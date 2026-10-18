@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/config" },
+    { "path": "packages/bus" },
+    { "path": "services/chat" },
+    { "path": "services/brain" },
+    { "path": "services/voice" },
+    { "path": "services/avatar" },
+    { "path": "services/eyes" },
+    { "path": "services/ears" },
+    { "path": "services/dashboard" }
+  ]
+}

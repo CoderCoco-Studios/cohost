@@ -1,0 +1,21 @@
+{
+  "name": "@cohost/brain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "reflect": "tsx src/reflect.ts"
+  },
+  "dependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0"
+  }
+}

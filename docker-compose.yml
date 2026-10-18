@@ -1,0 +1,135 @@
+# Base stack. CPU-only by default; GPU is layered on via docker-compose.gpu.yml
+# (install.sh writes COMPOSE_FILE into .env so plain `docker compose up` picks both).
+#
+#   docker compose up -d                 # everything
+#   docker compose up -d chat brain voice avatar dashboard   # minimal talking path
+#   docker compose --profile ears up -d  # add the Discord voice bot
+#   docker compose --profile eyes up -d  # add OBS vision
+
+x-ts-service: &ts-service
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    REDIS_URL: redis://redis:6379
+    DATABASE_URL: postgres://cohost:cohost@postgres:5432/cohost
+    OLLAMA_URL: http://ollama:11434
+    TTS_URL: http://tts:8880
+    STT_URL: http://stt:8000
+    VOICE_URL: http://voice:8700
+    CONFIG_DIR: /app/config
+  volumes:
+    - ./config:/app/config
+  extra_hosts:
+    - "host.docker.internal:host-gateway"   # reach OBS / VTube Studio on the host (Linux)
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  # ---------- infrastructure ----------
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes: [redis-data:/data]
+    ports: ["127.0.0.1:6379:6379"]   # for `pnpm dev` outside docker
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cohost
+      POSTGRES_PASSWORD: cohost
+      POSTGRES_DB: cohost
+    volumes: [pg-data:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cohost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes: [ollama-data:/root/.ollama]
+    ports: ["127.0.0.1:11434:11434"]
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: "q8_0"
+
+  # Pulls the models named in .env once ollama is up, then exits.
+  models:
+    image: curlimages/curl:latest
+    env_file: .env
+    depends_on: [ollama]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl -sf http://ollama:11434/api/tags >/dev/null; do sleep 2; done
+        for m in "$$LLM_MODEL" "$$VISION_MODEL" "$$EMBED_MODEL"; do
+          echo "pulling $$m"; curl -s http://ollama:11434/api/pull -d "{\"name\":\"$$m\"}" | tail -c 200; echo
+        done
+
+  tts:
+    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
+    restart: unless-stopped
+    ports: ["127.0.0.1:8880:8880"]
+
+  stt:
+    image: ${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:latest-cpu}
+    restart: unless-stopped
+    volumes: [stt-cache:/home/ubuntu/.cache/huggingface/hub]
+    ports: ["127.0.0.1:8000:8000"]
+
+  # ---------- co-host services ----------
+  chat:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: chat } }
+
+  brain:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: brain } }
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      ollama: { condition: service_started }
+
+  voice:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: voice } }
+    depends_on:
+      redis: { condition: service_healthy }
+      tts: { condition: service_started }
+
+  avatar:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: avatar } }
+
+  dashboard:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: dashboard } }
+    ports: ["${DASHBOARD_PORT:-3000}:3000"]
+
+  eyes:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: eyes } }
+    profiles: [eyes]
+
+  ears:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: ears } }
+    profiles: [ears]
+    depends_on:
+      redis: { condition: service_healthy }
+      stt: { condition: service_started }
+
+volumes:
+  redis-data:
+  pg-data:
+  ollama-data:
+  stt-cache:

@@ -1,0 +1,16 @@
+{
+  "name": "@cohost/voice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*"
+  }
+}

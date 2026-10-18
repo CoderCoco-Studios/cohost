@@ -1,0 +1,34 @@
+# Maps the brain's canonical emotions to whatever your avatar app calls them.
+# Canonical set: neutral happy laugh surprised smug sad angry confused think
+#
+# vtube-studio: values are hotkey NAMES as shown in VTS (Settings > Hotkey Settings).
+#               The driver resolves names to ids at connect time. Leave a key out to skip it.
+# vmc:          values are VRM blendshape (expression) names sent as /VMC/Ext/Blend/Val.
+#               Standard VRM 0.x presets: Neutral Joy Angry Sorrow Fun Surprised Blink etc.
+
+vtube-studio:
+  neutral: "Expr Neutral"
+  happy: "Expr Happy"
+  laugh: "Expr Laugh"
+  surprised: "Expr Surprised"
+  smug: "Expr Smug"
+  sad: "Expr Sad"
+  angry: "Expr Angry"
+  confused: "Expr Confused"
+  think: "Expr Think"
+  # gestures (optional) — triggered by [gesture:name] in brain output
+  gestures:
+    wave: "Anim Wave"
+    facepalm: "Anim Facepalm"
+
+vmc:
+  neutral: "Neutral"
+  happy: "Joy"
+  laugh: "Fun"
+  surprised: "Surprised"
+  smug: "Fun"
+  sad: "Sorrow"
+  angry: "Angry"
+  confused: "Sorrow"
+  think: "Neutral"
+  gestures: {}

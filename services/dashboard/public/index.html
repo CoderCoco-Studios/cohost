@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cohost · __COHOST_NAME__</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e8ee; --dim:#8b93a7; --acc:#7c9cff; --ok:#5ad47f; --warn:#ffb454; --bad:#ff6b6b; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 ui-sans-serif,system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; font-weight:600 }
+  .pill { padding:3px 10px; border-radius:999px; background:var(--panel); border:1px solid var(--line); color:var(--dim); font-size:12px }
+  .pill.idle{color:var(--dim)} .pill.thinking{color:var(--warn)} .pill.speaking{color:var(--ok)} .pill.muted{color:var(--bad)}
+  main { display:grid; grid-template-columns: 1fr 320px; gap:12px; padding:12px; height:calc(100vh - 49px); }
+  @media (max-width:800px){ main{grid-template-columns:1fr; height:auto} }
+  .col { display:flex; flex-direction:column; gap:12px; min-height:0 }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; min-height:0 }
+  .panel h2 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
+  #feed { flex:1; overflow:auto; font-family:ui-monospace,Menlo,monospace; font-size:12.5px }
+  .ev { padding:3px 0; border-bottom:1px solid #1d2129; display:flex; gap:8px }
+  .ev .t { color:var(--dim); flex:0 0 58px }
+  .ev .k { flex:0 0 110px; color:var(--acc) }
+  .ev.say .k{color:var(--ok)} .ev.chat .k{color:#c7a5ff} .ev.vision .k{color:#7fd6e0} .ev.speech .k{color:var(--warn)} .ev.status{opacity:.55}
+  button { background:#232838; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:6px 10px; cursor:pointer }
+  button:hover{border-color:var(--acc)} button.on{background:var(--acc); color:#0b0d12; border-color:var(--acc)}
+  input, textarea { width:100%; background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit }
+  textarea { font-family:ui-monospace,Menlo,monospace; font-size:12px; min-height:260px; resize:vertical }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap }
+  svg { width:100%; height:auto; display:block }
+  .sink main { display:none }  /* ?sink=1 : audio only, for OBS browser source */
+  .hint { color:var(--dim); font-size:12px }
+</style>
+</head>
+<body>
+<header>
+  <h1>__COHOST_NAME__</h1>
+  <span id="status" class="pill idle">connecting…</span>
+  <span id="driver" class="pill">avatar: —</span>
+  <span style="flex:1"></span>
+  <button id="audio">🔇 enable audio</button>
+  <button id="mute">mute</button>
+</header>
+<main>
+  <section class="col">
+    <div class="panel" style="flex:1; display:flex; flex-direction:column">
+      <h2>bus</h2>
+      <div id="feed"></div>
+    </div>
+    <div class="panel">
+      <h2>say something</h2>
+      <div class="row"><input id="say" placeholder="Type a line for the co-host to speak…"><button id="sayBtn">say</button><button id="forget">wipe context</button></div>
+    </div>
+  </section>
+  <section class="col">
+    <div class="panel">
+      <h2>avatar preview</h2>
+      <svg id="face" viewBox="0 0 200 200">
+        <g id="head">
+          <circle cx="100" cy="100" r="70" fill="#2b3142" stroke="#3b4357" stroke-width="2"/>
+          <g id="eyes">
+            <ellipse id="eyeL" cx="75" cy="88" rx="7" ry="9" fill="#e6e8ee"/>
+            <ellipse id="eyeR" cx="125" cy="88" rx="7" ry="9" fill="#e6e8ee"/>
+          </g>
+          <path id="mouth" d="M80 130 Q100 134 120 130" stroke="#e6e8ee" stroke-width="3" fill="#1a1d26" stroke-linecap="round"/>
+        </g>
+        <text id="emo" x="100" y="190" text-anchor="middle" fill="#8b93a7" font-size="12">neutral</text>
+      </svg>
+    </div>
+    <div class="panel" style="flex:1; display:flex; flex-direction:column">
+      <h2>personality.md</h2>
+      <textarea id="pers" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:8px"><button id="savePers">save &amp; reload</button><span id="persMsg" class="hint"></span></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const isSink = new URLSearchParams(location.search).has("sink");
+if (isSink) document.body.classList.add("sink");
+
+// ---------- audio sink
+let audioOn = isSink; // OBS browser sources allow autoplay; normal browsers need a click
+const queue = []; let playing = false;
+$("#audio").onclick = () => { audioOn = !audioOn; $("#audio").textContent = audioOn ? "🔊 audio on" : "🔇 enable audio"; $("#audio").classList.toggle("on", audioOn); if (audioOn) pump(); };
+async function pump() {
+  if (!audioOn || playing || !queue.length) return;
+  const u = queue.shift(); playing = true;
+  const a = new Audio(`/audio/${u.id}.wav`);
+  a.onplay = () => post("/sink", { event: "playing", id: u.id });
+  a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
+  try { await a.play(); } catch (e) { playing = false; audioOn = false; $("#audio").textContent = "🔇 enable audio"; }
+}
+const post = (p, b) => fetch(p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+
+// ---------- controls
+let muted = false;
+$("#mute").onclick = () => { muted = !muted; post("/control", { cmd: muted ? "mute" : "unmute" }); $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); };
+$("#sayBtn").onclick = () => { const t = $("#say").value.trim(); if (t) { post("/control", { cmd: "say", text: t }); $("#say").value = ""; } };
+$("#say").onkeydown = (e) => { if (e.key === "Enter") $("#sayBtn").click(); };
+$("#forget").onclick = () => post("/control", { cmd: "forget_context" });
+fetch("/personality").then(r => r.text()).then(t => $("#pers").value = t);
+$("#savePers").onclick = async () => { await fetch("/personality", { method: "PUT", body: $("#pers").value }); $("#persMsg").textContent = "saved · brain reloaded"; setTimeout(() => $("#persMsg").textContent = "", 2500); };
+
+// ---------- feed + state
+const feed = $("#feed");
+function line(ev) {
+  const d = ev.data, t = new Date(ev.ts).toLocaleTimeString([], { hour12: false });
+  let cls = "", text = "";
+  switch (ev.type) {
+    case "chat.message": cls = "chat"; text = `${d.user}: ${d.text}`; break;
+    case "brain.say": cls = "say"; text = `[${d.emotion}] ${d.text}  ← ${d.reason || ""}`; break;
+    case "vision.summary": cls = "vision"; text = d.text; break;
+    case "speech.heard": cls = "speech"; text = `${d.speaker}: ${d.text}`; break;
+    case "brain.status": cls = "status"; text = d.state + (d.detail ? ` · ${d.detail}` : ""); break;
+    case "control": cls = "status"; text = d.cmd + (d.text ? ` "${d.text}"` : ""); break;
+    case "voice.utterance": cls = "status"; text = `audio ready ${Math.round(d.durationMs)}ms`; break;
+    case "voice.playing": case "voice.done": cls = "status"; text = `${d.sink}`; break;
+    default: return;
+  }
+  const el = document.createElement("div"); el.className = "ev " + cls;
+  el.innerHTML = `<span class="t">${t}</span><span class="k">${ev.type}</span><span>${esc(text)}</span>`;
+  feed.appendChild(el); while (feed.children.length > 300) feed.firstChild.remove();
+  feed.scrollTop = feed.scrollHeight;
+}
+const esc = (s) => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+function onEvent(ev) {
+  if (ev.type === "avatar.state") { drawFace(ev.data); return; }
+  if (ev.type === "brain.status") { const s = $("#status"); s.className = "pill " + ev.data.state; s.textContent = ev.data.state; }
+  if (ev.type === "voice.utterance") { queue.push(ev.data); pump(); }
+  line(ev);
+}
+function drawFace(s) {
+  $("#driver").textContent = `avatar: ${s.driver}${s.connected ? "" : " (disconnected)"}`;
+  $("#head").setAttribute("transform", `translate(${s.headX * 0.8} ${-s.headY * 0.8}) rotate(${s.headZ} 100 100)`);
+  const ry = Math.max(0.5, 9 * (1 - s.blink));
+  for (const id of ["eyeL", "eyeR"]) { const e = $("#" + id); e.setAttribute("ry", ry); e.setAttribute("cx", (id === "eyeL" ? 75 : 125) + s.eyeX * 4); e.setAttribute("cy", 88 + s.eyeY * 3); }
+  const open = 4 + s.mouthOpen * 22, smile = s.mouthSmile * 10;
+  $("#mouth").setAttribute("d", `M80 128 Q100 ${128 + smile + open} 120 128 Q100 ${128 + smile - open * 0.3} 80 128`);
+  $("#emo").textContent = s.emotion;
+}
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onmessage = (m) => onEvent(JSON.parse(m.data));
+  ws.onclose = () => { $("#status").textContent = "reconnecting…"; setTimeout(connect, 2000); };
+}
+connect();
+</script>
+</body>
+</html>

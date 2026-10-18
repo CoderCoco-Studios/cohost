@@ -1,0 +1,23 @@
+# NVIDIA GPU overlay. Works on native Linux (nvidia-container-toolkit) and on
+# Docker Desktop / docker-ce inside WSL2 (driver lives on the Windows side).
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# install.sh sets COMPOSE_FILE in .env so you can just run `docker compose up -d`.
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  ollama:
+    <<: *gpu
+  tts:
+    <<: *gpu
+    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:latest}
+  stt:
+    <<: *gpu
+    image: ${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:latest-cuda}

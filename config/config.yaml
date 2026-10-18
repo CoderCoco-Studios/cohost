@@ -1,0 +1,73 @@
+# Behavioural config. ${VAR} is substituted from the environment (.env).
+# Secrets stay in .env; this file is safe to commit.
+
+cohost:
+  name: "Coco"                 # how the co-host refers to itself / is addressed in chat
+  streamer: "Chris"            # your name as the LLM should know it
+  timezone: "America/New_York"
+
+llm:
+  model: "${LLM_MODEL}"
+  num_ctx: 8192                # context window; raise with VRAM
+  temperature: 0.9
+  max_tokens: 120              # short replies read better as speech
+  embed_model: "${EMBED_MODEL}"
+
+vision:
+  enabled: false               # flip on once the `eyes` profile is running
+  model: "${VISION_MODEL}"
+  interval_ms: 8000            # how often to look at the game
+  obs:
+    host: "${OBS_HOST}"
+    port: ${OBS_PORT}
+    password: "${OBS_PASSWORD}"
+    source: "${OBS_SOURCE}"
+    width: 896                 # downscale before sending to the VLM
+
+chat:
+  twitch:
+    channel: "${TWITCH_CHANNEL}"
+  ignore_users: ["nightbot", "streamelements", "moobot"]
+  ignore_prefixes: ["!"]       # bot commands
+
+brain:
+  # When to speak. The brain scores every bus event and talks when it has a reason.
+  tick_ms: 1500
+  cooldown_ms: 6000            # min gap between utterances
+  idle_chatter_ms: 90000       # speak unprompted if quiet this long and there's fresh context
+  reply_on_mention: true       # always respond when its name is used
+  max_context_events: 24       # recent events kept in the prompt window
+  memory:
+    recall_k: 6                # memories pulled per prompt
+    min_similarity: 0.35
+
+voice:
+  engine: "kokoro"
+  voice: "af_heart"            # kokoro voice id
+  speed: 1.05
+  sample_rate: 24000
+
+avatar:
+  driver: "${AVATAR_DRIVER}"   # vtube-studio | vmc | null
+  fps: 30
+  smoothing: 0.25              # 0..1, higher = snappier
+  idle_motion: true            # gentle head/eye drift when idle
+  vtube_studio:
+    host: "${VTS_HOST}"
+    port: ${VTS_PORT}
+    plugin_name: "cohost"
+    plugin_developer: "${TWITCH_CHANNEL}"
+  vmc:
+    host: "${VMC_HOST}"
+    port: ${VMC_PORT}
+
+ears:
+  discord:
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+  silence_ms: 700              # end-of-utterance detection
+  min_speech_ms: 400
+  stt_model: "${STT_MODEL}"
+
+dashboard:
+  port: 3000

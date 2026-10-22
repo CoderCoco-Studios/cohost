@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
@@ -9,11 +9,17 @@ export * from "./schema.js";
 export const configDir = (): string =>
   resolve(process.env.CONFIG_DIR ?? join(process.cwd(), "config"));
 
-/** Replace ${VAR} with process.env.VAR (empty string when unset). */
+/**
+ * Replace ${VAR} with process.env.VAR (empty string when unset), and
+ * ${VAR:-default} with the default when VAR is unset or empty. The default
+ * form lets config.yaml hold the normal value literally while still allowing
+ * a per-machine override from .env.
+ */
 export function substituteEnv(text: string): string {
-  return text.replace(/\$\{([A-Z0-9_]+)\}/g, (_, k: string) => {
+  return text.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, k: string, def: string | undefined) => {
     const v = process.env[k];
-    return v === undefined ? "" : v;
+    if (v !== undefined && v !== "") return v;
+    return def ?? "";
   });
 }
 
@@ -52,27 +58,61 @@ export function loadDotEnv(file = join(configDir(), "..", ".env")): void {
   }
 }
 
+/** Keys present in the yaml that the schema doesn't know (typos, or settings from before the region split). */
+export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] {
+  const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(raw) || !isObj(parsed)) return [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(raw)) {
+    const here = path ? `${path}.${k}` : k;
+    if (!(k in parsed)) out.push(here);
+    else out.push(...unknownKeys(v, parsed[k], here));
+  }
+  return out;
+}
+
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
-  const file = join(configDir(), "config.yaml");
+  const file = ensureFromExample("config.yaml", "config.example.yaml");
   const raw = parseYaml(substituteEnv(readFileSync(file, "utf8")));
   const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
   if (!parsed.success) {
     throw new Error(`Invalid ${file}:\n${parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")}`);
   }
+  const stray = unknownKeys(coerceEmptyNumbers(raw), parsed.data);
+  if (stray.length > 0) {
+    console.warn(
+      `[config] ${file}: ignoring unknown keys: ${stray.join(", ")}. ` +
+      `(Settings that used to sit directly under brain: moved into brain.salience / affect / memory / cortex — see config.example.yaml.)`,
+    );
+  }
   cached = parsed.data;
   return cached;
 }
 
+/**
+ * The real files in config/ (config.yaml, personality.md, expressions.yaml) are
+ * yours and git-ignored; the committed *.example.* versions seed them on first
+ * run (install.sh does the same copy). Returns the path to read.
+ */
+export function ensureFromExample(name: string, example: string): string {
+  const file = join(configDir(), name);
+  if (existsSync(file)) return file;
+  const src = join(configDir(), example);
+  if (!existsSync(src)) throw new Error(`No ${file} and no ${src} to seed it from`);
+  copyFileSync(src, file);
+  console.warn(`[config] created ${file} from ${example} — edit it, it's git-ignored`);
+  return file;
+}
+
 export function loadExpressions(): ExpressionMap {
-  const file = join(configDir(), "expressions.yaml");
-  if (!existsSync(file)) return {};
+  const file = ensureFromExample("expressions.yaml", "expressions.example.yaml");
   return ExpressionMapSchema.parse(parseYaml(readFileSync(file, "utf8")) ?? {});
 }
 
 export function personalityPath(): string {
-  return join(configDir(), "personality.md");
+  return ensureFromExample("personality.md", "personality.example.md");
 }
 export function loadPersonality(): string {
   return readFileSync(personalityPath(), "utf8");

@@ -1,6 +1,6 @@
 /**
  * reflect — run after a stream (`pnpm reflect` or
- * `docker compose run --rm brain node dist/reflect.js`).
+ * `docker compose run --rm memory node services/memory/dist/reflect.js`).
  *
  * Reads everything remembered since the last reflection, asks the LLM what
  * the co-host should carry forward, and appends it to the "## Learned"
@@ -8,13 +8,13 @@
  * instead of resetting every stream. Edit the file by hand whenever you like.
  */
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
-import { Ollama } from "./llm.js";
-import { MemoryStore } from "./memory.js";
+import { createChatProvider, createEmbedder } from "@cohost/llm";
+import { MemoryStore } from "./store.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
-const llm = new Ollama(cfg.llm);
-const memory = new MemoryStore(llm, cfg.brain.memory, log);
+const llm = createChatProvider(cfg.llm);
+const memory = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
 
 async function main() {
   await memory.init();

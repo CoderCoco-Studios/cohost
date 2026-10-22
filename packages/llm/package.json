@@ -1,0 +1,16 @@
+{
+  "name": "@cohost/llm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^1.0.0",
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@cohost/config": "workspace:*"
+  }
+}

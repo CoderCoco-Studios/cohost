@@ -12,6 +12,8 @@ export class Engine {
   private target: AvatarParams = { ...NEUTRAL };
   private emotion: Emotion = "neutral";
   private emotionUntil = 0;
+  /** Resting face from the affect region; what we fall back to when an utterance's emotion wears off. */
+  private mood: Emotion = "neutral";
   private known = new Map<string, Utterance>();
   private playing?: { u: Utterance; startedAt: number };
   private nextBlink = Date.now() + 3000;
@@ -52,6 +54,16 @@ export class Engine {
     this.driver.setExpression(e, 1);
   }
 
+  /** Mood changes show up softly, and only when no utterance is holding the face. */
+  setMood(e: Emotion): void {
+    if (e === this.mood) return;
+    this.mood = e;
+    if (Date.now() > this.emotionUntil) {
+      this.emotion = e;
+      this.driver.setExpression(e, e === "neutral" ? 0 : 0.5);
+    }
+  }
+
   private frame(): void {
     const now = Date.now();
     const t = (now - this.t0) / 1000;
@@ -66,10 +78,10 @@ export class Engine {
     }
     this.target.mouthOpen = mouth;
 
-    // --- emotion decay back to neutral
-    if (this.emotion !== "neutral" && now > this.emotionUntil) {
-      this.emotion = "neutral";
-      this.driver.setExpression("neutral", 0);
+    // --- emotion decay back to the resting mood
+    if (this.emotion !== this.mood && now > this.emotionUntil) {
+      this.emotion = this.mood;
+      this.driver.setExpression(this.mood, this.mood === "neutral" ? 0 : 0.5);
     }
     this.target.mouthSmile = this.emotion === "happy" || this.emotion === "laugh" || this.emotion === "smug" ? 0.7 : 0.15;
 
@@ -98,6 +110,6 @@ export class Engine {
     }
 
     this.driver.setParams(this.cur);
-    this.onState?.(this.cur, this.emotion, this.emotion === "neutral" ? 0 : 1);
+    this.onState?.(this.cur, this.emotion, this.emotion === "neutral" ? 0 : now <= this.emotionUntil ? 1 : 0.5);
   }
 }

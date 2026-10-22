@@ -29,7 +29,7 @@ async function main() {
   engine.start();
 
   void bus.subscribe(
-    { group: "avatar", types: ["voice.utterance", "voice.playing", "voice.done", "brain.say"], fromNow: true },
+    { group: "avatar", types: ["voice.utterance", "voice.playing", "voice.done", "brain.say", "affect.state"], fromNow: true },
     (ev: BusEvent) => {
       switch (ev.type) {
         case "brain.say": {
@@ -43,6 +43,7 @@ async function main() {
           engine.prepare({ id: d.id, emotion: d.emotion, gesture: d.gesture, envelope: d.envelope, envelopeHz: d.envelopeHz, durationMs: d.durationMs });
           break;
         }
+        case "affect.state": engine.setMood((ev.data as BusEvent<"affect.state">["data"]).mood); break;
         case "voice.playing": engine.play((ev.data as BusEvent<"voice.playing">["data"]).id); break;
         case "voice.done": engine.done((ev.data as BusEvent<"voice.done">["data"]).id); break;
       }

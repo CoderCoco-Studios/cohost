@@ -1,0 +1,150 @@
+# Behavioural config: models, hooks, timings, voice, avatar. Copy to config.yaml
+# (install.sh does this); config.yaml is git-ignored and is the one that's read.
+# ${VAR} is substituted from .env, ${VAR:-default} falls back when VAR is unset.
+# Secrets (API keys, tokens) stay in .env; everything else belongs here.
+
+cohost:
+  name: "Coco"                 # how the co-host refers to itself / is addressed in chat
+  streamer: "Chris"            # your name as the LLM should know it
+  timezone: "America/New_York"
+
+llm:
+  # Who answers for the co-host. Everything else in the stack stays local whichever you pick.
+  #   ollama     local GPU (default). Model tag comes from LLM_MODEL in .env so `docker compose up models` can pull it.
+  #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
+  #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
+  #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
+  # Recipes for each: examples/providers/README.md
+  provider: ollama
+  model: "${LLM_MODEL}"        # ollama tag from .env; for other providers write the id here,
+                               # e.g. claude-opus-5-5, anthropic.claude-opus-5-5, meta-llama/Llama-3.3-70B-Instruct
+  num_ctx: 8192                # ollama: context window; raise with VRAM
+  temperature: 0.9             # ollama + openai
+  max_tokens: 120              # ollama + openai: short replies read better as speech
+  embed_model: "${EMBED_MODEL}" # always Ollama, whatever `provider` is: memory vectors must not change size
+  openai:
+    base_url: "https://api.openai.com/v1"   # e.g. http://my-gpu-box:8000/v1 or https://openrouter.ai/api/v1
+    api_key: "${LLM_API_KEY}"
+  claude:                      # provider: anthropic or bedrock
+    api_key: "${ANTHROPIC_API_KEY}"
+    effort: low                # thinking depth; low is right for one-liners
+    max_tokens: 2048           # caps thinking + reply together
+    fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
+  bedrock:
+    region: ""                 # empty = AWS_REGION / AWS_DEFAULT_REGION from the environment
+
+vision:
+  enabled: false               # flip on once the `eyes` profile is running
+  model: "${VISION_MODEL}"
+  interval_ms: 8000            # how often to look at the game
+  obs:
+    host: "${OBS_HOST}"
+    port: ${OBS_PORT}
+    password: "${OBS_PASSWORD}"
+    source: "${OBS_SOURCE}"
+    width: 896                 # downscale before sending to the VLM
+
+chat:
+  twitch:
+    channel: "${TWITCH_CHANNEL}"
+  ignore_users: ["nightbot", "streamelements", "moobot"]
+  ignore_prefixes: ["!"]       # bot commands
+
+brain:
+  # The brain is four containers ("regions") that only talk over the bus:
+  #   salience  when to speak + reflexes       affect  mood (valence/arousal)
+  #   memory    Postgres + recall (hippocampus) cortex  the LLM call
+  working_memory_events: 24    # recent events each region keeps / the prompt window
+
+  salience:
+    tick_ms: 1500
+    cooldown_ms: 6000          # min gap between utterances
+    idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context
+    reply_on_mention: true     # always respond when its name is used
+    speak_threshold: 0.6       # summed event score needed to speak (mention=1.0, question=0.55 ...)
+    arousal_bias: 0.2          # an excited mood lowers the threshold by up to this much
+    # Hook: how events are scored. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    module:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/salience
+      timeout_ms: 1500
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+    # Reflexes: canned reactions that fire the instant a matching event lands, no LLM.
+    # `match` is a case-insensitive regex; `on` picks senses (chat | speech | vision).
+    reflexes: []
+    # reflexes:
+    #   - match: "\\b(you died|game over|wasted)\\b"
+    #     on: [vision]
+    #     say: ["Oof.", "Welp.", "That one hurt."]
+    #     emotion: surprised
+    #     cooldown_ms: 45000
+    #   - match: "\\braid\\b"
+    #     on: [chat]
+    #     say: ["Oh hey, welcome in everyone!"]
+    #     emotion: happy
+    #     cooldown_ms: 120000
+
+  affect:
+    publish_ms: 2000           # how often affect.state goes out while it's moving
+    half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
+    baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
+    # Hook: how a line of chat/voice moves the mood. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    module:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/affect
+      timeout_ms: 1500
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+
+  memory:
+    recall_k: 6                # memories pulled per prompt (0 disables recall)
+    min_similarity: 0.35
+
+  cortex:
+    recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
+    speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
+    # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    critic:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/critic
+      timeout_ms: 2500
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+
+voice:
+  engine: "kokoro"
+  voice: "af_heart"            # kokoro voice id
+  speed: 1.05
+  sample_rate: 24000
+
+avatar:
+  driver: "${AVATAR_DRIVER}"   # vtube-studio | vmc | null
+  fps: 30
+  smoothing: 0.25              # 0..1, higher = snappier
+  idle_motion: true            # gentle head/eye drift when idle
+  vtube_studio:
+    host: "${VTS_HOST}"
+    port: ${VTS_PORT}
+    plugin_name: "cohost"
+    plugin_developer: "${TWITCH_CHANNEL}"
+  vmc:
+    host: "${VMC_HOST}"
+    port: ${VMC_PORT}
+
+ears:
+  discord:
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+  silence_ms: 700              # end-of-utterance detection
+  min_speech_ms: 400
+  stt_model: "${STT_MODEL}"
+
+dashboard:
+  port: 3000

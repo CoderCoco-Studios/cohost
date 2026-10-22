@@ -1,6 +1,6 @@
 import pg from "pg";
 import { urls, type Config, type Logger } from "@cohost/config";
-import type { Ollama } from "./llm.js";
+import type { Embedder } from "@cohost/llm";
 
 export type MemoryKind = "chat" | "speech" | "self" | "note";
 
@@ -22,7 +22,7 @@ export class MemoryStore {
   private pool: pg.Pool;
   private dims: number | undefined;
 
-  constructor(private llm: Ollama, private cfg: Config["brain"]["memory"], private log: Logger) {
+  constructor(private llm: Embedder, private cfg: Config["brain"]["memory"], private log: Logger) {
     this.pool = new pg.Pool({ connectionString: urls.database(), max: 4 });
   }
 

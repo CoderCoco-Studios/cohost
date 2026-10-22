@@ -13,8 +13,10 @@
     "typecheck": "tsc -b --noEmit",
     "dev": "pnpm -r --parallel --filter './services/*' dev",
     "lint": "tsc -b --noEmit",
-    "reflect": "pnpm --filter @cohost/brain reflect",
-    "clean": "rm -rf packages/*/dist services/*/dist"
+    "reflect": "pnpm --filter @cohost/memory reflect",
+    "clean": "rm -rf packages/*/dist services/*/dist",
+    "test": "tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
+    "test:only": "node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

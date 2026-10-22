@@ -1,5 +1,5 @@
 import type { Config } from "@cohost/config";
-import type { Context, ContextEvent } from "./context.js";
+import type { Context, ContextEvent } from "@cohost/working-memory";
 
 export interface Decision {
   speak: boolean;
@@ -12,12 +12,13 @@ export interface Decision {
 /**
  * Decides *whether* to talk. Deliberately simple and tunable from config —
  * this is the knob that makes a co-host pleasant instead of exhausting.
+ * Mood (from the affect region) nudges the threshold: excited = chattier.
  */
 export class Scheduler {
   private lastSpoke = 0;
   private lastActivity = Date.now();
 
-  constructor(private cfg: Config["brain"]) {}
+  constructor(private cfg: Config["brain"]["salience"]) {}
 
   noteSpoke(): void {
     this.lastSpoke = Date.now();
@@ -27,10 +28,10 @@ export class Scheduler {
     this.lastActivity = Date.now();
   }
 
-  decide(ctx: Context, busy: boolean, muted: boolean): Decision {
+  decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0): Decision {
     const now = Date.now();
     if (muted) return { speak: false, reason: "muted", score: 0 };
-    if (busy) return { speak: false, reason: "still speaking", score: 0 };
+    if (busy) return { speak: false, reason: "cortex busy", score: 0 };
     if (now - this.lastSpoke < this.cfg.cooldown_ms) return { speak: false, reason: "cooldown", score: 0 };
 
     const unseen = ctx.unseen();
@@ -52,12 +53,15 @@ export class Scheduler {
       if (s > focusScore) { focusScore = s; focus = e; }
     }
 
-    if (score >= 0.6) return { speak: true, reason: focus?.kind === "chat" && focus.mention ? "mentioned" : "engaged", score, focus };
+    const threshold = Math.max(0.1, this.cfg.speak_threshold - this.cfg.arousal_bias * arousal);
+    if (score >= threshold) {
+      return { speak: true, reason: focus?.kind === "chat" && focus.mention ? "mentioned" : "engaged", score, focus };
+    }
 
     const idle = now - this.lastActivity;
     if (this.cfg.idle_chatter_ms > 0 && idle > this.cfg.idle_chatter_ms) {
       return { speak: true, reason: "idle chatter", score, focus };
     }
-    return { speak: false, reason: `score ${score.toFixed(2)}`, score, focus };
+    return { speak: false, reason: `score ${score.toFixed(2)} < ${threshold.toFixed(2)}`, score, focus };
   }
 }

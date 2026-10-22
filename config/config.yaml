@@ -31,15 +31,45 @@ chat:
   ignore_prefixes: ["!"]       # bot commands
 
 brain:
-  # When to speak. The brain scores every bus event and talks when it has a reason.
-  tick_ms: 1500
-  cooldown_ms: 6000            # min gap between utterances
-  idle_chatter_ms: 90000       # speak unprompted if quiet this long and there's fresh context
-  reply_on_mention: true       # always respond when its name is used
-  max_context_events: 24       # recent events kept in the prompt window
+  # The brain is four containers ("regions") that only talk over the bus:
+  #   salience  when to speak + reflexes       affect  mood (valence/arousal)
+  #   memory    Postgres + recall (hippocampus) cortex  the LLM call
+  working_memory_events: 24    # recent events each region keeps / the prompt window
+
+  salience:
+    tick_ms: 1500
+    cooldown_ms: 6000          # min gap between utterances
+    idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context
+    reply_on_mention: true     # always respond when its name is used
+    speak_threshold: 0.6       # summed event score needed to speak (mention=1.0, question=0.55 ...)
+    arousal_bias: 0.2          # an excited mood lowers the threshold by up to this much
+    # Reflexes: canned reactions that fire the instant a matching event lands, no LLM.
+    # `match` is a case-insensitive regex; `on` picks senses (chat | speech | vision).
+    reflexes: []
+    # reflexes:
+    #   - match: "\\b(you died|game over|wasted)\\b"
+    #     on: [vision]
+    #     say: ["Oof.", "Welp.", "That one hurt."]
+    #     emotion: surprised
+    #     cooldown_ms: 45000
+    #   - match: "\\braid\\b"
+    #     on: [chat]
+    #     say: ["Oh hey, welcome in everyone!"]
+    #     emotion: happy
+    #     cooldown_ms: 120000
+
+  affect:
+    publish_ms: 2000           # how often affect.state goes out while it's moving
+    half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
+    baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
+
   memory:
-    recall_k: 6                # memories pulled per prompt
+    recall_k: 6                # memories pulled per prompt (0 disables recall)
     min_similarity: 0.35
+
+  cortex:
+    recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
+    speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
 
 voice:
   engine: "kokoro"

@@ -13,7 +13,7 @@
     "typecheck": "tsc -b --noEmit",
     "dev": "pnpm -r --parallel --filter './services/*' dev",
     "lint": "tsc -b --noEmit",
-    "reflect": "pnpm --filter @cohost/brain reflect",
+    "reflect": "pnpm --filter @cohost/memory reflect",
     "clean": "rm -rf packages/*/dist services/*/dist"
   },
   "devDependencies": {

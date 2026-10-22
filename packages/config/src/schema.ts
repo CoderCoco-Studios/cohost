@@ -36,16 +36,58 @@ export const ConfigSchema = z.object({
     ignore_users: z.array(z.string()).default([]),
     ignore_prefixes: z.array(z.string()).default(["!"]),
   }),
+  /**
+   * The brain is several containers ("regions") that only talk over the bus:
+   * salience (when to speak + reflexes), affect (mood), memory (hippocampus),
+   * cortex (what to say). Each has its own knobs; they share working_memory_events.
+   */
   brain: z.object({
-    tick_ms: z.number().int().positive().default(1500),
-    cooldown_ms: z.number().int().nonnegative().default(6000),
-    idle_chatter_ms: z.number().int().nonnegative().default(90000),
-    reply_on_mention: z.boolean().default(true),
-    max_context_events: z.number().int().positive().default(24),
+    /** Recent events each region keeps as its working memory / prompt window. */
+    working_memory_events: z.number().int().positive().default(24),
+    salience: z.object({
+      tick_ms: z.number().int().positive().default(1500),
+      cooldown_ms: z.number().int().nonnegative().default(6000),
+      idle_chatter_ms: z.number().int().nonnegative().default(90000),
+      reply_on_mention: z.boolean().default(true),
+      /** Summed event score needed to speak. */
+      speak_threshold: z.number().min(0).default(0.6),
+      /** How much a high-arousal mood lowers the threshold (0 = ignore mood). */
+      arousal_bias: z.number().min(0).max(1).default(0.2),
+      /** Fast path: no LLM, canned line, fires the instant a matching event arrives. */
+      reflexes: z
+        .array(
+          z.object({
+            /** Regex (case-insensitive) tested against the event text. */
+            match: z.string().min(1),
+            /** Which senses this reflex listens to. */
+            on: z.array(z.enum(["chat", "speech", "vision"])).default(["chat", "speech", "vision"]),
+            /** One is picked at random. */
+            say: z.array(z.string().min(1)).min(1),
+            emotion: Emotion.default("surprised"),
+            gesture: z.string().optional(),
+            cooldown_ms: z.number().int().nonnegative().default(30000),
+          }),
+        )
+        .default([]),
+    }).default({}),
+    affect: z.object({
+      /** How often affect.state is published while it's changing. */
+      publish_ms: z.number().int().positive().default(2000),
+      /** Time for a mood swing to fade halfway back to baseline. */
+      half_life_ms: z.number().int().positive().default(45000),
+      /** Resting valence (-1..1). A sunny co-host sits above 0. */
+      baseline_valence: z.number().min(-1).max(1).default(0.15),
+    }).default({}),
     memory: z.object({
       recall_k: z.number().int().nonnegative().default(6),
       min_similarity: z.number().min(0).max(1).default(0.35),
-    }),
+    }).default({}),
+    cortex: z.object({
+      /** How long to wait for the memory region before answering without it. */
+      recall_timeout_ms: z.number().int().positive().default(2500),
+      /** Give up on a stuck utterance / voice sink after this long. */
+      speaking_timeout_ms: z.number().int().positive().default(20000),
+    }).default({}),
   }),
   voice: z.object({
     engine: z.enum(["kokoro"]).default("kokoro"),

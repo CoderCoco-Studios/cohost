@@ -42,6 +42,33 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
+  packages/llm:
+    dependencies:
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+
+  packages/working-memory:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+
+  services/affect:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../../packages/bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@cohost/working-memory':
+        specifier: workspace:*
+        version: link:../../packages/working-memory
+
   services/avatar:
     dependencies:
       '@cohost/bus':
@@ -58,22 +85,6 @@ importers:
         specifier: ^8.5.13
         version: 8.18.2
 
-  services/brain:
-    dependencies:
-      '@cohost/bus':
-        specifier: workspace:*
-        version: link:../../packages/bus
-      '@cohost/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      pg:
-        specifier: ^8.13.0
-        version: 8.23.1
-    devDependencies:
-      '@types/pg':
-        specifier: ^8.11.0
-        version: 8.23.1
-
   services/chat:
     dependencies:
       '@cohost/bus':
@@ -88,6 +99,21 @@ importers:
       '@twurple/chat':
         specifier: ^8.2.0
         version: 8.2.0(@twurple/auth@8.2.0)
+
+  services/cortex:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../../packages/bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@cohost/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@cohost/working-memory':
+        specifier: workspace:*
+        version: link:../../packages/working-memory
 
   services/dashboard:
     dependencies:
@@ -143,6 +169,37 @@ importers:
       obs-websocket-js:
         specifier: ^5.0.6
         version: 5.0.8
+
+  services/memory:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../../packages/bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@cohost/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.23.1
+
+  services/salience:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../../packages/bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@cohost/working-memory':
+        specifier: workspace:*
+        version: link:../../packages/working-memory
 
   services/voice:
     dependencies:

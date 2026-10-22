@@ -1,5 +1,5 @@
 {
-  "name": "@cohost/brain",
+  "name": "@cohost/memory",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,8 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
+    "@cohost/llm": "workspace:*",
     "pg": "^8.13.0"
   },
-  "devDependencies": {
-    "@types/pg": "^8.11.0"
-  }
+  "devDependencies": { "@types/pg": "^8.11.0" }
 }

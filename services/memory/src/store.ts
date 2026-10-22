@@ -1,6 +1,6 @@
 import pg from "pg";
 import { urls, type Config, type Logger } from "@cohost/config";
-import type { Ollama } from "./llm.js";
+import type { Ollama } from "@cohost/llm";
 
 export type MemoryKind = "chat" | "speech" | "self" | "note";
 

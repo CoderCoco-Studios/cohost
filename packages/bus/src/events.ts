@@ -49,6 +49,64 @@ export const EventPayloads = {
     detail: z.string().optional(),
   }),
 
+  // ---- brain regions talk to each other through these ----
+
+  /** salience → cortex: something is worth responding to right now. */
+  "attention.focus": z.object({
+    /** "mentioned" | "engaged" | "idle chatter" ... free text for the dashboard. */
+    reason: z.string(),
+    score: z.number(),
+    /** The single event most worth replying to, if any. */
+    focus: z
+      .object({
+        kind: z.enum(["chat", "speech", "vision"]),
+        who: z.string().optional(),
+        text: z.string(),
+        mention: z.boolean().default(false),
+      })
+      .optional(),
+  }),
+
+  /** affect → everyone: the co-host's running mood. Decays on its own. */
+  "affect.state": z.object({
+    /** -1 (miserable) .. 1 (delighted) */
+    valence: z.number().min(-1).max(1),
+    /** 0 (flat) .. 1 (buzzing) */
+    arousal: z.number().min(0).max(1),
+    /** Nearest canonical emotion, for the avatar's resting face and the prompt. */
+    mood: Emotion,
+    /** What last moved it, for the dashboard. */
+    cause: z.string().optional(),
+  }),
+
+  /** cortex → memory: what do we remember that relates to this? */
+  "memory.recall.request": z.object({
+    id: z.string(),
+    query: z.string(),
+    k: z.number().int().positive().optional(),
+  }),
+  /** memory → cortex: the answer. Empty list is a valid answer. */
+  "memory.recall.reply": z.object({
+    id: z.string(),
+    memories: z.array(
+      z.object({
+        ts: z.number(),
+        kind: z.enum(["chat", "speech", "self", "note"]),
+        who: z.string(),
+        text: z.string(),
+        similarity: z.number().optional(),
+      }),
+    ),
+  }),
+
+  /** memory → cortex: who this viewer is, emitted when they address the co-host. */
+  "memory.viewer": z.object({
+    user: z.string(),
+    isNew: z.boolean(),
+    msgCount: z.number().int(),
+    notes: z.string().default(""),
+  }),
+
   /** Audio for an utterance is ready. envelope = mouth-open level per frame (0..1). */
   "voice.utterance": z.object({
     id: z.string(),

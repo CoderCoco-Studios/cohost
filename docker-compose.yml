@@ -2,7 +2,7 @@
 # (install.sh writes COMPOSE_FILE into .env so plain `docker compose up` picks both).
 #
 #   docker compose up -d                 # everything
-#   docker compose up -d chat brain voice avatar dashboard   # minimal talking path
+#   docker compose up -d chat salience affect memory cortex voice avatar dashboard   # minimal talking path
 #   docker compose --profile ears up -d  # add the Discord voice bot
 #   docker compose --profile eyes up -d  # add OBS vision
 
@@ -91,12 +91,30 @@ services:
     <<: *ts-service
     build: { context: ., args: { SERVICE: chat } }
 
-  brain:
+  # ---------- the brain: four regions that only talk over the bus ----------
+  # salience decides *when* to speak (and fires reflexes), affect keeps the mood,
+  # memory owns Postgres, cortex is the only one that calls the chat LLM.
+  salience:
     <<: *ts-service
-    build: { context: ., args: { SERVICE: brain } }
+    build: { context: ., args: { SERVICE: salience } }
+
+  affect:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: affect } }
+
+  memory:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: memory } }
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
+      ollama: { condition: service_started }
+
+  cortex:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: cortex } }
+    depends_on:
+      redis: { condition: service_healthy }
       ollama: { condition: service_started }
 
   voice:

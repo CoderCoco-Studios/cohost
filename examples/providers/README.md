@@ -2,7 +2,7 @@
 
 `llm.provider` in `config/config.yaml` picks who answers; only the API key goes
 in `.env`. Everything else in the stack stays local (embeddings included, so
-memory never has to be rebuilt). Restart with `docker compose up -d cortex memory`
+memory never has to be rebuilt). Restart with `docker compose up -d cortex memory salience affect`
 after changing these.
 
 ## Local GPU (default)

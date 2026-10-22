@@ -97,3 +97,54 @@ test("Scheduler: arousal lowers the threshold; idle chatter fires after quiet", 
   assert.equal(d.speak, true);
   assert.equal(d.reason, "idle chatter");
 });
+
+test("Scheduler: an unchanged unseen set is scored once, not every tick", async () => {
+  let calls = 0;
+  const counting = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), {} as never, {
+    rules: (i) => { calls++; return scoreRules(i, true); },
+  }, log);
+  const sch = new Scheduler(salienceCfg(), counting);
+  const ctx = new Context(10);
+  ctx.push(chat("plain one"));
+  for (let i = 0; i < 5; i++) await sch.decide(ctx, false, false);
+  assert.equal(calls, 1);
+  ctx.push(chat("plain two")); // only the new event is sent to the scorer
+  const d = await sch.decide(ctx, false, false);
+  assert.equal(calls, 2);
+  assert.equal(d.scored.length, 2);
+});
+
+test("Scheduler: events that arrive during scoring are not in `scored` and stay unseen", async () => {
+  const ctx = new Context(10);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const slow = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), {} as never, {
+    rules: (i) => scoreRules(i, true),
+  }, log);
+  const run = slow.run.bind(slow);
+  slow.run = async (i) => { await gate; return run(i); };
+  const sch = new Scheduler(salienceCfg(), slow);
+  ctx.push(chat("hey Coco?", { mentionsCohost: true }));
+  const pending = sch.decide(ctx, false, false);
+  ctx.push(chat("Coco, did you see that?", { mentionsCohost: true })); // lands mid-await
+  release();
+  const d = await pending;
+  assert.equal(d.speak, true);
+  assert.equal(d.scored.length, 1);
+  ctx.markSeenEvents(d.scored);
+  assert.equal(ctx.unseen().length, 1); // the late mention is still waiting for its own decision
+  assert.equal((ctx.unseen()[0] as { text: string }).text, "Coco, did you see that?");
+});
+
+test("Scheduler.cooling and Context.last/markSeenEvents", async () => {
+  const sch = new Scheduler(salienceCfg({ cooldown_ms: 1000 }), rulesScorer());
+  assert.equal(sch.cooling(), false);
+  sch.noteSpoke();
+  assert.equal(sch.cooling(), true);
+  const ctx = new Context(10);
+  ctx.push(chat("a"));
+  ctx.push(chat("b"));
+  assert.equal((ctx.last() as { text: string }).text, "b");
+  ctx.markSeenEvents([ctx.last()!]);
+  assert.deepEqual(ctx.unseen().map((e) => (e as { text: string }).text), ["a"]);
+});

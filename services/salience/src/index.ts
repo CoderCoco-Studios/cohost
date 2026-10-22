@@ -96,10 +96,14 @@ async function onEvent(ev: BusEvent) {
 /** Fast path. Fires immediately, bypassing the scheduler and the LLM. */
 async function reflex(sense: Sense, text: string) {
   if (muted || reflexes.size === 0) return;
+  // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
+  // Gate before test(), which spends the rule's own cooldown on a hit.
+  if (busy() || scheduler.cooling()) return;
+  const trigger = ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
   const hit = reflexes.test(sense, text);
   if (!hit) return;
   log.info({ rule: hit.rule, sense }, "reflex");
-  ctx.markSeen(); // the thing that triggered it has been "handled"
+  if (trigger) ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count
   await bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}` });
 }
 
@@ -119,7 +123,8 @@ async function tick() {
   try { decision = await scheduler.decide(ctx, busy(), muted, arousal); }
   finally { deciding = false; }
   if (!decision.speak) return;
-  ctx.markSeen();
+  // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
+  ctx.markSeenEvents(decision.scored);
   // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.
   cortexState = "thinking";
   cortexSince = Date.now();

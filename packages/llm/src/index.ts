@@ -17,14 +17,22 @@ import { urls, type Config } from "@cohost/config";
 export type { Config };
 
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
-export interface ChatOptions { maxTokens?: number; temperature?: number }
+export interface ChatOptions {
+  maxTokens?: number;
+  temperature?: number;
+  /** JSON reply wanted: don't send stop sequences (a blank line or a transcript tag inside JSON would truncate it). */
+  json?: boolean;
+  /** Abort the in-flight request (hook timeouts). */
+  signal?: AbortSignal;
+}
 
 export interface ChatProvider {
   readonly name: string;
   readonly model: string;
   chat(messages: ChatMessage[], opts?: ChatOptions): Promise<string>;
-  /** True once the backend is reachable and answering. */
+  /** True once the backend is reachable and answering. On false, `lastError` says why. */
   ping(): Promise<boolean>;
+  lastError?: string;
 }
 export interface Embedder {
   embed(text: string): Promise<number[]>;
@@ -32,6 +40,8 @@ export interface Embedder {
 
 /** Lines that mean "the model started writing the next transcript entry": stop there. */
 const TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"];
+/** Blank line ends a spoken reply. Exactly four entries: OpenAI-style APIs reject more than four stops. */
+const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS];
 
 export function createChatProvider(cfg: Config["llm"]): ChatProvider {
   switch (cfg.provider) {
@@ -68,9 +78,10 @@ export class Ollama implements ChatProvider, Embedder {
           temperature: opts.temperature ?? this.cfg.temperature,
           num_ctx: this.cfg.num_ctx,
           num_predict: opts.maxTokens ?? this.cfg.max_tokens,
-          stop: ["\n\n", ...TRANSCRIPT_STOPS],
+          ...(opts.json ? {} : { stop: REPLY_STOPS }),
         },
       }),
+      signal: opts.signal,
     });
     if (!res.ok) throw new Error(`ollama chat ${res.status}: ${await res.text()}`);
     const json = (await res.json()) as { message?: { content?: string } };
@@ -90,8 +101,13 @@ export class Ollama implements ChatProvider, Embedder {
     return v;
   }
 
+  lastError?: string;
   async ping(): Promise<boolean> {
-    try { return (await fetch(`${this.base}/api/tags`)).ok; } catch { return false; }
+    try {
+      const r = await fetch(`${this.base}/api/tags`);
+      this.lastError = r.ok ? undefined : `ollama ${r.status} at ${this.base}`;
+      return r.ok;
+    } catch (err) { this.lastError = `cannot reach ollama at ${this.base}: ${String(err)}`; return false; }
   }
 }
 
@@ -126,16 +142,22 @@ export class OpenAICompatible implements ChatProvider {
         stream: false,
         temperature: opts.temperature ?? this.cfg.temperature,
         max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
-        stop: ["\n\n", ...TRANSCRIPT_STOPS].slice(0, 4),
+        ...(opts.json ? {} : { stop: REPLY_STOPS }),
       }),
+      signal: opts.signal,
     });
     if (!res.ok) throw new Error(`${this.name} chat ${res.status}: ${await res.text()}`);
     const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
     return (json.choices?.[0]?.message?.content ?? "").trim();
   }
 
+  lastError?: string;
   async ping(): Promise<boolean> {
-    try { return (await fetch(`${this.base}/models`, { headers: this.headers() })).ok; } catch { return false; }
+    try {
+      const r = await fetch(`${this.base}/models`, { headers: this.headers() });
+      this.lastError = r.ok ? undefined : `${this.base}/models answered ${r.status}${r.status === 401 || r.status === 403 ? " (check llm.openai.api_key)" : ""}`;
+      return r.ok;
+    } catch (err) { this.lastError = `cannot reach ${this.base}: ${String(err)}`; return false; }
   }
 }
 
@@ -169,11 +191,11 @@ abstract class ClaudeBase implements ChatProvider {
       system: system || undefined,
       messages: turns,
       output_config: { effort: this.cfg.claude.effort },
-      stop_sequences: TRANSCRIPT_STOPS,
+      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }),
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
       // in the same call. Not offered on Bedrock, where a refusal just means "say nothing".
       ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
-    });
+    }, { signal: opts.signal });
     if (res.stop_reason === "refusal") return "";
     return res.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -182,6 +204,7 @@ abstract class ClaudeBase implements ChatProvider {
       .trim();
   }
 
+  lastError?: string;
   abstract ping(): Promise<boolean>;
 }
 
@@ -196,7 +219,17 @@ export class AnthropicProvider extends ClaudeBase {
     this.serverFallbacks = cfg.claude.fallbacks;
   }
   async ping(): Promise<boolean> {
-    try { await this.client.models.retrieve(this.cfg.model); return true; } catch { return false; }
+    try {
+      await this.client.models.retrieve(this.cfg.model);
+      this.lastError = undefined;
+      return true;
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      this.lastError = status === 401 || status === 403 ? `Claude API rejected the credentials (${status}): check ANTHROPIC_API_KEY`
+        : status === 404 ? `Claude API has no model "${this.cfg.model}": check llm.model`
+        : String(err);
+      return false;
+    }
   }
 }
 

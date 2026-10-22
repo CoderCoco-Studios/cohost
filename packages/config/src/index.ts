@@ -58,6 +58,19 @@ export function loadDotEnv(file = join(configDir(), "..", ".env")): void {
   }
 }
 
+/** Keys present in the yaml that the schema doesn't know (typos, or settings from before the region split). */
+export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] {
+  const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+  if (!isObj(raw) || !isObj(parsed)) return [];
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(raw)) {
+    const here = path ? `${path}.${k}` : k;
+    if (!(k in parsed)) out.push(here);
+    else out.push(...unknownKeys(v, parsed[k], here));
+  }
+  return out;
+}
+
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
@@ -66,6 +79,13 @@ export function loadConfig(force = false): Config {
   const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
   if (!parsed.success) {
     throw new Error(`Invalid ${file}:\n${parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")}`);
+  }
+  const stray = unknownKeys(coerceEmptyNumbers(raw), parsed.data);
+  if (stray.length > 0) {
+    console.warn(
+      `[config] ${file}: ignoring unknown keys: ${stray.join(", ")}. ` +
+      `(Settings that used to sit directly under brain: moved into brain.salience / affect / memory / cortex — see config.example.yaml.)`,
+    );
   }
   cached = parsed.data;
   return cached;

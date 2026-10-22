@@ -19,7 +19,10 @@ export const ModuleSchema = z.object({
   llm: z.object({
     provider: z.preprocess((v) => v || undefined, z.enum(["ollama", "openai", "anthropic", "bedrock"]).optional()),
     model: z.preprocess((v) => v || undefined, z.string().optional()),
-  }).default({}),
+  }).default({}).superRefine((v, ctx) => {
+    // A model id only means something to one provider; inheriting the cortex's id across providers 404s every call.
+    if (v.provider && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required when llm.provider is set on a hook (model ids are provider-specific)" });
+  }),
 }).default({});
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
 
@@ -104,7 +107,7 @@ export const ConfigSchema = z.object({
         .array(
           z.object({
             /** Regex (case-insensitive) tested against the event text. */
-            match: z.string().min(1),
+            match: z.string().min(1).refine((m) => { try { new RegExp(m, "i"); return true; } catch { return false; } }, { message: "not a valid regular expression" }),
             /** Which senses this reflex listens to. */
             on: z.array(z.enum(["chat", "speech", "vision"])).default(["chat", "speech", "vision"]),
             /** One is picked at random. */

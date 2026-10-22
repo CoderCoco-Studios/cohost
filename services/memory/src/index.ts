@@ -35,10 +35,9 @@ async function main() {
       await sleep(3000);
     }
   }
-  void bus.subscribe(
-    { group: "memory", types: ["chat.message", "speech.heard", "brain.say", "memory.recall.request"], fromNow: true },
-    onEvent,
-  );
+  // Two consumer groups so a recall never queues behind the (embed + INSERT) writes.
+  void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], fromNow: true }, onEvent);
+  void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], fromNow: true }, onEvent);
   log.info({ recall_k: cfg.brain.memory.recall_k }, "memory online");
 }
 
@@ -48,8 +47,9 @@ async function onEvent(ev: BusEvent) {
       const d = ev.data as BusEvent<"chat.message">["data"];
       const v = await store.touchViewer(d.userId ?? d.user, d.user);
       if (d.mentionsCohost) {
-        await store.remember("chat", d.user, d.text);
+        // Announce who this is before the slow embed so the cortex has it when the reply is built.
         await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, notes: v.notes });
+        await store.remember("chat", d.user, d.text);
       }
       break;
     }

@@ -67,7 +67,7 @@ export class Module<I, O> {
     const raw = await withTimeout(
       this.provider!.chat(
         [{ role: "system", content: spec.system }, { role: "user", content: spec.user(input) }],
-        { maxTokens: spec.maxTokens ?? 200, temperature: 0 },
+        { maxTokens: spec.maxTokens ?? 200, temperature: 0, json: true, signal: AbortSignal.timeout(this.cfg.timeout_ms) },
       ),
       this.cfg.timeout_ms,
     );

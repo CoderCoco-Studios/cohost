@@ -14,8 +14,10 @@ export interface AppraiseInput {
 /** How much to move the mood. Both are deltas, clamped to +-0.5. */
 export interface AppraiseOutput { valence_delta: number; arousal_delta: number }
 
-const POSITIVE = /\b(lol|lmao|haha+|pog(gers|champ)?|gg|w|love|nice|let'?s go|hype|based|goat|clutch|ez|amazing|cute|wholesome)\b|[😂🤣❤️🔥]/i;
-const NEGATIVE = /\b(boo|l|ratio|trash|cringe|hate|boring|mald|rip|f|oof|unlucky|scam|bad|worst|ugh)\b|[😡💀👎]/i;
+// Emoji are alternations, not [...] classes: without the `u` flag a class matches single UTF-16 code
+// units, and most emoji share a high surrogate, so one emoji could hit both lists (and VS16 alone matched).
+const POSITIVE = /\b(lol|lmao|haha+|pog(gers|champ)?|gg|w|love|nice|let'?s go|hype|based|goat|clutch|ez|amazing|cute|wholesome)\b|😂|🤣|❤|🔥/iu;
+const NEGATIVE = /\b(boo|l|ratio|trash|cringe|hate|boring|mald|rip|f|oof|unlucky|scam|bad|worst|ugh)\b|😡|💀|👎/iu;
 
 /** The built-in word lists. Also the fallback for the llm / http kinds. */
 export function appraiseRules(i: AppraiseInput): AppraiseOutput {

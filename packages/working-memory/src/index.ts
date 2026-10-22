@@ -48,6 +48,15 @@ export class Context {
   unseen(): ContextEvent[] {
     return this.events.filter((e) => !e.seen);
   }
+  /** Mark only these events seen (not ones that arrived while a decision was in flight). */
+  markSeenEvents(events: readonly ContextEvent[]): void {
+    const set = new Set<ContextEvent>(events);
+    for (const e of this.events) if (set.has(e)) e.seen = true;
+  }
+  /** The most recently added event, if any. */
+  last(): ContextEvent | undefined {
+    return this.events[this.events.length - 1];
+  }
   markSeen(): void {
     for (const e of this.events) e.seen = true;
   }

@@ -11,7 +11,7 @@
 import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { Mood } from "./mood.js";
-import { createAppraiser } from "./appraise.js";
+import { createAppraiser, appraiseRules, type AppraiseInput } from "./appraise.js";
 
 const log = createLogger("affect");
 const cfg = loadConfig();
@@ -35,13 +35,13 @@ async function onEvent(ev: BusEvent) {
   switch (ev.type) {
     case "chat.message": {
       const d = ev.data as BusEvent<"chat.message">["data"];
-      await appraise("chat", d.user, d.text, d.mentionsCohost);
+      appraise("chat", d.user, d.text, d.mentionsCohost);
       if (d.isSub) mood.nudge(0.05, 0.05, `sub: ${d.user}`);
       break;
     }
     case "speech.heard": {
       const d = ev.data as BusEvent<"speech.heard">["data"];
-      await appraise("speech", d.speaker, d.text, false);
+      appraise("speech", d.speaker, d.text, false);
       break;
     }
     case "vision.summary": {
@@ -64,10 +64,40 @@ async function onEvent(ev: BusEvent) {
   }
 }
 
-async function appraise(source: "chat" | "speech", who: string, text: string, mention: boolean) {
+/**
+ * rules appraise inline. An llm/http appraiser can take its whole timeout per line, so those run
+ * on a small worker queue instead of the bus handler: the consumer never stalls behind a slow
+ * module, and when appraisal falls behind the oldest waiting lines are dropped (mood is a
+ * smoothed signal; a missed line costs less than a stale one).
+ */
+const MAX_QUEUED = 8;
+const queue: { input: AppraiseInput; cause: string }[] = [];
+let draining = false;
+
+function appraise(source: "chat" | "speech", who: string, text: string, mention: boolean) {
   mood.tick();
-  const out = await appraiser.run({ source, who, text, mention, valence: mood.valence, arousal: mood.arousal });
-  mood.applyAppraisal(out, `${source === "speech" ? "voice" : "chat"}: ${who}`);
+  const input: AppraiseInput = { source, who, text, mention, valence: mood.valence, arousal: mood.arousal };
+  const cause = `${source === "speech" ? "voice" : "chat"}: ${who}`;
+  // Rules are instant, and a line too short to carry tone isn't worth a model call.
+  if (appraiser.kind === "rules" || (!mention && text.trim().length < 4)) {
+    mood.applyAppraisal(appraiseRules(input), cause);
+    return;
+  }
+  queue.push({ input, cause });
+  while (queue.length > MAX_QUEUED) queue.shift();
+  if (!draining) void drain();
+}
+
+async function drain() {
+  draining = true;
+  try {
+    for (let job = queue.shift(); job; job = queue.shift()) {
+      const out = await appraiser.run({ ...job.input, valence: mood.valence, arousal: mood.arousal });
+      mood.applyAppraisal(out, job.cause);
+    }
+  } finally {
+    draining = false;
+  }
 }
 
 function publish() {

@@ -54,3 +54,13 @@ test("Mood.state rounds and labels", () => {
   assert.equal(s.arousal, 0.4);
   assert.equal(s.mood, "happy");
 });
+
+test("emoji: one emoji never hits both lists, and a bare VS16 is not positive", () => {
+  assert.equal(line("🎉").valence_delta, 0); // shares a surrogate with 😡/💀 in a non-unicode class
+  assert.equal(line("😀").valence_delta, 0);
+  assert.equal(line("\ufe0f").valence_delta, 0);
+  assert.ok(line("😂").valence_delta > 0);
+  assert.ok(line("❤️").valence_delta > 0);
+  assert.ok(line("💀").valence_delta < 0);
+  assert.ok(line("👎").valence_delta < 0);
+});

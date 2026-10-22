@@ -132,6 +132,19 @@ docker compose run --rm memory node services/memory/dist/reflect.js
 It appends a dated block of bullets to `## Learned` in `personality.md`. Edit or
 delete whatever you don't like — it's just a file.
 
+### Upgrading an existing install
+
+`config.yaml`, `personality.md` and `expressions.yaml` are no longer tracked
+(the `*.example.*` versions are). Before pulling, copy your current three files
+somewhere safe: git removes the tracked ones, and your `personality.md` holds
+whatever the reflection pass learned. After pulling, put them back in `config/`.
+
+Settings that used to sit directly under `brain:` (`tick_ms`, `cooldown_ms`,
+`idle_chatter_ms`, `reply_on_mention`, `max_context_events`) moved under
+`brain.salience`, and `max_context_events` is now `working_memory_events`.
+Unknown keys are ignored, and every service logs a warning naming them at
+startup, so a setting that silently reverted to its default shows up there.
+
 ## Hooks: regions you can replace with a model
 
 Three regions expose their judgement as a hook that runs one of: `rules` (the
@@ -171,8 +184,8 @@ table.
 | `anthropic` | Claude via the Claude API                                         | `provider: anthropic`, `model: claude-opus-5-5`          | `ANTHROPIC_API_KEY=`        |
 | `bedrock`   | Claude via Amazon Bedrock, billed to your AWS account             | `provider: bedrock`, `model: anthropic.claude-opus-5-5`, `bedrock.region:` | `AWS_*` credentials |
 
-Then `docker compose up -d cortex memory` (the reflection pass uses the same
-chat model). Full recipes per provider: [`examples/providers/`](examples/providers/).
+Then `docker compose up -d cortex memory salience affect` (salience and affect load
+`llm.*` and the hooks too; the reflection pass uses the same chat model). Full recipes per provider: [`examples/providers/`](examples/providers/).
 `llm.claude.*` tunes the Claude paths: `effort` (thinking depth; `low` suits
 one-line replies), a roomier `max_tokens` because thinking and the reply share
 it, and `fallbacks`, which retries on another Claude model if a safety

@@ -128,6 +128,30 @@ docker compose run --rm memory node services/memory/dist/reflect.js
 It appends a dated block of bullets to `## Learned` in `personality.md`. Edit or
 delete whatever you don't like — it's just a file.
 
+## Stronger model (rented GPUs, hosted APIs)
+
+The regions never see the model backend, so a bigger brain is a `.env` change.
+`LLM_PROVIDER` picks it; `LLM_MODEL` is the id as that provider names it.
+Embeddings always stay on local Ollama, so swapping the chat model never
+changes the vector size of the memory table.
+
+| provider    | what it is                                                        | `.env`                                                    |
+| ----------- | ----------------------------------------------------------------- | --------------------------------------------------------- |
+| `ollama`    | local GPU (default)                                               | `LLM_MODEL=qwen2.5:14b-instruct-q4_K_M`                   |
+| `openai`    | any OpenAI-compatible endpoint: vLLM on a box you rent by the hour, OpenRouter, Groq, Together ... | `LLM_BASE_URL=http://my-box:8000/v1` `LLM_API_KEY=...` `LLM_MODEL=...` |
+| `anthropic` | Claude via the Claude API                                         | `ANTHROPIC_API_KEY=...` `LLM_MODEL=claude-opus-5-5`        |
+| `bedrock`   | Claude via Amazon Bedrock, billed to your AWS account             | `AWS_REGION=us-east-1` + the usual `AWS_*` credentials, `LLM_MODEL=anthropic.claude-opus-5-5` |
+
+Then `docker compose up -d cortex` (and `memory`, since the reflection pass
+uses the same chat model). `llm.claude.*` in `config.yaml` tunes the Claude
+paths: `effort` (thinking depth; `low` suits one-line replies), a roomier
+`max_tokens` because thinking and the reply share it, and `fallbacks`, which
+retries on another Claude model if a safety classifier declines (Claude API
+only; on Bedrock a decline just means it says nothing that turn).
+
+Everything else — eyes, ears, voice, the avatar, Postgres — stays local.
+Only the cortex's chat call and the reflection pass leave the machine.
+
 ## Avatar: 2D or 3D
 
 `AVATAR_DRIVER` picks the driver; the brain regions never know which app is running.

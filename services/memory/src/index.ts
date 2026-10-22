@@ -13,17 +13,17 @@
  */
 import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
-import { Ollama } from "@cohost/llm";
+import { createEmbedder, Ollama } from "@cohost/llm";
 import { MemoryStore } from "./store.js";
 
 const log = createLogger("memory");
 const cfg = loadConfig();
 const bus = new Bus("memory", log);
-const llm = new Ollama(cfg.llm);
-const store = new MemoryStore(llm, cfg.brain.memory, log);
+const ollama = new Ollama(cfg.llm); // embeddings are always local, whatever the chat provider
+const store = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
 
 async function main() {
-  while (!(await llm.ping())) {
+  while (!(await ollama.ping())) {
     log.warn("waiting for ollama (embeddings)...");
     await sleep(3000);
   }

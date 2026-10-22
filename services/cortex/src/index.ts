@@ -15,14 +15,14 @@
 import { randomUUID } from "node:crypto";
 import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
 import { createLogger, loadConfig, loadPersonality, type Emotion } from "@cohost/config";
-import { Ollama } from "@cohost/llm";
+import { createChatProvider } from "@cohost/llm";
 import { Context } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Mood, type Recalled } from "./prompt.js";
 
 const log = createLogger("cortex");
 const cfg = loadConfig();
 const bus = new Bus("cortex", log);
-const llm = new Ollama(cfg.llm);
+const llm = createChatProvider(cfg.llm);
 const ctx = new Context(cfg.brain.working_memory_events);
 
 let personality = loadPersonality();
@@ -36,7 +36,7 @@ const pendingRecall = new Map<string, (m: Recalled) => void>();
 
 async function main() {
   while (!(await llm.ping())) {
-    log.warn("waiting for ollama...");
+    log.warn({ provider: llm.name }, "waiting for the model backend...");
     await sleep(3000);
   }
   await status("idle");
@@ -51,7 +51,7 @@ async function main() {
     },
     onEvent,
   );
-  log.info({ model: cfg.llm.model, name: cfg.cohost.name }, "cortex online");
+  log.info({ provider: llm.name, model: llm.model, name: cfg.cohost.name }, "cortex online");
 }
 
 async function onEvent(ev: BusEvent) {

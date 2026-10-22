@@ -12,12 +12,39 @@ export const ConfigSchema = z.object({
     streamer: z.string().min(1),
     timezone: z.string().default("UTC"),
   }),
+  /**
+   * Which model answers for the co-host. Embeddings always use local Ollama so
+   * the memory table's vector size never changes when the chat model does.
+   */
   llm: z.object({
+    provider: z.preprocess((v) => v || "ollama", z.enum(["ollama", "openai", "anthropic", "bedrock"])),
+    /** Model id as the provider names it (ollama tag, OpenAI-style id, claude-opus-5-5, anthropic.claude-opus-5-5 ...). */
     model: z.string().min(1),
     num_ctx: z.number().int().positive().default(8192),
+    /** ollama + openai only; Claude models no longer take sampling parameters. */
     temperature: z.number().min(0).max(2).default(0.9),
+    /** ollama + openai: reply length cap. */
     max_tokens: z.number().int().positive().default(120),
     embed_model: z.string().min(1),
+    openai: z.object({
+      base_url: z.string().default("https://api.openai.com/v1"),
+      api_key: z.string().default(""),
+    }).default({}),
+    /** Shared by provider=anthropic and provider=bedrock. */
+    claude: z.object({
+      /** Claude API key; leave empty to use ANTHROPIC_API_KEY or an `ant auth login` profile. */
+      api_key: z.string().default(""),
+      /** Thinking depth. "low" is right for one-line chat replies. */
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("low"),
+      /** Caps thinking + reply together, so it must be roomier than max_tokens above. */
+      max_tokens: z.number().int().min(256).default(2048),
+      /** Claude API only: re-run on another Claude model if a safety classifier declines. */
+      fallbacks: z.boolean().default(true),
+    }).default({}),
+    bedrock: z.object({
+      /** Empty = AWS_REGION / AWS_DEFAULT_REGION from the environment. */
+      region: z.string().default(""),
+    }).default({}),
   }),
   vision: z.object({
     enabled: z.boolean().default(false),

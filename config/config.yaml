@@ -7,11 +7,25 @@ cohost:
   timezone: "America/New_York"
 
 llm:
-  model: "${LLM_MODEL}"
-  num_ctx: 8192                # context window; raise with VRAM
-  temperature: 0.9
-  max_tokens: 120              # short replies read better as speech
+  # Who answers. ollama (local GPU, default) | openai (any OpenAI-compatible
+  # endpoint: a rented vLLM box, OpenRouter, Groq ...) | anthropic | bedrock.
+  # Embeddings stay on local Ollama whichever you pick.
+  provider: "${LLM_PROVIDER}"
+  model: "${LLM_MODEL}"        # as the provider names it, e.g. claude-opus-5-5 / anthropic.claude-opus-5-5
+  num_ctx: 8192                # ollama: context window; raise with VRAM
+  temperature: 0.9             # ollama + openai
+  max_tokens: 120              # ollama + openai: short replies read better as speech
   embed_model: "${EMBED_MODEL}"
+  openai:
+    base_url: "${LLM_BASE_URL}"
+    api_key: "${LLM_API_KEY}"
+  claude:                      # provider: anthropic or bedrock
+    api_key: "${ANTHROPIC_API_KEY}"
+    effort: low                # thinking depth; low is right for one-liners
+    max_tokens: 2048           # caps thinking + reply together
+    fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
+  bedrock:
+    region: "${AWS_REGION}"
 
 vision:
   enabled: false               # flip on once the `eyes` profile is running

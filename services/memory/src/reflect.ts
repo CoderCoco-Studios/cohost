@@ -8,13 +8,13 @@
  * instead of resetting every stream. Edit the file by hand whenever you like.
  */
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
-import { Ollama } from "@cohost/llm";
+import { createChatProvider, createEmbedder } from "@cohost/llm";
 import { MemoryStore } from "./store.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
-const llm = new Ollama(cfg.llm);
-const memory = new MemoryStore(llm, cfg.brain.memory, log);
+const llm = createChatProvider(cfg.llm);
+const memory = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
 
 async function main() {
   await memory.init();

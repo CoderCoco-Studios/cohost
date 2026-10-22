@@ -6,3 +6,5 @@ data/
 *.log
 .DS_Store
 config/config.yaml
+config/personality.md
+config/expressions.yaml

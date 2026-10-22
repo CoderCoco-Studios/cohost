@@ -75,9 +75,13 @@ docker compose --profile ears up -d   # Discord voice bot
 | file                       | holds                                                            |
 | -------------------------- | ---------------------------------------------------------------- |
 | `.env`                     | secrets + per-machine stuff (tokens, API keys, hosts, GPU overlay) |
-| `config/config.yaml`       | all behaviour: which model answers, brain hooks, timings, voice, driver. Copied from `config.example.yaml` by `install.sh`; git-ignored |
+| `config/config.yaml`       | all behaviour: which model answers, brain hooks, timings, voice, driver |
 | `config/personality.md`    | who the co-host is; the cortex re-reads it on save from dashboard |
 | `config/expressions.yaml`  | canonical emotion → your model's expression/hotkey names         |
+
+The three `config/` files are yours and git-ignored. The committed
+`*.example.*` versions seed them: `install.sh` copies them, and any service
+that finds one missing copies it on first run.
 
 Upgrading the GPU later is `LLM_MODEL=qwen2.5:14b-instruct-q4_K_M` in `.env` and
 `docker compose up -d models`. Nothing else changes.

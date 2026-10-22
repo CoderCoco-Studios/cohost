@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
@@ -61,15 +61,7 @@ export function loadDotEnv(file = join(configDir(), "..", ".env")): void {
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
-  // config.yaml is yours and git-ignored; the committed config.example.yaml is the fallback
-  // so a fresh clone runs before you've copied it (install.sh does the copy).
-  let file = join(configDir(), "config.yaml");
-  if (!existsSync(file)) {
-    const example = join(configDir(), "config.example.yaml");
-    if (!existsSync(example)) throw new Error(`No ${file} and no ${example}`);
-    console.warn(`[config] ${file} not found, using ${example} — copy it to config.yaml to customise`);
-    file = example;
-  }
+  const file = ensureFromExample("config.yaml", "config.example.yaml");
   const raw = parseYaml(substituteEnv(readFileSync(file, "utf8")));
   const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
   if (!parsed.success) {
@@ -79,14 +71,28 @@ export function loadConfig(force = false): Config {
   return cached;
 }
 
+/**
+ * The real files in config/ (config.yaml, personality.md, expressions.yaml) are
+ * yours and git-ignored; the committed *.example.* versions seed them on first
+ * run (install.sh does the same copy). Returns the path to read.
+ */
+export function ensureFromExample(name: string, example: string): string {
+  const file = join(configDir(), name);
+  if (existsSync(file)) return file;
+  const src = join(configDir(), example);
+  if (!existsSync(src)) throw new Error(`No ${file} and no ${src} to seed it from`);
+  copyFileSync(src, file);
+  console.warn(`[config] created ${file} from ${example} — edit it, it's git-ignored`);
+  return file;
+}
+
 export function loadExpressions(): ExpressionMap {
-  const file = join(configDir(), "expressions.yaml");
-  if (!existsSync(file)) return {};
+  const file = ensureFromExample("expressions.yaml", "expressions.example.yaml");
   return ExpressionMapSchema.parse(parseYaml(readFileSync(file, "utf8")) ?? {});
 }
 
 export function personalityPath(): string {
-  return join(configDir(), "personality.md");
+  return ensureFromExample("personality.md", "personality.example.md");
 }
 export function loadPersonality(): string {
   return readFileSync(personalityPath(), "utf8");

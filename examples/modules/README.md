@@ -1,13 +1,25 @@
 # Brain hooks: rules, an LLM call, or your own model
 
 Three regions expose a hook where their judgement lives. Each hook runs one of
-three kinds, chosen per hook in `.env` (wired through `config/config.yaml`):
+three kinds, chosen per hook in `config/config.yaml`:
 
-| hook                | region   | question it answers                          | `.env` keys                                  |
-| ------------------- | -------- | -------------------------------------------- | -------------------------------------------- |
-| `salience.module`   | salience | how much does each event deserve a reaction? | `SALIENCE_MODULE`, `SALIENCE_MODULE_URL`     |
-| `affect.module`     | affect   | how does this line move my mood?             | `AFFECT_MODULE`, `AFFECT_MODULE_URL`         |
-| `cortex.critic`     | cortex   | is this reply okay to say out loud?          | `CORTEX_CRITIC`, `CORTEX_CRITIC_URL`         |
+| hook                    | region   | question it answers                          |
+| ----------------------- | -------- | -------------------------------------------- |
+| `brain.salience.module` | salience | how much does each event deserve a reaction? |
+| `brain.affect.module`   | affect   | how does this line move my mood?             |
+| `brain.cortex.critic`   | cortex   | is this reply okay to say out loud?          |
+
+Every hook has the same shape:
+
+```yaml
+module:            # or `critic:` under cortex
+  kind: rules      # rules | llm | http
+  url: ""          # http: where to POST
+  timeout_ms: 1500
+  llm:             # llm: override the provider/model; empty = same as llm.* at the top of the file
+    provider: ""
+    model: ""
+```
 
 | kind    | what runs                                                     | latency      | needs              |
 | ------- | ------------------------------------------------------------- | ------------ | ------------------ |
@@ -20,13 +32,14 @@ Whatever the kind, a timeout, an error, or an unparseable answer falls back to
 
 ## 1. `rules` (default)
 
-Leave the keys empty. This is what ships: fixed weights in salience, word
-lists in affect, pass-through in the critic.
+What ships: fixed weights in salience, word lists in affect, pass-through in
+the critic.
 
-```ini
-SALIENCE_MODULE=
-AFFECT_MODULE=
-CORTEX_CRITIC=
+```yaml
+brain:
+  salience: { module: { kind: rules } }
+  affect:   { module: { kind: rules } }
+  cortex:   { critic: { kind: rules } }
 ```
 
 ## 2. `llm`: a sub-region that is its own model call
@@ -34,22 +47,25 @@ CORTEX_CRITIC=
 Each hook becomes one extra chat request with a JSON reply. Point the hooks at
 a small, fast model so they don't compete with the cortex for the GPU:
 
-```ini
-# the cortex keeps talking through Claude ...
-LLM_PROVIDER=anthropic
-LLM_MODEL=claude-opus-5-5
-ANTHROPIC_API_KEY=sk-ant-...
+```yaml
+llm:                                   # the cortex keeps talking through Claude ...
+  provider: anthropic
+  model: claude-opus-5-5
 
-# ... while the hooks use a 3B model on the local GPU
-MODULE_LLM_PROVIDER=ollama
-MODULE_LLM_MODEL=qwen2.5:3b-instruct
-
-AFFECT_MODULE=llm        # mood from a model's read of each line instead of word lists
-CORTEX_CRITIC=llm        # an inner editor that can veto or tighten a line before it's spoken
-SALIENCE_MODULE=rules    # scoring runs every 1.5s tick; keep it on rules unless you have GPU to spare
+brain:
+  affect:                              # ... mood from a model's read of each line, on a 3B local model
+    module:
+      kind: llm
+      llm: { provider: ollama, model: "qwen2.5:3b-instruct" }
+  cortex:                              # an inner editor that can veto or tighten a line before it's spoken
+    critic:
+      kind: llm
+      llm: { provider: ollama, model: "qwen2.5:3b-instruct" }
+  salience:                            # scoring runs every 1.5s tick; keep it on rules unless you have GPU to spare
+    module: { kind: rules }
 ```
 
-Leave `MODULE_LLM_*` empty to reuse the cortex's model. The prompts live in
+Leave `llm.provider` / `llm.model` under a hook empty to reuse the cortex's model. The prompts live in
 `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts` and
 `services/cortex/src/critic.ts`.
 
@@ -62,17 +78,15 @@ directory is a complete, dependency-free stand-in with the exact contracts:
 python3 examples/modules/server.py        # :8900, /salience /affect /critic
 ```
 
-```ini
-SALIENCE_MODULE=http
-SALIENCE_MODULE_URL=http://host.docker.internal:8900/salience
-AFFECT_MODULE=http
-AFFECT_MODULE_URL=http://host.docker.internal:8900/affect
-CORTEX_CRITIC=http
-CORTEX_CRITIC_URL=http://host.docker.internal:8900/critic
+```yaml
+brain:
+  salience: { module: { kind: http, url: "http://host.docker.internal:8900/salience" } }
+  affect:   { module: { kind: http, url: "http://host.docker.internal:8900/affect" } }
+  cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
 ```
 
-Mix freely: `AFFECT_MODULE=http` with a sentiment model you fine-tuned, the
-critic on `llm`, salience on `rules`.
+Mix freely: affect on `http` with a sentiment model you fine-tuned, the critic
+on `llm`, salience on `rules`.
 
 ### Contracts
 
@@ -102,7 +116,7 @@ Everything a module would learn from is already on the bus and in Postgres:
 `chat.message` / `speech.heard` with the `attention.focus` and `brain.say`
 that followed are a labelled dataset for salience, and the `memories` table
 plus `affect.state` history is one for affect. Train offline, serve behind
-one of the endpoints above, flip the `.env` key. Nothing else changes.
+one of the endpoints above, set `kind: http` in `config.yaml`. Nothing else changes.
 
 ## Adding a fourth hook
 

@@ -45,7 +45,7 @@ Infra containers: `redis`, `postgres` (pgvector), `ollama`, `tts` (Kokoro-FastAP
 ```bash
 git clone <this repo> cohost && cd cohost
 ./scripts/install.sh          # docker, nvidia toolkit, node, .env, pulls images + models
-# edit .env  (Twitch channel, OBS password, Discord token, AVATAR_DRIVER)
+# edit .env (tokens, OBS password, AVATAR_DRIVER) and config/config.yaml (model, hooks, behaviour)
 docker compose up -d          # core: chat + brain regions + voice avatar dashboard + infra
 open http://localhost:3000    # dashboard
 ```
@@ -74,8 +74,8 @@ docker compose --profile ears up -d   # Discord voice bot
 
 | file                       | holds                                                            |
 | -------------------------- | ---------------------------------------------------------------- |
-| `.env`                     | secrets + per-machine stuff (tokens, hosts, which GPU overlay)   |
-| `config/config.yaml`       | all behaviour: models, timings, talkativeness, voice, driver     |
+| `.env`                     | secrets + per-machine stuff (tokens, API keys, hosts, GPU overlay) |
+| `config/config.yaml`       | all behaviour: which model answers, brain hooks, timings, voice, driver. Copied from `config.example.yaml` by `install.sh`; git-ignored |
 | `config/personality.md`    | who the co-host is; the cortex re-reads it on save from dashboard |
 | `config/expressions.yaml`  | canonical emotion → your model's expression/hotkey names         |
 
@@ -133,37 +133,47 @@ delete whatever you don't like — it's just a file.
 Three regions expose their judgement as a hook that runs one of: `rules` (the
 built-in heuristics, default), `llm` (one chat call, JSON answer, optionally
 on a smaller model than the cortex), or `http` (POST to a URL you serve — a
-model you trained yourself).
+model you trained yourself). Pick per hook in `config.yaml`:
 
-| hook              | asks                                         | `.env`                                   |
-| ----------------- | -------------------------------------------- | ---------------------------------------- |
-| `salience.module` | how much does each event deserve a reaction? | `SALIENCE_MODULE=rules\|llm\|http`       |
-| `affect.module`   | how does this line move my mood?             | `AFFECT_MODULE=rules\|llm\|http`         |
-| `cortex.critic`   | is this reply okay to say? (inhibition)      | `CORTEX_CRITIC=rules\|llm\|http`         |
+| hook                    | asks                                         |
+| ----------------------- | -------------------------------------------- |
+| `brain.salience.module` | how much does each event deserve a reaction? |
+| `brain.affect.module`   | how does this line move my mood?             |
+| `brain.cortex.critic`   | is this reply okay to say? (inhibition)      |
+
+```yaml
+brain:
+  affect:
+    module: { kind: llm, llm: { provider: ollama, model: "qwen2.5:3b-instruct" } }
+  cortex:
+    critic: { kind: http, url: "http://host.docker.internal:8900/critic" }
+```
 
 Any failure falls back to `rules`. Contracts, prompts, a runnable stand-in
-server and `.env` recipes for each kind are in [`examples/modules/`](examples/modules/).
+server and yaml recipes for each kind are in [`examples/modules/`](examples/modules/).
 
 ## Stronger model (rented GPUs, hosted APIs)
 
-The regions never see the model backend, so a bigger brain is a `.env` change.
-`LLM_PROVIDER` picks it; `LLM_MODEL` is the id as that provider names it.
-Embeddings always stay on local Ollama, so swapping the chat model never
-changes the vector size of the memory table.
+The regions never see the model backend, so a bigger brain is a `config.yaml`
+change: `llm.provider` picks it, `llm.model` is the id as that provider names
+it, and only the API key lives in `.env`. Embeddings always stay on local
+Ollama, so swapping the chat model never changes the vector size of the memory
+table.
 
-| provider    | what it is                                                        | `.env`                                                    |
-| ----------- | ----------------------------------------------------------------- | --------------------------------------------------------- |
-| `ollama`    | local GPU (default)                                               | `LLM_MODEL=qwen2.5:14b-instruct-q4_K_M`                   |
-| `openai`    | any OpenAI-compatible endpoint: vLLM on a box you rent by the hour, OpenRouter, Groq, Together ... | `LLM_BASE_URL=http://my-box:8000/v1` `LLM_API_KEY=...` `LLM_MODEL=...` |
-| `anthropic` | Claude via the Claude API                                         | `ANTHROPIC_API_KEY=...` `LLM_MODEL=claude-opus-5-5`        |
-| `bedrock`   | Claude via Amazon Bedrock, billed to your AWS account             | `AWS_REGION=us-east-1` + the usual `AWS_*` credentials, `LLM_MODEL=anthropic.claude-opus-5-5` |
+| provider    | what it is                                                        | config.yaml                                              | .env                        |
+| ----------- | ----------------------------------------------------------------- | -------------------------------------------------------- | --------------------------- |
+| `ollama`    | local GPU (default)                                               | `provider: ollama`                                       | `LLM_MODEL=` (tag to pull)  |
+| `openai`    | any OpenAI-compatible endpoint: vLLM on a box you rent by the hour, OpenRouter, Groq, Together ... | `provider: openai`, `model:`, `openai.base_url:` | `LLM_API_KEY=`   |
+| `anthropic` | Claude via the Claude API                                         | `provider: anthropic`, `model: claude-opus-5-5`          | `ANTHROPIC_API_KEY=`        |
+| `bedrock`   | Claude via Amazon Bedrock, billed to your AWS account             | `provider: bedrock`, `model: anthropic.claude-opus-5-5`, `bedrock.region:` | `AWS_*` credentials |
 
-Then `docker compose up -d cortex` (and `memory`, since the reflection pass
-uses the same chat model). Full `.env` recipes per provider: [`examples/providers/`](examples/providers/). `llm.claude.*` in `config.yaml` tunes the Claude
-paths: `effort` (thinking depth; `low` suits one-line replies), a roomier
-`max_tokens` because thinking and the reply share it, and `fallbacks`, which
-retries on another Claude model if a safety classifier declines (Claude API
-only; on Bedrock a decline just means it says nothing that turn).
+Then `docker compose up -d cortex memory` (the reflection pass uses the same
+chat model). Full recipes per provider: [`examples/providers/`](examples/providers/).
+`llm.claude.*` tunes the Claude paths: `effort` (thinking depth; `low` suits
+one-line replies), a roomier `max_tokens` because thinking and the reply share
+it, and `fallbacks`, which retries on another Claude model if a safety
+classifier declines (Claude API only; on Bedrock a decline just means it says
+nothing that turn).
 
 Everything else — eyes, ears, voice, the avatar, Postgres — stays local.
 Only the cortex's chat call and the reflection pass leave the machine.

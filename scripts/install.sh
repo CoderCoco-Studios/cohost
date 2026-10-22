@@ -85,6 +85,10 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   log "Wrote .env from template — fill in Twitch/Discord/OBS values."
 fi
+if [[ ! -f config/config.yaml ]]; then
+  cp config/config.example.yaml config/config.yaml
+  log "Wrote config/config.yaml from config.example.yaml — this one is yours (git-ignored)."
+fi
 if [[ $HAS_NVIDIA -eq 1 ]]; then
   sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml#' .env
   log "GPU overlay enabled in .env (COMPOSE_FILE)"

@@ -9,11 +9,17 @@ export * from "./schema.js";
 export const configDir = (): string =>
   resolve(process.env.CONFIG_DIR ?? join(process.cwd(), "config"));
 
-/** Replace ${VAR} with process.env.VAR (empty string when unset). */
+/**
+ * Replace ${VAR} with process.env.VAR (empty string when unset), and
+ * ${VAR:-default} with the default when VAR is unset or empty. The default
+ * form lets config.yaml hold the normal value literally while still allowing
+ * a per-machine override from .env.
+ */
 export function substituteEnv(text: string): string {
-  return text.replace(/\$\{([A-Z0-9_]+)\}/g, (_, k: string) => {
+  return text.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, k: string, def: string | undefined) => {
     const v = process.env[k];
-    return v === undefined ? "" : v;
+    if (v !== undefined && v !== "") return v;
+    return def ?? "";
   });
 }
 
@@ -55,7 +61,15 @@ export function loadDotEnv(file = join(configDir(), "..", ".env")): void {
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
-  const file = join(configDir(), "config.yaml");
+  // config.yaml is yours and git-ignored; the committed config.example.yaml is the fallback
+  // so a fresh clone runs before you've copied it (install.sh does the copy).
+  let file = join(configDir(), "config.yaml");
+  if (!existsSync(file)) {
+    const example = join(configDir(), "config.example.yaml");
+    if (!existsSync(example)) throw new Error(`No ${file} and no ${example}`);
+    console.warn(`[config] ${file} not found, using ${example} — copy it to config.yaml to customise`);
+    file = example;
+  }
   const raw = parseYaml(substituteEnv(readFileSync(file, "utf8")));
   const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
   if (!parsed.success) {

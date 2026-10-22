@@ -1,5 +1,7 @@
-# Behavioural config. ${VAR} is substituted from the environment (.env).
-# Secrets stay in .env; this file is safe to commit.
+# Behavioural config: models, hooks, timings, voice, avatar. Copy to config.yaml
+# (install.sh does this); config.yaml is git-ignored and is the one that's read.
+# ${VAR} is substituted from .env, ${VAR:-default} falls back when VAR is unset.
+# Secrets (API keys, tokens) stay in .env; everything else belongs here.
 
 cohost:
   name: "Coco"                 # how the co-host refers to itself / is addressed in chat
@@ -7,17 +9,21 @@ cohost:
   timezone: "America/New_York"
 
 llm:
-  # Who answers. ollama (local GPU, default) | openai (any OpenAI-compatible
-  # endpoint: a rented vLLM box, OpenRouter, Groq ...) | anthropic | bedrock.
-  # Embeddings stay on local Ollama whichever you pick.
-  provider: "${LLM_PROVIDER}"
-  model: "${LLM_MODEL}"        # as the provider names it, e.g. claude-opus-5-5 / anthropic.claude-opus-5-5
+  # Who answers for the co-host. Everything else in the stack stays local whichever you pick.
+  #   ollama     local GPU (default). Model tag comes from LLM_MODEL in .env so `docker compose up models` can pull it.
+  #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
+  #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
+  #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
+  # Recipes for each: examples/providers/README.md
+  provider: ollama
+  model: "${LLM_MODEL}"        # ollama tag from .env; for other providers write the id here,
+                               # e.g. claude-opus-5-5, anthropic.claude-opus-5-5, meta-llama/Llama-3.3-70B-Instruct
   num_ctx: 8192                # ollama: context window; raise with VRAM
   temperature: 0.9             # ollama + openai
   max_tokens: 120              # ollama + openai: short replies read better as speech
-  embed_model: "${EMBED_MODEL}"
+  embed_model: "${EMBED_MODEL}" # always Ollama, whatever `provider` is: memory vectors must not change size
   openai:
-    base_url: "${LLM_BASE_URL}"
+    base_url: "https://api.openai.com/v1"   # e.g. http://my-gpu-box:8000/v1 or https://openrouter.ai/api/v1
     api_key: "${LLM_API_KEY}"
   claude:                      # provider: anthropic or bedrock
     api_key: "${ANTHROPIC_API_KEY}"
@@ -25,7 +31,7 @@ llm:
     max_tokens: 2048           # caps thinking + reply together
     fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
   bedrock:
-    region: "${AWS_REGION}"
+    region: ""                 # empty = AWS_REGION / AWS_DEFAULT_REGION from the environment
 
 vision:
   enabled: false               # flip on once the `eyes` profile is running
@@ -57,13 +63,15 @@ brain:
     reply_on_mention: true     # always respond when its name is used
     speak_threshold: 0.6       # summed event score needed to speak (mention=1.0, question=0.55 ...)
     arousal_bias: 0.2          # an excited mood lowers the threshold by up to this much
-    # Hook: how events are scored. rules (built-in weights) | llm (ask a model) | http (your own model).
-    # Any failure falls back to rules. See examples/modules/.
+    # Hook: how events are scored. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     module:
-      kind: "${SALIENCE_MODULE}"      # empty = rules
-      url: "${SALIENCE_MODULE_URL}"   # http: e.g. http://host.docker.internal:8900/salience
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/salience
       timeout_ms: 1500
-      llm: { provider: "${MODULE_LLM_PROVIDER}", model: "${MODULE_LLM_MODEL}" }  # empty = same as llm.* above
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
     # Reflexes: canned reactions that fire the instant a matching event lands, no LLM.
     # `match` is a case-insensitive regex; `on` picks senses (chat | speech | vision).
     reflexes: []
@@ -83,12 +91,15 @@ brain:
     publish_ms: 2000           # how often affect.state goes out while it's moving
     half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
     baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
-    # Hook: how a line of chat/voice moves the mood. rules | llm | http.
+    # Hook: how a line of chat/voice moves the mood. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     module:
-      kind: "${AFFECT_MODULE}"
-      url: "${AFFECT_MODULE_URL}"     # http: e.g. http://host.docker.internal:8900/affect
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/affect
       timeout_ms: 1500
-      llm: { provider: "${MODULE_LLM_PROVIDER}", model: "${MODULE_LLM_MODEL}" }
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
 
   memory:
     recall_k: 6                # memories pulled per prompt (0 disables recall)
@@ -97,12 +108,15 @@ brain:
   cortex:
     recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
     speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
-    # Hook: inhibition. A check on every reply before it's spoken. rules = pass-through | llm | http.
+    # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     critic:
-      kind: "${CORTEX_CRITIC}"
-      url: "${CORTEX_CRITIC_URL}"     # http: e.g. http://host.docker.internal:8900/critic
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/critic
       timeout_ms: 2500
-      llm: { provider: "${MODULE_LLM_PROVIDER}", model: "${MODULE_LLM_MODEL}" }
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
 
 voice:
   engine: "kokoro"

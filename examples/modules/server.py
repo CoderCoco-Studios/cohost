@@ -9,11 +9,12 @@ Standard library only, so it runs anywhere:
 
     python3 examples/modules/server.py            # listens on :8900
 
-Then in .env (the co-host runs in Docker, so reach the host by name):
+Then in config/config.yaml (the co-host runs in Docker, so reach the host by name):
 
-    SALIENCE_MODULE=http   SALIENCE_MODULE_URL=http://host.docker.internal:8900/salience
-    AFFECT_MODULE=http     AFFECT_MODULE_URL=http://host.docker.internal:8900/affect
-    CORTEX_CRITIC=http     CORTEX_CRITIC_URL=http://host.docker.internal:8900/critic
+    brain:
+      salience: { module: { kind: http, url: "http://host.docker.internal:8900/salience" } }
+      affect:   { module: { kind: http, url: "http://host.docker.internal:8900/affect" } }
+      cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic" } }
 
 Any error or timeout makes the region fall back to its built-in rules, so a
 module can crash, be slow, or be redeployed mid-stream without breaking the show.

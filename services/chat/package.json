@@ -14,5 +14,8 @@
     "@cohost/config": "workspace:*",
     "@twurple/auth": "^8.2.0",
     "@twurple/chat": "^8.2.0"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
   }
 }

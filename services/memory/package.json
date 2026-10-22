@@ -16,5 +16,5 @@
     "@cohost/llm": "workspace:*",
     "pg": "^8.13.0"
   },
-  "devDependencies": { "@types/pg": "^8.11.0" }
+  "devDependencies": { "@cohost/testing": "workspace:*", "@types/pg": "^8.11.0" }
 }

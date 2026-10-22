@@ -13,5 +13,8 @@
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
     "obs-websocket-js": "^5.0.6"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
   }
 }

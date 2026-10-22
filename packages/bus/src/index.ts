@@ -21,6 +21,9 @@ export interface SubscribeOptions<T extends EventType> {
 
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
+/** The publishing half of a Bus: what region logic depends on, so tests can pass a recorder. */
+export type Publisher = Pick<Bus, "publish">;
+
 /**
  * Thin typed wrapper over one Redis Stream. Publish is fire-and-forget;
  * subscribe runs a consumer-group loop until stop().

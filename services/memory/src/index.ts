@@ -11,16 +11,18 @@
  *
  * Consolidation ("sleep") is reflect.ts, run between streams.
  */
-import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
+import { Bus, onShutdown } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { createEmbedder, Ollama } from "@cohost/llm";
 import { MemoryStore } from "./store.js";
+import { createMemoryHandler } from "./region.js";
 
 const log = createLogger("memory");
 const cfg = loadConfig();
 const bus = new Bus("memory", log);
 const ollama = new Ollama(cfg.llm); // embeddings are always local, whatever the chat provider
 const store = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
+const onEvent = createMemoryHandler({ cfg, bus, store });
 
 async function main() {
   while (!(await ollama.ping())) {
@@ -39,40 +41,6 @@ async function main() {
   void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], fromNow: true }, onEvent);
   void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], fromNow: true }, onEvent);
   log.info({ recall_k: cfg.brain.memory.recall_k }, "memory online");
-}
-
-async function onEvent(ev: BusEvent) {
-  switch (ev.type) {
-    case "chat.message": {
-      const d = ev.data as BusEvent<"chat.message">["data"];
-      const v = await store.touchViewer(d.userId ?? d.user, d.user);
-      if (d.mentionsCohost) {
-        // Announce who this is before the slow embed so the cortex has it when the reply is built.
-        await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, notes: v.notes });
-        await store.remember("chat", d.user, d.text);
-      }
-      break;
-    }
-    case "speech.heard": {
-      const d = ev.data as BusEvent<"speech.heard">["data"];
-      await store.remember("speech", d.speaker, d.text);
-      break;
-    }
-    case "brain.say": {
-      const d = ev.data as BusEvent<"brain.say">["data"];
-      if (d.text.length >= 2) await store.remember("self", cfg.cohost.name, d.text);
-      break;
-    }
-    case "memory.recall.request": {
-      const d = ev.data as BusEvent<"memory.recall.request">["data"];
-      const memories = await store.recall(d.query, d.k);
-      await bus.publish("memory.recall.reply", {
-        id: d.id,
-        memories: memories.map((m) => ({ ts: m.ts.getTime(), kind: m.kind, who: m.who, text: m.text, similarity: m.similarity })),
-      });
-      break;
-    }
-  }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

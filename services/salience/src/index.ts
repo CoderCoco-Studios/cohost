@@ -11,27 +11,16 @@
  * lowers the bar to speak), `brain.status` / `brain.say` (don't pile on while
  * the cortex is thinking or the voice is still playing).
  */
-import { randomUUID } from "node:crypto";
-import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
+import { Bus, onShutdown } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
-import { Context } from "@cohost/working-memory";
-import { Scheduler } from "./scheduler.js";
 import { createScorer } from "./scoring.js";
-import { Reflexes, type Sense } from "./reflex.js";
+import { Salience } from "./salience.js";
 
 const log = createLogger("salience");
 const cfg = loadConfig();
 const bus = new Bus("salience", log);
-const ctx = new Context(cfg.brain.working_memory_events);
 const scorer = createScorer(cfg, log);
-const scheduler = new Scheduler(cfg.brain.salience, scorer);
-const reflexes = new Reflexes(cfg.brain.salience.reflexes);
-
-let muted = false;
-let arousal = 0;
-/** What the cortex / voice are up to, as last reported on the bus. */
-let cortexState: "idle" | "thinking" | "speaking" | "muted" = "idle";
-let cortexSince = Date.now();
+const salience = new Salience({ cfg, bus, scorer, log });
 
 async function main() {
   void bus.subscribe(
@@ -40,105 +29,10 @@ async function main() {
       types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "brain.status", "affect.state", "control"],
       fromNow: true,
     },
-    onEvent,
+    (ev) => salience.onEvent(ev),
   );
-  setInterval(() => void tick(), cfg.brain.salience.tick_ms);
-  log.info({ reflexes: reflexes.size, threshold: cfg.brain.salience.speak_threshold, scorer: scorer.kind }, "salience online");
-}
-
-async function onEvent(ev: BusEvent) {
-  switch (ev.type) {
-    case "chat.message": {
-      const d = ev.data as BusEvent<"chat.message">["data"];
-      ctx.push(ev);
-      scheduler.noteActivity();
-      await reflex("chat", d.text);
-      break;
-    }
-    case "speech.heard": {
-      const d = ev.data as BusEvent<"speech.heard">["data"];
-      ctx.push(ev);
-      scheduler.noteActivity();
-      await reflex("speech", d.text);
-      break;
-    }
-    case "vision.summary": {
-      const d = ev.data as BusEvent<"vision.summary">["data"];
-      ctx.push(ev);
-      if (d.changed) await reflex("vision", d.text);
-      break;
-    }
-    case "brain.say":
-      // Whoever spoke (cortex, a reflex, the operator), the cooldown starts now.
-      scheduler.noteSpoke();
-      cortexState = "speaking";
-      cortexSince = Date.now();
-      break;
-    case "brain.status": {
-      const d = ev.data as BusEvent<"brain.status">["data"];
-      cortexState = d.state;
-      cortexSince = Date.now();
-      break;
-    }
-    case "affect.state":
-      arousal = (ev.data as BusEvent<"affect.state">["data"]).arousal;
-      break;
-    case "control": {
-      const d = ev.data as BusEvent<"control">["data"];
-      if (d.cmd === "mute") muted = true;
-      if (d.cmd === "unmute") muted = false;
-      if (d.cmd === "forget_context") ctx.clear();
-      break;
-    }
-  }
-}
-
-/** Fast path. Fires immediately, bypassing the scheduler and the LLM. */
-async function reflex(sense: Sense, text: string) {
-  if (muted || reflexes.size === 0) return;
-  // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
-  // Gate before test(), which spends the rule's own cooldown on a hit.
-  if (busy() || scheduler.cooling()) return;
-  const trigger = ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
-  const hit = reflexes.test(sense, text);
-  if (!hit) return;
-  log.info({ rule: hit.rule, sense }, "reflex");
-  if (trigger) ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count
-  await bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}` });
-}
-
-function busy(): boolean {
-  const age = Date.now() - cortexSince;
-  // Safety valves: a cortex that never reports back, or a voice sink that never says done.
-  if (cortexState === "thinking") return age < 60_000;
-  if (cortexState === "speaking") return age < cfg.brain.cortex.speaking_timeout_ms;
-  return false;
-}
-
-let deciding = false;
-async function tick() {
-  if (deciding) return; // an llm/http scorer can take longer than a tick
-  deciding = true;
-  let decision;
-  try { decision = await scheduler.decide(ctx, busy(), muted, arousal); }
-  finally { deciding = false; }
-  if (!decision.speak) return;
-  // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
-  ctx.markSeenEvents(decision.scored);
-  // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.
-  cortexState = "thinking";
-  cortexSince = Date.now();
-  const f = decision.focus;
-  await bus.publish("attention.focus", {
-    reason: decision.reason,
-    score: decision.score,
-    focus:
-      f?.kind === "chat" ? { kind: "chat", who: f.user, text: f.text, mention: f.mention }
-      : f?.kind === "speech" ? { kind: "speech", who: f.speaker, text: f.text }
-      : f?.kind === "vision" ? { kind: "vision", text: f.text }
-      : undefined,
-  });
-  log.debug({ reason: decision.reason, score: decision.score }, "focus");
+  setInterval(() => void salience.tick(), cfg.brain.salience.tick_ms);
+  log.info({ reflexes: salience.reflexes.size, threshold: cfg.brain.salience.speak_threshold, scorer: scorer.kind }, "salience online");
 }
 
 main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });

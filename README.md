@@ -226,6 +226,9 @@ pnpm install
 pnpm dev                                              # every service with tsx watch
 ```
 
+`pnpm test` builds and runs the unit tests (Node's built-in runner via `tsx`);
+the bus round-trip test needs a Redis on `REDIS_URL` and skips itself otherwise.
+
 `.env` is loaded automatically in the dev loop. Each service is one `src/index.ts`
 with a `Bus` from `@cohost/bus`; event types and payloads are in
 `packages/bus/src/events.ts` (zod). Adding a YouTube chat source, a second TTS

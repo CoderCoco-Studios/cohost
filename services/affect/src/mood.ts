@@ -1,9 +1,7 @@
 import type { Config, Emotion } from "@cohost/config";
+import type { AppraiseOutput } from "./appraise.js";
 
 export interface MoodState { valence: number; arousal: number; mood: Emotion; cause?: string }
-
-const POSITIVE = /\b(lol|lmao|haha+|pog(gers|champ)?|gg|w|love|nice|let'?s go|hype|based|goat|clutch|ez|amazing|cute|wholesome)\b|[😂🤣❤️🔥]/i;
-const NEGATIVE = /\b(boo|l|ratio|trash|cringe|hate|boring|mald|rip|f|oof|unlucky|scam|bad|worst|ugh)\b|[😡💀👎]/i;
 
 /**
  * A two-number model of mood: valence (how good) and arousal (how awake).
@@ -37,16 +35,9 @@ export class Mood {
     this.cause = cause;
   }
 
-  /** Read a line of chat / speech and react to its tone. */
-  onText(text: string, opts: { mention?: boolean; speech?: boolean; who: string }): void {
-    let dv = 0;
-    let da = opts.speech ? 0.15 : 0.03;
-    if (opts.mention) da += 0.2;
-    if (POSITIVE.test(text)) { dv += 0.12; da += 0.05; }
-    if (NEGATIVE.test(text)) { dv -= 0.15; da += 0.08; }
-    if (/!{2,}|[A-Z]{5,}/.test(text)) da += 0.05;
-    if (text.includes("?")) da += 0.03;
-    this.nudge(dv, da, `${opts.speech ? "voice" : "chat"}: ${opts.who}`);
+  /** Apply an appraisal (from the appraiser module) of a line someone said. */
+  applyAppraisal(a: AppraiseOutput, cause: string): void {
+    this.nudge(a.valence_delta, a.arousal_delta, cause);
   }
 
   state(): MoodState {

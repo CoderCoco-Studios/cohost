@@ -4,6 +4,7 @@
     { "path": "packages/config" },
     { "path": "packages/bus" },
     { "path": "packages/llm" },
+    { "path": "packages/modules" },
     { "path": "packages/working-memory" },
     { "path": "services/chat" },
     { "path": "services/salience" },

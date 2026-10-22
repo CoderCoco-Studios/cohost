@@ -11,11 +11,13 @@
 import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { Mood } from "./mood.js";
+import { createAppraiser } from "./appraise.js";
 
 const log = createLogger("affect");
 const cfg = loadConfig();
 const bus = new Bus("affect", log);
 const mood = new Mood(cfg.brain.affect);
+const appraiser = createAppraiser(cfg, log);
 
 let lastPublished = "";
 let lastPublishedAt = 0;
@@ -26,20 +28,20 @@ async function main() {
     onEvent,
   );
   setInterval(publish, cfg.brain.affect.publish_ms);
-  log.info({ half_life_ms: cfg.brain.affect.half_life_ms }, "affect online");
+  log.info({ half_life_ms: cfg.brain.affect.half_life_ms, appraiser: appraiser.kind }, "affect online");
 }
 
-function onEvent(ev: BusEvent) {
+async function onEvent(ev: BusEvent) {
   switch (ev.type) {
     case "chat.message": {
       const d = ev.data as BusEvent<"chat.message">["data"];
-      mood.onText(d.text, { mention: d.mentionsCohost, who: d.user });
+      await appraise("chat", d.user, d.text, d.mentionsCohost);
       if (d.isSub) mood.nudge(0.05, 0.05, `sub: ${d.user}`);
       break;
     }
     case "speech.heard": {
       const d = ev.data as BusEvent<"speech.heard">["data"];
-      mood.onText(d.text, { speech: true, who: d.speaker });
+      await appraise("speech", d.speaker, d.text, false);
       break;
     }
     case "vision.summary": {
@@ -60,6 +62,12 @@ function onEvent(ev: BusEvent) {
       break;
     }
   }
+}
+
+async function appraise(source: "chat" | "speech", who: string, text: string, mention: boolean) {
+  mood.tick();
+  const out = await appraiser.run({ source, who, text, mention, valence: mood.valence, arousal: mood.arousal });
+  mood.applyAppraisal(out, `${source === "speech" ? "voice" : "chat"}: ${who}`);
 }
 
 function publish() {

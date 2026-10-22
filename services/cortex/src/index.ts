@@ -18,12 +18,14 @@ import { createLogger, loadConfig, loadPersonality, type Emotion } from "@cohost
 import { createChatProvider } from "@cohost/llm";
 import { Context } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Mood, type Recalled } from "./prompt.js";
+import { createCritic } from "./critic.js";
 
 const log = createLogger("cortex");
 const cfg = loadConfig();
 const bus = new Bus("cortex", log);
 const llm = createChatProvider(cfg.llm);
 const ctx = new Context(cfg.brain.working_memory_events);
+const critic = createCritic(cfg, log);
 
 let personality = loadPersonality();
 let muted = false;
@@ -51,7 +53,7 @@ async function main() {
     },
     onEvent,
   );
-  log.info({ provider: llm.name, model: llm.model, name: cfg.cohost.name }, "cortex online");
+  log.info({ provider: llm.name, model: llm.model, critic: critic.kind, name: cfg.cohost.name }, "cortex online");
 }
 
 async function onEvent(ev: BusEvent) {
@@ -122,10 +124,15 @@ async function think(focus: Focus) {
     const messages = buildMessages({ cfg, personality, ctx, memories, focus, mood, viewerNote });
     const t0 = Date.now();
     const raw = await llm.chat(messages);
-    const { text, emotion, gesture } = parseReply(raw);
+    let { text, emotion, gesture } = parseReply(raw);
     log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length, raw }, "llm reply");
     viewerNote = undefined;
     if (!text || text.length < 2) { await status("idle"); return; }
+    // Inhibition: let the critic veto or touch up the line before it's spoken.
+    const verdict = await critic.run({ text, emotion: emotion as Emotion, reason: focus.reason, transcript: ctx.transcript(cfg.cohost.name) });
+    if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await status("idle"); return; }
+    if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
+    if (verdict.emotion) emotion = verdict.emotion;
     await say(text, emotion as Emotion, gesture, focus.reason);
   } catch (err) {
     log.error({ err }, "think failed");

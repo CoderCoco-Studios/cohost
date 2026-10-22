@@ -54,6 +54,15 @@ importers:
         specifier: workspace:*
         version: link:../config
 
+  packages/modules:
+    dependencies:
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+      '@cohost/llm':
+        specifier: workspace:*
+        version: link:../llm
+
   packages/working-memory:
     dependencies:
       '@cohost/bus':
@@ -71,6 +80,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory
@@ -117,6 +129,9 @@ importers:
       '@cohost/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@cohost/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory
@@ -203,6 +218,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory

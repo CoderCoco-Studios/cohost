@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
 import { urls, type Config } from "@cohost/config";
+export type { Config };
 
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
 export interface ChatOptions { maxTokens?: number; temperature?: number }

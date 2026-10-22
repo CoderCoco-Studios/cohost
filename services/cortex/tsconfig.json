@@ -6,6 +6,7 @@
     { "path": "../../packages/config" },
     { "path": "../../packages/bus" },
     { "path": "../../packages/working-memory" },
+    { "path": "../../packages/modules" },
     { "path": "../../packages/llm" }
   ]
 }

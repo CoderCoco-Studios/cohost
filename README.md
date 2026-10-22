@@ -128,6 +128,22 @@ docker compose run --rm memory node services/memory/dist/reflect.js
 It appends a dated block of bullets to `## Learned` in `personality.md`. Edit or
 delete whatever you don't like — it's just a file.
 
+## Hooks: regions you can replace with a model
+
+Three regions expose their judgement as a hook that runs one of: `rules` (the
+built-in heuristics, default), `llm` (one chat call, JSON answer, optionally
+on a smaller model than the cortex), or `http` (POST to a URL you serve — a
+model you trained yourself).
+
+| hook              | asks                                         | `.env`                                   |
+| ----------------- | -------------------------------------------- | ---------------------------------------- |
+| `salience.module` | how much does each event deserve a reaction? | `SALIENCE_MODULE=rules\|llm\|http`       |
+| `affect.module`   | how does this line move my mood?             | `AFFECT_MODULE=rules\|llm\|http`         |
+| `cortex.critic`   | is this reply okay to say? (inhibition)      | `CORTEX_CRITIC=rules\|llm\|http`         |
+
+Any failure falls back to `rules`. Contracts, prompts, a runnable stand-in
+server and `.env` recipes for each kind are in [`examples/modules/`](examples/modules/).
+
 ## Stronger model (rented GPUs, hosted APIs)
 
 The regions never see the model backend, so a bigger brain is a `.env` change.
@@ -143,7 +159,7 @@ changes the vector size of the memory table.
 | `bedrock`   | Claude via Amazon Bedrock, billed to your AWS account             | `AWS_REGION=us-east-1` + the usual `AWS_*` credentials, `LLM_MODEL=anthropic.claude-opus-5-5` |
 
 Then `docker compose up -d cortex` (and `memory`, since the reflection pass
-uses the same chat model). `llm.claude.*` in `config.yaml` tunes the Claude
+uses the same chat model). Full `.env` recipes per provider: [`examples/providers/`](examples/providers/). `llm.claude.*` in `config.yaml` tunes the Claude
 paths: `effort` (thinking depth; `low` suits one-line replies), a roomier
 `max_tokens` because thinking and the reply share it, and `fallbacks`, which
 retries on another Claude model if a safety classifier declines (Claude API

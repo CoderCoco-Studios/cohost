@@ -6,6 +6,23 @@ export const Emotion = z.enum([
 export type Emotion = z.infer<typeof Emotion>;
 export const EMOTIONS = Emotion.options;
 
+/**
+ * A region's pluggable judgement: built-in rules, a chat model parsed as JSON,
+ * or a URL you serve yourself (a model you trained). See packages/modules.
+ */
+export const ModuleSchema = z.object({
+  kind: z.preprocess((v) => v || "rules", z.enum(["rules", "llm", "http"])),
+  /** http: POST endpoint. */
+  url: z.string().default(""),
+  timeout_ms: z.number().int().positive().default(1500),
+  /** llm: override the provider/model (e.g. a small local model while the cortex uses Claude). */
+  llm: z.object({
+    provider: z.preprocess((v) => v || undefined, z.enum(["ollama", "openai", "anthropic", "bedrock"]).optional()),
+    model: z.preprocess((v) => v || undefined, z.string().optional()),
+  }).default({}),
+}).default({});
+export type ModuleConfig = z.infer<typeof ModuleSchema>;
+
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -80,6 +97,8 @@ export const ConfigSchema = z.object({
       speak_threshold: z.number().min(0).default(0.6),
       /** How much a high-arousal mood lowers the threshold (0 = ignore mood). */
       arousal_bias: z.number().min(0).max(1).default(0.2),
+      /** How events are scored: rules | llm | http. */
+      module: ModuleSchema,
       /** Fast path: no LLM, canned line, fires the instant a matching event arrives. */
       reflexes: z
         .array(
@@ -104,6 +123,8 @@ export const ConfigSchema = z.object({
       half_life_ms: z.number().int().positive().default(45000),
       /** Resting valence (-1..1). A sunny co-host sits above 0. */
       baseline_valence: z.number().min(-1).max(1).default(0.15),
+      /** How a line of chat/speech moves the mood: rules | llm | http. */
+      module: ModuleSchema,
     }).default({}),
     memory: z.object({
       recall_k: z.number().int().nonnegative().default(6),
@@ -114,6 +135,8 @@ export const ConfigSchema = z.object({
       recall_timeout_ms: z.number().int().positive().default(2500),
       /** Give up on a stuck utterance / voice sink after this long. */
       speaking_timeout_ms: z.number().int().positive().default(20000),
+      /** Inhibition: a check on each reply before it's spoken. rules = pass-through. */
+      critic: ModuleSchema,
     }).default({}),
   }),
   voice: z.object({

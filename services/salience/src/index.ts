@@ -16,13 +16,15 @@ import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { Context } from "@cohost/working-memory";
 import { Scheduler } from "./scheduler.js";
+import { createScorer } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
 
 const log = createLogger("salience");
 const cfg = loadConfig();
 const bus = new Bus("salience", log);
 const ctx = new Context(cfg.brain.working_memory_events);
-const scheduler = new Scheduler(cfg.brain.salience);
+const scorer = createScorer(cfg, log);
+const scheduler = new Scheduler(cfg.brain.salience, scorer);
 const reflexes = new Reflexes(cfg.brain.salience.reflexes);
 
 let muted = false;
@@ -41,7 +43,7 @@ async function main() {
     onEvent,
   );
   setInterval(() => void tick(), cfg.brain.salience.tick_ms);
-  log.info({ reflexes: reflexes.size, threshold: cfg.brain.salience.speak_threshold }, "salience online");
+  log.info({ reflexes: reflexes.size, threshold: cfg.brain.salience.speak_threshold, scorer: scorer.kind }, "salience online");
 }
 
 async function onEvent(ev: BusEvent) {
@@ -109,8 +111,13 @@ function busy(): boolean {
   return false;
 }
 
+let deciding = false;
 async function tick() {
-  const decision = scheduler.decide(ctx, busy(), muted, arousal);
+  if (deciding) return; // an llm/http scorer can take longer than a tick
+  deciding = true;
+  let decision;
+  try { decision = await scheduler.decide(ctx, busy(), muted, arousal); }
+  finally { deciding = false; }
   if (!decision.speak) return;
   ctx.markSeen();
   // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.

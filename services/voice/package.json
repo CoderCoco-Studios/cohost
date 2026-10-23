@@ -12,5 +12,8 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
   }
 }

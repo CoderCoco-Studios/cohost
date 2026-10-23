@@ -21,6 +21,9 @@ export interface SubscribeOptions<T extends EventType> {
 
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
+/** The publishing half of a Bus: what region logic depends on, so tests can pass a recorder. */
+export type Publisher = Pick<Bus, "publish">;
+
 /**
  * Thin typed wrapper over one Redis Stream. Publish is fire-and-forget;
  * subscribe runs a consumer-group loop until stop().
@@ -64,9 +67,15 @@ export class Bus {
     // First drain anything pending for this consumer (crash recovery), then read new.
     let cursor: string = "0";
     while (!this.stopped) {
-      const res = (await conn.xreadgroup(
-        "GROUP", opts.group, this.consumer, "COUNT", 50, "BLOCK", block, "STREAMS", STREAM, cursor,
-      )) as [string, [string, string[]][]][] | null;
+      let res: [string, [string, string[]][]][] | null;
+      try {
+        res = (await conn.xreadgroup(
+          "GROUP", opts.group, this.consumer, "COUNT", 50, "BLOCK", block, "STREAMS", STREAM, cursor,
+        )) as typeof res;
+      } catch (err) {
+        if (this.stopped) break; // stop() closed the connection under a blocking read
+        throw err;
+      }
       if (!res) { cursor = ">"; continue; }
       const entries = res[0]?.[1] ?? [];
       if (cursor === "0" && entries.length === 0) { cursor = ">"; continue; }
@@ -92,9 +101,13 @@ export class Bus {
     this.subs.push(conn);
     let last = fromId;
     while (!this.stopped) {
-      const res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", STREAM, last)) as
-        | [string, [string, string[]][]][]
-        | null;
+      let res: [string, [string, string[]][]][] | null;
+      try {
+        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", STREAM, last)) as typeof res;
+      } catch (err) {
+        if (this.stopped) break;
+        throw err;
+      }
       if (!res) continue;
       for (const [id, fields] of res[0]?.[1] ?? []) {
         last = id;

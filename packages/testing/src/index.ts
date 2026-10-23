@@ -1,0 +1,69 @@
+/** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
+import { randomUUID } from "node:crypto";
+import { ConfigSchema, type Config } from "@cohost/config";
+import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) out[k] = isObj(v) && isObj(out[k]) ? merge(out[k] as Record<string, unknown>, v) : v;
+  return out;
+}
+
+/** A complete, schema-validated config with the timing knobs zeroed so tests don't wait. */
+export function testConfig(over: Record<string, unknown> = {}): Config {
+  const base = {
+    cohost: { name: "Coco", streamer: "Chris", timezone: "UTC" },
+    llm: { model: "m", embed_model: "e" },
+    vision: { model: "v", obs: {} },
+    chat: { twitch: { channel: "chan" } },
+    brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 } },
+    voice: {},
+    avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
+    ears: { discord: {} },
+    dashboard: {},
+  };
+  return ConfigSchema.parse(merge(base, over));
+}
+
+export const silentLog = { warn() {}, info() {}, error() {}, debug() {}, fatal() {}, trace() {} } as never;
+
+/** A logger that keeps what it was told, by level. */
+export function recordingLog() {
+  const lines: { level: string; obj: unknown; msg?: string }[] = [];
+  const at = (level: string) => (obj: unknown, msg?: string) => { lines.push({ level, obj, msg: typeof obj === "string" ? obj : msg }); };
+  const log = { warn: at("warn"), info: at("info"), error: at("error"), debug: at("debug") } as never;
+  return { log, lines, msgs: (level: string) => lines.filter((l) => l.level === level).map((l) => l.msg) };
+}
+
+/** Validates like the real Bus, records instead of talking to Redis. */
+export class FakeBus implements Publisher {
+  published: { type: EventType; data: unknown }[] = [];
+  fail?: (type: EventType) => boolean;
+  async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
+    const parsed = EventPayloads[type].parse(data);
+    if (this.fail?.(type)) throw new Error(`publish ${type} failed`);
+    this.published.push({ type, data: parsed });
+    return String(this.published.length);
+  }
+  of<T extends EventType>(type: T): BusEvent<T>["data"][] {
+    return this.published.filter((p) => p.type === type).map((p) => p.data as BusEvent<T>["data"]);
+  }
+  types(): EventType[] {
+    return this.published.map((p) => p.type);
+  }
+  clear(): void { this.published = []; }
+}
+
+/** A bus event as a subscriber would receive it. */
+export function event<T extends EventType>(type: T, data: EventInput<T>, source = "test"): BusEvent<T> {
+  return { id: randomUUID(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
+}
+
+export async function waitFor(cond: () => boolean, what = "condition", ms = 2000): Promise<void> {
+  const t0 = Date.now();
+  while (!cond()) {
+    if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 2));
+  }
+}

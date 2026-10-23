@@ -10,6 +10,7 @@
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
 import { createChatProvider, createEmbedder } from "@cohost/llm";
 import { MemoryStore } from "./store.js";
+import { appendLearned, learnedBlock, parseBullets } from "./learned.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
@@ -42,15 +43,11 @@ async function main() {
     { maxTokens: 400, temperature: 0.5 },
   );
 
-  const bullets = raw.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("- "));
+  const bullets = parseBullets(raw);
   if (bullets.length === 0) { log.warn({ raw }, "no bullets produced"); return; }
 
-  const stamp = new Date().toISOString().slice(0, 10);
-  const addition = `\n### ${stamp}\n${bullets.join("\n")}\n`;
-  const marker = "## Learned";
-  const idx = personality.indexOf(marker);
-  const updated = idx === -1 ? `${personality.trimEnd()}\n\n${marker}\n${addition}` : `${personality.trimEnd()}\n${addition}`;
-  savePersonality(updated);
+  const addition = learnedBlock(bullets, new Date().toISOString().slice(0, 10));
+  savePersonality(appendLearned(personality, addition));
   await memory.setMeta("last_reflection", new Date().toISOString());
   log.info({ bullets: bullets.length }, "personality updated");
   console.log(addition);

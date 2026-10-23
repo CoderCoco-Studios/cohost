@@ -9,19 +9,19 @@ import { ChatClient } from "@twurple/chat";
 import { RefreshingAuthProvider, type AuthProvider } from "@twurple/auth";
 import { Bus, onShutdown } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
+import { channelName, createChatFilter } from "./filter.js";
 
 const log = createLogger("chat");
 const cfg = loadConfig();
 const bus = new Bus("chat", log);
 
-const channel = cfg.chat.twitch.channel.replace(/^#/, "").toLowerCase();
+const channel = channelName(cfg.chat);
 if (!channel) {
   log.error("TWITCH_CHANNEL is not set; nothing to listen to");
   process.exit(1);
 }
 
-const cohostName = cfg.cohost.name.toLowerCase();
-const ignoreUsers = new Set(cfg.chat.ignore_users.map((u) => u.toLowerCase()));
+const toEvent = createChatFilter(cfg);
 
 function buildAuth(): AuthProvider | undefined {
   const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_ACCESS_TOKEN, TWITCH_REFRESH_TOKEN } = process.env;
@@ -47,20 +47,8 @@ client.onConnect(() => log.info({ channel, authenticated: !!authProvider }, "con
 client.onDisconnect((manually, reason) => log.warn({ manually, reason }, "twitch chat disconnected"));
 
 client.onMessage(async (_chan, user, text, msg) => {
-  const lower = user.toLowerCase();
-  if (ignoreUsers.has(lower)) return;
-  if (cfg.chat.ignore_prefixes.some((p) => text.startsWith(p))) return;
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return;
-  await bus.publish("chat.message", {
-    platform: "twitch",
-    user: msg.userInfo.displayName || user,
-    userId: msg.userInfo.userId,
-    text: clean,
-    isMod: msg.userInfo.isMod || msg.userInfo.isBroadcaster,
-    isSub: msg.userInfo.isSubscriber,
-    mentionsCohost: clean.toLowerCase().includes(cohostName),
-  });
+  const ev = toEvent(user, text, msg.userInfo);
+  if (ev) await bus.publish("chat.message", ev);
 });
 
 client.connect();

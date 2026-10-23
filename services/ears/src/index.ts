@@ -20,8 +20,9 @@ import {
 import prism from "prism-media";
 import { Readable } from "node:stream";
 import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
-import { createLogger, env, loadConfig, urls } from "@cohost/config";
-import { discordPcmToWav16k, wavToDiscordPcm } from "./audio.js";
+import { createLogger, env, loadConfig } from "@cohost/config";
+import { Hearing, sttTranscriber } from "./hearing.js";
+import { Playback, httpAudio } from "./playback.js";
 
 const log = createLogger("ears");
 const cfg = loadConfig();
@@ -31,20 +32,11 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const player = createAudioPlayer();
 let connection: VoiceConnection | undefined;
 const listening = new Set<string>();
-const queue: { id: string; url: string }[] = [];
-let current: string | undefined;
-
-async function transcribe(wav: Buffer): Promise<string> {
-  const form = new FormData();
-  form.append("file", new Blob([wav], { type: "audio/wav" }), "speech.wav");
-  form.append("model", cfg.ears.stt_model);
-  form.append("language", "en");
-  form.append("response_format", "json");
-  const res = await fetch(`${urls.stt()}/v1/audio/transcriptions`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`stt ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as { text?: string };
-  return (json.text ?? "").trim();
-}
+const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: sttTranscriber(cfg.ears) });
+const playback = new Playback({
+  bus, log, fetchAudio: httpAudio,
+  play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
+});
 
 function listenTo(userId: string, channel: VoiceBasedChannel) {
   if (!connection || listening.has(userId)) return;
@@ -57,24 +49,11 @@ function listenTo(userId: string, channel: VoiceBasedChannel) {
     const opus = receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: cfg.ears.silence_ms } });
     const decoder = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
     const chunks: Buffer[] = [];
-    const t0 = Date.now();
     opus.pipe(decoder);
     decoder.on("data", (c: Buffer) => chunks.push(c));
-    decoder.on("end", async () => {
+    decoder.on("end", () => {
       listening.delete(userId);
-      const pcm = Buffer.concat(chunks);
-      const durationMs = (pcm.length / 4 / 48000) * 1000;
-      if (durationMs < cfg.ears.min_speech_ms) return;
-      try {
-        const text = await transcribe(discordPcmToWav16k(pcm));
-        if (!text || /^\W*$/.test(text)) return;
-        log.info({ speaker: name, durationMs: Math.round(durationMs), text }, "heard");
-        await bus.publish("speech.heard", { speaker: name, speakerId: userId, text, durationMs: Math.round(durationMs) });
-      } catch (err) {
-        log.warn({ err: String(err) }, "transcription failed");
-      } finally {
-        void t0;
-      }
+      void hearing.heard(Buffer.concat(chunks), name, userId);
     });
     decoder.on("error", (err: Error) => { listening.delete(userId); log.warn({ err: err.message }, "decoder error"); });
   };
@@ -117,26 +96,7 @@ async function join() {
 }
 
 // ---- playback
-async function pump() {
-  if (current || queue.length === 0) return;
-  const next = queue.shift()!;
-  current = next.id;
-  try {
-    const res = await fetch(next.url);
-    if (!res.ok) throw new Error(`fetch audio ${res.status}`);
-    const pcm = wavToDiscordPcm(Buffer.from(await res.arrayBuffer()));
-    player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw }));
-    await bus.publish("voice.playing", { id: next.id, sink: "discord" });
-  } catch (err) {
-    log.warn({ err: String(err) }, "playback failed");
-    current = undefined;
-    void pump();
-  }
-}
-player.on(AudioPlayerStatus.Idle, () => {
-  if (current) { void bus.publish("voice.done", { id: current, sink: "discord" }); current = undefined; }
-  void pump();
-});
+player.on(AudioPlayerStatus.Idle, () => void playback.onIdle());
 player.on("error", (err) => log.warn({ err: err.message }, "player error"));
 
 client.once("ready", async () => {
@@ -144,8 +104,7 @@ client.once("ready", async () => {
   await join();
   void bus.subscribe({ group: "ears", types: ["voice.utterance"], fromNow: true }, (ev: BusEvent) => {
     const d = ev.data as BusEvent<"voice.utterance">["data"];
-    queue.push({ id: d.id, url: d.audioUrl });
-    void pump();
+    void playback.enqueue(d.id, d.audioUrl);
   });
 });
 

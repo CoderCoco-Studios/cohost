@@ -15,5 +15,8 @@
     "@cohost/working-memory": "workspace:*",
     "@cohost/llm": "workspace:*",
     "@cohost/modules": "workspace:*"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
   }
 }

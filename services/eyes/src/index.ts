@@ -12,7 +12,8 @@
  */
 import OBSWebSocket from "obs-websocket-js";
 import { Bus, onShutdown } from "@cohost/bus";
-import { createLogger, loadConfig, urls } from "@cohost/config";
+import { createLogger, loadConfig } from "@cohost/config";
+import { Eyes, ollamaDescriber, stripDataUrl } from "./eyes.js";
 
 const log = createLogger("eyes");
 const cfg = loadConfig();
@@ -22,8 +23,6 @@ const obs = new OBSWebSocket();
 if (!cfg.vision.enabled) {
   log.warn("vision.enabled is false in config.yaml — eyes idle. Flip it on and restart.");
 }
-
-let previous = "";
 
 async function connectObs(): Promise<void> {
   const { host, port, password } = cfg.vision.obs;
@@ -47,55 +46,16 @@ async function screenshot(): Promise<string> {
     imageWidth: width,
     imageCompressionQuality: 70,
   });
-  return res.imageData.replace(/^data:image\/\w+;base64,/, "");
+  return stripDataUrl(res.imageData);
 }
 
-async function describe(b64: string): Promise<string> {
-  const res = await fetch(`${urls.ollama()}/api/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model: cfg.vision.model,
-      stream: false,
-      keep_alive: "24h",
-      options: { temperature: 0.2, num_predict: 60 },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
-            "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
-            "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME",
-        },
-        {
-          role: "user",
-          content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?",
-          images: [b64],
-        },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`vision model ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as { message?: { content?: string } };
-  return (json.message?.content ?? "").trim().split("\n")[0] ?? "";
-}
+const eyes = new Eyes({ bus, log, screenshot, describe: ollamaDescriber(cfg.vision) });
 
 async function loop() {
   for (;;) {
     const t0 = Date.now();
     try {
-      if (cfg.vision.enabled && obs.identified) {
-        const b64 = await screenshot();
-        const text = await describe(b64);
-        const same = !text || /^same\b/i.test(text);
-        if (!same) {
-          previous = text;
-          await bus.publish("vision.summary", { text, changed: true });
-          log.info({ ms: Date.now() - t0, text }, "saw");
-        } else {
-          log.debug({ ms: Date.now() - t0 }, "no change");
-        }
-      }
+      if (cfg.vision.enabled && obs.identified) await eyes.look();
     } catch (err) {
       log.warn({ err: String(err) }, "look failed");
       if (!obs.identified) await connectObs();

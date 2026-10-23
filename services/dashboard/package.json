@@ -16,6 +16,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@cohost/testing": "workspace:*",
     "@types/ws": "^8.5.13"
   }
 }

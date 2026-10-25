@@ -16,9 +16,9 @@
 - [x] 3.6 Tests in `services/dashboard/test/inject.test.ts` and `uploads.test.ts`: each route and level, emitted payloads (`injected`, `remember`, `source`), size/type rejection, TTL expiry and eviction, 404 on expired, gate on/off
 
 ## 4. chat
-- [ ] 4.1 `services/chat/src/inject.ts` handler (text -> `chat.message` injected, defaults, mention detection, blank text, bypass ignore rules); `inject.result`
-- [ ] 4.2 In `services/chat/src/index.ts` subscribe group `chat` type `inject.request`, independent of `chat.source`; drop stale (>60 s) requests
-- [ ] 4.3 Tests in `services/chat/test`
+- [x] 4.1 `services/chat/src/inject.ts` handler (text -> `chat.message` injected, defaults, mention detection, blank text, bypass ignore rules); `inject.result`
+- [x] 4.2 In `services/chat/src/index.ts` subscribe group `chat` type `inject.request`, independent of `chat.source`; drop stale (>60 s) requests
+- [x] 4.3 Tests in `services/chat/test`
 
 ## 5. eyes
 - [ ] 5.1 `services/eyes/src/inject.ts` (fetch guarded to dashboard uploads URL, base64, `describe(b64,"")`, publish injected `vision.summary`, `inject.result`; does not touch `previous`)

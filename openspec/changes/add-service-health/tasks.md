@@ -6,12 +6,12 @@
 - [x] 1.5 Make `Bus`/`FakeBus` in `packages/testing` support health publish/recent for tests
 
 ## 2. Control package (service-health)
-- [ ] 2.1 Scaffold `packages/control` (package.json via `pnpm`, tsconfig, add to `tsc -b` refs)
-- [ ] 2.2 Implement `HealthTracker` with injectable clock: unknown/up/degraded/stale/down, `starting` -> degraded
-- [ ] 2.3 Add crash-loop detection (3 distinct `startedAt` in 60 s) and `restarts` count
-- [ ] 2.4 Implement snapshot including unseen known services as `unknown`
-- [ ] 2.5 Tests in `packages/control/test/` covering every scenario in specs/service-health
-- [ ] 2.6 Add `healthcheck` CLI (`dist/healthcheck.js <service>`) with test for fresh/silent/stopping
+- [x] 2.1 Scaffold `packages/control` (package.json via `pnpm`, tsconfig, add to `tsc -b` refs)
+- [x] 2.2 Implement `HealthTracker` with injectable clock: unknown/up/degraded/stale/down, `starting` -> degraded
+- [x] 2.3 Add crash-loop detection (3 distinct `startedAt` in 60 s) and `restarts` count
+- [x] 2.4 Implement snapshot including unseen known services as `unknown`
+- [x] 2.5 Tests in `packages/control/test/` covering every scenario in specs/service-health
+- [x] 2.6 Add `healthcheck` CLI (`dist/healthcheck.js <service>`) with test for fresh/silent/stopping
 
 ## 3. Wire services (one task each; add test under `services/<svc>/test/`)
 - [ ] 3.1 chat: heartbeat, `mode off` when no `TWITCH_CHANNEL`

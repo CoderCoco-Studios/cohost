@@ -7,6 +7,7 @@
  *              OpenRouter, Groq, Together, Fireworks ...
  *   anthropic  Claude via the Claude API
  *   bedrock    Claude via Amazon Bedrock (AWS credentials from the environment)
+ *   mock       deterministic offline replies, for isolated runs (never a default)
  *
  * Embeddings always come from Ollama: they're cheap, and switching the chat
  * model must not change the vector size of the memory table.
@@ -14,7 +15,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
 import { urls, type Config } from "@cohost/config";
+import { MockProvider, HashEmbedder } from "./mock.js";
 export type { Config };
+export { MockProvider, HashEmbedder };
 
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
 export interface ChatOptions {
@@ -49,11 +52,13 @@ export function createChatProvider(cfg: Config["llm"]): ChatProvider {
     case "openai": return new OpenAICompatible(cfg);
     case "anthropic": return new AnthropicProvider(cfg);
     case "bedrock": return new BedrockProvider(cfg);
+    case "mock": return new MockProvider(cfg);
   }
 }
 
-/** Embeddings are always local Ollama (see header). */
+/** Embeddings are local Ollama (see header), except the offline hash embedder under the mock provider. */
 export function createEmbedder(cfg: Config["llm"]): Embedder {
+  if (cfg.provider === "mock") return new HashEmbedder();
   return new Ollama(cfg);
 }
 

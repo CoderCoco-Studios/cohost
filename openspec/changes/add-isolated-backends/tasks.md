@@ -3,8 +3,8 @@
 - [x] 1.1 Extend `ConfigSchema`: `llm.provider` adds `mock`; `voice.engine` adds `stub`; add `brain.memory.store`, `brain.memory.embedder`, `chat.source`, `chat.fake.interval_ms`, `ears.source` with defaults (verify no default changes)
 - [x] 1.2 Update `config/config.example.yaml` to `${VAR:-default}` for LLM_PROVIDER, MEMORY_STORE, MEMORY_EMBEDDER, VOICE_ENGINE, CHAT_SOURCE, VISION_ENABLED, EARS_SOURCE
 - [x] 1.3 Tests in `packages/config/test/`: new defaults, invalid enum values, env flip, unset env equals old defaults
-- [ ] 1.4 Add hash embedder and `MockProvider` to `packages/llm/src`; wire `createChatProvider` and `createEmbedder`
-- [ ] 1.5 Tests in `packages/llm/test/`: determinism, ping, JSON mode, aborted signal, embedder similarity ordering, factory selection
+- [x] 1.4 Add hash embedder and `MockProvider` to `packages/llm/src`; wire `createChatProvider` and `createEmbedder`
+- [x] 1.5 Tests in `packages/llm/test/`: determinism, ping, JSON mode, aborted signal, embedder similarity ordering, factory selection
 
 ## 2. memory
 

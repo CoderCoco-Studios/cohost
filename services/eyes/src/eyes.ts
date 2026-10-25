@@ -70,3 +70,21 @@ export class Eyes {
     return true;
   }
 }
+
+export interface StartDeps {
+  enabled: boolean;
+  log: Logger;
+  connect: () => Promise<void>;
+  loop: () => Promise<void>;
+}
+
+/** Connect to OBS and run the look loop — but only when vision is enabled. */
+export async function startEyes({ enabled, log, connect, loop }: StartDeps): Promise<boolean> {
+  if (!enabled) {
+    log.warn("vision.enabled is false in config.yaml — eyes idle. Flip it on and restart.");
+    return false;
+  }
+  await connect();
+  await loop();
+  return true;
+}

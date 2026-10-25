@@ -13,16 +13,12 @@
 import OBSWebSocket from "obs-websocket-js";
 import { Bus, onShutdown } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
-import { Eyes, ollamaDescriber, stripDataUrl } from "./eyes.js";
+import { Eyes, ollamaDescriber, startEyes, stripDataUrl } from "./eyes.js";
 
 const log = createLogger("eyes");
 const cfg = loadConfig();
 const bus = new Bus("eyes", log);
 const obs = new OBSWebSocket();
-
-if (!cfg.vision.enabled) {
-  log.warn("vision.enabled is false in config.yaml — eyes idle. Flip it on and restart.");
-}
 
 async function connectObs(): Promise<void> {
   const { host, port, password } = cfg.vision.obs;
@@ -67,5 +63,5 @@ async function loop() {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 obs.on("ConnectionClosed", () => log.warn("OBS connection closed"));
-connectObs().then(loop).catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
+startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop }).catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
 onShutdown(async () => { await obs.disconnect(); bus.stop(); });

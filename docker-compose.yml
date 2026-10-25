@@ -24,6 +24,14 @@ x-ts-service: &ts-service
   depends_on:
     redis:
       condition: service_healthy
+  # Healthy = the newest heartbeat on cohost:health is younger than 3x its interval and not
+  # "stopping". $SERVICE is baked into the image (see Dockerfile). Applies to every app service.
+  healthcheck:
+    test: ["CMD-SHELL", "node packages/control/dist/healthcheck.js $$SERVICE"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
 
 services:
   # ---------- infrastructure ----------

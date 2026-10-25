@@ -33,6 +33,6 @@
 - [x] 4.5 Services tab in `public/index.html`
 
 ## 5. Compose and docs
-- [ ] 5.1 Add heartbeat-freshness healthchecks to all app services in `docker-compose.yml`
-- [ ] 5.2 Document `HEARTBEAT_INTERVAL_MS` and the Services tab in README
+- [x] 5.1 Add heartbeat-freshness healthchecks to all app services in `docker-compose.yml`
+- [x] 5.2 Document `HEARTBEAT_INTERVAL_MS` and the Services tab in README
 - [ ] 5.3 Run `pnpm test` and `openspec validate add-service-health`

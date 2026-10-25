@@ -8,11 +8,11 @@
 - [x] 2.2 Define `Runtime` interface and result type
 - [x] 2.3 `process` adapter: fixed-argv spawn, pid tracking, SIGTERM then SIGKILL timeout; tests with an injected spawner
 - [x] 2.4 `compose` adapter: `execFile docker compose up -d|stop|restart <name>`; tests assert exact argv and no shell
-- [ ] 2.5 Consumer-group reset helper (`XGROUP SETID <group> $`, create if missing) and fresh/resume orchestration (stop, reset, start); tests with fake redis
-- [ ] 2.6 `ServiceController` applying guards: unknown id, `self`, `infra` unless advanced; tests for each rejection
+- [x] 2.5 Consumer-group reset helper (`XGROUP SETID <group> $`, create if missing) and fresh/resume orchestration (stop, reset, start); tests with fake redis
+- [x] 2.6 `ServiceController` applying guards: unknown id, `self`, `infra` unless advanced; tests for each rejection
 
 ## 3. Dashboard routes and gating
-- [ ] 3.1 Config parsing for `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_RUNTIME`, `CONTROL_ADVANCED`; fail fast if enabled without token
+- [x] 3.1 Config parsing for `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_RUNTIME`, `CONTROL_ADVANCED`; fail fast if enabled without token
 - [ ] 3.2 Bearer middleware (constant-time compare); apply to `POST /control`, `PUT /personality` and service routes only when enabled
 - [ ] 3.3 Routes `POST /services/:id/start|stop|restart` (+ `GET /services/control` flag); publish `service.lifecycle` after each attempt
 - [ ] 3.4 Bind loopback by default when enabled, honour `CONTROL_BIND`, warn on non-loopback

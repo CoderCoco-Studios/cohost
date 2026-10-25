@@ -13,16 +13,16 @@
 
 ## 3. Dashboard routes and gating
 - [x] 3.1 Config parsing for `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_RUNTIME`, `CONTROL_ADVANCED`; fail fast if enabled without token
-- [ ] 3.2 Bearer middleware (constant-time compare); apply to `POST /control`, `PUT /personality` and service routes only when enabled
-- [ ] 3.3 Routes `POST /services/:id/start|stop|restart` (+ `GET /services/control` flag); publish `service.lifecycle` after each attempt
-- [ ] 3.4 Bind loopback by default when enabled, honour `CONTROL_BIND`, warn on non-loopback
-- [ ] 3.5 Tests in `services/dashboard/test`: disabled (404 + `/control` open), enabled 401/204, unknown id 404, self 409, infra 403, audit event published, bind selection
+- [x] 3.2 Bearer middleware (constant-time compare); apply to `POST /control`, `PUT /personality` and service routes only when enabled
+- [x] 3.3 Routes `POST /services/:id/start|stop|restart` (+ `GET /services/control` flag); publish `service.lifecycle` after each attempt
+- [x] 3.4 Bind loopback by default when enabled, honour `CONTROL_BIND`, warn on non-loopback
+- [x] 3.5 Tests in `services/dashboard/test`: disabled (404 + `/control` open), enabled 401/204, unknown id 404, self 409, infra 403, audit event published, bind selection
 
 ## 4. In-process pause/resume
 - [ ] 4.1 salience: honour `pause`/`resume` and `target`; test
 - [ ] 4.2 affect: same; test
 - [ ] 4.3 cortex: same (no LLM calls while paused); test
-- [ ] 4.4 Dashboard `POST /control` accepts `pause`/`resume`/`target`
+- [x] 4.4 Dashboard `POST /control` accepts `pause`/`resume`/`target`
 
 ## 5. UI
 - [ ] 5.1 Services tab controls with Start/Stop/Restart, fresh/resume toggle, confirm dialog, token prompt

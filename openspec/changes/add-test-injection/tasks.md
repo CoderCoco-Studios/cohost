@@ -36,8 +36,8 @@
 
 ## 7b. Flag propagation (cortex, salience, working-memory)
 - [x] 7b.1 `packages/working-memory`: `ContextEvent` chat/speech/vision keep `injected`/`remember` from the bus event; test in `packages/working-memory/test`
-- [ ] 7b.2 salience: `attention.focus` carries `injected`/`remember` of the focus event (absent when no focus or real); reflex `brain.say` copies them from the triggering event; tests in `services/salience/test`
-- [ ] 7b.3 cortex: `think(focus)` passes `focus.injected`/`remember` to `say()` so the `brain.say` carries them; `control say` stays unflagged; tests in `services/cortex/test`
+- [x] 7b.2 salience: `attention.focus` carries `injected`/`remember` of the focus event (absent when no focus or real); reflex `brain.say` copies them from the triggering event; tests in `services/salience/test`
+- [x] 7b.3 cortex: `think(focus)` passes `focus.injected`/`remember` to `say()` so the `brain.say` carries them; `control say` stays unflagged; tests in `services/cortex/test`
 - [x] 7b.4 memory: skip `brain.say` as `self` memory when `injected` and not `remember`; test in `services/memory/test`
 
 ## 8. UI

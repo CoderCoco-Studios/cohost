@@ -12,6 +12,13 @@ function flagsOf(d: InjectionFlags): InjectionFlags {
   };
 }
 
+/** The flags to copy onto a derived bus event: only for injected inputs, never for real ones (a stray `remember` is dropped). */
+export function propagatedFlags(src: object | undefined): InjectionFlags {
+  const e = src as InjectionFlags | undefined; // `self` events have no flags
+  if (!e?.injected) return {};
+  return { injected: true, ...(e.remember !== undefined ? { remember: e.remember } : {}) };
+}
+
 export type ContextEvent =
   | ({ kind: "chat"; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)

@@ -302,3 +302,24 @@ test("a targeted mute for another service does not mute the cortex", async () =>
   await cortex.think(mention());
   assert.equal(llm.calls.length, 1);
 });
+
+// ---- test injection
+
+test("think: a reply to an injected focus carries injected/remember; remembered stays remembered", async () => {
+  const a = setup();
+  await a.cortex.think({ ...mention(), injected: true, remember: false });
+  assert.equal(a.bus.of("brain.say")[0]!.injected, true);
+  assert.equal(a.bus.of("brain.say")[0]!.remember, false);
+  const b = setup();
+  await b.cortex.think({ ...mention(), injected: true, remember: true });
+  assert.equal(b.bus.of("brain.say")[0]!.remember, true);
+});
+
+test("think: a real focus, and control say, produce unflagged brain.say", async () => {
+  const { cortex, bus } = setup();
+  await cortex.think({ ...mention(), remember: true });
+  await cortex.onEvent(event("control", { cmd: "say", text: "brb" }));
+  const says = bus.of("brain.say");
+  assert.equal(says.length, 2);
+  for (const s of says) assert.equal("injected" in s || "remember" in s, false);
+});

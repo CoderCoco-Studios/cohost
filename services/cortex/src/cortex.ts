@@ -3,7 +3,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
-import { Context } from "@cohost/working-memory";
+import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Mood, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
 
@@ -125,7 +125,7 @@ export class Cortex {
       // A reflex or operator line may have started while we were thinking; don't talk over it.
       if (this.muted || this.paused) { await this.status("muted"); return; }
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
-      await this.say(text, emotion as Emotion, gesture, focus.reason);
+      await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus));
     } catch (err) {
       log.error({ err }, "think failed");
       await this.status("idle").catch(() => {});
@@ -158,11 +158,11 @@ export class Cortex {
     });
   }
 
-  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string) {
+  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags = {}) {
     const id = randomUUID();
     this.speakingId = id;
     this.speakingSince = Date.now();
-    await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason });
+    await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason, ...flags });
     await this.status("speaking", text);
   }
 }

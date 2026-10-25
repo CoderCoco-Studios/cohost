@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
-import { Context } from "@cohost/working-memory";
+import { Context, propagatedFlags } from "@cohost/working-memory";
 import { Scheduler } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
@@ -95,7 +95,7 @@ export class Salience {
     if (!hit) return;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");
     if (trigger) this.ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count
-    await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}` });
+    await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}`, ...propagatedFlags(trigger) });
   }
 
   private busy(): boolean {
@@ -127,6 +127,7 @@ export class Salience {
         : f?.kind === "speech" ? { kind: "speech", who: f.speaker, text: f.text }
         : f?.kind === "vision" ? { kind: "vision", text: f.text }
         : undefined,
+      ...propagatedFlags(f),
     });
     this.d.log.debug({ reason: decision.reason, score: decision.score }, "focus");
   }

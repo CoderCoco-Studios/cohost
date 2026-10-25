@@ -14,8 +14,8 @@
 
 ## 3. voice
 
-- [ ] 3.1 Add stub synth (silent WAV, 60 ms/char, min 400 ms) and select it by `voice.engine`
-- [ ] 3.2 Tests in `services/voice/test/`: valid WAV parses, duration, zero envelope, no fetch call
+- [x] 3.1 Add stub synth (silent WAV, 60 ms/char, min 400 ms) and select it by `voice.engine`
+- [x] 3.2 Tests in `services/voice/test/`: valid WAV parses, duration, zero envelope, no fetch call
 
 ## 4. chat
 

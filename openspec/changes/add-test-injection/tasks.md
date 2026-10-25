@@ -31,14 +31,14 @@
 - [x] 6.3 Tests in `services/ears/test`: success, empty transcript, STT failure, foreign URL, non-WAV duration 0
 
 ## 7. memory
-- [ ] 7.1 In `createMemoryHandler` skip viewer touch, `memory.viewer` and `remember` for `injected && !remember`; store normally when `remember` true
-- [ ] 7.2 Tests in `services/memory/test`: injected unremembered chat/speech, injected remembered, real event with stray `remember:false`
+- [x] 7.1 In `createMemoryHandler` skip viewer touch, `memory.viewer` and `remember` for `injected && !remember`; store normally when `remember` true
+- [x] 7.2 Tests in `services/memory/test`: injected unremembered chat/speech, injected remembered, real event with stray `remember:false`
 
 ## 7b. Flag propagation (cortex, salience, working-memory)
 - [x] 7b.1 `packages/working-memory`: `ContextEvent` chat/speech/vision keep `injected`/`remember` from the bus event; test in `packages/working-memory/test`
 - [ ] 7b.2 salience: `attention.focus` carries `injected`/`remember` of the focus event (absent when no focus or real); reflex `brain.say` copies them from the triggering event; tests in `services/salience/test`
 - [ ] 7b.3 cortex: `think(focus)` passes `focus.injected`/`remember` to `say()` so the `brain.say` carries them; `control say` stays unflagged; tests in `services/cortex/test`
-- [ ] 7b.4 memory: skip `brain.say` as `self` memory when `injected` and not `remember`; test in `services/memory/test`
+- [x] 7b.4 memory: skip `brain.say` as `self` memory when `injected` and not `remember`; test in `services/memory/test`
 
 ## 8. UI
 - [ ] 8.1 Injected/remembered badge on feed rows

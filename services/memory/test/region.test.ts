@@ -56,3 +56,34 @@ test("unrelated events are ignored", async () => {
   await onEvent(event("affect.state", { valence: 0, arousal: 0, mood: "neutral" }));
   assert.equal(calls.length + bus.published.length, 0);
 });
+
+// ---- test injection
+
+test("injected, not remembered: nothing stored, no viewer row, no memory.viewer", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(chat({ mentionsCohost: true, injected: true, remember: false }));
+  await onEvent(chat({ mentionsCohost: true, injected: true })); // remember absent
+  await onEvent(event("speech.heard", { speaker: "Chris", text: "hi", durationMs: 0, injected: true, remember: false }));
+  await onEvent(event("brain.say", { id: "1", text: "a reply", emotion: "happy", injected: true, remember: false }));
+  await onEvent(event("brain.say", { id: "2", text: "a reply", emotion: "happy", injected: true }));
+  assert.deepEqual(calls, []);
+  assert.equal(bus.published.length, 0);
+});
+
+test("injected and remembered: handled exactly like real events", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(chat({ mentionsCohost: true, injected: true, remember: true }));
+  await onEvent(event("speech.heard", { speaker: "Chris", text: "hi", durationMs: 0, injected: true, remember: true }));
+  await onEvent(event("brain.say", { id: "1", text: "a reply", emotion: "happy", injected: true, remember: true }));
+  assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember", "remember", "remember"]);
+  assert.deepEqual(calls.slice(1).map((c) => c.args[0]), ["chat", "speech", "self"]);
+  assert.deepEqual(bus.types(), ["memory.viewer"]);
+});
+
+test("remember:false on a real event is ignored", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(event("speech.heard", { speaker: "Chris", text: "hi", durationMs: 1, remember: false }));
+  await onEvent(chat({ mentionsCohost: true, remember: false }));
+  await onEvent(event("brain.say", { id: "1", text: "reply", emotion: "happy", remember: false }));
+  assert.deepEqual(calls.map((c) => c.op), ["remember", "touchViewer", "remember", "remember"]);
+});

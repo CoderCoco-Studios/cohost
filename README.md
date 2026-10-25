@@ -244,6 +244,46 @@ service as `up`, `degraded`, `stale` (no heartbeat for 3 intervals), `down`
 `docker compose ps` reflects the same signal: each app container's healthcheck
 passes only while its heartbeat is fresh.
 
+## Running one service on its own (isolated)
+
+Every service can run with only Redis: no accounts, GPU or API keys. Each backend
+has an opt-in preset env var (wired into `config/config.example.yaml` as
+`${VAR:-default}`, so nobody edits `config.yaml`; copy a fresh example if yours
+predates them). Defaults are unchanged: with none set you get the live backends.
+A service on a mock/off backend logs a warning at startup and reports heartbeat
+mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
+`DISCORD_TOKEN`) idles as `degraded` instead of exiting.
+
+| Service | Preset | Result (mode) |
+|---|---|---|
+| cortex | `LLM_PROVIDER=mock` | deterministic echo replies, hash embeddings (`mock`) |
+| memory | `MEMORY_STORE=inmemory MEMORY_EMBEDDER=hash` | in-process store, capped at 2000, lost on exit (`mock`) |
+| voice | `VOICE_ENGINE=stub` | silent WAV, 60 ms per character (min 400 ms), no TTS call (`mock`) |
+| chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
+| eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`) |
+| ears | `EARS_SOURCE=off` | idles, no Discord client (`off`) |
+| avatar | `AVATAR_DRIVER=null` | no app needed |
+| salience, affect, dashboard | none | already Redis-only |
+
+Smoke run (cortex answering with the mock model; cortex needs salience and affect
+alongside it, memory is optional because cortex answers without recall after
+`brain.cortex.recall_timeout_ms`):
+
+```bash
+docker compose up -d redis
+pnpm install && pnpm build
+export REDIS_URL=redis://localhost:6379
+LLM_PROVIDER=mock pnpm --filter @cohost/cortex exec tsx src/index.ts &
+pnpm --filter @cohost/salience exec tsx src/index.ts &
+pnpm --filter @cohost/affect exec tsx src/index.ts &
+CHAT_SOURCE=fake pnpm --filter @cohost/chat exec tsx src/index.ts &   # or type lines into its stdin
+VOICE_ENGINE=stub pnpm --filter @cohost/voice exec tsx src/index.ts &
+```
+
+Watch the **services** tab (or `GET /services`) for `mock` modes, and
+`brain.say` / `voice.utterance` on the event feed. In-memory data is gone when the
+process exits.
+
 ## Developing
 
 ```bash
@@ -267,6 +307,6 @@ publishes a new event type.
 ## Status
 
 Scaffold. Built and type-checked; the `chat → salience → cortex → voice → avatar → dashboard`
-path has been exercised end-to-end against a stub TTS. Not yet run against real
+path has been exercised end-to-end against the stub voice engine (`VOICE_ENGINE=stub`). Not yet run against real
 Twitch / VTube Studio / Discord — expect to tune the VTS parameter names and the
 Discord receive path on first contact.

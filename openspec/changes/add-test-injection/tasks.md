@@ -1,7 +1,7 @@
 ## 1. Bus events
-- [ ] 1.1 In `packages/bus/src/events.ts` add optional `injected: z.boolean().optional()` and `remember: z.boolean().optional()` to `chat.message`, `vision.summary`, `speech.heard` (no defaults)
+- [ ] 1.1 In `packages/bus/src/events.ts` add optional `injected: z.boolean().optional()` and `remember: z.boolean().optional()` to `chat.message`, `vision.summary`, `speech.heard` (no defaults); same two optional fields on `brain.say` and `attention.focus`
 - [ ] 1.2 Add `inject.request` and `inject.result` schemas; register in `EventPayloads`/`EVENT_TYPES`
-- [ ] 1.3 Tests in `packages/bus/test`: old payloads still valid and unchanged, flags accepted, request enum validation, result validation
+- [ ] 1.3 Tests in `packages/bus/test`: old payloads still valid and unchanged, flags accepted on `brain.say`/`attention.focus`, request enum validation, result validation
 
 ## 2. Config
 - [ ] 2.1 Add `urls.dashboard()` (`DASHBOARD_URL`, default `http://127.0.0.1:3000`) to `packages/config/src/index.ts`; test default and override
@@ -33,6 +33,12 @@
 ## 7. memory
 - [ ] 7.1 In `createMemoryHandler` skip viewer touch, `memory.viewer` and `remember` for `injected && !remember`; store normally when `remember` true
 - [ ] 7.2 Tests in `services/memory/test`: injected unremembered chat/speech, injected remembered, real event with stray `remember:false`
+
+## 7b. Flag propagation (cortex, salience, working-memory)
+- [ ] 7b.1 `packages/working-memory`: `ContextEvent` chat/speech/vision keep `injected`/`remember` from the bus event; test in `packages/working-memory/test`
+- [ ] 7b.2 salience: `attention.focus` carries `injected`/`remember` of the focus event (absent when no focus or real); reflex `brain.say` copies them from the triggering event; tests in `services/salience/test`
+- [ ] 7b.3 cortex: `think(focus)` passes `focus.injected`/`remember` to `say()` so the `brain.say` carries them; `control say` stays unflagged; tests in `services/cortex/test`
+- [ ] 7b.4 memory: skip `brain.say` as `self` memory when `injected` and not `remember`; test in `services/memory/test`
 
 ## 8. UI
 - [ ] 8.1 Injected/remembered badge on feed rows

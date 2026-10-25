@@ -13,13 +13,13 @@ The owner wants to exercise the brain and the perception services without a live
 
 ## Capabilities affected
 
-- `bus` (modified: catalogue + three payloads; added: injection events), `dashboard` (added: inject routes, upload store, test-inputs panel, injected badge), `chat`, `eyes`, `ears` (each added: inject handling), `memory` (modified: Storing memories; added: viewer tracking for injected chat).
-- No spec change for salience, affect, cortex, voice, avatar (injected events are treated as real by design).
+- `bus` (modified: catalogue + three payloads; added: injection events), `dashboard` (added: inject routes, upload store, test-inputs panel, injected badge), `chat`, `eyes`, `ears` (each added: inject handling), `memory` (modified: Storing memories; added: viewer tracking for injected chat), `salience` (added: flag propagation), `cortex` (added: flag propagation), `working-memory` (added: events retain flags).
+- No spec change for affect, voice, avatar.
 
 ## Bus events changed
 
 - ADDED `inject.request`, `inject.result` (on `cohost:events`).
-- MODIFIED `chat.message`, `speech.heard`, `vision.summary`: optional `injected?: boolean`, `remember?: boolean`. Back-compat: existing producers and consumers are unchanged.
+- MODIFIED `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `attention.focus`: optional `injected?: boolean`, `remember?: boolean`. (Cortex answers only via `attention.focus`, so it carries them from salience to cortex.) Back-compat: existing producers and consumers are unchanged.
 
 ## Dependencies on sibling changes
 
@@ -29,4 +29,4 @@ The owner wants to exercise the brain and the perception services without a live
 
 ## Out of scope
 
-- Load/stress testing, recording and replaying sessions, injecting `brain.say` / `voice.utterance` (already `control say`), auth beyond the shared bearer token, persistent upload storage, video input, marking downstream `brain.say` replies as test output.
+- Load/stress testing, recording and replaying sessions, injecting `brain.say` / `voice.utterance` (already `control say`), auth beyond the shared bearer token, persistent upload storage, video input.

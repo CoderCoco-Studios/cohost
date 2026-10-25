@@ -28,7 +28,7 @@ Without it, failures are invisible: a missing `vision.summary` could mean eyes d
 Both are optional fields on the three perception payloads, `remember` meaningful only when `injected` is true (ignored otherwise, so a real event can never be hidden from memory). Alternative: carry `remember` only on `inject.request` and let services drop it. Rejected: memory consumes the resulting event, not the request, so the flag has to travel on the event. Alternative: a separate wrapper event. Rejected: every consumer would need to learn it. Absent and `false` behave identically for both fields (no `.default(false)`, to keep real events byte-identical).
 
 ### D7. Behaviour of injected events downstream
-Salience, affect, cortex see ordinary events (that is the point). Memory: `injected && !remember` -> do not `remember`, do not touch `viewers`, do not publish `memory.viewer`. Note `memory` baseline does not store `vision.summary`, so `remember` is currently a no-op for vision; it is still carried so a future vision memory honours it. Known gap: `brain.say` replies to an injected event are stored as `self` memories (they carry no flag); marking them is out of scope (Open Question 1).
+Salience, affect, cortex see ordinary events (that is the point). Memory: `injected && !remember` -> do not `remember`, do not touch `viewers`, do not publish `memory.viewer`. Note `memory` baseline does not store `vision.summary`, so `remember` is currently a no-op for vision; it is still carried so a future vision memory honours it. `brain.say` replies caused by an injected input are also not stored as `self` memories unless `remember` was true (D11).
 
 ### D8. Service handlers
 - **eyes**: subscribe group `eyes`, types `[inject.request]`, handle `target==="eyes" && kind==="image"`. Fetch URL, base64 it, call the same `describe(b64, "")` (previous = "" so injection neither sees SAME nor disturbs the change-tracking `previous`). Empty/`SAME` reply -> `ok:false` "no description". Works with `vision.enabled=false`: OBS is never needed; if the vision model backend is unreachable, `ok:false` with the error. Publishes `vision.summary {text, changed:true, injected:true, remember}`.
@@ -43,10 +43,25 @@ Same gate as `add-service-control`: when `CONTROL_ENABLED=1` the three routes re
 ### D10. UI
 "Test inputs" panel: textarea + viewer fields (user, platform select, mod, sub); image file input; audio file input; mic record button (optional, `MediaRecorder`, hidden if unavailable); level toggle (service/bus; bus disables image/audio pickers and exposes `as` for text); `remember` checkbox (default off, labelled "store in memory"); status line fed by `inject.result`. Feed rows with `data.injected` show an "injected" badge (and "remembered" when `remember`). When control is enabled the panel prompts for the token like the service controls do.
 
+### D11. Propagating injection to `brain.say` (owner decision)
+`brain.say {id,text,...}` has no reference to the input that caused it, so memory cannot tell a reply to a test input from a real one. Decision: **propagate the flags**, not correlate by id.
+- `brain.say` gains optional `injected` / `remember` (same semantics as the perception events).
+- Real trigger path (checked in code): salience scores working-memory events and publishes `attention.focus {reason, score, focus}`; cortex does not read perception events to decide what to answer, it only reacts to `attention.focus` (`think(focus)`), so `attention.focus` MUST carry the flags (optional `injected`, `remember`, taken from the single focus event; no focus event means absent). Cortex copies them from the focus it is thinking about onto the resulting `brain.say`. Mixed batches follow the focus event (the one being replied to), because that is what the reply is about.
+- Salience reflexes publish `brain.say` directly; they copy the flags from the triggering event (`ctx.last()` at reflex time).
+- Salience needs the flags on its working-memory events, so `@cohost/working-memory` `ContextEvent` (chat/speech/vision) retains `injected` / `remember` from the bus event. Self events are never injected.
+- Operator `control say` is unchanged (not an injected input; still remembered as today).
+- Alternative: correlate by id (cortex/salience remember `brain.say.id -> trigger`, memory looks up). Rejected: memory would need state about ids it never saw published together with the trigger, ordering between regions is not guaranteed, and consumer groups resume independently after restarts. Flags are stateless and survive replays.
+- Alternative: memory skips all `brain.say` while any injection is recent. Rejected: time heuristics drop real replies.
+- Downside: three more payload/service touch points (cortex, salience, working-memory). Accepted.
+
+## Owner-confirmed decisions
+- Bus-level injection is text only (D1): confirmed.
+- Chat injection bypasses `ignore_users` / `ignore_prefixes` (D8): confirmed.
+- `brain.say` replies to injected input are not remembered unless `remember` is true (D11): confirmed.
+
 ## Risks / Trade-offs
 
 - Injected content is real to the brain: it can be spoken aloud on stream. Mitigated by gating, the badge, and `remember` default off; mute still works via `control`.
-- Memory pollution via `brain.say` replies (D7); documented.
 - Upload store is per dashboard process; a dashboard restart drops pending uploads (request then fails `ok:false`, fetch 404).
 - Catalogue and `Control commands` are modified by sibling changes too: at archive, the catalogue list must be merged (`service.heartbeat`, `service.lifecycle`, `inject.request`, `inject.result`). This change's catalogue text includes all four so whichever archives last is correct; re-check on archive.
 
@@ -56,5 +71,4 @@ Additive. Old events lack the fields and behave as real. Compose: eyes and ears 
 
 ## Open Questions
 
-1. Tag `brain.say` replies caused by an injected event (e.g. propagate `injected` through `attention.focus`) so memory can skip them too? Needs a cortex/salience change; deferred.
-2. Should bus-level image/audio allow the operator to type the description/transcript alongside the file? Currently use `/inject/text` `as: vision|speech`.
+1. Should bus-level image/audio allow the operator to type the description/transcript alongside the file? Currently use `/inject/text` `as: vision|speech`.

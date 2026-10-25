@@ -50,3 +50,18 @@ The system SHALL define `inject.request` `{id: string, target: "eyes"|"ears"|"ch
 #### Scenario: Result
 - **WHEN** `{id, ok:false, detail:"stt 503"}` is published as `inject.result`
 - **THEN** it validates
+
+### Requirement: Injection flags on brain output
+`brain.say` and `attention.focus` SHALL accept optional `injected` (boolean) and `remember` (boolean) fields with no default, carrying the flags of the input that caused them. Real traffic MUST NOT carry them.
+
+#### Scenario: Flagged reply
+- **WHEN** a `brain.say` with `injected: true, remember: false` is published
+- **THEN** it validates and the stored data keeps both flags
+
+#### Scenario: Real reply unchanged
+- **WHEN** a `brain.say` without the fields is published
+- **THEN** the stored data contains neither field
+
+#### Scenario: Flagged focus
+- **WHEN** an `attention.focus` with `injected: true` is published
+- **THEN** it validates

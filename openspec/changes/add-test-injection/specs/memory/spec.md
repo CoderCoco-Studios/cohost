@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Storing memories
-The system SHALL store via `MemoryStore.remember(kind, who, text)` an embedding of `"<who>: <text>"` in table `memories` (kinds `chat`, `speech`, `self`, `note`): chat only when `mentionsCohost` is true, every `speech.heard` (who = speaker), and `brain.say` text of length >= 2 (who = `cfg.cohost.name`, kind `self`). A `chat.message` or `speech.heard` with `injected: true` SHALL be stored only when `remember` is true; with `remember` false or absent it MUST NOT be stored. `remember` has no effect on events without `injected: true`.
+The system SHALL store via `MemoryStore.remember(kind, who, text)` an embedding of `"<who>: <text>"` in table `memories` (kinds `chat`, `speech`, `self`, `note`): chat only when `mentionsCohost` is true, every `speech.heard` (who = speaker), and `brain.say` text of length >= 2 (who = `cfg.cohost.name`, kind `self`). A `chat.message` or `speech.heard` with `injected: true` SHALL be stored only when `remember` is true; with `remember` false or absent it MUST NOT be stored. A `brain.say` with `injected: true` SHALL be stored as kind `self` only when `remember` is true. `remember` has no effect on events without `injected: true`.
 
 #### Scenario: Unaddressed chat
 - **WHEN** a chat message does not mention the co-host
@@ -22,6 +22,14 @@ The system SHALL store via `MemoryStore.remember(kind, who, text)` an embedding 
 #### Scenario: Injected, remembered
 - **WHEN** a `speech.heard` with `injected: true` and `remember: true` arrives
 - **THEN** it is stored as kind `speech` as for a real event
+
+#### Scenario: Reply to injected input
+- **WHEN** a `brain.say` with `injected: true` and `remember` false or absent arrives
+- **THEN** it is not stored as a `self` memory
+
+#### Scenario: Remembered reply
+- **WHEN** a `brain.say` with `injected: true` and `remember: true` arrives
+- **THEN** it is stored as kind `self`
 
 #### Scenario: Flag ignored on real events
 - **WHEN** a `speech.heard` without `injected` carries `remember: false`

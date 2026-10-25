@@ -30,7 +30,7 @@
 - [x] 4.2 Add `GET /services`; test in `services/dashboard/test/`
 - [x] 4.3 Push `services` WS message on connect, on change, and 1 s staleness tick; test
 - [x] 4.4 Drop `service.heartbeat` from feed and `recent(60)` replay; test
-- [ ] 4.5 Services tab in `public/index.html`
+- [x] 4.5 Services tab in `public/index.html`
 
 ## 5. Compose and docs
 - [ ] 5.1 Add heartbeat-freshness healthchecks to all app services in `docker-compose.yml`

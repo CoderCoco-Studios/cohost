@@ -391,33 +391,33 @@ To force a spoken line without scoring, use a `reflexes` entry in
 
 ## Known problems
 
-Found while writing this guide. Not fixed here (out of scope: docs and helper scripts only).
+Found while writing this guide. Not fixed here (out of scope: docs and helper scripts only); each has a GitHub issue.
 
-1. **`pnpm dev` / `pnpm --filter <svc> dev` can't find the config.** pnpm runs the
+1. **`pnpm dev` / `pnpm --filter <svc> dev` can't find the config.** ([#8](https://github.com/CoderCoco/cohost/issues/8)) pnpm runs the
    script with the service directory as cwd, and `configDir()` defaults to
    `./config`, so it throws `No …/services/salience/config/config.yaml and no
    …/config.example.yaml to seed it from`. Verified. Workaround: set
    `CONFIG_DIR=$PWD/config` (also makes `.env` load from the repo root), or run
    `node --import tsx services/<svc>/src/index.ts` from the root as in this guide.
    The README's "Developing" section (`pnpm dev`) currently doesn't work as written.
-2. **A fresh clone can't start any service without `.env`.** The error is a list
+2. **A fresh clone can't start any service without `.env`.** ([#9](https://github.com/CoderCoco/cohost/issues/9)) The error is a list
    of empty-string schema failures, not "copy .env.example". `scripts/install.sh` does the copy; manual setup doesn't.
-3. **`VOICE_URL` defaults to `http://voice:8700`**, a compose hostname. Outside
+3. **`VOICE_URL` defaults to `http://voice:8700`** ([#10](https://github.com/CoderCoco/cohost/issues/10)), a compose hostname. Outside
    Docker `voice.utterance.audioUrl` and the dashboard's audio proxy point
    nowhere until you set `VOICE_URL=http://127.0.0.1:8700`.
-4. **`memory` cannot run without real Ollama *and* Postgres**, and there is no
+4. **`memory` cannot run without real Ollama *and* Postgres** ([#12](https://github.com/CoderCoco/cohost/issues/12)), and there is no
    in-memory/fake mode (it works fine against the real containers, §5b).
-5. **`eyes` with `vision.enabled: false`** still tries to connect to OBS (it
+5. **`eyes` with `vision.enabled: false`** ([#11](https://github.com/CoderCoco/cohost/issues/11)) still tries to connect to OBS (it
    retries every 10 s) instead of idling quietly; the "eyes idle" warning is misleading.
 6. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 7. **Bus state persists** in Redis between runs (and `salience` etc. use
    `fromNow`, but `bus-tail --replay` will show old traffic).
-9. **The service Docker images don't start.** `docker compose up` for any TS
+9. **The service Docker images don't start.** ([#6](https://github.com/CoderCoco/cohost/issues/6)) `docker compose up` for any TS
    service restarts in a loop with `ERR_MODULE_NOT_FOUND: Cannot find package
    '@cohost/bus'`. Cause (verified): the Dockerfile's final `pnpm prune --prod`
    (pnpm 10.0.0) deletes the workspace `@cohost/*` links from every
    `services/*/node_modules`. Building without that line works (larger image).
-10. **`.dockerignore` doesn't exclude `*.tsbuildinfo`.** After any local
+10. **`.dockerignore` doesn't exclude `*.tsbuildinfo`.** ([#7](https://github.com/CoderCoco/cohost/issues/7)) After any local
    `pnpm build`/`pnpm test`, the stale `tsconfig.tsbuildinfo` files get copied
    into the build context and `tsc -b` in the image emits nothing, so
    `services/*/dist` is missing (`Cannot find module '/app/services/<svc>/dist/index.js'`).

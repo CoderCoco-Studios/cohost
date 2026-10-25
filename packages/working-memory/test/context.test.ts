@@ -95,3 +95,18 @@ test("transcript renders each kind with the tags the LLM stop sequences rely on"
   );
   assert.equal(new Context(5).transcript("Coco"), "");
 });
+
+test("injection flags are retained on chat, speech and vision; real events and self carry none", () => {
+  const ctx = new Context(10);
+  ctx.push(chat("a", { injected: true, remember: false }));
+  ctx.push(speech("b"));
+  ctx.push(ev("speech.heard", { speaker: "S", text: "c", durationMs: 1, injected: true, remember: true }));
+  ctx.push(ev("vision.summary", { text: "d", changed: true, injected: true, remember: false }));
+  ctx.pushSelf("e", "happy");
+  const [c, real, sp, v, self] = ctx.all() as unknown as Record<string, unknown>[];
+  assert.deepEqual([c!.injected, c!.remember], [true, false]);
+  assert.equal("injected" in real! || "remember" in real!, false);
+  assert.deepEqual([sp!.injected, sp!.remember], [true, true]);
+  assert.deepEqual([v!.injected, v!.remember], [true, false]);
+  assert.equal("injected" in self! || "remember" in self!, false);
+});

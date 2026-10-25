@@ -142,8 +142,20 @@ export const EventPayloads = {
 
   /** Operator controls from the dashboard. */
   control: z.object({
-    cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality"]),
+    cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume"]),
     text: z.string().optional(),
+    /** Service the command is addressed to; absent = all services (back-compat). */
+    target: z.string().optional(),
+  }),
+
+  /** Audit record of a start/stop/restart attempt made through the service controller. */
+  "service.lifecycle": z.object({
+    service: z.string(),
+    action: z.enum(["start", "stop", "restart"]),
+    /** Who asked: "dashboard" for HTTP callers, "cohostctl" for the CLI. */
+    by: z.string(),
+    ok: z.boolean(),
+    detail: z.string().optional(),
   }),
 
   /**

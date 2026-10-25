@@ -1,7 +1,7 @@
 ## 1. Bus events
-- [ ] 1.1 In `packages/bus/src/events.ts` add `service.lifecycle` schema `{service, action: enum start|stop|restart, by, ok, detail?}`; register in `EventPayloads`/`EVENT_TYPES`
-- [ ] 1.2 Extend `control` schema: `cmd` adds `pause`,`resume`; add `target: z.string().optional()`
-- [ ] 1.3 Tests in `packages/bus/test`: lifecycle validation, control without target still valid, target accepted, invalid action rejected
+- [x] 1.1 In `packages/bus/src/events.ts` add `service.lifecycle` schema `{service, action: enum start|stop|restart, by, ok, detail?}`; register in `EventPayloads`/`EVENT_TYPES`
+- [x] 1.2 Extend `control` schema: `cmd` adds `pause`,`resume`; add `target: z.string().optional()`
+- [x] 1.3 Tests in `packages/bus/test`: lifecycle validation, control without target still valid, target accepted, invalid action rejected
 
 ## 2. Runtime core (packages/control; requires add-service-health scaffold)
 - [ ] 2.1 Extend registry manifest with `composeName`, `pnpmFilter`, `groups[]`, `defaultMode`, `infra`, `self`; test every manifest id has these

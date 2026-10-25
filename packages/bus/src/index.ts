@@ -102,6 +102,23 @@ export class Bus {
       .reverse();
   }
 
+  /**
+   * Point a consumer group at the stream's newest entry (`XGROUP SETID <group> $`), creating the
+   * group (and stream) at `$` if it does not exist. Used for "fresh" service starts.
+   */
+  async resetGroup(group: string): Promise<void> {
+    try {
+      await this.pub.xgroup("SETID", STREAM, group, "$");
+    } catch (e) {
+      if (!String(e).includes("NOGROUP")) throw e;
+      try {
+        await this.pub.xgroup("CREATE", STREAM, group, "$", "MKSTREAM");
+      } catch (e2) {
+        if (!String(e2).includes("BUSYGROUP")) throw e2;
+      }
+    }
+  }
+
   /** Consumer-group subscription. Resolves when stop() is called. */
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const conn = new Redis(this.url, { maxRetriesPerRequest: null });

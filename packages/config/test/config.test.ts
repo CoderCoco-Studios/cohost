@@ -203,3 +203,19 @@ test("configDir finds <workspace root>/config when cwd is a nested package dir",
     if (prevEnv === undefined) delete process.env.CONFIG_DIR; else process.env.CONFIG_DIR = prevEnv;
   }
 });
+
+test("urls.voice defaults to loopback (host runs), honours VOICE_PORT, and VOICE_URL overrides (compose)", () => {
+  const saved = { u: process.env.VOICE_URL, p: process.env.VOICE_PORT };
+  try {
+    delete process.env.VOICE_URL;
+    delete process.env.VOICE_PORT;
+    assert.equal(urls.voice(), "http://127.0.0.1:8700");
+    process.env.VOICE_PORT = "9000";
+    assert.equal(urls.voice(), "http://127.0.0.1:9000");
+    process.env.VOICE_URL = "http://voice:8700";
+    assert.equal(urls.voice(), "http://voice:8700");
+  } finally {
+    if (saved.u === undefined) delete process.env.VOICE_URL; else process.env.VOICE_URL = saved.u;
+    if (saved.p === undefined) delete process.env.VOICE_PORT; else process.env.VOICE_PORT = saved.p;
+  }
+});

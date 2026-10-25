@@ -9,14 +9,14 @@
  */
 import http from "node:http";
 import { Bus, onShutdown } from "@cohost/bus";
-import { createLogger, envOr, loadConfig } from "@cohost/config";
+import { createLogger, envOr, loadConfig, urls } from "@cohost/config";
 import { Voice, kokoroSynth } from "./voice.js";
 
 const log = createLogger("voice");
 const cfg = loadConfig();
 const bus = new Bus("voice", log);
 const PORT = Number(envOr("VOICE_PORT", "8700"));
-const PUBLIC = envOr("VOICE_URL", `http://voice:${PORT}`);
+const PUBLIC = urls.voice();
 const voice = new Voice({ bus, log, synth: kokoroSynth(cfg.voice), publicUrl: PUBLIC });
 
 const server = http.createServer(voice.handle);

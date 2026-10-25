@@ -159,6 +159,8 @@ export const urls = {
   ollama: () => envOr("OLLAMA_URL", "http://127.0.0.1:11434"),
   tts: () => envOr("TTS_URL", "http://127.0.0.1:8880"),
   stt: () => envOr("STT_URL", "http://127.0.0.1:8000"),
+  /** Voice's public base URL; loopback by default, compose overrides with `http://voice:8700`. */
+  voice: () => envOr("VOICE_URL", `http://127.0.0.1:${envOr("VOICE_PORT", "8700")}`),
 };
 
 export function createLogger(service: string) {

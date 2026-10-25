@@ -14,14 +14,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { Bus, onShutdown } from "@cohost/bus";
-import { createLogger, envOr, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
+import { createLogger, envOr, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
 
 const log = createLogger("dashboard");
 const cfg = loadConfig();
 const bus = new Bus("dashboard", log);
 const PORT = Number(envOr("PORT", String(cfg.dashboard.port)));
-const VOICE = envOr("VOICE_URL", "http://voice:8700");
+const VOICE = urls.voice();
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 

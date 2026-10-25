@@ -46,4 +46,4 @@
 - [x] 8.3 Optional: mic recording via `MediaRecorder` (hidden when unsupported)
 
 ## 9. Verify
-- [ ] 9.1 `pnpm test` green; manual: inject each kind at both levels with eyes/ears in isolated mode
+- [x] 9.1 `pnpm test` green; manual: inject each kind at both levels with eyes/ears in isolated mode

@@ -1,14 +1,29 @@
 import { tracked, type HeartbeatSpec } from "@cohost/bus";
 
-/** ears: `off` without a Discord token; otherwise discord follows the gateway session and stt the last transcription. */
+export type EarsSource = "discord" | "off";
+/** `off`: source=off. `no-token`: discord without DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
+export type EarsPlan = "off" | "no-token" | "discord";
+
+/** Pure decision for what ears does at startup; never exits for a configuration gap. */
+export function earsPlan(source: EarsSource, hasToken: boolean): EarsPlan {
+  if (source === "off") return "off";
+  return hasToken ? "discord" : "no-token";
+}
+
+/**
+ * ears: `off` (mode off, deps n/a) for source=off; otherwise mode live with discord following the
+ * gateway session (down without a token) and stt the last transcription.
+ */
 export class EarsHealth {
   private stt: "ok" | "down" = "ok";
-  constructor(private hasToken: boolean, private discordReady: () => boolean) {}
+  constructor(private plan: EarsPlan, private discordReady: () => boolean) {}
 
   readonly spec: HeartbeatSpec = {
     service: "ears",
-    mode: () => (this.hasToken ? "live" : "off"),
-    deps: () => ({ discord: !this.hasToken ? "n/a" : this.discordReady() ? "ok" : "down", stt: this.stt }),
+    mode: () => (this.plan === "off" ? "off" : "live"),
+    deps: () => (this.plan === "off"
+      ? { discord: "n/a", stt: "n/a" }
+      : { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt: this.stt }),
   };
 
   track(transcribe: (wav: Buffer) => Promise<string>) {

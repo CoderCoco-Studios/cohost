@@ -25,9 +25,9 @@
 
 ## 5. eyes and ears
 
-- [ ] 5.1 Eyes: skip `connectObs`/loop entirely when `vision.enabled` is false
-- [ ] 5.2 Ears: `ears.source` switch; `off` and missing-token idle paths; keep exit(1) on login failure
-- [ ] 5.3 Tests in `services/eyes/test/` and `services/ears/test/` for the idle decisions (extract a pure decision function if needed)
+- [x] 5.1 Eyes: skip `connectObs`/loop entirely when `vision.enabled` is false
+- [x] 5.2 Ears: `ears.source` switch; `off` and missing-token idle paths; keep exit(1) on login failure
+- [x] 5.3 Tests in `services/eyes/test/` and `services/ears/test/` for the idle decisions (extract a pure decision function if needed)
 
 ## 6. cortex and wiring
 

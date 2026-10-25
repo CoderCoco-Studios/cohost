@@ -67,6 +67,13 @@ async function loop() {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 obs.on("ConnectionClosed", () => log.warn("OBS connection closed"));
-startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop }).then((started) => { if (!started) heartbeat.ready(); }) // deliberately disabled counts as ready (mode: off)
+startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop })
+  .then((started) => {
+    if (started) return;
+    // Disabled: startEyes never connected to OBS. Stay up (mode off) so a supervisor sees a healthy idle service.
+    heartbeat.ready();
+    const timer = setInterval(() => log.warn("eyes idle: vision.enabled is false"), 60_000);
+    onShutdown(() => { clearInterval(timer); });
+  })
   .catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
 onShutdown(async () => { await obs.disconnect(); bus.stop(); });

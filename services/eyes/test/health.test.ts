@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
-import { EyesHealth } from "../src/health.js";
+import { EyesHealth, eyesPlan } from "../src/health.js";
 
 test("vision disabled: mode off and both deps n/a", async () => {
   const hbs = await runHeartbeat(new EyesHealth(false, () => false).spec);
@@ -20,4 +20,9 @@ test("enabled: obs follows the connection, ollama follows describe calls", async
   assert.deepEqual(hbs[1]!.deps, { obs: "down", ollama: "down" });
   assert.equal(hbs[1]!.state, "degraded");
   assert.equal(hbs[1]!.mode, "live");
+});
+
+test("eyesPlan: disabled vision idles (no OBS connect loop); enabled runs", () => {
+  assert.equal(eyesPlan({ enabled: false }), "idle");
+  assert.equal(eyesPlan({ enabled: true }), "run");
 });

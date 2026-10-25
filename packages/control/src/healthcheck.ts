@@ -4,10 +4,10 @@
  * Exits 0 iff the newest heartbeat for the service is younger than
  * 3 x its intervalMs and is not `stopping`.
  */
-import { Bus, type Heartbeat } from "@cohost/bus";
+import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { STALE_FACTOR } from "./health.js";
 
-export function isHealthy(service: string, recent: Heartbeat[], now = Date.now()): boolean {
+export function isHealthy(service: string, recent: HeartbeatEvent[], now = Date.now()): boolean {
   const latest = recent.filter((h) => h.data.service === service).at(-1);
   if (!latest || latest.data.state === "stopping") return false;
   return now - latest.ts < STALE_FACTOR * latest.data.intervalMs;

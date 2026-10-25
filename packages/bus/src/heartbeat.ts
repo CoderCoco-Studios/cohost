@@ -22,6 +22,20 @@ export interface HeartbeatOptions {
   log?: Logger;
 }
 
+/** The service-specific part of the options; what each service's health.ts exports. */
+export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps">;
+
+/**
+ * Wrap an async call so its outcome feeds a dependency status:
+ * `set(true)` after a success, `set(false)` after a failure (the error still propagates).
+ */
+export function tracked<A extends unknown[], R>(fn: (...a: A) => Promise<R>, set: (ok: boolean) => void): (...a: A) => Promise<R> {
+  return async (...a) => {
+    try { const r = await fn(...a); set(true); return r; }
+    catch (err) { set(false); throw err; }
+  };
+}
+
 export interface Heartbeat {
   ready(): void;
   degraded(detail?: string): void;

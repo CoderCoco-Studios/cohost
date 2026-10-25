@@ -172,7 +172,7 @@ test("recentHealth returns the newest heartbeats oldest-first; tailHealth delive
 });
 
 // startHeartbeat against a recording publisher (no Redis).
-import { startHeartbeat } from "../src/index.js";
+import { startHeartbeat, tracked } from "../src/index.js";
 class RecBus {
   readonly consumer = "rec-1";
   sent: { state: string; deps: Record<string, string>; ts: number }[] = [];
@@ -243,4 +243,14 @@ test("SIGTERM publishes `stopping` before the service's own shutdown callback, t
   const r = spawnSync(process.execPath, ["--import", "tsx", new URL("./shutdown.fixture.ts", import.meta.url).pathname], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.stdout.trim().split("\n"), ["hb:starting", "hb:ready", "hb:stopping", "bus.stop"]);
+});
+
+test("tracked() reports each call's outcome and still propagates errors", async () => {
+  const seen: boolean[] = [];
+  let fail = false;
+  const fn = tracked(async (n: number) => { if (fail) throw new Error("x"); return n * 2; }, (ok) => seen.push(ok));
+  assert.equal(await fn(2), 4);
+  fail = true;
+  await assert.rejects(fn(1));
+  assert.deepEqual(seen, [true, false]);
 });

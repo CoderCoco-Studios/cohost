@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { Bus, type Heartbeat } from "@cohost/bus";
+import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { isHealthy } from "../src/healthcheck.js";
 
-const rec = (service: string, ageMs: number, state: Heartbeat["data"]["state"] = "ready", now = 1_000_000): Heartbeat => ({
+const rec = (service: string, ageMs: number, state: HeartbeatEvent["data"]["state"] = "ready", now = 1_000_000): HeartbeatEvent => ({
   id: "1", type: "service.heartbeat", ts: now - ageMs, source: service,
   data: { service, instance: "i", pid: 1, version: "0", startedAt: 1, state, deps: {}, mode: "live", intervalMs: 5000 },
 });

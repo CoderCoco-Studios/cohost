@@ -11,7 +11,7 @@ const MAXLEN = 20_000;
 export const HEALTH_STREAM = "cohost:health";
 export const HEALTH_MAXLEN = 1000;
 
-export type Heartbeat = BusEvent<"service.heartbeat">;
+export type HeartbeatEvent = BusEvent<"service.heartbeat">;
 
 export interface SubscribeOptions<T extends EventType> {
   /** Consumer group — one per service. Restarts resume where they left off. */
@@ -71,7 +71,7 @@ export class Bus {
   }
 
   /** Non-group live tail of the health stream. Does not ack. */
-  async tailHealth(handler: (hb: Heartbeat) => void, fromId = "$"): Promise<void> {
+  async tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$"): Promise<void> {
     const conn = new Redis(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
     let last = fromId;
@@ -87,18 +87,18 @@ export class Bus {
       for (const [id, fields] of res[0]?.[1] ?? []) {
         last = id;
         const ev = decode(id, fields);
-        if (ev?.type === "service.heartbeat") handler(ev as Heartbeat);
+        if (ev?.type === "service.heartbeat") handler(ev as HeartbeatEvent);
       }
     }
     conn.disconnect();
   }
 
   /** Newest N heartbeats, oldest first. */
-  async recentHealth(count = 100): Promise<Heartbeat[]> {
+  async recentHealth(count = 100): Promise<HeartbeatEvent[]> {
     const rows = (await this.pub.xrevrange(HEALTH_STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
     return rows
       .map(([id, f]) => decode(id, f))
-      .filter((e): e is Heartbeat => e?.type === "service.heartbeat")
+      .filter((e): e is HeartbeatEvent => e?.type === "service.heartbeat")
       .reverse();
   }
 

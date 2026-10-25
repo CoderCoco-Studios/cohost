@@ -1,7 +1,7 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
 import { randomUUID } from "node:crypto";
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+import { EventPayloads, startHeartbeat, type BusEvent, type EventInput, type EventType, type HeartbeatSpec, type Publisher } from "@cohost/bus";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
@@ -75,6 +75,22 @@ export class FakeBus implements Publisher {
 /** A bus event as a subscriber would receive it. */
 export function event<T extends EventType>(type: T, data: EventInput<T>, source = "test"): BusEvent<T> {
   return { id: randomUUID(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
+}
+
+/**
+ * Run a service's heartbeat against a FakeBus: `drive` moves it through its lifecycle,
+ * then the stopping heartbeat is sent. Returns every heartbeat published, in order.
+ */
+export async function runHeartbeat(
+  spec: HeartbeatSpec,
+  drive: (hb: ReturnType<typeof startHeartbeat>) => void | Promise<void> = (hb) => hb.ready(),
+): Promise<BusEvent<"service.heartbeat">["data"][]> {
+  const bus = new FakeBus();
+  const hb = startHeartbeat(bus, { ...spec, intervalMs: 60_000 });
+  await drive(hb);
+  await new Promise((r) => setTimeout(r, 10));
+  await hb.stop();
+  return bus.health;
 }
 
 export async function waitFor(cond: () => boolean, what = "condition", ms = 2000): Promise<void> {

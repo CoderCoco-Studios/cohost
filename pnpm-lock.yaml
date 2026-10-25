@@ -177,6 +177,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/control':
+        specifier: workspace:*
+        version: link:../../packages/control
       ws:
         specifier: ^8.18.0
         version: 8.22.0

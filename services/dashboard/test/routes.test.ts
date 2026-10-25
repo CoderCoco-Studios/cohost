@@ -2,6 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
+import { HealthTracker } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 
 // The voice service the dashboard proxies audio from.
@@ -13,6 +14,7 @@ await new Promise<void>((r) => voice.listen(0, r));
 after(() => voice.close());
 
 const bus = new FakeBus();
+const tracker = new HealthTracker();
 const rec = recordingLog();
 let personality = "# Coco\n";
 const server = http.createServer(createDashboardHandler({
@@ -22,6 +24,7 @@ const server = http.createServer(createDashboardHandler({
   voiceUrl: `http://127.0.0.1:${(voice.address() as { port: number }).port}`,
   loadPersonality: () => personality,
   savePersonality: (t) => { personality = t; },
+  services: () => tracker.snapshot(),
 }));
 await new Promise<void>((r) => server.listen(0, r));
 after(() => server.close());
@@ -80,4 +83,18 @@ test("bad input is a 500 with the error logged, not a crash; unknown routes 404"
   assert.equal((await fetch(`${base}/nope`)).status, 404);
   assert.equal((await post("/", "x")).status, 404);
   assert.equal(await (await fetch(`${base}/health`)).text(), "ok");
+});
+
+test("GET /services lists every known service; unseen ones are unknown, a heartbeating one has its state", async () => {
+  tracker.ingest({
+    service: "cortex", instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready",
+    deps: { llm: "ok" }, mode: "live", intervalMs: 5000,
+  });
+  const r = await fetch(`${base}/services`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type")!, /application\/json/);
+  const { services } = (await r.json()) as { services: { service: string; state: string }[] };
+  assert.equal(services.length, 10);
+  assert.equal(services.find((s) => s.service === "cortex")!.state, "up");
+  assert.equal(services.filter((s) => s.state === "unknown").length, 9);
 });

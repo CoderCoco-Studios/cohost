@@ -23,13 +23,13 @@
 - [x] 3.7 avatar: heartbeat with driver dep, `off` for null driver
 - [x] 3.8 eyes: heartbeat with obs/ollama deps, `off` when vision disabled
 - [x] 3.9 ears: heartbeat with discord/stt deps, `off` without `DISCORD_TOKEN`
-- [ ] 3.10 dashboard: heartbeat
+- [x] 3.10 dashboard: heartbeat
 
 ## 4. Dashboard
-- [ ] 4.1 Instantiate `HealthTracker` fed by `tailHealth` seeded from `recentHealth`
-- [ ] 4.2 Add `GET /services`; test in `services/dashboard/test/`
-- [ ] 4.3 Push `services` WS message on connect, on change, and 1 s staleness tick; test
-- [ ] 4.4 Drop `service.heartbeat` from feed and `recent(60)` replay; test
+- [x] 4.1 Instantiate `HealthTracker` fed by `tailHealth` seeded from `recentHealth`
+- [x] 4.2 Add `GET /services`; test in `services/dashboard/test/`
+- [x] 4.3 Push `services` WS message on connect, on change, and 1 s staleness tick; test
+- [x] 4.4 Drop `service.heartbeat` from feed and `recent(60)` replay; test
 - [ ] 4.5 Services tab in `public/index.html`
 
 ## 5. Compose and docs

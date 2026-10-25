@@ -13,30 +13,31 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { HealthTracker } from "@cohost/control";
 import { createLogger, envOr, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
+import { createFeed } from "./feed.js";
+import { dashboardHealth } from "./health.js";
 
 const log = createLogger("dashboard");
 const cfg = loadConfig();
 const bus = new Bus("dashboard", log);
+const heartbeat = startHeartbeat(bus, { ...dashboardHealth, log });
+const tracker = new HealthTracker();
 const PORT = Number(envOr("PORT", String(cfg.dashboard.port)));
 const VOICE = urls.voice();
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
 const server = http.createServer(
-  createDashboardHandler({ bus, log, html, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality }),
+  createDashboardHandler({ bus, log, html, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot() }),
 );
 
 const wss = new WebSocketServer({ server, path: "/ws" });
-wss.on("connection", async (ws) => {
-  for (const ev of await bus.recent(60)) ws.send(JSON.stringify(ev));
-});
-void bus.tail((ev) => {
-  const msg = JSON.stringify(ev);
-  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(msg);
-});
+const feed = createFeed({ bus, tracker, clients: () => wss.clients });
+wss.on("connection", (ws) => void feed.onConnection(ws));
+void feed.start();
 
-server.listen(PORT, () => log.info({ port: PORT }, "dashboard online"));
-onShutdown(() => { wss.close(); server.close(); bus.stop(); });
+server.listen(PORT, () => { heartbeat.ready(); log.info({ port: PORT }, "dashboard online"); });
+onShutdown(() => { feed.stop(); wss.close(); server.close(); bus.stop(); });

@@ -1,6 +1,7 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
+import type { ServiceHealth } from "@cohost/control";
 
 export interface DashboardDeps {
   bus: Publisher;
@@ -12,6 +13,8 @@ export interface DashboardDeps {
   voiceUrl: string;
   loadPersonality: () => string;
   savePersonality: (text: string) => void;
+  /** Derived per-service health (HealthTracker snapshot). */
+  services: () => ServiceHealth[];
 }
 
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
@@ -29,6 +32,11 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);
         res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "audio/wav", "cache-control": "no-store" });
         res.end(Buffer.from(await up.arrayBuffer()));
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/services") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ services: d.services() }));
         return;
       }
       if (req.method === "GET" && url.pathname === "/personality") {

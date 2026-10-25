@@ -1,13 +1,27 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
 import { ConfigSchema, ExpressionMapSchema, type Config, type ExpressionMap } from "./schema.js";
 
 export * from "./schema.js";
 
+/**
+ * Walk up from `start` to the nearest dir containing pnpm-workspace.yaml.
+ * `pnpm dev` runs scripts with cwd set to the package dir, so cwd alone isn't the repo root.
+ */
+export function findWorkspaceRoot(start = process.cwd()): string | undefined {
+  let dir = resolve(start);
+  for (;;) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
 export const configDir = (): string =>
-  resolve(process.env.CONFIG_DIR ?? join(process.cwd(), "config"));
+  resolve(process.env.CONFIG_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
 
 /**
  * Replace ${VAR} with process.env.VAR (empty string when unset), and

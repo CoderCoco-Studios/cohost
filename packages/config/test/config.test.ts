@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS } from "../src/index.js";
 
 test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
   process.env.T_SET = "set";
@@ -167,4 +167,29 @@ test("env() requires a non-empty value; envOr() and urls fall back", () => {
   process.env.REDIS_URL = "redis://elsewhere:1";
   assert.equal(urls.redis(), "redis://elsewhere:1");
   if (saved === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = saved;
+});
+
+test("configDir finds <workspace root>/config when cwd is a nested package dir", () => {
+  const root = mkdtempSync(join(tmpdir(), "cohost-ws-"));
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - services/*\n");
+  const svc = join(root, "services", "salience");
+  mkdirSync(svc, { recursive: true });
+  const prevCwd = process.cwd();
+  const prevEnv = process.env.CONFIG_DIR;
+  delete process.env.CONFIG_DIR;
+  try {
+    process.chdir(svc);
+    assert.equal(findWorkspaceRoot(), realpathSync(root));
+    assert.equal(configDir(), join(realpathSync(root), "config"));
+    process.env.CONFIG_DIR = "/explicit";
+    assert.equal(configDir(), "/explicit"); // explicit override still wins
+    delete process.env.CONFIG_DIR;
+    // no workspace file anywhere above: fall back to cwd/config
+    const lone = mkdtempSync(join(tmpdir(), "cohost-lone-"));
+    process.chdir(lone);
+    assert.equal(configDir(), join(realpathSync(lone), "config"));
+  } finally {
+    process.chdir(prevCwd);
+    if (prevEnv === undefined) delete process.env.CONFIG_DIR; else process.env.CONFIG_DIR = prevEnv;
+  }
 });

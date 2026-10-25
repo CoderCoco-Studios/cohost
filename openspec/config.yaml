@@ -1,0 +1,61 @@
+schema: spec-driven
+
+context: |
+  Project: AI Cohost — a locally hosted AI VTuber co-host. Every piece is its own
+  container/process; they communicate only over a Redis Streams bus. Nothing is
+  monolithic and any piece can be swapped.
+
+  Stack: Node >=22, TypeScript (strict, ES2022, NodeNext modules, so relative
+  imports use a `.js` suffix, `noUncheckedIndexedAccess` on), pnpm 10 workspaces,
+  zod for payload/config validation, ioredis, pino-style logger from @cohost/config.
+  Tests: node:test run through tsx (`pnpm test` = `tsc -b` then
+  `node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts"`).
+  Docker Compose for runtime; Postgres (pgvector), Ollama, Kokoro (TTS), speaches (STT).
+
+  Layout:
+    packages/bus            typed Redis Stream wrapper + the event catalogue (events.ts, zod schemas)
+    packages/config         YAML/env config loading, logger, service URLs
+    packages/modules        pluggable module/hook loading (see examples/modules)
+    packages/llm            pluggable chat-model backends (see examples/providers)
+    packages/working-memory short-lived context shared by brain regions
+    packages/testing        test helpers (e.g. publisher recorders)
+    services/*              chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard
+    config/                 *.example.yaml / personality.example.md (real files are gitignored)
+
+  Architecture: a single stream `cohost:events` (MAXLEN ~20k). Every event is
+  {type, ts, source, data}; `data` is validated against `EventPayloads[type]` on
+  publish. Each service subscribes with its own consumer group (restarts resume),
+  optionally filtering by event type. The "brain" is four bus-connected regions —
+  salience (when to speak, reflexes), affect (mood), memory (Postgres/pgvector,
+  recall), cortex (the only caller of the chat LLM; attention.focus -> brain.say).
+  Perception services (chat, eyes, ears) publish events; voice and avatar consume
+  brain.say / affect.state; dashboard observes and controls everything.
+  Service logic is written against `Publisher` (a `Pick<Bus,"publish">`) so tests
+  pass a recorder instead of Redis.
+
+  Spec conventions: one capability per directory under openspec/specs/, named after
+  the package or service (bus, config, modules, llm, working-memory, affect, avatar,
+  chat, cortex, dashboard, ears, eyes, memory, salience, voice). Specs describe
+  observable contracts (bus events in/out, payload shapes, defaults, edge cases),
+  not internals. Adding or changing an event in packages/bus/src/events.ts MUST be
+  reflected in the bus spec and in every service spec that produces/consumes it.
+
+rules:
+  proposal:
+    - State which capabilities (spec directories) are affected and which bus events change
+    - State what is out of scope
+  specs:
+    - Use SHALL/MUST for normative requirements and at least one #### Scenario per requirement
+    - Cite real event types, config keys, and defaults from the code
+  tasks:
+    - Include a task to update or add tests under the owning package/service test/ dir
+    - Keep tasks small enough to complete in one sitting
+
+operations:
+  apply:
+    guidance:
+      - Work in a Pane worktree/branch, never on main
+      - Run `pnpm test` before marking tasks complete
+  archive:
+    guidance:
+      - Archive only after the implementing PR is merged, so openspec/specs/ reflects main

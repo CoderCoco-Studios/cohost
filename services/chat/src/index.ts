@@ -7,17 +7,22 @@
  */
 import { ChatClient } from "@twurple/chat";
 import { RefreshingAuthProvider, type AuthProvider } from "@twurple/auth";
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { channelName, createChatFilter } from "./filter.js";
+import { chatHealth } from "./health.js";
 
 const log = createLogger("chat");
 const cfg = loadConfig();
 const bus = new Bus("chat", log);
 
 const channel = channelName(cfg.chat);
+let connected = false;
+const heartbeat = startHeartbeat(bus, { ...chatHealth(channel, () => connected), log });
 if (!channel) {
   log.error("TWITCH_CHANNEL is not set; nothing to listen to");
+  heartbeat.degraded("TWITCH_CHANNEL is not set");
+  await heartbeat.stop();
   process.exit(1);
 }
 
@@ -43,8 +48,15 @@ function buildAuth(): AuthProvider | undefined {
 const authProvider = buildAuth();
 const client = new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } });
 
-client.onConnect(() => log.info({ channel, authenticated: !!authProvider }, "connected to twitch chat"));
-client.onDisconnect((manually, reason) => log.warn({ manually, reason }, "twitch chat disconnected"));
+client.onConnect(() => {
+  connected = true;
+  heartbeat.ready();
+  log.info({ channel, authenticated: !!authProvider }, "connected to twitch chat");
+});
+client.onDisconnect((manually, reason) => {
+  connected = false;
+  log.warn({ manually, reason }, "twitch chat disconnected");
+});
 
 client.onMessage(async (_chan, user, text, msg) => {
   const ev = toEvent(user, text, msg.userInfo);

@@ -11,14 +11,17 @@
  * AI box is another machine, untick "localhost only" / allow LAN.
  */
 import OBSWebSocket from "obs-websocket-js";
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { Eyes, ollamaDescriber, startEyes, stripDataUrl } from "./eyes.js";
+import { EyesHealth } from "./health.js";
 
 const log = createLogger("eyes");
 const cfg = loadConfig();
 const bus = new Bus("eyes", log);
 const obs = new OBSWebSocket();
+const health = new EyesHealth(cfg.vision.enabled, () => obs.identified);
+const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 
 async function connectObs(): Promise<void> {
   const { host, port, password } = cfg.vision.obs;
@@ -26,6 +29,7 @@ async function connectObs(): Promise<void> {
     try {
       const { obsWebSocketVersion } = await obs.connect(`ws://${host}:${port}`, password || undefined);
       log.info({ host, port, obsWebSocketVersion }, "connected to OBS");
+      heartbeat.ready();
       return;
     } catch (err) {
       log.warn({ err: String(err) }, "OBS not reachable, retrying in 10s");
@@ -45,7 +49,7 @@ async function screenshot(): Promise<string> {
   return stripDataUrl(res.imageData);
 }
 
-const eyes = new Eyes({ bus, log, screenshot, describe: ollamaDescriber(cfg.vision) });
+const eyes = new Eyes({ bus, log, screenshot, describe: health.track(ollamaDescriber(cfg.vision)) });
 
 async function loop() {
   for (;;) {
@@ -63,5 +67,6 @@ async function loop() {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 obs.on("ConnectionClosed", () => log.warn("OBS connection closed"));
-startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop }).catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
+startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop }).then((started) => { if (!started) heartbeat.ready(); }) // deliberately disabled counts as ready (mode: off)
+  .catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
 onShutdown(async () => { await obs.disconnect(); bus.stop(); });

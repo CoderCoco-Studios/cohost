@@ -14,15 +14,15 @@
 - [x] 2.6 Add `healthcheck` CLI (`dist/healthcheck.js <service>`) with test for fresh/silent/stopping
 
 ## 3. Wire services (one task each; add test under `services/<svc>/test/`)
-- [ ] 3.1 chat: heartbeat, `mode off` when no `TWITCH_CHANNEL`
-- [ ] 3.2 salience: heartbeat
-- [ ] 3.3 affect: heartbeat
-- [ ] 3.4 memory: heartbeat with postgres/ollama deps
-- [ ] 3.5 cortex: heartbeat with llm dep
-- [ ] 3.6 voice: heartbeat with kokoro dep
-- [ ] 3.7 avatar: heartbeat with driver dep, `off` for null driver
-- [ ] 3.8 eyes: heartbeat with obs/ollama deps, `off` when vision disabled
-- [ ] 3.9 ears: heartbeat with discord/stt deps, `off` without `DISCORD_TOKEN`
+- [x] 3.1 chat: heartbeat, `mode off` when no `TWITCH_CHANNEL`
+- [x] 3.2 salience: heartbeat
+- [x] 3.3 affect: heartbeat
+- [x] 3.4 memory: heartbeat with postgres/ollama deps
+- [x] 3.5 cortex: heartbeat with llm dep
+- [x] 3.6 voice: heartbeat with kokoro dep
+- [x] 3.7 avatar: heartbeat with driver dep, `off` for null driver
+- [x] 3.8 eyes: heartbeat with obs/ollama deps, `off` when vision disabled
+- [x] 3.9 ears: heartbeat with discord/stt deps, `off` without `DISCORD_TOKEN`
 - [ ] 3.10 dashboard: heartbeat
 
 ## 4. Dashboard

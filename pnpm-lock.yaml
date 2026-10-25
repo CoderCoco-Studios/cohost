@@ -121,6 +121,9 @@ importers:
         specifier: ^8.18.0
         version: 8.22.0
     devDependencies:
+      '@cohost/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.2

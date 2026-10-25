@@ -8,14 +8,16 @@
  *   - salience can get chattier when things are exciting.
  * No LLM, no database — it's a couple of numbers and a half-life.
  */
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { createAppraiser } from "./appraise.js";
 import { Affect } from "./affect.js";
+import { affectHealth } from "./health.js";
 
 const log = createLogger("affect");
 const cfg = loadConfig();
 const bus = new Bus("affect", log);
+const heartbeat = startHeartbeat(bus, { ...affectHealth, log });
 const appraiser = createAppraiser(cfg, log);
 const affect = new Affect({ cfg, bus, appraiser, log });
 
@@ -25,6 +27,7 @@ async function main() {
     (ev) => affect.onEvent(ev),
   );
   setInterval(() => affect.publish(), cfg.brain.affect.publish_ms);
+  heartbeat.ready();
   log.info({ half_life_ms: cfg.brain.affect.half_life_ms, appraiser: appraiser.kind }, "affect online");
 }
 

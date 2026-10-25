@@ -8,9 +8,9 @@
 
 ## 2. memory
 
-- [ ] 2.1 Extract the store interface; add in-memory store (cap 2000, recall rules identical)
-- [ ] 2.2 Switch `services/memory/src/index.ts` on `store`/`embedder`; skip Ollama wait and Postgres retries when unused; reflect no-op for inmemory
-- [ ] 2.3 Tests in `services/memory/test/`: recall round trip, 2-minute exclusion, min_similarity, cap, no Ollama traffic with hash
+- [x] 2.1 Extract the store interface; add in-memory store (cap 2000, recall rules identical)
+- [x] 2.2 Switch `services/memory/src/index.ts` on `store`/`embedder`; skip Ollama wait and Postgres retries when unused; reflect no-op for inmemory
+- [x] 2.3 Tests in `services/memory/test/`: recall round trip, 2-minute exclusion, min_similarity, cap, no Ollama traffic with hash
 
 ## 3. voice
 

@@ -8,16 +8,20 @@
  * instead of resetting every stream. Edit the file by hand whenever you like.
  */
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
-import { createChatProvider, createEmbedder } from "@cohost/llm";
-import { MemoryStore } from "./store.js";
+import { createChatProvider } from "@cohost/llm";
+import { createMemoryEmbedder, createStore } from "./backend.js";
 import { appendLearned, learnedBlock, parseBullets } from "./learned.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
 const llm = createChatProvider(cfg.llm);
-const memory = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
+const memory = createStore(cfg, createMemoryEmbedder(cfg), log);
 
 async function main() {
+  if (cfg.brain.memory.store === "memory") {
+    log.warn("brain.memory.store is memory: nothing persists between processes, so there is nothing to reflect on");
+    return;
+  }
   await memory.init();
   const since = new Date((await memory.getMeta("last_reflection")) ?? "1970-01-01");
   const rows = await memory.recentSince(since, 600);

@@ -113,7 +113,7 @@ What each service needs to come up, and what it does if that is missing
 | `dashboard` | Redis | works; http://localhost:3000. Audio needs `voice` (`VOICE_URL`) |
 | `voice` | Redis + a TTS server at `TTS_URL` (default `:8880`) | starts; each `brain.say` logs a synth failure and still emits `voice.done`. Use the stub TTS (§5) |
 | `cortex` | Redis + a chat model (Ollama by default) | starts, logs `waiting for the model backend` every 3 s until Ollama answers. Use the stub LLM (§5) |
-| `memory` | Redis + Ollama (embeddings) + Postgres | logs `waiting for ollama (embeddings)...` forever; **cannot be stubbed** with `stub-llm` (no `/api/embed`). Bring up the real `postgres` + `ollama` or leave it out. `cortex` copes without it (see below) |
+| `memory` | Redis + Ollama (embeddings) + Postgres | logs `waiting for ollama (embeddings)...` forever; **cannot be stubbed** with `stub-llm` (no `/api/embed`). Bring up the real `postgres` + `ollama` (§5b) or leave it out. `cortex` copes without it (see below) |
 | `chat` | `TWITCH_CHANNEL` | exits 1 without it. With only a channel it reads anonymous IRC (**not verified**, needs the internet) |
 | `eyes` | OBS + a vision model | see §5 |
 | `ears` | Discord bot token + STT | exits immediately without `DISCORD_TOKEN`. See §5 |
@@ -128,7 +128,7 @@ answers without memories.
 | ------- | ------------------- | ---- | ---------------------- |
 | `voice` | Kokoro TTS container (`tts`) | optional (CPU image exists) | `scripts/dev/stub-tts.ts` |
 | `cortex`, `salience`/`affect` `llm` hooks, `memory` reflect | Ollama / OpenAI-compatible / Claude | yes for Ollama | `scripts/dev/stub-llm.ts`, or `llm.provider: openai` pointed at any local server |
-| `memory` | Ollama `nomic-embed-text` + Postgres (pgvector) | embeddings are light | none; run the real containers (`docker compose up -d postgres ollama`, **not verified**) |
+| `memory` | Ollama `nomic-embed-text` + Postgres (pgvector) | embeddings are light | none; run the real containers (§5b, verified) |
 | `eyes` | OBS WebSocket + Ollama vision model | yes | publish `vision.summary` by hand (§7). Leave `vision.enabled: false` |
 | `ears` | Discord bot + STT container (faster-whisper) | STT is GPU-friendly | publish `speech.heard` by hand (§7). Its logic is unit tested with fake transcribers/players |
 | `chat` | Twitch IRC | no | publish `chat.message` by hand (§7) |
@@ -170,6 +170,46 @@ network/hardware edge is the only part not covered.
 
   Wiring it into a running region through `config.yaml` was **not** exercised;
   the `Module` fallback/timeout logic is covered by `packages/modules/test`.
+
+### 5b. Real infra containers, CPU only
+
+Verified; about 1 GB of images plus two small models:
+
+```bash
+docker compose up -d redis postgres ollama tts stt     # CPU images (base compose file only)
+docker compose ps                                       # postgres/redis report (healthy)
+curl -s localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'        # embeddings, 768-dim
+curl -s localhost:11434/api/pull -d '{"name":"qwen2.5:0.5b-instruct"}'  # tiny chat model: fast, silly replies
+curl -s localhost:8880/v1/audio/speech -H 'content-type: application/json' \
+  -d '{"model":"kokoro","input":"Hello there","voice":"af_heart","response_format":"wav"}' -o hello.wav   # 200, a WAV
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/health                                              # 200
+```
+
+Then run the services on the host against them (env vars set in the shell
+override `.env`):
+
+```bash
+export VOICE_URL=http://127.0.0.1:8700 LLM_MODEL=qwen2.5:0.5b-instruct
+for s in salience affect memory cortex voice avatar; do node --import tsx services/$s/src/index.ts & done
+```
+
+`memory` logs `memory ready` (`dims: 768`) and creates `memories`, `viewers`
+and `meta` tables in Postgres. Publishing the Recipe B chat message then gave
+a real reply (~1.6 s on the 0.5B model), real Kokoro audio (`voice.utterance`,
+5 s), a `memory.viewer` for the new user and an on-time, empty
+`memory.recall.reply`. Afterwards
+`docker compose exec postgres psql -U cohost -c 'select kind, who, text from memories'`
+shows the chat line (`chat`) and the reply (`self`). The 0.5B model is only
+for plumbing; use the `LLM_MODEL` from `.env.example` for real quality. The
+stub TTS and LLM scripts are not needed in this setup.
+
+Stop everything: `docker compose down` (add `-v` to also drop the Postgres and model volumes).
+
+**Stopping background `node --import tsx …` jobs:** `kill $!` can leave the
+tsx child running and holding the port (a stale stub-llm on `:11434` made the
+real Ollama pull return `{"error":"not stubbed"}` while writing this). Stop
+them with `pkill -f "scripts/dev/"` and `pkill -f "services/.*/src/index.ts"`
+typed on their own, then check `ss -ltn`.
 
 ## 6. Unit-test helpers: `@cohost/testing`
 
@@ -331,12 +371,12 @@ Found while writing this guide. Not fixed here (out of scope: docs and helper sc
    Docker `voice.utterance.audioUrl` and the dashboard's audio proxy point
    nowhere until you set `VOICE_URL=http://127.0.0.1:8700`.
 4. **`memory` cannot run without real Ollama *and* Postgres**, and there is no
-   in-memory/fake mode. The cortex's recall path is only covered by unit tests.
+   in-memory/fake mode (it works fine against the real containers, §5b).
 5. **`eyes` with `vision.enabled: false`** still tries to connect to OBS (it
    retries every 10 s) instead of idling quietly; the "eyes idle" warning is misleading.
 6. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 7. **Bus state persists** in Redis between runs (and `salience` etc. use
    `fromNow`, but `bus-tail --replay` will show old traffic).
-8. **Not verified here:** every `docker compose` command except `up -d redis` / `exec redis`, the real Kokoro/Ollama/Postgres/STT containers, Twitch IRC, OBS,
+8. **Not verified here:** the `stt` container beyond `GET /health` (no audio sent), the GPU overlay, the services' own Docker images (`docker compose build`/`up` of `chat`, `salience` …), Twitch IRC, OBS,
    Discord, VTube Studio and VMC against real apps, GPU overlay. The README's
    own Status section says the same for the real integrations.

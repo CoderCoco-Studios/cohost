@@ -26,6 +26,8 @@ export class Affect {
   private lastPublishedAt = 0;
   private queue: { input: AppraiseInput; cause: string }[] = [];
   private draining?: Promise<void>;
+  /** Paused by `control pause`: events no longer nudge the mood; decay and publishing continue. */
+  private paused = false;
 
   constructor(private d: AffectDeps) {
     this.mood = new Mood(d.cfg.brain.affect);
@@ -33,6 +35,7 @@ export class Affect {
 
   onEvent(ev: BusEvent): void {
     const mood = this.mood;
+    if (this.paused && ev.type !== "control") return;
     switch (ev.type) {
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
@@ -59,6 +62,9 @@ export class Affect {
       }
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
+        if (d.target && d.target !== "affect") break; // addressed to another service
+        if (d.cmd === "pause") this.paused = true;
+        if (d.cmd === "resume") this.paused = false;
         if (d.cmd === "forget_context") { mood.nudge(this.d.cfg.brain.affect.baseline_valence - mood.valence, 0.1 - mood.arousal, "reset"); }
         break;
       }

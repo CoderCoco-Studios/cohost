@@ -19,9 +19,9 @@
 - [x] 3.5 Tests in `services/dashboard/test`: disabled (404 + `/control` open), enabled 401/204, unknown id 404, self 409, infra 403, audit event published, bind selection
 
 ## 4. In-process pause/resume
-- [ ] 4.1 salience: honour `pause`/`resume` and `target`; test
-- [ ] 4.2 affect: same; test
-- [ ] 4.3 cortex: same (no LLM calls while paused); test
+- [x] 4.1 salience: honour `pause`/`resume` and `target`; test
+- [x] 4.2 affect: same; test
+- [x] 4.3 cortex: same (no LLM calls while paused); test
 - [x] 4.4 Dashboard `POST /control` accepts `pause`/`resume`/`target`
 
 ## 5. UI

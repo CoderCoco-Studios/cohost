@@ -21,6 +21,8 @@ export class Cortex {
   readonly ctx: Context;
   private personality: string;
   private muted = false;
+  /** Paused by `control pause`: keeps reading events but starts no LLM call. Reported as "muted" so salience stops waiting. */
+  private paused = false;
   private thinking = false;
   private speakingId: string | undefined;
   private speakingSince = 0;
@@ -50,7 +52,7 @@ export class Cortex {
       }
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
-        if (d.id === this.speakingId) { this.speakingId = undefined; await this.status(this.muted ? "muted" : "idle"); }
+        if (d.id === this.speakingId) { this.speakingId = undefined; await this.status(this.muted || this.paused ? "muted" : "idle"); }
         break;
       }
       case "attention.focus":
@@ -81,8 +83,11 @@ export class Cortex {
         break;
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
+        if (d.target && d.target !== "cortex") break; // addressed to another service
+        if (d.cmd === "pause") { this.paused = true; await this.status("muted", "paused"); }
+        if (d.cmd === "resume") { this.paused = false; await this.status(this.muted ? "muted" : "idle"); }
         if (d.cmd === "mute") { this.muted = true; await this.status("muted"); }
-        if (d.cmd === "unmute") { this.muted = false; await this.status("idle"); }
+        if (d.cmd === "unmute") { this.muted = false; await this.status(this.paused ? "muted" : "idle"); }
         if (d.cmd === "forget_context") { this.ctx.clear(); this.viewerNotes.clear(); }
         if (d.cmd === "reload_personality") { this.personality = this.d.loadPersonality(); this.d.log.info("personality reloaded"); }
         if (d.cmd === "say" && d.text) await this.say(d.text, "neutral", undefined, "operator");
@@ -95,7 +100,7 @@ export class Cortex {
     const { cfg, llm, critic, log } = this.d;
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
     if (this.thinking) { await this.status("thinking", focus.reason).catch(() => {}); return; }
-    if (this.muted) { await this.status("muted"); return; }
+    if (this.muted || this.paused) { await this.status("muted"); return; }
     if (this.voiceBusy()) { await this.status("speaking"); return; }
 
     this.thinking = true; // the try/finally below always clears it, even if a status publish fails
@@ -118,7 +123,7 @@ export class Cortex {
       if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
       if (verdict.emotion) emotion = verdict.emotion;
       // A reflex or operator line may have started while we were thinking; don't talk over it.
-      if (this.muted) { await this.status("muted"); return; }
+      if (this.muted || this.paused) { await this.status("muted"); return; }
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
       await this.say(text, emotion as Emotion, gesture, focus.reason);
     } catch (err) {

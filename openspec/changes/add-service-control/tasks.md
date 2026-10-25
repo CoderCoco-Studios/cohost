@@ -25,8 +25,8 @@
 - [x] 4.4 Dashboard `POST /control` accepts `pause`/`resume`/`target`
 
 ## 5. UI
-- [ ] 5.1 Services tab controls with Start/Stop/Restart, fresh/resume toggle, confirm dialog, token prompt
-- [ ] 5.2 Show `service.lifecycle` events in the feed; hide controls when control disabled
+- [x] 5.1 Services tab controls with Start/Stop/Restart, fresh/resume toggle, confirm dialog, token prompt
+- [x] 5.2 Show `service.lifecycle` events in the feed; hide controls when control disabled
 
 ## 6. Docs and CLI
 - [ ] 6.1 README ops section: enabling control, host-run recommendation, docker-socket opt-in warning

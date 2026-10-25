@@ -37,18 +37,18 @@ character(s)` …). The defaults in `.env.example` are fine for local testing
 ### Redis
 
 ```bash
-docker compose up -d redis      # (not verified: no Docker in the WSL distro this was written in)
+docker compose up -d redis      # verified: Redis 7.4, healthy, 127.0.0.1:6379
 ```
 
 Compose binds it to `127.0.0.1:6379`, which is what the services default to.
 No Docker? Any Redis ≥ 6.2 on that port works. This guide was verified against
 Redis 6.2 from `pip install redislite` (`<venv>/bin/redis-server --port 6379 --save ""`).
 
-Check it: `docker compose exec redis redis-cli ping` → `PONG` (or `redis-cli ping`).
+Check it: `docker compose exec redis redis-cli ping` → `PONG` (verified).
 
 The bus is one Redis Stream, `cohost:events`. It survives between runs, so
 old events reappear in `bus-tail --replay`. Reset it with
-`docker compose exec redis redis-cli DEL cohost:events` (or restart a throwaway Redis).
+`docker compose exec redis redis-cli DEL cohost:events` (verified) (or restart a throwaway Redis).
 
 ## 2. Run the whole suite
 
@@ -58,7 +58,7 @@ pnpm test:only       # same, without the build step (faster once built)
 pnpm typecheck       # tsc -b --noEmit
 ```
 
-Verified result with Redis up: **206 tests, 206 pass, 0 skipped** (~7 s).
+Verified result with Redis up (both the compose Redis 7.4 and a standalone 6.2): **206 tests, 206 pass, 0 skipped** (~7 s).
 Without Redis: 200 pass, **6 skipped**; the skipped ones are the bus round-trip
 tests in `packages/bus/test/bus.test.ts`, each marked `(needs Redis)`. A run
 with skips is not a full pass.
@@ -337,7 +337,6 @@ Found while writing this guide. Not fixed here (out of scope: docs and helper sc
 6. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 7. **Bus state persists** in Redis between runs (and `salience` etc. use
    `fromNow`, but `bus-tail --replay` will show old traffic).
-8. **Not verified here:** every `docker compose` command (no Docker in the dev WSL
-   distro), the real Kokoro/Ollama/Postgres/STT containers, Twitch IRC, OBS,
+8. **Not verified here:** every `docker compose` command except `up -d redis` / `exec redis`, the real Kokoro/Ollama/Postgres/STT containers, Twitch IRC, OBS,
    Discord, VTube Studio and VMC against real apps, GPU overlay. The README's
    own Status section says the same for the real integrations.

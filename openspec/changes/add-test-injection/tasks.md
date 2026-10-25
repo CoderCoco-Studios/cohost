@@ -1,19 +1,19 @@
 ## 1. Bus events
-- [ ] 1.1 In `packages/bus/src/events.ts` add optional `injected: z.boolean().optional()` and `remember: z.boolean().optional()` to `chat.message`, `vision.summary`, `speech.heard` (no defaults); same two optional fields on `brain.say` and `attention.focus`
-- [ ] 1.2 Add `inject.request` and `inject.result` schemas; register in `EventPayloads`/`EVENT_TYPES`
-- [ ] 1.3 Tests in `packages/bus/test`: old payloads still valid and unchanged, flags accepted on `brain.say`/`attention.focus`, request enum validation, result validation
+- [x] 1.1 In `packages/bus/src/events.ts` add optional `injected: z.boolean().optional()` and `remember: z.boolean().optional()` to `chat.message`, `vision.summary`, `speech.heard` (no defaults); same two optional fields on `brain.say` and `attention.focus`
+- [x] 1.2 Add `inject.request` and `inject.result` schemas; register in `EventPayloads`/`EVENT_TYPES`
+- [x] 1.3 Tests in `packages/bus/test`: old payloads still valid and unchanged, flags accepted on `brain.say`/`attention.focus`, request enum validation, result validation
 
 ## 2. Config
-- [ ] 2.1 Add `urls.dashboard()` (`DASHBOARD_URL`, default `http://127.0.0.1:3000`) to `packages/config/src/index.ts`; test default and override
-- [ ] 2.2 Set `DASHBOARD_URL=http://dashboard:3000` for eyes and ears in `docker-compose.yml`
+- [x] 2.1 Add `urls.dashboard()` (`DASHBOARD_URL`, default `http://127.0.0.1:3000`) to `packages/config/src/index.ts`; test default and override
+- [x] 2.2 Set `DASHBOARD_URL=http://dashboard:3000` for eyes and ears in `docker-compose.yml`
 
 ## 3. Dashboard routes and upload store
-- [ ] 3.1 `services/dashboard/src/uploads.ts`: in-memory store with per-kind size caps, TTL, entry/total caps, random 128-bit ids; env `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS`
-- [ ] 3.2 `GET /uploads/:id` (content-type from upload, 404 unknown/expired)
-- [ ] 3.3 `POST /inject/text` (service chat, bus chat/speech/vision), validation and 400s
-- [ ] 3.4 `POST /inject/image` and `/inject/audio` (raw body, query options, 413/415/400, 202 `{id}`, publish `inject.request` with `${urls.dashboard()}/uploads/<id>`)
-- [ ] 3.5 Apply the `add-service-control` bearer gate to the three inject routes when enabled (reuse its middleware; 401 otherwise)
-- [ ] 3.6 Tests in `services/dashboard/test/inject.test.ts` and `uploads.test.ts`: each route and level, emitted payloads (`injected`, `remember`, `source`), size/type rejection, TTL expiry and eviction, 404 on expired, gate on/off
+- [x] 3.1 `services/dashboard/src/uploads.ts`: in-memory store with per-kind size caps, TTL, entry/total caps, random 128-bit ids; env `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS`
+- [x] 3.2 `GET /uploads/:id` (content-type from upload, 404 unknown/expired)
+- [x] 3.3 `POST /inject/text` (service chat, bus chat/speech/vision), validation and 400s
+- [x] 3.4 `POST /inject/image` and `/inject/audio` (raw body, query options, 413/415/400, 202 `{id}`, publish `inject.request` with `${urls.dashboard()}/uploads/<id>`)
+- [x] 3.5 Apply the `add-service-control` bearer gate to the three inject routes when enabled (reuse its middleware; 401 otherwise)
+- [x] 3.6 Tests in `services/dashboard/test/inject.test.ts` and `uploads.test.ts`: each route and level, emitted payloads (`injected`, `remember`, `source`), size/type rejection, TTL expiry and eviction, 404 on expired, gate on/off
 
 ## 4. chat
 - [ ] 4.1 `services/chat/src/inject.ts` handler (text -> `chat.message` injected, defaults, mention detection, blank text, bypass ignore rules); `inject.result`

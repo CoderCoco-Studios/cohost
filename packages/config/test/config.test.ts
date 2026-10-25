@@ -127,6 +127,16 @@ test("loadConfig: an invalid file names every bad path", () => {
   assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /voice\.speed:/.test(e.message));
 });
 
+test("loadConfig: an invalid file with no .env says to copy .env.example", () => {
+  sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''") });
+  assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /no \.env/i.test(e.message) && /cp \.env\.example \.env/.test(e.message));
+});
+
+test("loadConfig: an invalid file with a .env present gets no .env hint", () => {
+  sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''"), ".env": "X=1\n" });
+  assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && !/\.env/.test(e.message));
+});
+
 test("loadConfig warns about keys the schema doesn't know", () => {
   sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { tick_ms: 900 }") });
   const warnings = captureWarnings(() => loadConfig(true));

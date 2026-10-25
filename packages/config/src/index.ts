@@ -44,7 +44,12 @@ let cached: Config | undefined;
  * not inside compose (which injects env itself), load it without overriding
  * anything already set. Handles `KEY=value`, `KEY="quoted value"`, comments.
  */
-export function loadDotEnv(file = join(configDir(), "..", ".env")): void {
+const dotEnvPath = (): string => join(configDir(), "..", ".env");
+
+/** True when a dev run has no .env (compose injects env itself, so containers are exempt). */
+const missingDotEnv = (): boolean => !existsSync(dotEnvPath()) && !existsSync("/.dockerenv");
+
+export function loadDotEnv(file = dotEnvPath()): void {
   if (!existsSync(file)) return;
   for (const raw of readFileSync(file, "utf8").split("\n")) {
     const line = raw.trim();
@@ -78,7 +83,10 @@ export function loadConfig(force = false): Config {
   const raw = parseYaml(substituteEnv(readFileSync(file, "utf8")));
   const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
   if (!parsed.success) {
-    throw new Error(`Invalid ${file}:\n${parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")}`);
+    throw new Error(
+      `Invalid ${file}:\n${parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")}` +
+      (missingDotEnv() ? `\n\nNo .env found at ${dotEnvPath()} — ${"${VAR}"} values in config.yaml came out empty. Run: cp .env.example .env` : ""),
+    );
   }
   const stray = unknownKeys(coerceEmptyNumbers(raw), parsed.data);
   if (stray.length > 0) {

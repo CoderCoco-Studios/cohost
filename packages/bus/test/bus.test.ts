@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Redis } from "ioredis";
-import { Bus, EventPayloads, type BusEvent } from "../src/index.js";
+import { Bus, EVENT_TYPES, EventPayloads, type BusEvent } from "../src/index.js";
 
 const url = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 async function redisUp(): Promise<boolean> {
@@ -116,4 +116,131 @@ test("subscribe() and tail() resolve when stop() interrupts a blocking read (nee
   await new Promise((r) => setTimeout(r, 200)); // both are now parked in BLOCK
   bus.stop();
   await within(Promise.all([sub, tail]), 2000);
+});
+
+// ---- service.heartbeat / health stream ----
+
+const hb = (over: Record<string, unknown> = {}) => ({
+  service: "t", instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready" as const,
+  deps: { x: "ok" as const }, mode: "live", intervalMs: 5000, ...over,
+});
+
+test("service.heartbeat is catalogued and validated", () => {
+  assert.ok(EVENT_TYPES.includes("service.heartbeat"));
+  assert.ok(EventPayloads["service.heartbeat"].safeParse(hb()).success);
+  assert.ok(EventPayloads["service.heartbeat"].safeParse(hb({ detail: "d" })).success);
+  assert.equal(EventPayloads["service.heartbeat"].safeParse(hb({ state: "dead" })).success, false);
+  assert.equal(EventPayloads["service.heartbeat"].safeParse(hb({ deps: { x: "maybe" } })).success, false);
+});
+
+test("publish('service.heartbeat') throws and writes nothing (needs Redis)", needsRedis, async () => {
+  const bus = new Bus("hb-reject", undefined, url);
+  const r = new Redis(url);
+  const before = await r.xlen("cohost:events");
+  await assert.rejects(bus.publish("service.heartbeat", hb()), /publishHealth/);
+  assert.equal(await r.xlen("cohost:events"), before);
+  r.disconnect(); bus.stop();
+});
+
+test("publishHealth writes to cohost:health only, and rejects an invalid state (needs Redis)", needsRedis, async () => {
+  const bus = new Bus("hb-route", undefined, url);
+  const r = new Redis(url);
+  const ev = await r.xlen("cohost:events");
+  const h = await r.xlen("cohost:health");
+  await bus.publishHealth(hb({ service: "route" }));
+  assert.equal(await r.xlen("cohost:events"), ev);
+  assert.equal(await r.xlen("cohost:health"), h + 1);
+  await assert.rejects(bus.publishHealth(hb({ state: "dead" }) as never));
+  assert.equal(await r.xlen("cohost:health"), h + 1, "nothing written for the invalid heartbeat");
+  r.disconnect(); bus.stop();
+});
+
+test("recentHealth returns the newest heartbeats oldest-first; tailHealth delivers live ones (needs Redis)", needsRedis, async () => {
+  const bus = new Bus("hb-recent", undefined, url);
+  const watcher = new Bus("hb-tail", undefined, url);
+  const tag = `rh-${Date.now()}`;
+  const live = new Promise<string>((resolve) => {
+    void watcher.tailHealth((h) => { if (h.data.service === `${tag}-live`) resolve(h.source); });
+  });
+  await new Promise((r) => setTimeout(r, 200));
+  for (let n = 1; n <= 4; n++) await bus.publishHealth(hb({ service: tag, pid: n }));
+  const got = await bus.recentHealth(3);
+  assert.deepEqual(got.map((h) => h.data.pid), [2, 3, 4]);
+  await bus.publishHealth(hb({ service: `${tag}-live` }));
+  assert.equal(await within(live), "hb-recent");
+  watcher.stop(); bus.stop();
+});
+
+// startHeartbeat against a recording publisher (no Redis).
+import { startHeartbeat } from "../src/index.js";
+class RecBus {
+  readonly consumer = "rec-1";
+  sent: { state: string; deps: Record<string, string>; ts: number }[] = [];
+  fail = false;
+  async publishHealth(d: ReturnType<typeof hb>): Promise<string> {
+    if (this.fail) throw new Error("redis down");
+    this.sent.push({ state: d.state, deps: d.deps, ts: Date.now() });
+    return "1";
+  }
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("startHeartbeat publishes starting, then ready, then repeats every interval", async () => {
+  const bus = new RecBus();
+  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 100 });
+  await sleep(20);
+  assert.deepEqual(bus.sent.map((s) => s.state), ["starting"]);
+  h.ready();
+  await sleep(20);
+  assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready"]);
+  await sleep(250);
+  assert.ok(bus.sent.filter((s) => s.state === "ready").length >= 3, "ready repeats");
+  await h.stop();
+});
+
+test("startHeartbeat publishes immediately when a dep changes, and reports degraded", async () => {
+  const bus = new RecBus();
+  let dep: "ok" | "down" = "ok";
+  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: () => ({ x: dep }), intervalMs: 60_000 });
+  h.ready();
+  await sleep(20);
+  const n = bus.sent.length;
+  dep = "down";
+  await sleep(1300); // change check runs at least once a second, interval is 60 s
+  const last = bus.sent.at(-1)!;
+  assert.ok(bus.sent.length > n);
+  assert.equal(last.state, "degraded");
+  assert.deepEqual(last.deps, { x: "down" });
+  await h.stop();
+});
+
+test("stop() publishes a single stopping heartbeat and cancels the timer", async () => {
+  const bus = new RecBus();
+  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 50 });
+  h.ready();
+  await h.stop(); await h.stop();
+  const n = bus.sent.length;
+  assert.equal(bus.sent.filter((s) => s.state === "stopping").length, 1);
+  assert.equal(bus.sent.at(-1)!.state, "stopping");
+  await sleep(150);
+  assert.equal(bus.sent.length, n);
+});
+
+test("a failing publish is logged and does not throw into the service", async () => {
+  const bus = new RecBus();
+  bus.fail = true;
+  const warns: unknown[] = [];
+  const log = { warn: (o: unknown) => warns.push(o) } as never;
+  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 50, log });
+  h.degraded("x"); h.ready();
+  await sleep(80);
+  await h.stop();
+  assert.ok(warns.length >= 2);
+});
+
+test("SIGTERM publishes `stopping` before the service's own shutdown callback, then exits 0", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, ["--import", "tsx", new URL("./shutdown.fixture.ts", import.meta.url).pathname], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.trim().split("\n"), ["hb:starting", "hb:ready", "hb:stopping", "bus.stop"]);
 });

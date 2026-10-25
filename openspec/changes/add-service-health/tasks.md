@@ -1,9 +1,9 @@
 ## 1. Bus
-- [ ] 1.1 Add `service.heartbeat` zod schema to `packages/bus/src/events.ts` and to `EVENT_TYPES`
-- [ ] 1.2 Add `HEALTH_STREAM = "cohost:health"` (MAXLEN ~1000), `publishHealth`, `tailHealth`, `recentHealth`; make `publish("service.heartbeat")` throw
-- [ ] 1.3 Add `startHeartbeat` (starting/ready/degraded/stop, deps-change publish, shutdown hook, swallow publish errors)
-- [ ] 1.4 Tests in `packages/bus/test/` for stream routing, validation, ordering, helper timing, shutdown `stopping`, publish failure
-- [ ] 1.5 Make `Bus`/`FakeBus` in `packages/testing` support health publish/recent for tests
+- [x] 1.1 Add `service.heartbeat` zod schema to `packages/bus/src/events.ts` and to `EVENT_TYPES`
+- [x] 1.2 Add `HEALTH_STREAM = "cohost:health"` (MAXLEN ~1000), `publishHealth`, `tailHealth`, `recentHealth`; make `publish("service.heartbeat")` throw
+- [x] 1.3 Add `startHeartbeat` (starting/ready/degraded/stop, deps-change publish, shutdown hook, swallow publish errors)
+- [x] 1.4 Tests in `packages/bus/test/` for stream routing, validation, ordering, helper timing, shutdown `stopping`, publish failure
+- [x] 1.5 Make `Bus`/`FakeBus` in `packages/testing` support health publish/recent for tests
 
 ## 2. Control package (service-health)
 - [ ] 2.1 Scaffold `packages/control` (package.json via `pnpm`, tsconfig, add to `tsc -b` refs)

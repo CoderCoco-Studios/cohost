@@ -7,6 +7,11 @@ export * from "./events.js";
 
 export const STREAM = "cohost:events";
 const MAXLEN = 20_000;
+/** Heartbeats live on their own capped stream so they never evict domain events. */
+export const HEALTH_STREAM = "cohost:health";
+export const HEALTH_MAXLEN = 1000;
+
+export type Heartbeat = BusEvent<"service.heartbeat">;
 
 export interface SubscribeOptions<T extends EventType> {
   /** Consumer group — one per service. Restarts resume where they left off. */
@@ -39,6 +44,7 @@ export class Bus {
   }
 
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
+    if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
     const id = await this.pub.xadd(
       STREAM, "MAXLEN", "~", MAXLEN, "*",
@@ -49,6 +55,51 @@ export class Bus {
     );
     this.log?.debug({ type, id }, "published");
     return id as string;
+  }
+
+  /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */
+  async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
+    const parsed = EventPayloads["service.heartbeat"].parse(data);
+    const id = await this.pub.xadd(
+      HEALTH_STREAM, "MAXLEN", "~", HEALTH_MAXLEN, "*",
+      "type", "service.heartbeat",
+      "ts", String(Date.now()),
+      "source", this.source,
+      "data", JSON.stringify(parsed),
+    );
+    return id as string;
+  }
+
+  /** Non-group live tail of the health stream. Does not ack. */
+  async tailHealth(handler: (hb: Heartbeat) => void, fromId = "$"): Promise<void> {
+    const conn = new Redis(this.url, { maxRetriesPerRequest: null });
+    this.subs.push(conn);
+    let last = fromId;
+    while (!this.stopped) {
+      let res: [string, [string, string[]][]][] | null;
+      try {
+        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", HEALTH_STREAM, last)) as typeof res;
+      } catch (err) {
+        if (this.stopped) break;
+        throw err;
+      }
+      if (!res) continue;
+      for (const [id, fields] of res[0]?.[1] ?? []) {
+        last = id;
+        const ev = decode(id, fields);
+        if (ev?.type === "service.heartbeat") handler(ev as Heartbeat);
+      }
+    }
+    conn.disconnect();
+  }
+
+  /** Newest N heartbeats, oldest first. */
+  async recentHealth(count = 100): Promise<Heartbeat[]> {
+    const rows = (await this.pub.xrevrange(HEALTH_STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
+    return rows
+      .map(([id, f]) => decode(id, f))
+      .filter((e): e is Heartbeat => e?.type === "service.heartbeat")
+      .reverse();
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
@@ -149,14 +200,31 @@ function decode(id: string, fields: string[]): BusEvent | undefined {
   }
 }
 
+const shutdownHooks: (() => void | Promise<void>)[] = [];
+/** Max time pre-shutdown hooks (e.g. the `stopping` heartbeat) may delay exit. */
+const HOOK_TIMEOUT_MS = 2000;
+
+/** Register work that must finish before the service's own onShutdown callback runs. */
+export function beforeShutdown(fn: () => void | Promise<void>): void {
+  shutdownHooks.push(fn);
+}
+
 /** Shared graceful-shutdown helper for services. */
 export function onShutdown(fn: () => void | Promise<void>): void {
   let done = false;
   const run = async () => {
     if (done) return;
     done = true;
-    try { await fn(); } finally { process.exit(0); }
+    try {
+      await Promise.race([
+        Promise.allSettled(shutdownHooks.map((h) => h())),
+        new Promise((r) => setTimeout(r, HOOK_TIMEOUT_MS).unref()),
+      ]);
+      await fn();
+    } finally { process.exit(0); }
   };
   process.on("SIGINT", run);
   process.on("SIGTERM", run);
 }
+
+export * from "./heartbeat.js";

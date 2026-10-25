@@ -41,9 +41,9 @@
 - [x] 7b.4 memory: skip `brain.say` as `self` memory when `injected` and not `remember`; test in `services/memory/test`
 
 ## 8. UI
-- [ ] 8.1 Injected/remembered badge on feed rows
-- [ ] 8.2 "Test inputs" panel (text + viewer fields, image/audio pickers, level and remember toggles, token prompt when control enabled, status line from `inject.result`, 10 s no-response message)
-- [ ] 8.3 Optional: mic recording via `MediaRecorder` (hidden when unsupported)
+- [x] 8.1 Injected/remembered badge on feed rows
+- [x] 8.2 "Test inputs" panel (text + viewer fields, image/audio pickers, level and remember toggles, token prompt when control enabled, status line from `inject.result`, 10 s no-response message)
+- [x] 8.3 Optional: mic recording via `MediaRecorder` (hidden when unsupported)
 
 ## 9. Verify
 - [ ] 9.1 `pnpm test` green; manual: inject each kind at both levels with eyes/ears in isolated mode

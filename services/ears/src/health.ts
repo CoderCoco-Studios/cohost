@@ -26,7 +26,7 @@ export class EarsHealth {
       : { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt: this.stt }),
   };
 
-  track(transcribe: (wav: Buffer) => Promise<string>) {
+  track<A extends unknown[]>(transcribe: (...a: A) => Promise<string>) {
     return tracked(transcribe, (ok) => { this.stt = ok ? "ok" : "down"; });
   }
 }

@@ -26,9 +26,9 @@
 - [x] 5.3 Tests in `services/eyes/test`: success, SAME/empty, model failure, foreign URL rejected, disabled vision
 
 ## 6. ears
-- [ ] 6.1 `services/ears/src/inject.ts` (guarded fetch, STT via `sttTranscriber`, WAV duration, publish injected `speech.heard`, `inject.result`)
-- [ ] 6.2 Subscribe group `ears` in `index.ts`, working when `ears.source=off`
-- [ ] 6.3 Tests in `services/ears/test`: success, empty transcript, STT failure, foreign URL, non-WAV duration 0
+- [x] 6.1 `services/ears/src/inject.ts` (guarded fetch, STT via `sttTranscriber`, WAV duration, publish injected `speech.heard`, `inject.result`)
+- [x] 6.2 Subscribe group `ears` in `index.ts`, working when `ears.source=off`
+- [x] 6.3 Tests in `services/ears/test`: success, empty transcript, STT failure, foreign URL, non-WAV duration 0
 
 ## 7. memory
 - [ ] 7.1 In `createMemoryHandler` skip viewer touch, `memory.viewer` and `remember` for `injected && !remember`; store normally when `remember` true

@@ -18,6 +18,8 @@ export interface DiscordDeps {
   health: EarsHealth;
   heartbeat: Heartbeat;
   setVoiceReady(ready: boolean): void;
+  /** Handles `inject.request` (shares the `ears` consumer group, so it must be subscribed here). */
+  onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
 }
 
 /** The Discord session: joins the voice channel, transcribes speakers, plays `voice.utterance`. Only loaded for `ears.source: discord` with a token. */
@@ -100,7 +102,9 @@ export function startDiscord(deps: DiscordDeps): void {
   client.once("ready", async () => {
     log.info({ user: client.user?.tag }, "discord ready");
     await join();
-    void bus.subscribe({ group: "ears", types: ["voice.utterance"], fromNow: true }, (ev: BusEvent) => {
+    // One loop for the whole `ears` group: two loops with different type filters would drop each other's events.
+    void bus.subscribe({ group: "ears", types: ["voice.utterance", "inject.request"], fromNow: true }, async (ev: BusEvent) => {
+      if (ev.type === "inject.request") return deps.onInject(ev as BusEvent<"inject.request">);
       const d = ev.data as BusEvent<"voice.utterance">["data"];
       void playback.enqueue(d.id, d.audioUrl);
     });

@@ -5,6 +5,14 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc -b" },
-  "dependencies": { "@cohost/bus": "workspace:*", "@cohost/config": "workspace:*" }
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*"
+  },
+  "bin": {
+    "cohostctl": "dist/cli.js"
+  }
 }

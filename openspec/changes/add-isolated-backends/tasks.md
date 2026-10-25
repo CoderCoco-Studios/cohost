@@ -31,8 +31,8 @@
 
 ## 6. cortex and wiring
 
-- [ ] 6.1 Cortex waits for ping without blocking forever silently (log + degraded hook point for `add-service-health`)
-- [ ] 6.2 Test in `services/cortex/test/`: mock provider produces `brain.say`; no-memory timeout path
-- [ ] 6.3 Each service logs a warn when a mock/off backend is active and exposes its `mode` label for `add-service-health` to publish
+- [x] 6.1 Cortex waits for ping without blocking forever silently (log + degraded hook point for `add-service-health`)
+- [x] 6.2 Test in `services/cortex/test/`: mock provider produces `brain.say`; no-memory timeout path
+- [x] 6.3 Each service logs a warn when a mock/off backend is active and exposes its `mode` label for `add-service-health` to publish
 - [ ] 6.4 Smoke script/doc: `docker compose up -d redis` then run each service with its preset env; update README "stub TTS" mention
 - [ ] 6.5 Run `pnpm test` and confirm green

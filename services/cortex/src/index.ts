@@ -18,21 +18,20 @@ import { createChatProvider } from "@cohost/llm";
 import { createCritic } from "./critic.js";
 import { Cortex } from "./cortex.js";
 import { cortexHealth } from "./health.js";
+import { waitForLlm } from "./startup.js";
 
 const log = createLogger("cortex");
 const cfg = loadConfig();
 const bus = new Bus("cortex", log);
 let llmOk = false;
-const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk), log });
+const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk, cfg.llm.provider), log });
 const llm = createChatProvider(cfg.llm);
 const critic = createCritic(cfg, log);
 const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality });
 
 async function main() {
-  while (!(llmOk = await llm.ping())) {
-    log.warn({ provider: llm.name, model: llm.model, error: llm.lastError }, "waiting for the model backend...");
-    await sleep(3000);
-  }
+  if (llm.name === "mock") log.warn("llm.provider is mock: replies are canned echoes, not a real model (mode mock)");
+  await waitForLlm(llm, { log, setOk: (ok) => { llmOk = ok; }, onDown: (detail) => heartbeat.degraded(detail) });
   await cortex.status("idle");
   void bus.subscribe(
     {
@@ -48,8 +47,6 @@ async function main() {
   heartbeat.ready();
   log.info({ provider: llm.name, model: llm.model, critic: critic.kind, name: cfg.cohost.name }, "cortex online");
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
 onShutdown(async () => { bus.stop(); });

@@ -12,9 +12,10 @@
  */
 import OBSWebSocket from "obs-websocket-js";
 import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
-import { createLogger, loadConfig } from "@cohost/config";
+import { createLogger, loadConfig, urls } from "@cohost/config";
 import { Eyes, ollamaDescriber, startEyes, stripDataUrl } from "./eyes.js";
 import { EyesHealth } from "./health.js";
+import { createInjectHandler } from "./inject.js";
 
 const log = createLogger("eyes");
 const cfg = loadConfig();
@@ -49,7 +50,14 @@ async function screenshot(): Promise<string> {
   return stripDataUrl(res.imageData);
 }
 
-const eyes = new Eyes({ bus, log, screenshot, describe: health.track(ollamaDescriber(cfg.vision)) });
+const describe = health.track(ollamaDescriber(cfg.vision));
+const eyes = new Eyes({ bus, log, screenshot, describe });
+
+// Injected images never touch OBS, so this is wired whether vision is enabled or idle.
+void bus.subscribe(
+  { group: "eyes", types: ["inject.request"], fromNow: true },
+  createInjectHandler({ bus, log, dashboardUrl: urls.dashboard(), describe }),
+);
 
 async function loop() {
   for (;;) {

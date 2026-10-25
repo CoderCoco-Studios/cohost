@@ -21,9 +21,9 @@
 - [x] 4.3 Tests in `services/chat/test`
 
 ## 5. eyes
-- [ ] 5.1 `services/eyes/src/inject.ts` (fetch guarded to dashboard uploads URL, base64, `describe(b64,"")`, publish injected `vision.summary`, `inject.result`; does not touch `previous`)
-- [ ] 5.2 Subscribe group `eyes` in `index.ts`, working when `vision.enabled=false`
-- [ ] 5.3 Tests in `services/eyes/test`: success, SAME/empty, model failure, foreign URL rejected, disabled vision
+- [x] 5.1 `services/eyes/src/inject.ts` (fetch guarded to dashboard uploads URL, base64, `describe(b64,"")`, publish injected `vision.summary`, `inject.result`; does not touch `previous`)
+- [x] 5.2 Subscribe group `eyes` in `index.ts`, working when `vision.enabled=false`
+- [x] 5.3 Tests in `services/eyes/test`: success, SAME/empty, model failure, foreign URL rejected, disabled vision
 
 ## 6. ears
 - [ ] 6.1 `services/ears/src/inject.ts` (guarded fetch, STT via `sttTranscriber`, WAV duration, publish injected `speech.heard`, `inject.result`)

@@ -228,6 +228,15 @@ test("brain.memory.store defaults to postgres; 'memory' selects the in-process f
   assert.equal(shape.safeParse({ store: "sqlite" }).success, false);
 });
 
+test("urls.dashboard() defaults to loopback and honours DASHBOARD_URL", () => {
+  const saved = process.env.DASHBOARD_URL;
+  delete process.env.DASHBOARD_URL;
+  assert.equal(urls.dashboard(), "http://127.0.0.1:3000");
+  process.env.DASHBOARD_URL = "http://dashboard:3000";
+  assert.equal(urls.dashboard(), "http://dashboard:3000");
+  if (saved === undefined) delete process.env.DASHBOARD_URL; else process.env.DASHBOARD_URL = saved;
+});
+
 function loadShipped(env: Record<string, string> = {}) {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));

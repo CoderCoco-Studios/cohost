@@ -16,6 +16,9 @@ export const EventPayloads = {
     isSub: z.boolean().default(false),
     /** The co-host's name appeared in the message. */
     mentionsCohost: z.boolean().default(false),
+    /** Set by test injection; absent on real events. */
+    injected: z.boolean().optional(),
+    remember: z.boolean().optional(),
   }),
 
   /** The eyes looked at the game and this is what they saw. */
@@ -23,6 +26,9 @@ export const EventPayloads = {
     text: z.string(),
     /** True when materially different from the previous summary. */
     changed: z.boolean().default(true),
+    /** Set by test injection; absent on real events. */
+    injected: z.boolean().optional(),
+    remember: z.boolean().optional(),
   }),
 
   /** Someone spoke in Discord voice and it was transcribed. */
@@ -31,6 +37,9 @@ export const EventPayloads = {
     speakerId: z.string().optional(),
     text: z.string(),
     durationMs: z.number(),
+    /** Set by test injection; absent on real events. */
+    injected: z.boolean().optional(),
+    remember: z.boolean().optional(),
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
@@ -41,6 +50,9 @@ export const EventPayloads = {
     gesture: z.string().optional(),
     /** Why it spoke, for the dashboard. */
     reason: z.string().optional(),
+    /** Set by test injection; absent on real events. */
+    injected: z.boolean().optional(),
+    remember: z.boolean().optional(),
   }),
 
   /** The brain's current state, for the dashboard. */
@@ -65,6 +77,9 @@ export const EventPayloads = {
         mention: z.boolean().default(false),
       })
       .optional(),
+    /** Set by test injection; absent on real events. */
+    injected: z.boolean().optional(),
+    remember: z.boolean().optional(),
   }),
 
   /** affect → everyone: the co-host's running mood. Decays on its own. */
@@ -146,6 +161,35 @@ export const EventPayloads = {
     text: z.string().optional(),
     /** Service the command is addressed to; absent = all services (back-compat). */
     target: z.string().optional(),
+  }),
+
+  /**
+   * dashboard → eyes/ears/chat: run this test input through the service's real
+   * code path. Binaries never ride the stream; `url` points at the dashboard
+   * upload store.
+   */
+  "inject.request": z.object({
+    id: z.string(),
+    target: z.enum(["eyes", "ears", "chat"]),
+    kind: z.enum(["image", "audio", "text"]),
+    url: z.string().optional(),
+    text: z.string().optional(),
+    meta: z
+      .object({
+        user: z.string().optional(),
+        platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+        isMod: z.boolean().optional(),
+        isSub: z.boolean().optional(),
+      })
+      .optional(),
+    remember: z.boolean(),
+  }),
+
+  /** eyes/ears/chat → dashboard: outcome of an inject.request, correlated by id. */
+  "inject.result": z.object({
+    id: z.string(),
+    ok: z.boolean(),
+    detail: z.string().optional(),
   }),
 
   /** Audit record of a start/stop/restart attempt made through the service controller. */

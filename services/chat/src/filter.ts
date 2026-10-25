@@ -15,6 +15,15 @@ export function channelName(cfg: Config["chat"]): string {
   return cfg.twitch.channel.replace(/^#/, "").toLowerCase();
 }
 
+/**
+ * What the service should do for this config: `fake` publishes scripted/stdin chat,
+ * `twitch` connects, `idle` is twitch with no channel (stay up degraded; never exit).
+ */
+export function chatPlan(cfg: Config["chat"]): "fake" | "twitch" | "idle" {
+  if (cfg.source === "fake") return "fake";
+  return channelName(cfg) ? "twitch" : "idle";
+}
+
 /** Twitch message → `chat.message` payload, or undefined for bots, commands and blank lines. */
 export function createChatFilter(cfg: Config): (user: string, text: string, info: ChatUserInfo) => EventInput<"chat.message"> | undefined {
   const cohostName = cfg.cohost.name.toLowerCase();

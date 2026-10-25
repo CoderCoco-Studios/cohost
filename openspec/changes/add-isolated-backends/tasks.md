@@ -19,9 +19,9 @@
 
 ## 4. chat
 
-- [ ] 4.1 Add fake source (stdin or scripted) through `createChatFilter`; do not import twurple when fake
-- [ ] 4.2 Replace `exit(1)` on empty channel with idle + degraded state
-- [ ] 4.3 Tests in `services/chat/test/`: scripted publish, ignored prefix, no-channel does not exit
+- [x] 4.1 Add fake source (stdin or scripted) through `createChatFilter`; do not import twurple when fake
+- [x] 4.2 Replace `exit(1)` on empty channel with idle + degraded state
+- [x] 4.3 Tests in `services/chat/test/`: scripted publish, ignored prefix, no-channel does not exit
 
 ## 5. eyes and ears
 

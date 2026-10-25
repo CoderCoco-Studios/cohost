@@ -35,4 +35,4 @@
 ## 5. Compose and docs
 - [x] 5.1 Add heartbeat-freshness healthchecks to all app services in `docker-compose.yml`
 - [x] 5.2 Document `HEARTBEAT_INTERVAL_MS` and the Services tab in README
-- [ ] 5.3 Run `pnpm test` and `openspec validate add-service-health`
+- [x] 5.3 Run `pnpm test` and `openspec validate add-service-health`

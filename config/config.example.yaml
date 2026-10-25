@@ -102,6 +102,7 @@ brain:
         model: ""              # while the cortex talks through something bigger.
 
   memory:
+    store: postgres            # postgres (pgvector + Ollama embeddings) | memory (in-process fake: no Ollama/Postgres, forgets on restart; dev/CI)
     recall_k: 6                # memories pulled per prompt (0 disables recall)
     min_similarity: 0.35
 

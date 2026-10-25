@@ -14,18 +14,23 @@
 import { Bus, onShutdown } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { createEmbedder, Ollama } from "@cohost/llm";
-import { MemoryStore } from "./store.js";
+import { MemoryStore, type MemoryBackend } from "./store.js";
+import { InMemoryStore } from "./fake-store.js";
 import { createMemoryHandler } from "./region.js";
 
 const log = createLogger("memory");
 const cfg = loadConfig();
 const bus = new Bus("memory", log);
+const fake = cfg.brain.memory.store === "memory";
 const ollama = new Ollama(cfg.llm); // embeddings are always local, whatever the chat provider
-const store = new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
+const store: MemoryBackend = fake
+  ? new InMemoryStore(cfg.brain.memory)
+  : new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
 const onEvent = createMemoryHandler({ cfg, bus, store });
 
 async function main() {
-  while (!(await ollama.ping())) {
+  if (fake) log.warn("brain.memory.store is 'memory': in-process fake, nothing is persisted");
+  while (!fake && !(await ollama.ping())) {
     log.warn("waiting for ollama (embeddings)...");
     await sleep(3000);
   }

@@ -13,12 +13,24 @@ export interface Memory {
   similarity?: number;
 }
 
+/** What the region needs from a memory store: Postgres-backed (MemoryStore) or in-process (InMemoryStore). */
+export interface MemoryBackend {
+  init(): Promise<void>;
+  remember(kind: MemoryKind, who: string, text: string): Promise<void>;
+  recall(query: string, k?: number): Promise<Memory[]>;
+  touchViewer(userKey: string, display: string): Promise<{ msgCount: number; notes: string; isNew: boolean }>;
+  recentSince(ts: Date, limit?: number): Promise<Memory[]>;
+  getMeta(k: string): Promise<string | undefined>;
+  setMeta(k: string, v: string): Promise<void>;
+  close(): Promise<void>;
+}
+
 /**
  * Long-term memory: every meaningful exchange is embedded and stored in
  * Postgres (pgvector). Recall = cosine similarity against the current moment.
  * Viewer table tracks who's a regular.
  */
-export class MemoryStore {
+export class MemoryStore implements MemoryBackend {
   private pool: pg.Pool;
   private dims: number | undefined;
 

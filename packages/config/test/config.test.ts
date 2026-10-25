@@ -219,3 +219,11 @@ test("urls.voice defaults to loopback (host runs), honours VOICE_PORT, and VOICE
     if (saved.p === undefined) delete process.env.VOICE_PORT; else process.env.VOICE_PORT = saved.p;
   }
 });
+
+test("brain.memory.store defaults to postgres; 'memory' selects the in-process fake; others are rejected", async () => {
+  const { ConfigSchema } = await import("../src/schema.js");
+  const shape = ConfigSchema.shape.brain.shape.memory;
+  assert.equal(shape.parse({}).store, "postgres");
+  assert.equal(shape.parse({ store: "memory" }).store, "memory");
+  assert.equal(shape.safeParse({ store: "sqlite" }).success, false);
+});

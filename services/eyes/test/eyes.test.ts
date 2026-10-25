@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, silentLog, testConfig } from "@cohost/testing";
-import { Eyes, ollamaDescriber, stripDataUrl } from "../src/eyes.js";
+import { Eyes, ollamaDescriber, startEyes, stripDataUrl } from "../src/eyes.js";
 
 function setup(replies: string[]) {
   const bus = new FakeBus();
@@ -60,4 +60,27 @@ test("ollamaDescriber sends the frame and previous line, and keeps only the firs
   assert.equal(body!.messages[1]!.content, "Previous description: In a cave.\nWhat is happening now?");
   status = 500;
   await assert.rejects(describe("IMG", ""), /vision model 500/);
+});
+
+test("startEyes does not connect to OBS or loop when vision is disabled (#11)", async () => {
+  let connects = 0, loops = 0;
+  const started = await startEyes({
+    enabled: false, log: silentLog,
+    connect: async () => { connects++; },
+    loop: async () => { loops++; },
+  });
+  assert.equal(started, false);
+  assert.equal(connects, 0);
+  assert.equal(loops, 0);
+});
+
+test("startEyes connects then loops when vision is enabled", async () => {
+  const order: string[] = [];
+  const started = await startEyes({
+    enabled: true, log: silentLog,
+    connect: async () => { order.push("connect"); },
+    loop: async () => { order.push("loop"); },
+  });
+  assert.equal(started, true);
+  assert.deepEqual(order, ["connect", "loop"]);
 });

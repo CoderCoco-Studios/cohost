@@ -423,6 +423,5 @@ Found while writing this guide. Not fixed here (out of scope: docs and helper sc
    `services/*/dist` is missing (`Cannot find module '/app/services/<svc>/dist/index.js'`).
    Workaround: `find packages services -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete`
    before `docker compose build`. A fresh clone is unaffected.
-11. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord, OBS,
-   Discord, VTube Studio and VMC against real apps, GPU overlay. The README's
-   own Status section says the same for the real integrations.
+11. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord. The README's Status section says the same for the
+   real integrations.

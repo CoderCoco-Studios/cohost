@@ -130,6 +130,8 @@ export const ConfigSchema = z.object({
       module: ModuleSchema,
     }).default({}),
     memory: z.object({
+      /** postgres = pgvector + Ollama embeddings; memory = in-process with hashed embeddings (no Ollama/Postgres; forgets on restart; for dev/CI). */
+      store: z.enum(["postgres", "memory"]).default("postgres"),
       recall_k: z.number().int().nonnegative().default(6),
       min_similarity: z.number().min(0).max(1).default(0.35),
     }).default({}),

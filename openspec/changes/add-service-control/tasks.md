@@ -4,10 +4,10 @@
 - [x] 1.3 Tests in `packages/bus/test`: lifecycle validation, control without target still valid, target accepted, invalid action rejected
 
 ## 2. Runtime core (packages/control; requires add-service-health scaffold)
-- [ ] 2.1 Extend registry manifest with `composeName`, `pnpmFilter`, `groups[]`, `defaultMode`, `infra`, `self`; test every manifest id has these
-- [ ] 2.2 Define `Runtime` interface and result type
-- [ ] 2.3 `process` adapter: fixed-argv spawn, pid tracking, SIGTERM then SIGKILL timeout; tests with an injected spawner
-- [ ] 2.4 `compose` adapter: `execFile docker compose up -d|stop|restart <name>`; tests assert exact argv and no shell
+- [x] 2.1 Extend registry manifest with `composeName`, `pnpmFilter`, `groups[]`, `defaultMode`, `infra`, `self`; test every manifest id has these
+- [x] 2.2 Define `Runtime` interface and result type
+- [x] 2.3 `process` adapter: fixed-argv spawn, pid tracking, SIGTERM then SIGKILL timeout; tests with an injected spawner
+- [x] 2.4 `compose` adapter: `execFile docker compose up -d|stop|restart <name>`; tests assert exact argv and no shell
 - [ ] 2.5 Consumer-group reset helper (`XGROUP SETID <group> $`, create if missing) and fresh/resume orchestration (stop, reset, start); tests with fake redis
 - [ ] 2.6 `ServiceController` applying guards: unknown id, `self`, `infra` unless advanced; tests for each rejection
 

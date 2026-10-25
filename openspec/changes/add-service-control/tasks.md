@@ -29,6 +29,6 @@
 - [x] 5.2 Show `service.lifecycle` events in the feed; hide controls when control disabled
 
 ## 6. Docs and CLI
-- [ ] 6.1 README ops section: enabling control, host-run recommendation, docker-socket opt-in warning
+- [x] 6.1 README ops section: enabling control, host-run recommendation, docker-socket opt-in warning
 - [x] 6.2 Optional `cohostctl` CLI (status/start/stop/restart) on `packages/control`, publishing `by: "cohostctl"`; tests for argument parsing
 - [ ] 6.3 Run `pnpm test`; update `openspec/specs` on archive

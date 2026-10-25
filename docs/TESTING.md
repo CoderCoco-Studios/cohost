@@ -211,6 +211,41 @@ real Ollama pull return `{"error":"not stubbed"}` while writing this). Stop
 them with `pkill -f "scripts/dev/"` and `pkill -f "services/.*/src/index.ts"`
 typed on their own, then check `ss -ltn`.
 
+### 5c. The services in Docker, GPU overlay, STT, Twitch, VMC
+
+Also verified on the same machine:
+
+* **STT with real audio:** TTS → STT round trip. Download a model into speaches
+  once, then transcribe the Kokoro WAV from §5b (same endpoint `ears` uses):
+
+  ```bash
+  curl -s -XPOST localhost:8000/v1/models/Systran/faster-whisper-tiny.en     # "downloaded", ~75 MB
+  curl -s localhost:8000/v1/audio/transcriptions -F file=@hello.wav -F model=Systran/faster-whisper-tiny.en
+  # {"text":"Hello there."}
+  ```
+  (The default `STT_MODEL` in `.env.example` is `Systran/faster-whisper-small`.)
+* **GPU overlay:** `docker run --rm --gpus all ubuntu nvidia-smi -L` sees the card;
+  `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d ollama`
+  starts with an NVIDIA device request and `ollama ps` reports `100% GPU`.
+  The `tts` GPU image was not pulled.
+* **Twitch (anonymous, read-only):** `TWITCH_CHANNEL=xqc node --import tsx services/chat/src/index.ts`
+  logs `connected to twitch chat` (`authenticated: false`) and publishes real
+  `chat.message` events within seconds (pick a busy channel; a quiet one
+  just stays quiet). Posting back and the authenticated path were not tested.
+* **VMC avatar driver:** `AVATAR_DRIVER=vmc VMC_HOST=127.0.0.1 node --import tsx services/avatar/src/index.ts`
+  with a UDP listener on `:39539` received `/VMC/Ext/Blend/Val`, `/Blend/Apply`,
+  `/Bone/Pos` and `/OK` packets after a `brain.say`. It's fire-and-forget UDP,
+  so it never reports "connected".
+* **The services as containers:** `docker compose build` succeeds for all of them,
+  but **the images crash on start at this commit** (Known problems #9). With the
+  `pnpm prune --prod` line removed from the Dockerfile (tested out-of-tree),
+  `docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar dashboard`
+  runs all of them. A chat message published with `bus-pub` then went
+  salience → cortex → real Ollama → real Kokoro → `voice.done`, and
+  `http://localhost:3000/audio/<id>.wav` (dashboard → voice proxy) returned the WAV.
+  Compose sets `VOICE_URL=http://voice:8700` itself, so problem #3 doesn't apply there.
+  `chat` was left out: it exits without `TWITCH_CHANNEL` and compose restarts it forever.
+
 ## 6. Unit-test helpers: `@cohost/testing`
 
 `packages/testing/src/index.ts`, used by every region test:
@@ -377,6 +412,17 @@ Found while writing this guide. Not fixed here (out of scope: docs and helper sc
 6. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 7. **Bus state persists** in Redis between runs (and `salience` etc. use
    `fromNow`, but `bus-tail --replay` will show old traffic).
-8. **Not verified here:** the `stt` container beyond `GET /health` (no audio sent), the GPU overlay, the services' own Docker images (`docker compose build`/`up` of `chat`, `salience` …), Twitch IRC, OBS,
+9. **The service Docker images don't start.** `docker compose up` for any TS
+   service restarts in a loop with `ERR_MODULE_NOT_FOUND: Cannot find package
+   '@cohost/bus'`. Cause (verified): the Dockerfile's final `pnpm prune --prod`
+   (pnpm 10.0.0) deletes the workspace `@cohost/*` links from every
+   `services/*/node_modules`. Building without that line works (larger image).
+10. **`.dockerignore` doesn't exclude `*.tsbuildinfo`.** After any local
+   `pnpm build`/`pnpm test`, the stale `tsconfig.tsbuildinfo` files get copied
+   into the build context and `tsc -b` in the image emits nothing, so
+   `services/*/dist` is missing (`Cannot find module '/app/services/<svc>/dist/index.js'`).
+   Workaround: `find packages services -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete`
+   before `docker compose build`. A fresh clone is unaffected.
+11. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord, OBS,
    Discord, VTube Studio and VMC against real apps, GPU overlay. The README's
    own Status section says the same for the real integrations.

@@ -37,7 +37,8 @@ export const ConfigSchema = z.object({
    * the memory table's vector size never changes when the chat model does.
    */
   llm: z.object({
-    provider: z.preprocess((v) => v || "ollama", z.enum(["ollama", "openai", "anthropic", "bedrock"])),
+    /** `mock` is deterministic and offline (isolated runs); opt-in only, never the default. */
+    provider: z.preprocess((v) => v || "ollama", z.enum(["ollama", "openai", "anthropic", "bedrock", "mock"])),
     /** Model id as the provider names it (ollama tag, OpenAI-style id, claude-opus-5-5, anthropic.claude-opus-5-5 ...). */
     model: z.string().min(1),
     num_ctx: z.number().int().positive().default(8192),
@@ -79,6 +80,9 @@ export const ConfigSchema = z.object({
     }),
   }),
   chat: z.object({
+    /** `fake` publishes scripted/stdin messages with no Twitch connection (isolated runs). */
+    source: z.preprocess((v) => v || "twitch", z.enum(["twitch", "fake"])),
+    fake: z.object({ interval_ms: z.number().int().positive().default(8000) }).default({}),
     twitch: z.object({ channel: z.string().default("") }),
     ignore_users: z.array(z.string()).default([]),
     ignore_prefixes: z.array(z.string()).default(["!"]),
@@ -130,8 +134,10 @@ export const ConfigSchema = z.object({
       module: ModuleSchema,
     }).default({}),
     memory: z.object({
-      /** postgres = pgvector + Ollama embeddings; memory = in-process with hashed embeddings (no Ollama/Postgres; forgets on restart; for dev/CI). */
-      store: z.enum(["postgres", "memory"]).default("postgres"),
+      /** postgres = pgvector + Ollama embeddings; `memory` = in-process fake (lost on exit; for dev/CI and isolated runs). */
+      store: z.preprocess((v) => v || "postgres", z.enum(["postgres", "memory"])),
+      /** `hash` is a deterministic offline embedder; never contacts Ollama. */
+      embedder: z.preprocess((v) => v || "ollama", z.enum(["ollama", "hash"])),
       recall_k: z.number().int().nonnegative().default(6),
       min_similarity: z.number().min(0).max(1).default(0.35),
     }).default({}),
@@ -145,7 +151,8 @@ export const ConfigSchema = z.object({
     }).default({}),
   }),
   voice: z.object({
-    engine: z.enum(["kokoro"]).default("kokoro"),
+    /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
+    engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "stub"])),
     voice: z.string().default("af_heart"),
     speed: z.number().positive().default(1),
     sample_rate: z.number().int().positive().default(24000),
@@ -164,6 +171,8 @@ export const ConfigSchema = z.object({
     vmc: z.object({ host: z.string(), port: z.number().int() }),
   }),
   ears: z.object({
+    /** `off` idles with no Discord client (isolated runs). */
+    source: z.preprocess((v) => v || "discord", z.enum(["discord", "off"])),
     discord: z.object({
       guild_id: z.string().default(""),
       voice_channel_id: z.string().default(""),

@@ -8,3 +8,10 @@ data/
 config/config.yaml
 config/personality.md
 config/expressions.yaml
+
+# VitePress
+docs/.vitepress/cache
+docs/.vitepress/dist
+# Generated from README.md / examples by scripts/docs-prepare.mjs
+docs/guide/
+docs/examples/

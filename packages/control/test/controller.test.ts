@@ -59,7 +59,7 @@ test("isolated start passes the manifest's preset env; restart recreates instead
   await c.start("memory", { isolated: true });
   await c.restart("cortex", { mode: "resume", isolated: true });
   assert.deepEqual(log, [
-    `start memory {"MEMORY_STORE":"inmemory","MEMORY_EMBEDDER":"hash"}`,
+    `start memory {"MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}`,
     "stop cortex",
     `start cortex {"LLM_PROVIDER":"mock"}`,
   ]);

@@ -2,7 +2,8 @@
   "name": "cohost",
   "private": true,
   "version": "0.1.0",
-  "description": "Locally hosted AI VTuber co-host \u2014 modular services on a Redis bus",
+  "description": "Locally hosted AI VTuber co-host — modular services on a Redis bus",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "engines": {
@@ -16,12 +17,17 @@
     "reflect": "pnpm --filter @cohost/memory reflect",
     "clean": "rm -rf packages/*/dist services/*/dist",
     "test": "tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
+    "docs:prepare": "node scripts/docs-prepare.mjs",
+    "docs:dev": "pnpm docs:prepare && vitepress dev docs",
+    "docs:build": "pnpm docs:prepare && vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "test:only": "node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitepress": "1.6.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -357,3 +357,11 @@ Scaffold. Built and type-checked; the `chat → salience → cortex → voice �
 path has been exercised end-to-end against the stub voice engine (`VOICE_ENGINE=stub`). Not yet run against real
 Twitch / VTube Studio / Discord — expect to tune the VTS parameter names and the
 Discord receive path on first contact.
+
+## License
+
+cohost is licensed under the [GNU Affero General Public License v3.0](LICENSE)
+(`AGPL-3.0-only`). Copyright © CoderCoco.
+
+Contributions are accepted under the same license. Every commit must carry a
+[DCO](CONTRIBUTING.md) sign-off: use `git commit -s`.

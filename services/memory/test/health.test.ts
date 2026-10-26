@@ -27,3 +27,19 @@ test("a failing embedding marks ollama down (degraded) and the next success rest
   hbs = await runHeartbeat(h.spec);
   assert.equal(hbs[1]!.state, "ready");
 });
+
+test("memory + hash: postgres and ollama are n/a, mode is mock, state ready", async () => {
+  const h = new MemoryHealth({ store: "memory", embedder: "hash" });
+  const hbs = await runHeartbeat(h.spec);
+  assert.equal(hbs[1]!.mode, "mock");
+  assert.deepEqual(hbs[1]!.deps, { postgres: "n/a", ollama: "n/a" });
+  assert.equal(hbs[1]!.state, "ready");
+});
+
+test("either non-default backend makes the mode mock; the other dep is still tracked", async () => {
+  const h = new MemoryHealth({ store: "postgres", embedder: "hash" });
+  h.setPostgres(true);
+  const hbs = await runHeartbeat(h.spec);
+  assert.equal(hbs[1]!.mode, "mock");
+  assert.deepEqual(hbs[1]!.deps, { postgres: "ok", ollama: "n/a" });
+});

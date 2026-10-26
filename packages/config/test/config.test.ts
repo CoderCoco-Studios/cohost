@@ -227,3 +227,58 @@ test("brain.memory.store defaults to postgres; 'memory' selects the in-process f
   assert.equal(shape.parse({ store: "memory" }).store, "memory");
   assert.equal(shape.safeParse({ store: "sqlite" }).success, false);
 });
+
+function loadShipped(env: Record<string, string> = {}) {
+  const dir = sandbox();
+  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
+  copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
+  const saved = { ...process.env };
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE"]) delete process.env[k];
+  Object.assign(process.env, env);
+  try {
+    let cfg!: ReturnType<typeof loadConfig>;
+    captureWarnings(() => { cfg = loadConfig(true); });
+    return cfg;
+  } finally {
+    process.env = saved;
+  }
+}
+
+test("isolation presets: unset env equals the live defaults", () => {
+  const cfg = loadShipped();
+  assert.equal(cfg.llm.provider, "ollama");
+  assert.equal(cfg.voice.engine, "kokoro");
+  assert.equal(cfg.vision.enabled, false);
+  assert.equal(cfg.brain.memory.store, "postgres");
+  assert.equal(cfg.brain.memory.embedder, "ollama");
+  assert.equal(cfg.chat.source, "twitch");
+  assert.equal(cfg.chat.fake.interval_ms, 8000);
+  assert.equal(cfg.ears.source, "discord");
+});
+
+test("isolation presets: each env var flips its key without editing config.yaml", () => {
+  const cfg = loadShipped({
+    LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
+    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off",
+  });
+  assert.equal(cfg.llm.provider, "mock");
+  assert.equal(cfg.brain.memory.store, "memory");
+  assert.equal(cfg.brain.memory.embedder, "hash");
+  assert.equal(cfg.voice.engine, "stub");
+  assert.equal(cfg.chat.source, "fake");
+  assert.equal(cfg.vision.enabled, true);
+  assert.equal(cfg.ears.source, "off");
+});
+
+test("new keys default to live backends when omitted; bad enum values are rejected", () => {
+  const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
+    voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: { discord: {} }, dashboard: {}, brain: {} };
+  const ok = ConfigSchema.parse(base);
+  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, ok.ears.source],
+    ["kokoro", "postgres", "ollama", "twitch", "discord"]);
+  const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
+  assert.equal(bad.success, false);
+  assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
+  assert.equal(ConfigSchema.safeParse({ ...base, ears: { source: "x", discord: {} } }).success, false);
+  assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
+});

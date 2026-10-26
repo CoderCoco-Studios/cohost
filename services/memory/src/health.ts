@@ -1,23 +1,29 @@
 import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import type { Config } from "@cohost/config";
 import type { Embedder } from "@cohost/llm";
 
 type Dep = "ok" | "down";
 
-/** Tracks memory's two dependencies from the calls it actually makes. */
+/**
+ * Tracks memory's two dependencies from the calls it actually makes.
+ * A dependency the config doesn't use (`memory` store, `hash` embedder) reports `n/a`,
+ * and either one being non-default makes the mode `mock`.
+ */
 export class MemoryHealth {
   private postgres: Dep = "down";
   private ollama: Dep = "down";
 
-  /** `fake` = brain.memory.store is the in-process fake: mode `mock`, no real deps. */
-  constructor(private fake = false) {}
+  readonly spec: HeartbeatSpec;
 
-  readonly spec: HeartbeatSpec = {
-    service: "memory",
-    mode: () => (this.fake ? "mock" : "live"),
-    deps: () => (this.fake
-      ? { postgres: "n/a", ollama: "n/a" }
-      : { postgres: this.postgres, ollama: this.ollama }),
-  };
+  constructor(backend: Pick<Config["brain"]["memory"], "store" | "embedder"> = { store: "postgres", embedder: "ollama" }) {
+    const usesPg = backend.store === "postgres";
+    const usesOllama = usesPg && backend.embedder === "ollama"; // the in-process fake never embeds via Ollama
+    this.spec = {
+      service: "memory",
+      mode: usesPg && usesOllama ? "live" : "mock",
+      deps: () => ({ postgres: usesPg ? this.postgres : "n/a", ollama: usesOllama ? this.ollama : "n/a" }),
+    };
+  }
 
   setOllama(ok: boolean): void { this.ollama = ok ? "ok" : "down"; }
   setPostgres(ok: boolean): void { this.postgres = ok ? "ok" : "down"; }

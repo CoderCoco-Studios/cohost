@@ -12,115 +12,35 @@
  * permissions, set DISCORD_TOKEN / DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID.
  * This MUST be a bot account — automating a user account gets it banned.
  */
-import { Client, GatewayIntentBits, type VoiceBasedChannel } from "discord.js";
-import {
-  createAudioPlayer, createAudioResource, EndBehaviorType, entersState, joinVoiceChannel,
-  AudioPlayerStatus, StreamType, VoiceConnectionStatus, type VoiceConnection,
-} from "@discordjs/voice";
-import prism from "prism-media";
-import { Readable } from "node:stream";
-import { Bus, onShutdown, startHeartbeat, type BusEvent } from "@cohost/bus";
-import { createLogger, env, loadConfig } from "@cohost/config";
-import { Hearing, sttTranscriber } from "./hearing.js";
-import { Playback, httpAudio } from "./playback.js";
-import { EarsHealth } from "./health.js";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { createLogger, loadConfig } from "@cohost/config";
+import { EarsHealth, earsPlan } from "./health.js";
 
 const log = createLogger("ears");
 const cfg = loadConfig();
 const bus = new Bus("ears", log);
 const token = process.env.DISCORD_TOKEN ?? "";
+const plan = earsPlan(cfg.ears.source, !!token);
 let voiceReady = false;
-const health = new EarsHealth(!!token, () => voiceReady);
+const health = new EarsHealth(plan, () => voiceReady);
 const heartbeat = startHeartbeat(bus, { ...health.spec, log });
-if (!token) {
-  log.error("DISCORD_TOKEN is not set; ears cannot start");
-  heartbeat.degraded("DISCORD_TOKEN is not set");
-  await heartbeat.stop();
-  process.exit(1);
+
+if (plan === "discord") {
+  // discord.js and friends are only loaded when a session will actually be opened.
+  const { startDiscord } = await import("./discord.js");
+  startDiscord({ cfg, bus, log, health, heartbeat, setVoiceReady: (v) => { voiceReady = v; } });
+  onShutdown(() => { bus.stop(); });
+} else {
+  // Idle: no Discord client, no bus subscription (voice.utterance is ignored), process stays up.
+  if (plan === "off") {
+    log.warn("ears.source is off: idle, no Discord client, nothing heard or played (mode off)");
+    heartbeat.ready();
+  } else {
+    log.error("DISCORD_TOKEN is not set; ears is idle (no Discord client)");
+    heartbeat.degraded("DISCORD_TOKEN is not set");
+  }
+  const timer = setInterval(() => {
+    if (plan === "no-token") log.warn("DISCORD_TOKEN is not set; ears still idle");
+  }, 60_000);
+  onShutdown(() => { clearInterval(timer); bus.stop(); });
 }
-
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers] });
-const player = createAudioPlayer();
-let connection: VoiceConnection | undefined;
-const listening = new Set<string>();
-const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
-const playback = new Playback({
-  bus, log, fetchAudio: httpAudio,
-  play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
-});
-
-function listenTo(userId: string, channel: VoiceBasedChannel) {
-  if (!connection || listening.has(userId)) return;
-  listening.add(userId);
-  const receiver = connection.receiver;
-  const member = channel.guild.members.cache.get(userId);
-  const name = member?.displayName ?? userId;
-
-  const start = () => {
-    const opus = receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: cfg.ears.silence_ms } });
-    const decoder = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
-    const chunks: Buffer[] = [];
-    opus.pipe(decoder);
-    decoder.on("data", (c: Buffer) => chunks.push(c));
-    decoder.on("end", () => {
-      listening.delete(userId);
-      void hearing.heard(Buffer.concat(chunks), name, userId);
-    });
-    decoder.on("error", (err: Error) => { listening.delete(userId); log.warn({ err: err.message }, "decoder error"); });
-  };
-  start();
-}
-
-async function join() {
-  const guild = await client.guilds.fetch(env("DISCORD_GUILD_ID"));
-  const channel = (await guild.channels.fetch(env("DISCORD_VOICE_CHANNEL_ID"))) as VoiceBasedChannel | null;
-  if (!channel?.isVoiceBased()) throw new Error("DISCORD_VOICE_CHANNEL_ID is not a voice channel");
-  await guild.members.fetch().catch(() => undefined);
-
-  connection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: guild.id,
-    adapterCreator: guild.voiceAdapterCreator,
-    selfDeaf: false,
-    selfMute: false,
-  });
-  await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
-  connection.subscribe(player);
-  voiceReady = true;
-  heartbeat.ready();
-  log.info({ channel: channel.name }, "joined voice");
-
-  connection.receiver.speaking.on("start", (userId) => {
-    if (userId === client.user?.id) return;
-    listenTo(userId, channel);
-  });
-  connection.on(VoiceConnectionStatus.Disconnected, async () => {
-    try {
-      await Promise.race([
-        entersState(connection!, VoiceConnectionStatus.Signalling, 5_000),
-        entersState(connection!, VoiceConnectionStatus.Connecting, 5_000),
-      ]);
-    } catch {
-      voiceReady = false;
-      log.warn("voice disconnected, rejoining in 5s");
-      connection?.destroy();
-      setTimeout(() => void join().catch((e) => log.error({ e }, "rejoin failed")), 5000);
-    }
-  });
-}
-
-// ---- playback
-player.on(AudioPlayerStatus.Idle, () => void playback.onIdle());
-player.on("error", (err) => log.warn({ err: err.message }, "player error"));
-
-client.once("ready", async () => {
-  log.info({ user: client.user?.tag }, "discord ready");
-  await join();
-  void bus.subscribe({ group: "ears", types: ["voice.utterance"], fromNow: true }, (ev: BusEvent) => {
-    const d = ev.data as BusEvent<"voice.utterance">["data"];
-    void playback.enqueue(d.id, d.audioUrl);
-  });
-});
-
-client.login(env("DISCORD_TOKEN")).catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
-onShutdown(async () => { connection?.destroy(); await client.destroy(); bus.stop(); });

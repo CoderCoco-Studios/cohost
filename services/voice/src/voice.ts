@@ -33,6 +33,34 @@ export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buf
   };
 }
 
+/** Stub timing: 60 ms of silence per character, never shorter than 400 ms. */
+export const STUB_MS_PER_CHAR = 60;
+export const STUB_MIN_MS = 400;
+
+/** `voice.engine: stub` — a silent mono PCM16 WAV sized from the text. No network. */
+export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: string) => Promise<Buffer> {
+  return async (text) => {
+    const ms = Math.max(STUB_MIN_MS, text.length * STUB_MS_PER_CHAR);
+    const frames = Math.round((cfg.sample_rate * ms) / 1000);
+    const dataLength = frames * 2;
+    const buf = Buffer.alloc(44 + dataLength); // zero-filled = silence
+    buf.write("RIFF", 0, "ascii");
+    buf.writeUInt32LE(36 + dataLength, 4);
+    buf.write("WAVE", 8, "ascii");
+    buf.write("fmt ", 12, "ascii");
+    buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20); // PCM
+    buf.writeUInt16LE(1, 22); // mono
+    buf.writeUInt32LE(cfg.sample_rate, 24);
+    buf.writeUInt32LE(cfg.sample_rate * 2, 28);
+    buf.writeUInt16LE(2, 32);
+    buf.writeUInt16LE(16, 34);
+    buf.write("data", 36, "ascii");
+    buf.writeUInt32LE(dataLength, 40);
+    return buf;
+  };
+}
+
 /** The voice region: synthesis, the bounded audio store, the virtual sink and the audio HTTP endpoint. */
 export class Voice {
   // ---- audio store (in-memory, bounded)

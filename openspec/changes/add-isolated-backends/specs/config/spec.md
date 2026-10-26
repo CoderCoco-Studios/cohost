@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Schema validation and defaults
-The system SHALL validate the config with `ConfigSchema`, treat null values (from empty substitutions) as absent so defaults apply, and throw `Invalid <file>` listing each issue as `path: message`. Defaults include `llm.provider` ollama (enum `ollama|openai|anthropic|bedrock|mock`), `llm.num_ctx` 8192, `llm.temperature` 0.9, `llm.max_tokens` 120, `brain.working_memory_events` 24, `salience.speak_threshold` 0.6, `voice.engine` kokoro (enum `kokoro|stub`), `voice.voice` af_heart, `brain.memory.store` postgres (enum `postgres|inmemory`), `brain.memory.embedder` ollama (enum `ollama|hash`), `chat.source` twitch (enum `twitch|fake`), `chat.fake.interval_ms` 8000, `ears.source` discord (enum `discord|off`), `dashboard.port` 3000.
+The system SHALL validate the config with `ConfigSchema`, treat null values (from empty substitutions) as absent so defaults apply, and throw `Invalid <file>` listing each issue as `path: message`. Defaults include `llm.provider` ollama (enum `ollama|openai|anthropic|bedrock|mock`), `llm.num_ctx` 8192, `llm.temperature` 0.9, `llm.max_tokens` 120, `brain.working_memory_events` 24, `salience.speak_threshold` 0.6, `voice.engine` kokoro (enum `kokoro|stub`), `voice.voice` af_heart, `brain.memory.store` postgres (enum `postgres|memory`), `brain.memory.embedder` ollama (enum `ollama|hash`), `chat.source` twitch (enum `twitch|fake`), `chat.fake.interval_ms` 8000, `ears.source` discord (enum `discord|off`), `dashboard.port` 3000.
 
 #### Scenario: Invalid value
 - **WHEN** `llm.temperature` is above 2

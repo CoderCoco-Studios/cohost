@@ -15,7 +15,8 @@ llm:
   #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
   #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
   # Recipes for each: examples/providers/README.md
-  provider: ollama
+  #   mock       deterministic offline replies + hash embeddings; for isolated runs (LLM_PROVIDER=mock), never a default
+  provider: "${LLM_PROVIDER:-ollama}"
   model: "${LLM_MODEL}"        # ollama tag from .env; for other providers write the id here,
                                # e.g. claude-opus-5-5, anthropic.claude-opus-5-5, meta-llama/Llama-3.3-70B-Instruct
   num_ctx: 8192                # ollama: context window; raise with VRAM
@@ -34,7 +35,7 @@ llm:
     region: ""                 # empty = AWS_REGION / AWS_DEFAULT_REGION from the environment
 
 vision:
-  enabled: false               # flip on once the `eyes` profile is running
+  enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
   model: "${VISION_MODEL}"
   interval_ms: 8000            # how often to look at the game
   obs:
@@ -45,6 +46,9 @@ vision:
     width: 896                 # downscale before sending to the VLM
 
 chat:
+  source: "${CHAT_SOURCE:-twitch}"  # twitch | fake (scripted/stdin messages, no channel needed)
+  fake:
+    interval_ms: 8000          # source=fake: gap between scripted messages
   twitch:
     channel: "${TWITCH_CHANNEL}"
   ignore_users: ["nightbot", "streamelements", "moobot"]
@@ -102,7 +106,8 @@ brain:
         model: ""              # while the cortex talks through something bigger.
 
   memory:
-    store: postgres            # postgres (pgvector + Ollama embeddings) | memory (in-process fake: no Ollama/Postgres, forgets on restart; dev/CI)
+    store: "${MEMORY_STORE:-postgres}"      # postgres (pgvector + Ollama embeddings) | memory (in-process fake, lost on exit; dev/CI/isolated runs)
+    embedder: "${MEMORY_EMBEDDER:-ollama}"  # ollama | hash (deterministic, offline)
     recall_k: 6                # memories pulled per prompt (0 disables recall)
     min_similarity: 0.35
 
@@ -120,7 +125,7 @@ brain:
         model: ""              # while the cortex talks through something bigger.
 
 voice:
-  engine: "kokoro"
+  engine: "${VOICE_ENGINE:-kokoro}"  # kokoro | stub (silent WAV sized from the text; isolated runs)
   voice: "af_heart"            # kokoro voice id
   speed: 1.05
   sample_rate: 24000
@@ -140,6 +145,7 @@ avatar:
     port: ${VMC_PORT}
 
 ears:
+  source: "${EARS_SOURCE:-discord}"  # discord | off (idle, no Discord client; isolated runs)
   discord:
     guild_id: "${DISCORD_GUILD_ID}"
     voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"

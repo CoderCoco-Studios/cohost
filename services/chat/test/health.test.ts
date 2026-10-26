@@ -17,9 +17,16 @@ test("twitch disconnected reports down and degrades", async () => {
   assert.equal(hbs[1]!.state, "degraded");
 });
 
-test("no channel: mode off, twitch n/a, state degraded", async () => {
+test("no channel (twitch source): stays live-mode, twitch down, state degraded", async () => {
   const hbs = await runHeartbeat(chatHealth("", () => false), (hb) => hb.degraded("TWITCH_CHANNEL is not set"));
   const hb = hbs.find((h) => h.state === "degraded")!;
-  assert.equal(hb.mode, "off");
-  assert.deepEqual(hb.deps, { twitch: "n/a" });
+  assert.equal(hb.mode, "live");
+  assert.deepEqual(hb.deps, { twitch: "down" });
+});
+
+test("fake source: mode mock, twitch n/a, ready", async () => {
+  const hbs = await runHeartbeat(chatHealth("", () => false, "fake"));
+  assert.equal(hbs[1]!.mode, "mock");
+  assert.deepEqual(hbs[1]!.deps, { twitch: "n/a" });
+  assert.equal(hbs[1]!.state, "ready");
 });

@@ -16,3 +16,8 @@ test("llm unreachable: dep down and state degraded", async () => {
   assert.deepEqual(hbs[1]!.deps, { llm: "down" });
   assert.equal(hbs[1]!.state, "degraded");
 });
+
+test("mock provider: mode mock", async () => {
+  const hbs = await runHeartbeat(cortexHealth(() => true, "mock"));
+  assert.equal(hbs[1]!.mode, "mock");
+});

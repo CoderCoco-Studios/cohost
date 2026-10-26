@@ -5,30 +5,50 @@
  * secret / tokens in .env to connect as the bot account (needed later if you
  * want the co-host to also *type* in chat).
  */
-import { ChatClient } from "@twurple/chat";
-import { RefreshingAuthProvider, type AuthProvider } from "@twurple/auth";
+import type { AuthProvider } from "@twurple/auth";
 import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
-import { channelName, createChatFilter } from "./filter.js";
+import { channelName, chatPlan, createChatFilter } from "./filter.js";
 import { chatHealth } from "./health.js";
+import { startFakeSource } from "./fake.js";
 
 const log = createLogger("chat");
 const cfg = loadConfig();
 const bus = new Bus("chat", log);
 
 const channel = channelName(cfg.chat);
+const source = cfg.chat.source;
+const plan = chatPlan(cfg.chat);
 let connected = false;
-const heartbeat = startHeartbeat(bus, { ...chatHealth(channel, () => connected), log });
-if (!channel) {
-  log.error("TWITCH_CHANNEL is not set; nothing to listen to");
-  heartbeat.degraded("TWITCH_CHANNEL is not set");
-  await heartbeat.stop();
-  process.exit(1);
-}
-
+const heartbeat = startHeartbeat(bus, { ...chatHealth(channel, () => connected, source), log });
 const toEvent = createChatFilter(cfg);
 
-function buildAuth(): AuthProvider | undefined {
+if (plan === "fake") {
+  // No channel, credentials or network; @twurple is never loaded.
+  log.warn({ intervalMs: cfg.chat.fake.interval_ms }, "chat.source is fake: publishing scripted/stdin messages (mode mock)");
+  const stop = startFakeSource({
+    toEvent,
+    publish: (ev) => bus.publish("chat.message", ev),
+    cohostName: cfg.cohost.name,
+    intervalMs: cfg.chat.fake.interval_ms,
+    stdin: process.stdin,
+    onError: (err) => log.warn({ err }, "fake chat publish failed"),
+  });
+  heartbeat.ready();
+  onShutdown(() => { stop(); bus.stop(); });
+} else if (plan === "idle") {
+  // A configuration gap, not a crash: stay up so a supervisor sees `degraded`, not a restart loop.
+  const complain = () => log.error("TWITCH_CHANNEL is not set; chat is idle and publishing nothing");
+  complain();
+  heartbeat.degraded("TWITCH_CHANNEL is not set");
+  const timer = setInterval(complain, 60_000);
+  onShutdown(() => { clearInterval(timer); bus.stop(); });
+} else {
+  await startTwitch(channel);
+}
+
+async function buildAuth(): Promise<AuthProvider | undefined> {
+  const { RefreshingAuthProvider } = await import("@twurple/auth");
   const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_ACCESS_TOKEN, TWITCH_REFRESH_TOKEN } = process.env;
   if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET || !TWITCH_ACCESS_TOKEN) return undefined;
   const provider = new RefreshingAuthProvider({ clientId: TWITCH_CLIENT_ID, clientSecret: TWITCH_CLIENT_SECRET });
@@ -45,23 +65,26 @@ function buildAuth(): AuthProvider | undefined {
   return provider;
 }
 
-const authProvider = buildAuth();
-const client = new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } });
+async function startTwitch(channel: string): Promise<void> {
+  const { ChatClient } = await import("@twurple/chat");
+  const authProvider = await buildAuth();
+  const client = new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } });
 
-client.onConnect(() => {
-  connected = true;
-  heartbeat.ready();
-  log.info({ channel, authenticated: !!authProvider }, "connected to twitch chat");
-});
-client.onDisconnect((manually, reason) => {
-  connected = false;
-  log.warn({ manually, reason }, "twitch chat disconnected");
-});
+  client.onConnect(() => {
+    connected = true;
+    heartbeat.ready();
+    log.info({ channel, authenticated: !!authProvider }, "connected to twitch chat");
+  });
+  client.onDisconnect((manually, reason) => {
+    connected = false;
+    log.warn({ manually, reason }, "twitch chat disconnected");
+  });
 
-client.onMessage(async (_chan, user, text, msg) => {
-  const ev = toEvent(user, text, msg.userInfo);
-  if (ev) await bus.publish("chat.message", ev);
-});
+  client.onMessage(async (_chan, user, text, msg) => {
+    const ev = toEvent(user, text, msg.userInfo);
+    if (ev) await bus.publish("chat.message", ev);
+  });
 
-client.connect();
-onShutdown(() => { client.quit(); bus.stop(); });
+  client.connect();
+  onShutdown(() => { client.quit(); bus.stop(); });
+}

@@ -209,3 +209,46 @@ test("bedrock: no server fallbacks, and ping is optimistic", async () => {
   assert.equal("betas" in calls[0]!, false);
   assert.equal(await b.ping(), true);
 });
+
+import { MockProvider, HashEmbedder } from "../src/index.js";
+
+const cosine = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0);
+
+test("mock provider: deterministic, tagged reply; ping true; JSON mode parses", async () => {
+  const p = createChatProvider(llmCfg({ provider: "mock" }));
+  assert.ok(p instanceof MockProvider);
+  assert.equal(p.name, "mock");
+  const msgs = [{ role: "system" as const, content: "s" }, { role: "user" as const, content: "  hello   there " }];
+  const a = await p.chat(msgs);
+  assert.equal(a, await p.chat(msgs));
+  assert.equal(a, "[happy] mock: hello there");
+  assert.equal(await p.ping(), true);
+  assert.equal(p.lastError, undefined);
+  assert.deepEqual(JSON.parse(await p.chat(msgs, { json: true })), {});
+  assert.ok((await p.chat([])).length > 0);
+});
+
+test("mock provider: an already-aborted signal throws", async () => {
+  const p = new MockProvider({ model: "m" });
+  await assert.rejects(p.chat([{ role: "user", content: "x" }], { signal: AbortSignal.abort() }));
+});
+
+test("hash embedder: 64-dim unit vectors, deterministic, token overlap ranks higher; empty is valid", async () => {
+  const e = new HashEmbedder();
+  const [a, b, c] = await Promise.all([e.embed("dog park walk"), e.embed("walk the dog"), e.embed("quantum physics")]);
+  assert.equal(a?.length, 64);
+  assert.ok(Math.abs(cosine(a!, a!) - 1) < 1e-9);
+  assert.deepEqual(await e.embed("dog park walk"), a);
+  assert.ok(cosine(a!, b!) > cosine(a!, c!));
+  assert.ok(cosine(a!, b!) > cosine(b!, c!));
+  const empty = await e.embed("");
+  assert.equal(empty.length, 64);
+  assert.ok(empty.every(Number.isFinite));
+});
+
+test("factory: mock provider needs no network and pairs with the hash embedder; others still use Ollama", () => {
+  const cfg = llmCfg({ provider: "mock" });
+  assert.ok(createEmbedder(cfg) instanceof HashEmbedder);
+  assert.ok(createEmbedder(llmCfg({ provider: "openai" })) instanceof Ollama);
+  assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
+});

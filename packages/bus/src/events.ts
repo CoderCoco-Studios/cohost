@@ -145,6 +145,26 @@ export const EventPayloads = {
     cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality"]),
     text: z.string().optional(),
   }),
+
+  /**
+   * Liveness/readiness report from a service. Carried on the separate
+   * `cohost:health` stream (see publishHealth), never on `cohost:events`.
+   */
+  "service.heartbeat": z.object({
+    service: z.string(),
+    /** Unique per process (the bus consumer name). */
+    instance: z.string(),
+    pid: z.number().int(),
+    version: z.string(),
+    /** Epoch ms the process started; constant for its lifetime. */
+    startedAt: z.number(),
+    state: z.enum(["starting", "ready", "degraded", "stopping"]),
+    deps: z.record(z.enum(["ok", "down", "n/a"])),
+    /** "live" | "mock" | "off" by convention. */
+    mode: z.string(),
+    detail: z.string().optional(),
+    intervalMs: z.number().int().positive(),
+  }),
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

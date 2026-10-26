@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "main": "dist/index.js",
-  "files": ["dist", "public"],
+  "files": [
+    "dist",
+    "public"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
@@ -13,6 +16,7 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
+    "@cohost/control": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

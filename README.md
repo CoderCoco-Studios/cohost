@@ -36,7 +36,7 @@ each other over the same bus, the way the rest of the stack does:
 | `cortex`    | `attention.focus` → LLM → `brain.say`                        | Ollama                      |
 | `voice`     | `brain.say` → TTS → audio + lip-sync envelope                | Kokoro (TTS)                |
 | `avatar`    | canonical avatar state → app-specific driver                 | VTube Studio / VMC          |
-| `dashboard` | live feed, mute/say, audio sink, edit personality            | browser                     |
+| `dashboard` | live feed, mute/say, audio sink, edit personality, services tab | browser                  |
 
 Infra containers: `redis`, `postgres` (pgvector), `ollama`, `tts` (Kokoro-FastAPI), `stt` (speaches / faster-whisper).
 
@@ -230,6 +230,19 @@ Everything in this repo runs on the AI box. The gaming PC only needs:
 
 - OBS with the WebSocket server enabled and reachable on LAN (`OBS_HOST=<gaming-pc-ip>`)
 - the avatar app, *or* run it on the AI box and send it to OBS with NDI
+
+## Service health
+
+Every service publishes a `service.heartbeat` on a separate capped stream
+(`cohost:health`, so it never crowds out the event feed): `starting` at boot,
+`ready` once serving, `degraded` when a dependency is down, `stopping` on
+shutdown, and a repeat every `HEARTBEAT_INTERVAL_MS` (default `5000`, set it in
+`.env`). The dashboard's **services** tab (and `GET /services`) shows each
+service as `up`, `degraded`, `stale` (no heartbeat for 3 intervals), `down`
+(silent for 10 intervals or stopped), `crash-looping` (3 restarts in 60 s) or
+`unknown` (never seen), with its mode (`live`, `mock`, `off`) and dependencies.
+`docker compose ps` reflects the same signal: each app container's healthcheck
+passes only while its heartbeat is fresh.
 
 ## Developing
 

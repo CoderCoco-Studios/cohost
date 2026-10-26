@@ -11,14 +11,16 @@
  * lowers the bar to speak), `brain.status` / `brain.say` (don't pile on while
  * the cortex is thinking or the voice is still playing).
  */
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { createScorer } from "./scoring.js";
 import { Salience } from "./salience.js";
+import { salienceHealth } from "./health.js";
 
 const log = createLogger("salience");
 const cfg = loadConfig();
 const bus = new Bus("salience", log);
+const heartbeat = startHeartbeat(bus, { ...salienceHealth, log });
 const scorer = createScorer(cfg, log);
 const salience = new Salience({ cfg, bus, scorer, log });
 
@@ -32,6 +34,7 @@ async function main() {
     (ev) => salience.onEvent(ev),
   );
   setInterval(() => void salience.tick(), cfg.brain.salience.tick_ms);
+  heartbeat.ready();
   log.info({ reflexes: salience.reflexes.size, threshold: cfg.brain.salience.speak_threshold, scorer: scorer.kind }, "salience online");
 }
 

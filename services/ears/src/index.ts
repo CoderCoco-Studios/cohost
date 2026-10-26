@@ -19,20 +19,31 @@ import {
 } from "@discordjs/voice";
 import prism from "prism-media";
 import { Readable } from "node:stream";
-import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat, type BusEvent } from "@cohost/bus";
 import { createLogger, env, loadConfig } from "@cohost/config";
 import { Hearing, sttTranscriber } from "./hearing.js";
 import { Playback, httpAudio } from "./playback.js";
+import { EarsHealth } from "./health.js";
 
 const log = createLogger("ears");
 const cfg = loadConfig();
 const bus = new Bus("ears", log);
+const token = process.env.DISCORD_TOKEN ?? "";
+let voiceReady = false;
+const health = new EarsHealth(!!token, () => voiceReady);
+const heartbeat = startHeartbeat(bus, { ...health.spec, log });
+if (!token) {
+  log.error("DISCORD_TOKEN is not set; ears cannot start");
+  heartbeat.degraded("DISCORD_TOKEN is not set");
+  await heartbeat.stop();
+  process.exit(1);
+}
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers] });
 const player = createAudioPlayer();
 let connection: VoiceConnection | undefined;
 const listening = new Set<string>();
-const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: sttTranscriber(cfg.ears) });
+const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
 const playback = new Playback({
   bus, log, fetchAudio: httpAudio,
   play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
@@ -75,6 +86,8 @@ async function join() {
   });
   await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
   connection.subscribe(player);
+  voiceReady = true;
+  heartbeat.ready();
   log.info({ channel: channel.name }, "joined voice");
 
   connection.receiver.speaking.on("start", (userId) => {
@@ -88,6 +101,7 @@ async function join() {
         entersState(connection!, VoiceConnectionStatus.Connecting, 5_000),
       ]);
     } catch {
+      voiceReady = false;
       log.warn("voice disconnected, rejoining in 5s");
       connection?.destroy();
       setTimeout(() => void join().catch((e) => log.error({ e }, "rejoin failed")), 5000);

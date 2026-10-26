@@ -1,7 +1,7 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
 import { randomUUID } from "node:crypto";
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+import { EventPayloads, startHeartbeat, type BusEvent, type EventInput, type EventType, type HeartbeatSpec, type Publisher } from "@cohost/bus";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
@@ -39,8 +39,25 @@ export function recordingLog() {
 /** Validates like the real Bus, records instead of talking to Redis. */
 export class FakeBus implements Publisher {
   published: { type: EventType; data: unknown }[] = [];
+  /** Heartbeats published via publishHealth (the real Bus puts these on cohost:health). */
+  health: BusEvent<"service.heartbeat">["data"][] = [];
+  readonly consumer = "fake-instance";
   fail?: (type: EventType) => boolean;
+  /** Make publishHealth reject, to test publish-failure handling. */
+  failHealth = false;
+  async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
+    const parsed = EventPayloads["service.heartbeat"].parse(data);
+    if (this.failHealth) throw new Error("publishHealth failed");
+    this.health.push(parsed);
+    return String(this.health.length);
+  }
+  async recentHealth(count = 100): Promise<BusEvent<"service.heartbeat">[]> {
+    return this.health.slice(-count).map((data, i) => ({
+      id: String(i), type: "service.heartbeat" as const, ts: Date.now(), source: data.service, data,
+    }));
+  }
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
+    if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
     if (this.fail?.(type)) throw new Error(`publish ${type} failed`);
     this.published.push({ type, data: parsed });
@@ -52,12 +69,28 @@ export class FakeBus implements Publisher {
   types(): EventType[] {
     return this.published.map((p) => p.type);
   }
-  clear(): void { this.published = []; }
+  clear(): void { this.published = []; this.health = []; }
 }
 
 /** A bus event as a subscriber would receive it. */
 export function event<T extends EventType>(type: T, data: EventInput<T>, source = "test"): BusEvent<T> {
   return { id: randomUUID(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
+}
+
+/**
+ * Run a service's heartbeat against a FakeBus: `drive` moves it through its lifecycle,
+ * then the stopping heartbeat is sent. Returns every heartbeat published, in order.
+ */
+export async function runHeartbeat(
+  spec: HeartbeatSpec,
+  drive: (hb: ReturnType<typeof startHeartbeat>) => void | Promise<void> = (hb) => hb.ready(),
+): Promise<BusEvent<"service.heartbeat">["data"][]> {
+  const bus = new FakeBus();
+  const hb = startHeartbeat(bus, { ...spec, intervalMs: 60_000 });
+  await drive(hb);
+  await new Promise((r) => setTimeout(r, 10));
+  await hb.stop();
+  return bus.health;
 }
 
 export async function waitFor(cond: () => boolean, what = "condition", ms = 2000): Promise<void> {

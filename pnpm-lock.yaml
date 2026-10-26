@@ -42,6 +42,15 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
+  packages/control:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+
   packages/llm:
     dependencies:
       '@anthropic-ai/bedrock-sdk':
@@ -112,6 +121,9 @@ importers:
         specifier: ^8.18.0
         version: 8.22.0
     devDependencies:
+      '@cohost/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.2
@@ -165,6 +177,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/control':
+        specifier: workspace:*
+        version: link:../../packages/control
       ws:
         specifier: ^8.18.0
         version: 8.22.0

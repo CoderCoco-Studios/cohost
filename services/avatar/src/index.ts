@@ -2,15 +2,18 @@
  * avatar — drives whatever avatar app you run (2D or 3D) from bus events.
  * Pick the app with AVATAR_DRIVER in .env; map emotions in config/expressions.yaml.
  */
-import { Bus, onShutdown, type BusEvent } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat, type BusEvent } from "@cohost/bus";
 import { configDir, createLogger, loadConfig, loadExpressions } from "@cohost/config";
 import { createDriver } from "./drivers/index.js";
 import { Engine } from "./engine.js";
+import { avatarHealth } from "./health.js";
 
 const log = createLogger("avatar");
 const cfg = loadConfig();
 const bus = new Bus("avatar", log);
 const driver = createDriver(cfg.avatar);
+const heartbeat = startHeartbeat(bus, { ...avatarHealth(driver), log });
+heartbeat.ready(); // driver selected; deps.driver follows its connection
 
 const exprCfg = loadExpressions()[cfg.avatar.driver] ?? { gestures: {} };
 const { gestures, ...expressions } = exprCfg;

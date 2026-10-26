@@ -6,6 +6,7 @@
     { "path": "packages/llm" },
     { "path": "packages/modules" },
     { "path": "packages/working-memory" },
+    { "path": "packages/control" },
     { "path": "packages/testing" },
     { "path": "services/chat" },
     { "path": "services/salience" },

@@ -11,32 +11,38 @@
  *
  * Consolidation ("sleep") is reflect.ts, run between streams.
  */
-import { Bus, onShutdown } from "@cohost/bus";
+import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
 import { createLogger, loadConfig } from "@cohost/config";
 import { createEmbedder, Ollama } from "@cohost/llm";
 import { MemoryStore, type MemoryBackend } from "./store.js";
 import { InMemoryStore } from "./fake-store.js";
+import { MemoryHealth } from "./health.js";
 import { createMemoryHandler } from "./region.js";
 
 const log = createLogger("memory");
 const cfg = loadConfig();
 const bus = new Bus("memory", log);
 const fake = cfg.brain.memory.store === "memory";
+const health = new MemoryHealth(fake);
+const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 const ollama = new Ollama(cfg.llm); // embeddings are always local, whatever the chat provider
 const store: MemoryBackend = fake
   ? new InMemoryStore(cfg.brain.memory)
-  : new MemoryStore(createEmbedder(cfg.llm), cfg.brain.memory, log);
+  : new MemoryStore(health.embedder(createEmbedder(cfg.llm)), cfg.brain.memory, log);
 const onEvent = createMemoryHandler({ cfg, bus, store });
 
 async function main() {
   if (fake) log.warn("brain.memory.store is 'memory': in-process fake, nothing is persisted");
   while (!fake && !(await ollama.ping())) {
+    health.setOllama(false);
     log.warn("waiting for ollama (embeddings)...");
     await sleep(3000);
   }
+  health.setOllama(true);
   for (let attempt = 1; ; attempt++) {
-    try { await store.init(); break; }
+    try { await store.init(); health.setPostgres(true); break; }
     catch (err) {
+      health.setPostgres(false);
       if (attempt > 20) throw err;
       log.warn({ err: String(err) }, "postgres not ready, retrying in 3s");
       await sleep(3000);
@@ -45,6 +51,7 @@ async function main() {
   // Two consumer groups so a recall never queues behind the (embed + INSERT) writes.
   void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], fromNow: true }, onEvent);
   void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], fromNow: true }, onEvent);
+  heartbeat.ready();
   log.info({ recall_k: cfg.brain.memory.recall_k }, "memory online");
 }
 

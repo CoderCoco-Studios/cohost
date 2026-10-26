@@ -1,7 +1,7 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
-import type { ServiceHealth } from "@cohost/control";
+import { bearerOk, type ServiceController, type ServiceHealth, type StartMode } from "@cohost/control";
 
 export interface DashboardDeps {
   bus: Publisher;
@@ -15,7 +15,15 @@ export interface DashboardDeps {
   savePersonality: (text: string) => void;
   /** Derived per-service health (HealthTracker snapshot). */
   services: () => ServiceHealth[];
+  /**
+   * Present only when CONTROL_ENABLED=1. Its presence turns on the service routes AND the bearer
+   * token requirement on every mutating route (`POST /control`, `PUT /personality`).
+   */
+  control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
 }
+
+const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
+const REFUSAL_STATUS = { unknown: 404, conflict: 409, forbidden: 403 } as const;
 
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
@@ -39,20 +47,46 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ services: d.services() }));
         return;
       }
+      if (req.method === "GET" && url.pathname === "/services/control") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify(d.control ? { enabled: true, runtime: d.control.runtime, advanced: d.control.advanced } : { enabled: false }));
+        return;
+      }
+      const life = req.method === "POST" ? LIFECYCLE.exec(url.pathname) : null;
+      if (life) {
+        const ctl = d.control;
+        if (!ctl) { res.writeHead(404); res.end("not found"); return; }
+        if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
+        const opts = parseLifecycleBody(await body(req));
+        if (!opts) { res.writeHead(400); res.end("bad request body"); return; }
+        const id = decodeURIComponent(life[1]!);
+        const action = life[2] as "start" | "stop" | "restart";
+        const out = await ctl.controller[action](id, opts);
+        if (out.refused) {
+          res.writeHead(REFUSAL_STATUS[out.refused], { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, detail: out.detail }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: out.ok, ...(out.detail ? { detail: out.detail } : {}) }));
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/personality") {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         res.end(d.loadPersonality());
         return;
       }
       if (req.method === "PUT" && url.pathname === "/personality") {
+        if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
         d.savePersonality(await body(req));
         await d.bus.publish("control", { cmd: "reload_personality" });
         res.writeHead(204); res.end();
         return;
       }
       if (req.method === "POST" && url.pathname === "/control") {
-        const { cmd, text } = JSON.parse(await body(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string };
-        await d.bus.publish("control", { cmd, text });
+        if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
+        const { cmd, text, target } = JSON.parse(await body(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string };
+        await d.bus.publish("control", { cmd, text, target });
         res.writeHead(204); res.end();
         return;
       }
@@ -69,6 +103,23 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       res.writeHead(500); res.end(String(err));
     }
   };
+}
+
+function unauthorized(res: http.ServerResponse): void {
+  res.writeHead(401, { "www-authenticate": "Bearer" });
+  res.end("unauthorized");
+}
+
+/** Only `mode` and `isolated` are read from the body; anything else is ignored. Undefined = malformed. */
+function parseLifecycleBody(raw: string): { mode?: StartMode; isolated?: boolean } | undefined {
+  if (raw.trim() === "") return {};
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return undefined; }
+  if (typeof j !== "object" || j === null || Array.isArray(j)) return undefined;
+  const { mode, isolated } = j as { mode?: unknown; isolated?: unknown };
+  if (mode !== undefined && mode !== "resume" && mode !== "fresh") return undefined;
+  if (isolated !== undefined && typeof isolated !== "boolean") return undefined;
+  return { mode, isolated };
 }
 
 function body(req: http.IncomingMessage): Promise<string> {

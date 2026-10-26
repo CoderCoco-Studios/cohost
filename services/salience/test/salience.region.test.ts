@@ -158,3 +158,32 @@ test("reflex: never talks over the cortex, inside the cooldown, or while muted",
   await muted.s.onEvent(chat("you died"));
   assert.equal(muted.bus.of("brain.say").length, 0);
 });
+
+test("pause: no attention.focus or reflex while paused, intake continues; resume restores; other targets ignored", async () => {
+  const { s, bus } = setup({ reflexes: [DIED] });
+  await s.onEvent(event("control", { cmd: "pause", target: "voice" })); // not for us
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1);
+
+  bus.clear();
+  await s.onEvent(event("control", { cmd: "pause", target: "salience" }));
+  await s.onEvent(chat("hey again Coco?", { mentionsCohost: true }));
+  await s.onEvent(event("vision.summary", { text: "you died", changed: true }));
+  await s.tick();
+  assert.equal(bus.published.length, 0, "no focus, no reflex while paused");
+  assert.ok(s.ctx.unseen().length > 0, "events were still taken in");
+
+  await s.onEvent(event("control", { cmd: "resume" })); // no target = all
+  await s.onEvent(idle);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1);
+});
+
+test("a targeted mute for another service does not mute salience", async () => {
+  const { s, bus } = setup();
+  await s.onEvent(event("control", { cmd: "mute", target: "cortex" }));
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1);
+});

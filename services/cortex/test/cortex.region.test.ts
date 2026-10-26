@@ -279,3 +279,26 @@ test("control: say speaks as the operator; forget_context clears the window and 
   assert.doesNotMatch(llm.system, /bob is new/);
   assert.doesNotMatch(llm.calls[0]![1]!.content, /old news/);
 });
+
+test("pause: no LLM call, status muted; resume restores; a pause for another service is ignored", async () => {
+  const { cortex, llm, bus, statuses } = setup();
+  await cortex.onEvent(event("control", { cmd: "pause", target: "voice" }));
+  assert.deepEqual(statuses(), []);
+
+  await cortex.onEvent(event("control", { cmd: "pause", target: "cortex" }));
+  await cortex.think(mention());
+  assert.equal(llm.calls.length, 0, "no LLM call while paused");
+  assert.deepEqual(statuses(), ["muted", "muted"]);
+
+  await cortex.onEvent(event("control", { cmd: "resume" }));
+  bus.clear();
+  await cortex.think(mention());
+  assert.equal(llm.calls.length, 1);
+});
+
+test("a targeted mute for another service does not mute the cortex", async () => {
+  const { cortex, llm } = setup();
+  await cortex.onEvent(event("control", { cmd: "mute", target: "salience" }));
+  await cortex.think(mention());
+  assert.equal(llm.calls.length, 1);
+});

@@ -19,6 +19,7 @@ import { createLogger, envOr, loadConfig, loadPersonality, savePersonality, urls
 import { createDashboardHandler } from "./routes.js";
 import { createFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
+import { setupControl } from "./control.js";
 
 const log = createLogger("dashboard");
 const cfg = loadConfig();
@@ -28,10 +29,11 @@ const tracker = new HealthTracker();
 const PORT = Number(envOr("PORT", String(cfg.dashboard.port)));
 const VOICE = urls.voice();
 const here = dirname(fileURLToPath(import.meta.url));
+const { control, bind } = setupControl(process.env, bus, log);
 const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
 const server = http.createServer(
-  createDashboardHandler({ bus, log, html, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot() }),
+  createDashboardHandler({ bus, log, html, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot(), control }),
 );
 
 const wss = new WebSocketServer({ server, path: "/ws" });
@@ -39,5 +41,6 @@ const feed = createFeed({ bus, tracker, clients: () => wss.clients });
 wss.on("connection", (ws) => void feed.onConnection(ws));
 void feed.start();
 
-server.listen(PORT, () => { heartbeat.ready(); log.info({ port: PORT }, "dashboard online"); });
+const onListening = () => { heartbeat.ready(); log.info({ port: PORT, bind: bind ?? "default" }, "dashboard online"); };
+if (bind) server.listen(PORT, bind, onListening); else server.listen(PORT, onListening);
 onShutdown(() => { feed.stop(); wss.close(); server.close(); bus.stop(); });

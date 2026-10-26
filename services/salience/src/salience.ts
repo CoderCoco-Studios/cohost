@@ -20,6 +20,8 @@ export class Salience {
   readonly scheduler: Scheduler;
   readonly reflexes: Reflexes;
   private muted = false;
+  /** Paused by `control pause`: keeps reading events (context is not lost) but decides and reflexes nothing. */
+  private paused = false;
   private arousal = 0;
   /** What the cortex / voice are up to, as last reported on the bus. */
   private cortexState: "idle" | "thinking" | "speaking" | "muted" = "idle";
@@ -71,6 +73,9 @@ export class Salience {
         break;
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
+        if (d.target && d.target !== "salience") break; // addressed to another service
+        if (d.cmd === "pause") this.paused = true;
+        if (d.cmd === "resume") this.paused = false;
         if (d.cmd === "mute") this.muted = true;
         if (d.cmd === "unmute") this.muted = false;
         if (d.cmd === "forget_context") this.ctx.clear();
@@ -81,7 +86,7 @@ export class Salience {
 
   /** Fast path. Fires immediately, bypassing the scheduler and the LLM. */
   private async reflex(sense: Sense, text: string) {
-    if (this.muted || this.reflexes.size === 0) return;
+    if (this.paused || this.muted || this.reflexes.size === 0) return;
     // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
     // Gate before test(), which spends the rule's own cooldown on a hit.
     if (this.busy() || this.scheduler.cooling()) return;
@@ -102,7 +107,7 @@ export class Salience {
   }
 
   async tick(): Promise<void> {
-    if (this.deciding) return; // an llm/http scorer can take longer than a tick
+    if (this.paused || this.deciding) return; // an llm/http scorer can take longer than a tick
     this.deciding = true;
     let decision;
     try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.muted, this.arousal); }

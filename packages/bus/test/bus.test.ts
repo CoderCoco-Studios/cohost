@@ -254,3 +254,43 @@ test("tracked() reports each call's outcome and still propagates errors", async 
   await assert.rejects(fn(1));
   assert.deepEqual(seen, [true, false]);
 });
+
+// ---- service.lifecycle / control target ----
+
+test("service.lifecycle is catalogued and validated", () => {
+  const ok = { service: "voice", action: "stop", by: "dashboard", ok: true };
+  assert.ok(EVENT_TYPES.includes("service.lifecycle"));
+  assert.ok(EventPayloads["service.lifecycle"].safeParse(ok).success);
+  assert.ok(EventPayloads["service.lifecycle"].safeParse({ ...ok, ok: false, detail: "boom" }).success);
+  assert.equal(EventPayloads["service.lifecycle"].safeParse({ ...ok, action: "kill" }).success, false);
+  assert.equal(EventPayloads["service.lifecycle"].safeParse({ ...ok, ok: "yes" }).success, false);
+});
+
+test("control: no target is still valid, target and pause/resume are accepted", () => {
+  assert.ok(EventPayloads.control.safeParse({ cmd: "mute" }).success);
+  assert.ok(EventPayloads.control.safeParse({ cmd: "pause", target: "affect" }).success);
+  assert.ok(EventPayloads.control.safeParse({ cmd: "resume" }).success);
+  assert.equal(EventPayloads.control.safeParse({ cmd: "explode" }).success, false);
+  assert.equal(EventPayloads.control.safeParse({ cmd: "mute", target: 3 }).success, false);
+});
+
+test("resetGroup creates a missing group at $ and moves an existing one to $ (needs Redis)", needsRedis, async () => {
+  const bus = new Bus("t", undefined, url);
+  const raw = new Redis(url);
+  const group = `reset-${Date.now()}`;
+  try {
+    await bus.resetGroup(group); // missing: created
+    await bus.publish("control", { cmd: "mute" });
+    await raw.xgroup("SETID", "cohost:events", group, "0");
+    await bus.resetGroup(group); // existing: moved to $
+    const groups = (await raw.xinfo("GROUPS", "cohost:events")) as unknown[][];
+    const g = groups.find((row) => row[1] === group)!;
+    const lastDelivered = g[g.indexOf("last-delivered-id") + 1];
+    const tail = (await raw.xrevrange("cohost:events", "+", "-", "COUNT", 1)) as [string, string[]][];
+    assert.equal(lastDelivered, tail[0]![0]);
+    await raw.xgroup("DESTROY", "cohost:events", group);
+  } finally {
+    raw.disconnect();
+    bus.stop();
+  }
+});

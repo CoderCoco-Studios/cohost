@@ -129,3 +129,29 @@ test("llm/http kind: when appraisal falls behind, the oldest waiting lines are d
   await affect.settled();
   assert.deepEqual(seen.map((s) => s.text), ["line number 0", ...[4, 5, 6, 7, 8, 9, 10, 11].map((n) => `line number ${n}`)]);
 });
+
+test("pause: events stop nudging the mood while paused; resume restores; other targets ignored", () => {
+  const { affect } = setup();
+  affect.onEvent(event("control", { cmd: "pause", target: "voice" })); // not for us
+  affect.onEvent(chat("lol clutch"));
+  const v1 = affect.mood.valence;
+  assert.ok(v1 > 0);
+
+  affect.onEvent(event("control", { cmd: "pause", target: "affect" }));
+  affect.onEvent(chat("lol clutch"));
+  affect.onEvent(event("vision.summary", { text: "x", changed: true }));
+  assert.equal(affect.mood.valence, v1);
+
+  affect.onEvent(event("control", { cmd: "resume" }));
+  affect.onEvent(chat("lol clutch"));
+  assert.ok(affect.mood.valence > v1);
+});
+
+test("pause: decay continues while paused", () => {
+  const { affect } = setup();
+  affect.onEvent(chat("lol clutch"));
+  affect.onEvent(event("control", { cmd: "pause" }));
+  const spy = mock.method(affect.mood, "tick");
+  affect.publish();
+  assert.equal(spy.mock.callCount(), 1);
+});

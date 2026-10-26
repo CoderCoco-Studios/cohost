@@ -331,6 +331,96 @@ a container is unsupported. `process` children are detached and tracked in memor
 the dashboard restarts it can no longer stop them (the services tab still shows their health),
 and `cohostctl stop` cannot stop a process started by another invocation; use `compose` there.
 
+## Test inputs (inject chat, images, audio)
+
+Exercise the brain without a live stream: type a fake viewer message, drop in a
+screenshot, upload a spoken clip, and watch the real pipeline react. The dashboard's
+**test inputs** panel and three HTTP routes feed it. Injected input is treated as real
+by salience, affect and cortex, so the reply can be spoken aloud on stream (mute with
+`control`).
+
+Two levels, picked per request:
+
+- **service**: the target service runs its real code path (chat publishes as a viewer,
+  eyes describes your image with the vision model, ears transcribes your clip with STT).
+- **bus**: the dashboard publishes the perception event itself, skipping eyes/ears. Text
+  only, with `as` = `chat` (default), `speech` or `vision`.
+
+The panel has a text box, viewer fields (name, platform, mod, sub), a **level** select
+(`service (real pipeline)` / `bus (skip perception)`; bus shows the `as` select and
+disables the image and audio pickers), an **image** and an **audio** file picker with
+their send buttons, an optional **record** button (only where the browser has
+`MediaRecorder`), and a **store in memory** checkbox (off by default). The status line
+shows the matching `inject.result`, or "no response from <target> after 10 s (is it
+running?)". While `CONTROL_ENABLED=1` the panel prompts for the token like the service
+controls.
+
+```bash
+T="authorization: Bearer $CONTROL_TOKEN"     # omit the header unless CONTROL_ENABLED=1
+D=http://127.0.0.1:3000
+
+# service level: chat publishes it as a viewer (platform: twitch|youtube|discord)
+curl -X POST -H "$T" -H 'content-type: application/json' \
+  -d '{"level":"service","text":"hey cohost, how is the run going?","user":"bob","platform":"twitch","isMod":true}' $D/inject/text
+# bus level: as = chat | speech | vision
+curl -X POST -H "$T" -H 'content-type: application/json' \
+  -d '{"level":"bus","as":"vision","text":"a boss fight starts","remember":false}' $D/inject/text
+
+# raw body + Content-Type, options in the query string (level defaults to service)
+curl -X POST -H "$T" -H 'content-type: image/png' --data-binary @shot.png "$D/inject/image?remember=1"
+curl -X POST -H "$T" -H 'content-type: audio/wav' --data-binary @clip.wav "$D/inject/audio?user=alice"
+```
+
+All three answer `202 {"id": "..."}`; the id correlates with the `inject.result`.
+Accepted types: `image/png|jpeg|webp`; `audio/wav|x-wav|mpeg|ogg|webm|mp4`. Errors: `400`
+(blank text, bad `level`/`as`, empty body, `level=bus` on image/audio: use `/inject/text`;
+service level supports only `as: chat`), `401` (missing token while control is enabled),
+`413` (over the size cap), `415` (other content type). `user` on audio labels the
+speaker (default `injected`); `remember` is `1` or `true`.
+
+On the bus (`cohost:events`) you will see `inject.request {id, target, kind, url?, text?,
+meta?, remember}` (service level only), then the normal `chat.message` / `vision.summary`
+/ `speech.heard` with `injected: true` (and `remember`), then `inject.result {id, ok,
+detail?}` (the produced text on success, the reason on failure). Images and audio never
+ride the stream: the dashboard keeps them in memory and serves them at `GET /uploads/:id`
+(unguessable id, no token), and the request carries that URL. The feed shows an
+**injected** badge on such rows, plus **remembered** when `remember` is set.
+
+`remember` (default false) governs memory only: with it off the memory region ignores the
+injected input (no memory, no viewer row, no `memory.viewer`) and also the co-host's
+replies to it (`brain.say` carries the flag). Set it true to store both. It means nothing
+on real events. The baseline memory region does not store `vision.summary`, so it is a
+no-op for vision today.
+
+| Env | Meaning |
+|---|---|
+| `INJECT_MAX_IMAGE_BYTES` | image upload cap, default `8388608` (8 MiB) |
+| `INJECT_MAX_AUDIO_BYTES` | audio upload cap, default `26214400` (25 MiB) |
+| `INJECT_TTL_MS` | how long an upload stays fetchable, default `600000` (10 min) |
+| `DASHBOARD_URL` | where eyes and ears fetch uploads; default `http://127.0.0.1:3000`. `docker-compose.yml` sets `http://dashboard:3000`; outside compose, point it at wherever the dashboard listens |
+
+The store also holds at most 16 uploads and 64 MiB, evicting the oldest, and is lost when
+the dashboard restarts. Eyes and ears only fetch URLs under `DASHBOARD_URL/uploads/`;
+without a reachable `DASHBOARD_URL` (the loopback default inside a container) the request
+fails with `ok:false`. Requests older than 60 s when a service picks them up are dropped
+as `stale`.
+
+Chat injection bypasses `chat.ignore_users` and `chat.ignore_prefixes` (a test that is
+silently dropped is useless).
+
+What must be running:
+
+| Input | Needs |
+|---|---|
+| text, service level | chat (any `CHAT_SOURCE`, no Twitch channel needed) |
+| text, bus level | nothing beyond the brain regions that react (salience, cortex, ...) |
+| image | eyes plus a reachable vision model; OBS and `VISION_ENABLED` are not needed |
+| audio | ears plus a reachable STT server; Discord and `EARS_SOURCE` are not needed |
+
+Isolated presets are fine: they keep the services running idle while the inject handlers
+stay wired. For a no-hardware loop use the mock LLM and in-memory store from the previous
+sections with bus-level text.
+
 ## Developing
 
 ```bash

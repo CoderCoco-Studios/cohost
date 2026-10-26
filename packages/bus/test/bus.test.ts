@@ -294,3 +294,42 @@ test("resetGroup creates a missing group at $ and moves an existing one to $ (ne
     bus.stop();
   }
 });
+
+// ---- test injection ----
+
+test("injection flags are optional and absent on real payloads", () => {
+  const chat = EventPayloads["chat.message"].parse({ platform: "twitch", user: "u", text: "hi" });
+  assert.equal("injected" in chat, false);
+  assert.equal("remember" in chat, false);
+  const sp = EventPayloads["speech.heard"].parse({ speaker: "s", text: "t", durationMs: 1 });
+  assert.equal("injected" in sp, false);
+  const vis = EventPayloads["vision.summary"].parse({ text: "t" });
+  assert.equal("remember" in vis, false);
+  const say = EventPayloads["brain.say"].parse({ id: "1", text: "hi", emotion: "neutral" });
+  assert.equal("injected" in say, false);
+  const focus = EventPayloads["attention.focus"].parse({ reason: "r", score: 1 });
+  assert.equal("injected" in focus, false);
+});
+
+test("injection flags are accepted and kept; non-boolean rejected", () => {
+  const vis = EventPayloads["vision.summary"].parse({ text: "t", changed: true, injected: true, remember: false });
+  assert.equal(vis.injected, true);
+  assert.equal(vis.remember, false);
+  assert.equal(EventPayloads["brain.say"].parse({ id: "1", text: "hi", emotion: "neutral", injected: true, remember: false }).injected, true);
+  assert.equal(EventPayloads["attention.focus"].parse({ reason: "r", score: 1, injected: true }).injected, true);
+  assert.equal(EventPayloads["chat.message"].safeParse({ platform: "twitch", user: "u", text: "x", injected: "yes" }).success, false);
+});
+
+test("inject.request / inject.result are catalogued and validated", () => {
+  assert.ok(EVENT_TYPES.includes("inject.request"));
+  assert.ok(EVENT_TYPES.includes("inject.result"));
+  const req = { id: "a", target: "eyes", kind: "image", url: "http://dashboard:3000/uploads/abc", remember: false };
+  assert.ok(EventPayloads["inject.request"].safeParse(req).success);
+  assert.ok(EventPayloads["inject.request"].safeParse({ id: "a", target: "chat", kind: "text", text: "x", meta: { user: "u", platform: "youtube", isMod: true }, remember: true }).success);
+  assert.equal(EventPayloads["inject.request"].safeParse({ ...req, target: "voice" }).success, false);
+  assert.equal(EventPayloads["inject.request"].safeParse({ ...req, kind: "video" }).success, false);
+  const { remember: _r, ...noRemember } = req;
+  assert.equal(EventPayloads["inject.request"].safeParse(noRemember).success, false);
+  assert.ok(EventPayloads["inject.result"].safeParse({ id: "a", ok: false, detail: "stt 503" }).success);
+  assert.equal(EventPayloads["inject.result"].safeParse({ id: "a" }).success, false);
+});

@@ -11,6 +11,7 @@ import { createLogger, loadConfig } from "@cohost/config";
 import { channelName, chatPlan, createChatFilter } from "./filter.js";
 import { chatHealth } from "./health.js";
 import { startFakeSource } from "./fake.js";
+import { createInjectHandler } from "./inject.js";
 
 const log = createLogger("chat");
 const cfg = loadConfig();
@@ -22,6 +23,12 @@ const plan = chatPlan(cfg.chat);
 let connected = false;
 const heartbeat = startHeartbeat(bus, { ...chatHealth(channel, () => connected, source), log });
 const toEvent = createChatFilter(cfg);
+
+// Test injection is handled whatever the source (twitch/fake/idle); it needs no channel or connection.
+void bus.subscribe(
+  { group: "chat", types: ["inject.request"], fromNow: true },
+  createInjectHandler({ bus, log, cohostName: cfg.cohost.name }),
+);
 
 if (plan === "fake") {
   // No channel, credentials or network; @twurple is never loaded.

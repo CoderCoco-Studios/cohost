@@ -10,11 +10,16 @@ export interface HearingDeps {
   transcribe: (wav: Buffer) => Promise<string>;
 }
 
+const EXT: Record<string, string> = {
+  "audio/wav": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "mp4",
+};
+
 /** The STT container (speaches / faster-whisper, OpenAI-compatible). */
-export function sttTranscriber(cfg: Config["ears"]): (wav: Buffer) => Promise<string> {
-  return async (wav) => {
+export function sttTranscriber(cfg: Config["ears"]): (audio: Buffer, hint?: { contentType: string }) => Promise<string> {
+  return async (wav, hint) => {
+    const type = hint?.contentType.split(";")[0]?.trim() || "audio/wav";
     const form = new FormData();
-    form.append("file", new Blob([wav], { type: "audio/wav" }), "speech.wav");
+    form.append("file", new Blob([wav], { type }), `speech.${EXT[type] ?? "wav"}`);
     form.append("model", cfg.stt_model);
     form.append("language", "en");
     form.append("response_format", "json");

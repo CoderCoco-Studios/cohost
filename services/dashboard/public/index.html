@@ -42,6 +42,11 @@
   .hint { color:var(--dim); font-size:12px }
   .svc td.act { white-space:nowrap } .svc td.act button { padding:2px 8px; font-size:12px }
   #ctlBar select, #ctlBar label { font-size:12px; color:var(--dim) } #ctlBar select { background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:3px }
+  .badge.inj { color:var(--warn); border-color:var(--warn); font-size:11px; padding:0 7px; margin-left:6px }
+  .badge.mem { color:var(--ok); border-color:var(--ok); font-size:11px; padding:0 7px; margin-left:4px }
+  #injText { min-height:60px; margin-bottom:6px }
+  #injStatus.ok{color:var(--ok)} #injStatus.bad{color:var(--bad)}
+  .inj-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px }
 </style>
 </head>
 <body>
@@ -64,6 +69,25 @@
     <div class="panel">
       <h2>say something</h2>
       <div class="row"><input id="say" placeholder="Type a line for the co-host to speak…"><button id="sayBtn">say</button><button id="forget">wipe context</button></div>
+    </div>
+    <div class="panel" id="injPanel">
+      <h2>test inputs</h2>
+      <textarea id="injText" placeholder="Type a fake viewer message (or the speech / screen line at bus level)…"></textarea>
+      <div class="inj-grid">
+        <input id="injUser" placeholder="viewer name (default injected_viewer)">
+        <select id="injPlatform"><option>twitch</option><option>youtube</option><option>discord</option></select>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <label>level <select id="injLevel"><option value="service">service (real pipeline)</option><option value="bus">bus (skip perception)</option></select></label>
+        <label id="injAsWrap" style="display:none">as <select id="injAs"><option value="chat">chat</option><option value="speech">speech</option><option value="vision">vision</option></select></label>
+        <label><input type="checkbox" id="injMod" style="width:auto"> mod</label>
+        <label><input type="checkbox" id="injSub" style="width:auto"> sub</label>
+        <label title="Off: the memory region ignores this input and any reply to it"><input type="checkbox" id="injRemember" style="width:auto"> store in memory</label>
+      </div>
+      <div class="row" style="margin-bottom:6px"><button id="injSend">send text</button></div>
+      <div class="row" style="margin-bottom:6px"><input type="file" id="injImage" accept="image/png,image/jpeg,image/webp"><button id="injImageBtn">send image</button></div>
+      <div class="row" style="margin-bottom:6px"><input type="file" id="injAudio" accept="audio/*"><button id="injAudioBtn">send audio</button><button id="injRec" style="display:none">&#9210; record</button></div>
+      <div id="injStatus" class="hint">Injected input is treated as real by the brain and may be spoken aloud.</div>
     </div>
   </section>
   <section class="col">
@@ -143,6 +167,70 @@ $("#forget").onclick = () => post("/control", { cmd: "forget_context" });
 fetch("/personality").then(r => r.text()).then(t => $("#pers").value = t);
 $("#savePers").onclick = async () => { await authFetch("/personality", { method: "PUT", body: $("#pers").value }); $("#persMsg").textContent = "saved · brain reloaded"; setTimeout(() => $("#persMsg").textContent = "", 2500); };
 
+// ---------- test inputs
+const injSet = (msg, cls = "") => { const el = $("#injStatus"); el.textContent = msg; el.className = "hint " + cls; };
+const TARGET = { text: "chat", image: "eyes", audio: "ears" };
+const injResults = new Map(); // id -> inject.result data, for results that beat the HTTP response
+const injPending = new Map(); // id -> timeout handle
+function injShow(r) { injSet(r.ok ? `ok${r.detail ? ": " + r.detail : ""}` : `failed${r.detail ? ": " + r.detail : ""}`, r.ok ? "ok" : "bad"); }
+function injTrack(id, kind) {
+  if (injResults.has(id)) { injShow(injResults.get(id)); return; }
+  injSet(`sent to ${TARGET[kind]}, waiting for result…`);
+  injPending.set(id, setTimeout(() => { injPending.delete(id); injSet(`no response from ${TARGET[kind]} after 10 s (is it running?)`, "bad"); }, 10000));
+}
+function onInjectResult(r) {
+  injResults.set(r.id, r);
+  if (injResults.size > 50) injResults.delete(injResults.keys().next().value);
+  if (injPending.has(r.id)) { clearTimeout(injPending.get(r.id)); injPending.delete(r.id); injShow(r); }
+}
+async function injFinish(r, kind, level) {
+  if (!r.ok) { injSet(`rejected (${r.status}): ${(await r.text()).slice(0, 200)}`, "bad"); return; }
+  const { id } = await r.json();
+  if (level === "bus") injSet("published at bus level (no service result)", "ok"); else injTrack(id, kind);
+}
+const injFlags = () => ({ remember: $("#injRemember").checked });
+$("#injLevel").onchange = () => {
+  const bus = $("#injLevel").value === "bus";
+  $("#injAsWrap").style.display = bus ? "" : "none";
+  for (const id of ["#injImage", "#injImageBtn", "#injAudio", "#injAudioBtn", "#injRec"]) $(id).disabled = bus;
+};
+$("#injSend").onclick = async () => {
+  const level = $("#injLevel").value, text = $("#injText").value.trim();
+  if (!text) { injSet("type some text first", "bad"); return; }
+  const body = { level, text, ...injFlags(), user: $("#injUser").value.trim() || undefined, platform: $("#injPlatform").value, isMod: $("#injMod").checked, isSub: $("#injSub").checked };
+  if (level === "bus") body.as = $("#injAs").value;
+  try { await injFinish(await post("/inject/text", body), "text", level); } catch (e) { injSet("failed: " + e, "bad"); }
+};
+async function injUpload(kind, blob, type) {
+  const q = new URLSearchParams({ level: "service", remember: $("#injRemember").checked ? "1" : "0" });
+  const user = $("#injUser").value.trim();
+  if (kind === "audio" && user) q.set("user", user);
+  try { await injFinish(await authFetch(`/inject/${kind}?${q}`, { method: "POST", headers: { "content-type": type }, body: blob }), kind, "service"); }
+  catch (e) { injSet("failed: " + e, "bad"); }
+}
+$("#injImageBtn").onclick = () => { const f = $("#injImage").files[0]; if (f) injUpload("image", f, f.type); else injSet("choose an image first", "bad"); };
+$("#injAudioBtn").onclick = () => { const f = $("#injAudio").files[0]; if (f) injUpload("audio", f, f.type); else injSet("choose an audio file first", "bad"); };
+// Optional microphone capture, only offered where MediaRecorder + getUserMedia exist.
+if (window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  let rec = null;
+  $("#injRec").style.display = "";
+  $("#injRec").onclick = async () => {
+    if (rec) { rec.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = []; rec = new MediaRecorder(stream);
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const type = (rec.mimeType || "audio/webm").split(";")[0];
+        rec = null; $("#injRec").textContent = "\u23FA record"; $("#injRec").classList.remove("on");
+        injUpload("audio", new Blob(chunks, { type }), type);
+      };
+      rec.start(); $("#injRec").textContent = "\u23F9 stop & send"; $("#injRec").classList.add("on");
+    } catch (e) { rec = null; injSet("microphone unavailable: " + e, "bad"); }
+  };
+}
+
 // ---------- tabs + services
 function showTab(name) {
   $("#live").classList.toggle("hide", name !== "live");
@@ -212,12 +300,14 @@ function line(ev) {
     case "brain.status": cls = "status"; text = d.state + (d.detail ? ` · ${d.detail}` : ""); break;
     case "control": cls = "status"; text = d.cmd + (d.target ? ` → ${d.target}` : "") + (d.text ? ` "${d.text}"` : ""); break;
     case "service.lifecycle": cls = "status"; text = `${d.action} ${d.service} by ${d.by} · ${d.ok ? "ok" : "FAILED"}${d.detail ? ` (${d.detail})` : ""}`; break;
+    case "inject.request": cls = "status"; text = `→ ${d.target} ${d.kind}${d.text ? ` "${d.text}"` : ""}${d.remember ? " (remember)" : ""}`; break;
+    case "inject.result": cls = "status"; text = `${d.ok ? "ok" : "FAILED"}${d.detail ? " · " + d.detail : ""}`; break;
     case "voice.utterance": cls = "status"; text = `audio ready ${Math.round(d.durationMs)}ms`; break;
     case "voice.playing": case "voice.done": cls = "status"; text = `${d.sink}`; break;
     default: return;
   }
   const el = document.createElement("div"); el.className = "ev " + cls;
-  el.innerHTML = `<span class="t">${t}</span><span class="k">${ev.type}</span><span>${esc(text)}</span>`;
+  el.innerHTML = `<span class="t">${t}</span><span class="k">${ev.type}</span><span>${esc(text)}${d.injected ? '<span class="badge inj">injected</span>' + (d.remember ? '<span class="badge mem">remembered</span>' : "") : ""}</span>`;
   feed.appendChild(el); while (feed.children.length > 300) feed.firstChild.remove();
   feed.scrollTop = feed.scrollHeight;
 }
@@ -225,6 +315,7 @@ const esc = (s) => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "
 
 function onEvent(ev) {
   if (ev.type === "services") { onServices(ev.services); return; }
+  if (ev.type === "inject.result") onInjectResult(ev.data);
   if (ev.type === "avatar.state") { drawFace(ev.data); return; }
   if (ev.type === "brain.status") { const s = $("#status"); s.className = "pill " + ev.data.state; s.textContent = ev.data.state; }
   if (ev.type === "voice.utterance") { queue.push(ev.data); pump(); }

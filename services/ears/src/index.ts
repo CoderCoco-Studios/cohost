@@ -13,8 +13,10 @@
  * This MUST be a bot account — automating a user account gets it banned.
  */
 import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
-import { createLogger, loadConfig } from "@cohost/config";
+import { createLogger, loadConfig, urls } from "@cohost/config";
 import { EarsHealth, earsPlan } from "./health.js";
+import { sttTranscriber } from "./hearing.js";
+import { createInjectHandler } from "./inject.js";
 
 const log = createLogger("ears");
 const cfg = loadConfig();
@@ -25,13 +27,17 @@ let voiceReady = false;
 const health = new EarsHealth(plan, () => voiceReady);
 const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 
+// Injected clips only need the STT service, so this works in every plan (off / no-token / discord).
+const onInject = createInjectHandler({ bus, log, dashboardUrl: urls.dashboard(), transcribe: health.track(sttTranscriber(cfg.ears)) });
+
 if (plan === "discord") {
   // discord.js and friends are only loaded when a session will actually be opened.
   const { startDiscord } = await import("./discord.js");
-  startDiscord({ cfg, bus, log, health, heartbeat, setVoiceReady: (v) => { voiceReady = v; } });
+  startDiscord({ cfg, bus, log, health, heartbeat, onInject, setVoiceReady: (v) => { voiceReady = v; } });
   onShutdown(() => { bus.stop(); });
 } else {
-  // Idle: no Discord client, no bus subscription (voice.utterance is ignored), process stays up.
+  // Idle: no Discord client; voice.utterance is ignored (only inject.request is consumed), process stays up.
+  void bus.subscribe({ group: "ears", types: ["inject.request"], fromNow: true }, onInject);
   if (plan === "off") {
     log.warn("ears.source is off: idle, no Discord client, nothing heard or played (mode off)");
     heartbeat.ready();

@@ -16,6 +16,7 @@ x-ts-service: &ts-service
     TTS_URL: http://tts:8880
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
+    DASHBOARD_URL: http://dashboard:3000   # eyes/ears fetch injected test uploads from here
     CONFIG_DIR: /app/config
   volumes:
     - ./config:/app/config

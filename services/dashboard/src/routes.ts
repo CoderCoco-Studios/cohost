@@ -1,7 +1,9 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
-import type { Logger } from "@cohost/config";
+import { urls, type Logger } from "@cohost/config";
 import { bearerOk, type ServiceController, type ServiceHealth, type StartMode } from "@cohost/control";
+import { handleInject } from "./inject.js";
+import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
 
 export interface DashboardDeps {
   bus: Publisher;
@@ -11,6 +13,10 @@ export interface DashboardDeps {
   cohostName: string;
   /** The voice service, which holds the audio. */
   voiceUrl: string;
+  /** Injected test uploads (served at /uploads/:id). Defaults to a store configured from INJECT_* env. */
+  uploads?: UploadStore;
+  /** Base URL eyes/ears fetch uploads from. Defaults to `urls.dashboard()`. */
+  dashboardUrl?: string;
   loadPersonality: () => string;
   savePersonality: (text: string) => void;
   /** Derived per-service health (HealthTracker snapshot). */
@@ -27,6 +33,16 @@ const REFUSAL_STATUS = { unknown: 404, conflict: 409, forbidden: 403 } as const;
 
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
+  const uploads = d.uploads ?? new UploadStore(uploadOptionsFromEnv(process.env));
+  const inject = {
+    bus: d.bus,
+    uploads,
+    dashboardUrl: d.dashboardUrl ?? urls.dashboard(),
+    authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
+      return true;
+    },
+  };
   const page = d.html.replace("__COHOST_NAME__", d.cohostName);
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -42,6 +58,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(Buffer.from(await up.arrayBuffer()));
         return;
       }
+      if (await handleInject(inject, req, res, url)) return;
       if (req.method === "GET" && url.pathname === "/services") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ services: d.services() }));

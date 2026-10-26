@@ -187,3 +187,45 @@ test("a targeted mute for another service does not mute salience", async () => {
   await s.tick();
   assert.equal(bus.of("attention.focus").length, 1);
 });
+
+// ---- test injection
+
+test("tick: an injected focus carries injected/remember onto attention.focus", async () => {
+  const { s, bus } = setup();
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true, injected: true, remember: false }));
+  await s.tick();
+  const [f] = bus.of("attention.focus");
+  assert.equal(f!.injected, true);
+  assert.equal(f!.remember, false);
+});
+
+test("tick: real focus (even with a stray remember) and no-focus carry neither flag", async () => {
+  const real = setup();
+  await real.s.onEvent(chat("hey Coco?", { mentionsCohost: true, remember: true }));
+  await real.s.tick();
+  const [f] = real.bus.of("attention.focus");
+  assert.equal("injected" in f! || "remember" in f!, false);
+});
+
+test("tick: a mixed batch follows the focus event, not the others", async () => {
+  const { s, bus } = setup();
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await s.onEvent(chat("plain", { injected: true, remember: true }));
+  await s.tick();
+  const [f] = bus.of("attention.focus");
+  assert.equal(f!.focus?.text, "hey Coco?");
+  assert.equal("injected" in f!, false);
+});
+
+test("reflex: an injected trigger's brain.say carries the flags; a real one carries none", async () => {
+  const inj = setup({ reflexes: [DIED] });
+  await inj.s.onEvent(chat("lol you died", { injected: true, remember: false }));
+  const [say] = inj.bus.of("brain.say");
+  assert.equal(say!.injected, true);
+  assert.equal(say!.remember, false);
+
+  const real = setup({ reflexes: [DIED] });
+  await real.s.onEvent(chat("lol you died"));
+  const [rsay] = real.bus.of("brain.say");
+  assert.equal("injected" in rsay! || "remember" in rsay!, false);
+});

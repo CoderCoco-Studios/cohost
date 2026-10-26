@@ -24,7 +24,7 @@ The owner wants to exercise the brain and the perception services without a live
 ## Dependencies on sibling changes
 
 - `add-service-control`: the bearer-token gate (`CONTROL_ENABLED`, `CONTROL_TOKEN`) is reused as-is for the three inject routes; this change defines no auth of its own. If it has not landed, the inject routes are unauthenticated, exactly like today's `POST /control`. The `bus` catalogue and `Control commands` requirements are also modified there; see design for archive-order reconciliation.
-- `add-isolated-backends`: `chat.source: fake`, `vision.enabled=false`, `ears.source: off` keep the services running idle; injection handlers must be wired regardless of those sources. Mock LLM + inmemory memory make bus-level injection usable with nothing else running.
+- `add-isolated-backends`: `chat.source: fake`, `vision.enabled=false`, `ears.source: off` keep the services running idle; injection handlers must be wired regardless of those sources. Mock LLM + in-memory (`memory`) store make bus-level injection usable with nothing else running.
 - `add-service-health`: optional. Heartbeat `deps` can show why an inject failed; `inject.result` does not depend on it. Heartbeats stay on `cohost:health`; `inject.*` stay on `cohost:events`.
 
 ## Out of scope

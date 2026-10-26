@@ -257,7 +257,7 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 | Service | Preset | Result (mode) |
 |---|---|---|
 | cortex | `LLM_PROVIDER=mock` | deterministic echo replies, hash embeddings (`mock`) |
-| memory | `MEMORY_STORE=inmemory MEMORY_EMBEDDER=hash` | in-process store, capped at 2000, lost on exit (`mock`) |
+| memory | `MEMORY_STORE=memory MEMORY_EMBEDDER=hash` | in-process store, lost on exit (`mock`) |
 | voice | `VOICE_ENGINE=stub` | silent WAV, 60 ms per character (min 400 ms), no TTS call (`mock`) |
 | chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
 | eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`) |

@@ -28,7 +28,7 @@ test("a failing embedding marks ollama down (degraded) and the next success rest
   assert.equal(hbs[1]!.state, "ready");
 });
 
-test("inmemory + hash: postgres and ollama are n/a, mode is mock, state ready", async () => {
+test("memory + hash: postgres and ollama are n/a, mode is mock, state ready", async () => {
   const h = new MemoryHealth({ store: "memory", embedder: "hash" });
   const hbs = await runHeartbeat(h.spec);
   assert.equal(hbs[1]!.mode, "mock");

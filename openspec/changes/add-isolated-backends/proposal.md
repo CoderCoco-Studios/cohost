@@ -5,7 +5,7 @@ Only salience, affect, avatar (`driver: null`) and dashboard run with Redis alon
 ## What Changes
 
 - `llm.provider` gains `mock`: deterministic echo/canned replies, `ping()` true, deterministic hash embeddings (no Ollama). **New value, never default.**
-- Memory gains `brain.memory.store` (`postgres` | `inmemory`, default `postgres`) and `brain.memory.embedder` (`ollama` | `hash`, default `ollama`); startup skips the Ollama/Postgres waits when not used.
+- Memory gains `brain.memory.store` (`postgres` | `memory`, default `postgres`) and `brain.memory.embedder` (`ollama` | `hash`, default `ollama`); startup skips the Ollama/Postgres waits when not used.
 - Voice `voice.engine` gains `stub`: silent WAV plus an envelope sized from the text, no TTS call.
 - Chat gains `chat.source` (`twitch` | `fake`, default `twitch`); `fake` publishes scripted/stdin messages and needs no channel.
 - Eyes honors `vision.enabled=false`: idle, never connects to OBS.
@@ -23,7 +23,7 @@ None.
 ### Modified Capabilities
 - `llm`: `mock` provider; mock embedder; embedder selection.
 - `config`: new keys/enums/defaults; env-driven preset variables.
-- `memory`: in-memory store, hash embedder, startup without Postgres/Ollama.
+- `memory`: reuse main's in-memory store (`store: memory`), add hash embedder selection, startup without Postgres/Ollama.
 - `voice`: `stub` engine.
 - `chat`: `fake` source; no-channel behavior.
 - `eyes`: `vision.enabled=false` is truly idle.

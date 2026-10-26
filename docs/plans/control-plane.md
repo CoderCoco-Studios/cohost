@@ -296,7 +296,7 @@ backend), `mode` reported in heartbeat.
 | dashboard | OK | none | – |
 | voice | up but errors per utterance | `voice.engine: stub`: emit silent audio + envelope sized from text | `VOICE_ENGINE=stub` (new) |
 | cortex | blocked on `llm.ping()` | `llm.provider: mock`: deterministic canned/echo reply, `ping()` true | `LLM_PROVIDER=mock` (new) |
-| memory | blocked on Ollama/Postgres | `memory.store: inmemory` + `embedder: hash` (cheap deterministic embedding) | `MEMORY_STORE=inmemory` (new) |
+| memory | blocked on Ollama/Postgres | `memory.store: memory` + `embedder: hash` (cheap deterministic embedding) | `MEMORY_STORE=memory` (new) |
 | chat | exits without channel | `chat.source: fake`: scripted/stdin messages | `CHAT_SOURCE=fake` (new) |
 | eyes | loops on OBS | respect `vision.enabled=false` (idle, heartbeat `mode: "off"`); optional `fake` source | fix existing |
 | ears | exits without token | `ears.source: off` heartbeat `mode: "off"`, or file-based `speech.heard` injector | `EARS_SOURCE=off` (new) |
@@ -370,7 +370,7 @@ Sizes: S <= half day, M ~ 1-2 days, L ~ 3-5 days.
 | | 3.3 Start/stop/restart routes, token auth, loopback bind, `service.lifecycle` audit event, fresh/resume group reset | M | 3.1, 3.2 |
 | | 3.4 UI controls + confirmations; `control.target` for in-process pause/resume | M | 3.3 |
 | **4. Isolation** | 4.1 `llm.provider: mock` + zero-dep cortex start | M | – |
-| | 4.2 Memory `inmemory` store + hash embedder | M | – |
+| | 4.2 Memory `memory` store (main's fake) + hash embedder | M | – |
 | | 4.3 `voice.engine: stub` | S | – |
 | | 4.4 chat `fake` source; eyes respects `vision.enabled=false`; ears `off` | M | – |
 | | 4.5 Isolation presets in registry + "Start (isolated)" with dependency closure | M | 3.3, 4.1-4.4 |

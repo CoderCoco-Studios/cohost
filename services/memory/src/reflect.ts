@@ -17,6 +17,7 @@ const cfg = loadConfig();
 const llm = createChatProvider(cfg.llm);
 const memory = createStore(cfg, createMemoryEmbedder(cfg), log);
 
+// @spec MEM-REFLECT-001, MEM-REFLECT-002, MEM-REFLECT-003, MEM-REFLECT-004, MEM-REFLECT-006, MEM-REFLECT-007
 async function main() {
   if (cfg.brain.memory.store === "memory") {
     log.warn("brain.memory.store is memory: nothing persists between processes, so there is nothing to reflect on");
@@ -57,6 +58,7 @@ async function main() {
   console.log(addition);
 }
 
+// @spec MEM-REFLECT-009
 main()
   .catch((err) => { log.error({ err }, "reflect failed"); process.exitCode = 1; })
   .finally(() => memory.close());

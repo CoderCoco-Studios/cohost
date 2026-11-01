@@ -12,6 +12,7 @@ export interface CriticInput {
 /** ok=false drops the line. text/emotion, if present, replace the originals. */
 export interface CriticOutput { ok: boolean; text?: string; emotion?: Emotion; note?: string }
 
+// @spec CTX-CRITIC-005
 function validate(raw: unknown): CriticOutput | undefined {
   const r = raw as { ok?: unknown; text?: unknown; emotion?: unknown; note?: unknown } | undefined;
   if (!r || typeof r.ok !== "boolean") return undefined;
@@ -22,6 +23,7 @@ function validate(raw: unknown): CriticOutput | undefined {
   return out;
 }
 
+// @spec CTX-CRITIC-004, CTX-CRITIC-006
 /**
  * Inhibition. The built-in rule is pass-through; an llm or http critic can
  * veto or rewrite a line before anyone hears it.

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseReply } from "../src/prompt.js";
 
+// @spec CTX-PROMPT-005
 test("parseReply: emotion tag, gesture, stray brackets, quotes and name prefixes", () => {
   assert.deepEqual(parseReply("[happy] Hey chat!"), { text: "Hey chat!", emotion: "happy", gesture: undefined });
   assert.deepEqual(parseReply("[laugh] [gesture:wave] hi there"), { text: "hi there", emotion: "laugh", gesture: "wave" });

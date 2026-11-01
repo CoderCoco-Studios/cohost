@@ -9,6 +9,7 @@ function make(over: { recall_k?: number; min_similarity?: number } = {}) {
   return { s, advance: (ms: number) => { now += ms; } };
 }
 
+// @spec MEM-BACKEND-004
 test("hashEmbed is deterministic, unit-length, and closer for overlapping text", () => {
   const a = hashEmbed("the cursed sword in level three");
   assert.deepEqual(a, hashEmbed("the cursed sword in level three"));
@@ -17,6 +18,7 @@ test("hashEmbed is deterministic, unit-length, and closer for overlapping text",
   assert.ok(dot(a, hashEmbed("cursed sword")) > dot(a, hashEmbed("pizza for dinner")));
 });
 
+// @spec MEM-BACKEND-004, MEM-RECALL-004, MEM-RECALL-005
 test("recall returns the most similar memories, skips the last 2 minutes, and honours min_similarity", async () => {
   const { s, advance } = make();
   await s.init();
@@ -34,6 +36,7 @@ test("recall returns the most similar memories, skips the last 2 minutes, and ho
   assert.deepEqual(await s.recall("cursed sword", 0), []);
 });
 
+// @spec MEM-BACKEND-004
 test("recall respects k", async () => {
   const { s, advance } = make();
   for (const t of ["sword one", "sword two", "sword three"]) await s.remember("note", "x", t);
@@ -41,12 +44,14 @@ test("recall respects k", async () => {
   assert.equal((await s.recall("sword", 2)).length, 2);
 });
 
+// @spec MEM-BACKEND-005
 test("touchViewer counts per case-insensitive key; first sight is new", async () => {
   const { s } = make();
   assert.deepEqual(await s.touchViewer("ABC", "Bob"), { msgCount: 1, notes: "", isNew: true });
   assert.deepEqual(await s.touchViewer("abc", "Bobby"), { msgCount: 2, notes: "", isNew: false });
 });
 
+// @spec MEM-BACKEND-006
 test("recentSince is ordered and filtered; meta round-trips", async () => {
   const { s, advance } = make();
   await s.remember("chat", "a", "one");

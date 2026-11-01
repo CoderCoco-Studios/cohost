@@ -11,6 +11,7 @@ export interface WaitForLlmOptions {
   retryMs?: number;
 }
 
+// @spec CTX-START-001, CTX-HEALTH-002
 /**
  * Block until the model backend answers `ping()`. Never silent and never fatal:
  * every miss is logged and reported through `onDown`, so a supervisor sees `degraded`

@@ -8,13 +8,16 @@ export interface MemoryDeps {
   store: Pick<MemoryStore, "touchViewer" | "remember" | "recall">;
 }
 
+// @spec MEM-INJ-001, MEM-INJ-002, MEM-INJ-003
 /** An injected test input is kept out of memory unless the operator asked to remember it. `remember` means nothing on real events. */
 const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean => d.injected === true && d.remember !== true;
 
+// @spec MEM-EVT-002
 /** The memory region's event handler; index.ts subscribes it to both consumer groups. */
 export function createMemoryHandler({ cfg, bus, store }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
+      // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory
@@ -26,18 +29,21 @@ export function createMemoryHandler({ cfg, bus, store }: MemoryDeps): (ev: BusEv
         }
         break;
       }
+      // @spec MEM-WRITE-002
       case "speech.heard": {
         const d = ev.data as BusEvent<"speech.heard">["data"];
         if (skipInjected(d)) break;
         await store.remember("speech", d.speaker, d.text);
         break;
       }
+      // @spec MEM-WRITE-003
       case "brain.say": {
         const d = ev.data as BusEvent<"brain.say">["data"];
         if (skipInjected(d)) break; // a reply to an injected input
         if (d.text.length >= 2) await store.remember("self", cfg.cohost.name, d.text);
         break;
       }
+      // @spec MEM-RECALL-001
       case "memory.recall.request": {
         const d = ev.data as BusEvent<"memory.recall.request">["data"];
         const memories = await store.recall(d.query, d.k);

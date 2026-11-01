@@ -30,8 +30,11 @@ const critic = createCritic(cfg, log);
 const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality });
 
 async function main() {
+  // @spec CTX-START-002
   if (llm.name === "mock") log.warn("llm.provider is mock: replies are canned echoes, not a real model (mode mock)");
+  // @spec CTX-START-001, CTX-HEALTH-002
   await waitForLlm(llm, { log, setOk: (ok) => { llmOk = ok; }, onDown: (detail) => heartbeat.degraded(detail) });
+  // @spec CTX-START-003, CTX-EVT-001
   await cortex.status("idle");
   void bus.subscribe(
     {
@@ -48,5 +51,6 @@ async function main() {
   log.info({ provider: llm.name, model: llm.model, critic: critic.kind, name: cfg.cohost.name }, "cortex online");
 }
 
+// @spec CTX-START-004
 main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
 onShutdown(async () => { bus.stop(); });

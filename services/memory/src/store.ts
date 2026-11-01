@@ -38,6 +38,7 @@ export class MemoryStore implements MemoryBackend {
     this.pool = new pg.Pool({ connectionString: urls.database(), max: 4 });
   }
 
+  // @spec MEM-STORE-001
   async init(): Promise<void> {
     // Probe embedding size so the table matches whatever model is configured.
     this.dims = (await this.llm.embed("hello")).length;
@@ -68,6 +69,7 @@ export class MemoryStore implements MemoryBackend {
     this.log.info({ dims: this.dims }, "memory ready");
   }
 
+  // @spec MEM-WRITE-004, MEM-WRITE-005
   async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
     try {
       const emb = await this.llm.embed(`${who}: ${text}`);
@@ -80,6 +82,7 @@ export class MemoryStore implements MemoryBackend {
     }
   }
 
+  // @spec MEM-RECALL-002, MEM-RECALL-003, MEM-RECALL-004, MEM-RECALL-005, MEM-RECALL-006
   async recall(query: string, k = this.cfg.recall_k): Promise<Memory[]> {
     if (k <= 0) return [];
     try {
@@ -99,6 +102,7 @@ export class MemoryStore implements MemoryBackend {
     }
   }
 
+  // @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-VIEWER-004
   async touchViewer(userKey: string, display: string): Promise<{ msgCount: number; notes: string; isNew: boolean }> {
     const { rows } = await this.pool.query<{ msg_count: number; notes: string; first_seen: Date; last_seen: Date }>(
       `INSERT INTO viewers (user_key, display) VALUES ($1,$2)
@@ -110,6 +114,7 @@ export class MemoryStore implements MemoryBackend {
     return { msgCount: r.msg_count, notes: r.notes, isNew: r.msg_count <= 1 };
   }
 
+  // @spec MEM-STORE-003
   async recentSince(ts: Date, limit = 400): Promise<Memory[]> {
     const { rows } = await this.pool.query<Memory>(
       "SELECT id, ts, kind, who, text FROM memories WHERE ts > $1 ORDER BY ts ASC LIMIT $2",
@@ -118,6 +123,7 @@ export class MemoryStore implements MemoryBackend {
     return rows;
   }
 
+  // @spec MEM-STORE-003
   async getMeta(k: string): Promise<string | undefined> {
     const { rows } = await this.pool.query<{ v: string }>("SELECT v FROM meta WHERE k=$1", [k]);
     return rows[0]?.v;

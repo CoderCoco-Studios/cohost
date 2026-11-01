@@ -2,6 +2,7 @@
 
 const MARKER = "## Learned";
 
+// @spec MEM-REFLECT-005
 /** Keep only the "- " bullet lines of a reply (models like to add a preamble). */
 export function parseBullets(raw: string): string[] {
   return raw.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("- "));
@@ -12,6 +13,7 @@ export function learnedBlock(bullets: string[], stamp: string): string {
   return `\n### ${stamp}\n${bullets.join("\n")}\n`;
 }
 
+// @spec MEM-REFLECT-007
 /** Append the block to personality.md, adding the "## Learned" heading the first time. */
 export function appendLearned(personality: string, addition: string): string {
   return personality.includes(MARKER)

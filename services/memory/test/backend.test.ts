@@ -8,11 +8,13 @@ import { MemoryHealth } from "../src/health.js";
 
 const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
 
+// @spec MEM-BACKEND-001
 test("createStore picks the fake for store=memory without touching the embedder", () => {
   const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } } as never);
   assert.ok(createStore(cfg, createMemoryEmbedder(cfg), log) instanceof InMemoryStore);
 });
 
+// @spec MEM-BACKEND-004, MEM-RECALL-001
 test("region handler works end to end over the in-memory store", async () => {
   let t = 1_000_000;
   const cfg = testConfig();
@@ -30,6 +32,7 @@ test("region handler works end to end over the in-memory store", async () => {
   assert.ok(published.some((p) => p.type === "memory.viewer"));
 });
 
+// @spec MEM-BACKEND-003, MEM-HEALTH-001
 test("hash embedder makes no network request; memory+hash reports mock with n/a deps", async () => {
   const realFetch = globalThis.fetch;
   let calls = 0;

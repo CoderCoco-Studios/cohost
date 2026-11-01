@@ -34,6 +34,7 @@ export class InMemoryStore implements MemoryBackend {
     this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: hashEmbed(`${who}: ${text}`) });
   }
 
+  // @spec MEM-BACKEND-004, MEM-RECALL-002, MEM-RECALL-004, MEM-RECALL-005
   async recall(query: string, k = this.cfg.recall_k): Promise<Memory[]> {
     if (k <= 0) return [];
     const q = hashEmbed(query);
@@ -46,6 +47,7 @@ export class InMemoryStore implements MemoryBackend {
       .filter((m) => m.similarity >= this.cfg.min_similarity);
   }
 
+  // @spec MEM-BACKEND-005
   async touchViewer(userKey: string, _display: string): Promise<{ msgCount: number; notes: string; isNew: boolean }> {
     const key = userKey.toLowerCase();
     const v = this.viewers.get(key) ?? { msgCount: 0, notes: "" };
@@ -54,6 +56,7 @@ export class InMemoryStore implements MemoryBackend {
     return { msgCount: v.msgCount, notes: v.notes, isNew: v.msgCount <= 1 };
   }
 
+  // @spec MEM-BACKEND-006
   async recentSince(ts: Date, limit = 400): Promise<Memory[]> {
     return this.rows
       .filter((r) => r.ts > ts)
@@ -61,6 +64,7 @@ export class InMemoryStore implements MemoryBackend {
       .map(({ embedding: _e, ...m }) => m);
   }
 
+  // @spec MEM-BACKEND-006
   async getMeta(k: string): Promise<string | undefined> { return this.meta.get(k); }
   async setMeta(k: string, v: string): Promise<void> { this.meta.set(k, v); }
   async close(): Promise<void> {}

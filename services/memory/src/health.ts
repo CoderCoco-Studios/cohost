@@ -15,6 +15,7 @@ export class MemoryHealth {
 
   readonly spec: HeartbeatSpec;
 
+  // @spec MEM-HEALTH-001, MEM-HEALTH-002
   constructor(backend: Pick<Config["brain"]["memory"], "store" | "embedder"> = { store: "postgres", embedder: "ollama" }) {
     const usesPg = backend.store === "postgres";
     const usesOllama = usesPg && backend.embedder === "ollama"; // the in-process fake never embeds via Ollama
@@ -28,6 +29,7 @@ export class MemoryHealth {
   setOllama(ok: boolean): void { this.ollama = ok ? "ok" : "down"; }
   setPostgres(ok: boolean): void { this.postgres = ok ? "ok" : "down"; }
 
+  // @spec MEM-HEALTH-003
   /** An embedder whose success/failure drives `deps.ollama`. */
   embedder(inner: Embedder): Embedder {
     return { embed: tracked((t: string) => inner.embed(t), (ok) => this.setOllama(ok)) };

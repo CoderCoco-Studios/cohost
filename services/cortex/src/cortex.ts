@@ -38,11 +38,13 @@ export class Cortex {
 
   async onEvent(ev: BusEvent): Promise<void> {
     switch (ev.type) {
+      // @spec CTX-EVT-002
       case "chat.message":
       case "speech.heard":
       case "vision.summary":
         this.ctx.push(ev);
         break;
+      // @spec CTX-EVT-003, CTX-EVT-004
       case "brain.say": {
         // Our own lines and anyone else's (reflexes, operator) all land in the transcript.
         const d = ev.data as BusEvent<"brain.say">["data"];
@@ -50,21 +52,25 @@ export class Cortex {
         if (ev.source !== "cortex") { this.speakingId = d.id; this.speakingSince = Date.now(); }
         break;
       }
+      // @spec CTX-EVT-005
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
         if (d.id === this.speakingId) { this.speakingId = undefined; await this.status(this.muted || this.paused ? "muted" : "idle"); }
         break;
       }
+      // @spec CTX-EVT-006
       case "attention.focus":
         // Don't await: the LLM call must not block the subscription loop, or the
         // memory reply we're waiting on could never be delivered.
         void this.think(ev.data as Focus);
         break;
+      // @spec CTX-RECALL-005
       case "memory.recall.reply": {
         const d = ev.data as BusEvent<"memory.recall.reply">["data"];
         this.pendingRecall.get(d.id)?.(d.memories);
         break;
       }
+      // @spec CTX-VIEWER-001, CTX-VIEWER-002
       case "memory.viewer": {
         const d = ev.data as BusEvent<"memory.viewer">["data"];
         const note = d.isNew
@@ -78,36 +84,49 @@ export class Cortex {
         if (this.viewerNotes.size > 50) this.viewerNotes.delete(this.viewerNotes.keys().next().value!);
         break;
       }
+      // @spec CTX-EVT-007
       case "affect.state":
         this.mood = ev.data as Mood;
         break;
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
+        // @spec CTX-CTRL-001
         if (d.target && d.target !== "cortex") break; // addressed to another service
+        // @spec CTX-CTRL-002
         if (d.cmd === "pause") { this.paused = true; await this.status("muted", "paused"); }
         if (d.cmd === "resume") { this.paused = false; await this.status(this.muted ? "muted" : "idle"); }
+        // @spec CTX-CTRL-003
         if (d.cmd === "mute") { this.muted = true; await this.status("muted"); }
         if (d.cmd === "unmute") { this.muted = false; await this.status(this.paused ? "muted" : "idle"); }
+        // @spec CTX-CTRL-004
         if (d.cmd === "forget_context") { this.ctx.clear(); this.viewerNotes.clear(); }
+        // @spec CTX-CTRL-005
         if (d.cmd === "reload_personality") { this.personality = this.d.loadPersonality(); this.d.log.info("personality reloaded"); }
+        // @spec CTX-CTRL-006, CTX-INJ-002
         if (d.cmd === "say" && d.text) await this.say(d.text, "neutral", undefined, "operator");
         break;
       }
     }
   }
 
+  // @spec CTX-GATE-007, CTX-SAY-002, CTX-SAY-003
   async think(focus: Focus): Promise<void> {
     const { cfg, llm, critic, log } = this.d;
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
+    // @spec CTX-GATE-001
     if (this.thinking) { await this.status("thinking", focus.reason).catch(() => {}); return; }
+    // @spec CTX-GATE-002
     if (this.muted || this.paused) { await this.status("muted"); return; }
+    // @spec CTX-GATE-003, CTX-SAY-004
     if (this.voiceBusy()) { await this.status("speaking"); return; }
 
     this.thinking = true; // the try/finally below always clears it, even if a status publish fails
     try {
       await this.status("thinking", focus.reason);
+      // @spec CTX-RECALL-001
       const query = focus.focus?.text ?? this.ctx.lastVision;
       const memories = query ? await this.recall(query) : [];
+      // @spec CTX-VIEWER-003
       const who = focus.focus?.who?.toLowerCase();
       const viewerNote = who ? this.viewerNotes.get(who) : undefined;
       if (who) this.viewerNotes.delete(who);
@@ -115,16 +134,22 @@ export class Cortex {
       const t0 = Date.now();
       const raw = await llm.chat(messages);
       let { text, emotion, gesture } = parseReply(raw);
+      // @spec CTX-PROMPT-007
       log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length, raw }, "llm reply");
+      // @spec CTX-PROMPT-006
       if (!text || text.length < 2) { await this.status("idle"); return; }
       // Inhibition: let the critic veto or touch up the line before it's spoken.
+      // @spec CTX-CRITIC-001, CTX-CRITIC-002, CTX-CRITIC-003
       const verdict = await critic.run({ text, emotion: emotion as Emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
       if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await this.status("idle"); return; }
       if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
       if (verdict.emotion) emotion = verdict.emotion;
       // A reflex or operator line may have started while we were thinking; don't talk over it.
+      // @spec CTX-GATE-005
       if (this.muted || this.paused) { await this.status("muted"); return; }
+      // @spec CTX-GATE-006
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
+      // @spec CTX-INJ-001
       await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus));
     } catch (err) {
       log.error({ err }, "think failed");
@@ -138,12 +163,14 @@ export class Cortex {
     await this.d.bus.publish("brain.status", { state, detail });
   }
 
+  // @spec CTX-GATE-004
   /** Someone's line is still playing (with the stuck-sink safety valve). */
   private voiceBusy(): boolean {
     if (this.speakingId && Date.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.speakingId = undefined;
     return !!this.speakingId;
   }
 
+  // @spec CTX-RECALL-002, CTX-RECALL-003, CTX-RECALL-004
   /** Ask the memory region over the bus; give up gracefully if it doesn't answer. */
   private recall(query: string): Promise<Recalled> {
     const { cfg, bus, log } = this.d;
@@ -158,6 +185,7 @@ export class Cortex {
     });
   }
 
+  // @spec CTX-SAY-001
   private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags = {}) {
     const id = randomUUID();
     this.speakingId = id;

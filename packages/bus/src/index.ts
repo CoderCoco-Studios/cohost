@@ -33,6 +33,7 @@ export type Publisher = Pick<Bus, "publish">;
  * Thin typed wrapper over one Redis Stream. Publish is fire-and-forget;
  * subscribe runs a consumer-group loop until stop().
  */
+// @spec BUS-STREAM-005
 export class Bus {
   private pub: Redis;
   private subs: Redis[] = [];
@@ -43,6 +44,7 @@ export class Bus {
     this.pub = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
   }
 
+  // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, CTRL-HEARTBEAT-007
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
     if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
@@ -58,6 +60,7 @@ export class Bus {
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */
+  // @spec BUS-HEALTH-001, BUS-HEALTH-002, CTRL-HEARTBEAT-007
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     const id = await this.pub.xadd(
@@ -71,6 +74,7 @@ export class Bus {
   }
 
   /** Non-group live tail of the health stream. Does not ack. */
+  // @spec BUS-HEALTH-003
   async tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$"): Promise<void> {
     const conn = new Redis(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
@@ -94,6 +98,7 @@ export class Bus {
   }
 
   /** Newest N heartbeats, oldest first. */
+  // @spec BUS-HEALTH-004
   async recentHealth(count = 100): Promise<HeartbeatEvent[]> {
     const rows = (await this.pub.xrevrange(HEALTH_STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
     return rows
@@ -106,6 +111,7 @@ export class Bus {
    * Point a consumer group at the stream's newest entry (`XGROUP SETID <group> $`), creating the
    * group (and stream) at `$` if it does not exist. Used for "fresh" service starts.
    */
+  // @spec BUS-GROUP-001
   async resetGroup(group: string): Promise<void> {
     try {
       await this.pub.xgroup("SETID", STREAM, group, "$");
@@ -120,6 +126,7 @@ export class Bus {
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
+  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const conn = new Redis(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
@@ -164,6 +171,7 @@ export class Bus {
   }
 
   /** Non-group live tail (dashboard). Does not ack, does not replay. */
+  // @spec BUS-TAIL-001
   async tail(handler: (ev: BusEvent) => void, fromId = "$"): Promise<void> {
     const conn = new Redis(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
@@ -187,11 +195,13 @@ export class Bus {
   }
 
   /** Most recent N events (dashboard backfill). */
+  // @spec BUS-TAIL-002
   async recent(count = 100): Promise<BusEvent[]> {
     const rows = (await this.pub.xrevrange(STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
     return rows.map(([id, f]) => decode(id, f)).filter((e): e is BusEvent => !!e).reverse();
   }
 
+  // @spec BUS-STOP-001
   stop(): void {
     this.stopped = true;
     for (const c of this.subs) c.disconnect();
@@ -199,6 +209,7 @@ export class Bus {
   }
 }
 
+// @spec BUS-STREAM-006, BUS-SUB-007
 function decode(id: string, fields: string[]): BusEvent | undefined {
   const m: Record<string, string> = {};
   for (let i = 0; i < fields.length; i += 2) m[fields[i]!] = fields[i + 1]!;
@@ -227,6 +238,7 @@ export function beforeShutdown(fn: () => void | Promise<void>): void {
 }
 
 /** Shared graceful-shutdown helper for services. */
+// @spec BUS-STOP-002, BUS-STOP-003, BUS-STOP-004, CTRL-HEARTBEAT-005
 export function onShutdown(fn: () => void | Promise<void>): void {
   let done = false;
   const run = async () => {

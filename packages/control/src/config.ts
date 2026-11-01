@@ -16,11 +16,13 @@ export type ControlConfig =
 
 export const LOOPBACK_BIND = "127.0.0.1";
 
+// @spec CTRL-CONFIG-002
 export function isLoopback(host: string): boolean {
   return host === "localhost" || host === "::1" || host.startsWith("127.");
 }
 
 /** Parses CONTROL_* env. Throws (fail fast) when enabled without a token or with an unknown runtime. */
+// @spec CTRL-CONFIG-001, CTRL-CONFIG-002
 export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): ControlConfig {
   if (env.CONTROL_ENABLED !== "1") return { enabled: false };
   const token = env.CONTROL_TOKEN ?? "";
@@ -37,6 +39,7 @@ export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): Control
 }
 
 /** Constant-time check of an `Authorization: Bearer <token>` header. */
+// @spec CTRL-CONFIG-003
 export function bearerOk(header: string | undefined, token: string): boolean {
   const m = /^Bearer (.+)$/.exec(header ?? "");
   if (!m || !token) return false;

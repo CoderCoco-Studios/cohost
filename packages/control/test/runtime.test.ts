@@ -15,6 +15,7 @@ function fakeExec(fail?: string) {
   return { exec, calls };
 }
 
+// @spec CTRL-RUNTIME-001
 test("compose: exact argv for start / stop / restart, via execFile (no shell string)", async () => {
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ exec, env: {} });
@@ -28,6 +29,7 @@ test("compose: exact argv for start / stop / restart, via execFile (no shell str
   ]);
 });
 
+// @spec CTRL-RUNTIME-004
 test("compose: crafted ids are rejected without exec", async () => {
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ exec });
@@ -38,6 +40,7 @@ test("compose: crafted ids are rejected without exec", async () => {
   assert.equal(calls.length, 0);
 });
 
+// @spec CTRL-RUNTIME-002
 test("compose: isolated env goes in the child env and restart recreates", async () => {
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ exec, env: { A: "1" } });
@@ -47,6 +50,7 @@ test("compose: isolated env goes in the child env and restart recreates", async 
   assert.equal(calls[0]!.env.A, "1");
 });
 
+// @spec CTRL-RUNTIME-003
 test("compose: a failing command is ok:false with stderr as detail", async () => {
   const rt = new ComposeRuntime({ exec: fakeExec("no such service").exec });
   assert.deepEqual(await rt.start("cortex"), { ok: false, detail: "no such service" });
@@ -79,6 +83,7 @@ function fakeSpawner(opts: { failSpawn?: boolean; ignoreTerm?: boolean } = {}) {
   return { spawn, signal, spawned, signals, children };
 }
 
+// @spec CTRL-RUNTIME-005
 test("process: spawns pnpm with a fixed argv and records the pid", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal, env: {} });
@@ -92,6 +97,7 @@ test("process: spawns pnpm with a fixed argv and records the pid", async () => {
   assert.equal(f.spawned[1]!.env.VOICE_ENGINE, "stub");
 });
 
+// @spec CTRL-RUNTIME-006
 test("process: starting twice does not spawn a second copy", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
@@ -101,6 +107,7 @@ test("process: starting twice does not spawn a second copy", async () => {
   assert.equal(f.spawned.length, 1);
 });
 
+// @spec CTRL-RUNTIME-004, CTRL-RUNTIME-006
 test("process: crafted/unknown ids and compose-only services never spawn", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
@@ -108,6 +115,7 @@ test("process: crafted/unknown ids and compose-only services never spawn", async
   assert.equal(f.spawned.length, 0);
 });
 
+// @spec CTRL-RUNTIME-006
 test("process: a spawn error is ok:false and nothing is tracked", async () => {
   const f = fakeSpawner({ failSpawn: true });
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
@@ -117,6 +125,7 @@ test("process: a spawn error is ok:false and nothing is tracked", async () => {
   assert.equal(rt.pid("cortex"), undefined);
 });
 
+// @spec CTRL-RUNTIME-007
 test("process: stop sends SIGTERM and only SIGTERM when the process exits", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal, killTimeoutMs: 1000 });
@@ -127,6 +136,7 @@ test("process: stop sends SIGTERM and only SIGTERM when the process exits", asyn
   assert.equal(rt.pid("cortex"), undefined);
 });
 
+// @spec CTRL-RUNTIME-007
 test("process: SIGKILL after the timeout when SIGTERM is ignored", async () => {
   const f = fakeSpawner({ ignoreTerm: true });
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal, killTimeoutMs: 20 });
@@ -136,6 +146,7 @@ test("process: SIGKILL after the timeout when SIGTERM is ignored", async () => {
   assert.match(r.detail!, /SIGKILL/);
 });
 
+// @spec CTRL-RUNTIME-007
 test("process: stopping something it did not start is ok:false; a self-exit clears the pid", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
@@ -145,6 +156,7 @@ test("process: stopping something it did not start is ok:false; a self-exit clea
   assert.equal(rt.pid("cortex"), undefined);
 });
 
+// @spec CTRL-RUNTIME-008
 test("process: restart stops then starts a fresh process", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });

@@ -11,6 +11,7 @@ function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<s
 }
 
 /** A complete, schema-validated config with the timing knobs zeroed so tests don't wait. */
+// @spec BUS-TEST-005
 export function testConfig(over: Record<string, unknown> = {}): Config {
   const base = {
     cohost: { name: "Coco", streamer: "Chris", timezone: "UTC" },
@@ -26,9 +27,11 @@ export function testConfig(over: Record<string, unknown> = {}): Config {
   return ConfigSchema.parse(merge(base, over));
 }
 
+// @spec BUS-TEST-010
 export const silentLog = { warn() {}, info() {}, error() {}, debug() {}, fatal() {}, trace() {} } as never;
 
 /** A logger that keeps what it was told, by level. */
+// @spec BUS-TEST-010
 export function recordingLog() {
   const lines: { level: string; obj: unknown; msg?: string }[] = [];
   const at = (level: string) => (obj: unknown, msg?: string) => { lines.push({ level, obj, msg: typeof obj === "string" ? obj : msg }); };
@@ -37,6 +40,7 @@ export function recordingLog() {
 }
 
 /** Validates like the real Bus, records instead of talking to Redis. */
+// @spec BUS-TEST-004, BUS-TEST-009
 export class FakeBus implements Publisher {
   published: { type: EventType; data: unknown }[] = [];
   /** Heartbeats published via publishHealth (the real Bus puts these on cohost:health). */
@@ -45,17 +49,20 @@ export class FakeBus implements Publisher {
   fail?: (type: EventType) => boolean;
   /** Make publishHealth reject, to test publish-failure handling. */
   failHealth = false;
+  // @spec BUS-TEST-002
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     if (this.failHealth) throw new Error("publishHealth failed");
     this.health.push(parsed);
     return String(this.health.length);
   }
+  // @spec BUS-TEST-003
   async recentHealth(count = 100): Promise<BusEvent<"service.heartbeat">[]> {
     return this.health.slice(-count).map((data, i) => ({
       id: String(i), type: "service.heartbeat" as const, ts: Date.now(), source: data.service, data,
     }));
   }
+  // @spec BUS-TEST-001
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
     if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
@@ -73,6 +80,7 @@ export class FakeBus implements Publisher {
 }
 
 /** A bus event as a subscriber would receive it. */
+// @spec BUS-TEST-006
 export function event<T extends EventType>(type: T, data: EventInput<T>, source = "test"): BusEvent<T> {
   return { id: randomUUID(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
 }
@@ -81,6 +89,7 @@ export function event<T extends EventType>(type: T, data: EventInput<T>, source 
  * Run a service's heartbeat against a FakeBus: `drive` moves it through its lifecycle,
  * then the stopping heartbeat is sent. Returns every heartbeat published, in order.
  */
+// @spec BUS-TEST-007
 export async function runHeartbeat(
   spec: HeartbeatSpec,
   drive: (hb: ReturnType<typeof startHeartbeat>) => void | Promise<void> = (hb) => hb.ready(),
@@ -93,6 +102,7 @@ export async function runHeartbeat(
   return bus.health;
 }
 
+// @spec BUS-TEST-008
 export async function waitFor(cond: () => boolean, what = "condition", ms = 2000): Promise<void> {
   const t0 = Date.now();
   while (!cond()) {

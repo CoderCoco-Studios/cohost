@@ -1,12 +1,15 @@
 import { z } from "zod";
+// @spec BUS-EVT-019
 import { Emotion } from "@cohost/config";
 
 /**
  * Every message on the bus is one of these. Services only ever talk through
  * these events — never directly to each other — so any piece can be swapped.
  */
+// @spec BUS-EVT-001
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
+  // @spec BUS-EVT-002, BUS-EVT-005
   "chat.message": z.object({
     platform: z.enum(["twitch", "youtube", "discord"]),
     user: z.string(),
@@ -22,6 +25,7 @@ export const EventPayloads = {
   }),
 
   /** The eyes looked at the game and this is what they saw. */
+  // @spec BUS-EVT-012, BUS-EVT-005
   "vision.summary": z.object({
     text: z.string(),
     /** True when materially different from the previous summary. */
@@ -32,6 +36,7 @@ export const EventPayloads = {
   }),
 
   /** Someone spoke in Discord voice and it was transcribed. */
+  // @spec BUS-EVT-013, BUS-EVT-005
   "speech.heard": z.object({
     speaker: z.string(),
     speakerId: z.string().optional(),
@@ -43,6 +48,7 @@ export const EventPayloads = {
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
+  // @spec BUS-EVT-014, BUS-EVT-005
   "brain.say": z.object({
     id: z.string(),
     text: z.string(),
@@ -56,6 +62,7 @@ export const EventPayloads = {
   }),
 
   /** The brain's current state, for the dashboard. */
+  // @spec BUS-EVT-015
   "brain.status": z.object({
     state: z.enum(["idle", "thinking", "speaking", "muted"]),
     detail: z.string().optional(),
@@ -64,6 +71,7 @@ export const EventPayloads = {
   // ---- brain regions talk to each other through these ----
 
   /** salience → cortex: something is worth responding to right now. */
+  // @spec BUS-EVT-010, BUS-EVT-005
   "attention.focus": z.object({
     /** "mentioned" | "engaged" | "idle chatter" ... free text for the dashboard. */
     reason: z.string(),
@@ -83,6 +91,7 @@ export const EventPayloads = {
   }),
 
   /** affect → everyone: the co-host's running mood. Decays on its own. */
+  // @spec BUS-EVT-003
   "affect.state": z.object({
     /** -1 (miserable) .. 1 (delighted) */
     valence: z.number().min(-1).max(1),
@@ -95,12 +104,14 @@ export const EventPayloads = {
   }),
 
   /** cortex → memory: what do we remember that relates to this? */
+  // @spec BUS-EVT-010
   "memory.recall.request": z.object({
     id: z.string(),
     query: z.string(),
     k: z.number().int().positive().optional(),
   }),
   /** memory → cortex: the answer. Empty list is a valid answer. */
+  // @spec BUS-EVT-010
   "memory.recall.reply": z.object({
     id: z.string(),
     memories: z.array(
@@ -115,6 +126,7 @@ export const EventPayloads = {
   }),
 
   /** memory → cortex: who this viewer is, emitted when they address the co-host. */
+  // @spec BUS-EVT-010
   "memory.viewer": z.object({
     user: z.string(),
     isNew: z.boolean(),
@@ -123,6 +135,7 @@ export const EventPayloads = {
   }),
 
   /** Audio for an utterance is ready. envelope = mouth-open level per frame (0..1). */
+  // @spec BUS-EVT-016
   "voice.utterance": z.object({
     id: z.string(),
     text: z.string(),
@@ -137,10 +150,12 @@ export const EventPayloads = {
   }),
 
   /** Playback of an utterance started somewhere (dashboard sink / Discord). Avatar syncs to this. */
+  // @spec BUS-EVT-017
   "voice.playing": z.object({ id: z.string(), sink: z.string() }),
   "voice.done": z.object({ id: z.string(), sink: z.string() }),
 
   /** Avatar's smoothed state, for the dashboard preview. */
+  // @spec BUS-EVT-018
   "avatar.state": z.object({
     emotion: Emotion,
     intensity: z.number(),
@@ -156,6 +171,7 @@ export const EventPayloads = {
   }),
 
   /** Operator controls from the dashboard. */
+  // @spec BUS-EVT-004
   control: z.object({
     cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume"]),
     text: z.string().optional(),
@@ -168,6 +184,7 @@ export const EventPayloads = {
    * code path. Binaries never ride the stream; `url` points at the dashboard
    * upload store.
    */
+  // @spec BUS-EVT-006
   "inject.request": z.object({
     id: z.string(),
     target: z.enum(["eyes", "ears", "chat"]),
@@ -186,6 +203,7 @@ export const EventPayloads = {
   }),
 
   /** eyes/ears/chat → dashboard: outcome of an inject.request, correlated by id. */
+  // @spec BUS-EVT-007
   "inject.result": z.object({
     id: z.string(),
     ok: z.boolean(),
@@ -193,6 +211,7 @@ export const EventPayloads = {
   }),
 
   /** Audit record of a start/stop/restart attempt made through the service controller. */
+  // @spec BUS-EVT-008
   "service.lifecycle": z.object({
     service: z.string(),
     action: z.enum(["start", "stop", "restart"]),
@@ -206,6 +225,7 @@ export const EventPayloads = {
    * Liveness/readiness report from a service. Carried on the separate
    * `cohost:health` stream (see publishHealth), never on `cohost:events`.
    */
+  // @spec BUS-EVT-009
   "service.heartbeat": z.object({
     service: z.string(),
     /** Unique per process (the bus consumer name). */
@@ -236,4 +256,5 @@ export interface BusEvent<T extends EventType = EventType> {
   data: EventData<T>;
 }
 
+// @spec BUS-EVT-001
 export const EVENT_TYPES = Object.keys(EventPayloads) as EventType[];

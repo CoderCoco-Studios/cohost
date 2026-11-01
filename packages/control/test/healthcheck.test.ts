@@ -9,16 +9,19 @@ const rec = (service: string, ageMs: number, state: HeartbeatEvent["data"]["stat
   data: { service, instance: "i", pid: 1, version: "0", startedAt: 1, state, deps: {}, mode: "live", intervalMs: 5000 },
 });
 
+// @spec CTRL-CHECK-001
 test("fresh heartbeat is healthy", () => {
   assert.equal(isHealthy("chat", [rec("chat", 2000)], 1_000_000), true);
 });
 
+// @spec CTRL-CHECK-001
 test("silent service (no heartbeat, or older than 3x interval) is unhealthy", () => {
   assert.equal(isHealthy("chat", [], 1_000_000), false);
   assert.equal(isHealthy("chat", [rec("chat", 20_000)], 1_000_000), false);
   assert.equal(isHealthy("chat", [rec("voice", 1000)], 1_000_000), false);
 });
 
+// @spec CTRL-CHECK-001
 test("stopping is unhealthy even when fresh; only the newest heartbeat counts", () => {
   assert.equal(isHealthy("chat", [rec("chat", 1000, "stopping")], 1_000_000), false);
   assert.equal(isHealthy("chat", [rec("chat", 9000, "stopping"), rec("chat", 1000)], 1_000_000), true);
@@ -33,6 +36,7 @@ async function redisUp(): Promise<boolean> {
   } catch { return false; } finally { probe.stop(); }
 }
 
+// @spec CTRL-CHECK-002
 test("CLI exits 0 for a fresh service and 1 for a silent one (needs Redis)", { skip: !(await redisUp()) && `no Redis at ${url}` }, async () => {
   const bus = new Bus("hc-test", undefined, url);
   const name = `hc-${Date.now()}`;

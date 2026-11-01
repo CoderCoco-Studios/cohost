@@ -13,6 +13,7 @@ function setup() {
   return { clock, tracker, advance: (ms: number) => { clock.t += ms; } };
 }
 
+// @spec CTRL-HEALTH-003
 test("fresh ready service is up", () => {
   const { tracker, advance } = setup();
   tracker.ingest(hb());
@@ -20,6 +21,7 @@ test("fresh ready service is up", () => {
   assert.equal(tracker.get("chat").state, "up");
 });
 
+// @spec CTRL-HEALTH-002
 test("stale after 3x interval, down after 10x", () => {
   const { tracker, advance } = setup();
   tracker.ingest(hb());
@@ -29,18 +31,21 @@ test("stale after 3x interval, down after 10x", () => {
   assert.equal(tracker.get("chat").state, "down");
 });
 
+// @spec CTRL-HEALTH-002
 test("stopping is down immediately", () => {
   const { tracker } = setup();
   tracker.ingest(hb({ state: "stopping" }));
   assert.equal(tracker.get("chat").state, "down");
 });
 
+// @spec CTRL-HEALTH-001
 test("never seen is unknown, not down", () => {
   const { tracker } = setup();
   assert.equal(tracker.get("chat").state, "unknown");
   assert.equal(tracker.get("chat").heartbeat, undefined);
 });
 
+// @spec CTRL-HEALTH-003
 test("a dep down degrades a ready service; so does state degraded and starting", () => {
   const { tracker } = setup();
   tracker.ingest(hb({ service: "memory", deps: { postgres: "ok", ollama: "down" } }));
@@ -53,12 +58,14 @@ test("a dep down degrades a ready service; so does state degraded and starting",
   assert.equal(tracker.get("avatar").state, "up");
 });
 
+// @spec CTRL-HEALTH-003
 test("n/a deps do not degrade", () => {
   const { tracker } = setup();
   tracker.ingest(hb({ deps: { twitch: "n/a" } }));
   assert.equal(tracker.get("chat").state, "up");
 });
 
+// @spec CTRL-HEALTH-002
 test("uses the latest heartbeat's intervalMs", () => {
   const { tracker, advance } = setup();
   tracker.ingest(hb({ intervalMs: 1000 }));
@@ -66,6 +73,7 @@ test("uses the latest heartbeat's intervalMs", () => {
   assert.equal(tracker.get("chat").state, "stale");
 });
 
+// @spec CTRL-HEALTH-004
 test("three distinct startedAt within 60 s is crash-looping, taking precedence", () => {
   const { tracker, advance } = setup();
   tracker.ingest(hb({ startedAt: 1 }));
@@ -80,6 +88,7 @@ test("three distinct startedAt within 60 s is crash-looping, taking precedence",
   assert.equal(tracker.get("chat").state, "crash-looping");
 });
 
+// @spec CTRL-HEALTH-004
 test("crash-loop clears once fewer than 3 starts remain in the window", () => {
   const { tracker, advance } = setup();
   for (const startedAt of [1, 2, 3]) { tracker.ingest(hb({ startedAt })); advance(5000); }
@@ -91,6 +100,7 @@ test("crash-loop clears once fewer than 3 starts remain in the window", () => {
   assert.equal(s.restarts, 0);
 });
 
+// @spec CTRL-HEALTH-004
 test("repeated heartbeats with one startedAt are not restarts", () => {
   const { tracker, advance } = setup();
   for (let i = 0; i < 12; i++) { tracker.ingest(hb()); advance(5000); }
@@ -98,6 +108,7 @@ test("repeated heartbeats with one startedAt are not restarts", () => {
   assert.notEqual(tracker.get("chat").state, "crash-looping");
 });
 
+// @spec CTRL-HEALTH-005
 test("snapshot lists every known service, unseen ones as unknown", () => {
   const { tracker } = setup();
   tracker.ingest(hb({ service: "cortex", deps: { llm: "ok" } }));
@@ -111,6 +122,7 @@ test("snapshot lists every known service, unseen ones as unknown", () => {
   assert.ok(snap.find((s) => s.service === "extra"));
 });
 
+// @spec CTRL-HEALTH-006
 test("onChange fires on state transitions (including time-based ones via tick), not on identical heartbeats", () => {
   const { tracker, advance } = setup();
   const calls: string[] = [];
@@ -123,6 +135,7 @@ test("onChange fires on state transitions (including time-based ones via tick), 
   assert.deepEqual(calls, ["up", "stale"]);
 });
 
+// @spec CTRL-HEALTH-007
 test("seed() uses history timestamps as receive times", () => {
   const { tracker, clock } = setup();
   tracker.seed([{ ts: clock.t - 20_000, data: hb() }]);

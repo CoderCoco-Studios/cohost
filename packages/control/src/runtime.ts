@@ -43,6 +43,7 @@ export interface ComposeRuntimeOptions {
 }
 
 /** `docker compose up -d|stop|restart <composeName>` through the docker CLI. */
+// @spec CTRL-RUNTIME-001
 export class ComposeRuntime implements Runtime {
   readonly name = "compose" as const;
   private exec: ExecFile;
@@ -52,6 +53,7 @@ export class ComposeRuntime implements Runtime {
     this.manifest = o.manifest ?? SERVICE_MANIFEST;
   }
 
+  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004
   private async run(id: string, verb: string[], extraEnv?: Readonly<Record<string, string>>): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);
@@ -66,6 +68,7 @@ export class ComposeRuntime implements Runtime {
 
   start(id: string, opts: StartOptions = {}) { return this.run(id, ["up", "-d"], opts.env); }
   stop(id: string) { return this.run(id, ["stop"]); }
+  // @spec CTRL-RUNTIME-002
   restart(id: string, opts: StartOptions = {}) {
     // `restart` keeps the container's env; recreate through `up` when overrides must be applied.
     return opts.env && Object.keys(opts.env).length > 0 ? this.run(id, ["up", "-d", "--force-recreate"], opts.env) : this.run(id, ["restart"]);
@@ -123,6 +126,7 @@ export class ProcessRuntime implements Runtime {
   /** pid of the tracked process for a service, if running. */
   pid(id: string): number | undefined { return this.children.get(id)?.pid; }
 
+  // @spec CTRL-RUNTIME-004, CTRL-RUNTIME-005, CTRL-RUNTIME-006
   async start(id: string, opts: StartOptions = {}): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);
@@ -143,6 +147,7 @@ export class ProcessRuntime implements Runtime {
     return { ok: true, detail: `pid ${child.pid}` };
   }
 
+  // @spec CTRL-RUNTIME-004, CTRL-RUNTIME-007
   async stop(id: string): Promise<RuntimeResult> {
     if (!findService(id, this.manifest)) return unknown(id);
     const child = this.children.get(id);
@@ -162,6 +167,7 @@ export class ProcessRuntime implements Runtime {
     return { ok: true, detail: escalated ? "killed (SIGKILL after timeout)" : "stopped" };
   }
 
+  // @spec CTRL-RUNTIME-008
   async restart(id: string, opts: StartOptions = {}): Promise<RuntimeResult> {
     const stopped = await this.stop(id);
     if (!stopped.ok) return stopped;

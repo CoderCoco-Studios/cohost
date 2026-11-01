@@ -20,6 +20,7 @@ export function findWorkspaceRoot(start = process.cwd()): string | undefined {
   }
 }
 
+// @spec CFG-DIR-001, CFG-DIR-002
 export const configDir = (): string =>
   resolve(process.env.CONFIG_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
 
@@ -29,6 +30,7 @@ export const configDir = (): string =>
  * form lets config.yaml hold the normal value literally while still allowing
  * a per-machine override from .env.
  */
+// @spec CFG-ENV-001, CFG-ENV-002, CFG-ENV-003
 export function substituteEnv(text: string): string {
   return text.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, k: string, def: string | undefined) => {
     const v = process.env[k];
@@ -37,6 +39,7 @@ export function substituteEnv(text: string): string {
   });
 }
 
+// @spec CFG-LOAD-002
 function coerceEmptyNumbers(raw: unknown): unknown {
   // YAML like `port: ${OBS_PORT}` becomes `port: ` (null) when the var is unset. Leave it to defaults.
   if (Array.isArray(raw)) return raw.map(coerceEmptyNumbers);
@@ -63,6 +66,7 @@ const dotEnvPath = (): string => join(configDir(), "..", ".env");
 /** True when a dev run has no .env (compose injects env itself, so containers are exempt). */
 const missingDotEnv = (): boolean => !existsSync(dotEnvPath()) && !existsSync("/.dockerenv");
 
+// @spec CFG-ENV-004, CFG-ENV-005
 export function loadDotEnv(file = dotEnvPath()): void {
   if (!existsSync(file)) return;
   for (const raw of readFileSync(file, "utf8").split("\n")) {
@@ -90,6 +94,7 @@ export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] 
   return out;
 }
 
+// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-004, CFG-LOAD-005
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
@@ -118,6 +123,7 @@ export function loadConfig(force = false): Config {
  * yours and git-ignored; the committed *.example.* versions seed them on first
  * run (install.sh does the same copy). Returns the path to read.
  */
+// @spec CFG-DIR-003, CFG-DIR-004, CFG-DIR-005
 export function ensureFromExample(name: string, example: string): string {
   const file = join(configDir(), name);
   if (existsSync(file)) return file;
@@ -128,11 +134,13 @@ export function ensureFromExample(name: string, example: string): string {
   return file;
 }
 
+// @spec CFG-USR-002
 export function loadExpressions(): ExpressionMap {
   const file = ensureFromExample("expressions.yaml", "expressions.example.yaml");
   return ExpressionMapSchema.parse(parseYaml(readFileSync(file, "utf8")) ?? {});
 }
 
+// @spec CFG-USR-001
 export function personalityPath(): string {
   return ensureFromExample("personality.md", "personality.example.md");
 }
@@ -144,6 +152,7 @@ export function savePersonality(text: string): void {
 }
 
 /** Required env var, throws a readable error if missing. */
+// @spec CFG-ENV-007
 export function env(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing required environment variable ${name} (set it in .env)`);
@@ -153,6 +162,7 @@ export function envOr(name: string, fallback: string): string {
   return process.env[name] || fallback;
 }
 
+// @spec CFG-URL-001, CFG-URL-002, CFG-URL-003
 export const urls = {
   redis: () => envOr("REDIS_URL", "redis://127.0.0.1:6379"),
   database: () => envOr("DATABASE_URL", "postgres://cohost:cohost@127.0.0.1:5432/cohost"),
@@ -165,6 +175,7 @@ export const urls = {
   dashboard: () => envOr("DASHBOARD_URL", "http://127.0.0.1:3000"),
 };
 
+// @spec CFG-URL-004
 export function createLogger(service: string) {
   return pino({ name: service, level: envOr("LOG_LEVEL", "info") });
 }

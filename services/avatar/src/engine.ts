@@ -23,20 +23,20 @@ export class Engine {
 
   constructor(private cfg: Config["avatar"], private driver: AvatarDriver, private onState?: (p: AvatarParams, emotion: Emotion, intensity: number) => void) {}
 
-  start(): void {
+  start(): void { // @spec AVATAR-ENG-001
     const dt = 1000 / this.cfg.fps;
     this.timer = setInterval(() => this.frame(), dt);
   }
   stop(): void { clearInterval(this.timer); }
 
   /** Audio is ready; remember it so we can lip-sync when a sink starts playing. */
-  prepare(u: Utterance): void {
+  prepare(u: Utterance): void { // @spec AVATAR-ENG-002
     this.known.set(u.id, u);
     if (this.known.size > 20) this.known.delete(this.known.keys().next().value!);
   }
 
   /** A sink started playing this utterance. */
-  play(id: string): void {
+  play(id: string): void { // @spec AVATAR-ENG-003, AVATAR-ENG-004
     const u = this.known.get(id);
     if (!u) return;
     this.playing = { u, startedAt: Date.now() };
@@ -44,18 +44,18 @@ export class Engine {
     if (u.gesture) this.driver.trigger(u.gesture);
   }
 
-  done(id: string): void {
+  done(id: string): void { // @spec AVATAR-ENG-007
     if (this.playing?.u.id === id) this.playing = undefined;
   }
 
-  setEmotion(e: Emotion, holdMs = 4000): void {
+  setEmotion(e: Emotion, holdMs = 4000): void { // @spec AVATAR-ENG-008
     this.emotion = e;
     this.emotionUntil = Date.now() + holdMs;
     this.driver.setExpression(e, 1);
   }
 
   /** Mood changes show up softly, and only when no utterance is holding the face. */
-  setMood(e: Emotion): void {
+  setMood(e: Emotion): void { // @spec AVATAR-ENG-009, AVATAR-ENG-010
     if (e === this.mood) return;
     this.mood = e;
     if (Date.now() > this.emotionUntil) {
@@ -70,23 +70,23 @@ export class Engine {
 
     // --- mouth from envelope
     let mouth = 0;
-    if (this.playing) {
+    if (this.playing) { // @spec AVATAR-ENG-005
       const { u, startedAt } = this.playing;
       const i = Math.floor(((now - startedAt) / 1000) * u.envelopeHz);
       if (i < u.envelope.length) mouth = u.envelope[i] ?? 0;
-      else if (now - startedAt > u.durationMs + 500) this.playing = undefined;
+      else if (now - startedAt > u.durationMs + 500) this.playing = undefined; // @spec AVATAR-ENG-006
     }
     this.target.mouthOpen = mouth;
 
     // --- emotion decay back to the resting mood
-    if (this.emotion !== this.mood && now > this.emotionUntil) {
+    if (this.emotion !== this.mood && now > this.emotionUntil) { // @spec AVATAR-ENG-011
       this.emotion = this.mood;
       this.driver.setExpression(this.mood, this.mood === "neutral" ? 0 : 0.5);
     }
-    this.target.mouthSmile = this.emotion === "happy" || this.emotion === "laugh" || this.emotion === "smug" ? 0.7 : 0.15;
+    this.target.mouthSmile = this.emotion === "happy" || this.emotion === "laugh" || this.emotion === "smug" ? 0.7 : 0.15; // @spec AVATAR-ENG-012
 
     // --- idle motion: slow drifting sines, a bit livelier while talking
-    if (this.cfg.idle_motion) {
+    if (this.cfg.idle_motion) { // @spec AVATAR-ENG-013
       const k = this.playing ? 1.6 : 1;
       this.target.headX = k * (4 * Math.sin(t / 3.1) + 2 * Math.sin(t / 1.3));
       this.target.headY = k * (3 * Math.sin(t / 4.7));
@@ -96,7 +96,7 @@ export class Engine {
     }
 
     // --- blink
-    if (now > this.nextBlink) {
+    if (now > this.nextBlink) { // @spec AVATAR-ENG-014
       this.blinkUntil = now + 120;
       this.nextBlink = now + 2500 + Math.random() * 3500;
     }
@@ -104,12 +104,12 @@ export class Engine {
 
     // --- smoothing (mouth and blink snap faster than the head)
     const s = this.cfg.smoothing;
-    for (const k of Object.keys(this.cur) as (keyof AvatarParams)[]) {
+    for (const k of Object.keys(this.cur) as (keyof AvatarParams)[]) { // @spec AVATAR-ENG-015
       const rate = k === "mouthOpen" ? Math.min(1, s * 3) : k === "blink" ? 1 : s;
       this.cur[k] += (this.target[k] - this.cur[k]) * rate;
     }
 
     this.driver.setParams(this.cur);
-    this.onState?.(this.cur, this.emotion, this.emotion === "neutral" ? 0 : now <= this.emotionUntil ? 1 : 0.5);
+    this.onState?.(this.cur, this.emotion, this.emotion === "neutral" ? 0 : now <= this.emotionUntil ? 1 : 0.5); // @spec AVATAR-ENG-016
   }
 }

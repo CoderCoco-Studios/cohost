@@ -36,13 +36,13 @@ export class VTubeStudioDriver implements AvatarDriver {
   }
   connected() { return this.ready; }
 
-  async connect(ctx: DriverContext): Promise<void> {
+  async connect(ctx: DriverContext): Promise<void> { // @spec AVATAR-VTS-001, AVATAR-VTS-002
     this.ctx = ctx;
     this.closing = false;
     await this.open();
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(): Promise<void> { // @spec AVATAR-VTS-007
     this.closing = true;
     clearTimeout(this.reconnectTimer);
     this.ws?.close();
@@ -50,7 +50,7 @@ export class VTubeStudioDriver implements AvatarDriver {
   }
 
   // ---- params: injected every frame. VTS resets injected values after ~1s of silence.
-  setParams(p: AvatarParams): void {
+  setParams(p: AvatarParams): void { // @spec AVATAR-VTS-008, AVATAR-VTS-012
     if (!this.ready) return;
     void this.send("InjectParameterDataRequest", {
       faceFound: true,
@@ -71,7 +71,7 @@ export class VTubeStudioDriver implements AvatarDriver {
     }, false);
   }
 
-  setExpression(emotion: Emotion, intensity: number): void {
+  setExpression(emotion: Emotion, intensity: number): void { // @spec AVATAR-VTS-009, AVATAR-VTS-012
     if (!this.ready) return;
     const target = intensity > 0.05 ? this.ctx.expressions[emotion] : undefined;
     if (target === this.activeExpr) return;
@@ -80,7 +80,7 @@ export class VTubeStudioDriver implements AvatarDriver {
     this.activeExpr = target;
   }
 
-  trigger(gesture: string): void {
+  trigger(gesture: string): void { // @spec AVATAR-VTS-011, AVATAR-VTS-012
     if (!this.ready) return;
     const name = this.ctx.gestures[gesture];
     if (!name) return;
@@ -90,13 +90,13 @@ export class VTubeStudioDriver implements AvatarDriver {
   }
 
   // ---- internals
-  private async activate(name: string, on: boolean) {
+  private async activate(name: string, on: boolean) { // @spec AVATAR-VTS-010
     if (name.endsWith(".exp3.json")) {
       await this.send("ExpressionActivationRequest", { expressionFile: name, active: on });
       return;
     }
     const hk = this.hotkeys.get(name.toLowerCase());
-    if (!hk) { this.ctx.log.warn({ name }, "expression hotkey not found in VTS"); return; }
+    if (!hk) { this.ctx.log.warn({ name }, "expression hotkey not found in VTS"); return; } // @spec AVATAR-VTS-015
     // Hotkeys toggle; we only know our own bookkeeping, so trigger on both on and off.
     await this.send("HotkeyTriggerRequest", { hotkeyID: hk.hotkeyID });
   }
@@ -115,14 +115,14 @@ export class VTubeStudioDriver implements AvatarDriver {
           await this.loadHotkeys();
           this.ready = true;
           this.ctx.log.info({ hotkeys: this.hotkeys.size }, "vts authenticated");
-        } catch (err) {
+        } catch (err) { // @spec AVATAR-VTS-005
           this.ctx.log.error({ err }, "vts auth failed");
           ws.close();
         }
         resolve();
       });
       ws.on("message", (raw) => this.onMessage(String(raw)));
-      ws.on("close", () => {
+      ws.on("close", () => { // @spec AVATAR-VTS-007
         this.ready = false;
         for (const p of this.pending.values()) p.reject(new Error("socket closed"));
         this.pending.clear();
@@ -138,7 +138,7 @@ export class VTubeStudioDriver implements AvatarDriver {
     });
   }
 
-  private async authenticate() {
+  private async authenticate() { // @spec AVATAR-VTS-003
     const { pluginName, pluginDeveloper } = this.opts;
     let token = existsSync(this.tokenFile()) ? readFileSync(this.tokenFile(), "utf8").trim() : "";
     if (!token) {
@@ -148,7 +148,7 @@ export class VTubeStudioDriver implements AvatarDriver {
       writeFileSync(this.tokenFile(), token);
     }
     const auth = (await this.send("AuthenticationRequest", { pluginName, pluginDeveloper, authenticationToken: token })) as { authenticated: boolean; reason?: string };
-    if (!auth.authenticated) {
+    if (!auth.authenticated) { // @spec AVATAR-VTS-004
       writeFileSync(this.tokenFile(), "");
       throw new Error(`VTS rejected token: ${auth.reason}`);
     }
@@ -160,7 +160,7 @@ export class VTubeStudioDriver implements AvatarDriver {
     for (const h of r.availableHotkeys ?? []) this.hotkeys.set(h.name.toLowerCase(), h);
   }
 
-  private send(messageType: string, data: unknown, expectReply = true, timeoutMs = 5000): Promise<unknown> {
+  private send(messageType: string, data: unknown, expectReply = true, timeoutMs = 5000): Promise<unknown> { // @spec AVATAR-VTS-006
     const requestID = randomUUID();
     const msg = JSON.stringify({ apiName: "VTubeStudioPublicAPI", apiVersion: "1.0", requestID, messageType, data });
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("vts not connected"));

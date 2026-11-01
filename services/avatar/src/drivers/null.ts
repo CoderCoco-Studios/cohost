@@ -2,7 +2,7 @@ import type { Emotion } from "@cohost/config";
 import type { AvatarDriver, AvatarParams, Capability, DriverContext } from "../types.js";
 
 /** No avatar app. Logs expression changes; the dashboard preview shows the state. */
-export class NullDriver implements AvatarDriver {
+export class NullDriver implements AvatarDriver { // @spec AVATAR-DRV-007
   readonly name = "null";
   private log?: DriverContext["log"];
   capabilities(): ReadonlySet<Capability> { return new Set<Capability>(["expressions", "params", "gestures", "lipsync"]); }

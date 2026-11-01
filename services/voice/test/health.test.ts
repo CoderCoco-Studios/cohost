@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { VoiceHealth } from "../src/health.js";
 
-test("kokoro ok by default; shutdown sends one stopping", async () => {
+test("kokoro ok by default; shutdown sends one stopping", async () => { // @spec VOICE-HLTH-001, VOICE-HLTH-004
   const hbs = await runHeartbeat(new VoiceHealth().spec);
   assert.deepEqual(hbs.map((h) => h.state), ["starting", "ready", "stopping"]);
   assert.deepEqual(hbs[1]!.deps, { kokoro: "ok" });
   assert.equal(hbs[1]!.service, "voice");
 });
 
-test("a failed synthesis marks kokoro down (degraded), the next success marks it ok", async () => {
+test("a failed synthesis marks kokoro down (degraded), the next success marks it ok", async () => { // @spec VOICE-HLTH-002
   const h = new VoiceHealth();
   let fail = true;
   const synth = h.track(async () => { if (fail) throw new Error("tts 500"); return Buffer.from("x"); });

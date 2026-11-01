@@ -32,7 +32,7 @@ export interface DriverContext {
  * Implement this to support a new avatar app. Keep drivers dumb: no timing,
  * no smoothing, no decisions — the engine does that. Drivers just translate.
  */
-export interface AvatarDriver {
+export interface AvatarDriver { // @spec AVATAR-DRV-001
   readonly name: string;
   capabilities(): ReadonlySet<Capability>;
   connect(ctx: DriverContext): Promise<void>;

@@ -18,7 +18,7 @@ function setup(synth: (t: string) => Promise<Buffer> = async () => halfSecond) {
 beforeEach(() => mock.timers.enable({ apis: ["setTimeout"] }));
 afterEach(() => mock.timers.reset());
 
-test("brain.say → voice.utterance with duration, envelope and a fetchable URL", async () => {
+test("brain.say → voice.utterance with duration, envelope and a fetchable URL", async () => { // @spec VOICE-UTT-001, VOICE-UTT-002
   const texts: string[] = [];
   const { voice, bus } = setup(async (t) => { texts.push(t); return halfSecond; });
   await voice.onEvent(say("u1"));
@@ -34,7 +34,7 @@ test("brain.say → voice.utterance with duration, envelope and a fetchable URL"
   assert.equal(u!.audioUrl, "http://voice:8700/audio/u1.wav");
 });
 
-test("virtual sink: unclaimed after 1.5 s, voice times the line itself", async () => {
+test("virtual sink: unclaimed after 1.5 s, voice times the line itself", async () => { // @spec VOICE-SINK-002, VOICE-SINK-003
   const { voice, bus } = setup();
   await voice.onEvent(say("u1"));
   mock.timers.tick(1499);
@@ -48,7 +48,7 @@ test("virtual sink: unclaimed after 1.5 s, voice times the line itself", async (
   assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
 });
 
-test("virtual sink stands down when a real sink claims the line", async () => {
+test("virtual sink stands down when a real sink claims the line", async () => { // @spec VOICE-SINK-001, VOICE-SINK-004
   const { voice, bus } = setup();
   await voice.onEvent(say("u1"));
   await voice.onEvent(event("voice.playing", { id: "u1", sink: "discord" }));
@@ -58,7 +58,7 @@ test("virtual sink stands down when a real sink claims the line", async () => {
   assert.deepEqual(bus.types(), ["voice.utterance"]);
 });
 
-test("a TTS failure still reports voice.done so the brain moves on", async () => {
+test("a TTS failure still reports voice.done so the brain moves on", async () => { // @spec VOICE-UTT-003, VOICE-SINK-006
   const { voice, bus, rec } = setup(async () => { throw new Error("tts 500"); });
   await voice.onEvent(say("u1"));
   assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", sink: "error" } }]);
@@ -68,7 +68,7 @@ test("a TTS failure still reports voice.done so the brain moves on", async () =>
   assert.deepEqual(garbage.bus.of("voice.done"), [{ id: "u2", sink: "error" }]);
 });
 
-test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", async () => {
+test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", async () => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004
   mock.timers.reset(); // real timers for the HTTP round-trips
   const { voice } = setup();
   await voice.onEvent(say("abc-123"));
@@ -88,7 +88,7 @@ test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", a
   } finally { server.close(); }
 });
 
-test("only the newest 50 utterances are kept", async () => {
+test("only the newest 50 utterances are kept", async () => { // @spec VOICE-HTTP-001, VOICE-HTTP-003
   mock.timers.reset();
   const { voice } = setup();
   for (let i = 0; i < 51; i++) await voice.onEvent(say(`u${i}`));
@@ -102,7 +102,7 @@ test("only the newest 50 utterances are kept", async () => {
   assert.equal(status("u50"), 200);
 });
 
-test("kokoroSynth asks the TTS container for a WAV in the configured voice and speed", async () => {
+test("kokoroSynth asks the TTS container for a WAV in the configured voice and speed", async () => { // @spec VOICE-SYN-002, VOICE-SYN-003
   mock.timers.reset();
   let body: Record<string, unknown> = {};
   let status = 200;

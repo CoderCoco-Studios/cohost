@@ -27,14 +27,14 @@ async function waitFor(cond: () => boolean, what: string, ms = 2000) {
   }
 }
 
-test("createDriver picks the driver named in config", () => {
+test("createDriver picks the driver named in config", () => { // @spec AVATAR-DRV-002
   const cfg = (driver: string) => ({ driver, vtube_studio: { host: "h", port: 1, plugin_name: "p", plugin_developer: "d" }, vmc: { host: "h", port: 2 } }) as never;
   assert.ok(createDriver(cfg("vtube-studio")) instanceof VTubeStudioDriver);
   assert.ok(createDriver(cfg("vmc")) instanceof VmcDriver);
   assert.ok(createDriver(cfg("null")) instanceof NullDriver);
 });
 
-test("null driver: always connected, accepts everything", async () => {
+test("null driver: always connected, accepts everything", async () => { // @spec AVATAR-DRV-007
   const d = new NullDriver();
   await d.connect(ctx());
   assert.equal(d.connected(), true);
@@ -60,7 +60,7 @@ function decodeOsc(b: Buffer): { address: string; args: (string | number)[] } {
   return { address, args };
 }
 
-test("vmc: each frame sends head pose, mouth/blink for VRM 0.x and 1.0, then Apply + OK", async () => {
+test("vmc: each frame sends head pose, mouth/blink for VRM 0.x and 1.0, then Apply + OK", async () => { // @spec AVATAR-VMC-001, AVATAR-VMC-002, AVATAR-VMC-003, AVATAR-VMC-006
   const sock = dgram.createSocket("udp4");
   const got: { address: string; args: (string | number)[] }[] = [];
   sock.on("message", (m) => got.push(decodeOsc(m)));
@@ -130,7 +130,7 @@ async function vtsServer(opts: { authenticated?: boolean; apiErrorOn?: string } 
 }
 const vts = (port: number) => new VTubeStudioDriver({ host: "127.0.0.1", port, pluginName: "cohost", pluginDeveloper: "dev" });
 
-test("vts: first connect asks for a plugin token and saves it; the next connect reuses it", async () => {
+test("vts: first connect asks for a plugin token and saves it; the next connect reuses it", async () => { // @spec AVATAR-VTS-001, AVATAR-VTS-003
   const s = await vtsServer();
   const c = ctx();
   const d = vts(s.port);
@@ -150,7 +150,7 @@ test("vts: first connect asks for a plugin token and saves it; the next connect 
   await again.disconnect();
 });
 
-test("vts: a rejected token is wiped so the next run asks again", async () => {
+test("vts: a rejected token is wiped so the next run asks again", async () => { // @spec AVATAR-VTS-004
   const s = await vtsServer({ authenticated: false });
   const c = ctx();
   writeFileSync(join(c.stateDir, ".vts-token"), "stale");
@@ -161,7 +161,7 @@ test("vts: a rejected token is wiped so the next run asks again", async () => {
   await d.disconnect(); // also cancels the scheduled reconnect
 });
 
-test("vts: an APIError reply fails the request (and so the auth)", async () => {
+test("vts: an APIError reply fails the request (and so the auth)", async () => { // @spec AVATAR-VTS-005
   const s = await vtsServer({ apiErrorOn: "HotkeysInCurrentModelRequest" });
   const d = vts(s.port);
   await d.connect(ctx());
@@ -169,14 +169,14 @@ test("vts: an APIError reply fails the request (and so the auth)", async () => {
   await d.disconnect();
 });
 
-test("vts: an unreachable app doesn't block startup", async () => {
+test("vts: an unreachable app doesn't block startup", async () => { // @spec AVATAR-VTS-002
   const d = vts(1);
   await d.connect(ctx());
   assert.equal(d.connected(), false);
   await d.disconnect();
 });
 
-test("vts: params are injected every frame, clamped to the VTS ranges", async () => {
+test("vts: params are injected every frame, clamped to the VTS ranges", async () => { // @spec AVATAR-VTS-008
   const s = await vtsServer();
   const d = vts(s.port);
   await d.connect(ctx());
@@ -192,7 +192,7 @@ test("vts: params are injected every frame, clamped to the VTS ranges", async ()
   await d.disconnect();
 });
 
-test("vts: hotkey expressions toggle off the old one and on the new one; .exp3.json files are (de)activated", async () => {
+test("vts: hotkey expressions toggle off the old one and on the new one; .exp3.json files are (de)activated", async () => { // @spec AVATAR-VTS-009, AVATAR-VTS-010
   const s = await vtsServer();
   const d = vts(s.port);
   await d.connect(ctx());
@@ -212,7 +212,7 @@ test("vts: hotkey expressions toggle off the old one and on the new one; .exp3.j
   await d.disconnect();
 });
 
-test("vts: gestures map through expressions.yaml, case-insensitively; unknown ones warn or no-op", async () => {
+test("vts: gestures map through expressions.yaml, case-insensitively; unknown ones warn or no-op", async () => { // @spec AVATAR-VTS-011
   const s = await vtsServer();
   const d = vts(s.port);
   await d.connect(ctx({ gestures: { wave: "WAVE", dance: "Dance" } }));
@@ -227,7 +227,7 @@ test("vts: gestures map through expressions.yaml, case-insensitively; unknown on
   await d.disconnect();
 });
 
-test("vts: nothing is sent before authentication completes", () => {
+test("vts: nothing is sent before authentication completes", () => { // @spec AVATAR-VTS-012
   const d = vts(1);
   d.setParams(NEUTRAL); d.setExpression("happy", 1); d.trigger("wave"); // must not throw
   assert.equal(d.connected(), false);

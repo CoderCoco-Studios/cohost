@@ -161,6 +161,6 @@ Three tiers, none of which is validated by `ConfigSchema`.
 
 **OpenSpec**
 - `openspec/specs/config/spec.md` (8 requirements, baseline)
-- `openspec/changes/add-isolated-backends/specs/config/spec.md` (MODIFIED "Schema validation and defaults", ADDED "Isolation preset variables")
+- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/config/spec.md` (MODIFIED "Schema validation and defaults", ADDED "Isolation preset variables")
 
 **Docs**: README.md "Configuration" section (lines 73-87), `docs/TESTING.md` section 1 (known problems 1-3 there are resolved by this package's workspace walk, `.env` hint and `urls.voice`).

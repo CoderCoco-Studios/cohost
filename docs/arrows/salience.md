@@ -34,9 +34,9 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ### OpenSpec
 - openspec/specs/salience/spec.md
-- openspec/changes/add-service-health/specs/salience/spec.md
-- openspec/changes/add-service-control/specs/salience/spec.md
-- openspec/changes/add-test-injection/specs/salience/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/salience/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/salience/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/salience/spec.md
 
 ## Architecture
 

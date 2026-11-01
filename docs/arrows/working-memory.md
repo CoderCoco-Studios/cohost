@@ -29,8 +29,8 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ### OpenSpec
 - openspec/specs/working-memory/spec.md
-- openspec/changes/add-test-injection/specs/working-memory/spec.md
-- (propagation is specified under openspec/changes/add-test-injection/specs/salience/spec.md and .../cortex/spec.md)
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/working-memory/spec.md
+- (propagation is specified under openspec/changes/archive/2026-11-01-add-test-injection/specs/salience/spec.md and .../cortex/spec.md)
 
 ## Architecture
 

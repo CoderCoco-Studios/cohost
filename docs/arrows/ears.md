@@ -35,9 +35,9 @@ Discord voice in (per-speaker capture, STT, `speech.heard`), Discord voice out (
 
 ### OpenSpec
 - openspec/specs/ears/spec.md
-- openspec/changes/add-service-health/specs/ears/spec.md
-- openspec/changes/add-isolated-backends/specs/ears/spec.md
-- openspec/changes/add-test-injection/specs/ears/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/ears/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/ears/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/ears/spec.md
 
 ## Architecture
 

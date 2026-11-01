@@ -33,9 +33,9 @@ Twitch chat sense: Twitch IRC (or a fake source) in, filtered `chat.message` eve
 
 ### OpenSpec
 - openspec/specs/chat/spec.md
-- openspec/changes/add-service-health/specs/chat/spec.md
-- openspec/changes/add-isolated-backends/specs/chat/spec.md
-- openspec/changes/add-test-injection/specs/chat/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/chat/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/chat/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/chat/spec.md
 
 ## Architecture
 

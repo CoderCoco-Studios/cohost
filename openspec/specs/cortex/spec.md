@@ -4,6 +4,7 @@
 The cortex is the only region that calls the chat LLM. It turns `attention.focus` into a spoken line published as `brain.say`, using working memory, recalled memories, mood and viewer notes, and reports `brain.status`.
 
 ## Requirements
+
 ### Requirement: Inputs and context
 The system SHALL subscribe (group `cortex`, `fromNow`) to `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `voice.done`, `attention.focus`, `memory.recall.reply`, `memory.viewer`, `affect.state` and `control`, keeping a `Context` of `brain.working_memory_events` events; every `brain.say` (any source) is added as a self line.
 
@@ -80,3 +81,66 @@ The system SHALL publish `brain.say` `{id,text,emotion,gesture,reason}` followed
 #### Scenario: Operator say
 - **WHEN** `control` `say` with text arrives
 - **THEN** `brain.say` is published with reason `operator`
+
+### Requirement: Heartbeat
+The cortex service SHALL publish `service.heartbeat` with `service: "cortex"` via `startHeartbeat`: `starting` at boot, `ready` once the chat LLM backend answered `llm.ping()`, then every `intervalMs` (default 5000), and `stopping` on graceful shutdown. Its `deps` MUST be `{llm}`. It MUST report `mode: "live"` while a real backend is used.
+
+#### Scenario: Ready
+- **WHEN** cortex has finished starting
+- **THEN** a heartbeat with `service: "cortex"`, `state: "ready"` and the deps above is published every 5 s
+
+#### Scenario: LLM unreachable
+- **WHEN** `llm.ping()` fails
+- **THEN** `deps.llm` is `down` and `state` is `degraded`
+
+#### Scenario: Shutdown
+- **WHEN** cortex receives SIGTERM
+- **THEN** it publishes one `stopping` heartbeat before exiting 0
+
+### Requirement: Startup with the mock provider
+The cortex SHALL start and subscribe once `llm.ping()` is true; with `llm.provider: mock` this is immediate, and it MUST then answer `attention.focus` with `brain.say` using the mock reply through the normal parsing, critic and inhibition paths. With a real provider it SHALL keep waiting for `ping()` as before, while reporting `degraded` with the model backend down (heartbeat from change `add-service-health`) rather than silently blocking.
+
+#### Scenario: Mock answers
+- **WHEN** `llm.provider` is `mock` and `attention.focus` arrives
+- **THEN** a `brain.say` is published with non-empty text and a valid emotion
+
+#### Scenario: Real backend down
+- **WHEN** `llm.provider` is `ollama` and Ollama is unreachable
+- **THEN** the cortex keeps retrying and reports degraded; it does not exit
+
+### Requirement: Isolation preset and closure
+`LLM_PROVIDER=mock` SHALL be the cortex isolation preset (heartbeat `mode` `mock`). An isolated cortex run MUST include its bus-level requirements salience and affect (the supervisor change `add-service-control` computes the closure); memory is optional because the cortex answers without recall after `brain.cortex.recall_timeout_ms`.
+
+#### Scenario: Closure without memory
+- **WHEN** only cortex, salience and affect run with the mock provider
+- **THEN** a recall times out after `recall_timeout_ms` and the cortex still publishes `brain.say`
+
+### Requirement: Targeted pause and resume
+The cortex service SHALL treat `control` events with a `target` other than `cortex` as not addressed to it, and SHALL handle `pause` and `resume` (target `cortex` or undefined) by idling and resuming in-process without exiting.
+
+#### Scenario: Pause addressed to this service
+- **WHEN** `control {cmd:"pause", target:"cortex"}` arrives
+- **THEN** the service enters the paused state and no LLM call is started while paused
+
+#### Scenario: Pause for another service
+- **WHEN** `control {cmd:"pause", target:"voice"}` arrives
+- **THEN** the cortex service state is unchanged
+
+#### Scenario: Resume
+- **WHEN** `control {cmd:"resume"}` (no target) arrives while paused
+- **THEN** normal processing resumes
+
+### Requirement: Injection flag propagation
+When thinking about an `attention.focus` with `injected: true`, the cortex SHALL publish the resulting `brain.say` with `injected: true` and the focus's `remember` unchanged. A `brain.say` produced for a real focus, or by `control` `say`, MUST NOT carry either flag.
+
+#### Scenario: Reply to injected input
+- **WHEN** an `attention.focus {injected: true, remember: false}` is answered
+- **THEN** `brain.say` has `injected: true, remember: false`
+
+#### Scenario: Remembered injection
+- **WHEN** the focus has `injected: true, remember: true`
+- **THEN** `brain.say` has `injected: true, remember: true`
+
+#### Scenario: Real input and operator say
+- **WHEN** the focus is real, or `control` `say` is handled
+- **THEN** `brain.say` carries neither flag

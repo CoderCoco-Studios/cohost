@@ -133,9 +133,9 @@ Config read: `vision.enabled` (default false; env `VISION_ENABLED`), `vision.mod
 
 ### OpenSpec
 - `openspec/specs/eyes/spec.md`
-- `openspec/changes/add-service-health/specs/eyes/spec.md`
-- `openspec/changes/add-isolated-backends/specs/eyes/spec.md`
-- `openspec/changes/add-test-injection/specs/eyes/spec.md`
+- `openspec/changes/archive/2026-11-01-add-service-health/specs/eyes/spec.md`
+- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/eyes/spec.md`
+- `openspec/changes/archive/2026-11-01-add-test-injection/specs/eyes/spec.md`
 
 ### Docs
 - [HLD](../../high-level-design.md), [specs](eyes-specs.md), [arrow](../../arrows/eyes.md)

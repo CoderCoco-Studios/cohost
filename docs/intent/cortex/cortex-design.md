@@ -257,7 +257,7 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
   memory (stores `brain.say` as `self`), dashboard (displays `brain.status`, sends `control`)
 - External: the configured chat LLM backend (Ollama, OpenAI-compatible, Anthropic, Bedrock, or mock), optional HTTP critic endpoint
 - OpenSpec: `openspec/specs/cortex/spec.md`; deltas
-  `openspec/changes/add-service-health/specs/cortex/spec.md`,
-  `openspec/changes/add-isolated-backends/specs/cortex/spec.md`,
-  `openspec/changes/add-service-control/specs/cortex/spec.md`,
-  `openspec/changes/add-test-injection/specs/cortex/spec.md`
+  `openspec/changes/archive/2026-11-01-add-service-health/specs/cortex/spec.md`,
+  `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/cortex/spec.md`,
+  `openspec/changes/archive/2026-11-01-add-service-control/specs/cortex/spec.md`,
+  `openspec/changes/archive/2026-11-01-add-test-injection/specs/cortex/spec.md`

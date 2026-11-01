@@ -52,7 +52,7 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:8-10` is a second, hand-kept copy of 
 
 ### Runtime interface
 
-`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail? }` (`runtime.ts:5-20`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/add-service-control/design.md` decision 1) was not implemented.
+`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail? }` (`runtime.ts:5-20`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
 
 ### ComposeRuntime (`runtime.ts:46-73`)
 
@@ -247,11 +247,11 @@ Other segments (direction):
 External: Redis Streams (`cohost:events`, `cohost:health`), `docker compose` CLI, `pnpm`, Node `child_process`, `util.parseArgs`, `crypto`.
 
 OpenSpec: the capabilities `service-health` and `service-control` exist ONLY as unarchived deltas. There is no `openspec/specs/service-health/` or `openspec/specs/service-control/` baseline directory (the comments at `manifest.ts:4` and `health.ts:45` point at paths that do not exist), so these files are the only written source of intent:
-- `openspec/changes/add-service-health/specs/service-health/spec.md` (heartbeat contract, derived states, crash-loop, snapshot, compose healthcheck)
-- `openspec/changes/add-service-health/specs/bus/spec.md` (health stream, heartbeat helper, catalogue)
-- `openspec/changes/add-service-health/specs/dashboard/spec.md` and the per-service `Heartbeat` deltas
-- `openspec/changes/add-service-control/specs/service-control/spec.md` (runtime adapters, manifest-only ids, start modes, protected services, gating, audit event, `cohostctl`)
-- `openspec/changes/add-service-control/specs/bus/spec.md` (`service.lifecycle`), `.../dashboard/spec.md` (routes, token), `openspec/changes/add-service-control/design.md`
-- `openspec/changes/add-isolated-backends/specs/*` (isolation presets and the cortex closure requirement)
+- `openspec/changes/archive/2026-11-01-add-service-health/specs/service-health/spec.md` (heartbeat contract, derived states, crash-loop, snapshot, compose healthcheck)
+- `openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md` (health stream, heartbeat helper, catalogue)
+- `openspec/changes/archive/2026-11-01-add-service-health/specs/dashboard/spec.md` and the per-service `Heartbeat` deltas
+- `openspec/changes/archive/2026-11-01-add-service-control/specs/service-control/spec.md` (runtime adapters, manifest-only ids, start modes, protected services, gating, audit event, `cohostctl`)
+- `openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md` (`service.lifecycle`), `.../dashboard/spec.md` (routes, token), `openspec/changes/archive/2026-11-01-add-service-control/design.md`
+- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/*` (isolation presets and the cortex closure requirement)
 
 Spec-to-OpenSpec mismatches are captured as `[ ]` specs CTRL-RUNTIME-009 and CTRL-GUARD-008. The two catalogue deltas in `bus` list different sets (health lists `service.heartbeat` but not `service.lifecycle`; control lists `service.lifecycle` but not `service.heartbeat`); event-bus owns reconciling those.

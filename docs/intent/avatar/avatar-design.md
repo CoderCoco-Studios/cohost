@@ -127,7 +127,7 @@ Each `setParams` sends: `/VMC/Ext/Bone/Pos` for `Head` with a quaternion from `e
 2. Fire-and-forget VTS calls are `void`-ed with no `.catch`: `setParams` (`vtube-studio.ts:55`), `setExpression` (`:78-79`), `trigger` (`:89`). `send()` rejects when the socket is not open, on `APIError`, and after the 5 s timeout (`:166, :170, :184-186`). A single `APIError` (for example a missing `.exp3.json`) or timeout becomes an unhandled promise rejection; no `unhandledRejection` handler exists anywhere in `packages/` or `services/`, so on current Node the process would exit. No test covers this.
 3. The VMC driver attaches no `error` listener to its UDP socket and calls `send` without a callback (`vmc.ts:32, 50, 56`). A name-resolution failure emits an unhandled `error` event on the socket. Verified with a stand-alone `dgram` snippet that sending to an unresolvable host crashes the process. The default `.env.example` host is `host.docker.internal` (`.env.example:46, 48`), which only resolves under Docker or with `extra_hosts` (`docker-compose.yml:23-24`).
 4. `AVATAR_DRIVER` with an unrecognised value makes `loadConfig` throw (`schema.ts:161`, `packages/config/src/index.ts:98-104`). OpenSpec (`openspec/specs/avatar/spec.md`, "Null driver" scenario) says an unrecognised driver falls back to the null driver, and the `default:` branch exists (`drivers/index.ts:23-25`), but it can only be reached by calling `createDriver` directly.
-5. `openspec/changes/add-service-health/specs/avatar/spec.md` says a real driver is `vts` or `vmc`; the actual enum value is `vtube-studio` (`schema.ts:161`, `.env.example:44`).
+5. `openspec/changes/archive/2026-11-01-add-service-health/specs/avatar/spec.md` says a real driver is `vts` or `vmc`; the actual enum value is `vtube-studio` (`schema.ts:161`, `.env.example:44`).
 6. `config/.vts-token` is written into the config directory but is not covered by `.gitignore` (only `config.yaml`, `personality.md`, `expressions.yaml` are listed); a blank file is written on rejection (`vtube-studio.ts:152`). Whether the token is meant to stay out of version control is not stated.
 7. `heartbeat.ready()` fires before the driver connects (`index.ts:16`). The OpenSpec scenario "once its driver is selected" matches, but it means `ready` conveys nothing about the avatar app; only `deps.driver` does.
 8. `capabilities()` is declared by every driver but only logged (`index.ts:31`). The null driver claims all four (`null.ts:8`). It is unclear whether it is meant to gate behavior later.
@@ -157,4 +157,4 @@ Other segments (direction):
 
 External: `ws` (VTube Studio WebSocket), Node `dgram` (UDP), VTube Studio public API, VMC protocol.
 
-OpenSpec: `openspec/specs/avatar/spec.md`; `openspec/changes/add-service-health/specs/avatar/spec.md`.
+OpenSpec: `openspec/specs/avatar/spec.md`; `openspec/changes/archive/2026-11-01-add-service-health/specs/avatar/spec.md`.

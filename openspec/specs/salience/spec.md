@@ -4,6 +4,7 @@
 The salience region decides when the co-host should speak. It scores incoming senses, publishes `attention.focus` when worth a reply, and runs a reflex fast path that publishes `brain.say` directly. It never calls the chat LLM.
 
 ## Requirements
+
 ### Requirement: Inputs and working memory
 The system SHALL subscribe (group `salience`, `fromNow`) to `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `brain.status`, `affect.state` and `control`, keeping a `Context` of `brain.working_memory_events` (default 24) events.
 
@@ -88,3 +89,52 @@ The system SHALL match chat, speech and changed-vision text against `brain.salie
 #### Scenario: Busy cortex
 - **WHEN** the cortex is speaking
 - **THEN** no reflex fires
+
+### Requirement: Heartbeat
+The salience service SHALL publish `service.heartbeat` with `service: "salience"` via `startHeartbeat`: `starting` at boot, `ready` once its subscriptions are running, then every `intervalMs` (default 5000), and `stopping` on graceful shutdown. Its `deps` MUST be `{}` (it has no external dependencies). It MUST report `mode: "live"`.
+
+#### Scenario: Ready
+- **WHEN** salience has finished starting
+- **THEN** a heartbeat with `service: "salience"`, `state: "ready"` and the deps above is published every 5 s
+
+#### Scenario: No external deps
+- **WHEN** Redis is the only dependency
+- **THEN** `deps` is empty and `state` is `ready`
+
+#### Scenario: Shutdown
+- **WHEN** salience receives SIGTERM
+- **THEN** it publishes one `stopping` heartbeat before exiting 0
+
+### Requirement: Targeted pause and resume
+The salience service SHALL treat `control` events with a `target` other than `salience` as not addressed to it, and SHALL handle `pause` and `resume` (target `salience` or undefined) by idling and resuming in-process without exiting.
+
+#### Scenario: Pause addressed to this service
+- **WHEN** `control {cmd:"pause", target:"salience"}` arrives
+- **THEN** the service enters the paused state and no `attention.focus` is published while paused
+
+#### Scenario: Pause for another service
+- **WHEN** `control {cmd:"pause", target:"voice"}` arrives
+- **THEN** the salience service state is unchanged
+
+#### Scenario: Resume
+- **WHEN** `control {cmd:"resume"}` (no target) arrives while paused
+- **THEN** normal processing resumes
+
+### Requirement: Injection flag propagation
+When the `attention.focus` focus event has `injected: true`, salience SHALL publish `attention.focus` with `injected: true` and that event's `remember`; with no focus event or a real focus event it MUST omit both. A reflex `brain.say` SHALL carry `injected` and `remember` copied from the triggering event when that event is injected, and omit them otherwise. Injected events are otherwise scored and reacted to like real ones.
+
+#### Scenario: Injected focus
+- **WHEN** the speak decision's focus is an injected chat message with `remember: false`
+- **THEN** `attention.focus` has `injected: true, remember: false`
+
+#### Scenario: Real focus
+- **WHEN** the focus is a real chat message
+- **THEN** `attention.focus` has no `injected` or `remember`
+
+#### Scenario: Injected reflex
+- **WHEN** an injected chat line matches a reflex rule
+- **THEN** the reflex `brain.say` has `injected: true` and the line's `remember`
+
+#### Scenario: Real reflex
+- **WHEN** a real line matches a reflex rule
+- **THEN** the `brain.say` carries neither flag

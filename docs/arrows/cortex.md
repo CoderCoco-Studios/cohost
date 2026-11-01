@@ -37,10 +37,10 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ### OpenSpec
 - openspec/specs/cortex/spec.md
-- openspec/changes/add-service-health/specs/cortex/spec.md
-- openspec/changes/add-isolated-backends/specs/cortex/spec.md
-- openspec/changes/add-service-control/specs/cortex/spec.md
-- openspec/changes/add-test-injection/specs/cortex/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/cortex/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/cortex/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/cortex/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/cortex/spec.md
 
 ## Architecture
 

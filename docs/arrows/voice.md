@@ -32,8 +32,8 @@
 
 ### OpenSpec
 - openspec/specs/voice/spec.md
-- openspec/changes/add-service-health/specs/voice/spec.md
-- openspec/changes/add-isolated-backends/specs/voice/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/voice/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/voice/spec.md
 
 ## Architecture
 

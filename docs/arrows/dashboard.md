@@ -37,9 +37,9 @@ The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personali
 
 ### OpenSpec
 - openspec/specs/dashboard/spec.md
-- openspec/changes/add-service-health/specs/dashboard/spec.md
-- openspec/changes/add-service-control/specs/dashboard/spec.md
-- openspec/changes/add-test-injection/specs/dashboard/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/dashboard/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/dashboard/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/dashboard/spec.md
 
 ## Architecture
 

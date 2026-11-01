@@ -31,9 +31,9 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ### OpenSpec
 - openspec/specs/bus/spec.md
-- openspec/changes/add-service-health/specs/bus/spec.md
-- openspec/changes/add-service-control/specs/bus/spec.md
-- openspec/changes/add-test-injection/specs/bus/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/bus/spec.md
 - (`add-isolated-backends` has no bus delta)
 
 ## Architecture

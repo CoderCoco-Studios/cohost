@@ -165,4 +165,4 @@ Downstream/peers: cortex (consumes `attention.focus`, publishes `brain.status`),
 
 External: Redis (via the bus); optional LLM provider or HTTP endpoint for the scorer hook.
 
-OpenSpec: `openspec/specs/salience/spec.md`; deltas `openspec/changes/add-service-health/specs/salience/spec.md`, `openspec/changes/add-service-control/specs/salience/spec.md`, `openspec/changes/add-test-injection/specs/salience/spec.md`.
+OpenSpec: `openspec/specs/salience/spec.md`; deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/salience/spec.md`, `openspec/changes/archive/2026-11-01-add-service-control/specs/salience/spec.md`, `openspec/changes/archive/2026-11-01-add-test-injection/specs/salience/spec.md`.

@@ -174,6 +174,6 @@ Other segments (arrow shows direction):
 
 External: discord.js 14, `@discordjs/voice`, `prism-media` (Opus decode), speaches / faster-whisper STT (OpenAI-compatible `/v1/audio/transcriptions`).
 
-OpenSpec: `openspec/specs/ears/spec.md`; deltas `openspec/changes/add-service-health/specs/ears/spec.md`, `openspec/changes/add-isolated-backends/specs/ears/spec.md`, `openspec/changes/add-test-injection/specs/ears/spec.md`.
+OpenSpec: `openspec/specs/ears/spec.md`; deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/ears/spec.md`, `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/ears/spec.md`, `openspec/changes/archive/2026-11-01-add-test-injection/specs/ears/spec.md`.
 
 EARS specs: [ears-specs.md](./ears-specs.md).

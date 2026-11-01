@@ -28,7 +28,7 @@
 
 ### OpenSpec
 - openspec/specs/config/spec.md
-- openspec/changes/add-isolated-backends/specs/config/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/config/spec.md
 
 ## Architecture
 

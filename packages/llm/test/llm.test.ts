@@ -20,6 +20,7 @@ await new Promise<void>((r) => server.listen(0, r));
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 after(() => server.close());
 
+// @spec LLM-STOP-002, LLM-STOP-003, LLM-STOP-005
 test("openai-compatible: reply calls send the four stops; json calls send none", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1`, api_key: "k" } }));
   await p.chat([{ role: "user", content: "hi" }]);
@@ -28,6 +29,7 @@ test("openai-compatible: reply calls send the four stops; json calls send none",
   assert.equal("stop" in lastBody, false);
 });
 
+// @spec LLM-STOP-001, LLM-STOP-003
 test("ollama: json calls drop the stop list too", async () => {
   const o = new Ollama(llmCfg({ provider: "ollama" }), base);
   await o.chat([{ role: "user", content: "hi" }]);
@@ -36,6 +38,7 @@ test("ollama: json calls drop the stop list too", async () => {
   assert.equal("stop" in (lastBody.options as object), false);
 });
 
+// @spec LLM-PING-002, LLM-PING-005
 test("ping failure records why, including the auth hint", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1`, api_key: "bad" } }));
   status = 401;
@@ -49,12 +52,14 @@ test("ping failure records why, including the auth hint", async () => {
   assert.match(dead.lastError!, /cannot reach/);
 });
 
+// @spec LLM-CHAT-006
 test("an aborted signal rejects the request", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1` } }));
   await assert.rejects(p.chat([{ role: "user", content: "hi" }], { signal: AbortSignal.abort() }));
 });
 
 
+// @spec LLM-IF-002, LLM-EMBED-003
 test("createChatProvider picks the backend from llm.provider; embeddings are always ollama", () => {
   assert.equal(createChatProvider(llmCfg({ provider: "ollama" })).name, "ollama");
   assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
@@ -63,6 +68,7 @@ test("createChatProvider picks the backend from llm.provider; embeddings are alw
   assert.ok(createEmbedder(llmCfg({ provider: "anthropic" })) instanceof Ollama);
 });
 
+// @spec LLM-CHAT-002, LLM-CHAT-003, LLM-CHAT-004, LLM-CHAT-005, LLM-IF-004
 test("openai-compatible: trailing slashes, bearer auth, config defaults and a failed chat", async () => {
   const seen: { url?: string; auth?: string } = {};
   const s = http.createServer(async (req, res) => {
@@ -91,6 +97,7 @@ test("openai-compatible: trailing slashes, bearer auth, config defaults and a fa
   await assert.rejects(broken.chat([{ role: "user", content: "x" }]), /openai chat 502: upstream down/);
 });
 
+// @spec LLM-EMBED-001, LLM-EMBED-002, LLM-PING-001, LLM-CHAT-005
 test("ollama: embed returns the first vector and errors on an empty reply; ping reports status", async () => {
   let reply: unknown = { embeddings: [[0.1, 0.2, 0.3]] };
   let code = 200;
@@ -132,6 +139,7 @@ function claude(over: Record<string, unknown> = {}, reply: Record<string, unknow
   return { p, calls };
 }
 
+// @spec LLM-CLAUDE-001, LLM-CLAUDE-004, LLM-CLAUDE-005, LLM-IF-004
 test("claude: system messages move to `system`, only text blocks are returned", async () => {
   const { p, calls } = claude();
   const out = await p.chat([
@@ -149,6 +157,7 @@ test("claude: system messages move to `system`, only text blocks are returned", 
   assert.deepEqual(req.output_config, { effort: "low" });
 });
 
+// @spec LLM-CLAUDE-001, LLM-CLAUDE-002
 test("claude: a conversation must open with a user turn", async () => {
   const { p, calls } = claude();
   await p.chat([{ role: "system", content: "s" }]);
@@ -159,6 +168,7 @@ test("claude: a conversation must open with a user turn", async () => {
   assert.equal(calls[2]!.req.system, undefined);
 });
 
+// @spec LLM-CLAUDE-003
 test("claude: max_tokens never drops below claude.max_tokens (thinking shares the budget)", async () => {
   const { p, calls } = claude({ claude: { api_key: "k", max_tokens: 1024 } });
   await p.chat([{ role: "user", content: "x" }], { maxTokens: 60 });
@@ -166,6 +176,7 @@ test("claude: max_tokens never drops below claude.max_tokens (thinking shares th
   assert.deepEqual(calls.map((c) => c.req.max_tokens), [1024, 4000]);
 });
 
+// @spec LLM-STOP-003, LLM-STOP-004, LLM-CLAUDE-007, LLM-CLAUDE-010
 test("claude: transcript stops on replies, none on json; server fallbacks follow config", async () => {
   const { p, calls } = claude();
   const signal = new AbortController().signal;
@@ -181,11 +192,13 @@ test("claude: transcript stops on replies, none on json; server fallbacks follow
   assert.equal("fallbacks" in off.calls[0]!.req, false);
 });
 
+// @spec LLM-CLAUDE-006
 test("claude: a refusal means say nothing", async () => {
   const { p } = claude({}, { stop_reason: "refusal" });
   assert.equal(await p.chat([{ role: "user", content: "x" }]), "");
 });
 
+// @spec LLM-PING-003, LLM-PING-005
 test("claude: ping explains auth and unknown-model failures", async () => {
   const { p } = claude();
   assert.equal(await p.ping(), true);
@@ -200,6 +213,7 @@ test("claude: ping explains auth and unknown-model failures", async () => {
   assert.equal(p.lastError, undefined);
 });
 
+// @spec LLM-CLAUDE-008, LLM-PING-004
 test("bedrock: no server fallbacks, and ping is optimistic", async () => {
   const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
   const calls: Record<string, unknown>[] = [];
@@ -214,6 +228,7 @@ import { MockProvider, HashEmbedder } from "../src/index.js";
 
 const cosine = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0);
 
+// @spec LLM-MOCK-001, LLM-MOCK-002, LLM-MOCK-004, LLM-IF-002
 test("mock provider: deterministic, tagged reply; ping true; JSON mode parses", async () => {
   const p = createChatProvider(llmCfg({ provider: "mock" }));
   assert.ok(p instanceof MockProvider);
@@ -228,11 +243,13 @@ test("mock provider: deterministic, tagged reply; ping true; JSON mode parses", 
   assert.ok((await p.chat([])).length > 0);
 });
 
+// @spec LLM-MOCK-003
 test("mock provider: an already-aborted signal throws", async () => {
   const p = new MockProvider({ model: "m" });
   await assert.rejects(p.chat([{ role: "user", content: "x" }], { signal: AbortSignal.abort() }));
 });
 
+// @spec LLM-EMBED-005, LLM-EMBED-006
 test("hash embedder: 64-dim unit vectors, deterministic, token overlap ranks higher; empty is valid", async () => {
   const e = new HashEmbedder();
   const [a, b, c] = await Promise.all([e.embed("dog park walk"), e.embed("walk the dog"), e.embed("quantum physics")]);
@@ -246,6 +263,7 @@ test("hash embedder: 64-dim unit vectors, deterministic, token overlap ranks hig
   assert.ok(empty.every(Number.isFinite));
 });
 
+// @spec LLM-EMBED-003
 test("factory: mock provider needs no network and pairs with the hash embedder; others still use Ollama", () => {
   const cfg = llmCfg({ provider: "mock" });
   assert.ok(createEmbedder(cfg) instanceof HashEmbedder);

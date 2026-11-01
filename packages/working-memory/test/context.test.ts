@@ -10,6 +10,7 @@ const chat = (text: string, extra: Record<string, unknown> = {}) =>
 const vision = (text: string, changed = true) => ev("vision.summary", { text, changed });
 const speech = (text: string) => ev("speech.heard", { speaker: "Streamer", text, durationMs: 500 });
 
+// @spec WM-PUSH-001, WM-PUSH-002, WM-WIN-006
 test("push maps each sense into a context event, unseen", () => {
   const ctx = new Context(10);
   ctx.push(chat("hi", { mentionsCohost: true, isMod: true, isSub: true }));
@@ -20,6 +21,7 @@ test("push maps each sense into a context event, unseen", () => {
   ]);
 });
 
+// @spec WM-PUSH-003
 test("push ignores event types that aren't senses", () => {
   const ctx = new Context(10);
   ctx.push(ev("affect.state", { valence: 0, arousal: 0, mood: "neutral" }));
@@ -27,6 +29,7 @@ test("push ignores event types that aren't senses", () => {
   assert.equal(ctx.all().length, 0);
 });
 
+// @spec WM-PUSH-004, WM-PUSH-005, WM-SEEN-001
 test("vision: only the latest line is kept, and an unchanged screen is already seen", () => {
   const ctx = new Context(10);
   ctx.push(vision("menu"));
@@ -41,6 +44,7 @@ test("vision: only the latest line is kept, and an unchanged screen is already s
   assert.deepEqual(ctx.unseen().map((e) => e.text), ["a"]);
 });
 
+// @spec WM-WIN-001
 test("the window is trimmed from the oldest end, self lines included", () => {
   const ctx = new Context(3);
   ctx.push(chat("1"));
@@ -52,6 +56,7 @@ test("the window is trimmed from the oldest end, self lines included", () => {
   assert.deepEqual(ctx.all().map((e) => e.text), ["me", "3", "me again"]);
 });
 
+// @spec WM-PUSH-006, WM-SEEN-001, WM-SEEN-003, WM-WIN-003, WM-WIN-004
 test("self lines are always seen; markSeen marks everything; clear empties the window but keeps lastVision", () => {
   const ctx = new Context(10);
   ctx.pushSelf("me", "smug");
@@ -67,6 +72,7 @@ test("self lines are always seen; markSeen marks everything; clear empties the w
   assert.equal(ctx.lastVision, "v");
 });
 
+// @spec WM-SEEN-002
 test("markSeenEvents ignores events that are no longer (or never were) in the window", () => {
   const ctx = new Context(1);
   ctx.push(chat("old"));
@@ -76,6 +82,7 @@ test("markSeenEvents ignores events that are no longer (or never were) in the wi
   assert.deepEqual(ctx.unseen().map((e) => e.text), ["new"]);
 });
 
+// @spec WM-TRANS-001, WM-TRANS-002, WM-TRANS-003, WM-TRANS-004, WM-TRANS-005, WM-TRANS-007
 test("transcript renders each kind with the tags the LLM stop sequences rely on", () => {
   const ctx = new Context(10);
   ctx.push(chat("gg", { isMod: true }));
@@ -96,6 +103,7 @@ test("transcript renders each kind with the tags the LLM stop sequences rely on"
   assert.equal(new Context(5).transcript("Coco"), "");
 });
 
+// @spec WM-FLAG-001, WM-FLAG-002, WM-PUSH-006
 test("injection flags are retained on chat, speech and vision; real events and self carry none", () => {
   const ctx = new Context(10);
   ctx.push(chat("a", { injected: true, remember: false }));

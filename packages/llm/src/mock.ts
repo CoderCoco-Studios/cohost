@@ -5,16 +5,16 @@
 import type { ChatMessage, ChatOptions, ChatProvider, Embedder } from "./index.js";
 
 /** Echo-style provider: `[happy] mock: <last user message>`, in the tag format the cortex parses. */
-export class MockProvider implements ChatProvider {
+export class MockProvider implements ChatProvider { // @spec LLM-MOCK-004
   readonly name = "mock";
   readonly model: string;
   lastError?: string;
   constructor(cfg: { model: string }) { this.model = cfg.model; }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
-    if (opts.signal?.aborted) throw new Error("mock chat aborted");
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-MOCK-001
+    if (opts.signal?.aborted) throw new Error("mock chat aborted"); // @spec LLM-MOCK-003
     // Hooks (module.kind: llm) parse JSON; {} is valid and makes them fall back to their rules.
-    if (opts.json) return "{}";
+    if (opts.json) return "{}"; // @spec LLM-MOCK-002, HOOK-FALLBACK-006
     const last = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const text = last.replace(/\s+/g, " ").trim().slice(0, 80) || "hello";
     return `[happy] mock: ${text}`;
@@ -37,14 +37,14 @@ function fnv1a(s: string): number {
  * positive cosine similarity; empty text yields a valid (fixed) unit vector.
  */
 export class HashEmbedder implements Embedder {
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string): Promise<number[]> { // @spec LLM-EMBED-005
     const v = new Array<number>(HASH_DIMS).fill(0);
     for (const tok of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) {
       const h = fnv1a(tok);
       v[h % HASH_DIMS] = (v[h % HASH_DIMS] ?? 0) + ((h >>> 16) & 1 ? 1 : -1);
     }
     let norm = Math.hypot(...v);
-    if (norm === 0) { v[0] = 1; norm = 1; }
+    if (norm === 0) { v[0] = 1; norm = 1; } // @spec LLM-EMBED-006
     return v.map((x) => x / norm);
   }
 }

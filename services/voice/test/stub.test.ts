@@ -8,7 +8,7 @@ import { parseWav, envelope } from "../src/wav.js";
 
 const synth = stubSynth({ sample_rate: 24000 });
 
-test("stub: valid mono 16-bit WAV at the configured rate, 60 ms per character", async () => {
+test("stub: valid mono 16-bit WAV at the configured rate, 60 ms per character", async () => { // @spec VOICE-STUB-001
   const wav = await synth("x".repeat(100));
   const info = parseWav(wav);
   assert.equal(info.channels, 1);
@@ -18,7 +18,7 @@ test("stub: valid mono 16-bit WAV at the configured rate, 60 ms per character", 
   assert.ok(wav.subarray(info.dataOffset).every((b) => b === 0));
 });
 
-test("stub: short text is padded to at least 400 ms; the envelope is all zeros at 30 Hz", async () => {
+test("stub: short text is padded to at least 400 ms; the envelope is all zeros at 30 Hz", async () => { // @spec VOICE-STUB-001
   const wav = await synth("hi");
   const info = parseWav(wav);
   assert.equal(Math.round(info.durationMs), 400);
@@ -27,7 +27,7 @@ test("stub: short text is padded to at least 400 ms; the envelope is all zeros a
   assert.ok(env.every((v) => v === 0));
 });
 
-test("stub: brain.say publishes a real voice.utterance and never calls fetch", async () => {
+test("stub: brain.say publishes a real voice.utterance and never calls fetch", async () => { // @spec VOICE-STUB-001, VOICE-STUB-002
   mock.timers.enable({ apis: ["setTimeout"] });
   const realFetch = globalThis.fetch;
   let calls = 0;
@@ -49,7 +49,7 @@ test("stub: brain.say publishes a real voice.utterance and never calls fetch", a
   }
 });
 
-test("stub health: mode mock, kokoro n/a, still ready", async () => {
+test("stub health: mode mock, kokoro n/a, still ready", async () => { // @spec VOICE-HLTH-003
   const hbs = await runHeartbeat(new VoiceHealth("stub").spec);
   assert.equal(hbs[1]!.mode, "mock");
   assert.deepEqual(hbs[1]!.deps, { kokoro: "n/a" });

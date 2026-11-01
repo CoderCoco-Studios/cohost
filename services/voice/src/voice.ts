@@ -15,7 +15,7 @@ export interface VoiceDeps {
 }
 
 /** Calls the TTS container (Kokoro-FastAPI, OpenAI-compatible). */
-export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buffer> {
+export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buffer> { // @spec VOICE-SYN-002
   return async (text) => {
     const res = await fetch(`${urls.tts()}/v1/audio/speech`, {
       method: "POST",
@@ -28,7 +28,7 @@ export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buf
         response_format: "wav",
       }),
     });
-    if (!res.ok) throw new Error(`tts ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`tts ${res.status}: ${await res.text()}`); // @spec VOICE-SYN-003
     return Buffer.from(await res.arrayBuffer());
   };
 }
@@ -38,7 +38,7 @@ export const STUB_MS_PER_CHAR = 60;
 export const STUB_MIN_MS = 400;
 
 /** `voice.engine: stub` — a silent mono PCM16 WAV sized from the text. No network. */
-export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: string) => Promise<Buffer> {
+export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: string) => Promise<Buffer> { // @spec VOICE-STUB-001
   return async (text) => {
     const ms = Math.max(STUB_MIN_MS, text.length * STUB_MS_PER_CHAR);
     const frames = Math.round((cfg.sample_rate * ms) / 1000);
@@ -71,7 +71,7 @@ export class Voice {
 
   constructor(private d: VoiceDeps) {}
 
-  private put(id: string, wav: Buffer) {
+  private put(id: string, wav: Buffer) { // @spec VOICE-HTTP-001
     this.store.set(id, wav);
     this.order.push(id);
     while (this.order.length > 50) this.store.delete(this.order.shift()!);
@@ -81,11 +81,11 @@ export class Voice {
     if (ev.type === "brain.say") await this.onSay(ev as BusEvent<"brain.say">);
     else if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
-      if (d.sink !== "virtual") this.claimed.add(d.id);
+      if (d.sink !== "virtual") this.claimed.add(d.id); // @spec VOICE-SINK-001, VOICE-SINK-005
     }
   }
 
-  private async onSay(ev: BusEvent<"brain.say">) {
+  private async onSay(ev: BusEvent<"brain.say">) { // @spec VOICE-SYN-004, VOICE-SYN-005, VOICE-UTT-001
     const { bus, log } = this.d;
     const { id, text, emotion, gesture } = ev.data;
     const t0 = Date.now();
@@ -100,16 +100,16 @@ export class Voice {
         durationMs: Math.round(info.durationMs),
         envelopeHz: ENVELOPE_HZ,
         envelope: env,
-        audioUrl: `${this.d.publicUrl}/audio/${id}.wav`,
+        audioUrl: `${this.d.publicUrl}/audio/${id}.wav`, // @spec VOICE-UTT-002
         sampleRate: info.sampleRate,
       });
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
-      setTimeout(async () => {
+      setTimeout(async () => { // @spec VOICE-SINK-002, VOICE-SINK-004
         if (this.claimed.has(id)) return;
         await bus.publish("voice.playing", { id, sink: "virtual" });
-        setTimeout(() => void bus.publish("voice.done", { id, sink: "virtual" }), info.durationMs);
+        setTimeout(() => void bus.publish("voice.done", { id, sink: "virtual" }), info.durationMs); // @spec VOICE-SINK-003
       }, 1500);
-    } catch (err) {
+    } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");
       // Let the brain continue even though nothing was said.
       await bus.publish("voice.done", { id, sink: "error" });
@@ -117,7 +117,7 @@ export class Voice {
   }
 
   /** HTTP: GET /audio/<id>.wav, GET /health */
-  handle = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+  handle = (req: http.IncomingMessage, res: http.ServerResponse): void => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004
     const m = /^\/audio\/([\w-]+)\.wav$/.exec(req.url ?? "");
     if (m) {
       const wav = this.store.get(m[1]!);

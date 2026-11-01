@@ -9,7 +9,7 @@ export interface WavInfo {
   durationMs: number;
 }
 
-export function parseWav(buf: Buffer): WavInfo {
+export function parseWav(buf: Buffer): WavInfo { // @spec VOICE-ENV-001, VOICE-ENV-002
   if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
     throw new Error("not a RIFF/WAVE file");
   }
@@ -37,7 +37,7 @@ export function parseWav(buf: Buffer): WavInfo {
  * RMS per window, normalised to 0..1 with a soft knee so normal speech reads
  * as ~0.3-0.8 mouth-open rather than hugging zero.
  */
-export function envelope(buf: Buffer, info: WavInfo, hz = 30): number[] {
+export function envelope(buf: Buffer, info: WavInfo, hz = 30): number[] { // @spec VOICE-ENV-003, VOICE-ENV-004
   if (info.bitsPerSample !== 16) throw new Error(`unsupported bit depth ${info.bitsPerSample}`);
   const frameBytes = info.channels * 2;
   const totalFrames = Math.floor(info.dataLength / frameBytes);

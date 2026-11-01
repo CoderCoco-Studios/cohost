@@ -22,19 +22,19 @@ export class VmcDriver implements AvatarDriver {
 
   constructor(private opts: { host: string; port: number }) {}
 
-  capabilities(): ReadonlySet<Capability> {
+  capabilities(): ReadonlySet<Capability> { // @spec AVATAR-VMC-004
     return new Set<Capability>(["expressions", "params", "lipsync"]);
   }
   connected() { return !!this.sock; }
 
-  async connect(ctx: DriverContext): Promise<void> {
+  async connect(ctx: DriverContext): Promise<void> { // @spec AVATAR-VMC-001
     this.ctx = ctx;
     this.sock = dgram.createSocket("udp4");
     this.ctx.log.info({ host: this.opts.host, port: this.opts.port }, "vmc sender ready (UDP, fire-and-forget)");
   }
-  async disconnect(): Promise<void> { this.sock?.close(); this.sock = undefined; }
+  async disconnect(): Promise<void> { this.sock?.close(); this.sock = undefined; } // @spec AVATAR-VMC-006
 
-  setParams(p: AvatarParams): void {
+  setParams(p: AvatarParams): void { // @spec AVATAR-VMC-002
     if (!this.sock) return;
     const q = eulerToQuat(p.headY, p.headX, p.headZ);
     const msgs: Buffer[] = [
@@ -50,7 +50,7 @@ export class VmcDriver implements AvatarDriver {
     for (const m of msgs) this.sock.send(m, this.opts.port, this.opts.host);
   }
 
-  setExpression(emotion: Emotion, intensity: number): void {
+  setExpression(emotion: Emotion, intensity: number): void { // @spec AVATAR-VMC-003
     const target = this.ctx.expressions[emotion];
     if (this.activeExpr && this.activeExpr !== target && this.sock) {
       this.sock.send(osc("/VMC/Ext/Blend/Val", [this.activeExpr, 0]), this.opts.port, this.opts.host);
@@ -59,7 +59,7 @@ export class VmcDriver implements AvatarDriver {
     this.exprValue = Math.max(0, Math.min(1, intensity));
   }
 
-  trigger(_gesture: string): void { /* VMC has no gesture concept; use a vnyan/warudo driver for that */ }
+  trigger(_gesture: string): void { /* VMC has no gesture concept; use a vnyan/warudo driver for that */ } // @spec AVATAR-VMC-004
 }
 
 // ---- minimal OSC encoder (strings, int32, float32) — enough for VMC.

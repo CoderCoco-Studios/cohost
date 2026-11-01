@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 afterEach(() => { engine?.stop(); mock.timers.reset(); });
 
-test("runs at cfg.fps and pushes params to the driver every frame", () => {
+test("runs at cfg.fps and pushes params to the driver every frame", () => { // @spec AVATAR-ENG-001
   make();
   frames(5);
   assert.equal(driver.params.length, 5);
@@ -53,7 +53,7 @@ test("runs at cfg.fps and pushes params to the driver every frame", () => {
   assert.equal(driver.params.length, 5);
 });
 
-test("lip-sync follows the envelope from when the sink starts playing, then closes", () => {
+test("lip-sync follows the envelope from when the sink starts playing, then closes", () => { // @spec AVATAR-ENG-005
   make();
   engine.prepare(utterance());
   frames(1);
@@ -64,7 +64,7 @@ test("lip-sync follows the envelope from when the sink starts playing, then clos
   assert.deepEqual(mouth, [0.4, 0.2, 0, 0]); // 100ms in → envelope[1], ...; past the end → closed
 });
 
-test("play() sets the utterance emotion at full intensity and fires its gesture", () => {
+test("play() sets the utterance emotion at full intensity and fires its gesture", () => { // @spec AVATAR-ENG-003
   make();
   engine.prepare(utterance({ gesture: "wave" }));
   engine.play("u1");
@@ -72,7 +72,7 @@ test("play() sets the utterance emotion at full intensity and fires its gesture"
   assert.deepEqual(driver.gestures, ["wave"]);
 });
 
-test("play() of an unknown or evicted id is ignored (only the last 20 are kept)", () => {
+test("play() of an unknown or evicted id is ignored (only the last 20 are kept)", () => { // @spec AVATAR-ENG-002, AVATAR-ENG-004
   make();
   for (let i = 0; i < 21; i++) engine.prepare(utterance({ id: `u${i}`, gesture: "nod" }));
   engine.play("u0");
@@ -82,7 +82,7 @@ test("play() of an unknown or evicted id is ignored (only the last 20 are kept)"
   assert.deepEqual(driver.gestures, ["nod"]);
 });
 
-test("done() closes the mouth immediately; done() for another id does not", () => {
+test("done() closes the mouth immediately; done() for another id does not", () => { // @spec AVATAR-ENG-007
   make();
   engine.prepare(utterance({ envelope: [0.9, 0.9, 0.9, 0.9, 0.9], durationMs: 500 }));
   engine.play("u1");
@@ -95,7 +95,7 @@ test("done() closes the mouth immediately; done() for another id does not", () =
   assert.equal(driver.last.mouthOpen, 0);
 });
 
-test("a held emotion decays to the resting mood once its hold runs out", () => {
+test("a held emotion decays to the resting mood once its hold runs out", () => { // @spec AVATAR-ENG-008, AVATAR-ENG-009, AVATAR-ENG-011, AVATAR-ENG-016
   make();
   engine.setMood("smug");
   assert.deepEqual(driver.expressions, [["smug", 0.5]]); // nothing held: mood shows right away, softly
@@ -108,7 +108,7 @@ test("a held emotion decays to the resting mood once its hold runs out", () => {
   assert.deepEqual(states.at(-1), { emotion: "smug", intensity: 0.5 });
 });
 
-test("a mood change while an utterance holds the face waits for the hold to end", () => {
+test("a mood change while an utterance holds the face waits for the hold to end", () => { // @spec AVATAR-ENG-008, AVATAR-ENG-010
   make();
   engine.setEmotion("angry", 1000);
   engine.setMood("happy");
@@ -118,7 +118,7 @@ test("a mood change while an utterance holds the face waits for the hold to end"
   assert.deepEqual(driver.expressions, [["angry", 1], ["happy", 0.5]]);
 });
 
-test("returning to a neutral mood clears the expression (intensity 0)", () => {
+test("returning to a neutral mood clears the expression (intensity 0)", () => { // @spec AVATAR-ENG-009, AVATAR-ENG-016
   make();
   engine.setMood("sad");
   engine.setMood("neutral");
@@ -127,7 +127,7 @@ test("returning to a neutral mood clears the expression (intensity 0)", () => {
   assert.deepEqual(states.at(-1), { emotion: "neutral", intensity: 0 });
 });
 
-test("smile follows the emotion", () => {
+test("smile follows the emotion", () => { // @spec AVATAR-ENG-012
   make();
   const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   frames(1);
@@ -142,7 +142,7 @@ test("smile follows the emotion", () => {
   assert.ok(near(driver.last.mouthSmile, 0.15));
 });
 
-test("idle motion moves the head and eyes only when enabled", () => {
+test("idle motion moves the head and eyes only when enabled", () => { // @spec AVATAR-ENG-013
   make();
   frames(20);
   assert.ok(driver.params.every((p) => p.headX === 0 && p.headY === 0 && p.eyeX === 0));
@@ -154,7 +154,7 @@ test("idle motion moves the head and eyes only when enabled", () => {
   assert.ok(driver.params.every((p) => Math.abs(p.headX) <= 6 && Math.abs(p.eyeX) <= 0.35));
 });
 
-test("blinks: the first after ~3s, eyes shut briefly then open again", () => {
+test("blinks: the first after ~3s, eyes shut briefly then open again", () => { // @spec AVATAR-ENG-014
   make();
   frames(30); // up to and including t0 + 3000 ms
   assert.ok(driver.params.every((p) => p.blink === 0));
@@ -165,7 +165,7 @@ test("blinks: the first after ~3s, eyes shut briefly then open again", () => {
   assert.equal(driver.last.blink, 0);
 });
 
-test("smoothing eases the head, while the mouth moves 3x faster", () => {
+test("smoothing eases the head, while the mouth moves 3x faster", () => { // @spec AVATAR-ENG-015
   make({ smoothing: 0.2 });
   engine.prepare(utterance({ envelope: [1, 1, 1, 1], durationMs: 400 }));
   engine.play("u1");

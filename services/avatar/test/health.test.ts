@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { avatarHealth } from "../src/health.js";
 
-test("null driver: mode off, driver n/a, still ready", async () => {
+test("null driver: mode off, driver n/a, still ready", async () => { // @spec AVATAR-HEALTH-002
   const hbs = await runHeartbeat(avatarHealth({ name: "null", connected: () => true }));
   assert.equal(hbs[1]!.mode, "off");
   assert.deepEqual(hbs[1]!.deps, { driver: "n/a" });
   assert.equal(hbs[1]!.state, "ready");
 });
 
-test("real driver: live, driver ok iff connected", async () => {
+test("real driver: live, driver ok iff connected", async () => { // @spec AVATAR-HEALTH-003
   let up = true;
   const spec = avatarHealth({ name: "vmc", connected: () => up });
   assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { driver: "ok" });

@@ -12,6 +12,7 @@ import http from "node:http";
 
 const PORT = Number(process.env.STUB_LLM_PORT ?? 11434);
 
+// @spec DEPLOY-DEV-003
 http.createServer((req, res) => {
   const json = (code: number, body: unknown) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   if (req.method === "GET" && req.url === "/api/tags") return json(200, { models: [] });

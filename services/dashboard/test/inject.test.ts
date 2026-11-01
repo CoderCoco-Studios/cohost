@@ -30,6 +30,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
   return { bus, base, uploads, text, bin };
 }
 
+// @spec DASH-INJ-002
 test("bus-level chat publishes an injected chat.message and returns 202 {id}", async () => {
   const t = await boot();
   const r = await t.text({ level: "bus", text: "  hi   there ", user: "bob", isMod: true });
@@ -38,6 +39,7 @@ test("bus-level chat publishes an injected chat.message and returns 202 {id}", a
   assert.deepEqual(t.bus.of("chat.message"), [{ platform: "twitch", user: "bob", text: "hi there", isMod: true, isSub: false, mentionsCohost: false, injected: true, remember: false }]);
 });
 
+// @spec DASH-INJ-003
 test("bus-level speech and vision", async () => {
   const t = await boot();
   assert.equal((await t.text({ level: "bus", as: "speech", text: "hello", user: "al", remember: true })).status, 202);
@@ -50,6 +52,7 @@ test("bus-level speech and vision", async () => {
   assert.deepEqual(t.bus.of("vision.summary"), [{ text: "a boss fight", changed: true, injected: true, remember: true }]);
 });
 
+// @spec DASH-INJ-004
 test("service-level chat publishes inject.request with the response id", async () => {
   const t = await boot();
   const r = await t.text({ level: "service", text: "hello", user: "bob", platform: "youtube", isSub: true });
@@ -59,6 +62,7 @@ test("service-level chat publishes inject.request with the response id", async (
   assert.equal(t.bus.of("chat.message").length, 0);
 });
 
+// @spec DASH-INJ-001
 test("text validation: 400s publish nothing", async () => {
   const t = await boot();
   for (const body of [
@@ -75,6 +79,7 @@ test("text validation: 400s publish nothing", async () => {
   assert.equal(t.bus.published.length, 0);
 });
 
+// @spec DASH-INJ-005, DASH-INJ-007
 test("image upload: stored, served at /uploads/:id, request carries the URL", async () => {
   const t = await boot();
   const png = Buffer.from("PNGDATA");
@@ -93,6 +98,7 @@ test("image upload: stored, served at /uploads/:id, request carries the URL", as
   assert.equal(Buffer.from(await got.arrayBuffer()).toString(), "PNGDATA");
 });
 
+// @spec DASH-INJ-005
 test("audio upload labels the speaker; charset params on content-type are tolerated", async () => {
   const t = await boot();
   assert.equal((await t.bin("/inject/audio?user=alice", Buffer.from("RIFF"), "audio/wav")).status, 202);
@@ -105,6 +111,7 @@ test("audio upload labels the speaker; charset params on content-type are tolera
   assert.equal(b!.meta, undefined);
 });
 
+// @spec DASH-INJ-006
 test("binary rejections: 413 too large, 415 wrong type, 400 empty / bus level; nothing stored or published", async () => {
   const t = await boot({}, 8);
   assert.equal((await t.bin("/inject/image", Buffer.alloc(9), "image/png")).status, 413);
@@ -117,11 +124,13 @@ test("binary rejections: 413 too large, 415 wrong type, 400 empty / bus level; n
   assert.equal(t.uploads.size, 0);
 });
 
+// @spec DASH-INJ-007
 test("GET /uploads/:id is 404 for unknown ids", async () => {
   const t = await boot();
   assert.equal((await fetch(`${t.base}/uploads/deadbeef`)).status, 404);
 });
 
+// @spec DASH-CTRL-004, DASH-CTRL-005
 test("gate: with control enabled the three routes need the bearer token; /uploads stays open", async () => {
   const t = await boot({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" });
   assert.equal((await t.text({ level: "bus", text: "hi" })).status, 401);
@@ -137,6 +146,7 @@ test("gate: with control enabled the three routes need the bearer token; /upload
   assert.equal((await fetch(`${t.base}${url.pathname}`)).status, 200);
 });
 
+// @spec DASH-CTRL-001
 test("control disabled: routes are open", async () => {
   const t = await boot({});
   assert.equal((await t.text({ level: "bus", text: "hi" })).status, 202);

@@ -13,7 +13,7 @@ log()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31mxx\033[0m %s\n' "$*"; exit 1; }
 
-# ---------------------------------------------------------------- detect env
+# ---------------------------------------------------------------- detect env  @spec DEPLOY-INST-001
 IS_WSL=0
 if grep -qi microsoft /proc/version 2>/dev/null; then IS_WSL=1; fi
 . /etc/os-release || die "cannot read /etc/os-release"
@@ -33,7 +33,7 @@ else
   warn "No NVIDIA GPU detected — stack will run CPU-only (slow but functional)."
 fi
 
-# ---------------------------------------------------------------- docker
+# ---------------------------------------------------------------- docker  @spec DEPLOY-INST-002
 if ! command -v docker >/dev/null 2>&1; then
   if [[ $IS_WSL -eq 1 ]]; then
     warn "Docker not found. On WSL the easiest path is Docker Desktop for Windows with the WSL2 backend"
@@ -55,7 +55,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
 
-# ---------------------------------------------------------------- nvidia container toolkit
+# ---------------------------------------------------------------- nvidia container toolkit  @spec DEPLOY-INST-003
 if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
   if [[ -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]] || command -v nvidia-ctk >/dev/null 2>&1; then
     log "nvidia-container-toolkit present"
@@ -72,7 +72,7 @@ if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
   if [[ $IS_WSL -eq 1 ]]; then sudo service docker restart || true; else sudo systemctl restart docker; fi
 fi
 
-# ---------------------------------------------------------------- node + pnpm (for local dev)
+# ---------------------------------------------------------------- node + pnpm (for local dev)  @spec DEPLOY-INST-004
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | cut -c2-3)" -lt 22 ]]; then
   log "Installing Node 22"
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/dev/null
@@ -80,7 +80,7 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | cut -c2-3)" -lt 22 ]]; t
 fi
 command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo corepack enable; corepack prepare pnpm@10.0.0 --activate; }
 
-# ---------------------------------------------------------------- .env
+# ---------------------------------------------------------------- .env  @spec DEPLOY-INST-005, DEPLOY-INST-006
 if [[ ! -f .env ]]; then
   cp .env.example .env
   log "Wrote .env from template — fill in Twitch/Discord/OBS values."
@@ -99,7 +99,7 @@ else
 fi
 mkdir -p data
 
-# ---------------------------------------------------------------- deps + build
+# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-007, DEPLOY-INST-012
 log "Installing workspace dependencies"
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 log "Typechecking"

@@ -22,6 +22,7 @@ export interface UploadStoreOptions {
 
 const MiB = 1024 * 1024;
 
+// @spec DASH-UPL-001, DASH-UPL-002
 /** Defaults per the spec, overridable by INJECT_MAX_IMAGE_BYTES / INJECT_MAX_AUDIO_BYTES / INJECT_TTL_MS. */
 export function uploadOptionsFromEnv(env: NodeJS.ProcessEnv): UploadStoreOptions {
   const num = (k: string, d: number) => {
@@ -37,6 +38,7 @@ export function uploadOptionsFromEnv(env: NodeJS.ProcessEnv): UploadStoreOptions
   };
 }
 
+// @spec DASH-UPL-001, DASH-UPL-002, DASH-UPL-003
 /**
  * Bounded in-memory store for injected test uploads. Entries expire after `ttlMs` (swept lazily on
  * access and by `sweep()`), and the oldest are evicted past `maxEntries` / `maxTotalBytes`.

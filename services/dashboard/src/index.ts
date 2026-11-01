@@ -25,15 +25,18 @@ import { setupControl } from "./control.js";
 const log = createLogger("dashboard");
 const cfg = loadConfig();
 const bus = new Bus("dashboard", log);
+// @spec DASH-HEALTH-001
 const heartbeat = startHeartbeat(bus, { ...dashboardHealth, log });
 const tracker = new HealthTracker();
 const PORT = Number(envOr("PORT", String(cfg.dashboard.port)));
+// @spec DASH-SINK-004
 const VOICE = urls.voice();
 const here = dirname(fileURLToPath(import.meta.url));
 const { control, bind } = setupControl(process.env, bus, log);
 const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
 const uploads = new UploadStore(uploadOptionsFromEnv(process.env));
+// @spec DASH-UPL-002
 const sweeper = setInterval(() => uploads.sweep(), 60_000);
 sweeper.unref();
 
@@ -46,6 +49,8 @@ const feed = createFeed({ bus, tracker, clients: () => wss.clients });
 wss.on("connection", (ws) => void feed.onConnection(ws));
 void feed.start();
 
+// @spec DASH-HTTP-009
 const onListening = () => { heartbeat.ready(); log.info({ port: PORT, bind: bind ?? "default" }, "dashboard online"); };
 if (bind) server.listen(PORT, bind, onListening); else server.listen(PORT, onListening);
+// @spec DASH-HTTP-010
 onShutdown(() => { clearInterval(sweeper); feed.stop(); wss.close(); server.close(); bus.stop(); });

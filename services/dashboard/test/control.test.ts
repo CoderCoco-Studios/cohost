@@ -45,6 +45,7 @@ async function boot(env: NodeJS.ProcessEnv) {
   return { bus, calls, setup, send, rec, get personality() { return personality; } };
 }
 
+// @spec DASH-CTRL-001
 test("disabled: service routes 404, /control and /personality stay open, flag reports disabled", async () => {
   const t = await boot({});
   assert.equal(t.setup.control, undefined);
@@ -58,10 +59,12 @@ test("disabled: service routes 404, /control and /personality stay open, flag re
 
 const ON = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
 
+// @spec DASH-CTRL-002
 test("enabling without a token fails startup naming CONTROL_TOKEN", () => {
   assert.throws(() => setupControl({ CONTROL_ENABLED: "1" }, new CtlBus(), recordingLog().log), /CONTROL_TOKEN/);
 });
 
+// @spec DASH-CTRL-003
 test("bind: loopback by default, CONTROL_BIND overrides and warns when non-loopback", () => {
   const a = recordingLog();
   assert.equal(setupControl(ON, new CtlBus(), a.log).bind, "127.0.0.1");
@@ -74,6 +77,7 @@ test("bind: loopback by default, CONTROL_BIND overrides and warns when non-loopb
   assert.deepEqual(c.msgs("warn"), []);
 });
 
+// @spec DASH-CTRL-004
 test("enabled: every mutating route needs the bearer token (401 otherwise, nothing happens)", async () => {
   const t = await boot(ON);
   const before = t.bus.published.length;
@@ -87,6 +91,7 @@ test("enabled: every mutating route needs the bearer token (401 otherwise, nothi
   assert.deepEqual(t.calls, []);
 });
 
+// @spec DASH-CTRL-004, DASH-HTTP-008
 test("enabled + token: POST /control (incl. targeted pause) and PUT /personality succeed", async () => {
   const t = await boot(ON);
   assert.equal((await t.send("/control", { body: { cmd: "pause", target: "affect" }, token: "s3cret" })).status, 204);
@@ -95,11 +100,13 @@ test("enabled + token: POST /control (incl. targeted pause) and PUT /personality
   assert.equal(t.personality, "new");
 });
 
+// @spec DASH-CTRL-005, DASH-CTRL-007
 test("GET /services/control reports enabled without needing a token", async () => {
   const t = await boot(ON);
   assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "process", advanced: false });
 });
 
+// @spec DASH-SVC-001
 test("restart cortex: 200 {ok:true}, stop->reset->start, audited as dashboard", async () => {
   const t = await boot(ON);
   const r = await t.send("/services/cortex/restart", { token: "s3cret" });
@@ -110,6 +117,7 @@ test("restart cortex: 200 {ok:true}, stop->reset->start, audited as dashboard", 
   assert.deepEqual(t.bus.of("service.lifecycle"), [{ service: "cortex", action: "restart", by: "dashboard", ok: true }]);
 });
 
+// @spec DASH-SVC-002
 test("body: mode override is honoured; bad bodies are 400 and run nothing", async () => {
   const t = await boot(ON);
   await t.send("/services/memory/restart", { body: { mode: "fresh" }, token: "s3cret" });
@@ -121,12 +129,14 @@ test("body: mode override is honoured; bad bodies are 400 and run nothing", asyn
   assert.deepEqual(t.calls, []);
 });
 
+// @spec DASH-SVC-002
 test("isolated start is accepted in the body", async () => {
   const t = await boot(ON);
   assert.equal((await t.send("/services/salience/start", { body: { isolated: true }, token: "s3cret" })).status, 200);
   assert.deepEqual(t.calls, ["start salience"]);
 });
 
+// @spec DASH-SVC-003
 test("unknown id 404, crafted id 404, nothing executed or audited", async () => {
   const t = await boot(ON);
   assert.equal((await t.send("/services/nope/start", { token: "s3cret" })).status, 404);
@@ -135,6 +145,7 @@ test("unknown id 404, crafted id 404, nothing executed or audited", async () => 
   assert.deepEqual(t.bus.of("service.lifecycle"), []);
 });
 
+// @spec DASH-SVC-003
 test("dashboard stop/restart is 409; infra is 403 unless CONTROL_ADVANCED=1", async () => {
   const t = await boot(ON);
   assert.equal((await t.send("/services/dashboard/stop", { token: "s3cret" })).status, 409);
@@ -146,6 +157,7 @@ test("dashboard stop/restart is 409; infra is 403 unless CONTROL_ADVANCED=1", as
   assert.deepEqual(adv.calls, ["stop postgres"]);
 });
 
+// @spec DASH-SVC-004
 test("a failed audit publish does not fail the request", async () => {
   const t = await boot(ON);
   t.bus.fail = (type) => type === "service.lifecycle";

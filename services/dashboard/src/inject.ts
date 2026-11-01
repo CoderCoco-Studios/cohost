@@ -46,6 +46,7 @@ const flag = (v: string | null): boolean => v === "1" || v === "true";
 
 /** Serves GET /uploads/:id, POST /inject/{text,image,audio}. Returns false when the path is not ours. */
 export async function handleInject(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
+  // @spec DASH-INJ-007
   if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
     const id = url.pathname.slice("/uploads/".length);
     const up = d.uploads.get(id);
@@ -61,6 +62,7 @@ export async function handleInject(d: InjectDeps, req: http.IncomingMessage, res
   return false;
 }
 
+// @spec DASH-INJ-001, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004
 async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (!d.authorize(req, res)) return;
   const { data, tooLarge } = await readBody(req, TEXT_LIMIT);
@@ -111,6 +113,7 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   send(res, 202, { id });
 }
 
+// @spec DASH-INJ-005, DASH-INJ-006
 async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL, kind: UploadKind): Promise<void> {
   if (!d.authorize(req, res)) return;
   const level = url.searchParams.get("level") ?? "service";

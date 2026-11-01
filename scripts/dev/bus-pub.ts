@@ -10,6 +10,7 @@
  */
 import { Bus, EventPayloads, EVENT_TYPES, type EventType } from "../../packages/bus/src/index.js";
 
+// @spec DEPLOY-DEV-001
 const [type, json] = process.argv.slice(2);
 if (!type || type === "--help" || type === "-h") {
   console.error("usage: bus-pub.ts <event.type> '<json payload>'   |   bus-pub.ts --list");

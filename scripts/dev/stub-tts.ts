@@ -30,6 +30,7 @@ function wav(text: string): Buffer {
   return Buffer.concat([h, pcm]);
 }
 
+// @spec DEPLOY-DEV-003
 http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/v1/audio/speech") {
     let body = "";

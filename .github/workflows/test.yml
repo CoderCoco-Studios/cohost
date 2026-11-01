@@ -1,5 +1,6 @@
 name: test
 
+# @spec DEPLOY-CI-001
 on:
   pull_request:
   push:

@@ -70,6 +70,7 @@
       <h2>say something</h2>
       <div class="row"><input id="say" placeholder="Type a line for the co-host to speak…"><button id="sayBtn">say</button><button id="forget">wipe context</button></div>
     </div>
+    <!-- @spec DASH-UI-009 -->
     <div class="panel" id="injPanel">
       <h2>test inputs</h2>
       <textarea id="injText" placeholder="Type a fake viewer message (or the speech / screen line at bus level)…"></textarea>
@@ -128,6 +129,7 @@
 </section>
 <script>
 const $ = (s) => document.querySelector(s);
+// @spec DASH-UI-011
 const isSink = new URLSearchParams(location.search).has("sink");
 if (isSink) document.body.classList.add("sink");
 
@@ -135,6 +137,7 @@ if (isSink) document.body.classList.add("sink");
 let audioOn = isSink; // OBS browser sources allow autoplay; normal browsers need a click
 const queue = []; let playing = false;
 $("#audio").onclick = () => { audioOn = !audioOn; $("#audio").textContent = audioOn ? "🔊 audio on" : "🔇 enable audio"; $("#audio").classList.toggle("on", audioOn); if (audioOn) pump(); };
+// @spec DASH-UI-012
 async function pump() {
   if (!audioOn || playing || !queue.length) return;
   const u = queue.shift(); playing = true;
@@ -143,6 +146,7 @@ async function pump() {
   a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
   try { await a.play(); } catch (e) { playing = false; audioOn = false; $("#audio").textContent = "🔇 enable audio"; }
 }
+// @spec DASH-UI-006
 // When service control is enabled the server wants a bearer token on every mutating call.
 // It is asked for on the first 401 and kept for this tab only (sessionStorage).
 const tokenGet = () => { try { return sessionStorage.getItem("controlToken") || ""; } catch { return ""; } };
@@ -159,6 +163,7 @@ async function authFetch(path, init = {}) {
 const post = (p, b) => authFetch(p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
 
 // ---------- controls
+// @spec DASH-UI-005
 let muted = false;
 $("#mute").onclick = () => { muted = !muted; post("/control", { cmd: muted ? "mute" : "unmute" }); $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); };
 $("#sayBtn").onclick = () => { const t = $("#say").value.trim(); if (t) { post("/control", { cmd: "say", text: t }); $("#say").value = ""; } };
@@ -173,6 +178,7 @@ const TARGET = { text: "chat", image: "eyes", audio: "ears" };
 const injResults = new Map(); // id -> inject.result data, for results that beat the HTTP response
 const injPending = new Map(); // id -> timeout handle
 function injShow(r) { injSet(r.ok ? `ok${r.detail ? ": " + r.detail : ""}` : `failed${r.detail ? ": " + r.detail : ""}`, r.ok ? "ok" : "bad"); }
+// @spec DASH-UI-010
 function injTrack(id, kind) {
   if (injResults.has(id)) { injShow(injResults.get(id)); return; }
   injSet(`sent to ${TARGET[kind]}, waiting for result…`);
@@ -242,6 +248,7 @@ $("#tabLive").onclick = () => showTab("live");
 $("#tabServices").onclick = () => showTab("services");
 
 let svc = [], svcAt = 0;
+// @spec DASH-UI-007
 function renderServices() {
   const extra = svcAt ? Date.now() - svcAt : 0; // age shown = age at push + time since the push arrived
   $("#svcRows").innerHTML = svc.map((s) => {
@@ -256,6 +263,7 @@ function renderServices() {
   $("#tabServices").textContent = bad ? `services (${bad})` : "services";
 }
 // ---------- service control (only rendered when GET /services/control says enabled)
+// @spec DASH-UI-008
 let ctlEnabled = false;
 const ACTIONS = ["start", "stop", "restart"];
 function actions(id) {
@@ -289,6 +297,7 @@ function onServices(list) { svc = list; svcAt = Date.now(); renderServices(); }
 
 // ---------- feed + state
 const feed = $("#feed");
+// @spec DASH-UI-002
 function line(ev) {
   const d = ev.data, t = new Date(ev.ts).toLocaleTimeString([], { hour12: false });
   let cls = "", text = "";
@@ -313,6 +322,7 @@ function line(ev) {
 }
 const esc = (s) => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
+// @spec DASH-UI-003
 function onEvent(ev) {
   if (ev.type === "services") { onServices(ev.services); return; }
   if (ev.type === "inject.result") onInjectResult(ev.data);
@@ -321,6 +331,7 @@ function onEvent(ev) {
   if (ev.type === "voice.utterance") { queue.push(ev.data); pump(); }
   line(ev);
 }
+// @spec DASH-UI-004
 function drawFace(s) {
   $("#driver").textContent = `avatar: ${s.driver}${s.connected ? "" : " (disconnected)"}`;
   $("#head").setAttribute("transform", `translate(${s.headX * 0.8} ${-s.headY * 0.8}) rotate(${s.headZ} 100 100)`);
@@ -330,6 +341,7 @@ function drawFace(s) {
   $("#mouth").setAttribute("d", `M80 128 Q100 ${128 + smile + open} 120 128 Q100 ${128 + smile - open * 0.3} 80 128`);
   $("#emo").textContent = s.emotion;
 }
+// @spec DASH-UI-001
 function connect() {
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
   ws.onmessage = (m) => onEvent(JSON.parse(m.data));

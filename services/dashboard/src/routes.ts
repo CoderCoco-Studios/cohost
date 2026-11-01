@@ -31,6 +31,7 @@ export interface DashboardDeps {
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
 const REFUSAL_STATUS = { unknown: 404, conflict: 409, forbidden: 403 } as const;
 
+// @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const uploads = d.uploads ?? new UploadStore(uploadOptionsFromEnv(process.env));
@@ -47,11 +48,13 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     try {
+      // @spec DASH-HTTP-001
       if (req.method === "GET" && url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(page);
         return;
       }
+      // @spec DASH-SINK-001
       if (req.method === "GET" && url.pathname.startsWith("/audio/")) {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);
         res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "audio/wav", "cache-control": "no-store" });
@@ -59,16 +62,19 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         return;
       }
       if (await handleInject(inject, req, res, url)) return;
+      // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ services: d.services() }));
         return;
       }
+      // @spec DASH-CTRL-007
       if (req.method === "GET" && url.pathname === "/services/control") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify(d.control ? { enabled: true, runtime: d.control.runtime, advanced: d.control.advanced } : { enabled: false }));
         return;
       }
+      // @spec DASH-SVC-001, DASH-SVC-002, DASH-SVC-003
       const life = req.method === "POST" ? LIFECYCLE.exec(url.pathname) : null;
       if (life) {
         const ctl = d.control;
@@ -88,11 +94,13 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ ok: out.ok, ...(out.detail ? { detail: out.detail } : {}) }));
         return;
       }
+      // @spec DASH-HTTP-005
       if (req.method === "GET" && url.pathname === "/personality") {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         res.end(d.loadPersonality());
         return;
       }
+      // @spec DASH-HTTP-006
       if (req.method === "PUT" && url.pathname === "/personality") {
         if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
         d.savePersonality(await body(req));
@@ -100,6 +108,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.writeHead(204); res.end();
         return;
       }
+      // @spec DASH-HTTP-007, DASH-HTTP-008
       if (req.method === "POST" && url.pathname === "/control") {
         if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
         const { cmd, text, target } = JSON.parse(await body(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string };
@@ -107,15 +116,19 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.writeHead(204); res.end();
         return;
       }
+      // @spec DASH-SINK-002
       if (req.method === "POST" && url.pathname === "/sink") {
         const { event, id } = JSON.parse(await body(req)) as { event: "playing" | "done"; id: string };
         await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, sink: "dashboard" });
         res.writeHead(204); res.end();
         return;
       }
+      // @spec DASH-HTTP-002
       if (url.pathname === "/health") { res.writeHead(200); res.end("ok"); return; }
+      // @spec DASH-HTTP-003
       res.writeHead(404); res.end("not found");
     } catch (err) {
+      // @spec DASH-HTTP-004
       d.log.error({ err, url: req.url }, "request failed");
       res.writeHead(500); res.end(String(err));
     }

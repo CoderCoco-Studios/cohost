@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 # install.sh sets COMPOSE_FILE in .env so you can just run `docker compose up -d`.
 
-x-gpu: &gpu
+x-gpu: &gpu  # @spec DEPLOY-COMPOSE-010
   deploy:
     resources:
       reservations:

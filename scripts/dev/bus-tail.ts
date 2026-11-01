@@ -11,6 +11,7 @@
  */
 import { Bus, EVENT_TYPES, type BusEvent } from "../../packages/bus/src/index.js";
 
+// @spec DEPLOY-DEV-002
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 const ri = args.indexOf("--replay");

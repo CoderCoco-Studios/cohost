@@ -1,5 +1,6 @@
 name: compose-smoke
 
+# @spec DEPLOY-CI-002
 on:
   pull_request:
   push:

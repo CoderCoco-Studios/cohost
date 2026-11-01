@@ -30,6 +30,7 @@ function sitePath(page) {
   return `${BASE}/${page.replace(/index\.md$/, '').replace(/\.md$/, '')}`;
 }
 
+// @spec DEPLOY-DOCS-003
 function rewrite(src, text) {
   return text.replace(/(\]\()([^)\s]+)(\))/g, (m, open, href, close) => {
     if (/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(href)) return m;
@@ -46,6 +47,7 @@ function rewrite(src, text) {
   });
 }
 
+// @spec DEPLOY-DOCS-002
 for (const dir of ['guide', 'examples']) rmSync(join(root, 'docs', dir), { recursive: true, force: true });
 for (const [src, page] of pages) {
   const out = join(root, 'docs', page);

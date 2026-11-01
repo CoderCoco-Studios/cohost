@@ -13,6 +13,7 @@ export interface ControlSetup {
   bind?: string;
 }
 
+// @spec DASH-CTRL-001, DASH-CTRL-002, DASH-CTRL-003, DASH-CTRL-008
 /**
  * Reads CONTROL_* env and builds the controller. Throws (so startup fails) when CONTROL_ENABLED=1
  * without CONTROL_TOKEN. `runtime` can be injected for tests.
@@ -34,6 +35,7 @@ export function setupControl(
     by: "dashboard",
     advanced: cfg.advanced,
     processMode: cfg.processMode,
+    // @spec DASH-SVC-004
     audit: async (rec: LifecycleRecord) => {
       try { await bus.publish("service.lifecycle", rec); } catch (err) { log.warn({ err, rec }, "could not publish service.lifecycle"); }
     },

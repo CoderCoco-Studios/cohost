@@ -3,6 +3,7 @@
 # where `pnpm prune --prod` dropped @cohost/* links and every container crash-looped).
 # Only services that need no models/credentials: redis + salience affect avatar dashboard.
 # Usage: scripts/compose-smoke.sh [service...]
+# @spec DEPLOY-CI-002
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SERVICES=("$@"); [ ${#SERVICES[@]} -gt 0 ] || SERVICES=(salience affect avatar dashboard)
@@ -14,6 +15,7 @@ docker compose up -d --build redis "${SERVICES[@]}"
 sleep "${SMOKE_WAIT:-15}"   # a crash-looping container restarts well within this window
 
 fail=0
+# @spec DEPLOY-IMG-002, DEPLOY-IMG-003
 for s in "${SERVICES[@]}"; do
   id=$(docker compose ps -q "$s")
   state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' "$id")

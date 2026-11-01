@@ -31,6 +31,7 @@ after(() => server.close());
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const post = (path: string, body: unknown, method = "POST") => fetch(`${base}${path}`, { method, body: typeof body === "string" ? body : JSON.stringify(body) });
 
+// @spec DASH-HTTP-001
 test("GET / serves the page with the co-host's name filled in", async () => {
   const r = await fetch(base);
   assert.equal(r.status, 200);
@@ -38,6 +39,7 @@ test("GET / serves the page with the co-host's name filled in", async () => {
   assert.equal(await r.text(), "<title>Coco dashboard</title>");
 });
 
+// @spec DASH-SINK-001
 test("GET /audio/* proxies the voice service, passing its status through, uncached", async () => {
   const ok = await fetch(`${base}/audio/a1.wav`);
   assert.equal(ok.status, 200);
@@ -47,6 +49,7 @@ test("GET /audio/* proxies the voice service, passing its status through, uncach
   assert.equal((await fetch(`${base}/audio/missing.wav`)).status, 404);
 });
 
+// @spec DASH-HTTP-005, DASH-HTTP-006
 test("personality: GET reads it; PUT saves it and tells the cortex to reload", async () => {
   assert.equal(await (await fetch(`${base}/personality`)).text(), "# Coco\n");
   bus.clear();
@@ -56,6 +59,7 @@ test("personality: GET reads it; PUT saves it and tells the cortex to reload", a
   assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
 });
 
+// @spec DASH-HTTP-007
 test("POST /control forwards operator commands to the bus", async () => {
   bus.clear();
   assert.equal((await post("/control", { cmd: "say", text: "brb" })).status, 204);
@@ -63,6 +67,7 @@ test("POST /control forwards operator commands to the bus", async () => {
   assert.deepEqual(bus.of("control").map((c) => [c.cmd, c.text]), [["say", "brb"], ["mute", undefined]]);
 });
 
+// @spec DASH-SINK-002
 test("POST /sink reports the browser audio sink's playing / done", async () => {
   bus.clear();
   await post("/sink", { event: "playing", id: "a1" });
@@ -73,6 +78,7 @@ test("POST /sink reports the browser audio sink's playing / done", async () => {
   ]);
 });
 
+// @spec DASH-HTTP-002, DASH-HTTP-003, DASH-HTTP-004, DASH-HTTP-007
 test("bad input is a 500 with the error logged, not a crash; unknown routes 404", async () => {
   bus.clear();
   rec.lines.length = 0;
@@ -85,6 +91,7 @@ test("bad input is a 500 with the error logged, not a crash; unknown routes 404"
   assert.equal(await (await fetch(`${base}/health`)).text(), "ok");
 });
 
+// @spec DASH-FEED-006
 test("GET /services lists every known service; unseen ones are unknown, a heartbeating one has its state", async () => {
   tracker.ingest({
     service: "cortex", instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready",

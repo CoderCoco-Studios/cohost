@@ -31,6 +31,7 @@ export function createFeed(d: FeedDeps) {
   let offChange: (() => void) | undefined;
 
   return {
+    // @spec DASH-FEED-001
     /** Wire up a new client: current services first, then the recent event replay. */
     async onConnection(ws: FeedSocket): Promise<void> {
       ws.send(servicesMessage(d.tracker.snapshot()));
@@ -39,6 +40,7 @@ export function createFeed(d: FeedDeps) {
       }
     },
 
+    // @spec DASH-FEED-002, DASH-FEED-003, DASH-FEED-004, DASH-FEED-005
     /** Seed the tracker from recent heartbeats, then follow the live feeds. */
     async start(): Promise<void> {
       const history = await d.bus.recentHealth(500);

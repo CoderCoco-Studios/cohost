@@ -6,3 +6,4 @@ data
 .env
 **/*.tsbuildinfo
 **/*.log
+# @spec DEPLOY-IMG-004

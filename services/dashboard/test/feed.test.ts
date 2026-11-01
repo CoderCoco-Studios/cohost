@@ -38,6 +38,7 @@ function setup(clock = { t: 1_000_000 }) {
     emit: (ev: BusEvent) => tailHandler(ev), beat: (d: ReturnType<typeof hb>) => healthHandler({ data: d } as never) };
 }
 
+// @spec DASH-FEED-001
 test("a new client gets the services snapshot on connect", async () => {
   const t = setup();
   const ws = new Sock();
@@ -46,6 +47,7 @@ test("a new client gets the services snapshot on connect", async () => {
   assert.equal(ws.services()[0]!.services!.length, 10);
 });
 
+// @spec DASH-FEED-003
 test("seeds the tracker from recent heartbeats and tails the health stream after the last one", async () => {
   const t = setup();
   t.recentHeartbeats.push({ id: "5-0", ts: t.clock.t - 1000, data: hb() });
@@ -55,6 +57,7 @@ test("seeds the tracker from recent heartbeats and tails the health stream after
   t.feed.stop();
 });
 
+// @spec DASH-FEED-004
 test("pushes services when a state changes, not for identical heartbeats", async () => {
   const t = setup();
   const ws = new Sock(); t.socks.add(ws);
@@ -67,6 +70,7 @@ test("pushes services when a state changes, not for identical heartbeats", async
   t.feed.stop();
 });
 
+// @spec DASH-FEED-005
 test("the 1 s tick pushes staleness transitions", async () => {
   const t = setup();
   const ws = new Sock(); t.socks.add(ws);
@@ -79,6 +83,7 @@ test("the 1 s tick pushes staleness transitions", async () => {
   t.feed.stop();
 });
 
+// @spec DASH-FEED-001, DASH-FEED-002
 test("heartbeats never reach the event feed or the connect replay; other events do", async () => {
   const t = setup();
   const ws = new Sock(); t.socks.add(ws);
@@ -96,6 +101,7 @@ test("heartbeats never reach the event feed or the connect replay; other events 
   t.feed.stop();
 });
 
+// @spec DASH-HEALTH-001
 test("dashboard heartbeat: no deps, live, ready then one stopping", async () => {
   const hbs = await runHeartbeat(dashboardHealth);
   assert.deepEqual(hbs.map((h) => h.state), ["starting", "ready", "stopping"]);

@@ -1,0 +1,65 @@
+# model-backends specs
+
+## Interface and factory
+
+- [x] **LLM-IF-001**: The `@cohost/llm` package shall expose every chat backend as a `ChatProvider` with `name`, `model`, `chat(messages, opts)`, `ping()` and an optional `lastError`, and every embedding source as an `Embedder` with `embed(text)`. <!-- openspec: llm § Provider factory --> <!-- test: packages/llm/test/llm.test.ts:58 -->
+- [x] **LLM-IF-002**: When `createChatProvider` is called with `llm.provider` of `ollama`, `openai`, `anthropic`, `bedrock` or `mock`, the model-backends package shall return a provider whose `name` is that same string. <!-- openspec: llm § Provider factory --> <!-- test: packages/llm/test/llm.test.ts:58 -->
+- [x] **LLM-IF-003**: The model-backends package shall construct a `MockProvider` only through the explicit `mock` case of `createChatProvider`, with no fallback path from any other provider value to mock. <!-- openspec: llm § Provider factory -->
+- [x] **LLM-IF-004**: When `chat()` completes on any provider, the model-backends package shall resolve to the reply text with leading and trailing whitespace removed. <!-- test: packages/llm/test/llm.test.ts:66 -->
+
+## Ollama and OpenAI-compatible chat
+
+- [x] **LLM-CHAT-001**: When `Ollama.chat` is called, the package shall send a non-streaming `POST` to `/api/chat` at `OLLAMA_URL` (default `http://127.0.0.1:11434`) with `keep_alive` `24h` and `options` carrying `temperature`, `num_ctx` and `num_predict`. <!-- openspec: llm § Ollama and OpenAI-compatible chat -->
+- [x] **LLM-CHAT-002**: When `OpenAICompatible.chat` is called, the package shall send a non-streaming `POST` to `<openai.base_url>/chat/completions` with any trailing slashes on `base_url` removed. <!-- openspec: llm § Ollama and OpenAI-compatible chat --> <!-- test: packages/llm/test/llm.test.ts:66 -->
+- [x] **LLM-CHAT-003**: Where `llm.openai.api_key` is non-empty, the OpenAI-compatible provider shall send `Authorization: Bearer <key>`, and where it is empty the provider shall send no authorization header. <!-- openspec: llm § Ollama and OpenAI-compatible chat --> <!-- test: packages/llm/test/llm.test.ts:66 -->
+- [x] **LLM-CHAT-004**: When the caller supplies no `temperature` or `maxTokens`, the Ollama and OpenAI-compatible providers shall use `llm.temperature` and `llm.max_tokens`, and when the caller supplies them the providers shall use the caller's values. <!-- openspec: llm § Ollama and OpenAI-compatible chat --> <!-- test: packages/llm/test/llm.test.ts:66 -->
+- [x] **LLM-CHAT-005**: If an Ollama or OpenAI-compatible chat request returns a non-2xx status, then the provider shall throw an error containing the provider name, the status and the response body. <!-- openspec: llm § Ollama and OpenAI-compatible chat --> <!-- test: packages/llm/test/llm.test.ts:66 -->
+- [x] **LLM-CHAT-006**: When the supplied `AbortSignal` is aborted, the Ollama, OpenAI-compatible and Claude providers shall reject or abandon the in-flight request. <!-- test: packages/llm/test/llm.test.ts:52 -->
+- [x] **LLM-CHAT-007**: If an Ollama or OpenAI-compatible response contains no message content, then the provider shall return an empty string rather than throw.
+
+## Stop sequences
+
+- [x] **LLM-STOP-001**: When `Ollama.chat` is called without `json: true`, the package shall send `options.stop` equal to `["\n\n", "\n[chat]", "\n[voice]", "\n[screen]"]`. <!-- openspec: llm § Stop sequences --> <!-- test: packages/llm/test/llm.test.ts:31 -->
+- [x] **LLM-STOP-002**: When `OpenAICompatible.chat` is called without `json: true`, the package shall send `stop` equal to `["\n\n", "\n[chat]", "\n[voice]", "\n[screen]"]`. <!-- openspec: llm § Stop sequences --> <!-- test: packages/llm/test/llm.test.ts:23 -->
+- [x] **LLM-STOP-003**: When any real provider's `chat` is called with `json: true`, the package shall omit stop sequences from the request entirely. <!-- openspec: llm § Stop sequences --> <!-- test: packages/llm/test/llm.test.ts:23 -->
+- [x] **LLM-STOP-004**: When a Claude provider's `chat` is called without `json: true`, the package shall send `stop_sequences` equal to `["\n[chat]", "\n[voice]", "\n[screen]"]` and shall not include `"\n\n"`. <!-- openspec: llm § Stop sequences --> <!-- test: packages/llm/test/llm.test.ts:169 -->
+- [x] **LLM-STOP-005**: The reply stop list sent to Ollama and OpenAI-compatible providers shall contain at most four entries. <!-- openspec: llm § Stop sequences --> <!-- test: packages/llm/test/llm.test.ts:23 -->
+- [x] **LLM-STOP-006**: The transcript stop strings `\n[chat]`, `\n[voice]` and `\n[screen]` shall equal the tag prefixes that working-memory's `Context.transcript` renders for chat, voice and screen entries. <!-- test: packages/llm/test/llm.test.ts:26 -->
+
+## Claude providers
+
+- [x] **LLM-CLAUDE-001**: When a Claude provider's `chat` is called, the package shall join all `system` messages with a blank line into the request `system` field, and shall omit `system` when there are none. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:135 -->
+- [x] **LLM-CLAUDE-002**: If the non-system turns are empty or do not begin with a `user` turn, then a Claude provider shall prepend a `user` turn with content `(begin)`. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:152 -->
+- [x] **LLM-CLAUDE-003**: When a Claude provider's `chat` is called, the package shall send `max_tokens` equal to the larger of the caller's `maxTokens` and `llm.claude.max_tokens`. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:162 -->
+- [x] **LLM-CLAUDE-004**: When a Claude provider's `chat` is called, the package shall send `output_config.effort` from `llm.claude.effort` and shall send no `temperature`. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:135 -->
+- [x] **LLM-CLAUDE-005**: When a Claude response is received, the package shall return only the concatenated text blocks, trimmed, and shall discard thinking blocks. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:135 -->
+- [x] **LLM-CLAUDE-006**: When a Claude response has `stop_reason` of `refusal`, the provider shall return an empty string. <!-- openspec: llm § Claude message handling --> <!-- test: packages/llm/test/llm.test.ts:184 -->
+- [x] **LLM-CLAUDE-007**: Where the provider is `anthropic` and `llm.claude.fallbacks` is true, the package shall add the beta `server-side-fallback-2026-07-01` and `fallbacks: "default"` to the request, and where `fallbacks` is false it shall add neither. The wire format is unverified (see the LLD Open Questions). <!-- openspec: llm § Server-side fallbacks --> <!-- test: packages/llm/test/llm.test.ts:169 -->
+- [x] **LLM-CLAUDE-008**: The `bedrock` provider shall not send `betas` or `fallbacks` on any request. <!-- openspec: llm § Server-side fallbacks --> <!-- test: packages/llm/test/llm.test.ts:203 -->
+- [x] **LLM-CLAUDE-009**: Where `llm.claude.api_key` is empty, the `anthropic` provider shall construct its client without an explicit key so that the SDK default credential resolution applies, and where `llm.bedrock.region` is empty the `bedrock` provider shall likewise construct its client without a region.
+- [x] **LLM-CLAUDE-010**: When a Claude provider's `chat` is called with an `AbortSignal`, the package shall pass that signal to the SDK request. <!-- test: packages/llm/test/llm.test.ts:169 -->
+
+## Health ping
+
+- [x] **LLM-PING-001**: When `Ollama.ping` is called, the package shall `GET /api/tags` and return true only on a 2xx response, otherwise returning false with `lastError` naming the status or the unreachable URL. <!-- openspec: llm § Health ping --> <!-- test: packages/llm/test/llm.test.ts:94 -->
+- [x] **LLM-PING-002**: When `OpenAICompatible.ping` is called, the package shall `GET <base_url>/models` with the configured authorization, and on a 401 or 403 response set `lastError` to a message that points at `llm.openai.api_key`. <!-- openspec: llm § Health ping --> <!-- test: packages/llm/test/llm.test.ts:39 -->
+- [x] **LLM-PING-003**: When `AnthropicProvider.ping` is called, the package shall retrieve the configured model and, on failure, set `lastError` to a credentials hint for status 401 or 403, an unknown-model hint for status 404, and the stringified error otherwise. <!-- openspec: llm § Health ping --> <!-- test: packages/llm/test/llm.test.ts:189 -->
+- [x] **LLM-PING-004**: The `bedrock` provider's `ping` shall always return true without any network call. <!-- openspec: llm § Health ping --> <!-- test: packages/llm/test/llm.test.ts:203 -->
+- [x] **LLM-PING-005**: When a ping succeeds after an earlier failure, the provider shall reset `lastError` to undefined. <!-- test: packages/llm/test/llm.test.ts:39 -->
+
+## Embeddings
+
+- [x] **LLM-EMBED-001**: When `Ollama.embed` is called, the package shall `POST /api/embed` with `model` set to `llm.embed_model`, the input text and `keep_alive` `24h`, and return the first vector of the response. <!-- openspec: llm § Embeddings are always Ollama --> <!-- test: packages/llm/test/llm.test.ts:94 -->
+- [x] **LLM-EMBED-002**: If the embed response is non-2xx or contains no vector, then `Ollama.embed` shall throw (`ollama embed <status>` or `ollama embed returned no vector`). <!-- openspec: llm § Embeddings are always Ollama --> <!-- test: packages/llm/test/llm.test.ts:94 -->
+- [x] **LLM-EMBED-003**: When `createEmbedder` is called, the package shall return a `HashEmbedder` if `llm.provider` is `mock` and an `Ollama` client for every other provider. <!-- openspec: llm § Embeddings are always Ollama --> <!-- test: packages/llm/test/llm.test.ts:249 -->
+- [ ] **LLM-EMBED-004**: When a service builds an embedder while `llm.provider` is `mock`, the service shall obtain it through the model-backends embedder rule so that Ollama is never contacted. Gap: no service calls `createEmbedder`; memory selects its embedder from `brain.memory.embedder` (`services/memory/src/backend.ts:7-9`). <!-- openspec: llm § Embeddings are always Ollama -->
+- [x] **LLM-EMBED-005**: The `HashEmbedder` shall map text to a deterministic 64-element unit vector from its lowercase letter/digit tokens, so that identical text gives identical vectors and texts sharing tokens have higher cosine similarity than unrelated texts. <!-- openspec: llm § Hash embedder --> <!-- test: packages/llm/test/llm.test.ts:236 -->
+- [x] **LLM-EMBED-006**: If the text given to `HashEmbedder.embed` is empty or has no tokens, then the embedder shall return a fixed valid unit vector rather than throw or produce NaN. <!-- openspec: llm § Hash embedder --> <!-- test: packages/llm/test/llm.test.ts:236 -->
+
+## Mock provider
+
+- [x] **LLM-MOCK-001**: When `MockProvider.chat` is called without `json: true`, the provider shall return `[happy] mock: <text>` where text is the last user message with whitespace collapsed, truncated to 80 characters, or `hello` when empty, and identical input shall give identical output. <!-- openspec: llm § Mock provider --> <!-- test: packages/llm/test/llm.test.ts:217 -->
+- [x] **LLM-MOCK-002**: When `MockProvider.chat` is called with `json: true`, the provider shall return the string `{}`. <!-- openspec: llm § Mock provider --> <!-- test: packages/llm/test/llm.test.ts:217 -->
+- [x] **LLM-MOCK-003**: If the supplied `AbortSignal` is already aborted, then `MockProvider.chat` shall throw. <!-- openspec: llm § Mock provider --> <!-- test: packages/llm/test/llm.test.ts:231 -->
+- [x] **LLM-MOCK-004**: The `MockProvider` shall perform no network I/O, `ping` shall return true, and `lastError` shall remain undefined. <!-- openspec: llm § Mock provider --> <!-- test: packages/llm/test/llm.test.ts:217 -->
+- [ ] **LLM-MOCK-005**: Where any service or hook constructs a provider whose `name` is `mock`, the service shall log a warn-level message at startup naming the mock backend. Gap: cortex does (`services/cortex/src/index.ts:34`); `services/memory/src/reflect.ts:17` and `llm`-kind hooks (`packages/modules/src/index.ts:43`) do not. <!-- openspec: llm § Mock is reported, not hidden -->

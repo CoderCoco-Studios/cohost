@@ -1,0 +1,239 @@
+schema_version: 2
+last_updated: 2026-10-31
+
+# Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
+taxonomy:
+  platform:
+    - event-bus
+    - config
+    - model-backends
+    - region-hooks
+    - working-memory
+  senses:
+    - chat
+    - eyes
+    - ears
+  brain:
+    - salience
+    - affect
+    - memory
+    - cortex
+  body:
+    - voice
+    - avatar
+  operator:
+    - dashboard
+    - control-plane
+    - deployment
+
+# blocks / blockedBy follow the workspace-package import graph observed at
+# mapping time (git 686cc8f). Bus-event coupling between services is not
+# encoded here; see each LLD's References section.
+arrows:
+  config:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
+    blockedBy: []
+    detail: config.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit (first: it is the root of the dependency graph)."
+    drift: null
+
+  event-bus:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
+    blockedBy: [config]
+    detail: event-bus.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Decide intended crash-recovery semantics (consumer name is per-process)."
+    drift: null
+
+  model-backends:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [region-hooks, memory, cortex]
+    blockedBy: [config]
+    detail: model-backends.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Verify Claude beta header / fallbacks surface against current SDK."
+    drift: null
+
+  region-hooks:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [salience, affect, cortex]
+    blockedBy: [config, model-backends]
+    detail: region-hooks.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    drift: null
+
+  working-memory:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [salience, cortex]
+    blockedBy: [config, event-bus]
+    detail: working-memory.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Make the transcript-tag / LLM stop-string contract explicit."
+    drift: null
+
+  chat:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: chat.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    drift: null
+
+  eyes:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: eyes.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. OBS reconnect never fires after a drop."
+    drift: null
+
+  ears:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: ears.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    drift: null
+
+  salience:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, region-hooks, working-memory]
+    detail: salience.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Decide whether idle chatter should fire in a silent chat."
+    drift: null
+
+  affect:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, region-hooks]
+    detail: affect.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    drift: null
+
+  memory:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, model-backends]
+    detail: memory.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Reflection backlog beyond 600 rows is skipped permanently."
+    drift: null
+
+  cortex:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
+    detail: cortex.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    drift: null
+
+  voice:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: voice.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Owns the audio-sink arbitration protocol shared with ears and dashboard."
+    drift: null
+
+  avatar:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: avatar.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Untested against a real VTube Studio / VMC app."
+    drift: null
+
+  dashboard:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, control-plane]
+    detail: dashboard.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. No auth; audio replays on reconnect."
+    drift: null
+
+  control-plane:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: [dashboard]
+    blockedBy: [config, event-bus]
+    detail: control-plane.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Owns the heartbeat + lifecycle contract every service implements."
+    drift: null
+
+  deployment:
+    status: MAPPED
+    parent: null
+    sampled: 2026-10-31
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: []
+    detail: deployment.md
+    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Compose has never been run against real Twitch / VTS / Discord."
+    drift: null
+
+unmapped:
+  docs:
+    intent: []

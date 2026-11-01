@@ -18,7 +18,7 @@ const chat = (text: string, extra: Record<string, unknown> = {}) =>
 const vision = (text: string, changed = true) =>
   ({ id: "1", type: "vision.summary", ts: Date.now(), source: "t", data: { text, changed } }) as never;
 
-test("scoreRules: the documented weights", () => {
+test("scoreRules: the documented weights", () => { // @spec SAL-SCORE-001, SAL-SCORE-002
   const input: ScoreInput = {
     arousal: 0,
     events: [
@@ -35,7 +35,7 @@ test("scoreRules: the documented weights", () => {
   assert.equal(scoreRules(input, false).scores[0], 0.15); // reply_on_mention off: a mention is plain chat
 });
 
-test("toScoreInput flattens the working memory in order and skips self lines", () => {
+test("toScoreInput flattens the working memory in order and skips self lines", () => { // @spec SAL-SCORE-003
   const ctx = new Context(10);
   ctx.push(chat("a"));
   ctx.pushSelf("me", "neutral");
@@ -45,7 +45,7 @@ test("toScoreInput flattens the working memory in order and skips self lines", (
   assert.deepEqual(input.events.map((e) => e.kind), ["chat", "vision"]);
 });
 
-test("Reflexes: match, sense filter, per-rule cooldown, random pick", () => {
+test("Reflexes: match, sense filter, per-rule cooldown, random pick", () => { // @spec SAL-REFLEX-001, SAL-REFLEX-003
   const r = new Reflexes([
     { match: "\\b(you died|game over)\\b", on: ["vision"], say: ["Oof."], emotion: "surprised", cooldown_ms: 1000 },
     { match: "raid", on: ["chat"], say: ["A", "B"], emotion: "happy", cooldown_ms: 0 },
@@ -60,7 +60,7 @@ test("Reflexes: match, sense filter, per-rule cooldown, random pick", () => {
   assert.ok(["A", "B"].includes(r.test("chat", "incoming raid!")!.text));
 });
 
-test("Scheduler: muted, busy, cooldown, threshold, focus, mark-seen cycle", async () => {
+test("Scheduler: muted, busy, cooldown, threshold, focus, mark-seen cycle", async () => { // @spec SAL-DECIDE-001, SAL-DECIDE-002, SAL-DECIDE-003, SAL-DECIDE-006
   const sch = new Scheduler(salienceCfg({ cooldown_ms: 5000 }), rulesScorer());
   const ctx = new Context(10);
   assert.equal((await sch.decide(ctx, false, true)).reason, "muted");
@@ -80,7 +80,7 @@ test("Scheduler: muted, busy, cooldown, threshold, focus, mark-seen cycle", asyn
   assert.equal((await sch.decide(ctx, false, false)).reason, "cooldown");
 });
 
-test("Scheduler: arousal lowers the threshold; idle chatter fires after quiet", async () => {
+test("Scheduler: arousal lowers the threshold; idle chatter fires after quiet", async () => { // @spec SAL-DECIDE-003, SAL-DECIDE-004
   const sch = new Scheduler(salienceCfg({ speak_threshold: 0.6, arousal_bias: 0.5 }), rulesScorer());
   const ctx = new Context(10);
   ctx.push(chat("plain"));
@@ -98,7 +98,7 @@ test("Scheduler: arousal lowers the threshold; idle chatter fires after quiet", 
   assert.equal(d.reason, "idle chatter");
 });
 
-test("Scheduler: an unchanged unseen set is scored once, not every tick", async () => {
+test("Scheduler: an unchanged unseen set is scored once, not every tick", async () => { // @spec SAL-SCORE-006
   let calls = 0;
   const counting = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), {} as never, {
     rules: (i) => { calls++; return scoreRules(i, true); },
@@ -114,7 +114,7 @@ test("Scheduler: an unchanged unseen set is scored once, not every tick", async 
   assert.equal(d.scored.length, 2);
 });
 
-test("Scheduler: events that arrive during scoring are not in `scored` and stay unseen", async () => {
+test("Scheduler: events that arrive during scoring are not in `scored` and stay unseen", async () => { // @spec SAL-DECIDE-007
   const ctx = new Context(10);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));

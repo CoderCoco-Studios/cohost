@@ -17,19 +17,19 @@ import { affectHealth } from "./health.js";
 const log = createLogger("affect");
 const cfg = loadConfig();
 const bus = new Bus("affect", log);
-const heartbeat = startHeartbeat(bus, { ...affectHealth, log });
-const appraiser = createAppraiser(cfg, log);
+const heartbeat = startHeartbeat(bus, { ...affectHealth, log }); // @spec AFF-HEALTH-001
+const appraiser = createAppraiser(cfg, log); // @spec AFF-HOOK-001
 const affect = new Affect({ cfg, bus, appraiser, log });
 
 async function main() {
-  void bus.subscribe(
+  void bus.subscribe( // @spec AFF-IN-001
     { group: "affect", types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "control"], fromNow: true },
     (ev) => affect.onEvent(ev),
   );
-  setInterval(() => affect.publish(), cfg.brain.affect.publish_ms);
+  setInterval(() => affect.publish(), cfg.brain.affect.publish_ms); // @spec AFF-PUB-001
   heartbeat.ready();
   log.info({ half_life_ms: cfg.brain.affect.half_life_ms, appraiser: appraiser.kind }, "affect online");
 }
 
-main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
+main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); }); // @spec AFF-HEALTH-002
 onShutdown(async () => { bus.stop(); });

@@ -8,7 +8,7 @@ const cfg = (over: Record<string, unknown> = {}) => ConfigSchema.shape.brain.sha
 const line = (text: string, over: Record<string, unknown> = {}) =>
   appraiseRules({ source: "chat", who: "u", text, mention: false, valence: 0, arousal: 0, ...over } as never);
 
-test("appraiseRules: tone, mentions, speech and shouting move the right axis", () => {
+test("appraiseRules: tone, mentions, speech and shouting move the right axis", () => { // @spec AFF-APPR-001, AFF-APPR-002, AFF-APPR-003
   const plain = line("ok");
   assert.equal(plain.valence_delta, 0);
   assert.ok(plain.arousal_delta > 0 && plain.arousal_delta < 0.1);
@@ -19,7 +19,7 @@ test("appraiseRules: tone, mentions, speech and shouting move the right axis", (
   assert.ok(line("WHAT!!!").arousal_delta > plain.arousal_delta);
 });
 
-test("label maps the valence/arousal plane to canonical emotions", () => {
+test("label maps the valence/arousal plane to canonical emotions", () => { // @spec AFF-MOOD-004
   assert.equal(label(0, 0), "neutral");
   assert.equal(label(0.8, 0.8), "laugh");
   assert.equal(label(-0.8, 0.8), "angry");
@@ -31,7 +31,7 @@ test("label maps the valence/arousal plane to canonical emotions", () => {
   assert.equal(label(-0.6, 0.1), "sad");
 });
 
-test("Mood: nudges clamp, decay halves the distance to baseline per half-life", () => {
+test("Mood: nudges clamp, decay halves the distance to baseline per half-life", () => { // @spec AFF-MOOD-002, AFF-MOOD-003
   const m = new Mood(cfg({ half_life_ms: 1000, baseline_valence: 0 }));
   m.nudge(5, 5, "test");
   assert.equal(m.valence, 1);
@@ -46,7 +46,7 @@ test("Mood: nudges clamp, decay halves the distance to baseline per half-life", 
   assert.equal(m.state().mood, "neutral");
 });
 
-test("Mood.state rounds and labels", () => {
+test("Mood.state rounds and labels", () => { // @spec AFF-MOOD-001, AFF-MOOD-005
   const m = new Mood(cfg({ baseline_valence: 0.15 }));
   m.nudge(0.3, 0.3, "x");
   const s = m.state();
@@ -55,7 +55,7 @@ test("Mood.state rounds and labels", () => {
   assert.equal(s.mood, "happy");
 });
 
-test("emoji: one emoji never hits both lists, and a bare VS16 is not positive", () => {
+test("emoji: one emoji never hits both lists, and a bare VS16 is not positive", () => { // @spec AFF-APPR-004
   assert.equal(line("🎉").valence_delta, 0); // shares a surrogate with 😡/💀 in a non-unicode class
   assert.equal(line("😀").valence_delta, 0);
   assert.equal(line("\ufe0f").valence_delta, 0);

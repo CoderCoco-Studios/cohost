@@ -31,7 +31,7 @@ const chat = (text: string, extra: Record<string, unknown> = {}) =>
   event("chat.message", { platform: "twitch", user: "bob", text, isMod: false, isSub: false, mentionsCohost: false, ...extra });
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
-test("chat and speech are appraised with the word lists (rules kind)", () => {
+test("chat and speech are appraised with the word lists (rules kind)", () => { // @spec AFF-IN-002, AFF-IN-003, AFF-HOOK-004
   const { affect } = setup();
   affect.onEvent(chat("lol that was clutch"));
   assert.ok(affect.mood.valence > 0);
@@ -42,7 +42,7 @@ test("chat and speech are appraised with the word lists (rules kind)", () => {
   assert.equal(affect.mood.cause, "voice: Chris");
 });
 
-test("subs, screen changes and the co-host's own lines nudge the mood", () => {
+test("subs, screen changes and the co-host's own lines nudge the mood", () => { // @spec AFF-IN-004, AFF-IN-005, AFF-IN-006
   const { affect } = setup();
   const a0 = affect.mood.arousal;
   affect.onEvent(event("vision.summary", { text: "x", changed: false }));
@@ -65,7 +65,7 @@ test("subs, screen changes and the co-host's own lines nudge the mood", () => {
   assert.equal(s.affect.mood.cause, "sub: bob");
 });
 
-test("forget_context snaps the mood back to baseline", () => {
+test("forget_context snaps the mood back to baseline", () => { // @spec AFF-IN-007
   const { affect } = setup();
   for (let i = 0; i < 5; i++) affect.onEvent(chat("LOL POGGERS!!!"));
   affect.onEvent(event("control", { cmd: "forget_context" }));
@@ -74,7 +74,7 @@ test("forget_context snaps the mood back to baseline", () => {
   assert.equal(affect.mood.cause, "reset");
 });
 
-test("publish: only when the state moved, plus a 15 s heartbeat", () => {
+test("publish: only when the state moved, plus a 15 s heartbeat", () => { // @spec AFF-PUB-001, AFF-PUB-002, AFF-PUB-003
   mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
   try {
     const { affect, bus } = setup();
@@ -94,7 +94,7 @@ test("publish: only when the state moved, plus a 15 s heartbeat", () => {
   } finally { mock.timers.reset(); }
 });
 
-test("llm/http kind: lines queue for the slow appraiser instead of blocking the handler", async () => {
+test("llm/http kind: lines queue for the slow appraiser instead of blocking the handler", async () => { // @spec AFF-HOOK-005
   const { affect, seen, next } = setup("http");
   affect.onEvent(chat("what a great play"));
   affect.onEvent(chat("love this game"));
@@ -110,7 +110,7 @@ test("llm/http kind: lines queue for the slow appraiser instead of blocking the 
   assert.ok(near(affect.mood.valence, 0.2));
 });
 
-test("llm/http kind: a too-short line skips the model; a mention never does", async () => {
+test("llm/http kind: a too-short line skips the model; a mention never does", async () => { // @spec AFF-HOOK-007
   const { affect, seen, next } = setup("http");
   affect.onEvent(chat("gg"));
   assert.equal(seen.length, 0);
@@ -121,7 +121,7 @@ test("llm/http kind: a too-short line skips the model; a mention never does", as
   await affect.settled();
 });
 
-test("llm/http kind: when appraisal falls behind, the oldest waiting lines are dropped", async () => {
+test("llm/http kind: when appraisal falls behind, the oldest waiting lines are dropped", async () => { // @spec AFF-HOOK-006
   const { affect, seen, next } = setup("http");
   for (let i = 0; i < 12; i++) affect.onEvent(chat(`line number ${i}`));
   // #0 is in flight; of #1..#11 only the newest 8 are kept.
@@ -130,7 +130,7 @@ test("llm/http kind: when appraisal falls behind, the oldest waiting lines are d
   assert.deepEqual(seen.map((s) => s.text), ["line number 0", ...[4, 5, 6, 7, 8, 9, 10, 11].map((n) => `line number ${n}`)]);
 });
 
-test("pause: events stop nudging the mood while paused; resume restores; other targets ignored", () => {
+test("pause: events stop nudging the mood while paused; resume restores; other targets ignored", () => { // @spec AFF-CTRL-001, AFF-CTRL-002, AFF-CTRL-004
   const { affect } = setup();
   affect.onEvent(event("control", { cmd: "pause", target: "voice" })); // not for us
   affect.onEvent(chat("lol clutch"));
@@ -147,7 +147,7 @@ test("pause: events stop nudging the mood while paused; resume restores; other t
   assert.ok(affect.mood.valence > v1);
 });
 
-test("pause: decay continues while paused", () => {
+test("pause: decay continues while paused", () => { // @spec AFF-CTRL-003
   const { affect } = setup();
   affect.onEvent(chat("lol clutch"));
   affect.onEvent(event("control", { cmd: "pause" }));

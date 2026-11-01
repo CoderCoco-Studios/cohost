@@ -27,7 +27,7 @@ export class Affect {
   private queue: { input: AppraiseInput; cause: string }[] = [];
   private draining?: Promise<void>;
   /** Paused by `control pause`: events no longer nudge the mood; decay and publishing continue. */
-  private paused = false;
+  private paused = false; // @spec AFF-CTRL-005
 
   constructor(private d: AffectDeps) {
     this.mood = new Mood(d.cfg.brain.affect);
@@ -35,25 +35,25 @@ export class Affect {
 
   onEvent(ev: BusEvent): void {
     const mood = this.mood;
-    if (this.paused && ev.type !== "control") return;
+    if (this.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
     switch (ev.type) {
-      case "chat.message": {
+      case "chat.message": { // @spec AFF-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
         this.appraise("chat", d.user, d.text, d.mentionsCohost);
-        if (d.isSub) mood.nudge(0.05, 0.05, `sub: ${d.user}`);
+        if (d.isSub) mood.nudge(0.05, 0.05, `sub: ${d.user}`); // @spec AFF-IN-004
         break;
       }
-      case "speech.heard": {
+      case "speech.heard": { // @spec AFF-IN-003
         const d = ev.data as BusEvent<"speech.heard">["data"];
         this.appraise("speech", d.speaker, d.text, false);
         break;
       }
       case "vision.summary": {
         const d = ev.data as BusEvent<"vision.summary">["data"];
-        if (d.changed) mood.nudge(0, 0.08, "screen changed");
+        if (d.changed) mood.nudge(0, 0.08, "screen changed"); // @spec AFF-IN-005
         break;
       }
-      case "brain.say": {
+      case "brain.say": { // @spec AFF-IN-006
         // Saying something emotional reinforces the mood a little (and talking is arousing).
         const d = ev.data as BusEvent<"brain.say">["data"];
         const dv = ["happy", "laugh", "smug"].includes(d.emotion) ? 0.08 : ["sad", "angry"].includes(d.emotion) ? -0.08 : 0;
@@ -62,10 +62,10 @@ export class Affect {
       }
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
-        if (d.target && d.target !== "affect") break; // addressed to another service
-        if (d.cmd === "pause") this.paused = true;
-        if (d.cmd === "resume") this.paused = false;
-        if (d.cmd === "forget_context") { mood.nudge(this.d.cfg.brain.affect.baseline_valence - mood.valence, 0.1 - mood.arousal, "reset"); }
+        if (d.target && d.target !== "affect") break; // addressed to another service; @spec AFF-CTRL-001
+        if (d.cmd === "pause") this.paused = true; // @spec AFF-CTRL-002
+        if (d.cmd === "resume") this.paused = false; // @spec AFF-CTRL-004
+        if (d.cmd === "forget_context") { mood.nudge(this.d.cfg.brain.affect.baseline_valence - mood.valence, 0.1 - mood.arousal, "reset"); } // @spec AFF-IN-007
         break;
       }
     }
@@ -82,23 +82,23 @@ export class Affect {
     const input: AppraiseInput = { source, who, text, mention, valence: mood.valence, arousal: mood.arousal };
     const cause = `${source === "speech" ? "voice" : "chat"}: ${who}`;
     // Rules are instant, and a line too short to carry tone isn't worth a model call.
-    if (this.d.appraiser.kind === "rules" || (!mention && text.trim().length < 4)) {
+    if (this.d.appraiser.kind === "rules" || (!mention && text.trim().length < 4)) { // @spec AFF-HOOK-004, AFF-HOOK-007
       mood.applyAppraisal(appraiseRules(input), cause);
       return;
     }
-    this.queue.push({ input, cause });
-    while (this.queue.length > MAX_QUEUED) this.queue.shift();
+    this.queue.push({ input, cause }); // @spec AFF-HOOK-005
+    while (this.queue.length > MAX_QUEUED) this.queue.shift(); // @spec AFF-HOOK-006
     if (!this.draining) this.draining = this.drain().finally(() => { this.draining = undefined; });
   }
 
   private async drain() {
     for (let job = this.queue.shift(); job; job = this.queue.shift()) {
-      const out = await this.d.appraiser.run({ ...job.input, valence: this.mood.valence, arousal: this.mood.arousal });
+      const out = await this.d.appraiser.run({ ...job.input, valence: this.mood.valence, arousal: this.mood.arousal }); // @spec AFF-HOOK-003, AFF-HOOK-005
       this.mood.applyAppraisal(out, job.cause);
     }
   }
 
-  publish(): void {
+  publish(): void { // @spec AFF-PUB-001, AFF-PUB-002, AFF-PUB-003, AFF-CTRL-003
     this.mood.tick();
     const s = this.mood.state();
     const key = `${s.mood}:${s.valence.toFixed(2)}:${s.arousal.toFixed(2)}`;

@@ -29,17 +29,17 @@ const cfg = (salience: Record<string, unknown>) => ConfigSchema.parse({
 const ev = (text: string, mention = false) => ({ kind: "chat" as const, who: "bob", text, mention, isMod: false, isSub: false, changed: false });
 const input: ScoreInput = { arousal: 0, events: [ev("hey Coco", true), ev("plain")] };
 
-test("scorer rules honour reply_on_mention from config", async () => {
+test("scorer rules honour reply_on_mention from config", async () => { // @spec SAL-SCORE-002
   assert.deepEqual((await createScorer(cfg({}), log).run(input)).scores, [1, 0.15]);
   assert.deepEqual((await createScorer(cfg({ reply_on_mention: false }), log).run(input)).scores, [0.15, 0.15]);
 });
 
-test("scorer http: scores are clamped to 0..1", async () => {
+test("scorer http: scores are clamped to 0..1", async () => { // @spec SAL-SCORE-004, SAL-SCORE-007
   answer = { scores: [7, -2] };
   assert.deepEqual((await createScorer(cfg({ module: { kind: "http", url } }), log).run(input)).scores, [1, 0]);
 });
 
-test("scorer http: a wrong-length, non-numeric or missing list falls back to the rules", async () => {
+test("scorer http: a wrong-length, non-numeric or missing list falls back to the rules", async () => { // @spec SAL-SCORE-004, SAL-SCORE-005
   const s = createScorer(cfg({ module: { kind: "http", url } }), log);
   for (const bad of [{ scores: [0.5] }, { scores: [0.5, "high"] }, { scores: [0.5, null] }, { nope: 1 }, [0.1, 0.2]]) {
     answer = bad;

@@ -40,21 +40,21 @@ export class Scheduler {
 
   async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0): Promise<Decision> {
     const now = Date.now();
-    if (muted) return { speak: false, reason: "muted", score: 0, scored: [] };
+    if (muted) return { speak: false, reason: "muted", score: 0, scored: [] }; // @spec SAL-DECIDE-001, SAL-CTRL-004
     if (busy) return { speak: false, reason: "cortex busy", score: 0, scored: [] };
     if (now - this.lastSpoke < this.cfg.cooldown_ms) return { speak: false, reason: "cooldown", score: 0, scored: [] };
 
-    const unseen = ctx.unseen().filter((e) => e.kind !== "self");
-    if (unseen.length === 0) return { speak: false, reason: "nothing new", score: 0, scored: [] };
+    const unseen = ctx.unseen().filter((e) => e.kind !== "self"); // @spec SAL-DECIDE-007
+    if (unseen.length === 0) return { speak: false, reason: "nothing new", score: 0, scored: [] }; // @spec SAL-DECIDE-005
 
     // Score only events we haven't scored yet: an event stays unseen across ticks while the
     // total is below threshold, and an llm/http scorer must not be re-asked about the same input.
-    const fresh = unseen.filter((e) => !this.scoreCache.has(e));
+    const fresh = unseen.filter((e) => !this.scoreCache.has(e)); // @spec SAL-SCORE-006
     if (fresh.length > 0) {
-      const { scores: fs } = await this.scorer.run(toScoreInput(fresh, arousal));
+      const { scores: fs } = await this.scorer.run(toScoreInput(fresh, arousal)); // @spec SAL-SCORE-005
       fresh.forEach((e, i) => this.scoreCache.set(e, fs[i] ?? 0));
     }
-    let score = 0;
+    let score = 0; // @spec SAL-DECIDE-002
     let focus: ContextEvent | undefined;
     let focusScore = 0;
     unseen.forEach((e) => {
@@ -63,15 +63,15 @@ export class Scheduler {
       if (s > focusScore) { focusScore = s; focus = e; }
     });
 
-    const threshold = Math.max(0.1, this.cfg.speak_threshold - this.cfg.arousal_bias * arousal);
+    const threshold = Math.max(0.1, this.cfg.speak_threshold - this.cfg.arousal_bias * arousal); // @spec SAL-DECIDE-003
     if (score >= threshold) {
       return { speak: true, reason: focus?.kind === "chat" && focus.mention ? "mentioned" : "engaged", score, focus, scored: unseen };
     }
 
     const idle = now - this.lastActivity;
-    if (this.cfg.idle_chatter_ms > 0 && idle > this.cfg.idle_chatter_ms) {
+    if (this.cfg.idle_chatter_ms > 0 && idle > this.cfg.idle_chatter_ms) { // @spec SAL-DECIDE-004
       return { speak: true, reason: "idle chatter", score, focus, scored: unseen };
     }
-    return { speak: false, reason: `score ${score.toFixed(2)} < ${threshold.toFixed(2)}`, score, focus, scored: unseen };
+    return { speak: false, reason: `score ${score.toFixed(2)} < ${threshold.toFixed(2)}`, score, focus, scored: unseen }; // @spec SAL-DECIDE-006
   }
 }

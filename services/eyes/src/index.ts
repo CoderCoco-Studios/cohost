@@ -24,6 +24,7 @@ const obs = new OBSWebSocket();
 const health = new EyesHealth(cfg.vision.enabled, () => obs.identified);
 const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 
+// @spec EYES-OBS-001, EYES-OBS-002, EYES-OBS-003, EYES-HEALTH-005
 async function connectObs(): Promise<void> {
   const { host, port, password } = cfg.vision.obs;
   for (;;) {
@@ -39,6 +40,7 @@ async function connectObs(): Promise<void> {
   }
 }
 
+// @spec EYES-OBS-006
 async function screenshot(): Promise<string> {
   const { source, width } = cfg.vision.obs;
   const res = await obs.call("GetSourceScreenshot", {
@@ -50,15 +52,18 @@ async function screenshot(): Promise<string> {
   return stripDataUrl(res.imageData);
 }
 
+// @spec EYES-HEALTH-003
 const describe = health.track(ollamaDescriber(cfg.vision));
 const eyes = new Eyes({ bus, log, screenshot, describe });
 
 // Injected images never touch OBS, so this is wired whether vision is enabled or idle.
+// @spec EYES-ENAB-004, EYES-INJ-001, EYES-INJ-011
 void bus.subscribe(
   { group: "eyes", types: ["inject.request"], fromNow: true },
   createInjectHandler({ bus, log, dashboardUrl: urls.dashboard(), describe }),
 );
 
+// @spec EYES-LOOK-003, EYES-LOOK-004, EYES-LOOK-005, EYES-OBS-005
 async function loop() {
   for (;;) {
     const t0 = Date.now();
@@ -78,10 +83,12 @@ obs.on("ConnectionClosed", () => log.warn("OBS connection closed"));
 startEyes({ enabled: cfg.vision.enabled, log, connect: connectObs, loop })
   .then((started) => {
     if (started) return;
+    // @spec EYES-ENAB-002, EYES-HEALTH-005
     // Disabled: startEyes never connected to OBS. Stay up (mode off) so a supervisor sees a healthy idle service.
     heartbeat.ready();
     const timer = setInterval(() => log.warn("eyes idle: vision.enabled is false"), 60_000);
     onShutdown(() => { clearInterval(timer); });
   })
   .catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
+// @spec EYES-OBS-008
 onShutdown(async () => { await obs.disconnect(); bus.stop(); });

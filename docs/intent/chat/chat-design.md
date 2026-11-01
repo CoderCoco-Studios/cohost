@@ -11,66 +11,66 @@ Segment `chat` (`services/chat`, package `@cohost/chat`). Mapped 2026-10-31 at g
 
 `chat` is the text sense. It turns Twitch IRC lines into `chat.message` events on the bus (see [HLD](../../high-level-design.md)). It is one of three senses (`chat`, `eyes`, `ears`) that publish and never consume brain events; it consumes only `inject.request` (test injection). Downstream consumers of `chat.message`: `salience`, `affect`, `memory` (each via `bus.subscribe`, `services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`, `services/memory/src/index.ts:58`) and the `dashboard` feed.
 
-Observed design stance (all `[inferred]` from code and comments):
+Design stance (evidence per bullet; `[inferred]` where only the code shows it):
 
-- Read-only by default. `index.ts:3-6` says anonymous IRC works with only `TWITCH_CHANNEL`; credentials are optional and framed as "needed later" to let the co-host type. Nothing in the service ever sends a chat line.
-- Pure translation is separated from I/O. `filter.ts` has no side effects and is unit-tested; `index.ts` is untested glue.
-- A configuration gap is not a crash. With no channel the service idles and reports `degraded` rather than `process.exit(1)` (`index.ts:46-52`), so a supervisor sees a health state instead of a restart loop.
-- The service must run on Redis alone. `chat.source: fake` replaces Twitch with stdin or a scripted loop, and `@twurple/*` is loaded with dynamic `import()` only on the Twitch path (`index.ts:58`, `index.ts:76`).
+- Read-only by default. The header comment (`index.ts:3-6`) says anonymous IRC works with only `TWITCH_CHANNEL`; credentials are optional and framed as "needed later" to let the co-host type. Nothing in the service ever sends a chat line.
+- Pure translation is separated from I/O. `filter.ts` has no side effects and is unit-tested; `index.ts` is untested glue. Evidence: commit 95afa19 ("Split service entrypoints into testable region modules": chat gained `createChatFilter` / `channelName` so the logic could be tested without Twitch).
+- A configuration gap is not a crash. With no channel the service idles and reports `degraded` rather than `process.exit(1)` (`index.ts:51-59`), so a supervisor sees a health state instead of a restart loop. Evidence: comment at `index.ts:53`; commit 51d5a9c; add-isolated-backends design D6 ("the supervisor must not see a crash loop for a configuration gap").
+- The service must run on Redis alone. `chat.source: fake` replaces Twitch with stdin or a scripted loop, and `@twurple/*` is loaded with dynamic `import()` only on the Twitch path (`index.ts:66`, `index.ts:85`). Evidence: commit 51d5a9c ("mock/off backends so any service runs on Redis alone"); add-isolated-backends design D6 ("Does not touch `@twurple`").
 
 ## Source Selection (plan)
 
-`chatPlan(cfg.chat)` (`filter.ts:22-25`) maps config to one of three plans, chosen once at boot (`index.ts:22`):
+`chatPlan(cfg.chat)` (`filter.ts:24-27`) maps config to one of three plans, chosen once at boot (`index.ts:22`):
 
 | `chat.source` | `chat.twitch.channel` | Plan | Behaviour | Heartbeat |
 |---|---|---|---|---|
-| `fake` | any | `fake` | `startFakeSource`, no network | mode `mock`, `twitch: n/a`, `ready()` immediately (`index.ts:44`) |
-| `twitch` | non-empty | `twitch` | `startTwitch(channel)` | mode `live`, `twitch: ok` while connected else `down`; `ready()` on first connect (`index.ts:82`) |
-| `twitch` | empty | `idle` | logs an error at start and every 60 s, publishes nothing (`index.ts:48-52`) | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
+| `fake` | any | `fake` | `startFakeSource`, no network | mode `mock`, `twitch: n/a`, `ready()` immediately (`index.ts:48`) |
+| `twitch` | non-empty | `twitch` | `startTwitch(channel)` | mode `live`, `twitch: ok` while connected else `down`; `ready()` on first connect (`index.ts:92`) |
+| `twitch` | empty | `idle` | logs an error at start and every 60 s, publishes nothing (`index.ts:54-59`) | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
 
-`channelName` strips one leading `#` and lowercases (`filter.ts:14-16`). `chat.source` blank resolves to `twitch` via `z.preprocess` (`packages/config/src/schema.ts:84`); `chat.fake.interval_ms` defaults 8000 (`schema.ts:85`). Env presets: `CHAT_SOURCE` (`config/config.example.yaml:49`), `TWITCH_CHANNEL` (`:53`). The control plane's isolated start sets `CHAT_SOURCE=fake` (`packages/control/src/manifest.ts:39`, owned by `control-plane`).
+`channelName` strips one leading `#` and lowercases (`filter.ts:15-17`). `chat.source` blank resolves to `twitch` via `z.preprocess` (`packages/config/src/schema.ts:84`); `chat.fake.interval_ms` defaults 8000 (`schema.ts:85`). Env presets: `CHAT_SOURCE` (`config/config.example.yaml:49`), `TWITCH_CHANNEL` (`:53`). The control plane's isolated start sets `CHAT_SOURCE=fake` (`packages/control/src/manifest.ts:39`, owned by `control-plane`).
 
-In all three plans the `inject.request` subscription is wired before the plan branches (`index.ts:28-31`), so test injection works with no channel and no connection.
+In all three plans the `inject.request` subscription is wired before the plan branches (`index.ts:30-33`), so test injection works with no channel and no connection.
 
 ## Twitch Path
 
-`startTwitch` (`index.ts:75-97`):
+`startTwitch` (`index.ts:84-110`):
 
 1. Dynamic `import("@twurple/chat")`, then `buildAuth()`.
-2. `buildAuth()` (`index.ts:57-73`) returns `undefined` (anonymous) unless `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set. Otherwise it builds a `RefreshingAuthProvider`, logs `twitch token refreshed` with `expiresIn` on refresh, and registers the token via `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` and scope `["chat"]`. `TWITCH_REFRESH_TOKEN` is optional (`?? null`). The `addUserForToken` promise is fire-and-forget (`void`, `index.ts:63`) and the `ChatClient` is constructed immediately after. Refreshed tokens are logged but never persisted anywhere.
+2. `buildAuth()` (`index.ts:65-81`) returns `undefined` (anonymous) unless `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set. Otherwise it builds a `RefreshingAuthProvider`, logs `twitch token refreshed` with `expiresIn` on refresh, and registers the token via `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` and scope `["chat"]`. `TWITCH_REFRESH_TOKEN` is optional (`?? null`). The `addUserForToken` promise is fire-and-forget (`void`, `index.ts:71`) and the `ChatClient` is constructed immediately after. Refreshed tokens are logged but never persisted anywhere.
 3. `new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } })`.
-4. `onConnect`: `connected = true`, `heartbeat.ready()`, info log with `channel` and `authenticated`. `onDisconnect`: `connected = false`, warn log with `manually` and `reason`; no explicit reconnect code (reconnect behaviour is whatever `@twurple/chat` does by default; `node_modules` was not installed at mapping so this was not verified).
-5. `onMessage` runs `toEvent(user, text, msg.userInfo)` and, if it returns an event, `await bus.publish("chat.message", ev)` (`index.ts:90-93`) with no try/catch.
+4. `onConnect`: `connected = true`, `heartbeat.ready()`, info log with `channel` and `authenticated`. `onDisconnect`: `connected = false`, warn log with `manually` and `reason`; no explicit reconnect code. Reconnect is the library default: `@twurple/chat` 8.2.0 drives an `ircv3` 0.33.1 client whose `connection.reconnect` option defaults to `true` (`ircv3/lib/IrcClient.js:88`, `:591`), and `ChatClient` is constructed without overriding it, so an unexpected drop is retried and `onConnect` fires again (re-signalling `ready`).
+5. `onMessage` runs `toEvent(user, text, msg.userInfo)` and, if it returns an event, `await bus.publish("chat.message", ev)` (`index.ts:102-105`) with no try/catch.
 6. `client.connect()` is not awaited; `onShutdown` calls `client.quit()` and `bus.stop()`.
 
 The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/bus/src/heartbeat.ts:68-70`).
 
 ## Filter and Payload (`filter.ts`)
 
-`createChatFilter(cfg)` returns `(user, text, info) => EventInput<"chat.message"> | undefined` (`filter.ts:28-46`). Order of checks:
+`createChatFilter(cfg)` returns `(user, text, info) => EventInput<"chat.message"> | undefined` (`filter.ts:31-49`). Order of checks:
 
 1. `user` (lowercased) in `chat.ignore_users` (lowercased set) drops the message.
 2. Raw `text` (not yet trimmed or collapsed) starting with any `chat.ignore_prefixes` entry drops it. Default prefixes `["!"]` (`schema.ts:88`); the example config ships `ignore_users: ["nightbot","streamelements","moobot"]`.
 3. `text` with `\s+` collapsed to a single space and trimmed; empty result drops it.
 
-Payload: `platform: "twitch"` (hard-coded, also for `fake`), `user: info.displayName || user`, `userId: info.userId`, cleaned `text`, `isMod: info.isMod || info.isBroadcaster`, `isSub: info.isSubscriber`, `mentionsCohost: clean.toLowerCase().includes(cfg.cohost.name.toLowerCase())`. The mention test is a plain substring match: a test records `@coco_fan hi` matching cohost name `Coco` and comments "substring match, by design" (`test/filter.test.ts:32`). `cohost.name` is `z.string().min(1)` so the empty-name always-true case cannot occur through config.
+Payload: `platform: "twitch"` (hard-coded, also for `fake`), `user: info.displayName || user`, `userId: info.userId`, cleaned `text`, `isMod: info.isMod || info.isBroadcaster`, `isSub: info.isSubscriber`, `mentionsCohost: clean.toLowerCase().includes(cfg.cohost.name.toLowerCase())`. The mention test is a plain substring match: a test records `@coco_fan hi` matching cohost name `Coco` and comments "substring match, by design" (`test/filter.test.ts:36`). `cohost.name` is `z.string().min(1)` so the empty-name always-true case cannot occur through config.
 
 `ChatUserInfo` (`filter.ts:5-11`) is a structural subset of twurple's `ChatUser`, so the filter and tests need no twurple import.
 
 ## Fake Source (`fake.ts`)
 
-`startFakeSource({ toEvent, publish, cohostName, intervalMs, stdin, onError })` returns a stop function (`fake.ts:38-61`).
+`startFakeSource({ toEvent, publish, cohostName, intervalMs, stdin, onError })` returns a stop function (`fake.ts:39-62`).
 
 - Every emitted line goes through `toEvent` (the real filter), so `ignore_users`, `ignore_prefixes` and whitespace rules apply. Users are synthetic (`fake_viewer1..3`); `userId` equals the username and all flag fields are false (`fake.ts:31`).
 - If `stdin` is supplied, a `readline` interface turns each line into a message from `fake_viewer1` and sets `stdinSeen`.
-- If `stdin.isTTY`, the script is not started at all (interactive mode) (`fake.ts:51`).
-- Otherwise a `setInterval` cycles a 6-line script (`fakeScript`, `fake.ts:9-18`: two mentions, a question, a `!uptime` line the filter drops, two plain lines) every `intervalMs`; once any stdin line has been seen the timer keeps ticking but emits nothing (`fake.ts:56`).
-- Publish failures are caught and passed to `onError` (the entry point logs a warning) (`fake.ts:42`, `index.ts:42`).
+- If `stdin.isTTY`, the script is not started at all (interactive mode) (`fake.ts:52`).
+- Otherwise a `setInterval` cycles a 6-line script (`fakeScript`, `fake.ts:9-18`: two mentions, a question, a `!uptime` line the filter drops, two plain lines) every `intervalMs`; once any stdin line has been seen the timer keeps ticking but emits nothing (`fake.ts:57`).
+- Publish failures are caught and passed to `onError` (the entry point logs a warning) (`fake.ts:43`, `index.ts:46`).
 - `index.ts` always passes `process.stdin`, so in a container with no TTY and a closed or empty stdin the script runs.
 
 ## Test Injection (`inject.ts`)
 
-`createInjectHandler({ bus, log, cohostName, now? })` handles `inject.request` (group `chat`, `fromNow: true`, `index.ts:28-31`). Steps (`inject.ts:19-48`):
+`createInjectHandler({ bus, log, cohostName, now? })` handles `inject.request` (group `chat`, `fromNow: true`, `index.ts:30-33`). Steps (`inject.ts:20-49`):
 
 1. `target !== "chat"` returns silently.
 2. Any other path answers with `inject.result {id, ok, detail?}`.
@@ -84,7 +84,7 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 
 ## Health (`health.ts`)
 
-`chatHealth(channel, twitchConnected, source)` returns the `HeartbeatSpec` consumed by `startHeartbeat` (`index.ts:24`); the heartbeat contract is owned by `control-plane`.
+`chatHealth(channel, twitchConnected, source)` returns the `HeartbeatSpec` consumed by `startHeartbeat` (`index.ts:25`); the heartbeat contract is owned by `control-plane`.
 
 - `source === "fake"`: `{service:"chat", mode:"mock", deps: {twitch:"n/a"}}`.
 - else: `mode:"live"`, `deps.twitch = channel && twitchConnected() ? "ok" : "down"`.
@@ -95,34 +95,36 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
-| Anonymous vs authenticated IRC | Anonymous unless all of client id, secret and access token are set (`index.ts:60`) | Always require credentials; Twitch EventSub | `[inferred]` Lowest setup cost for a read-only sense; header comment (`index.ts:3-6`) calls auth future-proofing for typing in chat. |
-| Token registration | `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` (`index.ts:63-71`) | Pass real expiry; persist refreshed tokens | `[inferred]` Zero expiry forces the provider to refresh immediately because env tokens carry no expiry metadata. No evidence of intent beyond the values. |
-| Missing channel | Idle plus `degraded` heartbeat, error log every 60 s (`index.ts:46-52`) | `process.exit(1)` (old behaviour in baseline OpenSpec) | `[inferred]` Avoid restart loops under a supervisor; comment at `index.ts:47` says so. |
-| Lazy `@twurple` import | Dynamic `import()` inside `startTwitch`/`buildAuth` (`index.ts:58`, `:76`) | Static import | `[inferred]` The fake/idle plans must not load the IRC library; comment at `index.ts:34`. |
-| Mention detection | Substring on lowercased cleaned text (`filter.ts:43`) | Word-boundary or `@name` match | `[inferred]` Test comment "substring match, by design" (`test/filter.test.ts:32`); simplest rule, accepts false positives. |
-| Fake source reuses real filter | `toEvent` injected into `startFakeSource` (`fake.ts:6`, `:41`) | Publish scripted events directly | `[inferred]` So fake runs exercise ignore rules and cleaning exactly like Twitch; header comment `fake.ts:35`. |
-| Injection bypasses ignore rules | `inject.ts` does not call the filter (`inject.ts:15-17`) | Reuse `createChatFilter` | `[inferred]` Comment: "a dropped test is useless". |
-| Platform | Hard-coded `"twitch"` in filter (`filter.ts:37`) | Carry platform from the source | `[inferred]` Only one live source exists; the schema allows `youtube`/`discord` (`packages/bus/src/events.ts:11`) but only injection can set them. |
-| Health mode for idle channel | `live` with `twitch: down` (`health.ts:9-13`; asserted at `test/health.test.ts:20-25`) | `off` with `twitch: n/a` (as written in the add-service-health delta) | `[inferred]` Test is titled "stays live-mode", so the choice looks deliberate; the delta spec text was not updated. |
+| Anonymous vs authenticated IRC | Anonymous unless all of client id, secret and access token are set (`index.ts:68`) | Always require credentials; Twitch EventSub | Header comment (`index.ts:3-6`): works read-only with just `TWITCH_CHANNEL`; credentials are for typing in chat later. EventSub was not considered in any recorded source (`[inferred]` alternative). |
+| Token registration | `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` (`index.ts:71-79`) | Pass real expiry; persist refreshed tokens | `[inferred]` Zero expiry forces the provider to refresh immediately because env tokens carry no expiry metadata. No evidence of intent beyond the values. |
+| Missing channel | Idle plus `degraded` heartbeat, error log every 60 s (`index.ts:51-59`) | `process.exit(1)` (old behaviour in baseline OpenSpec) | Avoid restart loops under a supervisor: comment at `index.ts:53`; commit 51d5a9c; add-isolated-backends design D6. |
+| Lazy `@twurple` import | Dynamic `import()` inside `startTwitch`/`buildAuth` (`index.ts:66`, `:85`) | Static import | The fake and idle plans must not load the IRC library: comment at `index.ts:37`; add-isolated-backends design D6 ("Does not touch `@twurple`"). |
+| Mention detection | Substring on lowercased cleaned text (`filter.ts:46`) | Word-boundary or `@name` match | Deliberate per the test comment "substring match, by design" (`test/filter.test.ts:36`). Why substring was preferred over word matching is not recorded (`[inferred]`: simplest rule, accepts false positives). |
+| Fake source reuses real filter | `toEvent` injected into `startFakeSource` (`fake.ts:6`, `:42`) | Publish scripted events directly | So fake runs exercise ignore rules and cleaning exactly like Twitch: header comment `fake.ts:36`; add-isolated-backends design D6 ("passing each through the normal `createChatFilter` so ignore rules apply"). |
+| Injection bypasses ignore rules | `inject.ts` does not call the filter (`inject.ts:16-18`) | Reuse `createChatFilter` | "A dropped test is useless": comment at `inject.ts:16-18`; add-test-injection design D8, listed under its owner-confirmed decisions. |
+| Platform | Hard-coded `"twitch"` in filter (`filter.ts:40`) | Carry platform from the source | `[inferred]` Only one live source exists; the schema allows `youtube`/`discord` (`packages/bus/src/events.ts:11`) but only injection can set them. |
+| Health mode for idle channel | `live` with `twitch: down` (`health.ts:10-14`; asserted at `test/health.test.ts:23-28`) | `off` with `twitch: n/a` (the add-service-health delta) | add-isolated-backends design D6 specifies idle `degraded` with `deps: {twitch: "down"}`, and its D2 says services with a real source report `live`; the test is titled "stays live-mode" (`test/health.test.ts:23`). |
 
 ## Open Questions & Future Decisions
 
 ### Deferred / unexplained
 
-1. `addUserForToken` is not awaited (`index.ts:63`). `ChatClient` is built right after and may ask the auth provider for a token before the user is registered; a rejection is unhandled. Race and unhandled rejection both unconfirmed (twurple internals not read).
-2. `onMessage` has no try/catch around `bus.publish` (`index.ts:90-93`). A Redis failure rejects inside the twurple listener; effect depends on twurple.
-3. `void bus.subscribe(...)` for `inject.request` (`index.ts:28`) has no `.catch`; a Redis error at group creation is an unhandled rejection.
-4. Reconnect after disconnect is not coded here (`index.ts:85-88` only flips a flag and logs). Relies on twurple defaults, unverified.
-5. Refreshed tokens are never persisted (`index.ts:62` logs only). After a refresh the env token can be stale on restart.
-6. `ignore_prefixes` is checked on the untrimmed text (`filter.ts:33`): `" !cmd"` is not treated as a command. No test covers this.
-7. Mention matching is substring-only, so `@coco_fan` and `cocoa` both count as mentioning `Coco` (`test/filter.test.ts:32`).
-8. The header says credentials are for typing in chat later (`index.ts:5-6`), but no code ever sends messages; scope is only `["chat"]` (read) (`index.ts:70`).
-9. Injected `chat.message` carries no `userId` (`inject.ts:31-40`) while real ones do (`filter.ts:39`).
-10. Staleness compares publisher `ev.ts` with the local clock (`inject.ts:27`), so clock skew between hosts can mis-drop requests.
+1. `addUserForToken` is not awaited (`index.ts:71`). `ChatClient` is built right after and may ask the auth provider for a token before the user is registered; a rejection is unhandled. Race and unhandled rejection both unconfirmed (twurple internals not read).
+2. `onMessage` has no try/catch around `bus.publish` (`index.ts:102-105`). A Redis failure rejects inside the twurple listener; effect depends on twurple.
+3. `void bus.subscribe(...)` for `inject.request` (`index.ts:30`) has no `.catch`; a Redis error at group creation is an unhandled rejection.
+4. Reconnect after disconnect is not coded here (`index.ts:96-99` only flips a flag and logs); it relies on the `ircv3` default `reconnect: true` (see Twitch Path). No spec line covers reconnect and no test exercises it.
+5. Refreshed tokens are never persisted (`index.ts:70` logs only). After a refresh the env token can be stale on restart.
+6. `ignore_prefixes` is checked on the untrimmed text (`filter.ts:36`): `" !cmd"` is not treated as a command. No test covers this.
+7. Mention matching is substring-only, so `@coco_fan` and `cocoa` both count as mentioning `Coco` (`test/filter.test.ts:36`).
+8. The header says credentials are for typing in chat later (`index.ts:5-6`), but no code ever sends messages; scope is only `["chat"]` (read) (`index.ts:78`).
+9. Injected `chat.message` carries no `userId` (`inject.ts:32-41`) while real ones do (`filter.ts:42`).
+10. Staleness compares publisher `ev.ts` with the local clock (`inject.ts:28`), so clock skew between hosts can mis-drop requests.
 11. `index.ts` (plan dispatch, auth, ChatClient wiring, idle timer) has no test; only `filter`, `fake`, `health`, `inject` are covered.
-12. Idle plan logs an error every 60 s forever (`index.ts:51`); log noise rather than a state change.
-13. Baseline OpenSpec "No channel" scenario (exit code 1) is superseded by the isolated-backends delta; the baseline file still says exit 1 (`openspec/specs/chat/spec.md`).
-14. add-service-health "Unconfigured channel" scenario (`mode: off`, `twitch: n/a`) disagrees with the code (`mode: live`, `twitch: down`). See CHAT-HEALTH-006.
+12. Idle plan logs an error every 60 s forever (`index.ts:57`); log noise rather than a state change.
+13. The frozen OpenSpec baseline "No channel" scenario says exit code 1 (`openspec/specs/chat/spec.md`); CHAT-PLAN-003 (idle, never exit) governs.
+14. CHAT-HEALTH-006 states the shipped behavior for a missing channel (`mode: live`, `deps.twitch: down`). The add-service-health "Unconfigured channel" scenario (`mode: off`, `deps.twitch: n/a`) may have been the intended one; add-isolated-backends design D6 chose `down`. Owner to confirm.
+15. CHAT-TW-008 (Twitch message to `chat.message`) has no test: the `onMessage` wiring lives in untested `index.ts` (`index.ts:102-105`).
+16. CHAT-TW-006 and CHAT-TW-007 state `[inferred]` intent (await token registration; survive a publish failure) that no code, test, comment or commit records. Owner to confirm before they are implemented.
 
 ## References
 
@@ -144,6 +146,8 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 
 ### OpenSpec
 - `openspec/specs/chat/spec.md`
+- `openspec/changes/archive/2026-11-01-add-isolated-backends/design.md` ("add-isolated-backends design", D2 and D6 cited above)
+- `openspec/changes/archive/2026-11-01-add-test-injection/design.md` ("add-test-injection design", D8 and owner-confirmed decisions cited above)
 - `openspec/changes/archive/2026-11-01-add-service-health/specs/chat/spec.md`
 - `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/chat/spec.md`
 - `openspec/changes/archive/2026-11-01-add-test-injection/specs/chat/spec.md`

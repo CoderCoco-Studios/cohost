@@ -19,6 +19,7 @@ function run(extra: { stdin?: PassThrough & { isTTY?: boolean } } = {}) {
   return { published, stop };
 }
 
+// @spec CHAT-FAKE-001, CHAT-FAKE-003
 test("scripted: a chat.message with a synthetic user is published each interval; '!' lines are filtered", () => {
   mock.timers.enable({ apis: ["setInterval"] });
   try {
@@ -37,6 +38,7 @@ test("scripted: a chat.message with a synthetic user is published each interval;
   } finally { mock.timers.reset(); }
 });
 
+// @spec CHAT-FAKE-002, CHAT-FAKE-003
 test("stdin lines are published through the filter; a prefixed line is not", async () => {
   const stdin = new PassThrough();
   const { published, stop } = run({ stdin });
@@ -46,6 +48,7 @@ test("stdin lines are published through the filter; a prefixed line is not", asy
   stop();
 });
 
+// @spec CHAT-FAKE-004
 test("a TTY stdin disables the script entirely", () => {
   mock.timers.enable({ apis: ["setInterval"] });
   try {
@@ -57,6 +60,7 @@ test("a TTY stdin disables the script entirely", () => {
   } finally { mock.timers.reset(); }
 });
 
+// @spec CHAT-PLAN-001, CHAT-PLAN-002, CHAT-PLAN-003
 test("chatPlan: fake needs no channel; twitch without a channel idles (never exits); twitch with one connects", () => {
   const plan = (over: Record<string, unknown>) => chatPlan(testConfig({ chat: over }).chat);
   assert.equal(plan({ source: "fake", twitch: { channel: "" } }), "fake");

@@ -16,6 +16,7 @@ export interface InjectDeps {
   now?: () => number;
 }
 
+// @spec EARS-INJ-004
 /** The URL to fetch when it lies under `<dashboardUrl>/uploads/` (same origin, normalised path), else undefined. */
 export function uploadUrl(raw: string | undefined, dashboardUrl: string): string | undefined {
   if (!raw) return undefined;
@@ -30,6 +31,7 @@ export function uploadUrl(raw: string | undefined, dashboardUrl: string): string
   }
 }
 
+// @spec EARS-INJ-006
 /** Duration from a WAV header, 0 for anything else (or an unreadable header). */
 export function wavDurationMs(buf: Buffer): number {
   if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return 0;
@@ -42,6 +44,7 @@ export function wavDurationMs(buf: Buffer): number {
   }
 }
 
+// @spec EARS-INJ-001, EARS-INJ-002, EARS-INJ-003, EARS-INJ-004, EARS-INJ-005, EARS-INJ-006, EARS-INJ-008
 /**
  * Handles `inject.request` for ears: fetches the uploaded clip, sends it unchanged to STT and
  * publishes an injected `speech.heard`. `ears.min_speech_ms` does not apply. Needs no Discord.

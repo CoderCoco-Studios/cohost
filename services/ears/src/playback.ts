@@ -17,6 +17,7 @@ export async function httpAudio(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004, EARS-PLAY-005
 /** Plays utterances one at a time and reports voice.playing / voice.done for each. */
 export class Playback {
   private queue: { id: string; url: string }[] = [];

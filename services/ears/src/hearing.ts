@@ -14,6 +14,7 @@ const EXT: Record<string, string> = {
   "audio/wav": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "mp4",
 };
 
+// @spec EARS-HEAR-005
 /** The STT container (speaches / faster-whisper, OpenAI-compatible). */
 export function sttTranscriber(cfg: Config["ears"]): (audio: Buffer, hint?: { contentType: string }) => Promise<string> {
   return async (wav, hint) => {
@@ -30,6 +31,7 @@ export function sttTranscriber(cfg: Config["ears"]): (audio: Buffer, hint?: { co
   };
 }
 
+// @spec EARS-HEAR-004, EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-007, EARS-HEAR-008
 /** One speaker's utterance (48k stereo PCM, ended by silence) → `speech.heard`. */
 export class Hearing {
   constructor(private d: HearingDeps) {}

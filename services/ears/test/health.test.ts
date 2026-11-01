@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { EarsHealth, earsPlan } from "../src/health.js";
 
+// @spec EARS-START-002, EARS-HLTH-001, EARS-HLTH-002
 test("no token: mode live, discord down, degraded (idle, not exited)", async () => {
   const hbs = await runHeartbeat(new EarsHealth("no-token", () => false).spec, (hb) => hb.degraded("DISCORD_TOKEN is not set"));
   const hb = hbs.find((h) => h.state === "degraded")!;
@@ -10,6 +11,7 @@ test("no token: mode live, discord down, degraded (idle, not exited)", async () 
   assert.equal(hb.deps.discord, "down");
 });
 
+// @spec EARS-START-001, EARS-HLTH-001
 test("source off: mode off, deps n/a, ready", async () => {
   const hbs = await runHeartbeat(new EarsHealth("off", () => false).spec);
   assert.equal(hbs[1]!.mode, "off");
@@ -17,6 +19,7 @@ test("source off: mode off, deps n/a, ready", async () => {
   assert.equal(hbs[1]!.state, "ready");
 });
 
+// @spec EARS-START-004
 test("earsPlan: off wins; discord needs a token and otherwise idles instead of exiting", () => {
   assert.equal(earsPlan("off", true), "off");
   assert.equal(earsPlan("off", false), "off");
@@ -24,6 +27,7 @@ test("earsPlan: off wins; discord needs a token and otherwise idles instead of e
   assert.equal(earsPlan("discord", true), "discord");
 });
 
+// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003
 test("token set: discord follows the session, stt follows transcriptions", async () => {
   let up = true;
   const h = new EarsHealth("discord", () => up);

@@ -12,6 +12,7 @@ function setup(now?: () => number) {
 const req = (over: Record<string, unknown> = {}) =>
   event("inject.request", { id: "r1", target: "chat", kind: "text", text: "hi", remember: false, ...over });
 
+// @spec CHAT-INJ-005
 test("viewer fields and defaults, then ok result", async () => {
   const { bus, handle } = setup();
   await handle(req({ meta: { user: "bob", isMod: true } }));
@@ -19,6 +20,7 @@ test("viewer fields and defaults, then ok result", async () => {
   assert.deepEqual(bus.of("inject.result"), [{ id: "r1", ok: true }]);
 });
 
+// @spec CHAT-INJ-005
 test("defaults: injected_viewer on twitch; remember copied; platform from meta", async () => {
   const { bus, handle } = setup();
   await handle(req({ remember: true }));
@@ -30,6 +32,7 @@ test("defaults: injected_viewer on twitch; remember copied; platform from meta",
   assert.equal(b!.platform, "youtube");
 });
 
+// @spec CHAT-INJ-006
 test("ignore_users / ignore_prefixes are bypassed", async () => {
   const { bus, handle } = setup();
   await handle(req({ text: "!hello", meta: { user: "nightbot" } }));
@@ -37,6 +40,7 @@ test("ignore_users / ignore_prefixes are bypassed", async () => {
   assert.equal(bus.of("chat.message")[0]!.user, "nightbot");
 });
 
+// @spec CHAT-INJ-005, CHAT-INJ-007
 test("mention is detected case-insensitively; whitespace collapsed", async () => {
   const { bus, handle } = setup();
   await handle(req({ text: "  hey   COCO  " }));
@@ -44,6 +48,7 @@ test("mention is detected case-insensitively; whitespace collapsed", async () =>
   assert.equal(bus.of("chat.message")[0]!.text, "hey COCO");
 });
 
+// @spec CHAT-INJ-004
 test("blank text: no message, ok:false", async () => {
   const { bus, handle } = setup();
   await handle(req({ text: "   " }));
@@ -51,6 +56,7 @@ test("blank text: no message, ok:false", async () => {
   assert.equal(bus.of("inject.result")[0]!.ok, false);
 });
 
+// @spec CHAT-INJ-003
 test("stale request: only ok:false stale", async () => {
   const { bus, handle } = setup(() => Date.now() + 61_000);
   await handle(req());
@@ -58,6 +64,7 @@ test("stale request: only ok:false stale", async () => {
   assert.deepEqual(bus.of("inject.result")[0], { id: "r1", ok: false, detail: "stale" });
 });
 
+// @spec CHAT-INJ-002, CHAT-INJ-004
 test("other target publishes nothing; wrong kind for chat is ok:false", async () => {
   const { bus, handle } = setup();
   await handle(req({ target: "eyes", kind: "image", url: "http://x/uploads/1" }));
@@ -66,6 +73,7 @@ test("other target publishes nothing; wrong kind for chat is ok:false", async ()
   assert.equal(bus.of("inject.result")[0]!.ok, false);
 });
 
+// @spec CHAT-INJ-008
 test("publish failure becomes ok:false when the bus can still answer", async () => {
   const { bus, handle } = setup();
   bus.fail = (t) => t === "chat.message";

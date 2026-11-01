@@ -11,6 +11,7 @@ export interface InjectDeps {
   now?: () => number;
 }
 
+// @spec CHAT-INJ-002, CHAT-INJ-003, CHAT-INJ-004, CHAT-INJ-005, CHAT-INJ-006, CHAT-INJ-007, CHAT-INJ-008
 /**
  * Handles `inject.request` for chat: publishes the text as an injected `chat.message`, as a viewer.
  * `chat.ignore_users` / `chat.ignore_prefixes` are deliberately NOT applied (a dropped test is useless),

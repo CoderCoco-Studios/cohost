@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { EyesHealth } from "../src/health.js";
 
+// @spec EYES-HEALTH-001
 test("vision disabled: mode off and both deps n/a", async () => {
   const hbs = await runHeartbeat(new EyesHealth(false, () => false).spec);
   assert.equal(hbs[1]!.mode, "off");
@@ -10,6 +11,7 @@ test("vision disabled: mode off and both deps n/a", async () => {
   assert.equal(hbs[1]!.state, "ready");
 });
 
+// @spec EYES-HEALTH-002, EYES-HEALTH-003, EYES-HEALTH-004
 test("enabled: obs follows the connection, ollama follows describe calls", async () => {
   let obs = true;
   const h = new EyesHealth(true, () => obs);

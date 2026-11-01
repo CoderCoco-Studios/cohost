@@ -17,18 +17,21 @@ function setup(over: { advanced?: boolean; runtimeFail?: boolean; resetFail?: bo
   return { c, log, audits };
 }
 
+// @spec CTRL-GUARD-005
 test("fresh restart of cortex: stop, reset group, start (in that order)", async () => {
   const { c, log } = setup();
   assert.equal((await c.restart("cortex")).ok, true);
   assert.deepEqual(log, ["stop cortex", "reset cortex", "start cortex"]);
 });
 
+// @spec CTRL-GUARD-005
 test("memory resumes by default: native restart, groups untouched", async () => {
   const { c, log } = setup();
   await c.restart("memory");
   assert.deepEqual(log, ["restart memory"]);
 });
 
+// @spec CTRL-GUARD-005
 test("explicit mode:fresh resets both memory groups; mode:resume on cortex keeps the group", async () => {
   const a = setup();
   await a.c.restart("memory", { mode: "fresh" });
@@ -38,6 +41,7 @@ test("explicit mode:fresh resets both memory groups; mode:resume on cortex keeps
   assert.deepEqual(b.log, ["restart cortex"]);
 });
 
+// @spec CTRL-GUARD-004, CTRL-GUARD-005
 test("fresh start resets then starts; stop never resets", async () => {
   const { c, log } = setup();
   await c.start("voice");
@@ -45,6 +49,7 @@ test("fresh start resets then starts; stop never resets", async () => {
   assert.deepEqual(log, ["reset voice", "start voice", "stop voice"]);
 });
 
+// @spec CTRL-GUARD-005
 test("a failed reset aborts the start and is reported", async () => {
   const { c, log, audits } = setup({ resetFail: true });
   const r = await c.restart("cortex");
@@ -54,6 +59,7 @@ test("a failed reset aborts the start and is reported", async () => {
   assert.equal(audits[0]!.ok, false);
 });
 
+// @spec CTRL-GUARD-006
 test("isolated start passes the manifest's preset env; restart recreates instead of a native restart", async () => {
   const { c, log } = setup();
   await c.start("memory", { isolated: true });
@@ -65,6 +71,7 @@ test("isolated start passes the manifest's preset env; restart recreates instead
   ]);
 });
 
+// @spec CTRL-GUARD-001
 test("unknown id: refused 'unknown', nothing executed or audited", async () => {
   const { c, log, audits } = setup();
   for (const id of ["nope", "cortex; rm -rf /"]) {
@@ -75,6 +82,7 @@ test("unknown id: refused 'unknown', nothing executed or audited", async () => {
   assert.deepEqual(audits, []);
 });
 
+// @spec CTRL-GUARD-002
 test("dashboard cannot stop or restart itself (conflict)", async () => {
   const { c, log } = setup();
   assert.equal((await c.stop("dashboard")).refused, "conflict");
@@ -82,6 +90,7 @@ test("dashboard cannot stop or restart itself (conflict)", async () => {
   assert.deepEqual(log, []);
 });
 
+// @spec CTRL-GUARD-003
 test("infra is forbidden unless advanced, then executed (never reset)", async () => {
   const off = setup();
   assert.equal((await off.c.stop("redis")).refused, "forbidden");
@@ -93,6 +102,7 @@ test("infra is forbidden unless advanced, then executed (never reset)", async ()
   assert.deepEqual(on.log, ["stop postgres", "restart redis"]);
 });
 
+// @spec CTRL-GUARD-007
 test("every attempt is audited, failures with ok:false and detail", async () => {
   const ok = setup();
   await ok.c.stop("voice");
@@ -102,6 +112,7 @@ test("every attempt is audited, failures with ok:false and detail", async () => 
   assert.deepEqual(bad.audits, [{ service: "eyes", action: "start", by: "test", ok: false, detail: "boom" }]);
 });
 
+// @spec CTRL-GUARD-007
 test("an audit that throws does not fail the action", async () => {
   const c2 = new ServiceController({
     runtime: { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) },
@@ -110,6 +121,7 @@ test("an audit that throws does not fail the action", async () => {
   assert.equal((await c2.stop("voice")).ok, true);
 });
 
+// @spec CTRL-GUARD-004
 test("resetConsumerGroups resets each group in order and stops at the first failure", async () => {
   const seen: string[] = [];
   assert.equal((await resetConsumerGroups({ resetGroup: async (g) => { seen.push(g); } }, ["a", "b"])).ok, true);

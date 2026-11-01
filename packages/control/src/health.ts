@@ -5,6 +5,7 @@ export type HeartbeatData = EventData<"service.heartbeat">;
 export type HealthState = "up" | "degraded" | "stale" | "down" | "unknown" | "crash-looping";
 
 /** The 10 cohost services; always present in a snapshot even if never seen. */
+// @spec CTRL-MANIFEST-005
 export const KNOWN_SERVICES = [
   "chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "dashboard",
 ] as const;
@@ -72,6 +73,7 @@ export class HealthTracker {
   }
 
   /** Feed history oldest-first (e.g. `recentHealth`); `ts` of each is its receive time. */
+  // @spec CTRL-HEALTH-007
   seed(history: { ts: number; data: HeartbeatData }[]): void {
     for (const h of history) this.ingest(h.data, h.ts);
   }
@@ -89,12 +91,14 @@ export class HealthTracker {
   }
 
   /** Every known service plus any other that has sent a heartbeat. */
+  // @spec CTRL-HEALTH-005
   snapshot(): ServiceHealth[] {
     const names = [...this.known];
     for (const s of this.entries.keys()) if (!names.includes(s)) names.push(s);
     return names.map((s) => this.derive(s));
   }
 
+  // @spec CTRL-HEALTH-001, CTRL-HEALTH-002, CTRL-HEALTH-003, CTRL-HEALTH-004
   private derive(service: string): ServiceHealth {
     const e = this.entries.get(service);
     if (!e) return { service, state: "unknown", restarts: 0 };
@@ -111,6 +115,7 @@ export class HealthTracker {
     return { service, state, heartbeat: hb, lastSeenAgeMs: age, restarts };
   }
 
+  // @spec CTRL-HEALTH-006
   private notify(): void {
     if (this.listeners.size === 0) return;
     const snap = this.snapshot();

@@ -29,6 +29,7 @@ export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps">;
  * Wrap an async call so its outcome feeds a dependency status:
  * `set(true)` after a success, `set(false)` after a failure (the error still propagates).
  */
+// @spec CTRL-HEARTBEAT-008
 export function tracked<A extends unknown[], R>(fn: (...a: A) => Promise<R>, set: (ok: boolean) => void): (...a: A) => Promise<R> {
   return async (...a) => {
     try { const r = await fn(...a); set(true); return r; }
@@ -56,6 +57,7 @@ export function heartbeatIntervalMs(): number {
  * deps/mode change (checked at least once a second), and `stopping` on
  * shutdown (before the service's own onShutdown callback runs).
  */
+// @spec CTRL-HEARTBEAT-001, CTRL-HEARTBEAT-002, CTRL-HEARTBEAT-003, CTRL-HEARTBEAT-004, CTRL-HEARTBEAT-005, CTRL-HEARTBEAT-006
 export function startHeartbeat(bus: HealthPublisher, opts: HeartbeatOptions): Heartbeat {
   const intervalMs = opts.intervalMs ?? heartbeatIntervalMs();
   let base: "starting" | "ready" | "degraded" = "starting";

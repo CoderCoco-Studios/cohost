@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS } from "../src/index.js";
 
+// @spec CFG-ENV-001, CFG-ENV-002
 test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
   process.env.T_SET = "set";
   process.env.T_EMPTY = "";
@@ -16,6 +17,7 @@ test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
   assert.equal(substituteEnv("no vars here"), "no vars here");
 });
 
+// @spec CFG-DIR-003, CFG-DIR-004, CFG-DIR-005
 test("ensureFromExample seeds the real file once and then leaves it alone", () => {
   const dir = mkdtempSync(join(tmpdir(), "cohost-cfg-"));
   process.env.CONFIG_DIR = dir;
@@ -31,12 +33,14 @@ test("ensureFromExample seeds the real file once and then leaves it alone", () =
 
 import { ConfigSchema, ModuleSchema, unknownKeys } from "../src/index.js";
 
+// @spec CFG-SCH-004
 test("reflex match must be a valid regex (a bad one would crash-loop salience)", () => {
   const reflexes = ConfigSchema.shape.brain.shape.salience.removeDefault().shape.reflexes;
   assert.equal(reflexes.safeParse([{ match: "(you died", say: ["x"] }]).success, false);
   assert.equal(reflexes.safeParse([{ match: "\\b(you died)\\b", say: ["x"] }]).success, true);
 });
 
+// @spec CFG-SCH-003
 test("a hook's llm.provider override requires a model; a model alone is fine", () => {
   assert.equal(ModuleSchema.safeParse({ kind: "llm", llm: { provider: "ollama" } }).success, false);
   assert.equal(ModuleSchema.safeParse({ kind: "llm", llm: { provider: "ollama", model: "qwen" } }).success, true);
@@ -44,6 +48,7 @@ test("a hook's llm.provider override requires a model; a model alone is fine", (
   assert.equal(ModuleSchema.safeParse({ kind: "llm", llm: { provider: "", model: "" } }).success, true); // empty = inherit
 });
 
+// @spec CFG-LOAD-005
 test("unknownKeys names settings the schema dropped (pre-split brain.* keys)", () => {
   const raw = { brain: { tick_ms: 900, cooldown_ms: 1, salience: { tick_ms: 1500, typo_key: 1 }, memory: { recall_k: 3 } } };
   const parsed = { brain: { salience: { tick_ms: 1500 }, memory: { recall_k: 3 } } };
@@ -81,6 +86,7 @@ ears: { discord: {} }
 dashboard: {}
 `;
 
+// @spec CFG-USR-003, CFG-ENV-004
 test("the shipped config.example.yaml + .env.example load cleanly, with no unknown keys", () => {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
@@ -97,6 +103,7 @@ test("the shipped config.example.yaml + .env.example load cleanly, with no unkno
   }
 });
 
+// @spec CFG-USR-002, CFG-USR-004
 test("the shipped expressions.example.yaml parses and maps every emotion for each driver", () => {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "expressions.example.yaml"), join(dir, "expressions.example.yaml"));
@@ -108,6 +115,7 @@ test("the shipped expressions.example.yaml parses and maps every emotion for eac
   }
 });
 
+// @spec CFG-LOAD-001, CFG-LOAD-002, CFG-ENV-001, CFG-SCH-005
 test("loadConfig: env substitution, empty numbers fall back to defaults, results are cached", () => {
   sandbox({ "config.yaml": minimalYaml });
   delete process.env.T_OBS_PORT;
@@ -122,21 +130,25 @@ test("loadConfig: env substitution, empty numbers fall back to defaults, results
   delete process.env.T_CHANNEL;
 });
 
+// @spec CFG-LOAD-003, CFG-SCH-001, CFG-SCH-006
 test("loadConfig: an invalid file names every bad path", () => {
   sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''").replace("voice: {}", "voice: { speed: -1 }") });
   assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /voice\.speed:/.test(e.message));
 });
 
+// @spec CFG-LOAD-004
 test("loadConfig: an invalid file with no .env says to copy .env.example", () => {
   sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''") });
   assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /no \.env/i.test(e.message) && /cp \.env\.example \.env/.test(e.message));
 });
 
+// @spec CFG-LOAD-004
 test("loadConfig: an invalid file with a .env present gets no .env hint", () => {
   sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''"), ".env": "X=1\n" });
   assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && !/\.env/.test(e.message));
 });
 
+// @spec CFG-LOAD-005
 test("loadConfig warns about keys the schema doesn't know", () => {
   sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { tick_ms: 900 }") });
   const warnings = captureWarnings(() => loadConfig(true));
@@ -144,6 +156,7 @@ test("loadConfig warns about keys the schema doesn't know", () => {
   assert.match(warnings[0]!, /ignoring unknown keys: brain\.tick_ms/);
 });
 
+// @spec CFG-ENV-004, CFG-ENV-005
 test("loadDotEnv: comments, quotes, blank lines, and never overrides the real environment", () => {
   const dir = sandbox({ ".env": "# comment\n\nT_A=plain\nT_B=\"double quoted\"\nT_C='single'\n  T_D = spaced  \nT_E=from-file\n=novalue\nnoequals\nT_F=a=b\n" });
   process.env.T_E = "from-env";
@@ -158,6 +171,7 @@ test("loadDotEnv: comments, quotes, blank lines, and never overrides the real en
   loadDotEnv(join(dir, "nope.env")); // missing file is fine
 });
 
+// @spec CFG-USR-001
 test("personality is seeded from the example, then saved and reloaded in place", () => {
   sandbox({ "personality.example.md": "# Coco\n" });
   assert.equal(loadPersonality(), "# Coco\n");
@@ -165,6 +179,7 @@ test("personality is seeded from the example, then saved and reloaded in place",
   assert.equal(loadPersonality(), "# Coco\n\n## Learned\n- likes cats\n");
 });
 
+// @spec CFG-ENV-007, CFG-URL-001
 test("env() requires a non-empty value; envOr() and urls fall back", () => {
   process.env.T_REQ = "x";
   assert.equal(env("T_REQ"), "x");
@@ -179,6 +194,7 @@ test("env() requires a non-empty value; envOr() and urls fall back", () => {
   if (saved === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = saved;
 });
 
+// @spec CFG-DIR-001, CFG-DIR-002
 test("configDir finds <workspace root>/config when cwd is a nested package dir", () => {
   const root = mkdtempSync(join(tmpdir(), "cohost-ws-"));
   writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - services/*\n");
@@ -204,6 +220,7 @@ test("configDir finds <workspace root>/config when cwd is a nested package dir",
   }
 });
 
+// @spec CFG-URL-002
 test("urls.voice defaults to loopback (host runs), honours VOICE_PORT, and VOICE_URL overrides (compose)", () => {
   const saved = { u: process.env.VOICE_URL, p: process.env.VOICE_PORT };
   try {
@@ -220,6 +237,7 @@ test("urls.voice defaults to loopback (host runs), honours VOICE_PORT, and VOICE
   }
 });
 
+// @spec CFG-ISO-001, CFG-ISO-003
 test("brain.memory.store defaults to postgres; 'memory' selects the in-process fake; others are rejected", async () => {
   const { ConfigSchema } = await import("../src/schema.js");
   const shape = ConfigSchema.shape.brain.shape.memory;
@@ -228,6 +246,7 @@ test("brain.memory.store defaults to postgres; 'memory' selects the in-process f
   assert.equal(shape.safeParse({ store: "sqlite" }).success, false);
 });
 
+// @spec CFG-URL-003
 test("urls.dashboard() defaults to loopback and honours DASHBOARD_URL", () => {
   const saved = process.env.DASHBOARD_URL;
   delete process.env.DASHBOARD_URL;
@@ -253,6 +272,7 @@ function loadShipped(env: Record<string, string> = {}) {
   }
 }
 
+// @spec CFG-ISO-004
 test("isolation presets: unset env equals the live defaults", () => {
   const cfg = loadShipped();
   assert.equal(cfg.llm.provider, "ollama");
@@ -265,6 +285,7 @@ test("isolation presets: unset env equals the live defaults", () => {
   assert.equal(cfg.ears.source, "discord");
 });
 
+// @spec CFG-ISO-004
 test("isolation presets: each env var flips its key without editing config.yaml", () => {
   const cfg = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
@@ -279,6 +300,7 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   assert.equal(cfg.ears.source, "off");
 });
 
+// @spec CFG-ISO-001, CFG-ISO-003
 test("new keys default to live backends when omitted; bad enum values are rejected", () => {
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: { discord: {} }, dashboard: {}, brain: {} };

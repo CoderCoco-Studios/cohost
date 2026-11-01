@@ -60,6 +60,7 @@ export class ServiceController {
   stop(id: string) { return this.act("stop", id, {}); }
   restart(id: string, opts: ActionOptions = {}) { return this.act("restart", id, opts); }
 
+  // @spec CTRL-GUARD-001, CTRL-GUARD-002, CTRL-GUARD-003
   private guard(action: LifecycleAction, id: string): { def: ServiceDef } | { refusal: ControlResult } {
     const def = findService(id, this.manifest);
     if (!def) return { refusal: { ok: false, refused: "unknown", detail: "unknown service" } };
@@ -68,6 +69,7 @@ export class ServiceController {
     return { def };
   }
 
+  // @spec CTRL-GUARD-004, CTRL-GUARD-005, CTRL-GUARD-006, CTRL-GUARD-007
   private async act(action: LifecycleAction, id: string, a: ActionOptions): Promise<ControlResult> {
     const g = this.guard(action, id);
     if ("refusal" in g) return g.refusal;

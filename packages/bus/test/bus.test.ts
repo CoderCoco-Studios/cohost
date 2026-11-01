@@ -9,6 +9,7 @@ async function redisUp(): Promise<boolean> {
   try { await r.connect(); await r.ping(); return true; } catch { return false; } finally { r.disconnect(); }
 }
 
+// @spec BUS-EVT-003, BUS-EVT-010
 test("every region event validates its documented shape", () => {
   assert.ok(EventPayloads["attention.focus"].safeParse({ reason: "mentioned", score: 1, focus: { kind: "chat", who: "u", text: "hi" } }).success);
   assert.ok(EventPayloads["affect.state"].safeParse({ valence: 0.2, arousal: 0.4, mood: "happy" }).success);
@@ -18,6 +19,7 @@ test("every region event validates its documented shape", () => {
   assert.ok(EventPayloads["memory.viewer"].safeParse({ user: "u", isNew: true, msgCount: 1 }).success);
 });
 
+// @spec BUS-STREAM-001, BUS-SUB-001, BUS-SUB-004
 test("publish → consumer group subscribe round-trip (needs Redis)", { skip: !(await redisUp()) && `no Redis at ${url}` }, async () => {
   const group = `test-${Date.now()}`;
   const pub = new Bus(`pub-${group}`, undefined, url);
@@ -42,6 +44,7 @@ const needsRedis = { skip: !hasRedis && `no Redis at ${url}` };
 const within = <T>(p: Promise<T>, ms = 3000) =>
   Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), ms))]);
 
+// @spec BUS-STREAM-003
 test("publish validates the payload before it reaches the stream (needs Redis)", needsRedis, async () => {
   const bus = new Bus("validate", undefined, url);
   await assert.rejects(bus.publish("affect.state", { valence: 5, arousal: 0, mood: "happy" }));
@@ -49,6 +52,7 @@ test("publish validates the payload before it reaches the stream (needs Redis)",
   bus.stop();
 });
 
+// @spec BUS-SUB-005
 test("a throwing handler is logged, the event acked, and the loop keeps going (needs Redis)", needsRedis, async () => {
   const group = `throw-${Date.now()}`;
   const errors: unknown[] = [];
@@ -76,6 +80,7 @@ test("a throwing handler is logged, the event acked, and the loop keeps going (n
   sub.stop(); pub.stop();
 });
 
+// @spec BUS-TAIL-002, BUS-SUB-007, BUS-STREAM-006
 test("recent() returns the newest events oldest-first and skips entries it can't decode (needs Redis)", needsRedis, async () => {
   const bus = new Bus("recent", undefined, url);
   const tag = `r-${Date.now()}`;
@@ -93,6 +98,7 @@ test("recent() returns the newest events oldest-first and skips entries it can't
   bus.stop();
 });
 
+// @spec BUS-TAIL-001
 test("tail() delivers live events without a consumer group (needs Redis)", needsRedis, async () => {
   const pub = new Bus("tailpub", undefined, url);
   const watcher = new Bus("tail", undefined, url);
@@ -109,6 +115,7 @@ test("tail() delivers live events without a consumer group (needs Redis)", needs
   watcher.stop(); pub.stop();
 });
 
+// @spec BUS-STOP-001
 test("subscribe() and tail() resolve when stop() interrupts a blocking read (needs Redis)", needsRedis, async () => {
   const bus = new Bus("stopper", undefined, url);
   const sub = bus.subscribe({ group: `stop-${Date.now()}`, fromNow: true, blockMs: 5000 }, () => {});
@@ -125,6 +132,7 @@ const hb = (over: Record<string, unknown> = {}) => ({
   deps: { x: "ok" as const }, mode: "live", intervalMs: 5000, ...over,
 });
 
+// @spec BUS-EVT-001, BUS-EVT-009
 test("service.heartbeat is catalogued and validated", () => {
   assert.ok(EVENT_TYPES.includes("service.heartbeat"));
   assert.ok(EventPayloads["service.heartbeat"].safeParse(hb()).success);
@@ -133,6 +141,7 @@ test("service.heartbeat is catalogued and validated", () => {
   assert.equal(EventPayloads["service.heartbeat"].safeParse(hb({ deps: { x: "maybe" } })).success, false);
 });
 
+// @spec BUS-STREAM-004, CTRL-HEARTBEAT-007
 test("publish('service.heartbeat') throws and writes nothing (needs Redis)", needsRedis, async () => {
   const bus = new Bus("hb-reject", undefined, url);
   const r = new Redis(url);
@@ -142,6 +151,7 @@ test("publish('service.heartbeat') throws and writes nothing (needs Redis)", nee
   r.disconnect(); bus.stop();
 });
 
+// @spec BUS-HEALTH-001, BUS-HEALTH-002, CTRL-HEARTBEAT-007
 test("publishHealth writes to cohost:health only, and rejects an invalid state (needs Redis)", needsRedis, async () => {
   const bus = new Bus("hb-route", undefined, url);
   const r = new Redis(url);
@@ -155,6 +165,7 @@ test("publishHealth writes to cohost:health only, and rejects an invalid state (
   r.disconnect(); bus.stop();
 });
 
+// @spec BUS-HEALTH-003, BUS-HEALTH-004
 test("recentHealth returns the newest heartbeats oldest-first; tailHealth delivers live ones (needs Redis)", needsRedis, async () => {
   const bus = new Bus("hb-recent", undefined, url);
   const watcher = new Bus("hb-tail", undefined, url);
@@ -185,6 +196,7 @@ class RecBus {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// @spec CTRL-HEARTBEAT-002
 test("startHeartbeat publishes starting, then ready, then repeats every interval", async () => {
   const bus = new RecBus();
   const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 100 });
@@ -198,6 +210,7 @@ test("startHeartbeat publishes starting, then ready, then repeats every interval
   await h.stop();
 });
 
+// @spec CTRL-HEARTBEAT-003
 test("startHeartbeat publishes immediately when a dep changes, and reports degraded", async () => {
   const bus = new RecBus();
   let dep: "ok" | "down" = "ok";
@@ -214,6 +227,7 @@ test("startHeartbeat publishes immediately when a dep changes, and reports degra
   await h.stop();
 });
 
+// @spec CTRL-HEARTBEAT-004
 test("stop() publishes a single stopping heartbeat and cancels the timer", async () => {
   const bus = new RecBus();
   const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 50 });
@@ -226,6 +240,7 @@ test("stop() publishes a single stopping heartbeat and cancels the timer", async
   assert.equal(bus.sent.length, n);
 });
 
+// @spec CTRL-HEARTBEAT-006
 test("a failing publish is logged and does not throw into the service", async () => {
   const bus = new RecBus();
   bus.fail = true;
@@ -238,6 +253,7 @@ test("a failing publish is logged and does not throw into the service", async ()
   assert.ok(warns.length >= 2);
 });
 
+// @spec BUS-STOP-002, CTRL-HEARTBEAT-005
 test("SIGTERM publishes `stopping` before the service's own shutdown callback, then exits 0", async () => {
   const { spawnSync } = await import("node:child_process");
   const r = spawnSync(process.execPath, ["--import", "tsx", new URL("./shutdown.fixture.ts", import.meta.url).pathname], { encoding: "utf8" });
@@ -245,6 +261,7 @@ test("SIGTERM publishes `stopping` before the service's own shutdown callback, t
   assert.deepEqual(r.stdout.trim().split("\n"), ["hb:starting", "hb:ready", "hb:stopping", "bus.stop"]);
 });
 
+// @spec CTRL-HEARTBEAT-008
 test("tracked() reports each call's outcome and still propagates errors", async () => {
   const seen: boolean[] = [];
   let fail = false;
@@ -257,6 +274,7 @@ test("tracked() reports each call's outcome and still propagates errors", async 
 
 // ---- service.lifecycle / control target ----
 
+// @spec BUS-EVT-001, BUS-EVT-008
 test("service.lifecycle is catalogued and validated", () => {
   const ok = { service: "voice", action: "stop", by: "dashboard", ok: true };
   assert.ok(EVENT_TYPES.includes("service.lifecycle"));
@@ -266,6 +284,7 @@ test("service.lifecycle is catalogued and validated", () => {
   assert.equal(EventPayloads["service.lifecycle"].safeParse({ ...ok, ok: "yes" }).success, false);
 });
 
+// @spec BUS-EVT-004
 test("control: no target is still valid, target and pause/resume are accepted", () => {
   assert.ok(EventPayloads.control.safeParse({ cmd: "mute" }).success);
   assert.ok(EventPayloads.control.safeParse({ cmd: "pause", target: "affect" }).success);
@@ -274,6 +293,7 @@ test("control: no target is still valid, target and pause/resume are accepted", 
   assert.equal(EventPayloads.control.safeParse({ cmd: "mute", target: 3 }).success, false);
 });
 
+// @spec BUS-GROUP-001
 test("resetGroup creates a missing group at $ and moves an existing one to $ (needs Redis)", needsRedis, async () => {
   const bus = new Bus("t", undefined, url);
   const raw = new Redis(url);
@@ -297,6 +317,7 @@ test("resetGroup creates a missing group at $ and moves an existing one to $ (ne
 
 // ---- test injection ----
 
+// @spec BUS-EVT-005
 test("injection flags are optional and absent on real payloads", () => {
   const chat = EventPayloads["chat.message"].parse({ platform: "twitch", user: "u", text: "hi" });
   assert.equal("injected" in chat, false);
@@ -311,6 +332,7 @@ test("injection flags are optional and absent on real payloads", () => {
   assert.equal("injected" in focus, false);
 });
 
+// @spec BUS-EVT-005
 test("injection flags are accepted and kept; non-boolean rejected", () => {
   const vis = EventPayloads["vision.summary"].parse({ text: "t", changed: true, injected: true, remember: false });
   assert.equal(vis.injected, true);
@@ -320,6 +342,7 @@ test("injection flags are accepted and kept; non-boolean rejected", () => {
   assert.equal(EventPayloads["chat.message"].safeParse({ platform: "twitch", user: "u", text: "x", injected: "yes" }).success, false);
 });
 
+// @spec BUS-EVT-001, BUS-EVT-006, BUS-EVT-007
 test("inject.request / inject.result are catalogued and validated", () => {
   assert.ok(EVENT_TYPES.includes("inject.request"));
   assert.ok(EVENT_TYPES.includes("inject.result"));

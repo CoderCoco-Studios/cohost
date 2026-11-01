@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// @spec CFG-SCH-007
 export const Emotion = z.enum([
   "neutral", "happy", "laugh", "surprised", "smug", "sad", "angry", "confused", "think",
 ]);
@@ -10,6 +11,7 @@ export const EMOTIONS = Emotion.options;
  * A region's pluggable judgement: built-in rules, a chat model parsed as JSON,
  * or a URL you serve yourself (a model you trained). See packages/modules.
  */
+// @spec CFG-SCH-003, CFG-SCH-009
 export const ModuleSchema = z.object({
   kind: z.preprocess((v) => v || "rules", z.enum(["rules", "llm", "http"])),
   /** http: POST endpoint. */
@@ -26,6 +28,7 @@ export const ModuleSchema = z.object({
 }).default({});
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
 
+// @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -36,6 +39,7 @@ export const ConfigSchema = z.object({
    * Which model answers for the co-host. Embeddings always use local Ollama so
    * the memory table's vector size never changes when the chat model does.
    */
+  // @spec CFG-SCH-002
   llm: z.object({
     /** `mock` is deterministic and offline (isolated runs); opt-in only, never the default. */
     provider: z.preprocess((v) => v || "ollama", z.enum(["ollama", "openai", "anthropic", "bedrock", "mock"])),
@@ -92,6 +96,7 @@ export const ConfigSchema = z.object({
    * salience (when to speak + reflexes), affect (mood), memory (hippocampus),
    * cortex (what to say). Each has its own knobs; they share working_memory_events.
    */
+  // @spec CFG-SCH-005
   brain: z.object({
     /** Recent events each region keeps as its working memory / prompt window. */
     working_memory_events: z.number().int().positive().default(24),
@@ -107,6 +112,7 @@ export const ConfigSchema = z.object({
       /** How events are scored: rules | llm | http. */
       module: ModuleSchema,
       /** Fast path: no LLM, canned line, fires the instant a matching event arrives. */
+      // @spec CFG-SCH-004
       reflexes: z
         .array(
           z.object({
@@ -187,6 +193,7 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 /** Per-driver expression map: canonical emotion -> app-specific name, plus gestures. */
+// @spec CFG-SCH-007
 export const ExpressionMapSchema = z.record(
   z.string(),
   z

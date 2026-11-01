@@ -5,7 +5,7 @@ prefix: CTRL
 
 # control-plane
 
-Mapped 2026-10-31 at git `686cc8f`. Status MAPPED (not audited). Everything below describes what the code does today; where intent is a guess it is marked `[inferred]`. Parent: [high-level-design](../../high-level-design.md). Specs: [control-plane-specs.md](control-plane-specs.md).
+Mapped 2026-10-31 at git `686cc8f`; specs verified against the code and `@spec` annotations added at git `49ba935` (audit pass 2026-11-01). Status MAPPED until the arrow index records the audit. Everything below describes what the code does today; where intent is a guess it is marked `[inferred]`. Parent: [high-level-design](../../high-level-design.md). Specs: [control-plane-specs.md](control-plane-specs.md).
 
 ## Context and Design Philosophy
 
@@ -17,16 +17,16 @@ The control plane is the operator-facing half of "know what is running and chang
 
 Guiding ideas visible in the code (`[inferred]` from comments and tests):
 
-- **Allow-list, not command passing.** `manifest.ts:1-5` states that nothing from a request reaches an argv except by picking a manifest entry; both runtimes re-check the id against the manifest even though the controller already did (`runtime.ts:56`, `runtime.ts:127`, `runtime.ts:147`).
-- **UI-agnostic core.** The controller and tracker know nothing about HTTP or WebSocket; the dashboard and CLI inject the audit callback and the group resetter (`controller.ts:49-52`, `cli.ts:98-105`, `control.ts:31-40`).
-- **Monitoring is cheap and safe, control is gated.** The tracker runs unconditionally in the dashboard (`index.ts:29`); control is off unless `CONTROL_ENABLED=1` (`config.ts:25`).
-- **Derived states are local.** Tracker states are computed from receive time and never published (`health.ts:42-46`).
+- **Allow-list, not command passing.** `manifest.ts:1-5` states that nothing from a request reaches an argv except by picking a manifest entry; both runtimes re-check the id against the manifest even though the controller already did (`runtime.ts:58`, `runtime.ts:131`, `runtime.ts:152`).
+- **UI-agnostic core.** The controller and tracker know nothing about HTTP or WebSocket; the dashboard and CLI inject the audit callback and the group resetter (`controller.ts:49-52`, `cli.ts:101-108`, `control.ts:31-40`).
+- **Monitoring is cheap and safe, control is gated.** The tracker runs unconditionally in the dashboard (`index.ts:29`); control is off unless `CONTROL_ENABLED=1` (`config.ts:27`).
+- **Derived states are local.** Tracker states are computed from receive time and never published (`health.ts:43-47`).
 
 The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.0-only, `bin.cohostctl` is `dist/cli.js`, depends on `@cohost/bus` and `@cohost/config`. No file in `packages/control/src` imports `@cohost/config` (only `@cohost/bus` is imported: `cli.ts:13`, `health.ts:1`, `healthcheck.ts:7`), so that dependency and the tsconfig reference (`tsconfig.json:4`) are unused. `index.ts` re-exports health, manifest, runtime, controller, config and cli but not healthcheck (`index.ts:1-6`), because healthcheck is a script.
 
 ## Service manifest
 
-`SERVICE_MANIFEST` (`manifest.ts:38-54`) lists 15 units.
+`SERVICE_MANIFEST` (`manifest.ts:39-55`) lists 15 units.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
@@ -46,7 +46,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 Two small builders (`svc`, `compose`, `manifest.ts:28-36`) fill defaults: `composeName` equals `id`, `pnpmFilter` is `@cohost/<id>` for `svc` and removed for `compose`. The preset variable names are the env spellings introduced by `add-isolated-backends` (`config/config.example.yaml:19,38,49,109,110,128,134,148` interpolate them).
 
-Drift risk: `KNOWN_SERVICES` in `health.ts:8-10` is a second, hand-kept copy of the ten app ids; `manifest.test.ts:21` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:29`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:107`).
+Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of the ten app ids; `manifest.test.ts:23` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:29`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:110`).
 
 ## Runtimes and controller
 
@@ -54,31 +54,31 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:8-10` is a second, hand-kept copy of 
 
 `Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail? }` (`runtime.ts:5-20`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
 
-### ComposeRuntime (`runtime.ts:46-73`)
+### ComposeRuntime (`runtime.ts:47-76`)
 
 - start: `docker compose up -d <composeName>`; stop: `docker compose stop <composeName>`; restart: `docker compose restart <composeName>`.
-- With a non-empty env override, restart becomes `up -d --force-recreate` because a native `restart` keeps the container's environment (comment at `runtime.ts:70`).
-- Executed via `execFile` (argv array, no shell), 120 s timeout, `cwd` defaults to the process cwd, so `docker-compose.yml` must be found there (`runtime.ts:28-35`, `runtime.ts:40`). The override env is merged over `process.env` and applied to the `docker` CLI process only (`runtime.ts:59`).
-- Failure returns `ok: false` with stderr (else message) truncated to 500 chars (`runtime.ts:63`).
+- With a non-empty env override, restart becomes `up -d --force-recreate` because a native `restart` keeps the container's environment (comment at `runtime.ts:73`).
+- Executed via `execFile` (argv array, no shell), 120 s timeout, `cwd` defaults to the process cwd, so `docker-compose.yml` must be found there (`runtime.ts:28-35`, `runtime.ts:40`). The override env is merged over `process.env` and applied to the `docker` CLI process only (`runtime.ts:61`).
+- Failure returns `ok: false` with stderr (else message) truncated to 500 chars (`runtime.ts:65`).
 
-### ProcessRuntime (`runtime.ts:109-170`)
+### ProcessRuntime (`runtime.ts:112-176`)
 
-- start: spawns `pnpm --filter <pnpmFilter> dev|start`, `shell: false`, `detached: true`, `stdio: "ignore"`, waits for the child `spawn` or `error` event, tracks the child in an in-memory `Map`, `unref`s it, and clears the entry on `exit`. Script precedence is `opts.processMode`, then constructor `mode`, then `dev` (`runtime.ts:131`). Compose-only units are refused (`runtime.ts:129`); an already tracked id returns `ok: true` with `already running` (`runtime.ts:130`).
-- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` (`runtime.ts:149`); a tracked child that already exited returns `ok: true`.
-- restart: `stop` then `start`; a failed stop short-circuits (`runtime.ts:165-169`), so restarting something this process did not start fails rather than starts it.
+- start: spawns `pnpm --filter <pnpmFilter> dev|start`, `shell: false`, `detached: true`, `stdio: "ignore"`, waits for the child `spawn` or `error` event, tracks the child in an in-memory `Map`, `unref`s it, and clears the entry on `exit`. Script precedence is `opts.processMode`, then constructor `mode`, then `dev` (`runtime.ts:135`). Compose-only units are refused (`runtime.ts:133`); an already tracked id returns `ok: true` with `already running` (`runtime.ts:134`).
+- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` (`runtime.ts:154`); a tracked child that already exited returns `ok: true`.
+- restart: `stop` then `start`; a failed stop short-circuits (`runtime.ts:171-175`), so restarting something this process did not start fails rather than starts it.
 - Because the map is in memory, `cohostctl stop` cannot stop a process started by another invocation, and a restarted dashboard loses its handles. `README.md:331-332` documents this and recommends compose.
 
-### ServiceController (`controller.ts:53-103`)
+### ServiceController (`controller.ts:53-105`)
 
-Guard order (`controller.ts:63-69`):
+Guard order (`controller.ts:64-70`):
 
 1. Unknown id: `refused: "unknown"` (HTTP 404 in the dashboard).
 2. `self` and action is not `start`: `refused: "conflict"` (409).
 3. `infra` and not `advanced`: `refused: "forbidden"` (403); detail names `CONTROL_ADVANCED=1`.
 
-Refusals are returned before anything runs and are not audited.
+Refusals are returned before anything runs and are not audited, by design (commit `1d316ff`).
 
-Mode and orchestration (`controller.ts:71-97`): effective mode is `resume` for infra, otherwise the caller's `mode`, otherwise the manifest default. `fresh` only takes effect when the unit owns groups (`controller.ts:80`).
+Mode and orchestration (`controller.ts:73-99`): effective mode is `resume` for infra, otherwise the caller's `mode`, otherwise the manifest default. `fresh` only takes effect when the unit owns groups (`controller.ts:82`).
 
 | Action | Condition | Calls |
 |---|---|---|
@@ -88,11 +88,11 @@ Mode and orchestration (`controller.ts:71-97`): effective mode is `resume` for i
 | restart | resume, no isolation env | `runtime.restart` (native) |
 | restart | fresh or isolation env | `runtime.stop`, then (only if ok) reset groups if fresh, then `runtime.start` |
 
-Isolation env is `{ ...def.isolatedEnv }` when `isolated` is set and the unit is not infra, else `undefined` (`controller.ts:78`). Because an empty object is truthy, isolated restarts of salience, affect or dashboard (empty presets) also take the stop-then-start path.
+Isolation env is `{ ...def.isolatedEnv }` when `isolated` is set and the unit is not infra, else `undefined` (`controller.ts:80`). Because an empty object is truthy, isolated restarts of salience, affect or dashboard (empty presets) also take the stop-then-start path.
 
-The consumer-group reset is `Bus.resetGroup` (`packages/bus/src/index.ts:109-121`, event-bus segment): `XGROUP SETID cohost:events <group> $`, creating the group with `MKSTREAM` at `$` when missing and ignoring `BUSYGROUP`. `resetConsumerGroups` runs groups in manifest order and stops at the first failure with detail `consumer group reset failed: ...` (`controller.ts:40-47`). A failed reset aborts the start (tested, `controller.test.ts:48`).
+The consumer-group reset is `Bus.resetGroup` (`packages/bus/src/index.ts:115-127`, event-bus segment): `XGROUP SETID cohost:events <group> $`, creating the group with `MKSTREAM` at `$` when missing and ignoring `BUSYGROUP`. `resetConsumerGroups` runs groups in manifest order and stops at the first failure with detail `consumer group reset failed: ...` (`controller.ts:40-47`). A failed reset aborts the start (tested, `controller.test.ts:53`).
 
-Audit (`controller.ts:93-96`): after any executed attempt the controller calls `audit({ service, action, by, ok, detail? })` inside a try/catch that swallows errors ("the audit is best effort, e.g. bus down while stopping redis"). Both clients wire it to `bus.publish("service.lifecycle", rec)` (`cli.ts:104`, `control.ts:37-39`, the latter also swallowing and logging). The `service.lifecycle` schema is in `packages/bus/src/events.ts:196-205` (event-bus segment); the event is published on `cohost:events`, not on the health stream.
+Audit (`controller.ts:95-98`): after any executed attempt the controller calls `audit({ service, action, by, ok, detail? })`, with `detail` present whenever the runtime returned one (on success too, for example `pid <n>` from the process runtime), inside a try/catch that swallows errors ("the audit is best effort, e.g. bus down while stopping redis"). Both clients wire it to `bus.publish("service.lifecycle", rec)` (`cli.ts:107`, `control.ts:37-39`, the latter also swallowing and logging). The `service.lifecycle` schema is in `packages/bus/src/events.ts:215-224` (event-bus segment); the event is published on `cohost:events`, not on the health stream.
 
 ## Heartbeat contract and health derivation
 
@@ -100,21 +100,21 @@ Audit (`controller.ts:93-96`): after any executed attempt the controller calls `
 
 `startHeartbeat(bus, { service, version?, mode, deps, intervalMs?, log? })` returns `{ ready(), degraded(detail?), stop() }`.
 
-- Payload fields: `service`, `instance` (the bus consumer name, `hostname-uuid8`), `pid`, `version` (option, else `COHOST_VERSION`, else `dev`), `startedAt` (`processStartedAt`, the module-load time, `heartbeat.ts:46`), `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (`ok`, `down`, `n/a` per name), `mode` (`live`, `mock`, `off` by convention, a free string in the schema), optional `detail`, `intervalMs` (`heartbeat.ts:66-83`).
-- Cadence: one `starting` publish at call time, a steady `setInterval` of `intervalMs`, an immediate publish on `ready()` or `degraded()`, and a watcher at `min(1000, intervalMs)` that republishes if `[state, deps, mode, detail]` changed (`heartbeat.ts:96-107`). Both timers are `unref`ed.
-- `intervalMs` is `HEARTBEAT_INTERVAL_MS` floored when positive and finite, else 5000 (`heartbeat.ts:48-51`; `.env.example:53-54`).
-- Dependency-derived degradation: if the base is `ready` and any dep is `down`, the published state is `degraded` with detail `dependency down: a, b`, unless an explicit detail was given (`heartbeat.ts:68-70`). An explicit `degraded(detail)` keeps its own detail. A service that is still `starting` stays `starting` even with a dep down.
-- Shutdown: `stop()` is registered with `beforeShutdown` (`heartbeat.ts:115`). `onShutdown` (`packages/bus/src/index.ts:230-243`) awaits all registered hooks, capped at 2 s, and then runs the service's own callback and `process.exit(0)`. So the `stopping` heartbeat is only sent if the service calls `onShutdown`; there is no handling of other exit paths (crash, `process.exit`, SIGKILL).
-- Failure: a rejected `publishHealth` is logged at warn and swallowed (`heartbeat.ts:85-88`).
-- `tracked(fn, set)` wraps an async call to feed dep status (`heartbeat.ts:32-37`).
-- Transport: `Bus.publishHealth` validates against the zod schema and `XADD`s to `cohost:health` with `MAXLEN ~ 1000`; `Bus.publish("service.heartbeat")` throws (`packages/bus/src/index.ts:47,61-72`). `Bus.tailHealth` is a non-group `XREAD` tail; `Bus.recentHealth(n)` is `XREVRANGE` reversed to oldest-first.
+- Payload fields: `service`, `instance` (the bus consumer name, `hostname-uuid8`), `pid`, `version` (option, else `COHOST_VERSION`, else `dev`), `startedAt` (`processStartedAt`, the module-load time, `heartbeat.ts:47`), `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (`ok`, `down`, `n/a` per name), `mode` (`live`, `mock`, `off` by convention, a free string in the schema), optional `detail`, `intervalMs` (`heartbeat.ts:68-85`).
+- Cadence: one `starting` publish at call time, a steady `setInterval` of `intervalMs`, an immediate publish on `ready()` or `degraded()`, and a watcher at `min(1000, intervalMs)` that republishes if `[state, deps, mode, detail]` changed (`heartbeat.ts:98-109`). Both timers are `unref`ed.
+- `intervalMs` is `HEARTBEAT_INTERVAL_MS` floored when positive and finite, else 5000 (`heartbeat.ts:49-52`; `.env.example:53-54`).
+- Dependency-derived degradation: if the base is `ready` and any dep is `down`, the published state is `degraded` with detail `dependency down: a, b`, unless an explicit detail was given (`heartbeat.ts:70-72`). An explicit `degraded(detail)` keeps its own detail. A service that is still `starting` stays `starting` even with a dep down.
+- Shutdown: `stop()` is registered with `beforeShutdown` (`heartbeat.ts:117`). `onShutdown` (`packages/bus/src/index.ts:242-255`) awaits all registered hooks, capped at 2 s, and then runs the service's own callback and `process.exit(0)`. So the `stopping` heartbeat is only sent if the service calls `onShutdown`; there is no handling of other exit paths (crash, `process.exit`, SIGKILL).
+- Failure: a rejected `publishHealth` is logged at warn and swallowed (`heartbeat.ts:87-90`).
+- `tracked(fn, set)` wraps an async call to feed dep status (`heartbeat.ts:33-38`).
+- Transport: `Bus.publishHealth` validates against the zod schema and `XADD`s to `cohost:health` with `MAXLEN ~ 1000`; `Bus.publish("service.heartbeat")` throws (`packages/bus/src/index.ts:49,64-75`). `Bus.tailHealth` is a non-group `XREAD` tail; `Bus.recentHealth(n)` is `XREVRANGE` reversed to oldest-first.
 - `heartbeat.ts` and `index.ts` import each other (`heartbeat.ts:2`, `index.ts:247`). It works because `beforeShutdown` is only called at runtime, not at module evaluation.
 
 Every app service owns a `src/health.ts` exporting a `HeartbeatSpec` (service, mode, deps) and calls `startHeartbeat` itself; those files belong to each service's segment. The dashboard's own heartbeat is in `services/dashboard/src/index.ts:28`.
 
 ### HealthTracker (`packages/control/src/health.ts`)
 
-State precedence in `derive` (`health.ts:98-112`), evaluated with the tracker's own clock (`Date.now` by default):
+State precedence in `derive` (`health.ts:102-116`), evaluated with the tracker's own clock (`Date.now` by default):
 
 1. `unknown` if no heartbeat has ever been seen for a known name.
 2. `crash-looping` if at least 3 distinct `startedAt` values were first seen within the last 60 s (`CRASH_LOOP_RESTARTS = 3`, `CRASH_LOOP_WINDOW_MS = 60000`); this beats everything else, including silence.
@@ -125,34 +125,34 @@ State precedence in `derive` (`health.ts:98-112`), evaluated with the tracker's 
 
 Details worth knowing:
 
-- Age is `now - receivedAt`, where `receivedAt` is the local time of ingest for live heartbeats. `ingest(hb, at = now())` takes `at` as a parameter, and `seed(history)` passes each record's `ts` (the publisher's bus-stamped time) as `at` (`health.ts:60,75-77`). So clock skew is irrelevant only for live ingest; seeded history inherits any skew between the publishing and observing hosts. The comment "its own receive-time clock (so clock skew between containers is irrelevant)" (`health.ts:43-44`) is accurate for the live path only.
-- A replayed older heartbeat does not overwrite a newer one (`health.ts:67`); start history is trimmed to the 60 s window except for the current process's start (`health.ts:65-69`). Consequently a long-running service reports `restarts: 0`, and a service with exactly one start inside the window reports `restarts: 1`.
-- `snapshot()` returns the known list (default `KNOWN_SERVICES`) plus any other name that has sent a heartbeat. `onChange` listeners are called only when the per-service key (derived state, restarts, heartbeat state, mode, detail, deps, instance) changes; `tick()` re-derives time-based transitions (`health.ts:79-80,114-124`). `lastSeenAgeMs` is deliberately not in the key.
+- Age is `now - receivedAt`, where `receivedAt` is the local time of ingest for live heartbeats. `ingest(hb, at = now())` takes `at` as a parameter, and `seed(history)` passes each record's `ts` (the publisher's bus-stamped time) as `at` (`health.ts:61,77-79`). So clock skew is irrelevant only for live ingest; seeded history inherits any skew between the publishing and observing hosts. The comment "its own receive-time clock (so clock skew between containers is irrelevant)" (`health.ts:44-45`) is accurate for the live path only.
+- A replayed older heartbeat does not overwrite a newer one (`health.ts:68`); start history is trimmed to the 60 s window except for the current process's start (`health.ts:66-70`). Consequently a long-running service reports `restarts: 0`, and a service with exactly one start inside the window reports `restarts: 1`.
+- `snapshot()` returns the known list (default `KNOWN_SERVICES`) plus any other name that has sent a heartbeat. `onChange` listeners are called only when the per-service key (derived state, restarts, heartbeat state, mode, detail, deps, instance) changes; `tick()` re-derives time-based transitions (`health.ts:81-82,119-129`). `lastSeenAgeMs` is deliberately not in the key.
 - The dashboard feeds it with `recentHealth(500)` then `tailHealth` and runs `tick()` every second (`services/dashboard/src/feed.ts:44-52`); `GET /services` returns the snapshot (`routes.ts:62-66`) and WebSocket clients get a `services` message on change.
 
 ### Container healthcheck (`healthcheck.ts`)
 
-`isHealthy(service, recent, now)` takes the newest heartbeat for the service from the list and is true iff it exists, is not `stopping`, and `now - latest.ts < 3 x intervalMs` (`healthcheck.ts:10-14`). The script reads `recentHealth(200)`, exits 0 or 1, exits 2 without an argument, and hard-exits 1 after 4 s (`healthcheck.ts:16-31`). It is wired as `node packages/control/dist/healthcheck.js $$SERVICE` in the `x-ts-service` anchor (`docker-compose.yml:30-35`, interval 10 s, timeout 5 s, retries 3, start period 30 s); `SERVICE` is baked in by the Dockerfile (`Dockerfile:20`).
+`isHealthy(service, recent, now)` takes the newest heartbeat for the service from the list and is true iff it exists, is not `stopping`, and `now - latest.ts < 3 x intervalMs` (`healthcheck.ts:11-15`). The script reads `recentHealth(200)`, exits 0 or 1, exits 2 without an argument, and hard-exits 1 after 4 s (`healthcheck.ts:18-33`). It is wired as `node packages/control/dist/healthcheck.js $$SERVICE` in the `x-ts-service` anchor (`docker-compose.yml:30-35`, interval 10 s, timeout 5 s, retries 3, start period 30 s); `SERVICE` is baked in by the Dockerfile (`Dockerfile:20`).
 
 Unlike the tracker, the healthcheck compares the heartbeat's bus-side `ts` (publisher time) with the local clock, so container clock skew matters here. With roughly ten services beating every 5 s, 200 records covers about 100 s, comfortably more than the 15 s freshness bound; a much shorter `HEARTBEAT_INTERVAL_MS` would shrink that window.
 
 ## cohostctl and configuration
 
-CLI (`cli.ts`): `cohostctl status [service]` and `cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]`. Parsing uses `node:util.parseArgs` (`cli.ts:29-54`); any parse problem raises `UsageError` and exit code 2 with the usage text. Exit codes: 0 success, 1 refusal or failure (`cli.ts:63`), 2 usage.
+CLI (`cli.ts`): `cohostctl status [service]` and `cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]`. Parsing uses `node:util.parseArgs` (`cli.ts:30-55`); any parse problem raises `UsageError` and exit code 2 with the usage text. Exit codes: 0 success, 1 refusal or failure (`cli.ts:64`), 2 usage.
 
-- `status` builds a throwaway `HealthTracker` with known = manifest entries that are not infra and have a `pnpmFilter`, seeds it from `bus.recentHealth(200)` and prints `service  state  mode  Ns ago` per row (`cli.ts:70-79,106-111`). Because the known list excludes infra and compose-only units, `cohostctl status redis` reports `unknown service` and exits 1.
-- `main()` constructs `new Bus("cohostctl")`, builds the runtime from `CONTROL_RUNTIME` (default `compose`; any other value than `compose` or `process` is a `UsageError`, exit 2), passes `by: "cohostctl"`, `advanced` from `CONTROL_ADVANCED === "1"`, and `processMode` from `CONTROL_PROCESS_MODE === "start" ? "start" : "dev"` (`cli.ts:87-104`). It always calls `bus.stop()` in `finally`.
+- `status` builds a throwaway `HealthTracker` with known = manifest entries that are not infra and have a `pnpmFilter`, seeds it from `bus.recentHealth(200)` and prints `service  state  mode  Ns ago` per row (`cli.ts:72-81,109-114`). Because the known list excludes infra and compose-only units, `cohostctl status redis` reports `unknown service` and exits 1.
+- `main()` constructs `new Bus("cohostctl")`, builds the runtime from `CONTROL_RUNTIME` (default `compose`; any other value than `compose` or `process` is a `UsageError`, exit 2), passes `by: "cohostctl"`, `advanced` from `CONTROL_ADVANCED === "1"`, and `processMode` from `CONTROL_PROCESS_MODE === "start" ? "start" : "dev"` (`cli.ts:89-107`). It always calls `bus.stop()` in `finally`.
 - It runs as the invoking user and does not read `CONTROL_ENABLED` or `CONTROL_TOKEN` (those only gate the dashboard's HTTP surface).
-- `main()` runs only when `process.argv[1]` ends with `cli.js` (`cli.ts:121`). Since `index.ts` re-exports `cli.js`, importing the package from another entry script runs nothing, but the check is a suffix match, so any other entry script named `cli.js` that imports `@cohost/control` would also start the CLI. Running the TypeScript source under tsx does not trigger it either (the suffix would be `cli.ts`), so `cohostctl` only works from the built `dist`; the README invokes it as `pnpm --filter @cohost/control exec cohostctl` (`README.md:321-322`).
+- `main()` runs only when `process.argv[1]` ends with `cli.js` (`cli.ts:125`). Since `index.ts` re-exports `cli.js`, importing the package from another entry script runs nothing, but the check is a suffix match, so any other entry script named `cli.js` that imports `@cohost/control` would also start the CLI. Running the TypeScript source under tsx does not trigger it either (the suffix would be `cli.ts`), so `cohostctl` only works from the built `dist`; the README invokes it as `pnpm --filter @cohost/control exec cohostctl` (`README.md:321-322`).
 
-Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. Defaults are `CONTROL_BIND` unset means `127.0.0.1` with `bindExplicit: false`, `CONTROL_RUNTIME` compose, `CONTROL_PROCESS_MODE` dev, `CONTROL_ADVANCED` off. Unknown runtime or process mode throws. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual` (`config.ts:40-47`). `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.` (`config.ts:19-21`).
+Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. Defaults are `CONTROL_BIND` unset means `127.0.0.1` with `bindExplicit: false`, `CONTROL_RUNTIME` compose, `CONTROL_PROCESS_MODE` dev, `CONTROL_ADVANCED` off. Unknown runtime or process mode throws. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual` (`config.ts:43-50`). `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.` (`config.ts:20-22`).
 
 | Env var | Read by | Meaning |
 |---|---|---|
 | `CONTROL_ENABLED` | `loadControlConfig` (dashboard) | `1` turns the lifecycle routes and token gate on |
 | `CONTROL_TOKEN` | `loadControlConfig` | required bearer secret when enabled |
 | `CONTROL_BIND` | `loadControlConfig`, dashboard `index.ts:50` | listen address; loopback default only when enabled |
-| `CONTROL_RUNTIME` | `loadControlConfig`, `cli.ts:88` | `compose` (default) or `process` |
+| `CONTROL_RUNTIME` | `loadControlConfig`, `cli.ts:90` | `compose` (default) or `process` |
 | `CONTROL_PROCESS_MODE` | both | `dev` (default) or `start`; the CLI silently maps any other value to `dev` |
 | `CONTROL_ADVANCED` | both | `1` allows redis and postgres mutations |
 | `REDIS_URL` | `Bus` (via `@cohost/config` `urls.redis()`), CLI, healthcheck | bus address |
@@ -185,43 +185,46 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
-| Where heartbeats travel | Separate stream `cohost:health`, `MAXLEN ~1000`, `publish` refuses `service.heartbeat` | Same `cohost:events` stream | `[inferred]` keep high-rate liveness from evicting domain events (20k cap); `packages/bus/src/index.ts:10-12,47`, `docs/plans/control-plane.md` §6 |
-| Where the tracker's derived states live | Computed locally in each observer, never published | Supervisor publishes status events | `[inferred]` one source of truth (raw heartbeats), no feedback loop; `health.ts:42-46` |
-| Staleness clock | Observer's receive time for live ingest; publisher `ts` only for seeding history and in the healthcheck | Trust publisher `startedAt`/`ts` throughout | `[inferred]` containers can have skewed clocks; `health.ts:42-44,60,75` |
-| Crash-loop signal | 3 distinct `startedAt` in 60 s, outranks all other states | Parse `docker compose ps` restart counts | `[inferred]` works for compose and pnpm runtimes alike with no extra access; `health.ts:12-15,103-106` |
-| Controller as UI-agnostic class with injected runtime, group resetter, audit | `ServiceController` | Logic inside dashboard routes | `[inferred]` two clients (dashboard, CLI) share it; `controller.ts:49-52`, `cli.ts:98` |
-| Command construction | Manifest-only ids, `execFile`/`spawn` with fixed argv, `shell: false`; id re-checked in each runtime | Accept arbitrary service names; shell strings | `[inferred]` limit blast radius of a privileged endpoint; `manifest.ts:1-5`, `runtime.ts:30,88` |
-| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for chat-reactive brain/body services, resume for memory | Always resume; reset via `fromNow` subscribe option | `[inferred]` avoid replaying hours of backlog after a stop; `controller.ts:80-91`, `manifest.ts:40-45` |
-| Infra handling | `redis`, `postgres` refused unless `CONTROL_ADVANCED=1`, always resume | Never controllable; always controllable | `[inferred]` stopping infra takes everything down; `controller.ts:67,75` |
-| Self protection | `dashboard` can start but not stop/restart (409) | Allow, rely on operator | `[inferred]` the process serving the request would kill itself; `controller.ts:66` |
-| Audit is best effort | Swallow audit errors | Fail the action when audit fails | `[inferred]` stopping redis would make the audit unpublishable; `controller.ts:95` |
-| Process runtime | Detached children with in-memory pid map; SIGTERM to the process group then SIGKILL after 10 s | Persist pids to disk; run attached | `[inferred]` services should outlive the controller and pnpm spawns a tree; `runtime.ts:87-94,111,120` |
-| Compose runtime via CLI | `docker compose` through `execFile` | Docker Engine API | `[inferred]` simplest first step; Engine API deferred in `add-service-control/design.md` decision 1 |
-| Healthcheck as a Node script reading the bus | `healthcheck.js` | HTTP `/health` per service | `[inferred]` only voice and dashboard have HTTP endpoints; `docker-compose.yml:28-31`, plan §2.2 |
-| Heartbeat timers | One steady interval plus a faster change watcher (at most 1 s) | Publish on every dep mutation | `[inferred]` deps are read through getters, so polling detects changes without hooks in every service; `heartbeat.ts:96-107` |
+| Where heartbeats travel | Separate stream `cohost:health`, `MAXLEN ~1000`, `publish` refuses `service.heartbeat` | Same `cohost:events` stream | Comment `packages/bus/src/index.ts:10`: heartbeats live on their own capped stream "so they never evict domain events" (20k cap); `publish` refuses the type at `index.ts:49`; commit `691b079`; `docs/plans/control-plane.md` §6. |
+| Where the tracker's derived states live | Computed locally in each observer, never published | Supervisor publishes status events | Comment `health.ts:43-47` states derived states are never published. Why: `[inferred]` one source of truth (raw heartbeats), no feedback loop. |
+| Staleness clock | Observer's receive time for live ingest; publisher `ts` only for seeding history and in the healthcheck | Trust publisher `startedAt`/`ts` throughout | Comment `health.ts:43-45`: the tracker uses "its own receive-time clock (so clock skew between containers is irrelevant)"; `health.ts:61,77`. The seeding and healthcheck exceptions are Open Questions 6 and 7. |
+| Crash-loop signal | 3 distinct `startedAt` in 60 s, outranks all other states | Parse `docker compose ps` restart counts | `[inferred]` works for compose and pnpm runtimes alike with no extra access; `health.ts:13-16,107-110`. |
+| Controller as UI-agnostic class with injected runtime, group resetter, audit | `ServiceController` | Logic inside dashboard routes | Comments `controller.ts:49-52` ("UI-agnostic: the dashboard and cohostctl share it") and `cli.ts:3` ("a second client of the same ServiceController the dashboard uses"). |
+| Command construction | Manifest-only ids, `execFile`/`spawn` with fixed argv, `shell: false`; id re-checked in each runtime | Accept arbitrary service names; shell strings | Comments `manifest.ts:1-5` (nothing from a request reaches an argv except by picking a manifest entry), `runtime.ts:30` and `runtime.ts:91` (no shell, fixed argv); `add-service-control/design.md` decision 2. Why re-check in each runtime: `[inferred]` defence in depth. |
+| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for chat-reactive brain/body services, resume for memory | Always resume; reset via `fromNow` subscribe option | Mechanism and defaults per `add-service-control/design.md` decision 3. Why: `[inferred]` avoid replaying hours of backlog after a stop; `controller.ts:82-93`, `manifest.ts:41-46`. |
+| Infra handling | `redis`, `postgres` refused unless `CONTROL_ADVANCED=1`, always resume | Never controllable; always controllable | Behaviour per comment `manifest.ts:20` and commit `1d316ff`. Why: `[inferred]` stopping infra takes everything down; `controller.ts:68,77`. |
+| Self protection | `dashboard` can start but not stop/restart (409) | Allow, rely on operator | Behaviour per comment `manifest.ts:22` and commit `1d316ff`. Why: `[inferred]` the process serving the request would kill itself; `controller.ts:67`. |
+| Audit is best effort | Swallow audit errors | Fail the action when audit fails | Comment `controller.ts:97`: "the audit is best effort (e.g. bus down while stopping redis)". |
+| Process runtime | Detached children with in-memory pid map; SIGTERM to the process group then SIGKILL after 10 s | Persist pids to disk; run attached | Comment `runtime.ts:91`: detached so the child has its own process group "so pnpm's whole tree can be signalled". The in-memory pid map is an accepted limitation, with compose as the intended CLI runtime (commit `1d316ff`, `README.md:331-332`). Why services should outlive the controller: `[inferred]`. |
+| Compose runtime via CLI | `docker compose` through `execFile` | Docker Engine API | `add-service-control/design.md` decision 1: "CLI first; Engine API deferred". |
+| Healthcheck as a Node script reading the bus | `healthcheck.js` | HTTP `/health` per service | `[inferred]` only voice and dashboard have HTTP endpoints; `docker-compose.yml:28-31`, plan §2.2. |
+| Heartbeat timers | One steady interval plus a faster change watcher (at most 1 s) | Publish on every dep mutation | Comments `heartbeat.ts:19` (deps are "re-read every check so changes publish immediately") and `heartbeat.ts:106` (one timer for the beat, one at most 1 s for changes). Why polling rather than hooks in every service: `[inferred]`. |
 
 ## Open Questions & Future Decisions
 
 ### Resolved
 1. Separate health stream rather than the events stream (plan §11 question 3): resolved as separate, `packages/bus/src/index.ts:10-12`.
 2. Both runtimes shipped (plan §11 question 1): compose and process, selected by `CONTROL_RUNTIME`.
+3. The code comments that name this segment's intent (`manifest.ts:4`, `health.ts:46`) point at `docs/intent/control-plane/control-plane-specs.md`.
 
 ### Observed, unexplained, or debt
-1. **Compose isolation env probably never reaches the container** (`runtime.ts:59`). The preset env is set on the `docker compose` process, but `docker-compose.yml:11-21` uses `env_file: .env` and a fixed `environment` block with no `${LLM_PROVIDER}` style references, so `up -d` or `--force-recreate` does not forward them. Tests only assert the exec env (`runtime.test.ts:41`). Isolated start under compose may be a no-op for the container. Specified as gap CTRL-RUNTIME-009.
-2. **No dependency closure for isolated runs.** `add-isolated-backends` cortex § "Isolation preset and closure" says the controller computes it (cortex needs salience and affect); the manifest has no `requires` field and `controller.ts` starts only the named unit. Specified as gap CTRL-GUARD-008.
-3. **`restart` on a stopped or untracked process fails** (`runtime.ts:165-169`, `controller.ts:86-91`). Under `ProcessRuntime` a restart (native or fresh/isolated) returns `ok: false` with `not running under this process runtime` instead of starting the service, and a fresh restart never reaches the group reset. Whether restart should degrade to start is undecided.
-4. **`cohostctl` and the dashboard can disagree on config validation.** `loadControlConfig` throws on an invalid `CONTROL_PROCESS_MODE` (`config.ts:31`); the CLI silently treats anything other than `start` as `dev` (`cli.ts:90,103`). Invalid `CONTROL_RUNTIME` throws in both, but as `UsageError` (exit 2) in the CLI.
-5. **CLI creates a `Bus` before parsing arguments** (`cli.ts:95`, parse happens at `cli.ts:112`), so even usage errors open a Redis connection first.
-6. **Seeding uses publisher timestamps.** `seed` and `cohostctl status` pass `h.ts` (bus-stamped on the publisher) as receive time (`health.ts:75-77`, `cli.ts:109`), so skew shifts reported ages right after a dashboard start, and `status` is only a snapshot of the last ~200 heartbeats rather than a live subscription.
-7. **Healthcheck skew sensitivity** (`healthcheck.ts:13`): compares bus `ts` with local `Date.now()`. A container with a clock more than about 15 s off its Redis publisher host would flap unhealthy.
+1. **Compose isolation env probably never reaches the container** (CTRL-RUNTIME-009, `runtime.ts:61`). The preset env is set on the `docker compose` process, but `docker-compose.yml:11-21` uses `env_file: .env` and a fixed `environment` block with no `${LLM_PROVIDER}` style references, so `up -d` or `--force-recreate` does not forward them. Tests only assert the exec env (`runtime.test.ts:44`). Isolated start under compose may be a no-op for the container.
+2. **No dependency closure for isolated runs** (CTRL-GUARD-008). The OpenSpec cortex requirement "Isolation preset and closure" (`openspec/specs/cortex/spec.md:111-112`) says the supervisor computes it (cortex needs salience and affect); the manifest has no `requires` field and `controller.ts` starts only the named unit.
+3. **`restart` on a stopped or untracked process fails** (`runtime.ts:171-175`, `controller.ts:88-93`). Under `ProcessRuntime` a restart (native or fresh/isolated) returns `ok: false` with `not running under this process runtime` instead of starting the service, and a fresh restart never reaches the group reset. Whether restart should degrade to start is undecided.
+4. **`cohostctl` and the dashboard can disagree on config validation.** `loadControlConfig` throws on an invalid `CONTROL_PROCESS_MODE` (`config.ts:33`); the CLI silently treats anything other than `start` as `dev` (`cli.ts:92,106`). Invalid `CONTROL_RUNTIME` throws in both, but as `UsageError` (exit 2) in the CLI.
+5. **CLI creates a `Bus` before parsing arguments** (`cli.ts:98`, parse happens at `cli.ts:115`), so even usage errors open a Redis connection first.
+6. **Seeding uses publisher timestamps.** `seed` and `cohostctl status` pass `h.ts` (bus-stamped on the publisher) as receive time (`health.ts:77-79`, `cli.ts:112`), so skew shifts reported ages right after a dashboard start, and `status` is only a snapshot of the last ~200 heartbeats rather than a live subscription.
+7. **Healthcheck skew sensitivity** (`healthcheck.ts:14`): compares bus `ts` with local `Date.now()`. A container with a clock more than about 15 s off its Redis publisher host would flap unhealthy.
 8. **`stopping` heartbeat depends on a clean `onShutdown`.** Crashes, `process.exit` or SIGKILL publish nothing; those cases rely on staleness (3x then 10x interval) to turn `down`. Crash-looping services restarted fast also show `crash-looping` only after 3 starts.
 9. **`@cohost/config` is a declared dependency and tsconfig reference of `packages/control` but is never imported** (`package.json:14`, `tsconfig.json:4`). `heartbeat.ts` in `packages/bus` imports only the `Logger` type from it.
-10. **Circular import** between `packages/bus/src/index.ts:247` and `heartbeat.ts:2`; safe only while `beforeShutdown` is called at runtime.
-11. **Duplicate service lists.** `KNOWN_SERVICES` (`health.ts:8`) versus manifest-derived list (`cli.ts:107`); only a unit test ties them (`manifest.test.ts:21`).
-12. **Comments point at nonexistent baselines.** `manifest.ts:4` cites `openspec/specs/service-control` and `health.ts:45` cites `openspec/specs/service-health`; neither directory exists (see References).
-13. **`ProcessRuntime` mode precedence is split**: the controller passes `processMode` on every start (`controller.ts:77`) and the runtime also has a constructor `mode`; both come from the same env today (`cli.ts:90,103`; `control.ts:30,36`) so they cannot differ in practice.
-14. **Test coverage gaps**: no test for `cli.ts` `main()` or the entry guard, none for `isLoopback`, none for the compose `cwd`/timeout, none for a healthcheck against a stale-but-not-yet-down service end to end; `healthcheck.test.ts:36` needs a built `dist` and Redis and is skipped without Redis.
-15. **Heartbeat state published by the helper is already `degraded` for a down dep**, so the tracker's own "any dep down" rule (`health.ts:109`) is redundant for helper users and only matters for heartbeats hand-published by other publishers.
+10. **Circular import** between `packages/bus/src/index.ts:259` and `heartbeat.ts:2`; safe only while `beforeShutdown` is called at runtime.
+11. **Duplicate service lists.** `KNOWN_SERVICES` (`health.ts:9`) versus manifest-derived list (`cli.ts:110`); only a unit test ties them (`manifest.test.ts:23`, CTRL-MANIFEST-005).
+12. **`ProcessRuntime` mode precedence is split**: the controller passes `processMode` on every start (`controller.ts:79`) and the runtime also has a constructor `mode`; both come from the same env today (`cli.ts:92,106`; `control.ts:30,36`) so they cannot differ in practice.
+13. **Test coverage gaps.** No test for `cli.ts` `main()` or the entry guard (CTRL-CLI-004, CTRL-CLI-005; `cli.test.ts` builds its own controller with `by: "cohostctl"`, so the CLI's runtime selection and audit wiring are unexercised), for the heartbeat payload fields `version`, `startedAt`, `pid` and `instance` (CTRL-HEARTBEAT-001), for `isLoopback` (part of CTRL-CONFIG-002), for the compose `cwd`/timeout (part of CTRL-RUNTIME-001), for `ProcessRuntime.restart` when the stop fails (part of CTRL-RUNTIME-008), for a replayed older heartbeat during `seed` (part of CTRL-HEALTH-007), or for a healthcheck against a stale-but-not-yet-down service end to end; `healthcheck.test.ts:40` needs a built `dist` and Redis and is skipped without Redis.
+14. **Heartbeat state published by the helper is already `degraded` for a down dep**, so the tracker's own "any dep down" rule (`health.ts:113`) is redundant for helper users and only matters for heartbeats hand-published by other publishers.
+15. **Audit `detail` on success** (CTRL-GUARD-007). The controller copies the runtime's `detail` into the audit record whether or not the action succeeded (`controller.ts:96`), so a successful process-runtime start records `detail: "pid <n>"`. If success records were meant to carry `detail` only on failure, the code diverges from that intent.
+16. **Overlapping specs with event-bus.** CTRL-HEARTBEAT-007 restates BUS-STREAM-004 and BUS-HEALTH-001, and CTRL-HEARTBEAT-005 restates BUS-STOP-002; the code entry points in `packages/bus/src/index.ts` carry both IDs. Which segment owns each statement is undecided.
+17. **CTRL-CHECK-003 lives in `docker-compose.yml`** (deployment). It has no test, and the compose file carries no `@spec` annotation.
 
 ### Deferred
 1. Persisting process pids across controller restarts (README documents the limitation; CTRL-CLI-006 is `[D]`).
@@ -230,11 +233,11 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 
 ## References
 
-Files in this segment (git `686cc8f`):
+Files in this segment (git `49ba935`):
 - `packages/control/src/index.ts`, `cli.ts`, `config.ts`, `controller.ts`, `health.ts`, `healthcheck.ts`, `manifest.ts`, `runtime.ts`
 - `packages/control/test/cli.test.ts`, `config.test.ts`, `controller.test.ts`, `health.test.ts`, `healthcheck.test.ts`, `manifest.test.ts`, `runtime.test.ts`
 - `packages/control/package.json`, `packages/control/tsconfig.json`
-- `packages/bus/src/heartbeat.ts` (tests: `packages/bus/test/bus.test.ts:128-258`, `packages/bus/test/shutdown.fixture.ts`)
+- `packages/bus/src/heartbeat.ts` (tests: `packages/bus/test/bus.test.ts:136-275`, `packages/bus/test/shutdown.fixture.ts`)
 - `docs/plans/control-plane.md` (original plan, compared above)
 
 Other segments (direction):
@@ -246,12 +249,11 @@ Other segments (direction):
 
 External: Redis Streams (`cohost:events`, `cohost:health`), `docker compose` CLI, `pnpm`, Node `child_process`, `util.parseArgs`, `crypto`.
 
-OpenSpec: the capabilities `service-health` and `service-control` exist ONLY as unarchived deltas. There is no `openspec/specs/service-health/` or `openspec/specs/service-control/` baseline directory (the comments at `manifest.ts:4` and `health.ts:45` point at paths that do not exist), so these files are the only written source of intent:
-- `openspec/changes/archive/2026-11-01-add-service-health/specs/service-health/spec.md` (heartbeat contract, derived states, crash-loop, snapshot, compose healthcheck)
-- `openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md` (health stream, heartbeat helper, catalogue)
-- `openspec/changes/archive/2026-11-01-add-service-health/specs/dashboard/spec.md` and the per-service `Heartbeat` deltas
-- `openspec/changes/archive/2026-11-01-add-service-control/specs/service-control/spec.md` (runtime adapters, manifest-only ids, start modes, protected services, gating, audit event, `cohostctl`)
-- `openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md` (`service.lifecycle`), `.../dashboard/spec.md` (routes, token), `openspec/changes/archive/2026-11-01-add-service-control/design.md`
-- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/*` (isolation presets and the cortex closure requirement)
+OpenSpec (frozen, historical; the LID specs here supersede it per `CLAUDE.md` § Specs):
+- `openspec/specs/service-health/spec.md` (baseline, 5 requirements: heartbeat contract, derived states, crash-loop, snapshot, compose healthcheck)
+- `openspec/specs/service-control/spec.md` (baseline, 7 requirements: runtime adapters, manifest-only ids, start modes, protected services, gating, audit event, `cohostctl`)
+- `openspec/specs/bus/spec.md` (health stream, heartbeat helper, `service.lifecycle` in the catalogue)
+- `openspec/specs/cortex/spec.md` (isolation preset and closure)
+- Archived changes: `openspec/changes/archive/2026-11-01-add-service-health/`, `openspec/changes/archive/2026-11-01-add-service-control/` (including `design.md`), `openspec/changes/archive/2026-11-01-add-isolated-backends/`
 
-Spec-to-OpenSpec mismatches are captured as `[ ]` specs CTRL-RUNTIME-009 and CTRL-GUARD-008. The two catalogue deltas in `bus` list different sets (health lists `service.heartbeat` but not `service.lifecycle`; control lists `service.lifecycle` but not `service.heartbeat`); event-bus owns reconciling those.
+Spec-to-OpenSpec mismatches are captured as `[ ]` specs CTRL-RUNTIME-009 and CTRL-GUARD-008.

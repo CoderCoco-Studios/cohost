@@ -7,12 +7,14 @@
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { STALE_FACTOR } from "./health.js";
 
+// @spec CTRL-CHECK-001
 export function isHealthy(service: string, recent: HeartbeatEvent[], now = Date.now()): boolean {
   const latest = recent.filter((h) => h.data.service === service).at(-1);
   if (!latest || latest.data.state === "stopping") return false;
   return now - latest.ts < STALE_FACTOR * latest.data.intervalMs;
 }
 
+// @spec CTRL-CHECK-002
 async function main(): Promise<number> {
   const service = process.argv[2];
   if (!service) { console.error("usage: healthcheck <service>"); return 2; }

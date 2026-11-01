@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseCli, runCli, UsageError, ServiceController, type Runtime, type ServiceHealth } from "../src/index.js";
 
+// @spec CTRL-CLI-001
 test("parseCli: commands, flags, defaults", () => {
   assert.deepEqual(parseCli(["status"]), { cmd: "status" });
   assert.deepEqual(parseCli(["status", "cortex"]), { cmd: "status", id: "cortex" });
@@ -10,6 +11,7 @@ test("parseCli: commands, flags, defaults", () => {
   assert.deepEqual(parseCli(["start", "voice", "--mode=resume"]), { cmd: "start", id: "voice", opts: { mode: "resume" } });
 });
 
+// @spec CTRL-CLI-001
 test("parseCli: bad input throws UsageError", () => {
   for (const argv of [[], ["bogus"], ["start"], ["start", "a", "b"], ["start", "a", "--mode", "x"], ["start", "a", "--nope"], ["stop", "a", "--isolated"], ["status", "--isolated"]]) {
     assert.throws(() => parseCli(argv), UsageError, JSON.stringify(argv));
@@ -31,6 +33,7 @@ function harness() {
   return { log, audits, out, err, run: (argv: string[]) => runCli(argv, { controller, health, out: (l) => out.push(l), err: (l) => err.push(l) }) };
 }
 
+// @spec CTRL-CLI-003
 test("stop memory runs the runtime and audits as cohostctl", async () => {
   const h = harness();
   assert.equal(await h.run(["stop", "memory"]), 0);
@@ -38,12 +41,14 @@ test("stop memory runs the runtime and audits as cohostctl", async () => {
   assert.deepEqual(h.audits, [{ service: "memory", action: "stop", by: "cohostctl", ok: true }]);
 });
 
+// @spec CTRL-CLI-003
 test("restart cortex --mode fresh resets the group in between", async () => {
   const h = harness();
   assert.equal(await h.run(["restart", "cortex", "--mode", "fresh"]), 0);
   assert.deepEqual(h.log, ["stop cortex", "reset cortex", "start cortex"]);
 });
 
+// @spec CTRL-CLI-003
 test("protections apply: dashboard stop and redis stop exit 1 without acting; unknown too", async () => {
   const h = harness();
   assert.equal(await h.run(["stop", "dashboard"]), 1);
@@ -54,6 +59,7 @@ test("protections apply: dashboard stop and redis stop exit 1 without acting; un
   assert.match(h.err[0]!, /conflict/);
 });
 
+// @spec CTRL-CLI-001, CTRL-CLI-002
 test("usage errors exit 2; status prints rows", async () => {
   const h = harness();
   assert.equal(await h.run(["wat"]), 2);

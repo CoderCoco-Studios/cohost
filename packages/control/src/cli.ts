@@ -26,6 +26,7 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
+// @spec CTRL-CLI-001
 export function parseCli(argv: readonly string[]): CliCommand {
   let parsed;
   try {
@@ -61,6 +62,7 @@ export interface CliDeps {
 }
 
 /** Returns the process exit code: 0 ok, 1 failed or refused, 2 usage. */
+// @spec CTRL-CLI-002, CTRL-CLI-003
 export async function runCli(argv: readonly string[], d: CliDeps): Promise<number> {
   let c: CliCommand;
   try { c = parseCli(argv); } catch (e) {
@@ -91,6 +93,7 @@ function buildRuntime(env: NodeJS.ProcessEnv): Runtime {
   throw new UsageError(`CONTROL_RUNTIME must be "compose" or "process", got ${JSON.stringify(which)}`);
 }
 
+// @spec CTRL-CLI-002, CTRL-CLI-004
 async function main(): Promise<number> {
   const bus = new Bus("cohostctl");
   try {
@@ -118,6 +121,7 @@ async function main(): Promise<number> {
   }
 }
 
+// @spec CTRL-CLI-005
 if (process.argv[1]?.endsWith("cli.js")) {
   main().then((code) => process.exit(code), () => process.exit(1));
 }

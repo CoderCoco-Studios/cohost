@@ -35,6 +35,7 @@ const svc = (
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", { isolatedEnv: { CHAT_SOURCE: "fake" } }),
   svc("salience", { groups: ["salience"], defaultMode: "fresh" }),
@@ -53,6 +54,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   compose("stt"),
 ];
 
+// @spec CTRL-MANIFEST-004
 export function findService(id: string, manifest: readonly ServiceDef[] = SERVICE_MANIFEST): ServiceDef | undefined {
   return manifest.find((s) => s.id === id);
 }

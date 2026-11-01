@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SERVICE_MANIFEST, findService, KNOWN_SERVICES } from "../src/index.js";
 
+// @spec CTRL-MANIFEST-001
 test("every manifest entry carries the runtime fields", () => {
   const ids = new Set<string>();
   for (const s of SERVICE_MANIFEST) {
@@ -18,10 +19,12 @@ test("every manifest entry carries the runtime fields", () => {
   }
 });
 
+// @spec CTRL-MANIFEST-005
 test("every health-tracked service is in the manifest", () => {
   for (const id of KNOWN_SERVICES) assert.ok(findService(id), id);
 });
 
+// @spec CTRL-MANIFEST-002, CTRL-MANIFEST-003
 test("flags and defaults match the spec", () => {
   assert.equal(findService("dashboard")!.self, true);
   assert.equal(findService("redis")!.infra, true);
@@ -32,6 +35,7 @@ test("flags and defaults match the spec", () => {
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
 });
 
+// @spec CTRL-MANIFEST-004
 test("unknown ids are not found", () => {
   assert.equal(findService("nope"), undefined);
   assert.equal(findService("cortex; rm -rf /"), undefined);

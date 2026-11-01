@@ -25,7 +25,7 @@ const chat = (text: string, extra: Record<string, unknown> = {}) =>
   event("chat.message", { platform: "twitch", user: "bob", text, isMod: false, isSub: false, mentionsCohost: false, ...extra });
 const idle = event("brain.status", { state: "idle" });
 
-test("tick: a mention publishes attention.focus naming who and what", async () => {
+test("tick: a mention publishes attention.focus naming who and what", async () => { // @spec SAL-FOCUS-003, SAL-FOCUS-004, SAL-DECIDE-002
   const { s, bus } = setup();
   await s.onEvent(chat("plain"));
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
@@ -37,7 +37,7 @@ test("tick: a mention publishes attention.focus naming who and what", async () =
   assert.equal(s.ctx.unseen().length, 0, "what was scored is now seen");
 });
 
-test("tick: speech and vision focus are mapped for the cortex", async () => {
+test("tick: speech and vision focus are mapped for the cortex", async () => { // @spec SAL-FOCUS-003
   const sp = setup();
   await sp.s.onEvent(event("speech.heard", { speaker: "Chris", text: "look at this", durationMs: 900 }));
   await sp.s.tick();
@@ -49,7 +49,7 @@ test("tick: speech and vision focus are mapped for the cortex", async () => {
   assert.deepEqual(vi.bus.of("attention.focus")[0]!.focus, { kind: "vision", text: "a dragon appears", mention: false });
 });
 
-test("tick: after firing, it treats the cortex as busy until the cortex reports back", async () => {
+test("tick: after firing, it treats the cortex as busy until the cortex reports back", async () => { // @spec SAL-FOCUS-004, SAL-IN-005, SAL-BUSY-004
   const { s, bus } = setup();
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
   await s.tick();
@@ -61,7 +61,7 @@ test("tick: after firing, it treats the cortex as busy until the cortex reports 
   assert.equal(bus.of("attention.focus").length, 2);
 });
 
-test("a speaking cortex blocks focus until done, with a speaking_timeout_ms safety valve", async () => {
+test("a speaking cortex blocks focus until done, with a speaking_timeout_ms safety valve", async () => { // @spec SAL-BUSY-002, SAL-BUSY-003
   const { s, bus } = setup({}, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 }, cortex: { speaking_timeout_ms: 30 } } });
   await s.onEvent(event("brain.say", { id: "x", text: "hi", emotion: "happy" }));
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
@@ -72,7 +72,7 @@ test("a speaking cortex blocks focus until done, with a speaking_timeout_ms safe
   assert.equal(bus.of("attention.focus").length, 1);
 });
 
-test("brain.say from anyone starts the cooldown", async () => {
+test("brain.say from anyone starts the cooldown", async () => { // @spec SAL-BUSY-003
   const { s, bus } = setup({ cooldown_ms: 60_000 });
   await s.onEvent(event("brain.say", { id: "x", text: "hi", emotion: "happy" }));
   await s.onEvent(idle);
@@ -81,7 +81,7 @@ test("brain.say from anyone starts the cooldown", async () => {
   assert.equal(bus.of("attention.focus").length, 0);
 });
 
-test("mute / unmute / forget_context", async () => {
+test("mute / unmute / forget_context", async () => { // @spec SAL-CTRL-004, SAL-CTRL-005
   const { s, bus } = setup();
   await s.onEvent(event("control", { cmd: "mute" }));
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
@@ -95,7 +95,7 @@ test("mute / unmute / forget_context", async () => {
   assert.equal(bus.of("attention.focus").length, 1);
 });
 
-test("an excited mood lowers the bar to speak", async () => {
+test("an excited mood lowers the bar to speak", async () => { // @spec SAL-IN-004, SAL-DECIDE-003
   const { s, bus } = setup({ speak_threshold: 0.6, arousal_bias: 0.5 });
   for (const t of ["a", "b", "c"]) await s.onEvent(chat(t)); // 0.45
   await s.tick();
@@ -105,7 +105,7 @@ test("an excited mood lowers the bar to speak", async () => {
   assert.equal(bus.of("attention.focus")[0]!.reason, "engaged");
 });
 
-test("ticks don't overlap: a slow scorer is asked once", async () => {
+test("ticks don't overlap: a slow scorer is asked once", async () => { // @spec SAL-FOCUS-002
   const { s, bus, calls, setGate } = setup();
   let release!: () => void;
   setGate(new Promise<void>((r) => (release = r)));
@@ -118,7 +118,7 @@ test("ticks don't overlap: a slow scorer is asked once", async () => {
   assert.equal(bus.of("attention.focus").length, 1);
 });
 
-test("reflex: fires brain.say instantly and marks only its trigger seen", async () => {
+test("reflex: fires brain.say instantly and marks only its trigger seen", async () => { // @spec SAL-REFLEX-001, SAL-REFLEX-004
   const { s, bus } = setup({ reflexes: [DIED] });
   await s.onEvent(chat("hello"));
   await s.onEvent(chat("lol you died"));
@@ -127,7 +127,7 @@ test("reflex: fires brain.say instantly and marks only its trigger seen", async 
   assert.deepEqual(s.ctx.unseen().map((e) => e.text), ["hello"]);
 });
 
-test("reflex: listens on speech, and on vision only when the screen changed", async () => {
+test("reflex: listens on speech, and on vision only when the screen changed", async () => { // @spec SAL-REFLEX-001, SAL-REFLEX-002
   const { s, bus } = setup({ reflexes: [DIED] });
   await s.onEvent(event("vision.summary", { text: "YOU DIED", changed: false }));
   assert.equal(bus.of("brain.say").length, 0);
@@ -138,7 +138,7 @@ test("reflex: listens on speech, and on vision only when the screen changed", as
   assert.equal(sp.bus.of("brain.say").length, 1);
 });
 
-test("reflex: never talks over the cortex, inside the cooldown, or while muted", async () => {
+test("reflex: never talks over the cortex, inside the cooldown, or while muted", async () => { // @spec SAL-REFLEX-005, SAL-REFLEX-006, SAL-BUSY-001
   const busy = setup({ reflexes: [DIED] });
   await busy.s.onEvent(event("brain.status", { state: "thinking" }));
   await busy.s.onEvent(chat("you died"));
@@ -159,7 +159,7 @@ test("reflex: never talks over the cortex, inside the cooldown, or while muted",
   assert.equal(muted.bus.of("brain.say").length, 0);
 });
 
-test("pause: no attention.focus or reflex while paused, intake continues; resume restores; other targets ignored", async () => {
+test("pause: no attention.focus or reflex while paused, intake continues; resume restores; other targets ignored", async () => { // @spec SAL-CTRL-001, SAL-CTRL-002, SAL-CTRL-003, SAL-REFLEX-006
   const { s, bus } = setup({ reflexes: [DIED] });
   await s.onEvent(event("control", { cmd: "pause", target: "voice" })); // not for us
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
@@ -180,7 +180,7 @@ test("pause: no attention.focus or reflex while paused, intake continues; resume
   assert.equal(bus.of("attention.focus").length, 1);
 });
 
-test("a targeted mute for another service does not mute salience", async () => {
+test("a targeted mute for another service does not mute salience", async () => { // @spec SAL-CTRL-001
   const { s, bus } = setup();
   await s.onEvent(event("control", { cmd: "mute", target: "cortex" }));
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
@@ -190,7 +190,7 @@ test("a targeted mute for another service does not mute salience", async () => {
 
 // ---- test injection
 
-test("tick: an injected focus carries injected/remember onto attention.focus", async () => {
+test("tick: an injected focus carries injected/remember onto attention.focus", async () => { // @spec SAL-INJ-001
   const { s, bus } = setup();
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true, injected: true, remember: false }));
   await s.tick();
@@ -199,7 +199,7 @@ test("tick: an injected focus carries injected/remember onto attention.focus", a
   assert.equal(f!.remember, false);
 });
 
-test("tick: real focus (even with a stray remember) and no-focus carry neither flag", async () => {
+test("tick: real focus (even with a stray remember) and no-focus carry neither flag", async () => { // @spec SAL-INJ-002
   const real = setup();
   await real.s.onEvent(chat("hey Coco?", { mentionsCohost: true, remember: true }));
   await real.s.tick();
@@ -207,7 +207,7 @@ test("tick: real focus (even with a stray remember) and no-focus carry neither f
   assert.equal("injected" in f! || "remember" in f!, false);
 });
 
-test("tick: a mixed batch follows the focus event, not the others", async () => {
+test("tick: a mixed batch follows the focus event, not the others", async () => { // @spec SAL-INJ-003
   const { s, bus } = setup();
   await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
   await s.onEvent(chat("plain", { injected: true, remember: true }));
@@ -217,7 +217,7 @@ test("tick: a mixed batch follows the focus event, not the others", async () => 
   assert.equal("injected" in f!, false);
 });
 
-test("reflex: an injected trigger's brain.say carries the flags; a real one carries none", async () => {
+test("reflex: an injected trigger's brain.say carries the flags; a real one carries none", async () => { // @spec SAL-INJ-004
   const inj = setup({ reflexes: [DIED] });
   await inj.s.onEvent(chat("lol you died", { injected: true, remember: false }));
   const [say] = inj.bus.of("brain.say");

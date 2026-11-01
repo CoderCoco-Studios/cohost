@@ -16,11 +16,11 @@ export interface AppraiseOutput { valence_delta: number; arousal_delta: number }
 
 // Emoji are alternations, not [...] classes: without the `u` flag a class matches single UTF-16 code
 // units, and most emoji share a high surrogate, so one emoji could hit both lists (and VS16 alone matched).
-const POSITIVE = /\b(lol|lmao|haha+|pog(gers|champ)?|gg|w|love|nice|let'?s go|hype|based|goat|clutch|ez|amazing|cute|wholesome)\b|😂|🤣|❤|🔥/iu;
-const NEGATIVE = /\b(boo|l|ratio|trash|cringe|hate|boring|mald|rip|f|oof|unlucky|scam|bad|worst|ugh)\b|😡|💀|👎/iu;
+const POSITIVE = /\b(lol|lmao|haha+|pog(gers|champ)?|gg|w|love|nice|let'?s go|hype|based|goat|clutch|ez|amazing|cute|wholesome)\b|😂|🤣|❤|🔥/iu; // @spec AFF-APPR-004
+const NEGATIVE = /\b(boo|l|ratio|trash|cringe|hate|boring|mald|rip|f|oof|unlucky|scam|bad|worst|ugh)\b|😡|💀|👎/iu; // @spec AFF-APPR-004
 
 /** The built-in word lists. Also the fallback for the llm / http kinds. */
-export function appraiseRules(i: AppraiseInput): AppraiseOutput {
+export function appraiseRules(i: AppraiseInput): AppraiseOutput { // @spec AFF-APPR-001, AFF-APPR-002, AFF-APPR-003
   let dv = 0;
   let da = i.source === "speech" ? 0.15 : 0.03;
   if (i.mention) da += 0.2;
@@ -31,16 +31,16 @@ export function appraiseRules(i: AppraiseInput): AppraiseOutput {
   return { valence_delta: dv, arousal_delta: da };
 }
 
-function validate(raw: unknown): AppraiseOutput | undefined {
+function validate(raw: unknown): AppraiseOutput | undefined { // @spec AFF-HOOK-002
   const r = raw as { valence_delta?: unknown; arousal_delta?: unknown } | undefined;
   if (!r || !isNum(r.valence_delta) || !isNum(r.arousal_delta)) return undefined;
   return { valence_delta: clamp(r.valence_delta, -0.5, 0.5), arousal_delta: clamp(r.arousal_delta, -0.5, 0.5) };
 }
 
-export function createAppraiser(cfg: Config, log: Logger): Module<AppraiseInput, AppraiseOutput> {
+export function createAppraiser(cfg: Config, log: Logger): Module<AppraiseInput, AppraiseOutput> { // @spec AFF-HOOK-001
   const impl: ModuleImpl<AppraiseInput, AppraiseOutput> = {
     rules: appraiseRules,
-    llm: {
+    llm: { // @spec AFF-HOOK-009
       system:
         `You are the emotional appraisal of ${cfg.cohost.name}, an AI co-host on ${cfg.cohost.streamer}'s stream. ` +
         `Given one line someone said, decide how it should move ${cfg.cohost.name}'s mood. ` +

@@ -15,12 +15,12 @@ export class Mood {
   cause: string | undefined;
   private lastTick = Date.now();
 
-  constructor(private cfg: Config["brain"]["affect"]) {
+  constructor(private cfg: Config["brain"]["affect"]) { // @spec AFF-MOOD-001
     this.valence = cfg.baseline_valence;
   }
 
   /** Apply decay for the time elapsed since the last call. */
-  tick(now = Date.now()): void {
+  tick(now = Date.now()): void { // @spec AFF-MOOD-003
     const dt = now - this.lastTick;
     this.lastTick = now;
     const k = Math.pow(0.5, dt / this.cfg.half_life_ms);
@@ -28,7 +28,7 @@ export class Mood {
     this.arousal = 0.1 + (this.arousal - 0.1) * k;
   }
 
-  nudge(dv: number, da: number, cause: string): void {
+  nudge(dv: number, da: number, cause: string): void { // @spec AFF-MOOD-002
     this.tick();
     this.valence = clamp(this.valence + dv, -1, 1);
     this.arousal = clamp(this.arousal + da, 0, 1);
@@ -40,13 +40,13 @@ export class Mood {
     this.nudge(a.valence_delta, a.arousal_delta, cause);
   }
 
-  state(): MoodState {
+  state(): MoodState { // @spec AFF-MOOD-005
     return { valence: round(this.valence), arousal: round(this.arousal), mood: label(this.valence, this.arousal), cause: this.cause };
   }
 }
 
 /** Nearest canonical emotion for a point on the valence/arousal plane. */
-export function label(v: number, a: number): Emotion {
+export function label(v: number, a: number): Emotion { // @spec AFF-MOOD-004
   if (a > 0.6) return v > 0.3 ? "laugh" : v < -0.3 ? "angry" : "surprised";
   if (a > 0.3) return v > 0.2 ? "happy" : v < -0.2 ? "confused" : "think";
   return v > 0.35 ? "smug" : v < -0.3 ? "sad" : "neutral";

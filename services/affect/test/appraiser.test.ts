@@ -28,7 +28,7 @@ const cfg = ConfigSchema.parse({
 });
 const input: AppraiseInput = { source: "chat", who: "bob", text: "lol nice", mention: false, valence: 0, arousal: 0 };
 
-test("appraiser http: deltas pass through, clamped to ±0.5", async () => {
+test("appraiser http: deltas pass through, clamped to ±0.5", async () => { // @spec AFF-HOOK-001, AFF-HOOK-002
   const a = createAppraiser(cfg, log);
   answer = { valence_delta: 0.2, arousal_delta: -0.1 };
   assert.deepEqual(await a.run(input), { valence_delta: 0.2, arousal_delta: -0.1 });
@@ -36,7 +36,7 @@ test("appraiser http: deltas pass through, clamped to ±0.5", async () => {
   assert.deepEqual(await a.run(input), { valence_delta: 0.5, arousal_delta: -0.5 });
 });
 
-test("appraiser http: a missing or non-finite delta falls back to the word lists", async () => {
+test("appraiser http: a missing or non-finite delta falls back to the word lists", async () => { // @spec AFF-HOOK-003
   const a = createAppraiser(cfg, log);
   for (const bad of [{ valence_delta: 0.1 }, { valence_delta: "0.1", arousal_delta: 0 }, { valence_delta: null, arousal_delta: 0 }, null]) {
     answer = bad;
@@ -44,7 +44,7 @@ test("appraiser http: a missing or non-finite delta falls back to the word lists
   }
 });
 
-test("appraiseRules: question marks add a little arousal; mixed tone nets out negative", () => {
+test("appraiseRules: question marks add a little arousal; mixed tone nets out negative", () => { // @spec AFF-APPR-002, AFF-APPR-003
   const base = appraiseRules(input);
   assert.ok(appraiseRules({ ...input, text: "lol nice?" }).arousal_delta > base.arousal_delta);
   const mixed = appraiseRules({ ...input, text: "lol this is trash" });

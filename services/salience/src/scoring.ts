@@ -10,7 +10,7 @@ export interface ScoreInput {
 /** One 0..1 number per event, same order. */
 export interface ScoreOutput { scores: number[] }
 
-export function toScoreInput(unseen: ContextEvent[], arousal: number): ScoreInput {
+export function toScoreInput(unseen: ContextEvent[], arousal: number): ScoreInput { // @spec SAL-SCORE-003
   const events: ScoreInput["events"] = [];
   for (const e of unseen) {
     if (e.kind === "chat") events.push({ kind: "chat", who: e.user, text: e.text, mention: e.mention, isMod: e.isMod, isSub: e.isSub, changed: false });
@@ -21,7 +21,7 @@ export function toScoreInput(unseen: ContextEvent[], arousal: number): ScoreInpu
 }
 
 /** The built-in weights. Also the fallback for the llm / http kinds. */
-export function scoreRules(input: ScoreInput, replyOnMention: boolean): ScoreOutput {
+export function scoreRules(input: ScoreInput, replyOnMention: boolean): ScoreOutput { // @spec SAL-SCORE-001, SAL-SCORE-002
   return {
     scores: input.events.map((e) => {
       if (e.kind === "speech") return 0.9;                   // the streamer talked to it (or near it)
@@ -36,16 +36,16 @@ export function scoreRules(input: ScoreInput, replyOnMention: boolean): ScoreOut
   };
 }
 
-function validate(raw: unknown, input: ScoreInput): ScoreOutput | undefined {
+function validate(raw: unknown, input: ScoreInput): ScoreOutput | undefined { // @spec SAL-SCORE-004
   const scores = (raw as { scores?: unknown })?.scores;
   if (!Array.isArray(scores) || scores.length !== input.events.length || !scores.every(isNum)) return undefined;
   return { scores: scores.map((s) => clamp(s, 0, 1)) };
 }
 
-export function createScorer(cfg: Config, log: Logger): Module<ScoreInput, ScoreOutput> {
+export function createScorer(cfg: Config, log: Logger): Module<ScoreInput, ScoreOutput> { // @spec SAL-SCORE-007
   const impl: ModuleImpl<ScoreInput, ScoreOutput> = {
     rules: (i) => scoreRules(i, cfg.brain.salience.reply_on_mention),
-    llm: {
+    llm: { // @spec SAL-SCORE-008
       system:
         `You decide how much each event deserves a reaction from ${cfg.cohost.name}, an AI co-host on ${cfg.cohost.streamer}'s stream. ` +
         `Score each event 0..1: 1.0 = must respond (addressed directly, big moment), 0.5 = worth a comment, 0.1 = background noise. ` +

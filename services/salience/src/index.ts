@@ -20,12 +20,12 @@ import { salienceHealth } from "./health.js";
 const log = createLogger("salience");
 const cfg = loadConfig();
 const bus = new Bus("salience", log);
-const heartbeat = startHeartbeat(bus, { ...salienceHealth, log });
-const scorer = createScorer(cfg, log);
+const heartbeat = startHeartbeat(bus, { ...salienceHealth, log }); // @spec SAL-HEALTH-001
+const scorer = createScorer(cfg, log); // @spec SAL-SCORE-007
 const salience = new Salience({ cfg, bus, scorer, log });
 
 async function main() {
-  void bus.subscribe(
+  void bus.subscribe( // @spec SAL-IN-001
     {
       group: "salience",
       types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "brain.status", "affect.state", "control"],
@@ -33,10 +33,10 @@ async function main() {
     },
     (ev) => salience.onEvent(ev),
   );
-  setInterval(() => void salience.tick(), cfg.brain.salience.tick_ms);
+  setInterval(() => void salience.tick(), cfg.brain.salience.tick_ms); // @spec SAL-FOCUS-001
   heartbeat.ready();
   log.info({ reflexes: salience.reflexes.size, threshold: cfg.brain.salience.speak_threshold, scorer: scorer.kind }, "salience online");
 }
 
-main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });
+main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); }); // @spec SAL-HEALTH-003
 onShutdown(async () => { bus.stop(); });

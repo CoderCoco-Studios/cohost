@@ -19,7 +19,7 @@ export class Reflexes {
 
   get size(): number { return this.rules.length; }
 
-  test(sense: Sense, text: string, now = Date.now()): ReflexHit | undefined {
+  test(sense: Sense, text: string, now = Date.now()): ReflexHit | undefined { // @spec SAL-REFLEX-001, SAL-REFLEX-003
     for (const r of this.rules) {
       if (!r.rule.on.includes(sense)) continue;
       if (now - r.lastFired < r.rule.cooldown_ms) continue;

@@ -8,17 +8,20 @@ const filter = createChatFilter(cfg);
 const info = (over: Partial<ChatUserInfo> = {}): ChatUserInfo =>
   ({ displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false, ...over });
 
+// @spec CHAT-PLAN-004
 test("channelName strips # and lowercases", () => {
   assert.equal(channelName(testConfig({ chat: { twitch: { channel: "#CoderCoco" } } }).chat), "codercoco");
   assert.equal(channelName(testConfig({ chat: { twitch: { channel: "" } } }).chat), "");
 });
 
+// @spec CHAT-FILT-005
 test("a normal message becomes a chat.message payload", () => {
   assert.deepEqual(filter("bob", "hello   there\n friend ", info()), {
     platform: "twitch", user: "Bob", userId: "42", text: "hello there friend", isMod: false, isSub: false, mentionsCohost: false,
   });
 });
 
+// @spec CHAT-FILT-001, CHAT-FILT-002, CHAT-FILT-004
 test("bots (case-insensitive), commands and blank lines are dropped", () => {
   assert.equal(filter("nightbot", "Follow the stream!", info()), undefined);
   assert.equal(filter("NIGHTBOT", "Follow the stream!", info()), undefined);
@@ -27,12 +30,14 @@ test("bots (case-insensitive), commands and blank lines are dropped", () => {
   assert.equal(filter("bob", "   ", info()), undefined);
 });
 
+// @spec CHAT-FILT-007
 test("mentions are matched anywhere, case-insensitively", () => {
   assert.equal(filter("bob", "what do you think COCO", info())!.mentionsCohost, true);
   assert.equal(filter("bob", "@coco_fan hi", info())!.mentionsCohost, true); // substring match, by design
   assert.equal(filter("bob", "hi chat", info())!.mentionsCohost, false);
 });
 
+// @spec CHAT-FILT-005, CHAT-FILT-006
 test("broadcaster counts as mod; subscriber flag and display-name fallback", () => {
   const m = filter("chris", "hi", info({ isBroadcaster: true, isSubscriber: true, displayName: "" }))!;
   assert.equal(m.isMod, true);

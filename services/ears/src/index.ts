@@ -30,23 +30,29 @@ const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 // Injected clips only need the STT service, so this works in every plan (off / no-token / discord).
 const onInject = createInjectHandler({ bus, log, dashboardUrl: urls.dashboard(), transcribe: health.track(sttTranscriber(cfg.ears)) });
 
+// @spec EARS-START-004
 if (plan === "discord") {
   // discord.js and friends are only loaded when a session will actually be opened.
   const { startDiscord } = await import("./discord.js");
   startDiscord({ cfg, bus, log, health, heartbeat, onInject, setVoiceReady: (v) => { voiceReady = v; } });
+  // @spec EARS-START-005
   onShutdown(() => { bus.stop(); });
 } else {
+  // @spec EARS-START-003, EARS-INJ-009
   // Idle: no Discord client; voice.utterance is ignored (only inject.request is consumed), process stays up.
   void bus.subscribe({ group: "ears", types: ["inject.request"], fromNow: true }, onInject);
+  // @spec EARS-START-001
   if (plan === "off") {
     log.warn("ears.source is off: idle, no Discord client, nothing heard or played (mode off)");
     heartbeat.ready();
   } else {
+    // @spec EARS-START-002
     log.error("DISCORD_TOKEN is not set; ears is idle (no Discord client)");
     heartbeat.degraded("DISCORD_TOKEN is not set");
   }
   const timer = setInterval(() => {
     if (plan === "no-token") log.warn("DISCORD_TOKEN is not set; ears still idle");
   }, 60_000);
+  // @spec EARS-START-005
   onShutdown(() => { clearInterval(timer); bus.stop(); });
 }

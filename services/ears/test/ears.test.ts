@@ -21,6 +21,7 @@ function playback(fail: (url: string) => boolean = () => false) {
   return { p, bus, rec, played, fetched };
 }
 
+// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004
 test("playback: plays one utterance at a time, in order, reporting playing and done", async () => {
   const { p, bus, played, fetched } = playback();
   await p.enqueue("a", "http://voice/a.wav");
@@ -39,6 +40,7 @@ test("playback: plays one utterance at a time, in order, reporting playing and d
   assert.equal(bus.of("voice.done").length, 2);
 });
 
+// @spec EARS-PLAY-005
 test("playback: a failed fetch is skipped and the queue keeps going", async () => {
   const { p, bus, rec } = playback((url) => url.includes("bad"));
   await p.onIdle(); // nothing queued
@@ -50,6 +52,7 @@ test("playback: a failed fetch is skipped and the queue keeps going", async () =
   assert.deepEqual(rec.msgs("warn"), ["playback failed"]);
 });
 
+// @spec EARS-PLAY-002, EARS-PLAY-005
 test("httpAudio returns the body, and throws on a non-2xx", async () => {
   const server = http.createServer((req, res) => { res.statusCode = req.url === "/ok.wav" ? 200 : 404; res.end("WAVBYTES"); });
   await new Promise<void>((r) => server.listen(0, r));
@@ -70,6 +73,7 @@ function hearing(transcribe: (wav: Buffer) => Promise<string>) {
   return { h, bus, rec, wavs };
 }
 
+// @spec EARS-HEAR-005, EARS-HEAR-006
 test("hearing: an utterance is downsampled, transcribed and published with its speaker", async () => {
   const { h, bus, wavs } = hearing(async () => "did you see that");
   await h.heard(pcmMs(1000), "Chris", "u1");
@@ -77,6 +81,7 @@ test("hearing: an utterance is downsampled, transcribed and published with its s
   assert.deepEqual(bus.of("speech.heard"), [{ speaker: "Chris", speakerId: "u1", text: "did you see that", durationMs: 1000 }]);
 });
 
+// @spec EARS-HEAR-004, EARS-HEAR-007
 test("hearing: too-short clips skip STT; empty or punctuation-only transcripts are dropped", async () => {
   const { h, bus, wavs } = hearing(async () => "");
   await h.heard(pcmMs(300), "Chris", "u1");
@@ -87,6 +92,7 @@ test("hearing: too-short clips skip STT; empty or punctuation-only transcripts a
   assert.equal(bus.published.length + dots.bus.published.length, 0);
 });
 
+// @spec EARS-HEAR-008
 test("hearing: an STT failure is a warning, not a crash", async () => {
   const { h, bus, rec } = hearing(async () => { throw new Error("stt 503"); });
   await h.heard(pcmMs(500), "Chris", "u1");
@@ -94,6 +100,7 @@ test("hearing: an STT failure is a warning, not a crash", async () => {
   assert.deepEqual(rec.msgs("warn"), ["transcription failed"]);
 });
 
+// @spec EARS-HEAR-005
 test("sttTranscriber posts the WAV as OpenAI-style multipart form data", async () => {
   let form: FormData | undefined;
   let path: string | undefined;

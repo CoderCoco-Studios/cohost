@@ -30,6 +30,7 @@ export interface FakeSourceOptions {
 
 const info = (user: string): ChatUserInfo => ({ displayName: user, userId: user, isMod: false, isBroadcaster: false, isSubscriber: false });
 
+// @spec CHAT-FAKE-001, CHAT-FAKE-002, CHAT-FAKE-003, CHAT-FAKE-004, CHAT-FAKE-005, CHAT-FAKE-006
 /**
  * Fake chat: stdin lines when stdin provides input, otherwise the script cycled
  * every `intervalMs`. Everything passes through the normal chat filter.

@@ -1,5 +1,6 @@
 /** PCM helpers: Discord gives us 48 kHz stereo s16le; Whisper wants 16 kHz mono; Discord wants 48k stereo back. */
 
+// @spec EARS-AUD-001
 /** 48k stereo s16le -> 16k mono s16le WAV (for STT). Simple 3:1 decimation with averaging. */
 export function discordPcmToWav16k(pcm: Buffer): Buffer {
   const inFrames = Math.floor(pcm.length / 4);
@@ -16,6 +17,7 @@ export function discordPcmToWav16k(pcm: Buffer): Buffer {
   return wavWrap(out, 16000, 1);
 }
 
+// @spec EARS-AUD-002
 /** Any-rate mono/stereo 16-bit WAV -> 48k stereo s16le raw PCM (for Discord playback). Linear interpolation. */
 export function wavToDiscordPcm(wav: Buffer): Buffer {
   const { sampleRate, channels, dataOffset, dataLength } = readWavHeader(wav);
@@ -38,6 +40,7 @@ export function wavToDiscordPcm(wav: Buffer): Buffer {
   return out;
 }
 
+// @spec EARS-AUD-003
 export function readWavHeader(buf: Buffer): { sampleRate: number; channels: number; dataOffset: number; dataLength: number } {
   let off = 12;
   let sampleRate = 0, channels = 0;

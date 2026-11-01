@@ -15,6 +15,7 @@ function setup(replies: string[]) {
   return { eyes, bus, previous };
 }
 
+// @spec EYES-LOOK-001
 test("a new description is published and becomes the 'previous' for the next look", async () => {
   const { eyes, bus, previous } = setup(["The player enters a cave.", "A bat swoops down."]);
   assert.equal(await eyes.look(), true);
@@ -26,6 +27,7 @@ test("a new description is published and becomes the 'previous' for the next loo
   assert.deepEqual(previous, ["", "The player enters a cave."]);
 });
 
+// @spec EYES-LOOK-002
 test("SAME (any case, with trailing words) or an empty reply publishes nothing and keeps the previous line", async () => {
   const { eyes, bus, previous } = setup(["In the menu.", "SAME", "same.", "Same as before", "", "Samurai attack!"]);
   for (let i = 0; i < 6; i++) await eyes.look();
@@ -33,12 +35,14 @@ test("SAME (any case, with trailing words) or an empty reply publishes nothing a
   assert.deepEqual(previous.slice(1, 5), ["In the menu.", "In the menu.", "In the menu.", "In the menu."]);
 });
 
+// @spec EYES-OBS-007
 test("stripDataUrl removes the data: prefix obs-websocket adds", () => {
   assert.equal(stripDataUrl("data:image/jpg;base64,AAAA"), "AAAA");
   assert.equal(stripDataUrl("data:image/png;base64,BBBB"), "BBBB");
   assert.equal(stripDataUrl("CCCC"), "CCCC");
 });
 
+// @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004
 test("ollamaDescriber sends the frame and previous line, and keeps only the first line of the reply", async () => {
   let body: { model: string; messages: { role: string; content: string; images?: string[] }[] } | undefined;
   let status = 200;
@@ -62,6 +66,7 @@ test("ollamaDescriber sends the frame and previous line, and keeps only the firs
   await assert.rejects(describe("IMG", ""), /vision model 500/);
 });
 
+// @spec EYES-ENAB-001
 test("startEyes does not connect to OBS or loop when vision is disabled (#11)", async () => {
   let connects = 0, loops = 0;
   const started = await startEyes({
@@ -74,6 +79,7 @@ test("startEyes does not connect to OBS or loop when vision is disabled (#11)", 
   assert.equal(loops, 0);
 });
 
+// @spec EYES-ENAB-003
 test("startEyes connects then loops when vision is enabled", async () => {
   const order: string[] = [];
   const started = await startEyes({

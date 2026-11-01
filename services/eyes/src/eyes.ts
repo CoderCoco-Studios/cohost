@@ -10,11 +10,13 @@ export interface EyesDeps {
   describe: (b64: string, previous: string) => Promise<string>;
 }
 
+// @spec EYES-OBS-007
 /** obs-websocket returns a data URL; the vision model wants bare base64. */
 export function stripDataUrl(imageData: string): string {
   return imageData.replace(/^data:image\/\w+;base64,/, "");
 }
 
+// @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004, EYES-DESC-005
 /** Ask the Ollama vision model what changed. */
 export function ollamaDescriber(cfg: Config["vision"]): EyesDeps["describe"] {
   return async (b64, previous) => {
@@ -54,6 +56,7 @@ export class Eyes {
 
   constructor(private d: EyesDeps) {}
 
+  // @spec EYES-LOOK-001, EYES-LOOK-002
   /** True when something new was published. */
   async look(): Promise<boolean> {
     const t0 = Date.now();
@@ -78,6 +81,7 @@ export interface StartDeps {
   loop: () => Promise<void>;
 }
 
+// @spec EYES-ENAB-001, EYES-ENAB-003
 /** Connect to OBS and run the look loop — but only when vision is enabled. */
 export async function startEyes({ enabled, log, connect, loop }: StartDeps): Promise<boolean> {
   if (!enabled) {

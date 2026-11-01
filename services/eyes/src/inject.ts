@@ -15,6 +15,7 @@ export interface InjectDeps {
   now?: () => number;
 }
 
+// @spec EYES-INJ-005
 /**
  * Returns the URL to fetch when it lies under `<dashboardUrl>/uploads/` (same origin, normalised
  * path), else undefined. Guards against the bus being used to make eyes fetch arbitrary URLs.
@@ -32,6 +33,7 @@ export function uploadUrl(raw: string | undefined, dashboardUrl: string): string
   }
 }
 
+// @spec EYES-INJ-002, EYES-INJ-003, EYES-INJ-004, EYES-INJ-005, EYES-INJ-006, EYES-INJ-007, EYES-INJ-008, EYES-INJ-009, EYES-INJ-010
 /**
  * Handles `inject.request` for eyes: fetches the uploaded image, describes it with an empty
  * previous description (so it neither sees SAME nor touches `Eyes.look()`'s change tracking) and

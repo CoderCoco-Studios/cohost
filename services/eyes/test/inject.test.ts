@@ -22,6 +22,7 @@ function setup(reply: string | Error = "a menu screen", over: { fetch?: typeof f
 const req = (over: Record<string, unknown> = {}) =>
   event("inject.request", { id: "i1", target: "eyes", kind: "image", url: UP, remember: false, ...over });
 
+// @spec EYES-INJ-007
 test("image described: base64 bytes, empty previous, injected vision.summary then ok result", async () => {
   const t = setup();
   await t.handle(req());
@@ -31,12 +32,14 @@ test("image described: base64 bytes, empty previous, injected vision.summary the
   assert.deepEqual(t.bus.of("inject.result"), [{ id: "i1", ok: true, detail: "a menu screen" }]);
 });
 
+// @spec EYES-INJ-007
 test("remember flag is carried", async () => {
   const t = setup();
   await t.handle(req({ remember: true }));
   assert.equal(t.bus.of("vision.summary")[0]!.remember, true);
 });
 
+// @spec EYES-INJ-008
 test("SAME or empty reply: ok:false, no summary", async () => {
   for (const reply of ["SAME", "same.", ""]) {
     const t = setup(reply);
@@ -46,6 +49,7 @@ test("SAME or empty reply: ok:false, no summary", async () => {
   }
 });
 
+// @spec EYES-INJ-009
 test("model failure: ok:false with the error, no summary", async () => {
   const t = setup(new Error("vision model 503"));
   await t.handle(req());
@@ -55,6 +59,7 @@ test("model failure: ok:false with the error, no summary", async () => {
   assert.match(r!.detail!, /vision model 503/);
 });
 
+// @spec EYES-INJ-005
 test("foreign URLs are never fetched", async () => {
   for (const url of ["http://evil.example/uploads/abc", "http://dashboard:3000/other/abc", `${DASH}/uploads/../secret`, "http://user@dashboard:3000/uploads/a", "file:///etc/passwd", "garbage", undefined]) {
     const t = setup();
@@ -65,6 +70,7 @@ test("foreign URLs are never fetched", async () => {
   }
 });
 
+// @spec EYES-INJ-006
 test("fetch failure (404): ok:false without calling the model", async () => {
   const t = setup("x", { fetch: async () => new Response("gone", { status: 404 }) });
   await t.handle(req());
@@ -72,6 +78,7 @@ test("fetch failure (404): ok:false without calling the model", async () => {
   assert.match(t.bus.of("inject.result")[0]!.detail!, /404/);
 });
 
+// @spec EYES-INJ-002, EYES-INJ-003
 test("stale request: only ok:false stale; other target ignored", async () => {
   const stale = setup("x", { now: () => Date.now() + 61_000 });
   await stale.handle(req());
@@ -82,6 +89,7 @@ test("stale request: only ok:false stale; other target ignored", async () => {
   assert.equal(other.bus.published.length, 0);
 });
 
+// @spec EYES-INJ-010, EYES-INJ-011
 test("injection does not disturb look()'s previous description (works with no OBS: only describe is used)", async () => {
   const bus = new FakeBus();
   const previous: string[] = [];
@@ -95,6 +103,7 @@ test("injection does not disturb look()'s previous description (works with no OB
   assert.deepEqual(previous, ["", "", "first look"]);
 });
 
+// @spec EYES-INJ-005
 test("uploadUrl accepts only same-origin /uploads/<id>", () => {
   assert.equal(uploadUrl(UP, DASH), UP);
   assert.equal(uploadUrl(`${DASH}/uploads/`, DASH), undefined);

@@ -35,6 +35,7 @@ export function startDiscord(deps: DiscordDeps): void {
     play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
   });
 
+  // @spec EARS-HEAR-001, EARS-HEAR-002, EARS-HEAR-003
   function listenTo(userId: string, channel: VoiceBasedChannel) {
     if (!connection || listening.has(userId)) return;
     listening.add(userId);
@@ -57,6 +58,7 @@ export function startDiscord(deps: DiscordDeps): void {
     start();
   }
 
+  // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004
   async function join() {
     const guild = await client.guilds.fetch(env("DISCORD_GUILD_ID"));
     const channel = (await guild.channels.fetch(env("DISCORD_VOICE_CHANNEL_ID"))) as VoiceBasedChannel | null;
@@ -76,10 +78,12 @@ export function startDiscord(deps: DiscordDeps): void {
     deps.heartbeat.ready();
     log.info({ channel: channel.name }, "joined voice");
 
+    // @spec EARS-HEAR-001
     connection.receiver.speaking.on("start", (userId) => {
       if (userId === client.user?.id) return;
       listenTo(userId, channel);
     });
+    // @spec EARS-SESS-005
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
       try {
         await Promise.race([
@@ -96,13 +100,16 @@ export function startDiscord(deps: DiscordDeps): void {
   }
 
   // ---- playback
+  // @spec EARS-PLAY-004
   player.on(AudioPlayerStatus.Idle, () => void playback.onIdle());
+  // @spec EARS-PLAY-007
   player.on("error", (err) => log.warn({ err: err.message }, "player error"));
 
   client.once("ready", async () => {
     log.info({ user: client.user?.tag }, "discord ready");
     await join();
     // One loop for the whole `ears` group: two loops with different type filters would drop each other's events.
+    // @spec EARS-PLAY-001
     void bus.subscribe({ group: "ears", types: ["voice.utterance", "inject.request"], fromNow: true }, async (ev: BusEvent) => {
       if (ev.type === "inject.request") return deps.onInject(ev as BusEvent<"inject.request">);
       const d = ev.data as BusEvent<"voice.utterance">["data"];
@@ -110,6 +117,7 @@ export function startDiscord(deps: DiscordDeps): void {
     });
   });
 
+  // @spec EARS-SESS-001
   client.login(env("DISCORD_TOKEN")).catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
   onShutdown(async () => { connection?.destroy(); await client.destroy(); });
 }

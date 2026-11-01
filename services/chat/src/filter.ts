@@ -10,11 +10,13 @@ export interface ChatUserInfo {
   isSubscriber: boolean;
 }
 
+// @spec CHAT-PLAN-004
 /** `#SomeChannel` → `somechannel`. */
 export function channelName(cfg: Config["chat"]): string {
   return cfg.twitch.channel.replace(/^#/, "").toLowerCase();
 }
 
+// @spec CHAT-PLAN-001, CHAT-PLAN-002, CHAT-PLAN-003
 /**
  * What the service should do for this config: `fake` publishes scripted/stdin chat,
  * `twitch` connects, `idle` is twitch with no channel (stay up degraded; never exit).
@@ -24,6 +26,7 @@ export function chatPlan(cfg: Config["chat"]): "fake" | "twitch" | "idle" {
   return channelName(cfg) ? "twitch" : "idle";
 }
 
+// @spec CHAT-FILT-001, CHAT-FILT-002, CHAT-FILT-003, CHAT-FILT-004, CHAT-FILT-005, CHAT-FILT-006, CHAT-FILT-007
 /** Twitch message → `chat.message` payload, or undefined for bots, commands and blank lines. */
 export function createChatFilter(cfg: Config): (user: string, text: string, info: ChatUserInfo) => EventInput<"chat.message"> | undefined {
   const cohostName = cfg.cohost.name.toLowerCase();

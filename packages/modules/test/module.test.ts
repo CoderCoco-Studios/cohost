@@ -12,6 +12,7 @@ const validate = (raw: unknown) => {
   return typeof o === "number" ? { out: o } : undefined;
 };
 
+// @spec HOOK-HELP-001, HOOK-HELP-002
 test("extractJson pulls the first object out of chatty text", () => {
   assert.deepEqual(extractJson('Sure! {"scores":[0.2,1]} hope that helps'), { scores: [0.2, 1] });
   assert.deepEqual(extractJson("[1,2]"), [1, 2]);
@@ -19,12 +20,14 @@ test("extractJson pulls the first object out of chatty text", () => {
   assert.equal(extractJson("{broken"), undefined);
 });
 
+// @spec HOOK-KIND-001, HOOK-KIND-002
 test("kind=rules runs the rules function directly", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "rules" }), llmCfg, { rules }, log);
   assert.deepEqual(await m.run({ n: 2 }), { out: 4 });
   assert.equal(m.kind, "rules");
 });
 
+// @spec HOOK-KIND-003, HOOK-KIND-005
 test("kind=http requires a url; kind=llm requires an llm spec", () => {
   assert.throws(() => new Module("t", ModuleSchema.parse({ kind: "http" }), llmCfg, { rules, http: { validate } }, log), /url is empty/);
   assert.throws(() => new Module("t", ModuleSchema.parse({ kind: "llm" }), llmCfg, { rules }, log), /no llm implementation/);
@@ -43,12 +46,14 @@ await new Promise<void>((r) => server.listen(0, r));
 const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/m`;
 after(() => server.close());
 
+// @spec HOOK-HTTP-002
 test("kind=http posts the input and uses a valid answer", async () => {
   answers.push({ out: 99 });
   const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 500 }), llmCfg, { rules, http: { validate } }, log);
   assert.deepEqual(await m.run({ n: 2 }), { out: 99 });
 });
 
+// @spec HOOK-HTTP-003, HOOK-FALLBACK-001, HOOK-FALLBACK-002
 test("kind=http falls back to rules on bad shape, 500 and timeout", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 300 }), llmCfg, { rules, http: { validate } }, log);
   answers.push({ nope: true });
@@ -80,6 +85,7 @@ const openaiCfg = {
 } as never;
 const llmImpl = { rules, llm: { system: "score it", user: (i: { n: number }) => `n=${i.n}`, maxTokens: 30, validate } };
 
+// @spec HOOK-LLM-001, HOOK-LLM-003, HOOK-LLM-005
 test("kind=llm sends system + user prompt as a deterministic json call and parses chatty replies", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "llm" }), openaiCfg, llmImpl, log);
   llmReplies.push('Here you go: {"out": 42}');
@@ -91,6 +97,7 @@ test("kind=llm sends system + user prompt as a deterministic json call and parse
   assert.equal(llmBody.model, "cortex-model"); // no override: inherits the cortex's model
 });
 
+// @spec HOOK-LLM-002
 test("kind=llm can use a different model than the cortex", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "llm", llm: { model: "tiny" } }), openaiCfg, llmImpl, log);
   llmReplies.push('{"out": 1}');
@@ -98,6 +105,7 @@ test("kind=llm can use a different model than the cortex", async () => {
   assert.equal(llmBody.model, "tiny");
 });
 
+// @spec HOOK-LLM-004, HOOK-FALLBACK-002, HOOK-FALLBACK-003
 test("kind=llm falls back to rules on prose, wrong shape and timeout", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "llm", timeout_ms: 200 }), openaiCfg, llmImpl, log);
   llmReplies.push("I think it's about 4");
@@ -110,6 +118,7 @@ test("kind=llm falls back to rules on prose, wrong shape and timeout", async () 
   assert.ok(Date.now() - t0 < 1000, "gave up at the hook timeout");
 });
 
+// @spec HOOK-WARN-001
 test("a module that keeps failing warns once per 30s, not on every call", async () => {
   const warns: unknown[] = [];
   const counting = { info() {}, error() {}, debug() {}, warn: (o: unknown) => warns.push(o) } as never;
@@ -119,10 +128,12 @@ test("a module that keeps failing warns once per 30s, not on every call", async 
   assert.deepEqual(warns, [{ module: "t", kind: "http" }]);
 });
 
+// @spec HOOK-KIND-004
 test("kind=http with no http implementation is a config error", () => {
   assert.throws(() => new Module("t", ModuleSchema.parse({ kind: "http", url }), llmCfg, { rules }, log), /no http implementation/);
 });
 
+// @spec HOOK-HELP-004
 test("clamp and isNum", () => {
   assert.equal(clamp(5, 0, 1), 1);
   assert.equal(clamp(-5, 0, 1), 0);

@@ -39,30 +39,30 @@ export class Module<I, O> {
     private log: Logger,
   ) {
     if (cfg.kind === "llm") {
-      if (!impl.llm) throw new Error(`${name}: this hook has no llm implementation`);
-      this.provider = createChatProvider({ ...llmCfg, ...(cfg.llm.provider ? { provider: cfg.llm.provider } : {}), ...(cfg.llm.model ? { model: cfg.llm.model } : {}) });
+      if (!impl.llm) throw new Error(`${name}: this hook has no llm implementation`); // @spec HOOK-KIND-003
+      this.provider = createChatProvider({ ...llmCfg, ...(cfg.llm.provider ? { provider: cfg.llm.provider } : {}), ...(cfg.llm.model ? { model: cfg.llm.model } : {}) }); // @spec HOOK-LLM-001, HOOK-LLM-002
     }
     if (cfg.kind === "http") {
-      if (!impl.http) throw new Error(`${name}: this hook has no http implementation`);
-      if (!cfg.url) throw new Error(`${name}: module.kind is http but module.url is empty`);
+      if (!impl.http) throw new Error(`${name}: this hook has no http implementation`); // @spec HOOK-KIND-004
+      if (!cfg.url) throw new Error(`${name}: module.kind is http but module.url is empty`); // @spec HOOK-KIND-005
     }
   }
 
-  get kind(): ModuleConfig["kind"] { return this.cfg.kind; }
+  get kind(): ModuleConfig["kind"] { return this.cfg.kind; } // @spec HOOK-KIND-002
 
-  async run(input: I): Promise<O> {
-    if (this.cfg.kind === "rules") return this.impl.rules(input);
+  async run(input: I): Promise<O> { // @spec HOOK-FALLBACK-001, HOOK-FALLBACK-002, HOOK-FALLBACK-003, HOOK-FALLBACK-004
+    if (this.cfg.kind === "rules") return this.impl.rules(input); // @spec HOOK-KIND-001
     try {
       const out = this.cfg.kind === "llm" ? await this.viaLlm(input) : await this.viaHttp(input);
       if (out !== undefined) return out;
-      this.warn("module returned something unusable; using rules");
+      this.warn("module returned something unusable; using rules"); // @spec HOOK-WARN-002
     } catch (err) {
-      this.warn(`module failed (${String(err).slice(0, 120)}); using rules`);
+      this.warn(`module failed (${String(err).slice(0, 120)}); using rules`); // @spec HOOK-WARN-002
     }
     return this.impl.rules(input);
   }
 
-  private async viaLlm(input: I): Promise<O | undefined> {
+  private async viaLlm(input: I): Promise<O | undefined> { // @spec HOOK-LLM-003, HOOK-LLM-004, HOOK-LLM-005
     const spec = this.impl.llm!;
     const raw = await withTimeout(
       this.provider!.chat(
@@ -74,18 +74,18 @@ export class Module<I, O> {
     return spec.validate(extractJson(raw), input);
   }
 
-  private async viaHttp(input: I): Promise<O | undefined> {
+  private async viaHttp(input: I): Promise<O | undefined> { // @spec HOOK-HTTP-001, HOOK-HTTP-002
     const res = await fetch(this.cfg.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(this.cfg.timeout_ms),
     });
-    if (!res.ok) throw new Error(`http ${res.status}`);
+    if (!res.ok) throw new Error(`http ${res.status}`); // @spec HOOK-HTTP-003
     return this.impl.http!.validate(await res.json(), input);
   }
 
-  private warn(msg: string): void {
+  private warn(msg: string): void { // @spec HOOK-WARN-001
     const now = Date.now();
     if (now - this.lastWarn < 30_000) return; // don't flood the log when a module is down
     this.lastWarn = now;
@@ -94,7 +94,7 @@ export class Module<I, O> {
 }
 
 /** Pull the first JSON object or array out of a chat reply (models love to add prose). */
-export function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown { // @spec HOOK-HELP-001, HOOK-HELP-002
   const m = /[\[{][\s\S]*[\]}]/.exec(text);
   if (!m) return undefined;
   try { return JSON.parse(m[0]); } catch { return undefined; }
@@ -107,5 +107,5 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
-export const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x)); // @spec HOOK-HELP-004
+export const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x); // @spec HOOK-HELP-004

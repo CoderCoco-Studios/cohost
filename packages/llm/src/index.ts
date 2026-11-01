@@ -29,7 +29,7 @@ export interface ChatOptions {
   signal?: AbortSignal;
 }
 
-export interface ChatProvider {
+export interface ChatProvider { // @spec LLM-IF-001
   readonly name: string;
   readonly model: string;
   chat(messages: ChatMessage[], opts?: ChatOptions): Promise<string>;
@@ -37,16 +37,16 @@ export interface ChatProvider {
   ping(): Promise<boolean>;
   lastError?: string;
 }
-export interface Embedder {
+export interface Embedder { // @spec LLM-IF-001
   embed(text: string): Promise<number[]>;
 }
 
 /** Lines that mean "the model started writing the next transcript entry": stop there. */
-const TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"];
+const TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"]; // @spec LLM-STOP-006
 /** Blank line ends a spoken reply. Exactly four entries: OpenAI-style APIs reject more than four stops. */
-const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS];
+const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 
-export function createChatProvider(cfg: Config["llm"]): ChatProvider {
+export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
   switch (cfg.provider) {
     case "ollama": return new Ollama(cfg);
     case "openai": return new OpenAICompatible(cfg);
@@ -57,7 +57,7 @@ export function createChatProvider(cfg: Config["llm"]): ChatProvider {
 }
 
 /** Embeddings are local Ollama (see header), except the offline hash embedder under the mock provider. */
-export function createEmbedder(cfg: Config["llm"]): Embedder {
+export function createEmbedder(cfg: Config["llm"]): Embedder { // @spec LLM-EMBED-003
   if (cfg.provider === "mock") return new HashEmbedder();
   return new Ollama(cfg);
 }
@@ -70,7 +70,7 @@ export class Ollama implements ChatProvider, Embedder {
   readonly model: string;
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006
     const res = await fetch(`${this.base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -83,17 +83,17 @@ export class Ollama implements ChatProvider, Embedder {
           temperature: opts.temperature ?? this.cfg.temperature,
           num_ctx: this.cfg.num_ctx,
           num_predict: opts.maxTokens ?? this.cfg.max_tokens,
-          ...(opts.json ? {} : { stop: REPLY_STOPS }),
+          ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-001, LLM-STOP-003
         },
       }),
       signal: opts.signal,
     });
-    if (!res.ok) throw new Error(`ollama chat ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`ollama chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
     const json = (await res.json()) as { message?: { content?: string } };
-    return (json.message?.content ?? "").trim();
+    return (json.message?.content ?? "").trim(); // @spec LLM-CHAT-007, LLM-IF-004
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string): Promise<number[]> { // @spec LLM-EMBED-001, LLM-EMBED-002
     const res = await fetch(`${this.base}/api/embed`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -107,7 +107,7 @@ export class Ollama implements ChatProvider, Embedder {
   }
 
   lastError?: string;
-  async ping(): Promise<boolean> {
+  async ping(): Promise<boolean> { // @spec LLM-PING-001, LLM-PING-005
     try {
       const r = await fetch(`${this.base}/api/tags`);
       this.lastError = r.ok ? undefined : `ollama ${r.status} at ${this.base}`;
@@ -131,13 +131,13 @@ export class OpenAICompatible implements ChatProvider {
     this.base = cfg.openai.base_url.replace(/\/+$/, "");
   }
 
-  private headers(): Record<string, string> {
+  private headers(): Record<string, string> { // @spec LLM-CHAT-003
     const h: Record<string, string> = { "content-type": "application/json" };
     if (this.cfg.openai.api_key) h.authorization = `Bearer ${this.cfg.openai.api_key}`;
     return h;
   }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006
     const res = await fetch(`${this.base}/chat/completions`, {
       method: "POST",
       headers: this.headers(),
@@ -147,17 +147,17 @@ export class OpenAICompatible implements ChatProvider {
         stream: false,
         temperature: opts.temperature ?? this.cfg.temperature,
         max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
-        ...(opts.json ? {} : { stop: REPLY_STOPS }),
+        ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-002, LLM-STOP-003
       }),
       signal: opts.signal,
     });
-    if (!res.ok) throw new Error(`${this.name} chat ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`${this.name} chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
     const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
-    return (json.choices?.[0]?.message?.content ?? "").trim();
+    return (json.choices?.[0]?.message?.content ?? "").trim(); // @spec LLM-CHAT-007, LLM-IF-004
   }
 
   lastError?: string;
-  async ping(): Promise<boolean> {
+  async ping(): Promise<boolean> { // @spec LLM-PING-002, LLM-PING-005
     try {
       const r = await fetch(`${this.base}/models`, { headers: this.headers() });
       this.lastError = r.ok ? undefined : `${this.base}/models answered ${r.status}${r.status === 401 || r.status === 403 ? " (check llm.openai.api_key)" : ""}`;
@@ -183,26 +183,26 @@ abstract class ClaudeBase implements ChatProvider {
   constructor(protected cfg: Config["llm"]) { this.model = cfg.model; }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
-    const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+    const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
     const turns: Anthropic.MessageParam[] = messages
       .filter((m): m is ChatMessage & { role: "user" | "assistant" } => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
-    if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" });
+    if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" }); // @spec LLM-CLAUDE-002
 
-    const maxTokens = Math.max(opts.maxTokens ?? 0, this.cfg.claude.max_tokens);
+    const maxTokens = Math.max(opts.maxTokens ?? 0, this.cfg.claude.max_tokens); // @spec LLM-CLAUDE-003
     const res = await this.client.beta.messages.create({
       model: this.cfg.model,
       max_tokens: maxTokens,
       system: system || undefined,
       messages: turns,
-      output_config: { effort: this.cfg.claude.effort },
-      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }),
+      output_config: { effort: this.cfg.claude.effort }, // @spec LLM-CLAUDE-004
+      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }), // @spec LLM-STOP-003, LLM-STOP-004
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
       // in the same call. Not offered on Bedrock, where a refusal just means "say nothing".
-      ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
-    }, { signal: opts.signal });
-    if (res.stop_reason === "refusal") return "";
-    return res.content
+      ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007
+    }, { signal: opts.signal }); // @spec LLM-CLAUDE-010, LLM-CHAT-006
+    if (res.stop_reason === "refusal") return ""; // @spec LLM-CLAUDE-006
+    return res.content // @spec LLM-CLAUDE-005, LLM-IF-004
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("")
@@ -220,10 +220,10 @@ export class AnthropicProvider extends ClaudeBase {
   constructor(cfg: Config["llm"]) {
     super(cfg);
     // Falls back to ANTHROPIC_API_KEY / an `ant auth login` profile when no key is configured.
-    this.client = new Anthropic(cfg.claude.api_key ? { apiKey: cfg.claude.api_key } : {});
+    this.client = new Anthropic(cfg.claude.api_key ? { apiKey: cfg.claude.api_key } : {}); // @spec LLM-CLAUDE-009
     this.serverFallbacks = cfg.claude.fallbacks;
   }
-  async ping(): Promise<boolean> {
+  async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
     try {
       await this.client.models.retrieve(this.cfg.model);
       this.lastError = undefined;
@@ -241,11 +241,11 @@ export class AnthropicProvider extends ClaudeBase {
 export class BedrockProvider extends ClaudeBase {
   readonly name = "bedrock";
   protected client: AnthropicBedrockMantle;
-  protected serverFallbacks = false;
+  protected serverFallbacks = false; // @spec LLM-CLAUDE-008
   constructor(cfg: Config["llm"]) {
     super(cfg);
     // AWS credentials come from the usual places: env vars, profile, instance role.
-    this.client = new AnthropicBedrockMantle(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {});
+    this.client = new AnthropicBedrockMantle(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {}); // @spec LLM-CLAUDE-009
   }
-  async ping(): Promise<boolean> { return true; } // no cheap probe on Bedrock; errors surface on first chat
+  async ping(): Promise<boolean> { return true; } // @spec LLM-PING-004 (no cheap probe on Bedrock; errors surface on first chat)
 }

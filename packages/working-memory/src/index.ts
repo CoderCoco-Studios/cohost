@@ -5,7 +5,7 @@ import type { Emotion } from "@cohost/config";
 export interface InjectionFlags { injected?: boolean; remember?: boolean }
 
 /** Only the flags the bus event actually carries, so real events stay free of them. */
-function flagsOf(d: InjectionFlags): InjectionFlags {
+function flagsOf(d: InjectionFlags): InjectionFlags { // @spec WM-FLAG-001, WM-FLAG-002
   return {
     ...(d.injected !== undefined ? { injected: d.injected } : {}),
     ...(d.remember !== undefined ? { remember: d.remember } : {}),
@@ -13,7 +13,7 @@ function flagsOf(d: InjectionFlags): InjectionFlags {
 }
 
 /** The flags to copy onto a derived bus event: only for injected inputs, never for real ones (a stray `remember` is dropped). */
-export function propagatedFlags(src: object | undefined): InjectionFlags {
+export function propagatedFlags(src: object | undefined): InjectionFlags { // @spec WM-FLAG-003, WM-FLAG-004
   const e = src as InjectionFlags | undefined; // `self` events have no flags
   if (!e?.injected) return {};
   return { injected: true, ...(e.remember !== undefined ? { remember: e.remember } : {}) };
@@ -34,12 +34,12 @@ export class Context {
 
   push(ev: BusEvent): void {
     switch (ev.type) {
-      case "chat.message": {
+      case "chat.message": { // @spec WM-PUSH-001
         const d = ev.data as BusEvent<"chat.message">["data"];
         this.events.push({ kind: "chat", ts: ev.ts, user: d.user, text: d.text, mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) });
         break;
       }
-      case "vision.summary": {
+      case "vision.summary": { // @spec WM-PUSH-004, WM-PUSH-005
         const d = ev.data as BusEvent<"vision.summary">["data"];
         this.lastVision = d.text;
         // Keep only the latest vision line in the window; older ones are noise.
@@ -47,59 +47,59 @@ export class Context {
         this.events.push({ kind: "vision", ts: ev.ts, text: d.text, changed: d.changed, seen: !d.changed, ...flagsOf(d) });
         break;
       }
-      case "speech.heard": {
+      case "speech.heard": { // @spec WM-PUSH-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
         this.events.push({ kind: "speech", ts: ev.ts, speaker: d.speaker, text: d.text, seen: false, ...flagsOf(d) });
         break;
       }
-      default:
+      default: // @spec WM-PUSH-003
         return;
     }
     this.trim();
   }
 
-  pushSelf(text: string, emotion: Emotion): void {
+  pushSelf(text: string, emotion: Emotion): void { // @spec WM-PUSH-006
     this.events.push({ kind: "self", ts: Date.now(), text, emotion, seen: true });
     this.trim();
   }
 
-  unseen(): ContextEvent[] {
+  unseen(): ContextEvent[] { // @spec WM-SEEN-001
     return this.events.filter((e) => !e.seen);
   }
   /** Mark only these events seen (not ones that arrived while a decision was in flight). */
-  markSeenEvents(events: readonly ContextEvent[]): void {
+  markSeenEvents(events: readonly ContextEvent[]): void { // @spec WM-SEEN-002
     const set = new Set<ContextEvent>(events);
     for (const e of this.events) if (set.has(e)) e.seen = true;
   }
   /** The most recently added event, if any. */
-  last(): ContextEvent | undefined {
+  last(): ContextEvent | undefined { // @spec WM-WIN-004
     return this.events[this.events.length - 1];
   }
-  markSeen(): void {
+  markSeen(): void { // @spec WM-SEEN-003
     for (const e of this.events) e.seen = true;
   }
-  clear(): void {
+  clear(): void { // @spec WM-WIN-003
     this.events = [];
   }
-  all(): readonly ContextEvent[] {
+  all(): readonly ContextEvent[] { // @spec WM-WIN-006
     return this.events;
   }
 
   /** Render the window as transcript lines for the prompt. */
-  transcript(cohostName: string): string {
+  transcript(cohostName: string): string { // @spec WM-TRANS-001, WM-TRANS-007
     return this.events
       .map((e) => {
         switch (e.kind) {
-          case "chat": return `[chat] ${e.user}${e.isMod ? " (mod)" : ""}: ${e.text}`;
-          case "speech": return `[voice] ${e.speaker}: ${e.text}`;
-          case "vision": return `[screen] ${e.text}`;
-          case "self": return `${cohostName}: [${e.emotion}] ${e.text}`;
+          case "chat": return `[chat] ${e.user}${e.isMod ? " (mod)" : ""}: ${e.text}`; // @spec WM-TRANS-002, WM-TRANS-006
+          case "speech": return `[voice] ${e.speaker}: ${e.text}`; // @spec WM-TRANS-003, WM-TRANS-006
+          case "vision": return `[screen] ${e.text}`; // @spec WM-TRANS-004, WM-TRANS-006
+          case "self": return `${cohostName}: [${e.emotion}] ${e.text}`; // @spec WM-TRANS-005
         }
       })
       .join("\n");
   }
 
-  private trim(): void {
+  private trim(): void { // @spec WM-WIN-001, WM-WIN-002
     if (this.events.length > this.max) this.events.splice(0, this.events.length - this.max);
   }
 }

@@ -30,12 +30,14 @@ const cfg = (critic: Record<string, unknown>) => ConfigSchema.parse({
 const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/critic`;
 const line = { text: "hello chat", emotion: "happy" as const, reason: "engaged", transcript: "[chat] bob: hi" };
 
+// @spec CTX-CRITIC-004
 test("critic rules: pass-through", async () => {
   const c = createCritic(cfg({}), log);
   assert.equal(c.kind, "rules");
   assert.deepEqual(await c.run(line), { ok: true });
 });
 
+// @spec CTX-CRITIC-005
 test("critic http: receives the line and can veto, rewrite or re-emote it", async () => {
   const c = createCritic(cfg({ kind: "http", url }), log);
   answer = { ok: false, note: "repeats itself" };
@@ -45,12 +47,14 @@ test("critic http: receives the line and can veto, rewrite or re-emote it", asyn
   assert.deepEqual(await c.run(line), { ok: true, text: "hey chat", emotion: "laugh" });
 });
 
+// @spec CTX-CRITIC-005
 test("critic http: an unknown emotion or a blank rewrite is dropped, not passed on", async () => {
   const c = createCritic(cfg({ kind: "http", url }), log);
   answer = { ok: true, text: "   ", emotion: "furious", note: 5 };
   assert.deepEqual(await c.run(line), { ok: true });
 });
 
+// @spec CTX-CRITIC-005
 test("critic http: no boolean ok → unusable → the rules pass the line through", async () => {
   const c = createCritic(cfg({ kind: "http", url }), log);
   answer = { ok: "false" };

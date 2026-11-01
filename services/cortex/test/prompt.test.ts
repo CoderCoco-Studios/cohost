@@ -21,6 +21,7 @@ const build = (over: Partial<Parameters<typeof buildMessages>[0]> = {}) =>
 const system = (over: Parameters<typeof build>[0] = {}) => build(over)[0]!.content;
 const user = (over: Parameters<typeof build>[0] = {}) => build(over)[1]!.content;
 
+// @spec CTX-PROMPT-001
 test("buildMessages: one system message (personality first) and one user message", () => {
   const msgs = build();
   assert.deepEqual(msgs.map((m) => m.role), ["system", "user"]);
@@ -29,6 +30,7 @@ test("buildMessages: one system message (personality first) and one user message
   for (const e of EMOTIONS) assert.ok(msgs[0]!.content.includes(`[${e}]`), `emotion ${e} offered`);
 });
 
+// @spec CTX-PROMPT-002
 test("buildMessages: optional lines only appear when there is something to say", () => {
   const bare = system();
   assert.doesNotMatch(bare, /On screen right now|current mood|Things you remember/);
@@ -40,6 +42,7 @@ test("buildMessages: optional lines only appear when there is something to say",
   assert.match(s, /- Your current mood: even, relaxed \(neutral\)/);
 });
 
+// @spec CTX-PROMPT-003
 test("buildMessages: mood numbers become words", () => {
   const mood = (valence: number, arousal: number) => /current mood: ([^(]+)\(/.exec(system({ mood: { valence, arousal, mood: "x" as never } }))![1]!.trim();
   assert.equal(mood(0.5, 0.7), "in a great mood, buzzing");
@@ -49,11 +52,13 @@ test("buildMessages: mood numbers become words", () => {
   assert.equal(mood(-0.5, 0.1), "fed up, relaxed");
 });
 
+// @spec CTX-PROMPT-002
 test("buildMessages: recalled memories are dated and attributed", () => {
   const s = system({ memories: [{ ts: Date.UTC(2026, 0, 2, 12), kind: "chat", who: "bob", text: "I love speedruns" }] });
   assert.match(s, /## Things you remember.*\n- \(2026-01-02\) bob: I love speedruns/);
 });
 
+// @spec CTX-PROMPT-001
 test("buildMessages: the transcript goes in the user turn, or (quiet) when empty", () => {
   assert.match(user(), /^## Recent transcript\n\(quiet\)\n\n/);
   const ctx = new Context(10);
@@ -61,6 +66,7 @@ test("buildMessages: the transcript goes in the user turn, or (quiet) when empty
   assert.match(user({ ctx }), /^## Recent transcript\nCoco: \[happy\] hello\n\n/);
 });
 
+// @spec CTX-PROMPT-004
 test("buildMessages: the closing nudge depends on why salience fired and what it focused on", () => {
   const nudge = (focus: Focus) => user({ focus }).split("\n\n").pop()!;
   assert.match(nudge({ reason: "idle chatter", score: 0 }), /^It's been quiet\..* Coco:$/);

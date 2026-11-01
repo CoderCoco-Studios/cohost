@@ -5,12 +5,14 @@ import { MemoryStore } from "../src/store.js";
 
 // ---- reflection → personality.md
 
+// @spec MEM-REFLECT-005
 test("parseBullets keeps only bullet lines, trimmed", () => {
   const raw = "Sure! Here's what I learned:\n\n- bob loves speedruns\n  - running joke: the cursed sword  \n* not this\n-nor this\nThanks!";
   assert.deepEqual(parseBullets(raw), ["- bob loves speedruns", "- running joke: the cursed sword"]);
   assert.deepEqual(parseBullets("no bullets at all"), []);
 });
 
+// @spec MEM-REFLECT-007
 test("appendLearned adds the heading the first time, then appends dated blocks under it", () => {
   const block1 = learnedBlock(["- a", "- b"], "2026-10-01");
   assert.equal(block1, "\n### 2026-10-01\n- a\n- b\n");
@@ -45,6 +47,7 @@ function store(opts: { rows?: (q: Query) => unknown[]; fail?: (q: Query) => bool
   return { s, queries, warnings, embedded };
 }
 
+// @spec MEM-STORE-001
 test("init sizes the vector column from a probe embedding and survives a missing hnsw index", async () => {
   const { s, queries, warnings } = store({ fail: (q) => q.sql.includes("hnsw") });
   await s.init();
@@ -55,6 +58,7 @@ test("init sizes the vector column from a probe embedding and survives a missing
   assert.equal(warnings.length, 1);
 });
 
+// @spec MEM-WRITE-004
 test("remember embeds 'who: text' and stores the vector as a pgvector literal", async () => {
   const { s, queries, embedded } = store();
   await s.remember("chat", "bob", "I love speedruns");
@@ -63,6 +67,7 @@ test("remember embeds 'who: text' and stores the vector as a pgvector literal", 
   assert.deepEqual(queries[0]!.params, ["chat", "bob", "I love speedruns", "[0.5,-1,2]"]);
 });
 
+// @spec MEM-WRITE-005
 test("remember never throws: a failed embed or insert is a warning", async () => {
   const bad = store({ embed: async () => { throw new Error("ollama down"); } });
   await bad.s.remember("chat", "bob", "x");
@@ -73,6 +78,7 @@ test("remember never throws: a failed embed or insert is a warning", async () =>
   assert.equal(dbDown.warnings.length, 1);
 });
 
+// @spec MEM-RECALL-002, MEM-RECALL-003, MEM-RECALL-004
 test("recall: top-k by cosine distance, older than 2 minutes, filtered by min_similarity", async () => {
   const rows = [
     { id: 1, ts: new Date(), kind: "chat", who: "bob", text: "close", similarity: 0.9 },
@@ -89,6 +95,7 @@ test("recall: top-k by cosine distance, older than 2 minutes, filtered by min_si
   assert.equal(queries[1]!.params![1], 7);
 });
 
+// @spec MEM-RECALL-005, MEM-RECALL-006
 test("recall: k=0 skips the database, and failures return nothing instead of throwing", async () => {
   const { s, queries } = store();
   assert.deepEqual(await s.recall("x", 0), []);
@@ -98,6 +105,7 @@ test("recall: k=0 skips the database, and failures return nothing instead of thr
   assert.equal(down.warnings.length, 1);
 });
 
+// @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-VIEWER-004
 test("touchViewer keys viewers case-insensitively and flags first-timers", async () => {
   let count = 1;
   const { s, queries } = store({ rows: () => [{ msg_count: count, notes: "likes cats", first_seen: new Date(), last_seen: new Date() }] });
@@ -108,6 +116,7 @@ test("touchViewer keys viewers case-insensitively and flags first-timers", async
   assert.equal((await s.touchViewer("bob123", "Bob")).isNew, false);
 });
 
+// @spec MEM-STORE-003
 test("meta get/set and recentSince", async () => {
   const meta = new Map<string, string>();
   const { s, queries } = store({

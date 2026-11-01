@@ -31,6 +31,7 @@ function setup(opts: { cfg?: Record<string, unknown>; critic?: (i: CriticInput) 
 const mention = (who = "bob", text = "hey Coco, how are you?") =>
   ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, text, mention: true } });
 
+// @spec CTX-EVT-002, CTX-SAY-001, CTX-SAY-002
 test("think: status thinking → LLM → brain.say with the parsed emotion and gesture → status speaking", async () => {
   const { cortex, bus, llm, statuses } = setup();
   llm.reply = () => "[laugh] [gesture:wave] hi bob!";
@@ -43,6 +44,7 @@ test("think: status thinking → LLM → brain.say with the parsed emotion and g
   assert.equal(bus.of("brain.status").at(-1)!.detail, "hi bob!");
 });
 
+// @spec CTX-RECALL-001, CTX-RECALL-005
 test("recall: asks the memory region over the bus and puts the reply in the prompt", async () => {
   const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 2000 } } } });
   const thinking = cortex.think(mention("bob", "remember my speedrun?"));
@@ -57,6 +59,7 @@ test("recall: asks the memory region over the bus and puts the reply in the prom
   assert.match(llm.system, /- \(2026-01-05\) bob: did a 12 minute run/);
 });
 
+// @spec CTX-RECALL-001
 test("recall: no focus text falls back to what's on screen; nothing at all skips recall", async () => {
   const { cortex, bus } = setup({ cfg: { brain: { memory: { recall_k: 4 } } } });
   await cortex.think({ reason: "idle chatter", score: 0 });
@@ -69,6 +72,7 @@ test("recall: no focus text falls back to what's on screen; nothing at all skips
   await t; // times out (100 ms) and answers anyway
 });
 
+// @spec CTX-RECALL-003
 test("recall: a silent memory region costs the timeout, not the reply", async () => {
   const { cortex, bus, llm, rec } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 50 } } } });
   const t0 = Date.now();
@@ -79,6 +83,7 @@ test("recall: a silent memory region costs the timeout, not the reply", async ()
   assert.deepEqual(rec.msgs("warn"), ["memory region did not answer in time"]);
 });
 
+// @spec CTX-RECALL-004
 test("recall: a failed publish answers immediately without memories", async () => {
   const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 5000 } } } });
   bus.fail = (t) => t === "memory.recall.request";
@@ -88,6 +93,7 @@ test("recall: a failed publish answers immediately without memories", async () =
   assert.equal(llm.calls.length, 1);
 });
 
+// @spec CTX-EVT-006
 test("attention.focus doesn't block the event loop, so the recall reply can arrive", async () => {
   const { cortex, bus } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 2000 } } } });
   await cortex.onEvent(event("attention.focus", mention())); // returns before thinking finishes
@@ -96,6 +102,7 @@ test("attention.focus doesn't block the event loop, so the recall reply can arri
   await waitFor(() => bus.of("brain.say").length === 1, "the reply");
 });
 
+// @spec CTX-GATE-001, CTX-GATE-007
 test("only one thought at a time: a second focus while thinking just re-reports thinking", async () => {
   const { cortex, bus, llm, statuses } = setup();
   let release!: () => void;
@@ -114,6 +121,7 @@ test("only one thought at a time: a second focus while thinking just re-reports 
   assert.equal(llm.calls.length, 2);
 });
 
+// @spec CTX-GATE-002, CTX-CTRL-003
 test("muted: no LLM call, status muted; unmute resumes", async () => {
   const { cortex, llm, statuses } = setup();
   await cortex.onEvent(event("control", { cmd: "mute" }));
@@ -125,6 +133,7 @@ test("muted: no LLM call, status muted; unmute resumes", async () => {
   assert.equal(llm.calls.length, 1);
 });
 
+// @spec CTX-EVT-004, CTX-EVT-005, CTX-GATE-003
 test("someone else's line (reflex/operator) holds the cortex until its voice.done", async () => {
   const { cortex, llm, statuses } = setup();
   await cortex.onEvent(event("brain.say", { id: "reflex-1", text: "Oof.", emotion: "surprised", reason: "reflex: died" }, "salience"));
@@ -139,6 +148,7 @@ test("someone else's line (reflex/operator) holds the cortex until its voice.don
   assert.equal(llm.calls.length, 1);
 });
 
+// @spec CTX-EVT-003, CTX-EVT-004
 test("its own brain.say lands in the transcript but doesn't hold itself", async () => {
   const { cortex, llm } = setup();
   await cortex.onEvent(event("brain.say", { id: "mine", text: "earlier line", emotion: "smug" }, "cortex"));
@@ -147,6 +157,7 @@ test("its own brain.say lands in the transcript but doesn't hold itself", async 
   assert.match(llm.calls[0]![1]!.content, /Coco: \[smug\] earlier line/);
 });
 
+// @spec CTX-GATE-004
 test("a stuck voice sink is ignored after speaking_timeout_ms", async () => {
   const { cortex, llm } = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { speaking_timeout_ms: 30 } } } });
   await cortex.onEvent(event("brain.say", { id: "stuck", text: "x", emotion: "neutral" }, "operator"));
@@ -157,6 +168,7 @@ test("a stuck voice sink is ignored after speaking_timeout_ms", async () => {
   assert.equal(llm.calls.length, 1);
 });
 
+// @spec CTX-GATE-003, CTX-SAY-004
 test("while it waits on voice.done for its own line, it doesn't start another", async () => {
   const { cortex, bus, llm } = setup();
   await cortex.think(mention());
@@ -167,6 +179,7 @@ test("while it waits on voice.done for its own line, it doesn't start another", 
   assert.equal(llm.calls.length, 2);
 });
 
+// @spec CTX-GATE-006
 test("a line that started while thinking wins: the cortex's reply is dropped", async () => {
   const { cortex, bus, llm, statuses } = setup();
   llm.reply = async () => {
@@ -178,6 +191,7 @@ test("a line that started while thinking wins: the cortex's reply is dropped", a
   assert.deepEqual(statuses(), ["thinking", "speaking"]);
 });
 
+// @spec CTX-GATE-005
 test("muted while thinking: the reply is dropped", async () => {
   const { cortex, bus, llm, statuses } = setup();
   llm.reply = async () => { await cortex.onEvent(event("control", { cmd: "mute" })); return "[happy] my reply"; };
@@ -186,6 +200,7 @@ test("muted while thinking: the reply is dropped", async () => {
   assert.deepEqual(statuses(), ["thinking", "muted", "muted"]);
 });
 
+// @spec CTX-PROMPT-006
 test("an empty or one-character reply says nothing and goes idle", async () => {
   for (const reply of ["", "[happy]", "[happy] k"]) {
     const { cortex, bus, llm, statuses } = setup();
@@ -196,6 +211,7 @@ test("an empty or one-character reply says nothing and goes idle", async () => {
   }
 });
 
+// @spec CTX-SAY-003, CTX-GATE-007
 test("an LLM error goes idle and frees the cortex", async () => {
   const { cortex, llm, statuses, rec } = setup();
   llm.reply = () => { throw new Error("backend down"); };
@@ -207,6 +223,7 @@ test("an LLM error goes idle and frees the cortex", async () => {
   assert.equal(llm.calls.length, 2);
 });
 
+// @spec CTX-CRITIC-001, CTX-CRITIC-002, CTX-CRITIC-003
 test("critic: sees the line and transcript; can veto, rewrite and re-emote", async () => {
   let seen: CriticInput | undefined;
   const veto = setup({ critic: (i) => { seen = i; return { ok: false, note: "too long" }; } });
@@ -223,6 +240,7 @@ test("critic: sees the line and transcript; can veto, rewrite and re-emote", asy
   assert.equal(say!.emotion, "smug");
 });
 
+// @spec CTX-VIEWER-001, CTX-VIEWER-003
 test("viewer notes: new and regular viewers are introduced once, to that viewer's reply only", async () => {
   const { cortex, bus, llm } = setup();
   const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, sink: "x" }));
@@ -244,6 +262,7 @@ test("viewer notes: new and regular viewers are introduced once, to that viewer'
   assert.doesNotMatch(llm.system, /cat is/);
 });
 
+// @spec CTX-VIEWER-002
 test("a later viewer update replaces (or clears) the earlier note", async () => {
   const { cortex, llm } = setup();
   await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1 }));
@@ -252,6 +271,7 @@ test("a later viewer update replaces (or clears) the earlier note", async () => 
   assert.doesNotMatch(llm.system, /bob is/);
 });
 
+// @spec CTX-EVT-007
 test("affect.state colours the prompt", async () => {
   const { cortex, llm } = setup();
   await cortex.onEvent(event("affect.state", { valence: 0.6, arousal: 0.7, mood: "laugh" }));
@@ -259,6 +279,7 @@ test("affect.state colours the prompt", async () => {
   assert.match(llm.system, /current mood: in a great mood, buzzing \(laugh\)/);
 });
 
+// @spec CTX-CTRL-004, CTX-CTRL-005, CTX-CTRL-006
 test("control: say speaks as the operator; forget_context clears the window and notes; reload_personality re-reads the file", async () => {
   let personality = "You are Coco v1.";
   const { cortex, bus, llm } = setup({ personality: () => personality });
@@ -280,6 +301,7 @@ test("control: say speaks as the operator; forget_context clears the window and 
   assert.doesNotMatch(llm.calls[0]![1]!.content, /old news/);
 });
 
+// @spec CTX-CTRL-001, CTX-CTRL-002, CTX-GATE-002
 test("pause: no LLM call, status muted; resume restores; a pause for another service is ignored", async () => {
   const { cortex, llm, bus, statuses } = setup();
   await cortex.onEvent(event("control", { cmd: "pause", target: "voice" }));
@@ -296,6 +318,7 @@ test("pause: no LLM call, status muted; resume restores; a pause for another ser
   assert.equal(llm.calls.length, 1);
 });
 
+// @spec CTX-CTRL-001
 test("a targeted mute for another service does not mute the cortex", async () => {
   const { cortex, llm } = setup();
   await cortex.onEvent(event("control", { cmd: "mute", target: "salience" }));
@@ -305,6 +328,7 @@ test("a targeted mute for another service does not mute the cortex", async () =>
 
 // ---- test injection
 
+// @spec CTX-INJ-001
 test("think: a reply to an injected focus carries injected/remember; remembered stays remembered", async () => {
   const a = setup();
   await a.cortex.think({ ...mention(), injected: true, remember: false });
@@ -315,6 +339,7 @@ test("think: a reply to an injected focus carries injected/remember; remembered 
   assert.equal(b.bus.of("brain.say")[0]!.remember, true);
 });
 
+// @spec CTX-INJ-002
 test("think: a real focus, and control say, produce unflagged brain.say", async () => {
   const { cortex, bus } = setup();
   await cortex.think({ ...mention(), remember: true });

@@ -19,6 +19,7 @@ function setup(cfgOver: Record<string, unknown> = {}) {
   return { bus, cortex };
 }
 
+// @spec CTX-START-002
 test("mock provider: attention.focus produces a brain.say with text and a valid emotion", async () => {
   const { bus, cortex } = setup({ brain: { memory: { recall_k: 0 } } });
   await cortex.think(focus);
@@ -27,6 +28,7 @@ test("mock provider: attention.focus produces a brain.say with text and a valid 
   assert.ok((EMOTIONS as readonly string[]).includes(say!.emotion));
 });
 
+// @spec CTX-RECALL-003
 test("no memory region: recall times out after recall_timeout_ms and the cortex still speaks", async () => {
   const { bus, cortex } = setup({ brain: { memory: { recall_k: 3 }, cortex: { recall_timeout_ms: 50 } } });
   await cortex.think(focus);
@@ -34,6 +36,7 @@ test("no memory region: recall times out after recall_timeout_ms and the cortex 
   assert.equal(bus.of("brain.say").length, 1);
 });
 
+// @spec CTX-START-001, CTX-HEALTH-002
 test("waitForLlm: mock answers at once; a dead backend is logged and reported degraded until it recovers", async () => {
   let downs: string[] = [];
   await waitForLlm(new MockProvider({ model: "m" }), { log: silentLog, onDown: (d) => downs.push(d) });

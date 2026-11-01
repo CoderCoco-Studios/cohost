@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { cortexHealth } from "../src/health.js";
 
+// @spec CTX-HEALTH-001, CTX-HEALTH-002
 test("ready when the llm answered ping", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => true));
   assert.equal(hbs[1]!.service, "cortex");
@@ -11,12 +12,14 @@ test("ready when the llm answered ping", async () => {
   assert.deepEqual(hbs.map((h) => h.state), ["starting", "ready", "stopping"]);
 });
 
+// @spec CTX-HEALTH-002
 test("llm unreachable: dep down and state degraded", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => false));
   assert.deepEqual(hbs[1]!.deps, { llm: "down" });
   assert.equal(hbs[1]!.state, "degraded");
 });
 
+// @spec CTX-HEALTH-001
 test("mock provider: mode mock", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => true, "mock"));
   assert.equal(hbs[1]!.mode, "mock");

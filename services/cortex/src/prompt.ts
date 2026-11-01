@@ -7,6 +7,7 @@ export type Focus = BusEvent<"attention.focus">["data"];
 export type Recalled = BusEvent<"memory.recall.reply">["data"]["memories"];
 export type Mood = BusEvent<"affect.state">["data"];
 
+// @spec CTX-PROMPT-001, CTX-PROMPT-002
 export function buildMessages(opts: {
   cfg: Config;
   personality: string;
@@ -48,6 +49,7 @@ export function buildMessages(opts: {
   ];
 }
 
+// @spec CTX-PROMPT-003
 /** Turn the affect region's numbers into something a language model can act on. */
 function describeMood(m: Mood): string {
   const energy = m.arousal > 0.6 ? "buzzing" : m.arousal > 0.3 ? "engaged" : "relaxed";
@@ -55,6 +57,7 @@ function describeMood(m: Mood): string {
   return `${feel}, ${energy} (${m.mood}). Let it colour the line, don't announce it.`;
 }
 
+// @spec CTX-PROMPT-004
 function describeFocus(d: Focus, name: string): string {
   const f = d.focus;
   if (d.reason === "idle chatter") return `It's been quiet. Say something natural about what's going on, or don't force it — a short aside is fine. ${name}:`;
@@ -68,6 +71,7 @@ function describeFocus(d: Focus, name: string): string {
 
 const TAG = /^\s*\[(\w+)\]\s*(?:\[gesture:([\w-]+)\]\s*)?/i;
 
+// @spec CTX-PROMPT-005
 export function parseReply(raw: string): { text: string; emotion: string; gesture?: string } {
   let text = (raw.trim().split("\n")[0] ?? "").replace(/^[\w ]{1,20}:\s*(?=\[)/, "");
   let emotion = "neutral";

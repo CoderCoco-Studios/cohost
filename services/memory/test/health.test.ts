@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { MemoryHealth } from "../src/health.js";
 
+// @spec MEM-HEALTH-002
 test("ready with postgres and ollama ok", async () => {
   const h = new MemoryHealth();
   h.setPostgres(true); h.setOllama(true);
@@ -13,6 +14,7 @@ test("ready with postgres and ollama ok", async () => {
   assert.equal(hbs.at(-1)!.state, "stopping");
 });
 
+// @spec MEM-HEALTH-003
 test("a failing embedding marks ollama down (degraded) and the next success restores it", async () => {
   const h = new MemoryHealth();
   h.setPostgres(true);
@@ -28,6 +30,7 @@ test("a failing embedding marks ollama down (degraded) and the next success rest
   assert.equal(hbs[1]!.state, "ready");
 });
 
+// @spec MEM-HEALTH-001, MEM-HEALTH-002
 test("memory + hash: postgres and ollama are n/a, mode is mock, state ready", async () => {
   const h = new MemoryHealth({ store: "memory", embedder: "hash" });
   const hbs = await runHeartbeat(h.spec);
@@ -36,6 +39,7 @@ test("memory + hash: postgres and ollama are n/a, mode is mock, state ready", as
   assert.equal(hbs[1]!.state, "ready");
 });
 
+// @spec MEM-HEALTH-001, MEM-HEALTH-002
 test("either non-default backend makes the mode mock; the other dep is still tracked", async () => {
   const h = new MemoryHealth({ store: "postgres", embedder: "hash" });
   h.setPostgres(true);

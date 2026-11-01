@@ -18,6 +18,7 @@ function setup(viewer = { msgCount: 1, notes: "", isNew: true }, recalled: Memor
 const chat = (extra: Record<string, unknown> = {}) =>
   event("chat.message", { platform: "twitch", user: "Bob", userId: "123", text: "hey Coco", isMod: false, isSub: false, mentionsCohost: false, ...extra });
 
+// @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002
 test("every chat line counts toward the viewer; only lines addressed to the co-host are remembered", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat());
@@ -27,6 +28,7 @@ test("every chat line counts toward the viewer; only lines addressed to the co-h
   assert.deepEqual(calls[1], { op: "touchViewer", args: ["Bob", "Bob"] });
 });
 
+// @spec MEM-WRITE-001, MEM-VIEWER-002, MEM-VIEWER-004
 test("a mention announces the viewer before the (slow) embed + store", async () => {
   const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "speedrunner", isNew: false });
   await onEvent(chat({ mentionsCohost: true }));
@@ -35,6 +37,7 @@ test("a mention announces the viewer before the (slow) embed + store", async () 
   assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco"]);
 });
 
+// @spec MEM-WRITE-002, MEM-WRITE-003
 test("speech is always remembered; the co-host's own lines under its name, skipping one-character ones", async () => {
   const { onEvent, calls } = setup();
   await onEvent(event("speech.heard", { speaker: "Chris", text: "we're live", durationMs: 800 }));
@@ -43,6 +46,7 @@ test("speech is always remembered; the co-host's own lines under its name, skipp
   assert.deepEqual(calls.map((c) => c.args), [["speech", "Chris", "we're live"], ["self", "Coco", "Hi chat!"]]);
 });
 
+// @spec MEM-RECALL-001
 test("recall requests are answered on the bus with the same id, timestamps as epoch ms", async () => {
   const ts = new Date("2026-01-02T03:04:05Z");
   const { onEvent, bus, calls } = setup(undefined, [{ id: 9, ts, kind: "chat", who: "bob", text: "gg", similarity: 0.8 }]);
@@ -51,6 +55,7 @@ test("recall requests are answered on the bus with the same id, timestamps as ep
   assert.deepEqual(bus.of("memory.recall.reply"), [{ id: "req-1", memories: [{ ts: ts.getTime(), kind: "chat", who: "bob", text: "gg", similarity: 0.8 }] }]);
 });
 
+// @spec MEM-EVT-002
 test("unrelated events are ignored", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(event("affect.state", { valence: 0, arousal: 0, mood: "neutral" }));
@@ -59,6 +64,7 @@ test("unrelated events are ignored", async () => {
 
 // ---- test injection
 
+// @spec MEM-INJ-001
 test("injected, not remembered: nothing stored, no viewer row, no memory.viewer", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat({ mentionsCohost: true, injected: true, remember: false }));
@@ -70,6 +76,7 @@ test("injected, not remembered: nothing stored, no viewer row, no memory.viewer"
   assert.equal(bus.published.length, 0);
 });
 
+// @spec MEM-INJ-002
 test("injected and remembered: handled exactly like real events", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat({ mentionsCohost: true, injected: true, remember: true }));
@@ -80,6 +87,7 @@ test("injected and remembered: handled exactly like real events", async () => {
   assert.deepEqual(bus.types(), ["memory.viewer"]);
 });
 
+// @spec MEM-INJ-003
 test("remember:false on a real event is ignored", async () => {
   const { onEvent, calls } = setup();
   await onEvent(event("speech.heard", { speaker: "Chris", text: "hi", durationMs: 1, remember: false }));

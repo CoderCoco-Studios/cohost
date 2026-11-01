@@ -266,6 +266,6 @@ The running cortex does not learn of the change until a `reload_personality` con
   invocation)
 - External: PostgreSQL with the pgvector extension (`pg` ^8.13), Ollama embeddings, Redis streams
 - OpenSpec: `openspec/specs/memory/spec.md`; deltas
-  `openspec/changes/add-service-health/specs/memory/spec.md`,
-  `openspec/changes/add-isolated-backends/specs/memory/spec.md`,
-  `openspec/changes/add-test-injection/specs/memory/spec.md`
+  `openspec/changes/archive/2026-11-01-add-service-health/specs/memory/spec.md`,
+  `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/memory/spec.md`,
+  `openspec/changes/archive/2026-11-01-add-test-injection/specs/memory/spec.md`

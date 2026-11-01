@@ -14,13 +14,13 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/' },
       { text: 'Testing', link: '/TESTING' },
-      { text: 'Spec-driven', link: '/SPEC-DRIVEN' },
+      { text: 'Specs', link: '/SPEC-DRIVEN' },
       { text: 'Plans', link: '/plans/control-plane' },
     ],
     sidebar: [
       { text: 'Guide', items: [{ text: 'Overview and setup (README)', link: '/guide/' }] },
       { text: 'Testing', items: [{ text: 'Testing piece by piece', link: '/TESTING' }] },
-      { text: 'Spec-driven development', items: [{ text: 'OpenSpec workflow', link: '/SPEC-DRIVEN' }] },
+      { text: 'Specs', items: [{ text: 'Linked-intent development', link: '/SPEC-DRIVEN' }] },
       { text: 'Plans', items: [{ text: 'Control plane', link: '/plans/control-plane' }] },
       {
         text: 'Examples',

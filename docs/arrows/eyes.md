@@ -31,9 +31,9 @@ Visual sense: OBS screenshot -> Ollama vision model -> change-only `vision.summa
 
 ### OpenSpec
 - openspec/specs/eyes/spec.md
-- openspec/changes/add-service-health/specs/eyes/spec.md
-- openspec/changes/add-isolated-backends/specs/eyes/spec.md
-- openspec/changes/add-test-injection/specs/eyes/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/eyes/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/eyes/spec.md
+- openspec/changes/archive/2026-11-01-add-test-injection/specs/eyes/spec.md
 
 ## Architecture
 

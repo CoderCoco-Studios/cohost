@@ -29,7 +29,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ### OpenSpec
 - openspec/specs/llm/spec.md
-- openspec/changes/add-isolated-backends/specs/llm/spec.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/llm/spec.md
 
 ## Architecture
 

@@ -185,6 +185,6 @@ Other segments (arrow shows direction):
 
 External: Kokoro-FastAPI (OpenAI-compatible `POST /v1/audio/speech`), Node `http`.
 
-OpenSpec: `openspec/specs/voice/spec.md`; deltas `openspec/changes/add-service-health/specs/voice/spec.md`, `openspec/changes/add-isolated-backends/specs/voice/spec.md`.
+OpenSpec: `openspec/specs/voice/spec.md`; deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/voice/spec.md`, `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/voice/spec.md`.
 
 EARS specs: [voice-specs.md](./voice-specs.md).

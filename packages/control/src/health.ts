@@ -42,7 +42,7 @@ interface Entry {
 /**
  * Derives per-service health from heartbeats using its own receive-time clock
  * (so clock skew between containers is irrelevant). Derived states are never
- * published. See openspec/specs/service-health.
+ * published. See docs/intent/control-plane/control-plane-specs.md.
  */
 export class HealthTracker {
   private entries = new Map<string, Entry>();

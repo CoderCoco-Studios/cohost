@@ -1,7 +1,7 @@
 /**
  * The service manifest: the ONLY source of ids, compose names, pnpm filters and consumer groups that
  * the runtime adapters may act on. Nothing from a request ever reaches an argv except by picking an
- * entry from this list. See openspec/specs/service-control.
+ * entry from this list. See docs/intent/control-plane/control-plane-specs.md.
  */
 
 export type StartMode = "resume" | "fresh";

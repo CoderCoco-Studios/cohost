@@ -6,11 +6,15 @@ The voice service (services/voice) turns `brain.say` into audio via a TTS contai
 ## Requirements
 
 ### Requirement: Synthesis
-The system SHALL subscribe (group `voice`, from now) to `brain.say` and POST to `<tts>/v1/audio/speech` with model `kokoro`, input text, `voice.voice` (default `af_heart`), `voice.speed` (default 1) and response_format `wav`.
+With `voice.engine` `kokoro` (default) the system SHALL subscribe (group `voice`, from now) to `brain.say` and POST to `<tts>/v1/audio/speech` with model `kokoro`, input text, `voice.voice` (default `af_heart`), `voice.speed` (default 1) and response_format `wav`. With `voice.engine` `stub` it SHALL NOT contact the TTS service.
 
 #### Scenario: Non-OK TTS
 - **WHEN** TTS returns a non-OK status
 - **THEN** an error "tts <status>" is raised and handled as a failure
+
+#### Scenario: Stub makes no request
+- **WHEN** `voice.engine` is `stub` and a `brain.say` arrives
+- **THEN** no HTTP request is made to the TTS URL
 
 ### Requirement: voice.utterance publication
 The system SHALL publish `voice.utterance` with `id`, `text`, `emotion`, `gesture`, `durationMs` (rounded), `envelopeHz` 30, `envelope`, `audioUrl` `<VOICE_URL>/audio/<id>.wav` and `sampleRate`.
@@ -58,3 +62,36 @@ The system SHALL keep at most 50 WAVs in memory (oldest evicted) and serve `GET 
 #### Scenario: Other paths
 - **WHEN** another path is requested
 - **THEN** 404 is returned
+
+### Requirement: Heartbeat
+The voice service SHALL publish `service.heartbeat` with `service: "voice"` via `startHeartbeat`: `starting` at boot, `ready` once its HTTP server on port 8700 is listening, then every `intervalMs` (default 5000), and `stopping` on graceful shutdown. Its `deps` MUST be `{kokoro}`. It MUST mark `kokoro` `down` after a TTS failure and `ok` after the next success.
+
+#### Scenario: Ready
+- **WHEN** voice has finished starting
+- **THEN** a heartbeat with `service: "voice"`, `state: "ready"` and the deps above is published every 5 s
+
+#### Scenario: TTS failing
+- **WHEN** a synthesis call fails
+- **THEN** `deps.kokoro` is `down`, `state` is `degraded`, and `voice.done{sink:"error"}` behaviour is unchanged
+
+#### Scenario: Shutdown
+- **WHEN** voice receives SIGTERM
+- **THEN** it publishes one `stopping` heartbeat before exiting 0
+
+### Requirement: Stub engine
+The `stub` engine SHALL return a valid mono 16-bit WAV at `voice.sample_rate` containing silence whose duration scales with text length (60 ms per character, minimum 400 ms), so `voice.utterance` carries real `durationMs`, `sampleRate`, an all-zero `envelope` at 30 Hz, and a fetchable `audioUrl`. The virtual sink, audio store and failure handling behave as with Kokoro.
+
+#### Scenario: Duration from text
+- **WHEN** the text is 100 characters
+- **THEN** `durationMs` is about 6000 and the envelope has one zero per 1/30 s
+
+#### Scenario: Short text
+- **WHEN** the text is "hi"
+- **THEN** `durationMs` is at least 400
+
+### Requirement: Isolation preset and mode
+`VOICE_ENGINE=stub` SHALL select the stub engine without editing `config.yaml`. The heartbeat `mode` (change `add-service-health`) MUST be `mock` for `stub` and `live` for `kokoro`, and startup SHALL log a warning when `stub` is active.
+
+#### Scenario: Preset
+- **WHEN** `VOICE_ENGINE=stub`
+- **THEN** `voice.engine` is `stub` and mode is `mock`

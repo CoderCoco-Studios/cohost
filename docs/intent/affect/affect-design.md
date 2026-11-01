@@ -126,4 +126,4 @@ Downstream consumers: salience (arousal -> threshold), cortex (prompt colour), a
 
 External: Redis (via the bus); optional LLM provider or HTTP endpoint for the appraiser hook.
 
-OpenSpec: `openspec/specs/affect/spec.md`; deltas `openspec/changes/add-service-health/specs/affect/spec.md`, `openspec/changes/add-service-control/specs/affect/spec.md`.
+OpenSpec: `openspec/specs/affect/spec.md`; deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/affect/spec.md`, `openspec/changes/archive/2026-11-01-add-service-control/specs/affect/spec.md`.

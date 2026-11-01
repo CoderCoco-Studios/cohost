@@ -5,7 +5,24 @@ The system SHALL define exactly these event types: `chat.message`, `vision.summa
 
 #### Scenario: Control commands
 - **WHEN** a `control` event is validated
-- **THEN** `cmd` MUST be one of `mute`, `unmute`, `say`, `forget_context`, `reload_personality`
+- **THEN** `cmd` MUST be one of `mute`, `unmute`, `say`, `forget_context`, `reload_personality`, `pause`, `resume`
+- **AND** `target` MAY be a string; when absent the command applies to all services
+
+#### Scenario: Control without target is unchanged
+- **WHEN** `control {cmd: "mute"}` is published with no `target`
+- **THEN** it validates and is addressed to all services
+
+#### Scenario: Service lifecycle audit
+- **WHEN** a `service.lifecycle` event is validated
+- **THEN** `service` and `by` MUST be strings, `action` MUST be `start`, `stop` or `restart`, `ok` MUST be boolean, and `detail` MAY be a string
+
+#### Scenario: Invalid lifecycle action
+- **WHEN** `service.lifecycle` is published with `action: "kill"`
+- **THEN** `publish` throws and nothing is written
+
+#### Scenario: Heartbeat payload
+- **WHEN** a `service.heartbeat` is validated
+- **THEN** it MUST have `service`, `instance`, `pid`, `version`, `startedAt` (epoch ms), `state` (`starting`, `ready`, `degraded` or `stopping`), `deps` (record of `ok`, `down` or `n/a`), `mode` (string) and `intervalMs`, and MAY have `detail`
 
 #### Scenario: Chat platforms
 - **WHEN** a `chat.message` is validated

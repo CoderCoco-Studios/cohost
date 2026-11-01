@@ -36,13 +36,13 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ### OpenSpec
 - No `openspec/specs/service-health/` or `openspec/specs/service-control/` baseline exists; both capabilities live only as unarchived deltas:
-- openspec/changes/add-service-health/specs/service-health/spec.md
-- openspec/changes/add-service-health/specs/bus/spec.md
-- openspec/changes/add-service-control/specs/service-control/spec.md
-- openspec/changes/add-service-control/specs/bus/spec.md
-- openspec/changes/add-service-control/specs/dashboard/spec.md
-- openspec/changes/add-service-control/design.md
-- openspec/changes/add-isolated-backends/specs/cortex/spec.md (isolation closure)
+- openspec/changes/archive/2026-11-01-add-service-health/specs/service-health/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/service-control/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/dashboard/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/design.md
+- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/cortex/spec.md (isolation closure)
 
 ## Architecture
 

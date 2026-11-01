@@ -36,7 +36,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 ### OpenSpec
 - openspec/specs/avatar/spec.md
-- openspec/changes/add-service-health/specs/avatar/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/avatar/spec.md
 
 ## Architecture
 

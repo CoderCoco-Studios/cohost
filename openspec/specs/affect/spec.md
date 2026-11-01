@@ -4,6 +4,7 @@
 The affect region keeps a running valence/arousal mood that decays toward a baseline and publishes it as `affect.state`. It consumes senses from the bus and never calls a database.
 
 ## Requirements
+
 ### Requirement: Event subscriptions and nudges
 The system SHALL subscribe (group `affect`, `fromNow`) to `chat.message`, `speech.heard`, `vision.summary`, `brain.say` and `control`, and nudge mood per event type.
 
@@ -81,3 +82,33 @@ The system SHALL publish `affect.state` `{valence, arousal, mood, cause}` (value
 #### Scenario: Heartbeat
 - **WHEN** the state is unchanged but 15 s have passed
 - **THEN** `affect.state` is published again
+
+### Requirement: Heartbeat
+The affect service SHALL publish `service.heartbeat` with `service: "affect"` via `startHeartbeat`: `starting` at boot, `ready` once its subscriptions are running, then every `intervalMs` (default 5000), and `stopping` on graceful shutdown. Its `deps` MUST be `{}` (it has no external dependencies). It MUST report `mode: "live"`.
+
+#### Scenario: Ready
+- **WHEN** affect has finished starting
+- **THEN** a heartbeat with `service: "affect"`, `state: "ready"` and the deps above is published every 5 s
+
+#### Scenario: No external deps
+- **WHEN** Redis is the only dependency
+- **THEN** `deps` is empty and `state` is `ready`
+
+#### Scenario: Shutdown
+- **WHEN** affect receives SIGTERM
+- **THEN** it publishes one `stopping` heartbeat before exiting 0
+
+### Requirement: Targeted pause and resume
+The affect service SHALL treat `control` events with a `target` other than `affect` as not addressed to it, and SHALL handle `pause` and `resume` (target `affect` or undefined) by idling and resuming in-process without exiting.
+
+#### Scenario: Pause addressed to this service
+- **WHEN** `control {cmd:"pause", target:"affect"}` arrives
+- **THEN** the service enters the paused state and mood is not nudged by incoming events while paused (decay continues)
+
+#### Scenario: Pause for another service
+- **WHEN** `control {cmd:"pause", target:"voice"}` arrives
+- **THEN** the affect service state is unchanged
+
+#### Scenario: Resume
+- **WHEN** `control {cmd:"resume"}` (no target) arrives while paused
+- **THEN** normal processing resumes

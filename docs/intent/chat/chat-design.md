@@ -144,9 +144,9 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 
 ### OpenSpec
 - `openspec/specs/chat/spec.md`
-- `openspec/changes/add-service-health/specs/chat/spec.md`
-- `openspec/changes/add-isolated-backends/specs/chat/spec.md`
-- `openspec/changes/add-test-injection/specs/chat/spec.md`
+- `openspec/changes/archive/2026-11-01-add-service-health/specs/chat/spec.md`
+- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/chat/spec.md`
+- `openspec/changes/archive/2026-11-01-add-test-injection/specs/chat/spec.md`
 
 ### Docs
 - [HLD](../../high-level-design.md), [specs](chat-specs.md), [arrow](../../arrows/chat.md)

@@ -33,8 +33,8 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ### OpenSpec
 - openspec/specs/affect/spec.md
-- openspec/changes/add-service-health/specs/affect/spec.md
-- openspec/changes/add-service-control/specs/affect/spec.md
+- openspec/changes/archive/2026-11-01-add-service-health/specs/affect/spec.md
+- openspec/changes/archive/2026-11-01-add-service-control/specs/affect/spec.md
 
 ## Architecture
 

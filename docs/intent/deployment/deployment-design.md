@@ -65,7 +65,7 @@ Because `env_file: .env` applies to every application service, any variable an o
 
 The Dockerfile does not prune (`:3-5`): under pnpm 10, `pnpm prune --prod` empties `services/*/node_modules` and drops the `@cohost/*` workspace links (issue #6), and `pnpm deploy --prod` on pnpm 10.0.0 needs `inject-workspace-packages=true`, which fails `--frozen-lockfile` unless enabled workspace-wide (commit 18ea80a). The consequence is a larger image that ships dev dependencies. No `USER` is set (containers run as root, so files the config loader seeds into the bind mount are root-owned on Linux hosts) and the Dockerfile declares no `HEALTHCHECK` (Compose supplies it).
 
-`.dockerignore`: `node_modules`, `**/node_modules`, `**/dist`, `.git`, `data`, `.env`, `**/*.tsbuildinfo`, `**/*.log` (`:1-8`). Excluding `.tsbuildinfo` stops stale host incremental state from making `tsc -b` in the image skip emitting while `**/dist` is ignored (issue #7, commit 7e89e4e). It does not exclude `worktrees/`, `config/`, `docs/` or `graphify-out/`, which only inflates the context.
+`.dockerignore`: `node_modules`, `**/node_modules`, `**/dist`, `.git`, `data`, `.env`, `**/*.tsbuildinfo`, `**/*.log` (`:1-8`). Excluding `.tsbuildinfo` stops stale host incremental state from making `tsc -b` in the image skip emitting while `**/dist` is ignored (issue #7, commit 7e89e4e). It does not exclude `worktrees/`, `config/`, `docs/` or `graphify-out/`. Beyond inflating the context, `config/` can hold the VTube Studio credential (`<config>/.vts-token`, `services/avatar/src/drivers/vtube-studio.ts:104`), which a legacy `docker build` context would therefore include; adding `config/` to `.dockerignore` is a follow-up change, not part of this audit.
 
 ## Installer: `scripts/install.sh`
 

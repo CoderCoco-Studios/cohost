@@ -93,8 +93,9 @@ every `tick_ms`: a mention of its name = 1.0, something said in voice = 0.9, a
 question = 0.55, a mod/sub = 0.35, screen change = 0.3, plain chat = 0.15. It
 publishes `attention.focus` at ≥ `speak_threshold` (0.6), never within
 `cooldown_ms` of the last line, never while the cortex is thinking or the voice
-is still playing, and pipes up on its own after `idle_chatter_ms` of quiet. An
-excited mood lowers the threshold by up to `arousal_bias`.
+is still playing, and pipes up on its own after `idle_chatter_ms` of quiet when
+there is something new it has not reacted to yet; a fully silent stream stays
+silent. An excited mood lowers the threshold by up to `arousal_bias`.
 
 ### Reflexes
 

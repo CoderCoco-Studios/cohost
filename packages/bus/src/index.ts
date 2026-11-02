@@ -44,7 +44,7 @@ export class Bus {
     this.pub = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
   }
 
-  // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, CTRL-HEARTBEAT-007
+  // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
     if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
@@ -60,7 +60,7 @@ export class Bus {
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */
-  // @spec BUS-HEALTH-001, BUS-HEALTH-002, CTRL-HEARTBEAT-007
+  // @spec BUS-HEALTH-001, BUS-HEALTH-002
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     const id = await this.pub.xadd(
@@ -238,7 +238,7 @@ export function beforeShutdown(fn: () => void | Promise<void>): void {
 }
 
 /** Shared graceful-shutdown helper for services. */
-// @spec BUS-STOP-002, BUS-STOP-003, BUS-STOP-004, CTRL-HEARTBEAT-005
+// @spec BUS-STOP-002, BUS-STOP-003, BUS-STOP-004
 export function onShutdown(fn: () => void | Promise<void>): void {
   let done = false;
   const run = async () => {

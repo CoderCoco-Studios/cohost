@@ -114,9 +114,9 @@ What each service needs to come up, and what it does if that is missing
 | `voice` | Redis + a TTS server at `TTS_URL` (default `:8880`) | starts; each `brain.say` logs a synth failure and still emits `voice.done`. Use the stub TTS (§5) |
 | `cortex` | Redis + a chat model (Ollama by default) | starts, logs `waiting for the model backend` every 3 s until Ollama answers. Use the stub LLM (§5) |
 | `memory` | Redis + Ollama (embeddings) + Postgres | logs `waiting for ollama (embeddings)...` forever; **cannot be stubbed** with `stub-llm` (no `/api/embed`). Bring up the real `postgres` + `ollama` (§5b) or leave it out. `cortex` copes without it (see below) |
-| `chat` | `TWITCH_CHANNEL` | exits 1 without it. With only a channel it reads anonymous IRC (**not verified**, needs the internet) |
+| `chat` | `TWITCH_CHANNEL` | idles as `degraded` without it (`deps.twitch: down`) instead of exiting, and still accepts injected chat. With only a channel it reads anonymous IRC (**not verified**, needs the internet) |
 | `eyes` | OBS + a vision model | see §5 |
-| `ears` | Discord bot token + STT | exits immediately without `DISCORD_TOKEN`. See §5 |
+| `ears` | Discord bot token + STT | idles as `degraded` without `DISCORD_TOKEN` (no Discord client) and still accepts injected audio; `EARS_SOURCE=off` idles as `off`. See §5 |
 
 `cortex` without `memory` still replies: it waits `brain.cortex.recall_timeout_ms`
 for `memory.recall.reply`, logs `memory region did not answer in time`, and

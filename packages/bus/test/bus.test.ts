@@ -141,7 +141,7 @@ test("service.heartbeat is catalogued and validated", () => {
   assert.equal(EventPayloads["service.heartbeat"].safeParse(hb({ deps: { x: "maybe" } })).success, false);
 });
 
-// @spec BUS-STREAM-004, CTRL-HEARTBEAT-007
+// @spec BUS-STREAM-004
 test("publish('service.heartbeat') throws and writes nothing (needs Redis)", needsRedis, async () => {
   const bus = new Bus("hb-reject", undefined, url);
   const r = new Redis(url);
@@ -151,7 +151,7 @@ test("publish('service.heartbeat') throws and writes nothing (needs Redis)", nee
   r.disconnect(); bus.stop();
 });
 
-// @spec BUS-HEALTH-001, BUS-HEALTH-002, CTRL-HEARTBEAT-007
+// @spec BUS-HEALTH-001, BUS-HEALTH-002
 test("publishHealth writes to cohost:health only, and rejects an invalid state (needs Redis)", needsRedis, async () => {
   const bus = new Bus("hb-route", undefined, url);
   const r = new Redis(url);

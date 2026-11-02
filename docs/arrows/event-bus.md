@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 60 specs: 50 implemented, 0 deferred, 10 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 50 implemented, 0 deferred, 11 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
 
 ## Decisions applied
 
@@ -27,7 +27,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (60 specs: 50 `[x]`, 10 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (61 specs: 50 `[x]`, 11 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (358 lines; 23 `@spec` lines with 29 `BUS-*` and 6 `CTRL-*` citations; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)
@@ -63,7 +63,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
-| Publish and envelope | BUS-STREAM-001 to 006 | 6 | 0 | 0 | 4 |
+| Publish and envelope | BUS-STREAM-001 to 007 | 6 | 0 | 1 (STREAM-007) | 4 |
 | Event catalogue and schemas | BUS-EVT-001 to 019 (011 retired) | 17 | 0 | 1 (EVT-018) | 9 |
 | Consumer-group subscription | BUS-SUB-001 to 011 | 6 | 0 | 5 (SUB-001, 002, 009, 010, 011) | 3 |
 | Live tail and backfill | BUS-TAIL-001 to 004 | 2 | 0 | 2 (TAIL-003, 004) | 2 |
@@ -72,7 +72,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Shutdown | BUS-STOP-001 to 006 | 4 | 0 | 2 (STOP-005, 006) | 2 |
 | Test double | BUS-TEST-001 to 010 | 10 | 0 | 0 | 0 |
 
-**Summary:** 50 of 60 specs implemented; 0 deferred; 10 gaps. 25 of the 50 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-SUB-008, BUS-STOP-003, BUS-STOP-004, BUS-TEST-001 to 010. Gap lines that already carry a code annotation (the code is the current, superseded behaviour): BUS-SUB-001, BUS-SUB-002, BUS-SUB-009 (`packages/bus/src/index.ts:129`), BUS-EVT-018 (`events.ts:158`); BUS-SUB-001 also has a test (`bus.test.ts:23`).
+**Summary:** 50 of 61 specs implemented; 0 deferred; 11 gaps. 25 of the 50 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-SUB-008, BUS-STOP-003, BUS-STOP-004, BUS-TEST-001 to 010. Gap lines that already carry a code annotation (the code is the current, superseded behaviour): BUS-SUB-001, BUS-SUB-002, BUS-SUB-009 (`packages/bus/src/index.ts:129`), BUS-EVT-018 (`events.ts:158`); BUS-SUB-001 also has a test (`bus.test.ts:23`).
 
 ## Key Findings
 
@@ -92,7 +92,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ### Must Fix
 1. Add the explicit start mode to `subscribe`: `latest` resets the group to `$` on every start, `resume` keeps it, a missing group is created at `$` in both; replace `fromNow` (P8; BUS-SUB-001, BUS-SUB-002, BUS-SUB-010, BUS-SUB-011). Each subscribing service then selects its mode in its own segment (memory `resume`, every other `latest`). Fix the "crash recovery" comment at `index.ts:142` to match BUS-SUB-008.
-2. Retry `subscribe`, `tail` and `tailHealth` reads with a capped, growing delay, log and skip a failed `XACK`, and guard tail handlers (R1; BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004).
+2. Retry `subscribe`, `tail` and `tailHealth` reads with a capped, growing delay, log and skip a failed `XACK`, guard tail handlers, and log a failed `XADD` in `publish` / `publishHealth` before rejecting (R1; BUS-STREAM-007, BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004).
 3. Compose `onShutdown` registrations into one sequence that runs every callback, logs failures and exits 0 once; treat a synchronously throwing `beforeShutdown` hook like a rejection (R2; BUS-STOP-005, BUS-STOP-006).
 4. Add `mouthSmile` (number) to the `avatar.state` schema (B2; BUS-EVT-018); avatar and dashboard consume it in their segments.
 

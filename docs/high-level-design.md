@@ -3,10 +3,10 @@
 > Marker legend. `[proposed]` ends a sentence that states intent the project
 > owner has not yet confirmed; it is a proposal drafted from the code, the
 > README, the example config and personality files, and the commit history.
-> `[inferred]` marks a statement of purpose read out of mechanism. A heading
-> marked `[decision needed]` offers two or more intents that the code supports
-> equally; the owner picks one and the others are deleted. Sentences with no
-> marker are facts of the code at git `686cc8f`.
+> `[inferred]` marks a statement of purpose read out of mechanism. Sentences
+> with no marker are either facts of the code at git `686cc8f` or intent the
+> owner has decided; where a decided intent is not yet implemented, the owning
+> segment's EARS file carries it as a `[ ]` gap.
 
 ## Problem
 
@@ -72,11 +72,15 @@ Three cross-cutting choices make the metaphor hold up in practice. Judgement
 that could use a model is a **hook** (`rules` / `llm` / `http`) that always
 falls back to built-in rules, so the show goes on when a model is slow or
 down. The chat model is behind one `ChatProvider` interface, so a stronger
-brain is a `config.yaml` change and embeddings stay on local Ollama (the offline mock provider uses hash embeddings). And every
+brain is a `config.yaml` change, while embeddings are chosen separately by
+`brain.memory.embedder` (local Ollama by default, a deterministic hash embedder
+offline) and never follow the chat provider. And every
 service has a mock, stub or off backend, so any one of them runs on Redis
 alone with no account, GPU or API key. `[inferred]`
 
 ## Target Users
+
+cohost is built for one streamer: the owner, on their own stream.
 
 1. **The owner, streaming.** One person running cohost on their own Linux or
    WSL2 box with an NVIDIA GPU, OBS on the same or a second PC, a Twitch
@@ -89,14 +93,17 @@ alone with no account, GPU or API key. `[inferred]`
    screenshots and audio from the dashboard, reading the reflection pass's
    bullets and deleting the ones they do not like, and tuning talkativeness
    in YAML. `[proposed]`
-3. **Another streamer with the same shape of setup.** The installer, the
-   `*.example.*` seeding, the provider and hook recipes under `examples/`,
-   the Pages docs site and the AGPL licence exist so a second person can
-   clone, install and run without reading the source. `[proposed]`
-4. **A tinkerer with their own model.** Someone who trains a scorer,
-   appraiser or critic and serves it over HTTP, or swaps in a hosted chat
+3. **The owner, tinkering with their own model.** Training a scorer,
+   appraiser or critic and serving it over HTTP, or swapping in a hosted chat
    model, without touching TypeScript. The `http` hook kind and the
-   `examples/modules/server.py` stand-in are for them. `[proposed]`
+   `examples/modules/server.py` stand-in are for this. `[proposed]`
+
+Other streamers are not a target user. The installer, the `*.example.*`
+seeding, the recipes under `examples/`, the Pages docs site and the AGPL
+licence stay, and a defect in any of them is a bug that gets fixed with the
+same weight as a code defect, because the owner reinstalls and rereads them
+too. Hardening for other people's setups (shared networks, several
+streamers, untrusted operators) is not a goal.
 
 Viewers are not users of the software. They experience the co-host through
 Twitch chat, the stream audio and the avatar on screen; nothing in cohost is
@@ -106,8 +113,9 @@ for them to operate. `[proposed]`
 
 1. **Feel like a second person in the room, not an assistant.** Short spoken
    lines, names used when replying, opinions about the game, and silence
-   when nothing is worth saying (`config/personality.example.md`).
-   `[proposed]`
+   when nothing is worth saying (`config/personality.example.md`). This
+   voice, a second person in the room for whom silence is fine, is the
+   project's voice, not only the example persona.
 2. **Speak when it is worth it.** Mentions, questions, voice, and screen
    changes are scored against a threshold with a cooldown and a busy gate;
    reflexes react instantly to the things that should not wait for a
@@ -141,6 +149,24 @@ for them to operate. `[proposed]`
    bus, brain status, mood, avatar preview and per-service health, and
    offers mute, say, forget, personality reload, and (when enabled) service
    restart. `[proposed]`
+9. **Hear chat from more than one platform.** `chat.message.platform` admits
+   `twitch`, `youtube` and `discord`, and a new chat source is a new sense
+   that publishes `chat.message` without touching the brain. Twitch is the
+   only platform implemented today.
+
+### Deferred goals
+
+These are goals, not non-goals, but no work is scheduled for them yet; the
+code keeps the seams they need.
+
+- **Typing in chat.** The chat sense is read-only today. A future body output
+  beside `voice` will post the co-host's lines to chat; the optional Twitch
+  user credentials in `services/chat/src/index.ts:4-6` stay for it.
+- **Breaking a dead stream's silence.** Idle chatter fires only after
+  `idle_chatter_ms` of quiet *and* at least one unseen event
+  (`services/salience/src/scheduler.ts:48,72-73`); a fully silent stream
+  stays silent. Unprompted talk on a stream with nothing new to react to is a
+  future goal.
 
 ## Non-Goals
 
@@ -150,9 +176,10 @@ for them to operate. `[proposed]`
 2. **Not a general assistant.** It does not look things up, run tools, or
    answer every message; the personality file says so explicitly.
    `[proposed]`
-3. **Not a hosted or multi-tenant service.** One install serves one
-   streamer; there is no account system, no tenancy, and the trust boundary
-   is the operator's LAN plus an optional bearer token. `[proposed]`
+3. **Not a hosted, multi-tenant or hardened service.** One install serves one
+   streamer; there is no account system and no tenancy. The trust boundary is
+   the operator's LAN (see Trust boundary below); hardening against other
+   hosts on that LAN is not a goal.
 4. **Not a player.** cohost watches the game through screenshots; it never
    sends input to the game or OBS. `[proposed]`
 5. **Not a voice pipeline of its own.** Speaker segmentation is Discord's
@@ -167,27 +194,6 @@ for them to operate. `[proposed]`
 8. **Not a scripted character.** Beyond reflexes (regex to canned lines),
    dialogue is generated; there is no dialogue tree, intent classifier or
    scripted show. `[proposed]`
-
-### Non-goal or deferred goal `[decision needed]`
-
-- **Typing in chat.** The chat sense is read-only and nothing ever sends a
-  line, yet `services/chat/src/index.ts:3-6` keeps optional credentials
-  "needed later if you want the co-host to also *type* in chat".
-  Alternative A: typing in chat is a non-goal; the co-host's only output is
-  voice, and the credential path is removed. Alternative B: typing is a
-  deferred goal, to be specified as a new body output beside `voice`.
-- **Chat platforms beyond Twitch.** `chat.message.platform` admits
-  `youtube` and `discord` (`packages/bus/src/events.ts:11`) and the README
-  names a YouTube source as the canonical "add a sense" example, but only
-  Twitch and the fake source exist. Alternative A: Twitch only is the goal;
-  the enum is left for injection and future work. Alternative B:
-  multi-platform chat is a goal and a YouTube sense is planned.
-- **Idle chatter in a silent stream.** Salience only pipes up after
-  `idle_chatter_ms` when at least one unseen event exists
-  (`services/salience/src/scheduler.ts:47-48,71-73`); the README reads as
-  unconditional. Alternative A: silence stays silent (the config comment
-  "and there's fresh context"). Alternative B: the co-host should break a
-  dead stream on its own.
 
 ## Tenets
 
@@ -237,7 +243,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 `[inferred]` cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 17 event types) plus a separate `cohost:health` heartbeat stream (18 registered payloads in all). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 18 event types) plus a separate `cohost:health` heartbeat stream (19 registered payloads in all). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -274,7 +280,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 17 event types plus 1 health type; consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 18 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -297,11 +303,22 @@ flowchart LR
 - **Turn-taking.** salience publishes `attention.focus`; cortex publishes
   `brain.status` (thinking / speaking / idle / muted) which salience uses as a
   busy flag; `voice.done` releases cortex. Reflexes bypass the LLM by
-  publishing `brain.say` from salience directly.
+  publishing `brain.say` from salience directly. Mute and pause are seen only
+  by the regions that decide to speak: salience and cortex honour `mute` and
+  `pause` (affect also honours `pause` for its own appraisal), and a mute or
+  pause that lands while a decision is in flight stops that decision. voice
+  and ears never read `control`: they speak and play every `brain.say` they
+  receive, so muting upstream is the only mute. An operator `say` is the one
+  override: cortex speaks it even while muted, paused or busy.
 - **Audio sink arbitration.** voice publishes `voice.utterance`; any sink
   (ears "discord", dashboard "dashboard") claims it with `voice.playing`; if no
-  claim arrives within 1.5 s voice emits a virtual playing / done pair.
+  claim arrives within 1.5 s voice emits a virtual playing / done pair, and a
+  real claim that arrives after the window cancels the pending virtual
+  `voice.done` so cortex is not released while audio still plays.
   avatar lip-syncs on `voice.playing` using the envelope from the utterance.
+  Sinks inside Compose fetch audio from `http://voice:8700`; a player on the
+  host or another PC goes through the dashboard's audio proxy, since voice's
+  port is not published.
 - **Region hooks.** salience.scorer, affect.appraiser, cortex.critic each run
   as rules / llm / http per config, falling back to rules on any failure.
 - **Service health and control.** Every service publishes `service.heartbeat`
@@ -311,8 +328,16 @@ flowchart LR
 - **Test injection and isolated backends.** `inject.request` / `inject.result`
   let the dashboard feed synthetic chat, screenshots, or audio into a sense;
   mock / stub / fake / off backends let any service run on Redis alone.
-- **Transcript contract.** working-memory renders `[chat]` / `[voice]` /
-  `[screen]` lines that model-backends uses as LLM stop strings.
+- **Transcript contract.** working-memory owns the `[chat]` / `[voice]` /
+  `[screen]` transcript tags; model-backends mirrors them as LLM stop strings.
+  The stops save tokens rather than guard correctness (cortex keeps only the
+  first line of a reply), the co-host's own line is not a stop, and a
+  cortex-level test checks the rendered tags against the stop list.
+- **Restart start position.** Every subscription names a start mode:
+  `latest` resets the service's consumer group to the newest entry on every
+  start, `resume` keeps the group's stored position. memory uses `resume`;
+  every other subscriber uses `latest`. Delivery across a restart is
+  at-most-once.
 
 ## Key Design Decisions
 
@@ -323,35 +348,34 @@ would need before reading any LLD.
 
 | Decision | Chosen | Alternatives | Rationale | Embodied in |
 | --- | --- | --- | --- | --- |
-| Inter-service transport | Redis Streams with one or more consumer groups per service and zod validation on both publish and read | HTTP between services; pub/sub; one monolith | A service can restart and resume, a poison event is logged and acked rather than wedging the stream, and every payload shape lives in one registry. `[proposed]` | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:3-6` |
+| Inter-service transport | Redis Streams with one or more consumer groups per service and zod validation on both publish and read | HTTP between services; pub/sub; one monolith | A service can restart and pick its start position, a poison event (unknown type, non-JSON data, failed schema) is dropped and acked without logging rather than wedging the stream, and every payload shape lives in one registry. `[proposed]` | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:5-8` |
 | Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and cortex or an explicitly configured `llm` hook can call a chat model. `[proposed]` | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
 | Who decides vs. who speaks | salience decides *when* (`attention.focus`), cortex decides *what* (`brain.say`), reflexes short-circuit both | cortex decides on its own; every event prompts the model | Talkativeness is a cheap, tunable scoring loop with no model in it; the expensive call only happens once something is worth a reply. `[proposed]` | [salience](intent/salience/salience-design.md) Scoring and Decision; [cortex](intent/cortex/cortex-design.md) think pipeline |
-| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; production embeddings use local Ollama and mock uses hash embeddings | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. `[inferred]` | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
+| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider` | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. `[inferred]` | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. `[inferred]` | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. `[proposed]` | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
+| Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control`; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
+| Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (Discord bot, dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. `[inferred]` | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
-| Binary payloads | Never on the bus: events carry text, numbers, envelopes and URLs; audio and uploads travel over HTTP | Base64 on the stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. `[inferred]` | `packages/bus/src/events.ts:126-137,166-170`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads |
+| Binary payloads | Never on the bus: events carry text, numbers, envelopes and URLs; audio and uploads travel over HTTP | Base64 on the stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. `[inferred]` | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads |
 | Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. `[inferred]` | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. `[inferred]` | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |
 | Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand | Learned facts in the database only; a structured persona schema | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. `[proposed]` | [memory](intent/memory/memory-design.md) Reflection pass; `config/personality.example.md` |
-| Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. `[inferred]` | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
+| Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode; a failed bus publish is logged and the service continues, and a failed subscription or tail read retries with backoff inside the bus. Two cases still exit non-zero: a config value that is present but invalid (for example an unknown `AVATAR_DRIVER`) fails the config load, and the dashboard exits when Redis is unreachable at start | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. An invalid value is an operator mistake to fix, not a gap to idle through, and without Redis there is no bus to report on. `[inferred]` The publish, retry and exit cases are owner decisions of 2026-11-01. | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
 | Health and control | Heartbeats on a separate capped stream; derived states computed by observers; control off by default, bearer-gated, manifest-only argv, loopback bind | Heartbeats on the event stream; always-on control | Liveness traffic never evicts domain events; a privileged endpoint has the smallest possible surface and is opt-in. `[inferred]` | [control-plane](intent/control-plane/control-plane-design.md); `packages/control/src/manifest.ts:1-5` |
+| Trust boundary | The operator's LAN is the boundary. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle routes and other state-changing posts); reads (`/ws`, `GET /personality`, `GET /services`) stay open; `POST /sink` stays ungated; host-side audio sinks use the dashboard proxy | Gate reads and sink events with the same token; per-user accounts | cohost serves the owner's own stream on their own network. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path; reads expose nothing beyond what is already on stream. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decision 2026-11-01. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Deployment shape | One Dockerfile parameterised by `SERVICE`, infra ports on loopback, the dashboard as the only published port, optional senses behind Compose profiles | Per-service images; everything published | One build cached across ten images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. `[inferred]` | [deployment](intent/deployment/deployment-design.md) |
 
-### Trust boundary `[decision needed]`
+### Trust boundary
 
-The dashboard listens on all interfaces with no authentication unless
-`CONTROL_ENABLED=1`, the `/ws` feed and `POST /sink` are never gated, the
-voice HTTP server has CORS `*`, Postgres credentials are fixed, and containers
-run as root ([dashboard](intent/dashboard/dashboard-design.md) Open Questions
-6-8, [deployment](intent/deployment/deployment-design.md) Open Question 6).
-
-- Alternative A: the trust boundary is the operator's LAN. Only the service
-  lifecycle routes need a token because they can run commands; everything
-  else is accepted as open, and hardening is a non-goal.
-- Alternative B: a second streamer running this on a shared network is a
-  target user, so read access to chat/voice transcripts and the ability to
-  publish sink events need the same gate, and the posture becomes a goal.
+The trust boundary is the operator's LAN. The dashboard listens on all
+interfaces; with `CONTROL_ENABLED=1` every mutating route needs the bearer
+token, while the `/ws` feed, the `GET` routes and `POST /sink` stay open. The
+sink stays ungated because an OBS Browser Source cannot authenticate, and a
+host-side audio player reaches voice only through the dashboard's audio proxy,
+since Compose does not publish voice's port. Inside this boundary the voice
+HTTP server's CORS `*`, the fixed Postgres credentials and root containers are
+accepted; hardening against other hosts on the LAN is a non-goal.
 
 ## Success Metrics
 
@@ -364,20 +388,24 @@ what to measure once it has. All targets are proposals. `[proposed]`
    whole session and no `crash-looping` or `down` state in the Services tab.
    `[proposed]`
 2. **Latency to speak.** Time from a chat mention landing on the bus to
-   `voice.playing` from a real sink, measured on the owner's GPU box with the
-   default local models. Target: under 4 s at the median. `[proposed]`
-   `[decision needed]` the number is a guess; the owner sets it.
+   `voice.playing` from a real sink, measured as the median on the owner's GPU
+   box with the default local models. The target is "as fast as possible":
+   there is no pass/fail threshold; the measured median is tracked from stream
+   to stream and should trend down.
 3. **Silence ratio.** Fraction of distinct `chat.message` events that
-   receive an attributable `brain.say` (one caused by that message, such as a
-   focus or reply tied to it) within a fixed window, so the ratio cannot
+   receive an attributable `brain.say` within 60 s, so the ratio cannot
    exceed 1; reflexes and voice-, vision- or operator-triggered lines are
-   excluded. `[decision needed]` the window length is the owner's call. The co-host should answer well under half of plain chat and
-   nearly all direct mentions; a rising ratio over time means it is getting
-   noisy. `[proposed]`
+   excluded. `[proposed]` `brain.say` carries no source-message id, so
+   attribution is window-based: a message counts as answered when an
+   `attention.focus` whose `focus` has that message's `who` and `text` is
+   followed by a cortex `brain.say` within the 60 s window. `[proposed]` The
+   co-host should answer well under half of plain chat and nearly all direct
+   mentions; a rising ratio over time means it is getting noisy. `[proposed]`
 4. **Hook health.** Fallback rate (fallbacks per hook call, counted per
    occurrence rather than from the logger, which throttles to one warning per
    30 s) for `salience.scorer`, `affect.appraiser` and `cortex.critic` is
-   rare in steady state. `[decision needed]` the threshold is the owner's call. `[proposed]`
+   under 5% of that hook's calls in any hour of steady-state streaming.
+   `[proposed]`
 5. **Memory that sticks.** After the reflection pass, the share of
    `## Learned` bullets the owner keeps rather than deletes; recalled
    memories appear in the prompt for at least half of replies to regulars.

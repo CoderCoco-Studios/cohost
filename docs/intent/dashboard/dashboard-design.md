@@ -42,7 +42,7 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | `POST /inject/text`, `/inject/image`, `/inject/audio` | test-input injection (below) | yes | `inject.ts:58-62`, `routes.ts:38-46` |
 | `GET /services` | `{services: ServiceHealth[]}` from the tracker snapshot | no | `:66-70` |
 | `GET /services/control` | `{enabled:false}` or `{enabled:true, runtime, advanced}` | no | `:72-76` |
-| `POST /services/:id/(start|stop|restart)` | delegate to `ServiceController`; `404` when control is disabled | yes | `:31, 78-96` |
+| `POST /services/:id/(start\|stop\|restart)` | delegate to `ServiceController`; `404` when control is disabled | yes | `:31, 78-96` |
 | `GET /personality` | `text/plain` personality file | no | `:98-102` |
 | `PUT /personality` | save body, publish `control {cmd: "reload_personality"}`, `204` | yes | `:104-110` |
 | `POST /control` | publish `control {cmd, text, target}`, `204`; the event schema validates `cmd` | yes | `:112-118` |

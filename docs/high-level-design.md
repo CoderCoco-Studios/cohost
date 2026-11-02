@@ -25,8 +25,10 @@ point the voice at a different avatar app without starting over. `[proposed]`
 
 cohost is for a streamer who owns a GPU box and wants the co-host to live on
 it: every sense, every brain region, the voice, the face and the memory run
-locally in separate containers, and only explicitly configured chat-model or
-hook calls may leave the machine, by explicit choice. `[proposed]`
+locally in separate containers. Chat-model and hook calls leave the machine
+only when explicitly configured. Audio, screenshots and synthesized text leave
+the machine only when the STT, Ollama or TTS URL points to a remote host.
+Generated audio leaves for Discord only when the Discord source is enabled. `[proposed]`
 
 ## Approach
 
@@ -117,9 +119,11 @@ for them to operate. `[proposed]`
    `## Learned` block after each stream that the owner can edit or delete.
    `[proposed]`
 4. **Run locally on one GPU box.** Senses, brain, body, memory and the
-   dashboard all run in Compose on the AI PC; only explicitly configured
-   chat-model, reflection, or hook calls may leave the machine, and only when
-   the selected provider or hook URL is remote.
+   dashboard all run in Compose on the AI PC; chat-model,
+   reflection and hook calls leave the machine only when explicitly
+   configured; audio, screenshots and synthesized text leave only when the
+   STT, Ollama or TTS URL is remote; generated audio reaches Discord only when
+   the Discord source is enabled.
    `[proposed]`
 5. **Swap any piece.** Adding a chat source, a TTS engine, an avatar driver,
    a model provider or a hook implementation never touches the brain
@@ -191,7 +195,8 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 1. **The bus is the only seam.** Services exchange control and events as
    typed events on `cohost:events`; HTTP is allowed only for binary or object
-   transfer (such as voice audio) and operator APIs. Reject a design in which two services
+   transfer (such as voice audio), operator APIs, and configured `http` hooks
+   that POST JSON to `module.url`. Reject a design in which two services
    call each other over HTTP, share a database, or import each other's
    runtime code. `[proposed]`
 2. **Senses and body are swappable without touching the brain.** A new chat
@@ -220,9 +225,11 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    new setting that puts a secret in `config.yaml`, a behaviour knob in
    `.env` without a `${VAR:-default}` placeholder in YAML, or a persona
    fact anywhere but `personality.md`. `[proposed]`
-8. **Local by default; only explicitly configured chat-model or hook calls may leave the machine.**
+8. **Local by default; only explicitly configured egress may leave the machine.**
+   Egress means chat-model and hook calls, a remote STT, Ollama or TTS URL,
+   and Discord audio when the Discord source is enabled.
    Audio, frames, chat text, embeddings and memories stay on the operator's
-   box. Reject a default that sends any of them to a hosted service, and
+   box unless that egress is configured. Reject a default that sends any of them to a hosted service, and
    reject an embedding path that follows the chat provider off-machine.
    `[proposed]`
 

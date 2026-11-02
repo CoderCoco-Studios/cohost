@@ -82,7 +82,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 | Health | MEM-HEALTH-001 to MEM-HEALTH-006 | 5 | 0 | 1 | 3 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-009 | 8 | 0 | 1 | 2 |
 
-**Summary:** 47 of 51 specs implemented and annotated in code; 0 deferred; 4 gaps (`MEM-VIEWER-005`, `MEM-STORE-002`, `MEM-HEALTH-005`, `MEM-REFLECT-008`). 31 of the 47 implemented specs have a test annotated with `@spec`; the 16 without one are `MEM-EVT-001`, `MEM-BACKEND-002`, `MEM-START-001` to `MEM-START-006`, `MEM-HEALTH-004`, `MEM-HEALTH-006`, `MEM-REFLECT-001` to `MEM-REFLECT-004`, `MEM-REFLECT-006` and `MEM-REFLECT-009` (all in `index.ts` wiring or the `reflect.ts` main flow, which runs at import). No `@spec` annotation cites a missing ID.
+**Summary:** 47 of 51 specs implemented and annotated in code; 0 deferred; 4 gaps (`MEM-VIEWER-005`, `MEM-STORE-002`, `MEM-HEALTH-005`, `MEM-REFLECT-008`). 31 of the 47 implemented specs have a test annotated with `@spec`; the 16 without one are `MEM-EVT-001`, `MEM-BACKEND-002`, `MEM-START-001` to `MEM-START-006`, `MEM-HEALTH-004`, `MEM-HEALTH-006`, `MEM-REFLECT-001` to `MEM-REFLECT-004`, `MEM-REFLECT-006` and `MEM-REFLECT-009` (`MEM-BACKEND-002` is in `backend.ts`; the rest are in `index.ts` wiring or the `reflect.ts` main flow, which runs at import). No `@spec` annotation cites a missing ID.
 
 ## Key Findings
 

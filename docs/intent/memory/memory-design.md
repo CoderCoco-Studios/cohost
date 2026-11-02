@@ -240,10 +240,14 @@ mutex against the live service.
 7. Failures (including an unreachable embedder at `init`) log `reflect failed` and
    set `process.exitCode = 1`; the store is closed in `finally` (`reflect.ts:62-64`).
 
-`recentSince` is `ORDER BY ts ASC LIMIT 600`, which bounds the prompt. After a
-successful save `meta.last_reflection` is set to the timestamp of the newest row
-read, so with more than 600 new rows the remainder is reflected on in the next
-pass (`MEM-REFLECT-008`). The code sets it to the current time
+`recentSince` reads at most 600 rows, which bounds the prompt. The reflection
+cursor is the pair `(ts, id)` of the newest row read: after a successful save
+`meta.last_reflection` stores it, and the next pass reads rows strictly after it
+in `(ts, id)` order, so with more than 600 new rows the remainder is reflected on
+in the next pass, and rows sharing the last row's timestamp are not skipped
+(`MEM-REFLECT-008`). A timestamp-only cursor would skip such rows because
+`ts > $1` excludes them. The code reads `ts > $1 ORDER BY ts`
+(`store.ts:120`) and sets the cursor to the current time
 (`reflect.ts:28,56`), which skips the remainder permanently.
 The running cortex does not learn of the change until a `reload_personality` control.
 

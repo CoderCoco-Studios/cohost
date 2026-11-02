@@ -85,7 +85,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-1. Make the shipped config load with no `.env`: blank-safe `avatar.driver`, `${AVATAR_DRIVER:-null}` in `config.example.yaml`, schema defaults 8001 / 39539 for the avatar ports; an unknown driver still fails (B3; CFG-ISO-005, CFG-SCH-010).
+1. Make the shipped config load with no `.env`: `:-` defaults for `LLM_MODEL`, `EMBED_MODEL` and `VISION_MODEL` from `.env.example`, blank-safe `avatar.driver`, `${AVATAR_DRIVER:-null}` in `config.example.yaml`, schema defaults 8001 / 39539 for the avatar ports; an unknown driver still fails (B3; CFG-ISO-005, CFG-SCH-010).
 2. Strip unquoted inline ` # ...` comments in `loadDotEnv` (S48; CFG-ENV-006).
 
 ### Should Fix

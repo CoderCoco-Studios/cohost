@@ -4,19 +4,21 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 ## Status
 
-**MAPPED** — mapped 2026-10-31 (git SHA 686cc8f). 52 of 57 specs implemented, 33 of them exercised by a test; the 5 gaps are failure handling in the drivers and the bus loop, plus unknown-driver fallback. The service wiring (`index.ts`) has no test. Audit pass complete 2026-11-02, awaiting index update.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 58 specs: 46 implemented, 0 deferred, 12 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
 
-## Questions for the user
+## Decisions applied
 
-1. **AVATAR-STATE-001: should `avatar.state` carry `mouthSmile`?** The service passes it (`services/avatar/src/index.ts:26`), but the `avatar.state` schema has no such field, so publish strips it (`packages/bus/src/events.ts:144-156`; checked by parsing a sample payload). The dashboard preview computes its mouth from `s.mouthSmile * 10`, which is `NaN` (`services/dashboard/public/index.html:329`). The spec line now lists the fields the event really carries. Recommended: yes; add `mouthSmile` to the schema (an event-bus change) and restore "every canonical parameter" in the spec.
-2. **AVATAR-DRV-004: fail fast or fall back on a bad `AVATAR_DRIVER`?** An unrecognised value makes `loadConfig` throw (`packages/config/src/schema.ts:161`, `packages/config/src/index.ts:98-104`), so the `default:` fallback (`services/avatar/src/drivers/index.ts:23-25`) is dead code. An unset or empty variable fails the same way, because `config/config.example.yaml:134` writes `driver: "${AVATAR_DRIVER}"` and `""` is not in the enum; since every service loads the whole config, that stops every service, not only avatar. Recommended: fail fast on unknown values (drop the gap line and the dead branch), and let a `.env` without avatar settings load by writing `${AVATAR_DRIVER:-null}` in the example YAML and giving `vtube_studio.port` and `vmc.port` schema defaults, which they lack today (`packages/config/src/schema.ts:167,171`; a config change).
-3. **AVATAR-VTS-002: what does "startup is not blocked" promise?** `connect()` never rejects, but `main()` waits for the first attempt to end before it starts the engine and the subscription (`index.ts:30-34`): up to 60 s while a first-time token request waits for the operator (`services/avatar/src/drivers/vtube-studio.ts:146`), and for a host that drops packets the OS TCP connect timeout, since `ws` is created with no handshake timeout (`vtube-studio.ts:109`; `[inferred]` from library defaults, not tested). Recommended: read it as "returns within a bounded time": start the engine and subscription without awaiting the first VTS attempt.
-4. **Should avatar survive a Redis outage?** The 5 Hz `avatar.state` publish is `void`-ed (`index.ts:26`) and the publisher gives up after three attempts (`packages/bus/src/index.ts:43`), so losing Redis for about a second ends the process with an unhandled rejection (no `unhandledRejection` handler exists in `packages/` or `services/`); compose restarts it (`docker-compose.yml:9`). AVATAR-BUS-008 covers only the subscription, which a dropped connection does not reject (`packages/bus/src/index.ts:124`). Recommended: yes; catch and drop failed `avatar.state` publishes, and add a spec line for it.
-5. **AVATAR-BUS-001: should a restart replay events published while avatar was down?** `fromNow` only positions a newly created group (`packages/bus/src/index.ts:126-131`); a compose restart resumes the existing `avatar` group, and only a control-plane `fresh` start resets it (`packages/control/src/manifest.ts:45`). voice has the same behavior. Recommended: no; decide it once in event-bus.
-6. **Should avatar lip-sync voice's `virtual` sink?** avatar ignores the `sink` field (`index.ts:50`), so it mouths lines nobody is playing, and with a real sink that starts after voice's 1.5 s window it restarts lip-sync on the second `voice.playing` and can stop on the virtual `voice.done` mid-line (`services/avatar/src/engine.ts:39-49`; voice LLD, Sink Arbitration Protocol). Recommended: keep following `virtual` (it is the only playback signal when no sink is attached) and fix the duplicate lifecycle on the voice side (VOICE-SINK-008).
-7. **AVATAR-BUS-007: should every startup failure log `fatal`?** Config, driver creation and expressions load at module level (`index.ts:12-19`), outside `main()`, so their errors end the process without the `fatal` log; inside `main()`, only a malformed VTS address can reject (`vtube-studio.ts:108-109`). Recommended: move the module-level setup into `main()`.
-8. **Is `config/.vts-token` meant to stay out of git?** The driver writes the plugin token there (`vtube-studio.ts:104, 148`) and `.gitignore` lists only `config/config.yaml`, `config/personality.md` and `config/expressions.yaml`. Recommended: yes; ignore it (a repo-root change).
-9. **Should `capabilities()` gate anything?** Every driver declares it; it is only logged (`index.ts:31`), and the null driver claims all four (`services/avatar/src/drivers/null.ts:8`). Recommended: drop it unless a consumer is planned.
+Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
+
+1. **B2** `mouthSmile` in `avatar.state` → yes; the event carries every canonical parameter (schema change in event-bus, BUS-EVT-018). Specs: AVATAR-STATE-001 (`[x]` → `[ ]`).
+2. **B3** Bad or empty `AVATAR_DRIVER` → fail fast on unknown values, drop the dead factory fallback; unset or empty loads as `null` via `${AVATAR_DRIVER:-null}`, a blank-safe driver value and port defaults (config-owned). Specs: AVATAR-DRV-004 rewritten, AVATAR-DRV-003 (`[x]` → `[ ]`).
+3. **R3** VTS first attempt → the engine and subscription start without awaiting it. Specs: AVATAR-VTS-002 (`[x]` → `[ ]`).
+4. **R1** Redis outage → a failed `avatar.state` publish is dropped and logged at a limited rate; VTS fire-and-forget calls and the VMC socket `error` are absorbed and logged. Specs: AVATAR-STATE-002 (new); AVATAR-VTS-014, AVATAR-VMC-005 unchanged.
+5. **P8** Restart replay → event-bus start mode `latest`. Specs: AVATAR-BUS-001 (`[x]` → `[ ]`).
+6. **B1** Lip-sync on `virtual` → keep following every sink; the late-sink double lifecycle is fixed in voice (VOICE-SINK-008). LLD Decisions row.
+7. **R3** Startup failures → all setup inside `main()`, every failure logs `fatal`. Specs: AVATAR-BUS-007 (`[x]` → `[ ]`).
+8. **B18** `config/.vts-token` → git-ignored (`.gitignore:12`); excluded from the Docker build context too (B25, deployment).
+9. **S47** `capabilities()` → drop it from the driver contract. Specs: AVATAR-DRV-001 (`[x]` → `[ ]`); capability wording removed from AVATAR-DRV-007 and AVATAR-VMC-004.
 
 ## References
 
@@ -27,7 +29,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (57 specs: 52 `[x]`, 5 `[ ]`, 0 `[D]`)
+- docs/intent/avatar/avatar-specs.md (58 specs: 46 `[x]`, 12 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/avatar/test/engine.test.ts (12 tests, mocked timers)
@@ -48,7 +50,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 - services/avatar/package.json, services/avatar/tsconfig.json
 - config/expressions.example.yaml
 
-50 `@spec` annotations in code, citing all 52 `[x]` spec IDs. No annotation cites a missing or non-`[x]` ID.
+50 `@spec` annotations in code, citing all 46 `[x]` spec IDs plus six that are now gaps (AVATAR-BUS-001, AVATAR-BUS-007, AVATAR-DRV-001, AVATAR-DRV-003, AVATAR-VTS-002, AVATAR-STATE-001); those annotations mark the code the scheduled fixes change. No annotation cites a missing ID.
 
 ### OpenSpec (frozen, historical)
 - openspec/specs/avatar/spec.md
@@ -62,10 +64,10 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 **Key Components:**
 1. `index.ts` — wiring: config, driver, heartbeat, subscription (group `avatar`) to `brain.say`, `voice.utterance`, `voice.playing`, `voice.done`, `affect.state`; throttles `avatar.state` to at most once per 200 ms.
 2. `Engine` (`engine.ts`) — fixed-rate loop owning smoothing, blink, idle motion, lip-sync playback, emotion hold and decay to the mood.
-3. `AvatarDriver` (`types.ts`) — contract: `setParams` per frame, `setExpression` on change, `trigger` for gestures, `capabilities` (informational only).
+3. `AvatarDriver` (`types.ts`) — contract: `setParams` per frame, `setExpression` on change, `trigger` for gestures (the informational `capabilities()` is scheduled for removal).
 4. `VTubeStudioDriver` — VTS WebSocket API, plugin token in `<configDir>/.vts-token`, parameter injection, hotkey toggling, 5 s reconnect.
 5. `VmcDriver` — hand-rolled OSC over UDP (head quaternion, `A`/`aa` mouth, `Blink`/`blink`, expression blendshape).
-6. `NullDriver` — declares every capability, does nothing; the `.env.example` default and the isolated-mode choice.
+6. `NullDriver` — does nothing and reports connected; the default (also for an unset or empty `AVATAR_DRIVER`, once config lands the default) and the isolated-mode choice.
 7. `health.ts` — `off` with the null driver, else `live` with `deps.driver` ok/down.
 8. `config/expressions.example.yaml` — per-driver emotion-to-expression/hotkey map and gesture map.
 
@@ -73,44 +75,45 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 | Category | Spec IDs | Implemented | Tested | Deferred | Gaps |
 |----------|----------|-------------|--------|----------|------|
-| Bus wiring | AVATAR-BUS-001 to 008 | 7 | 0 | 0 | 1 |
+| Bus wiring | AVATAR-BUS-001 to 008 | 5 | 0 | 0 | 3 |
 | Animation engine | AVATAR-ENG-001 to 016 | 16 | 15 | 0 | 0 |
-| Driver contract and selection | AVATAR-DRV-001 to 007 | 6 | 2 | 0 | 1 |
-| VTube Studio driver | AVATAR-VTS-001 to 015 | 13 | 10 | 0 | 2 |
+| Driver contract and selection | AVATAR-DRV-001 to 007 | 4 | 2 | 0 | 3 |
+| VTube Studio driver | AVATAR-VTS-001 to 015 | 12 | 9 | 0 | 3 |
 | VMC driver | AVATAR-VMC-001 to 006 | 5 | 4 | 0 | 1 |
-| State publication | AVATAR-STATE-001 | 1 | 0 | 0 | 0 |
+| State publication | AVATAR-STATE-001 to 002 | 0 | 0 | 0 | 2 |
 | Health | AVATAR-HEALTH-001 to 004 | 4 | 2 | 0 | 0 |
 
-**Summary:** 52 of 57 specs implemented; 0 deferred; 5 gaps (AVATAR-BUS-008, AVATAR-DRV-004, AVATAR-VTS-013, AVATAR-VTS-014, AVATAR-VMC-005). Implemented but untested: AVATAR-BUS-001 to 007, AVATAR-STATE-001, AVATAR-HEALTH-001, AVATAR-HEALTH-004, AVATAR-DRV-003, AVATAR-DRV-005, AVATAR-DRV-006 (all `index.ts` or the `createDriver` fallback), AVATAR-ENG-006, AVATAR-VTS-006, AVATAR-VTS-007, AVATAR-VTS-015, AVATAR-VMC-004. AVATAR-DRV-001 is held by the type checker (`implements AvatarDriver`), not a test.
+**Summary:** 46 of 58 specs implemented; 0 deferred; 12 gaps (AVATAR-BUS-001, AVATAR-BUS-007, AVATAR-BUS-008, AVATAR-DRV-001, AVATAR-DRV-003, AVATAR-DRV-004, AVATAR-VTS-002, AVATAR-VTS-013, AVATAR-VTS-014, AVATAR-VMC-005, AVATAR-STATE-001, AVATAR-STATE-002). Implemented but untested: AVATAR-BUS-002 to 006, AVATAR-HEALTH-001, AVATAR-HEALTH-004, AVATAR-DRV-005, AVATAR-DRV-006 (all `index.ts`), AVATAR-ENG-006, AVATAR-VTS-006, AVATAR-VTS-007, AVATAR-VTS-015, AVATAR-VMC-004. AVATAR-VTS-002's test (`drivers.test.ts:172`) covers only `connect` resolving on a refused connection.
 
 ## Key Findings
 
-1. **`avatar.state` drops `mouthSmile`.** The `avatar.state` schema omits it, publish strips it (`packages/bus/src/events.ts:144-156`, checked by parsing a sample payload), and the dashboard preview reads it and gets `NaN` (`services/dashboard/public/index.html:329`). AVATAR-STATE-001 was reworded to the fields actually carried.
+1. **`avatar.state` drops `mouthSmile`.** The `avatar.state` schema omits it, publish strips it (`packages/bus/src/events.ts:159-171`, checked by parsing a sample payload), and the dashboard preview reads it and gets `NaN` (`services/dashboard/public/index.html:340`). (AVATAR-STATE-001, BUS-EVT-018, B2)
 2. **Unhandled rejections from VTS fire-and-forget calls** — `void this.send/activate` at `services/avatar/src/drivers/vtube-studio.ts:55, 78-79, 89` rejects on APIError, timeout or closed socket (`:166, :170, :184-186`). No `unhandledRejection` handler exists in the repo, so on Node 22 the process ends. (AVATAR-VTS-014)
 3. **VMC UDP socket has no `error` handler** — `services/avatar/src/drivers/vmc.ts:32, 50, 56`. A stand-alone `dgram` probe confirms that sending to an unresolvable host raises an unhandled `error` and exits the process; the default host is `host.docker.internal` (`.env.example:48`). (AVATAR-VMC-005)
-4. **A Redis outage ends avatar through the state publish, not the subscription.** The `void bus.publish("avatar.state")` at `index.ts:26` rejects once the publisher's three retries run out (`packages/bus/src/index.ts:43`); the subscriber waits for the reconnect instead (`packages/bus/src/index.ts:124`). AVATAR-BUS-008's example was corrected to a failure that does reject the loop. (AVATAR-BUS-008)
-5. **An unset or empty `AVATAR_DRIVER` fails config for every service.** `config/config.example.yaml:134` substitutes it to `""`, which the enum rejects (checked against the schema); the schema's `null` default only applies when the key is absent. Unknown values fail the same way, so the `createDriver` fallback is dead (AVATAR-DRV-003, AVATAR-DRV-004).
+4. **A Redis outage ends avatar through the state publish, not the subscription.** The `void bus.publish("avatar.state")` at `index.ts:26` rejects once the publisher's three retries run out (`packages/bus/src/index.ts:44`); the subscriber waits for the reconnect instead (`packages/bus/src/index.ts:131`). (AVATAR-STATE-002, AVATAR-BUS-008, R1)
+5. **An unset or empty `AVATAR_DRIVER` fails config for every service.** `config/config.example.yaml:134` substitutes it to `""`, which the enum rejects (checked against the schema); the schema's `null` default only applies when the key is absent. Unknown values fail the same way, so the `createDriver` fallback is dead. (AVATAR-DRV-003, AVATAR-DRV-004, B3)
 6. **VTS `activeExpr` survives disconnects** — `vtube-studio.ts:28` is never cleared; hotkeys are toggles, so a stale value inverts the next expression change after a VTS restart, and expressions requested while disconnected are dropped with no replay (`:75`). (AVATAR-VTS-013)
-7. **A restart can replay stale events.** `fromNow` applies only when the `avatar` group is created (`packages/bus/src/index.ts:126-131`); only the control plane's `fresh` start resets it. AVATAR-BUS-001 was reworded to say so.
-8. **First VTS pairing holds up startup.** `main()` awaits the first VTS attempt, including up to 60 s for the token prompt (`vtube-studio.ts:146`), before starting the engine and subscription (`index.ts:30-34`). AVATAR-VTS-002 holds only in the sense that `connect()` never rejects.
-9. **Lip-sync follows every sink, including `virtual` and late duplicates** (`index.ts:50`, `engine.ts:39-49`), so voice's late-sink double lifecycle (VOICE-SINK-008) shows up as a restarted or cut-short mouth.
-10. **`.vts-token` is not git-ignored, and `ready` precedes the driver connection** — the token is written to `config/.vts-token` (`vtube-studio.ts:104, 148`); `heartbeat.ready()` runs before `connect` (`index.ts:16`), so `ready` means "driver selected" and real drivers show `degraded` until connected (AVATAR-HEALTH-001).
-11. **Spec changes in this pass.** No `[x]`/`[ ]` marker was wrong. Reworded to match the code: AVATAR-BUS-001 (group creation), AVATAR-BUS-007 (log message, scope of `main()`), AVATAR-BUS-008 (failure example), AVATAR-ENG-002 (eviction order on re-prepare), AVATAR-ENG-006 (clears only after the envelope runs out), AVATAR-ENG-007 (target, not instant close), AVATAR-VTS-009 (unmapped emotions), AVATAR-STATE-001 (fields carried). Added: AVATAR-VTS-015 (missing expression hotkey warns), AVATAR-VMC-006 (disconnect), AVATAR-HEALTH-004 (shutdown). AVATAR-VTS-007 lost a test pointer to a test that does not assert the reconnect.
+7. **A restart can replay stale events.** `fromNow` applies only when the `avatar` group is created (`packages/bus/src/index.ts:133-138`); only the control plane's `fresh` start resets it. (AVATAR-BUS-001, P8)
+8. **First VTS pairing holds up startup.** `main()` awaits the first VTS attempt, including up to 60 s for the token prompt (`vtube-studio.ts:146`), before starting the engine and subscription (`index.ts:30-34`). (AVATAR-VTS-002, R3)
+9. **Lip-sync follows every sink, including `virtual` and late duplicates** (`index.ts:50`, `engine.ts:39-49`), so voice's late-sink double lifecycle shows up as a restarted or cut-short mouth; the fix is in voice (VOICE-SINK-008, B1).
+10. **Module-level setup skips the `fatal` log, and `ready` precedes the driver connection** — config, driver and expressions load outside `main()` (`index.ts:12-19`); `heartbeat.ready()` runs before `connect` (`index.ts:16`), so `ready` means "driver selected" and real drivers show `degraded` until connected (AVATAR-BUS-007, AVATAR-HEALTH-001).
+11. **`capabilities()` gates nothing** — declared by every driver, read only by the startup log (`index.ts:31`); the null driver claims all four (`drivers/null.ts:8`). (AVATAR-DRV-001, S47)
 
 ## Work Required
 
 ### Must Fix
-1. Catch and log failures of fire-and-forget VTS requests (AVATAR-VTS-014).
-2. Attach an `error` listener / send callback to the VMC UDP socket (AVATAR-VMC-005).
-3. Decide whether `avatar.state` carries `mouthSmile` and align the schema, spec and dashboard (AVATAR-STATE-001).
+1. Add `mouthSmile` to `avatar.state` once BUS-EVT-018 lands, and confirm the dashboard preview renders it (AVATAR-STATE-001, B2).
+2. Drop failed `avatar.state` publishes with a rate-limited log (AVATAR-STATE-002, R1).
+3. Catch and log failures of fire-and-forget VTS requests (AVATAR-VTS-014, R1).
+4. Attach an `error` listener / send callback to the VMC UDP socket (AVATAR-VMC-005, R1).
+5. Start the engine and subscription without awaiting the first VTS attempt (AVATAR-VTS-002, R3).
+6. Move config, driver creation, heartbeat and expressions setup into `main()` (AVATAR-BUS-007, R3).
+7. Remove the unreachable `default:` branch in `createDriver` (AVATAR-DRV-003, B3); the empty-`AVATAR_DRIVER` fix itself is config's (AVATAR-DRV-004).
+8. Subscribe with the event-bus `latest` start mode once BUS-SUB-010 lands (AVATAR-BUS-001, P8); log `fatal` and exit non-zero when the subscription rejects after the bus's retry (AVATAR-BUS-008).
 
 ### Should Fix
-4. Catch failed `avatar.state` publishes; handle failure of the bus subscription loop (AVATAR-BUS-008).
-5. Reset `activeExpr` on close/reconnect and re-apply the current expression after reconnect (AVATAR-VTS-013).
-6. Decide the unknown and empty `AVATAR_DRIVER` behavior (AVATAR-DRV-003, AVATAR-DRV-004).
-7. Decide whether startup should wait for the first VTS attempt (AVATAR-VTS-002).
-8. Add `config/.vts-token` to `.gitignore`.
+9. Drop `capabilities()` and the `Capability` type from the driver contract and every driver; move the `AVATAR-VMC-004` annotation from `vmc.ts:25` to `trigger` (AVATAR-DRV-001, S47).
+10. Reset `activeExpr` on close/reconnect and re-apply the current expression after reconnect (AVATAR-VTS-013).
 
 ### Nice to Have
-9. Tests for `index.ts` routing, the 200 ms throttle and shutdown (AVATAR-BUS-001 to 007, AVATAR-STATE-001, AVATAR-HEALTH-001, AVATAR-HEALTH-004), the VTS reconnect/timeout paths (AVATAR-VTS-006, AVATAR-VTS-007), the missing-hotkey warning (AVATAR-VTS-015), and the `playing` auto-clear (AVATAR-ENG-006); consider backoff for the 5 s VTS reconnect.
-10. Give `capabilities()` a consumer or drop it; add `tsconfig` coverage for tests.
+11. Tests for `index.ts` routing, the 200 ms throttle, the publish-failure drop and shutdown (AVATAR-BUS-001 to 008, AVATAR-STATE-001, AVATAR-STATE-002, AVATAR-HEALTH-001, AVATAR-HEALTH-004), the non-blocking VTS start (AVATAR-VTS-002), the VTS reconnect/timeout paths (AVATAR-VTS-006, AVATAR-VTS-007), the missing-hotkey warning (AVATAR-VTS-015), and the `playing` auto-clear (AVATAR-ENG-006); consider backoff for the 5 s VTS reconnect; add `tsconfig` coverage for tests.

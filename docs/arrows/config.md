@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 46 specs: 39 implemented, 0 deferred, 7 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 39 implemented, 0 deferred, 8 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
 
 ## Decisions applied
 
@@ -17,7 +17,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 5. **R5** explicit `llm.provider: mock` on a hook → keep rejecting it. Specs: CFG-SCH-009 (unchanged, wording clarified).
 6. **S50** CFG-ENV-008 → keep, add a test that `ConfigSchema.shape` has no control key (Work Required).
 7. **B20 / S17** stale example comment: `config/config.example.yaml:18` says mock brings hash embeddings; memory's `MEMORY_EMBEDDER` decides. Specs: CFG-USR-006.
-8. New keys requested by other segments' decisions: `brain.salience.thinking_timeout_ms`, `brain.affect.baseline_arousal` (S33, S39) and `vision.timeout_ms`, `vision.upload_timeout_ms`, `vision.upload_max_bytes` (R1 eyes timeouts). Specs: CFG-SCH-011, CFG-SCH-012.
+8. New keys requested by other segments' decisions: `brain.salience.thinking_timeout_ms`, `brain.affect.baseline_arousal` (S33, S39) and `vision.timeout_ms`, `vision.upload_timeout_ms`, `vision.upload_max_bytes` (R1 eyes timeouts) and `llm.timeout_ms` (R1 model-backends timeouts). Specs: CFG-SCH-011, CFG-SCH-012, CFG-SCH-013.
 
 ## References
 
@@ -28,7 +28,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (46 specs, prefix `CFG`: 39 `[x]`, 7 `[ ]`, 0 `[D]`)
+- docs/intent/config/config-specs.md (47 specs, prefix `CFG`: 39 `[x]`, 8 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/config.test.ts (315 lines; 22 `@spec` lines with 37 spec-ID citations, covering 30 of the 39 implemented specs)
@@ -62,12 +62,12 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Config directory and seeding | CFG-DIR-001 to 005 | 5 | 0 | 0 | 5 |
 | Environment handling | CFG-ENV-001 to 008 | 7 | 0 | 1 (ENV-006) | 5 |
 | Loading and validation pipeline | CFG-LOAD-001 to 006 | 5 | 0 | 1 (LOAD-006) | 5 |
-| Schema | CFG-SCH-001 to 012 | 10 | 0 | 2 (SCH-011, 012) | 5 |
+| Schema | CFG-SCH-001 to 013 | 10 | 0 | 3 (SCH-011 to 013) | 5 |
 | Backend selection and presets | CFG-ISO-001 to 005 | 4 | 0 | 1 (ISO-005) | 3 |
 | Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
 | User-owned files | CFG-USR-001 to 006 | 4 | 0 | 2 (USR-005, 006) | 4 |
 
-**Summary:** 39 of 46 specs implemented; 0 deferred; 7 gaps. 30 of the 39 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-ENV-008, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-009, CFG-SCH-010, CFG-ISO-002, CFG-URL-004. Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004 (realized by the example files).
+**Summary:** 39 of 47 specs implemented; 0 deferred; 8 gaps. 30 of the 39 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-ENV-008, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-009, CFG-SCH-010, CFG-ISO-002, CFG-URL-004. Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004 (realized by the example files).
 
 ## Key Findings
 
@@ -92,7 +92,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 3. Ears reads `ears.discord.guild_id` / `voice_channel_id` (B19; CFG-USR-005, ears EARS-SESS-007).
 4. Descend into arrays in `unknownKeys` and drop the region-split text (S49; CFG-LOAD-006).
 5. Fix the mock/hash-embedder comment at `config/config.example.yaml:18` (B20, S17; CFG-USR-006).
-6. Add the schema keys other segments' fixes read: `brain.salience.thinking_timeout_ms`, `brain.affect.baseline_arousal` (CFG-SCH-011) and `vision.timeout_ms`, `vision.upload_timeout_ms`, `vision.upload_max_bytes` (CFG-SCH-012).
+6. Add the schema keys other segments' fixes read: `brain.salience.thinking_timeout_ms`, `brain.affect.baseline_arousal` (CFG-SCH-011) and `vision.timeout_ms`, `vision.upload_timeout_ms`, `vision.upload_max_bytes` (CFG-SCH-012), `llm.timeout_ms` (CFG-SCH-013).
 7. Add a test that `ConfigSchema.shape` has no control key (S50; CFG-ENV-008), and tests for the other untested implemented specs: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007 to 010, CFG-ISO-002, CFG-URL-004, and the uncovered halves of the partially tested ones (Key Finding 7).
 
 ### Nice to Have

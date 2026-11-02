@@ -48,7 +48,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/chat/src/health.ts
 - services/chat/package.json, services/chat/tsconfig.json
 
-19 `@spec` annotations in code. They cite 39 IDs: 38 of the 39 `[x]` IDs (CHAT-TW-009, the library-driven reconnect, has no annotation yet) and CHAT-FILT-003, which is now a `[ ]` gap whose annotation stays on `filter.ts` until the fix lands. No annotation cites a missing ID.
+19 `@spec` annotations in code. They cite 40 IDs: all 39 `[x]` IDs (CHAT-TW-009, the library-driven reconnect, rides the `onConnect` annotation at `services/chat/src/index.ts:89`) and CHAT-FILT-003, which is now a `[ ]` gap whose annotation stays on `filter.ts` until the fix lands. No annotation cites a missing ID.
 
 ### OpenSpec (frozen, historical)
 - openspec/specs/chat/spec.md
@@ -102,8 +102,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Consumed by `sali
 
 ### Should Fix
 4. Await (and log a failure of) `addUserForToken` before creating `ChatClient` (CHAT-TW-006, S9).
-5. Add an `@spec CHAT-TW-009` annotation at the `ChatClient` construction / `onConnect` wiring (`services/chat/src/index.ts:87-94`).
 
 ### Nice to Have
-6. Add tests for the `index.ts` wiring: idle plan degraded heartbeat, auth selection, message publish, reconnect re-signalling `ready` (CHAT-PLAN-003, CHAT-TW-001, CHAT-TW-002, CHAT-TW-008, CHAT-TW-009).
-7. Persist refreshed Twitch tokens, or document that restarts re-use the env token (CHAT-TW-002).
+5. Add tests for the `index.ts` wiring: idle plan degraded heartbeat, auth selection, message publish, reconnect re-signalling `ready` (CHAT-PLAN-003, CHAT-TW-001, CHAT-TW-002, CHAT-TW-008, CHAT-TW-009).
+6. Persist refreshed Twitch tokens, or document that restarts re-use the env token (CHAT-TW-002).

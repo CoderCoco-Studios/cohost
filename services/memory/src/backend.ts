@@ -3,7 +3,7 @@ import { HashEmbedder, Ollama, type Embedder } from "@cohost/llm";
 import { InMemoryStore } from "./fake-store.js";
 import { MemoryStore, type MemoryBackend } from "./store.js";
 
-// @spec MEM-BACKEND-003
+// @spec MEM-BACKEND-003, LLM-EMBED-004
 /** Embedder per `brain.memory.embedder`: `ollama` is always the real client, `hash` never touches the network. */
 export function createMemoryEmbedder(cfg: Config): Embedder {
   return cfg.brain.memory.embedder === "hash" ? new HashEmbedder() : new Ollama(cfg.llm);

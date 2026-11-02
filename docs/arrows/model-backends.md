@@ -70,7 +70,7 @@ Consumers: cortex (`services/cortex/src/index.ts:28`), memory (`services/memory/
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 | 6 | 0 | 0 | 5 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 4 | 0 | 1 | 4 | 4 |
 
-**Summary:** 42 of 44 specs implemented; 0 deferred; 2 gaps (LLM-CHAT-008, LLM-MOCK-005). 41 specs cited from code, 35 from tests. No reverse orphans. Implemented but without a code annotation: LLM-EMBED-004 (realized by memory's switch, `services/memory/src/backend.ts:8-10`). Implemented but without a test annotation: LLM-IF-001, LLM-IF-003 (structural), LLM-CHAT-001, LLM-CHAT-007, LLM-CLAUDE-009, LLM-STOP-006, LLM-EMBED-004.
+**Summary:** 42 of 44 specs implemented; 0 deferred; 2 gaps (LLM-CHAT-008, LLM-MOCK-005). 42 specs cited from code (LLM-EMBED-004 is annotated at memory's switch, `services/memory/src/backend.ts:6`), 35 from tests. No reverse orphans. Implemented but without a test annotation: LLM-IF-001, LLM-IF-003 (structural), LLM-CHAT-001, LLM-CHAT-007, LLM-CLAUDE-009, LLM-STOP-006, LLM-EMBED-004.
 
 ## Key Findings
 
@@ -94,7 +94,6 @@ Consumers: cortex (`services/cortex/src/index.ts:28`), memory (`services/memory/
 ### Should Fix
 1. Correct the `mock` comment at `config/config.example.yaml:18` to name the separate `MEMORY_EMBEDDER=hash` switch (LLM-EMBED-004; S17).
 2. Fix `examples/providers/README.md:86`: Compose mounts no `~/.aws`, so document environment credentials (or an instance role) for Bedrock in Docker (S6, deployment DEPLOY-7); fix `:96`, whose override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
-3. Optionally annotate `services/memory/src/backend.ts:8` with `@spec LLM-EMBED-004` (memory segment).
 
 ### Nice to Have
 1. Tighten the weak assertions listed in Key Finding 9 and add tests for LLM-CHAT-001, LLM-CHAT-007 and LLM-CLAUDE-009.

@@ -86,7 +86,7 @@ async function startTwitch(channel: string): Promise<void> {
   const authProvider = await buildAuth();
   const client = new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } });
 
-  // @spec CHAT-TW-004
+  // @spec CHAT-TW-004, CHAT-TW-009
   client.onConnect(() => {
     connected = true;
     heartbeat.ready();

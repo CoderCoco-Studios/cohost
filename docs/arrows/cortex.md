@@ -4,20 +4,25 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**MAPPED** — mapped 2026-10-31 (git SHA 686cc8f), not yet marked audited in `index.yaml`. Audit pass complete 2026-11-01, awaiting index update.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 58 specs: 46 implemented, 0 deferred, 12 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
 
-## Questions for the user
+## Decisions applied
 
-1. **Should `deps.llm` follow the backend at runtime?** `llmOk` is written only by `waitForLlm` (`services/cortex/src/index.ts:26`, `index.ts:36`; `services/cortex/src/startup.ts:24`), so after `ready` the heartbeat says `llm: ok` while `think` fails (`services/cortex/src/cortex.ts:154-156`); commit `691b079` noted this at merge and `health.ts:4` claims it follows the last ping (`CTX-HEALTH-003`). Recommended: yes; feed each `llm.chat` outcome into `llmOk` with `tracked()`.
-2. **Should a failed status publish on the early gates be absorbed?** `cortex.ts:119` and `cortex.ts:121` await `status()` outside any `try` while `think` runs un-awaited (`cortex.ts:65`); no `unhandledRejection` handler exists, so Node exits on such a rejection (`CTX-GATE-008`). Recommended: yes; add `.catch(() => {})` as on `cortex.ts:117`.
-3. **Should the raw model reply be logged at `info`?** `cortex.ts:138` logs `raw` on every reply, before the critic has seen it (`CTX-PROMPT-007`). Recommended: move `raw` to `debug`, keep timing and counts at `info`.
-4. **Should a plain restart replay stale `attention.focus` events?** `fromNow` only applies when the group is created (`packages/bus/src/index.ts:126-131`); the control plane's default `fresh` start resets the group (`packages/control/src/manifest.ts:43`), but a crash or container restart replays the backlog and can answer old focuses (`CTX-EVT-001`). Recommended: no; reset the `cortex` group to `$` (or drop old focuses) on every start.
-5. **Is operator `say` meant to ignore mute, pause and a playing line?** `cortex.ts:106` calls `say()` directly and overwrites `speakingId` (`cortex.ts:189-195`; `CTX-CTRL-006`). Recommended: yes, keep it as the operator override and record that as a decision.
-6. **Should the speaking timeout publish a status?** When `speaking_timeout_ms` clears `speakingId` (`cortex.ts:168-171`), `brain.status` stays `speaking` until the next think (`CTX-GATE-004`). Recommended: yes; publish `idle` (or `muted`) when the timeout releases the voice.
-7. **Which reply-length rule wins?** The prompt asks for "ONE short spoken line" (`services/cortex/src/prompt.ts:37`); the llm critic blocks lines "longer than two sentences" (`services/cortex/src/critic.ts:38`; `CTX-CRITIC-006`). Recommended: align the critic to the prompt's one short line.
-8. **Should a viewer note survive a vetoed, dropped or failed reply?** It is deleted before the LLM call (`cortex.ts:130-132`; `CTX-VIEWER-003`). Recommended: delete it only after `say()` succeeds.
-9. **Should `forget_context` also clear the vision summary?** `Context.clear` empties only the event array (`packages/working-memory/src/index.ts:81-83`), so `lastVision` keeps feeding the "On screen right now" line and the recall fallback (`cortex.ts:102`; `CTX-CTRL-004`). Recommended: yes, clear `lastVision` too (mood can stay).
-10. **Should an empty focus text fall back to the vision summary for recall?** `cortex.ts:127` uses `??`, so a focus with `text: ""` skips recall; the old spec wording read both ways (`CTX-RECALL-001`). Recommended: yes; use the vision summary whenever the focus text is empty.
+Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
+
+1. **R4** Runtime `deps.llm` → every `llm.chat` outcome feeds it through `tracked()`. Specs: `CTX-HEALTH-003` (reworded).
+2. **R1** Failed status publish on the early gates → logged, the think returns. Specs: `CTX-GATE-008` (reworded).
+3. **B21** Raw model reply → logged at `debug`; timing and counts stay at `info`. Specs: `CTX-PROMPT-007` (`[x]` → `[ ]`).
+4. **P8** Restart replay → start mode `latest`: the `cortex` group is reset to `$` on every start. Specs: `CTX-EVT-001` (`[x]` → `[ ]`).
+5. **P7** Operator `say` → kept as the override of mute, pause and busy; only cortex and salience see mute and pause. Specs: `CTX-CTRL-006` (reworded, stays `[x]`).
+6. **S28** Speaking-timeout release → publish `idle` (or `muted`) when it fires. Specs: `CTX-GATE-009` (new).
+7. **B10** Reply length → the llm critic enforces the prompt's one short spoken line. Specs: `CTX-CRITIC-006` (`[x]` → `[ ]`).
+8. **B9** Viewer note → deleted only after the reply's `brain.say` is published. Specs: `CTX-VIEWER-003` (`[x]` → `[ ]`).
+9. **S29** `forget_context` → also clears the last vision summary; mood and pending recalls stay. Specs: `CTX-CTRL-004` (`[x]` → `[ ]`; working-memory `WM-WIN-003`).
+10. **S30** Empty focus text → recall falls back to the vision summary. Specs: `CTX-RECALL-001` (`[x]` → `[ ]`).
+11. **P10** Tag/stop contract → working-memory owns the tags, stops are a token saver, the self line is not a stop, a cortex-level test pins tags against stops. Specs: `CTX-PROMPT-008` (new).
+12. **R4** Bedrock ping always true → the cortex heartbeat `detail` says `llm` is not probed. Specs: `CTX-HEALTH-004` (new).
+13. **R3** Readiness → `ready` once the `cortex` consumer group exists. Specs: `CTX-START-003` (`[x]` → `[ ]`).
 
 ## References
 
@@ -28,7 +33,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (55 specs, prefix `CTX`: 53 `[x]`, 2 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (58 specs, prefix `CTX`: 46 `[x]`, 12 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 42 lines citing 47 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (25)
@@ -38,7 +43,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 - services/cortex/test/mock.test.ts (3)
 - services/cortex/test/health.test.ts (3)
 
-### Code (`@spec` lines per file; 40 lines citing all 53 implemented IDs)
+### Code (`@spec` lines per file; 40 lines citing 53 IDs: the 46 implemented plus the 7 former `[x]` lines now `[ ]`)
 - services/cortex/src/index.ts (4)
 - services/cortex/src/startup.ts (1)
 - services/cortex/src/cortex.ts (28)
@@ -69,56 +74,59 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Tested |
-|----------|----------|-------------|----------|------|--------|
-| Event handling | CTX-EVT-001 to CTX-EVT-007 | 7 | 0 | 0 | 6 |
-| Think gating | CTX-GATE-001 to CTX-GATE-008 | 7 | 0 | 1 | 7 |
-| Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 | 4 |
-| Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-003 | 3 | 0 | 0 | 3 |
-| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-007 | 7 | 0 | 0 | 6 |
-| Critic | CTX-CRITIC-001 to CTX-CRITIC-006 | 6 | 0 | 0 | 5 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
+|----------|----------|-------------|----------|------|-----------|
+| Event handling | CTX-EVT-001 to CTX-EVT-007 | 6 | 0 | 1 (EVT-001) | 6 |
+| Think gating | CTX-GATE-001 to CTX-GATE-009 | 7 | 0 | 2 (GATE-008, 009) | 7 |
+| Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 4 | 0 | 1 (RECALL-001) | 4 |
+| Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-003 | 2 | 0 | 1 (VIEWER-003) | 3 |
+| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-008 | 6 | 0 | 2 (PROMPT-007, 008) | 6 |
+| Critic | CTX-CRITIC-001 to CTX-CRITIC-006 | 5 | 0 | 1 (CRITIC-006) | 5 |
 | Saying | CTX-SAY-001 to CTX-SAY-004 | 4 | 0 | 0 | 4 |
-| Control | CTX-CTRL-001 to CTX-CTRL-006 | 6 | 0 | 0 | 6 |
+| Control | CTX-CTRL-001 to CTX-CTRL-006 | 5 | 0 | 1 (CTRL-004) | 6 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 | 2 |
-| Startup and shutdown | CTX-START-001 to CTX-START-004 | 4 | 0 | 0 | 2 |
-| Health | CTX-HEALTH-001 to CTX-HEALTH-003 | 2 | 0 | 1 | 2 |
+| Startup and shutdown | CTX-START-001 to CTX-START-004 | 3 | 0 | 1 (START-003) | 2 |
+| Health | CTX-HEALTH-001 to CTX-HEALTH-004 | 2 | 0 | 2 (HEALTH-003, 004) | 2 |
 
-**Summary:** 53 of 55 specs implemented and annotated in code; 0 deferred; 2 gaps (`CTX-GATE-008`, `CTX-HEALTH-003`). 47 of the 53 implemented specs have a test annotated with `@spec`; the 6 without one are `CTX-EVT-001`, `CTX-RECALL-002`, `CTX-PROMPT-007`, `CTX-CRITIC-006`, `CTX-START-003` and `CTX-START-004`. No `@spec` annotation cites a missing ID.
+**Summary:** 46 of 58 specs implemented and annotated in code; 0 deferred; 12 gaps (`CTX-EVT-001`, `CTX-GATE-008`, `CTX-GATE-009`, `CTX-RECALL-001`, `CTX-VIEWER-003`, `CTX-PROMPT-007`, `CTX-PROMPT-008`, `CTX-CRITIC-006`, `CTX-CTRL-004`, `CTX-START-003`, `CTX-HEALTH-003`, `CTX-HEALTH-004`). Seven gaps are former `[x]` lines whose intent changed (`CTX-EVT-001`, `CTX-RECALL-001`, `CTX-VIEWER-003`, `CTX-PROMPT-007`, `CTX-CRITIC-006`, `CTX-CTRL-004`, `CTX-START-003`); their existing code annotations stay and the fix lands under the same ID. 47 spec lines have a test annotated with `@spec` (the "With test" column; the tests on `CTX-RECALL-001`, `CTX-VIEWER-003` and `CTX-CTRL-004` pin today's behaviour and change with the fix). Implemented specs with no test: `CTX-RECALL-002`, `CTX-START-004`. No `@spec` annotation cites a missing ID.
 
 ## Key Findings
 
-1. **Markers verified, none flipped** — every `[x]` line has implementing code; both `[ ]` gaps are confirmed absent (`cortex.ts:119-121`, `index.ts:36` is the only writer of `llmOk`).
-2. **Spec lines corrected to match the code** — `CTX-EVT-001` (`fromNow` only applies when the group is created), `CTX-RECALL-001` (vision fallback only when the focus has no `focus` object, `cortex.ts:127`), `CTX-CRITIC-005` (also trims `text` and keeps a string `note`, `critic.ts:16-24`), `CTX-CTRL-004` (keeps `lastVision`, mood and pending recalls), and the `CTX-RECALL-002` test reference (nothing asserts the skipped request). LLD Open Questions 8, 10 and 11 record that the earlier wording may have been the intent.
-3. **New spec line for observed behaviour** — `CTX-CRITIC-006`: the llm critic's inner-editor prompt and 160-token cap (`critic.ts:34-43`).
-4. **`deps.llm` never changes after startup** — `llmOk` is written only by `waitForLlm` (`index.ts:26,36`; `startup.ts:24`), so the heartbeat reports `ready`/`llm: ok` forever even when `think` fails against a dead backend (`cortex.ts:154-156`). Commit `691b079` review notes: "cortex `llm` dep reflects the startup ping only". Question 1.
-5. **Unawaited think can raise an unhandled rejection** — `void this.think(...)` (`cortex.ts:65`) and early-gate `await this.status("muted"|"speaking")` outside the `try` (`cortex.ts:119-121`); only the `thinking` branch has `.catch` (`cortex.ts:117`), and no process-level `unhandledRejection` handler exists. Question 2.
-6. **Raw LLM text logged at info** — `log.info({ ms, reason, memories, raw }, "llm reply")` on every reply (`cortex.ts:138`), before the critic has seen it. Question 3.
-7. **Restarts replay stale focuses** — a plain restart resumes the `cortex` group and processes old `attention.focus` events; only a first start or a control-plane `fresh` start (the default, `packages/control/src/manifest.ts:43`) skips them. Question 4.
-8. **Operator `say` bypasses every gate** — no mute, pause or busy check, overwrites `speakingId` (`cortex.ts:106`, `cortex.ts:189-195`). Question 5.
-9. **Speaking release is internal only** — `voiceBusy()` clears `speakingId` after `speaking_timeout_ms` (`cortex.ts:168-171`) but `brain.status` stays `speaking` until the next think publishes something. Question 6.
-10. **Inconsistent length rules** — prompt "ONE short spoken line" (`prompt.ts:37`) vs llm critic "longer than two sentences" (`critic.ts:38`). Question 7.
-11. **Viewer note is consumed before success** — deleted at `cortex.ts:130-132`, so a vetoed, dropped or failed reply loses that viewer's one-shot note; "regular" is a bare literal `> 25` (`cortex.ts:78`) applied to counts that the memory region's Postgres store reports one low (memory `MEM-VIEWER-001`). Question 8.
-12. **`forget_context` keeps the vision summary** — `Context.clear` leaves `lastVision` (`packages/working-memory/src/index.ts:81-83`). Question 9.
-13. **Own-vs-other `brain.say` depends on the bus source string** — `ev.source !== "cortex"` (`cortex.ts:52`) ties behaviour to `new Bus("cortex")` at `index.ts:25`.
-14. **Critic misconfiguration fails at import** — the `Module` constructor throws for an unusable critic config (`packages/modules/src/index.ts:41-48`) while `index.ts:29` runs, outside `main()`'s `fatal` handler (`index.ts:55`).
-15. **Decision rationale** — 8 of the 12 LLD decision rows cite the code comment or commit that states their rationale (`969f6d7`, `51d5a9c`, comments at `cortex.ts:24,63-64,147,167`, `startup.ts:15-19`, `index.ts:11-13`, `packages/llm/src/mock.ts:7`); 2 are partly settled (status echo, per-viewer keying) and 2 remain `[inferred]` (own-vs-other by source, operator `say` bypass).
-16. **Test coverage** — `index.ts` wiring is untested; `cortex.test.ts` covers only `parseReply`; the 50-entry viewer cap, the `recall_k <= 0` skip and the operator-`say` gate bypass have no assertion.
+1. **Markers verified at audit** — every `[x]` line had implementing code; both original `[ ]` gaps were confirmed absent (`cortex.ts:119-121`; `index.ts:36` is the only writer of `llmOk`).
+2. **`deps.llm` never changes after startup** — `llmOk` is written only by `waitForLlm` (`index.ts:26,36`; `startup.ts:24`), so the heartbeat reports `ready`/`llm: ok` forever even when `think` fails against a dead backend (`cortex.ts:154-156`). Commit `691b079` review notes: "cortex `llm` dep reflects the startup ping only". R4, `CTX-HEALTH-003`.
+3. **Unawaited think can raise an unhandled rejection** — `void this.think(...)` (`cortex.ts:65`) and early-gate `await this.status("muted"|"speaking")` outside the `try` (`cortex.ts:119-121`); only the `thinking` branch has `.catch` (`cortex.ts:117`), and no process-level `unhandledRejection` handler exists. R1, `CTX-GATE-008`.
+4. **Raw LLM text logged at info** — `log.info({ ms, reason, memories, raw }, "llm reply")` on every reply (`cortex.ts:138`), before the critic has seen it. B21, `CTX-PROMPT-007`.
+5. **Restarts replay stale focuses** — a plain restart resumes the `cortex` group and processes old `attention.focus` events; only a first start or a control-plane `fresh` start (the manifest default, `packages/control/src/manifest.ts:44`) skips them. P8, `CTX-EVT-001`.
+6. **Operator `say` bypasses every gate, by design** — no mute, pause or busy check, overwrites `speakingId` (`cortex.ts:106`, `cortex.ts:189-195`). P7, `CTX-CTRL-006`.
+7. **Speaking release is internal only** — `voiceBusy()` clears `speakingId` after `speaking_timeout_ms` (`cortex.ts:168-171`) but `brain.status` stays `speaking` until the next think publishes something. S28, `CTX-GATE-009`.
+8. **Inconsistent length rules** — prompt "ONE short spoken line" (`prompt.ts:37`) vs llm critic "longer than two sentences" (`critic.ts:38`). B10, `CTX-CRITIC-006`.
+9. **Viewer note is consumed before success** — deleted at `cortex.ts:130-132`, so a vetoed, dropped or failed reply loses that viewer's one-shot note; "regular" is a bare literal `> 25` (`cortex.ts:78`) applied to counts that the memory region's Postgres store reports one low (memory `MEM-VIEWER-001`). B9, `CTX-VIEWER-003`.
+10. **`forget_context` keeps the vision summary** — `Context.clear` leaves `lastVision` (`packages/working-memory/src/index.ts:81-83`). S29, `CTX-CTRL-004`.
+11. **Tag/stop literals are copied by hand** — `packages/working-memory/src/index.ts:93-95` vs `packages/llm/src/index.ts:45`; no test imports both. P10, `CTX-PROMPT-008`.
+12. **Own-vs-other `brain.say` depends on the bus source string** — `ev.source !== "cortex"` (`cortex.ts:52`) ties behaviour to `new Bus("cortex")` at `index.ts:25`.
+13. **Critic misconfiguration fails at import** — the `Module` constructor throws for an unusable critic config (`packages/modules/src/index.ts:41-48`) while `index.ts:29` runs, outside `main()`'s `fatal` handler (`index.ts:55`).
+14. **Decision rationale** — the LLD's Decisions table cites a code comment or commit for 8 original rows, records the owner's 2026-11-01 decisions in 12 rows (2 of them, operator `say` and viewer-note deletion, replacing `[inferred]`), and leaves 1 row `[inferred]` (own-vs-other by source) plus 2 partly `[inferred]` (single flight, the 50-note cap).
+15. **Test coverage** — `index.ts` wiring is untested; `cortex.test.ts` covers only `parseReply`; the 50-entry viewer cap, the `recall_k <= 0` skip and the operator-`say` gate bypass have no assertion.
 
 ## Work Required
 
 ### Must Fix
-1. Make `deps.llm` reflect runtime backend health, not just startup (`CTX-HEALTH-003`, question 1).
-2. Absorb status-publish failures on the early gate paths so the unawaited think cannot reject (`CTX-GATE-008`, question 2).
+1. Feed every `llm.chat` outcome into `deps.llm` with `tracked()` (`CTX-HEALTH-003`, R4).
+2. Log and absorb status-publish failures on the early gate paths (`CTX-GATE-008`, R1).
+3. Subscribe with the bus's explicit start mode `latest` once event-bus provides it (`CTX-EVT-001`, P8).
+4. Report `ready` only once the `cortex` consumer group exists (`CTX-START-003`, R3).
+5. Delete the viewer note only after `say()` succeeds (`CTX-VIEWER-003`, B9).
+6. Align the llm critic's length rule with the prompt (`CTX-CRITIC-006`, B10).
+7. Log the raw reply at `debug` (`CTX-PROMPT-007`, B21).
+8. Flag the unprobed Bedrock `llm` dependency in the heartbeat `detail` (`CTX-HEALTH-004`, R4).
 
 ### Should Fix
-3. Decide raw LLM text logging (`CTX-PROMPT-007`, question 3).
-4. Decide restart replay for the `cortex` group (`CTX-EVT-001`, question 4).
-5. Publish a status when the speaking timeout releases the voice, or record why not (`CTX-GATE-004`, question 6).
-6. Record the operator `say` override decision (`CTX-CTRL-006`, question 5).
-7. Reconcile the "one line" vs "two sentences" length rule (`CTX-CRITIC-006`, question 7).
+9. Publish `idle`/`muted` when the speaking timeout fires (`CTX-GATE-009`, S28).
+10. Clear the vision summary on `forget_context`, with working-memory (`CTX-CTRL-004`, `WM-WIN-003`, S29).
+11. Fall back to the vision summary when the focus text is empty (`CTX-RECALL-001`, S30).
+12. Add the cortex-level tag/stop test (`CTX-PROMPT-008`, P10).
 
 ### Nice to Have
-8. Move the viewer-note delete after a successful reply, or record one-shot-on-attempt (`CTX-VIEWER-003`, question 8).
-9. Decide `forget_context` and the recall fallback (`CTX-CTRL-004`, `CTX-RECALL-001`, questions 9 and 10).
-10. Name the "regular" threshold (25) and the 50-note cap as constants (`CTX-VIEWER-001`, `CTX-VIEWER-002`).
-11. Add tests for `index.ts` wiring, the viewer cap and the `recall_k <= 0` skip (`CTX-EVT-001`, `CTX-VIEWER-002`, `CTX-RECALL-002`).
+13. Assert the operator-`say` gate bypass in a test (`CTX-CTRL-006`).
+14. Name the "regular" threshold (25) and the 50-note cap as constants (`CTX-VIEWER-001`, `CTX-VIEWER-002`).
+15. Add tests for `index.ts` wiring, the viewer cap and the `recall_k <= 0` skip (`CTX-EVT-001`, `CTX-VIEWER-002`, `CTX-RECALL-002`).

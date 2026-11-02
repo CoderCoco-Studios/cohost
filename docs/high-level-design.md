@@ -25,8 +25,8 @@ point the voice at a different avatar app without starting over. `[proposed]`
 
 cohost is for a streamer who owns a GPU box and wants the co-host to live on
 it: every sense, every brain region, the voice, the face and the memory run
-locally in separate containers, and the only thing that may leave the machine
-is the chat-model call, by explicit choice. `[proposed]`
+locally in separate containers, and only explicitly configured chat-model or
+hook calls may leave the machine, by explicit choice. `[proposed]`
 
 ## Approach
 
@@ -37,7 +37,9 @@ deliberate: it gives each region one job, one set of inputs and one set of
 outputs, and lets any part be replaced, mocked or run alone without the others
 noticing. `[proposed]`
 
-- **Senses** publish what they observe and consume nothing from the brain:
+- **Senses** publish what they observe and consume nothing from the brain
+  on the sensing path (`ears` also consumes `voice.utterance` and reports
+  Discord playback events as a sink for `voice`):
   `chat` turns Twitch IRC into `chat.message`, `eyes` turns an OBS screenshot
   into a one-line `vision.summary` from a local vision model, `ears` turns
   each Discord speaker's audio into `speech.heard` through local
@@ -50,7 +52,8 @@ noticing. `[proposed]`
   its own (`affect.state`). `memory` is the only region that touches
   Postgres: it embeds what happened, answers `memory.recall.request`, knows
   the regulars, and between streams consolidates what it learned into the
-  personality file. `cortex` is the only region that calls the chat model:
+  personality file. `cortex` is the only region that generates the main reply (salience and
+  affect `llm` hooks and the cortex critic hook may also call a model):
   it turns a focus plus personality, mood, viewer notes, recalled memories
   and the recent transcript into one spoken line, vetted by a critic hook.
 - **The body** speaks and animates. `voice` synthesizes `brain.say` into
@@ -67,7 +70,7 @@ Three cross-cutting choices make the metaphor hold up in practice. Judgement
 that could use a model is a **hook** (`rules` / `llm` / `http`) that always
 falls back to built-in rules, so the show goes on when a model is slow or
 down. The chat model is behind one `ChatProvider` interface, so a stronger
-brain is a `config.yaml` change and embeddings stay on local Ollama. And every
+brain is a `config.yaml` change and embeddings stay on local Ollama (the offline mock provider uses hash embeddings). And every
 service has a mock, stub or off backend, so any one of them runs on Redis
 alone with no account, GPU or API key. `[inferred]`
 
@@ -114,9 +117,9 @@ for them to operate. `[proposed]`
    `## Learned` block after each stream that the owner can edit or delete.
    `[proposed]`
 4. **Run locally on one GPU box.** Senses, brain, body, memory and the
-   dashboard all run in Compose on the AI PC; only the cortex's chat call
-   (and the reflection pass, which uses the same provider) may leave the
-   machine, and only when the operator picks a hosted provider.
+   dashboard all run in Compose on the AI PC; only explicitly configured
+   chat-model, reflection, or hook calls may leave the machine, and only when
+   the selected provider or hook URL is remote.
    `[proposed]`
 5. **Swap any piece.** Adding a chat source, a TTS engine, an avatar driver,
    a model provider or a hook implementation never touches the brain
@@ -186,8 +189,9 @@ for them to operate. `[proposed]`
 
 Each tenet is a test a reviewer can apply to a design or a pull request.
 
-1. **The bus is the only seam.** Services talk through typed events on
-   `cohost:events` and nothing else. Reject a design in which two services
+1. **The bus is the only seam.** Services exchange control and events as
+   typed events on `cohost:events`; HTTP is allowed only for binary or object
+   transfer (such as voice audio) and operator APIs. Reject a design in which two services
    call each other over HTTP, share a database, or import each other's
    runtime code. `[proposed]`
 2. **Senses and body are swappable without touching the brain.** A new chat
@@ -216,7 +220,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    new setting that puts a secret in `config.yaml`, a behaviour knob in
    `.env` without a `${VAR:-default}` placeholder in YAML, or a persona
    fact anywhere but `personality.md`. `[proposed]`
-8. **Local by default; only the chat-model call may leave the machine.**
+8. **Local by default; only explicitly configured chat-model or hook calls may leave the machine.**
    Audio, frames, chat text, embeddings and memories stay on the operator's
    box. Reject a default that sends any of them to a hosted service, and
    reject an embedding path that follows the chat provider off-machine.
@@ -226,7 +230,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 `[inferred]` cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 19 event types) plus a separate `cohost:health` heartbeat stream. Senses publish what they observe; four brain regions
+bus (`cohost:events`, 17 event types) plus a separate `cohost:health` heartbeat stream (18 registered payloads in all). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -263,7 +267,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 19 event types; consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 17 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -312,10 +316,10 @@ would need before reading any LLD.
 
 | Decision | Chosen | Alternatives | Rationale | Embodied in |
 | --- | --- | --- | --- | --- |
-| Inter-service transport | Redis Streams with one consumer group per service and zod validation on both publish and read | HTTP between services; pub/sub; one monolith | A service can restart and resume, a poison event is logged and acked rather than wedging the stream, and every payload shape lives in one registry. `[proposed]` | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:3-6` |
-| Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and only cortex ever calls the chat model. `[proposed]` | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
+| Inter-service transport | Redis Streams with one or more consumer groups per service and zod validation on both publish and read | HTTP between services; pub/sub; one monolith | A service can restart and resume, a poison event is logged and acked rather than wedging the stream, and every payload shape lives in one registry. `[proposed]` | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:3-6` |
+| Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and cortex or an explicitly configured `llm` hook can call a chat model. `[proposed]` | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
 | Who decides vs. who speaks | salience decides *when* (`attention.focus`), cortex decides *what* (`brain.say`), reflexes short-circuit both | cortex decides on its own; every event prompts the model | Talkativeness is a cheap, tunable scoring loop with no model in it; the expensive call only happens once something is worth a reply. `[proposed]` | [salience](intent/salience/salience-design.md) Scoring and Decision; [cortex](intent/cortex/cortex-design.md) think pipeline |
-| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings always local Ollama | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. `[inferred]` | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
+| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; production embeddings use local Ollama and mock uses hash embeddings | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. `[inferred]` | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. `[inferred]` | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. `[proposed]` | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (Discord bot, dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. `[inferred]` | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
@@ -356,13 +360,17 @@ what to measure once it has. All targets are proposals. `[proposed]`
    `voice.playing` from a real sink, measured on the owner's GPU box with the
    default local models. Target: under 4 s at the median. `[proposed]`
    `[decision needed]` the number is a guess; the owner sets it.
-3. **Silence ratio.** Fraction of `chat.message` events that lead to a
-   `brain.say`. The co-host should answer well under half of plain chat and
+3. **Silence ratio.** Fraction of distinct `chat.message` events that
+   receive an attributable `brain.say` (one caused by that message, such as a
+   focus or reply tied to it) within a fixed window, so the ratio cannot
+   exceed 1; reflexes and voice-, vision- or operator-triggered lines are
+   excluded. `[decision needed]` the window length is the owner's call. The co-host should answer well under half of plain chat and
    nearly all direct mentions; a rising ratio over time means it is getting
    noisy. `[proposed]`
-4. **Hook health.** Fallback warnings from `salience.scorer`,
-   `affect.appraiser` and `cortex.critic` are rare in steady state (no more
-   than one per 30 s window per hook, the current throttle). `[proposed]`
+4. **Hook health.** Fallback rate (fallbacks per hook call, counted per
+   occurrence rather than from the logger, which throttles to one warning per
+   30 s) for `salience.scorer`, `affect.appraiser` and `cortex.critic` is
+   rare in steady state. `[decision needed]` the threshold is the owner's call. `[proposed]`
 5. **Memory that sticks.** After the reflection pass, the share of
    `## Learned` bullets the owner keeps rather than deletes; recalled
    memories appear in the prompt for at least half of replies to regulars.

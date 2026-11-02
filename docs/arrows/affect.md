@@ -4,34 +4,37 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**MAPPED** — mapped 2026-10-31 (git SHA 686cc8f), not yet audited. 33 of 36 specs verified against code; 3 gaps (`forget_context` misses baseline, stale queued appraisals across pause/reset, unhandled publish rejection). Audit pass complete 2026-11-02, awaiting index update.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 37 specs: 29 implemented, 0 deferred, 8 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
 
-## Questions for the user
+## Decisions applied
 
-1. **Should `forget_context` land exactly on baseline?** The reset deltas are taken before decay and `nudge` decays first (`services/affect/src/affect.ts:68`, `services/affect/src/mood.ts:31-34`), so the mood ends past baseline by the decay since the last tick (valence 0.135 instead of 0.15 two seconds after a 0.65 peak; -0.09 after 45 s without a tick). AFF-IN-007 is now `[ ]`. Recommended: yes; tick before computing the deltas (or assign directly).
-2. **Should a paused affect keep publishing `affect.state`?** Code and comment say yes (`affect.ts:29`, `publish()` at `:101` has no pause check; AFF-CTRL-003); the archived add-service-control design says paused services are "treated like muted for output" (`openspec/changes/archive/2026-11-01-add-service-control/design.md:27`). No test asserts either. Recommended: keep publishing (consumers need a live, decaying mood); the LID spec wins over the retired OpenSpec design.
-3. **What should `pause` and `forget_context` do to queued llm/http appraisals?** AFF-HOOK-008 (gap) prescribes discarding the queue; holding it until `resume`, or skipping jobs in `drain` while paused (`affect.ts:94-99`), also satisfies "mood is not nudged while paused". Recommended: discard on `forget_context`, skip (drop) in `drain` while paused.
-4. **Log-and-continue, or crash-and-restart, on a publish failure?** AFF-PUB-004 (gap) asks for log-and-continue; today `void this.d.bus.publish(...)` (`affect.ts:110`) lets a Redis error kill the process and compose restarts it at baseline (AFF-CTRL-005). Recommended: confirm log-and-continue.
-5. **Should a crashed affect replay the backlog on restart?** `fromNow` only positions a newly created group (`packages/bus/src/index.ts:126-131`); a compose restart resumes the `affect` group and every line published while down nudges the mood at once. Control-plane `fresh` starts skip them (`packages/control/src/manifest.ts:41`). Recommended: decide with the event-bus crash-recovery question; for affect, skipping stale lines matches "a missed line costs less than a stale one" (`affect.ts:17-18`).
-6. **Should AFF-HEALTH-002 cover failures at module load?** `main()` awaits nothing; `createAppraiser` and the rest run at import time (`services/affect/src/index.ts:17-22`), so `module.kind: http` with an empty `url` (`packages/modules/src/index.ts:45-48`) exits via an uncaught exception without the `fatal` log. Recommended: yes; widen the spec and mark it a gap.
-7. **Is "No LLM" still the claim?** `services/affect/src/index.ts:9` and `README.md` ("Mood": "No LLM, no database") contradict the `llm` appraiser kind (`services/affect/src/appraise.ts:43-51`, AFF-HOOK-009). Recommended: reword to "no LLM unless `brain.affect.module.kind` is `llm`; no database".
-8. **Should resting arousal be configurable?** 0.1 is a literal in three places (`mood.ts:14,28`, `affect.ts:68`) while valence has `baseline_valence` (AFF-MOOD-001, AFF-MOOD-003). Recommended: add `brain.affect.baseline_arousal` defaulting to 0.1, or document it as fixed.
-9. **Which delta range is the contract: the prompt's or the validator's?** The llm prompt asks for valence -0.3..0.3 and arousal 0..0.3 (`appraise.ts:47`, AFF-HOOK-009) while validation accepts +-0.5 for both (`appraise.ts:37`, AFF-HOOK-002) and the http contract documents +-0.5 (`examples/modules/README.md:110`). Recommended: keep +-0.5 as the contract and widen the prompt text.
-10. **Is the self-reinforcing mood loop intended?** The co-host's own `brain.say` emotion nudges its mood (`affect.ts:56-62`, AFF-IN-006), whose label colours the cortex prompt and avatar; only the half-life damps it. Recommended: confirm as intended gain.
-11. **Should a voice line addressed to the co-host get the mention boost?** Speech is always appraised with `mention` false (`affect.ts:48`, AFF-IN-003). Recommended: keep; speech already has the higher 0.15 base.
-12. **Are single-letter slang tokens intended?** POSITIVE contains `w`; NEGATIVE contains `l` and `f` as whole words (`appraise.ts:19-20`), so a lone "L", "W" or "F" in chat moves the mood. Recommended: confirm (stream slang).
-13. **Should `ready` wait for the subscription?** `heartbeat.ready()` fires right after the un-awaited `bus.subscribe` (`services/affect/src/index.ts:25,30`); the OpenSpec heartbeat requirement says "once its subscriptions are running". AFF-HEALTH-001 now states the observed timing. Recommended: await consumer-group creation before `ready()`.
+Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
+
+1. **B4** `forget_context` lands past baseline → apply pending decay first, then land exactly on baseline. Specs: AFF-IN-007 reworded (gap).
+2. **S36** Paused affect publishing → keep publishing `affect.state` while paused. Specs: AFF-CTRL-003 reworded (`[x]`).
+3. **S37** Queued appraisals on pause/reset → discard the queue on `forget_context`; the worker drops jobs while paused. Specs: AFF-HOOK-008 rewritten (gap).
+4. **R1** Publish failure → log and continue. Specs: AFF-PUB-004 (gap).
+5. **P8** Restart replay → start mode `latest` (group moved to the tail on every start; at-most-once). Specs: AFF-IN-001 rewritten, `[x]` → `[ ]`.
+6. **R3** Startup failures at module load → all setup inside `main()` so `fatal` is logged. Specs: AFF-HEALTH-002 widened, `[x]` → `[ ]`.
+7. **S38** "No LLM" claim → reword: no model on the default rules path; `llm`/`http` appraisers exist. Specs: none (LLD Context; code comment and README fix).
+8. **S39** Resting arousal → new key `brain.affect.baseline_arousal`, default 0.1. Specs: AFF-MOOD-006 added; AFF-MOOD-001, AFF-MOOD-003 reference it.
+9. **S40** Prompt vs validator range → +-0.5 is the contract; widen the llm prompt. Specs: AFF-HOOK-009 `[x]` → `[ ]`.
+10. **S41** Self-reinforcing mood loop → intended. Specs: none (LLD Decisions row).
+11. **S42** Mention boost for voice lines → none; speech base 0.15 stands in. Specs: AFF-IN-003 reworded (`[x]`).
+12. **S43** Single-letter slang `w` / `l` / `f` → intended. Specs: AFF-APPR-002 reworded (`[x]`).
+13. **R3** `ready` timing → after consumer-group creation. Specs: AFF-HEALTH-001 `[x]` → `[ ]`.
+14. **S25** (working-memory question 7) Unused `@cohost/working-memory` dependency → drop it. Specs: none.
 
 ## References
 
 ### HLD
-- docs/high-level-design.md (Services table; Cross-cutting protocols: Region hooks)
+- docs/high-level-design.md (Segments table; Cross-cutting protocols: Region hooks)
 
 ### LLD
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (36 specs, prefix `AFF`: 33 `[x]`, 3 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (37 specs, prefix `AFF`: 29 `[x]`, 8 `[ ]`, 0 `[D]`)
 
 ### Tests (18 annotated tests, 32 spec citations)
 - services/affect/test/affect.region.test.ts (9 annotated: Affect class nudges, reset, publish gating, llm/http queue, pause)
@@ -73,42 +76,44 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Event intake | AFF-IN-001 to AFF-IN-007 | 6 | 0 | 1 | 6 |
-| Mood model | AFF-MOOD-001 to AFF-MOOD-005 | 5 | 0 | 0 | 5 |
+| Event intake | AFF-IN-001 to AFF-IN-007 | 5 | 0 | 2 (IN-001, IN-007) | 6 |
+| Mood model | AFF-MOOD-001 to AFF-MOOD-006 | 5 | 0 | 1 (MOOD-006) | 5 |
 | Rule appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 | 4 |
-| Appraiser hook and queue | AFF-HOOK-001 to AFF-HOOK-009 | 8 | 0 | 1 | 7 |
-| Publishing | AFF-PUB-001 to AFF-PUB-004 | 3 | 0 | 1 | 3 |
+| Appraiser hook and queue | AFF-HOOK-001 to AFF-HOOK-009 | 7 | 0 | 2 (HOOK-008, HOOK-009) | 7 |
+| Publishing | AFF-PUB-001 to AFF-PUB-004 | 3 | 0 | 1 (PUB-004) | 3 |
 | Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 | 4 |
-| Health and lifecycle | AFF-HEALTH-001 to AFF-HEALTH-002 | 2 | 0 | 0 | 1 |
+| Health and lifecycle | AFF-HEALTH-001 to AFF-HEALTH-002 | 0 | 0 | 2 (HEALTH-001, HEALTH-002) | 1 |
 
-**Summary:** 33 of 36 specs implemented; 0 deferred; 3 gaps (AFF-IN-007, AFF-HOOK-008, AFF-PUB-004). Every implemented spec has a code `@spec` annotation, and so does AFF-IN-007, whose code exists but misses its target; 30 spec lines have a test annotation. Implemented specs with no test: AFF-IN-001, AFF-HOOK-009, AFF-CTRL-005, AFF-HEALTH-002. No reverse orphans (every `AFF-*` ID cited in code or tests exists in the spec file).
+**Summary:** 29 of 37 specs implemented; 0 deferred; 8 gaps (AFF-IN-001, AFF-IN-007, AFF-MOOD-006, AFF-HOOK-008, AFF-HOOK-009, AFF-PUB-004, AFF-HEALTH-001, AFF-HEALTH-002). 30 spec lines have a test annotation. Five gaps (AFF-IN-001, AFF-IN-007, AFF-HOOK-009, AFF-HEALTH-001, AFF-HEALTH-002) carry code annotations on the current implementation, which misses the decided behaviour; the fix lands under the same ID. Implemented specs with no test: AFF-CTRL-005. No reverse orphans (every `AFF-*` ID cited in code or tests exists in the spec file).
 
 ## Key Findings
 
-1. **AFF-IN-007 flipped `[x]` → `[ ]`.** `forget_context` computes its deltas before `nudge` applies the pending decay (`affect.ts:68`, `mood.ts:31-34`), so the mood lands past baseline by the decay since the last tick. Reproduced against the current code: valence 0.135 / arousal 0.085 two seconds after a 0.65 / 0.6 peak (defaults), valence -0.09 / arousal 0 after 45 s without a tick. The existing test uses a 10 000 000 ms half-life, which hides it. Question 1.
-2. **The other two gaps are real.** AFF-HOOK-008: neither `pause` nor `forget_context` touches the queue, and `drain` never checks `paused` (`affect.ts:36-38,68,94-99`). AFF-PUB-004: `void this.d.bus.publish(...)` (`affect.ts:110`) is uncaught. The `drain()` chain (`affect.ts:91`) is not a practical crash path: `Module.run` catches every module failure and the `rules` kind is never queued.
-3. **Spec wording corrected to match code.** AFF-IN-001: `fromNow` positions only a newly created group (`packages/bus/src/index.ts:126-131`). AFF-APPR-003: only ASCII capitals count (`/[A-Z]{5,}/`, `appraise.ts:29`). AFF-HEALTH-001: `ready` follows the *started* subscription. AFF-HEALTH-002: scoped to `main()` rejecting.
-4. **Two behaviours had no spec line; now AFF-HOOK-009 and AFF-CTRL-005.** The llm prompt contents (with ranges narrower than validation), and mood/paused state held only in memory.
-5. **Two documents disagree on paused output.** Code and `affect.ts:29` keep publishing while paused (AFF-CTRL-003); the archived add-service-control design says paused services are "treated like muted for output". Question 2.
-6. **README and header still say "No LLM".** `services/affect/src/index.ts:9` and `README.md` ("Mood"), against the `llm` appraiser kind (`appraise.ts:43-51`). Question 7.
+1. **`forget_context` misses baseline** (AFF-IN-007). It computes its deltas before `nudge` applies the pending decay (`affect.ts:68`, `mood.ts:31-34`), so the mood lands past baseline by the decay since the last tick. Reproduced against the current code: valence 0.135 / arousal 0.085 two seconds after a 0.65 / 0.6 peak (defaults), valence -0.09 / arousal 0 after 45 s without a tick. The existing test uses a 10 000 000 ms half-life, which hides it.
+2. **The queue and publish gaps are real.** AFF-HOOK-008: neither `pause` nor `forget_context` touches the queue, and `drain` never checks `paused` (`affect.ts:38,68,94-99`). AFF-PUB-004: `void this.d.bus.publish(...)` (`affect.ts:110`) is uncaught. The `drain()` chain (`affect.ts:91`) is not a practical crash path: `Module.run` catches every module failure and the `rules` kind is never queued.
+3. **Spec wording matches code where the decision confirmed it.** AFF-APPR-003: only ASCII capitals count (`/[A-Z]{5,}/`, `appraise.ts:29`). AFF-APPR-002 names the single-letter slang tokens. AFF-IN-003 states the absent mention boost for speech. AFF-CTRL-003: publishing continues while paused.
+4. **Restart replays the backlog.** A compose restart resumes the `affect` group (`packages/bus/src/index.ts:133-138`); only control-plane `fresh` starts (`packages/control/src/manifest.ts:42`) skip it. AFF-IN-001 (P8).
+5. **Startup failures bypass the `fatal` handler, and `ready` precedes the subscription.** Construction runs at module load (`index.ts:17-22`); `ready()` follows the un-awaited `bus.subscribe` (`index.ts:25,30`). AFF-HEALTH-001, AFF-HEALTH-002 (R3).
+6. **README and header still say "No LLM".** `services/affect/src/index.ts:9` and `README.md` ("Mood"), against the `llm` appraiser kind (`appraise.ts:43-51`). S38.
 7. **Spec numbers match OpenSpec.** Rule deltas, nudge sizes, label thresholds, queue cap 8, 4-char short-line cutoff and the 15 s republish all agree with `openspec/specs/affect/spec.md`; the OpenSpec worked examples (`lol nice` → 0.12/0.08, mention + trash → -0.15/0.31) reproduce from `appraise.ts:23-32`, though no test asserts those exact values.
 8. **Hygiene.** Unused `@cohost/working-memory` dependency (`package.json:16`, `tsconfig.json:8`; no import in `src` or `test`); a local `clamp` (`mood.ts:55`) duplicates the one `appraise.ts:1` imports from `@cohost/modules`.
-9. **Decisions now cite evidence.** 6 of 11 LLD decision rows are settled by code comments, a test assertion, commit `969f6d7` or the OpenSpec docs; 3 are settled in part (queue cap 8, publish-key precision and 15 s period, why +-0.5); 2 stay `[inferred]` (lazy decay, fixed resting arousal).
-10. **Test gaps.** Four implemented specs have no test (listed in the summary). Several annotated tests check direction or cause rather than the specified sizes: AFF-IN-004, AFF-IN-006 (arousal), AFF-APPR-001..003 (only the net -0.03 is exact), AFF-CTRL-003 (publishing while paused unasserted).
+9. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, a test assertion, commit `969f6d7`, the OpenSpec docs or the 2026-11-01 owner decisions; three keep a partial `[inferred]` (queue cap 8, publish-key precision and 15 s period) and one stays `[inferred]` (lazy decay).
+10. **Test gaps.** No test for AFF-CTRL-005 or the `index.ts` wiring. Several annotated tests check direction or cause rather than the specified sizes: AFF-IN-004, AFF-IN-006 (arousal), AFF-APPR-001..003 (only the net -0.03 is exact), AFF-CTRL-003 (publishing while paused unasserted).
 
 ## Work Required
 
 ### Must Fix
-1. Catch and log `affect.state` publish failures so a transient Redis error does not crash the service (AFF-PUB-004; Question 4).
+1. Make `forget_context` apply the pending decay before resetting, so the mood lands exactly on baseline (AFF-IN-007; B4).
+2. Catch and log `affect.state` publish failures (AFF-PUB-004; R1).
+3. Subscribe in start mode `latest` once event-bus provides it (AFF-IN-001; P8).
+4. Move all startup into `main()` and signal `ready` after the consumer group exists (AFF-HEALTH-002, AFF-HEALTH-001; R3).
 
 ### Should Fix
-2. Make `forget_context` land exactly on baseline (AFF-IN-007; Question 1).
-3. Settle and implement queued-appraisal handling on `pause` and `forget_context` (AFF-HOOK-008; Question 3).
-4. Correct the stale "No LLM" wording in `index.ts:9` and the README Mood section (Question 7).
-5. Remove the unused `@cohost/working-memory` dependency and the duplicated local `clamp` (no spec; hygiene).
+5. Discard queued appraisals on `forget_context` and drop them in `drain` while paused (AFF-HOOK-008; S37).
+6. Add `brain.affect.baseline_arousal` (default 0.1) and use it in `mood.ts` and the reset (AFF-MOOD-006; S39; the schema key is a config-segment change).
+7. Widen the llm prompt's delta ranges to +-0.5 (AFF-HOOK-009; S40).
+8. Reword the "No LLM" claim in `services/affect/src/index.ts:9` and the README "Mood" section (S38; README is outside this segment).
+9. Remove the unused `@cohost/working-memory` dependency from `services/affect/package.json` and `tsconfig.json` (S25), and the duplicated local `clamp`.
 
 ### Nice to Have
-6. Make resting arousal configurable or document it as fixed (AFF-MOOD-003; Question 8).
-7. Align the llm prompt's delta ranges with the validator's +-0.5 (AFF-HOOK-009; Question 9).
-8. Add tests for the four untested specs, exact rule deltas, label boundary equalities and the queue/pause interaction.
-9. Move the misplaced queue docblock (`affect.ts:14-19`) onto the class, and clear the publish timer on shutdown (AFF-PUB-001).
+10. Add tests for the `index.ts` wiring, AFF-CTRL-005, exact rule deltas, label boundary equalities, the queue/pause interaction and a realistic half-life for the reset.
+11. Move the misplaced queue docblock (`affect.ts:14-19`) onto the class, and clear the publish timer on shutdown (AFF-PUB-001).

@@ -111,7 +111,8 @@ has time to think (a death on screen, a raid). Each rule has its own cooldown.
 `half_life_ms`. The nearest canonical emotion is published as `affect.state`:
 the avatar wears it as its resting face between lines, the cortex gets a
 one-line mood description in the prompt, and salience gets chattier when
-arousal is high. No LLM, no database.
+arousal is high. No database; the built-in `rules` appraiser needs no model,
+and an `llm` or `http` appraiser is opt-in through `brain.affect.module`.
 
 ### Memory
 

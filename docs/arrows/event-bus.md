@@ -92,7 +92,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ### Must Fix
 1. Add the explicit start mode to `subscribe`: `latest` resets the group to `$` on every start, `resume` keeps it, a missing group is created at `$` in both; replace `fromNow` (P8; BUS-SUB-001, BUS-SUB-002, BUS-SUB-010, BUS-SUB-011). Each subscribing service then selects its mode in its own segment (memory `resume`, every other `latest`). Fix the "crash recovery" comment at `index.ts:142` to match BUS-SUB-008.
-2. Retry `subscribe`, `tail` and `tailHealth` reads with a capped, growing delay, log and skip a failed `XACK`, guard tail handlers, and log a failed `XADD` in `publish` / `publishHealth` before rejecting (R1; BUS-STREAM-007, BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004).
+2. Retry `subscribe`, `tail` and `tailHealth` reads with a capped, growing delay, log and skip a failed `XACK`, guard tail handlers, and log a failed `XADD` in `publish` / `publishHealth` before rejecting, and add a rejection handler to the four fire-and-forget callers (avatar, affect, ears, voice; each in its own segment) (R1; BUS-STREAM-007, BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004).
 3. Compose `onShutdown` registrations into one sequence that runs every callback, logs failures and exits 0 once; treat a synchronously throwing `beforeShutdown` hook like a rejection (R2; BUS-STOP-005, BUS-STOP-006).
 4. Add `mouthSmile` (number) to the `avatar.state` schema (B2; BUS-EVT-018); avatar and dashboard consume it in their segments.
 

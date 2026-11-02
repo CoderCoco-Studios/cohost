@@ -242,8 +242,8 @@ The running cortex does not learn of the change until a `reload_personality` con
 1. **Vector dimension is never reconciled (open; not decided here).**
    `CREATE TABLE IF NOT EXISTS` fixes `vector(dims)` from the first embedding
    (`store.ts:46-54`); `dims` is held in memory only (`store.ts:35,44`) and never
-   compared with the existing column. Switching embed model, or switching to
-   `embedder=hash` (64 dims, `packages/llm/src/mock.ts:26`) on a database created
+   compared with the existing column. Switching to an embedder with a different
+   dimension, such as `embedder=hash` (64 dims, `packages/llm/src/mock.ts:26`) on a database created
    with Ollama vectors, makes every later `remember` INSERT and `recall` query fail
    in pgvector, and both errors are swallowed as warnings (`store.ts:80-82,99-102`);
    `deps.postgres` stays `ok` and `deps.ollama` stays `ok` because the embed itself

@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-10-31
+last_updated: 2026-11-02
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -31,207 +31,207 @@ taxonomy:
 # encoded here; see each LLD's References section.
 arrows:
   config:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit (first: it is the root of the dependency graph)."
+    next: "Wave 2 (platform-core): blank-safe avatar.driver, port defaults and ${AVATAR_DRIVER:-null} so a config loads with no .env (B3)."
     drift: null
 
   event-bus:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Decide intended crash-recovery semantics (consumer name is per-process)."
+    next: "Wave 2 (platform-core): explicit subscribe start mode latest/resume with at-most-once delivery (P8), plus subscribe/tail retry and composed onShutdown (R1, R2)."
     drift: null
 
   model-backends:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Verify Claude beta header / fallbacks surface against current SDK."
+    next: "Wave 2 (platform-models): config-driven default timeouts for HTTP providers (R1)."
     drift: null
 
   region-hooks:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [salience, affect, cortex]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    next: "Wave 2 (platform-models): extractJson returns the first balanced JSON value (B15)."
     drift: null
 
   working-memory:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Make the transcript-tag / LLM stop-string contract explicit."
+    next: "Wave 2 (platform-models): transcript flattens newlines; all() returns a copy; propagatedFlags unit tests."
     drift: null
 
   chat:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    next: "Wave 3 (senses): trim before ignore_prefixes (B14) and log-and-skip failed Twitch publishes (R1)."
     drift: null
 
   eyes:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. OBS reconnect never fires after a drop."
+    next: "Wave 3 (senses): reconnect to OBS after any close and report degraded while OBS is down at boot."
     drift: null
 
   ears:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    next: "Wave 3 (senses): survive a failed first Discord join with backoff and subscribe to injection before joining (B12, B13)."
     drift: null
 
   salience:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Decide whether idle chatter should fire in a silent chat."
+    next: "Wave 3 (brain-front): re-check mute/pause/busy after the scorer await (B11) and use start mode latest (P8)."
     drift: null
 
   affect:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    next: "Wave 3 (brain-front): forget_context lands exactly on baseline by ticking decay first (B4)."
     drift: null
 
   memory:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Reflection backlog beyond 600 rows is skipped permanently."
+    next: "Wave 3 (brain-back): fail init loudly on a vector-dims mismatch (B5) and advance the reflection cursor past 600 rows (B7)."
     drift: null
 
   cortex:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit."
+    next: "Wave 3 (brain-back): delete the viewer note only after say() (B9), align the critic to the prompt (B10), start mode latest (P8)."
     drift: null
 
   voice:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Owns the audio-sink arbitration protocol shared with ears and dashboard."
+    next: "Wave 3 (body): a late sink claim cancels the pending virtual voice.done (B1)."
     drift: null
 
   avatar:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Untested against a real VTube Studio / VMC app."
+    next: "Wave 3 (body): carry mouthSmile in avatar.state (B2) and stop unhandled rejections from state publishes (R1)."
     drift: null
 
   dashboard:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. No auth; audio replays on reconnect."
+    next: "Wave 2 (operator): reject unknown POST /sink events with 400 (B22), body caps (R6), page-side no-replay and the three page defects (B16)."
     drift: null
 
   control-plane:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Owns the heartbeat + lifecycle contract every service implements."
+    next: "Wave 2 (platform-core): restart of an untracked process starts it, isolated starts bring requires, cohostctl rejects a bad CONTROL_PROCESS_MODE."
     drift: null
 
   deployment:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: null
-    audited_sha: null
+    audited: 2026-11-02
+    audited_sha: 1b57790
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Flesh out LLD and EARS via linked-intent-dev, then audit. Compose has never been run against real Twitch / VTS / Discord."
+    next: "Wave 2 (operator): installer strictness (P9) and CONTROL_ENABLED \"0\" plus env pass-through in compose (B17)."
     drift: null
 
 unmapped:

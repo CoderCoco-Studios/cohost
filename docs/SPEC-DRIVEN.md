@@ -60,11 +60,13 @@ Start at `docs/arrows/index.yaml`; `blockedBy` gives the dependency order.
 
 ## Brownfield state
 
-The mapping was bootstrapped from code on 2026-10-31 (commit `686cc8f`), so
-every segment is `MAPPED`, not `AUDITED`: LLD decisions carry `[inferred]`
-markers, the HLD's Problem / Goals / Non-Goals / Tenets are unfilled, and code
-has no `@spec` annotations yet. Fleshing those out segment by segment with
-`/linked-intent-dev` is the current job.
+The mapping was bootstrapped from code on 2026-10-31 (commit `686cc8f`) and
+every segment was audited against the code on 2026-11-01/02, so every segment
+is `AUDITED`: code and tests carry `@spec` annotations, and the owner's
+answers to the audit questions are applied to the HLD, the LLDs and the EARS
+files. Decided behaviour the code does not have yet is a `[ ]` gap; HLD
+sentences marked `[proposed]` and LLD rows marked `[inferred]` still await the
+owner's review.
 
 ## OpenSpec (retired)
 

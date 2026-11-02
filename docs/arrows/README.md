@@ -44,13 +44,18 @@ beside them in `{segment}-specs.md`. The root HLD is `docs/high-level-design.md`
 
 Normal progression: `UNMAPPED → MAPPED → AUDITED → OK`.
 
-## Brownfield origin
+## Brownfield origin and audit state
 
 Every segment was bootstrapped by `/map-codebase` on 2026-10-31 at git
-`686cc8f`. LLD "Decisions & Alternatives" rows carry `[inferred]` until the
-rationale is confirmed or rewritten by the project owner. No `@spec`
-annotations exist in code yet; adding them is part of the per-segment flesh-out
-pass via `linked-intent-dev`.
+`686cc8f` and audited against the code on 2026-11-01/02 (status `AUDITED`,
+`audited_sha` `1b57790`). Each audit raised questions for the project owner;
+the owner answered them on 2026-11-01, and each arrow doc's `## Decisions
+applied` section lists the answers with the spec IDs they changed. Decided
+behaviour the code does not yet have is a `[ ]` line in the segment's EARS
+file and an item under the arrow doc's Work Required. LLD "Decisions &
+Alternatives" rows say `owner decision 2026-11-01` where the owner settled
+them; rows still marked `[inferred]` await confirmation. Project-level
+decisions are in the HLD's Key Design Decisions table.
 
 ## Common workflows
 

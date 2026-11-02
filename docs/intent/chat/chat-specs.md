@@ -1,6 +1,6 @@
 # chat specs
 
-Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`. LLD: [chat-design.md](chat-design.md).
+Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified against the code in the audit pass of 2026-11-01. Owner decisions of 2026-11-01 applied at git `1b57790`. LLD: [chat-design.md](chat-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred.
 
 ## Source selection
 
@@ -18,19 +18,20 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`. LLD: [chat-d
 - [x] **CHAT-TW-003**: When the Twitch auth provider refreshes a token, the chat service shall write an info log containing `expiresIn`. <!-- openspec: chat § Authentication -->
 - [x] **CHAT-TW-004**: When the Twitch client connects, the chat service shall mark Twitch connected, signal heartbeat `ready`, and log the channel and whether it is authenticated. <!-- openspec: chat § Connection lifecycle -->
 - [x] **CHAT-TW-005**: When the Twitch client disconnects, the chat service shall mark Twitch disconnected and log a warning with `manually` and `reason`. <!-- openspec: chat § Connection lifecycle -->
-- [ ] **CHAT-TW-006**: When authenticating with a user token, the chat service shall finish registering the token with the auth provider (and surface a failure) before the chat client first requests credentials. Gap: `addUserForToken` is fire-and-forget (`services/chat/src/index.ts:71`), so ordering is not guaranteed and a rejection is unhandled; `[inferred]` intent.
-- [ ] **CHAT-TW-007**: If publishing a `chat.message` for a Twitch message fails, the chat service shall log the failure and keep handling later messages. Gap: `onMessage` awaits `bus.publish` with no try/catch (`services/chat/src/index.ts:102-105`); `[inferred]` intent.
-- [x] **CHAT-TW-008**: When a message arrives in the joined Twitch channel, the chat service shall pass the sender's login, the message text and the sender's user info through the chat filter and publish the resulting `chat.message`, if the filter returns one. `[inferred]` untested.
+- [ ] **CHAT-TW-006**: When authenticating with a user token, the chat service shall finish registering the token with the auth provider (and surface a failure) before the chat client first requests credentials. Gap: `addUserForToken` is fire-and-forget (`services/chat/src/index.ts:71`) and the `ChatClient` is built right after (`:87`), so ordering is not guaranteed and a rejection is unhandled.
+- [ ] **CHAT-TW-007**: If publishing a `chat.message` for a Twitch message fails, the chat service shall log the failure and keep handling later messages. Gap: `onMessage` awaits `bus.publish` with no try/catch (`services/chat/src/index.ts:102-105`).
+- [x] **CHAT-TW-008**: When a message arrives in the joined Twitch channel, the chat service shall pass the sender's login, the message text and the sender's user info through the chat filter and publish the resulting `chat.message`, if the filter returns one. Untested.
+- [x] **CHAT-TW-009**: When the Twitch IRC connection drops without a manual quit, the chat service shall rely on the `@twurple/chat` client's built-in reconnect (the `ircv3` `reconnect` option left at its default `true`) and, when the client connects again, shall mark Twitch connected and signal heartbeat `ready` again (CHAT-TW-004). Untested.
 
 ## Filtering and payload
 
 - [x] **CHAT-FILT-001**: When the sender's name matches an entry of `chat.ignore_users` in any letter case, the chat service shall publish no `chat.message` for that line. <!-- test: services/chat/test/filter.test.ts:25 --> <!-- openspec: chat § Message filtering -->
-- [x] **CHAT-FILT-002**: When the raw message text starts with any entry of `chat.ignore_prefixes`, the chat service shall publish no `chat.message` for that line. <!-- test: services/chat/test/filter.test.ts:25 --> <!-- openspec: chat § Message filtering -->
-- [x] **CHAT-FILT-003**: The chat service shall evaluate `chat.ignore_prefixes` against the raw text before whitespace is trimmed, so a line with leading whitespace before the prefix is not dropped as a command. `[inferred]` accidental; untested.
+- [x] **CHAT-FILT-002**: When the message text starts with any entry of `chat.ignore_prefixes`, the chat service shall publish no `chat.message` for that line. <!-- test: services/chat/test/filter.test.ts:25 --> <!-- openspec: chat § Message filtering -->
+- [ ] **CHAT-FILT-003**: The chat service shall trim leading and trailing whitespace from the message text before matching `chat.ignore_prefixes`, so a line with leading whitespace before a prefix (such as `" !cmd"`) is dropped as a command. Gap: prefixes are matched against the untrimmed raw text (`services/chat/src/filter.ts:36`), so `" !cmd"` is published.
 - [x] **CHAT-FILT-004**: When a message is empty after collapsing whitespace, the chat service shall publish no `chat.message` for that line. <!-- test: services/chat/test/filter.test.ts:25 --> <!-- openspec: chat § Message filtering -->
 - [x] **CHAT-FILT-005**: The chat service shall publish `chat.message` with whitespace runs collapsed to single spaces, trimmed, `platform` `twitch`, `user` the display name (falling back to the login), `userId`, and `isSub` from the subscriber flag. <!-- test: services/chat/test/filter.test.ts:18,41 --> <!-- openspec: chat § chat.message payload -->
 - [x] **CHAT-FILT-006**: When the sender is a moderator or the broadcaster, the chat service shall set `isMod` to true. <!-- test: services/chat/test/filter.test.ts:41 --> <!-- openspec: chat § chat.message payload -->
-- [x] **CHAT-FILT-007**: When the cleaned text contains `cohost.name` as a case-insensitive substring (not necessarily a whole word), the chat service shall set `mentionsCohost` to true. <!-- test: services/chat/test/filter.test.ts:34 --> <!-- openspec: chat § chat.message payload -->
+- [x] **CHAT-FILT-007**: When the cleaned text contains `cohost.name` as a case-insensitive substring (not necessarily a whole word, so `cocoa` and `@coco_fan` both mention `Coco`), the chat service shall set `mentionsCohost` to true. <!-- test: services/chat/test/filter.test.ts:34 --> <!-- openspec: chat § chat.message payload -->
 
 ## Fake source
 
@@ -43,14 +44,15 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`. LLD: [chat-d
 
 ## Test injection
 
-- [x] **CHAT-INJ-001**: The chat service shall subscribe with consumer group `chat` to `inject.request` from the newest message in every plan (`twitch`, `fake` and `idle`), without needing a channel or connection. <!-- openspec: chat § Injected text messages -->
+- [x] **CHAT-INJ-001**: The chat service shall subscribe with consumer group `chat` to `inject.request` in every plan (`twitch`, `fake` and `idle`), without needing a channel or connection. <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-002**: When an `inject.request` targets a service other than `chat`, the chat service shall ignore it and publish nothing. <!-- test: services/chat/test/inject.test.ts:68 --> <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-003**: If an `inject.request` envelope is more than 60 seconds old when handled, the chat service shall publish `inject.result {ok:false, detail:"stale"}` and nothing else. <!-- test: services/chat/test/inject.test.ts:60 --> <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-004**: If an `inject.request` for chat has a kind other than `text`, or its text is blank after whitespace collapse, the chat service shall publish `inject.result {ok:false}` with a detail and no `chat.message`. <!-- test: services/chat/test/inject.test.ts:52,68 --> <!-- openspec: chat § Injected text messages -->
-- [x] **CHAT-INJ-005**: When a valid text `inject.request` for chat arrives, the chat service shall publish `chat.message` with `injected: true`, `remember` from the request, whitespace-collapsed text, `user` from `meta.user` or `injected_viewer`, `platform` from `meta.platform` or `twitch`, `isMod`/`isSub` from `meta` (default false), then publish `inject.result {ok:true}`. <!-- test: services/chat/test/inject.test.ts:16,24,44 --> <!-- openspec: chat § Injected text messages -->
+- [x] **CHAT-INJ-005**: When a valid text `inject.request` for chat arrives, the chat service shall publish `chat.message` with `injected: true`, `remember` from the request, whitespace-collapsed text, `user` from `meta.user` or `injected_viewer`, `platform` from `meta.platform` or `twitch`, `isMod`/`isSub` from `meta` (default false) and no `userId`, then publish `inject.result {ok:true}`. <!-- test: services/chat/test/inject.test.ts:16,24,44 --> <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-006**: The chat service shall not apply `chat.ignore_users` or `chat.ignore_prefixes` to injected messages. <!-- test: services/chat/test/inject.test.ts:36 --> <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-007**: When an injected message contains `cohost.name` case-insensitively, the chat service shall set `mentionsCohost` true. <!-- test: services/chat/test/inject.test.ts:44 --> <!-- openspec: chat § Injected text messages -->
 - [x] **CHAT-INJ-008**: If publishing the injected `chat.message` fails, the chat service shall publish `inject.result {ok:false, detail}` when the bus can still answer, and otherwise swallow the error. <!-- test: services/chat/test/inject.test.ts:77 -->
+- [ ] **CHAT-INJ-009**: The chat service shall subscribe its `inject.request` consumer group `chat` with start mode `latest`, so the group is reset to the newest entry on every start and no request published while chat was down is handled. Gap: the subscription passes `fromNow: true` (`services/chat/src/index.ts:30-33`), which positions only a newly created group; an existing group resumes after its last delivered entry.
 
 ## Health
 
@@ -59,4 +61,4 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`. LLD: [chat-d
 - [x] **CHAT-HEALTH-003**: Where `chat.source` is `twitch`, the chat service shall report `mode: "live"` and `deps.twitch` `ok` only while a channel is configured and the IRC client is connected, otherwise `down`. <!-- test: services/chat/test/health.test.ts:7,16 --> <!-- openspec: chat § Heartbeat -->
 - [x] **CHAT-HEALTH-004**: While the chat service has signalled ready and the Twitch connection is down, its heartbeat state shall be `degraded`. <!-- test: services/chat/test/health.test.ts:16 -->
 - [x] **CHAT-HEALTH-005**: In the idle plan (no channel), the chat service shall publish a `degraded` heartbeat with detail `TWITCH_CHANNEL is not set`. <!-- test: services/chat/test/health.test.ts:23 --> <!-- openspec: chat § Heartbeat -->
-- [x] **CHAT-HEALTH-006**: Where `chat.source` is `twitch` and no Twitch channel is configured, the chat service shall report `mode: "live"` and `deps.twitch: "down"` (not `mode: "off"` with `deps.twitch: "n/a"`). <!-- test: services/chat/test/health.test.ts:23 --> <!-- openspec: chat § Heartbeat (add-service-health said off / n/a; add-isolated-backends design D6 chose twitch down) -->
+- [x] **CHAT-HEALTH-006**: Where `chat.source` is `twitch` and no Twitch channel is configured, the chat service shall report `mode: "live"` and `deps.twitch: "down"`. <!-- test: services/chat/test/health.test.ts:23 --> <!-- openspec: chat § Heartbeat (add-service-health said off / n/a; add-isolated-backends design D6 chose twitch down) -->

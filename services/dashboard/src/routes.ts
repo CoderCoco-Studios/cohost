@@ -44,10 +44,10 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       return true;
     },
   };
-  const page = d.html.replace("__COHOST_NAME__", d.cohostName);
+  const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
   return async (req, res) => {
-    const url = new URL(req.url ?? "/", "http://x");
     try {
+      const url = new URL(req.url ?? "/", "http://x");
       // @spec DASH-HTTP-001
       if (req.method === "GET" && url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -57,8 +57,9 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-SINK-001
       if (req.method === "GET" && url.pathname.startsWith("/audio/")) {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);
+        const audio = Buffer.from(await up.arrayBuffer()); // whole body first: a failed read must still be answerable with a 500
         res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "audio/wav", "cache-control": "no-store" });
-        res.end(Buffer.from(await up.arrayBuffer()));
+        res.end(audio);
         return;
       }
       if (await handleInject(inject, req, res, url)) return;
@@ -80,9 +81,10 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         const ctl = d.control;
         if (!ctl) { res.writeHead(404); res.end("not found"); return; }
         if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
+        let id: string;
+        try { id = decodeURIComponent(life[1]!); } catch { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: "unknown service" })); return; } // @spec DASH-HTTP-013
         const opts = parseLifecycleBody(await body(req));
         if (!opts) { res.writeHead(400); res.end("bad request body"); return; }
-        const id = decodeURIComponent(life[1]!);
         const action = life[2] as "start" | "stop" | "restart";
         const out = await ctl.controller[action](id, opts);
         if (out.refused) {
@@ -118,7 +120,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-SINK-002
       if (req.method === "POST" && url.pathname === "/sink") {
-        const { event, id } = JSON.parse(await body(req)) as { event: "playing" | "done"; id: string };
+        const { event, id } = JSON.parse(await body(req)) as { event?: unknown; id: string };
+        if (event !== "playing" && event !== "done") { res.writeHead(400); res.end("event must be 'playing' or 'done'"); return; } // @spec DASH-SINK-003
         await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, sink: "dashboard" });
         res.writeHead(204); res.end();
         return;
@@ -128,9 +131,11 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-HTTP-003
       res.writeHead(404); res.end("not found");
     } catch (err) {
+      // @spec DASH-HTTP-011
+      if (err instanceof BodyTooLarge) { sendUnlessStarted(res, 413, "body too large"); return; }
       // @spec DASH-HTTP-004
       d.log.error({ err, url: req.url }, "request failed");
-      res.writeHead(500); res.end(String(err));
+      sendUnlessStarted(res, 500, String(err));
     }
   };
 }
@@ -152,11 +157,27 @@ function parseLifecycleBody(raw: string): { mode?: StartMode; isolated?: boolean
   return { mode, isolated };
 }
 
+/** Failure responses never throw: if the headers already went out the connection is cut instead. */
+function sendUnlessStarted(res: http.ServerResponse, status: number, text: string): void {
+  if (res.headersSent) { res.destroy(); return; }
+  res.writeHead(status); res.end(text);
+}
+
+const BODY_LIMIT = 64 * 1024;
+class BodyTooLarge extends Error {}
+
+/** The request body as text, up to 64 KiB. Over the cap the rest is drained and discarded, then `BodyTooLarge` is thrown. */
 function body(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    let size = 0, tooLarge = false;
+    req.on("data", (c: Buffer) => {
+      if (tooLarge) return;
+      size += c.length;
+      if (size > BODY_LIMIT) { tooLarge = true; chunks.length = 0; return; }
+      chunks.push(c);
+    });
+    req.on("end", () => (tooLarge ? reject(new BodyTooLarge()) : resolve(Buffer.concat(chunks).toString("utf8"))));
     req.on("error", reject);
   });
 }

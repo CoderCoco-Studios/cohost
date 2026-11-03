@@ -18,6 +18,17 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
     VOICE_URL: http://voice:8700
     DASHBOARD_URL: http://dashboard:3000   # eyes/ears fetch injected test uploads from here
     CONFIG_DIR: /app/config
+    # Monitor-only in containers: a CONTROL_ENABLED=1 in .env must not rebind the dashboard to loopback.
+    CONTROL_ENABLED: "0"  # @spec DEPLOY-COMPOSE-016
+    # Isolation preset the control plane sets on the `docker compose` process; unset falls through to config.yaml.
+    CHAT_SOURCE: ${CHAT_SOURCE:-}  # @spec DEPLOY-COMPOSE-017
+    MEMORY_STORE: ${MEMORY_STORE:-}
+    MEMORY_EMBEDDER: ${MEMORY_EMBEDDER:-}
+    LLM_PROVIDER: ${LLM_PROVIDER:-}
+    VOICE_ENGINE: ${VOICE_ENGINE:-}
+    AVATAR_DRIVER: ${AVATAR_DRIVER:-}
+    VISION_ENABLED: ${VISION_ENABLED:-}
+    EARS_SOURCE: ${EARS_SOURCE:-}
   volumes:
     - ./config:/app/config
   extra_hosts:
@@ -36,8 +47,9 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
 
 services:  # @spec DEPLOY-COMPOSE-001
   # ---------- infrastructure ----------
-  redis:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-013, DEPLOY-COMPOSE-014
+  redis:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-013, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
     image: redis:7-alpine
+    restart: unless-stopped
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes: [redis-data:/data]
     ports: ["127.0.0.1:6379:6379"]   # for `pnpm dev` outside docker
@@ -47,8 +59,9 @@ services:  # @spec DEPLOY-COMPOSE-001
       timeout: 3s
       retries: 10
 
-  postgres:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-014
+  postgres:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: cohost
       POSTGRES_PASSWORD: cohost
@@ -71,8 +84,9 @@ services:  # @spec DEPLOY-COMPOSE-001
       OLLAMA_FLASH_ATTENTION: "1"
       OLLAMA_KV_CACHE_TYPE: "q8_0"
 
-  # Pulls the models named in .env once ollama is up, then exits.
-  models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-014
+  # Pulls the models named in .env once ollama is up, then exits; exits non-zero if any pull fails
+  # (no restart policy: a failed run stays visible in `docker compose ps`).
+  models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011, DEPLOY-COMPOSE-014
     image: curlimages/curl:latest
     env_file: .env
     depends_on: [ollama]
@@ -80,9 +94,17 @@ services:  # @spec DEPLOY-COMPOSE-001
     command:
       - |
         until curl -sf http://ollama:11434/api/tags >/dev/null; do sleep 2; done
+        fail=0
         for m in "$$LLM_MODEL" "$$VISION_MODEL" "$$EMBED_MODEL"; do
-          echo "pulling $$m"; curl -s http://ollama:11434/api/pull -d "{\"name\":\"$$m\"}" | tail -c 200; echo
+          echo "pulling $$m"
+          # -f: a non-2xx status fails; Ollama also reports a mid-stream pull error as a 200 {"error":...} line.
+          if curl -fsS http://ollama:11434/api/pull -d "{\"name\":\"$$m\"}" -o /tmp/pull.out && ! grep -q '"error"' /tmp/pull.out; then
+            tail -c 200 /tmp/pull.out; echo
+          else
+            echo "pull FAILED: $$m" >&2; tail -c 200 /tmp/pull.out >&2; echo >&2; fail=1
+          fi
         done
+        exit $$fail
 
   tts:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
     image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}

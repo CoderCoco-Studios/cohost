@@ -69,10 +69,11 @@ Leave `llm.provider` / `llm.model` under a hook empty to reuse the cortex's mode
 Setting `llm.provider` on a hook requires setting `llm.model` too (a model id is only
 valid for one provider), and config loading rejects the combination otherwise.
 
-Hook calls are cut off at `timeout_ms` (default 1500 for salience and affect). A hosted
-Claude model with thinking usually takes longer than that, so every call would time out
-and fall back to rules while still being billed: for hooks, use a small fast model
-(local Ollama or a vLLM box) or raise `timeout_ms` to several seconds. The prompts live in
+Hook calls are cut off at `timeout_ms` (default 1500 for every hook;
+`config/config.example.yaml` sets the critic to 2500). A hosted Claude model with
+thinking usually takes longer than that, so every call would time out and fall back
+to rules while still being billed: for hooks, use a small fast model (local Ollama
+or a vLLM box) or raise `timeout_ms` to several seconds. The prompts live in
 `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts` and
 `services/cortex/src/critic.ts`.
 

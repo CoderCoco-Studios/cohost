@@ -65,7 +65,8 @@ export class Scheduler {
 
     const threshold = Math.max(0.1, this.cfg.speak_threshold - this.cfg.arousal_bias * arousal); // @spec SAL-DECIDE-003
     if (score >= threshold) {
-      return { speak: true, reason: focus?.kind === "chat" && focus.mention ? "mentioned" : "engaged", score, focus, scored: unseen };
+      const mentioned = focus?.kind === "chat" && focus.mention && this.cfg.reply_on_mention; // @spec SAL-DECIDE-008
+      return { speak: true, reason: mentioned ? "mentioned" : "engaged", score, focus, scored: unseen };
     }
 
     const idle = now - this.lastActivity;

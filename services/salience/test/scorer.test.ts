@@ -46,3 +46,46 @@ test("scorer http: a wrong-length, non-numeric or missing list falls back to the
     assert.deepEqual((await s.run(input)).scores, [1, 0.15], JSON.stringify(bad));
   }
 });
+
+// ---- kind=llm, against a fake OpenAI-compatible server
+
+let llmBody: { messages?: { role: string; content: string }[]; max_tokens?: number } = {};
+const llmServer = http.createServer(async (req, res) => {
+  let body = ""; for await (const c of req) body += c;
+  llmBody = JSON.parse(body);
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ choices: [{ message: { content: '{"scores":[0.9,0.2,0.4]}' } }] }));
+});
+await new Promise<void>((r) => llmServer.listen(0, r));
+after(() => llmServer.close());
+
+test("scorer llm: the prompt names both people, caps tokens, and marks mention, mod and sub", async () => { // @spec SAL-SCORE-008
+  const base = (llmServer.address() as { port: number }).port;
+  const c = ConfigSchema.parse({
+    cohost: { name: "Coco", streamer: "Chris" },
+    llm: { provider: "openai", model: "m", embed_model: "e", openai: { base_url: `http://127.0.0.1:${base}/v1`, api_key: "" } },
+    vision: { model: "v", obs: {} },
+    chat: { twitch: {} },
+    brain: { salience: { module: { kind: "llm" } } },
+    voice: {},
+    avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
+    ears: { discord: {} },
+    dashboard: {},
+  });
+  const events = [
+    { ...ev("hey Coco", true), isMod: true },
+    { ...ev("subbed!"), isSub: true },
+    ev("plain"),
+  ];
+  const out = await createScorer(c, log).run({ arousal: 0.25, events });
+  assert.deepEqual(out.scores, [0.9, 0.2, 0.4], "the model's scores were used");
+  const [system, user] = llmBody.messages!;
+  assert.match(system!.content, /Coco/);
+  assert.match(system!.content, /Chris/);
+  assert.equal(llmBody.max_tokens, 120);
+  const lines = user!.content.split("\n");
+  assert.equal(lines[0], "Current arousal: 0.25");
+  assert.equal(lines[1], "1. [chat, mentions co-host, mod] bob: hey Coco");
+  assert.equal(lines[2], "2. [chat, sub] bob: subbed!");
+  assert.equal(lines[3], "3. [chat] bob: plain");
+});

@@ -1,8 +1,8 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import { FakeBus, event, silentLog, testConfig } from "@cohost/testing";
+import { FakeBus, event, recordingLog, silentLog, testConfig } from "@cohost/testing";
 import { Salience } from "../src/salience.js";
 import { scoreRules, type ScoreInput, type ScoreOutput } from "../src/scoring.js";
 
@@ -228,4 +228,111 @@ test("reflex: an injected trigger's brain.say carries the flags; a real one carr
   await real.s.onEvent(chat("lol you died"));
   const [rsay] = real.bus.of("brain.say");
   assert.equal("injected" in rsay! || "remember" in rsay!, false);
+});
+
+test("tick: a mute, pause or busy cortex that arrives while the scorer is running stops the focus", async () => { // @spec SAL-FOCUS-005
+  const arrives: [string, (s: ReturnType<typeof setup>["s"]) => Promise<void>][] = [
+    ["mute", (s) => s.onEvent(event("control", { cmd: "mute" }))],
+    ["pause", (s) => s.onEvent(event("control", { cmd: "pause" }))],
+    ["busy", (s) => s.onEvent(event("brain.status", { state: "thinking" }))],
+  ];
+  for (const [name, arrive] of arrives) {
+    const { s, bus, setGate } = setup();
+    await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+    let open!: () => void;
+    setGate(new Promise<void>((r) => (open = r)));
+    const ticking = s.tick();
+    await arrive(s);
+    open();
+    await ticking;
+    assert.equal(bus.of("attention.focus").length, 0, `${name}: no focus for a decision made before it`);
+  }
+});
+
+test("tick: a decision nothing interrupted still publishes after the scorer returns", async () => { // @spec SAL-FOCUS-005
+  const { s, bus, setGate } = setup();
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  let open!: () => void;
+  setGate(new Promise<void>((r) => (open = r)));
+  const ticking = s.tick();
+  open();
+  await ticking;
+  assert.equal(bus.of("attention.focus").length, 1);
+});
+
+test("busy: a thinking cortex stops counting as busy after brain.salience.thinking_timeout_ms", async () => { // @spec SAL-BUSY-001
+  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+  try {
+    const short = setup({ thinking_timeout_ms: 5_000 });
+    await short.s.onEvent(event("brain.status", { state: "thinking" }));
+    await short.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+    mock.timers.tick(4_999);
+    await short.s.tick();
+    assert.equal(short.bus.of("attention.focus").length, 0, "still inside the configured valve");
+    mock.timers.tick(2);
+    await short.s.tick();
+    assert.equal(short.bus.of("attention.focus").length, 1, "past the configured valve, not the old 60 s literal");
+
+    const dflt = setup();
+    await dflt.s.onEvent(event("brain.status", { state: "thinking" }));
+    await dflt.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+    mock.timers.tick(59_000);
+    await dflt.s.tick();
+    assert.equal(dflt.bus.of("attention.focus").length, 0, "default valve is 60 s");
+    mock.timers.tick(2_000);
+    await dflt.s.tick();
+    assert.equal(dflt.bus.of("attention.focus").length, 1);
+  } finally { mock.timers.reset(); }
+});
+
+test("reflex: publishing starts the cooldown and marks the voice speaking before the echo returns", async () => { // @spec SAL-REFLEX-007
+  const two = [DIED, { match: "level up", say: ["Nice."], emotion: "happy", cooldown_ms: 0 }];
+  const { s, bus } = setup({ cooldown_ms: 60_000, reflexes: two });
+  await s.onEvent(chat("you died"));
+  assert.equal(bus.of("brain.say").length, 1);
+  // No brain.say echo has been delivered to s. A second rule and a tick must still be held back.
+  await s.onEvent(chat("level up"));
+  assert.equal(bus.of("brain.say").length, 1, "second reflex waits out the cooldown");
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "no tick fires inside the reflex's cooldown");
+});
+
+test("reflex: with a zero cooldown a reflex still marks the voice speaking, so the next tick waits", async () => { // @spec SAL-REFLEX-007
+  const { s, bus } = setup({ reflexes: [DIED] });
+  await s.onEvent(chat("you died"));
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "cortex state is speaking until the voice reports done");
+});
+
+test("decide: reason is mentioned only when the focus is a mention and reply_on_mention is on", async () => { // @spec SAL-DECIDE-008
+  const on = setup();
+  await on.s.onEvent(chat("hey Coco", { mentionsCohost: true }));
+  await on.s.tick();
+  assert.equal(on.bus.of("attention.focus")[0]!.reason, "mentioned");
+
+  const off = setup({ reply_on_mention: false, speak_threshold: 0.1 });
+  await off.s.onEvent(chat("hey Coco", { mentionsCohost: true }));
+  await off.s.tick();
+  assert.equal(off.bus.of("attention.focus")[0]!.reason, "engaged");
+});
+
+test("tick: a failed attention.focus publish is logged and the next tick still runs", async () => { // @spec SAL-HEALTH-002
+  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 } } });
+  const bus = new FakeBus();
+  const rec = recordingLog();
+  const scorer = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), cfg.llm, { rules: (i) => scoreRules(i, true) }, silentLog);
+  const s = new Salience({ cfg, bus, scorer, log: rec.log });
+  bus.fail = (t) => t === "attention.focus";
+  await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await assert.doesNotReject(s.tick());
+  assert.equal(rec.msgs("error").length, 1);
+  assert.match(String(rec.msgs("error")[0]), /tick/);
+
+  bus.fail = undefined;
+  await s.onEvent(idle);
+  await s.onEvent(chat("again Coco?", { mentionsCohost: true }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1, "the next tick ran and published");
 });

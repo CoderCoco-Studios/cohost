@@ -52,6 +52,17 @@ test("playback: a failed fetch is skipped and the queue keeps going", async () =
   assert.deepEqual(rec.msgs("warn"), ["playback failed"]);
 });
 
+// @spec EARS-PLAY-009
+test("playback: a failed voice.done publish is logged and the next queued utterance still plays", async () => {
+  const { p, bus, rec } = playback();
+  bus.fail = (type) => type === "voice.done";
+  await p.enqueue("a", "http://voice/a.wav");
+  await p.enqueue("b", "http://voice/b.wav");
+  await p.onIdle(); // done(a) rejects: must not throw or leave a rejection behind
+  assert.deepEqual(rec.msgs("warn"), ["voice.done publish failed"]);
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "a", sink: "discord" }, { id: "b", sink: "discord" }]);
+});
+
 // @spec EARS-PLAY-002, EARS-PLAY-005
 test("httpAudio returns the body, and throws on a non-2xx", async () => {
   const server = http.createServer((req, res) => { res.statusCode = req.url === "/ok.wav" ? 200 : 404; res.end("WAVBYTES"); });

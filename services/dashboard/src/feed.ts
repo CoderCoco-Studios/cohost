@@ -17,6 +17,12 @@ export interface FeedDeps {
   replay?: number;
 }
 
+/** The slice of the service logger the feed's failure handling uses. */
+export interface FeedLog {
+  error(obj: unknown, msg: string): void;
+  fatal(obj: unknown, msg: string): void;
+}
+
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 
 /**
@@ -27,16 +33,34 @@ export function createFeed(d: FeedDeps) {
   const broadcast = (msg: string) => {
     for (const c of d.clients()) if (c.readyState === OPEN) c.send(msg);
   };
+  // Sockets whose connect replay is being read: live events for them wait here until the replay is out.
+  const replaying = new Map<FeedSocket, BusEvent[]>();
+  const deliver = (c: FeedSocket, ev: BusEvent) => {
+    const held = replaying.get(c);
+    if (held) held.push(ev); else if (c.readyState === OPEN) c.send(JSON.stringify(ev));
+  };
   let timer: NodeJS.Timeout | undefined;
   let offChange: (() => void) | undefined;
 
   return {
     // @spec DASH-FEED-001
     /** Wire up a new client: current services first, then the recent event replay. */
+    // Replayed events carry `replay: true`; a live event that lands meanwhile is held and sent after the replay (once).
     async onConnection(ws: FeedSocket): Promise<void> {
-      ws.send(servicesMessage(d.tracker.snapshot()));
-      for (const ev of await d.bus.recent(d.replay ?? 60)) {
-        if (ev.type !== "service.heartbeat") ws.send(JSON.stringify(ev));
+      const held: BusEvent[] = [];
+      replaying.set(ws, held); // before the first await: the socket is already in the client set
+      try {
+        ws.send(servicesMessage(d.tracker.snapshot()));
+        const sent = new Set<string>();
+        for (const ev of await d.bus.recent(d.replay ?? 60)) {
+          if (ev.type === "service.heartbeat") continue;
+          sent.add(ev.id);
+          ws.send(JSON.stringify({ ...ev, replay: true }));
+        }
+        replaying.delete(ws);
+        for (const ev of held) if (!sent.has(ev.id) && ws.readyState === OPEN) ws.send(JSON.stringify(ev));
+      } finally {
+        replaying.delete(ws);
       }
     },
 
@@ -48,7 +72,7 @@ export function createFeed(d: FeedDeps) {
       const fromId = history.at(-1)?.id ?? "$";
       void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId);
       void d.bus.tail((ev: BusEvent) => {
-        if (ev.type !== "service.heartbeat") broadcast(JSON.stringify(ev));
+        if (ev.type !== "service.heartbeat") for (const c of d.clients()) deliver(c, ev);
       });
       offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));
       timer = setInterval(() => d.tracker.tick(), d.tickMs ?? 1000);
@@ -60,4 +84,19 @@ export function createFeed(d: FeedDeps) {
       offChange?.();
     },
   };
+}
+
+// @spec DASH-HTTP-012
+/** Starts the feed; Redis being unreachable is fatal for the dashboard, so log it and exit non-zero (Compose restarts it). */
+export function startFeed(feed: { start(): Promise<void> }, log: FeedLog, exit: (code: number) => void = (c) => process.exit(c)): Promise<void> {
+  return feed.start().catch((err) => { log.fatal({ err }, "feed failed to start"); exit(1); });
+}
+
+// @spec DASH-HTTP-012
+/** Replays history to a new client; if that fails, log it and close only that socket. */
+export function serveClient(feed: { onConnection(ws: FeedSocket): Promise<void> }, ws: FeedSocket & { close(): void }, log: FeedLog): Promise<void> {
+  return feed.onConnection(ws).catch((err) => {
+    log.error({ err }, "connect replay failed");
+    try { ws.close(); } catch { /* already closed */ }
+  });
 }

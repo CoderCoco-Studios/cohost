@@ -58,7 +58,7 @@
   <button id="tabServices" class="tab">services</button>
   <span style="flex:1"></span>
   <button id="audio">🔇 enable audio</button>
-  <button id="mute">mute</button>
+  <button id="mute">mute</button><span id="muteMsg" class="hint"></span>
 </header>
 <main id="live">
   <section class="col">
@@ -136,7 +136,7 @@ if (isSink) document.body.classList.add("sink");
 // ---------- audio sink
 let audioOn = isSink; // OBS browser sources allow autoplay; normal browsers need a click
 const queue = []; let playing = false;
-$("#audio").onclick = () => { audioOn = !audioOn; $("#audio").textContent = audioOn ? "🔊 audio on" : "🔇 enable audio"; $("#audio").classList.toggle("on", audioOn); if (audioOn) pump(); };
+$("#audio").onclick = () => { audioOn = !audioOn; $("#audio").textContent = audioOn ? "🔊 audio on" : "🔇 enable audio"; $("#audio").classList.toggle("on", audioOn); if (audioOn) pump(); else queue.length = 0; };
 // @spec DASH-UI-012
 async function pump() {
   if (!audioOn || playing || !queue.length) return;
@@ -144,7 +144,7 @@ async function pump() {
   const a = new Audio(`/audio/${u.id}.wav`);
   a.onplay = () => post("/sink", { event: "playing", id: u.id });
   a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
-  try { await a.play(); } catch (e) { playing = false; audioOn = false; $("#audio").textContent = "🔇 enable audio"; }
+  try { await a.play(); } catch (e) { playing = false; audioOn = false; queue.length = 0; $("#audio").textContent = "🔇 enable audio"; }
 }
 // @spec DASH-UI-006
 // When service control is enabled the server wants a bearer token on every mutating call.
@@ -165,12 +165,12 @@ const post = (p, b) => authFetch(p, { method: "POST", headers: { "content-type":
 // ---------- controls
 // @spec DASH-UI-005
 let muted = false;
-$("#mute").onclick = () => { muted = !muted; post("/control", { cmd: muted ? "mute" : "unmute" }); $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); };
+$("#mute").onclick = async () => { const next = !muted, m = $("#muteMsg"); try { const r = await post("/control", { cmd: next ? "mute" : "unmute" }); if (!r.ok) throw new Error("HTTP " + r.status); muted = next; $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); m.textContent = ""; } catch (e) { m.textContent = `${next ? "mute" : "unmute"} failed: ${e.message}`; } }; // @spec DASH-UI-015
 $("#sayBtn").onclick = () => { const t = $("#say").value.trim(); if (t) { post("/control", { cmd: "say", text: t }); $("#say").value = ""; } };
 $("#say").onkeydown = (e) => { if (e.key === "Enter") $("#sayBtn").click(); };
 $("#forget").onclick = () => post("/control", { cmd: "forget_context" });
 fetch("/personality").then(r => r.text()).then(t => $("#pers").value = t);
-$("#savePers").onclick = async () => { await authFetch("/personality", { method: "PUT", body: $("#pers").value }); $("#persMsg").textContent = "saved · brain reloaded"; setTimeout(() => $("#persMsg").textContent = "", 2500); };
+$("#savePers").onclick = async () => { const m = $("#persMsg"); let ok = false; try { const r = await authFetch("/personality", { method: "PUT", body: $("#pers").value }); ok = r.ok; m.textContent = ok ? "saved · brain reloaded" : `save failed (${r.status})`; } catch (e) { m.textContent = `save failed: ${e.message}`; } setTimeout(() => m.textContent = "", ok ? 2500 : 8000); }; // @spec DASH-UI-015
 
 // ---------- test inputs
 const injSet = (msg, cls = "") => { const el = $("#injStatus"); el.textContent = msg; el.className = "hint " + cls; };
@@ -296,7 +296,7 @@ setInterval(renderServices, 1000);
 function onServices(list) { svc = list; svcAt = Date.now(); renderServices(); }
 
 // ---------- feed + state
-const feed = $("#feed");
+const feed = $("#feed"), seen = new Set(); // seen: bus event ids already handled, so replays and reconnects never repeat a row or an utterance
 // @spec DASH-UI-002
 function line(ev) {
   const d = ev.data, t = new Date(ev.ts).toLocaleTimeString([], { hour12: false });
@@ -320,15 +320,15 @@ function line(ev) {
   feed.appendChild(el); while (feed.children.length > 300) feed.firstChild.remove();
   feed.scrollTop = feed.scrollHeight;
 }
-const esc = (s) => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); // @spec DASH-UI-016
 
 // @spec DASH-UI-003
 function onEvent(ev) {
-  if (ev.type === "services") { onServices(ev.services); return; }
+  if (ev.type === "services") { onServices(ev.services); return; } if (ev.id) { if (seen.has(ev.id)) return; seen.add(ev.id); if (seen.size > 1000) seen.delete(seen.values().next().value); } // @spec DASH-UI-013
   if (ev.type === "inject.result") onInjectResult(ev.data);
   if (ev.type === "avatar.state") { drawFace(ev.data); return; }
   if (ev.type === "brain.status") { const s = $("#status"); s.className = "pill " + ev.data.state; s.textContent = ev.data.state; }
-  if (ev.type === "voice.utterance") { queue.push(ev.data); pump(); }
+  if (ev.type === "voice.utterance" && !ev.replay && audioOn) { queue.push(ev.data); pump(); } // @spec DASH-UI-013, DASH-UI-014 (replayed or audio off: shown, never queued)
   line(ev);
 }
 // @spec DASH-UI-004

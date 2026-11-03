@@ -163,3 +163,27 @@ test("a failed audit publish does not fail the request", async () => {
   t.bus.fail = (type) => type === "service.lifecycle";
   assert.equal((await t.send("/services/voice/stop", { token: "s3cret" })).status, 200);
 });
+
+// @spec DASH-HTTP-011
+test("lifecycle body over 64 KiB is a 413 and runs nothing", async () => {
+  const t = await boot(ON);
+  const big = JSON.stringify({ mode: "resume", pad: "x".repeat(64 * 1024) });
+  for (const act of ["start", "stop", "restart"]) {
+    assert.equal((await t.send(`/services/cortex/${act}`, { body: big, token: "s3cret" })).status, 413);
+  }
+  assert.deepEqual(t.calls, []);
+  assert.deepEqual(t.bus.of("service.lifecycle"), []);
+});
+
+// @spec DASH-HTTP-013
+test("a malformed % escape in the service id is a 404 like an unknown service, not a 500", async () => {
+  const t = await boot(ON);
+  t.rec.lines.length = 0;
+  for (const id of ["%E0%A4%A", "%", "cortex%zz"]) {
+    const r = await t.send(`/services/${id}/stop`, { token: "s3cret" });
+    assert.equal(r.status, 404, id);
+    assert.equal(((await r.json()) as { ok: boolean }).ok, false);
+  }
+  assert.deepEqual(t.calls, []);
+  assert.deepEqual(t.rec.msgs("error"), []);
+});

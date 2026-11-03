@@ -18,7 +18,7 @@ import { HealthTracker } from "@cohost/control";
 import { createLogger, envOr, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
-import { createFeed } from "./feed.js";
+import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
 
@@ -46,8 +46,8 @@ const server = http.createServer(
 
 const wss = new WebSocketServer({ server, path: "/ws" });
 const feed = createFeed({ bus, tracker, clients: () => wss.clients });
-wss.on("connection", (ws) => void feed.onConnection(ws));
-void feed.start();
+wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
+void startFeed(feed, log); // @spec DASH-HTTP-012
 
 // @spec DASH-HTTP-009
 const onListening = () => { heartbeat.ready(); log.info({ port: PORT, bind: bind ?? "default" }, "dashboard online"); };

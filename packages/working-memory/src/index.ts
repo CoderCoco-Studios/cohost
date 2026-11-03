@@ -80,9 +80,10 @@ export class Context {
   }
   clear(): void { // @spec WM-WIN-003
     this.events = [];
+    this.lastVision = "";
   }
   all(): readonly ContextEvent[] { // @spec WM-WIN-006
-    return this.events;
+    return [...this.events];
   }
 
   /** Render the window as transcript lines for the prompt. */
@@ -90,9 +91,9 @@ export class Context {
     return this.events
       .map((e) => {
         switch (e.kind) {
-          case "chat": return `[chat] ${e.user}${e.isMod ? " (mod)" : ""}: ${e.text}`; // @spec WM-TRANS-002, WM-TRANS-006
-          case "speech": return `[voice] ${e.speaker}: ${e.text}`; // @spec WM-TRANS-003, WM-TRANS-006
-          case "vision": return `[screen] ${e.text}`; // @spec WM-TRANS-004, WM-TRANS-006
+          case "chat": return `${LINE_TAG.chat} ${oneLine(e.user)}${e.isMod ? " (mod)" : ""}: ${oneLine(e.text)}`; // @spec WM-TRANS-002, WM-TRANS-006
+          case "speech": return `${LINE_TAG.speech} ${oneLine(e.speaker)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
+          case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006
           case "self": return `${cohostName}: [${e.emotion}] ${e.text}`; // @spec WM-TRANS-005
         }
       })
@@ -103,3 +104,13 @@ export class Context {
     if (this.events.length > this.max) this.events.splice(0, this.events.length - this.max);
   }
 }
+
+/**
+ * The tag that opens a transcript line, per input kind. This package owns the list; the LLM layer derives its
+ * transcript stop sequences from `TRANSCRIPT_TAGS` (WM-TRANS-009). The co-host's own `Name:` line has no tag.
+ */
+const LINE_TAG = { chat: "[chat]", speech: "[voice]", vision: "[screen]" } as const;
+export const TRANSCRIPT_TAGS: readonly string[] = [LINE_TAG.chat, LINE_TAG.speech, LINE_TAG.vision]; // @spec WM-TRANS-009
+
+/** One line per event: a CR or LF inside a field would let it forge a tag or a co-host line. */
+const oneLine = (s: string): string => s.replace(/[\r\n]/g, " "); // @spec WM-TRANS-008

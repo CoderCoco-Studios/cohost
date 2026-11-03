@@ -12,6 +12,8 @@ import { channelName, chatPlan, createChatFilter } from "./filter.js";
 import { chatHealth } from "./health.js";
 import { startFakeSource } from "./fake.js";
 import { createInjectHandler } from "./inject.js";
+import { subscribeInject } from "./subscribe.js";
+import { createMessageHandler, registerUserToken } from "./twitch.js";
 
 const log = createLogger("chat");
 const cfg = loadConfig();
@@ -24,13 +26,12 @@ let connected = false;
 // @spec CHAT-HEALTH-001
 const heartbeat = startHeartbeat(bus, { ...chatHealth(channel, () => connected, source), log });
 const toEvent = createChatFilter(cfg);
+const fatal = (err: unknown): never => { log.error({ err }, "fatal"); process.exit(1); };
 
 // Test injection is handled whatever the source (twitch/fake/idle); it needs no channel or connection.
-// @spec CHAT-INJ-001
-void bus.subscribe(
-  { group: "chat", types: ["inject.request"], fromNow: true },
-  createInjectHandler({ bus, log, cohostName: cfg.cohost.name }),
-);
+// The subscription is established before any plan signals `ready`.
+// @spec CHAT-INJ-001, CHAT-INJ-009
+await subscribeInject(bus, createInjectHandler({ bus, log, cohostName: cfg.cohost.name }), log).catch(fatal);
 
 // @spec CHAT-PLAN-001, CHAT-HEALTH-002
 if (plan === "fake") {
@@ -58,7 +59,7 @@ if (plan === "fake") {
   // @spec CHAT-PLAN-006
   onShutdown(() => { clearInterval(timer); bus.stop(); });
 } else {
-  await startTwitch(channel);
+  await startTwitch(channel).catch(fatal);
 }
 
 // @spec CHAT-TW-001, CHAT-TW-002, CHAT-TW-003
@@ -68,15 +69,8 @@ async function buildAuth(): Promise<AuthProvider | undefined> {
   if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET || !TWITCH_ACCESS_TOKEN) return undefined;
   const provider = new RefreshingAuthProvider({ clientId: TWITCH_CLIENT_ID, clientSecret: TWITCH_CLIENT_SECRET });
   provider.onRefresh((_userId, token) => log.info({ expiresIn: token.expiresIn }, "twitch token refreshed"));
-  void provider.addUserForToken(
-    {
-      accessToken: TWITCH_ACCESS_TOKEN,
-      refreshToken: TWITCH_REFRESH_TOKEN ?? null,
-      expiresIn: 0,
-      obtainmentTimestamp: 0,
-    },
-    ["chat"],
-  );
+  // @spec CHAT-TW-006
+  await registerUserToken(provider, { accessToken: TWITCH_ACCESS_TOKEN, refreshToken: TWITCH_REFRESH_TOKEN ?? null });
   return provider;
 }
 
@@ -99,10 +93,9 @@ async function startTwitch(channel: string): Promise<void> {
   });
 
   // @spec CHAT-TW-008
-  client.onMessage(async (_chan, user, text, msg) => {
-    const ev = toEvent(user, text, msg.userInfo);
-    if (ev) await bus.publish("chat.message", ev);
-  });
+  const handleMessage = createMessageHandler({ toEvent, bus, log });
+  // @spec CHAT-TW-007
+  client.onMessage((_chan, user, text, msg) => handleMessage(user, text, msg.userInfo));
 
   client.connect();
   // @spec CHAT-PLAN-006

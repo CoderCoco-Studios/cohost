@@ -30,6 +30,13 @@ test("bots (case-insensitive), commands and blank lines are dropped", () => {
   assert.equal(filter("bob", "   ", info()), undefined);
 });
 
+// @spec CHAT-FILT-003
+test("whitespace before a prefix is trimmed first, so the line is still dropped as a command", () => {
+  assert.equal(filter("bob", " !cmd", info()), undefined);
+  assert.equal(filter("bob", "\t  #ad  ", info()), undefined);
+  assert.equal(filter("bob", "  hi !not-a-prefix", info())!.text, "hi !not-a-prefix");
+});
+
 // @spec CHAT-FILT-007
 test("mentions are matched anywhere, case-insensitively", () => {
   assert.equal(filter("bob", "what do you think COCO", info())!.mentionsCohost, true);

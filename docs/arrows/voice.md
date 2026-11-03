@@ -83,7 +83,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Key Findings
 
-1. **Late real sink (fixed).** A real sink's `voice.playing` after the virtual one now cancels the pending virtual `voice.done` (`services/voice/src/voice.ts:105-107`), so cortex is released by the sink that is playing. avatar still restarts lip-sync on the second `voice.playing` for the id. (VOICE-SINK-008, B1)
+1. **Late real sink (fixed).** A real sink's `voice.playing` after the virtual one now cancels the pending virtual `voice.done` (`services/voice/src/voice.ts:120-122`), so cortex is released by the sink that is playing. avatar still restarts lip-sync on the second `voice.playing` for the id. (VOICE-SINK-008, B1)
 2. **Restart replay (fixed).** voice subscribes with `start: "latest"` and positions its group before `ready` (`services/voice/src/boot.ts:41-45`). (VOICE-SYN-001, P8)
 3. **Bus failures (fixed).** Virtual-sink publishes go through `publishVirtual`, which logs and continues; every startup step and the subscription are inside `runVoice`'s `try`, which logs `fatal` and exits 1. (VOICE-SINK-009, VOICE-SYN-006, R1, R3)
 4. **Claims share the TTS loop.** One sequential subscription handles `brain.say` (seconds of synthesis) and `voice.playing` claims (`packages/bus/src/index.ts`), so a claim for line A can be stuck behind synthesis of line B and the virtual timer for A may fire anyway. `[inferred]` not reproduced in tests.
@@ -92,7 +92,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 7. **Two near-duplicate WAV parsers and a cross-service test import.** `services/voice/src/wav.ts:12-34` vs `services/ears/src/audio.ts:44-55`; `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js`.
 8. **Port 8700 is not published by compose, by design.** Compose sets `VOICE_URL=http://voice:8700` (`docker-compose.yml:18`) and never publishes the port; `urls.voice()` defaults to loopback (commit `e53badc`); host-side players go through the dashboard proxy (P4). The frozen OpenSpec's `http://voice:<VOICE_PORT>` default is stale and the LID line (VOICE-UTT-002) is authoritative.
 9. **WAV handling is narrow.** Only 16-bit PCM; envelope reads the first channel only; `parseWav` ignores the format tag and a missing `fmt ` gives a non-finite duration (`wav.ts:17-29,41`). Kokoro returns mono 16-bit today so nothing trips.
-10. **Store eviction counts duplicates.** Re-using an id pushes it into `order` twice (`voice.ts:77-85`); and a failed `voice.utterance` publish is reported as `tts failed` because the whole path shares one `try` (`voice.ts:115-144`).
+10. **Store eviction counts duplicates.** Re-using an id pushes it into `order` twice (`voice.ts:77-85`); and a failed `voice.utterance` publish is reported as `tts failed` because the whole path shares one `try` (`voice.ts:130-153`).
 
 ## Work Required
 

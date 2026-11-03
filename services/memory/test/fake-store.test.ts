@@ -57,10 +57,21 @@ test("recentSince is ordered and filtered; meta round-trips", async () => {
   await s.remember("chat", "a", "one");
   advance(1000);
   await s.remember("speech", "b", "two");
-  assert.deepEqual((await s.recentSince(new Date(T0))).map((m) => m.text), ["two"]);
-  assert.equal((await s.recentSince(new Date(T0 - 1))).length, 2);
+  assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 1 })).map((m) => m.text), ["two"]);
+  assert.equal((await s.recentSince({ ts: new Date(T0 - 1).toISOString(), id: 0 })).length, 2);
   assert.equal(await s.getMeta("k"), undefined);
   await s.setMeta("k", "v");
   assert.equal(await s.getMeta("k"), "v");
   await s.close();
+});
+
+// @spec MEM-REFLECT-008
+test("recentSince reads strictly after a (ts, id) cursor, including rows that share the cursor's timestamp", async () => {
+  const { s, advance } = make();
+  for (const t of ["a", "b", "c"]) await s.remember("chat", "x", t); // all at T0, ids 1..3
+  advance(1000);
+  await s.remember("chat", "x", "d"); // id 4
+  assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 1 })).map((m) => m.text), ["b", "c", "d"]);
+  assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 3 }, 1)).map((m) => m.text), ["d"]);
+  assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 0 }, 2)).map((m) => m.text), ["a", "b"]);
 });

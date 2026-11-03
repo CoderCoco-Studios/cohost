@@ -1,4 +1,5 @@
 import type { Config } from "@cohost/config";
+import type { ReflectCursor } from "./cursor.js";
 import type { Memory, MemoryKind, MemoryBackend } from "./store.js";
 
 const DIMS = 64;
@@ -56,10 +57,12 @@ export class InMemoryStore implements MemoryBackend {
     return { msgCount: v.msgCount, notes: v.notes, isNew: v.msgCount <= 1 };
   }
 
-  // @spec MEM-BACKEND-006
-  async recentSince(ts: Date, limit = 400): Promise<Memory[]> {
+  // @spec MEM-BACKEND-006, MEM-REFLECT-008
+  async recentSince(after: ReflectCursor, limit = 400): Promise<Memory[]> {
+    const t = new Date(after.ts).getTime();
     return this.rows
-      .filter((r) => r.ts > ts)
+      .filter((r) => r.ts.getTime() > t || (r.ts.getTime() === t && r.id > after.id))
+      .sort((a, b) => a.ts.getTime() - b.ts.getTime() || a.id - b.id)
       .slice(0, limit)
       .map(({ embedding: _e, ...m }) => m);
   }

@@ -1,0 +1,64 @@
+import type { Bus, Heartbeat } from "@cohost/bus";
+import type { Config, Logger } from "@cohost/config";
+import type { BusEvent } from "@cohost/bus";
+import type { MemoryHealth } from "./health.js";
+import { DimensionMismatchError, type MemoryBackend } from "./store.js";
+
+/** Everything the startup sequence touches, injected so it can be tested without Redis, Ollama or Postgres. */
+export interface StartupDeps {
+  cfg: Config["brain"]["memory"];
+  log: Logger;
+  bus: Pick<Bus, "subscribe">;
+  store: Pick<MemoryBackend, "init">;
+  health: Pick<MemoryHealth, "setOllama" | "setPostgres">;
+  heartbeat: Pick<Heartbeat, "ready" | "degraded">;
+  /** True once Ollama answers. */
+  ping: () => Promise<boolean>;
+  onEvent: (ev: BusEvent) => Promise<void>;
+  sleep: (ms: number) => Promise<void>;
+}
+
+const RETRY_MS = 3000;
+const MAX_INIT_RETRIES = 20;
+
+/** Wait for dependencies, initialise the store, subscribe both consumer groups, report ready. Throws on fatal startup errors. */
+export async function startMemory({ cfg, log, bus, store, health, heartbeat, ping, onEvent, sleep }: StartupDeps): Promise<void> {
+  const { store: storeKind, embedder: embedderKind } = cfg;
+  // @spec MEM-START-004
+  if (storeKind !== "postgres" || embedderKind !== "ollama") {
+    log.warn({ store: storeKind, embedder: embedderKind }, "memory running with a non-default backend (mode mock); data is not durable");
+  }
+  // @spec MEM-START-001, MEM-HEALTH-007
+  if (storeKind === "postgres" && embedderKind === "ollama") {
+    while (!(await ping())) {
+      health.setOllama(false);
+      heartbeat.degraded("waiting for ollama (embeddings)");
+      log.warn("waiting for ollama (embeddings)...");
+      await sleep(RETRY_MS);
+    }
+    health.setOllama(true);
+  }
+  // @spec MEM-START-002, MEM-HEALTH-004, MEM-HEALTH-006, MEM-HEALTH-007, MEM-STORE-002
+  if (storeKind === "postgres") {
+    for (let attempt = 1; ; attempt++) {
+      try { await store.init(); health.setPostgres(true); break; }
+      catch (err) {
+        health.setPostgres(false);
+        // A configuration error, not an outage: retrying cannot fix it.
+        if (err instanceof DimensionMismatchError || attempt > MAX_INIT_RETRIES) throw err;
+        heartbeat.degraded(`waiting for postgres (init attempt ${attempt} failed)`);
+        log.warn({ err: String(err) }, "postgres not ready, retrying in 3s");
+        await sleep(RETRY_MS);
+      }
+    }
+  } else {
+    // @spec MEM-START-003
+    await store.init();
+  }
+  // @spec MEM-EVT-001, MEM-START-005
+  // Two consumer groups so a recall never queues behind the (embed + INSERT) writes.
+  void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], start: "resume" }, onEvent);
+  void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], start: "resume" }, onEvent);
+  heartbeat.ready();
+  log.info({ recall_k: cfg.recall_k }, "memory online");
+}

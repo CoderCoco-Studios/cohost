@@ -10,53 +10,14 @@
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
 import { createChatProvider } from "@cohost/llm";
 import { createMemoryEmbedder, createStore } from "./backend.js";
-import { appendLearned, learnedBlock, parseBullets } from "./learned.js";
+import { runReflect } from "./reflect-run.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
 const llm = createChatProvider(cfg.llm);
 const memory = createStore(cfg, createMemoryEmbedder(cfg), log);
 
-// @spec MEM-REFLECT-001, MEM-REFLECT-002, MEM-REFLECT-003, MEM-REFLECT-004, MEM-REFLECT-006, MEM-REFLECT-007
-async function main() {
-  if (cfg.brain.memory.store === "memory") {
-    log.warn("brain.memory.store is memory: nothing persists between processes, so there is nothing to reflect on");
-    return;
-  }
-  await memory.init();
-  const since = new Date((await memory.getMeta("last_reflection")) ?? "1970-01-01");
-  const rows = await memory.recentSince(since, 600);
-  if (rows.length < 5) {
-    log.info({ count: rows.length }, "not enough new memories to reflect on");
-    return;
-  }
-  const transcript = rows.map((r) => `${r.who}: ${r.text}`).join("\n");
-  const personality = loadPersonality();
-
-  const raw = await llm.chat(
-    [
-      {
-        role: "system",
-        content:
-          `You are ${cfg.cohost.name}, reflecting after a stream. Below is your current personality file and ` +
-          `a transcript of things you and chat said. Write 3-6 short bullet points of durable things worth ` +
-          `remembering for future streams: running jokes, regulars and what they're like, opinions you formed, ` +
-          `things ${cfg.cohost.streamer} likes or hates. Be concrete. Output only the bullets, each starting with "- ".`,
-      },
-      { role: "user", content: `## Personality\n${personality}\n\n## Transcript\n${transcript}` },
-    ],
-    { maxTokens: 400, temperature: 0.5 },
-  );
-
-  const bullets = parseBullets(raw);
-  if (bullets.length === 0) { log.warn({ raw }, "no bullets produced"); return; }
-
-  const addition = learnedBlock(bullets, new Date().toISOString().slice(0, 10));
-  savePersonality(appendLearned(personality, addition));
-  await memory.setMeta("last_reflection", new Date().toISOString());
-  log.info({ bullets: bullets.length }, "personality updated");
-  console.log(addition);
-}
+const main = () => runReflect({ cfg, llm, memory, log, loadPersonality, savePersonality, now: () => new Date() });
 
 // @spec MEM-REFLECT-009
 main()

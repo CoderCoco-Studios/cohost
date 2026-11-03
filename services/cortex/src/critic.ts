@@ -35,7 +35,7 @@ export function createCritic(cfg: Config, log: Logger): Module<CriticInput, Crit
       system:
         `You are the inner editor of ${cfg.cohost.name}, an AI co-host on ${cfg.cohost.streamer}'s live stream. ` +
         `You see a line ${cfg.cohost.name} is about to say out loud. Block it if it is hateful, doxxes anyone, breaks character, ` +
-        `narrates instead of speaking, repeats something said moments ago, or is longer than two sentences. ` +
+        `narrates instead of speaking, repeats something said moments ago, or is longer than one short spoken line. ` +
         `If a small edit fixes it, return the fixed line. Reply with JSON only: {"ok":true} or {"ok":true,"text":"fixed line"} or {"ok":false,"note":"why"}.`,
       user: (i) => `## Recent transcript\n${i.transcript || "(quiet)"}\n\n## About to say (${i.emotion}, because: ${i.reason})\n${i.text}`,
       maxTokens: 160,

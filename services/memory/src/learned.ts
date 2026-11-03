@@ -14,9 +14,14 @@ export function learnedBlock(bullets: string[], stamp: string): string {
 }
 
 // @spec MEM-REFLECT-007
-/** Append the block to personality.md, adding the "## Learned" heading the first time. */
+/** Put the block at the end of the "## Learned" section (before the next "## " heading), adding the heading at the end the first time. */
 export function appendLearned(personality: string, addition: string): string {
-  return personality.includes(MARKER)
-    ? `${personality.trimEnd()}\n${addition}`
-    : `${personality.trimEnd()}\n\n${MARKER}\n${addition}`;
+  const heading = /^## Learned[ \t]*$/m.exec(personality);
+  if (!heading) return `${personality.trimEnd()}\n\n${MARKER}\n${addition}`;
+  const bodyStart = heading.index + heading[0].length;
+  const next = /^## /m.exec(personality.slice(bodyStart));
+  const end = next ? bodyStart + next.index : personality.length;
+  const head = personality.slice(0, end).trimEnd();
+  const tail = personality.slice(end);
+  return `${head}\n${addition}${tail ? `\n${tail}` : ""}`;
 }

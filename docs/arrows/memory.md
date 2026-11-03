@@ -4,7 +4,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 43 implemented, 1 deferred, 9 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are scheduled.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 54 specs: 52 implemented, 1 deferred, 1 gap. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, except `MEM-START-005`, which waits on a bus hook (event-bus).
 
 ## Decisions applied
 
@@ -31,22 +31,27 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (53 specs, prefix `MEM`: 43 `[x]`, 9 `[ ]`, 1 `[D]`)
+- docs/intent/memory/memory-specs.md (54 specs, prefix `MEM`: 52 `[x]`, 1 `[ ]`, 1 `[D]`)
 
-### Tests (`@spec` lines per file; 29 lines citing 31 distinct IDs)
-- services/memory/test/region.test.ts (8)
-- services/memory/test/memory.test.ts (9)
+### Tests (`@spec` lines per file; 50 lines citing 49 distinct IDs)
+- services/memory/test/region.test.ts (9)
+- services/memory/test/memory.test.ts (13)
 - services/memory/test/backend.test.ts (3)
-- services/memory/test/fake-store.test.ts (5)
+- services/memory/test/fake-store.test.ts (6)
 - services/memory/test/health.test.ts (4)
+- services/memory/test/reflect.test.ts (9)
+- services/memory/test/startup.test.ts (6)
 
-### Code (`@spec` lines per file; 30 lines citing 47 IDs: the 43 implemented plus the 4 former `[x]` lines now `[ ]`)
-- services/memory/src/index.ts (6)
-- services/memory/src/region.ts (6)
-- services/memory/src/store.ts (6)
+### Code (`@spec` lines per file; 35 lines citing 53 IDs: every spec except the deferred `MEM-VIEWER-005`)
+- services/memory/src/index.ts (2)
+- services/memory/src/startup.ts (5)
+- services/memory/src/region.ts (7)
+- services/memory/src/store.ts (8)
+- services/memory/src/cursor.ts (1)
 - services/memory/src/backend.ts (2)
 - services/memory/src/fake-store.ts (4)
-- services/memory/src/reflect.ts (2)
+- services/memory/src/reflect.ts (1)
+- services/memory/src/reflect-run.ts (1)
 - services/memory/src/learned.ts (2)
 - services/memory/src/health.ts (2)
 - services/memory/package.json
@@ -67,56 +72,52 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 2. `store.ts` — Postgres/pgvector `MemoryStore` (tables `memories`, `viewers`, `meta`; 2-minute recency exclusion; `min_similarity` filter) and the `MemoryBackend` interface.
 3. `fake-store.ts` + `backend.ts` — in-process `InMemoryStore` with its own 64-dim hash embedder; config-driven store and embedder factories.
 4. `health.ts` — dependency tracker (`postgres`, `ollama`, `n/a` when unused) and mode (`live` only for postgres + ollama).
-5. `index.ts` — startup waits (Ollama ping, Postgres init retry, fatal after the 21st failure), subscriptions, heartbeat.
-6. `reflect.ts` + `learned.ts` — offline reflection CLI and its pure text helpers.
+5. `index.ts` + `startup.ts` — wiring, and the injectable startup sequence (Ollama ping, Postgres init retry with no retry on a dimension mismatch, fatal after the 21st failure, `degraded` while waiting, subscriptions with start mode `resume`, heartbeat).
+6. `reflect.ts` + `reflect-run.ts` + `cursor.ts` + `learned.ts` — offline reflection CLI (wiring), the injectable reflection pass, the `(ts, id)` cursor, and the pure text helpers.
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
-| Event handling | MEM-EVT-001 to MEM-EVT-002 | 1 | 0 | 1 (EVT-001) | 1 |
+| Event handling | MEM-EVT-001 to MEM-EVT-002 | 2 | 0 | 0 | 2 |
 | Storing memories | MEM-WRITE-001 to MEM-WRITE-005 | 5 | 0 | 0 | 5 |
 | Test injection | MEM-INJ-001 to MEM-INJ-003 | 3 | 0 | 0 | 3 |
-| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 | 3 | 1 (VIEWER-005) | 2 (VIEWER-001, 006) | 4 |
+| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 | 5 | 1 (VIEWER-005) | 0 | 5 |
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
-| Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 2 | 0 | 1 (STORE-002) | 2 |
+| Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
-| Startup and shutdown | MEM-START-001 to MEM-START-006 | 5 | 0 | 1 (START-005) | 0 |
-| Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 5 | 0 | 2 (HEALTH-005, 007) | 3 |
-| Reflection | MEM-REFLECT-001 to MEM-REFLECT-009 | 7 | 0 | 2 (REFLECT-007, 008) | 2 |
+| Startup and shutdown | MEM-START-001 to MEM-START-006 | 5 | 0 | 1 (START-005) | 4 |
+| Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
+| Reflection | MEM-REFLECT-001 to MEM-REFLECT-010 | 10 | 0 | 0 | 9 |
 
-**Summary:** 43 of 53 specs implemented and annotated in code; 1 deferred (`MEM-VIEWER-005`); 9 gaps (`MEM-EVT-001`, `MEM-VIEWER-001`, `MEM-VIEWER-006`, `MEM-STORE-002`, `MEM-START-005`, `MEM-HEALTH-005`, `MEM-HEALTH-007`, `MEM-REFLECT-007`, `MEM-REFLECT-008`). Four gaps are former `[x]` lines whose intent changed (`MEM-EVT-001`, `MEM-VIEWER-001`, `MEM-START-005`, `MEM-REFLECT-007`); their existing code annotations stay and the fix lands under the same ID. 31 spec lines have a test annotated with `@spec` (the "With test" column; `MEM-REFLECT-007`'s covers the text append only). Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-001` to `MEM-START-004`, `MEM-START-006`, `MEM-HEALTH-004`, `MEM-HEALTH-006`, `MEM-REFLECT-001` to `MEM-REFLECT-004`, `MEM-REFLECT-006`, `MEM-REFLECT-009`. No `@spec` annotation cites a missing ID.
+**Summary:** 52 of 54 specs implemented and annotated in code; 1 deferred (`MEM-VIEWER-005`); 1 gap (`MEM-START-005`: `ready` can precede consumer-group creation until the bus offers a group-ready hook). 49 spec lines have a test annotated with `@spec` (the "With test" column). Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts` and `reflect.ts` are wiring only and untested; the logic they used to hold is in `startup.ts` and `reflect-run.ts`, covered with fakes (no test runs against a real Postgres).
 
 ## Key Findings
 
-1. **Markers verified at audit** — every `[x]` line had implementing code and every `[ ]` gap was confirmed absent in code (`store.ts:44-54`, `index.ts:49`, `reflect.ts:28,56`, no `notes` writer).
-2. **Postgres and in-memory stores disagree on viewer counts** — Postgres reports `msgCount` 0 then 1 for a viewer's first two messages, both `isNew` (`store.ts:61,108-109,114`); the fake reports 1 then 2 (`fake-store.ts:53-56`). The unit test's fake pool returns `msg_count` 1 (`services/memory/test/memory.test.ts:110-111`), so the divergence is untested. B6, `MEM-VIEWER-001`.
-3. **Vector dimension is fixed and unchecked** — `CREATE TABLE IF NOT EXISTS memories (... embedding vector(dims))` (`store.ts:46-54`) with no comparison to an existing table. Changing embed model, or `embedder=hash` (64 dims) on a database created with Ollama vectors, makes every `remember`/`recall` fail, both swallow the error as a warning (`store.ts:80-82`, `store.ts:99-102`), and health stays `ok`. B5, `MEM-STORE-002`.
-4. **`deps.postgres` is startup-only** — `setPostgres` is called only in the init loop (`index.ts:49,51`); commit `691b079` review notes state "memory `postgres` only flips on init". Only `ollama` is live-tracked via `tracked()` (`health.ts:33-36`). R4, `MEM-HEALTH-005`.
-5. **Reflection loses rows past 600** — `recentSince(since, 600)` returns the oldest 600 (`store.ts:118-124`) and `last_reflection` is then set to now (`reflect.ts:28,56`). Reflection also needs a reachable embedder because `init()` embeds `"hello"` (`store.ts:44`), and takes no lock against the live service. B7, `MEM-REFLECT-008`.
-6. **`viewers.notes` has no writer** — read and forwarded in `memory.viewer` (`store.ts:106-115`, `region.ts:27`) but never written anywhere; cortex surfaces it only for viewers above 25 messages. S26, `MEM-VIEWER-005` `[D]`.
-7. **Restarts replay the backlog, by design** — both groups resume after downtime (`fromNow` behaves as `resume`, `packages/bus/src/index.ts:133-138`; manifest default `resume`, `packages/control/src/manifest.ts:43`); `ready()` is reported before the un-awaited subscriptions have created the groups (`index.ts:63-65`). P8, R3, `MEM-EVT-001`, `MEM-START-005`.
-8. **A failing viewer upsert drops the chat event** — `touchViewer` has no `try/catch` (`store.ts:106-115`); the bus logs and acks (`packages/bus/src/index.ts:160-166`), so neither `memory.viewer` nor the memory row is produced. B8, `MEM-VIEWER-006`.
-9. **Two hash embedders** — `fake-store.ts:7-16` (unsigned, tokens include apostrophes, zero vector for empty text) vs `packages/llm/src/mock.ts:39-50` (signed, fixed unit vector for empty text). `backend.ts:8-10` uses the llm one only for `store=postgres, embedder=hash`; the fake ignores the supplied embedder. Memory deliberately does not follow `llm.provider=mock` (commit `51d5a9c`).
-10. **Startup heartbeat stays `starting`, not `degraded`, while waiting** for Ollama or Postgres (`index.ts:37-56`; `ready()` only at `index.ts:65`). R3, `MEM-HEALTH-007`.
-11. **Decision rationale** — the LLD's Decisions table cites a code comment or commit for 8 original rows and records the owner's 2026-11-01 decisions in 9 rows; 4 rows remain `[inferred]` (where vectors live, recency exclusion, isolated backend, mode reporting) and one is partly `[inferred]` (the 600 cap itself).
-12. **Test gaps** — `index.ts` wiring/retries and the `reflect.ts` main flow are untested (see Summary); `learned.ts` exists so the pure part is testable (commit `95afa19`).
+1. **Viewer counts agree across stores** — the Postgres INSERT sets `msg_count` 1 (`store.ts:144`), as the fake counts from 1 (`fake-store.ts:54-57`); the insert SQL is asserted in `memory.test.ts:154`. B6, `MEM-VIEWER-001`.
+2. **Vector dimension is checked** — `init` reads `atttypmod` of `memories.embedding` and throws `DimensionMismatchError` on a mismatch (`store.ts:100-106`); `startup.ts:48` rethrows it without retrying, so the service exits through `MEM-START-006`. B5, `MEM-STORE-002`. Migrating a table to a new dimension stays an open decision.
+3. **`deps.postgres` follows the latest query** — every pool query goes through `MemoryStore.query` (`store.ts:54,62`), which reports to `health.setPostgres` (`index.ts:28`). R4, `MEM-HEALTH-005`.
+4. **Reflection reads a `(ts, id)` cursor** — `meta.last_reflection` is `<ISO ts>#<id>` of the newest row read (`cursor.ts`, `reflect-run.ts:62`); `recentSince` reads `WHERE (ts, id) > ($1, $2) ORDER BY ts, id` (`store.ts:154-161`); a legacy plain timestamp is accepted; fewer than 5 rows leave the cursor alone. Reflection still needs a reachable embedder (`init()` embeds `"hello"`, `store.ts:69`) and takes no lock against the live service. The cursor timestamp is the exact microsecond text from Postgres (`"tsText"`), so no row is re-read. B7, `MEM-REFLECT-008`, `MEM-REFLECT-003`.
+5. **Learned block placement** — `appendLearned` inserts at the end of the `## Learned` section (`learned.ts:16-27`). S27, `MEM-REFLECT-007`.
+6. **Reflect announces the mock backend** — `runReflect` warns once when the chat provider is `mock` (`reflect-run.ts:25`). `MEM-REFLECT-010`, `LLM-MOCK-005` (that spec line lives in model-backends).
+7. **`viewers.notes` has no writer** — read and forwarded in `memory.viewer` (`store.ts:142-152`, `region.ts:32`) but never written anywhere; cortex surfaces it only for viewers above 25 messages. S26, `MEM-VIEWER-005` `[D]`.
+8. **Restarts replay the backlog, by design** — both groups subscribe with `start: "resume"` (`startup.ts:60-61`, asserted in `startup.test.ts:28`); manifest default `resume` (`packages/control/src/manifest.ts:43`). P8, `MEM-EVT-001`.
+9. **`ready` can precede group creation (open)** — the bus has no group-ready hook and `resetGroup` would move a resumed group to `$`, so `heartbeat.ready()` follows the `void` subscriptions at once (`startup.ts:60-62`). R3, `MEM-START-005`. Follow-up: event-bus adds `SubscribeOptions.onReady` (`packages/bus/src/index.ts`).
+10. **A failing viewer upsert no longer drops the chat event** — `region.ts:25-29` catches, logs a warning, skips `memory.viewer` and still remembers the mention. B8, `MEM-VIEWER-006`.
+11. **Startup reports `degraded` while waiting** for Ollama or Postgres (`startup.ts:35,49`). R3, `MEM-HEALTH-007`.
+12. **Two hash embedders** — `fake-store.ts:8-17` (unsigned, tokens include apostrophes, zero vector for empty text) vs `packages/llm/src/mock.ts:39-50` (signed, fixed unit vector for empty text). `backend.ts:8-10` uses the llm one only for `store=postgres, embedder=hash`; the fake ignores the supplied embedder. Memory deliberately does not follow `llm.provider=mock` (commit `51d5a9c`).
+13. **Decision rationale** — the LLD's Decisions table cites a code comment or commit for 8 original rows and records the owner's 2026-11-01 decisions in 9 rows plus two rows for the testable-startup/reflection split and the readiness limitation; 4 rows remain `[inferred]` (where vectors live, recency exclusion, isolated backend, mode reporting) and one is partly `[inferred]` (the 600 cap itself).
+14. **Test coverage** — `startup.ts` and `reflect-run.ts` are tested with injected fakes; `index.ts` and `reflect.ts` are wiring only. No test runs against a real Postgres (the `atttypmod` query and the row comparison are checked as recorded SQL).
 
 ## Work Required
 
 ### Must Fix
-1. Fail `init` on a vector-dimension mismatch, without retry (`MEM-STORE-002`, B5).
-2. Insert new Postgres viewers at `msg_count` 1 and test the insert path (`MEM-VIEWER-001`, B6).
-3. Advance `last_reflection` to the newest row read (`MEM-REFLECT-008`, B7).
-4. Catch a failed `touchViewer`, log, skip `memory.viewer`, still remember the mention (`MEM-VIEWER-006`, B8).
-5. Track Postgres health on every pool query with `tracked()` (`MEM-HEALTH-005`, R4).
-6. Report `degraded` with a detail while waiting for Ollama or Postgres, and `ready` only once both consumer groups exist (`MEM-HEALTH-007`, `MEM-START-005`, R3).
-7. Subscribe both groups with the bus's explicit start mode `resume` once event-bus provides it (`MEM-EVT-001`, P8).
+1. Add a group-ready hook to the bus (`SubscribeOptions.onReady`, called after the consumer group exists and is positioned, before the first read) and report `ready` from it (`MEM-START-005`, R3). Owner: event-bus segment; memory then calls `heartbeat.ready()` from the hook in `startup.ts`.
 
 ### Should Fix
-8. Insert the Learned block at the end of the `## Learned` section (`MEM-REFLECT-007`, S27; low priority).
-9. Fix the stale comments `services/memory/src/index.ts:8-10` (`memory.viewer` goes on every mention, `region.ts:25-27`) and `services/memory/src/backend.ts:16` ("main's fake") (B20).
+2. Fix the stale comments `services/memory/src/index.ts:8-10` (`memory.viewer` goes on every mention, `region.ts:30-33`) and `services/memory/src/backend.ts:16` ("main's fake") (B20).
+3. Flip `LLM-MOCK-005` to `[x]` in docs/intent/model-backends (model-backends segment) with test pointer `services/memory/test/reflect.test.ts:127`.
 
 ### Nice to Have
-10. Add tests for `index.ts` startup retry/ordering and the `reflect` main flow (`MEM-START-*`, `MEM-REFLECT-001` to `MEM-REFLECT-004`, `MEM-REFLECT-006`, `MEM-REFLECT-009`).
-11. Consolidate the two hash embedders or record why the fake keeps its own.
+4. Add a test that runs `init`, `touchViewer` and `recentSince` against a real Postgres with pgvector.
+5. Consolidate the two hash embedders or record why the fake keeps its own.

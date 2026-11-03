@@ -18,14 +18,18 @@ import { createChatProvider } from "@cohost/llm";
 import { createCritic } from "./critic.js";
 import { Cortex } from "./cortex.js";
 import { cortexHealth } from "./health.js";
-import { waitForLlm } from "./startup.js";
+import { startCortex, trackLlm, waitForLlm } from "./startup.js";
 
 const log = createLogger("cortex");
 const cfg = loadConfig();
 const bus = new Bus("cortex", log);
+const provider = createChatProvider(cfg.llm);
 let llmOk = false;
-const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk, cfg.llm.provider), log });
-const llm = createChatProvider(cfg.llm);
+// A provider whose ping always answers true says nothing until a reply has been tried (CTX-HEALTH-004).
+let llmProbed = !provider.pingIsNominal;
+const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk, cfg.llm.provider, () => llmProbed), log });
+// @spec CTX-HEALTH-003
+const llm = trackLlm(provider, (ok) => { llmOk = ok; llmProbed = true; });
 const critic = createCritic(cfg, log);
 const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality });
 
@@ -33,21 +37,8 @@ async function main() {
   // @spec CTX-START-002
   if (llm.name === "mock") log.warn("llm.provider is mock: replies are canned echoes, not a real model (mode mock)");
   // @spec CTX-START-001, CTX-HEALTH-002
-  await waitForLlm(llm, { log, setOk: (ok) => { llmOk = ok; }, onDown: (detail) => heartbeat.degraded(detail) });
-  // @spec CTX-START-003, CTX-EVT-001
-  await cortex.status("idle");
-  void bus.subscribe(
-    {
-      group: "cortex",
-      types: [
-        "chat.message", "speech.heard", "vision.summary", "brain.say", "voice.done",
-        "attention.focus", "memory.recall.reply", "memory.viewer", "affect.state", "control",
-      ],
-      fromNow: true,
-    },
-    (ev) => cortex.onEvent(ev),
-  );
-  heartbeat.ready();
+  await waitForLlm(provider, { log, setOk: (ok) => { llmOk = ok; }, onDown: (detail) => heartbeat.degraded(detail) });
+  await startCortex({ bus, cortex, heartbeat, onFatal: (err) => { log.error({ err }, "fatal"); process.exit(1); } });
   log.info({ provider: llm.name, model: llm.model, critic: critic.kind, name: cfg.cohost.name }, "cortex online");
 }
 

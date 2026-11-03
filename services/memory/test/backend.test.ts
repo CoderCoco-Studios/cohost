@@ -21,7 +21,7 @@ test("region handler works end to end over the in-memory store", async () => {
   const store = new InMemoryStore({ ...cfg.brain.memory, recall_k: 3, min_similarity: 0.3 }, () => t);
   const published: { type: string; data: any }[] = [];
   const bus = { publish: async (type: string, data: unknown) => { published.push({ type, data }); return "1"; } } as never;
-  const on = createMemoryHandler({ cfg, bus, store });
+  const on = createMemoryHandler({ cfg, bus, store, log });
   const ev = (type: string, data: unknown) => ({ id: "1", type, ts: 0, source: "t", data }) as never;
   await on(ev("chat.message", { user: "bob", text: "coco I love speedrunning", mentionsCohost: true, userId: "1" }));
   t += 150_000;

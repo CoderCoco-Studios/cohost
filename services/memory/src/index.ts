@@ -17,56 +17,30 @@ import { Ollama } from "@cohost/llm";
 import { MemoryHealth } from "./health.js";
 import { createMemoryEmbedder, createStore } from "./backend.js";
 import { createMemoryHandler } from "./region.js";
+import { startMemory } from "./startup.js";
 
 const log = createLogger("memory");
 const cfg = loadConfig();
 const bus = new Bus("memory", log);
-const { store: storeKind, embedder: embedderKind } = cfg.brain.memory;
 const health = new MemoryHealth(cfg.brain.memory);
 const heartbeat = startHeartbeat(bus, { ...health.spec, log });
 const rawEmbedder = createMemoryEmbedder(cfg); // ollama is local whatever the chat provider; hash is offline
-const store = createStore(cfg, health.embedder(rawEmbedder), log);
-const onEvent = createMemoryHandler({ cfg, bus, store });
+const store = createStore(cfg, health.embedder(rawEmbedder), log, (ok) => health.setPostgres(ok)); // @spec MEM-HEALTH-005
+const onEvent = createMemoryHandler({ cfg, bus, store, log });
 
-async function main() {
-  // @spec MEM-START-004
-  if (storeKind !== "postgres" || embedderKind !== "ollama") {
-    log.warn({ store: storeKind, embedder: embedderKind }, "memory running with a non-default backend (mode mock); data is not durable");
-  }
-  // @spec MEM-START-001
-  if (storeKind === "postgres" && embedderKind === "ollama") {
-    const ollama = new Ollama(cfg.llm);
-    while (!(await ollama.ping())) {
-      health.setOllama(false);
-      log.warn("waiting for ollama (embeddings)...");
-      await sleep(3000);
-    }
-    health.setOllama(true);
-  }
-  // @spec MEM-START-002, MEM-HEALTH-004, MEM-HEALTH-006
-  if (storeKind === "postgres") {
-    for (let attempt = 1; ; attempt++) {
-      try { await store.init(); health.setPostgres(true); break; }
-      catch (err) {
-        health.setPostgres(false);
-        if (attempt > 20) throw err;
-        log.warn({ err: String(err) }, "postgres not ready, retrying in 3s");
-        await sleep(3000);
-      }
-    }
-  } else {
-    // @spec MEM-START-003
-    await store.init();
-  }
-  // @spec MEM-EVT-001, MEM-START-005
-  // Two consumer groups so a recall never queues behind the (embed + INSERT) writes.
-  void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], fromNow: true }, onEvent);
-  void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], fromNow: true }, onEvent);
-  heartbeat.ready();
-  log.info({ recall_k: cfg.brain.memory.recall_k }, "memory online");
-}
+const main = () => startMemory({
+  cfg: cfg.brain.memory,
+  log,
+  bus,
+  store,
+  health,
+  heartbeat,
+  ping: () => new Ollama(cfg.llm).ping(),
+  onEvent,
+  sleep,
+});
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // @spec MEM-START-006
 main().catch((err) => { log.error({ err }, "fatal"); process.exit(1); });

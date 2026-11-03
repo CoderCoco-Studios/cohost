@@ -1,10 +1,11 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
-import type { Config } from "@cohost/config";
+import type { Config, Logger } from "@cohost/config";
 import type { MemoryStore } from "./store.js";
 
 export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
+  log: Logger;
   store: Pick<MemoryStore, "touchViewer" | "remember" | "recall">;
 }
 
@@ -14,17 +15,21 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 
 // @spec MEM-EVT-002
 /** The memory region's event handler; index.ts subscribes it to both consumer groups. */
-export function createMemoryHandler({ cfg, bus, store }: MemoryDeps): (ev: BusEvent) => Promise<void> {
+export function createMemoryHandler({ cfg, bus, store, log }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
       // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory
-        const v = await store.touchViewer(d.userId ?? d.user, d.user);
+        // @spec MEM-VIEWER-006
+        const v = await store.touchViewer(d.userId ?? d.user, d.user).catch((err) => {
+          log.warn({ err: String(err), user: d.user }, "viewer upsert failed; no memory.viewer for this message");
+          return undefined;
+        });
         if (d.mentionsCohost) {
           // Announce who this is before the slow embed so the cortex has it when the reply is built.
-          await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, notes: v.notes });
+          if (v) await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, notes: v.notes });
           await store.remember("chat", d.user, d.text);
         }
         break;

@@ -62,3 +62,26 @@ test("critic http: no boolean ok → unusable → the rules pass the line throug
   answer = null;
   assert.deepEqual(await c.run(line), { ok: true });
 });
+
+// @spec CTX-CRITIC-006
+test("critic llm: the system prompt carries the reply prompt's length rule, one short spoken line", async () => {
+  const llmCfg = ConfigSchema.parse({
+    cohost: { name: "Coco", streamer: "Chris" },
+    llm: { provider: "openai", model: "m", embed_model: "e", openai: { base_url: `http://127.0.0.1:${(server.address() as { port: number }).port}` } },
+    vision: { model: "v", obs: {} },
+    chat: { twitch: {} },
+    brain: { cortex: { critic: { kind: "llm" } } },
+    voice: {},
+    avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
+    ears: { discord: {} },
+    dashboard: {},
+  });
+  answer = { choices: [{ message: { content: '{"ok":true}' } }] };
+  const c = createCritic(llmCfg, log);
+  assert.equal(c.kind, "llm");
+  await c.run(line);
+  const system = (lastBody.messages as { role: string; content: string }[])[0]!.content;
+  assert.match(system, /longer than one short spoken line/);
+  assert.doesNotMatch(system, /two sentences/);
+  assert.equal(lastBody.max_tokens, 160);
+});

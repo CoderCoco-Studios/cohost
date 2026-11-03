@@ -4,16 +4,22 @@ import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
 
-function setup(viewer = { msgCount: 1, notes: "", isNew: true }, recalled: Memory[] = []) {
+function setup(viewer = { msgCount: 1, notes: "", isNew: true }, recalled: Memory[] = [], opts: { touchFails?: boolean } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
+  const warnings: unknown[] = [];
+  const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
   const store = {
-    touchViewer: async (...args: [string, string]) => { calls.push({ op: "touchViewer", args }); return viewer; },
+    touchViewer: async (...args: [string, string]) => {
+      calls.push({ op: "touchViewer", args });
+      if (opts.touchFails) throw new Error("db down");
+      return viewer;
+    },
     remember: async (...args: [MemoryKind, string, string]) => { calls.push({ op: "remember", args }); },
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
   };
   const bus = new FakeBus();
-  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store });
-  return { onEvent, bus, calls };
+  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log });
+  return { onEvent, bus, calls, warnings };
 }
 const chat = (extra: Record<string, unknown> = {}) =>
   event("chat.message", { platform: "twitch", user: "Bob", userId: "123", text: "hey Coco", isMod: false, isSub: false, mentionsCohost: false, ...extra });
@@ -94,4 +100,16 @@ test("remember:false on a real event is ignored", async () => {
   await onEvent(chat({ mentionsCohost: true, remember: false }));
   await onEvent(event("brain.say", { id: "1", text: "reply", emotion: "happy", remember: false }));
   assert.deepEqual(calls.map((c) => c.op), ["remember", "touchViewer", "remember", "remember"]);
+});
+
+// @spec MEM-VIEWER-006
+test("a failed viewer upsert is logged, publishes no memory.viewer, and the mention is still remembered", async () => {
+  const { onEvent, bus, calls, warnings } = setup(undefined, [], { touchFails: true });
+  await onEvent(chat({ mentionsCohost: true }));
+  assert.equal(warnings.length, 1);
+  assert.deepEqual(bus.published, []);
+  assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
+  await onEvent(chat()); // unaddressed: nothing to remember, still no throw
+  assert.equal(warnings.length, 2);
+  assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember", "touchViewer"]);
 });

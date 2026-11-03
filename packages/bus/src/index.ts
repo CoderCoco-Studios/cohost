@@ -155,18 +155,20 @@ export class Bus {
   /**
    * Point a consumer group at the stream's newest entry (`XGROUP SETID <group> $`), creating the
    * group (and stream) at `$` if it does not exist. Used for "fresh" service starts.
+   *
+   * Creates first (`XGROUP CREATE ... $ MKSTREAM`) and only falls back to `SETID` on `BUSYGROUP`:
+   * on a fresh Redis 7+ the stream key does not exist and `SETID` answers "ERR The XGROUP
+   * subcommand requires the key to exist", an error that is not `NOGROUP`, so SETID-first would
+   * have to match Redis-version-specific error text. A `BUSYGROUP` from a concurrent creator is
+   * the same "group exists" case and also ends in `SETID`.
    */
   // @spec BUS-GROUP-001
   async resetGroup(group: string): Promise<void> {
     try {
-      await this.pub.xgroup("SETID", STREAM, group, "$");
+      await this.pub.xgroup("CREATE", STREAM, group, "$", "MKSTREAM");
     } catch (e) {
-      if (!String(e).includes("NOGROUP")) throw e;
-      try {
-        await this.pub.xgroup("CREATE", STREAM, group, "$", "MKSTREAM");
-      } catch (e2) {
-        if (!String(e2).includes("BUSYGROUP")) throw e2;
-      }
+      if (!String(e).includes("BUSYGROUP")) throw e;
+      await this.pub.xgroup("SETID", STREAM, group, "$");
     }
   }
 

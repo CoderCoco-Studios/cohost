@@ -48,7 +48,7 @@ Constructor: `new Bus(source, log?, url = urls.redis(), options?)` (`index.ts:72
 | `tailHealth(handler, fromId="$")` | same loop on `cohost:health`; only `service.heartbeat` entries reach the handler | `index.ts:119-144` |
 | `recent(count=100)` | `XREVRANGE + - COUNT n`, decoded, undecodable entries filtered, reversed to oldest-first | `index.ts:255-259` |
 | `recentHealth(count=100)` | same on `cohost:health` | `index.ts:146-153` |
-| `resetGroup(group)` | `XGROUP SETID cohost:events group $`; on `NOGROUP` create at `$` with `MKSTREAM`; tolerate `BUSYGROUP`; rethrow anything else | `index.ts:155-171` |
+| `resetGroup(group)` | `XGROUP CREATE cohost:events group $ MKSTREAM` first (creates a missing stream and group; works on a fresh Redis 7+, where `SETID` on a missing key fails with `requires the key to exist`); on `BUSYGROUP` (group exists, including a concurrent create) `XGROUP SETID cohost:events group $`; rethrow anything else | `index.ts:155-173` |
 | `stop()` | sets the instance-wide `stopped` flag, wakes any retry backoff sleep, disconnects every sub/tail connection and the publish connection | `index.ts:282-289` |
 
 ### Consumer-group subscription loop

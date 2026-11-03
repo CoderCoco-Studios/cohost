@@ -264,3 +264,80 @@ test("a schema failure throws before XADD and is not logged as a publish failure
   assert.equal(l.at("warn").length, 0);
   bus.stop();
 });
+
+// ---- resetGroup on a fresh Redis ----
+
+/** Real text Redis 7+ returns for XGROUP SETID/DESTROY/... on a key that does not exist. */
+const NO_KEY =
+  "ERR The XGROUP subcommand requires the key to exist. Note that for CREATE you may want to use the MKSTREAM option to create an empty stream automatically.";
+
+/** Minimal stateful XGROUP matching Redis 7: only CREATE ... MKSTREAM may touch a missing stream. */
+function redis7Xgroup(fake: FakeRedis, state: { stream: boolean; groups: Set<string> }) {
+  fake.xgroup = (...a: unknown[]) => {
+    fake.calls.push(["xgroup", ...a]);
+    const [sub, , group, , mk] = a as string[];
+    if (sub === "CREATE") {
+      if (!state.stream && mk !== "MKSTREAM") return Promise.reject(new Error(NO_KEY));
+      state.stream = true;
+      if (state.groups.has(group!)) return Promise.reject(new Error("BUSYGROUP Consumer Group name already exists"));
+      state.groups.add(group!);
+      return Promise.resolve("OK");
+    }
+    if (!state.stream) return Promise.reject(new Error(NO_KEY));
+    if (!state.groups.has(group!)) return Promise.reject(new Error("NOGROUP No such consumer group for key name"));
+    return Promise.resolve("OK");
+  };
+}
+
+// @spec BUS-GROUP-001
+test("resetGroup on a fresh Redis (no stream key) creates the stream and group instead of failing", async () => {
+  const fake = new FakeRedis();
+  const state = { stream: false, groups: new Set<string>() };
+  redis7Xgroup(fake, state);
+  const { bus } = busWith(fake);
+  await bus.resetGroup("g");
+  assert.equal(state.stream, true);
+  assert.ok(state.groups.has("g"));
+  assert.ok(fake.of("xgroup").some((c) => c[1] === "CREATE" && c.includes("MKSTREAM")));
+  bus.stop();
+});
+
+// @spec BUS-GROUP-001
+test("resetGroup on an existing group moves it to $ with SETID", async () => {
+  const fake = new FakeRedis();
+  redis7Xgroup(fake, { stream: true, groups: new Set(["g"]) });
+  const { bus } = busWith(fake);
+  await bus.resetGroup("g");
+  assert.deepEqual(fake.of("xgroup").at(-1), ["xgroup", "SETID", STREAM, "g", "$"]);
+  bus.stop();
+});
+
+// @spec BUS-GROUP-001
+test("resetGroup tolerates a concurrent create (BUSYGROUP) and still ends at $", async () => {
+  const fake = new FakeRedis();
+  const state = { stream: false, groups: new Set<string>() };
+  redis7Xgroup(fake, state);
+  const inner = fake.xgroup.bind(fake);
+  let raced = false;
+  // A competing process creates the group between our calls.
+  fake.xgroup = (...a: unknown[]) => {
+    if (!raced) { raced = true; state.stream = true; state.groups.add("g"); }
+    return inner(...a);
+  };
+  const { bus } = busWith(fake);
+  await bus.resetGroup("g");
+  assert.deepEqual(fake.of("xgroup").at(-1), ["xgroup", "SETID", STREAM, "g", "$"]);
+  bus.stop();
+});
+
+// @spec BUS-GROUP-001
+test("resetGroup rethrows an error that is not a missing stream or group", async () => {
+  const fake = new FakeRedis();
+  fake.xgroup = (...a: unknown[]) => {
+    fake.calls.push(["xgroup", ...a]);
+    return Promise.reject(new Error("READONLY You can't write against a read only replica."));
+  };
+  const { bus } = busWith(fake);
+  await assert.rejects(bus.resetGroup("g"), /READONLY/);
+  bus.stop();
+});

@@ -165,7 +165,7 @@ const post = (p, b) => authFetch(p, { method: "POST", headers: { "content-type":
 // ---------- controls
 // @spec DASH-UI-005
 let muted = false;
-$("#mute").onclick = async () => { const next = !muted, m = $("#muteMsg"); try { const r = await post("/control", { cmd: next ? "mute" : "unmute" }); if (!r.ok) throw new Error("HTTP " + r.status); muted = next; $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); m.textContent = ""; } catch (e) { m.textContent = `${next ? "mute" : "unmute"} failed: ${e.message}`; } }; // @spec DASH-UI-015
+$("#mute").onclick = async () => { if ($("#mute").disabled) return; const next = !muted, m = $("#muteMsg"); $("#mute").disabled = true; try { const r = await post("/control", { cmd: next ? "mute" : "unmute" }); if (!r.ok) throw new Error("HTTP " + r.status); muted = next; $("#mute").textContent = muted ? "unmute" : "mute"; $("#mute").classList.toggle("on", muted); m.textContent = ""; } catch (e) { m.textContent = `${next ? "mute" : "unmute"} failed: ${e.message}`; } finally { $("#mute").disabled = false; } }; // @spec DASH-UI-015
 $("#sayBtn").onclick = () => { const t = $("#say").value.trim(); if (t) { post("/control", { cmd: "say", text: t }); $("#say").value = ""; } };
 $("#say").onkeydown = (e) => { if (e.key === "Enter") $("#sayBtn").click(); };
 $("#forget").onclick = () => post("/control", { cmd: "forget_context" });

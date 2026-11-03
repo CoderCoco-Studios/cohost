@@ -92,16 +92,19 @@ Tests import sources through `tsx`, so no build is needed for these.
 
 ## 4. Run one service in isolation
 
-Run a service with `node --import tsx` (this guide's form, which also works
-from any directory) or through `pnpm dev` / `pnpm --filter <svc> dev`:
+Run a service with `node --import tsx` from the **workspace root** (the
+entry-point path below is relative to the working directory) or through
+`pnpm dev` / `pnpm --filter <svc> dev`:
 
 ```bash
 node --import tsx services/salience/src/index.ts
 ```
 
-Config is read from the `config/` directory and `.env` at the workspace root
-(the nearest ancestor directory holding `pnpm-workspace.yaml`), so the working
-directory does not matter. `CONFIG_DIR` overrides the config directory.
+Config is read from the `config/` directory at the workspace root (the nearest
+ancestor directory holding `pnpm-workspace.yaml`), so config lookup does not
+depend on the working directory. `.env` is read from the parent of the config
+directory: the workspace root by default, but the parent of `CONFIG_DIR` when
+that overrides the config directory.
 Set `LOG_LEVEL=debug` for more. Stop with ctrl-c.
 
 What each service needs to come up, and what it does if that is missing

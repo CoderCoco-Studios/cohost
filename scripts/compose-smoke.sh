@@ -18,7 +18,8 @@ deadline=$((SECONDS + ${SMOKE_WAIT:-60}))   # one budget for all services; a hea
 fail=0
 # @spec DEPLOY-IMG-002, DEPLOY-IMG-003
 for s in "${SERVICES[@]}"; do
-  id=$(docker compose ps -q "$s")
+  id=$(docker compose ps -aq "$s")   # -a: a service that already exited must still be found and reported
+  if [ -z "$id" ]; then echo "FAIL $s (no container)"; docker compose logs --tail 20 "$s" || true; fail=1; continue; fi
   while :; do
     state=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}} restarts={{.RestartCount}}' "$id")
     if [ "$state" = "running healthy restarts=0" ]; then echo "ok   $s"; break; fi

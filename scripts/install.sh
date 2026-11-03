@@ -133,9 +133,10 @@ probe() {
   done
   echo "  $name ok"
 }
-probe_redis()    { [[ "$(docker compose exec -T redis redis-cli ping)" == *PONG* ]]; }
-probe_postgres() { [[ "$(docker compose exec -T postgres pg_isready -U cohost)" == *accepting* ]]; }
-probe_ollama()   { [[ "$(curl -sf http://127.0.0.1:11434/api/tags)" == *models* ]]; }
+# Each attempt is bounded (timeout / --max-time) so a stalled command cannot starve the deadline check.
+probe_redis()    { [[ "$(timeout 10 docker compose exec -T redis redis-cli ping)" == *PONG* ]]; }
+probe_postgres() { [[ "$(timeout 10 docker compose exec -T postgres pg_isready -U cohost)" == *accepting* ]]; }
+probe_ollama()   { [[ "$(curl -sf --max-time 5 http://127.0.0.1:11434/api/tags)" == *models* ]]; }
 
 log "Smoke test"
 docker compose up -d redis postgres

@@ -7,9 +7,13 @@ set -euo pipefail
 base=${1:?usage: dco-check.sh <base-sha> <head-sha>}
 head=${2:?usage: dco-check.sh <base-sha> <head-sha>}
 
+# Enumerate first so a bad base/head fails the check instead of silently checking zero commits.
+shas=$(git rev-list --no-merges "$base..$head") || { echo "FAIL cannot list commits in $base..$head" >&2; exit 1; }
+
 fail=0
 count=0
 while read -r sha; do
+  [ -n "$sha" ] || continue
   count=$((count + 1))
   name=$(git log -1 --format=%an "$sha")
   email=$(git log -1 --format=%ae "$sha")
@@ -20,7 +24,7 @@ while read -r sha; do
     echo "     missing 'Signed-off-by: $name <$email>' (commit author); fix with: git rebase --signoff <base>" >&2
     fail=1
   fi
-done < <(git rev-list --no-merges "$base..$head")
+done <<< "$shas"
 
 echo "checked $count commit(s)"
 exit $fail

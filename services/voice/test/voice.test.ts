@@ -122,3 +122,128 @@ test("kokoroSynth asks the TTS container for a WAV in the configured voice and s
     await assert.rejects(synth("hi"), /tts 503: model not loaded/);
   } finally { server.close(); }
 });
+
+const flush = () => new Promise((r) => setImmediate(r));
+const httpStatus = (voice: Voice, id: string) => {
+  let code = 0;
+  voice.handle({ url: `/audio/${id}.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
+  return code;
+};
+
+// @spec VOICE-SINK-008
+test("a real sink claiming after the virtual playing cancels the virtual done, leaving only the sink's own", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "u1", sink: "virtual" }]);
+  mock.timers.tick(200); // the line is mid-playback on the virtual clock
+  await voice.onEvent(event("voice.playing", { id: "u1", sink: "discord" })); // a queued sink starts late
+  mock.timers.tick(5000);
+  await flush();
+  assert.deepEqual(bus.of("voice.done"), []); // the sink's own voice.done is the only one the brain will see
+});
+
+// @spec VOICE-SINK-008
+test("a late claim for one line leaves another line's pending virtual done alone", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("a"));
+  await voice.onEvent(say("b"));
+  mock.timers.tick(1500);
+  await flush();
+  await voice.onEvent(event("voice.playing", { id: "a", sink: "discord" }));
+  mock.timers.tick(500);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "b", sink: "virtual" }]);
+});
+
+// @spec VOICE-SINK-008
+test("a claim after the virtual done has been published changes nothing", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  mock.timers.tick(500);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+  await voice.onEvent(event("voice.playing", { id: "u1", sink: "discord" }));
+  mock.timers.tick(5000);
+  assert.equal(bus.of("voice.done").length, 1);
+});
+
+// @spec VOICE-SINK-009
+test("a failed virtual voice.playing or voice.done publish is logged and voice keeps running", async () => {
+  const { voice, bus, rec } = setup();
+  await voice.onEvent(say("u1"));
+  bus.fail = (type) => type === "voice.playing" || type === "voice.done";
+  const unhandled: unknown[] = [];
+  const onRejection = (e: unknown) => { unhandled.push(e); };
+  process.on("unhandledRejection", onRejection);
+  try {
+    mock.timers.tick(1500);
+    await flush();
+    mock.timers.tick(500);
+    await flush();
+    await flush();
+  } finally { process.off("unhandledRejection", onRejection); }
+  assert.deepEqual(unhandled, []);
+  assert.equal(rec.msgs("warn").filter((m) => m === "virtual sink publish failed").length, 2);
+  bus.fail = undefined;
+  await voice.onEvent(say("u2")); // still alive
+  assert.deepEqual(bus.of("voice.utterance").map((u) => u.id), ["u1", "u2"]);
+});
+
+// @spec VOICE-SINK-005
+test("the voice service's own virtual voice.playing echo is not a claim, even for a re-used id", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  await voice.onEvent(event("voice.playing", { id: "u1", sink: "virtual" })); // the bus delivers voice's own publish back
+  mock.timers.tick(500);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+  bus.clear();
+  await voice.onEvent(say("u1")); // the id is re-used
+  mock.timers.tick(1500);
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "u1", sink: "virtual" }]); // not suppressed by the echo
+});
+
+// @spec VOICE-SINK-007
+test("claims are dropped when their audio is evicted, so the claimed set stays bounded", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("old"));
+  await voice.onEvent(event("voice.playing", { id: "old", sink: "discord" }));
+  for (let i = 0; i < 50; i++) await voice.onEvent(say(`n${i}`)); // evicts "old" (store holds 50)
+  assert.equal(httpStatus(voice, "old"), 404);
+  assert.equal(voice.claimCount, 0); // the evicted line's claim went with its audio
+  // a claim for an id that was never synthesized (or already evicted) is not kept
+  await voice.onEvent(event("voice.playing", { id: "ghost", sink: "discord" }));
+  assert.equal(voice.claimCount, 0);
+  // re-using the evicted id starts clean: nothing claims it, so the virtual sink times it
+  bus.clear();
+  await voice.onEvent(say("old"));
+  mock.timers.tick(1500);
+  await flush();
+  assert.ok(bus.of("voice.playing").some((p) => p.id === "old" && p.sink === "virtual"));
+});
+
+// @spec VOICE-SYN-004
+test("the WAV is stored and fetchable before voice.utterance is published", async () => {
+  const { voice, bus } = setup();
+  let statusAtPublish = 0;
+  const publish = bus.publish.bind(bus);
+  bus.publish = (async (type: never, data: never) => {
+    if (type === ("voice.utterance" as never)) statusAtPublish = httpStatus(voice, "u1");
+    return publish(type, data);
+  }) as typeof bus.publish;
+  await voice.onEvent(say("u1"));
+  assert.equal(statusAtPublish, 200);
+  assert.equal(bus.of("voice.utterance").length, 1);
+});
+
+// @spec VOICE-SYN-005
+test("every brain.say is synthesized, whatever its reason, injected or remember fields", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(event("brain.say", { id: "a", text: "operator line", emotion: "neutral", reason: "operator", injected: true, remember: false }));
+  await voice.onEvent(event("brain.say", { id: "b", text: "idle chatter", emotion: "neutral", reason: "idle" }));
+  assert.deepEqual(bus.of("voice.utterance").map((u) => u.id), ["a", "b"]);
+});

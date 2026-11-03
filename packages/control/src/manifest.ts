@@ -37,15 +37,15 @@ const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName"
 
 // @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
-  svc("chat", { isolatedEnv: { CHAT_SOURCE: "fake" } }),
+  svc("chat", { groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" } }),
   svc("salience", { groups: ["salience"], defaultMode: "fresh" }),
   svc("affect", { groups: ["affect"], defaultMode: "fresh" }),
   svc("memory", { groups: ["memory", "memory-recall"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" } }),
   svc("cortex", { groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" } }),
   svc("voice", { groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" } }),
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),
-  svc("eyes", { isolatedEnv: { VISION_ENABLED: "false" } }),
-  svc("ears", { groups: ["ears"], isolatedEnv: { EARS_SOURCE: "off" } }),
+  svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false" } }),
+  svc("ears", { groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off" } }),
   svc("dashboard", { self: true }),
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),

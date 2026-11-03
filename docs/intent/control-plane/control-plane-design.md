@@ -30,15 +30,15 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
-| chat | pnpm | none | resume | | `CHAT_SOURCE=fake` |
+| chat | pnpm | chat | fresh | | `CHAT_SOURCE=fake` |
 | salience | pnpm | salience | fresh | | none |
 | affect | pnpm | affect | fresh | | none |
 | memory | pnpm | memory, memory-recall | resume | | `MEMORY_STORE=memory`, `MEMORY_EMBEDDER=hash` |
 | cortex | pnpm | cortex | fresh | | `LLM_PROVIDER=mock` |
 | voice | pnpm | voice | fresh | | `VOICE_ENGINE=stub` |
 | avatar | pnpm | avatar | fresh | | `AVATAR_DRIVER=null` |
-| eyes | pnpm | none | resume | | `VISION_ENABLED=false` |
-| ears | pnpm | ears | resume | | `EARS_SOURCE=off` |
+| eyes | pnpm | eyes | fresh | | `VISION_ENABLED=false` |
+| ears | pnpm | ears | fresh | | `EARS_SOURCE=off` |
 | dashboard | pnpm | none | resume | `self` | none |
 | redis | compose-only | none | resume | `infra` | none |
 | postgres | compose-only | none | resume | `infra` | none |
@@ -48,7 +48,7 @@ Two small builders (`svc`, `compose`, `manifest.ts:28-36`) fill defaults: `compo
 
 Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of the ten app ids; `manifest.test.ts:23` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:30`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:110`).
 
-**Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit that owns groups except `ears` (default `resume` here, `latest` on the bus); under the bus rule the difference has no effect. `chat` and `eyes` subscribe under groups of their own name but list none here, so a `fresh` start of them resets nothing; with `latest` on the bus that is also harmless.
+**Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit: `fresh` for each service that owns groups except memory (the `latest` subscribers), `resume` for memory, dashboard and the compose-only units. Each pnpm service that subscribes owns a group of its own name (memory also `memory-recall`), so a `fresh` start resets exactly the groups the service reads under.
 
 **Isolated starts and requirements.** An isolated start also starts the units the started unit needs on the bus, named in a manifest `requires` list and followed transitively (cortex requires salience and affect); a non-isolated start starts only the named unit (CTRL-GUARD-008). The manifest has no `requires` field yet.
 
@@ -197,7 +197,7 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 | Crash-loop signal | 3 distinct `startedAt` in 60 s, outranks all other states | Parse `docker compose ps` restart counts | `[inferred]` works for compose and pnpm runtimes alike with no extra access; `health.ts:13-16,107-110`. |
 | Controller as UI-agnostic class with injected runtime, group resetter, audit | `ServiceController` | Logic inside dashboard routes | Comments `controller.ts:49-52` ("UI-agnostic: the dashboard and cohostctl share it") and `cli.ts:3` ("a second client of the same ServiceController the dashboard uses"). |
 | Command construction | Manifest-only ids, `execFile`/`spawn` with fixed argv, `shell: false`; id re-checked in each runtime | Accept arbitrary service names; shell strings | Comments `manifest.ts:1-5` (nothing from a request reaches an argv except by picking a manifest entry), `runtime.ts:30` and `runtime.ts:91` (no shell, fixed argv); `add-service-control/design.md` decision 2. Why re-check in each runtime: `[inferred]` defence in depth. |
-| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for chat-reactive brain/body services, resume for memory | Always resume; reset via `fromNow` subscribe option | Mechanism and defaults per `add-service-control/design.md` decision 3. Owner decision 2026-11-01: a restarted co-host must not act on stale backlog, while memory keeps what it missed; `controller.ts:82-93`, `manifest.ts:41-46`. |
+| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for every service that owns groups except memory, resume for memory | Always resume; reset via `fromNow` subscribe option | Mechanism and defaults per `add-service-control/design.md` decision 3. Owner decision 2026-11-01: a restarted co-host must not act on stale backlog, while memory keeps what it missed; `controller.ts:82-93`, `manifest.ts:41-46`. |
 | Who decides where a restarted service reads from | The service's bus start mode (`latest` for every service except memory, `resume` for memory); the controller's `fresh` / `resume` is an operator override that changes behaviour only for `resume` subscribers | Controller `fresh` start as the only way to skip backlog | Owner decision 2026-11-01: a compose or crash restart bypasses the controller, so the skip has to live in the subscription (event-bus BUS-SUB-010, BUS-SUB-011). |
 | Isolated start closure | Manifest `requires`, followed transitively, only for isolated starts (CTRL-GUARD-008) | No closure (start only the named unit); closure for every start | Owner decision 2026-11-01: an isolated cortex is useless without salience and affect on the bus (`openspec/specs/cortex/spec.md:111-112`, plan §7.2); a normal start must not pull in services the operator did not ask for. |
 | Restart of a stopped or untracked service | Treated as a start (CTRL-RUNTIME-008, CTRL-GUARD-009) | Fail with the stop error | Owner decision 2026-11-01: the operator's intent is "make it run with these settings"; failing because nothing was running is not useful. |
@@ -232,7 +232,6 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 9. **Test coverage gaps.** No test for `cli.ts` `main()` or the entry guard (CTRL-CLI-004, CTRL-CLI-005; `cli.test.ts` builds its own controller with `by: "cohostctl"`, so the CLI's runtime selection and audit wiring are unexercised), for the heartbeat payload fields `version`, `startedAt`, `pid` and `instance` (CTRL-HEARTBEAT-001), for `isLoopback` (part of CTRL-CONFIG-002), for the compose `cwd`/timeout (part of CTRL-RUNTIME-001), for a replayed older heartbeat during `seed` (part of CTRL-HEALTH-007), or for a healthcheck against a stale-but-not-yet-down service end to end; `healthcheck.test.ts:40` needs a built `dist` and Redis and is skipped without Redis.
 10. **Heartbeat state published by the helper is already `degraded` for a down dep**, so the tracker's own "any dep down" rule (`health.ts:113`) is redundant for helper users and only matters for heartbeats hand-published by other publishers.
 11. **CTRL-CHECK-003 lives in `docker-compose.yml`** (deployment). It has no test, and the compose file carries no `@spec` annotation.
-12. **Manifest groups lag the services' subscriptions.** `chat` and `eyes` subscribe under groups named `chat` and `eyes` but the manifest lists none for them (`manifest.ts:40,47`), and `ears` defaults to `resume` (`manifest.ts:48`). With every non-memory subscriber on the bus `latest` start mode this has no effect on what a restarted service reads.
 
 ### Deferred
 1. Persisting process pids across controller restarts (README documents the limitation; CTRL-CLI-006 is `[D]`).

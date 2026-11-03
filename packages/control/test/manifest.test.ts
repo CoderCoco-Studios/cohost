@@ -29,8 +29,12 @@ test("flags and defaults match the spec", () => {
   assert.equal(findService("dashboard")!.self, true);
   assert.equal(findService("redis")!.infra, true);
   assert.equal(findService("postgres")!.infra, true);
-  for (const id of ["salience", "affect", "cortex", "voice", "avatar"]) assert.equal(findService(id)!.defaultMode, "fresh", id);
-  assert.equal(findService("memory")!.defaultMode, "resume");
+  for (const id of ["salience", "affect", "cortex", "voice", "avatar", "chat", "eyes", "ears"]) {
+    assert.equal(findService(id)!.defaultMode, "fresh", id);
+    assert.deepEqual(findService(id)!.groups, [id], id);
+  }
+  for (const id of ["memory", "dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
+  for (const id of ["dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.deepEqual(findService(id)!.groups, [], id);
   assert.deepEqual(findService("memory")!.groups, ["memory", "memory-recall"]);
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
 });

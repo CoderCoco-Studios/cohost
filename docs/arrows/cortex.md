@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**IMPLEMENTED, one gap** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 58 specs: 57 implemented, 0 deferred, 1 gap (`CTX-HEALTH-004`, waiting on a heartbeat `detail` API in the control plane).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 58 specs: 57 implemented, 0 deferred, 1 gap (`CTX-HEALTH-004`, waiting on a heartbeat `detail` API in the control plane).
 
 ## Decisions applied
 

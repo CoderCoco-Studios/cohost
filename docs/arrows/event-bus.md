@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 59 implemented, 0 deferred, 2 gaps. The owner decisions of 2026-11-01 are applied below; the bus-side fixes are implemented. The two remaining gaps need work in other segments: BUS-STREAM-007 (fire-and-forget callers attach a rejection handler) and BUS-SUB-011 (every caller names `start`).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 60 implemented, 0 deferred, 1 gap. The owner decisions of 2026-11-01 are applied below; the bus-side fixes are implemented. The two remaining gaps need work in other segments: BUS-STREAM-007 (fire-and-forget callers attach a rejection handler) and BUS-SUB-011 (every caller names `start`).
 
 ## Decisions applied
 
@@ -27,7 +27,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (61 specs: 59 `[x]`, 2 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (61 specs: 60 `[x]`, 1 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)
@@ -64,7 +64,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
-| Publish and envelope | BUS-STREAM-001 to 007 | 6 | 0 | 1 (STREAM-007) | 4 |
+| Publish and envelope | BUS-STREAM-001 to 007 | 7 | 0 | 0 | 4 |
 | Event catalogue and schemas | BUS-EVT-001 to 019 (011 retired) | 18 | 0 | 0 | 10 |
 | Consumer-group subscription | BUS-SUB-001 to 011 | 10 | 0 | 1 (SUB-011) | 8 |
 | Live tail and backfill | BUS-TAIL-001 to 004 | 4 | 0 | 0 | 4 |
@@ -73,11 +73,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Shutdown | BUS-STOP-001 to 006 | 6 | 0 | 0 | 6 |
 | Test double | BUS-TEST-001 to 010 | 10 | 0 | 0 | 0 |
 
-**Summary:** 59 of 61 specs implemented; 0 deferred; 2 gaps (BUS-STREAM-007 awaiting caller handlers in avatar, affect, ears and voice; BUS-SUB-011 awaiting every caller naming `start`). 37 of the 59 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
+**Summary:** 60 of 61 specs implemented; 0 deferred; 1 gap (BUS-SUB-011 awaiting every caller naming `start`). 37 of the 59 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line is observed in code and carries an `@spec` annotation. The two `[ ]` lines (BUS-STREAM-007, BUS-SUB-011) name the cross-segment work that remains.
+1. **Markers.** Every `[x]` line is observed in code and carries an `@spec` annotation. The one `[ ]` line (BUS-SUB-011) names the cross-segment work that remains.
 2. **The event schema specs match `events.ts` field for field.** BUS-EVT-002, 003, 004, 006, 009 and 010 list every field; BUS-EVT-012 (`vision.summary`), 013 (`speech.heard`), 014 (`brain.say`), 015 (`brain.status`), 016 (`voice.utterance`), 017 (`voice.playing` / `voice.done`), 018 (`avatar.state`) and 019 (`Emotion` fields) cover the rest. BUS-EVT-018 additionally requires `mouthSmile`, which the schema lacks today (B2).
 3. **Other spec corrections** (IDs kept): BUS-STREAM-003 (unknown payload keys are stripped), BUS-SUB-003 (one pending batch of up to 50, then new entries), BUS-STOP-002 (rejected hooks are ignored; synchronous throws are BUS-STOP-006). BUS-TEST-009 (`FakeBus.consumer`) and BUS-TEST-010 (`silentLog`, `recordingLog`) cover the remaining test helpers.
 4. **Restart behaviour.** `subscribe` takes an optional `start` (`latest` default, or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010). `fromNow` is a deprecated, ignored field. Every service caller still passes `fromNow: true`, so all of them run as `latest`, including memory, which needs `resume` (BUS-SUB-011 lists the callers). Delivery is at most once (BUS-SUB-008).
@@ -93,7 +93,6 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ### Must Fix
 1. Every `Bus.subscribe` caller names `start` (memory `resume`, every other service `latest`), then `start` becomes required and `fromNow` is removed (BUS-SUB-011). Each service does this in its own segment.
-2. Every fire-and-forget `bus.publish` caller attaches a rejection handler that logs and continues: avatar, affect, ears and voice, each in its own segment (BUS-STREAM-007).
 
 ### Should Fix
 3. Log (at least at debug or warn) when `decode` drops an entry (BUS-SUB-007).

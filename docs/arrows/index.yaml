@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -39,7 +39,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Wave 2 (platform-core): blank-safe avatar.driver, port defaults and ${AVATAR_DRIVER:-null} so a config loads with no .env (B3)."
+    next: "CFG-USR-005: wire DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID through config into ears (ears segment), then intent review of [proposed] LLD rows."
     drift: null
 
   event-bus:
@@ -51,7 +51,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Wave 2 (platform-core): explicit subscribe start mode latest/resume with at-most-once delivery (P8), plus subscribe/tail retry and composed onShutdown (R1, R2)."
+    next: "BUS-SUB-011: make SubscribeOptions.start required and remove fromNow now that every caller names it, then intent review of [proposed] LLD rows."
     drift: null
 
   model-backends:
@@ -63,7 +63,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "Wave 2 (platform-models): config-driven default timeouts for HTTP providers (R1)."
+    next: "LLM-STOP-007 (import the transcript tags from working-memory instead of a hand-copied list) and LLM-MOCK-005 (mock-provider warning in the memory reflect job), then intent review."
     drift: null
 
   region-hooks:
@@ -75,7 +75,7 @@ arrows:
     blocks: [salience, affect, cortex]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "Wave 2 (platform-models): extractJson returns the first balanced JSON value (B15)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   working-memory:
@@ -87,7 +87,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "Wave 2 (platform-models): transcript flattens newlines; all() returns a copy; propagatedFlags unit tests."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   chat:
@@ -99,7 +99,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "Wave 3 (senses): trim before ignore_prefixes (B14) and log-and-skip failed Twitch publishes (R1)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   eyes:
@@ -111,7 +111,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "Wave 3 (senses): reconnect to OBS after any close and report degraded while OBS is down at boot."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   ears:
@@ -123,7 +123,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Wave 3 (senses): survive a failed first Discord join with backoff and subscribe to injection before joining (B12, B13)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   salience:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "Wave 3 (brain-front): re-check mute/pause/busy after the scorer await (B11) and use start mode latest (P8)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   affect:
@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "Wave 3 (brain-front): forget_context lands exactly on baseline by ticking decay first (B4)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   memory:
@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Wave 3 (brain-back): fail init loudly on a vector-dims mismatch (B5) and advance the reflection cursor past 600 rows (B7)."
+    next: "MEM-START-005: needs a bus group-ready signal before ready() can follow subscription; plus LLM-MOCK-005 reflect warning. Then intent review."
     drift: null
 
   cortex:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Wave 3 (brain-back): delete the viewer note only after say() (B9), align the critic to the prompt (B10), start mode latest (P8)."
+    next: "CTX-HEALTH-004: needs a standing heartbeat detail API in the control plane; then intent review."
     drift: null
 
   voice:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Wave 3 (body): a late sink claim cancels the pending virtual voice.done (B1)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   avatar:
@@ -195,7 +195,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "Wave 3 (body): carry mouthSmile in avatar.state (B2) and stop unhandled rejections from state publishes (R1)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   dashboard:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Wave 2 (operator): reject unknown POST /sink events with 400 (B22), body caps (R6), page-side no-replay and the three page defects (B16)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
   control-plane:
@@ -219,7 +219,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Wave 2 (platform-core): restart of an untracked process starts it, isolated starts bring requires, cohostctl rejects a bad CONTROL_PROCESS_MODE."
+    next: "CTRL-RUNTIME-009: pass the isolated-preset variables through docker-compose.yml (deployment segment), then intent review."
     drift: null
 
   deployment:
@@ -231,7 +231,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Wave 2 (operator): installer strictness (P9) and CONTROL_ENABLED \"0\" plus env pass-through in compose (B17)."
+    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
 unmapped:

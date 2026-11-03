@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 60 implemented, 0 deferred, 1 gap. The owner decisions of 2026-11-01 are applied below; the bus-side fixes are implemented. The two remaining gaps need work in other segments: BUS-STREAM-007 (fire-and-forget callers attach a rejection handler) and BUS-SUB-011 (every caller names `start`).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 60 implemented, 0 deferred, 1 gap. The owner decisions of 2026-11-01 are applied below; the bus-side fixes are implemented. The one remaining gap, BUS-SUB-011 (every caller names `start`, then `start` becomes required), needs work in other segments.
 
 ## Decisions applied
 
@@ -73,7 +73,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Shutdown | BUS-STOP-001 to 006 | 6 | 0 | 0 | 6 |
 | Test double | BUS-TEST-001 to 010 | 10 | 0 | 0 | 0 |
 
-**Summary:** 60 of 61 specs implemented; 0 deferred; 1 gap (BUS-SUB-011 awaiting every caller naming `start`). 37 of the 59 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
+**Summary:** 60 of 61 specs implemented; 0 deferred; 1 gap (BUS-SUB-011 awaiting every caller naming `start`). 38 of the 60 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
 
 ## Key Findings
 

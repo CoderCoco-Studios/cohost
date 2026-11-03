@@ -50,3 +50,40 @@ test("appraiseRules: question marks add a little arousal; mixed tone nets out ne
   const mixed = appraiseRules({ ...input, text: "lol this is trash" });
   assert.ok(Math.abs(mixed.valence_delta - -0.03) < 1e-9);
 });
+
+// ---- kind=llm, against a fake OpenAI-compatible server
+
+let llmBody: { messages?: { role: string; content: string }[]; max_tokens?: number } = {};
+const llmServer = http.createServer(async (req, res) => {
+  let body = ""; for await (const c of req) body += c;
+  llmBody = JSON.parse(body);
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ choices: [{ message: { content: '{"valence_delta":0.4,"arousal_delta":-0.3}' } }] }));
+});
+await new Promise<void>((r) => llmServer.listen(0, r));
+after(() => llmServer.close());
+
+test("appraiser llm: the prompt asks for both deltas within -0.5..0.5 and carries mood and line", async () => { // @spec AFF-HOOK-009
+  const port = (llmServer.address() as { port: number }).port;
+  const c = ConfigSchema.parse({
+    cohost: { name: "Coco", streamer: "Chris" },
+    llm: { provider: "openai", model: "m", embed_model: "e", openai: { base_url: `http://127.0.0.1:${port}/v1`, api_key: "" } },
+    vision: { model: "v", obs: {} },
+    chat: { twitch: {} },
+    brain: { affect: { module: { kind: "llm" } } },
+    voice: {},
+    avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
+    ears: { discord: {} },
+    dashboard: {},
+  });
+  const out = await createAppraiser(c, log).run({ source: "chat", who: "bob", text: "hey Coco", mention: true, valence: 0.25, arousal: 0.5 });
+  assert.deepEqual(out, { valence_delta: 0.4, arousal_delta: -0.3 }, "the validator range admits what the prompt now asks for");
+  const [system, user] = llmBody.messages!;
+  assert.match(system!.content, /Coco/);
+  assert.match(system!.content, /Chris/);
+  assert.match(system!.content, /valence_delta: -0\.5 \([^)]*\) \.\. 0\.5/);
+  assert.match(system!.content, /arousal_delta: -0\.5 \([^)]*\) \.\. 0\.5/);
+  assert.doesNotMatch(system!.content, /0\.3/, "no narrower range left in the prompt");
+  assert.equal(llmBody.max_tokens, 60);
+  assert.equal(user!.content, "Mood now: valence 0.25, arousal 0.50\n[chat, mentions co-host] bob: hey Coco");
+});

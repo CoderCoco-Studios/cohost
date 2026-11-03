@@ -2,7 +2,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import { FakeBus, event, silentLog, testConfig } from "@cohost/testing";
+import { FakeBus, event, recordingLog, silentLog, testConfig } from "@cohost/testing";
 import { Affect } from "../src/affect.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "../src/appraise.js";
 
@@ -154,4 +154,102 @@ test("pause: decay continues while paused", () => { // @spec AFF-CTRL-003
   const spy = mock.method(affect.mood, "tick");
   affect.publish();
   assert.equal(spy.mock.callCount(), 1);
+});
+
+test("forget_context applies the pending decay first, so the mood lands exactly on baseline", () => { // @spec AFF-IN-007
+  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+  try {
+    const bus = new FakeBus();
+    const real = testConfig({ brain: { affect: { half_life_ms: 45_000 } } }); // baseline_valence 0.15, baseline_arousal 0.1
+    const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), real.llm, { rules: appraiseRules }, silentLog);
+    const affect = new Affect({ cfg: real, bus, appraiser: mod, log: silentLog });
+    for (let i = 0; i < 5; i++) affect.onEvent(chat("LOL POGGERS!!!"));
+    assert.ok(affect.mood.valence > 0.5 && affect.mood.arousal > 0.5, "a real peak");
+    mock.timers.tick(2_000); // the default publish interval: decay accrued since the last touch
+    affect.onEvent(event("control", { cmd: "forget_context" }));
+    assert.ok(near(affect.mood.valence, 0.15), `valence ${affect.mood.valence}`);
+    assert.ok(near(affect.mood.arousal, 0.1), `arousal ${affect.mood.arousal}`);
+    assert.equal(affect.mood.cause, "reset");
+    mock.timers.tick(100_000);
+    affect.publish();
+    assert.ok(near(bus.of("affect.state")[0]!.valence, 0.15));
+  } finally { mock.timers.reset(); }
+});
+
+test("brain.affect.baseline_arousal is the initial arousal, the decay target and the reset value", () => { // @spec AFF-MOOD-006
+  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+  try {
+    const bus = new FakeBus();
+    const c = testConfig({ brain: { affect: { baseline_arousal: 0.4, half_life_ms: 10_000 } } });
+    const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), c.llm, { rules: appraiseRules }, silentLog);
+    const affect = new Affect({ cfg: c, bus, appraiser: mod, log: silentLog });
+    assert.equal(affect.mood.arousal, 0.4, "initial");
+
+    affect.onEvent(event("vision.summary", { text: "x", changed: true }));
+    assert.ok(near(affect.mood.arousal, 0.48));
+    mock.timers.tick(10_000 * 40); // forty half-lives
+    affect.mood.tick();
+    assert.ok(Math.abs(affect.mood.arousal - 0.4) < 1e-6, "decays to the configured resting arousal, not 0.1");
+
+    affect.onEvent(event("vision.summary", { text: "x", changed: true }));
+    affect.onEvent(event("control", { cmd: "forget_context" }));
+    assert.ok(near(affect.mood.arousal, 0.4), "reset value");
+  } finally { mock.timers.reset(); }
+});
+
+test("forget_context discards queued appraisals and the one in flight; pause drops queued jobs unapplied", async () => { // @spec AFF-HOOK-008
+  // reset
+  const r = setup("http");
+  r.affect.onEvent(chat("what a great play"));   // in flight
+  r.affect.onEvent(chat("love this game"));      // queued
+  r.affect.onEvent(chat("another great one"));   // queued
+  assert.equal(r.seen.length, 1);
+  r.affect.onEvent(event("control", { cmd: "forget_context" }));
+  r.next();                                       // the in-flight appraisal finishes after the reset
+  await r.affect.settled();
+  assert.equal(r.seen.length, 1, "queued jobs never reached the appraiser");
+  assert.ok(near(r.affect.mood.valence, 0), "no appraisal changed the mood after the reset");
+
+  // pause
+  const p = setup("http");
+  p.affect.onEvent(chat("what a great play"));
+  p.affect.onEvent(chat("love this game"));
+  p.affect.onEvent(event("control", { cmd: "pause" }));
+  p.next();
+  await p.affect.settled();
+  assert.equal(p.seen.length, 1, "the queued job was dropped, not run");
+  assert.equal(p.affect.mood.valence, 0, "nothing applied while paused");
+  p.affect.onEvent(event("control", { cmd: "resume" }));
+  assert.equal(p.affect.mood.valence, 0, "and nothing from before the pause lands after resume");
+
+  // new lines after the reset or resume are appraised normally
+  p.affect.onEvent(chat("fresh great line"));
+  p.next();
+  await p.affect.settled();
+  assert.ok(near(p.affect.mood.valence, 0.1));
+});
+
+test("a failed affect.state publish is logged and affect keeps running", async () => { // @spec AFF-PUB-004
+  const bus = new FakeBus();
+  const rec = recordingLog();
+  const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), cfg.llm, { rules: appraiseRules }, silentLog);
+  const affect = new Affect({ cfg, bus, appraiser: mod, log: rec.log });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    bus.fail = (t) => t === "affect.state";
+    assert.doesNotThrow(() => affect.publish());
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(unhandled, []);
+    assert.equal(rec.lines.filter((l) => l.level !== "debug").length, 1);
+    assert.match(String(rec.lines.find((l) => l.level !== "debug")!.msg), /affect\.state/);
+
+    bus.fail = undefined;
+    affect.onEvent(chat("lol nice"));
+    affect.publish();
+    await new Promise((r) => setImmediate(r));
+    assert.equal(bus.of("affect.state").length, 1, "the next publish went through");
+  } finally { process.off("unhandledRejection", onUnhandled); }
 });

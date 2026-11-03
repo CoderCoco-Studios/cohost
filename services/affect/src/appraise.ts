@@ -44,7 +44,7 @@ export function createAppraiser(cfg: Config, log: Logger): Module<AppraiseInput,
       system:
         `You are the emotional appraisal of ${cfg.cohost.name}, an AI co-host on ${cfg.cohost.streamer}'s stream. ` +
         `Given one line someone said, decide how it should move ${cfg.cohost.name}'s mood. ` +
-        `valence_delta: -0.3 (hurtful/sad) .. 0.3 (delightful). arousal_delta: 0 (dull) .. 0.3 (exciting, addressed directly). ` +
+        `valence_delta: -0.5 (hurtful/sad) .. 0.5 (delightful). arousal_delta: -0.5 (calming/dull) .. 0.5 (exciting, addressed directly). ` +
         `Reply with JSON only: {"valence_delta":n,"arousal_delta":n}.`,
       user: (i) => `Mood now: valence ${i.valence.toFixed(2)}, arousal ${i.arousal.toFixed(2)}\n[${i.source}${i.mention ? ", mentions co-host" : ""}] ${i.who}: ${i.text}`,
       maxTokens: 60,

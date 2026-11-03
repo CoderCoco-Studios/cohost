@@ -1,4 +1,5 @@
 import type { Config, Emotion } from "@cohost/config";
+import { clamp } from "@cohost/modules";
 import type { AppraiseOutput } from "./appraise.js";
 
 export interface MoodState { valence: number; arousal: number; mood: Emotion; cause?: string }
@@ -11,12 +12,13 @@ export interface MoodState { valence: number; arousal: number; mood: Emotion; ca
  */
 export class Mood {
   valence: number;
-  arousal = 0.1;
+  arousal: number;
   cause: string | undefined;
   private lastTick = Date.now();
 
   constructor(private cfg: Config["brain"]["affect"]) { // @spec AFF-MOOD-001
     this.valence = cfg.baseline_valence;
+    this.arousal = cfg.baseline_arousal; // @spec AFF-MOOD-006
   }
 
   /** Apply decay for the time elapsed since the last call. */
@@ -25,13 +27,21 @@ export class Mood {
     this.lastTick = now;
     const k = Math.pow(0.5, dt / this.cfg.half_life_ms);
     this.valence = this.cfg.baseline_valence + (this.valence - this.cfg.baseline_valence) * k;
-    this.arousal = 0.1 + (this.arousal - 0.1) * k;
+    this.arousal = this.cfg.baseline_arousal + (this.arousal - this.cfg.baseline_arousal) * k; // @spec AFF-MOOD-006
   }
 
   nudge(dv: number, da: number, cause: string): void { // @spec AFF-MOOD-002
     this.tick();
     this.valence = clamp(this.valence + dv, -1, 1);
     this.arousal = clamp(this.arousal + da, 0, 1);
+    this.cause = cause;
+  }
+
+  /** Apply the pending decay, then land exactly on the resting valence and arousal. */
+  reset(cause: string): void { // @spec AFF-IN-007, AFF-MOOD-006
+    this.tick();
+    this.valence = this.cfg.baseline_valence;
+    this.arousal = this.cfg.baseline_arousal;
     this.cause = cause;
   }
 
@@ -52,5 +62,4 @@ export function label(v: number, a: number): Emotion { // @spec AFF-MOOD-004
   return v > 0.35 ? "smug" : v < -0.3 ? "sad" : "neutral";
 }
 
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const round = (x: number) => Math.round(x * 1000) / 1000;

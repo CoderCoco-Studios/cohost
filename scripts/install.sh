@@ -33,7 +33,7 @@ else
   warn "No NVIDIA GPU detected — stack will run CPU-only (slow but functional)."
 fi
 
-# ---------------------------------------------------------------- docker  @spec DEPLOY-INST-002
+# ---------------------------------------------------------------- docker  @spec DEPLOY-INST-002, DEPLOY-INST-010
 if ! command -v docker >/dev/null 2>&1; then
   if [[ $IS_WSL -eq 1 ]]; then
     warn "Docker not found. On WSL the easiest path is Docker Desktop for Windows with the WSL2 backend"
@@ -51,7 +51,8 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   sudo usermod -aG docker "$USER" || true
   if [[ $IS_WSL -eq 1 ]]; then sudo service docker start || true; else sudo systemctl enable --now docker; fi
-  warn "Added $USER to the docker group — log out/in (or run 'newgrp docker') if docker commands fail."
+  # This shell does not have the new group yet, so the docker commands below would fail part-way.
+  die "Installed Docker and added $USER to the docker group — log out and back in, then re-run ./scripts/install.sh."
 fi
 docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
 
@@ -72,8 +73,9 @@ if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
   if [[ $IS_WSL -eq 1 ]]; then sudo service docker restart || true; else sudo systemctl restart docker; fi
 fi
 
-# ---------------------------------------------------------------- node + pnpm (for local dev)  @spec DEPLOY-INST-004
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | cut -c2-3)" -lt 22 ]]; then
+# ---------------------------------------------------------------- node + pnpm (for local dev)  @spec DEPLOY-INST-004, DEPLOY-INST-009
+node_major() { node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0; }
+if ! command -v node >/dev/null 2>&1 || [[ "$(node_major)" -lt 22 ]]; then
   log "Installing Node 22"
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/dev/null
   sudo apt-get install -y -qq nodejs
@@ -99,9 +101,11 @@ else
 fi
 mkdir -p data
 
-# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-007, DEPLOY-INST-012
+# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-012
 log "Installing workspace dependencies"
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+# Frozen only, like CI and the Dockerfile: a lockfile mismatch stops here with pnpm's own error
+# instead of silently rewriting pnpm-lock.yaml.
+pnpm install --frozen-lockfile || die "pnpm install --frozen-lockfile failed (see the error above); fix pnpm-lock.yaml and re-run."
 log "Typechecking"
 pnpm typecheck
 
@@ -117,25 +121,47 @@ if [[ $PULL -eq 1 ]]; then
   kill $LOGPID 2>/dev/null || true
 fi
 
-# ---------------------------------------------------------------- smoke test
+# ---------------------------------------------------------------- smoke test  @spec DEPLOY-INST-007
+# probe <name> <timeout-seconds> <command...>: poll until the command passes; a probe that never
+# passes prints one failure line naming it and stops the installer.
+probe() {
+  local name=$1 timeout=$2 deadline; shift 2
+  deadline=$((SECONDS + timeout))
+  until "$@" >/dev/null 2>&1; do
+    (( SECONDS < deadline )) || die "smoke probe failed: $name did not pass within ${timeout}s"
+    sleep 1
+  done
+  echo "  $name ok"
+}
+probe_redis()    { [[ "$(docker compose exec -T redis redis-cli ping)" == *PONG* ]]; }
+probe_postgres() { [[ "$(docker compose exec -T postgres pg_isready -U cohost)" == *accepting* ]]; }
+probe_ollama()   { [[ "$(curl -sf http://127.0.0.1:11434/api/tags)" == *models* ]]; }
+
 log "Smoke test"
 docker compose up -d redis postgres
-sleep 2
-docker compose exec -T redis redis-cli ping | grep -q PONG && echo "  redis ok"
-docker compose exec -T postgres pg_isready -U cohost | grep -q accepting && echo "  postgres ok"
-if [[ $PULL -eq 1 ]]; then
-  curl -sf http://127.0.0.1:11434/api/tags | grep -q models && echo "  ollama ok"
+probe redis 60 probe_redis
+probe postgres 60 probe_postgres
+if [[ $PULL -eq 1 ]]; then probe ollama 60 probe_ollama; fi
+
+# ---------------------------------------------------------------- next steps  @spec DEPLOY-INST-008, DEPLOY-INST-011
+# DASHBOARD_PORT for the final URL: the calling shell wins (as in Compose), then .env. .env is
+# parsed with sed, never sourced, so nothing in it is executed.
+DASH_PORT=${DASHBOARD_PORT:-}
+if [[ -z "$DASH_PORT" ]]; then
+  DASH_PORT=$(sed -n 's/^[[:space:]]*DASHBOARD_PORT=//p' .env | tail -n 1 | tr -d '\r' \
+    | sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^[\"']//" -e "s/[\"']\$//")
 fi
+[[ "$DASH_PORT" =~ ^[0-9]+$ ]] || DASH_PORT=3000
 
 cat <<EOF
 
 Done. Next:
   1. Edit .env (Twitch token, Discord token, OBS password, AVATAR_DRIVER).
   2. docker compose up -d            # core stack
-  3. open http://localhost:${DASHBOARD_PORT:-3000}   # dashboard: bus feed, audio sink, personality editor
+  3. open http://localhost:${DASH_PORT}   # dashboard: bus feed, audio sink, personality editor
   4. docker compose --profile eyes --profile ears up -d   # when ready for vision + Discord voice
 
 Dev loop without Docker for the TS services:
-  docker compose up -d redis postgres ollama tts   # infra only
-  pnpm dev                                         # all services with tsx watch
+  docker compose up -d redis postgres ollama tts stt   # infra only
+  pnpm dev                                             # all services with tsx watch
 EOF

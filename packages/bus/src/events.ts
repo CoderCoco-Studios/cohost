@@ -160,6 +160,7 @@ export const EventPayloads = {
     emotion: Emotion,
     intensity: z.number(),
     mouthOpen: z.number(),
+    mouthSmile: z.number(),
     headX: z.number(),
     headY: z.number(),
     headZ: z.number(),

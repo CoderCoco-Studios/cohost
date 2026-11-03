@@ -26,7 +26,7 @@ test("publish → consumer group subscribe round-trip (needs Redis)", { skip: !(
   const sub = new Bus(`sub-${group}`, undefined, url);
   const got: BusEvent[] = [];
   const done = new Promise<void>((resolve) => {
-    void sub.subscribe({ group, types: ["attention.focus"], fromNow: true, blockMs: 200 }, (ev) => { got.push(ev); resolve(); });
+    void sub.subscribe({ group, types: ["attention.focus"], start: "latest", blockMs: 200 }, (ev) => { got.push(ev); resolve(); });
   });
   await new Promise((r) => setTimeout(r, 300)); // let the group get created at "$"
   await pub.publish("affect.state", { valence: 0, arousal: 0, mood: "neutral" }); // filtered out by types
@@ -61,7 +61,7 @@ test("a throwing handler is logged, the event acked, and the loop keeps going (n
   const sub = new Bus("sub", log, url);
   const seen: string[] = [];
   const second = new Promise<void>((resolve) => {
-    void sub.subscribe({ group, types: ["control"], fromNow: true, blockMs: 100 }, (ev) => {
+    void sub.subscribe({ group, types: ["control"], start: "latest", blockMs: 100 }, (ev) => {
       seen.push(ev.data.cmd);
       if (ev.data.cmd === "mute") throw new Error("handler blew up");
       resolve();
@@ -118,7 +118,7 @@ test("tail() delivers live events without a consumer group (needs Redis)", needs
 // @spec BUS-STOP-001
 test("subscribe() and tail() resolve when stop() interrupts a blocking read (needs Redis)", needsRedis, async () => {
   const bus = new Bus("stopper", undefined, url);
-  const sub = bus.subscribe({ group: `stop-${Date.now()}`, fromNow: true, blockMs: 5000 }, () => {});
+  const sub = bus.subscribe({ group: `stop-${Date.now()}`, start: "latest", blockMs: 5000 }, () => {});
   const tail = bus.tail(() => {});
   await new Promise((r) => setTimeout(r, 200)); // both are now parked in BLOCK
   bus.stop();
@@ -355,4 +355,12 @@ test("inject.request / inject.result are catalogued and validated", () => {
   assert.equal(EventPayloads["inject.request"].safeParse(noRemember).success, false);
   assert.ok(EventPayloads["inject.result"].safeParse({ id: "a", ok: false, detail: "stt 503" }).success);
   assert.equal(EventPayloads["inject.result"].safeParse({ id: "a" }).success, false);
+});
+
+// @spec BUS-EVT-018
+test("avatar.state requires mouthSmile and keeps it", () => {
+  const base = { emotion: "happy", intensity: 1, mouthOpen: 0.2, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, driver: "x", connected: true };
+  assert.equal(EventPayloads["avatar.state"].safeParse(base).success, false);
+  const ok = EventPayloads["avatar.state"].parse({ ...base, mouthSmile: 7.5 });
+  assert.equal(ok.mouthSmile, 7.5);
 });

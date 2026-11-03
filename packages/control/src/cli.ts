@@ -15,6 +15,7 @@ import { ComposeRuntime, ProcessRuntime, type Runtime } from "./runtime.js";
 import { ServiceController, type ActionOptions, type GroupResetter, type LifecycleRecord } from "./controller.js";
 import { HealthTracker, type ServiceHealth } from "./health.js";
 import { SERVICE_MANIFEST } from "./manifest.js";
+import { parseProcessMode } from "./config.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
@@ -86,24 +87,30 @@ export async function runCli(argv: readonly string[], d: CliDeps): Promise<numbe
   return 0;
 }
 
-function buildRuntime(env: NodeJS.ProcessEnv): Runtime {
+function buildRuntime(env: NodeJS.ProcessEnv, processMode: "dev" | "start"): Runtime {
   const which = env.CONTROL_RUNTIME || "compose";
   if (which === "compose") return new ComposeRuntime();
-  if (which === "process") return new ProcessRuntime({ mode: env.CONTROL_PROCESS_MODE === "start" ? "start" : "dev" });
+  if (which === "process") return new ProcessRuntime({ mode: processMode });
   throw new UsageError(`CONTROL_RUNTIME must be "compose" or "process", got ${JSON.stringify(which)}`);
 }
 
-// @spec CTRL-CLI-002, CTRL-CLI-004
+// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-007
 async function main(): Promise<number> {
+  // CTRL-CLI-007: reject an invalid CONTROL_PROCESS_MODE (same message as the dashboard) before touching the bus.
+  let processMode: "dev" | "start";
+  try { processMode = parseProcessMode(process.env.CONTROL_PROCESS_MODE); } catch (e) {
+    console.error((e as Error).message);
+    return 2;
+  }
   const bus = new Bus("cohostctl");
   try {
     const groups: GroupResetter = bus;
     const controller = new ServiceController({
-      runtime: buildRuntime(process.env),
+      runtime: buildRuntime(process.env, processMode),
       groups,
       by: "cohostctl",
       advanced: process.env.CONTROL_ADVANCED === "1",
-      processMode: process.env.CONTROL_PROCESS_MODE === "start" ? "start" : "dev",
+      processMode,
       audit: async (rec: LifecycleRecord) => { await bus.publish("service.lifecycle", rec); },
     });
     const health = async () => {

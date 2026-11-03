@@ -30,15 +30,15 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
-| chat | pnpm | none | resume | | `CHAT_SOURCE=fake` |
+| chat | pnpm | chat | fresh | | `CHAT_SOURCE=fake` |
 | salience | pnpm | salience | fresh | | none |
 | affect | pnpm | affect | fresh | | none |
 | memory | pnpm | memory, memory-recall | resume | | `MEMORY_STORE=memory`, `MEMORY_EMBEDDER=hash` |
 | cortex | pnpm | cortex | fresh | | `LLM_PROVIDER=mock` |
 | voice | pnpm | voice | fresh | | `VOICE_ENGINE=stub` |
 | avatar | pnpm | avatar | fresh | | `AVATAR_DRIVER=null` |
-| eyes | pnpm | none | resume | | `VISION_ENABLED=false` |
-| ears | pnpm | ears | resume | | `EARS_SOURCE=off` |
+| eyes | pnpm | eyes | fresh | | `VISION_ENABLED=false` |
+| ears | pnpm | ears | fresh | | `EARS_SOURCE=off` |
 | dashboard | pnpm | none | resume | `self` | none |
 | redis | compose-only | none | resume | `infra` | none |
 | postgres | compose-only | none | resume | `infra` | none |
@@ -48,30 +48,30 @@ Two small builders (`svc`, `compose`, `manifest.ts:28-36`) fill defaults: `compo
 
 Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of the ten app ids; `manifest.test.ts:23` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:30`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:110`).
 
-**Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit that owns groups except `ears` (default `resume` here, `latest` on the bus); under the bus rule the difference has no effect. `chat` and `eyes` subscribe under groups of their own name but list none here, so a `fresh` start of them resets nothing; with `latest` on the bus that is also harmless.
+**Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit: `fresh` for each service that owns groups except memory (the `latest` subscribers), `resume` for memory, dashboard and the compose-only units. Each pnpm service that subscribes owns a group of its own name (memory also `memory-recall`), so a `fresh` start resets exactly the groups the service reads under.
 
-**Isolated starts and requirements.** An isolated start also starts the units the started unit needs on the bus, named in a manifest `requires` list and followed transitively (cortex requires salience and affect); a non-isolated start starts only the named unit (CTRL-GUARD-008). The manifest has no `requires` field yet.
+**Isolated starts and requirements.** The manifest `requires` field lists the units a unit needs on the bus (cortex requires salience and affect). An isolated start of a unit first starts its `requires` closure, followed transitively, depth-first in list order, each unit once, then the named unit. Each required unit starts with its own isolation preset and its own default mode, and is audited as its own start. A required unit that fails to start ends the start: the named unit is not started and the result is `ok: false`, naming the failed unit. A non-isolated start, and every restart and stop, act on the named unit only (CTRL-GUARD-008).
 
 ## Runtimes and controller
 
 ### Runtime interface
 
-`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail? }` (`runtime.ts:5-20`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
+`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail?, notRunning? }` (`runtime.ts:5-25`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
 
 ### ComposeRuntime (`runtime.ts:47-76`)
 
 - start: `docker compose up -d <composeName>`; stop: `docker compose stop <composeName>`; restart: `docker compose restart <composeName>`.
 - With a non-empty env override, restart becomes `up -d --force-recreate` because a native `restart` keeps the container's environment (comment at `runtime.ts:73`).
 - Executed via `execFile` (argv array, no shell), 120 s timeout, `cwd` defaults to the process cwd, so `docker-compose.yml` must be found there (`runtime.ts:28-35`, `runtime.ts:40`). The override env is merged over `process.env` and applied to the `docker` CLI process (`runtime.ts:61`).
-- Isolation env reaches the container through pass-through entries in the compose `x-ts-service` environment, one per preset variable, written `VAR: ${VAR:-}` so an unset variable leaves the `${VAR:-default}` in `config.yaml` in charge (CTRL-RUNTIME-009). The entries belong to `docker-compose.yml` (deployment segment) and do not exist yet, so today an isolated compose start has no effect inside the container.
-- The containerised dashboard runs with service control off: compose pins `CONTROL_ENABLED: "0"` in its environment (deployment segment), because with control on the dashboard binds `127.0.0.1` inside the container and the published port stops answering. The compose runtime is therefore driven by `cohostctl` from the host, or by a dashboard run on the host under `pnpm`.
+- Isolation env reaches the container through pass-through entries in the compose `x-ts-service` environment, one per preset variable, each written `VAR: ${VAR:-}` so an unset variable leaves the `${VAR:-default}` in `config.yaml` in charge (CTRL-RUNTIME-009): `CHAT_SOURCE`, `MEMORY_STORE`, `MEMORY_EMBEDDER`, `LLM_PROVIDER`, `VOICE_ENGINE`, `AVATAR_DRIVER`, `VISION_ENABLED`, `EARS_SOURCE`. The entries belong to `docker-compose.yml` (deployment segment); until they are present an isolated compose start sets the preset only in the `docker compose` CLI's own environment and has no effect inside the container, which is why CTRL-RUNTIME-009 stays open.
+- The containerised dashboard runs with service control off: compose pins `CONTROL_ENABLED: "0"` in the environment the dashboard container receives (deployment segment), overriding any `CONTROL_ENABLED=1` in `.env`, because with control on the dashboard binds `127.0.0.1` inside the container and the published port stops answering. The compose runtime is therefore driven by `cohostctl` from the host, or by a dashboard run on the host under `pnpm`.
 - Failure returns `ok: false` with stderr (else message) truncated to 500 chars (`runtime.ts:65`).
 
 ### ProcessRuntime (`runtime.ts:112-176`)
 
 - start: spawns `pnpm --filter <pnpmFilter> dev|start`, `shell: false`, `detached: true`, `stdio: "ignore"`, waits for the child `spawn` or `error` event, tracks the child in an in-memory `Map`, `unref`s it, and clears the entry on `exit`. Script precedence is `opts.processMode`, then constructor `mode`, then `dev` (`runtime.ts:135`). Compose-only units are refused (`runtime.ts:133`); an already tracked id returns `ok: true` with `already running` (`runtime.ts:134`).
-- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` (`runtime.ts:154`); a tracked child that already exited returns `ok: true`.
-- restart: `stop` then `start`. A restart of a service with no tracked child (stopped, or started by another process) is a start (CTRL-RUNTIME-008); the controller's stop-then-start path for fresh or isolated restarts follows the same rule (CTRL-GUARD-009). The code does not do this yet: a failed stop short-circuits (`runtime.ts:171-175`, `controller.ts:91-93`), so restarting something this process did not start fails rather than starts it.
+- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` with `notRunning: true`; a tracked child that already exited returns `ok: true`.
+- restart: `stop` then `start`. A restart of a service with no tracked child (stopped, or started by another process) is a start (CTRL-RUNTIME-008); the controller's stop-then-start path for fresh or isolated restarts follows the same rule (CTRL-GUARD-009). A runtime reports "nothing to stop" through `notRunning: true` on its failed stop result; any other stop failure is returned as is.
 - Because the map is in memory, `cohostctl stop` cannot stop a process started by another invocation, and a restarted dashboard loses its handles. `README.md:331-332` documents this and recommends compose.
 
 ### ServiceController (`controller.ts:53-105`)
@@ -91,8 +91,9 @@ Mode and orchestration (`controller.ts:73-99`): effective mode is `resume` for i
 | stop | always | `runtime.stop` (never resets groups) |
 | start | fresh | reset each group, then `runtime.start` |
 | start | resume | `runtime.start` |
+| start | isolated, unit has `requires` | the closure first (each required unit as an isolated start in its own default mode, audited separately), then the named unit's start as above |
 | restart | resume, no isolation env | `runtime.restart` (native) |
-| restart | fresh or isolation env | `runtime.stop`, then (only if ok) reset groups if fresh, then `runtime.start` |
+| restart | fresh or isolation env | `runtime.stop`, then (only if it resolved ok or reported `notRunning`) reset groups if fresh, then `runtime.start` |
 
 Isolation env is `{ ...def.isolatedEnv }` when `isolated` is set and the unit is not infra, else `undefined` (`controller.ts:80`). Because an empty object is truthy, isolated restarts of salience, affect or dashboard (empty presets) also take the stop-then-start path.
 
@@ -147,11 +148,11 @@ Unlike the tracker, the healthcheck compares the heartbeat's bus-side `ts` (publ
 CLI (`cli.ts`): `cohostctl status [service]` and `cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]`. Parsing uses `node:util.parseArgs` (`cli.ts:30-55`); any parse problem raises `UsageError` and exit code 2 with the usage text. Exit codes: 0 success, 1 refusal or failure (`cli.ts:64`), 2 usage.
 
 - `status` builds a throwaway `HealthTracker` with known = manifest entries that are not infra and have a `pnpmFilter`, seeds it from `bus.recentHealth(200)` and prints `service  state  mode  Ns ago` per row (`cli.ts:72-81,109-114`). Because the known list excludes infra and compose-only units, `cohostctl status redis` reports `unknown service` and exits 1.
-- `main()` constructs `new Bus("cohostctl")`, builds the runtime from `CONTROL_RUNTIME` (default `compose`; any other value than `compose` or `process` is a `UsageError`, exit 2), passes `by: "cohostctl"`, `advanced` from `CONTROL_ADVANCED === "1"`, and `processMode` from `CONTROL_PROCESS_MODE === "start" ? "start" : "dev"` (`cli.ts:89-107`). It always calls `bus.stop()` in `finally`. An invalid non-empty `CONTROL_PROCESS_MODE` is meant to be rejected exactly as the dashboard rejects it, with `loadControlConfig`'s message and exit 2 (CTRL-CLI-007); today the CLI silently treats it as `dev`.
+- `main()` constructs `new Bus("cohostctl")`, builds the runtime from `CONTROL_RUNTIME` (default `compose`; any other value than `compose` or `process` is a `UsageError`, exit 2), passes `by: "cohostctl"`, `advanced` from `CONTROL_ADVANCED === "1"`, and `processMode` from `parseProcessMode(CONTROL_PROCESS_MODE)` (`config.ts`, shared with `loadControlConfig`). It always calls `bus.stop()` in `finally`. An invalid non-empty `CONTROL_PROCESS_MODE` is rejected before the bus is created, exactly as the dashboard rejects it: `parseProcessMode` throws `loadControlConfig`'s message, `main()` prints it and returns exit 2 without acting (CTRL-CLI-007).
 - It runs as the invoking user and does not read `CONTROL_ENABLED` or `CONTROL_TOKEN` (those only gate the dashboard's HTTP surface).
 - `main()` runs only when `process.argv[1]` ends with `cli.js` (`cli.ts:125`). Since `index.ts` re-exports `cli.js`, importing the package from another entry script runs nothing, but the check is a suffix match, so any other entry script named `cli.js` that imports `@cohost/control` would also start the CLI. Running the TypeScript source under tsx does not trigger it either (the suffix would be `cli.ts`), so `cohostctl` only works from the built `dist`; the README invokes it as `pnpm --filter @cohost/control exec cohostctl` (`README.md:321-322`).
 
-Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. Defaults are `CONTROL_BIND` unset means `127.0.0.1` with `bindExplicit: false`, `CONTROL_RUNTIME` compose, `CONTROL_PROCESS_MODE` dev, `CONTROL_ADVANCED` off. Unknown runtime or process mode throws. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual` (`config.ts:43-50`). `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.` (`config.ts:20-22`).
+Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. Defaults are `CONTROL_BIND` unset means `127.0.0.1` with `bindExplicit: false`, `CONTROL_RUNTIME` compose, `CONTROL_PROCESS_MODE` dev, `CONTROL_ADVANCED` off. Unknown runtime or process mode throws; the process-mode check is `parseProcessMode(raw)`, which `cohostctl` also uses. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual` (`config.ts:43-50`). `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.` (`config.ts:20-22`).
 
 | Env var | Read by | Meaning |
 |---|---|---|
@@ -159,7 +160,7 @@ Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. 
 | `CONTROL_TOKEN` | `loadControlConfig` | required bearer secret when enabled |
 | `CONTROL_BIND` | `loadControlConfig`, dashboard `index.ts:50` | listen address; loopback default only when enabled |
 | `CONTROL_RUNTIME` | `loadControlConfig`, `cli.ts:90` | `compose` (default) or `process` |
-| `CONTROL_PROCESS_MODE` | both | `dev` (default) or `start`; any other value is rejected (the CLI does not reject it yet, CTRL-CLI-007) |
+| `CONTROL_PROCESS_MODE` | both | `dev` (default) or `start`; any other non-empty value is rejected by both (CTRL-CONFIG-002, CTRL-CLI-007) |
 | `CONTROL_ADVANCED` | both | `1` allows redis and postgres mutations |
 | `REDIS_URL` | `Bus` (via `@cohost/config` `urls.redis()`), CLI, healthcheck | bus address |
 | `HEARTBEAT_INTERVAL_MS`, `COHOST_VERSION` | `heartbeat.ts` | beat interval (default 5000) and reported version (default `dev`) |
@@ -173,7 +174,7 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 | Plan | Landed | Note |
 |---|---|---|
 | Option A: dashboard-embedded supervisor on a UI-agnostic core, `cohostctl` later (§5) | Same | `packages/control` plus dashboard plus `cohostctl` |
-| `ServiceRegistry` with `requires`, `externals`, `isolationEnv` (§5, §7.1) | Flat `SERVICE_MANIFEST` with `groups`, `defaultMode`, `infra`, `self`, `isolatedEnv`; no `requires` or `externals` | `requires` for isolated starts is intended (CTRL-GUARD-008); `externals` is not |
+| `ServiceRegistry` with `requires`, `externals`, `isolationEnv` (§5, §7.1) | Flat `SERVICE_MANIFEST` with `groups`, `defaultMode`, `infra`, `self`, `isolatedEnv` and an optional `requires`; no `externals` | `requires` applies to isolated starts only (CTRL-GUARD-008); `externals` is not provided |
 | Compose-only units not discussed as controllable | `ollama`, `tts`, `stt` added as manifest units | compose runtime only |
 | `service.heartbeat` schema, `startHeartbeat` returning `ready/degraded/stop`, separate `cohost:health` stream (§6) | Same; options take `mode` and `deps` as values or getters instead of `getState` | `HEARTBEAT_INTERVAL_MS` env added |
 | `mode` label examples `live`, `null`, `mock` | Convention is `live`, `mock`, `off` | schema accepts any string |
@@ -197,7 +198,7 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 | Crash-loop signal | 3 distinct `startedAt` in 60 s, outranks all other states | Parse `docker compose ps` restart counts | `[inferred]` works for compose and pnpm runtimes alike with no extra access; `health.ts:13-16,107-110`. |
 | Controller as UI-agnostic class with injected runtime, group resetter, audit | `ServiceController` | Logic inside dashboard routes | Comments `controller.ts:49-52` ("UI-agnostic: the dashboard and cohostctl share it") and `cli.ts:3` ("a second client of the same ServiceController the dashboard uses"). |
 | Command construction | Manifest-only ids, `execFile`/`spawn` with fixed argv, `shell: false`; id re-checked in each runtime | Accept arbitrary service names; shell strings | Comments `manifest.ts:1-5` (nothing from a request reaches an argv except by picking a manifest entry), `runtime.ts:30` and `runtime.ts:91` (no shell, fixed argv); `add-service-control/design.md` decision 2. Why re-check in each runtime: `[inferred]` defence in depth. |
-| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for chat-reactive brain/body services, resume for memory | Always resume; reset via `fromNow` subscribe option | Mechanism and defaults per `add-service-control/design.md` decision 3. Owner decision 2026-11-01: a restarted co-host must not act on stale backlog, while memory keeps what it missed; `controller.ts:82-93`, `manifest.ts:41-46`. |
+| Fresh vs resume | `fresh` resets groups to `$` after stop, before start; default fresh for every service that owns groups except memory, resume for memory | Always resume; reset via `fromNow` subscribe option | Mechanism and defaults per `add-service-control/design.md` decision 3. Owner decision 2026-11-01: a restarted co-host must not act on stale backlog, while memory keeps what it missed; `controller.ts:82-93`, `manifest.ts:41-46`. |
 | Who decides where a restarted service reads from | The service's bus start mode (`latest` for every service except memory, `resume` for memory); the controller's `fresh` / `resume` is an operator override that changes behaviour only for `resume` subscribers | Controller `fresh` start as the only way to skip backlog | Owner decision 2026-11-01: a compose or crash restart bypasses the controller, so the skip has to live in the subscription (event-bus BUS-SUB-010, BUS-SUB-011). |
 | Isolated start closure | Manifest `requires`, followed transitively, only for isolated starts (CTRL-GUARD-008) | No closure (start only the named unit); closure for every start | Owner decision 2026-11-01: an isolated cortex is useless without salience and affect on the bus (`openspec/specs/cortex/spec.md:111-112`, plan §7.2); a normal start must not pull in services the operator did not ask for. |
 | Restart of a stopped or untracked service | Treated as a start (CTRL-RUNTIME-008, CTRL-GUARD-009) | Fail with the stop error | Owner decision 2026-11-01: the operator's intent is "make it run with these settings"; failing because nothing was running is not useful. |
@@ -232,7 +233,6 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 9. **Test coverage gaps.** No test for `cli.ts` `main()` or the entry guard (CTRL-CLI-004, CTRL-CLI-005; `cli.test.ts` builds its own controller with `by: "cohostctl"`, so the CLI's runtime selection and audit wiring are unexercised), for the heartbeat payload fields `version`, `startedAt`, `pid` and `instance` (CTRL-HEARTBEAT-001), for `isLoopback` (part of CTRL-CONFIG-002), for the compose `cwd`/timeout (part of CTRL-RUNTIME-001), for a replayed older heartbeat during `seed` (part of CTRL-HEALTH-007), or for a healthcheck against a stale-but-not-yet-down service end to end; `healthcheck.test.ts:40` needs a built `dist` and Redis and is skipped without Redis.
 10. **Heartbeat state published by the helper is already `degraded` for a down dep**, so the tracker's own "any dep down" rule (`health.ts:113`) is redundant for helper users and only matters for heartbeats hand-published by other publishers.
 11. **CTRL-CHECK-003 lives in `docker-compose.yml`** (deployment). It has no test, and the compose file carries no `@spec` annotation.
-12. **Manifest groups lag the services' subscriptions.** `chat` and `eyes` subscribe under groups named `chat` and `eyes` but the manifest lists none for them (`manifest.ts:40,47`), and `ears` defaults to `resume` (`manifest.ts:48`). With every non-memory subscriber on the bus `latest` start mode this has no effect on what a restarted service reads.
 
 ### Deferred
 1. Persisting process pids across controller restarts (README documents the limitation; CTRL-CLI-006 is `[D]`).

@@ -83,7 +83,8 @@ llm:
 ```ini
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
-# or AWS_PROFILE=... with a mounted ~/.aws, or an instance role on EC2
+# Set these in .env: the Compose stack mounts no home directory into the containers.
+# (An instance role on EC2 also works.)
 ```
 
 Server-side fallbacks aren't offered on Bedrock; a classifier decline simply

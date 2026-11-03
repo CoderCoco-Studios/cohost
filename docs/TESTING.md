@@ -58,9 +58,9 @@ pnpm test:only       # same, without the build step (faster once built)
 pnpm typecheck       # tsc -b --noEmit
 ```
 
-Verified result with Redis up (both the compose Redis 7.4 and a standalone 6.2): **206 tests, 206 pass, 0 skipped** (~7 s).
-Without Redis: 200 pass, **6 skipped**; the skipped ones are the bus round-trip
-tests in `packages/bus/test/bus.test.ts`, each marked `(needs Redis)`. A run
+With Redis up (both the compose Redis 7.4 and a standalone 6.2) every test
+passes and none is skipped. Without Redis the bus round-trip tests in
+`packages/bus/test/bus.test.ts`, each marked `(needs Redis)`, are skipped. A run
 with skips is not a full pass.
 
 Everything else is mocked: region logic is tested against `FakeBus` (see §6),
@@ -72,8 +72,8 @@ There are no per-package `test` scripts; call Node's runner directly. Each
 package/service keeps tests in its own `test/` folder:
 
 ```bash
-node --import tsx --test services/salience/test/*.test.ts       # one service (22 tests)
-node --import tsx --test packages/bus/test/*.test.ts            # one package (needs Redis for 6 of 7)
+node --import tsx --test services/salience/test/*.test.ts       # one service
+node --import tsx --test packages/bus/test/*.test.ts            # one package (its round-trip tests need Redis)
 node --import tsx --test services/voice/test/wav.test.ts        # one file
 node --import tsx --test --test-name-pattern="mention" services/salience/test/*.test.ts   # by test name
 ```
@@ -88,18 +88,20 @@ Tests import sources through `tsx`, so no build is needed for these.
 | `services/voice` | TTS client, WAV parser, envelope, HTTP endpoint, virtual sink |
 | `services/avatar` | engine smoothing/idle, drivers (VTS, VMC) against fake sockets |
 | `services/ears`, `eyes`, `chat` | transcription/describer logic with fake backends, chat filter |
-| `services/dashboard` | HTTP routes |
+| `services/dashboard` | HTTP routes, live feed, page script (stub DOM in `node:vm`) |
 
 ## 4. Run one service in isolation
 
-Run a service from the **repo root**, not via `pnpm --filter … dev` (see
-[Known problems](#known-problems) #1):
+Run a service with `node --import tsx` (this guide's form, which also works
+from any directory) or through `pnpm dev` / `pnpm --filter <svc> dev`:
 
 ```bash
 node --import tsx services/salience/src/index.ts
 ```
 
-Config is read from `./config` and `./.env` relative to the working directory.
+Config is read from the `config/` directory and `.env` at the workspace root
+(the nearest ancestor directory holding `pnpm-workspace.yaml`), so the working
+directory does not matter. `CONFIG_DIR` overrides the config directory.
 Set `LOG_LEVEL=debug` for more. Stop with ctrl-c.
 
 What each service needs to come up, and what it does if that is missing
@@ -147,9 +149,9 @@ network/hardware edge is the only part not covered.
 * **TTS:** `node --import tsx scripts/dev/stub-tts.ts` serves
   `POST /v1/audio/speech` on `:8880` (override with `STUB_TTS_PORT`) and returns
   a pulsing-tone WAV ~65 ms per character, so the lip-sync envelope moves.
-  Then run `voice` with `VOICE_URL=http://127.0.0.1:8700` (the default
-  `http://voice:8700` only resolves inside compose, and it ends up in
-  `voice.utterance.audioUrl`). Verified: `brain.say` → `voice.utterance` →
+  Then run `voice` (outside compose `VOICE_URL` defaults to
+  `http://127.0.0.1:8700`, which ends up in `voice.utterance.audioUrl`;
+  compose sets `http://voice:8700`). Verified: `brain.say` → `voice.utterance` →
   `voice.playing` / `voice.done` (sink `virtual`), `GET /audio/<id>.wav` → 200.
 * **LLM:** `node --import tsx scripts/dev/stub-llm.ts` impersonates Ollama on
   `:11434` (`/api/tags`, `/api/chat`) and replies `Stub brain here. You said: …`
@@ -236,14 +238,14 @@ Also verified on the same machine:
   with a UDP listener on `:39539` received `/VMC/Ext/Blend/Val`, `/Blend/Apply`,
   `/Bone/Pos` and `/OK` packets after a `brain.say`. It's fire-and-forget UDP,
   so it never reports "connected".
-* **The services as containers:** `docker compose build` succeeds for all of them,
-  but **the images crash on start at this commit** (Known problems #9). With the
-  `pnpm prune --prod` line removed from the Dockerfile (tested out-of-tree),
+* **The services as containers:** `docker compose build` succeeds for all of them
+  and the images start (`scripts/compose-smoke.sh` guards that in CI; the
+  Dockerfile deliberately does not `pnpm prune --prod`).
   `docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar dashboard`
   runs all of them. A chat message published with `bus-pub` then went
   salience → cortex → real Ollama → real Kokoro → `voice.done`, and
   `http://localhost:3000/audio/<id>.wav` (dashboard → voice proxy) returned the WAV.
-  Compose sets `VOICE_URL=http://voice:8700` itself, so problem #3 doesn't apply there.
+  Compose sets `VOICE_URL=http://voice:8700` itself.
   `chat` was left out: it exits without `TWITCH_CHANNEL` and compose restarts it forever.
 
 ## 6. Unit-test helpers: `@cohost/testing`
@@ -391,37 +393,10 @@ To force a spoken line without scoring, use a `reflexes` entry in
 
 ## Known problems
 
-Found while writing this guide. Not fixed here (out of scope: docs and helper scripts only); each has a GitHub issue.
+Found while writing this guide.
 
-1. **`pnpm dev` / `pnpm --filter <svc> dev` can't find the config.** ([#8](https://github.com/CoderCoco/cohost/issues/8)) pnpm runs the
-   script with the service directory as cwd, and `configDir()` defaults to
-   `./config`, so it throws `No …/services/salience/config/config.yaml and no
-   …/config.example.yaml to seed it from`. Verified. Workaround: set
-   `CONFIG_DIR=$PWD/config` (also makes `.env` load from the repo root), or run
-   `node --import tsx services/<svc>/src/index.ts` from the root as in this guide.
-   The README's "Developing" section (`pnpm dev`) currently doesn't work as written.
-2. **A fresh clone can't start any service without `.env`.** ([#9](https://github.com/CoderCoco/cohost/issues/9)) The error is a list
-   of empty-string schema failures, not "copy .env.example". `scripts/install.sh` does the copy; manual setup doesn't.
-3. **`VOICE_URL` defaults to `http://voice:8700`** ([#10](https://github.com/CoderCoco/cohost/issues/10)), a compose hostname. Outside
-   Docker `voice.utterance.audioUrl` and the dashboard's audio proxy point
-   nowhere until you set `VOICE_URL=http://127.0.0.1:8700`.
-4. **`memory` cannot run without real Ollama *and* Postgres** ([#12](https://github.com/CoderCoco/cohost/issues/12)), and there is no
-   in-memory/fake mode (it works fine against the real containers, §5b).
-5. **`eyes` with `vision.enabled: false`** ([#11](https://github.com/CoderCoco/cohost/issues/11)) still tries to connect to OBS (it
-   retries every 10 s) instead of idling quietly; the "eyes idle" warning is misleading.
-6. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
-7. **Bus state persists** in Redis between runs (and `salience` etc. use
+1. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
+2. **Bus state persists** in Redis between runs (and `salience` etc. use
    `fromNow`, but `bus-tail --replay` will show old traffic).
-9. **The service Docker images don't start.** ([#6](https://github.com/CoderCoco/cohost/issues/6)) `docker compose up` for any TS
-   service restarts in a loop with `ERR_MODULE_NOT_FOUND: Cannot find package
-   '@cohost/bus'`. Cause (verified): the Dockerfile's final `pnpm prune --prod`
-   (pnpm 10.0.0) deletes the workspace `@cohost/*` links from every
-   `services/*/node_modules`. Building without that line works (larger image).
-10. **`.dockerignore` doesn't exclude `*.tsbuildinfo`.** ([#7](https://github.com/CoderCoco/cohost/issues/7)) After any local
-   `pnpm build`/`pnpm test`, the stale `tsconfig.tsbuildinfo` files get copied
-   into the build context and `tsc -b` in the image emits nothing, so
-   `services/*/dist` is missing (`Cannot find module '/app/services/<svc>/dist/index.js'`).
-   Workaround: `find packages services -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete`
-   before `docker compose build`. A fresh clone is unaffected.
-11. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord. The README's Status section says the same for the
+3. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord. The README's Status section says the same for the
    real integrations.

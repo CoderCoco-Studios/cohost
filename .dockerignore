@@ -6,4 +6,8 @@ data
 .env
 **/*.tsbuildinfo
 **/*.log
-# @spec DEPLOY-IMG-004
+config/.vts-token
+config/config.yaml
+config/personality.md
+config/expressions.yaml
+# @spec DEPLOY-IMG-004, DEPLOY-IMG-005

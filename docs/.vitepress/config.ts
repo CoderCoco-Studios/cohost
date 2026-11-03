@@ -9,7 +9,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: false,
   ignoreDeadLinks: [/^https?:\/\/localhost/],
-  srcExclude: ['plans/README.md', 'arrows/**', 'intent/**', 'high-level-design.md'],
+  srcExclude: ['arrows/**', 'intent/**', 'high-level-design.md'],
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/' },

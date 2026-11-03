@@ -356,3 +356,11 @@ test("inject.request / inject.result are catalogued and validated", () => {
   assert.ok(EventPayloads["inject.result"].safeParse({ id: "a", ok: false, detail: "stt 503" }).success);
   assert.equal(EventPayloads["inject.result"].safeParse({ id: "a" }).success, false);
 });
+
+// @spec BUS-EVT-018
+test("avatar.state requires mouthSmile and keeps it", () => {
+  const base = { emotion: "happy", intensity: 1, mouthOpen: 0.2, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, driver: "x", connected: true };
+  assert.equal(EventPayloads["avatar.state"].safeParse(base).success, false);
+  const ok = EventPayloads["avatar.state"].parse({ ...base, mouthSmile: 7.5 });
+  assert.equal(ok.mouthSmile, 7.5);
+});

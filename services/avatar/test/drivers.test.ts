@@ -34,12 +34,17 @@ test("createDriver picks the driver named in config", () => { // @spec AVATAR-DR
   assert.ok(createDriver(cfg("null")) instanceof NullDriver);
 });
 
+// @spec AVATAR-DRV-003
+test("createDriver has no fallback: a name outside vtube-studio, vmc and null yields no driver", () => {
+  const cfg = { driver: "vseeface", vtube_studio: {}, vmc: {} } as never; // config validation rejects this before any service starts
+  assert.equal(createDriver(cfg), undefined);
+});
+
 test("null driver: always connected, accepts everything", async () => { // @spec AVATAR-DRV-007
   const d = new NullDriver();
   await d.connect(ctx());
   assert.equal(d.connected(), true);
   d.setParams(NEUTRAL); d.setExpression("happy", 1); d.trigger("wave");
-  assert.deepEqual([...d.capabilities()].sort(), ["expressions", "gestures", "lipsync", "params"]);
 });
 
 // ---- VMC (OSC over UDP)
@@ -95,6 +100,21 @@ test("vmc: each frame sends head pose, mouth/blink for VRM 0.x and 1.0, then App
   assert.deepEqual(got[0]!.args, ["Smile", 0]);
   await d.disconnect();
   assert.equal(d.connected(), false);
+});
+
+// @spec AVATAR-VMC-004
+test("vmc: gestures are ignored — trigger sends nothing", async () => {
+  const sock = dgram.createSocket("udp4");
+  const got: Buffer[] = [];
+  sock.on("message", (m) => got.push(m));
+  await new Promise<void>((r) => sock.bind(0, "127.0.0.1", r));
+  after(() => sock.close());
+  const d = new VmcDriver({ host: "127.0.0.1", port: sock.address().port });
+  await d.connect(ctx({ gestures: { wave: "WAVE" } }));
+  d.trigger("wave");
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(got.length, 0);
+  await d.disconnect();
 });
 
 // ---- VTube Studio (WebSocket API)
@@ -231,4 +251,62 @@ test("vts: nothing is sent before authentication completes", () => { // @spec AV
   const d = vts(1);
   d.setParams(NEUTRAL); d.setExpression("happy", 1); d.trigger("wave"); // must not throw
   assert.equal(d.connected(), false);
+});
+
+// @spec AVATAR-VTS-013
+test("vts: a closed and re-established connection forgets the active expression, so the next change toggles from a clean slate", async () => {
+  const s = await vtsServer();
+  const d = vts(s.port);
+  const c = ctx();
+  await d.connect(c);
+  d.setExpression("happy", 1); // hk-smile on
+  await waitFor(() => s.types().includes("HotkeyTriggerRequest"), "smile on");
+  await d.disconnect(); // the socket closes; VTS would have reset its model
+  await waitFor(() => s.wss.clients.size === 0, "server saw the close"); // the old socket's close has fully played out
+  await d.connect(c);
+  s.reqs.length = 0;
+  d.setExpression("happy", 1); // would be skipped as "already active" if the old record survived
+  await waitFor(() => s.reqs.length >= 1, "smile on again");
+  assert.deepEqual(s.reqs.map((r) => `${r.messageType}:${r.data.hotkeyID}`), ["HotkeyTriggerRequest:hk-smile"]);
+  await d.disconnect();
+});
+
+// @spec AVATAR-VTS-014
+test("vts: a failed fire-and-forget request is logged, never an unhandled rejection", async () => {
+  const s = await vtsServer({ apiErrorOn: "HotkeyTriggerRequest" });
+  const d = vts(s.port);
+  await d.connect(ctx({ gestures: { wave: "WAVE" } }));
+  warnings.length = 0;
+  const unhandled: unknown[] = [];
+  const onRejection = (e: unknown) => { unhandled.push(e); };
+  process.on("unhandledRejection", onRejection);
+  try {
+    d.setExpression("happy", 1); // activate -> HotkeyTriggerRequest -> APIError
+    d.trigger("wave"); // HotkeyTriggerRequest -> APIError
+    await waitFor(() => s.reqs.filter((r) => r.messageType === "HotkeyTriggerRequest").length >= 2, "both requests");
+    await new Promise((r) => setTimeout(r, 50));
+  } finally { process.off("unhandledRejection", onRejection); }
+  assert.deepEqual(unhandled, []);
+  assert.ok(warnings.length >= 2, "each failed request is logged");
+  assert.equal(d.connected(), true);
+  await d.disconnect();
+});
+
+// @spec AVATAR-VMC-005
+test("vmc: a failed UDP send (unresolvable host) is logged once per interval and the driver keeps running", async () => {
+  const d = new VmcDriver({ host: "no-such-host.invalid", port: 39539 });
+  await d.connect(ctx());
+  warnings.length = 0;
+  const uncaught: unknown[] = [];
+  const onUncaught = (e: unknown) => { uncaught.push(e); };
+  process.on("uncaughtException", onUncaught);
+  try {
+    for (let i = 0; i < 3; i++) d.setParams(NEUTRAL);
+    await waitFor(() => warnings.length >= 1, "send failure logged", 5000);
+    await new Promise((r) => setTimeout(r, 100));
+  } finally { process.off("uncaughtException", onUncaught); }
+  assert.deepEqual(uncaught, []);
+  assert.equal(warnings.length, 1); // 3 frames x 7 datagrams, one log line
+  assert.equal(d.connected(), true);
+  await d.disconnect();
 });

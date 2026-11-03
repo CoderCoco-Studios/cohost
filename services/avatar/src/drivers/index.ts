@@ -9,7 +9,7 @@ import { VmcDriver } from "./vmc.js";
  * add its name to the `avatar.driver` enum in packages/config/src/schema.ts,
  * and add a block to config/expressions.yaml.
  */
-export function createDriver(cfg: Config["avatar"]): AvatarDriver { // @spec AVATAR-DRV-002
+export function createDriver(cfg: Config["avatar"]): AvatarDriver { // @spec AVATAR-DRV-002, AVATAR-DRV-003
   switch (cfg.driver) {
     case "vtube-studio":
       return new VTubeStudioDriver({
@@ -21,7 +21,6 @@ export function createDriver(cfg: Config["avatar"]): AvatarDriver { // @spec AVA
     case "vmc":
       return new VmcDriver({ host: cfg.vmc.host, port: cfg.vmc.port });
     case "null":
-    default: // @spec AVATAR-DRV-003
       return new NullDriver();
   }
 }

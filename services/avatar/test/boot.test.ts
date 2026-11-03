@@ -1,0 +1,182 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import type { Emotion } from "@cohost/config";
+import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
+import { runAvatar, type AvatarBoot, type AvatarBus } from "../src/boot.js";
+import type { AvatarDriver, AvatarParams, DriverContext } from "../src/types.js";
+
+type SubscribeCall = { opts: Record<string, unknown>; handler: (ev: never) => unknown };
+
+/** A FakeBus plus the two group calls boot makes; each can be held open or made to fail. */
+class BootBus extends FakeBus {
+  calls: string[] = [];
+  subscribed: SubscribeCall[] = [];
+  stopped = false;
+  resetGate?: Promise<void>;
+  subscribeError?: Error;
+  async resetGroup(group: string): Promise<void> {
+    this.calls.push(`resetGroup:${group}`);
+    await this.resetGate;
+  }
+  subscribe = (async (opts: SubscribeCall["opts"], handler: SubscribeCall["handler"]) => {
+    this.calls.push("subscribe");
+    this.subscribed.push({ opts, handler });
+    if (this.subscribeError) throw this.subscribeError;
+    await new Promise(() => {}); // like the real loop: runs until stop()
+  }) as unknown as AvatarBus["subscribe"];
+  stop(): void { this.stopped = true; }
+  deliver(ev: ReturnType<typeof event>) { return this.subscribed[0]!.handler(ev as never); }
+}
+
+class FakeDriver implements AvatarDriver {
+  readonly name = "fake";
+  params: AvatarParams[] = [];
+  expressions: [Emotion, number][] = [];
+  gestures: string[] = [];
+  ctx?: DriverContext;
+  disconnected = false;
+  isConnected = false;
+  /** What `connect` does; the default never settles, like a VTS pairing nobody has approved. */
+  onConnect: (ctx: DriverContext) => Promise<void> = () => new Promise(() => {});
+  connect(ctx: DriverContext) { this.ctx = ctx; return this.onConnect(ctx); }
+  async disconnect() { this.disconnected = true; }
+  connected() { return this.isConnected; }
+  setParams(p: AvatarParams) { this.params.push({ ...p }); }
+  setExpression(e: Emotion, i: number) { this.expressions.push([e, i]); }
+  trigger(g: string) { this.gestures.push(g); }
+}
+
+function boot(over: { bus?: BootBus; driver?: FakeDriver } = {}) {
+  const bus = over.bus ?? new BootBus();
+  const driver = over.driver ?? new FakeDriver();
+  const rec = recordingLog();
+  const exits: number[] = [];
+  const shutdown: (() => void | Promise<void>)[] = [];
+  const b: AvatarBoot = {
+    log: rec.log,
+    setup: () => ({
+      cfg: testConfig({ avatar: { driver: "vmc", fps: 100, idle_motion: false } }),
+      bus, driver,
+      expressions: { happy: "Smile" }, gestures: { wave: "WAVE" }, stateDir: "/state",
+    }),
+    onShutdown: (fn) => { shutdown.push(fn); },
+    exit: (code) => { exits.push(code); },
+  };
+  return { b, bus, driver, rec, exits, shutdown, close: async () => { for (const fn of shutdown) await fn(); } };
+}
+
+const states = (bus: FakeBus) => bus.health.map((h) => h.state);
+
+// @spec AVATAR-BUS-001
+test("subscribes in group avatar with start mode latest to the five body events, after the engine started", async () => {
+  const t = boot();
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  assert.deepEqual(t.bus.calls, ["resetGroup:avatar", "subscribe"]);
+  const { opts } = t.bus.subscribed[0]!;
+  assert.equal(opts.group, "avatar");
+  assert.equal(opts.start, "latest");
+  assert.equal("fromNow" in opts, false);
+  assert.deepEqual([...(opts.types as string[])].sort(), ["affect.state", "brain.say", "voice.done", "voice.playing", "voice.utterance"]);
+  await waitFor(() => t.driver.params.length > 0, "engine frames"); // the engine is running
+  await t.close();
+});
+
+// @spec AVATAR-BUS-002, AVATAR-BUS-003, AVATAR-BUS-004, AVATAR-BUS-005, AVATAR-BUS-006
+test("events reach the engine: brain.say shows the emotion, utterance + playing lip-syncs, done ends it, affect.state sets the mood", async () => {
+  const t = boot();
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  await t.bus.deliver(event("brain.say", { id: "u1", text: "hi", emotion: "smug" }));
+  assert.deepEqual(t.driver.expressions.at(-1), ["smug", 1]);
+  await t.bus.deliver(event("voice.utterance", {
+    id: "u1", text: "hi", emotion: "happy", gesture: "wave", durationMs: 1000, envelopeHz: 30, envelope: [0.9, 0.9, 0.9], audioUrl: "http://v/audio/u1.wav", sampleRate: 24000,
+  }));
+  assert.deepEqual(t.driver.gestures, []); // prepared, not playing
+  await t.bus.deliver(event("voice.playing", { id: "u1", sink: "discord" }));
+  assert.deepEqual(t.driver.gestures, ["wave"]);
+  assert.deepEqual(t.driver.expressions.at(-1), ["happy", 1]);
+  await waitFor(() => t.driver.params.some((p) => p.mouthOpen > 0.5), "mouth moves");
+  await t.bus.deliver(event("voice.done", { id: "u1", sink: "discord" }));
+  await waitFor(() => t.driver.params.at(-1)!.mouthOpen < 0.3, "mouth closes");
+  await t.bus.deliver(event("affect.state", { mood: "sad", valence: -0.5, arousal: 0.2 } as never));
+  await t.close();
+});
+
+// @spec AVATAR-HEALTH-001, AVATAR-VTS-002
+test("ready once the consumer group is positioned, without waiting for the driver to connect", async () => {
+  const bus = new BootBus();
+  let release!: () => void;
+  bus.resetGate = new Promise<void>((r) => { release = r; });
+  const t = boot({ bus }); // driver.connect never settles
+  void runAvatar(t.b);
+  await waitFor(() => bus.calls.includes("resetGroup:avatar"), "group positioning started");
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(states(bus), ["starting"]);
+  release();
+  await waitFor(() => bus.subscribed.length === 1, "subscription");
+  await waitFor(() => states(bus).includes("degraded") || states(bus).includes("ready"), "ready");
+  // the driver is still connecting: the heartbeat reports it as a down dependency, not as an unready service
+  assert.equal(bus.health.at(-1)!.deps.driver, "down");
+  assert.equal(t.driver.ctx !== undefined, true); // connect was started
+  await t.close();
+});
+
+// @spec AVATAR-VTS-002, AVATAR-DRV-006
+test("the engine runs and the subscription starts while the first driver connect is still pending", async () => {
+  const t = boot(); // connect() never resolves
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  await waitFor(() => t.driver.params.length > 0, "engine frames");
+  assert.deepEqual(t.driver.ctx?.expressions, { happy: "Smile" });
+  assert.deepEqual(t.driver.ctx?.gestures, { wave: "WAVE" });
+  assert.equal(t.driver.ctx?.stateDir, "/state");
+  assert.deepEqual(t.exits, []);
+  await t.close();
+});
+
+// @spec AVATAR-BUS-007
+test("a setup failure (config load, driver creation, expressions load) logs fatal and exits 1", async () => {
+  const t = boot();
+  t.b.setup = () => { throw new Error("config invalid"); };
+  await runAvatar(t.b);
+  assert.deepEqual(t.exits, [1]);
+  assert.ok(t.rec.msgs("error").includes("fatal"));
+  assert.equal(t.bus.subscribed.length, 0);
+});
+
+// @spec AVATAR-BUS-007
+test("a rejecting driver.connect logs fatal and exits 1", async () => {
+  const driver = new FakeDriver();
+  driver.onConnect = async () => { throw new Error("bad ws url"); };
+  const t = boot({ driver });
+  void runAvatar(t.b);
+  await waitFor(() => t.exits.length > 0, "fatal exit");
+  assert.deepEqual(t.exits, [1]);
+  assert.ok(t.rec.msgs("error").includes("fatal"));
+  await t.close();
+});
+
+// @spec AVATAR-BUS-008
+test("a rejecting subscription logs fatal and exits 1", async () => {
+  const bus = new BootBus();
+  bus.subscribeError = new Error("NOGROUP consumer group deleted");
+  const t = boot({ bus });
+  await runAvatar(t.b);
+  assert.deepEqual(t.exits, [1]);
+  assert.ok(t.rec.msgs("error").includes("fatal"));
+  await t.close();
+});
+
+// @spec AVATAR-HEALTH-004
+test("shutdown stops the engine, disconnects the driver and stops the bus", async () => {
+  const t = boot();
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  await t.close();
+  assert.equal(t.driver.disconnected, true);
+  assert.equal(t.bus.stopped, true);
+  const frames = t.driver.params.length;
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(t.driver.params.length, frames); // the engine loop is stopped
+});

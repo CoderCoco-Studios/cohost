@@ -11,7 +11,7 @@
  */
 import dgram from "node:dgram";
 import type { Emotion } from "@cohost/config";
-import type { AvatarDriver, AvatarParams, Capability, DriverContext } from "../types.js";
+import type { AvatarDriver, AvatarParams, DriverContext } from "../types.js";
 
 export class VmcDriver implements AvatarDriver {
   readonly name = "vmc";
@@ -19,17 +19,16 @@ export class VmcDriver implements AvatarDriver {
   private ctx!: DriverContext;
   private activeExpr?: string;
   private exprValue = 0;
+  private sendFailedAt = -Infinity;
 
   constructor(private opts: { host: string; port: number }) {}
 
-  capabilities(): ReadonlySet<Capability> { // @spec AVATAR-VMC-004
-    return new Set<Capability>(["expressions", "params", "lipsync"]);
-  }
   connected() { return !!this.sock; }
 
   async connect(ctx: DriverContext): Promise<void> { // @spec AVATAR-VMC-001
     this.ctx = ctx;
     this.sock = dgram.createSocket("udp4");
+    this.sock.on("error", (err) => this.sendFailed(err)); // @spec AVATAR-VMC-005
     this.ctx.log.info({ host: this.opts.host, port: this.opts.port }, "vmc sender ready (UDP, fire-and-forget)");
   }
   async disconnect(): Promise<void> { this.sock?.close(); this.sock = undefined; } // @spec AVATAR-VMC-006
@@ -47,14 +46,25 @@ export class VmcDriver implements AvatarDriver {
     if (this.activeExpr) msgs.push(osc("/VMC/Ext/Blend/Val", [this.activeExpr, this.exprValue]));
     msgs.push(osc("/VMC/Ext/Blend/Apply", []));
     msgs.push(osc("/VMC/Ext/OK", [1]));
-    for (const m of msgs) this.sock.send(m, this.opts.port, this.opts.host);
+    for (const m of msgs) this.sendDatagram(m);
+  }
+
+  /** UDP is fire-and-forget, but a failed send (for example a host that does not resolve) must not end the process. */
+  private sendDatagram(m: Buffer): void { // @spec AVATAR-VMC-005
+    this.sock?.send(m, this.opts.port, this.opts.host, (err) => { if (err) this.sendFailed(err); });
+  }
+
+  /** Log a send failure at most once every 10 s: setParams sends several datagrams per frame. */
+  private sendFailed(err: Error): void {
+    const now = Date.now();
+    if (now - this.sendFailedAt < 10_000) return;
+    this.sendFailedAt = now;
+    this.ctx.log.warn({ err: err.message, host: this.opts.host, port: this.opts.port }, "vmc send failed");
   }
 
   setExpression(emotion: Emotion, intensity: number): void { // @spec AVATAR-VMC-003
     const target = this.ctx.expressions[emotion];
-    if (this.activeExpr && this.activeExpr !== target && this.sock) {
-      this.sock.send(osc("/VMC/Ext/Blend/Val", [this.activeExpr, 0]), this.opts.port, this.opts.host);
-    }
+    if (this.activeExpr && this.activeExpr !== target) this.sendDatagram(osc("/VMC/Ext/Blend/Val", [this.activeExpr, 0]));
     this.activeExpr = target;
     this.exprValue = Math.max(0, Math.min(1, intensity));
   }

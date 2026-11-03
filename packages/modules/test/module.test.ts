@@ -1,4 +1,4 @@
-import { test, after } from "node:test";
+import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ModuleSchema } from "@cohost/config";
@@ -142,4 +142,65 @@ test("clamp and isNum", () => {
   assert.equal(isNum(NaN), false);
   assert.equal(isNum(Infinity), false);
   assert.equal(isNum("1"), false);
+});
+
+// @spec HOOK-WARN-003
+test("the next warning after a suppressed window carries the number of suppressed fallbacks", async () => {
+  let now = 1_000_000_000_000;
+  const clock = mock.method(Date, "now", () => now);
+  after(() => clock.mock.restore());
+  const warns: Record<string, unknown>[] = [];
+  const counting = { info() {}, error() {}, debug() {}, warn: (o: Record<string, unknown>) => warns.push(o) } as never;
+  const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 300 }), llmCfg, { rules, http: { validate } }, counting);
+  answers.push("500", "500", "500", "500");
+  await m.run({ n: 1 }); // logged
+  now += 1_000; await m.run({ n: 2 }); // suppressed
+  now += 1_000; await m.run({ n: 3 }); // suppressed
+  assert.deepEqual(warns, [{ module: "t", kind: "http" }]);
+  now += 30_000; await m.run({ n: 4 }); // window over: logged, with the count
+  assert.deepEqual(warns, [{ module: "t", kind: "http" }, { module: "t", kind: "http", suppressed: 2 }]);
+  answers.push("500");
+  now += 30_000; await m.run({ n: 5 }); // nothing suppressed since: no count field
+  assert.deepEqual(warns[2], { module: "t", kind: "http" });
+});
+
+// @spec HOOK-WARN-004, HOOK-FALLBACK-006
+test("building an llm-kind hook on the mock provider warns once, names the hook, and every call falls back to rules", async () => {
+  const warns: { obj: unknown; msg: string }[] = [];
+  const logger = { info() {}, error() {}, debug() {}, warn: (obj: unknown, msg: string) => warns.push({ obj, msg }) } as never;
+  const mockCfg = { provider: "mock", model: "x", embed_model: "x" } as never;
+  const m = new Module("salience.scorer", ModuleSchema.parse({ kind: "llm" }), mockCfg, { rules, llm: { system: "s", user: () => "u", validate } }, logger);
+  assert.equal(warns.length, 1);
+  assert.deepEqual(warns[0]!.obj, { module: "salience.scorer", kind: "llm" });
+  assert.match(warns[0]!.msg, /salience\.scorer.*mock provider.*rules/);
+  assert.deepEqual(await m.run({ n: 3 }), { out: 6 }); // {} fails validation: the usual fallback warning follows
+  assert.equal(warns.length, 2);
+  assert.match(warns[1]!.msg, /unusable/);
+  // Only llm-kind hooks resolve a provider, and a real provider does not warn.
+  new Module("t", ModuleSchema.parse({ kind: "llm" }), openaiCfg, llmImpl, logger);
+  new Module("t", ModuleSchema.parse({ kind: "rules" }), mockCfg, { rules }, logger);
+  assert.equal(warns.length, 2);
+});
+
+// @spec HOOK-FALLBACK-005
+test("impl.rules is called unguarded: a rules function that throws surfaces to the caller on the rules path and as the fallback", async () => {
+  const boom = () => { throw new Error("rules exploded"); };
+  const direct = new Module("t", ModuleSchema.parse({ kind: "rules" }), llmCfg, { rules: boom }, log);
+  await assert.rejects(direct.run({ n: 1 }), /rules exploded/);
+  const viaHttp = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 300 }), llmCfg, { rules: boom, http: { validate } }, log);
+  answers.push("500");
+  await assert.rejects(viaHttp.run({ n: 1 }), /rules exploded/);
+});
+
+// @spec HOOK-HELP-003
+test("extractJson returns the first balanced value: two values, bracketed prose before, brackets in prose after", () => {
+  assert.deepEqual(extractJson('{"a":1} then {"b":2}'), { a: 1 });
+  assert.deepEqual(extractJson('[1,2] and [3]'), [1, 2]);
+  assert.deepEqual(extractJson('Scores for [events] follow: {"scores":[0.5]}'), { scores: [0.5] });
+  assert.deepEqual(extractJson('{"ok":true} (see note [1] and the } below)'), { ok: true });
+  assert.deepEqual(extractJson('{"note":"a } and ] inside a string","n":[1,{"x":2}]} trailing }'), { note: "a } and ] inside a string", n: [1, { x: 2 }] });
+  assert.deepEqual(extractJson('{"q":"say \\"hi}\\""} done'), { q: 'say "hi}"' });
+  assert.deepEqual(extractJson('{ not json {"a":1} }'), { a: 1 }); // an unparseable outer span does not hide the value inside it
+  assert.equal(extractJson("[unclosed"), undefined);
+  assert.equal(extractJson("only [prose] here"), undefined);
 });

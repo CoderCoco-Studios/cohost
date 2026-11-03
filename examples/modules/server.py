@@ -45,7 +45,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 GAME_WORDS = re.compile(r"\b(boss|died|clutch|raid|gg|clip|pog)\b", re.I)
 
 
-def salience(req):
+def salience(req):  # @spec HOOK-EX-002
     """Which of these events deserve a reaction? Here: a toy that likes game words."""
     scores = []
     for e in req["events"]:
@@ -62,7 +62,7 @@ def salience(req):
     return {"scores": scores}
 
 
-def affect(req):
+def affect(req):  # @spec HOOK-EX-003
     """How does this line move the mood? Here: a two-word lexicon. Yours: a sentiment model."""
     text = req["text"].lower()
     dv = 0.2 if "love" in text else -0.2 if "hate" in text else 0.0
@@ -70,7 +70,7 @@ def affect(req):
     return {"valence_delta": dv, "arousal_delta": da}
 
 
-def critic(req):
+def critic(req):  # @spec HOOK-EX-004
     """Should this line be said? Here: block anything with a URL, trim to one sentence."""
     text = req["text"]
     if "http" in text:
@@ -79,20 +79,22 @@ def critic(req):
     return {"ok": True, "text": first} if first != text else {"ok": True}
 
 
-ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}
+ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}  # @spec HOOK-EX-001
 
 # --- plumbing -----------------------------------------------------------------
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
+    def do_POST(self):  # @spec HOOK-EX-001
         fn = ROUTES.get(self.path)
         if not fn:
             return self._send(404, {"error": "unknown module"})
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0)) or b"{}"))
+            length = int(self.headers.get("content-length") or 0)  # @spec HOOK-EX-006
+            raw = self.rfile.read(length) if length > 0 else b""
+            body = json.loads(raw or b"{}")
             self._send(200, fn(body))
-        except Exception as e:  # noqa: BLE001 — a bad answer just means the region uses its rules
+        except Exception as e:  # noqa: BLE001 — a bad answer just means the region uses its rules  # @spec HOOK-EX-005
             self._send(500, {"error": str(e)})
 
     def _send(self, code, obj):

@@ -1,0 +1,41 @@
+{
+  "_comment": "Request/response pairs for examples/modules/server.py. packages/modules/test/example-server.test.ts feeds every response through the real region validators, and (when python3 is installed) checks that the running server still produces them.",
+  "salience": [
+    {
+      "request": {
+        "arousal": 0.4,
+        "events": [
+          { "kind": "chat", "who": "viewer", "text": "Coco what a clutch play", "mention": true, "isMod": false, "isSub": false, "changed": false },
+          { "kind": "speech", "who": "Streamer", "text": "hello there", "mention": false, "isMod": false, "isSub": false, "changed": false },
+          { "kind": "vision", "text": "boss fight begins", "mention": false, "isMod": false, "isSub": false, "changed": true },
+          { "kind": "chat", "who": "viewer", "text": "anyone here?", "mention": false, "isMod": false, "isSub": false, "changed": false }
+        ]
+      },
+      "response": { "scores": [1.0, 0.9, 0.55, 0.15] }
+    }
+  ],
+  "affect": [
+    {
+      "request": { "source": "chat", "who": "viewer", "text": "I love this game", "mention": true, "valence": 0, "arousal": 0.3 },
+      "response": { "valence_delta": 0.2, "arousal_delta": 0.25 }
+    },
+    {
+      "request": { "source": "speech", "who": "Streamer", "text": "I hate this part", "mention": false, "valence": 0.1, "arousal": 0.2 },
+      "response": { "valence_delta": -0.2, "arousal_delta": 0.05 }
+    }
+  ],
+  "critic": [
+    {
+      "request": { "text": "Nice one. Did you see that?", "emotion": "happy", "reason": "mentioned", "transcript": "[chat] viewer: gg" },
+      "response": { "ok": true, "text": "Nice one." }
+    },
+    {
+      "request": { "text": "Watch this https://example.com/clip", "emotion": "neutral", "reason": "engaged", "transcript": "" },
+      "response": { "ok": false, "note": "no links on air" }
+    },
+    {
+      "request": { "text": "Short and sweet.", "emotion": "neutral", "reason": "idle", "transcript": "" },
+      "response": { "ok": true }
+    }
+  ]
+}

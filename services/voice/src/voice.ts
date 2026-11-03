@@ -96,6 +96,21 @@ export class Voice {
     }
   }
 
+  /**
+   * Publish the virtual `voice.playing`, then time `voice.done` from when that publish resolved, so a slow publish never
+   * lets the done arrive back-to-back with the playing. A real sink that claimed the id during the publish wins: no
+   * done is armed. A failed publish is logged inside `publishVirtual` and the done is still armed.
+   */
+  private async playVirtual(id: string, durationMs: number): Promise<void> { // @spec VOICE-SINK-003, VOICE-SINK-008
+    await this.publishVirtual("voice.playing", id);
+    if (this.claimed.has(id)) return;
+    clearTimeout(this.virtualDone.get(id));
+    this.virtualDone.set(id, setTimeout(() => {
+      this.virtualDone.delete(id);
+      void this.publishVirtual("voice.done", id);
+    }, durationMs));
+  }
+
   async onEvent(ev: BusEvent): Promise<void> {
     if (ev.type === "brain.say") await this.onSay(ev as BusEvent<"brain.say">);
     else if (ev.type === "voice.playing") {
@@ -129,13 +144,7 @@ export class Voice {
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
       setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004
         if (this.claimed.has(id)) return;
-        // Armed before the playing publish resolves, so a claim during that await can still cancel it.
-        clearTimeout(this.virtualDone.get(id));
-        this.virtualDone.set(id, setTimeout(() => { // @spec VOICE-SINK-003
-          this.virtualDone.delete(id);
-          void this.publishVirtual("voice.done", id);
-        }, info.durationMs));
-        void this.publishVirtual("voice.playing", id);
+        void this.playVirtual(id, info.durationMs);
       }, 1500);
     } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");

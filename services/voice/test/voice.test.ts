@@ -191,6 +191,45 @@ test("a failed virtual voice.playing or voice.done publish is logged and voice k
   assert.deepEqual(bus.of("voice.utterance").map((u) => u.id), ["u1", "u2"]);
 });
 
+// @spec VOICE-SINK-003
+test("the virtual done is timed from when the virtual playing publish resolves, not from when it began", async () => {
+  const { voice, bus } = setup();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const publish = bus.publish.bind(bus) as (type: never, data: never) => Promise<string>;
+  bus.publish = (async (type: never, data: never) => { if ((type as string) === "voice.playing") await gate; return publish(type, data); }) as typeof bus.publish;
+  await voice.onEvent(say("u1")); // 500 ms line
+  mock.timers.tick(1500);
+  await flush();
+  mock.timers.tick(5000); // far longer than the line, while the playing publish is still pending
+  await flush();
+  assert.deepEqual(bus.of("voice.done"), []);
+  release();
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "u1", sink: "virtual" }]);
+  mock.timers.tick(499);
+  assert.deepEqual(bus.of("voice.done"), []);
+  mock.timers.tick(1);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+});
+
+// @spec VOICE-SINK-008
+test("a real sink claiming while the virtual playing publish is pending leaves no virtual done", async () => {
+  const { voice, bus } = setup();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const publish = bus.publish.bind(bus) as (type: never, data: never) => Promise<string>;
+  bus.publish = (async (type: never, data: never) => { if ((type as string) === "voice.playing") await gate; return publish(type, data); }) as typeof bus.publish;
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  await voice.onEvent(event("voice.playing", { id: "u1", sink: "discord" })); // claims during the publish
+  release();
+  await flush();
+  mock.timers.tick(5000);
+  assert.deepEqual(bus.of("voice.done"), []);
+});
+
 // @spec VOICE-SINK-005
 test("the voice service's own virtual voice.playing echo is not a claim, even for a re-used id", async () => {
   const { voice, bus } = setup();

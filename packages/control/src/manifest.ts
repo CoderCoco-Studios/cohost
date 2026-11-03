@@ -21,6 +21,8 @@ export interface ServiceDef {
   infra: boolean;
   /** The dashboard: it may not stop or restart itself. */
   self: boolean;
+  /** Units an isolated start of this unit also starts (transitively); never applied to restart or stop. */
+  requires?: readonly string[];
   /** Env presets (add-isolated-backends) applied by an "isolated" start: one service, no external backends. */
   isolatedEnv: Readonly<Record<string, string>>;
 }
@@ -35,13 +37,13 @@ const svc = (
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
-// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", { groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" } }),
   svc("salience", { groups: ["salience"], defaultMode: "fresh" }),
   svc("affect", { groups: ["affect"], defaultMode: "fresh" }),
   svc("memory", { groups: ["memory", "memory-recall"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" } }),
-  svc("cortex", { groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" } }),
+  svc("cortex", { requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" } }),
   svc("voice", { groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" } }),
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),
   svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false" } }),

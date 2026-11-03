@@ -50,7 +50,7 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of 
 
 **Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit: `fresh` for each service that owns groups except memory (the `latest` subscribers), `resume` for memory, dashboard and the compose-only units. Each pnpm service that subscribes owns a group of its own name (memory also `memory-recall`), so a `fresh` start resets exactly the groups the service reads under.
 
-**Isolated starts and requirements.** An isolated start also starts the units the started unit needs on the bus, named in a manifest `requires` list and followed transitively (cortex requires salience and affect); a non-isolated start starts only the named unit (CTRL-GUARD-008). The manifest has no `requires` field yet.
+**Isolated starts and requirements.** The manifest `requires` field lists the units a unit needs on the bus (cortex requires salience and affect). An isolated start of a unit first starts its `requires` closure, followed transitively, depth-first in list order, each unit once, then the named unit. Each required unit starts with its own isolation preset and its own default mode, and is audited as its own start. A required unit that fails to start ends the start: the named unit is not started and the result is `ok: false`, naming the failed unit. A non-isolated start, and every restart and stop, act on the named unit only (CTRL-GUARD-008).
 
 ## Runtimes and controller
 
@@ -91,6 +91,7 @@ Mode and orchestration (`controller.ts:73-99`): effective mode is `resume` for i
 | stop | always | `runtime.stop` (never resets groups) |
 | start | fresh | reset each group, then `runtime.start` |
 | start | resume | `runtime.start` |
+| start | isolated, unit has `requires` | the closure first (each required unit as an isolated start in its own default mode, audited separately), then the named unit's start as above |
 | restart | resume, no isolation env | `runtime.restart` (native) |
 | restart | fresh or isolation env | `runtime.stop`, then (only if ok) reset groups if fresh, then `runtime.start` |
 
@@ -173,7 +174,7 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 | Plan | Landed | Note |
 |---|---|---|
 | Option A: dashboard-embedded supervisor on a UI-agnostic core, `cohostctl` later (§5) | Same | `packages/control` plus dashboard plus `cohostctl` |
-| `ServiceRegistry` with `requires`, `externals`, `isolationEnv` (§5, §7.1) | Flat `SERVICE_MANIFEST` with `groups`, `defaultMode`, `infra`, `self`, `isolatedEnv`; no `requires` or `externals` | `requires` for isolated starts is intended (CTRL-GUARD-008); `externals` is not |
+| `ServiceRegistry` with `requires`, `externals`, `isolationEnv` (§5, §7.1) | Flat `SERVICE_MANIFEST` with `groups`, `defaultMode`, `infra`, `self`, `isolatedEnv` and an optional `requires`; no `externals` | `requires` applies to isolated starts only (CTRL-GUARD-008); `externals` is not provided |
 | Compose-only units not discussed as controllable | `ollama`, `tts`, `stt` added as manifest units | compose runtime only |
 | `service.heartbeat` schema, `startHeartbeat` returning `ready/degraded/stop`, separate `cohost:health` stream (§6) | Same; options take `mode` and `deps` as values or getters instead of `getState` | `HEARTBEAT_INTERVAL_MS` env added |
 | `mode` label examples `live`, `null`, `mock` | Convention is `live`, `mock`, `off` | schema accepts any string |

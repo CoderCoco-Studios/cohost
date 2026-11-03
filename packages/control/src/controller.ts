@@ -69,7 +69,7 @@ export class ServiceController {
     return { def };
   }
 
-  // @spec CTRL-GUARD-004, CTRL-GUARD-005, CTRL-GUARD-006, CTRL-GUARD-007
+  // @spec CTRL-GUARD-004, CTRL-GUARD-005, CTRL-GUARD-006, CTRL-GUARD-007, CTRL-GUARD-008
   private async act(action: LifecycleAction, id: string, a: ActionOptions): Promise<ControlResult> {
     const g = this.guard(action, id);
     if ("refusal" in g) return g.refusal;
@@ -84,6 +84,9 @@ export class ServiceController {
     if (action === "stop") {
       res = await this.o.runtime.stop(def.id);
     } else if (action === "start") {
+      const closure = a.isolated && !def.infra ? await this.startRequired(def) : { ok: true };
+      // The named unit is not executed when a required unit failed, so it gets no audit record of its own.
+      if (!closure.ok) return { ok: false, ...(closure.detail ? { detail: closure.detail } : {}) };
       res = fresh ? await this.resetThen(def, () => this.o.runtime.start(def.id, start)) : await this.o.runtime.start(def.id, start);
     } else if (!fresh && !start.env) {
       res = await this.o.runtime.restart(def.id, start);
@@ -96,6 +99,38 @@ export class ServiceController {
       await this.o.audit?.({ service: def.id, action, by: this.o.by, ok: res.ok, ...(res.detail ? { detail: res.detail } : {}) });
     } catch { /* the audit is best effort (e.g. bus down while stopping redis) */ }
     return { ok: res.ok, ...(res.detail ? { detail: res.detail } : {}) };
+  }
+
+  /**
+   * Starts the units `def` requires, transitively and depth-first in `requires` order (each once),
+   * each isolated and in its own default mode, each audited as its own start. Stops at the first failure.
+   */
+  private async startRequired(def: ServiceDef): Promise<RuntimeResult> {
+    const seen = new Set<string>([def.id]);
+    const visit = async (d: ServiceDef): Promise<RuntimeResult> => {
+      for (const rid of d.requires ?? []) {
+        if (seen.has(rid)) continue;
+        seen.add(rid);
+        const r = findService(rid, this.manifest);
+        if (!r) return { ok: false, detail: `required unit ${rid} is not in the manifest` };
+        const sub = await visit(r);
+        if (!sub.ok) return sub;
+        const res = await this.runRequiredStart(r);
+        if (!res.ok) return { ok: false, detail: `required unit ${rid} failed to start${res.detail ? `: ${res.detail}` : ""}` };
+      }
+      return { ok: true };
+    };
+    return visit(def);
+  }
+
+  private async runRequiredStart(r: ServiceDef): Promise<RuntimeResult> {
+    const opts: StartOptions = { processMode: this.o.processMode, env: r.infra ? undefined : { ...r.isolatedEnv } };
+    const run = () => this.o.runtime.start(r.id, opts);
+    const res = r.defaultMode === "fresh" && r.groups.length > 0 && !r.infra ? await this.resetThen(r, run) : await run();
+    try {
+      await this.o.audit?.({ service: r.id, action: "start", by: this.o.by, ok: res.ok, ...(res.detail ? { detail: res.detail } : {}) });
+    } catch { /* the audit is best effort */ }
+    return res;
   }
 
   private async resetThen(def: ServiceDef, run: () => Promise<RuntimeResult>): Promise<RuntimeResult> {

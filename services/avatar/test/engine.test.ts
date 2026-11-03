@@ -2,14 +2,13 @@ import { test, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { Emotion } from "@cohost/config";
 import { Engine } from "../src/engine.js";
-import type { AvatarDriver, AvatarParams, Capability } from "../src/types.js";
+import type { AvatarDriver, AvatarParams } from "../src/types.js";
 
 class FakeDriver implements AvatarDriver {
   readonly name = "fake";
   params: AvatarParams[] = [];
   expressions: [Emotion, number][] = [];
   gestures: string[] = [];
-  capabilities(): ReadonlySet<Capability> { return new Set(); }
   async connect() {}
   async disconnect() {}
   connected() { return true; }

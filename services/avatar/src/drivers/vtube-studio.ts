@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import type { Emotion } from "@cohost/config";
-import type { AvatarDriver, AvatarParams, Capability, DriverContext } from "../types.js";
+import type { AvatarDriver, AvatarParams, DriverContext } from "../types.js";
 
 interface Hotkey { name: string; type: string; hotkeyID: string }
 
@@ -26,14 +26,12 @@ export class VTubeStudioDriver implements AvatarDriver {
   private pending = new Map<string, { resolve: (d: unknown) => void; reject: (e: Error) => void }>();
   private hotkeys = new Map<string, Hotkey>();
   private activeExpr?: string;
+  private failLoggedAt = new Map<string, number>();
   private reconnectTimer?: NodeJS.Timeout;
   private closing = false;
 
   constructor(private opts: { host: string; port: number; pluginName: string; pluginDeveloper: string }) {}
 
-  capabilities(): ReadonlySet<Capability> {
-    return new Set<Capability>(["expressions", "params", "gestures", "lipsync"]);
-  }
   connected() { return this.ready; }
 
   async connect(ctx: DriverContext): Promise<void> { // @spec AVATAR-VTS-001, AVATAR-VTS-002
@@ -52,7 +50,7 @@ export class VTubeStudioDriver implements AvatarDriver {
   // ---- params: injected every frame. VTS resets injected values after ~1s of silence.
   setParams(p: AvatarParams): void { // @spec AVATAR-VTS-008, AVATAR-VTS-012
     if (!this.ready) return;
-    void this.send("InjectParameterDataRequest", {
+    this.fire("params", this.send("InjectParameterDataRequest", {
       faceFound: true,
       mode: "set",
       parameterValues: [
@@ -68,15 +66,15 @@ export class VTubeStudioDriver implements AvatarDriver {
         { id: "EyeOpenLeft", value: clamp(1 - p.blink, 0, 1) },
         { id: "EyeOpenRight", value: clamp(1 - p.blink, 0, 1) },
       ],
-    }, false);
+    }, false));
   }
 
   setExpression(emotion: Emotion, intensity: number): void { // @spec AVATAR-VTS-009, AVATAR-VTS-012
     if (!this.ready) return;
     const target = intensity > 0.05 ? this.ctx.expressions[emotion] : undefined;
     if (target === this.activeExpr) return;
-    if (this.activeExpr) void this.activate(this.activeExpr, false);
-    if (target) void this.activate(target, true);
+    if (this.activeExpr) this.fire("expression", this.activate(this.activeExpr, false));
+    if (target) this.fire("expression", this.activate(target, true));
     this.activeExpr = target;
   }
 
@@ -86,10 +84,20 @@ export class VTubeStudioDriver implements AvatarDriver {
     if (!name) return;
     const hk = this.hotkeys.get(name.toLowerCase());
     if (!hk) { this.ctx.log.warn({ gesture, name }, "gesture hotkey not found in VTS"); return; }
-    void this.send("HotkeyTriggerRequest", { hotkeyID: hk.hotkeyID });
+    this.fire("gesture", this.send("HotkeyTriggerRequest", { hotkeyID: hk.hotkeyID }));
   }
 
   // ---- internals
+  /** Absorb a fire-and-forget request's failure (APIError, timeout, closed socket): log it, at most every 5 s per kind. */
+  private fire(kind: "params" | "expression" | "gesture", request: Promise<unknown>): void { // @spec AVATAR-VTS-014
+    request.catch((err) => {
+      const now = Date.now();
+      if (now - (this.failLoggedAt.get(kind) ?? -Infinity) < 5000) return;
+      this.failLoggedAt.set(kind, now);
+      this.ctx.log.warn({ err: err instanceof Error ? err.message : String(err), kind }, "vts request failed");
+    });
+  }
+
   private async activate(name: string, on: boolean) { // @spec AVATAR-VTS-010
     if (name.endsWith(".exp3.json")) {
       await this.send("ExpressionActivationRequest", { expressionFile: name, active: on });
@@ -106,6 +114,7 @@ export class VTubeStudioDriver implements AvatarDriver {
   private open(): Promise<void> {
     return new Promise((resolve) => {
       const url = `ws://${this.opts.host}:${this.opts.port}`;
+      this.activeExpr = undefined; // @spec AVATAR-VTS-013
       const ws = new WebSocket(url);
       this.ws = ws;
       ws.on("open", async () => {
@@ -124,6 +133,7 @@ export class VTubeStudioDriver implements AvatarDriver {
       ws.on("message", (raw) => this.onMessage(String(raw)));
       ws.on("close", () => { // @spec AVATAR-VTS-007
         this.ready = false;
+        this.activeExpr = undefined; // @spec AVATAR-VTS-013
         for (const p of this.pending.values()) p.reject(new Error("socket closed"));
         this.pending.clear();
         if (!this.closing) {

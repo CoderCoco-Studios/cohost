@@ -16,8 +16,6 @@ export interface AvatarParams {
   blink: number;   // 0 open .. 1 closed
 }
 
-export type Capability = "expressions" | "params" | "gestures" | "lipsync";
-
 export interface DriverContext {
   log: Logger;
   /** canonical emotion -> app-specific expression name (from expressions.yaml) */
@@ -34,7 +32,6 @@ export interface DriverContext {
  */
 export interface AvatarDriver { // @spec AVATAR-DRV-001
   readonly name: string;
-  capabilities(): ReadonlySet<Capability>;
   connect(ctx: DriverContext): Promise<void>;
   disconnect(): Promise<void>;
   connected(): boolean;

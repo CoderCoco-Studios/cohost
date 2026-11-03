@@ -108,13 +108,19 @@ export function createInjectHandler(d: InjectDeps): (ev: BusEvent<"inject.reques
       const target = uploadUrl(r.url, d.dashboardUrl);
       if (!target) return void (await result(false, "url is not an upload of this dashboard"));
       let bytes: Buffer | undefined;
+      // A ref'd timer, not `AbortSignal.timeout`: that one is unref'd, so on Node 22 a fetch that never
+      // answers lets the event loop drain before the abort fires. Cleared once headers and body are in.
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(new DOMException("The operation timed out.", "TimeoutError")), timeoutMs);
       try {
-        const res = await doFetch(target, { redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
+        const res = await doFetch(target, { redirect: "error", signal: ctl.signal });
         if (!res.ok) return void (await result(false, `fetch upload ${res.status}`));
         bytes = await readCapped(res, maxBytes);
       } catch (err) {
         if (!isTimeout(err)) throw err;
         return void (await result(false, `fetch upload timed out after ${timeoutMs} ms`));
+      } finally {
+        clearTimeout(timer);
       }
       if (!bytes) return void (await result(false, `upload larger than the ${maxBytes} byte limit`));
       const b64 = bytes.toString("base64");

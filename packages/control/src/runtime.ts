@@ -2,7 +2,12 @@ import { execFile as nodeExecFile, spawn as nodeSpawn } from "node:child_process
 import type { EventEmitter } from "node:events";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 
-export interface RuntimeResult { ok: boolean; detail?: string }
+export interface RuntimeResult {
+  ok: boolean;
+  detail?: string;
+  /** Set on a failed `stop` when the service was not running (nothing to stop), as opposed to a stop that errored. */
+  notRunning?: true;
+}
 
 export interface StartOptions {
   /** `dev` (tsx watch) or `start` (built dist); process runtime only. */
@@ -151,7 +156,7 @@ export class ProcessRuntime implements Runtime {
   async stop(id: string): Promise<RuntimeResult> {
     if (!findService(id, this.manifest)) return unknown(id);
     const child = this.children.get(id);
-    if (!child) return { ok: false, detail: "not running under this process runtime (no tracked pid)" };
+    if (!child) return { ok: false, notRunning: true, detail: "not running under this process runtime (no tracked pid)" };
     if (child.exitCode !== null || child.signalCode !== null) { this.children.delete(id); return { ok: true, detail: "already exited" }; }
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     this.signalFn(child, "SIGTERM");
@@ -167,10 +172,10 @@ export class ProcessRuntime implements Runtime {
     return { ok: true, detail: escalated ? "killed (SIGKILL after timeout)" : "stopped" };
   }
 
-  // @spec CTRL-RUNTIME-008
+  // @spec CTRL-RUNTIME-008 (an untracked service is started rather than failing)
   async restart(id: string, opts: StartOptions = {}): Promise<RuntimeResult> {
     const stopped = await this.stop(id);
-    if (!stopped.ok) return stopped;
+    if (!stopped.ok && !stopped.notRunning) return stopped;
     return this.start(id, opts);
   }
 }

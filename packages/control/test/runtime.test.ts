@@ -150,7 +150,9 @@ test("process: SIGKILL after the timeout when SIGTERM is ignored", async () => {
 test("process: stopping something it did not start is ok:false; a self-exit clears the pid", async () => {
   const f = fakeSpawner();
   const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
-  assert.equal((await rt.stop("cortex")).ok, false);
+  const untracked = await rt.stop("cortex");
+  assert.equal(untracked.ok, false);
+  assert.equal(untracked.notRunning, true);
   await rt.start("cortex");
   f.children[0]!.exit();
   assert.equal(rt.pid("cortex"), undefined);
@@ -164,4 +166,14 @@ test("process: restart stops then starts a fresh process", async () => {
   assert.equal((await rt.restart("cortex")).ok, true);
   assert.equal(f.spawned.length, 2);
   assert.equal(rt.pid("cortex"), 1001);
+});
+
+// @spec CTRL-RUNTIME-008
+test("process: restart of a service with no tracked child starts it", async () => {
+  const f = fakeSpawner();
+  const rt = new ProcessRuntime({ spawn: f.spawn, signal: f.signal });
+  const r = await rt.restart("cortex");
+  assert.equal(r.ok, true);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(rt.pid("cortex"), 1000);
 });

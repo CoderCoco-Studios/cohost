@@ -56,7 +56,7 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of 
 
 ### Runtime interface
 
-`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail? }` (`runtime.ts:5-20`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
+`Runtime` has `name`, `start(id, opts)`, `stop(id)`, `restart(id, opts)` returning `{ ok, detail?, notRunning? }` (`runtime.ts:5-25`). `StartOptions` carries `processMode` (`dev` or `start`, process runtime only) and `env` (the isolation preset). The design note's optional `status?(id)` (`openspec/changes/archive/2026-11-01-add-service-control/design.md` decision 1) was not implemented.
 
 ### ComposeRuntime (`runtime.ts:47-76`)
 
@@ -70,8 +70,8 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of 
 ### ProcessRuntime (`runtime.ts:112-176`)
 
 - start: spawns `pnpm --filter <pnpmFilter> dev|start`, `shell: false`, `detached: true`, `stdio: "ignore"`, waits for the child `spawn` or `error` event, tracks the child in an in-memory `Map`, `unref`s it, and clears the entry on `exit`. Script precedence is `opts.processMode`, then constructor `mode`, then `dev` (`runtime.ts:135`). Compose-only units are refused (`runtime.ts:133`); an already tracked id returns `ok: true` with `already running` (`runtime.ts:134`).
-- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` (`runtime.ts:154`); a tracked child that already exited returns `ok: true`.
-- restart: `stop` then `start`. A restart of a service with no tracked child (stopped, or started by another process) is a start (CTRL-RUNTIME-008); the controller's stop-then-start path for fresh or isolated restarts follows the same rule (CTRL-GUARD-009). The code does not do this yet: a failed stop short-circuits (`runtime.ts:171-175`, `controller.ts:91-93`), so restarting something this process did not start fails rather than starts it.
+- stop: SIGTERM to the process group (`-pid`, falling back to the pid), race against `killTimeoutMs` (default 10 s), then SIGKILL and up to 2 s grace. An id with no tracked child returns `ok: false` with `notRunning: true`; a tracked child that already exited returns `ok: true`.
+- restart: `stop` then `start`. A restart of a service with no tracked child (stopped, or started by another process) is a start (CTRL-RUNTIME-008); the controller's stop-then-start path for fresh or isolated restarts follows the same rule (CTRL-GUARD-009). A runtime reports "nothing to stop" through `notRunning: true` on its failed stop result; any other stop failure is returned as is.
 - Because the map is in memory, `cohostctl stop` cannot stop a process started by another invocation, and a restarted dashboard loses its handles. `README.md:331-332` documents this and recommends compose.
 
 ### ServiceController (`controller.ts:53-105`)
@@ -93,7 +93,7 @@ Mode and orchestration (`controller.ts:73-99`): effective mode is `resume` for i
 | start | resume | `runtime.start` |
 | start | isolated, unit has `requires` | the closure first (each required unit as an isolated start in its own default mode, audited separately), then the named unit's start as above |
 | restart | resume, no isolation env | `runtime.restart` (native) |
-| restart | fresh or isolation env | `runtime.stop`, then (only if ok) reset groups if fresh, then `runtime.start` |
+| restart | fresh or isolation env | `runtime.stop`, then (only if it resolved ok or reported `notRunning`) reset groups if fresh, then `runtime.start` |
 
 Isolation env is `{ ...def.isolatedEnv }` when `isolated` is set and the unit is not infra, else `undefined` (`controller.ts:80`). Because an empty object is truthy, isolated restarts of salience, affect or dashboard (empty presets) also take the stop-then-start path.
 

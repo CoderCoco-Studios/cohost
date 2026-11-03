@@ -33,8 +33,9 @@ export function createChatFilter(cfg: Config): (user: string, text: string, info
   const ignoreUsers = new Set(cfg.chat.ignore_users.map((u) => u.toLowerCase()));
   return (user, text, info) => {
     if (ignoreUsers.has(user.toLowerCase())) return undefined;
-    if (cfg.chat.ignore_prefixes.some((p) => text.startsWith(p))) return undefined;
-    const clean = text.replace(/\s+/g, " ").trim();
+    const trimmed = text.trim();
+    if (cfg.chat.ignore_prefixes.some((p) => trimmed.startsWith(p))) return undefined;
+    const clean = trimmed.replace(/\s+/g, " ");
     if (!clean) return undefined;
     return {
       platform: "twitch",

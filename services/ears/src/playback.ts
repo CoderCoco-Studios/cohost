@@ -17,7 +17,7 @@ export async function httpAudio(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004, EARS-PLAY-005
+// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004, EARS-PLAY-005, EARS-PLAY-009
 /** Plays utterances one at a time and reports voice.playing / voice.done for each. */
 export class Playback {
   private queue: { id: string; url: string }[] = [];
@@ -31,8 +31,16 @@ export class Playback {
   }
 
   /** The player went idle: whatever was playing has finished. */
-  onIdle(): Promise<void> {
-    if (this.current) { void this.d.bus.publish("voice.done", { id: this.current, sink: "discord" }); this.current = undefined; }
+  async onIdle(): Promise<void> {
+    const id = this.current;
+    this.current = undefined;
+    if (id) {
+      try {
+        await this.d.bus.publish("voice.done", { id, sink: "discord" });
+      } catch (err) {
+        this.d.log.warn({ err: String(err), id }, "voice.done publish failed");
+      }
+    }
     return this.pump();
   }
 

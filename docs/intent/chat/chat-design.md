@@ -5,7 +5,7 @@ prefix: CHAT
 
 # chat
 
-Segment `chat` (`services/chat`, package `@cohost/chat`). Mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at `1b57790` with the owner's decisions of 2026-11-01 applied. Describes the intended behaviour and, where the code lags, names the gap spec.
+Segment `chat` (`services/chat`, package `@cohost/chat`). Mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at `1b57790` with the owner's decisions of 2026-11-01 applied. Describes the implemented behaviour.
 
 ## Context and Design Philosophy
 
@@ -17,7 +17,7 @@ Design stance (evidence per bullet; `[inferred]` where only the code shows it):
 
 - Read-only by default. The header comment (`index.ts:3-6`) says anonymous IRC works with only `TWITCH_CHANNEL`; credentials are optional. Typing in chat is a deferred project goal: the authenticated path stays so that a later body output beside `voice` can send lines, but nothing in the service sends a chat line today.
 - Pure translation is separated from I/O. `filter.ts` has no side effects and is unit-tested; `index.ts` is untested glue. Evidence: commit 95afa19 ("Split service entrypoints into testable region modules": chat gained `createChatFilter` / `channelName` so the logic could be tested without Twitch).
-- A configuration gap is not a crash. With no channel the service idles and reports `degraded` rather than `process.exit(1)` (`index.ts:51-59`), so a supervisor sees a health state instead of a restart loop. Evidence: comment at `index.ts:53`; commit 51d5a9c; add-isolated-backends design D6 ("the supervisor must not see a crash loop for a configuration gap").
+- A configuration gap is not a crash. With no channel the service idles and reports `degraded` rather than `process.exit(1)` (`index.ts:53-60`), so a supervisor sees a health state instead of a restart loop. Evidence: comment at `index.ts:53`; commit 51d5a9c; add-isolated-backends design D6 ("the supervisor must not see a crash loop for a configuration gap").
 - The service must run on Redis alone. `chat.source: fake` replaces Twitch with stdin or a scripted loop, and `@twurple/*` is loaded with dynamic `import()` only on the Twitch path (`index.ts:66`, `index.ts:85`). Evidence: commit 51d5a9c ("mock/off backends so any service runs on Redis alone"); add-isolated-backends design D6 ("Does not touch `@twurple`").
 
 ## Source Selection (plan)
@@ -26,23 +26,23 @@ Design stance (evidence per bullet; `[inferred]` where only the code shows it):
 
 | `chat.source` | `chat.twitch.channel` | Plan | Behaviour | Heartbeat |
 |---|---|---|---|---|
-| `fake` | any | `fake` | `startFakeSource`, no network | mode `mock`, `twitch: n/a`, `ready()` immediately (`index.ts:48`) |
-| `twitch` | non-empty | `twitch` | `startTwitch(channel)` | mode `live`, `twitch: ok` while connected else `down`; `ready()` on first connect (`index.ts:92`) |
-| `twitch` | empty | `idle` | logs an error at start and every 60 s, publishes nothing (`index.ts:54-59`) | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
+| `fake` | any | `fake` | `startFakeSource`, no network | mode `mock`, `twitch: n/a`, `ready()` immediately (`index.ts:49`) |
+| `twitch` | non-empty | `twitch` | `startTwitch(channel)` | mode `live`, `twitch: ok` while connected else `down`; `ready()` on first connect (`index.ts:86`) |
+| `twitch` | empty | `idle` | logs an error at start and every 60 s, publishes nothing (`index.ts:55-60`) | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
 
 `channelName` strips one leading `#` and lowercases (`filter.ts:15-17`). `chat.source` blank resolves to `twitch` via `z.preprocess` (`packages/config/src/schema.ts:88`); `chat.fake.interval_ms` defaults 8000 (`schema.ts:89`). Env presets: `CHAT_SOURCE` (`config/config.example.yaml:49`), `TWITCH_CHANNEL` (`:53`). The control plane's isolated start sets `CHAT_SOURCE=fake` (`packages/control/src/manifest.ts:39`, owned by `control-plane`).
 
-In all three plans the `inject.request` subscription is wired before the plan branches (`index.ts:30-33`), so test injection works with no channel and no connection. It uses the bus start mode `latest` (the group is reset to the newest entry on every start), so requests published while chat was down are never handled; the code still passes `fromNow: true`, which positions only a newly created group (CHAT-INJ-009). A failing subscription read is retried with backoff inside the bus ([event-bus](../event-bus/event-bus-design.md)).
+In all three plans the `inject.request` subscription is established before the plan branches (`index.ts:34`), so test injection works with no channel and no connection. `subscribeInject` (`subscribe.ts`) first creates the `chat` consumer group (`Bus.resetGroup`) and then starts the read loop with the bus start mode `latest` (the group is reset to the newest entry on every start), so requests published while chat was down are never handled (CHAT-INJ-009). Because the group exists before any plan runs, heartbeat `ready` is only ever signalled after the subscription is established. A failure to create the group is logged as `fatal` and exits non-zero. A failing subscription read is retried with backoff inside the bus ([event-bus](../event-bus/event-bus-design.md)).
 
 ## Twitch Path
 
-`startTwitch` (`index.ts:84-110`):
+`startTwitch` (`index.ts:77-103`):
 
 1. Dynamic `import("@twurple/chat")`, then `buildAuth()`.
-2. `buildAuth()` (`index.ts:65-81`) returns `undefined` (anonymous) unless `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set. Otherwise it builds a `RefreshingAuthProvider`, logs `twitch token refreshed` with `expiresIn` on refresh, and registers the token via `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` and scope `["chat"]`. `TWITCH_REFRESH_TOKEN` is optional (`?? null`). Registration must finish (and a failure must surface in the log) before the `ChatClient` first asks for credentials (CHAT-TW-006); the code does not yet do this: the `addUserForToken` promise is fire-and-forget (`void`, `index.ts:71`) and the `ChatClient` is constructed immediately after (`index.ts:87`). Refreshed tokens are logged but never persisted anywhere.
+2. `buildAuth()` (`index.ts:65-75`) returns `undefined` (anonymous) unless `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set. Otherwise it builds a `RefreshingAuthProvider`, logs `twitch token refreshed` with `expiresIn` on refresh, and registers the token via `addUserForToken` (`registerUserToken`, `twitch.ts`) with `expiresIn: 0`, `obtainmentTimestamp: 0` and intent `["chat"]`. `TWITCH_REFRESH_TOKEN` is optional (`?? null`). `buildAuth` awaits the registration before it returns, so the `ChatClient` is constructed only after the token is registered; a failed registration rejects `startTwitch` and is logged as `fatal` (CHAT-TW-006). Refreshed tokens are logged but never persisted anywhere.
 3. `new ChatClient({ authProvider, channels: [channel], logger: { minLevel: "warning" } })`.
 4. `onConnect`: `connected = true`, `heartbeat.ready()`, info log with `channel` and `authenticated`. `onDisconnect`: `connected = false`, warn log with `manually` and `reason`; no explicit reconnect code. Reconnect is the library default: `@twurple/chat` 8.2.0 drives an `ircv3` 0.33.1 client whose `connection.reconnect` option defaults to `true` (`ircv3/lib/IrcClient.js:88`, `:591`), and `ChatClient` is constructed without overriding it, so an unexpected drop is retried and `onConnect` fires again (re-signalling `ready`). This library reconnect is the specified behaviour (CHAT-TW-009); the service adds no reconnect code of its own.
-5. `onMessage` runs `toEvent(user, text, msg.userInfo)` and, if it returns an event, publishes `chat.message` (`index.ts:102-105`). A failed publish is logged and the next message is handled normally, as on the fake path (CHAT-TW-007); the code does not yet catch it.
+5. `onMessage` runs `createMessageHandler` (`twitch.ts`): `toEvent(user, text, msg.userInfo)` and, if it returns an event, publish `chat.message`. A failed publish is caught, logged at warn level (`chat.message publish failed`) and the next message is handled normally, as on the fake path (CHAT-TW-007).
 6. `client.connect()` is not awaited; `onShutdown` calls `client.quit()` and `bus.stop()`.
 
 The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/bus/src/heartbeat.ts:71`).
@@ -52,7 +52,7 @@ The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes
 `createChatFilter(cfg)` returns `(user, text, info) => EventInput<"chat.message"> | undefined` (`filter.ts:31-49`). Order of checks:
 
 1. `user` (lowercased) in `chat.ignore_users` (lowercased set) drops the message.
-2. `text` trimmed of leading and trailing whitespace and starting with any `chat.ignore_prefixes` entry drops it, so `" !cmd"` is a command too (CHAT-FILT-003; the code still matches the untrimmed raw text, `filter.ts:36`). Default prefixes `["!"]` (`schema.ts:92`); the example config ships `ignore_users: ["nightbot","streamelements","moobot"]`.
+2. `text` trimmed of leading and trailing whitespace and starting with any `chat.ignore_prefixes` entry drops it, so `" !cmd"` is a command too (CHAT-FILT-003). Default prefixes `["!"]` (`schema.ts:92`); the example config ships `ignore_users: ["nightbot","streamelements","moobot"]`.
 3. `text` with `\s+` collapsed to a single space and trimmed; empty result drops it.
 
 Payload: `platform: "twitch"` (hard-coded, also for `fake`), `user: info.displayName || user`, `userId: info.userId`, cleaned `text`, `isMod: info.isMod || info.isBroadcaster`, `isSub: info.isSubscriber`, `mentionsCohost: clean.toLowerCase().includes(cfg.cohost.name.toLowerCase())`. The mention test is a plain substring match, so `cocoa` and `@coco_fan` both mention `Coco`; a test pins `@coco_fan hi` and comments "substring match, by design" (`test/filter.test.ts:36`). `cohost.name` is `z.string().min(1)` so the empty-name always-true case cannot occur through config.
@@ -72,7 +72,7 @@ Payload: `platform: "twitch"` (hard-coded, also for `fake`), `user: info.display
 
 ## Test Injection (`inject.ts`)
 
-`createInjectHandler({ bus, log, cohostName, now? })` handles `inject.request` (group `chat`, start mode `latest` per CHAT-INJ-009; the code passes `fromNow: true`, `index.ts:30-33`). Steps (`inject.ts:20-49`):
+`createInjectHandler({ bus, log, cohostName, now? })` handles `inject.request` (group `chat`, start mode `latest` per CHAT-INJ-009, `index.ts:34`). Steps (`inject.ts:20-49`):
 
 1. `target !== "chat"` returns silently.
 2. Any other path answers with `inject.result {id, ok, detail?}`.
@@ -99,13 +99,13 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 |----------|--------|------------------------|-----------|
 | Anonymous vs authenticated IRC | Anonymous unless all of client id, secret and access token are set (`index.ts:68`) | Always require credentials; remove the credential path; Twitch EventSub | Header comment (`index.ts:3-6`): works read-only with just `TWITCH_CHANNEL`. Owner decision 2026-11-01: typing in chat is a deferred goal, so the credential path stays for a later body output beside `voice`. EventSub was not considered in any recorded source (`[inferred]` alternative). |
 | Token registration | `addUserForToken` with `expiresIn: 0`, `obtainmentTimestamp: 0` (`index.ts:71-79`) | Pass real expiry; persist refreshed tokens | `[inferred]` Zero expiry forces the provider to refresh immediately because env tokens carry no expiry metadata. No evidence of intent beyond the values. |
-| Token registration ordering | Await `addUserForToken` before the `ChatClient` asks for credentials (CHAT-TW-006) | Fire-and-forget (today's code) | Owner decision 2026-11-01: the client must not race the registration, and a failed registration must surface instead of becoming an unhandled rejection. |
+| Token registration ordering | Await `addUserForToken` before the `ChatClient` asks for credentials (CHAT-TW-006) | Fire-and-forget (the original code) | Owner decision 2026-11-01: the client must not race the registration, and a failed registration must surface instead of becoming an unhandled rejection. |
 | Twitch publish failure | Log and handle the next message (CHAT-TW-007) | Let the rejection escape the twurple listener; crash and restart | Owner decision 2026-11-01 (project-wide): a failed bus publish is logged and the service continues, as the fake path already does (CHAT-FAKE-006). |
 | Reconnect | Library default: `ircv3` `reconnect: true`, `onConnect` re-signals `ready` (CHAT-TW-009) | Own reconnect loop | Owner decision 2026-11-01: the library already retries an unexpected drop; the spec records it rather than adding code. |
 | Missing channel | Idle plus `degraded` heartbeat, error log every 60 s (`index.ts:51-59`) | `process.exit(1)` (old behaviour in baseline OpenSpec) | Avoid restart loops under a supervisor: comment at `index.ts:53`; commit 51d5a9c; add-isolated-backends design D6. |
 | Lazy `@twurple` import | Dynamic `import()` inside `startTwitch`/`buildAuth` (`index.ts:66`, `:85`) | Static import | The fake and idle plans must not load the IRC library: comment at `index.ts:37`; add-isolated-backends design D6 ("Does not touch `@twurple`"). |
 | Mention detection | Substring on lowercased cleaned text (`filter.ts:46`) | Word-boundary or `@name` match | Test comment "substring match, by design" (`test/filter.test.ts:36`). Owner decision 2026-11-01: keep substring matching; false positives such as `cocoa` are accepted. |
-| Command prefixes | Matched after trimming (CHAT-FILT-003) | Match the raw text (today's code) | Owner decision 2026-11-01: a leading space must not defeat the command filter. |
+| Command prefixes | Matched after trimming (CHAT-FILT-003) | Match the raw text (the original code) | Owner decision 2026-11-01: a leading space must not defeat the command filter. |
 | Fake source reuses real filter | `toEvent` injected into `startFakeSource` (`fake.ts:6`, `:42`) | Publish scripted events directly | So fake runs exercise ignore rules and cleaning exactly like Twitch: header comment `fake.ts:36`; add-isolated-backends design D6 ("passing each through the normal `createChatFilter` so ignore rules apply"). |
 | Injection bypasses ignore rules | `inject.ts` does not call the filter (`inject.ts:16-18`) | Reuse `createChatFilter` | "A dropped test is useless": comment at `inject.ts:16-18`; add-test-injection design D8, listed under its owner-confirmed decisions. |
 | Platform | Hard-coded `"twitch"` in filter (`filter.ts:40`), also for fake chat; injected chat carries no `userId` | Carry platform from the source; a `fake` platform value | Owner decision 2026-11-01: keep both. The schema has no `fake` platform and `userId` is optional. Multi-platform chat is a goal and Twitch the only implementation; the schema already allows `youtube`/`discord` (`packages/bus/src/events.ts:14`), so a new platform is a new source that sets its own value. |
@@ -125,8 +125,8 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 ## References
 
 ### Files in this segment
-- `services/chat/src/index.ts`, `filter.ts`, `fake.ts`, `health.ts`, `inject.ts`
-- `services/chat/test/filter.test.ts`, `fake.test.ts`, `health.test.ts`, `inject.test.ts`
+- `services/chat/src/index.ts`, `filter.ts`, `fake.ts`, `health.ts`, `inject.ts`, `subscribe.ts`, `twitch.ts`
+- `services/chat/test/filter.test.ts`, `fake.test.ts`, `health.test.ts`, `inject.test.ts`, `twitch.test.ts`
 - `services/chat/package.json`, `services/chat/tsconfig.json`
 
 ### Other segments

@@ -16,38 +16,51 @@ export function stripDataUrl(imageData: string): string {
   return imageData.replace(/^data:image\/\w+;base64,/, "");
 }
 
-// @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004, EYES-DESC-005
-/** Ask the Ollama vision model what changed. */
+/** True for the error a fetch rejects with when its `AbortSignal.timeout` fires. */
+export const isTimeout = (err: unknown): boolean => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+
+// @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004, EYES-DESC-005, EYES-DESC-006
+/** Ask the Ollama vision model what changed; a call unanswered after `vision.timeout_ms` is aborted and throws. */
 export function ollamaDescriber(cfg: Config["vision"]): EyesDeps["describe"] {
   return async (b64, previous) => {
-    const res = await fetch(`${urls.ollama()}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: cfg.model,
-        stream: false,
-        keep_alive: "24h",
-        options: { temperature: 0.2, num_predict: 60 },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
-              "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
-              "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME",
-          },
-          {
-            role: "user",
-            content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?",
-            images: [b64],
-          },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error(`vision model ${res.status}: ${await res.text()}`);
-    const json = (await res.json()) as { message?: { content?: string } };
-    return (json.message?.content ?? "").trim().split("\n")[0] ?? "";
+    try {
+      return await ask(cfg, b64, previous);
+    } catch (err) {
+      if (isTimeout(err)) throw new Error(`vision model did not answer within ${cfg.timeout_ms} ms`);
+      throw err;
+    }
   };
+}
+
+async function ask(cfg: Config["vision"], b64: string, previous: string): Promise<string> {
+  const res = await fetch(`${urls.ollama()}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(cfg.timeout_ms),
+    body: JSON.stringify({
+      model: cfg.model,
+      stream: false,
+      keep_alive: "24h",
+      options: { temperature: 0.2, num_predict: 60 },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
+            "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
+            "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME",
+        },
+        {
+          role: "user",
+          content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?",
+          images: [b64],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`vision model ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { message?: { content?: string } };
+  return (json.message?.content ?? "").trim().split("\n")[0] ?? "";
 }
 
 /** One look at the screen; publishes `vision.summary` only when the model saw a change. */

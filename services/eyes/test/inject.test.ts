@@ -7,7 +7,7 @@ import { createInjectHandler, uploadUrl } from "../src/inject.js";
 const DASH = "http://dashboard:3000";
 const UP = `${DASH}/uploads/abc123`;
 
-function setup(reply: string | Error = "a menu screen", over: { fetch?: typeof fetch; now?: () => number } = {}) {
+function setup(reply: string | Error = "a menu screen", over: { fetch?: typeof fetch; now?: () => number; uploadTimeoutMs?: number; uploadMaxBytes?: number } = {}) {
   const bus = new FakeBus();
   const fetched: string[] = [];
   const described: [string, string][] = [];
@@ -15,7 +15,7 @@ function setup(reply: string | Error = "a menu screen", over: { fetch?: typeof f
     bus, log: silentLog, dashboardUrl: DASH,
     fetch: over.fetch ?? (async (u) => { fetched.push(String(u)); return new Response(Buffer.from("IMG")); }),
     describe: async (b64, prev) => { described.push([b64, prev]); if (reply instanceof Error) throw reply; return reply; },
-    now: over.now,
+    now: over.now, uploadTimeoutMs: over.uploadTimeoutMs, uploadMaxBytes: over.uploadMaxBytes,
   });
   return { bus, handle, fetched, described };
 }
@@ -109,4 +109,60 @@ test("uploadUrl accepts only same-origin /uploads/<id>", () => {
   assert.equal(uploadUrl(`${DASH}/uploads/`, DASH), undefined);
   assert.equal(uploadUrl("http://dashboard:3001/uploads/a", DASH), undefined);
   assert.equal(uploadUrl(UP, "http://dashboard:3000/"), UP);
+});
+
+// @spec EYES-INJ-012
+test("an upload fetch that does not finish within the timeout is aborted: ok:false naming the timeout, model not called", async () => {
+  const hang: typeof fetch = (_u, init) => new Promise((_res, rej) => {
+    init!.signal!.addEventListener("abort", () => rej(init!.signal!.reason));
+  });
+  const t = setup("x", { fetch: hang, uploadTimeoutMs: 20 });
+  await t.handle(req());
+  const [r] = t.bus.of("inject.result");
+  assert.equal(r!.ok, false);
+  assert.match(r!.detail!, /timed out after 20 ms/);
+  assert.equal(t.described.length, 0);
+  assert.equal(t.bus.of("vision.summary").length, 0);
+});
+
+// @spec EYES-INJ-012
+test("a body that stalls after the headers is also cut off by the timeout", async () => {
+  const stall: typeof fetch = async (_u, init) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(new Uint8Array([1])); init!.signal!.addEventListener("abort", () => c.error(init!.signal!.reason)); },
+    });
+    return new Response(body);
+  };
+  const t = setup("x", { fetch: stall, uploadTimeoutMs: 20 });
+  await t.handle(req());
+  assert.match(t.bus.of("inject.result")[0]!.detail!, /timed out after 20 ms/);
+  assert.equal(t.described.length, 0);
+});
+
+// @spec EYES-INJ-013
+test("a body over vision.upload_max_bytes is rejected naming the limit, whether declared or streamed; model not called", async () => {
+  const declared = setup("x", { fetch: async () => new Response(Buffer.alloc(10), { headers: { "content-length": "10" } }), uploadMaxBytes: 5 });
+  await declared.handle(req());
+  assert.equal(declared.bus.of("inject.result")[0]!.ok, false);
+  assert.match(declared.bus.of("inject.result")[0]!.detail!, /5 byte limit/);
+  assert.equal(declared.described.length, 0);
+
+  let pulled = 0;
+  const streamed = setup("x", {
+    fetch: async () => new Response(new ReadableStream<Uint8Array>({
+      pull(c) { pulled++; c.enqueue(new Uint8Array(4)); }, // no content-length: endless 4-byte chunks
+    })),
+    uploadMaxBytes: 10,
+  });
+  await streamed.handle(req());
+  assert.match(streamed.bus.of("inject.result")[0]!.detail!, /10 byte limit/);
+  assert.ok(pulled < 10, `stopped reading after the limit (pulled ${pulled})`);
+  assert.equal(streamed.described.length, 0);
+});
+
+// @spec EYES-INJ-013
+test("a body exactly at the limit is accepted", async () => {
+  const t = setup("a menu", { fetch: async () => new Response(Buffer.alloc(5)), uploadMaxBytes: 5 });
+  await t.handle(req());
+  assert.equal(t.bus.of("inject.result")[0]!.ok, true);
 });

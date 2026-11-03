@@ -90,3 +90,15 @@ test("startEyes connects then loops when vision is enabled", async () => {
   assert.equal(started, true);
   assert.deepEqual(order, ["connect", "loop"]);
 });
+
+// @spec EYES-DESC-006
+test("ollamaDescriber aborts a describe call the model has not answered within vision.timeout_ms", async () => {
+  const server = http.createServer(() => { /* never answers */ });
+  await new Promise<void>((r) => server.listen(0, r));
+  after(() => { server.closeAllConnections(); server.close(); });
+  process.env.OLLAMA_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const describe = ollamaDescriber(testConfig({ vision: { model: "llava", timeout_ms: 50 } }).vision);
+  const t0 = Date.now();
+  await assert.rejects(describe("IMG", ""), /did not answer within 50 ms/);
+  assert.ok(Date.now() - t0 < 2000);
+});

@@ -52,7 +52,7 @@ export function createScorer(cfg: Config, log: Logger): Module<ScoreInput, Score
         `Reply with JSON only: {"scores":[...]} with exactly one number per event, in order.`,
       user: (i) =>
         `Current arousal: ${i.arousal.toFixed(2)}\n` +
-        i.events.map((e, n) => `${n + 1}. [${e.kind}${e.mention ? ", mentions co-host" : ""}${e.isMod ? ", mod" : ""}] ${e.who ? e.who + ": " : ""}${e.text}`).join("\n"),
+        i.events.map((e, n) => `${n + 1}. [${e.kind}${e.mention ? ", mentions co-host" : ""}${e.isMod ? ", mod" : ""}${e.isSub ? ", sub" : ""}] ${e.who ? e.who + ": " : ""}${e.text}`).join("\n"),
       maxTokens: 120,
       validate,
     },

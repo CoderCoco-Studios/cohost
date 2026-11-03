@@ -24,8 +24,10 @@ export class Affect {
   readonly mood: Mood;
   private lastPublished = "";
   private lastPublishedAt = 0;
-  private queue: { input: AppraiseInput; cause: string }[] = [];
+  private queue: { input: AppraiseInput; cause: string; epoch: number }[] = [];
   private draining?: Promise<void>;
+  /** Bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
+  private epoch = 0;
   /** Paused by `control pause`: events no longer nudge the mood; decay and publishing continue. */
   private paused = false; // @spec AFF-CTRL-005
 
@@ -63,9 +65,13 @@ export class Affect {
       case "control": {
         const d = ev.data as BusEvent<"control">["data"];
         if (d.target && d.target !== "affect") break; // addressed to another service; @spec AFF-CTRL-001
-        if (d.cmd === "pause") this.paused = true; // @spec AFF-CTRL-002
+        if (d.cmd === "pause") { this.paused = true; this.epoch++; } // @spec AFF-CTRL-002, AFF-HOOK-008
         if (d.cmd === "resume") this.paused = false; // @spec AFF-CTRL-004
-        if (d.cmd === "forget_context") { mood.nudge(this.d.cfg.brain.affect.baseline_valence - mood.valence, 0.1 - mood.arousal, "reset"); } // @spec AFF-IN-007
+        if (d.cmd === "forget_context") { // @spec AFF-HOOK-008
+          this.epoch++;
+          this.queue.length = 0;
+          mood.reset("reset"); // @spec AFF-IN-007
+        }
         break;
       }
     }
@@ -86,16 +92,23 @@ export class Affect {
       mood.applyAppraisal(appraiseRules(input), cause);
       return;
     }
-    this.queue.push({ input, cause }); // @spec AFF-HOOK-005
+    this.queue.push({ input, cause, epoch: this.epoch }); // @spec AFF-HOOK-005
     while (this.queue.length > MAX_QUEUED) this.queue.shift(); // @spec AFF-HOOK-006
     if (!this.draining) this.draining = this.drain().finally(() => { this.draining = undefined; });
   }
 
   private async drain() {
     for (let job = this.queue.shift(); job; job = this.queue.shift()) {
+      if (this.stale(job)) continue; // @spec AFF-HOOK-008
       const out = await this.d.appraiser.run({ ...job.input, valence: this.mood.valence, arousal: this.mood.arousal }); // @spec AFF-HOOK-003, AFF-HOOK-005
+      if (this.stale(job)) continue; // paused or reset while the appraiser was working; @spec AFF-HOOK-008
       this.mood.applyAppraisal(out, job.cause);
     }
+  }
+
+  /** A job that must not touch the mood: affect is paused, or a pause or reset happened since it was queued. */
+  private stale(job: { epoch: number }): boolean {
+    return this.paused || job.epoch !== this.epoch;
   }
 
   publish(): void { // @spec AFF-PUB-001, AFF-PUB-002, AFF-PUB-003, AFF-CTRL-003
@@ -107,6 +120,8 @@ export class Affect {
     if (key === this.lastPublished && now - this.lastPublishedAt < 15_000) return;
     this.lastPublished = key;
     this.lastPublishedAt = now;
-    void this.d.bus.publish("affect.state", s);
+    this.d.bus.publish("affect.state", s).catch((err) => { // @spec AFF-PUB-004
+      this.d.log.warn({ err }, "affect.state publish failed");
+    });
   }
 }

@@ -104,9 +104,6 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
-      '@cohost/working-memory':
-        specifier: workspace:*
-        version: link:../../packages/working-memory
     devDependencies:
       '@cohost/testing':
         specifier: workspace:*

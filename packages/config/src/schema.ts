@@ -28,7 +28,7 @@ export const ModuleSchema = z.object({
 }).default({});
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
 
-// @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003
+// @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -51,6 +51,8 @@ export const ConfigSchema = z.object({
     /** ollama + openai: reply length cap. */
     max_tokens: z.number().int().positive().default(120),
     embed_model: z.string().min(1),
+    /** Request timeout for chat(), embed() and ping() when the caller passes no AbortSignal. */
+    timeout_ms: z.number().int().positive().default(60000),
     openai: z.object({
       base_url: z.string().default("https://api.openai.com/v1"),
       api_key: z.string().default(""),
@@ -75,6 +77,12 @@ export const ConfigSchema = z.object({
     enabled: z.boolean().default(false),
     model: z.string().min(1),
     interval_ms: z.number().int().positive().default(8000),
+    /** Describe-call (VLM request) timeout. */
+    timeout_ms: z.number().int().positive().default(30000),
+    /** Timeout for fetching an injected upload from the dashboard. */
+    upload_timeout_ms: z.number().int().positive().default(10000),
+    /** Largest injected image accepted (the dashboard's default image upload cap, 8 MiB). */
+    upload_max_bytes: z.number().int().positive().default(8388608),
     obs: z.object({
       host: z.string().default("host.docker.internal"),
       port: z.number().int().default(4455),
@@ -103,6 +111,8 @@ export const ConfigSchema = z.object({
     salience: z.object({
       tick_ms: z.number().int().positive().default(1500),
       cooldown_ms: z.number().int().nonnegative().default(6000),
+      /** How long a `thinking` cortex counts as busy before salience stops waiting on it. */
+      thinking_timeout_ms: z.number().int().positive().default(60000),
       idle_chatter_ms: z.number().int().nonnegative().default(90000),
       reply_on_mention: z.boolean().default(true),
       /** Summed event score needed to speak. */
@@ -136,6 +146,8 @@ export const ConfigSchema = z.object({
       half_life_ms: z.number().int().positive().default(45000),
       /** Resting valence (-1..1). A sunny co-host sits above 0. */
       baseline_valence: z.number().min(-1).max(1).default(0.15),
+      /** Resting arousal (0..1). */
+      baseline_arousal: z.number().min(0).max(1).default(0.1),
       /** How a line of chat/speech moves the mood: rules | llm | http. */
       module: ModuleSchema,
     }).default({}),
@@ -164,17 +176,18 @@ export const ConfigSchema = z.object({
     sample_rate: z.number().int().positive().default(24000),
   }),
   avatar: z.object({
-    driver: z.enum(["vtube-studio", "vmc", "null"]).default("null"),
+    // A blank value (unset AVATAR_DRIVER) means "no avatar app"; a non-empty unknown value still fails.
+    driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])),
     fps: z.number().int().positive().default(30),
     smoothing: z.number().min(0).max(1).default(0.25),
     idle_motion: z.boolean().default(true),
     vtube_studio: z.object({
       host: z.string(),
-      port: z.number().int(),
+      port: z.number().int().default(8001),
       plugin_name: z.string().default("cohost"),
       plugin_developer: z.string().default("cohost"),
     }),
-    vmc: z.object({ host: z.string(), port: z.number().int() }),
+    vmc: z.object({ host: z.string(), port: z.number().int().default(39539) }),
   }),
   ears: z.object({
     /** `off` idles with no Discord client (isolated runs). */

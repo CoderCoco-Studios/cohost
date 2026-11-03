@@ -313,3 +313,143 @@ test("new keys default to live backends when omitted; bad enum values are reject
   assert.equal(ConfigSchema.safeParse({ ...base, ears: { source: "x", discord: {} } }).success, false);
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
+
+/** Loads the shipped example through the real loader with no .env file and the given env vars set. */
+function loadShippedBare(env: Record<string, string> = {}) {
+  const dir = sandbox();
+  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
+  const saved = { ...process.env };
+  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "EMBED_MODEL", "VISION_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT"]) delete process.env[k];
+  Object.assign(process.env, env);
+  try {
+    let cfg!: ReturnType<typeof loadConfig>;
+    const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+    return { cfg, warnings };
+  } finally {
+    process.env = saved;
+  }
+}
+
+// @spec CFG-ISO-005
+test("the shipped example loads with no .env: model defaults, avatar.driver null, default avatar ports", () => {
+  const { cfg, warnings } = loadShippedBare();
+  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
+  assert.equal(cfg.llm.model, "qwen2.5:7b-instruct-q4_K_M");
+  assert.equal(cfg.llm.embed_model, "nomic-embed-text");
+  assert.equal(cfg.vision.model, "qwen2.5vl:3b");
+  assert.equal(cfg.avatar.driver, "null");
+  assert.equal(cfg.avatar.vtube_studio.port, 8001);
+  assert.equal(cfg.avatar.vmc.port, 39539);
+  assert.equal(loadShippedBare({ AVATAR_DRIVER: "", VTS_PORT: "", VMC_PORT: "" }).cfg.avatar.driver, "null");
+});
+
+// @spec CFG-ISO-005
+test("an unknown avatar.driver still fails the load, naming avatar.driver", () => {
+  assert.throws(() => loadShippedBare({ AVATAR_DRIVER: "bogus" }), (e: Error) => /avatar\.driver:/.test(e.message));
+  assert.equal(loadShippedBare({ AVATAR_DRIVER: "vmc", VMC_PORT: "1234" }).cfg.avatar.driver, "vmc");
+});
+
+// @spec CFG-ENV-006
+test("loadDotEnv strips an unquoted ' #' suffix, keeps '#' in quotes and inside a word", () => {
+  const keys = ["T_C1", "T_C2", "T_C3", "T_C4", "T_C5", "T_C6", "T_C7"];
+  for (const k of keys) delete process.env[k];
+  const dir = sandbox({ ".env": "T_C1= # only a comment\nT_C2=value # trailing\nT_C3=\"a # b\"\nT_C4=a#b\nT_C5='x # y' # note\nT_C6=tab\t# tabbed\nT_C7=#nospace\n" });
+  loadDotEnv(join(dir, "..", ".env"));
+  assert.equal(process.env.T_C1, "");
+  assert.equal(process.env.T_C2, "value");
+  assert.equal(process.env.T_C3, "a # b");
+  assert.equal(process.env.T_C4, "a#b");
+  assert.equal(process.env.T_C5, "x # y");
+  assert.equal(process.env.T_C6, "tab");
+  assert.equal(process.env.T_C7, "#nospace");
+  for (const k of keys) delete process.env[k];
+});
+
+// @spec CFG-LOAD-006
+test("unknownKeys descends into arrays and reports path[index].key", () => {
+  const raw = { brain: { salience: { reflexes: [{ match: "a", say: ["x"] }, { match: "b", say: ["y"], emtion: "happy" }] } } };
+  const parsed = { brain: { salience: { reflexes: [{ match: "a", say: ["x"] }, { match: "b", say: ["y"] }] } } };
+  assert.deepEqual(unknownKeys(raw, parsed), ["brain.salience.reflexes[1].emtion"]);
+});
+
+// @spec CFG-LOAD-006
+test("loadConfig warns about a typo inside a reflex, without migration advice", () => {
+  const yaml = minimalYaml.replace("brain: {}", "brain: { salience: { reflexes: [{ match: 'x', say: ['y'], cooldwn_ms: 5 }] } }");
+  sandbox({ "config.yaml": yaml });
+  const warnings = captureWarnings(() => loadConfig(true));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /ignoring unknown keys: brain\.salience\.reflexes\[0\]\.cooldwn_ms/);
+  assert.doesNotMatch(warnings[0]!, /used to sit|moved into/);
+});
+
+// @spec CFG-ENV-008
+test("ConfigSchema has no control section and no key for CONTROL_* or HEARTBEAT_INTERVAL_MS", () => {
+  const top = Object.keys(ConfigSchema.shape);
+  assert.ok(!top.includes("control"));
+  const banned = /control|heartbeat/i;
+  const walk = (s: unknown, path: string): string[] => {
+    let t = s as { _zod?: { def: Record<string, unknown> } };
+    while (t?._zod && (t._zod.def.innerType || t._zod.def.out)) t = (t._zod.def.innerType ?? t._zod.def.out) as typeof t;
+    const shape = t?._zod?.def.shape as Record<string, unknown> | undefined;
+    if (!shape) return [];
+    return Object.entries(shape).flatMap(([k, v]) => [`${path}${k}`, ...walk(v, `${path}${k}.`)]);
+  };
+  assert.deepEqual(walk(ConfigSchema, "").filter((p) => banned.test(p)), []);
+});
+
+// @spec CFG-SCH-009
+test("a hook's explicit llm.provider 'mock' is rejected (it can only be inherited)", () => {
+  assert.equal(ModuleSchema.safeParse({ kind: "llm", llm: { provider: "mock", model: "x" } }).success, false);
+  assert.equal(ModuleSchema.safeParse({ kind: "llm", llm: { provider: "ollama", model: "x" } }).success, true);
+});
+
+const baseCfg = () => ({ cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: { discord: {} }, dashboard: {}, brain: {} });
+
+// @spec CFG-SCH-011
+test("brain.salience.thinking_timeout_ms and brain.affect.baseline_arousal default and validate", () => {
+  const ok = ConfigSchema.parse(baseCfg());
+  assert.equal(ok.brain.salience.thinking_timeout_ms, 60000);
+  assert.equal(ok.brain.affect.baseline_arousal, 0.1);
+  const withBrain = (b: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: b });
+  assert.equal(withBrain({ salience: { thinking_timeout_ms: 0 } }).success, false);
+  assert.equal(withBrain({ salience: { thinking_timeout_ms: 1.5 } }).success, false);
+  assert.equal(withBrain({ salience: { thinking_timeout_ms: 5000 } }).success, true);
+  assert.equal(withBrain({ affect: { baseline_arousal: 1.1 } }).success, false);
+  assert.equal(withBrain({ affect: { baseline_arousal: -0.1 } }).success, false);
+  assert.equal(withBrain({ affect: { baseline_arousal: 0 } }).success, true);
+  assert.equal(withBrain({ affect: { baseline_arousal: 1 } }).success, true);
+});
+
+// @spec CFG-SCH-012
+test("vision.timeout_ms, upload_timeout_ms and upload_max_bytes default and validate", () => {
+  const ok = ConfigSchema.parse(baseCfg());
+  assert.equal(ok.vision.timeout_ms, 30000);
+  assert.equal(ok.vision.upload_timeout_ms, 10000);
+  assert.equal(ok.vision.upload_max_bytes, 8388608);
+  for (const k of ["timeout_ms", "upload_timeout_ms", "upload_max_bytes"]) {
+    for (const v of [0, -1, 1.5]) {
+      assert.equal(ConfigSchema.safeParse({ ...baseCfg(), vision: { model: "v", obs: {}, [k]: v } }).success, false, `${k}=${v}`);
+    }
+  }
+});
+
+// @spec CFG-SCH-013
+test("llm.timeout_ms defaults to 60000 and must be a positive integer", () => {
+  assert.equal(ConfigSchema.parse(baseCfg()).llm.timeout_ms, 60000);
+  for (const v of [0, -1, 1.5]) {
+    assert.equal(ConfigSchema.safeParse({ ...baseCfg(), llm: { model: "m", embed_model: "e", timeout_ms: v } }).success, false, `${v}`);
+  }
+});
+
+// @spec CFG-SCH-011, CFG-SCH-012, CFG-SCH-013
+test("the shipped example shows the new timeout keys with their schema defaults", () => {
+  const { cfg, warnings } = loadShippedBare();
+  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
+  assert.equal(cfg.brain.salience.thinking_timeout_ms, 60000);
+  assert.equal(cfg.brain.affect.baseline_arousal, 0.1);
+  assert.equal(cfg.vision.timeout_ms, 30000);
+  assert.equal(cfg.vision.upload_timeout_ms, 10000);
+  assert.equal(cfg.vision.upload_max_bytes, 8388608);
+  assert.equal(cfg.llm.timeout_ms, 60000);
+});

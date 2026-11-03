@@ -66,7 +66,7 @@ const dotEnvPath = (): string => join(configDir(), "..", ".env");
 /** True when a dev run has no .env (compose injects env itself, so containers are exempt). */
 const missingDotEnv = (): boolean => !existsSync(dotEnvPath()) && !existsSync("/.dockerenv");
 
-// @spec CFG-ENV-004, CFG-ENV-005
+// @spec CFG-ENV-004, CFG-ENV-005, CFG-ENV-006
 export function loadDotEnv(file = dotEnvPath()): void {
   if (!existsSync(file)) return;
   for (const raw of readFileSync(file, "utf8").split("\n")) {
@@ -75,15 +75,21 @@ export function loadDotEnv(file = dotEnvPath()): void {
     const eq = line.indexOf("=");
     if (eq < 1) continue;
     const key = line.slice(0, eq).trim();
-    let val = line.slice(eq + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
+    const rest = line.slice(eq + 1);
+    let val = rest.trim();
+    const q = val[0];
+    const close = q === '"' || q === "'" ? val.indexOf(q, 1) : -1;
+    if (close > 0 && /^\s*(#.*)?$/.test(val.slice(close + 1))) val = val.slice(1, close); // quoted, optionally followed by a comment
+    else if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
+    else val = rest.replace(/\s+#.*$/, "").trim(); // unquoted: whitespace then `#` starts a comment (Compose env_file)
     if (process.env[key] === undefined) process.env[key] = val;
   }
 }
 
-/** Keys present in the yaml that the schema doesn't know (typos, or settings from before the region split). */
+/** Keys present in the yaml that the schema doesn't know (typos, retired settings), including inside array entries as `path[index].key`. */
 export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] {
   const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+  if (Array.isArray(raw) && Array.isArray(parsed)) return raw.flatMap((v, i) => unknownKeys(v, parsed[i], `${path}[${i}]`));
   if (!isObj(raw) || !isObj(parsed)) return [];
   const out: string[] = [];
   for (const [k, v] of Object.entries(raw)) {
@@ -94,7 +100,7 @@ export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] 
   return out;
 }
 
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-004, CFG-LOAD-005
+// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-004, CFG-LOAD-005, CFG-LOAD-006
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
@@ -110,8 +116,7 @@ export function loadConfig(force = false): Config {
   const stray = unknownKeys(coerceEmptyNumbers(raw), parsed.data);
   if (stray.length > 0) {
     console.warn(
-      `[config] ${file}: ignoring unknown keys: ${stray.join(", ")}. ` +
-      `(Settings that used to sit directly under brain: moved into brain.salience / affect / memory / cortex — see config.example.yaml.)`,
+      `[config] ${file}: ignoring unknown keys: ${stray.join(", ")}`,
     );
   }
   cached = parsed.data;

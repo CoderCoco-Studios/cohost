@@ -331,8 +331,6 @@ test("tick: a failed attention.focus publish is logged and the next tick still r
   assert.match(String(rec.msgs("error")[0]), /tick/);
 
   bus.fail = undefined;
-  await s.onEvent(idle);
-  await s.onEvent(chat("again Coco?", { mentionsCohost: true }));
-  await s.tick();
-  assert.equal(bus.of("attention.focus").length, 1, "the next tick ran and published");
+  await s.tick(); // no idle event: the failed publish rolled back the busy state and left the events unseen
+  assert.equal(bus.of("attention.focus").length, 1, "the next tick retried and published");
 });

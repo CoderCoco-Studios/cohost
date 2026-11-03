@@ -128,9 +128,12 @@ export class Salience {
     // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
     this.ctx.markSeenEvents(decision.scored); // @spec SAL-FOCUS-004
     // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.
+    const prevState = this.cortexState;
+    const prevSince = this.cortexSince;
     this.cortexState = "thinking";
-    this.cortexSince = Date.now();
+    const since = this.cortexSince = Date.now();
     const f = decision.focus;
+    try {
     await this.d.bus.publish("attention.focus", { // @spec SAL-FOCUS-003
       reason: decision.reason,
       score: decision.score,
@@ -141,6 +144,16 @@ export class Salience {
         : undefined,
       ...propagatedFlags(f), // @spec SAL-INJ-001, SAL-INJ-002, SAL-INJ-003
     });
+    } catch (err) {
+      // Nothing reached the cortex: roll back so the next tick can retry these events (SAL-HEALTH-002).
+      // Skip the state rollback if a brain.status/say arrived meanwhile (cortexSince moved on).
+      if (this.cortexState === "thinking" && this.cortexSince === since) {
+        this.cortexState = prevState;
+        this.cortexSince = prevSince;
+      }
+      for (const e of decision.scored) e.seen = false;
+      throw err;
+    }
     this.d.log.debug({ reason: decision.reason, score: decision.score }, "focus");
   }
 }

@@ -7,26 +7,16 @@
  * can fetch and play it. Sinks report `voice.playing` / `voice.done`; if no
  * sink picks an utterance up, a virtual sink times it so the brain moves on.
  */
-import http from "node:http";
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
 import { createLogger, envOr, loadConfig, urls } from "@cohost/config";
-import { Voice, kokoroSynth, stubSynth } from "./voice.js";
-import { VoiceHealth } from "./health.js";
+import { runVoice } from "./boot.js";
 
 const log = createLogger("voice");
-const cfg = loadConfig();
-const bus = new Bus("voice", log);
-const health = new VoiceHealth(cfg.voice.engine);
-const heartbeat = startHeartbeat(bus, { ...health.spec, log });
-const PORT = Number(envOr("VOICE_PORT", "8700")); // @spec VOICE-HTTP-005
-const PUBLIC = urls.voice();
-if (cfg.voice.engine === "stub") log.warn("voice.engine is stub: no TTS, utterances are silent (mode mock)"); // @spec VOICE-STUB-003
-const synth = cfg.voice.engine === "stub" ? stubSynth(cfg.voice) : health.track(kokoroSynth(cfg.voice)); // @spec VOICE-STUB-002, VOICE-HLTH-002
-const voice = new Voice({ bus, log, synth, publicUrl: PUBLIC });
 
-const server = http.createServer(voice.handle);
-server.listen(PORT, () => { heartbeat.ready(); log.info({ port: PORT, public: PUBLIC, voice: cfg.voice.voice }, "voice online"); }); // @spec VOICE-HLTH-001
-
-void bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing"], fromNow: true }, (ev) => voice.onEvent(ev)); // @spec VOICE-SYN-001
-
-onShutdown(() => { server.close(); bus.stop(); }); // @spec VOICE-HLTH-004
+void runVoice({
+  log,
+  setup: () => {
+    const cfg = loadConfig();
+    return { cfg, bus: new Bus("voice", log), port: Number(envOr("VOICE_PORT", "8700")), publicUrl: urls.voice() };
+  },
+});

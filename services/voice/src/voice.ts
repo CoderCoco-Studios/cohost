@@ -67,21 +67,44 @@ export class Voice {
   private store = new Map<string, Buffer>();
   private order: string[] = [];
   // ---- virtual sink bookkeeping
+  /** Ids a real sink has claimed; only ids whose audio is stored, so it is bounded by the store. */
   private claimed = new Set<string>();
+  /** Pending virtual `voice.done` timers, keyed by utterance id; a late real sink cancels its entry. */
+  private virtualDone = new Map<string, NodeJS.Timeout>();
 
   constructor(private d: VoiceDeps) {}
 
   private put(id: string, wav: Buffer) { // @spec VOICE-HTTP-001
     this.store.set(id, wav);
     this.order.push(id);
-    while (this.order.length > 50) this.store.delete(this.order.shift()!);
+    while (this.order.length > 50) {
+      const evicted = this.order.shift()!;
+      this.store.delete(evicted);
+      this.claimed.delete(evicted); // @spec VOICE-SINK-007
+    }
+  }
+
+  /** Number of live real-sink claims (never more than the audio store holds). */
+  get claimCount(): number { return this.claimed.size; }
+
+  /** Publish a virtual-sink event; a failure is logged and never escapes the timer callback. */
+  private async publishVirtual(type: "voice.playing" | "voice.done", id: string): Promise<void> { // @spec VOICE-SINK-009
+    try {
+      await this.d.bus.publish(type, { id, sink: "virtual" });
+    } catch (err) {
+      this.d.log.warn({ err, id, type }, "virtual sink publish failed");
+    }
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
     if (ev.type === "brain.say") await this.onSay(ev as BusEvent<"brain.say">);
     else if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
-      if (d.sink !== "virtual") this.claimed.add(d.id); // @spec VOICE-SINK-001, VOICE-SINK-005
+      if (d.sink === "virtual") return; // @spec VOICE-SINK-005
+      if (this.store.has(d.id)) this.claimed.add(d.id); // @spec VOICE-SINK-001, VOICE-SINK-007
+      // A real sink that starts after voice's virtual pair began takes over: the virtual done must not release the brain early.
+      const pending = this.virtualDone.get(d.id);
+      if (pending) { clearTimeout(pending); this.virtualDone.delete(d.id); } // @spec VOICE-SINK-008
     }
   }
 
@@ -104,10 +127,15 @@ export class Voice {
         sampleRate: info.sampleRate,
       });
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
-      setTimeout(async () => { // @spec VOICE-SINK-002, VOICE-SINK-004
+      setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004
         if (this.claimed.has(id)) return;
-        await bus.publish("voice.playing", { id, sink: "virtual" });
-        setTimeout(() => void bus.publish("voice.done", { id, sink: "virtual" }), info.durationMs); // @spec VOICE-SINK-003
+        // Armed before the playing publish resolves, so a claim during that await can still cancel it.
+        clearTimeout(this.virtualDone.get(id));
+        this.virtualDone.set(id, setTimeout(() => { // @spec VOICE-SINK-003
+          this.virtualDone.delete(id);
+          void this.publishVirtual("voice.done", id);
+        }, info.durationMs));
+        void this.publishVirtual("voice.playing", id);
       }, 1500);
     } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");

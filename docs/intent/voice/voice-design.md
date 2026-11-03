@@ -17,7 +17,7 @@ voice turns the brain's `brain.say` into audio and is the **owner of the audio-s
 
 Design leanings visible in the code:
 
-- **Keep the brain moving.** Every failure path ends in a `voice.done` (error sink, virtual sink) so [cortex](../cortex/cortex-design.md) is never left in `speaking` (`voice.ts:112-116`, `voice.ts:106-111`). The comments say so directly: "a virtual sink times it so the brain moves on" (`index.ts:7-8`) and "Let the brain continue even though nothing was said" (`voice.ts:114`).
+- **Keep the brain moving.** Every failure path ends in a `voice.done` (error sink, virtual sink) so [cortex](../cortex/cortex-design.md) is never left in `speaking` (`voice.ts:140-144`, `voice.ts:129-139`). The comments say so directly: "a virtual sink times it so the brain moves on" (`index.ts:7-8`) and "Let the brain continue even though nothing was said" (`voice.ts:142`).
 - **Binary audio never rides the bus.** The bus carries a URL, a duration, and a small envelope; the WAV is fetched over HTTP (`packages/bus/src/events.ts:126-137`). `[inferred]`
 - **Effects injected, logic testable.** `Voice` takes `bus`, `log`, `synth`, `publicUrl` (`voice.ts:8-15`); synthesizers are plain functions; tests drive `Voice.onEvent` and `Voice.handle` directly with a `FakeBus` and mocked timers. `[inferred]`
 - **A stub engine is a first-class mode** so the whole bus path can run with no TTS container (commit `51d5a9c`, "mock/off backends so any service runs on Redis alone").
@@ -26,26 +26,28 @@ Ownership notes (from the mapping brief): `src/health.ts` implements the heartbe
 
 ## Synthesis Pipeline
 
-Boot (`index.ts:16-32`): load config, create `Bus("voice")`, build `VoiceHealth(cfg.voice.engine)`, start the heartbeat, read `VOICE_PORT` (default `8700`) and `PUBLIC = urls.voice()`, pick the synthesizer, create `Voice`, listen on the port (then `heartbeat.ready()`), and start one bus loop:
+Boot (`runVoice`, `boot.ts:26-50`; `index.ts` only supplies the real `setup`): inside one `try`, load config, create `Bus("voice")`, read `VOICE_PORT` (default `8700`) and `urls.voice()`, build `VoiceHealth(cfg.voice.engine)`, start the heartbeat, pick the synthesizer, create `Voice`, listen on the port, position the consumer group with `bus.resetGroup("voice")`, call `heartbeat.ready()`, and start one bus loop:
 
-`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing"], fromNow: true }, ev => voice.onEvent(ev))` (`index.ts:30`).
+`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing"], start: "latest" }, ev => voice.onEvent(ev))` (`boot.ts:45`).
+
+Readiness means "can receive `brain.say`": `ready` is reported only once the HTTP server listens **and** the `voice` group exists at the stream's newest entry. The bus has no "subscribed" notification (`subscribe` resolves only when the bus stops), so boot creates and positions the group itself with `resetGroup` before `ready`, and `subscribe` then runs the same positioning (`latest` resets again); a `brain.say` published in the few milliseconds between the two is dropped, which is what `latest` allows. Everything runs inside the `try`, so a config error, a port in use, an unreachable Redis at the group call or a rejecting subscription all log `fatal` and exit 1 (VOICE-SYN-006).
 
 That single loop handles events strictly one at a time (`packages/bus/src/index.ts:157-167` awaits the handler per entry). While a `brain.say` is being synthesized, a following `voice.playing` claim waits behind it.
 
-**Start mode.** voice subscribes with the event-bus `latest` start mode: the `voice` group is moved to the newest stream entry on every start, so a `brain.say` published while voice was down is never spoken (VOICE-SYN-001). Delivery across a restart is therefore at-most-once, which suits a live co-host: a stale line spoken late is worse than a line dropped. The code does not yet do this. It passes `fromNow: true`, which positions only a newly created group (`XGROUP CREATE ... $`, `packages/bus/src/index.ts:133-138`); an existing group resumes after its last-delivered entry, so a compose `restart: unless-stopped` restart (`docker-compose.yml:10`) speaks the backlog. Only the control plane's `fresh` start skips it today, by resetting the group before the process starts (voice's manifest default, `packages/control/src/manifest.ts:45`; reset at `packages/control/src/controller.ts:42` via `Bus.resetGroup`, `packages/bus/src/index.ts:115-126`).
+**Start mode.** voice subscribes with the event-bus `latest` start mode: the `voice` group is moved to the newest stream entry on every start, so a `brain.say` published while voice was down is never spoken (VOICE-SYN-001). Delivery across a restart is therefore at-most-once, which suits a live co-host: a stale line spoken late is worse than a line dropped. This holds for every restart path, including a compose `restart: unless-stopped` restart (`docker-compose.yml:10`); the control plane's `fresh` start (voice's manifest default, `packages/control/src/manifest.ts:45`) is no longer the only thing that skips the backlog.
 
-The bus retries a failed subscription read with backoff (event-bus); a subscription rejection that still reaches voice is logged with message `fatal` and ends the process with a non-zero status, so compose restarts it with a clear cause (VOICE-SYN-006). Today the subscribe call is `void`-ed with no `.catch` (`index.ts:30`). A Redis outage does not reject it (the subscriber connection uses `maxRetriesPerRequest: null`, so its commands wait for the reconnect, `packages/bus/src/index.ts:131`), but any other Redis error escapes the loop as an unhandled rejection, which ends the process on Node 22 with no log line.
+The bus retries a failed subscription read with backoff (event-bus); a subscription rejection that still reaches voice is logged with message `fatal` and ends the process with a non-zero status, so compose restarts it with a clear cause (VOICE-SYN-006). A Redis outage does not reject it (the subscriber connection uses `maxRetriesPerRequest: null`, so its commands wait for the reconnect); another Redis error, such as the group being deleted, does.
 
-`onSay` (`voice.ts:88-117`), per `brain.say { id, text, emotion, gesture, ... }`:
+`onSay` (`voice.ts:111-145`), per `brain.say { id, text, emotion, gesture, ... }`:
 
 1. `wav = await synth(text)`.
 2. `info = parseWav(wav)`; `env = envelope(wav, info, 30)`.
 3. `put(id, wav)` into the store, **before** announcing it.
 4. Publish `voice.utterance { id, text, emotion, gesture, durationMs: round(info.durationMs), envelopeHz: 30, envelope, audioUrl: <PUBLIC>/audio/<id>.wav, sampleRate }`.
 5. Arm the 1.5 s virtual-sink timer (see Sink Arbitration).
-6. Any exception in 1-5 is caught: log `"tts failed"`, publish `voice.done { id, sink: "error" }` (`voice.ts:112-116`). That covers TTS HTTP errors, a non-WAV reply, a non-16-bit WAV (envelope throws), and a failed publish. No `voice.utterance` is emitted in that case (unless the failure was the timer-arming step, which cannot throw).
+6. Any exception in 1-5 is caught: log `"tts failed"`, publish `voice.done { id, sink: "error" }` (`voice.ts:140-144`). That covers TTS HTTP errors, a non-WAV reply, a non-16-bit WAV (envelope throws), and a failed publish. No `voice.utterance` is emitted in that case (unless the failure was the timer-arming step, which cannot throw).
 
-The timer callbacks run outside that `try`. A failed virtual publish is logged and voice keeps running (VOICE-SINK-009). Today their publishes (`voice.ts:109-110`) have no `.catch`; the publishing connection gives up after three reconnect attempts (`maxRetriesPerRequest: 3`, `packages/bus/src/index.ts:44`), so a virtual-sink timer that fires during a Redis outage leaves an unhandled rejection and Node 22 ends the process.
+The timer callbacks run outside that `try`. Their publishes go through `publishVirtual` (`voice.ts:91-97`), which logs a failure at warn (`virtual sink publish failed`) and returns, so voice keeps running (VOICE-SINK-009); the publishing connection gives up after three reconnect attempts (`maxRetriesPerRequest: 3`, `packages/bus/src/index.ts:44`), so a virtual-sink timer that fires during a Redis outage would otherwise end the process.
 
 Voice speaks **everything** on `brain.say` regardless of `injected` / `remember` flags or `reason`, and it never subscribes to `control` (VOICE-SYN-005). Mute and pause are seen only by the regions that decide to speak, [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md); an operator `say` reaches voice as an ordinary `brain.say` and is spoken even while the co-host is muted.
 
@@ -54,7 +56,7 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 | `voice.engine` | Synthesizer | Network | Heartbeat |
 | --- | --- | --- | --- |
 | `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }`; non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
-| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-62`) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`index.ts:23`) |
+| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-62`) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
 
 `voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (schema default 1, example YAML 1.05), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
 
@@ -66,9 +68,9 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 
 ## Audio Store and HTTP
 
-The store (`voice.ts:66-78`) is a `Map<id, Buffer>` plus an insertion-order array; `put` evicts from the front while more than 50 ids are held. Eviction is by count only, not size or age, and the same id published twice is stored twice in `order` (the second `put` overwrites the buffer but both order entries later delete the one key).
+The store (`voice.ts:66-85`) is a `Map<id, Buffer>` plus an insertion-order array; `put` evicts from the front while more than 50 ids are held. Eviction is by count only, not size or age, and the same id published twice is stored twice in `order` (the second `put` overwrites the buffer but both order entries later delete the one key). Evicting an id also drops its real-sink claim (VOICE-SINK-007).
 
-`Voice.handle` (`voice.ts:119-131`), mounted on a plain `http.createServer` listening on all interfaces:
+`Voice.handle` (`voice.ts:148-160`), mounted on a plain `http.createServer` listening on all interfaces:
 
 | Request | Response |
 | --- | --- |
@@ -118,27 +120,25 @@ sequenceDiagram
 
 ### Rules
 
-1. **Claiming.** On every `voice.playing` that voice reads, if `sink !== "virtual"` the id is added to the `claimed` set (`voice.ts:82-85`). The virtual sink's own `voice.playing` therefore claims nothing. That exclusion has no observable effect unless an id is re-used, because voice publishes its virtual `voice.playing` only after the claim check has already passed. Claims are never removed.
-2. **Virtual fallback.** Right after publishing `voice.utterance`, voice arms `setTimeout(1500)`. When it fires and the id is not in `claimed`, voice publishes `voice.playing { id, sink: "virtual" }` and arms `setTimeout(info.durationMs)` to publish `voice.done { id, sink: "virtual" }` (`voice.ts:106-111`). If the id is claimed, voice does nothing further for it (VOICE-SINK-004).
-3. **Late claim.** A real sink's `voice.playing` that arrives after the virtual `voice.playing` but before the virtual `voice.done` cancels that pending `voice.done`, so the real sink's own `voice.done` is the one that releases cortex (VOICE-SINK-008). The fix stays inside voice; sinks keep their duties unchanged. The code does not yet do this: the claim set is consulted only when the 1.5 s timer fires, and the virtual `voice.done` timer is never cancelled (`voice.ts:108-110`).
-4. **Error release.** On any synthesis-path failure voice publishes only `voice.done { id, sink: "error" }` (`voice.ts:115`). No virtual timers run.
+1. **Claiming.** On every `voice.playing` that voice reads, if `sink !== "virtual"` and the id's audio is still stored, the id is added to the `claimed` set (`voice.ts:103-104`). The virtual sink's own `voice.playing` therefore claims nothing. That exclusion has no observable effect unless an id is re-used, because voice publishes its virtual `voice.playing` only after the claim check has already passed. A claim lives as long as the audio: `put` drops it when it evicts the id (`voice.ts:83`), so the set never exceeds the store's 50 ids (VOICE-SINK-007).
+2. **Virtual fallback.** Right after publishing `voice.utterance`, voice arms `setTimeout(1500)`. When it fires and the id is not in `claimed`, voice arms `setTimeout(info.durationMs)` to publish `voice.done { id, sink: "virtual" }` and publishes `voice.playing { id, sink: "virtual" }` (`voice.ts:130-139`). The done timer is armed first, before the playing publish resolves, so a claim that arrives during that publish can still cancel it. If the id is claimed, voice does nothing further for it (VOICE-SINK-004).
+3. **Late claim.** A real sink's `voice.playing` that arrives after the virtual `voice.playing` but before the virtual `voice.done` cancels that pending `voice.done`, so the real sink's own `voice.done` is the one that releases cortex (VOICE-SINK-008). The pending done timers are kept per id (`virtualDone`, `voice.ts:73`) and cleared by the late claim (`voice.ts:105-107`). The fix stays inside voice; sinks keep their duties unchanged. A claim that arrives after the virtual `voice.done` was published changes nothing.
+4. **Error release.** On any synthesis-path failure voice publishes only `voice.done { id, sink: "error" }` (`voice.ts:143`). No virtual timers run.
 5. **Sinks' duties.** A sink should publish `voice.playing` when audio actually starts and `voice.done` when it ends. Dashboard: on the `<audio>` element's `play` / `ended` / `error`, via `POST /sink` which the dashboard turns into `voice.playing` / `voice.done` with `sink: "dashboard"` (`services/dashboard/public/index.html:145-146`, `services/dashboard/src/routes.ts:120-122`). ears: `Playback` as described in the [ears LLD](../ears/ears-design.md). Both receive `voice.utterance` over the bus (dashboard through its tail).
-6. **Who is released by `voice.done`.** cortex clears `speakingId` on the first `voice.done` for its own id from **any** sink (`services/cortex/src/cortex.ts:56-60`), with `brain.cortex.speaking_timeout_ms` (20 s) as a backstop (`cortex.ts:169`, `packages/config/src/schema.ts:153-154`). avatar starts lip-sync on `voice.playing` and ends it on `voice.done` for the matching id (`services/avatar/src/index.ts:50-51`).
+6. **Who is released by `voice.done`.** cortex clears `speakingId` on the first `voice.done` for its own id from **any** sink (`services/cortex/src/cortex.ts:56-60`), with `brain.cortex.speaking_timeout_ms` (20 s) as a backstop (`cortex.ts:169`, `packages/config/src/schema.ts:153-154`). avatar starts lip-sync on `voice.playing` and ends it on `voice.done` for the matching id (`services/avatar/src/boot.ts`, `voice.playing` and `voice.done` cases).
 7. **Voice never reads `voice.done`.** It does not subscribe to it and keeps no per-id lifecycle; completion tracking is entirely the consumers'.
 
 ### Known limits of the protocol
 
-- **Slow or queued real sinks look like absent sinks at first.** The claim window is a fixed 1.5 s measured from `voice.utterance`, but a sink may legitimately start later: ears queues utterances behind the one playing and then does a fetch, convert and play before publishing `voice.playing` (`services/ears/src/playback.ts:39-46`); a second line queued behind a long first line is always timed by the virtual sink. With the late-claim rule (VOICE-SINK-008) the virtual `voice.done` is cancelled, so cortex waits for the real sink; the id still sees two `voice.playing` events (virtual, then real), and [avatar](../avatar/avatar-design.md) restarts lip-sync from the first envelope value on the second one (`services/avatar/src/engine.ts:39-45`). Until VOICE-SINK-008 is implemented, the pending virtual `voice.done` also releases cortex early and can close the avatar's mouth while the real sink is playing (`engine.ts:47-49`).
-- **No exclusivity.** If both ears and a dashboard sink are active they both claim, both play, and both publish; voice only uses claims to suppress its own fallback, never to pick one sink. Playing the same line on two sinks is accepted (see Decisions).
-- **Claim ordering.** Claims are read by the same sequential loop that runs TTS. A claim for utterance A can be queued behind the synthesis of utterance B, so the 1.5 s timer for A may fire before the claim is processed and produce a spurious virtual pair. `[inferred]` (loop semantics at `packages/bus/src/index.ts:151-159`; timer at `voice.ts:107`.)
-- **Unbounded `claimed`.** Entries are never pruned, unlike the audio store's 50-item bound (`voice.ts:70,84`). (VOICE-SINK-007)
-- **Timers outlive shutdown.** The virtual timers are not tracked or cleared; shutdown closes the server and stops the bus (`index.ts:32`).
-- **Timer publishes are unguarded.** A virtual `voice.playing` / `voice.done` publish that fails (for example during a Redis outage) is an unhandled rejection that ends the process (`voice.ts:107-110`); the intended behaviour is log and continue (VOICE-SINK-009).
+- **Slow or queued real sinks look like absent sinks at first.** The claim window is a fixed 1.5 s measured from `voice.utterance`, but a sink may legitimately start later: ears queues utterances behind the one playing and then does a fetch, convert and play before publishing `voice.playing` (`services/ears/src/playback.ts:39-46`); a second line queued behind a long first line is always timed by the virtual sink. With the late-claim rule (VOICE-SINK-008) the virtual `voice.done` is cancelled, so cortex waits for the real sink; the id still sees two `voice.playing` events (virtual, then real), and [avatar](../avatar/avatar-design.md) restarts lip-sync from the first envelope value on the second one (`services/avatar/src/engine.ts:39-45`).
+- **No exclusivity.** If both ears and a dashboard sink are active they both claim, both play, and both publish `voice.playing` and `voice.done` for the same id; voice only uses claims to suppress its own fallback, never to pick one sink. The same line playing on two sinks is accepted (see Decisions): cortex is released by whichever `voice.done` arrives first, and avatar lip-syncs from the first `voice.playing` it sees (a second one restarts the envelope). Running two sinks is the operator's choice.
+- **Claim ordering.** Claims are read by the same sequential loop that runs TTS. A claim for utterance A can be queued behind the synthesis of utterance B, so the 1.5 s timer for A may fire before the claim is processed and produce a spurious virtual pair. `[inferred]` (loop semantics at `packages/bus/src/index.ts:151-159`; timer at `voice.ts:130`.)
+- **Timers outlive shutdown.** The 1.5 s timer is not tracked or cleared; shutdown closes the server and stops the bus (`boot.ts:37`).
 - **A silent dashboard sink is still "a sink".** The dashboard page queues every `voice.utterance` even while audio is disabled and only plays when enabled (`index.html:137,142,331`); because it publishes `voice.playing` only on actual playback, a disabled page falls through to the virtual sink correctly, but a later enable replays the stale backlog.
 
 ## Health
 
-`VoiceHealth` (`health.ts:7-19`): `service: "voice"`; `kokoro` engine gives mode `live` and `deps.kokoro` `ok` initially, `down` after any failed synthesis, `ok` again after the next success (the synthesizer is wrapped with `tracked`, `index.ts:24`); `stub` gives mode `mock` and `kokoro: "n/a"`. `heartbeat.ready()` is called when the HTTP server starts listening (`index.ts:28`), not when the bus subscription is up. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. Shutdown closes the HTTP server and stops the bus after the pre-shutdown `stopping` heartbeat (`index.ts:32`, `packages/bus/src/index.ts:231-257`).
+`VoiceHealth` (`health.ts:7-19`): `service: "voice"`; `kokoro` engine gives mode `live` and `deps.kokoro` `ok` initially, `down` after any failed synthesis, `ok` again after the next success (the synthesizer is wrapped with `tracked`, `boot.ts:33`); `stub` gives mode `mock` and `kokoro: "n/a"`. `heartbeat.ready()` is called once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts:42`), so `ready` means voice can receive `brain.say`. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. Shutdown closes the HTTP server and stops the bus after the pre-shutdown `stopping` heartbeat (`boot.ts:37`, `packages/bus/src/index.ts:231-257`).
 
 ## Decisions & Alternatives
 
@@ -147,9 +147,9 @@ sequenceDiagram
 | Where audio plays | Voice synthesizes and serves; separate sinks play | Voice plays locally; push audio over the bus | Header comment: voice keeps the WAV and serves it "so any 'sink' (dashboard audio page captured by OBS, the Discord bot) can fetch and play it" (`index.ts:4-7`). |
 | How audio reaches sinks | HTTP GET of a stored WAV by URL | Base64 on the stream | `[inferred]` events carry only `audioUrl`; schema comment "Path on the voice service" (`events.ts:134`). |
 | Brain release when nobody plays | Virtual sink timed by `durationMs` after 1.5 s | Wait for a sink indefinitely; timeout in cortex only | Header comment: "if no sink picks an utterance up, a virtual sink times it so the brain moves on" (`index.ts:7-8`). The 1.5 s figure itself is `[inferred]`; cortex also has its own 20 s backstop. |
-| Claim mechanism | Any non-`virtual` `voice.playing` for the id suppresses the fallback | Explicit sink registration; sink ack protocol | `[inferred]` smallest change on the existing events (`voice.ts:84`). |
-| TTS failure | Publish `voice.done` sink `error`, no utterance | Retry; emit a silent utterance | Comment: "Let the brain continue even though nothing was said" (`voice.ts:114`). |
-| Audio store | In-memory map, newest 50 | Disk, TTL | `[inferred]` sinks fetch immediately; bounded memory (`voice.ts:77`). |
+| Claim mechanism | Any non-`virtual` `voice.playing` for the id suppresses the fallback | Explicit sink registration; sink ack protocol | `[inferred]` smallest change on the existing events (`voice.ts:104`). |
+| TTS failure | Publish `voice.done` sink `error`, no utterance | Retry; emit a silent utterance | Comment: "Let the brain continue even though nothing was said" (`voice.ts:142`). |
+| Audio store | In-memory map, newest 50 | Disk, TTL | `[inferred]` sinks fetch immediately; bounded memory (`voice.ts:80`). |
 | Envelope shape | 30 Hz RMS, soft knee `(rms/0.22)^0.8`, 0.6 release | Peak, FFT/visemes | Comments: the soft knee makes "normal speech read as ~0.3-0.8 mouth-open rather than hugging zero" and the release is "light smoothing so the mouth doesn't flicker" (`wav.ts:36-38,56`). Peak and FFT/visemes are `[inferred]` alternatives. |
 | Envelope source channel | First channel only | Mix channels | `[inferred]` Kokoro returns mono (`wav.ts:1`, `wav.test.ts:81`). |
 | WAV support | 16-bit PCM only | Floats / other depths | Comment: "PCM 16-bit only (what Kokoro emits)" (`wav.ts:1`). |
@@ -161,32 +161,31 @@ sequenceDiagram
 | Mute awareness | voice is unaware of mute and pause; it speaks every `brain.say` | voice subscribes to `control` and drops lines while muted | Owner decision 2026-11-01: mute and pause are seen only by cortex and salience, which decide whether to speak; an operator `say` bypasses mute and must still be heard. |
 | Host-side sinks | Not supported except through the dashboard's `/audio/*` proxy; compose does not publish 8700 | Publish 8700 to the host; CORS-open host access | Owner decision 2026-11-01: the LAN is the trust boundary and the dashboard is the one published port; browser and OBS sinks already go through the proxy. |
 | Bus failures | Virtual-sink publish failures are logged and voice continues; a subscription rejection that survives the bus's retry is logged `fatal` and exits non-zero | Crash on any failure; ignore silently | Owner decision 2026-11-01 (cross-cutting): a failed publish never ends a service; a dead subscription is a clear, restartable failure. |
-| Serving | Plain `node:http`, CORS `*` | Express | `[inferred]` dependency-free; CORS lets browser sinks fetch cross-origin (`voice.ts:125`). |
+| Readiness | `ready` after the HTTP server listens and the `voice` group is positioned with `resetGroup`, before the subscription loop starts | `ready` when the server listens (before the bus is usable); a "subscribed" hook in event-bus | Owner decision 2026-11-01 (R3): ready means "can receive `brain.say`". The bus has no hook that fires when `subscribe` has created the group and `subscribe` resolves only at stop, so boot positions the group itself; a hook would remove the duplicate positioning but needs an event-bus change. |
+| Serving | Plain `node:http`, CORS `*` | Express | `[inferred]` dependency-free; CORS lets browser sinks fetch cross-origin (`voice.ts:153`). |
 
 ## Open Questions & Future Decisions
 
-1. **`claimed` is never pruned** (`voice.ts:70,84`), unlike the store. (VOICE-SINK-007)
-2. **Single sequential loop does TTS and claim intake.** A slow synthesis delays claim processing and can cause spurious virtual pairs; synthesis could be moved off the loop (as cortex does with `void this.think(...)`, `cortex.ts:65`). `[inferred]`
-3. **Two near-duplicate WAV parsers.** `services/voice/src/wav.ts:12-34` (`parseWav`: validates RIFF/WAVE, returns bits and duration) and `services/ears/src/audio.ts:44-55` (`readWavHeader`: no RIFF check, no bit depth, throws `bad wav`), plus `services/ears/src/inject.ts:36-45` adding a RIFF check around it, plus two WAV writers (`stubSynth` header at `voice.ts:41-62`, ears `wavWrap` at `audio.ts:57-64`). No shared package. Consolidation target is undecided.
-4. **Cross-service test import.** `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` (only for `wavWrap`), coupling voice's test run to ears' source; `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
-5. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`wav.ts:17-29`). Envelope silently ignores extra channels.
-6. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:121,129`).
-7. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:75-77`), so one eviction can remove an id that is still the newest.
-8. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
-9. **Heartbeat `ready` precedes the bus subscription** (`index.ts:28,30`), so a service can report ready a moment before it can receive `brain.say`.
-10. **Tests missing.** No test covers `index.ts` (boot wiring, the stub warning, the port, signal handling and shutdown) or a real sink arriving after the virtual one. VOICE-SYN-001, VOICE-STUB-003 and VOICE-HTTP-005 have no test; VOICE-HLTH-001 and VOICE-HLTH-004 are tested only through the heartbeat spec. VOICE-SINK-005 is observable only with a re-used id (the test at `voice.test.ts:55` sends a virtual echo for an id that was never said), and VOICE-SYN-004's store-before-publish ordering is held only by statement order (`voice.ts:96-98`).
+1. **Single sequential loop does TTS and claim intake.** A slow synthesis delays claim processing and can cause spurious virtual pairs; synthesis could be moved off the loop (as cortex does with `void this.think(...)`, `cortex.ts:65`). `[inferred]`
+2. **Two near-duplicate WAV parsers.** `services/voice/src/wav.ts:12-34` (`parseWav`: validates RIFF/WAVE, returns bits and duration) and `services/ears/src/audio.ts:44-55` (`readWavHeader`: no RIFF check, no bit depth, throws `bad wav`), plus `services/ears/src/inject.ts:36-45` adding a RIFF check around it, plus two WAV writers (`stubSynth` header at `voice.ts:41-62`, ears `wavWrap` at `audio.ts:57-64`). No shared package. Consolidation target is undecided.
+3. **Cross-service test import.** `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` (only for `wavWrap`), coupling voice's test run to ears' source; `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
+4. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`wav.ts:17-29`). Envelope silently ignores extra channels.
+5. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:149,157`).
+6. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
+7. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
+8. **Tests missing.** `services/voice/test/boot.test.ts` covers boot wiring, but no test covers real signal handling or process exit (`onShutdown` and `process.exit` are injected). The 1.5 s timer is not cleared on shutdown.
 
 ## References
 
 Files in this segment:
 
-- `services/voice/src/index.ts`, `voice.ts`, `wav.ts`, `health.ts`
-- `services/voice/test/health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
+- `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `wav.ts`, `health.ts`
+- `services/voice/test/boot.test.ts`, `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
 
 Other segments (arrow shows direction):
 
-- voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing` (group `voice`, created at the newest entry); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
+- voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing` (group `voice`, moved to the newest entry on every start); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
 - voice -> [config](../config/config-design.md): `loadConfig` (`voice.*`), `urls.tts()`, `urls.voice()`, `envOr("VOICE_PORT")`.
 - voice <- [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md): publish `brain.say`; cortex consumes `voice.done`.
 - voice <-> [ears](../ears/ears-design.md): ears is the `discord` sink and fetches `audioUrl`.

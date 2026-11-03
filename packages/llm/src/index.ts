@@ -36,6 +36,8 @@ export interface ChatProvider { // @spec LLM-IF-001
   /** True once the backend is reachable and answering. On false, `lastError` says why. */
   ping(): Promise<boolean>;
   lastError?: string;
+  /** Set (true) when `ping()` is not a probe and always answers true, so a caller can tell `ok` from "not checked" (LLM-PING-006). */
+  readonly pingIsNominal?: boolean;
 }
 export interface Embedder { // @spec LLM-IF-001
   embed(text: string): Promise<number[]>;
@@ -45,6 +47,16 @@ export interface Embedder { // @spec LLM-IF-001
 const TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"]; // @spec LLM-STOP-006
 /** Blank line ends a spoken reply. Exactly four entries: OpenAI-style APIs reject more than four stops. */
 const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
+
+/** Default request timeout when `llm.timeout_ms` is absent (CFG-SCH-013 default). */
+const DEFAULT_TIMEOUT_MS = 60_000;
+/** `llm.timeout_ms`, read defensively so this package does not depend on the config schema's merge order. */
+function timeoutMs(cfg: Config["llm"]): number { // @spec LLM-CHAT-008
+  const ms = (cfg as { timeout_ms?: unknown }).timeout_ms;
+  return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
+}
+/** The caller's signal when it passed one (it wins), otherwise the default timeout. */
+const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(timeoutMs(cfg)); // @spec LLM-CHAT-008
 
 export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
   switch (cfg.provider) {
@@ -86,7 +98,7 @@ export class Ollama implements ChatProvider, Embedder {
           ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-001, LLM-STOP-003
         },
       }),
-      signal: opts.signal,
+      signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
     if (!res.ok) throw new Error(`ollama chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
     const json = (await res.json()) as { message?: { content?: string } };
@@ -98,6 +110,7 @@ export class Ollama implements ChatProvider, Embedder {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: this.cfg.embed_model, input: text, keep_alive: "24h" }),
+      signal: requestSignal(this.cfg), // @spec LLM-CHAT-008
     });
     if (!res.ok) throw new Error(`ollama embed ${res.status}: ${await res.text()}`);
     const json = (await res.json()) as { embeddings?: number[][] };
@@ -109,7 +122,7 @@ export class Ollama implements ChatProvider, Embedder {
   lastError?: string;
   async ping(): Promise<boolean> { // @spec LLM-PING-001, LLM-PING-005
     try {
-      const r = await fetch(`${this.base}/api/tags`);
+      const r = await fetch(`${this.base}/api/tags`, { signal: requestSignal(this.cfg) }); // @spec LLM-CHAT-008
       this.lastError = r.ok ? undefined : `ollama ${r.status} at ${this.base}`;
       return r.ok;
     } catch (err) { this.lastError = `cannot reach ollama at ${this.base}: ${String(err)}`; return false; }
@@ -149,7 +162,7 @@ export class OpenAICompatible implements ChatProvider {
         max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
         ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-002, LLM-STOP-003
       }),
-      signal: opts.signal,
+      signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
     if (!res.ok) throw new Error(`${this.name} chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
     const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
@@ -159,7 +172,7 @@ export class OpenAICompatible implements ChatProvider {
   lastError?: string;
   async ping(): Promise<boolean> { // @spec LLM-PING-002, LLM-PING-005
     try {
-      const r = await fetch(`${this.base}/models`, { headers: this.headers() });
+      const r = await fetch(`${this.base}/models`, { headers: this.headers(), signal: requestSignal(this.cfg) }); // @spec LLM-CHAT-008
       this.lastError = r.ok ? undefined : `${this.base}/models answered ${r.status}${r.status === 401 || r.status === 403 ? " (check llm.openai.api_key)" : ""}`;
       return r.ok;
     } catch (err) { this.lastError = `cannot reach ${this.base}: ${String(err)}`; return false; }
@@ -200,7 +213,7 @@ abstract class ClaudeBase implements ChatProvider {
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
       // in the same call. Not offered on Bedrock, where a refusal just means "say nothing".
       ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007
-    }, { signal: opts.signal }); // @spec LLM-CLAUDE-010, LLM-CHAT-006
+    }, opts.signal ? { signal: opts.signal } : { timeout: timeoutMs(this.cfg) }); // @spec LLM-CLAUDE-010, LLM-CHAT-006, LLM-CHAT-008
     if (res.stop_reason === "refusal") return ""; // @spec LLM-CLAUDE-006
     return res.content // @spec LLM-CLAUDE-005, LLM-IF-004
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -225,7 +238,7 @@ export class AnthropicProvider extends ClaudeBase {
   }
   async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
     try {
-      await this.client.models.retrieve(this.cfg.model);
+      await this.client.models.retrieve(this.cfg.model, undefined, { timeout: timeoutMs(this.cfg) }); // @spec LLM-CHAT-008
       this.lastError = undefined;
       return true;
     } catch (err) {
@@ -247,5 +260,6 @@ export class BedrockProvider extends ClaudeBase {
     // AWS credentials come from the usual places: env vars, profile, instance role.
     this.client = new AnthropicBedrockMantle(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {}); // @spec LLM-CLAUDE-009
   }
+  readonly pingIsNominal = true; // @spec LLM-PING-006
   async ping(): Promise<boolean> { return true; } // @spec LLM-PING-004 (no cheap probe on Bedrock; errors surface on first chat)
 }

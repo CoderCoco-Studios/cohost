@@ -1,4 +1,4 @@
-import { test, after } from "node:test";
+import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ConfigSchema } from "@cohost/config";
@@ -269,4 +269,89 @@ test("factory: mock provider needs no network and pairs with the hash embedder; 
   assert.ok(createEmbedder(cfg) instanceof HashEmbedder);
   assert.ok(createEmbedder(llmCfg({ provider: "openai" })) instanceof Ollama);
   assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
+});
+
+// ---- default request timeout (llm.timeout_ms, CFG-SCH-013)
+
+/** A backend that accepts connections and never answers (a black hole). */
+const hole = http.createServer(() => {});
+await new Promise<void>((r) => hole.listen(0, r));
+after(() => { hole.closeAllConnections(); hole.close(); });
+const holeUrl = `http://127.0.0.1:${(hole.address() as { port: number }).port}`;
+/** `llm.timeout_ms` is added by the config task; the providers read it defensively, so tests set it on the object. */
+const withTimeout = (ms: number, over: Record<string, unknown> = {}) => ({ ...llmCfg(over), timeout_ms: ms }) as ReturnType<typeof llmCfg>;
+const user = [{ role: "user" as const, content: "x" }];
+
+// @spec LLM-CHAT-008
+test("timeout: a black-holed Ollama and OpenAI-compatible backend fails chat, embed and ping once llm.timeout_ms passes", async () => {
+  const o = new Ollama(withTimeout(150, { provider: "ollama" }), holeUrl);
+  const oa = new OpenAICompatible(withTimeout(150, { openai: { base_url: `${holeUrl}/v1` } }));
+  for (const call of [() => o.chat(user), () => o.embed("x"), () => oa.chat(user)]) {
+    const t0 = Date.now();
+    await assert.rejects(call());
+    assert.ok(Date.now() - t0 < 3000, "gave up near the timeout, not never");
+  }
+  assert.equal(await o.ping(), false);
+  assert.match(o.lastError!, /cannot reach ollama/);
+  assert.equal(await oa.ping(), false);
+  assert.match(oa.lastError!, /cannot reach/);
+});
+
+// @spec LLM-CHAT-008
+test("timeout: llm.timeout_ms defaults to 60000 when the config object has none", async () => {
+  const spy = mock.method(AbortSignal, "timeout", (ms: number) => { void ms; return new AbortController().signal; });
+  after(() => spy.mock.restore());
+  const s = http.createServer(async (req, res) => { for await (const _ of req); res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }], message: { content: "ok" }, embeddings: [[1]], models: [] })); });
+  await new Promise<void>((r) => s.listen(0, r));
+  after(() => s.close());
+  const b = `http://127.0.0.1:${(s.address() as { port: number }).port}`;
+  await new OpenAICompatible(llmCfg({ openai: { base_url: `${b}/v1` } })).chat(user);
+  await new Ollama(llmCfg({ provider: "ollama" }), b).embed("x");
+  assert.deepEqual(spy.mock.calls.map((c) => c.arguments[0]), [60000, 60000]);
+  await new OpenAICompatible(withTimeout(1234, { openai: { base_url: `${b}/v1` } })).chat(user);
+  assert.equal(spy.mock.calls.at(-1)!.arguments[0], 1234);
+});
+
+// @spec LLM-CHAT-008, LLM-CHAT-006
+test("timeout: a caller's AbortSignal wins over the default timeout", async () => {
+  const slow = http.createServer(async (req, res) => {
+    for await (const _ of req);
+    await new Promise((r) => setTimeout(r, 400));
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ choices: [{ message: { content: "late but fine" } }] }));
+  });
+  await new Promise<void>((r) => slow.listen(0, r));
+  after(() => slow.close());
+  const url = `http://127.0.0.1:${(slow.address() as { port: number }).port}/v1`;
+  const p = new OpenAICompatible(withTimeout(100, { openai: { base_url: url } }));
+  await assert.rejects(p.chat(user)); // no signal: the 100 ms default applies
+  assert.equal(await p.chat(user, { signal: new AbortController().signal }), "late but fine"); // a signal replaces it
+});
+
+// @spec LLM-CHAT-008
+test("timeout: Claude requests carry the default timeout only when the caller passes no signal; ping is bounded too", async () => {
+  const { p, calls } = claude();
+  (p as unknown as { cfg: unknown }).cfg = { ...(p as unknown as { cfg: object }).cfg, timeout_ms: 4321 };
+  await p.chat(user);
+  assert.equal((calls[0]!.opts as { timeout?: number }).timeout, 4321);
+  assert.equal(calls[0]!.opts.signal, undefined);
+  const signal = new AbortController().signal;
+  await p.chat(user, { signal });
+  assert.equal(calls[1]!.opts.signal, signal);
+  assert.equal("timeout" in calls[1]!.opts, false);
+  const seen: unknown[] = [];
+  (p as unknown as { client: { models: { retrieve: (...a: unknown[]) => Promise<unknown> } } }).client.models.retrieve = async (...a) => { seen.push(a[2]); return {}; };
+  assert.equal(await p.ping(), true);
+  assert.deepEqual(seen, [{ timeout: 4321 }]);
+  const dflt = claude();
+  await dflt.p.chat(user);
+  assert.equal((dflt.calls[0]!.opts as { timeout?: number }).timeout, 60000);
+});
+
+// @spec LLM-PING-006
+test("bedrock: pingIsNominal tells callers its ping is not a probe; real providers do not set it", () => {
+  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
+  assert.equal(b.pingIsNominal, true);
+  for (const provider of ["ollama", "openai", "mock"] as const) assert.equal(createChatProvider(llmCfg({ provider })).pingIsNominal, undefined);
+  assert.equal(createChatProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } })).pingIsNominal, undefined);
 });

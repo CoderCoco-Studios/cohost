@@ -26,6 +26,8 @@ export class Cortex {
   private thinking = false;
   private speakingId: string | undefined;
   private speakingSince = 0;
+  /** Fires `speaking_timeout_ms` after a line starts, to release a stuck voice sink (CTX-GATE-009). */
+  private speakingTimer: ReturnType<typeof setTimeout> | undefined;
   private mood: Mood | undefined;
   /** Who-is-this notes from the memory region, keyed by lowercase user so one viewer's framing never lands on another's reply. */
   private viewerNotes = new Map<string, string>();
@@ -49,20 +51,20 @@ export class Cortex {
         // Our own lines and anyone else's (reflexes, operator) all land in the transcript.
         const d = ev.data as BusEvent<"brain.say">["data"];
         this.ctx.pushSelf(d.text, d.emotion);
-        if (ev.source !== "cortex") { this.speakingId = d.id; this.speakingSince = Date.now(); }
+        if (ev.source !== "cortex") this.startSpeaking(d.id);
         break;
       }
       // @spec CTX-EVT-005
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
-        if (d.id === this.speakingId) { this.speakingId = undefined; await this.status(this.muted || this.paused ? "muted" : "idle"); }
+        if (d.id === this.speakingId) { this.stopSpeaking(); await this.status(this.muted || this.paused ? "muted" : "idle"); }
         break;
       }
       // @spec CTX-EVT-006
       case "attention.focus":
         // Don't await: the LLM call must not block the subscription loop, or the
         // memory reply we're waiting on could never be delivered.
-        void this.think(ev.data as Focus);
+        this.think(ev.data as Focus).catch((err) => this.d.log.error({ err }, "think rejected")); // @spec CTX-GATE-008
         break;
       // @spec CTX-RECALL-005
       case "memory.recall.reply": {
@@ -99,7 +101,7 @@ export class Cortex {
         if (d.cmd === "mute") { this.muted = true; await this.status("muted"); }
         if (d.cmd === "unmute") { this.muted = false; await this.status(this.paused ? "muted" : "idle"); }
         // @spec CTX-CTRL-004
-        if (d.cmd === "forget_context") { this.ctx.clear(); this.viewerNotes.clear(); }
+        if (d.cmd === "forget_context") { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); }
         // @spec CTX-CTRL-005
         if (d.cmd === "reload_personality") { this.personality = this.d.loadPersonality(); this.d.log.info("personality reloaded"); }
         // @spec CTX-CTRL-006, CTX-INJ-002
@@ -114,28 +116,28 @@ export class Cortex {
     const { cfg, llm, critic, log } = this.d;
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
     // @spec CTX-GATE-001
-    if (this.thinking) { await this.status("thinking", focus.reason).catch(() => {}); return; }
+    if (this.thinking) { await this.statusLogged("thinking", focus.reason); return; }
     // @spec CTX-GATE-002
-    if (this.muted || this.paused) { await this.status("muted"); return; }
+    if (this.muted || this.paused) { await this.statusLogged("muted"); return; } // @spec CTX-GATE-008
     // @spec CTX-GATE-003, CTX-SAY-004
-    if (this.voiceBusy()) { await this.status("speaking"); return; }
+    if (this.voiceBusy()) { await this.statusLogged("speaking"); return; }
 
     this.thinking = true; // the try/finally below always clears it, even if a status publish fails
     try {
       await this.status("thinking", focus.reason);
       // @spec CTX-RECALL-001
-      const query = focus.focus?.text ?? this.ctx.lastVision;
+      const query = focus.focus?.text || this.ctx.lastVision;
       const memories = query ? await this.recall(query) : [];
       // @spec CTX-VIEWER-003
       const who = focus.focus?.who?.toLowerCase();
       const viewerNote = who ? this.viewerNotes.get(who) : undefined;
-      if (who) this.viewerNotes.delete(who);
       const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote });
       const t0 = Date.now();
       const raw = await llm.chat(messages);
       let { text, emotion, gesture } = parseReply(raw);
       // @spec CTX-PROMPT-007
-      log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length, raw }, "llm reply");
+      log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length }, "llm reply");
+      log.debug({ raw }, "llm reply text"); // raw text can echo chat and is not yet through the critic
       // @spec CTX-PROMPT-006
       if (!text || text.length < 2) { await this.status("idle"); return; }
       // Inhibition: let the critic veto or touch up the line before it's spoken.
@@ -150,13 +152,21 @@ export class Cortex {
       // @spec CTX-GATE-006
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
       // @spec CTX-INJ-001
-      await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus));
+      // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
+      await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus), () => {
+        if (who && this.viewerNotes.get(who) === viewerNote) this.viewerNotes.delete(who);
+      });
     } catch (err) {
       log.error({ err }, "think failed");
       await this.status("idle").catch(() => {});
     } finally {
       this.thinking = false;
     }
+  }
+
+  /** `status` for paths with nothing else to do: a failed publish is logged, never raised (CTX-GATE-008). */
+  private statusLogged(state: "idle" | "thinking" | "speaking" | "muted", detail?: string): Promise<void> {
+    return this.status(state, detail).catch((err) => this.d.log.error({ err, state }, "brain.status publish failed"));
   }
 
   async status(state: "idle" | "thinking" | "speaking" | "muted", detail?: string): Promise<void> {
@@ -166,8 +176,30 @@ export class Cortex {
   // @spec CTX-GATE-004
   /** Someone's line is still playing (with the stuck-sink safety valve). */
   private voiceBusy(): boolean {
-    if (this.speakingId && Date.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.speakingId = undefined;
+    if (this.speakingId && Date.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.stopSpeaking();
     return !!this.speakingId;
+  }
+
+  /** A line began playing: remember it and arm the stuck-sink release. */
+  private startSpeaking(id: string): void {
+    this.stopSpeaking();
+    this.speakingId = id;
+    this.speakingSince = Date.now();
+    // @spec CTX-GATE-009
+    this.speakingTimer = setTimeout(() => {
+      this.speakingTimer = undefined;
+      if (this.speakingId !== id) return;
+      this.speakingId = undefined;
+      // A think in flight ends with its own status; don't contradict it.
+      if (!this.thinking) void this.statusLogged(this.muted || this.paused ? "muted" : "idle");
+    }, this.d.cfg.brain.cortex.speaking_timeout_ms);
+    this.speakingTimer.unref();
+  }
+
+  private stopSpeaking(): void {
+    this.speakingId = undefined;
+    if (this.speakingTimer) clearTimeout(this.speakingTimer);
+    this.speakingTimer = undefined;
   }
 
   // @spec CTX-RECALL-002, CTX-RECALL-003, CTX-RECALL-004
@@ -186,11 +218,11 @@ export class Cortex {
   }
 
   // @spec CTX-SAY-001
-  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags = {}) {
+  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags = {}, onPublished?: () => void) {
     const id = randomUUID();
-    this.speakingId = id;
-    this.speakingSince = Date.now();
+    this.startSpeaking(id);
     await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason, ...flags });
+    onPublished?.();
     await this.status("speaking", text);
   }
 }

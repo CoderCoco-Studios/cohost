@@ -24,3 +24,25 @@ test("mock provider: mode mock", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => true, "mock"));
   assert.equal(hbs[1]!.mode, "mock");
 });
+
+// @spec CTX-HEALTH-003
+test("llm status follows the supplied outcome: down after a failed reply, ok again after recovery", async () => {
+  let ok = true;
+  const spec = cortexHealth(() => ok);
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+  ok = false;
+  const down = await runHeartbeat(spec);
+  assert.equal(down[1]!.state, "degraded");
+  ok = true;
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+});
+
+// @spec CTX-HEALTH-004
+test("a provider whose ping is nominal reports llm n/a (not probed) until a reply outcome arrives, and stays ready", async () => {
+  let probed = false;
+  const spec = cortexHealth(() => true, "bedrock", () => probed);
+  const before = await runHeartbeat(spec);
+  assert.deepEqual([before[1]!.state, before[1]!.deps], ["ready", { llm: "n/a" }]);
+  probed = true;
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+});

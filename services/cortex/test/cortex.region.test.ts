@@ -348,3 +348,110 @@ test("think: a real focus, and control say, produce unflagged brain.say", async 
   assert.equal(says.length, 2);
   for (const s of says) assert.equal("injected" in s || "remember" in s, false);
 });
+
+// @spec CTX-GATE-008
+test("a failed brain.status publish on a gated early return is logged, not raised", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => { unhandled.push(e); };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    for (const gate of ["muted", "paused", "speaking"] as const) {
+      const { cortex, bus, llm, rec } = setup();
+      if (gate === "muted") await cortex.onEvent(event("control", { cmd: "mute" }));
+      if (gate === "paused") await cortex.onEvent(event("control", { cmd: "pause" }));
+      if (gate === "speaking") await cortex.onEvent(event("brain.say", { id: "op", text: "x", emotion: "neutral" }, "operator"));
+      bus.fail = (t) => t === "brain.status";
+      await cortex.think(mention()); // resolves; does not reject
+      await cortex.onEvent(event("attention.focus", mention())); // the unawaited path
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(llm.calls.length, 0, gate);
+      assert.ok(rec.msgs("error").length >= 2, `${gate}: failures are logged`);
+    }
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+// @spec CTX-GATE-009
+test("speaking_timeout_ms with no voice.done releases the status: idle, or muted when muted or paused", async () => {
+  const cfg = { brain: { memory: { recall_k: 0 }, cortex: { speaking_timeout_ms: 30 } } };
+  const a = setup({ cfg });
+  await a.cortex.onEvent(event("brain.say", { id: "stuck", text: "x", emotion: "neutral" }, "operator"));
+  assert.deepEqual(a.statuses(), []);
+  await waitFor(() => a.statuses().length === 1, "timeout release");
+  assert.deepEqual(a.statuses(), ["idle"]);
+
+  const b = setup({ cfg });
+  await b.cortex.onEvent(event("brain.say", { id: "stuck", text: "x", emotion: "neutral" }, "operator"));
+  await b.cortex.onEvent(event("control", { cmd: "mute" }));
+  await waitFor(() => b.statuses().length === 2, "timeout release while muted");
+  assert.deepEqual(b.statuses(), ["muted", "muted"]);
+
+  // voice.done in time cancels the release; so does the cortex's own line finishing.
+  const c = setup({ cfg });
+  await c.cortex.onEvent(event("brain.say", { id: "ok", text: "x", emotion: "neutral" }, "operator"));
+  await c.cortex.onEvent(event("voice.done", { id: "ok", sink: "x" }));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(c.statuses(), ["idle"]);
+});
+
+// @spec CTX-RECALL-001
+test("recall: a focus with empty text falls back to the vision summary", async () => {
+  const { cortex, bus } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 50 } } } });
+  await cortex.onEvent(event("vision.summary", { text: "a boss fight", changed: true }));
+  await cortex.think({ reason: "engaged", score: 1, focus: { kind: "chat", who: "bob", text: "", mention: false } });
+  assert.equal(bus.of("memory.recall.request")[0]!.query, "a boss fight");
+  const none = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 50 } } } });
+  await none.cortex.think({ reason: "engaged", score: 1, focus: { kind: "chat", who: "bob", text: "", mention: false } });
+  assert.equal(none.bus.of("memory.recall.request").length, 0);
+});
+
+// @spec CTX-VIEWER-003
+test("viewer note: kept when the reply is vetoed, dropped or fails; deleted once the say is published", async () => {
+  const { cortex, bus, llm } = setup({ critic: (i) => (i.text === "veto me" ? { ok: false } : { ok: true }) });
+  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1 }));
+  const note = /Bob is new here|bob is new here/i;
+
+  llm.reply = () => "[happy] veto me"; // vetoed
+  await cortex.think(mention("bob"));
+  llm.reply = () => { throw new Error("down"); }; // fails
+  await cortex.think(mention("bob"));
+  llm.reply = async () => { await cortex.onEvent(event("brain.say", { id: "op", text: "x", emotion: "neutral" }, "dashboard")); return "[happy] hi"; }; // dropped
+  await cortex.think(mention("bob"));
+  assert.equal(bus.of("brain.say").length, 0);
+  assert.equal(llm.calls.length, 3);
+  for (const c of llm.calls) assert.match(c[0]!.content, note);
+
+  await cortex.onEvent(event("voice.done", { id: "op", sink: "x" }));
+  llm.reply = () => "[happy] hello bob";
+  await cortex.think(mention("bob")); // spoken: note used and consumed
+  assert.match(llm.calls[3]![0]!.content, note);
+  assert.equal(bus.of("brain.say").length, 1);
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.think(mention("bob"));
+  assert.doesNotMatch(llm.calls[4]![0]!.content, note);
+});
+
+// @spec CTX-PROMPT-007
+test("llm reply log: elapsed, reason and memory count at info; the raw text only at debug", async () => {
+  const { cortex, rec } = setup();
+  await cortex.think(mention());
+  const info = rec.lines.find((l) => l.level === "info" && l.msg === "llm reply")!;
+  assert.deepEqual(Object.keys(info.obj as object).sort(), ["memories", "ms", "reason"]);
+  assert.equal((info.obj as { reason: string }).reason, "mentioned");
+  const dbg = rec.lines.filter((l) => l.level === "debug");
+  assert.ok(dbg.some((l) => (l.obj as { raw?: string }).raw === "[happy] hey chat!"));
+  assert.ok(!rec.lines.some((l) => l.level !== "debug" && JSON.stringify(l.obj).includes("hey chat!")));
+});
+
+// @spec CTX-CTRL-004
+test("forget_context also clears the last vision summary: no 'on screen' line, no recall fallback", async () => {
+  const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 20 } } } });
+  await cortex.onEvent(event("vision.summary", { text: "a boss fight", changed: true }));
+  await cortex.onEvent(event("control", { cmd: "forget_context" }));
+  assert.equal(cortex.ctx.lastVision, "");
+  await cortex.think({ reason: "idle chatter", score: 0 });
+  assert.doesNotMatch(llm.system, /On screen right now/);
+  assert.equal(bus.of("memory.recall.request").length, 0);
+});

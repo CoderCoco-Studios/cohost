@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Compose smoke check: build the TS service images and verify they stay up (regression guard for #6,
+# Compose smoke check: build the TS service images and verify they come up healthy (regression guard for #6,
 # where `pnpm prune --prod` dropped @cohost/* links and every container crash-looped).
 # Only services that need no models/credentials: redis + salience affect avatar dashboard.
+# Each service must reach Compose health status `healthy` with restarts=0 within SMOKE_WAIT seconds (default 60).
 # Usage: scripts/compose-smoke.sh [service...]
 # @spec DEPLOY-CI-002
 set -euo pipefail
@@ -12,15 +13,18 @@ cleanup() { docker compose down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 docker compose up -d --build redis "${SERVICES[@]}"
-sleep "${SMOKE_WAIT:-15}"   # a crash-looping container restarts well within this window
+deadline=$((SECONDS + ${SMOKE_WAIT:-60}))   # one budget for all services; a healthy stack passes in about 15 s
 
 fail=0
 # @spec DEPLOY-IMG-002, DEPLOY-IMG-003
 for s in "${SERVICES[@]}"; do
   id=$(docker compose ps -q "$s")
-  state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' "$id")
-  if [ "$state" = "running restarts=0" ]; then echo "ok   $s"; else
-    echo "FAIL $s ($state)"; docker compose logs --tail 20 "$s"; fail=1
-  fi
+  while :; do
+    state=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}} restarts={{.RestartCount}}' "$id")
+    if [ "$state" = "running healthy restarts=0" ]; then echo "ok   $s"; break; fi
+    # Only "still starting, never restarted" can recover; a restart, an exit or an unhealthy verdict cannot.
+    if [ "$state" = "running starting restarts=0" ] && (( SECONDS < deadline )); then sleep 1; continue; fi
+    echo "FAIL $s ($state)"; docker compose logs --tail 20 "$s"; fail=1; break
+  done
 done
 exit $fail

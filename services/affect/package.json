@@ -13,7 +13,6 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
-    "@cohost/working-memory": "workspace:*",
     "@cohost/modules": "workspace:*"
   },
   "devDependencies": {

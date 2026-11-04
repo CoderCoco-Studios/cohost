@@ -1,56 +1,41 @@
 # Contributing
 
-cohost is licensed under [AGPL-3.0-only](LICENSE). By contributing you agree
-that your contribution is licensed under the same terms.
+cohost is offered to the public under [AGPL-3.0-only](LICENSE), and
+CoderCoco also licenses it on commercial terms (see
+[Commercial licensing](COMMERCIAL.md)). By contributing you agree that your
+contribution is offered to the public under the same AGPL-3.0-only terms.
 
-## Developer Certificate of Origin (DCO)
+## Contributor License Agreement (CLA)
 
-Every commit must be signed off to certify the statement below. Add the
-sign-off with `git commit -s`, which appends a line like:
+Before a pull request can be merged, everyone who authored a commit in it must
+have accepted the [cohost Individual Contributor License Agreement](CLA.md).
+The CLA, adapted from the Apache Individual CLA, leaves you the copyright in
+your work and grants CoderCoco a licence to it that includes the right to
+relicense it, which is what lets CoderCoco offer the commercial licence for
+the whole codebase.
 
-```
-Signed-off-by: Your Name <you@example.com>
-```
+How to sign:
 
-If you forgot, amend with `git commit --amend -s` (or `git rebase --signoff`
-for several commits).
+1. Open your pull request. The `cla` check comments on it and fails until
+   every author has signed.
+2. Read [CLA.md](CLA.md), then post this exact comment on the pull request:
 
-```
-Developer Certificate of Origin
-Version 1.1
+   ```
+   I have read the CLA Document and I hereby sign the CLA
+   ```
 
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+3. The check records your signature and passes. Comment `recheck` if it does
+   not re-run on its own.
 
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
+You sign once: later pull requests from the same GitHub account pass without
+a new comment. Commits are matched to GitHub accounts by their author email,
+so commit with an email address that is linked to your GitHub account.
+Co-authors credited only in a `Co-authored-by:` trailer are not checked
+automatically; ask each of them to sign on the pull request as well.
 
-
-Developer's Certificate of Origin 1.1
-
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
+The CLA is for individuals. If you are contributing on behalf of an employer
+or another organisation, open an issue first so a suitable agreement can be
+arranged.
 
 See [Testing](docs/TESTING.md) for how to run the suite and
 [Spec-driven development](docs/SPEC-DRIVEN.md) for how changes are proposed.

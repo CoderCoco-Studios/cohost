@@ -1,0 +1,44 @@
+name: cla
+
+# @spec DEPLOY-CI-005
+# Every contributor to a pull request must have signed CLA.md. pull_request_target runs this workflow from the
+# base branch with a write token, so it never checks out or runs pull-request code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, closed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: write # commits signatures to the cla-signatures branch
+  pull-requests: write
+  statuses: write
+
+# One run per pull request at a time and none cancelled, so a signing comment is never lost to a newer event.
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+        (github.event.comment.body == 'recheck' ||
+         github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    steps:
+      - uses: contributor-assistant/github-action@v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: ${{ github.server_url }}/${{ github.repository }}/blob/main/CLA.md
+          # Written by the action only (a hand-made file breaks it). main is ruleset-protected, so the record lives on
+          # an unprotected branch that must exist before the first run.
+          path-to-signatures: .github/cla/signatures.json
+          branch: cla-signatures
+          # The licensor does not license to itself; GitHub App bots cannot sign.
+          allowlist: CoderCoco,*[bot]
+          lock-pullrequest-aftermerge: true

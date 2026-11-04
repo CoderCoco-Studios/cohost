@@ -7,15 +7,13 @@ prefix: CTX
 
 Brownfield: this document describes the intended behaviour and, where the code
 lags, says so with the spec ID of the gap. It was audited against the code on
-2026-11-01 and carries the owner's decisions of 2026-11-01. A rationale cell
-marked `[inferred]` is read from the code and not confirmed by the owner; a cell
-marked `owner decision 2026-11-01` was settled by the owner; any other rationale
-cell cites the code comment or commit message that states it.
+2026-11-01 and carries the owner's decisions of 2026-11-01.
 
 ## Context and Design Philosophy
 
-`[inferred]` cortex is the language region (`services/cortex/src/index.ts:2`): the
-only service that calls the chat LLM. It does not decide whether to speak
+cortex is the language region (`services/cortex/src/index.ts:2`): the only region
+that generates the main reply (salience and affect `llm` hooks and the cortex critic
+hook may also call a model, per the HLD). It does not decide whether to speak
 (salience does) and it does not remember beyond a rolling window (memory does).
 It waits for `attention.focus`, assembles a prompt from personality, mood, viewer
 notes, recalled memories and a working-memory transcript, calls the model, runs the

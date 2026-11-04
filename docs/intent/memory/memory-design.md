@@ -7,10 +7,7 @@ prefix: MEM
 
 Brownfield: this document describes the intended behaviour and, where the code
 lags, says so with the spec ID of the gap. It was audited against the code on
-2026-11-01 and carries the owner's decisions of 2026-11-01. A rationale cell
-marked `[inferred]` is read from the code and not confirmed by the owner; a cell
-marked `owner decision 2026-11-01` was settled by the owner; any other rationale
-cell cites the code comment or commit message that states it.
+2026-11-01 and carries the owner's decisions of 2026-11-01.
 
 ## Context and Design Philosophy
 
@@ -288,7 +285,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Viewer notes writer | Deferred | reflection; dashboard; hand-edited SQL | owner decision 2026-11-01: no writer until one is chosen; `MEM-VIEWER-005` `[D]` |
 | Postgres health | Every pool query feeds `deps.postgres` through `tracked()`; `degraded` with a detail while waiting for Ollama or Postgres at startup | startup-only flag; stay `starting` while waiting | owner decision 2026-11-01: the heartbeat reflects runtime dependency state, as the cortex does; `MEM-HEALTH-005`, `MEM-HEALTH-007` |
 | Recall k=0 | Short-circuit with no embed or query | query anyway | `config/config.example.yaml:111` documents `recall_k: 0` as "disables recall"; `store.ts:123`, `fake-store.ts:40` |
-| Isolated backend | Separate in-process store with its own 64-dim hash embedder | reuse `HashEmbedder` inside the fake | `[inferred]` the fake needs no async embedder; the fake store (commit `719ce5a`) predates `HashEmbedder` (commit `51d5a9c`), and OpenSpec `add-isolated-backends` accepts the fake's "own bag-of-words hashed vectors"; `fake-store.ts:8-17`, comment `backend.ts:16` |
+| Isolated backend | Separate in-process store with its own 64-dim hash embedder | reuse `HashEmbedder` inside the fake | the fake is self-contained and ignores `brain.memory.embedder`; its unsigned counts keep similarity scores non-negative, so `min_similarity` stays meaningful for plain word overlap; it needs no async embedder; the fake store (commit `719ce5a`) predates `HashEmbedder` (commit `51d5a9c`), and OpenSpec `add-isolated-backends` accepts the fake's "own bag-of-words hashed vectors"; `fake-store.ts:8-17`, comment `backend.ts:16` |
 | Reflection with the in-memory store | Logged no-op | reflect over the fake | Commit `719ce5a`: "`reflect` still uses the Postgres store (it runs in a separate process, so a fake would be empty)"; `reflect.ts:22-25` |
 | Mode reporting | `mock` if either store or embedder is non-default | per-dependency mode | `live` means memory as a real stream needs it: persistent rows and semantic recall. Either substitute (the in-process store forgets on restart; the hash embedder matches words, not meaning) means recall is not real, so the mode says `mock`; which dependency is substituted is already visible per dependency as `n/a` in `deps`; `health.ts:7-11,24` |
 | Reflection placement | Offline CLI, writes personality file | in-service timer; DB-only learned facts | Comments `index.ts:12` ("Consolidation (\"sleep\") is reflect.ts, run between streams") and `reflect.ts:1-9` ("This is how the personality drifts over time instead of resetting every stream. Edit the file by hand whenever you like.") |
@@ -316,7 +313,8 @@ The running cortex does not learn of the change until a `reload_personality` con
    alongside the live service.
 3. **Two hash embedders.** `fake-store.ts:hashEmbed` and `@cohost/llm` `HashEmbedder`
    differ in tokenisation, sign handling and empty-text output; both 64 dims. The
-   fake keeps its own because it predates `HashEmbedder` (commit `719ce5a`).
+   fake keeps its own: it is self-contained and its non-negative scores suit
+   `min_similarity` (it also predates `HashEmbedder`, commit `719ce5a`).
 4. **Kind `note` is declared but never written** (`store.ts:7`).
 5. **Recall request validation:** the bus schema makes `k` positive
    (`packages/bus/src/events.ts:108-112`, `k` at 111), so `k=0` can only occur

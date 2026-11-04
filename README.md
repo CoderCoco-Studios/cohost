@@ -366,10 +366,11 @@ cohost is dual licensed. Copyright © CoderCoco.
 
 - To the public under the [GNU Affero General Public License v3.0](LICENSE)
   (`AGPL-3.0-only`). The AGPL permits commercial use, including running
-  cohost as a service, as long as you publish the complete source of the
-  version you run, with your changes, under the AGPL.
+  cohost as a service. If remote users interact with your modified version,
+  you must offer them its source (section 13); if you distribute it, sections
+  4-6 apply. Running a modified copy privately obliges nothing.
 - Under a separate commercial licence from CoderCoco, for uses the AGPL does
-  not allow, such as a closed-source product or an unpublished hosted fork.
+  not allow, such as a closed-source product or a hosted fork whose source you do not offer to its users.
   See [Commercial licensing](COMMERCIAL.md).
 
 Contributions are accepted under AGPL-3.0-only from contributors who have

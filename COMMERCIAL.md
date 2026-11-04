@@ -36,6 +36,3 @@ Open an issue on the
 [cohost repository](https://github.com/CoderCoco/cohost/issues) titled
 "Commercial licence enquiry". Say who you are and how you intend to use
 cohost; leave out anything confidential, since issues are public.
-
-<!-- OWNER: add a private contact email for commercial enquiries on the next line, then delete this comment. -->
-Contact email: *to be added by the owner.*

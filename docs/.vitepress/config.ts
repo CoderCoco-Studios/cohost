@@ -34,6 +34,6 @@ export default defineConfig({
     outline: { level: [2, 3] },
     search: { provider: 'local' },
     socialLinks: [{ icon: 'github', link: 'https://github.com/CoderCoco/cohost' }],
-    footer: { message: 'Released under AGPL-3.0-only.', copyright: 'Copyright © CoderCoco' },
+    footer: { message: 'Released under AGPL-3.0-only; commercial licence available from CoderCoco.', copyright: 'Copyright © CoderCoco' },
   },
 });

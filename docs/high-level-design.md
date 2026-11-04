@@ -17,8 +17,10 @@ point the voice at a different avatar app without starting over.
 
 cohost is for a streamer who owns a GPU box and wants the co-host to live on
 it: every sense, every brain region, the voice, the face and the memory run
-locally in separate containers. Everything stays on the owner's LAN unless
-explicitly configured otherwise. Chat-model and hook calls leave the LAN only
+locally in separate containers. All internal processing and storage stays on
+the owner's LAN unless explicitly configured otherwise. Platform connections
+(Twitch chat by default, YouTube, Discord) are intentional external
+integrations. Chat-model and hook calls leave the LAN only
 when explicitly configured. Audio, screenshots and synthesized text leave the
 LAN only when the STT, Ollama or TTS URL points to a host outside it.
 Generated audio leaves for Discord only when the Discord source is enabled.
@@ -117,7 +119,9 @@ for them to operate.
    recognised by message count; the personality file grows a dated
    `## Learned` block after each stream that the owner can edit or delete.
 4. **Run locally on one GPU box.** Senses, brain, body, memory and the
-   dashboard all run in Compose on the AI PC; the LAN is the trust boundary;
+   dashboard all run in Compose on the AI PC; the LAN is the trust boundary
+   for internal processing and storage (platform connections such as Twitch
+   chat are intentional external integrations);
    chat-model, reflection and hook calls leave the LAN only when explicitly
    configured; audio, screenshots and synthesized text leave only when the
    STT, Ollama or TTS URL points outside it; generated audio reaches Discord
@@ -220,7 +224,9 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    `.env` without a `${VAR:-default}` placeholder in YAML, or a persona
    fact anywhere but `personality.md`.
 8. **Local by default; only explicitly configured egress may leave the LAN.**
-   Egress means chat-model and hook calls, a remote STT, Ollama or TTS URL
+   Internal processing and storage stay on the LAN; platform connections
+   (Twitch chat, YouTube, Discord) are intentional external integrations, not
+   egress in this sense. Egress means chat-model and hook calls, a remote STT, Ollama or TTS URL
    outside the LAN, and Discord audio when the Discord source is enabled.
    Audio, frames, chat text, embeddings and memories stay on the operator's
    LAN unless that egress is configured. Reject a default that sends any of
@@ -386,13 +392,17 @@ what to measure once it has. All targets are proposals.
    box with the default local models. The target is "as fast as possible":
    there is no pass/fail threshold; the measured median is tracked from stream
    to stream and should trend down.
-3. **Silence ratio.** Fraction of distinct `chat.message` events that
-   receive an attributable `brain.say` within 60 s, so the ratio cannot
+3. **Silence ratio (heuristic).** Fraction of distinct `chat.message` events
+   that receive an attributable `brain.say` within 60 s, so the ratio cannot
    exceed 1; reflexes and voice-, vision- or operator-triggered lines are
    excluded. `brain.say` carries no source-message id, so
    attribution is window-based: a message counts as answered when an
    `attention.focus` whose `focus` has that message's `who` and `text` is
-   followed by a cortex `brain.say` within the 60 s window. The
+   followed by a cortex `brain.say` within the 60 s window. Matching is not
+   unique: identical `who` and `text` inside the window count once, as
+   answered by at most one `brain.say`. A stable source-message id on
+   `attention.focus` and `brain.say` is a possible future change that would
+   make attribution exact. The
    co-host should answer well under half of plain chat and nearly all direct
    mentions; a rising ratio over time means it is getting noisy.
 4. **Hook health.** Fallback rate (fallbacks per hook call, counted per

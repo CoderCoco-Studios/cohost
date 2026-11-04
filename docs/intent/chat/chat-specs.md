@@ -39,8 +39,8 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **CHAT-FAKE-002**: When a fake-source line arrives on stdin, the chat service shall publish it as a message from `fake_viewer1`. <!-- test: services/chat/test/fake.test.ts:42 --> <!-- openspec: chat § Fake source -->
 - [x] **CHAT-FAKE-003**: The chat service shall pass every fake-source message through the normal chat filter, so ignored users, ignored prefixes and blank lines are dropped. <!-- test: services/chat/test/fake.test.ts:23,42 --> <!-- openspec: chat § Fake source -->
 - [x] **CHAT-FAKE-004**: Where stdin is a TTY, the fake source shall not run the built-in script and shall publish only typed lines. <!-- test: services/chat/test/fake.test.ts:52 -->
-- [x] **CHAT-FAKE-005**: While at least one stdin line has been received, the fake source shall stop publishing the built-in script. `[inferred]` from `services/chat/src/fake.ts:57`; untested.
-- [x] **CHAT-FAKE-006**: If publishing a fake-source message fails, the chat service shall log a warning and continue. `[inferred]` from `services/chat/src/fake.ts:43`, `services/chat/src/index.ts:46`; untested.
+- [x] **CHAT-FAKE-005**: While at least one stdin line has been received, the fake source shall stop publishing the built-in script. <!-- untested; services/chat/src/fake.ts:57 -->
+- [x] **CHAT-FAKE-006**: If publishing a fake-source message fails, the chat service shall log a warning and continue. <!-- untested; services/chat/src/fake.ts:43, services/chat/src/index.ts:46 -->
 
 ## Test injection
 

@@ -226,8 +226,9 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 8. **Local by default; only explicitly configured egress may leave the LAN.**
    Internal processing and storage stay on the LAN; platform connections
    (Twitch chat, YouTube, Discord) are intentional external integrations, not
-   egress in this sense. Egress means chat-model and hook calls, a remote STT, Ollama or TTS URL
-   outside the LAN, and Discord audio when the Discord source is enabled.
+   egress in this sense. Egress means chat-model and hook calls, a remote STT,
+   Ollama, TTS, Redis (`REDIS_URL`) or Postgres (`DATABASE_URL`) URL outside the
+   LAN, and Discord audio when the Discord source is enabled.
    Audio, frames, chat text, embeddings and memories stay on the operator's
    LAN unless that egress is configured. Reject a default that sends any of
    them to a hosted service, and reject an embedding path that follows the

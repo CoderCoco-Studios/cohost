@@ -27,6 +27,12 @@ How to sign:
 3. The check records your signature and passes. Comment `recheck` if it does
    not re-run on its own.
 
+The owner signs like everyone else, and no account is exempt: the check
+resolves commits without a linked GitHub account by raw author name, which
+anyone can set. The signature record starts from a seed file
+(`{"signedContributors": []}`) on the `cla-signatures` branch, which the
+action then maintains.
+
 You sign once: later pull requests from the same GitHub account pass without
 a new comment. Commits are matched to GitHub accounts by their author email,
 so commit with an email address that is linked to your GitHub account.

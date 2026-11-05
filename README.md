@@ -362,8 +362,17 @@ Discord receive path on first contact.
 
 ## License
 
-cohost is licensed under the [GNU Affero General Public License v3.0](LICENSE)
-(`AGPL-3.0-only`). Copyright © CoderCoco.
+cohost is dual licensed. Copyright © CoderCoco.
 
-Contributions are accepted under the same license. Every commit must carry a
-[DCO](CONTRIBUTING.md) sign-off: use `git commit -s`.
+- To the public under the [GNU Affero General Public License v3.0](LICENSE)
+  (`AGPL-3.0-only`). The AGPL permits commercial use, including running
+  cohost as a service. If remote users interact with your modified version,
+  you must offer them its source (section 13); if you distribute it, sections
+  4-6 apply. Running a modified copy privately obliges nothing.
+- Under a separate commercial licence from CoderCoco, for uses the AGPL does
+  not allow, such as a closed-source product or a hosted fork whose source you do not offer to its users.
+  See [Commercial licensing](COMMERCIAL.md).
+
+Contributions are accepted under AGPL-3.0-only from contributors who have
+signed the [Contributor License Agreement](CLA.md); see
+[Contributing](CONTRIBUTING.md).

@@ -231,7 +231,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Owner setup for DEPLOY-CI-005 / DEPLOY-LIC-004: create the unprotected cla-signatures branch before the first pull request after the cla workflow lands, and add the commercial contact email to COMMERCIAL.md. Then the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
     drift: null
 
 unmapped:

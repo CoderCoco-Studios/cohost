@@ -7,15 +7,13 @@ prefix: CTX
 
 Brownfield: this document describes the intended behaviour and, where the code
 lags, says so with the spec ID of the gap. It was audited against the code on
-2026-11-01 and carries the owner's decisions of 2026-11-01. A rationale cell
-marked `[inferred]` is read from the code and not confirmed by the owner; a cell
-marked `owner decision 2026-11-01` was settled by the owner; any other rationale
-cell cites the code comment or commit message that states it.
+2026-11-01 and carries the owner's decisions of 2026-11-01.
 
 ## Context and Design Philosophy
 
-`[inferred]` cortex is the language region (`services/cortex/src/index.ts:2`): the
-only service that calls the chat LLM. It does not decide whether to speak
+cortex is the language region (`services/cortex/src/index.ts:2`): the only region
+that generates the main reply (salience and affect `llm` hooks and the cortex critic
+hook may also call a model, per the HLD). It does not decide whether to speak
 (salience does) and it does not remember beyond a rolling window (memory does).
 It waits for `attention.focus`, assembles a prompt from personality, mood, viewer
 notes, recalled memories and a working-memory transcript, calls the model, runs the
@@ -245,8 +243,8 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 |----------|--------|------------------------|-----------|
 | Do not await `attention.focus` | `void this.think()` | await inside the handler | Comment `cortex.ts:65-66`: "the LLM call must not block the subscription loop, or the memory reply we're waiting on could never be delivered"; test `cortex.region.test.ts:97` |
 | Recall over the bus with timeout | request/reply with `recall_timeout_ms`, proceed with `[]` | call Postgres directly; no timeout | Only memory touches Postgres and the cortex answers without recall when memory is down or slow: comment `index.ts:11-13`, `config/config.example.yaml:115`, commit `969f6d7` ("cortex: ... answers without recall if memory doesn't reply in time") |
-| One thought at a time | `thinking` flag plus status echo | queue focuses; cancel in-flight | Status echo: comment `cortex.ts:117` ("Salience assumes we're busy once it fires, so every path out of here reports a status"). Single flight instead of a queue: `[inferred]`; test `cortex.region.test.ts:106` |
-| Own vs other `brain.say` | compare `ev.source` to `"cortex"` | tag lines with an origin field | `[inferred]` cheap; relies on bus source naming; `cortex.ts:54` |
+| One thought at a time | `thinking` flag plus status echo | queue focuses; cancel in-flight | Status echo: comment `cortex.ts:117` ("Salience assumes we're busy once it fires, so every path out of here reports a status"). Single flight instead of a queue: a queued focus would be answered after the conversation had moved on, and salience re-decides on fresh context every tick once the cortex reports idle, so a dropped focus costs nothing; cancelling the in-flight call would waste the model work already spent. Test `cortex.region.test.ts:106` |
+| Own vs other `brain.say` | compare `ev.source` to `"cortex"` | tag lines with an origin field | The bus stamps every event with the publishing service's name (`new Bus("cortex")`), so no extra field is needed. Cortex marks its own lines speaking at publish time (`say()`), so only another source's line (for example a salience reflex) starts the speaking state from the echo. This relies on each service using its own name as the bus source; `cortex.ts:54` |
 | Restart start mode | `latest`: reset the `cortex` group to `$` on every start | `resume` (replay the backlog); drop old focuses by age | owner decision 2026-11-01: a stale `attention.focus` must not produce an LLM call and a late line; only memory keeps its backlog; `CTX-EVT-001` |
 | Who sees mute and pause | cortex and salience only | voice and ears also gate on mute | owner decision 2026-11-01: the services that decide to speak own the gate; the body plays what it is given |
 | Status publish failures | log and continue on every think exit | let the unawaited think reject | owner decision 2026-11-01: an unhandled rejection ends the process; `CTX-GATE-008` |
@@ -259,7 +257,7 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Re-check busy and mute after the LLM | drop the reply if something else started speaking | speak anyway | Comment `cortex.ts:149`: "A reflex or operator line may have started while we were thinking; don't talk over it."; test `cortex.region.test.ts:183` |
 | Stuck-sink release | `speaking_timeout_ms` inside `voiceBusy()`, plus a timer that publishes the release (`CTX-GATE-009`) | rely on `voice.done` only | Comment `cortex.ts:177` ("stuck-sink safety valve"), `packages/config/src/schema.ts:153` ("Give up on a stuck utterance / voice sink after this long") |
 | Operator `say` bypasses gates | no mute, pause or busy check | route through `think` | owner decision 2026-11-01: `say` is the operator's override; `cortex.ts:108`, `CTX-CTRL-006` |
-| Viewer notes one-shot, capped | delete after the reply is published, 50 entries FIFO | delete before the LLM call; persistent per-viewer notes | Per-viewer keying: comment `cortex.ts:32` ("so one viewer's framing never lands on another's reply"). Delete after success: owner decision 2026-11-01, so a vetoed or failed reply does not lose the note (`CTX-VIEWER-003`). The 50 cap: `[inferred]` bounded memory |
+| Viewer notes one-shot, capped | delete after the reply is published, 50 entries FIFO | delete before the LLM call; persistent per-viewer notes | Per-viewer keying: comment `cortex.ts:32` ("so one viewer's framing never lands on another's reply"). Delete after success: owner decision 2026-11-01, so a vetoed or failed reply does not lose the note (`CTX-VIEWER-003`). The 50 cap bounds memory on a long stream: a note is replaced on each `memory.viewer` for that viewer and used once, so evicting the oldest only loses a note for a viewer not replied to since 50 newer viewer notes arrived |
 | `forget_context` scope | clear the window, the vision summary and viewer notes; keep mood and pending recalls | keep the vision summary | owner decision 2026-11-01: a forgotten screen must not keep feeding the prompt and the recall fallback; `CTX-CTRL-004` |
 | Recall query | focus text, else the vision summary when the text is empty | fall back only when there is no focus object | owner decision 2026-11-01; `CTX-RECALL-001` |
 | Pause reported as `muted` | reuse existing status | add a `paused` state | Comment `cortex.ts:24`: "Reported as \"muted\" so salience stops waiting." |

@@ -22,7 +22,8 @@ the owner's LAN unless explicitly configured otherwise. Platform connections
 (Twitch chat by default, YouTube, Discord) are intentional external
 integrations. Chat-model and hook calls leave the LAN only
 when explicitly configured. Audio, screenshots and synthesized text leave the
-LAN only when the STT, Ollama or TTS URL points to a host outside it.
+LAN only when a configured service URL (STT, Ollama, TTS, `VOICE_URL`, Redis,
+Postgres, or any other) points to a host outside it.
 Generated audio leaves for Discord only when the Discord source is enabled.
 
 ## Approach
@@ -126,8 +127,9 @@ for them to operate.
    for internal processing and storage (platform connections such as Twitch
    chat are intentional external integrations);
    chat-model, reflection and hook calls leave the LAN only when explicitly
-   configured; audio, screenshots and synthesized text leave only when the
-   STT, Ollama or TTS URL points outside it; generated audio reaches Discord
+   configured; audio, screenshots and synthesized text leave only when a configured
+   service URL (STT, Ollama, TTS, `VOICE_URL`, Redis, Postgres, or any other)
+   points outside it; generated audio reaches Discord
    only when the Discord source is enabled.
 5. **Swap any piece.** Adding a chat source, a TTS engine, an avatar driver,
    a model provider or a hook implementation never touches the brain
@@ -229,9 +231,10 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 8. **Local by default; only explicitly configured egress may leave the LAN.**
    Internal processing and storage stay on the LAN; platform connections
    (Twitch chat, YouTube, Discord) are intentional external integrations, not
-   egress in this sense. Egress means chat-model and hook calls, a remote STT,
-   Ollama, TTS, Redis (`REDIS_URL`) or Postgres (`DATABASE_URL`) URL outside the
-   LAN, and Discord audio when the Discord source is enabled.
+   egress in this sense. Egress means chat-model and hook calls, any configured
+   service URL that points outside the LAN (for example STT, Ollama, TTS,
+   `VOICE_URL`, `REDIS_URL` or `DATABASE_URL`), and Discord audio when the
+   Discord source is enabled.
    Audio, frames, chat text, embeddings and memories stay on the operator's
    LAN unless that egress is configured. Reject a default that sends any of
    them to a hosted service, and reject an embedding path that follows the

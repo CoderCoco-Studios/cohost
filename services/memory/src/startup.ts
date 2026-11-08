@@ -57,8 +57,20 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   }
   // @spec MEM-EVT-001, MEM-START-005
   // Two consumer groups so a recall never queues behind the (embed + INSERT) writes.
-  void bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], start: "resume" }, onEvent);
-  void bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], start: "resume" }, onEvent);
+  // `ready` waits for both groups to exist; a subscription that rejects first fails startup.
+  const groupReady = (): { ready: Promise<void>; onReady: () => void } => {
+    let onReady!: () => void;
+    const ready = new Promise<void>((resolve) => { onReady = resolve; });
+    return { ready, onReady };
+  };
+  const main = groupReady();
+  const recall = groupReady();
+  const running = [
+    bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], start: "resume", onReady: main.onReady }, onEvent),
+    bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], start: "resume", onReady: recall.onReady }, onEvent),
+  ];
+  // The subscriptions run until the bus stops; only their early failure matters here.
+  await Promise.race([Promise.all([main.ready, recall.ready]), ...running]);
   heartbeat.ready();
   log.info({ recall_k: cfg.recall_k }, "memory online");
 }

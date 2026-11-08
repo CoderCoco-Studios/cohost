@@ -3,17 +3,24 @@ import assert from "node:assert/strict";
 import { startMemory, type StartupDeps } from "../src/startup.js";
 import { DimensionMismatchError } from "../src/store.js";
 
-function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[] } = {}) {
+function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[]; readyOrder?: "auto" | "manual" } = {}) {
   const events: string[] = [];
   const subs: Record<string, unknown>[] = [];
   const warnings: string[] = [];
+  const readies: (() => void)[] = [];
   const pings = [...(over.pings ?? [true])];
   const failures = [...(over.initFailures ?? [])];
   let inits = 0;
   const deps: StartupDeps = {
     cfg: { store: over.store ?? "postgres", embedder: over.embedder ?? "ollama", recall_k: 6, min_similarity: 0.35 },
     log: { warn: (_o: unknown, m?: string) => warnings.push(m ?? String(_o)), info() {}, error() {}, debug() {} } as never,
-    bus: { subscribe: (opts: Record<string, unknown>) => { subs.push(opts); events.push(`subscribe:${opts.group}`); return new Promise<void>(() => {}); } } as never,
+    bus: { subscribe: (opts: Record<string, unknown>) => {
+      subs.push(opts); events.push(`subscribe:${opts.group}`);
+      const ready = opts.onReady as (() => void) | undefined;
+      if (over.readyOrder !== "manual") queueMicrotask(() => { events.push(`group:${opts.group}`); ready?.(); });
+      else readies.push(() => { events.push(`group:${opts.group}`); ready?.(); });
+      return new Promise<void>(() => {});
+    } } as never,
     store: { init: async () => { inits++; events.push("init"); if (failures.length) throw failures.shift(); } } as never,
     health: { setOllama: (ok: boolean) => events.push(`ollama:${ok}`), setPostgres: (ok: boolean) => events.push(`postgres:${ok}`) },
     heartbeat: { ready: () => events.push("ready"), degraded: (d?: string) => events.push(`degraded:${d}`) },
@@ -21,7 +28,7 @@ function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "has
     onEvent: async () => {},
     sleep: async () => { events.push("sleep"); },
   };
-  return { deps, events, subs, warnings, inits: () => inits };
+  return { deps, events, subs, warnings, readies, inits: () => inits };
 }
 
 // @spec MEM-EVT-001
@@ -84,4 +91,29 @@ test("store=memory initialises once with no ollama wait, and warns that data is 
   assert.equal(t.inits(), 1);
   assert.ok(!t.events.some((e) => e.startsWith("ollama") || e.startsWith("postgres") || e.startsWith("degraded")));
   assert.equal(t.warnings.filter((w) => /mock/.test(w)).length, 1);
+});
+
+// @spec MEM-START-005
+test("ready is reported only after both consumer groups report ready", async () => {
+  const t = setup({ readyOrder: "manual" });
+  let done = false;
+  const p = startMemory(t.deps).then(() => { done = true; });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(done, false);
+  assert.ok(!t.events.includes("ready"));
+  t.readies[0]!();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.ok(!t.events.includes("ready"), "one group is not enough");
+  t.readies[1]!();
+  await p;
+  assert.ok(t.events.indexOf("ready") > t.events.indexOf("group:memory-recall"));
+  assert.ok(t.events.indexOf("ready") > t.events.indexOf("group:memory"));
+});
+
+// @spec MEM-START-005
+test("a subscription that fails before its group is ready fails startup instead of reporting ready", async () => {
+  const t = setup();
+  (t.deps.bus as { subscribe: unknown }).subscribe = () => Promise.reject(new Error("READONLY"));
+  await assert.rejects(startMemory(t.deps), /READONLY/);
+  assert.ok(!t.events.includes("ready"));
 });

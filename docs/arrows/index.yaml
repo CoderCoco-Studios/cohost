@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "MEM-START-005: needs a bus group-ready signal before ready() can follow subscription; plus LLM-MOCK-005 reflect warning. Then intent review."
+    next: "LLM-MOCK-005 reflect warning. Then intent review."
     drift: null
 
   cortex:

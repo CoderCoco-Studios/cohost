@@ -30,6 +30,8 @@ export interface SubscribeOptions<T extends EventType> {
   fromNow?: boolean;
   /** Block time per read, ms. */
   blockMs?: number;
+  /** Called once the consumer group exists and is positioned, before the first read. */
+  onReady?: () => void;
 }
 
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
@@ -184,6 +186,7 @@ export class Bus {
       if (!String(e).includes("BUSYGROUP")) throw e;
       if (mode === "latest") await conn.xgroup("SETID", STREAM, opts.group, "$");
     }
+    opts.onReady?.();
     const wanted = opts.types ? new Set<string>(opts.types) : undefined;
     const block = opts.blockMs ?? 5000;
 

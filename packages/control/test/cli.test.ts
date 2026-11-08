@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { parseCli, runCli, parseProcessMode, UsageError, ServiceController, type Runtime, type ServiceHealth } from "../src/index.js";
+import { parseCli, runCli, buildRuntime, ComposeRuntime, UsageError, ServiceController, type Runtime, type ServiceHealth } from "../src/index.js";
 
 // @spec CTRL-CLI-001
 test("parseCli: commands, flags, defaults", () => {
@@ -69,23 +68,18 @@ test("usage errors exit 2; status prints rows", async () => {
   assert.equal(await h.run(["status", "nope"]), 1);
 });
 
-// @spec CTRL-CLI-007
-test("cohostctl rejects an invalid CONTROL_PROCESS_MODE with the dashboard's message and exits 2 without acting", async () => {
-  const { spawnSync } = await import("node:child_process");
-  const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
-  // An unreachable Redis proves nothing was attempted: the check runs before the bus is used.
-  const env = { ...process.env, CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "bogus", REDIS_URL: "redis://127.0.0.1:1" };
-  const r = spawnSync(process.execPath, [cli, "start", "cortex"], { env, encoding: "utf8", timeout: 20_000 });
-  assert.equal(r.status, 2);
-  assert.equal(r.stderr.trim(), 'CONTROL_PROCESS_MODE must be "dev" or "start", got "bogus"');
-  assert.equal(r.stdout, "");
-});
-
-// @spec CTRL-CLI-007
-test("parseProcessMode: empty or unset is dev, dev and start pass, anything else throws the loadControlConfig message", () => {
-  assert.equal(parseProcessMode(undefined), "dev");
-  assert.equal(parseProcessMode(""), "dev");
-  assert.equal(parseProcessMode("dev"), "dev");
-  assert.equal(parseProcessMode("start"), "start");
-  assert.throws(() => parseProcessMode("prod"), /CONTROL_PROCESS_MODE must be "dev" or "start", got "prod"/);
+// @spec CTRL-CLI-004
+test("cohostctl always builds the compose runtime, whatever CONTROL_RUNTIME or CONTROL_PROCESS_MODE say", async () => {
+  const saved = { r: process.env.CONTROL_RUNTIME, m: process.env.CONTROL_PROCESS_MODE };
+  process.env.CONTROL_RUNTIME = "process";
+  process.env.CONTROL_PROCESS_MODE = "bogus";
+  try {
+    const rt = buildRuntime();
+    assert.ok(rt instanceof ComposeRuntime);
+    assert.equal(rt.name, "compose");
+  } finally {
+    for (const [k, v] of [["CONTROL_RUNTIME", saved.r], ["CONTROL_PROCESS_MODE", saved.m]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
 });

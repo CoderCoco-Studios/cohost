@@ -9,9 +9,7 @@ export type ControlConfig =
       bind: string;
       /** True when bind was set explicitly (CONTROL_BIND), so the caller can warn if non-loopback. */
       bindExplicit: boolean;
-      runtime: "compose" | "process";
       advanced: boolean;
-      processMode: "dev" | "start";
     };
 
 export const LOOPBACK_BIND = "127.0.0.1";
@@ -21,27 +19,16 @@ export function isLoopback(host: string): boolean {
   return host === "localhost" || host === "::1" || host.startsWith("127.");
 }
 
-/** `CONTROL_PROCESS_MODE`: unset or empty is `dev`; anything but `dev`/`start` throws. Shared by the dashboard and `cohostctl`. */
-// @spec CTRL-CONFIG-002, CTRL-CLI-007
-export function parseProcessMode(raw: string | undefined): "dev" | "start" {
-  const mode = raw || "dev";
-  if (mode !== "dev" && mode !== "start") throw new Error(`CONTROL_PROCESS_MODE must be "dev" or "start", got ${JSON.stringify(mode)}`);
-  return mode;
-}
-
-/** Parses CONTROL_* env. Throws (fail fast) when enabled without a token or with an unknown runtime. */
+/** Parses CONTROL_* env. Throws (fail fast) when enabled without a token. There is no runtime setting: compose is the only runtime. */
 // @spec CTRL-CONFIG-001, CTRL-CONFIG-002
 export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): ControlConfig {
   if (env.CONTROL_ENABLED !== "1") return { enabled: false };
   const token = env.CONTROL_TOKEN ?? "";
   if (token.trim() === "") throw new Error("CONTROL_ENABLED=1 requires CONTROL_TOKEN to be set to a non-empty secret");
-  const runtime = env.CONTROL_RUNTIME || "compose";
-  if (runtime !== "compose" && runtime !== "process") throw new Error(`CONTROL_RUNTIME must be "compose" or "process", got ${JSON.stringify(runtime)}`);
-  const processMode = parseProcessMode(env.CONTROL_PROCESS_MODE);
   const bind = env.CONTROL_BIND?.trim();
   return {
     enabled: true, token, bind: bind || LOOPBACK_BIND, bindExplicit: !!bind,
-    runtime, advanced: env.CONTROL_ADVANCED === "1", processMode,
+    advanced: env.CONTROL_ADVANCED === "1",
   };
 }
 

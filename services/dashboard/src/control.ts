@@ -1,5 +1,5 @@
 import {
-  ComposeRuntime, ProcessRuntime, ServiceController, isLoopback, loadControlConfig,
+  ComposeRuntime, ServiceController, isLoopback, loadControlConfig,
   type GroupResetter, type LifecycleRecord, type Runtime,
 } from "@cohost/control";
 import type { Publisher } from "@cohost/bus";
@@ -28,13 +28,12 @@ export function setupControl(
   if (!cfg.enabled) return {};
   if (!isLoopback(cfg.bind)) log.warn({ bind: cfg.bind }, "CONTROL_BIND is not loopback: the bearer token travels in cleartext HTTP; use a reverse proxy/SSH tunnel");
   if (cfg.advanced) log.warn("CONTROL_ADVANCED=1: redis/postgres can be stopped from the dashboard");
-  const rt = runtime ?? (cfg.runtime === "process" ? new ProcessRuntime({ mode: cfg.processMode }) : new ComposeRuntime());
+  const rt = runtime ?? new ComposeRuntime();
   const controller = new ServiceController({
     runtime: rt,
     groups: bus,
     by: "dashboard",
     advanced: cfg.advanced,
-    processMode: cfg.processMode,
     // @spec DASH-SVC-004
     audit: async (rec: LifecycleRecord) => {
       try { await bus.publish("service.lifecycle", rec); } catch (err) { log.warn({ err, rec }, "could not publish service.lifecycle"); }

@@ -1,24 +1,19 @@
-import { execFile as nodeExecFile, spawn as nodeSpawn } from "node:child_process";
-import type { EventEmitter } from "node:events";
+import { execFile as nodeExecFile } from "node:child_process";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 
 export interface RuntimeResult {
   ok: boolean;
   detail?: string;
-  /** Set on a failed `stop` when the service was not running (nothing to stop), as opposed to a stop that errored. */
-  notRunning?: true;
 }
 
 export interface StartOptions {
-  /** `dev` (tsx watch) or `start` (built dist); process runtime only. */
-  processMode?: "dev" | "start";
   /** Extra env for the started service (isolation presets). Only ever comes from the manifest. */
   env?: Readonly<Record<string, string>>;
 }
 
 /** Starts and stops services by manifest id. Adapters build argv from manifest fields only. */
 export interface Runtime {
-  readonly name: "compose" | "process";
+  readonly name: "compose";
   start(id: string, opts?: StartOptions): Promise<RuntimeResult>;
   stop(id: string): Promise<RuntimeResult>;
   restart(id: string, opts?: StartOptions): Promise<RuntimeResult>;
@@ -77,105 +72,5 @@ export class ComposeRuntime implements Runtime {
   restart(id: string, opts: StartOptions = {}) {
     // `restart` keeps the container's env; recreate through `up` when overrides must be applied.
     return opts.env && Object.keys(opts.env).length > 0 ? this.run(id, ["up", "-d", "--force-recreate"], opts.env) : this.run(id, ["restart"]);
-  }
-}
-
-// ---- process ----
-
-/** The slice of a ChildProcess the process runtime uses (lets tests inject a fake). */
-export interface ChildLike extends EventEmitter {
-  pid?: number;
-  exitCode: number | null;
-  signalCode: NodeJS.Signals | null;
-  unref?(): void;
-}
-export type Spawner = (cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string }) => ChildLike;
-export type Signaller = (child: ChildLike, signal: NodeJS.Signals) => void;
-
-const defaultSpawn: Spawner = (cmd, args, opts) =>
-  // Fixed argv, no shell. detached: own process group, so pnpm's whole tree can be signalled.
-  nodeSpawn(cmd, args, { ...opts, shell: false, detached: true, stdio: "ignore" });
-
-const defaultSignal: Signaller = (child, signal) => {
-  if (child.pid === undefined) return;
-  try { process.kill(-child.pid, signal); } catch { try { process.kill(child.pid, signal); } catch { /* already gone */ } }
-};
-
-export interface ProcessRuntimeOptions {
-  spawn?: Spawner;
-  signal?: Signaller;
-  manifest?: readonly ServiceDef[];
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-  /** Default `dev`. */
-  mode?: "dev" | "start";
-  /** SIGTERM -> SIGKILL escalation, ms. */
-  killTimeoutMs?: number;
-}
-
-/** `pnpm --filter @cohost/<svc> dev|start` as a host process; pids are tracked in memory. */
-export class ProcessRuntime implements Runtime {
-  readonly name = "process" as const;
-  private children = new Map<string, ChildLike>();
-  private spawnFn: Spawner;
-  private signalFn: Signaller;
-  private manifest: readonly ServiceDef[];
-  private killTimeoutMs: number;
-  constructor(private o: ProcessRuntimeOptions = {}) {
-    this.spawnFn = o.spawn ?? defaultSpawn;
-    this.signalFn = o.signal ?? defaultSignal;
-    this.manifest = o.manifest ?? SERVICE_MANIFEST;
-    this.killTimeoutMs = o.killTimeoutMs ?? 10_000;
-  }
-
-  /** pid of the tracked process for a service, if running. */
-  pid(id: string): number | undefined { return this.children.get(id)?.pid; }
-
-  // @spec CTRL-RUNTIME-004, CTRL-RUNTIME-005, CTRL-RUNTIME-006
-  async start(id: string, opts: StartOptions = {}): Promise<RuntimeResult> {
-    const def = findService(id, this.manifest);
-    if (!def) return unknown(id);
-    if (!def.pnpmFilter) return { ok: false, detail: `${id} is not a pnpm package; use the compose runtime` };
-    if (this.children.has(id)) return { ok: true, detail: `already running (pid ${this.pid(id)})` };
-    const script = opts.processMode ?? this.o.mode ?? "dev";
-    const child = this.spawnFn("pnpm", ["--filter", def.pnpmFilter, script], {
-      env: { ...(this.o.env ?? process.env), ...opts.env }, cwd: this.o.cwd,
-    });
-    const spawned = await new Promise<RuntimeResult>((resolve) => {
-      child.once("spawn", () => resolve({ ok: true }));
-      child.once("error", (err: Error) => resolve({ ok: false, detail: `spawn failed: ${err.message}` }));
-    });
-    if (!spawned.ok) return spawned;
-    this.children.set(id, child);
-    child.once("exit", () => { if (this.children.get(id) === child) this.children.delete(id); });
-    child.unref?.();
-    return { ok: true, detail: `pid ${child.pid}` };
-  }
-
-  // @spec CTRL-RUNTIME-004, CTRL-RUNTIME-007
-  async stop(id: string): Promise<RuntimeResult> {
-    if (!findService(id, this.manifest)) return unknown(id);
-    const child = this.children.get(id);
-    if (!child) return { ok: false, notRunning: true, detail: "not running under this process runtime (no tracked pid)" };
-    if (child.exitCode !== null || child.signalCode !== null) { this.children.delete(id); return { ok: true, detail: "already exited" }; }
-    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-    this.signalFn(child, "SIGTERM");
-    let timer: NodeJS.Timeout | undefined;
-    const timedOut = new Promise<true>((resolve) => { timer = setTimeout(() => resolve(true), this.killTimeoutMs); });
-    const escalated = await Promise.race([exited.then(() => false as const), timedOut]);
-    clearTimeout(timer);
-    if (escalated) {
-      this.signalFn(child, "SIGKILL");
-      await Promise.race([exited, new Promise<void>((r) => setTimeout(r, 2000).unref())]);
-    }
-    this.children.delete(id);
-    return { ok: true, detail: escalated ? "killed (SIGKILL after timeout)" : "stopped" };
-  }
-
-  // @spec CTRL-RUNTIME-008 (an untracked service is started rather than failing)
-  async restart(id: string, opts: StartOptions = {}): Promise<RuntimeResult> {
-    const stopped = await this.stop(id);
-    if (!stopped.ok && !stopped.notRunning) return stopped;
-    return this.start(id, opts);
   }
 }

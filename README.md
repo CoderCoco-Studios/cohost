@@ -295,8 +295,7 @@ Nothing else changes while it is off: `POST /control` stays open as before.
 ```bash
 export CONTROL_ENABLED=1
 export CONTROL_TOKEN=$(openssl rand -hex 24)   # required: startup fails without it
-export CONTROL_RUNTIME=process                  # compose (default) | process
-pnpm --filter @cohost/dashboard start           # run the dashboard ON THE HOST
+pnpm --filter @cohost/dashboard start           # run the dashboard ON THE HOST; it drives services with `docker compose up -d|stop|restart <service>`
 ```
 
 | Env | Meaning |
@@ -304,8 +303,6 @@ pnpm --filter @cohost/dashboard start           # run the dashboard ON THE HOST
 | `CONTROL_ENABLED=1` | turns the routes on; otherwise `POST /services/:id/*` is 404 |
 | `CONTROL_TOKEN` | bearer token, required on `POST /services/:id/start\|stop\|restart`, `POST /control` and `PUT /personality` while enabled (the UI prompts once per tab) |
 | `CONTROL_BIND` | listen address; defaults to `127.0.0.1` when enabled (a non-loopback value logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel) |
-| `CONTROL_RUNTIME` | `compose` runs `docker compose up -d\|stop\|restart <service>`; `process` runs `pnpm --filter @cohost/<service> dev\|start` as a detached host process |
-| `CONTROL_PROCESS_MODE` | `dev` (default, `tsx watch`) or `start` (built `dist`) for the process runtime |
 | `CONTROL_ADVANCED=1` | also allow `redis` and `postgres` (otherwise 403). The dashboard can never stop itself (409) |
 
 Only service ids in the manifest (`packages/control/src/manifest.ts`) are accepted
@@ -328,10 +325,8 @@ Host-run vs docker socket: run the control-enabled dashboard on the host (as abo
 so it needs no extra privilege. The containerised dashboard stays monitor-only. Mounting
 `/var/run/docker.sock` into the dashboard container so `compose` works from inside it is
 possible but is an explicit opt-in: it gives that container root-equivalent control of the
-host, so only do it behind a loopback bind and a strong token. The `process` runtime inside
-a container is unsupported. `process` children are detached and tracked in memory only: if
-the dashboard restarts it can no longer stop them (the services tab still shows their health),
-and `cohostctl stop` cannot stop a process started by another invocation; use `compose` there.
+host, so only do it behind a loopback bind and a strong token. Compose is the only
+runtime; the control plane never starts host processes (run services directly with `pnpm dev`).
 
 ## Developing
 

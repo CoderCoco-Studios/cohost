@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ServiceController, resetConsumerGroups, SERVICE_MANIFEST, findService, type ServiceDef, type LifecycleRecord, type Runtime, type RuntimeResult } from "../src/index.js";
 
-function setup(over: { advanced?: boolean; runtimeFail?: boolean; resetFail?: boolean; failStart?: string; stopNotRunning?: boolean; manifest?: readonly ServiceDef[] } = {}) {
+function setup(over: { advanced?: boolean; runtimeFail?: boolean; resetFail?: boolean; failStart?: string; manifest?: readonly ServiceDef[] } = {}) {
   const log: string[] = [];
   const audits: LifecycleRecord[] = [];
   const res = (): RuntimeResult => (over.runtimeFail ? { ok: false, detail: "boom" } : { ok: true });
@@ -14,7 +14,7 @@ function setup(over: { advanced?: boolean; runtimeFail?: boolean; resetFail?: bo
     },
     async stop(id) {
       log.push(`stop ${id}`);
-      return over.stopNotRunning ? { ok: false, notRunning: true, detail: "not running under this process runtime (no tracked pid)" } : res();
+      return res();
     },
     async restart(id) { log.push(`restart ${id}`); return res(); },
   };
@@ -186,24 +186,8 @@ test("a required unit that fails to start stops the closure; the named unit is n
   assert.deepEqual(audits.map((a) => `${a.service} ${a.ok}`), ["salience true", "affect false"]);
 });
 
-// @spec CTRL-GUARD-009
-test("fresh restart of a service the runtime reports as not running resets its groups and starts it", async () => {
-  const { c, log, audits } = setup({ stopNotRunning: true });
-  const r = await c.restart("cortex");
-  assert.equal(r.ok, true);
-  assert.deepEqual(log, ["stop cortex", "reset cortex", "start cortex"]);
-  assert.deepEqual(audits.map((a) => `${a.action} ${a.service} ${a.ok}`), ["restart cortex true"]);
-});
-
-// @spec CTRL-GUARD-009
-test("isolated restart of a service the runtime reports as not running starts it with the preset", async () => {
-  const { c, log } = setup({ stopNotRunning: true });
-  assert.equal((await c.restart("memory", { isolated: true })).ok, true);
-  assert.deepEqual(log, ["stop memory", `start memory {"MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}`]);
-});
-
-// @spec CTRL-GUARD-009
-test("a genuine stop failure during a fresh restart is returned without resetting or starting", async () => {
+// @spec CTRL-GUARD-005
+test("a failed stop during a fresh restart is returned without resetting or starting", async () => {
   const { c, log } = setup({ runtimeFail: true });
   const r = await c.restart("cortex");
   assert.equal(r.ok, false);

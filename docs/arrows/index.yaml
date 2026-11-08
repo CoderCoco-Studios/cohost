@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "CTX-HEALTH-004: needs a standing heartbeat detail API in the control plane; then intent review."
+    next: null
     drift: null
 
   voice:

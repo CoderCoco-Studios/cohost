@@ -186,11 +186,11 @@ test("recentHealth returns the newest heartbeats oldest-first; tailHealth delive
 import { startHeartbeat, tracked } from "../src/index.js";
 class RecBus {
   readonly consumer = "rec-1";
-  sent: { state: string; deps: Record<string, string>; ts: number }[] = [];
+  sent: { state: string; deps: Record<string, string>; ts: number; detail?: string }[] = [];
   fail = false;
   async publishHealth(d: ReturnType<typeof hb>): Promise<string> {
     if (this.fail) throw new Error("redis down");
-    this.sent.push({ state: d.state, deps: d.deps, ts: Date.now() });
+    this.sent.push({ state: d.state, deps: d.deps, ts: Date.now(), detail: d.detail });
     return "1";
   }
 }
@@ -224,6 +224,23 @@ test("startHeartbeat publishes immediately when a dep changes, and reports degra
   assert.ok(bus.sent.length > n);
   assert.equal(last.state, "degraded");
   assert.deepEqual(last.deps, { x: "down" });
+  await h.stop();
+});
+
+// @spec CTRL-HEARTBEAT-001, CTX-HEALTH-004
+test("a standing detail survives ready() and yields to an explicit degraded detail or a dependency-down detail", async () => {
+  const bus = new RecBus();
+  let dep: "ok" | "down" = "ok";
+  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: () => ({ x: dep }), detail: "x is not probed", intervalMs: 60_000 });
+  h.ready();
+  await sleep(20);
+  assert.equal(bus.sent.at(-1)!.detail, "x is not probed");
+  dep = "down";
+  await sleep(1300);
+  assert.equal(bus.sent.at(-1)!.detail, "dependency down: x");
+  h.degraded("boom");
+  await sleep(20);
+  assert.equal(bus.sent.at(-1)!.detail, "boom");
   await h.stop();
 });
 

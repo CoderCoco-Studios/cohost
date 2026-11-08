@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 58 specs: 57 implemented, 0 deferred, 1 gap (`CTX-HEALTH-004`, waiting on a heartbeat `detail` API in the control plane).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 58 specs: 58 implemented, 0 deferred, 0 gaps.
 
 ## Decisions applied
 
@@ -21,7 +21,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 9. **S29** `forget_context` → also clears the last vision summary. `CTX-CTRL-004`.
 10. **S30** Empty focus text → recall falls back to the vision summary. `CTX-RECALL-001`.
 11. **P10** Tag/stop contract → working-memory owns the tags; a cortex-level test pins tags against the provider's stops. `CTX-PROMPT-008`.
-12. **R4** Bedrock ping always true → the heartbeat should say `llm` is not probed (`detail`); `deps.llm` reads `n/a` until the first reply in the meantime. `CTX-HEALTH-004`.
+12. **R4** Bedrock ping always true → the heartbeat `detail` says `llm` is not probed; `deps.llm` reads `n/a` until the first reply. `CTX-HEALTH-004`.
 13. **R3** Readiness → `ready` once the `cortex` consumer group exists. `CTX-START-003`.
 
 ## References
@@ -88,9 +88,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Control | CTX-CTRL-001 to CTX-CTRL-006 | 6 | 0 | 0 | 6 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 | 2 |
 | Startup and shutdown | CTX-START-001 to CTX-START-004 | 4 | 0 | 0 | 3 |
-| Health | CTX-HEALTH-001 to CTX-HEALTH-004 | 3 | 0 | 1 (HEALTH-004) | 4 |
+| Health | CTX-HEALTH-001 to CTX-HEALTH-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 57 of 58 specs implemented and annotated in code; 0 deferred; 1 gap. `CTX-HEALTH-004` needs a standing `detail` in the heartbeat's `ready` state: `ready()` clears it and `HeartbeatSpec` has no `detail` (`packages/bus/src/heartbeat.ts`). Until then `deps.llm` is `n/a` for a provider whose ping is nominal (Bedrock) until the first reply, which `health.test.ts:41` covers.
+**Summary:** 58 of 58 specs implemented and annotated in code; 0 deferred; 0 gaps. `CTX-HEALTH-004` rides on the standing `detail` option of `startHeartbeat` (`packages/bus/src/heartbeat.ts`); `deps.llm` is `n/a` for a provider whose ping is nominal (Bedrock) until the first reply.
 
 ## Key Findings
 
@@ -109,7 +109,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-1. Carry a standing heartbeat `detail` through `ready` (control-plane / bus change), then state in it that the Bedrock `llm` dependency is not probed (`CTX-HEALTH-004`, R4).
+None.
 
 ### Nice to Have
 2. Assert the operator-`say` gate bypass in a test (`CTX-CTRL-006`).

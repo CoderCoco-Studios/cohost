@@ -2,7 +2,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
-import { wavWrap, readWavHeader } from "../src/audio.js";
+import { wavWrap } from "@cohost/shared";
+import { readWavHeader } from "../src/audio.js";
 import { Playback, httpAudio } from "../src/playback.js";
 import { Hearing, sttTranscriber } from "../src/hearing.js";
 

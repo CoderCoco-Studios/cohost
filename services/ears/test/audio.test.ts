@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { discordPcmToWav16k, wavToDiscordPcm, readWavHeader, wavWrap } from "../src/audio.js";
+import { discordPcmToWav16k, wavToDiscordPcm, readWavHeader } from "../src/audio.js";
+import { wavWrap } from "@cohost/shared";
 
 const pcm16 = (samples: number[]): Buffer => {
   const b = Buffer.alloc(samples.length * 2);
@@ -14,17 +15,8 @@ const samplesOf = (b: Buffer, from = 0): number[] => {
 };
 
 // @spec EARS-AUD-003
-test("wavWrap writes a canonical 44-byte PCM header that readWavHeader reads back", () => {
-  const w = wavWrap(pcm16([1, 2, 3, 4]), 16000, 1);
-  assert.equal(w.length, 44 + 8);
-  assert.equal(w.toString("ascii", 0, 4), "RIFF");
-  assert.equal(w.readUInt32LE(4), 36 + 8);
-  assert.equal(w.toString("ascii", 8, 12), "WAVE");
-  assert.equal(w.readUInt16LE(20), 1); // PCM
-  assert.equal(w.readUInt32LE(28), 32000); // byte rate
-  assert.equal(w.readUInt16LE(32), 2); // block align
-  assert.equal(w.readUInt16LE(34), 16);
-  assert.deepEqual(readWavHeader(w), { sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 8 });
+test("readWavHeader reads a wavWrap header back", () => {
+  assert.deepEqual(readWavHeader(wavWrap(pcm16([1, 2, 3, 4]), 16000, 1)), { sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 8 });
 });
 
 // @spec EARS-AUD-003

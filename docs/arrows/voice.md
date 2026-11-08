@@ -63,7 +63,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 1. `index.ts` — supplies the real setup (config, `Bus`, `VOICE_PORT` 8700, `urls.voice()`) to `runVoice`.
 2. `boot.ts` — `runVoice`: heartbeat, HTTP server, consumer-group positioning, `ready`, one bus loop on `brain.say` + `voice.playing` (`latest`); every failure logs `fatal` and exits 1.
 3. `voice.ts` — `Voice` class: synth, store (50 newest), `voice.utterance`, claimed set (pruned with the store), 1.5 s virtual sink with a cancellable virtual done, error release, HTTP handler; plus `kokoroSynth` and `stubSynth`.
-4. `wav.ts` — the 30 Hz mouth envelope; `parseWav` comes from `@cohost/shared` (`packages/shared/src/wav.ts`, shared with ears).
+4. `wav.ts` — the 30 Hz mouth envelope; `parseWav` comes from `@cohost/shared` (`packages/shared/src/wav.ts`, shared with ears), as does `wavWrap`, which `stubSynth` uses.
 5. `health.ts` — `VoiceHealth` (`kokoro` dep, modes `live` / `mock`).
 6. Consumers/peers of the protocol: ears (`discord` sink), dashboard (`dashboard` sink, `/audio/*` proxy), cortex (released by `voice.done`), avatar (lip-sync on `voice.playing`).
 
@@ -89,7 +89,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 4. **Claims share the TTS loop.** One sequential subscription handles `brain.say` (seconds of synthesis) and `voice.playing` claims (`packages/bus/src/index.ts`), so a claim for line A can be stuck behind synthesis of line B and the virtual timer for A may fire anyway. `[inferred]` not reproduced in tests.
 5. **`claimed` is pruned with the store (fixed).** There is no sink exclusivity: Discord and a dashboard page both play and both report, which is accepted (S46, documented in the LLD). (VOICE-SINK-007)
 6. **`ready` needs a duplicate positioning call.** The bus has no "subscribed" notification, so boot calls `resetGroup` before `ready` and `subscribe` positions the group again. A hook in event-bus would remove the duplicate (cross-segment follow-up).
-7. **WAV parser shared; WAV writer and a cross-service test import remain.** `parseWav` lives in `@cohost/shared` (owner decision of 2026-11-08), used by voice and by ears' `readWavHeader` adapter. `stubSynth` still hand-builds a header, and `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` for `wavWrap`.
+7. **WAV parser and writer shared.** `parseWav` and `wavWrap` live in `@cohost/shared` (owner decision of 2026-11-08); voice uses both (`stubSynth` calls `wavWrap`, EARS-AUD-004) and ears' `readWavHeader` adapts `parseWav`. Voice tests import `wavWrap` from `@cohost/shared`.
 8. **Port 8700 is not published by compose, by design.** Compose sets `VOICE_URL=http://voice:8700` (`docker-compose.yml:18`) and never publishes the port; `urls.voice()` defaults to loopback (commit `e53badc`); host-side players go through the dashboard proxy (P4). The frozen OpenSpec's `http://voice:<VOICE_PORT>` default is stale and the LID line (VOICE-UTT-002) is authoritative.
 9. **WAV handling is narrow.** Only 16-bit PCM; envelope reads the first channel only; `parseWav` ignores the format tag and a missing `fmt ` gives a non-finite duration (`packages/shared/src/wav.ts`). Kokoro returns mono 16-bit today so nothing trips.
 10. **Store eviction counts duplicates.** Re-using an id pushes it into `order` twice (`voice.ts:77-85`); and a failed `voice.utterance` publish is reported as `tts failed` because the whole path shares one `try` (`voice.ts:130-153`).
@@ -101,8 +101,7 @@ None.
 
 ### Should Fix
 1. Move synthesis off the shared loop (or use a second group for claims) so claims are not delayed by TTS.
-2. Share the WAV writer (`wavWrap`) between voice and ears and remove the cross-service import in `voice.test.ts` (the reader is already shared).
-3. Add an event-bus "subscribed" hook so `ready` does not need the duplicate `resetGroup` call (event-bus segment).
+2. Add an event-bus "subscribed" hook so `ready` does not need the duplicate `resetGroup` call (event-bus segment).
 
 ### Nice to Have
 4. Clear the 1.5 s virtual timer and any pending virtual done on shutdown.

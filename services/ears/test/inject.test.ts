@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, event, silentLog } from "@cohost/testing";
-import { wavWrap } from "../src/audio.js";
+import { wavWrap } from "@cohost/shared";
 import { createInjectHandler, wavDurationMs } from "../src/inject.js";
 
 const DASH = "http://dashboard:3000";

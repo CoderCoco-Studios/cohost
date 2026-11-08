@@ -1,7 +1,7 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
-import { parseWav } from "@cohost/shared";
+import { parseWav, wavWrap } from "@cohost/shared";
 import { envelope } from "./wav.js";
 
 export const ENVELOPE_HZ = 30;
@@ -43,22 +43,7 @@ export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: str
   return async (text) => {
     const ms = Math.max(STUB_MIN_MS, text.length * STUB_MS_PER_CHAR);
     const frames = Math.round((cfg.sample_rate * ms) / 1000);
-    const dataLength = frames * 2;
-    const buf = Buffer.alloc(44 + dataLength); // zero-filled = silence
-    buf.write("RIFF", 0, "ascii");
-    buf.writeUInt32LE(36 + dataLength, 4);
-    buf.write("WAVE", 8, "ascii");
-    buf.write("fmt ", 12, "ascii");
-    buf.writeUInt32LE(16, 16);
-    buf.writeUInt16LE(1, 20); // PCM
-    buf.writeUInt16LE(1, 22); // mono
-    buf.writeUInt32LE(cfg.sample_rate, 24);
-    buf.writeUInt32LE(cfg.sample_rate * 2, 28);
-    buf.writeUInt16LE(2, 32);
-    buf.writeUInt16LE(16, 34);
-    buf.write("data", 36, "ascii");
-    buf.writeUInt32LE(dataLength, 40);
-    return buf;
+    return wavWrap(Buffer.alloc(frames * 2), cfg.sample_rate, 1); // zero-filled = silence
   };
 }
 

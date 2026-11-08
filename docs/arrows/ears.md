@@ -4,7 +4,7 @@ Discord voice in (per-speaker capture, STT, `speech.heard`), Discord voice out (
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 46 specs: 45 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
 
 ## Decisions applied
 
@@ -29,7 +29,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (46 specs: 45 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/ears/ears-specs.md (47 specs: 46 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
 - services/ears/test/audio.test.ts
@@ -69,7 +69,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 3. `session.ts` — testable session logic: `voiceTarget` (config keys), `createJoiner` (retry with increasing delay), `createEarsHandler` (inject always; utterance only while voice is ready), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
 4. `hearing.ts` — min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish.
 5. `playback.ts` — FIFO playback queue; publishes `voice.playing` / `voice.done` with `sink: "discord"`.
-6. `audio.ts` — PCM resampling and WAV header write; `readWavHeader` is a thin adapter over `parseWav` from `@cohost/shared`.
+6. `audio.ts` — PCM resampling; the WAV writer `wavWrap` and parser `parseWav` come from `@cohost/shared`, and `readWavHeader` is a thin adapter over `parseWav` from `@cohost/shared`.
 7. `inject.ts` — `inject.request` (audio) handler with dashboard-origin URL guard.
 8. `health.ts` — startup plan decision and `EarsHealth` heartbeat spec.
 
@@ -80,12 +80,12 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Startup plans | EARS-START-001 to 006 | 6 | 0 | 0 |
 | Discord session | EARS-SESS-001 to 008 | 8 | 0 | 0 |
 | Listening and transcription | EARS-HEAR-001 to 008 | 8 | 0 | 0 |
-| Audio conversion | EARS-AUD-001 to 003 | 3 | 0 | 0 |
+| Audio conversion | EARS-AUD-001 to 004 | 4 | 0 | 0 |
 | Playback sink | EARS-PLAY-001 to 009 | 8 | 1 (PLAY-006) | 0 |
 | Audio injection | EARS-INJ-001 to 009 | 9 | 0 | 0 |
 | Health | EARS-HLTH-001 to 003 | 3 | 0 | 0 |
 
-**Summary:** 45 of 46 specs implemented; 0 gaps; 1 deferred (EARS-PLAY-006). 31 of the 45 implemented specs have a test citing them. The 14 without a test are the Discord and plan glue in `discord.ts` / `index.ts` (EARS-START-003, EARS-SESS-001 to 005, EARS-HEAR-001 to 003, EARS-PLAY-001, EARS-PLAY-007, EARS-INJ-009) plus EARS-INJ-003 (wrong kind) and EARS-PLAY-008 (boundary statement). EARS-INJ-004's redirect and non-2xx paths are untested in ears.
+**Summary:** 46 of 47 specs implemented; 0 gaps; 1 deferred (EARS-PLAY-006). 32 of the 46 implemented specs have a test citing them. The 14 without a test are the Discord and plan glue in `discord.ts` / `index.ts` (EARS-START-003, EARS-SESS-001 to 005, EARS-HEAR-001 to 003, EARS-PLAY-001, EARS-PLAY-007, EARS-INJ-009) plus EARS-INJ-003 (wrong kind) and EARS-PLAY-008 (boundary statement). EARS-INJ-004's redirect and non-2xx paths are untested in ears.
 
 ## Key Findings
 
@@ -96,7 +96,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 5. **Playback failure sends no `voice.done`, and the queue has no timeout.** Recovery depends on voice's virtual sink (`services/ears/src/playback.ts:47-51`, pinned by `services/ears/test/ears.test.ts:51`), kept by decision (S15, EARS-PLAY-006 deferred); a hung `httpAudio` fetch (no timeout, `playback.ts:14-18`) blocks every later utterance. The `voice.done` publish in `onIdle` is unguarded (`playback.ts:35`, EARS-PLAY-009).
 6. **Guild/channel come from config.** `voiceTarget` reads `ears.discord.guild_id` / `voice_channel_id`; the env vars are no longer read by ears. (EARS-SESS-007, B19)
 7. **`mute` / `pause` are ignored by ears by design.** It never subscribes to `control` (`discord.ts:113`); cortex and salience enforce muting (EARS-PLAY-008, P7).
-8. **Decisions evidenced; WAV parser shared** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts`) now wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`, owner decision of 2026-11-08); the WAV writer `wavWrap` is still ears-only.
+8. **Decisions evidenced; WAV parser and writer shared** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts`) now wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`, owner decision of 2026-11-08); `wavWrap` (`packages/shared/src/wav.ts`, EARS-AUD-004) is the one WAV writer, also used by voice's stub engine.
 
 ## Work Required
 
@@ -108,5 +108,4 @@ None: all six gap specs are implemented.
 2. Add tests for the remaining `discord.ts` glue (login failure, rejoin on disconnect, per-speaker capture) behind a fake client.
 
 ### Nice to Have
-3. Share one WAV parser/writer between ears and voice (e.g. in a package) and stop `voice/test/voice.test.ts` importing from ears.
-4. Make the transcript filter Unicode-aware (`services/ears/src/hearing.ts:44`).
+3. Make the transcript filter Unicode-aware (`services/ears/src/hearing.ts:44`).

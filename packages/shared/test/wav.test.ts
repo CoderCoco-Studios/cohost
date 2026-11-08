@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseWav } from "../src/index.js";
+import { parseWav, wavWrap } from "../src/index.js";
 
 /** A PCM WAV with optional extra chunks before `data`. */
 function wav(samples: number[], { sampleRate = 24000, channels = 1, bits = 16, before = [] as Buffer[] } = {}): Buffer {
@@ -65,4 +65,33 @@ test("parseWav with requireRiff:false walks chunks without the RIFF/WAVE check",
   assert.equal(info.sampleRate, 24000);
   assert.equal(info.dataLength, 4);
   assert.throws(() => parseWav(bare.subarray(0, 36), { requireRiff: false }), /no data chunk/);
+});
+
+// @spec EARS-AUD-004
+test("wavWrap writes a canonical 44-byte PCM16 header that parseWav reads back", () => {
+  const pcm = Buffer.from([1, 0, 2, 0, 3, 0, 4, 0]);
+  const w = wavWrap(pcm, 16000, 1);
+  assert.equal(w.length, 44 + 8);
+  assert.equal(w.toString("ascii", 0, 4), "RIFF");
+  assert.equal(w.readUInt32LE(4), 36 + 8);
+  assert.equal(w.toString("ascii", 8, 12), "WAVE");
+  assert.equal(w.toString("ascii", 12, 16), "fmt ");
+  assert.equal(w.readUInt32LE(16), 16);
+  assert.equal(w.readUInt16LE(20), 1); // PCM
+  assert.equal(w.readUInt32LE(28), 32000); // byte rate
+  assert.equal(w.readUInt16LE(32), 2); // block align
+  assert.equal(w.readUInt16LE(34), 16);
+  assert.equal(w.toString("ascii", 36, 40), "data");
+  assert.equal(w.readUInt32LE(40), 8);
+  assert.deepEqual(w.subarray(44), pcm);
+});
+
+// @spec EARS-AUD-004
+test("wavWrap then parseWav round-trips rate, channels, depth, data span and duration", () => {
+  const w = wavWrap(Buffer.alloc(48000 * 2 * 2), 48000, 2); // 1 s stereo
+  const info = parseWav(w);
+  assert.deepEqual(info, { sampleRate: 48000, channels: 2, bitsPerSample: 16, dataOffset: 44, dataLength: 192000, durationMs: 1000 });
+  assert.equal(w.readUInt32LE(28), 192000);
+  assert.equal(w.readUInt16LE(32), 4);
+  assert.equal(parseWav(wavWrap(Buffer.alloc(0), 24000, 1)).dataLength, 0);
 });

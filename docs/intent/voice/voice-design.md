@@ -56,7 +56,7 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 | `voice.engine` | Synthesizer | Network | Heartbeat |
 | --- | --- | --- | --- |
 | `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }`; non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
-| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-62`) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
+| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, EARS-AUD-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
 
 `voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (schema default 1, example YAML 1.05), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
 
@@ -167,13 +167,12 @@ sequenceDiagram
 ## Open Questions & Future Decisions
 
 1. **Single sequential loop does TTS and claim intake.** A slow synthesis delays claim processing and can cause spurious virtual pairs; synthesis could be moved off the loop (as cortex does by not awaiting `this.think(...)`, `cortex.ts:67`).
-2. **Two WAV writers.** `stubSynth` hand-builds a header (`voice.ts:41-62`) beside ears' `wavWrap` (`services/ears/src/audio.ts`). The parser is shared (`@cohost/shared`); the writers are not.
-3. **Cross-service test import.** `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` (only for `wavWrap`, the one WAV writer not yet shared), coupling voice's test run to ears' source; `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
-4. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`packages/shared/src/wav.ts`). Envelope silently ignores extra channels.
-5. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:158,166`).
-6. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
-7. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
-8. **Tests missing.** `services/voice/test/boot.test.ts` covers boot wiring, but no test covers real signal handling or process exit (`onShutdown` and `process.exit` are injected). The 1.5 s timer is not cleared on shutdown.
+2. **Voice tests are not type-checked.** `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
+3. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`packages/shared/src/wav.ts`). Envelope silently ignores extra channels.
+4. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:158,166`).
+5. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
+6. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
+7. **Tests missing.** `services/voice/test/boot.test.ts` covers boot wiring, but no test covers real signal handling or process exit (`onShutdown` and `process.exit` are injected). The 1.5 s timer is not cleared on shutdown.
 
 ## References
 

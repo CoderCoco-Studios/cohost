@@ -1,4 +1,4 @@
-/** WAV header parser shared by voice (envelope, duration) and ears (resampling, injected-clip duration). */
+/** WAV parser and writer shared by voice (envelope, duration, stub synth) and ears (resampling, injected-clip duration, STT wav). */
 
 export interface WavInfo {
   sampleRate: number;
@@ -42,4 +42,15 @@ export function parseWav(buf: Buffer, opts: ParseWavOptions = {}): WavInfo {
     off = body + size + (size & 1);
   }
   throw new Error("no data chunk");
+}
+
+// @spec EARS-AUD-004
+/** Wraps raw s16le PCM in a canonical 44-byte PCM16 WAV header. */
+export function wavWrap(pcm: Buffer, sampleRate: number, channels: number): Buffer {
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVE", 8);
+  h.write("fmt ", 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);
+  h.writeUInt32LE(sampleRate, 24); h.writeUInt32LE(sampleRate * channels * 2, 28); h.writeUInt16LE(channels * 2, 32); h.writeUInt16LE(16, 34);
+  h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
 }

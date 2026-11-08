@@ -2,7 +2,8 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ConfigSchema } from "@cohost/config";
-import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, createChatProvider, createEmbedder } from "../src/index.js";
+import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, createChatProvider, createEmbedder, TRANSCRIPT_STOPS } from "../src/index.js";
+import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 
 const llmCfg = (over: Record<string, unknown> = {}) =>
   ConfigSchema.shape.llm.parse({ provider: "openai", model: "m", embed_model: "e", ...over });
@@ -27,6 +28,12 @@ test("openai-compatible: reply calls send the four stops; json calls send none",
   assert.deepEqual(lastBody.stop, ["\n\n", "\n[chat]", "\n[voice]", "\n[screen]"]);
   await p.chat([{ role: "user", content: "hi" }], { json: true });
   assert.equal("stop" in lastBody, false);
+});
+
+// @spec LLM-STOP-007
+test("TRANSCRIPT_STOPS is a newline followed by each working-memory transcript tag", () => {
+  assert.deepEqual([...TRANSCRIPT_STOPS], TRANSCRIPT_TAGS.map((t) => `\n${t}`));
+  assert.ok(TRANSCRIPT_STOPS.length > 0);
 });
 
 // @spec LLM-STOP-001, LLM-STOP-003

@@ -63,7 +63,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "LLM-STOP-007 (import the transcript tags from working-memory instead of a hand-copied list) and LLM-MOCK-005 (mock-provider warning in the memory reflect job), then intent review."
+    next: "Intent review (no open gaps)."
     drift: null
 
   region-hooks:
@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "MEM-START-005: needs a bus group-ready signal before ready() can follow subscription; plus LLM-MOCK-005 reflect warning. Then intent review."
+    next: "MEM-START-005: needs a bus group-ready signal before ready() can follow subscription; then intent review."
     drift: null
 
   cortex:

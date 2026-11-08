@@ -62,7 +62,7 @@ if (plan === "fake") {
   await startTwitch(channel).catch(fatal);
 }
 
-// @spec CHAT-TW-001, CHAT-TW-002, CHAT-TW-003
+// @spec CHAT-TW-001, CHAT-TW-002, CHAT-TW-003, CHAT-TW-010
 async function buildAuth(): Promise<AuthProvider | undefined> {
   const { RefreshingAuthProvider } = await import("@twurple/auth");
   const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_ACCESS_TOKEN, TWITCH_REFRESH_TOKEN } = process.env;
@@ -70,7 +70,7 @@ async function buildAuth(): Promise<AuthProvider | undefined> {
   const provider = new RefreshingAuthProvider({ clientId: TWITCH_CLIENT_ID, clientSecret: TWITCH_CLIENT_SECRET });
   provider.onRefresh((_userId, token) => log.info({ expiresIn: token.expiresIn }, "twitch token refreshed"));
   // @spec CHAT-TW-006
-  await registerUserToken(provider, { accessToken: TWITCH_ACCESS_TOKEN, refreshToken: TWITCH_REFRESH_TOKEN ?? null });
+  await registerUserToken(provider, { accessToken: TWITCH_ACCESS_TOKEN, refreshToken: TWITCH_REFRESH_TOKEN });
   return provider;
 }
 

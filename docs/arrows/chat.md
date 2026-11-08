@@ -4,7 +4,7 @@ Twitch chat sense: Twitch IRC (or a fake source) in, filtered `chat.message` eve
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 43 specs: 43 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 44 specs: 44 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
 
 ## Decisions applied
 
@@ -21,6 +21,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 9. **P2** Chat platforms → multi-platform is a goal; Twitch is the only implementation. LLD Context.
 10. **P8** Restart replay → `inject.request` subscription uses start mode `latest`. Specs: CHAT-INJ-009 (new, `[x]`), CHAT-INJ-001 (reworded).
 
+11. **Owner 2026-11-08** `TWITCH_REFRESH_TOKEN` required on the authenticated Twitch path. Specs: CHAT-TW-002 (reworded), CHAT-TW-010 (new, `[x]`).
+
 ## References
 
 ### HLD
@@ -30,7 +32,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/chat/chat-design.md
 
 ### EARS
-- docs/intent/chat/chat-specs.md (43 specs: 43 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/chat/chat-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/chat/test/filter.test.ts
@@ -51,7 +53,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/chat/src/twitch.ts
 - services/chat/package.json, services/chat/tsconfig.json
 
-24 `@spec` annotations in code, citing all 43 IDs (CHAT-TW-009, the library-driven reconnect, rides the `onConnect` annotation in `services/chat/src/index.ts`). No annotation cites a missing ID.
+24 `@spec` annotations in code, citing all 44 IDs (CHAT-TW-009, the library-driven reconnect, rides the `onConnect` annotation in `services/chat/src/index.ts`). No annotation cites a missing ID.
 
 ### OpenSpec (frozen, historical)
 - openspec/specs/chat/spec.md
@@ -85,7 +87,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Consumed by `sali
 | Test injection | CHAT-INJ-001 to 009 | 9 | 0 | 0 |
 | Health | CHAT-HEALTH-001 to 006 | 6 | 0 | 0 |
 
-**Summary:** 43 of 43 specs implemented; 0 gaps; 0 deferred. 32 of the 43 have a test citing them. The 11 without a test are the `index.ts` wiring (CHAT-PLAN-005, CHAT-PLAN-006, CHAT-TW-001 to 005, CHAT-TW-009, CHAT-INJ-001) plus CHAT-FAKE-005 and CHAT-FAKE-006. CHAT-PLAN-001 to 003 are tested only through the pure `chatPlan`, not the branch wiring.
+**Summary:** 44 of 44 specs implemented; 0 gaps; 0 deferred. 33 of the 44 have a test citing them. The 11 without a test are the `index.ts` wiring (CHAT-PLAN-005, CHAT-PLAN-006, CHAT-TW-001 to 005, CHAT-TW-009, CHAT-INJ-001) plus CHAT-FAKE-005 and CHAT-FAKE-006. CHAT-PLAN-001 to 003 are tested only through the pure `chatPlan`, not the branch wiring.
 
 ## Key Findings
 

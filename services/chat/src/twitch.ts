@@ -28,14 +28,21 @@ export interface TokenRegistry {
   addUserForToken(token: Parameters<RefreshingAuthProvider["addUserForToken"]>[0], intents?: string[]): Promise<string>;
 }
 
-// @spec CHAT-TW-006
-/** Register the user token and wait for it, so the chat client never asks for credentials first. */
+// @spec CHAT-TW-006, CHAT-TW-010
+/**
+ * Register the user token and wait for it, so the chat client never asks for credentials first.
+ * A missing refresh token is rejected up front: twurple's `addUserForToken` cannot register without one.
+ */
 export async function registerUserToken(
   provider: TokenRegistry,
-  tokens: { accessToken: string; refreshToken: string | null },
+  tokens: { accessToken: string; refreshToken: string | undefined },
 ): Promise<void> {
+  const refreshToken = tokens.refreshToken?.trim();
+  if (!refreshToken) {
+    throw new Error("TWITCH_REFRESH_TOKEN is required when TWITCH_ACCESS_TOKEN is set (the authenticated Twitch path)");
+  }
   await provider.addUserForToken(
-    { ...tokens, expiresIn: 0, obtainmentTimestamp: 0 },
+    { accessToken: tokens.accessToken, refreshToken, expiresIn: 0, obtainmentTimestamp: 0 },
     ["chat"],
   );
 }

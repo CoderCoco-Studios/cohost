@@ -46,7 +46,17 @@ test("the user token is registered (awaited) before registerUserToken resolves, 
   assert.deepEqual(order, ["add:chat", "registered", "returned"]);
 
   const failing = { addUserForToken: async () => { throw new Error("bad token"); } };
-  await assert.rejects(registerUserToken(failing, { accessToken: "a", refreshToken: null }), /bad token/);
+  await assert.rejects(registerUserToken(failing, { accessToken: "a", refreshToken: "r" }), /bad token/);
+});
+
+// @spec CHAT-TW-010
+test("an unset or blank refresh token rejects naming TWITCH_REFRESH_TOKEN before any registration", async () => {
+  let calls = 0;
+  const provider = { addUserForToken: async () => { calls++; return "uid"; } };
+  for (const refreshToken of [undefined, "", "   "]) {
+    await assert.rejects(registerUserToken(provider, { accessToken: "a", refreshToken }), /TWITCH_REFRESH_TOKEN/);
+  }
+  assert.equal(calls, 0, "addUserForToken is never called");
 });
 
 // @spec CHAT-INJ-009

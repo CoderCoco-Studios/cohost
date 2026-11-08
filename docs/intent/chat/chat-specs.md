@@ -14,7 +14,7 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 ## Twitch connection
 
 - [x] **CHAT-TW-001**: Unless `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set, the chat service shall connect to Twitch anonymously (read-only) without creating an auth provider. <!-- openspec: chat § Authentication -->
-- [x] **CHAT-TW-002**: Where `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set, the chat service shall authenticate with a `RefreshingAuthProvider` holding the access token (and `TWITCH_REFRESH_TOKEN` when set) for intent `chat`. <!-- openspec: chat § Authentication -->
+- [x] **CHAT-TW-002**: Where `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set, the chat service shall authenticate with a `RefreshingAuthProvider` holding the access token and `TWITCH_REFRESH_TOKEN` for intent `chat`. <!-- openspec: chat § Authentication -->
 - [x] **CHAT-TW-003**: When the Twitch auth provider refreshes a token, the chat service shall write an info log containing `expiresIn`. <!-- openspec: chat § Authentication -->
 - [x] **CHAT-TW-004**: When the Twitch client connects, the chat service shall mark Twitch connected, signal heartbeat `ready`, and log the channel and whether it is authenticated. <!-- openspec: chat § Connection lifecycle -->
 - [x] **CHAT-TW-005**: When the Twitch client disconnects, the chat service shall mark Twitch disconnected and log a warning with `manually` and `reason`. <!-- openspec: chat § Connection lifecycle -->
@@ -22,6 +22,7 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **CHAT-TW-007**: If publishing a `chat.message` for a Twitch message fails, the chat service shall log the failure and keep handling later messages. <!-- test: services/chat/test/twitch.test.ts:12 -->
 - [x] **CHAT-TW-008**: When a message arrives in the joined Twitch channel, the chat service shall pass the sender's login, the message text and the sender's user info through the chat filter and publish the resulting `chat.message`, if the filter returns one. Untested.
 - [x] **CHAT-TW-009**: When the Twitch IRC connection drops without a manual quit, the chat service shall rely on the `@twurple/chat` client's built-in reconnect (the `ircv3` `reconnect` option left at its default `true`) and, when the client connects again, shall mark Twitch connected and signal heartbeat `ready` again (CHAT-TW-004). Untested.
+- [x] **CHAT-TW-010**: If `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` and `TWITCH_ACCESS_TOKEN` are all set and `TWITCH_REFRESH_TOKEN` is unset or blank, the chat service shall reject Twitch startup with an error that names `TWITCH_REFRESH_TOKEN`, before registering any token with the auth provider (the entry point logs it as `fatal` and exits). <!-- test: services/chat/test/twitch.test.ts -->
 
 ## Filtering and payload
 

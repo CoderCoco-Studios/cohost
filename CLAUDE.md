@@ -17,10 +17,11 @@ Behavior is specified with linked-intent development (LID, below): the HLD at
 `docs/intent/<segment>/`, and the arrow overlay under `docs/arrows/`. Guide:
 `docs/SPEC-DRIVEN.md`.
 
-`openspec/` is the retired OpenSpec baseline, frozen at the 2026-11-01 archive.
-It is historical reference only: do not propose, apply or archive changes
-there, and do not add `/opsx:*` commands back. When an LID spec and an
-OpenSpec requirement disagree, the LID spec wins.
+The OpenSpec baseline (`openspec/`) was removed; its history is in git, last
+present at the commit before the one that removed it. Do not recreate it and do
+not add `/opsx:*` commands back. `<!-- openspec: ... -->` comments in spec
+files cite that removed baseline. When an LID spec and an old OpenSpec
+requirement disagree, the LID spec wins.
 
 ## LID
 - Mode: Full

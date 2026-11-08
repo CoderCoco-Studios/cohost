@@ -54,6 +54,7 @@ Segment `eyes` (prefix `EYES`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **EYES-INJ-012**: If fetching an injected upload has not completed within `vision.upload_timeout_ms`, then the eyes service shall abort the fetch and publish `inject.result {ok:false}` with a detail naming the timeout, without calling the model. <!-- test: services/eyes/test/inject.test.ts:115 --> <!-- test: services/eyes/test/inject.test.ts:129 -->
 - [x] **EYES-INJ-013**: If an injected upload's body is larger than `vision.upload_max_bytes`, then the eyes service shall stop reading it and publish `inject.result {ok:false}` with a detail naming the size limit, without calling the model. <!-- test: services/eyes/test/inject.test.ts:143 --> <!-- test: services/eyes/test/inject.test.ts:164 -->
 - [x] **EYES-INJ-014**: The eyes service shall subscribe its `inject.request` consumer group `eyes` with start mode `latest`, so the group is reset to the newest entry on every start and no request published while eyes was down is handled. <!-- test: services/eyes/test/obs.test.ts:108 -->
+- [x] **EYES-INJ-015**: The chat, eyes and ears services shall decide whether an `inject.request` is stale against one shared `INJECT_STALE_MS` (60 000 ms), and the eyes and ears services shall validate an injected upload URL with one shared `uploadUrl`, both exported by `@cohost/shared`, so the services cannot disagree on either. <!-- test: packages/shared/test/inject.test.ts:10 --> <!-- test: packages/shared/test/inject.test.ts:15 -->
 
 ## Health
 

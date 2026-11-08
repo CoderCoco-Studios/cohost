@@ -27,13 +27,14 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/eyes/eyes-design.md
 
 ### EARS
-- docs/intent/eyes/eyes-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/eyes/eyes-specs.md (45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/eyes/test/eyes.test.ts
 - services/eyes/test/inject.test.ts
 - services/eyes/test/health.test.ts
 - services/eyes/test/obs.test.ts
+- packages/shared/test/inject.test.ts
 
 29 `@spec` annotations in tests, citing 32 distinct spec IDs.
 
@@ -60,11 +61,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 **Key Components:**
 1. `index.ts` — composition root: screenshot call, polling loop, subscription establishment, heartbeat start, the one shutdown registration. Untested.
 2. `eyes.ts` — `Eyes.look()` change-only publisher, `ollamaDescriber` (with the describe timeout), `stripDataUrl`, `startEyes` enablement gate.
-3. `inject.ts` — `createInjectHandler` (upload timeout and size cap) + `uploadUrl` SSRF guard for `inject.request` images (duplicated in ears), and `subscribeInject` (group created first, start mode `latest`).
+3. `inject.ts` — `createInjectHandler` (upload timeout and size cap) + `uploadUrl` SSRF guard and `INJECT_STALE_MS` imported from `@cohost/shared` (shared with ears and chat), and `subscribeInject` (group created first, start mode `latest`).
 4. `obs.ts` — `createObsLink` (connect with retry, degraded while unreachable, reconnect on any close) and `stopEyes` (the single shutdown sequence).
 5. `health.ts` — `EyesHealth` (mode off/live, deps `obs`/`ollama`, `track()` wrapper).
 
-Depends on `event-bus`, `config`, `control-plane` (heartbeat). Calls Ollama and OBS directly. Fetches uploads from `dashboard`. Consumed by `salience`, `affect`.
+Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/shared` workspace package (inject helpers; owned by this segment, no segment of its own). Calls Ollama and OBS directly. Fetches uploads from `dashboard`. Consumed by `salience`, `affect`.
 
 ## Spec Coverage
 
@@ -74,10 +75,10 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Calls Ollama and 
 | OBS connection and capture | EYES-OBS-001 to 008 | 8 | 0 | 0 |
 | Vision description | EYES-DESC-001 to 006 | 6 | 0 | 0 |
 | Look loop and publication | EYES-LOOK-001 to 005 | 5 | 0 | 0 |
-| Test injection | EYES-INJ-001 to 014 | 14 | 0 | 0 |
+| Test injection | EYES-INJ-001 to 015 | 15 | 0 | 0 |
 | Health | EYES-HEALTH-001 to 006 | 6 | 0 | 0 |
 
-**Summary:** 44 of 44 specs implemented; 0 gaps; 0 deferred. 32 of the 44 have a test citing them. The 12 without a test are the `index.ts` wiring (EYES-ENAB-002, EYES-ENAB-004, EYES-OBS-001, EYES-OBS-005, EYES-OBS-006, EYES-LOOK-003 to 005, EYES-INJ-001, EYES-HEALTH-005) plus EYES-DESC-005 (prompt text) and EYES-INJ-004 (wrong kind). The redirect half of EYES-INJ-006 is also untested.
+**Summary:** 45 of 45 specs implemented; 0 gaps; 0 deferred. 33 of the 45 have a test citing them. The 12 without a test are the `index.ts` wiring (EYES-ENAB-002, EYES-ENAB-004, EYES-OBS-001, EYES-OBS-005, EYES-OBS-006, EYES-LOOK-003 to 005, EYES-INJ-001, EYES-HEALTH-005) plus EYES-DESC-005 (prompt text) and EYES-INJ-004 (wrong kind). The redirect half of EYES-INJ-006 is also untested.
 
 ## Key Findings
 
@@ -88,8 +89,8 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Calls Ollama and 
 5. **Change detection is entirely model-driven** — the service trusts the literal word `SAME` (`eyes.ts:65`, prompt at `:35-37`); every interval costs a model call. `changed` is always `true` (`eyes.ts:71`) by contract (S14).
 6. **One tracked `describe` is shared by loop and injection** — a bad injected image marks `ollama` down for the live heartbeat (`index.ts:56`, `:63`; `health.ts:17-19`); kept by decision (R4).
 7. **Outbound calls are bounded** — the Ollama call aborts after `vision.timeout_ms` (EYES-DESC-006); the upload fetch aborts after `vision.upload_timeout_ms` and the body is cut off past `vision.upload_max_bytes` (EYES-INJ-012, EYES-INJ-013; R1). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
-8. **`uploadUrl`/`INJECT_STALE_MS` duplicated in ears** — `services/eyes/src/inject.ts:5,23` and `services/ears/src/inject.ts:6,21`; no comment or commit explains the copy.
-9. **Decisions evidenced** — LLD Decisions rows cite a comment, commit (463b1bb, 51d5a9c), archived OpenSpec design or the owner decision of 2026-11-01; change detection, OBS retry, prompt options and helper duplication stay `[inferred]`.
+8. **`uploadUrl`/`INJECT_STALE_MS` shared** — one definition in `packages/shared/src/inject.ts`, imported by eyes, ears and chat (EYES-INJ-015, owner decision of 2026-11-08); the former copies are deleted.
+9. **Decisions evidenced** — LLD Decisions rows cite a comment, commit (463b1bb, 51d5a9c), archived OpenSpec design or the owner decision of 2026-11-01; change detection, OBS retry, prompt options and stay `[inferred]`; the shared-helper row cites the owner decision of 2026-11-08.
 
 ## Work Required
 
@@ -97,9 +98,9 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Calls Ollama and 
 None: all seven gap specs are implemented.
 
 ### Should Fix
-1. Extract `uploadUrl` and the stale constant shared with ears into a common module (EYES-INJ-005).
+None.
 
 ### Nice to Have
-2. Add tests for the loop wiring, cadence, wrong-kind injection and redirect refusal (EYES-LOOK-003, EYES-INJ-004, EYES-INJ-006).
-3. Make the system prompt, `num_predict`, `keep_alive` and JPEG quality configurable (EYES-DESC-001).
-4. Add backoff to the OBS connect retries (EYES-OBS-002).
+1. Add tests for the loop wiring, cadence, wrong-kind injection and redirect refusal (EYES-LOOK-003, EYES-INJ-004, EYES-INJ-006).
+2. Make the system prompt, `num_predict`, `keep_alive` and JPEG quality configurable (EYES-DESC-001).
+3. Add backoff to the OBS connect retries (EYES-OBS-002).

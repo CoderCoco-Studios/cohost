@@ -93,9 +93,9 @@ The sink's behavior relative to the protocol: ears always plays every utterance 
 Processing order for a request `r` (publishing `inject.result { id, ok, detail? }` on every failure path):
 
 1. `r.target !== "ears"` returns silently with nothing published (`inject.ts:57`).
-2. Older than `INJECT_STALE_MS` = 60 000 ms by the event's `ts` returns `ok:false, "stale"` (`inject.ts:6,60`). (Consumer groups resume after a restart, which is why.)
+2. Older than `INJECT_STALE_MS` = 60 000 ms by the event's `ts` returns `ok:false, "stale"` (`INJECT_STALE_MS` from `@cohost/shared`, EYES-INJ-015). (Consumer groups resume after a restart, which is why.)
 3. `r.kind !== "audio"` returns `ok:false, "ears cannot handle kind '<kind>'"` (`inject.ts:61`).
-4. `uploadUrl(r.url, urls.dashboard())` must be same-origin, credential-free, and under `<dashboard path>/uploads/` with a non-empty id; otherwise `ok:false, "url is not an upload of this dashboard"` and nothing is fetched (`inject.ts:21-32,62-63`).
+4. `uploadUrl(r.url, urls.dashboard())` (from `@cohost/shared`; the eyes LLD owns it, EYES-INJ-015) must be same-origin, credential-free, and under `<dashboard path>/uploads/` with a non-empty id; otherwise `ok:false, "url is not an upload of this dashboard"` and nothing is fetched (`inject.ts:21-32,62-63`).
 5. `fetch(target, { redirect: "error" })`; non-2xx returns `ok:false, "fetch upload <status>"` (`inject.ts:64-65`).
 6. The bytes go **unchanged** to STT with the response content type as a hint (default `audio/wav`); `ears.min_speech_ms` does not apply (`inject.ts:66-67`, `inject.ts:48-51`).
 7. Empty/non-word transcript returns `ok:false, "empty transcript"` (`inject.ts:68`).
@@ -139,7 +139,7 @@ Discrepancy: the `add-service-health` delta says no token means `mode: "off"` an
 | Start mode | `latest`: the `ears` group is reset to the newest entry on every start (EARS-START-006) | `resume` (play a backlog of stale utterances) | Owner decision 2026-11-01 (project-wide): every subscriber except memory uses `latest`; delivery across restarts is at-most-once. |
 | Publish failures | Log and continue (EARS-PLAY-009) | Unhandled rejection (the original `voice.done` publish) | Owner decision 2026-11-01 (project-wide): a failed bus publish is logged and the service continues. |
 | Injection URL trust | Same origin as `urls.dashboard()`, under `/uploads/`, no redirects | Fetch any URL | SSRF guard: add-test-injection design D2 ("eyes/ears ... MUST only fetch URLs under `urls.dashboard()` + `/uploads/`"); doc comment on `dashboardUrl` (`inject.ts:11-12`). The origin and path check applies to the requested URL only; `redirect: "error"` (`inject.ts:64`) makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
-| Stale injected requests | Drop after 60 s | Process all backlog | Consumer groups resume after a restart: comment at `inject.ts:5`; add-test-injection design D8 ("Staleness"). |
+| Stale injected requests | Drop after 60 s | Process all backlog | Consumer groups resume after a restart: `INJECT_STALE_MS` in `@cohost/shared` (shared with eyes and chat, EYES-INJ-015); add-test-injection design D8 ("Staleness"). |
 | Injected clips skip `min_speech_ms` | No minimum duration | Apply the gate | add-test-injection design D8: "`min_speech_ms` does not apply (that gates Discord PCM)"; doc comment `inject.ts:50`; test `inject.test.ts:36-43`. |
 
 ## Open Questions & Future Decisions
@@ -166,6 +166,7 @@ Files in this segment:
 Other segments (arrow shows direction):
 
 - ears -> [event-bus](../event-bus/event-bus-design.md): publishes `speech.heard`, `voice.playing`, `voice.done`, `inject.result`, heartbeats; consumes `voice.utterance`, `inject.request` (group `ears`).
+- ears -> `@cohost/shared` (workspace package): `uploadUrl`, `INJECT_STALE_MS`, owned by the [eyes LLD](../eyes/eyes-design.md) (Image Injection).
 - ears -> [config](../config/config-design.md): `loadConfig`, `urls.stt()`, `urls.dashboard()`, `env()`.
 - ears <- [voice](../voice/voice-design.md): owns the sink arbitration protocol; ears is a `discord` sink and fetches `audioUrl` from voice's HTTP server.
 - ears <- [dashboard](../dashboard/dashboard-design.md): sends `inject.request` and serves `/uploads/<id>`; the other sink (`sink: "dashboard"`).

@@ -13,6 +13,7 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
+    "@cohost/shared": "workspace:*",
     "@twurple/auth": "^8.2.0",
     "@twurple/chat": "^8.2.0"
   },

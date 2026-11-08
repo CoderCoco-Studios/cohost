@@ -13,6 +13,7 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
+    "@cohost/shared": "workspace:*",
     "@discordjs/voice": "^0.19.2",
     "@snazzah/davey": "^0.1.12",
     "discord.js": "^14.27.0",

@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -39,7 +39,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "intent review of [proposed] LLD rows."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   event-bus:
@@ -51,7 +51,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "intent review of [proposed] LLD rows."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   model-backends:
@@ -63,7 +63,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "Intent review (no open gaps)."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   region-hooks:
@@ -75,7 +75,7 @@ arrows:
     blocks: [salience, affect, cortex]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   working-memory:
@@ -87,7 +87,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   chat:
@@ -99,7 +99,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   eyes:
@@ -111,7 +111,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   ears:
@@ -123,7 +123,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   salience:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   affect:
@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   memory:
@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Intent review."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   cortex:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   avatar:
@@ -195,7 +195,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   dashboard:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "No open gaps. Next is the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   control-plane:
@@ -219,7 +219,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Intent review."
+    next: "Intent pass confirmed; no open gaps."
     drift: null
 
   deployment:
@@ -231,7 +231,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Owner setup for DEPLOY-CI-005 / DEPLOY-LIC-004: create the unprotected cla-signatures branch before the first pull request after the cla workflow lands, and add the commercial contact email to COMMERCIAL.md. Then the interactive intent review of the [proposed] and [inferred] LLD and HLD sentences with the owner."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md."
     drift: null
 
 unmapped:

@@ -65,6 +65,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+      '@cohost/working-memory':
+        specifier: workspace:*
+        version: link:../working-memory
 
   packages/modules:
     dependencies:

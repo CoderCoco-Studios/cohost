@@ -15,6 +15,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
 import { urls, type Config } from "@cohost/config";
+import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 import { MockProvider, HashEmbedder } from "./mock.js";
 export type { Config };
 export { MockProvider, HashEmbedder };
@@ -44,7 +45,7 @@ export interface Embedder { // @spec LLM-IF-001
 }
 
 /** Lines that mean "the model started writing the next transcript entry": stop there. */
-const TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"]; // @spec LLM-STOP-006
+export const TRANSCRIPT_STOPS: string[] = TRANSCRIPT_TAGS.map((tag) => `\n${tag}`); // @spec LLM-STOP-006, LLM-STOP-007
 /** Blank line ends a spoken reply. Exactly four entries: OpenAI-style APIs reject more than four stops. */
 const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 

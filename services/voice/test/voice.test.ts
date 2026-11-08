@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
-import { wavWrap } from "../../ears/src/audio.js";
+import { wavWrap } from "@cohost/shared";
 import { Voice, kokoroSynth } from "../src/voice.js";
 
 const say = (id: string, text = "hello chat") => event("brain.say", { id, text, emotion: "happy", gesture: "wave" });

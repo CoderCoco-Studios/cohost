@@ -1,4 +1,5 @@
 /** PCM helpers: Discord gives us 48 kHz stereo s16le; Whisper wants 16 kHz mono; Discord wants 48k stereo back. */
+import { parseWav } from "@cohost/shared";
 
 // @spec EARS-AUD-001
 /** 48k stereo s16le -> 16k mono s16le WAV (for STT). Simple 3:1 decimation with averaging. */
@@ -41,17 +42,14 @@ export function wavToDiscordPcm(wav: Buffer): Buffer {
 }
 
 // @spec EARS-AUD-003
+/** Thin adapter over the shared `parseWav`: no RIFF/WAVE check, and any failure reads as `bad wav`. */
 export function readWavHeader(buf: Buffer): { sampleRate: number; channels: number; dataOffset: number; dataLength: number } {
-  let off = 12;
-  let sampleRate = 0, channels = 0;
-  while (off + 8 <= buf.length) {
-    const id = buf.toString("ascii", off, off + 4);
-    const size = buf.readUInt32LE(off + 4);
-    if (id === "fmt ") { channels = buf.readUInt16LE(off + 10); sampleRate = buf.readUInt32LE(off + 12); }
-    else if (id === "data") return { sampleRate, channels, dataOffset: off + 8, dataLength: Math.min(size, buf.length - off - 8) };
-    off += 8 + size + (size & 1);
+  try {
+    const { sampleRate, channels, dataOffset, dataLength } = parseWav(buf, { requireRiff: false });
+    return { sampleRate, channels, dataOffset, dataLength };
+  } catch {
+    throw new Error("bad wav");
   }
-  throw new Error("bad wav");
 }
 
 export function wavWrap(pcm: Buffer, sampleRate: number, channels: number): Buffer {

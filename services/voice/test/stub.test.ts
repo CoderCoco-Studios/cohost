@@ -4,7 +4,8 @@ import { FakeBus, event, recordingLog } from "@cohost/testing";
 import { runHeartbeat } from "@cohost/testing";
 import { Voice, stubSynth, ENVELOPE_HZ } from "../src/voice.js";
 import { VoiceHealth } from "../src/health.js";
-import { parseWav, envelope } from "../src/wav.js";
+import { parseWav } from "@cohost/shared";
+import { envelope } from "../src/wav.js";
 
 const synth = stubSynth({ sample_rate: 24000 });
 

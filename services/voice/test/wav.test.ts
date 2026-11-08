@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseWav, envelope } from "../src/wav.js";
+import { parseWav } from "@cohost/shared";
+import { envelope } from "../src/wav.js";
 
 /** A 16-bit PCM WAV with optional extra chunks before `data`. */
 function wav(samples: number[], { sampleRate = 24000, channels = 1, bits = 16, before = [] as Buffer[] } = {}): Buffer {
@@ -17,41 +18,6 @@ function wav(samples: number[], { sampleRate = 24000, channels = 1, bits = 16, b
   riff.write("RIFF", 0); riff.writeUInt32LE(body.length, 4);
   return Buffer.concat([riff, body]);
 }
-function chunk(id: string, size: number): Buffer {
-  const b = Buffer.alloc(8 + size + (size & 1));
-  b.write(id, 0); b.writeUInt32LE(size, 4);
-  return b;
-}
-
-test("parseWav reads the fmt chunk and computes the duration", () => { // @spec VOICE-ENV-001
-  const info = parseWav(wav(new Array(24000).fill(0)));
-  assert.equal(info.sampleRate, 24000);
-  assert.equal(info.channels, 1);
-  assert.equal(info.bitsPerSample, 16);
-  assert.equal(info.dataOffset, 44);
-  assert.equal(info.dataLength, 48000);
-  assert.equal(info.durationMs, 1000);
-  assert.equal(parseWav(wav(new Array(4800).fill(0), { channels: 2 })).durationMs, 100); // 2400 stereo frames
-});
-
-test("parseWav skips unknown chunks, including odd-sized ones padded to even", () => { // @spec VOICE-ENV-001
-  const info = parseWav(wav([1, 2, 3], { before: [chunk("LIST", 4), chunk("junk", 3)] }));
-  assert.equal(info.dataOffset, 44 + 12 + 12);
-  assert.equal(info.dataLength, 6);
-});
-
-test("parseWav clamps a data chunk that claims more bytes than the buffer has", () => { // @spec VOICE-ENV-001
-  const full = wav(new Array(100).fill(0));
-  const info = parseWav(full.subarray(0, full.length - 50)); // e.g. a streamed/truncated TTS reply
-  assert.equal(info.dataLength, 150);
-});
-
-test("parseWav rejects non-WAV input and a WAV with no data chunk", () => { // @spec VOICE-ENV-002
-  assert.throws(() => parseWav(Buffer.from("not a wav file at all")), /RIFF\/WAVE/);
-  const headerOnly = wav([]).subarray(0, 36); // RIFF + fmt, no data chunk
-  assert.throws(() => parseWav(headerOnly), /no data chunk/);
-});
-
 test("envelope: silence is closed, full-scale is open, one value per window", () => { // @spec VOICE-ENV-003
   const silent = wav(new Array(2400).fill(0)); // 100ms @ 24k
   assert.deepEqual(envelope(silent, parseWav(silent), 30), [0, 0, 0]); // 800-sample windows

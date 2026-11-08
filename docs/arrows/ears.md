@@ -69,7 +69,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 3. `session.ts` — testable session logic: `voiceTarget` (config keys), `createJoiner` (retry with increasing delay), `createEarsHandler` (inject always; utterance only while voice is ready), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
 4. `hearing.ts` — min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish.
 5. `playback.ts` — FIFO playback queue; publishes `voice.playing` / `voice.done` with `sink: "discord"`.
-6. `audio.ts` — PCM resampling and WAV header read/write.
+6. `audio.ts` — PCM resampling and WAV header write; `readWavHeader` is a thin adapter over `parseWav` from `@cohost/shared`.
 7. `inject.ts` — `inject.request` (audio) handler with dashboard-origin URL guard.
 8. `health.ts` — startup plan decision and `EarsHealth` heartbeat spec.
 
@@ -96,7 +96,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 5. **Playback failure sends no `voice.done`, and the queue has no timeout.** Recovery depends on voice's virtual sink (`services/ears/src/playback.ts:47-51`, pinned by `services/ears/test/ears.test.ts:51`), kept by decision (S15, EARS-PLAY-006 deferred); a hung `httpAudio` fetch (no timeout, `playback.ts:14-18`) blocks every later utterance. The `voice.done` publish in `onIdle` is unguarded (`playback.ts:35`, EARS-PLAY-009).
 6. **Guild/channel come from config.** `voiceTarget` reads `ears.discord.guild_id` / `voice_channel_id`; the env vars are no longer read by ears. (EARS-SESS-007, B19)
 7. **`mute` / `pause` are ignored by ears by design.** It never subscribes to `control` (`discord.ts:113`); cortex and salience enforce muting (EARS-PLAY-008, P7).
-8. **Decisions evidenced; duplicate WAV code** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts:44-55`) still duplicates voice's `parseWav` (`services/voice/src/wav.ts:12-34`).
+8. **Decisions evidenced; WAV parser shared** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts`) now wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`, owner decision of 2026-11-08); the WAV writer `wavWrap` is still ears-only.
 
 ## Work Required
 

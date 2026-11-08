@@ -27,7 +27,7 @@ const provider = createChatProvider(cfg.llm);
 let llmOk = false;
 // A provider whose ping always answers true says nothing until a reply has been tried (CTX-HEALTH-004).
 let llmProbed = !provider.pingIsNominal;
-const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk, cfg.llm.provider, () => llmProbed), log });
+const heartbeat = startHeartbeat(bus, { ...cortexHealth(() => llmOk, cfg.llm.provider, () => llmProbed, provider.pingIsNominal === true), log });
 // @spec CTX-HEALTH-003
 const llm = trackLlm(provider, (ok) => { llmOk = ok; llmProbed = true; });
 const critic = createCritic(cfg, log);

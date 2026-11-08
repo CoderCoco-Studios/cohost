@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { ComposeRuntime, ProcessRuntime, type ChildLike, type ExecFile, type Spawner } from "../src/index.js";
+import { readFileSync } from "node:fs";
+import { ComposeRuntime, ProcessRuntime, SERVICE_MANIFEST, type ChildLike, type ExecFile, type Spawner } from "../src/index.js";
 
 // ---- compose ----
 
@@ -48,6 +49,27 @@ test("compose: isolated env goes in the child env and restart recreates", async 
   assert.deepEqual(calls[0]!.args, ["compose", "up", "-d", "--force-recreate", "cortex"]);
   assert.equal(calls[0]!.env.LLM_PROVIDER, "mock");
   assert.equal(calls[0]!.env.A, "1");
+});
+
+// @spec CTRL-RUNTIME-009
+test("compose: every isolation preset variable reaches the container through x-ts-service pass-through", async () => {
+  // The preset is set on the docker compose CLI env; it only reaches the container if the
+  // compose file names each variable as `VAR: ${VAR:-}` (docker is not run here).
+  const compose = readFileSync(new URL("../../../docker-compose.yml", import.meta.url), "utf8");
+  const block = compose.slice(compose.indexOf("x-ts-service:"), compose.indexOf("\nservices:"));
+  const presetVars = new Set(SERVICE_MANIFEST.flatMap((d) => Object.keys(d.isolatedEnv)));
+  for (const v of ["CHAT_SOURCE", "MEMORY_STORE", "MEMORY_EMBEDDER", "LLM_PROVIDER", "VOICE_ENGINE", "AVATAR_DRIVER", "VISION_ENABLED", "EARS_SOURCE"]) {
+    assert.ok(presetVars.has(v), `${v} is a manifest preset variable`);
+  }
+  for (const v of presetVars) {
+    assert.match(block, new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}`, "m"), `${v} passed through as \${${v}:-}`);
+  }
+  // And the runtime does hand the preset to the compose process for start and recreate.
+  const { exec, calls } = fakeExec();
+  const rt = new ComposeRuntime({ exec, env: {} });
+  await rt.start("cortex", { env: { LLM_PROVIDER: "mock" } });
+  await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
+  assert.deepEqual(calls.map((c) => c.env.LLM_PROVIDER), ["mock", "mock"]);
 });
 
 // @spec CTRL-RUNTIME-003

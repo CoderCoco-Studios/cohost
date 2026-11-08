@@ -4,7 +4,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 50 specs: 48 implemented, 1 deferred (cross-invocation process stop, deliberate), 1 gap (CTRL-RUNTIME-009, a `docker-compose.yml` change in the deployment segment). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 50 specs: 49 implemented, 1 deferred (cross-invocation process stop, deliberate), 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed.
 
 ## Decisions applied
 

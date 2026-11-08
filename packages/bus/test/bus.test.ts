@@ -227,7 +227,7 @@ test("startHeartbeat publishes immediately when a dep changes, and reports degra
   await h.stop();
 });
 
-// @spec CTRL-HEARTBEAT-001, CTX-HEALTH-004
+// @spec CTRL-HEARTBEAT-001, CTX-HEALTH-004, CTRL-HEARTBEAT-009
 test("a standing detail survives ready() and yields to an explicit degraded detail or a dependency-down detail", async () => {
   const bus = new RecBus();
   let dep: "ok" | "down" = "ok";

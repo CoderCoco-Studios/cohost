@@ -173,7 +173,7 @@ export class Bus {
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
-  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011
+  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const mode = opts.start as unknown;
     if (mode !== "latest" && mode !== "resume") {

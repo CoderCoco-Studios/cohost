@@ -337,7 +337,7 @@ test("resetGroup rethrows an error that is not a missing stream or group", async
   bus.stop();
 });
 
-// @spec MEM-START-005
+// @spec BUS-SUB-012, MEM-START-005
 test("onReady fires after the group is created and positioned, before the first read", async () => {
   const fake = new FakeRedis();
   fake.script.xgroup = [busyGroup];

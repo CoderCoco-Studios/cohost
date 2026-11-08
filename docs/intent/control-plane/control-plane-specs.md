@@ -49,6 +49,7 @@ Specs for `packages/control`, `packages/bus/src/heartbeat.ts`, and the semantics
 - [x] **CTRL-HEARTBEAT-005**: When `startHeartbeat` is called, the system shall register the heartbeat's `stop()` as a `beforeShutdown` hook, so that a SIGINT or SIGTERM handled through `onShutdown` publishes the `stopping` heartbeat before the service's own shutdown callback runs; the hook time limit, callback order and exit code are event-bus BUS-STOP-002. <!-- openspec: bus (add-service-health) § Heartbeat helper --> <!-- test: packages/bus/test/bus.test.ts:257 -->
 - [x] **CTRL-HEARTBEAT-006**: If publishing a heartbeat fails, then the system shall log a warning (when a logger was supplied) and keep running without throwing into the service. <!-- openspec: bus (add-service-health) § Heartbeat helper --> <!-- test: packages/bus/test/bus.test.ts:244 -->
 - [x] **CTRL-HEARTBEAT-008**: The system shall provide `tracked(fn, set)` which wraps an async call so `set(true)` follows a success and `set(false)` follows a failure while the error still propagates, so a service can feed a dependency status from real call outcomes. <!-- test: packages/bus/test/bus.test.ts:265 -->
+- [x] **CTRL-HEARTBEAT-009**: Where `startHeartbeat` is given a standing `detail`, the system shall publish it as the heartbeat `detail` in every state, including `starting` and after `ready()`, unless an explicit `degraded(detail)` or the derived `dependency down: ...` detail applies, which take precedence in that order.
 
 ## Health derivation (CTRL-HEALTH)
 

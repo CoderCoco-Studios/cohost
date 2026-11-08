@@ -219,7 +219,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "CTRL-RUNTIME-009: pass the isolated-preset variables through docker-compose.yml (deployment segment), then intent review."
+    next: "Intent review."
     drift: null
 
   deployment:

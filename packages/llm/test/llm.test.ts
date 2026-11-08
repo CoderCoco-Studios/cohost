@@ -362,3 +362,22 @@ test("bedrock: pingIsNominal tells callers its ping is not a probe; real provide
   for (const provider of ["ollama", "openai", "mock"] as const) assert.equal(createChatProvider(llmCfg({ provider })).pingIsNominal, undefined);
   assert.equal(createChatProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } })).pingIsNominal, undefined);
 });
+
+// @spec LLM-CHAT-009
+test("a failed Ollama or OpenAI-compatible chat makes exactly one request and is not retried", async () => {
+  let hits = 0;
+  const s = http.createServer(async (req, res) => {
+    for await (const _ of req) { /* drain */ }
+    hits++;
+    res.statusCode = 503;
+    res.end("unavailable");
+  });
+  await new Promise<void>((r) => s.listen(0, r));
+  after(() => s.close());
+  const b = `http://127.0.0.1:${(s.address() as { port: number }).port}`;
+  const msgs = [{ role: "user" as const, content: "x" }];
+  await assert.rejects(new OpenAICompatible(llmCfg({ openai: { base_url: `${b}/v1` } })).chat(msgs), /openai chat 503/);
+  assert.equal(hits, 1);
+  await assert.rejects(new Ollama(llmCfg({ provider: "ollama" }), b).chat(msgs), /ollama chat 503/);
+  assert.equal(hits, 2);
+});

@@ -54,7 +54,7 @@ Class-level facts: `ClaudeBase` is not exported; tests reach into the protected 
 
 Two constants drive truncation (`index.ts:46-49`):
 
-- `TRANSCRIPT_STOPS = ["\n[chat]", "\n[voice]", "\n[screen]"]` - "the model started writing the next transcript entry".
+- `TRANSCRIPT_STOPS` = `"\n"` followed by each tag in working-memory's `TRANSCRIPT_TAGS` (`"\n[chat]"`, `"\n[voice]"`, `"\n[screen]"` today), derived rather than copied (LLM-STOP-007): "the model started writing the next transcript entry".
 - `REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]` - a blank line also ends a spoken reply. The comment states "Exactly four entries: OpenAI-style APIs reject more than four stops" (`index.ts:48`).
 
 Behavior matrix:

@@ -105,10 +105,11 @@ Audit (`controller.ts:95-98`): after any executed attempt the controller calls `
 
 ### Publisher (`packages/bus/src/heartbeat.ts`)
 
-`startHeartbeat(bus, { service, version?, mode, deps, intervalMs?, log? })` returns `{ ready(), degraded(detail?), stop() }`.
+`startHeartbeat(bus, { service, version?, mode, deps, detail?, intervalMs?, log? })` returns `{ ready(), degraded(detail?), stop() }`.
 
 - Payload fields: `service`, `instance` (the bus consumer name, `hostname-uuid8`), `pid`, `version` (option, else `COHOST_VERSION`, else `dev`), `startedAt` (`processStartedAt`, the module-load time, `heartbeat.ts:47`), `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (`ok`, `down`, `n/a` per name), `mode` (`live`, `mock`, `off` by convention, a free string in the schema), optional `detail`, `intervalMs` (`heartbeat.ts:68-85`).
 - Cadence: one `starting` publish at call time, a steady `setInterval` of `intervalMs`, an immediate publish on `ready()` or `degraded()`, and a watcher at `min(1000, intervalMs)` that republishes if `[state, deps, mode, detail]` changed (`heartbeat.ts:98-109`). Both timers are `unref`ed.
+- A standing `detail` option is published in every state, including `starting` and after `ready()`. Precedence: explicit `degraded(detail)`, then `dependency down: ...`, then the standing detail (CTRL-HEARTBEAT-009).
 - `intervalMs` is `HEARTBEAT_INTERVAL_MS` floored when positive and finite, else 5000 (`heartbeat.ts:49-52`; `.env.example:53-54`).
 - Dependency-derived degradation: if the base is `ready` and any dep is `down`, the published state is `degraded` with detail `dependency down: a, b`, unless an explicit detail was given (`heartbeat.ts:70-72`). An explicit `degraded(detail)` keeps its own detail. A service that is still `starting` stays `starting` even with a dep down.
 - Shutdown: `stop()` is registered with `beforeShutdown` (`heartbeat.ts:117`, CTRL-HEARTBEAT-005). The shutdown sequence itself is event-bus's: `onShutdown` (`packages/bus/src/index.ts:242-257`) awaits all registered hooks, capped at 2 s, and then runs the service's own callback and `process.exit(0)` (BUS-STOP-002). So the `stopping` heartbeat is only sent if the service calls `onShutdown`; there is no handling of other exit paths (crash, `process.exit`, SIGKILL).

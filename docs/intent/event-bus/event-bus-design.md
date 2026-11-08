@@ -53,7 +53,7 @@ Constructor: `new Bus(source, log?, url = urls.redis(), options?)` (`index.ts:72
 
 ### Consumer-group subscription loop
 
-`SubscribeOptions` (`index.ts:19-35`): `group` (one per service), `types?` (client-side filter), `start` (`SubscribeStart`, `"latest"` or `"resume"`; required), `blockMs?` (default 5000).
+`SubscribeOptions` (`index.ts:19-35`): `group` (one per service), `types?` (client-side filter), `start` (`SubscribeStart`, `"latest"` or `"resume"`; required), `blockMs?` (default 5000), `onReady?` (called once after the group is created or positioned and before the first read; BUS-SUB-012).
 
 **Start mode.** Every subscription names where it starts reading after a process start (BUS-SUB-011):
 

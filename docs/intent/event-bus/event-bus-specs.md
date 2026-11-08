@@ -46,6 +46,7 @@ Design: [event-bus-design.md](event-bus-design.md). Prefix `BUS`. Verified again
 - [x] **BUS-SUB-009**: If a blocking read in `subscribe` fails for any reason other than `stop()`, then the system shall log the error at warn level and retry the read after a delay that grows with each consecutive failure up to a fixed cap, resetting the delay after a successful read, and shall not reject the `subscribe` promise; if acknowledging an entry (`XACK`) fails, the system shall log it at warn level and continue with the next entry without delivering the handled entry again (at-most-once, BUS-SUB-008). <!-- test: packages/bus/test/resilience.test.ts:129 --> <!-- test: packages/bus/test/resilience.test.ts:143 -->
 - [x] **BUS-SUB-010**: Where a subscription's start mode is `latest`, `Bus.subscribe` shall move an existing consumer group to the newest entry (`$`) on every start before its first read (creating a missing group at `$`), so a restarted subscriber skips entries published while it was down. <!-- test: packages/bus/test/resilience.test.ts:66 -->
 - [x] **BUS-SUB-011**: The system shall require every `Bus.subscribe` call to name its start mode explicitly, `latest` or `resume`, in place of the `fromNow` option.
+- [x] **BUS-SUB-012**: Where a `Bus.subscribe` call supplies `onReady`, the system shall invoke it once, after the consumer group has been created or positioned for the call's start mode and before the subscription's first read, so a caller can tell when its group is live.
 
 ## Live tail and backfill
 

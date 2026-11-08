@@ -59,7 +59,7 @@ export function heartbeatIntervalMs(): number {
  * deps/mode change (checked at least once a second), and `stopping` on
  * shutdown (before the service's own onShutdown callback runs).
  */
-// @spec CTRL-HEARTBEAT-001, CTRL-HEARTBEAT-002, CTRL-HEARTBEAT-003, CTRL-HEARTBEAT-004, CTRL-HEARTBEAT-005, CTRL-HEARTBEAT-006
+// @spec CTRL-HEARTBEAT-001, CTRL-HEARTBEAT-002, CTRL-HEARTBEAT-003, CTRL-HEARTBEAT-004, CTRL-HEARTBEAT-005, CTRL-HEARTBEAT-006, CTRL-HEARTBEAT-009
 export function startHeartbeat(bus: HealthPublisher, opts: HeartbeatOptions): Heartbeat {
   const intervalMs = opts.intervalMs ?? heartbeatIntervalMs();
   let base: "starting" | "ready" | "degraded" = "starting";

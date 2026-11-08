@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 46 specs: 46 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below; the timeout and Bedrock-ping fixes have landed (platform-models cascade fix).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below; the timeout and Bedrock-ping fixes have landed (platform-models cascade fix).
 
 ## Decisions applied
 
@@ -27,10 +27,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (46 specs, prefix LLM: 44 `[x]`, 2 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (47 specs, prefix LLM: 47 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
-- packages/llm/test/llm.test.ts (23 tests, 23 `@spec` lines citing 37 distinct LLM IDs; fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client, no external network)
+- packages/llm/test/llm.test.ts (25 tests, 25 `@spec` lines citing 38 distinct LLM IDs; fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client, no external network)
 
 ### Code
 - packages/llm/src/index.ts (41 `@spec` lines)

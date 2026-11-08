@@ -5,7 +5,7 @@ prefix: BUS
 
 # event-bus
 
-Status: AUDITED 2026-11-02 at git `1b57790`. Mapped 2026-10-31 at git `686cc8f` (reverse-engineered from code); specs verified against the code and `@spec` annotations added at git `49ba935`; owner decisions of 2026-11-01 applied. Where the code does not yet do what this document intends (BUS-SUB-011, BUS-STREAM-007), the text names the `[ ]` spec line. Parent: [high-level-design](../../high-level-design.md). Specs: [event-bus-specs.md](event-bus-specs.md). Arrow: [docs/arrows/event-bus.md](../../arrows/event-bus.md).
+Status: AUDITED 2026-11-02 at git `1b57790`. Mapped 2026-10-31 at git `686cc8f` (reverse-engineered from code); specs verified against the code and `@spec` annotations added at git `49ba935`; owner decisions of 2026-11-01 applied. Where the code does not yet do what this document intends (BUS-STREAM-007), the text names the `[ ]` spec line. Parent: [high-level-design](../../high-level-design.md). Specs: [event-bus-specs.md](event-bus-specs.md). Arrow: [docs/arrows/event-bus.md](../../arrows/event-bus.md).
 
 ## Context and Design Philosophy
 
@@ -53,9 +53,9 @@ Constructor: `new Bus(source, log?, url = urls.redis(), options?)` (`index.ts:72
 
 ### Consumer-group subscription loop
 
-`SubscribeOptions` (`index.ts:19-35`): `group` (one per service), `types?` (client-side filter), `start?` (`SubscribeStart`, `"latest"` or `"resume"`; default `"latest"`), `blockMs?` (default 5000). The deprecated boolean `fromNow` is accepted and ignored.
+`SubscribeOptions` (`index.ts:19-35`): `group` (one per service), `types?` (client-side filter), `start` (`SubscribeStart`, `"latest"` or `"resume"`; required), `blockMs?` (default 5000).
 
-**Start mode.** Every subscription names where it starts reading after a process start (BUS-SUB-011; until every caller names `start`, omitting it means `latest`):
+**Start mode.** Every subscription names where it starts reading after a process start (BUS-SUB-011):
 
 - `latest`: the group is moved to the newest entry (`$`) on every start, so a restarted subscriber never acts on events published while it was down (BUS-SUB-010). Used by every subscribing service except memory: a co-host that speaks, reacts or animates must not replay stale chat, focus or speech lines after a restart.
 - `resume`: an existing group keeps its stored position, so the backlog still held by the 20000-entry stream is delivered after a restart (BUS-SUB-002). Used by memory, which wants to store what it missed.

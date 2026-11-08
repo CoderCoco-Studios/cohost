@@ -46,3 +46,19 @@ test("a provider whose ping is nominal reports llm n/a (not probed) until a repl
   probed = true;
   assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
 });
+
+// @spec CTX-HEALTH-004
+test("a nominal-ping provider states in the heartbeat detail that llm is not probed; others carry no detail", async () => {
+  const nominal = await runHeartbeat(cortexHealth(() => true, "bedrock", () => false, true));
+  assert.equal(nominal[1]!.state, "ready");
+  assert.match(nominal[1]!.detail ?? "", /llm.*not probed/i);
+  const normal = await runHeartbeat(cortexHealth(() => true, "ollama"));
+  assert.equal(normal[1]!.detail, undefined);
+});
+
+// @spec CTX-HEALTH-004
+test("a down llm dependency still reports its own detail over the not-probed note", async () => {
+  const hbs = await runHeartbeat(cortexHealth(() => false, "bedrock", () => true, true));
+  assert.equal(hbs[1]!.state, "degraded");
+  assert.match(hbs[1]!.detail ?? "", /dependency down: llm/);
+});

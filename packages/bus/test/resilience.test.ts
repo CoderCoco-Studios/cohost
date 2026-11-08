@@ -96,19 +96,14 @@ test("any group-creation error other than BUSYGROUP rejects subscribe", async ()
   assert.equal(fake.of("xreadgroup").length, 0);
 });
 
-// @spec BUS-SUB-001, BUS-SUB-010
-test("start defaults to latest and the deprecated fromNow is ignored", async () => {
-  for (const extra of [{}, { fromNow: false }, { fromNow: true }]) {
+// @spec BUS-SUB-011
+test("subscribe requires an explicit start mode and ignores the removed fromNow", async () => {
+  for (const extra of [{}, { fromNow: true }, { start: "bogus" }]) {
     const fake = new FakeRedis();
-    fake.script.xgroup = [busyGroup];
     const { bus } = busWith(fake);
-    const done = bus.subscribe({ group: "g", blockMs: 10, ...extra }, () => {});
-    await until(() => fake.of("xreadgroup").length > 0);
-    assert.deepEqual(fake.of("xgroup"), [
-      ["xgroup", "CREATE", STREAM, "g", "$", "MKSTREAM"],
-      ["xgroup", "SETID", STREAM, "g", "$"],
-    ]);
-    bus.stop(); await done;
+    await assert.rejects(bus.subscribe({ group: "g", blockMs: 10, ...extra } as never, () => {}), /start/);
+    assert.equal(fake.of("xgroup").length, 0);
+    assert.equal(fake.of("xreadgroup").length, 0);
   }
 });
 

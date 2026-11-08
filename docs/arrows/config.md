@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 0 deferred, 1 gap (CFG-USR-005, ears segment). The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented.
 
 ## Decisions applied
 
@@ -67,7 +67,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
 | User-owned files | CFG-USR-001 to 006 | 5 | 0 | 1 (USR-005) | 4 |
 
-**Summary:** 46 of 47 specs implemented; 0 deferred; 1 gap (CFG-USR-005, ears segment). 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
+**Summary:** 47 of 47 specs implemented; 0 deferred; 0 gaps. 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
 
 ## Key Findings
 
@@ -75,7 +75,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 2. **Spec lines corrected to match the code** (IDs kept): CFG-ENV-001 (empty counts as unset), CFG-ENV-005 (line, key and value trimming), CFG-SCH-002 (`llm.claude.effort` enum), CFG-URL-002 and CFG-URL-003 (an empty override falls back). CFG-SCH-008 (remaining section defaults), CFG-SCH-009 (hook `url` default and provider enum without `mock`) and CFG-SCH-010 (required nested objects and avatar hosts) cover behaviour that had no line.
 3. **Inline `.env` comments** — `.env.example:18-20` ends API-key lines with `# llm.provider: ...`; `loadDotEnv` strips an unquoted whitespace-then-`#` suffix like Compose, so host-run services read those variables as empty (CFG-ENV-006, S48).
 4. **Config loads without `.env`** — every service loads the whole config, so the shipped example must not depend on avatar or model variables: model placeholders carry `:-` defaults, `avatar.driver` is blank-safe and the avatar ports default (CFG-ISO-005, B3).
-5. **Dead and partially dead keys** — `ears.discord.guild_id` / `voice_channel_id` are defined and populated but not yet read (ears uses `env("DISCORD_GUILD_ID")`, `services/ears/src/discord.ts:63-64`; CFG-USR-005, B19); `voice.sample_rate` is only used by the stub synth (`services/voice/src/voice.ts:41-55`).
+5. **Dead and partially dead keys** — `voice.sample_rate` is only used by the stub synth (`services/voice/src/voice.ts:41-55`).
 6. **`unknownKeys` descends into arrays**, so typos inside `reflexes[]` entries are reported as `path[index].key` (CFG-LOAD-006, S49).
 7. **Partial test coverage behind annotated tests.** CFG-SCH-001 (only `cohost.name`), CFG-SCH-004 (regex only), CFG-SCH-005 (only `salience.cooldown_ms`), CFG-SCH-006 (only negative `voice.speed`), CFG-URL-001 (only `urls.redis`), CFG-USR-002 (no empty-file case), CFG-ISO-001 (omitted `chat.fake.interval_ms` not asserted), CFG-ISO-003 (through `ConfigSchema`, not `loadConfig`) and CFG-LOAD-005 (`config.test.ts:52` exercises `unknownKeys` directly).
 8. **Env-only settings are scattered** — `CONTROL_*`, `HEARTBEAT_INTERVAL_MS`, `INJECT_*`, `PORT`, `VOICE_PORT` are read directly by their owners; `.env.example` lists only `HEARTBEAT_INTERVAL_MS` (commented, line 54). (CFG-ENV-008)
@@ -88,9 +88,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 None outstanding in this segment. Implemented: no-`.env` load (CFG-ISO-005) and inline `.env` comment stripping (CFG-ENV-006).
 
 ### Should Fix
-1. Ears reads `ears.discord.guild_id` / `voice_channel_id` (B19; CFG-USR-005, ears EARS-SESS-007). Ears segment.
-2. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, EYES-INJ-012, EYES-INJ-013), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
-3. Add tests for the remaining untested implemented specs: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, and the uncovered halves of the partially tested ones (Key Finding 7).
+1. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, EYES-INJ-012, EYES-INJ-013), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
+2. Add tests for the remaining untested implemented specs: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, and the uncovered halves of the partially tested ones (Key Finding 7).
 
 ### Nice to Have
 4. Route config diagnostics through the pino logger; format `loadExpressions` errors like `loadConfig`; make `savePersonality` atomic (CFG-LOAD-005, CFG-USR-001).

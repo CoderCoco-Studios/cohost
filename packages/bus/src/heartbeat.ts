@@ -18,12 +18,14 @@ export interface HeartbeatOptions {
   mode: string | (() => string);
   /** Dependency status, re-read every check so changes publish immediately. */
   deps: Record<string, DepStatus> | (() => Record<string, DepStatus>);
+  /** Standing note shown while no explicit `degraded(detail)` or dependency-down detail applies. */
+  detail?: string;
   intervalMs?: number;
   log?: Logger;
 }
 
 /** The service-specific part of the options; what each service's health.ts exports. */
-export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps">;
+export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps" | "detail">;
 
 /**
  * Wrap an async call so its outcome feeds a dependency status:
@@ -69,7 +71,7 @@ export function startHeartbeat(bus: HealthPublisher, opts: HeartbeatOptions): He
     const deps = typeof opts.deps === "function" ? opts.deps() : opts.deps;
     const down = Object.entries(deps).filter(([, v]) => v === "down").map(([k]) => k);
     const state = base === "ready" && down.length ? "degraded" : base;
-    const d = detail ?? (state === "degraded" && base === "ready" ? `dependency down: ${down.join(", ")}` : undefined);
+    const d = detail ?? (state === "degraded" && base === "ready" ? `dependency down: ${down.join(", ")}` : undefined) ?? opts.detail;
     return {
       service: opts.service,
       instance: bus.consumer,

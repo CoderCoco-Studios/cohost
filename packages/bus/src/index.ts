@@ -22,12 +22,10 @@ export interface SubscribeOptions<T extends EventType> {
   /** Only deliver these types (others are acked and skipped). */
   types?: readonly T[];
   /**
-   * Where the group starts. `latest` (default) moves the group to the newest entry on every start;
-   * `resume` keeps an existing group's stored position. A missing group is created at `$` in both.
+   * Where the group starts, named by every caller. `latest` moves the group to the newest entry on
+   * every start; `resume` keeps an existing group's stored position. A missing group is created at `$` in both.
    */
-  start?: SubscribeStart;
-  /** @deprecated Ignored: a missing group is always created at `$`. Name `start` instead. */
-  fromNow?: boolean;
+  start: SubscribeStart;
   /** Block time per read, ms. */
   blockMs?: number;
   /** Called once the consumer group exists and is positioned, before the first read. */
@@ -175,11 +173,14 @@ export class Bus {
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
-  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010
+  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
+    const mode = opts.start as unknown;
+    if (mode !== "latest" && mode !== "resume") {
+      throw new Error(`Bus.subscribe: start must be "latest" or "resume", got ${JSON.stringify(mode)}`);
+    }
     const conn = this.connect(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
-    const mode: SubscribeStart = opts.start ?? "latest";
     try {
       await conn.xgroup("CREATE", STREAM, opts.group, "$", "MKSTREAM");
     } catch (e) {

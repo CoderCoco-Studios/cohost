@@ -39,7 +39,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "CFG-USR-005: wire DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID through config into ears (ears segment), then intent review of [proposed] LLD rows."
+    next: "intent review of [proposed] LLD rows."
     drift: null
 
   event-bus:
@@ -51,7 +51,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "BUS-SUB-011: make SubscribeOptions.start required and remove fromNow now that every caller names it, then intent review of [proposed] LLD rows."
+    next: "intent review of [proposed] LLD rows."
     drift: null
 
   model-backends:
@@ -63,7 +63,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "LLM-STOP-007 (import the transcript tags from working-memory instead of a hand-copied list) and LLM-MOCK-005 (mock-provider warning in the memory reflect job), then intent review."
+    next: "Intent review (no open gaps)."
     drift: null
 
   region-hooks:
@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "LLM-MOCK-005 reflect warning. Then intent review."
+    next: "Intent review."
     drift: null
 
   cortex:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "CTX-HEALTH-004: needs a standing heartbeat detail API in the control plane; then intent review."
+    next: null
     drift: null
 
   voice:
@@ -219,7 +219,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "CTRL-RUNTIME-009: pass the isolated-preset variables through docker-compose.yml (deployment segment), then intent review."
+    next: "Intent review."
     drift: null
 
   deployment:

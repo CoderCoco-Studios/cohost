@@ -1,7 +1,8 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
-import { envelope, parseWav } from "./wav.js";
+import { parseWav } from "@cohost/shared";
+import { envelope } from "./wav.js";
 
 export const ENVELOPE_HZ = 30;
 

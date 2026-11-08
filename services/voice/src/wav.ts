@@ -1,37 +1,5 @@
-/** Tiny WAV reader + mouth-envelope extractor. PCM 16-bit only (what Kokoro emits). */
-
-export interface WavInfo {
-  sampleRate: number;
-  channels: number;
-  bitsPerSample: number;
-  dataOffset: number;
-  dataLength: number;
-  durationMs: number;
-}
-
-export function parseWav(buf: Buffer): WavInfo { // @spec VOICE-ENV-001, VOICE-ENV-002
-  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
-    throw new Error("not a RIFF/WAVE file");
-  }
-  let off = 12;
-  let sampleRate = 0, channels = 0, bitsPerSample = 0;
-  while (off + 8 <= buf.length) {
-    const id = buf.toString("ascii", off, off + 4);
-    const size = buf.readUInt32LE(off + 4);
-    const body = off + 8;
-    if (id === "fmt ") {
-      channels = buf.readUInt16LE(body + 2);
-      sampleRate = buf.readUInt32LE(body + 4);
-      bitsPerSample = buf.readUInt16LE(body + 14);
-    } else if (id === "data") {
-      const dataLength = Math.min(size, buf.length - body);
-      const frames = dataLength / (channels * (bitsPerSample / 8));
-      return { sampleRate, channels, bitsPerSample, dataOffset: body, dataLength, durationMs: (frames / sampleRate) * 1000 };
-    }
-    off = body + size + (size & 1);
-  }
-  throw new Error("no data chunk");
-}
+/** Mouth-envelope extractor over `parseWav` (from `@cohost/shared`). PCM 16-bit only (what Kokoro emits). */
+import type { WavInfo } from "@cohost/shared";
 
 /**
  * RMS per window, normalised to 0..1 with a soft knee so normal speech reads

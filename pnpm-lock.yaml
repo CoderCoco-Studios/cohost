@@ -301,6 +301,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
     devDependencies:
       '@cohost/testing':
         specifier: workspace:*

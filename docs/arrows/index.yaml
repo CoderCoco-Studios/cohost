@@ -51,7 +51,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "BUS-SUB-011: make SubscribeOptions.start required and remove fromNow now that every caller names it, then intent review of [proposed] LLD rows."
+    next: "intent review of [proposed] LLD rows."
     drift: null
 
   model-backends:

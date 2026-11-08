@@ -299,6 +299,10 @@ flowchart LR
 | operator | control-plane | Service manifest, start / stop / restart runtimes, heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology, single parameterized Dockerfile, installer, CI |
 
+### Shared package
+
+`@cohost/shared` (`packages/shared`) holds small helpers that more than one service needs: today the `inject.request` upload-URL guard (`uploadUrl`) and staleness window (`INJECT_STALE_MS`), imported by chat, eyes and ears. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It has no dependencies on other workspace packages and is not an arrow segment: each helper is specified by the segment that owns the behavior (the inject plumbing by `eyes`, EYES-INJ-015), and the package would earn its own segment only if it grew helpers with behavior of their own.
+
 ### Cross-cutting protocols (observed)
 
 - **Turn-taking.** salience publishes `attention.focus`; cortex publishes

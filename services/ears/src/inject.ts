@@ -1,9 +1,7 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
+import { INJECT_STALE_MS, uploadUrl } from "@cohost/shared";
 import { readWavHeader } from "./audio.js";
-
-/** Requests older than this are dropped (consumer groups resume after a restart). */
-export const INJECT_STALE_MS = 60_000;
 
 export interface InjectDeps {
   bus: Publisher;
@@ -14,21 +12,6 @@ export interface InjectDeps {
   transcribe: (audio: Buffer, hint?: { contentType: string }) => Promise<string>;
   fetch?: typeof fetch;
   now?: () => number;
-}
-
-// @spec EARS-INJ-004
-/** The URL to fetch when it lies under `<dashboardUrl>/uploads/` (same origin, normalised path), else undefined. */
-export function uploadUrl(raw: string | undefined, dashboardUrl: string): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const u = new URL(raw);
-    const base = new URL(dashboardUrl);
-    if (u.origin !== base.origin || u.username || u.password) return undefined;
-    const prefix = base.pathname.replace(/\/+$/, "") + "/uploads/";
-    return u.pathname.startsWith(prefix) && u.pathname.length > prefix.length ? u.href : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 // @spec EARS-INJ-006

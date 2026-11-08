@@ -25,6 +25,8 @@ Segments (17, flat): `config`, `event-bus`, `model-backends`, `region-hooks`,
 `working-memory`, `control-plane`, `chat`, `eyes`, `ears`, `salience`,
 `affect`, `memory`, `cortex`, `voice`, `avatar`, `dashboard`, `deployment`.
 Start at `docs/arrows/index.yaml`; `blockedBy` gives the dependency order.
+The `@cohost/shared` package (tiny helpers used by several services) is not a
+segment; the segment that owns the behavior specifies it.
 
 ## The flow
 

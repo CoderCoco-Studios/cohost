@@ -60,13 +60,13 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 1. `target !== "eyes"` returns silently.
 2. Stale (`now() - ev.ts > 60_000`) gives `inject.result {ok:false, detail:"stale"}`.
 3. `kind !== "image"` gives `ok:false` with `eyes cannot handle kind '<kind>'`.
-4. `uploadUrl(r.url, dashboardUrl)` (`inject.ts:23-34`) must accept: same origin as `urls.dashboard()`, no userinfo, normalised pathname starting with `<dashboard path>/uploads/` and longer than that prefix. Result is `u.href` (query strings pass). Otherwise `ok:false` `url is not an upload of this dashboard`; nothing is fetched.
+4. `uploadUrl(r.url, dashboardUrl)` (from `@cohost/shared`, `packages/shared/src/inject.ts`) must accept: same origin as `urls.dashboard()`, no userinfo, normalised pathname starting with `<dashboard path>/uploads/` and longer than that prefix. Result is `u.href` (query strings pass). Otherwise `ok:false` `url is not an upload of this dashboard`; nothing is fetched.
 5. `fetch(target, {redirect: "error", signal: AbortSignal.timeout(vision.upload_timeout_ms)})` (default 10000 ms); non-OK gives `ok:false` `fetch upload <status>`. The signal covers the headers and the body read: a fetch that has not completed in time gives `ok:false` `fetch upload timed out after <ms> ms` (EYES-INJ-012). The body is read in chunks and abandoned as soon as it passes `vision.upload_max_bytes` (default 8 MiB, the dashboard's image upload cap; a declared `content-length` over the limit is refused without reading), giving `ok:false` `upload larger than the <n> byte limit` (EYES-INJ-013). In both cases the model is not called.
 6. Bytes to base64, `describe(b64, "")` (empty previous so the model never needs `SAME`, and `Eyes.look()`'s `previous` is untouched); empty or `SAME` gives `ok:false` `no description`.
 7. Publishes `vision.summary {text, changed:true, injected:true, remember}` then `inject.result {ok:true, detail:text}`.
 8. Any throw becomes `ok:false` with `String(err)`; a failure to publish that is swallowed.
 
-`uploadUrl` and `INJECT_STALE_MS` are duplicated verbatim in `services/ears/src/inject.ts` (the `ears` segment). The upload store and HTTP routes belong to `dashboard`; the `inject.*` schemas to `event-bus`.
+`uploadUrl` and `INJECT_STALE_MS` live in `@cohost/shared` (`packages/shared/src/inject.ts`) and are imported by eyes, ears and chat (EYES-INJ-015). This LLD owns them as inject plumbing: the shared package is a home for small helpers that more than one service needs, not an arrow segment, so a change to either helper is a change to this section and EYES-INJ-005 / EYES-INJ-015, cascading to the ears and chat LLDs, which only cite them. The upload store and HTTP routes belong to `dashboard`; the `inject.*` schemas to `event-bus`.
 
 ## Health (`health.ts`)
 
@@ -99,8 +99,8 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 | Injection start mode | `latest`: the `eyes` group is reset to the newest entry on every start (EYES-INJ-014) | `resume` | Owner decision 2026-11-01 (project-wide): every subscriber except memory uses `latest`; delivery across restarts is at-most-once. |
 | Prompt and model options | Hard-coded in source (`eyes.ts:43-51`) | Configurable prompt / options | Only the model is expected to vary per install (`vision.model`), because it depends on the operator's GPU. The prompt carries the `SAME` contract the parser relies on (`eyes.ts:78`), so an operator-edited prompt could silently break change detection. `num_predict: 60` and `temperature: 0.2` keep the answer to one short, stable sentence; `keep_alive: "24h"` keeps the model resident in VRAM so a look never pays a cold load. |
 | Injection reuses `describe` | Same tracked describer, empty previous (`index.ts:63`, `inject.ts:57`) | Separate describer; pass `Eyes.previous` | Keeps change tracking untouched and exercises the real model path: doc comment `inject.ts:39-41`; add-test-injection design D8 ("previous = \"\" so injection neither sees SAME nor disturbs the change-tracking `previous`"). |
-| SSRF guard | `uploadUrl` + `redirect:"error"` (`inject.ts:23-34`, `:54`) | Allow any URL; allow-list of hosts | Stop the bus being used to make eyes fetch arbitrary URLs: comment at `inject.ts:20-22`; add-test-injection design D2 ("SSRF guard"). The origin and path check applies to the requested URL only; `redirect: "error"` makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
-| Helper duplication | `uploadUrl` copied into ears; `INJECT_STALE_MS` copied into ears and chat | Shared helper in a package | `[inferred]` Both copies arrived with test injection (3fae9f7); no comment explains why they are not shared. |
+| SSRF guard | `uploadUrl` (`@cohost/shared`) + `redirect:"error"` (`inject.ts`) | Allow any URL; allow-list of hosts | Stop the bus being used to make eyes fetch arbitrary URLs: comment at `inject.ts:20-22`; add-test-injection design D2 ("SSRF guard"). The origin and path check applies to the requested URL only; `redirect: "error"` makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
+| Shared inject helpers | `uploadUrl` and `INJECT_STALE_MS` in the `@cohost/shared` workspace package, imported by eyes, ears and chat (EYES-INJ-015) | A copy in each service (the original arrangement); a helper exported from eyes and imported by ears | Owner decision of 2026-11-08: code shared across modules or services belongs in shared packages. One definition means the SSRF guard and the staleness window cannot drift between services. A service importing a sibling service's source would couple deployables; a package keeps the dependency direction service to package. |
 
 ## Open Questions & Future Decisions
 
@@ -110,10 +110,9 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 2. The `fatal` path (`log.error` then `process.exit(1)`) is reached only by setup failures such as the subscription group not being creatable.
 3. The `SAME` rule is a prefix word match (`/^same\b/i`), so `Same old menu screen` is treated as no change; the test pins `Same as before` and `same.` and that `Samurai attack!` is not (`test/eyes.test.ts:31-36`).
 4. Hard-coded system prompt, `num_predict: 60`, `temperature`, `keep_alive: "24h"`, JPEG quality 70 (`eyes.ts:28-37`, `index.ts:50`): not configurable.
-5. The chat/ears copies of the stale-window constant and `uploadUrl` can drift (`services/ears/src/inject.ts`).
-6. Config-example comment says vision.enabled `false = eyes idles, never touches OBS` (`config/config.example.yaml:38`), consistent with code. The frozen OpenSpec baseline ("loop never calls look()") is looser than the shipped gate; EYES-ENAB-001 governs.
-7. `index.ts` has no test; `startEyes` and the pure pieces are tested, the loop, `connectObs`, `screenshot` are not. 15 of 37 `[x]` specs have no test (see the arrow doc).
-8. EYES-INJ-004 (wrong kind) and the redirect half of EYES-INJ-006 have no test; EYES-HEALTH-003's recovery to `ok` after a success is not asserted (the test only drives a failure).
+5. Config-example comment says vision.enabled `false = eyes idles, never touches OBS` (`config/config.example.yaml:38`), consistent with code. The frozen OpenSpec baseline ("loop never calls look()") is looser than the shipped gate; EYES-ENAB-001 governs.
+6. `index.ts` has no test; `startEyes` and the pure pieces are tested, the loop, `connectObs`, `screenshot` are not. 15 of 37 `[x]` specs have no test (see the arrow doc).
+7. EYES-INJ-004 (wrong kind) and the redirect half of EYES-INJ-006 have no test; EYES-HEALTH-003's recovery to `ok` after a success is not asserted (the test only drives a failure).
 
 ## References
 
@@ -121,6 +120,7 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 - `services/eyes/src/index.ts`, `eyes.ts`, `health.ts`, `inject.ts`, `obs.ts`
 - `services/eyes/test/eyes.test.ts`, `health.test.ts`, `inject.test.ts`, `obs.test.ts`
 - `services/eyes/package.json`, `services/eyes/tsconfig.json`
+- `packages/shared/src/inject.ts`, `packages/shared/test/inject.test.ts` (shared inject helpers)
 
 ### Other segments
 - `event-bus` (depends on): `Bus`, `vision.summary`, `inject.request`/`inject.result`.
@@ -128,7 +128,8 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 - `control-plane` (depends on): `startHeartbeat`, `tracked`, `HeartbeatSpec`.
 - `model-backends`: not used; eyes calls Ollama directly with `fetch` rather than the shared `ChatProvider` (observation).
 - `dashboard` (called by): serves `/uploads/:id`, publishes `inject.request`, shows `inject.result`.
-- `ears` (sibling): duplicates `uploadUrl`.
+- `ears` (sibling): imports `uploadUrl` and `INJECT_STALE_MS` from `@cohost/shared`; `chat` imports `INJECT_STALE_MS`.
+- `@cohost/shared` (depends on, workspace package): `uploadUrl`, `INJECT_STALE_MS`; owned by this LLD, see Image Injection.
 - `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`).
 - `deployment`: compose service `eyes`, profile `eyes` (`docker-compose.yml:145-148`).
 

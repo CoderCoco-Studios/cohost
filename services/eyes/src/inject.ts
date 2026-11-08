@@ -1,9 +1,7 @@
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
+import { INJECT_STALE_MS, uploadUrl } from "@cohost/shared";
 import { isTimeout } from "./eyes.js";
-
-/** Requests older than this are dropped (consumer groups resume after a restart). */
-export const INJECT_STALE_MS = 60_000;
 
 /** Defaults for the `vision.upload_timeout_ms` and `vision.upload_max_bytes` config keys. */
 export const UPLOAD_TIMEOUT_MS = 10_000;
@@ -67,24 +65,6 @@ async function readCapped(res: Response, max: number): Promise<Buffer | undefine
     chunks.push(value);
   }
   return Buffer.concat(chunks);
-}
-
-// @spec EYES-INJ-005
-/**
- * Returns the URL to fetch when it lies under `<dashboardUrl>/uploads/` (same origin, normalised
- * path), else undefined. Guards against the bus being used to make eyes fetch arbitrary URLs.
- */
-export function uploadUrl(raw: string | undefined, dashboardUrl: string): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const u = new URL(raw);
-    const base = new URL(dashboardUrl);
-    if (u.origin !== base.origin || u.username || u.password) return undefined;
-    const prefix = base.pathname.replace(/\/+$/, "") + "/uploads/";
-    return u.pathname.startsWith(prefix) && u.pathname.length > prefix.length ? u.href : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 // @spec EYES-INJ-002, EYES-INJ-003, EYES-INJ-004, EYES-INJ-005, EYES-INJ-006, EYES-INJ-007, EYES-INJ-008, EYES-INJ-009, EYES-INJ-010, EYES-INJ-012, EYES-INJ-013

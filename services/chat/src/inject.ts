@@ -1,8 +1,6 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
-
-/** Requests older than this are dropped (consumer groups resume after a restart). */
-export const INJECT_STALE_MS = 60_000;
+import { INJECT_STALE_MS } from "@cohost/shared";
 
 export interface InjectDeps {
   bus: Publisher;

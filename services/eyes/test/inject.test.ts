@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, event, silentLog } from "@cohost/testing";
 import { Eyes } from "../src/eyes.js";
-import { createInjectHandler, uploadUrl } from "../src/inject.js";
+import { createInjectHandler } from "../src/inject.js";
 
 const DASH = "http://dashboard:3000";
 const UP = `${DASH}/uploads/abc123`;
@@ -101,14 +101,6 @@ test("injection does not disturb look()'s previous description (works with no OB
   await handle(req());
   await eyes.look();
   assert.deepEqual(previous, ["", "", "first look"]);
-});
-
-// @spec EYES-INJ-005
-test("uploadUrl accepts only same-origin /uploads/<id>", () => {
-  assert.equal(uploadUrl(UP, DASH), UP);
-  assert.equal(uploadUrl(`${DASH}/uploads/`, DASH), undefined);
-  assert.equal(uploadUrl("http://dashboard:3001/uploads/a", DASH), undefined);
-  assert.equal(uploadUrl(UP, "http://dashboard:3000/"), UP);
 });
 
 // @spec EYES-INJ-012

@@ -62,9 +62,9 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 
 ### WAV parsing and the lip-sync envelope
 
-`parseWav` (`wav.ts:12-34`): requires `RIFF`...`WAVE`; walks chunks (odd sizes padded), reads channels / sample rate / bits from `fmt `, and on `data` clamps the length to the buffer (tolerates truncated or streamed replies) and computes `durationMs = frames / sampleRate * 1000`. Throws `not a RIFF/WAVE file` or `no data chunk`. It does not check the format tag (PCM vs float) and a missing `fmt ` leaves zeros (divide by zero).
+`parseWav` (from `@cohost/shared`, `packages/shared/src/wav.ts`; ears uses the same parser through `readWavHeader`, see [ears](../ears/ears-design.md)): requires `RIFF`...`WAVE`; walks chunks (odd sizes padded), reads channels / sample rate / bits from `fmt `, and on `data` clamps the length to the buffer (tolerates truncated or streamed replies) and computes `durationMs = frames / sampleRate * 1000`. Throws `not a RIFF/WAVE file` or `no data chunk`. It does not check the format tag (PCM vs float) and a missing `fmt ` leaves zeros (divide by zero).
 
-`envelope` (`wav.ts:40-59`): 16-bit only (throws `unsupported bit depth N`); reads **only the first channel**; one window per `floor(sampleRate / hz)` frames (800 at 24 kHz / 30 Hz) including a partial last window; per window `min(1, (rms / 0.22) ^ 0.8)`; then a one-pole release `out[i] = max(out[i], out[i-1] * 0.6)` so the mouth closes over several windows; rounded to 2 decimals. `ENVELOPE_HZ = 30` is a constant (`voice.ts:6`). [avatar](../avatar/avatar-design.md) consumes the envelope from `voice.utterance` and indexes it from `voice.playing`.
+`envelope` (`wav.ts:8-26`): 16-bit only (throws `unsupported bit depth N`); reads **only the first channel**; one window per `floor(sampleRate / hz)` frames (800 at 24 kHz / 30 Hz) including a partial last window; per window `min(1, (rms / 0.22) ^ 0.8)`; then a one-pole release `out[i] = max(out[i], out[i-1] * 0.6)` so the mouth closes over several windows; rounded to 2 decimals. `ENVELOPE_HZ = 30` is a constant (`voice.ts:6`). [avatar](../avatar/avatar-design.md) consumes the envelope from `voice.utterance` and indexes it from `voice.playing`.
 
 ## Audio Store and HTTP
 
@@ -150,7 +150,7 @@ sequenceDiagram
 | Claim mechanism | Any non-`virtual` `voice.playing` for the id suppresses the fallback | Explicit sink registration; sink ack protocol | Reuses the `voice.playing` every sink already publishes for avatar lip-sync (`voice.ts:119`), so no new event, registration step or sink state exists; a sink needs no knowledge of the fallback. Registration or an ack protocol would add events and per-sink lifecycle for no behaviour the claim does not already give. |
 | TTS failure | Publish `voice.done` sink `error`, no utterance | Retry; emit a silent utterance | Comment: "Let the brain continue even though nothing was said" (`voice.ts:151`). |
 | Audio store | In-memory map, newest 50 | Disk, TTL | Sinks fetch an utterance as soon as they play it, so audio is needed for seconds, not across restarts; 50 ids bound memory while covering any realistic sink queue (`voice.ts:80`). Disk adds I/O and cleanup for data no one reads after playback; a TTL bounds by age rather than memory. |
-| Envelope shape | 30 Hz RMS, soft knee `(rms/0.22)^0.8`, 0.6 release | Peak, FFT/visemes | Comments: the soft knee makes "normal speech read as ~0.3-0.8 mouth-open rather than hugging zero" and the release is "light smoothing so the mouth doesn't flicker" (`wav.ts:36-38,56`). RMS tracks loudness more steadily than peak, which jumps on single samples; FFT or viseme analysis would cost more and needs a mouth model with more than the one open value avatar drives. |
+| Envelope shape | 30 Hz RMS, soft knee `(rms/0.22)^0.8`, 0.6 release | Peak, FFT/visemes | Comments: the soft knee makes "normal speech read as ~0.3-0.8 mouth-open rather than hugging zero" and the release is "light smoothing so the mouth doesn't flicker" (`wav.ts:4-7,24`). RMS tracks loudness more steadily than peak, which jumps on single samples; FFT or viseme analysis would cost more and needs a mouth model with more than the one open value avatar drives. |
 | Envelope source channel | First channel only | Mix channels | Kokoro returns mono (`wav.ts:1`, `wav.test.ts:81`), so the first channel is the whole signal; mixing would add work for no TTS output in use. |
 | WAV support | 16-bit PCM only | Floats / other depths | Comment: "PCM 16-bit only (what Kokoro emits)" (`wav.ts:1`). |
 | Stub engine | Silent WAV sized 60 ms/char (min 400 ms) | Skip voice.utterance entirely | Isolated-backends design D5: silence sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`; commit `51d5a9c`). |
@@ -167,9 +167,9 @@ sequenceDiagram
 ## Open Questions & Future Decisions
 
 1. **Single sequential loop does TTS and claim intake.** A slow synthesis delays claim processing and can cause spurious virtual pairs; synthesis could be moved off the loop (as cortex does by not awaiting `this.think(...)`, `cortex.ts:67`).
-2. **Two near-duplicate WAV parsers.** `services/voice/src/wav.ts:12-34` (`parseWav`: validates RIFF/WAVE, returns bits and duration) and `services/ears/src/audio.ts:44-55` (`readWavHeader`: no RIFF check, no bit depth, throws `bad wav`), plus `services/ears/src/inject.ts:36-45` adding a RIFF check around it, plus two WAV writers (`stubSynth` header at `voice.ts:41-62`, ears `wavWrap` at `audio.ts:57-64`). No shared package. Consolidation target is undecided.
-3. **Cross-service test import.** `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` (only for `wavWrap`), coupling voice's test run to ears' source; `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
-4. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`wav.ts:17-29`). Envelope silently ignores extra channels.
+2. **Two WAV writers.** `stubSynth` hand-builds a header (`voice.ts:41-62`) beside ears' `wavWrap` (`services/ears/src/audio.ts`). The parser is shared (`@cohost/shared`); the writers are not.
+3. **Cross-service test import.** `services/voice/test/voice.test.ts:5` imports `../../ears/src/audio.js` (only for `wavWrap`, the one WAV writer not yet shared), coupling voice's test run to ears' source; `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
+4. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`packages/shared/src/wav.ts`). Envelope silently ignores extra channels.
 5. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:158,166`).
 6. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
 7. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
@@ -182,6 +182,7 @@ Files in this segment:
 - `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `wav.ts`, `health.ts`
 - `services/voice/test/boot.test.ts`, `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
+- `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
 
 Other segments (arrow shows direction):
 

@@ -26,8 +26,8 @@ taxonomy:
     - control-plane
     - deployment
 
-# The `@cohost/shared` workspace package (small inject helpers, owned by the eyes
-# segment) is deliberately not a segment and not listed in blocks / blockedBy.
+# The `@cohost/shared` workspace package (small inject helpers owned by the eyes
+# segment, and the `parseWav` WAV parser used by voice and ears) is deliberately not a segment and not listed in blocks / blockedBy.
 # blocks / blockedBy follow the workspace-package import graph observed at
 # mapping time (git 686cc8f). Bus-event coupling between services is not
 # encoded here; see each LLD's References section.

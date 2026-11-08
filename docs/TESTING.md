@@ -324,7 +324,7 @@ dev-pub    chat.message    {"platform":"twitch","user":"viewer","text":"hey Coco
 salience   attention.focus {"reason":"mentioned","score":1,"focus":{"kind":"chat","who":"viewer",...,"mention":true}}
 ```
 
-Salience subscribes `fromNow`, so start it **before** publishing, and give it
+Salience subscribes with start `latest`, so start it **before** publishing, and give it
 a second or two to connect. `salience` also needs a `tick_ms` to pass before it emits.
 
 ### Recipe B: full talking loop, no GPU, no accounts
@@ -400,6 +400,6 @@ Found while writing this guide.
 
 1. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 2. **Bus state persists** in Redis between runs (and `salience` etc. use
-   `fromNow`, but `bus-tail --replay` will show old traffic).
+   start `latest`, but `bus-tail --replay` will show old traffic).
 3. **Not verified here:** the `tts` GPU image, `eyes` and `ears` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord. The README's Status section says the same for the
    real integrations.

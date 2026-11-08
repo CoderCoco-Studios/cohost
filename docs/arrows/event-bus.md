@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 60 implemented, 0 deferred, 1 gap. The owner decisions of 2026-11-01 are applied below; the bus-side fixes are implemented. The one remaining gap, BUS-SUB-011 (every caller names `start`, then `start` becomes required), needs work in other segments.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented.
 
 ## Decisions applied
 
@@ -73,14 +73,14 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Shutdown | BUS-STOP-001 to 006 | 6 | 0 | 0 | 6 |
 | Test double | BUS-TEST-001 to 010 | 10 | 0 | 0 | 0 |
 
-**Summary:** 60 of 61 specs implemented; 0 deferred; 1 gap (BUS-SUB-011 awaiting every caller naming `start`). 38 of the 60 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
+**Summary:** 61 of 61 specs implemented; 0 deferred; 0 gaps. 39 of the 61 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line is observed in code and carries an `@spec` annotation. The one `[ ]` line (BUS-SUB-011) names the cross-segment work that remains.
+1. **Markers.** Every `[x]` line is observed in code and carries an `@spec` annotation. No `[ ]` lines remain.
 2. **The event schema specs match `events.ts` field for field.** BUS-EVT-002, 003, 004, 006, 009 and 010 list every field; BUS-EVT-012 (`vision.summary`), 013 (`speech.heard`), 014 (`brain.say`), 015 (`brain.status`), 016 (`voice.utterance`), 017 (`voice.playing` / `voice.done`), 018 (`avatar.state`) and 019 (`Emotion` fields) cover the rest. BUS-EVT-018 additionally requires `mouthSmile`, which the schema lacks today (B2).
 3. **Other spec corrections** (IDs kept): BUS-STREAM-003 (unknown payload keys are stripped), BUS-SUB-003 (one pending batch of up to 50, then new entries), BUS-STOP-002 (rejected hooks are ignored; synchronous throws are BUS-STOP-006). BUS-TEST-009 (`FakeBus.consumer`) and BUS-TEST-010 (`silentLog`, `recordingLog`) cover the remaining test helpers.
-4. **Restart behaviour.** `subscribe` takes an optional `start` (`latest` default, or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010). `fromNow` is a deprecated, ignored field. Every service caller still passes `fromNow: true`, so all of them run as `latest`, including memory, which needs `resume` (BUS-SUB-011 lists the callers). Delivery is at most once (BUS-SUB-008).
+4. **Restart behaviour.** `subscribe` takes a required `start` (`latest` or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010). `fromNow` is removed; every service caller names `start` (memory `resume`, the rest `latest`) (BUS-SUB-011). Delivery is at most once (BUS-SUB-008).
 5. **Several `onShutdown` registrations share one sequence** (`runShutdown`, `index.ts:320-345`): hooks once, every callback in registration order, failures logged (to the registration's optional logger or `console.error`), one `exit(0)`. Eyes and ears register more than one callback. (BUS-STOP-005, 006)
 6. **Handler failures and undecodable entries are silently dropped** — ack-always at `index.ts:166`; `decode` swallows every parse error with no log (`index.ts:226-228`); the ack-on-failure behaviour is pinned by `bus.test.ts:56-81`. A schema mismatch between producer and consumer would lose events invisibly. (BUS-SUB-005, BUS-SUB-007)
 7. **Read failures retry with a capped, growing delay and tail handlers are guarded** (`index.ts:261-281`); a Redis outage at subscribe time before the group exists still rejects `subscribe` (group creation is not retried), and callers use `void bus.subscribe(...)` with no `.catch`. (BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004, BUS-SUB-001)

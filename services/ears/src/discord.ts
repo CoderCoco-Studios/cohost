@@ -71,7 +71,7 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
 
   let stopped = false;
 
-  // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004, EARS-SESS-007
+  // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004, EARS-SESS-007, CFG-USR-005
   async function join() {
     const target = voiceTarget(cfg.ears.discord);
     const guild = await client.guilds.fetch(target.guildId);

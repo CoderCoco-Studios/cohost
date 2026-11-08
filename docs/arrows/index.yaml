@@ -39,7 +39,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "CFG-USR-005: wire DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID through config into ears (ears segment), then intent review of [proposed] LLD rows."
+    next: "intent review of [proposed] LLD rows."
     drift: null
 
   event-bus:

@@ -46,7 +46,7 @@ test("concurrent runs share one retry loop, and stopping ends it", async () => {
   assert.equal(calls, 3);
 });
 
-// @spec EARS-SESS-007
+// @spec EARS-SESS-007, CFG-USR-005
 test("the guild and voice channel come from the ears.discord config keys, not the environment", () => {
   const prev = { g: process.env.DISCORD_GUILD_ID, c: process.env.DISCORD_VOICE_CHANNEL_ID };
   process.env.DISCORD_GUILD_ID = "env-guild";

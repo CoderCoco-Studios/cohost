@@ -159,7 +159,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "MEM-START-005: needs a bus group-ready signal before ready() can follow subscription; then intent review."
+    next: "Intent review."
     drift: null
 
   cortex:

@@ -336,3 +336,15 @@ test("resetGroup rethrows an error that is not a missing stream or group", async
   await assert.rejects(bus.resetGroup("g"), /READONLY/);
   bus.stop();
 });
+
+// @spec MEM-START-005
+test("onReady fires after the group is created and positioned, before the first read", async () => {
+  const fake = new FakeRedis();
+  fake.script.xgroup = [busyGroup];
+  const { bus } = busWith(fake);
+  let callsAtReady: string[] = [];
+  const done = bus.subscribe({ group: "g", start: "latest", blockMs: 10, onReady: () => { callsAtReady = fake.calls.map((c) => c[0] as string); } }, () => {});
+  await until(() => fake.of("xreadgroup").length > 0);
+  assert.deepEqual(callsAtReady, ["xgroup", "xgroup"]);
+  bus.stop(); await done;
+});

@@ -4,7 +4,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 54 specs: 52 implemented, 1 deferred, 1 gap. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, except `MEM-START-005`, which waits on a bus hook (event-bus).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 54 specs: 53 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
 
 ## Decisions applied
 
@@ -86,11 +86,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
-| Startup and shutdown | MEM-START-001 to MEM-START-006 | 5 | 0 | 1 (START-005) | 4 |
+| Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 5 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-010 | 10 | 0 | 0 | 9 |
 
-**Summary:** 52 of 54 specs implemented and annotated in code; 1 deferred (`MEM-VIEWER-005`); 1 gap (`MEM-START-005`: `ready` can precede consumer-group creation until the bus offers a group-ready hook). 49 spec lines have a test annotated with `@spec` (the "With test" column). Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts` and `reflect.ts` are wiring only and untested; the logic they used to hold is in `startup.ts` and `reflect-run.ts`, covered with fakes (no test runs against a real Postgres).
+**Summary:** 53 of 54 specs implemented and annotated in code; 1 deferred (`MEM-VIEWER-005`); no gaps (`MEM-START-005` is closed: `ready` follows both groups' `onReady`). 49 spec lines have a test annotated with `@spec` (the "With test" column). Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts` and `reflect.ts` are wiring only and untested; the logic they used to hold is in `startup.ts` and `reflect-run.ts`, covered with fakes (no test runs against a real Postgres).
 
 ## Key Findings
 
@@ -102,7 +102,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 6. **Reflect announces the mock backend** — `runReflect` warns once when the chat provider is `mock` (`reflect-run.ts:25`). `MEM-REFLECT-010`, `LLM-MOCK-005` (that spec line lives in model-backends).
 7. **`viewers.notes` has no writer** — read and forwarded in `memory.viewer` (`store.ts:142-152`, `region.ts:32`) but never written anywhere; cortex surfaces it only for viewers above 25 messages. S26, `MEM-VIEWER-005` `[D]`.
 8. **Restarts replay the backlog, by design** — both groups subscribe with `start: "resume"` (`startup.ts:60-61`, asserted in `startup.test.ts:28`); manifest default `resume` (`packages/control/src/manifest.ts:43`). P8, `MEM-EVT-001`.
-9. **`ready` can precede group creation (open)** — the bus has no group-ready hook and `resetGroup` would move a resumed group to `$`, so `heartbeat.ready()` follows the `void` subscriptions at once (`startup.ts:60-62`). R3, `MEM-START-005`. Follow-up: event-bus adds `SubscribeOptions.onReady` (`packages/bus/src/index.ts`).
+9. **`ready` waits for both consumer groups (resolved)** — `SubscribeOptions.onReady` fires after the group exists and is positioned; `startup.ts` reports `ready` once both fire. R3, `MEM-START-005`.
 10. **A failing viewer upsert no longer drops the chat event** — `region.ts:25-29` catches, logs a warning, skips `memory.viewer` and still remembers the mention. B8, `MEM-VIEWER-006`.
 11. **Startup reports `degraded` while waiting** for Ollama or Postgres (`startup.ts:35,49`). R3, `MEM-HEALTH-007`.
 12. **Two hash embedders** — `fake-store.ts:8-17` (unsigned, tokens include apostrophes, zero vector for empty text) vs `packages/llm/src/mock.ts:39-50` (signed, fixed unit vector for empty text). `backend.ts:8-10` uses the llm one only for `store=postgres, embedder=hash`; the fake ignores the supplied embedder. Memory deliberately does not follow `llm.provider=mock` (commit `51d5a9c`).
@@ -112,7 +112,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-1. Add a group-ready hook to the bus (`SubscribeOptions.onReady`, called after the consumer group exists and is positioned, before the first read) and report `ready` from it (`MEM-START-005`, R3). Owner: event-bus segment; memory then calls `heartbeat.ready()` from the hook in `startup.ts`.
+1. (done) `MEM-START-005`: bus `onReady` hook plus `startup.ts` wait.
 
 ### Should Fix
 2. Fix the stale comments `services/memory/src/index.ts:8-10` (`memory.viewer` goes on every mention, `region.ts:30-33`) and `services/memory/src/backend.ts:16` ("main's fake") (B20).

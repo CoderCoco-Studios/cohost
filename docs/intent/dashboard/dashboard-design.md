@@ -30,7 +30,7 @@ The dashboard is also the only path by which a player on the host (outside the C
 7. `server.listen(PORT, bind?)`; the heartbeat becomes `ready` only once listening (`:53-54`). With control disabled `bind` is undefined, so Node listens on all interfaces; compose publishes `${DASHBOARD_PORT:-3000}:3000` (`docker-compose.yml`, dashboard service).
 8. `onShutdown` clears the sweeper, stops the feed, closes the WebSocket and HTTP servers, stops the bus (`:56`). The heartbeat's `stopping` is published by `startHeartbeat`'s own shutdown hook (control-plane).
 
-Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_RUNTIME`, `CONTROL_PROCESS_MODE`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), plus the heartbeat interval env owned by control-plane.
+Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), plus the heartbeat interval env owned by control-plane.
 
 ## HTTP surface
 
@@ -142,7 +142,7 @@ Files in segment:
 
 Other segments (direction):
 - event-bus: publishes `control`, `voice.playing`, `voice.done`, `inject.request`, `chat.message`, `speech.heard`, `vision.summary`, `service.lifecycle`; reads the whole main stream (`tail`, `recent`) and the health stream (`recentHealth`, `tailHealth`). Schemas in `packages/bus/src/events.ts`.
-- control-plane: `HealthTracker`, `ServiceController`, `ComposeRuntime` / `ProcessRuntime`, `loadControlConfig`, `bearerOk`, `isLoopback`; heartbeat contract (`startHeartbeat`, `HeartbeatSpec`).
+- control-plane: `HealthTracker`, `ServiceController`, `ComposeRuntime`, `loadControlConfig`, `bearerOk`, `isLoopback`; heartbeat contract (`startHeartbeat`, `HeartbeatSpec`).
 - config: `loadConfig`, `urls.voice()`, `urls.dashboard()`, `loadPersonality`, `savePersonality`, `cfg.cohost.name`, `cfg.dashboard.port`.
 - voice: source of `/audio/<id>.wav` and `voice.utterance`; consumer of `voice.playing` / `voice.done` with `sink: "dashboard"`.
 - chat, eyes, ears: handle `inject.request` for `target` chat / eyes / ears and publish `inject.result`; eyes and ears fetch `/uploads/<id>` from this service.

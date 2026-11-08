@@ -14,7 +14,7 @@ class CtlBus extends FakeBus {
 function fakeRuntime() {
   const calls: string[] = [];
   const rt: Runtime = {
-    name: "process",
+    name: "compose",
     async start(id) { calls.push(`start ${id}`); return { ok: true }; },
     async stop(id) { calls.push(`stop ${id}`); return { ok: true }; },
     async restart(id) { calls.push(`restart ${id}`); return { ok: true }; },
@@ -103,7 +103,13 @@ test("enabled + token: POST /control (incl. targeted pause) and PUT /personality
 // @spec DASH-CTRL-005, DASH-CTRL-007
 test("GET /services/control reports enabled without needing a token", async () => {
   const t = await boot(ON);
-  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "process", advanced: false });
+  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "compose", advanced: false });
+});
+
+// @spec DASH-CTRL-007
+test("setupControl without an injected runtime always selects the compose runtime", () => {
+  const setup = setupControl({ ...ON, CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "start" }, new CtlBus(), recordingLog().log);
+  assert.equal(setup.control?.runtime, "compose");
 });
 
 // @spec DASH-SVC-001

@@ -32,8 +32,6 @@ export interface ControllerOptions {
   /** CONTROL_ADVANCED: allow infra (redis, postgres) mutations. */
   advanced?: boolean;
   manifest?: readonly ServiceDef[];
-  /** Process runtime script, default from the runtime itself. */
-  processMode?: "dev" | "start";
 }
 
 /** Resets every group; stops at the first failure. */
@@ -69,14 +67,13 @@ export class ServiceController {
     return { def };
   }
 
-  // @spec CTRL-GUARD-004, CTRL-GUARD-005, CTRL-GUARD-006, CTRL-GUARD-007, CTRL-GUARD-008, CTRL-GUARD-009
+  // @spec CTRL-GUARD-004, CTRL-GUARD-005, CTRL-GUARD-006, CTRL-GUARD-007, CTRL-GUARD-008
   private async act(action: LifecycleAction, id: string, a: ActionOptions): Promise<ControlResult> {
     const g = this.guard(action, id);
     if ("refusal" in g) return g.refusal;
     const { def } = g;
     const mode = def.infra ? "resume" : a.mode ?? def.defaultMode;
     const start: StartOptions = {
-      processMode: this.o.processMode,
       env: a.isolated && !def.infra ? { ...def.isolatedEnv } : undefined,
     };
     const fresh = mode === "fresh" && def.groups.length > 0;
@@ -93,8 +90,7 @@ export class ServiceController {
     } else {
       // stop -> reset (only after stop resolved) -> start
       res = await this.o.runtime.stop(def.id);
-      // CTRL-GUARD-009: a stop that found nothing running continues as a start.
-      if (res.ok || res.notRunning) res = fresh ? await this.resetThen(def, () => this.o.runtime.start(def.id, start)) : await this.o.runtime.start(def.id, start);
+      if (res.ok) res = fresh ? await this.resetThen(def, () => this.o.runtime.start(def.id, start)) : await this.o.runtime.start(def.id, start);
     }
     try {
       await this.o.audit?.({ service: def.id, action, by: this.o.by, ok: res.ok, ...(res.detail ? { detail: res.detail } : {}) });
@@ -125,7 +121,7 @@ export class ServiceController {
   }
 
   private async runRequiredStart(r: ServiceDef): Promise<RuntimeResult> {
-    const opts: StartOptions = { processMode: this.o.processMode, env: r.infra ? undefined : { ...r.isolatedEnv } };
+    const opts: StartOptions = { env: r.infra ? undefined : { ...r.isolatedEnv } };
     const run = () => this.o.runtime.start(r.id, opts);
     const res = r.defaultMode === "fresh" && r.groups.length > 0 && !r.infra ? await this.resetThen(r, run) : await run();
     try {

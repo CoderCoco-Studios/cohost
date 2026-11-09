@@ -117,6 +117,32 @@ brain:
     embedder: "${MEMORY_EMBEDDER:-ollama}"  # ollama | hash (deterministic, offline)
     recall_k: 6                # memories pulled per prompt (0 disables recall)
     min_similarity: 0.35
+    regular_messages: 25       # lifetime messages above which a viewer counts as a regular (the owner can also flag one)
+    # Viewer notes: short, fading notes the co-host keeps about each viewer. Every number below is a default.
+    notes:
+      dirty_threshold: 20            # unconsolidated notes that start a consolidation pass (also run once after you shut the AI down)
+      recent_half_life_days: 7       # a recent note loses half its strength this often
+      core_half_life_days: 60        # a core note does too, more slowly
+      reinforce: 0.6                 # a repeat mention closes this fraction of the gap to full strength
+      promote_mentions: 3            # mentions that turn a recent note into a core one
+      demote_below: 0.3              # a core note weaker than this falls back to recent
+      drop_below: 0.1                # a recent note weaker than this is forgotten
+      returning_strength: 0.3        # a topic you deleted without a reason comes back this weak
+      suppress_similarity: 0.8       # similarity at which a note matches a deletion that had a reason
+      capture_min_chars: 8           # chat lines shorter than this are not considered for notes
+      max_notes_per_viewer: 5        # notes the cortex is shown per viewer
+      max_notes_total: 15            # notes the cortex is shown in all
+      sensitive_cooldown_hours: 24   # health and family notes are surfaced at most this often
+      deleted_retention_days: 30     # deletions without a reason are forgotten after this long
+      # Hook: the quality pass over new notes (merge duplicates, fix wording, recheck sensitivity). rules | llm | http.
+      # Runs only while the cortex is idle, on the cortex's own model through local Ollama. Failure = no changes.
+      consolidator:
+        kind: llm
+        url: ""
+        timeout_ms: 60000
+        llm:
+          provider: ollama
+          model: "${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"
 
   cortex:
     recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down

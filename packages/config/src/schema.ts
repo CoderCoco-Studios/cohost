@@ -158,6 +158,34 @@ export const ConfigSchema = z.object({
       embedder: z.preprocess((v) => v || "ollama", z.enum(["ollama", "hash"])),
       recall_k: z.number().int().nonnegative().default(6),
       min_similarity: z.number().min(0).max(1).default(0.35),
+      /** Lifetime message count above which a viewer is a regular (the owner's flag also makes one). */
+      // @spec CFG-SCH-014
+      regular_messages: z.number().int().positive().default(25),
+      /** Viewer notes: fade, promotion, caps and the two model hooks. */
+      // @spec CFG-SCH-015, CFG-SCH-016
+      notes: z.object({
+        /** Dirty notes that trigger a consolidation pass. */
+        dirty_threshold: z.number().int().positive().default(20),
+        recent_half_life_days: z.number().positive().default(7),
+        core_half_life_days: z.number().positive().default(60),
+        /** Fraction of the gap to full strength a fresh mention closes. */
+        reinforce: z.number().min(0).max(1).default(0.6),
+        /** A recent note mentioned this often becomes core. */
+        promote_mentions: z.number().int().positive().default(3),
+        demote_below: z.number().min(0).max(1).default(0.3),
+        drop_below: z.number().min(0).max(1).default(0.1),
+        returning_strength: z.number().min(0).max(1).default(0.3),
+        suppress_similarity: z.number().min(0).max(1).default(0.8),
+        capture_min_chars: z.number().int().nonnegative().default(8),
+        max_notes_per_viewer: z.number().int().positive().default(5),
+        max_notes_total: z.number().int().positive().default(15),
+        sensitive_cooldown_hours: z.number().nonnegative().default(24),
+        deleted_retention_days: z.number().positive().default(30),
+        /** Hook: live note capture (a small, cheap model). rules = writes no note. */
+        capture: ModuleSchema,
+        /** Hook: the after-the-fact quality pass (a stronger model). rules = proposes no change. */
+        consolidator: ModuleSchema,
+      }).default({}),
     }).default({}),
     cortex: z.object({
       /** How long to wait for the memory region before answering without it. */

@@ -453,3 +453,68 @@ test("the shipped example shows the new timeout keys with their schema defaults"
   assert.equal(cfg.vision.upload_max_bytes, 8388608);
   assert.equal(cfg.llm.timeout_ms, 60000);
 });
+
+// @spec CFG-SCH-014
+test("brain.memory.regular_messages defaults to 25 and must be a positive integer", () => {
+  assert.equal(ConfigSchema.parse(baseCfg()).brain.memory.regular_messages, 25);
+  const with_ = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { memory: { regular_messages: v } } });
+  for (const v of [0, -1, 1.5]) assert.equal(with_(v).success, false, `${v}`);
+  assert.equal(with_(40).success, true);
+});
+
+// @spec CFG-SCH-015
+test("brain.memory.notes defaults to the documented numbers and rejects out-of-range values", () => {
+  const { capture: _c, consolidator: _k, ...numbers } = ConfigSchema.parse(baseCfg()).brain.memory.notes;
+  assert.deepEqual(numbers, {
+    dirty_threshold: 20, recent_half_life_days: 7, core_half_life_days: 60, reinforce: 0.6, promote_mentions: 3,
+    demote_below: 0.3, drop_below: 0.1, returning_strength: 0.3, suppress_similarity: 0.8, capture_min_chars: 8,
+    max_notes_per_viewer: 5, max_notes_total: 15, sensitive_cooldown_hours: 24, deleted_retention_days: 30,
+  });
+  const with_ = (k: string, v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { memory: { notes: { [k]: v } } } });
+  const bad: [string, unknown[]][] = [
+    ["dirty_threshold", [0, -1, 1.5]], ["recent_half_life_days", [0, -1]], ["core_half_life_days", [0, -1]],
+    ["reinforce", [-0.1, 1.1]], ["promote_mentions", [0, 1.5]], ["demote_below", [-0.1, 1.1]], ["drop_below", [-0.1, 1.1]],
+    ["returning_strength", [-0.1, 1.1]], ["suppress_similarity", [-0.1, 1.1]], ["capture_min_chars", [-1, 1.5]],
+    ["max_notes_per_viewer", [0, 1.5]], ["max_notes_total", [0, 1.5]], ["sensitive_cooldown_hours", [-1]], ["deleted_retention_days", [0, -1]],
+  ];
+  for (const [k, vs] of bad) for (const v of vs) assert.equal(with_(k, v).success, false, `${k}=${v}`);
+  assert.equal(with_("capture_min_chars", 0).success, true);
+  assert.equal(with_("sensitive_cooldown_hours", 0).success, true);
+  assert.equal(with_("recent_half_life_days", 0.5).success, true);
+  assert.equal(with_("reinforce", 0).success && with_("reinforce", 1).success, true);
+});
+
+// @spec CFG-SCH-016
+test("brain.memory.notes.capture and consolidator are hook configs defaulting to rules, with the hook provider/model rules", () => {
+  const notes = ConfigSchema.parse(baseCfg()).brain.memory.notes;
+  for (const hook of [notes.capture, notes.consolidator]) {
+    assert.equal(hook.kind, "rules");
+    assert.equal(hook.timeout_ms, 1500);
+    assert.equal(hook.llm.provider, undefined);
+  }
+  const with_ = (hook: string, v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { memory: { notes: { [hook]: v } } } });
+  for (const hook of ["capture", "consolidator"] as const) {
+    assert.equal(with_(hook, { kind: "llm", llm: { provider: "ollama", model: "x" } }).success, true);
+    assert.equal(with_(hook, { kind: "llm", llm: { provider: "ollama" } }).success, false, "provider without a model");
+    assert.equal(with_(hook, { kind: "llm", llm: { provider: "mock", model: "x" } }).success, false, "mock cannot be named");
+    assert.equal(with_(hook, { kind: "" }).data!.brain.memory.notes[hook].kind, "rules");
+  }
+});
+
+// @spec CFG-USR-007
+test("the shipped example configures the consolidator on the cortex's model via ollama and lists the notes keys with their defaults", () => {
+  const { cfg, warnings } = loadShippedBare();
+  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
+  const c = cfg.brain.memory.notes.consolidator;
+  assert.equal(c.kind, "llm");
+  assert.equal(c.llm.provider, "ollama");
+  assert.equal(c.llm.model, cfg.llm.model);
+  assert.equal(c.llm.model, "qwen2.5:7b-instruct-q4_K_M");
+  assert.equal(loadShippedBare({ LLM_MODEL: "other:tag" }).cfg.brain.memory.notes.consolidator.llm.model, "other:tag");
+  assert.equal(cfg.brain.memory.regular_messages, 25);
+  const { capture: _c, consolidator: _k, ...numbers } = cfg.brain.memory.notes;
+  const { capture: _c2, consolidator: _k2, ...expected } = ConfigSchema.parse(baseCfg()).brain.memory.notes;
+  assert.deepEqual(numbers, expected);
+  const yaml = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  for (const key of Object.keys(expected)) assert.match(yaml, new RegExp(`^\\s+${key}:`, "m"), `${key} listed in the example`);
+});

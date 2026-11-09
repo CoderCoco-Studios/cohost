@@ -57,6 +57,10 @@ export class Voice {
   private claimed = new Set<string>();
   /** Pending virtual `voice.done` timers, keyed by utterance id; a late real sink cancels its entry. */
   private virtualDone = new Map<string, NodeJS.Timeout>();
+  /** Where an utterance is in the virtual sink: waiting out its claim window, or publishing the virtual `voice.playing`. */
+  private phase = new Map<string, "window" | "publishing">();
+  /** Ids a sink gave up on (a `voice.failed` without fallback) before the window ended or the virtual `voice.playing` finished publishing. */
+  private givenUp = new Set<string>();
 
   constructor(private d: VoiceDeps) {}
 
@@ -67,6 +71,7 @@ export class Voice {
       const evicted = this.order.shift()!;
       this.store.delete(evicted);
       this.claimed.delete(evicted); // @spec VOICE-SINK-007
+      this.givenUp.delete(evicted);
     }
   }
 
@@ -87,9 +92,16 @@ export class Voice {
    * lets the done arrive back-to-back with the playing. A real sink that claimed the id during the publish wins: no
    * done is armed. A failed publish is logged inside `publishVirtual` and the done is still armed.
    */
-  private async playVirtual(id: string, durationMs: number): Promise<void> { // @spec VOICE-SINK-003, VOICE-SINK-008
+  private async playVirtual(id: string, durationMs: number): Promise<void> { // @spec VOICE-SINK-003, VOICE-SINK-008, VOICE-SINK-012
+    this.phase.set(id, "publishing");
     await this.publishVirtual("voice.playing", id);
+    this.phase.delete(id);
+    const reported = this.givenUp.delete(id);
     if (this.claimed.has(id)) return;
+    if (reported) { // a sink gave up on the line meanwhile: release at once instead of waiting out its duration
+      await this.publishVirtual("voice.done", id);
+      return;
+    }
     clearTimeout(this.virtualDone.get(id));
     this.virtualDone.set(id, setTimeout(() => {
       this.virtualDone.delete(id);
@@ -99,6 +111,7 @@ export class Voice {
 
   async onEvent(ev: BusEvent): Promise<void> {
     if (ev.type === "brain.say") await this.onSay(ev as BusEvent<"brain.say">);
+    else if (ev.type === "voice.failed") await this.onFailed(ev as BusEvent<"voice.failed">);
     else if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
       if (d.sink === "virtual") return; // @spec VOICE-SINK-005
@@ -107,6 +120,21 @@ export class Voice {
       const pending = this.virtualDone.get(d.id);
       if (pending) { clearTimeout(pending); this.virtualDone.delete(d.id); } // @spec VOICE-SINK-008
     }
+  }
+
+  /**
+   * A sink gave up on an utterance. Nothing to do when a fallback clip plays in its place, a real sink holds the id, or the
+   * audio is not stored; otherwise cortex is released without waiting for the line's duration.
+   */
+  private async onFailed(ev: BusEvent<"voice.failed">): Promise<void> { // @spec VOICE-SINK-010, VOICE-SINK-011, VOICE-SINK-012, VOICE-SINK-013
+    const { id, fallback } = ev.data;
+    if (fallback || this.claimed.has(id) || !this.store.has(id)) return;
+    if (this.phase.has(id)) { this.givenUp.add(id); return; } // acted on when the window ends / the virtual playing publish resolves
+    const pending = this.virtualDone.get(id);
+    if (!pending) return; // the virtual done was already published
+    clearTimeout(pending);
+    this.virtualDone.delete(id);
+    await this.publishVirtual("voice.done", id);
   }
 
   private async onSay(ev: BusEvent<"brain.say">) { // @spec VOICE-SYN-004, VOICE-SYN-005, VOICE-UTT-001
@@ -128,8 +156,13 @@ export class Voice {
         sampleRate: info.sampleRate,
       });
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
-      setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004
+      this.phase.set(id, "window");
+      setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004, VOICE-SINK-011
+        this.phase.delete(id);
+        const reported = this.givenUp.delete(id);
         if (this.claimed.has(id)) return;
+        // A sink gave up on this line and nobody claimed it: release cortex now, with no virtual playing.
+        if (reported) { void this.publishVirtual("voice.done", id); return; }
         void this.playVirtual(id, info.durationMs);
       }, 1500);
     } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006

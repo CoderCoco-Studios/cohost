@@ -42,7 +42,7 @@ export async function runVoice(boot: VoiceBoot): Promise<void> { // @spec VOICE-
     heartbeat.ready(); // @spec VOICE-HLTH-001
     log.info({ port, public: publicUrl, voice: cfg.voice.voice }, "voice online");
 
-    await bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing"], start: START }, (ev) => voice.onEvent(ev)); // @spec VOICE-SYN-001
+    await bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed"], start: START }, (ev) => voice.onEvent(ev)); // @spec VOICE-SYN-001, VOICE-SINK-010
   } catch (err) {
     log.error({ err }, "fatal");
     (boot.exit ?? ((code: number) => process.exit(code)))(1);

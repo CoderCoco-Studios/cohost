@@ -25,6 +25,14 @@ export const configDir = (): string =>
   resolve(process.env.CONFIG_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
 
 /**
+ * Where services keep generated files they must remember across restarts: `COHOST_DATA_DIR`, else `data` under the
+ * workspace root (cwd when there is none). Each service writes only under `<dataDir()>/<service>/`.
+ */
+// @spec CFG-DIR-006, CFG-DIR-007
+export const dataDir = (): string =>
+  resolve(process.env.COHOST_DATA_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "data"));
+
+/**
  * Replace ${VAR} with process.env.VAR (empty string when unset), and
  * ${VAR:-default} with the default when VAR is unset or empty. The default
  * form lets config.yaml hold the normal value literally while still allowing

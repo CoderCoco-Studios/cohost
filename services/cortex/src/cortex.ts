@@ -4,7 +4,7 @@ import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
-import { buildMessages, parseReply, type Focus, type Mood, type Recalled } from "./prompt.js";
+import { buildMessages, parseReply, type Focus, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
 
 export interface CortexDeps {
@@ -32,6 +32,7 @@ export class Cortex {
   /** Who-is-this notes from the memory region, keyed by lowercase user so one viewer's framing never lands on another's reply. */
   private viewerNotes = new Map<string, string>();
   private pendingRecall = new Map<string, (m: Recalled) => void>();
+  private pendingNotes = new Map<string, (p: People) => void>();
 
   constructor(private d: CortexDeps) {
     this.ctx = new Context(d.cfg.brain.working_memory_events);
@@ -72,13 +73,20 @@ export class Cortex {
         this.pendingRecall.get(d.id)?.(d.memories);
         break;
       }
+      // @spec CTX-NOTES-003
+      case "memory.notes.reply": {
+        const d = ev.data as BusEvent<"memory.notes.reply">["data"];
+        this.pendingNotes.get(d.id)?.(d.viewers);
+        break;
+      }
       // @spec CTX-VIEWER-001, CTX-VIEWER-002
       case "memory.viewer": {
         const d = ev.data as BusEvent<"memory.viewer">["data"];
+        // Memory decides who is a regular (the owner's flag or its message threshold); no notes text rides here.
         const note = d.isNew
           ? `${d.user} is new here (first message).`
-          : d.msgCount > 25
-            ? `${d.user} is a regular (${d.msgCount} messages).${d.notes ? " Notes: " + d.notes : ""}`
+          : d.regular
+            ? `${d.user} is a regular (${d.msgCount} messages).`
             : undefined;
         const key = d.user.toLowerCase();
         this.viewerNotes.delete(key);
@@ -127,11 +135,15 @@ export class Cortex {
       await this.status("thinking", focus.reason);
       // @spec CTX-RECALL-001
       const query = focus.focus?.text || this.ctx.lastVision;
-      const memories = query ? await this.recall(query) : [];
+      // @spec CTX-NOTES-002
+      // Both requests go out before either is awaited, so they share one deadline.
+      const [memories, people] = await Promise.all([query ? this.recall(query) : [], this.fetchNotes(focus)]);
+      // @spec CTX-NOTES-008
+      if (people.length) log.info({ viewers: people.length, notes: people.reduce((n, v) => n + v.notes.length, 0) }, "viewer notes");
       // @spec CTX-VIEWER-003
       const who = focus.focus?.who?.toLowerCase();
       const viewerNote = who ? this.viewerNotes.get(who) : undefined;
-      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote });
+      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people });
       const t0 = Date.now();
       const raw = await llm.chat(messages);
       let { text, emotion, gesture } = parseReply(raw);
@@ -213,6 +225,42 @@ export class Cortex {
       this.pendingRecall.set(id, (m) => { clearTimeout(timer); this.pendingRecall.delete(id); resolve(m); });
       void bus.publish("memory.recall.request", { id, query, k: cfg.brain.memory.recall_k }).catch(() => {
         clearTimeout(timer); this.pendingRecall.delete(id); resolve([]);
+      });
+    });
+  }
+
+  // @spec CTX-NOTES-001
+  /** The replied-to viewer first, then the distinct chat users in the working-memory window, newest first; each name once. */
+  private notesUsers(focus: Focus): string[] {
+    const seen = new Set<string>();
+    const users: string[] = [];
+    const add = (name: string | undefined) => {
+      const trimmed = name?.trim();
+      if (!trimmed || seen.has(trimmed.toLowerCase())) return;
+      seen.add(trimmed.toLowerCase());
+      users.push(trimmed);
+    };
+    add(focus.focus?.who);
+    const events = this.ctx.all();
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]!;
+      if (e.kind === "chat") add(e.user);
+    }
+    return users;
+  }
+
+  // @spec CTX-NOTES-001, CTX-NOTES-002, CTX-NOTES-003, CTX-NOTES-007
+  /** Ask the memory region for the notes of the people in this conversation; none if it is silent or the publish fails. Nothing is kept afterwards. */
+  private fetchNotes(focus: Focus): Promise<People> {
+    const { cfg, bus, log } = this.d;
+    const users = this.notesUsers(focus);
+    if (!users.length) return Promise.resolve([]);
+    const id = randomUUID();
+    return new Promise<People>((resolve) => {
+      const timer = setTimeout(() => { this.pendingNotes.delete(id); log.warn("memory region did not answer the viewer-notes request in time"); resolve([]); }, cfg.brain.cortex.recall_timeout_ms);
+      this.pendingNotes.set(id, (p) => { clearTimeout(timer); this.pendingNotes.delete(id); resolve(p); });
+      void bus.publish("memory.notes.request", { id, users: users as [string, ...string[]] }).catch(() => {
+        clearTimeout(timer); this.pendingNotes.delete(id); resolve([]);
       });
     });
   }

@@ -56,11 +56,11 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts:52-60` |
 | in | `chat.message` | `memory-notes` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | `capture.ts` |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
-| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | gap |
+| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | gap |
-| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts:31-32`; `regular` is a gap (`MEM-VIEWER-002`) |
+| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
 | out | `memory.recall.reply` | | `{id, memories:[{ts(epoch ms), kind, who, text, similarity}]}` | `region.ts:55-58` |
-| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | gap (`MEM-SURF-001`) |
+| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | `surface.ts` (`MEM-SURF-001`) |
 | out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | gap (`MEM-ADMIN-007`) |
 
 Two consumer groups exist so a recall never queues behind the embed plus INSERT
@@ -401,6 +401,7 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Strength underflow after a long gap | effective strength is clamped to 0 to 1; a non-finite result counts as 0 | `MEM-NOTE-003` |
 | Clearing all notes | each note becomes a deletion record carrying the one reason (or none), so each can be restored | `MEM-ADMIN-005` |
 | Undoing a deletion | the note returns at the strength it had when deleted and fades from the restore time; its suppression rule is lifted | `MEM-ADMIN-004` |
+| Sensitive cooldown under concurrent requests | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a once-per-24-hours courtesy, not a safety property (the note text never leaves memory), and the cortex asks once per reply, so two requests racing in the same instant is rare and costs at most one repeated hint. `MEM-SURF-004` |
 | Suppression matching | embedding similarity against the same viewer's reason-carrying deletions only; the hash embedder (isolation) matches on shared words | `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected `[proposed]` | `MEM-EVT-002` |
 | How the stack was stopped | irrelevant: graceful stops set `notes.shutdown_run_owed` and the next start catches up; the one-shot is optional | `MEM-CONSOL-012`, `MEM-CONSOL-013` |

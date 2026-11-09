@@ -292,4 +292,40 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await assert.rejects(store.withConsolidationLock(async () => { throw new Error("boom"); }), /boom/);
     assert.deepEqual(await store.withConsolidationLock(async () => 2), { ran: true, value: 2 }, "released after a throw");
   });
+  // @spec MEM-SURF-002
+  t("a viewer is found by display name, case-insensitively, the most recently seen when several share it", async ({ store, advance }) => {
+    const name = `Shared${uid("")}`;
+    const first = uid("first");
+    const second = uid("second");
+    await store.touchViewer(first, name);
+    advance(1000);
+    await store.touchViewer(second, name.toUpperCase());
+    assert.equal((await store.findViewerByDisplay(name.toLowerCase()))!.key, second, "latest last_seen wins");
+    advance(1000);
+    await store.touchViewer(first, name);
+    assert.equal((await store.findViewerByDisplay(name))!.key, first);
+    assert.equal(await store.findViewerByDisplay(`Nobody${uid("")}`), undefined);
+    const renamed = uid("renamed");
+    await store.touchViewer(renamed, `Old${renamed}`);
+    await store.touchViewer(renamed, `New${renamed}`);
+    assert.equal(await store.findViewerByDisplay(`Old${renamed}`), undefined, "lookups use the current display");
+    assert.equal((await store.findViewerByDisplay(`new${renamed}`))!.key, renamed);
+  });
+
+  // @spec MEM-SURF-004
+  t("markSurfaced records the time on the named notes only", async ({ store, now }) => {
+    const key = uid();
+    await store.touchViewer(key, "Bob");
+    const a = await store.insertNote({ userKey: key, category: "health", text: "has a cold" });
+    const b = await store.insertNote({ userKey: key, category: "general", text: "plays celeste" });
+    assert.equal(a.lastSurfacedAt, null);
+    const at = new Date(now() + 5000);
+    await store.markSurfaced([a.id], at);
+    await store.markSurfaced([], at);
+    const notes = new Map((await store.listNotes(key)).map((n) => [n.id, n]));
+    assert.equal(notes.get(a.id)!.lastSurfacedAt!.getTime(), at.getTime());
+    assert.equal(notes.get(b.id)!.lastSurfacedAt, null);
+    assert.equal(notes.get(a.id)!.version, a.version, "surfacing is not a content change: the version stays");
+    assert.equal(notes.get(a.id)!.dirty, a.dirty);
+  });
 }

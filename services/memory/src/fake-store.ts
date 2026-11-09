@@ -100,6 +100,15 @@ export class InMemoryStore implements MemoryBackend {
     return v && { ...v };
   }
 
+  // @spec MEM-SURF-002
+  async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    const want = name.toLowerCase();
+    const v = [...this.viewers.values()]
+      .filter((r) => r.display.toLowerCase() === want)
+      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
+    return v && { ...v };
+  }
+
   // @spec MEM-CAPTURE-011, MEM-REG-004
   async ensureViewer(userKey: string, display: string): Promise<ViewerRow> {
     const key = userKey.toLowerCase();
@@ -174,6 +183,14 @@ export class InMemoryStore implements MemoryBackend {
 
   async listNotes(userKey: string): Promise<NoteRow[]> {
     return [...this.notes.values()].filter((n) => n.userKey === userKey.toLowerCase()).sort((a, b) => a.id - b.id).map((n) => ({ ...n }));
+  }
+
+  // @spec MEM-SURF-004
+  async markSurfaced(noteIds: number[], at: Date): Promise<void> {
+    for (const id of noteIds) {
+      const n = this.notes.get(id);
+      if (n) n.lastSurfacedAt = at;
+    }
   }
 
   async listDeletions(userKey: string): Promise<DeletionRow[]> {

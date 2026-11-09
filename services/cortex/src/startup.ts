@@ -35,7 +35,7 @@ export async function waitForLlm(llm: ChatProvider, o: WaitForLlmOptions): Promi
 /** Every bus event type the cortex reads. */
 const CORTEX_EVENTS = [
   "chat.message", "speech.heard", "vision.summary", "brain.say", "voice.done",
-  "attention.focus", "memory.recall.reply", "memory.viewer", "affect.state", "control",
+  "attention.focus", "memory.recall.reply", "memory.notes.reply", "memory.viewer", "affect.state", "control",
 ] as const;
 
 export interface StartCortexOptions {

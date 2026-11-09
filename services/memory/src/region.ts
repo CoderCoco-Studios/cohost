@@ -2,14 +2,17 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { MemoryStore } from "./store.js";
 import type { CortexState } from "./scheduler.js";
+import { buildNotesReply, type SurfaceStore } from "./surface.js";
 
 export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
   log: Logger;
-  store: Pick<MemoryStore, "touchViewer" | "remember" | "recall">;
+  store: Pick<MemoryStore, "touchViewer" | "remember" | "recall"> & SurfaceStore;
   /** Told the cortex's latest `brain.status`, so consolidation runs only while it is idle (MEM-CONSOL-002). */
   onBrainStatus?: (state: CortexState) => void;
+  /** Milliseconds since the epoch; injectable so note fade and the sensitive cooldown are testable. */
+  clock?: () => number;
 }
 
 // @spec MEM-INJ-001, MEM-INJ-002, MEM-INJ-003
@@ -18,10 +21,10 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 
 // @spec MEM-EVT-002
 /** The memory region's event handler; index.ts subscribes it to both consumer groups. */
-export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: MemoryDeps): (ev: BusEvent) => Promise<void> {
+export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus, clock = Date.now }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
-      // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004, MEM-REG-005
+      // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-REG-005
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory
@@ -32,7 +35,7 @@ export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: Mem
         });
         if (d.mentionsCohost) {
           // Announce who this is before the slow embed so the cortex has it when the reply is built.
-          if (v) await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, notes: v.notes });
+          if (v) await bus.publish("memory.viewer", { user: d.user, isNew: v.isNew, msgCount: v.msgCount, regular: v.regular });
           await store.remember("chat", d.user, d.text);
         }
         break;
@@ -64,6 +67,17 @@ export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: Mem
           id: d.id,
           memories: memories.map((m) => ({ ts: m.ts.getTime(), kind: m.kind, who: m.who, text: m.text, similarity: m.similarity })),
         });
+        break;
+      }
+      // @spec MEM-SURF-001, MEM-SURF-005
+      case "memory.notes.request": {
+        const d = ev.data as BusEvent<"memory.notes.request">["data"];
+        const viewers = await buildNotesReply(store, cfg.brain.memory, d.users, clock()).catch((err) => {
+          // Neither the names nor any note text go in the log.
+          log.warn({ err: String(err) }, "reading viewer notes failed; answering with none");
+          return [];
+        });
+        await bus.publish("memory.notes.reply", { id: d.id, viewers });
         break;
       }
     }

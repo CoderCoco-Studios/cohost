@@ -42,7 +42,7 @@ Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mod
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
 memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
 once viewer notes land (`CTX-EVT-001`). The service publishes `brain.status`,
-`brain.say`, `memory.recall.request` and (gap) `memory.notes.request`.
+`brain.say`, `memory.recall.request` and `memory.notes.request`.
 
 Subscribing happens only after the model backend answered `ping()` (`index.ts:40`).
 Start mode `latest` resets the `cortex` group to the stream's newest entry on every
@@ -66,7 +66,7 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `voice.done` | if `d.id === speakingId`: clear it, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
-| `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | gap |
+| `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | `cortex.ts` |
 | `memory.viewer` | build or clear a one-line note for that user | `cortex.ts:75-88` |
 | `affect.state` | store as the latest `Mood` | `cortex.ts:89-92` |
 | `control` | see Control commands | `cortex.ts:93-110` |
@@ -98,7 +98,7 @@ on arrival.
    resolves `[]` immediately.
    In parallel, publish `memory.notes.request` for the viewers in the focus and the
    window and wait for its reply under the same deadline (`CTX-NOTES-001`,
-   `CTX-NOTES-002`; gap, see Viewer notes).
+   `CTX-NOTES-002`; see Viewer notes).
 4. Viewer note: look up `focus.focus.who` lowercased and put it in the prompt; it
    is deleted only once the reply's `brain.say` is published, so a vetoed, dropped
    or failed reply keeps it for the next one (`CTX-VIEWER-003`; looked up at
@@ -166,13 +166,12 @@ Two things reach the prompt about viewers.
 text: `isNew` gives "`<user>` is new here (first message)."; `regular` true gives
 "`<user>` is a regular (N messages)."; otherwise no note (`CTX-VIEWER-001`). Memory
 decides who is a regular (the owner's flag or the configured message threshold,
-memory `MEM-REG-001`); the code today still tests the literal `msgCount > 25`
-(`cortex.ts:80`) and appends memory's legacy notes text, both gaps of
-`CTX-VIEWER-001`. Notes are keyed by lowercased user, a new event replaces or clears
+memory `MEM-REG-001`); the cortex holds no threshold of its own and the event
+carries no notes text. Notes are keyed by lowercased user, a new event replaces or clears
 the old one, and the map is capped at 50 with oldest-first eviction
 (`cortex.ts:83-86`).
 
-**Viewer notes from memory** (gap, `CTX-NOTES-*`). The co-host's short notes about
+**Viewer notes from memory** (`CTX-NOTES-*`). The co-host's short notes about
 viewers (core: who they are; recent: what they are up to lately) are fetched for
 each reply, for the viewer being replied to and for the other viewers in the
 working-memory window, whatever their message count. Step 3 of the think pipeline
@@ -189,12 +188,12 @@ The notes are rendered in a `## People here` block of the system message
 
 ```
 ## People here
-- alice (regular): got a new puppy named Biscuit; speedrunning Celeste lately
+- alice: got a new puppy named Biscuit; speedrunning Celeste lately
   - handle gently: check in warmly and gently; never name or quote it
 - bob: new to the channel's Minecraft server
 ```
 
-`general` notes are plain facts. For `health` and `family` notes the model receives
+A viewer's regular status reaches the prompt only through the familiarity line, never as a marker in this block. `general` notes are plain facts. For `health` and `family` notes the model receives
 only the handling hint, never the note text: memory leaves the text out of the
 reply (memory `MEM-SURF-004`), and a sympathetic check-in works from the hint
 alone (`CTX-NOTES-005`). Subscriber status, though memory stores it, never appears

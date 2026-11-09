@@ -12,7 +12,7 @@ Design: LLD § Fallback Line (owner decisions, `[proposed]` items, edge cases, b
 
 - `EARS-PLAY-005` (give up instead of a silent skip) and `EARS-PLAY-006` (publish `voice.failed`) are implemented in `playback.ts`; `services/ears/test/ears.test.ts` now asserts the give-up report instead of the old silent skip.
 - `EARS-FALL-001` to `019` are implemented: `fallback.ts` holds the clip cache, the disk mirror, the manifest refresh (startup, then every 60 s) and clip choice; `session.ts` reads `voice.playing` for the claim memory; `discord.ts` wires them.
-- Chunk 1 of the build order. Until chunk 2 (voice generates and serves clips) lands, voice answers the manifest with 404, so the cache stays empty and a give-up is the report plus a silent skip.
+- Chunk 1 of the build order. Chunk 2 (voice generates and serves clips) and chunk 3 (the cortex's transcript entry and acknowledgement hint) have landed, so a give-up reports `voice.failed` and plays a cached clip when one is eligible.
 - Deferred decisions recorded in the LLD: separate source-agnostic listening and speaking modules with owner-tunable routing (HLD Deferred goals); tuning the co-host's voice (voice segment).
 
 ## Decisions applied

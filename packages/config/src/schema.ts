@@ -202,6 +202,12 @@ export const ConfigSchema = z.object({
     voice: z.string().default("af_heart"),
     speed: z.number().positive().default(1),
     sample_rate: z.number().int().positive().default(24000),
+    fallback: z.object({
+      /** Phrases the co-host says when a line fails to play; voice turns each into a clip. Empty turns the feature off. */
+      lines: z.array(
+        z.string().max(200).refine((s) => s.trim().length > 0, "must not be empty"),
+      ).default([]), // @spec CFG-SCH-017
+    }).default({}),
   }),
   avatar: z.object({
     // A blank value (unset AVATAR_DRIVER) means "no avatar app"; a non-empty unknown value still fails.

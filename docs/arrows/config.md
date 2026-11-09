@@ -4,14 +4,15 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 56 implemented, 4 gaps (chunks 2 and 3), 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 58 implemented, 2 gaps (chunk 3), 0 deferred.
 
-## Spoken fallback line: chunk 1 built, chunks 2 and 3 designed
+## Spoken fallback line: chunks 1 and 2 built, chunk 3 designed
 
 Design: LLD § Schema key groups, Files table and Decisions (`[proposed]` items marked).
 
 - Built in chunk 1: `CFG-DIR-006`, `CFG-DIR-007` (`dataDir()`, `COHOST_DATA_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`).
-- Gaps: `CFG-SCH-017` (`voice.fallback.lines`) and `CFG-USR-009` (starter list) in chunk 2; `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
+- Built in chunk 2: `CFG-SCH-017` (`voice.fallback.lines`, schema in `packages/config/src/schema.ts`) and `CFG-USR-009` (the 15-line starter list and `ears.fallback.min_interval_ms: 20000` in `config/config.example.yaml`).
+- Gaps: `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
 
 ## Viewer notes: chunk 1 built
 
@@ -77,10 +78,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Config directory and seeding | CFG-DIR-001 to 007 | 5 | 0 | 2 (DIR-006, DIR-007: per-service data directory) | 5 |
 | Environment handling | CFG-ENV-001 to 008 | 8 | 0 | 0 | 7 |
 | Loading and validation pipeline | CFG-LOAD-001 to 006 | 6 | 0 | 0 | 6 |
-| Schema | CFG-SCH-001 to 019 | 16 | 0 | 3 (SCH-017 to 019: fallback line) | 12 |
+| Schema | CFG-SCH-001 to 019 | 18 | 0 | 1 (SCH-019: fallback line) | 14 |
 | Backend selection and presets | CFG-ISO-001 to 005 | 5 | 0 | 0 | 4 |
 | Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
-| User-owned files | CFG-USR-001 to 010 | 8 | 0 | 2 (USR-009, USR-010: fallback line) | 6 |
+| User-owned files | CFG-USR-001 to 010 | 9 | 0 | 1 (USR-010: fallback line) | 7 |
 
 **Summary:** 53 of 53 specs implemented (47 at the audit, plus CFG-SCH-014 to 016 and CFG-USR-007 from viewer-notes chunk 1 CFG-USR-008 from chunk 2 and CFG-ENV-009 from chunk 4); 0 deferred; 0 gaps. 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
 

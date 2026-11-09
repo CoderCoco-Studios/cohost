@@ -51,26 +51,38 @@ export function createJoiner({ join, onFailure, sleep = wait, baseMs = 5000, max
   };
 }
 
-export type EarsEventType = "voice.utterance" | "inject.request";
+export type EarsEventType = "voice.utterance" | "voice.playing" | "inject.request";
+
+/** The types the one `ears` loop reads in the `discord` plan (EARS-PLAY-001, EARS-FALL-010). */
+export const DISCORD_LOOP_TYPES = ["voice.utterance", "voice.playing", "inject.request"] as const satisfies readonly EarsEventType[];
 
 export interface EarsHandlerDeps {
   onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
   playback: { enqueue(id: string, url: string): Promise<void> };
   isVoiceReady: () => boolean;
   log: Pick<Logger, "debug">;
+  /** Which utterance ids a real sink other than `discord` claimed (the fallback line's memory, EARS-FALL-010). */
+  claims?: { seen(id: string): void; claim(id: string, sink: string): void };
 }
 
 /**
  * The one `ears` loop's handler: `inject.request` always goes to the injection handler; a
  * `voice.utterance` is queued for playback only while the voice connection is ready, and is
- * skipped otherwise so voice's virtual sink covers it.
+ * skipped otherwise (no `voice.failed`, no fallback) so voice's virtual sink covers it. A `voice.playing` only
+ * feeds the fallback line's claim memory.
  */
-// @spec EARS-INJ-007
-export function createEarsHandler({ onInject, playback, isVoiceReady, log }: EarsHandlerDeps) {
+// @spec EARS-INJ-007, EARS-FALL-010, EARS-FALL-013
+export function createEarsHandler({ onInject, playback, isVoiceReady, log, claims }: EarsHandlerDeps) {
   return async (ev: BusEvent): Promise<void> => {
     if (ev.type === "inject.request") return onInject(ev as BusEvent<"inject.request">);
+    if (ev.type === "voice.playing") {
+      const d = ev.data as BusEvent<"voice.playing">["data"];
+      claims?.claim(d.id, d.sink);
+      return;
+    }
     if (ev.type !== "voice.utterance") return;
     const d = ev.data as BusEvent<"voice.utterance">["data"];
+    claims?.seen(d.id);
     if (!isVoiceReady()) {
       log.debug({ id: d.id }, "voice not connected: utterance skipped");
       return;

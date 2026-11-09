@@ -1,6 +1,7 @@
-import type { Publisher } from "@cohost/bus";
+import type { EventInput, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { wavToDiscordPcm } from "./audio.js";
+import type { FallbackClip } from "./fallback.js";
 
 export interface PlaybackDeps {
   bus: Publisher;
@@ -9,6 +10,8 @@ export interface PlaybackDeps {
   fetchAudio: (url: string) => Promise<Buffer>;
   /** Hand 48k stereo PCM to the Discord audio player. */
   play: (pcm: Buffer) => void;
+  /** The spoken fallback line; without it a give-up is a silent skip. */
+  fallback?: { pick(id: string): FallbackClip | undefined; started(clip: FallbackClip): void; markBad(clip: FallbackClip): void };
 }
 
 export async function httpAudio(url: string): Promise<Buffer> {
@@ -17,7 +20,7 @@ export async function httpAudio(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004, EARS-PLAY-005, EARS-PLAY-009
+// @spec EARS-PLAY-002, EARS-PLAY-003, EARS-PLAY-004, EARS-PLAY-005, EARS-PLAY-006, EARS-PLAY-009
 /** Plays utterances one at a time and reports voice.playing / voice.done for each. */
 export class Playback {
   private queue: { id: string; url: string }[] = [];
@@ -51,11 +54,52 @@ export class Playback {
     try {
       const pcm = wavToDiscordPcm(await this.d.fetchAudio(next.url));
       this.d.play(pcm);
-      await this.d.bus.publish("voice.playing", { id: next.id, sink: "discord" });
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "playback failed");
+      if (await this.giveUp(next.id, String(err))) return; // a fallback clip is playing: it stays current until the player is idle
       this.current = undefined;
-      await this.pump();
+      return this.pump();
+    }
+    await this.publish("voice.playing", { id: next.id, sink: "discord" });
+  }
+
+  /**
+   * Ears gives up on `id`: say a fallback clip in its place when one is eligible, claim the id with `voice.playing` (first,
+   * so it reaches voice early inside its claim window), then report `voice.failed`. Resolves true while a clip is playing.
+   */
+  // @spec EARS-PLAY-006, EARS-FALL-001, EARS-FALL-002, EARS-FALL-008, EARS-FALL-011
+  private async giveUp(id: string, reason: string): Promise<boolean> {
+    const clip = this.d.fallback?.pick(id);
+    let playing: FallbackClip | undefined;
+    if (clip) {
+      let pcm: Buffer | undefined;
+      try {
+        pcm = wavToDiscordPcm(clip.wav);
+      } catch (err) {
+        this.d.fallback!.markBad(clip);
+        this.d.log.warn({ err: String(err), clip: clip.name }, "fallback clip failed conversion");
+      }
+      if (pcm) {
+        try {
+          this.d.play(pcm);
+          this.d.fallback!.started(clip);
+          playing = clip;
+        } catch (err) {
+          this.d.log.warn({ err: String(err), clip: clip.name }, "fallback clip play failed");
+        }
+      }
+    }
+    if (playing) await this.publish("voice.playing", { id, sink: "discord" });
+    await this.publish("voice.failed", { id, sink: "discord", reason, ...(playing ? { fallback: { clip: playing.name, text: playing.text } } : {}) });
+    return playing !== undefined;
+  }
+
+  /** Publish; a failure is logged and never escapes (EARS-PLAY-009). */
+  private async publish<T extends "voice.playing" | "voice.failed">(type: T, data: EventInput<T>): Promise<void> {
+    try {
+      await this.d.bus.publish(type, data);
+    } catch (err) {
+      this.d.log.warn({ err: String(err), id: data.id }, `${type} publish failed`);
     }
   }
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { event, recordingLog, testConfig } from "@cohost/testing";
-import { createEarsHandler, createJoiner, stopEars, subscribeEars, voiceTarget } from "../src/session.js";
+import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
+import { DISCORD_LOOP_TYPES, createEarsHandler, createJoiner, stopEars, subscribeEars, voiceTarget } from "../src/session.js";
 
 const sleeper = () => {
   const sleeps: number[] = [];
@@ -115,4 +115,43 @@ test("one shutdown sequence: idle timer, voice connection and client, then the b
   order.length = 0;
   await stopEars({ session: { stop: async () => { order.push("discord"); throw new Error("destroy failed"); } }, bus, log: recordingLog().log });
   assert.deepEqual(order, ["discord", "bus"], "the bus is stopped even if the teardown throws");
+});
+
+// ---- fallback line wiring
+
+const playingEv = (id: string, sink: string) => event("voice.playing", { id, sink });
+const failedEv = () => event("voice.failed", { id: "u1", sink: "discord", reason: "x" });
+
+// @spec EARS-FALL-010
+test("the loop reads voice.playing and forwards each claim to the fallback line, ignoring voice.failed", async () => {
+  const seen: string[] = [];
+  const claims: [string, string][] = [];
+  const h = createEarsHandler({
+    onInject: async () => {}, playback: { enqueue: async () => {} }, isVoiceReady: () => true, log: recordingLog().log,
+    claims: { seen: (id) => { seen.push(id); }, claim: (id, sink) => { claims.push([id, sink]); } },
+  });
+  await h(utterance());
+  await h(playingEv("u1", "dashboard"));
+  await h(playingEv("u1", "discord"));
+  await h(playingEv("u1", "virtual"));
+  await h(failedEv()); // ears never acts on voice.failed
+  assert.deepEqual(seen, ["u1"]);
+  assert.deepEqual(claims, [["u1", "dashboard"], ["u1", "discord"], ["u1", "virtual"]], "every claim is forwarded; the fallback line ignores discord's own and voice's virtual ones");
+});
+
+// @spec EARS-FALL-010
+test("in the discord plan the one ears loop reads voice.utterance, voice.playing and inject.request", () => {
+  assert.deepEqual([...DISCORD_LOOP_TYPES].sort(), ["inject.request", "voice.playing", "voice.utterance"]);
+});
+
+// @spec EARS-FALL-013, EARS-INJ-007
+test("while the voice connection is not ready a skipped voice.utterance is neither queued nor reported as failed", async () => {
+  const queued: string[] = [];
+  const bus = new FakeBus();
+  const h = createEarsHandler({
+    onInject: async () => {}, playback: { enqueue: async (id) => { queued.push(id); } }, isVoiceReady: () => false, log: recordingLog().log,
+  });
+  await h(utterance());
+  assert.deepEqual(queued, []);
+  assert.deepEqual(bus.published, [], "no voice.failed and no fallback clip for an utterance ears never took");
 });

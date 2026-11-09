@@ -23,6 +23,11 @@ export interface FeedLog {
   fatal(obj: unknown, msg: string): void;
 }
 
+// @spec DASH-FEED-007
+/** Events that carry viewer-note text (health and family notes included): never sent to a `/ws` browser, live or replayed. */
+const WITHHELD: ReadonlySet<string> = new Set(["memory.notes.request", "memory.notes.reply", "memory.viewers.request", "memory.viewers.reply"]);
+const forwardable = (ev: BusEvent): boolean => ev.type !== "service.heartbeat" && !WITHHELD.has(ev.type);
+
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 
 /**
@@ -43,7 +48,7 @@ export function createFeed(d: FeedDeps) {
   let offChange: (() => void) | undefined;
 
   return {
-    // @spec DASH-FEED-001
+    // @spec DASH-FEED-001, DASH-FEED-007
     /** Wire up a new client: current services first, then the recent event replay. */
     // Replayed events carry `replay: true`; a live event that lands meanwhile is held and sent after the replay (once).
     async onConnection(ws: FeedSocket): Promise<void> {
@@ -53,7 +58,7 @@ export function createFeed(d: FeedDeps) {
         ws.send(servicesMessage(d.tracker.snapshot()));
         const sent = new Set<string>();
         for (const ev of await d.bus.recent(d.replay ?? 60)) {
-          if (ev.type === "service.heartbeat") continue;
+          if (!forwardable(ev)) continue;
           sent.add(ev.id);
           ws.send(JSON.stringify({ ...ev, replay: true }));
         }
@@ -64,7 +69,7 @@ export function createFeed(d: FeedDeps) {
       }
     },
 
-    // @spec DASH-FEED-002, DASH-FEED-003, DASH-FEED-004, DASH-FEED-005
+    // @spec DASH-FEED-002, DASH-FEED-003, DASH-FEED-004, DASH-FEED-005, DASH-FEED-007
     /** Seed the tracker from recent heartbeats, then follow the live feeds. */
     async start(): Promise<void> {
       const history = await d.bus.recentHealth(500);
@@ -72,7 +77,7 @@ export function createFeed(d: FeedDeps) {
       const fromId = history.at(-1)?.id ?? "$";
       void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId);
       void d.bus.tail((ev: BusEvent) => {
-        if (ev.type !== "service.heartbeat") for (const c of d.clients()) deliver(c, ev);
+        if (forwardable(ev)) for (const c of d.clients()) deliver(c, ev);
       });
       offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));
       timer = setInterval(() => d.tracker.tick(), d.tickMs ?? 1000);

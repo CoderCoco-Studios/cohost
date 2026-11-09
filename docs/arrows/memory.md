@@ -14,7 +14,7 @@ Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The s
 - Amended to `[ ]`: `MEM-VIEWER-002` (`memory.viewer` carries `regular`, no notes), `MEM-STORE-001` (notes tables and viewer columns), `MEM-BACKEND-005` (in-memory store keeps notes).
 - New `[ ]`: `MEM-NOTE-001` to `011`, `MEM-REG-001` to `005`, `MEM-CAPTURE-001` to `011`, `MEM-CONSOL-001` to `016`, `MEM-SURF-001` to `005`, `MEM-ADMIN-001` to `007`.
 - Build order: (1) memory core (NOTE, REG, CONSOL, STORE-001, BACKEND-005, with config CFG-SCH-014 to 016 and CFG-USR-007); (2) capture (CAPTURE, with CFG-USR-008); (3) cortex surfacing (SURF, VIEWER-002, with CTX-NOTES-*, CTX-VIEWER-001, CTX-EVT-001, BUS-EVT-010, BUS-EVT-020, DASH-FEED-007); (4) Viewers page (ADMIN, with DASH-VIEWERS-*, BUS-EVT-021, CFG-ENV-009).
-- Waiting on the owner: the `[proposed]` items and the LLD's "Open (viewer notes)" questions.
+- Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Still `[proposed]`: fade numbers, caps, event and route names, classifier slot specifics; capture model deferred to chunk 2.
 
 ## Decisions applied
 

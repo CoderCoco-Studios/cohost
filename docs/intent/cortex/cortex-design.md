@@ -189,17 +189,16 @@ The notes are rendered in a `## People here` block of the system message
 
 ```
 ## People here
-- alice (regular, subscriber): got a new puppy named Biscuit; speedrunning Celeste lately
-  - handle gently: check in warmly and gently; never name or quote it (private background, never say it: her dad passed away last month)
+- alice (regular): got a new puppy named Biscuit; speedrunning Celeste lately
+  - handle gently: check in warmly and gently; never name or quote it
 - bob: new to the channel's Minecraft server
 ```
 
-`general` notes are plain facts. `health` and `family` notes are handling guidance,
-not facts to repeat: the hint leads and the note text follows only as private
-background the model must not say, name or quote (`CTX-NOTES-005`) `[proposed]`.
-Whether the private text reaches the model at all, or only the hint does, is an
-owner decision (Open Questions). Subscriber status is the one money-related detail
-and appears only as `(subscriber)` (`CTX-NOTES-006`) `[proposed]`. Notes live only
+`general` notes are plain facts. For `health` and `family` notes the model receives
+only the handling hint, never the note text: memory leaves the text out of the
+reply (memory `MEM-SURF-004`), and a sympathetic check-in works from the hint
+alone (`CTX-NOTES-005`). Subscriber status, though memory stores it, never appears
+in the prompt, nor does any other money-related detail (`CTX-NOTES-006`). Notes live only
 for the think that asked for them, so a note the owner deletes is gone from the
 next reply and `forget_context` has nothing to clear (`CTX-NOTES-007`). Note text
 never appears in `info` logs or `brain.status` details (`CTX-NOTES-008`).
@@ -301,7 +300,8 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Viewer notes one-shot, capped | delete after the reply is published, 50 entries FIFO | delete before the LLM call; persistent per-viewer notes | Per-viewer keying: comment `cortex.ts:32` ("so one viewer's framing never lands on another's reply"). Delete after success: owner decision 2026-11-01, so a vetoed or failed reply does not lose the note (`CTX-VIEWER-003`). The 50 cap bounds memory on a long stream: a note is replaced on each `memory.viewer` for that viewer and used once, so evicting the oldest only loses a note for a viewer not replied to since 50 newer viewer notes arrived |
 | Who gets viewer notes in the prompt | The replied-to viewer and every other chat user in the working-memory window, regardless of message count | replied-to viewer only; regulars only (the earlier `msgCount > 25` gate) | Owner decision: the co-host should know the people in the conversation it is answering, and notes are kept for everyone from their first message. `CTX-NOTES-001`, `CTX-NOTES-007` |
 | Fetching notes | Request/reply per think, in parallel with recall, one shared deadline | cache notes pushed by memory | `[proposed]`. Current notes on every reply (owner deletions take effect at once) and no added latency beyond the recall wait the cortex already accepts; memory's design records the alternatives. `CTX-NOTES-002` |
-| Rendering sensitive notes | Handling hint first, note text only as private background never to be said | plain facts like any note; hint only, no text | `[proposed]`. Owner decision: sensitive notes shape behaviour rather than being quoted. Giving the model the text lets it be specifically kind ("hope you're holding up"); withholding it is safer against leaks but leaves the hint vague. Owner question. `CTX-NOTES-005` |
+| Rendering sensitive notes | Handling hint only; the note text never reaches the model | plain facts like any note; hint plus the text as private background | Owner decision (the safest option): sensitive notes shape behaviour rather than being quoted, and a model that never sees the text cannot repeat it on stream. The cost is a vaguer check-in than the text would allow. `CTX-NOTES-005` |
+| Subscriber status in the prompt | Never rendered | `(subscriber)` marker | Owner decision (the safest option): memory may remember it, but no money-related detail reaches the prompt, so the co-host cannot call anyone out by it. `CTX-NOTES-006` |
 | `forget_context` scope | clear the window, the vision summary and viewer notes; keep mood and pending recalls | keep the vision summary | owner decision 2026-11-01: a forgotten screen must not keep feeding the prompt and the recall fallback; `CTX-CTRL-004` |
 | Recall query | focus text, else the vision summary when the text is empty | fall back only when there is no focus object | owner decision 2026-11-01; `CTX-RECALL-001` |
 | Pause reported as `muted` | reuse existing status | add a `paused` state | Comment `cortex.ts:24`: "Reported as \"muted\" so salience stops waiting." |
@@ -328,12 +328,7 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
    (`cortex.ts:86`); the 25-message "regular" threshold is a literal (`cortex.ts:80`),
    which `CTX-VIEWER-001` replaces with memory's `regular` flag.
 
-### Open (viewer notes, owner decisions needed)
-1. **Sensitive note text in the prompt.** Whether the text of a `health` or `family`
-   note reaches the model as private background (current proposal) or only its
-   handling hint does (`CTX-NOTES-005`).
-2. **Subscriber marker.** Whether `(subscriber)` appears in the prompt at all, or
-   subscriber status stays stored but unused (`CTX-NOTES-006`).
+
 3. **Critic misconfiguration fails outside `main()`.** A rejected critic config
    throws while the module is constructed (`index.ts:33`,
    `packages/modules/src/index.ts:41-48`), so it surfaces as an uncaught exception at

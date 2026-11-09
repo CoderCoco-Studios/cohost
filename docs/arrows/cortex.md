@@ -11,8 +11,8 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 Design: LLD § Viewer notes. The spec file now holds 66 specs: 56 `[x]`, 10 `[ ]`.
 
 - Amended to `[ ]`: `CTX-EVT-001` (subscribe to `memory.notes.reply`), `CTX-VIEWER-001` (regular from memory's `regular` flag, no notes text, no literal 25).
-- New `[ ]`: `CTX-NOTES-001` to `008` (notes requested per think for the replied-to viewer and the window's chat users, shared recall deadline, `## People here` block, sensitive notes as handling guidance, subscriber marker, no caching, no note text in logs).
-- Lands in build chunk 3 (memory LLD § Build order). Owner questions: sensitive note text in the prompt; subscriber marker.
+- New `[ ]`: `CTX-NOTES-001` to `008` (notes requested per think for the replied-to viewer and the window's chat users, shared recall deadline, `## People here` block, sensitive notes as hint-only guidance, no subscriber status, no caching, no note text in logs).
+- Lands in build chunk 3 (memory LLD § Build order). Owner decisions: sensitive notes reach the prompt as hint only; subscriber status is never rendered.
 
 ## Decisions applied
 

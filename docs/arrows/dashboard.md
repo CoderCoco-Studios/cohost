@@ -12,7 +12,7 @@ Design: LLD § Viewers page (layout "panel A", routes, Access protection options
 
 - Amended to `[ ]`: `DASH-FEED-001`, `DASH-FEED-002` (viewer-notes events excluded from `/ws`).
 - New `[ ]`: `DASH-FEED-007` (build chunk 3, with the first notes on the bus), `DASH-VIEWERS-001` to `017` (chunk 4).
-- Owner decision needed: the access option (A, a dedicated `VIEWERS_TOKEN`, is recommended). Open item: dashboard visual design to be revisited later.
+- Access: option A, a dedicated `VIEWERS_TOKEN` on every `/viewers` route (owner decision). Open item: dashboard visual design to be revisited later.
 
 ## Decisions applied
 

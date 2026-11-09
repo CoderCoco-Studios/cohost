@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Viewer notes designed: DASH-FEED-007 (chunk 3) and DASH-VIEWERS-001 to 017 (chunk 4); the owner chooses the Viewers access option (A recommended)."
+    next: "Viewer notes designed: DASH-FEED-007 (chunk 3) and DASH-VIEWERS-001 to 017 (chunk 4); access option A (VIEWERS_TOKEN) decided."
     drift: null
 
   control-plane:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Pending viewer-notes cascade: NOTES_MODEL pull, .env.example entries, launching the one-shot consolidate after a stop (see deployment.md)."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Pending viewer-notes cascade: NOTES_MODEL pull, .env.example entries, a best-effort Compose one-shot for consolidate (see deployment.md)."
     drift: null
 
 unmapped:

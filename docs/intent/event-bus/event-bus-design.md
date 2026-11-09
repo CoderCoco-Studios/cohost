@@ -86,7 +86,7 @@ Loop:
 - `index.ts` re-exports `./heartbeat.js` at its last line (`index.ts:358`) and `heartbeat.ts` imports `beforeShutdown` from `./index.js`; the cycle works because `beforeShutdown` is only called at runtime.
 - The subprocess fixture `packages/bus/test/shutdown.fixture.ts` proves the ordering `hb:starting`, `hb:ready`, `hb:stopping`, `bus.stop` (asserted at `bus.test.ts:257-261`). `shutdown-multi.fixture.ts` and `shutdown-hooks.fixture.ts` prove the composition: all callbacks in order with failures logged and one `exit(0)`, and a synchronously throwing hook that skips neither the other hooks nor the callbacks (`shutdown.test.ts`).
 
-## Event catalogue (19 types; 23 once viewer notes land)
+## Event catalogue (23 types; 24 with `voice.failed`)
 
 Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed from `publish(` and `subscribe(` call sites at `686cc8f`; the schema encodes neither (comments only). Optional fields marked `?`; `default` shows the zod default. Flags `injected?` and `remember?` are both `z.boolean().optional()` with no default.
 
@@ -122,6 +122,14 @@ Viewer-notes events (the two surfacing events are built; the two owner events ar
 | 23 | `memory.viewers.reply` | `id`, `ok`, `error?` (`not_found`, `failed`), `detail?`, `data?` | memory -> dashboard | BUS-EVT-021 |
 
 These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.
+
+Spoken fallback line (gap; shape `[proposed]`; design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
+
+| # | Type | Payload | Producers -> consumers (intended) | spec |
+|---|---|---|---|---|
+| 24 | `voice.failed` | `id`, `sink`, `reason`, `fallback?` (`clip`, `text`) | ears Discord sink -> voice, cortex, dashboard feed | BUS-EVT-022 |
+
+`voice.failed` reports that a sink gave up on an utterance; `fallback` is present when the sink plays a pre-generated fallback clip in the line's place. `voice.playing` and `voice.done` keep their shape: a fallback clip is reported through them as ordinary playback under the given-up id.
 
 `Emotion` is imported from `@cohost/config` (`packages/config/src/schema.ts:4-7`): `neutral`, `happy`, `laugh`, `surprised`, `smug`, `sad`, `angry`, `confused`, `think`.
 

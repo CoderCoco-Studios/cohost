@@ -4,7 +4,16 @@ Discord voice in (per-speaker capture, STT, `speech.heard`), Discord voice out (
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed. With the spoken fallback line designed: 66 specs: 45 implemented, 21 gaps, 0 deferred.
+
+## Spoken fallback line: designed, not built
+
+Design: LLD § Fallback Line (owner decisions, `[proposed]` items, edge cases, build order). When ears cannot play a line it reports `voice.failed` and says a pre-generated funny line in its place, played from ears' own cache of the clips voice serves over HTTP.
+
+- Rewritten in place (scope unchanged, now gaps): `EARS-PLAY-005` (give up instead of a silent skip; the test at `services/ears/test/ears.test.ts:44,56` pins the old silent skip and changes with chunk 1), `EARS-PLAY-006` (`[D]` → `[ ]`: publish `voice.failed`).
+- New gaps: `EARS-FALL-001` to `019` (019: the clip cache that ears fills from voice over HTTP).
+- Chunk 1 of the build order; chunk 2 (voice clips) gives it clips to play.
+- Deferred decisions recorded in the LLD: separate source-agnostic listening and speaking modules with owner-tunable routing (HLD Deferred goals); tuning the co-host's voice (voice segment).
 
 ## Decisions applied
 
@@ -29,7 +38,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (47 specs: 46 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/ears/ears-specs.md (66 specs: 45 `[x]`, 21 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/ears/test/audio.test.ts
@@ -81,7 +90,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Discord session | EARS-SESS-001 to 008 | 8 | 0 | 0 |
 | Listening and transcription | EARS-HEAR-001 to 008 | 8 | 0 | 0 |
 | Audio conversion | EARS-AUD-001 to 004 | 4 | 0 | 0 |
-| Playback sink | EARS-PLAY-001 to 009 | 8 | 1 (PLAY-006) | 0 |
+| Playback sink | EARS-PLAY-001 to 009 | 7 | 0 | 2 (PLAY-005, PLAY-006: fallback line) |
+| Fallback line | EARS-FALL-001 to 019 | 0 | 0 | 19 |
 | Audio injection | EARS-INJ-001 to 009 | 9 | 0 | 0 |
 | Health | EARS-HLTH-001 to 003 | 3 | 0 | 0 |
 
@@ -93,7 +103,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 2. **A failed voice join no longer ends the process.** `createJoiner` (`services/ears/src/session.ts`) retries the join (initial and rejoin) with a delay doubling from 5 s to a 60 s cap, `onFailure` marks `deps.discord` down and the heartbeat `degraded`, and the bus subscription is independent of the join. (EARS-SESS-006, B12)
 3. **Injection works before Discord is joined in the `discord` plan.** `startDiscord` establishes the `ears` loop before login; `createEarsHandler` always handles `inject.request` and skips a `voice.utterance` while the voice connection is not ready. The shared loop still awaits the inject handler, so a slow STT call delays `voice.utterance` pickup. (EARS-INJ-007, B13)
 4. **Shutdown in the `discord` plan is one sequence.** `index.ts` registers a single `onShutdown` running `stopEars`: Discord teardown, then `bus.stop()`. (EARS-SESS-008, R2)
-5. **Playback failure sends no `voice.done`, and the queue has no timeout.** Recovery depends on voice's virtual sink (`services/ears/src/playback.ts:47-51`, pinned by `services/ears/test/ears.test.ts:51`), kept by decision (S15, EARS-PLAY-006 deferred); a hung `httpAudio` fetch (no timeout, `playback.ts:14-18`) blocks every later utterance. The `voice.done` publish in `onIdle` is unguarded (`playback.ts:35`, EARS-PLAY-009).
+5. **Playback failure sends no `voice.done`, and the queue has no timeout.** Recovery depends on voice's virtual sink (`services/ears/src/playback.ts:47-51`, pinned by `services/ears/test/ears.test.ts:51`), kept by decision S15 until the spoken fallback line (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-*, gaps) replaces the silent skip; a hung `httpAudio` fetch (no timeout, `playback.ts:14-18`) blocks every later utterance. The `voice.done` publish in `onIdle` is unguarded (`playback.ts:35`, EARS-PLAY-009).
 6. **Guild/channel come from config.** `voiceTarget` reads `ears.discord.guild_id` / `voice_channel_id`; the env vars are no longer read by ears. (EARS-SESS-007, B19)
 7. **`mute` / `pause` are ignored by ears by design.** It never subscribes to `control` (`discord.ts:113`); cortex and salience enforce muting (EARS-PLAY-008, P7).
 8. **Decisions evidenced; WAV parser and writer shared** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts`) now wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`, owner decision of 2026-11-08); `wavWrap` (`packages/shared/src/wav.ts`, EARS-AUD-004) is the one WAV writer, also used by voice's stub engine.

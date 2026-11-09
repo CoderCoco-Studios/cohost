@@ -4,7 +4,15 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line designed: 65 specs: 63 implemented, 2 gaps, 0 deferred.
+
+## Spoken fallback line: designed, not built
+
+Design: LLD § Event catalogue (`voice.failed`, shape `[proposed]`); semantics in the voice LLD (Sink Arbitration Protocol rule 8).
+
+- Rewritten (now a gap): `BUS-EVT-001` (exactly 24 types with `voice.failed`; the 23 existing types stay pinned by their tests).
+- New gap: `BUS-EVT-022` (`voice.failed` shape).
+- Build chunk 1 (ears LLD § Fallback Line, Build order).
 
 ## Viewer notes events (built)
 
@@ -73,7 +81,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
 | Publish and envelope | BUS-STREAM-001 to 007 | 7 | 0 | 0 | 4 |
-| Event catalogue and schemas | BUS-EVT-001 to 019 (011 retired) | 18 | 0 | 0 | 10 |
+| Event catalogue and schemas | BUS-EVT-001 to 022 (011 retired) | 19 | 0 | 2 (EVT-001, EVT-022: `voice.failed`) | 10 |
 | Consumer-group subscription | BUS-SUB-001 to 011 | 10 | 0 | 1 (SUB-011) | 8 |
 | Live tail and backfill | BUS-TAIL-001 to 004 | 4 | 0 | 0 | 4 |
 | Health stream | BUS-HEALTH-001 to 004 | 4 | 0 | 0 | 4 |

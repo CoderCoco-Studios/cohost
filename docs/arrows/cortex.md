@@ -4,7 +4,13 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps. With the spoken fallback line designed: 74 specs: 66 implemented, 8 gaps, 0 deferred.
+
+## Spoken fallback line: designed, not built
+
+Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by a fallback; the next reply gets a hint stating the base chance (`brain.cortex.fallback_ack_chance`, 0.25) and the model decides in character; nothing enforces the rate, so it drifts.
+
+- New gaps: `CTX-EVT-008`, `CTX-FALL-001` to `007` (build chunk 3).
 
 ## Viewer notes (built, build chunk 3)
 
@@ -41,7 +47,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (66 specs, prefix `CTX`: 66 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (74 specs, prefix `CTX`: 66 `[x]`, 8 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)
@@ -86,7 +92,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
-| Event handling | CTX-EVT-001 to CTX-EVT-007 | 7 | 0 | 0 | 7 |
+| Event handling | CTX-EVT-001 to CTX-EVT-008 | 7 | 0 | 1 (EVT-008: `voice.failed`) | 7 |
+| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-007 | 0 | 0 | 7 | 0 |
 | Think gating | CTX-GATE-001 to CTX-GATE-009 | 9 | 0 | 0 | 9 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 | 4 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-003 | 3 | 0 | 0 | 3 |

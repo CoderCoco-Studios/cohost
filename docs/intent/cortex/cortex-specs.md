@@ -1,6 +1,6 @@
 # cortex specs
 
-Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. Verified against the code at git `49ba935` (audit pass 2026-11-01). Owner decisions of 2026-11-01 applied at git `1b57790`. `[x]` = implemented, `[ ]` = intended but not yet implemented (gap), `[D]` = deferred. Test paths are relative to the repo root; a `<!-- test: -->` pointer names the test that carries the matching `@spec` annotation. `[proposed]` inside a line marks a value or choice awaiting the owner's confirmation (viewer notes, CTX-NOTES-*).
+Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. Verified against the code at git `49ba935` (audit pass 2026-11-01). Owner decisions of 2026-11-01 applied at git `1b57790`. `[x]` = implemented, `[ ]` = intended but not yet implemented (gap), `[D]` = deferred. Test paths are relative to the repo root; a `<!-- test: -->` pointer names the test that carries the matching `@spec` annotation. `[proposed]` inside a line marks a value or choice awaiting the owner's confirmation (viewer notes, CTX-NOTES-*; spoken fallback line, CTX-FALL-*).
 
 ## Event handling
 
@@ -11,6 +11,7 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. Verified against the
 - [x] **CTX-EVT-005**: When a `voice.done` arrives whose `id` equals the speaking id, the cortex shall clear the speaking id and publish `brain.status` `idle`, or `muted` if the cortex is muted or paused; a `voice.done` with any other `id` shall be ignored. <!-- openspec: cortex § Inputs and context (voice.done) --> <!-- test: services/cortex/test/cortex.region.test.ts:137 -->
 - [x] **CTX-EVT-006**: When an `attention.focus` arrives, the cortex shall start thinking without awaiting the result, so the subscription loop can still deliver the `memory.recall.reply` it is waiting for. <!-- openspec: cortex § Think gating --> <!-- test: services/cortex/test/cortex.region.test.ts:97 -->
 - [x] **CTX-EVT-007**: When an `affect.state` arrives, the cortex shall keep it as the current mood for later prompts. <!-- openspec: cortex § Viewer notes and mood --> <!-- test: services/cortex/test/cortex.region.test.ts:275 -->
+- [ ] **CTX-EVT-008**: The cortex shall also subscribe to `voice.failed` in its `cortex` group subscription (CTX-EVT-001).
 
 ## Think gating
 
@@ -59,6 +60,18 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. Verified against the
 - [x] **CTX-PROMPT-006**: When the parsed reply text is shorter than two characters, the cortex shall publish no `brain.say` and publish `brain.status` `idle`. <!-- openspec: cortex § Critic inhibition (text >= 2 chars) --> <!-- test: services/cortex/test/cortex.region.test.ts:204 -->
 - [x] **CTX-PROMPT-007**: When the LLM replies, the cortex shall log the elapsed time, focus reason and memory count at info level and the raw reply text only at debug level. <!-- test: services/cortex/test/cortex.region.test.ts:437 -->
 - [x] **CTX-PROMPT-008**: When the cortex calls `llm.chat`, every transcript line it renders through working-memory for another speaker (`[chat]`, `[voice]`, `[screen]`) shall begin with a tag that is one of model-backends' transcript stop strings (`LLM-STOP-006`), and its own lines, which begin with the co-host name, shall not match any stop string; a cortex test renders each line kind through `Context.transcript` and checks it against the provider's stop list. <!-- test: services/cortex/test/transcript-stops.test.ts:30 -->
+
+## Fallback acknowledgement
+
+Design: LLD § Fallback acknowledgement. "The base chance" is `brain.cortex.fallback_ack_chance` (default 0.25, CFG-SCH-019). "A pending glitch" is the intended text and fallback text the cortex keeps after a fallback line played.
+
+- [ ] **CTX-FALL-001**: When a `brain.say` arrives from any source, the cortex shall add it to working memory with its `id` (`pushSelf(text, emotion, id)`, WM-PUSH-007).
+- [ ] **CTX-FALL-002**: When a `voice.failed` carrying `fallback` arrives, the cortex shall mark the working-memory line with that `id` as replaced by `fallback.text` (`markFallback`, WM-PUSH-008).
+- [ ] **CTX-FALL-003**: When a `voice.failed` carrying `fallback` arrives and working memory still holds the line with that `id`, the cortex shall keep a pending glitch holding that line's text and `fallback.text`, replacing any earlier pending glitch `[proposed]`.
+- [ ] **CTX-FALL-004**: When a think builds its prompt while a glitch is pending, its line is still in working memory (WM-WIN-007) and the base chance is above 0, the cortex shall add one line to the system message's `## Now` block that quotes the intended text and the fallback text, states the base chance as a percentage rounded to the nearest whole number, and invites the co-host to react in character only if it fits her `[proposed wording]`.
+- [ ] **CTX-FALL-005**: The cortex shall clear the pending glitch when the reply of a think whose prompt carried that same glitch's hint is published as `brain.say` (a newer glitch that replaced it stays pending), on `control` `forget_context`, or when its line is no longer in working memory, and shall keep it after a vetoed, empty or failed reply `[proposed]`.
+- [ ] **CTX-FALL-006**: The cortex shall not draw a random number for, add or withhold the acknowledgement hint by, or check the reply against, the base chance: the model decides in character whether to acknowledge.
+- [ ] **CTX-FALL-007**: When a `voice.failed` without `fallback` arrives, the cortex shall change neither working memory, the pending glitch nor its speaking state `[proposed]`.
 
 ## Critic
 

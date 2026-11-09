@@ -29,12 +29,16 @@ export interface MemoryBackend {
   /** Count one chat line for the viewer: upsert by lowercased key, keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
   touchViewer(userKey: string, display: string, opts?: { isSub?: boolean }): Promise<ViewerTouch>;
   getViewer(userKey: string): Promise<ViewerRow | undefined>;
+  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do (MEM-SURF-002). */
+  findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
   /** Set or clear the owner's regular flag by key or display name; a name with no row gets a placeholder when setting (MEM-REG-003). Clearing a name with no row returns undefined. */
   setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined>;
   insertNote(note: NewNote): Promise<NoteRow>;
   /** Reinforce a note with a fresh mention (MEM-NOTE-005); undefined when it no longer exists. */
   reinforceNote(id: number): Promise<NoteRow | undefined>;
   listNotes(userKey: string): Promise<NoteRow[]>;
+  /** Record `at` as the time these notes were last sent to the cortex (MEM-SURF-004); not a content change, so version and dirty stay. */
+  markSurfaced(noteIds: number[], at: Date): Promise<void>;
   listDeletions(userKey: string): Promise<DeletionRow[]>;
   /** Delete a note and record it (with its effective strength and the trimmed reason, none when blank); false when it does not exist. */
   deleteNote(id: number, reason?: string): Promise<boolean>;
@@ -246,6 +250,15 @@ export class MemoryStore implements MemoryBackend {
     return rows[0] && this.toViewer(rows[0]);
   }
 
+  // @spec MEM-SURF-002
+  async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    const { rows } = await this.query<ViewerSql>(
+      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) ORDER BY last_seen DESC, user_key LIMIT 1`,
+      [name],
+    );
+    return rows[0] && this.toViewer(rows[0]);
+  }
+
   // @spec MEM-REG-001, MEM-REG-003
   async setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined> {
     const key = keyOrName.toLowerCase();
@@ -328,6 +341,12 @@ export class MemoryStore implements MemoryBackend {
   async listNotes(userKey: string): Promise<NoteRow[]> {
     const { rows } = await this.query<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id`, [userKey.toLowerCase()]);
     return rows.map(toNote);
+  }
+
+  // @spec MEM-SURF-004
+  async markSurfaced(noteIds: number[], at: Date): Promise<void> {
+    if (!noteIds.length) return;
+    await this.query("UPDATE viewer_notes SET last_surfaced_at = $2 WHERE id = ANY($1::bigint[])", [noteIds, at]);
   }
 
   async listDeletions(userKey: string): Promise<DeletionRow[]> {

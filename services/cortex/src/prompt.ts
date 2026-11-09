@@ -6,6 +6,7 @@ import type { Context } from "@cohost/working-memory";
 export type Focus = BusEvent<"attention.focus">["data"];
 export type Recalled = BusEvent<"memory.recall.reply">["data"]["memories"];
 export type Mood = BusEvent<"affect.state">["data"];
+export type People = BusEvent<"memory.notes.reply">["data"]["viewers"];
 
 // @spec CTX-PROMPT-001, CTX-PROMPT-002
 export function buildMessages(opts: {
@@ -16,8 +17,10 @@ export function buildMessages(opts: {
   focus: Focus;
   mood?: Mood;
   viewerNote?: string;
+  /** Memory's notes about the viewers in the conversation (CTX-NOTES-004). */
+  people?: People;
 }): ChatMessage[] {
-  const { cfg, personality, ctx, memories, focus, mood, viewerNote } = opts;
+  const { cfg, personality, ctx, memories, focus, mood, viewerNote, people = [] } = opts;
   const now = new Date().toLocaleString("en-US", { timeZone: cfg.cohost.timezone });
 
   const memBlock = memories.length
@@ -33,6 +36,7 @@ export function buildMessages(opts: {
     ctx.lastVision ? `- On screen right now: ${ctx.lastVision}` : "",
     mood ? `- Your current mood: ${describeMood(mood)}` : "",
     viewerNote ? `- ${viewerNote}` : "",
+    peopleBlock(people),
     memBlock,
     `## Output\nReply with ONE short spoken line, starting with an emotion tag from: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}. ` +
       `Optionally add [gesture:name] after the tag. No other brackets, no quotes, no narration.`,
@@ -47,6 +51,25 @@ export function buildMessages(opts: {
     { role: "system", content: system },
     { role: "user", content: `## Recent transcript\n${transcript || "(quiet)"}\n\n${nudge}` },
   ];
+}
+
+const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+// @spec CTX-NOTES-004, CTX-NOTES-005, CTX-NOTES-006
+/**
+ * The `## People here` block: each viewer in reply order, `general` notes as plain facts, and a handling hint
+ * (never any text) for each `health` or `family` note. Subscriber status and other money detail are not read.
+ * Every field is flattened to one line so a note cannot forge a heading or a line of its own.
+ */
+function peopleBlock(people: People): string {
+  if (!people.length) return "";
+  const entries = people.map((v) => {
+    const facts = v.notes.filter((n) => n.category === "general" && n.text).map((n) => oneLine(n.text!));
+    const head = `- ${oneLine(v.user)}${v.regular ? " (regular)" : ""}${facts.length ? `: ${facts.join("; ")}` : ""}`;
+    const hints = v.notes.filter((n) => n.category !== "general" && n.hint).map((n) => `  - handle gently: ${oneLine(n.hint!)}`);
+    return [head, ...hints].join("\n");
+  });
+  return `\n## People here\n${entries.join("\n")}\n`;
 }
 
 // @spec CTX-PROMPT-003

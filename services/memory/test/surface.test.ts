@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { testConfig } from "@cohost/testing";
+import { event, recordingLog, testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
+import { createCaptureHandler } from "../src/capture.js";
 import { buildNotesReply } from "../src/surface.js";
 import { DAY, T0 } from "./store-contract.js";
 
@@ -148,4 +149,17 @@ test("a failing store makes buildNotesReply throw so the region handler can answ
   const { cfg } = setup();
   const broken = { findViewerByDisplay: async () => { throw new Error("db down"); }, listNotes: async () => [], markSurfaced: async () => {} };
   await assert.rejects(buildNotesReply(broken as never, cfg, ["Alice"], T0), /db down/);
+});
+
+// @spec MEM-REG-002
+test("a viewer on their first message gets a note captured and surfaced: regular status gates neither", async () => {
+  const { store, cfg, ask } = setup();
+  const onEvent = createCaptureHandler({
+    cfg, store, log: recordingLog().log,
+    hook: { kind: "llm", run: async () => ({ note: { category: "general", text: "just got a Steam Deck" } }) },
+  });
+  await onEvent(event("chat.message", { platform: "twitch", user: "Newbie", userId: "n1", text: "just got a Steam Deck!", isMod: false, isSub: false, mentionsCohost: false }));
+  const [v] = await ask(["Newbie"]);
+  assert.equal(v!.regular, false);
+  assert.deepEqual(v!.notes.map((n) => n.text), ["just got a Steam Deck"]);
 });

@@ -499,3 +499,15 @@ test("a viewer whose notes were all cleaned meanwhile is not processed", async (
   assert.equal(res.notes, 0);
   assert.equal(t.calls.length, 0);
 });
+
+// @spec MEM-NOTE-009, MEM-CONSOL-005
+test("a consolidator operation whose text or hint is about politics, money or subscriber status is discarded", async () => {
+  const { validateOp } = await import("../src/consolidator.js");
+  const ids = new Set([1, 2]);
+  assert.deepEqual(validateOp({ op: "rewrite", id: 1, text: "plays Hades" }, ids), { op: "rewrite", id: 1, text: "plays Hades" });
+  assert.equal(validateOp({ op: "rewrite", id: 1, text: "voted for Trump" }, ids), undefined);
+  assert.equal(validateOp({ op: "rewrite", id: 1, text: "plays Hades", hint: "mention their salary" }, ids), undefined);
+  assert.equal(validateOp({ op: "merge", ids: [1, 2], text: "makes $100k a year" }, ids), undefined);
+  assert.equal(validateOp({ op: "merge", ids: [1, 2], text: "is a tier 2 sub" }, ids), undefined);
+  assert.deepEqual(validateOp({ op: "drop", id: 2 }, ids), { op: "drop", id: 2 });
+});

@@ -518,3 +518,16 @@ test("the shipped example configures the consolidator on the cortex's model via 
   const yaml = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   for (const key of Object.keys(expected)) assert.match(yaml, new RegExp(`^\\s+${key}:`, "m"), `${key} listed in the example`);
 });
+
+// @spec CFG-USR-008
+test("the shipped example configures the capture hook on its own small ollama model, overridable with NOTES_MODEL, and .env.example documents it", () => {
+  const { cfg } = loadShippedBare();
+  const c = cfg.brain.memory.notes.capture;
+  assert.equal(c.kind, "llm");
+  assert.equal(c.llm.provider, "ollama");
+  assert.equal(c.llm.model, "gemma3:1b");
+  assert.notEqual(c.llm.model, cfg.llm.model, "its own model slot, not the cortex's");
+  assert.equal(loadShippedBare({ NOTES_MODEL: "other:tag" }).cfg.brain.memory.notes.capture.llm.model, "other:tag");
+  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:1b\}/);
+  assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:1b$/m);
+});

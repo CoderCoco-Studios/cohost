@@ -35,7 +35,7 @@ test("flags and defaults match the spec", () => {
   }
   for (const id of ["memory", "dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
   for (const id of ["dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.deepEqual(findService(id)!.groups, [], id);
-  assert.deepEqual(findService("memory")!.groups, ["memory", "memory-recall"]);
+  assert.deepEqual(findService("memory")!.groups, ["memory", "memory-recall", "memory-notes"]);
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
 });
 

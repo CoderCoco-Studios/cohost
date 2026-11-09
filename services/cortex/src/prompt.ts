@@ -65,7 +65,7 @@ function peopleBlock(people: People): string {
   if (!people.length) return "";
   const entries = people.map((v) => {
     const facts = v.notes.filter((n) => n.category === "general" && n.text).map((n) => oneLine(n.text!));
-    const head = `- ${oneLine(v.user)}${v.regular ? " (regular)" : ""}${facts.length ? `: ${facts.join("; ")}` : ""}`;
+    const head = `- ${oneLine(v.user)}${facts.length ? `: ${facts.join("; ")}` : ""}`;
     const hints = v.notes.filter((n) => n.category !== "general" && n.hint).map((n) => `  - handle gently: ${oneLine(n.hint!)}`);
     return [head, ...hints].join("\n");
   });

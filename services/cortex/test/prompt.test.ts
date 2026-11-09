@@ -60,7 +60,7 @@ test("buildMessages: a People here block lists each viewer in reply order with g
     block.trim(),
     [
       "## People here",
-      "- alice (regular): got a new puppy named Biscuit; speedrunning Celeste lately",
+      "- alice: got a new puppy named Biscuit; speedrunning Celeste lately",
       "  - handle gently: check in warmly and gently; never name or quote it",
       "- bob: new to the channel's Minecraft server",
     ].join("\n"),
@@ -71,7 +71,8 @@ test("buildMessages: a People here block lists each viewer in reply order with g
 test("buildMessages: no block for an empty or missing people list; a viewer with no notes is still named", () => {
   assert.doesNotMatch(system({ people: [] }), /People here/);
   assert.doesNotMatch(system(), /People here/);
-  assert.match(system({ people: [{ user: "cat", regular: true, msgCount: 30, notes: [] }] }), /## People here\n- cat \(regular\)\n/);
+  assert.match(system({ people: [{ user: "cat", regular: true, msgCount: 30, notes: [] }] }), /## People here\n- cat\n/);
+  assert.doesNotMatch(system({ people: [{ user: "cat", regular: true, msgCount: 30, notes: [] }] }), /\(regular\)/, "regular status is the familiarity line's job");
 });
 
 // @spec CTX-NOTES-005

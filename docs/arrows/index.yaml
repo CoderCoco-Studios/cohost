@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Viewer-notes chunk 1 built (CFG-SCH-014 to 016, CFG-USR-007). Remaining gaps: CFG-USR-008 (chunk 2), CFG-ENV-009 (chunk 4)."
+    next: "Viewer-notes chunks 1 and 2 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008). Remaining gap: CFG-ENV-009 (chunk 4)."
     drift: null
 
   event-bus:
@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 (memory core) and 3 (surfacing, MEM-SURF, MEM-VIEWER-002) built: 84 of 107 specs implemented, 23 gaps. Open chunk-1 specs wait on later chunks (NOTE-004 restore, NOTE-009/011 capture half, REG-002 capture half, CONSOL-001 trigger call site). Next: 2 capture (MEM-CAPTURE), 4 owner operations (MEM-ADMIN); deployment and cohostctl wiring for consolidate. See the memory LLD Build order."
+    next: "Viewer-notes chunks 1 (memory core), 2 (live capture) and 3 (surfacing) built: 99 of 107 specs implemented, 8 gaps. Open: NOTE-004 restore (chunk 4) and MEM-ADMIN-001 to 007 (chunk 4). Next: 4 owner operations (MEM-ADMIN); deployment pull of NOTES_MODEL and cohostctl wiring for consolidate. See the memory LLD Build order."
     drift: null
 
   cortex:

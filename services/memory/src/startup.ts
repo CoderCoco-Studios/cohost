@@ -15,6 +15,8 @@ export interface StartupDeps {
   /** True once Ollama answers. */
   ping: () => Promise<boolean>;
   onEvent: (ev: BusEvent) => Promise<void>;
+  /** Live note capture (MEM-CAPTURE-001): when given, it is the handler of a third consumer group, `memory-notes`, for `chat.message`. */
+  onCaptureEvent?: (ev: BusEvent) => Promise<void>;
   /** Called once the service is ready: the consolidation catch-up check (MEM-CONSOL-015). Its failure never fails startup. */
   onStarted?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
@@ -24,7 +26,7 @@ const RETRY_MS = 3000;
 const MAX_INIT_RETRIES = 20;
 
 /** Wait for dependencies, initialise the store, subscribe both consumer groups, report ready. Throws on fatal startup errors. */
-export async function startMemory({ cfg, log, bus, store, health, heartbeat, ping, onEvent, onStarted, sleep }: StartupDeps): Promise<void> {
+export async function startMemory({ cfg, log, bus, store, health, heartbeat, ping, onEvent, onCaptureEvent, onStarted, sleep }: StartupDeps): Promise<void> {
   const { store: storeKind, embedder: embedderKind } = cfg;
   // @spec MEM-START-004
   if (storeKind !== "postgres" || embedderKind !== "ollama") {
@@ -67,12 +69,20 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   };
   const main = groupReady();
   const recall = groupReady();
+  const groups = [main, recall];
   const running = [
     bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
     bus.subscribe({ group: "memory-recall", types: ["memory.recall.request", "memory.notes.request"], start: "resume", onReady: recall.onReady }, onEvent),
   ];
+  // @spec MEM-CAPTURE-001
+  // A third group for note capture, so a slow classifier call never delays memory writes or recall answers.
+  if (onCaptureEvent) {
+    const notes = groupReady();
+    groups.push(notes);
+    running.push(bus.subscribe({ group: "memory-notes", types: ["chat.message"], start: "resume", onReady: notes.onReady }, onCaptureEvent));
+  }
   // The subscriptions run until the bus stops; only their early failure matters here.
-  await Promise.race([Promise.all([main.ready, recall.ready]), ...running]);
+  await Promise.race([Promise.all(groups.map((g) => g.ready)), ...running]);
   heartbeat.ready();
   log.info({ recall_k: cfg.recall_k }, "memory online");
   // @spec MEM-CONSOL-015

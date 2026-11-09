@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { startMemory, type StartupDeps } from "../src/startup.js";
 import { DimensionMismatchError } from "../src/store.js";
 
-function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[]; readyOrder?: "auto" | "manual" } = {}) {
+function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[]; readyOrder?: "auto" | "manual" } = {}) {
   const events: string[] = [];
   const subs: Record<string, unknown>[] = [];
   const warnings: string[] = [];
@@ -26,6 +26,7 @@ function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "has
     heartbeat: { ready: () => events.push("ready"), degraded: (d?: string) => events.push(`degraded:${d}`) },
     ping: async () => pings.shift() ?? true,
     onEvent: async () => {},
+    onCaptureEvent: over.capture ? async () => {} : undefined,
     onStarted: over.onStarted && (async () => { events.push("started"); await over.onStarted!(); }),
     sleep: async () => { events.push("sleep"); },
   };
@@ -38,7 +39,7 @@ test("both consumer groups subscribe with start mode resume", async () => {
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start, "fromNow" in s]), [
     ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume", false],
-    ["memory-recall", ["memory.recall.request", "memory.notes.request"],"resume", false],
+    ["memory-recall", ["memory.recall.request", "memory.notes.request"], "resume", false],
   ]);
   assert.equal(t.events.at(-1), "ready");
 });
@@ -128,4 +129,30 @@ test("the consolidation catch-up check runs once the service is ready, and its f
   await startMemory(failing.deps);
   assert.equal(failing.events.at(-1), "started");
   assert.ok(failing.warnings.some((w) => w.includes("catch-up")));
+});
+
+// @spec MEM-CAPTURE-001, MEM-EVT-001
+test("note capture runs in a third consumer group, memory-notes, for chat.message only, subscribed with start mode resume", async () => {
+  const t = setup({ capture: true });
+  await startMemory(t.deps);
+  assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start]), [
+    ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume"],
+    ["memory-recall", ["memory.recall.request", "memory.notes.request"], "resume"],
+    ["memory-notes", ["chat.message"], "resume"],
+  ]);
+  assert.equal(t.events.at(-1), "ready");
+});
+
+// @spec MEM-CAPTURE-001, MEM-START-005
+test("ready waits for the memory-notes group too", async () => {
+  const t = setup({ capture: true, readyOrder: "manual" });
+  const p = startMemory(t.deps);
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  t.readies[0]!();
+  t.readies[1]!();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.ok(!t.events.includes("ready"), "two of three groups is not enough");
+  t.readies[2]!();
+  await p;
+  assert.ok(t.events.indexOf("ready") > t.events.indexOf("group:memory-notes"));
 });

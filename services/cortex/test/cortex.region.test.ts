@@ -544,7 +544,7 @@ test("notes are shown for any viewer, regular or not, replied-to or just in the 
   });
   await cortex.onEvent(say("amy"));
   await cortex.think(mention("bob"));
-  assert.match(llm.system, /## People here\n- bob: new to the Minecraft server\n- amy \(regular\): speedruns Celeste\n/);
+  assert.match(llm.system, /## People here\n- bob: new to the Minecraft server\n- amy: speedruns Celeste\n/);
 });
 
 // @spec CTX-NOTES-002
@@ -563,7 +563,7 @@ test("recall and notes requests go out together and the think waits for both", a
   assert.equal(llm.calls.length, 0, "still waiting for the notes");
   await cortex.onEvent(event("memory.notes.reply", { id: notes!.id, viewers: aliceNotes() }));
   await thinking;
-  assert.match(llm.system, /- alice \(regular\): got a new puppy named Biscuit/);
+  assert.match(llm.system, /- alice: got a new puppy named Biscuit/);
 });
 
 // @spec CTX-NOTES-002
@@ -628,7 +628,7 @@ test("health and family notes reach the prompt as a handling hint only; the text
     }],
   });
   await cortex.think(mention("alice"));
-  assert.match(llm.system, /- alice \(regular\): plays Celeste\n {2}- handle gently: check in warmly and gently; never name or quote it\n/);
+  assert.match(llm.system, /- alice: plays Celeste\n {2}- handle gently: check in warmly and gently; never name or quote it\n/);
 });
 
 // @spec CTX-NOTES-006
@@ -636,7 +636,7 @@ test("subscriber and money detail never reach the prompt even if memory sends it
   const { cortex, llm } = setup({ notes: () => [{ user: "alice", regular: true, msgCount: 40, isSub: true, subscriber: true, tier: "Tier 3", notes: [general("plays Celeste")] } as never] });
   await cortex.onEvent(event("chat.message", { platform: "twitch", user: "alice", text: "hey", isMod: false, isSub: true, mentionsCohost: true }));
   await cortex.think(mention("alice"));
-  assert.match(llm.system, /alice \(regular\): plays Celeste/);
+  assert.match(llm.system, /alice: plays Celeste/);
   assert.doesNotMatch(llm.system, /subscri|tier|\bsub\b/i);
 });
 

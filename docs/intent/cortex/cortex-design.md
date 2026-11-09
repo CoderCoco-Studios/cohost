@@ -188,12 +188,12 @@ The notes are rendered in a `## People here` block of the system message
 
 ```
 ## People here
-- alice (regular): got a new puppy named Biscuit; speedrunning Celeste lately
+- alice: got a new puppy named Biscuit; speedrunning Celeste lately
   - handle gently: check in warmly and gently; never name or quote it
 - bob: new to the channel's Minecraft server
 ```
 
-`general` notes are plain facts. For `health` and `family` notes the model receives
+A viewer's regular status reaches the prompt only through the familiarity line, never as a marker in this block. `general` notes are plain facts. For `health` and `family` notes the model receives
 only the handling hint, never the note text: memory leaves the text out of the
 reply (memory `MEM-SURF-004`), and a sympathetic check-in works from the hint
 alone (`CTX-NOTES-005`). Subscriber status, though memory stores it, never appears

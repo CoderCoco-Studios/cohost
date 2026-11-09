@@ -132,9 +132,10 @@ published; it stays in the table so no migration drops data `[proposed]`.
 The co-host remembers recent, relevant things about viewers (what they are doing,
 a cool new thing they got) and who they are as people, without storing or
 surfacing sensitive things badly. Notes are kept for every viewer from their first
-message; regular status does not gate them. The whole feature is gap: every
-statement in this section is a `[ ]` spec. Items marked `[proposed]` are design
-choices awaiting the owner's confirmation; everything else is settled intent.
+message; regular status does not gate them. The feature is implemented: its specs
+are `[x]`, with tests citing them. Items marked `[proposed]` are design choices
+the owner has not yet confirmed (numbers to tune, wire names, storage layout);
+everything else is settled intent.
 
 Markers in this section: the owner settled the purpose, the two layers, strength
 with reinforcement and fade, the sensitivity rules, live capture by a small model,

@@ -81,8 +81,9 @@ async function run(store: ViewersAdminStore, notes: NotesConfig, req: ViewersReq
       return { cleared: await store.clearNotes(req.key, req.reason) };
     }
     case "set_regular": {
-      const v = await store.setRegular(req.key ?? req.name!, req.regular);
-      if (!v) return notFound(`no viewer ${req.key ?? req.name}`);
+      const who = req.key?.trim() || req.name?.trim();
+      const v = who ? await store.setRegular(who, req.regular) : undefined;
+      if (!v) return notFound(`no viewer ${who ?? ""}`.trim());
       return { viewer: viewerData(v) };
     }
   }

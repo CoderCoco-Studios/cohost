@@ -518,3 +518,13 @@ test("the shipped example configures the consolidator on the cortex's model via 
   const yaml = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   for (const key of Object.keys(expected)) assert.match(yaml, new RegExp(`^\\s+${key}:`, "m"), `${key} listed in the example`);
 });
+
+// @spec CFG-ENV-009
+test("VIEWERS_TOKEN is env-only: no schema key at any depth, and a YAML key for it is reported as unknown", () => {
+  const keys = (o: unknown, out: string[] = []): string[] => {
+    if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) { out.push(k); keys(v, out); }
+    return out;
+  };
+  assert.equal(keys(loadShipped()).some((k) => /viewers?_?token/i.test(k)), false);
+  { const raw = { dashboard: { viewers_token: "x" } }; assert.ok(unknownKeys(raw, loadShipped()).some((p) => /viewers_token/.test(p))); }
+});

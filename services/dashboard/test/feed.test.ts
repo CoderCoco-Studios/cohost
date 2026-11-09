@@ -21,7 +21,7 @@ class Sock implements FeedSocket {
   services() { return this.sent.filter((m) => m.type === "services"); }
 }
 
-function setup(clock = { t: 1_000_000 }) {
+function setup(clock = { t: 1_000_000 }, extra: { onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void } = {}) {
   const tracker = new HealthTracker({ now: () => clock.t });
   const socks = new Set<Sock>();
   let tailHandler: (ev: BusEvent) => void = () => {};
@@ -37,7 +37,7 @@ function setup(clock = { t: 1_000_000 }) {
     recentHealth: async () => recentHeartbeats as never,
     tailHealth: async (h: never, from: string) => { healthHandler = h; healthFrom = from; },
   };
-  const feed = createFeed({ bus, tracker, clients: () => socks, tickMs: 20 });
+  const feed = createFeed({ bus, tracker, clients: () => socks, tickMs: 20, ...extra });
   return { clock, tracker, socks, feed, recentEvents,
     failReplay: (e: Error | undefined) => { replayError = e; },
     holdReplay: () => { let open!: () => void; gate = new Promise<void>((r) => { open = r; }); return open; }, recentHeartbeats, healthFrom: () => healthFrom,
@@ -188,4 +188,29 @@ test("dashboard heartbeat: no deps, live, ready then one stopping", async () => 
   assert.equal(hbs[1]!.service, "dashboard");
   assert.equal(hbs[1]!.mode, "live");
   assert.deepEqual(hbs[1]!.deps, {});
+});
+
+// @spec DASH-FEED-007, DASH-FEED-001, DASH-FEED-002
+test("viewer-notes events never reach a /ws client, neither live nor in the connect replay, and viewers replies go to the Viewers client instead", async () => {
+  const replies: string[] = [];
+  const t = setup(undefined, { onViewersReply: (e) => replies.push(e.id) });
+  const ws = new Sock(); t.socks.add(ws);
+  const secret = [
+    // The notes events are catalogued with the surfacing change; the feed filters them by name regardless.
+    { type: "memory.notes.request", ts: 1, source: "cortex", data: { id: "n1", users: ["a"] } },
+    { type: "memory.notes.reply", ts: 1, source: "memory", data: { id: "n1", viewers: [] } },
+    event("memory.viewers.request", { id: "v1", op: "list" }),
+    event("memory.viewers.reply", { id: "v1", ok: true, data: { viewers: [{ note: "health" }] } }),
+  ] as unknown as BusEvent[];
+  secret.forEach((e, i) => { (e as { id: string }).id = `${i + 1}-0`; });
+  t.recentEvents.push(...secret, ev("9-0"));
+  await t.feed.onConnection(ws);
+  assert.deepEqual(ws.sent.filter((m) => m.type !== "services").map((m) => m.type), ["brain.status"]);
+  await t.feed.start();
+  ws.sent.length = 0;
+  for (const e of secret) t.emit(e);
+  t.emit(ev("10-0"));
+  assert.deepEqual(ws.sent.map((m) => m.id), ["10-0"]);
+  assert.deepEqual(replies, ["4-0"], "only the reply goes to the Viewers client");
+  t.feed.stop();
 });

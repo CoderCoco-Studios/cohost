@@ -15,7 +15,15 @@ export interface FeedDeps {
   /** How often staleness is re-evaluated and pushed; default 1000 ms. */
   tickMs?: number;
   replay?: number;
+  /** Receives each `memory.viewers.reply` seen on the stream (the Viewers routes wait on these); the feed itself never forwards it. */
+  onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void;
 }
+
+// @spec DASH-FEED-007
+/** Events that carry viewer-note text: never sent to a `/ws` client, live or in the replay. */
+export const VIEWER_NOTE_EVENTS: ReadonlySet<string> = new Set([
+  "memory.notes.request", "memory.notes.reply", "memory.viewers.request", "memory.viewers.reply",
+]);
 
 /** The slice of the service logger the feed's failure handling uses. */
 export interface FeedLog {
@@ -53,7 +61,7 @@ export function createFeed(d: FeedDeps) {
         ws.send(servicesMessage(d.tracker.snapshot()));
         const sent = new Set<string>();
         for (const ev of await d.bus.recent(d.replay ?? 60)) {
-          if (ev.type === "service.heartbeat") continue;
+          if (ev.type === "service.heartbeat" || VIEWER_NOTE_EVENTS.has(ev.type)) continue;
           sent.add(ev.id);
           ws.send(JSON.stringify({ ...ev, replay: true }));
         }
@@ -72,7 +80,8 @@ export function createFeed(d: FeedDeps) {
       const fromId = history.at(-1)?.id ?? "$";
       void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId);
       void d.bus.tail((ev: BusEvent) => {
-        if (ev.type !== "service.heartbeat") for (const c of d.clients()) deliver(c, ev);
+        if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
+        if (ev.type !== "service.heartbeat" && !VIEWER_NOTE_EVENTS.has(ev.type)) for (const c of d.clients()) deliver(c, ev);
       });
       offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));
       timer = setInterval(() => d.tracker.tick(), d.tickMs ?? 1000);

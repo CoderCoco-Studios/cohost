@@ -4,6 +4,7 @@ import { urls, type Logger } from "@cohost/config";
 import { bearerOk, type ServiceController, type ServiceHealth, type StartMode } from "@cohost/control";
 import { handleInject } from "./inject.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
+import { ViewersClient, handleViewers } from "./viewers.js";
 
 export interface DashboardDeps {
   bus: Publisher;
@@ -17,6 +18,10 @@ export interface DashboardDeps {
   uploads?: UploadStore;
   /** Base URL eyes/ears fetch uploads from. Defaults to `urls.dashboard()`. */
   dashboardUrl?: string;
+  /** Request/reply client for the Viewers page; the feed hands it memory's replies. Defaults to a private client that never hears one. */
+  viewers?: ViewersClient;
+  /** `VIEWERS_TOKEN` (env only). Unset or empty locks every `/viewers` route with a 403; independent of `control`. */
+  viewersToken?: string;
   loadPersonality: () => string;
   savePersonality: (text: string) => void;
   /** Derived per-service health (HealthTracker snapshot). */
@@ -44,6 +49,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       return true;
     },
   };
+  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
   return async (req, res) => {
     try {
@@ -62,6 +68,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(audio);
         return;
       }
+      // @spec DASH-VIEWERS-001, DASH-VIEWERS-002, DASH-VIEWERS-003, DASH-VIEWERS-004, DASH-VIEWERS-005, DASH-VIEWERS-006, DASH-VIEWERS-007, DASH-VIEWERS-008, DASH-VIEWERS-009
+      if (await handleViewers(viewers, req, res, url)) return;
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {

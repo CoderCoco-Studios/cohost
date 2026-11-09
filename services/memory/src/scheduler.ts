@@ -72,7 +72,12 @@ export class ConsolidationScheduler {
     this.abort.abort();
     this.scheduled = false;
     for (const wake of this.waiters.splice(0)) wake();
-    if (this.running) await Promise.race([this.running, new Promise<void>((r) => setTimeout(r, graceMs).unref())]);
+    if (this.running) {
+      // The grace timer must keep the event loop alive: unref'd, a loop with nothing else pending would exit mid-shutdown.
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([this.running, new Promise<void>((r) => { timer = setTimeout(r, graceMs); })]);
+      clearTimeout(timer);
+    }
     try {
       await this.deps.store.setMeta(META_SHUTDOWN_RUN_OWED, "true");
     } catch (err) {

@@ -191,3 +191,26 @@ test("a failing dirty count is logged and schedules nothing", async () => {
   assert.equal(t.passes.length, 0);
   assert.ok(t.lines.some((l) => l.level === "warn"));
 });
+
+// @spec MEM-CONSOL-013
+test("shutdown's wait for a running pass holds the event loop open until it ends, and leaves no timer behind", async () => {
+  const t = setup({}, 5);
+  await t.sched.startup();
+  const timers: NodeJS.Timeout[] = [];
+  const real = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: () => void, ms?: number) => { const h = real(fn, ms); timers.push(h); return h; }) as typeof setTimeout;
+  try {
+    const done = t.sched.shutdown(30);
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0]!.hasRef(), true, "an unref'd timer lets the loop drain with shutdown still pending");
+    await done;
+  } finally {
+    globalThis.setTimeout = real;
+  }
+  const finished = setup({}, 5);
+  await finished.sched.startup();
+  const p = finished.sched.shutdown(60_000);
+  finished.passes[0]!.finish();
+  await p; // would hang for a minute if the grace timer were still what ended the wait
+  assert.equal(finished.meta.get(META_SHUTDOWN_RUN_OWED), "true");
+});

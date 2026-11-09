@@ -39,7 +39,7 @@ const scheduler = new ConsolidationScheduler({
   log,
   runPass: ({ gate, signal }) => runConsolidation({ store, hook: consolidator, cfg: cfg.brain.memory, log, gate, signal }),
 });
-const onEvent = createMemoryHandler({ cfg, bus, store, log, onBrainStatus: (state) => scheduler.onBrainStatus(state) });
+const onEvent = createMemoryHandler({ cfg, bus, store, admin: store, log, onBrainStatus: (state) => scheduler.onBrainStatus(state) });
 
 const main = () => startMemory({
   cfg: cfg.brain.memory,

@@ -54,6 +54,11 @@ export interface ViewerRow {
   regular: boolean;
 }
 
+/** A viewer row with the number of notes stored for it (Viewers page list). */
+export interface ViewerSummary extends ViewerRow {
+  noteCount: number;
+}
+
 export interface NewNote {
   userKey: string;
   layer?: Layer;

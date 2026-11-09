@@ -5,7 +5,7 @@ import { tracked } from "@cohost/bus";
 import type { ReflectCursor } from "./cursor.js";
 import {
   clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
-  type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow,
+  type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
 export type MemoryKind = "chat" | "speech" | "self" | "note";
@@ -38,6 +38,12 @@ export interface MemoryBackend {
   listDeletions(userKey: string): Promise<DeletionRow[]>;
   /** Delete a note and record it (with its effective strength and the trimmed reason, none when blank); false when it does not exist. */
   deleteNote(id: number, reason?: string): Promise<boolean>;
+  /** Viewers newest-seen first with their stored-note counts, optionally only those whose display contains `query` (case-insensitive, literal); `limit` defaults to 500 (MEM-ADMIN-001). */
+  listViewers(opts?: { query?: string; limit?: number }): Promise<ViewerSummary[]>;
+  /** Undo a deletion: recreate the note with its recorded strength from now, clean, and delete the record (MEM-ADMIN-004); undefined when the record does not exist. */
+  restoreDeletion(id: number): Promise<NoteRow | undefined>;
+  /** Delete every note of a viewer as `deleteNote` does, giving each record the same reason; returns how many (MEM-ADMIN-005). */
+  clearNotes(userKey: string, reason?: string): Promise<number>;
   dirtyNoteCount(): Promise<number>;
   /** Keys of viewers with at least one dirty note. */
   dirtyViewerKeys(): Promise<string[]>;
@@ -354,6 +360,56 @@ export class MemoryStore implements MemoryBackend {
         [n.userKey, n.layer, n.category, n.text, n.hint, effectiveStrength(n, this.clock(), this.cfg.notes), reason?.trim() || null, new Date(this.clock()), toVector(n.embedding)],
       );
       return true;
+    });
+  }
+
+  // @spec MEM-ADMIN-001
+  async listViewers(opts: { query?: string; limit?: number } = {}): Promise<ViewerSummary[]> {
+    const q = opts.query?.trim();
+    const { rows } = await this.query<ViewerSql & { note_count: number }>(
+      `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}, (SELECT count(*)::int FROM viewer_notes n WHERE n.user_key = v.user_key) AS note_count
+         FROM viewers v
+        WHERE $1::text IS NULL OR strpos(lower(v.display), lower($1)) > 0
+        ORDER BY v.last_seen DESC, v.user_key
+        LIMIT $2`,
+      [q ? q : null, opts.limit ?? 500],
+    );
+    return rows.map((r) => ({ ...this.toViewer(r), noteCount: r.note_count }));
+  }
+
+  // @spec MEM-ADMIN-004, MEM-NOTE-004
+  async restoreDeletion(id: number): Promise<NoteRow | undefined> {
+    return this.tx(async (q) => {
+      const { rows } = await q<DeletionSql>(
+        `SELECT id, user_key, layer, category, text, hint, strength, reason, deleted_at, embedding::text AS embedding
+           FROM viewer_note_deletions WHERE id = $1 FOR UPDATE`, [id]);
+      const d = rows[0];
+      if (!d) return undefined;
+      const out = await q<NoteSql>(
+        `INSERT INTO viewer_notes (user_key, layer, category, text, hint, strength, strength_at, mentions, dirty, version, embedding)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,1,false,1,$8::vector)
+         RETURNING ${NOTE_COLS}`,
+        [d.user_key, d.layer, d.category, d.text, d.hint, clamp01(d.strength), new Date(this.clock()), d.embedding],
+      );
+      await q("DELETE FROM viewer_note_deletions WHERE id = $1", [id]);
+      return toNote(out.rows[0]!);
+    });
+  }
+
+  // @spec MEM-ADMIN-005
+  async clearNotes(userKey: string, reason?: string): Promise<number> {
+    return this.tx(async (q) => {
+      const { rows } = await q<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id FOR UPDATE`, [userKey.toLowerCase()]);
+      for (const r of rows) {
+        const n = toNote(r);
+        await q("DELETE FROM viewer_notes WHERE id = $1", [n.id]);
+        await q(
+          `INSERT INTO viewer_note_deletions (user_key, layer, category, text, hint, strength, reason, deleted_at, embedding)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [n.userKey, n.layer, n.category, n.text, n.hint, effectiveStrength(n, this.clock(), this.cfg.notes), reason?.trim() || null, new Date(this.clock()), toVector(n.embedding)],
+        );
+      }
+      return rows.length;
     });
   }
 

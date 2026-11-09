@@ -69,7 +69,7 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   const recall = groupReady();
   const running = [
     bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
-    bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], start: "resume", onReady: recall.onReady }, onEvent),
+    bus.subscribe({ group: "memory-recall", types: ["memory.recall.request", "memory.viewers.request"], start: "resume", onReady: recall.onReady }, onEvent),
   ];
   // The subscriptions run until the bus stops; only their early failure matters here.
   await Promise.race([Promise.all([main.ready, recall.ready]), ...running]);

@@ -2,12 +2,15 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { MemoryStore } from "./store.js";
 import type { CortexState } from "./scheduler.js";
+import { answerViewersRequest, type ViewersAdminStore } from "./admin.js";
 
 export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
   log: Logger;
   store: Pick<MemoryStore, "touchViewer" | "remember" | "recall">;
+  /** The store the owner's Viewers-page operations run against; without it `memory.viewers.request` is ignored (MEM-ADMIN-007). */
+  admin?: ViewersAdminStore;
   /** Told the cortex's latest `brain.status`, so consolidation runs only while it is idle (MEM-CONSOL-002). */
   onBrainStatus?: (state: CortexState) => void;
 }
@@ -18,7 +21,7 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 
 // @spec MEM-EVT-002
 /** The memory region's event handler; index.ts subscribes it to both consumer groups. */
-export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: MemoryDeps): (ev: BusEvent) => Promise<void> {
+export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
       // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004, MEM-REG-005
@@ -54,6 +57,13 @@ export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: Mem
       // @spec MEM-CONSOL-002, MEM-CONSOL-003
       case "brain.status": {
         onBrainStatus?.((ev.data as BusEvent<"brain.status">["data"]).state);
+        break;
+      }
+      // @spec MEM-ADMIN-007
+      case "memory.viewers.request": {
+        if (!admin) break;
+        const d = ev.data as BusEvent<"memory.viewers.request">["data"];
+        await bus.publish("memory.viewers.reply", { id: d.id, ...(await answerViewersRequest(admin, cfg.brain.memory.notes, d)) });
         break;
       }
       // @spec MEM-RECALL-001

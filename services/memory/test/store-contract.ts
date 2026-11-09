@@ -249,4 +249,68 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await assert.rejects(store.withConsolidationLock(async () => { throw new Error("boom"); }), /boom/);
     assert.deepEqual(await store.withConsolidationLock(async () => 2), { ran: true, value: 2 }, "released after a throw");
   });
+
+  // @spec MEM-ADMIN-001
+  t("listViewers orders by last seen, filters by a case-insensitive display substring, counts stored notes and honours the limit", async ({ store, advance }) => {
+    const tag = uid("tag").replace(/-/g, "");
+    const [a, b, c] = [uid("a"), uid("b"), uid("c")];
+    await store.touchViewer(a, `Alice${tag}`); advance(1000);
+    await store.touchViewer(b, `bob${tag}`); advance(1000);
+    await store.touchViewer(c, `Carol${tag}`); advance(1000);
+    await store.touchViewer(a, `Alice${tag}`); advance(1000); // a is now the most recently seen
+    await store.insertNote({ userKey: a, category: "general", text: "one" });
+    await store.insertNote({ userKey: a, category: "general", text: "two" });
+    await store.setRegular(c, true);
+    const all = await store.listViewers({ query: tag.toUpperCase() });
+    assert.deepEqual(all.map((v) => v.key), [a, c, b]);
+    assert.deepEqual(all.map((v) => [v.noteCount, v.msgCount, v.regularManual]), [[2, 2, false], [0, 1, true], [0, 1, false]]);
+    assert.deepEqual((await store.listViewers({ query: `ALICE${tag}` })).map((v) => v.key), [a]);
+    assert.deepEqual((await store.listViewers({ query: `zzz${tag}` })), []);
+    assert.deepEqual((await store.listViewers({ query: tag, limit: 2 })).map((v) => v.key), [a, c]);
+    assert.equal((await store.listViewers({ query: "%" })).length, 0, "LIKE wildcards in the query are literal");
+  });
+
+  // @spec MEM-ADMIN-004, MEM-NOTE-004
+  t("restoreDeletion recreates the note at its recorded strength from now, clean, and removes the record", async ({ store, advance, now }) => {
+    const key = uid();
+    await store.touchViewer(key, "Bob");
+    const original = await store.insertNote({ userKey: key, layer: "core", category: "health", text: "has a cold", hint: "ask gently" });
+    advance(10 * DAY);
+    assert.equal(await store.deleteNote(original.id, "private"), true);
+    const [record] = await store.listDeletions(key);
+    assert.ok(record!.strength < 1 && record!.strength > 0);
+    advance(DAY);
+    const restored = (await store.restoreDeletion(record!.id))!;
+    assert.notEqual(restored.id, original.id, "ids are never reused, so a stale consolidation commit cannot touch it");
+    assert.deepEqual(
+      [restored.userKey, restored.layer, restored.category, restored.text, restored.hint, restored.dirty, restored.version, restored.strengthAt.getTime()],
+      [key, "core", "health", "has a cold", "ask gently", false, 1, now()],
+    );
+    assert.ok(Math.abs(restored.strength - record!.strength) < 1e-9);
+    assert.equal(restored.embedding.length, original.embedding.length);
+    assert.deepEqual((await store.listNotes(key)).map((n) => n.id), [restored.id]);
+    assert.deepEqual(await store.listDeletions(key), [], "the record, and any suppression it carried, is gone");
+    assert.equal(await store.restoreDeletion(record!.id), undefined, "a second restore finds nothing");
+    assert.equal(await store.restoreDeletion(987_654_321), undefined);
+  });
+
+  // @spec MEM-ADMIN-005
+  t("clearNotes deletes every note of one viewer into restorable records with one reason and leaves the viewer untouched", async ({ store }) => {
+    const key = uid(), other = uid("other");
+    await store.touchViewer(key, "Bob");
+    await store.touchViewer(other, "Amy");
+    await store.setRegular(key, true);
+    for (const text of ["one", "two", "three"]) await store.insertNote({ userKey: key, category: "general", text });
+    const kept = await store.insertNote({ userKey: other, category: "general", text: "untouched" });
+    assert.equal(await store.clearNotes(key, "  not for stream  "), 3);
+    assert.deepEqual(await store.listNotes(key), []);
+    assert.deepEqual((await store.listDeletions(key)).map((d) => [d.text, d.reason]), [["one", "not for stream"], ["two", "not for stream"], ["three", "not for stream"]]);
+    const v = (await store.getViewer(key))!;
+    assert.deepEqual([v.regularManual, v.msgCount], [true, 1]);
+    assert.deepEqual((await store.listNotes(other)).map((n) => n.id), [kept.id]);
+    assert.equal(await store.clearNotes(key), 0, "nothing left to clear");
+    await store.insertNote({ userKey: key, category: "general", text: "again" });
+    assert.equal(await store.clearNotes(key, "   "), 1);
+    assert.equal((await store.listDeletions(key)).at(-1)!.reason, null, "a blank reason stores none");
+  });
 }

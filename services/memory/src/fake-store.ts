@@ -3,7 +3,7 @@ import type { ReflectCursor } from "./cursor.js";
 import type { Memory, MemoryKind, MemoryBackend, ViewerTouch } from "./store.js";
 import {
   clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
-  type DeletionRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow,
+  type DeletionRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
 const DIMS = 64;
@@ -163,6 +163,40 @@ export class InMemoryStore implements MemoryBackend {
       deletedAt: new Date(this.clock()), embedding: n.embedding,
     });
     return true;
+  }
+
+  // @spec MEM-ADMIN-001
+  async listViewers(opts: { query?: string; limit?: number } = {}): Promise<ViewerSummary[]> {
+    const q = opts.query?.trim().toLowerCase();
+    const counts = new Map<string, number>();
+    for (const n of this.notes.values()) counts.set(n.userKey, (counts.get(n.userKey) ?? 0) + 1);
+    return [...this.viewers.values()]
+      .filter((v) => !q || v.display.toLowerCase().includes(q))
+      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || a.key.localeCompare(b.key))
+      .slice(0, opts.limit ?? 500)
+      .map((v) => ({ ...v, noteCount: counts.get(v.key) ?? 0 }));
+  }
+
+  // @spec MEM-ADMIN-004, MEM-NOTE-004
+  async restoreDeletion(id: number): Promise<NoteRow | undefined> {
+    const i = this.deletions.findIndex((d) => d.id === id);
+    if (i < 0) return undefined;
+    const [d] = this.deletions.splice(i, 1);
+    const now = new Date(this.clock());
+    const row: NoteRow = {
+      id: this.nextNoteId++, userKey: d!.userKey, layer: d!.layer, category: d!.category, text: d!.text, hint: d!.hint,
+      strength: clamp01(d!.strength), strengthAt: now, mentions: 1, dirty: false, version: 1, createdAt: now,
+      lastSurfacedAt: null, embedding: d!.embedding,
+    };
+    this.notes.set(row.id, row);
+    return { ...row };
+  }
+
+  // @spec MEM-ADMIN-005
+  async clearNotes(userKey: string, reason?: string): Promise<number> {
+    const ids = [...this.notes.values()].filter((n) => n.userKey === userKey.toLowerCase()).sort((a, b) => a.id - b.id).map((n) => n.id);
+    for (const id of ids) await this.deleteNote(id, reason);
+    return ids.length;
   }
 
   async dirtyNoteCount(): Promise<number> {

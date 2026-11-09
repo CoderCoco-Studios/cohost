@@ -38,7 +38,7 @@ test("both consumer groups subscribe with start mode resume", async () => {
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start, "fromNow" in s]), [
     ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume", false],
-    ["memory-recall", ["memory.recall.request"], "resume", false],
+    ["memory-recall", ["memory.recall.request", "memory.viewers.request"], "resume", false], // @spec MEM-ADMIN-007
   ]);
   assert.equal(t.events.at(-1), "ready");
 });

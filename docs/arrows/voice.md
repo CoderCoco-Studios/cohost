@@ -4,14 +4,14 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 38 implemented, 12 gaps (VOICE-CLIP-*, build chunk 2), 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 50 implemented, 0 gaps, 0 deferred.
 
-## Spoken fallback line: sink arbitration built (chunk 1), clips designed (chunk 2)
+## Spoken fallback line: built (chunks 1 and 2)
 
 Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips (`[proposed]` items marked). voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for ears to cache.
 
 - Built in chunk 1: `VOICE-SINK-010` to `013` (voice reads `voice.failed` and releases cortex early when nothing plays).
-- Gaps: `VOICE-CLIP-001` to `012` (build chunk 2; 011 and 012 are the `/fallback/*` HTTP routes). Until then every `/fallback/*` request is a 404.
+- Built in chunk 2: `VOICE-CLIP-001` to `012`: `clips.ts` (`ClipService`: fingerprint, startup check, background regeneration, atomic set swap, retry, cleanup) and the `/fallback/*` routes in `Voice.handle`. The stub engine builds no clip service, so it never touches the store and answers 404.
 - Deferred decisions recorded in the LLD: owner-facing voice tuning knobs (depend on what Kokoro-FastAPI accepts, unverified); a separate speaking module with tunable routing.
 
 ## Decisions applied
@@ -37,11 +37,13 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (50 specs: 38 `[x]`, 12 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (50 specs: 50 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
 - services/voice/test/boot.test.ts (boot wiring: subscription options, readiness, fatal paths, shutdown)
+- services/voice/test/clips.test.ts (fallback clips: fingerprint, generation, atomic swap, retry, per-phrase skips, cleanup, routes)
+- services/voice/test/ears-sync.test.ts (voice's manifest and routes accepted by ears' real clip sync)
 - services/voice/test/stub.test.ts
 - services/voice/test/wav.test.ts
 - services/voice/test/health.test.ts
@@ -54,6 +56,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/voice/src/voice.ts
 - services/voice/src/wav.ts
 - services/voice/src/health.ts
+- services/voice/src/clips.ts
 - services/voice/package.json, services/voice/tsconfig.json
 
 26 `@spec` annotations in code, citing all 34 spec IDs. No annotation cites a missing ID.
@@ -83,8 +86,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Stub engine | VOICE-STUB-001 to 003 | 3 | 3 | 0 | 0 |
 | Utterance publication | VOICE-UTT-001 to 003 | 3 | 3 | 0 | 0 |
 | WAV and envelope | VOICE-ENV-001 to 004 | 4 | 4 | 0 | 0 |
-| Sink arbitration | VOICE-SINK-001 to 013 | 9 | 9 | 0 | 4 (SINK-010 to 013: fallback line) |
-| Fallback clips | VOICE-CLIP-001 to 012 | 0 | 0 | 0 | 12 |
+| Sink arbitration | VOICE-SINK-001 to 013 | 13 | 13 | 0 | 0 |
+| Fallback clips | VOICE-CLIP-001 to 012 | 12 | 12 | 0 | 0 |
 | Audio store and HTTP | VOICE-HTTP-001 to 005 | 5 | 5 | 0 | 0 |
 | Health | VOICE-HLTH-001 to 004 | 4 | 4 | 0 | 0 |
 

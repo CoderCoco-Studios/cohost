@@ -3,6 +3,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
 import { parseWav, wavWrap } from "@cohost/shared";
 import { envelope } from "./wav.js";
+import type { ClipRoutes } from "./clips.js";
 
 export const ENVELOPE_HZ = 30;
 
@@ -13,6 +14,18 @@ export interface VoiceDeps {
   synth: (text: string) => Promise<Buffer>;
   /** Base URL sinks fetch audio from. */
   publicUrl: string;
+  /** The fallback clip store behind `/fallback/*`; absent (the stub engine) means those routes answer 404. */
+  clips?: ClipRoutes;
+}
+
+/** A non-2xx reply from the TTS server; the message stays `tts <status>: <body>`. */
+export class TtsError extends Error {
+  constructor(readonly status: number, body: string) { super(`tts ${status}: ${body}`); this.name = "TtsError"; }
+}
+
+/** Everything the Kokoro synthesizer sends to the TTS server except the text; the clip fingerprint hashes it (VOICE-CLIP-001). */
+export function kokoroRequestSettings(cfg: Pick<Config["voice"], "voice" | "speed">): Record<string, unknown> {
+  return { model: "kokoro", voice: cfg.voice, speed: cfg.speed, response_format: "wav" };
 }
 
 /** Calls the TTS container (Kokoro-FastAPI, OpenAI-compatible). */
@@ -21,15 +34,9 @@ export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buf
     const res = await fetch(`${urls.tts()}/v1/audio/speech`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: "kokoro",
-        input: text,
-        voice: cfg.voice,
-        speed: cfg.speed,
-        response_format: "wav",
-      }),
+      body: JSON.stringify({ ...kokoroRequestSettings(cfg), input: text }),
     });
-    if (!res.ok) throw new Error(`tts ${res.status}: ${await res.text()}`); // @spec VOICE-SYN-003
+    if (!res.ok) throw new TtsError(res.status, await res.text()); // @spec VOICE-SYN-003
     return Buffer.from(await res.arrayBuffer());
   };
 }
@@ -172,14 +179,31 @@ export class Voice {
     }
   }
 
-  /** HTTP: GET /audio/<id>.wav, GET /health */
-  handle = (req: http.IncomingMessage, res: http.ServerResponse): void => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004
+  /** HTTP: GET /audio/<id>.wav, GET /fallback/manifest.json, GET /fallback/<name>, GET /health */
+  handle = (req: http.IncomingMessage, res: http.ServerResponse): void => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004, VOICE-CLIP-008, VOICE-CLIP-011, VOICE-CLIP-012
     const m = /^\/audio\/([\w-]+)\.wav$/.exec(req.url ?? "");
     if (m) {
       const wav = this.store.get(m[1]!);
       if (!wav) { res.writeHead(404); res.end("gone"); return; }
       res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length, "access-control-allow-origin": "*" });
       res.end(wav);
+      return;
+    }
+    const clips = this.d.clips;
+    if (clips && req.url === "/fallback/manifest.json") {
+      const manifest = clips.manifest();
+      if (!manifest) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(manifest));
+      return;
+    }
+    const clip = clips ? /^\/fallback\/([\w][\w.-]*)$/.exec(req.url ?? "") : null;
+    if (clips && clip) {
+      void clips.clipBytes(clip[1]!).then((wav) => {
+        if (!wav) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length });
+        res.end(wav);
+      });
       return;
     }
     if (req.url === "/health") { res.writeHead(200); res.end("ok"); return; }

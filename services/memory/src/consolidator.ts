@@ -1,6 +1,6 @@
 import type { Config, Logger } from "@cohost/config";
 import { Module, type ModuleConfig, type ModuleImpl } from "@cohost/modules";
-import { MAX_NOTE_HINT, MAX_NOTE_TEXT, isCategory, type Category, type Layer } from "./notes.js";
+import { MAX_NOTE_HINT, MAX_NOTE_TEXT, isCategory, mentionsForbiddenTopic, type Category, type Layer } from "./notes.js";
 
 /** The note a consolidator hook sees: only what it needs to judge, no embeddings. */
 export interface ConsolidatorNote {
@@ -40,6 +40,9 @@ export function validateOp(raw: unknown, ids: ReadonlySet<number>): Consolidator
   const known = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && ids.has(x);
   if (raw.category !== undefined && !isCategory(raw.category)) return undefined;
   if (raw.hint !== undefined && !okHint(raw.hint)) return undefined;
+  // @spec MEM-NOTE-009
+  if (typeof raw.text === "string" && mentionsForbiddenTopic(raw.text)) return undefined;
+  if (typeof raw.hint === "string" && mentionsForbiddenTopic(raw.hint)) return undefined;
   const extras = {
     ...(raw.category !== undefined ? { category: raw.category as Category } : {}),
     ...(typeof raw.hint === "string" ? { hint: raw.hint.trim() } : {}),

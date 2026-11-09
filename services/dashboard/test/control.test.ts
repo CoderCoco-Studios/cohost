@@ -127,7 +127,7 @@ test("restart cortex: 200 {ok:true}, stop->reset->start, audited as dashboard", 
 test("body: mode override is honoured; bad bodies are 400 and run nothing", async () => {
   const t = await boot(ON);
   await t.send("/services/memory/restart", { body: { mode: "fresh" }, token: "s3cret" });
-  assert.deepEqual(t.bus.resets, ["memory", "memory-recall"]);
+  assert.deepEqual(t.bus.resets, ["memory", "memory-recall", "memory-notes"]);
   t.calls.length = 0;
   for (const body of ["{nope", { mode: "sideways" }, { isolated: "yes" }, "[1]"]) {
     assert.equal((await t.send("/services/memory/start", { body, token: "s3cret" })).status, 400);

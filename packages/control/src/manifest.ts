@@ -42,7 +42,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", { groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" } }),
   svc("salience", { groups: ["salience"], defaultMode: "fresh" }),
   svc("affect", { groups: ["affect"], defaultMode: "fresh" }),
-  svc("memory", { groups: ["memory", "memory-recall"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" } }),
+  svc("memory", { groups: ["memory", "memory-recall", "memory-notes"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" } }),
   svc("cortex", { requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" } }),
   svc("voice", { groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" } }),
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),

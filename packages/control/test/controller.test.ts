@@ -41,7 +41,7 @@ test("memory resumes by default: native restart, groups untouched", async () => 
 test("explicit mode:fresh resets both memory groups; mode:resume on cortex keeps the group", async () => {
   const a = setup();
   await a.c.restart("memory", { mode: "fresh" });
-  assert.deepEqual(a.log, ["stop memory", "reset memory", "reset memory-recall", "start memory"]);
+  assert.deepEqual(a.log, ["stop memory", "reset memory", "reset memory-recall", "reset memory-notes", "start memory"]);
   const b = setup();
   await b.c.restart("cortex", { mode: "resume" });
   assert.deepEqual(b.log, ["restart cortex"]);

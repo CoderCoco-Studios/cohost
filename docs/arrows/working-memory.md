@@ -4,13 +4,13 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 28 specs: 28 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (platform-models cascade fix). With the spoken fallback line designed: 32 specs: 28 implemented, 4 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 28 specs: 28 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (platform-models cascade fix). With the spoken fallback line built: 32 specs: 32 implemented, 0 gaps, 0 deferred.
 
-## Spoken fallback line: designed, not built
+## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback lines. `self` events keep their `brain.say` id; a fallback marks the line, which renders as the fallback text plus a bracketed note quoting the failed line (no new transcript tag, so the stop list is unchanged).
 
-- New gaps: `WM-PUSH-007`, `WM-PUSH-008`, `WM-WIN-007`, `WM-TRANS-010` (build chunk 3).
+- Built: `WM-PUSH-007`, `WM-PUSH-008`, `WM-WIN-007`, `WM-TRANS-010` (`pushSelf` id, `markFallback`, `hasSelf`, the note in `transcript`). Tests: `packages/working-memory/test/fallback.test.ts`.
 
 ## Decisions applied
 
@@ -65,10 +65,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Code `@spec` | Test `@spec` |
 |----------|----------|-------------|----------|------|--------------|--------------|
-| Window | WM-WIN-001 to 007 | 6 | 0 | 1 (WIN-007) | 5 | 4 |
-| Ingest | WM-PUSH-001 to 008 | 6 | 0 | 2 (PUSH-007, PUSH-008) | 6 | 6 |
+| Window | WM-WIN-001 to 007 | 7 | 0 | 0 | 6 | 5 |
+| Ingest | WM-PUSH-001 to 008 | 8 | 0 | 0 | 8 | 8 |
 | Seen tracking | WM-SEEN-001 to 003 | 3 | 0 | 0 | 3 | 3 |
-| Transcript | WM-TRANS-001 to 010 | 9 | 0 | 1 (TRANS-010) | 9 | 9 |
+| Transcript | WM-TRANS-001 to 010 | 10 | 0 | 0 | 10 | 10 |
 | Injection flags | WM-FLAG-001 to 004 | 4 | 0 | 0 | 4 | 4 |
 
 **Summary:** 28 of 28 specs implemented; 0 deferred; 0 gaps. 27 specs cited from code, 26 from tests. No reverse orphans. Implemented but without a test annotation: WM-WIN-002 (negative property), WM-WIN-005 (implemented in salience/cortex, outside this package).

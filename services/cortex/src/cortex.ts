@@ -4,7 +4,7 @@ import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
-import { buildMessages, parseReply, type Focus, type Mood, type People, type Recalled } from "./prompt.js";
+import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
 
 export interface CortexDeps {
@@ -31,6 +31,8 @@ export class Cortex {
   private mood: Mood | undefined;
   /** Who-is-this notes from the memory region, keyed by lowercase user so one viewer's framing never lands on another's reply. */
   private viewerNotes = new Map<string, string>();
+  /** A fallback line played in place of this one: kept until a reply that carried its hint is published (CTX-FALL-003, CTX-FALL-005). */
+  private glitch: { id: string; intended: string; fallback: string } | undefined;
   private pendingRecall = new Map<string, (m: Recalled) => void>();
   private pendingNotes = new Map<string, (p: People) => void>();
 
@@ -51,7 +53,7 @@ export class Cortex {
       case "brain.say": {
         // Our own lines and anyone else's (reflexes, operator) all land in the transcript.
         const d = ev.data as BusEvent<"brain.say">["data"];
-        this.ctx.pushSelf(d.text, d.emotion);
+        this.ctx.pushSelf(d.text, d.emotion, d.id); // @spec CTX-FALL-001
         if (ev.source !== "cortex") this.startSpeaking(d.id);
         break;
       }
@@ -59,6 +61,16 @@ export class Cortex {
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
         if (d.id === this.speakingId) { this.stopSpeaking(); await this.status(this.muted || this.paused ? "muted" : "idle"); }
+        break;
+      }
+      // @spec CTX-EVT-008, CTX-FALL-002, CTX-FALL-003, CTX-FALL-007
+      case "voice.failed": {
+        const d = ev.data as BusEvent<"voice.failed">["data"];
+        if (!d.fallback) break; // nothing was heard in its place: change nothing
+        const line = this.ctx.all().find((e) => e.kind === "self" && e.id === d.id);
+        if (line?.kind === "self" && this.ctx.markFallback(d.id, d.fallback.text)) {
+          this.glitch = { id: d.id, intended: line.text, fallback: d.fallback.text };
+        }
         break;
       }
       // @spec CTX-EVT-006
@@ -109,7 +121,7 @@ export class Cortex {
         if (d.cmd === "mute") { this.muted = true; await this.status("muted"); }
         if (d.cmd === "unmute") { this.muted = false; await this.status(this.paused ? "muted" : "idle"); }
         // @spec CTX-CTRL-004
-        if (d.cmd === "forget_context") { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); }
+        if (d.cmd === "forget_context") { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ }
         // @spec CTX-CTRL-005
         if (d.cmd === "reload_personality") { this.personality = this.d.loadPersonality(); this.d.log.info("personality reloaded"); }
         // @spec CTX-CTRL-006, CTX-INJ-002
@@ -143,7 +155,13 @@ export class Cortex {
       // @spec CTX-VIEWER-003
       const who = focus.focus?.who?.toLowerCase();
       const viewerNote = who ? this.viewerNotes.get(who) : undefined;
-      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people });
+      // @spec CTX-FALL-004, CTX-FALL-005, CTX-FALL-006
+      // The hint states the base chance and nothing more: no draw, and the reply is never checked against it.
+      if (this.glitch && !this.ctx.hasSelf(this.glitch.id)) this.glitch = undefined; // its line scrolled out of the window
+      const chance = cfg.brain.cortex.fallback_ack_chance;
+      const carried = chance > 0 ? this.glitch : undefined;
+      const glitch: Glitch | undefined = carried && { intended: carried.intended, fallback: carried.fallback, chance };
+      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch });
       const t0 = Date.now();
       const raw = await llm.chat(messages);
       let { text, emotion, gesture } = parseReply(raw);
@@ -167,6 +185,7 @@ export class Cortex {
       // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
       await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus), () => {
         if (who && this.viewerNotes.get(who) === viewerNote) this.viewerNotes.delete(who);
+        if (carried && this.glitch === carried) this.glitch = undefined; // a newer glitch stays pending (CTX-FALL-005)
       });
     } catch (err) {
       log.error({ err }, "think failed");

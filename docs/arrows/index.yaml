@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); gaps CFG-SCH-019, CFG-USR-010 (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -89,7 +89,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "Spoken fallback line designed (gaps): WM-PUSH-007, WM-PUSH-008, WM-WIN-007, WM-TRANS-010, build chunk 3. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line built (chunk 3): WM-PUSH-007, WM-PUSH-008, WM-WIN-007, WM-TRANS-010. Intent pass confirmed; no open gaps."
     drift: null
 
   chat:
@@ -125,7 +125,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Spoken fallback line chunk 1 built (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-001 to 019); it plays nothing until voice serves clips (voice chunk 2). Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line chunk 1 built (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-001 to 019); voice serves clips (chunk 2) and the cortex acknowledges a failed line (chunk 3), both built. Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
     drift: null
 
   salience:
@@ -173,7 +173,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Spoken fallback line designed (gaps): CTX-EVT-008, CTX-FALL-001 to 007, build chunk 3. Viewer notes surfacing built (build chunk 3): CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 66 of 74 specs implemented; only the fallback gaps are open."
+    next: "Spoken fallback line built (chunk 3): CTX-EVT-008, CTX-FALL-001 to 007. Viewer notes surfacing built: CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 74 of 74 specs implemented; no open gaps."
     drift: null
 
   voice:

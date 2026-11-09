@@ -4,13 +4,13 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps. With the spoken fallback line designed: 74 specs: 66 implemented, 8 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps. With the spoken fallback line built: 74 specs: 74 implemented, 0 gaps, 0 deferred.
 
-## Spoken fallback line: designed, not built
+## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by a fallback; the next reply gets a hint stating the base chance (`brain.cortex.fallback_ack_chance`, 0.25) and the model decides in character; nothing enforces the rate, so it drifts.
 
-- New gaps: `CTX-EVT-008`, `CTX-FALL-001` to `007` (build chunk 3).
+- Built: `CTX-EVT-008`, `CTX-FALL-001` to `007`. `voice.failed` is subscribed in `startup.ts`; `cortex.ts` keeps the pending glitch and consumes it when the reply that carried its hint is published; `prompt.ts` renders the one `## Now` line (`glitchLine`). Tests: `services/cortex/test/fallback.test.ts`, `prompt.test.ts`, `startup.test.ts`.
 
 ## Viewer notes (built, build chunk 3)
 
@@ -47,7 +47,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (74 specs, prefix `CTX`: 66 `[x]`, 8 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (74 specs, prefix `CTX`: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)
@@ -57,6 +57,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/cortex/test/mock.test.ts (3)
 - services/cortex/test/health.test.ts (5)
 - services/cortex/test/startup.test.ts (3)
+- services/cortex/test/fallback.test.ts (spoken fallback line, CTX-FALL-001 to 007)
 - services/cortex/test/transcript-stops.test.ts (1)
 
 ### Code (`@spec` lines per file; 46 lines citing 57 IDs)

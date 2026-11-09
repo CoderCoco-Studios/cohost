@@ -19,8 +19,10 @@ export function buildMessages(opts: {
   viewerNote?: string;
   /** Memory's notes about the viewers in the conversation (CTX-NOTES-004). */
   people?: People;
+  /** A spoken line of hers that failed to play (CTX-FALL-004); `chance` is the base chance as 0 to 1. */
+  glitch?: Glitch;
 }): ChatMessage[] {
-  const { cfg, personality, ctx, memories, focus, mood, viewerNote, people = [] } = opts;
+  const { cfg, personality, ctx, memories, focus, mood, viewerNote, people = [], glitch } = opts;
   const now = new Date().toLocaleString("en-US", { timeZone: cfg.cohost.timezone });
 
   const memBlock = memories.length
@@ -36,6 +38,7 @@ export function buildMessages(opts: {
     ctx.lastVision ? `- On screen right now: ${ctx.lastVision}` : "",
     mood ? `- Your current mood: ${describeMood(mood)}` : "",
     viewerNote ? `- ${viewerNote}` : "",
+    glitch ? glitchLine(glitch) : "",
     peopleBlock(people),
     memBlock,
     `## Output\nReply with ONE short spoken line, starting with an emotion tag from: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}. ` +
@@ -51,6 +54,15 @@ export function buildMessages(opts: {
     { role: "system", content: system },
     { role: "user", content: `## Recent transcript\n${transcript || "(quiet)"}\n\n${nudge}` },
   ];
+}
+
+export interface Glitch { intended: string; fallback: string; chance: number }
+
+// @spec CTX-FALL-004
+/** The one `## Now` line about a failed line: both texts and the base chance as a whole percentage; the model decides in character. */
+function glitchLine(g: Glitch): string {
+  return `- Your voice glitched: your line "${oneLine(g.intended)}" failed to play and everyone heard "${oneLine(g.fallback)}" instead. ` +
+    `You may react to it in character if that fits you; as a rough guide, about ${Math.round(g.chance * 100)}% of the time. If it does not fit, let it go.`;
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();

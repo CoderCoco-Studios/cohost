@@ -42,7 +42,7 @@ Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mod
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
 memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
 once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallback
-line (gap, `CTX-EVT-008`). The service publishes `brain.status`,
+line (`CTX-EVT-008`). The service publishes `brain.status`,
 `brain.say`, `memory.recall.request` and `memory.notes.request`.
 
 Subscribing happens only after the model backend answered `ping()` (`index.ts:40`).
@@ -65,7 +65,7 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `chat.message`, `speech.heard`, `vision.summary` | `ctx.push(ev)` into the `Context` window (`brain.working_memory_events`, default 24) | `cortex.ts:43-47`, `cortex.ts:37` |
 | `brain.say` (any source) | `ctx.pushSelf(text, emotion)`; if `ev.source !== "cortex"` also record `speakingId = d.id` and the time and arm the speaking-timeout release (`startSpeaking`) | `cortex.ts:49-55`, `cortex.ts:184-197` |
 | `voice.done` | if `d.id === speakingId`: clear it, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
-| `voice.failed` (gap) | with `fallback`: mark the line's transcript entry and keep a pending glitch for the next reply (see Fallback acknowledgement); without `fallback`: nothing | `CTX-FALL-002`, `CTX-FALL-003`, `CTX-FALL-007` |
+| `voice.failed` | with `fallback`: mark the line's transcript entry and keep a pending glitch for the next reply (see Fallback acknowledgement); without `fallback`: nothing | `CTX-FALL-002`, `CTX-FALL-003`, `CTX-FALL-007` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
 | `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | `cortex.ts` |
@@ -185,7 +185,7 @@ reply (`CTX-NOTES-002`, HLD tenet 3). Memory has already capped, ordered and
 filtered the notes (strongest first, a per-viewer and a total cap, sensitive
 notes only for the replied-to viewer and rarely; memory `MEM-SURF-*`).
 
-The notes are rendered in a `### Fallback acknowledgement (gap)
+The notes are rendered in a `### Fallback acknowledgement
 
 When one of the co-host's lines fails to play and a fallback line is said in its place ([ears](../ears/ears-design.md) Fallback Line), she should know she glitched and may joke about it. Owner decisions: the transcript records the fallback as her line with a note that the intended line failed; her next reply gets a prompt hint about the failed line that states a base chance of 1 in 4 (`brain.cortex.fallback_ack_chance`, default 0.25) as a nudge; the model decides in character whether to acknowledge. The cortex does not enforce the chance: there is no random draw, no per-personality number and no check of the reply (`CTX-FALL-006`). A shy personality will mostly shrug it off and a goofy one will milk it, so the real acknowledgement rate drifts with the personality, the model and the moment, and it is not expected to match the configured number. The hint wording, expiry and the handling of several glitches are `[proposed]`.
 

@@ -23,7 +23,7 @@ export type ContextEvent =
   | ({ kind: "chat"; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "speech"; ts: number; speaker: string; text: string; seen: boolean } & InjectionFlags)
-  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true };
+  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string };
 
 /** Rolling window of what's happened recently — the brain's working memory. */
 export class Context {
@@ -58,9 +58,22 @@ export class Context {
     this.trim();
   }
 
-  pushSelf(text: string, emotion: Emotion): void { // @spec WM-PUSH-006
-    this.events.push({ kind: "self", ts: Date.now(), text, emotion, seen: true });
+  pushSelf(text: string, emotion: Emotion, id?: string): void { // @spec WM-PUSH-006, WM-PUSH-007
+    this.events.push({ kind: "self", ts: Date.now(), text, emotion, seen: true, ...(id !== undefined ? { id } : {}) });
     this.trim();
+  }
+
+  /** Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window. */
+  markFallback(id: string, fallbackText: string): boolean { // @spec WM-PUSH-008
+    const e = this.events.find((x) => x.kind === "self" && x.id === id);
+    if (!e || e.kind !== "self") return false;
+    e.fallback = fallbackText;
+    return true;
+  }
+
+  /** Whether a `self` event with this id is still in the window. */
+  hasSelf(id: string): boolean { // @spec WM-WIN-007
+    return this.events.some((e) => e.kind === "self" && e.id === id);
   }
 
   unseen(): ContextEvent[] { // @spec WM-SEEN-001
@@ -94,7 +107,10 @@ export class Context {
           case "chat": return `${LINE_TAG.chat} ${oneLine(e.user)}${e.isMod ? " (mod)" : ""}: ${oneLine(e.text)}`; // @spec WM-TRANS-002, WM-TRANS-006
           case "speech": return `${LINE_TAG.speech} ${oneLine(e.speaker)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006
-          case "self": return `${cohostName}: [${e.emotion}] ${e.text}`; // @spec WM-TRANS-005
+          case "self": // @spec WM-TRANS-005, WM-TRANS-010
+            return e.fallback !== undefined
+              ? `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`
+              : `${cohostName}: [${e.emotion}] ${e.text}`;
         }
       })
       .join("\n");

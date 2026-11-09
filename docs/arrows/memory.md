@@ -4,16 +4,17 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 54 specs: 53 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); viewer-notes build chunk 1 (memory core) added after the audit. 107 specs: 78 implemented, 29 gaps (viewer notes: see below), 0 deferred. At the audit the 54 then-current specs were 53 implemented and 1 deferred. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
 
-## Planned: viewer notes (designed, not built)
+## Viewer notes: chunk 1 built (memory core), chunks 2 to 4 designed
 
-Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file now holds 107 specs: 49 `[x]`, 58 `[ ]`, 0 `[D]`.
+Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file holds 107 specs: 78 `[x]`, 29 `[ ]`, 0 `[D]`.
 
 - Retired: `MEM-VIEWER-004` (notes text in `memory.viewer`), `MEM-VIEWER-005` (deferred notes writer, superseded). Numbers not reused.
-- Amended to `[ ]`: `MEM-VIEWER-002` (`memory.viewer` carries `regular`, no notes), `MEM-STORE-001` (notes tables and viewer columns), `MEM-BACKEND-005` (in-memory store keeps notes).
-- New `[ ]`: `MEM-NOTE-001` to `011`, `MEM-REG-001` to `005`, `MEM-CAPTURE-001` to `011`, `MEM-CONSOL-001` to `016`, `MEM-SURF-001` to `005`, `MEM-ADMIN-001` to `007`.
-- Build order: (1) memory core (NOTE, REG, CONSOL, STORE-001, BACKEND-005, with config CFG-SCH-014 to 016 and CFG-USR-007); (2) capture (CAPTURE, with CFG-USR-008); (3) cortex surfacing (SURF, VIEWER-002, with CTX-NOTES-*, CTX-VIEWER-001, CTX-EVT-001, BUS-EVT-010, BUS-EVT-020, DASH-FEED-007); (4) Viewers page (ADMIN, with DASH-VIEWERS-*, BUS-EVT-021, CFG-ENV-009).
+- **Chunk 1 built** (notes store, regular flag, decay math, consolidation job and triggers, config): `[x]` `MEM-NOTE-001`, `002`, `003`, `005`, `006`, `007`, `008`, `010`; `MEM-REG-001`, `003`, `004`, `005`; `MEM-CONSOL-002` to `016`; `MEM-STORE-001`; `MEM-BACKEND-005`; with config `CFG-SCH-014` to `016` and `CFG-USR-007`.
+- **Chunk 1 specs still `[ ]`, each waiting on a later chunk**: `MEM-NOTE-004` (the version bump on *restore* is owned by `MEM-ADMIN-004`; insert, reinforce, layer move and rewrite already bump it), `MEM-NOTE-009` and `MEM-NOTE-011` (the capture half is chunk 2; the consolidator half and the shared `notesHookLlm` are built), `MEM-REG-002` (capture and surfacing are chunks 2 and 3), `MEM-CONSOL-001` (the dirty-count trigger `ConsolidationScheduler.notifyDirty` is built and tested; its call site is the capture writer of chunk 2).
+- Still planned: (2) capture (`MEM-CAPTURE-001` to `011`, `CFG-USR-008`); (3) cortex surfacing (`MEM-SURF`, `MEM-VIEWER-002`, with `CTX-NOTES-*`, `CTX-VIEWER-001`, `CTX-EVT-001`, `BUS-EVT-010`, `BUS-EVT-020`, `DASH-FEED-007`); (4) Viewers page (`MEM-ADMIN`, with `DASH-VIEWERS-*`, `BUS-EVT-021`, `CFG-ENV-009`). The store already carries `deleteNote`, which writes a deletion record, for the consolidation tests and chunk 4.
+- Deployment and control-plane follow-ups (not built): a Compose one-shot service and a `cohostctl` subcommand that run `consolidate`; the `models` container and `.env.example` entries for chunk 2.
 - Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Still `[proposed]`: fade numbers, caps, event and route names, classifier slot specifics; capture model deferred to chunk 2.
 
 ## Decisions applied
@@ -41,25 +42,36 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (54 specs, prefix `MEM`: 52 `[x]`, 1 `[ ]`, 1 `[D]`)
+- docs/intent/memory/memory-specs.md (107 specs, prefix `MEM`: 78 `[x]`, 29 `[ ]`, 0 `[D]`)
 
-### Tests (`@spec` lines per file; 50 lines citing 49 distinct IDs)
-- services/memory/test/region.test.ts (9)
-- services/memory/test/memory.test.ts (13)
+### Tests (`@spec` lines per file; 132 lines citing 81 distinct `MEM-*` IDs)
+- services/memory/test/region.test.ts (11)
+- services/memory/test/memory.test.ts (21)
 - services/memory/test/backend.test.ts (3)
 - services/memory/test/fake-store.test.ts (6)
 - services/memory/test/health.test.ts (4)
-- services/memory/test/reflect.test.ts (9)
-- services/memory/test/startup.test.ts (6)
+- services/memory/test/reflect.test.ts (10)
+- services/memory/test/startup.test.ts (9)
+- services/memory/test/notes.test.ts (4)
+- services/memory/test/consolidation.test.ts (33)
+- services/memory/test/scheduler.test.ts (12)
+- services/memory/test/consolidate-run.test.ts (5)
+- services/memory/test/store-contract.ts (14; the shared store behaviour, run by `notes-store.test.ts` on the in-memory store and by `notes-store.pg.test.ts` on a real Postgres when `COHOST_TEST_DATABASE_URL` is set)
 
-### Code (`@spec` lines per file; 35 lines citing 53 IDs: every spec except the deferred `MEM-VIEWER-005`)
-- services/memory/src/index.ts (2)
-- services/memory/src/startup.ts (5)
-- services/memory/src/region.ts (7)
-- services/memory/src/store.ts (8)
+### Code (`@spec` lines per file)
+- services/memory/src/index.ts (4)
+- services/memory/src/startup.ts (6)
+- services/memory/src/region.ts (8)
+- services/memory/src/store.ts (14)
 - services/memory/src/cursor.ts (1)
 - services/memory/src/backend.ts (2)
-- services/memory/src/fake-store.ts (4)
+- services/memory/src/fake-store.ts (10)
+- services/memory/src/notes.ts (5)
+- services/memory/src/consolidation.ts (5)
+- services/memory/src/consolidator.ts (4)
+- services/memory/src/scheduler.ts (4)
+- services/memory/src/consolidate-run.ts (1)
+- services/memory/src/consolidate.ts (1)
 - services/memory/src/reflect.ts (1)
 - services/memory/src/reflect-run.ts (1)
 - services/memory/src/learned.ts (2)
@@ -79,11 +91,15 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 **Key Components:**
 1. `region.ts` — event handler shared by two consumer groups (`memory` writes, `memory-recall` reads); injection filtering via `skipInjected`.
-2. `store.ts` — Postgres/pgvector `MemoryStore` (tables `memories`, `viewers`, `meta`; 2-minute recency exclusion; `min_similarity` filter) and the `MemoryBackend` interface.
-3. `fake-store.ts` + `backend.ts` — in-process `InMemoryStore` with its own 64-dim hash embedder; config-driven store and embedder factories.
+2. `store.ts` — Postgres/pgvector `MemoryStore` (tables `memories`, `viewers`, `viewer_notes`, `viewer_note_deletions`, `meta`; 2-minute recency exclusion; `min_similarity` filter; per-viewer note commits guarded by note versions; an advisory lock for consolidation) and the `MemoryBackend` interface.
+3. `fake-store.ts` + `backend.ts` — in-process `InMemoryStore` with its own 64-dim hash embedder (it now keeps viewer notes, deletion records and the regular and subscriber flags too); config-driven store and embedder factories.
 4. `health.ts` — dependency tracker (`postgres`, `ollama`, `n/a` when unused) and mode (`live` only for postgres + ollama).
 5. `index.ts` + `startup.ts` — wiring, and the injectable startup sequence (Ollama ping, Postgres init retry with no retry on a dimension mismatch, fatal after the 21st failure, `degraded` while waiting, subscriptions with start mode `resume`, heartbeat).
 6. `reflect.ts` + `reflect-run.ts` + `cursor.ts` + `learned.ts` — offline reflection CLI (wiring), the injectable reflection pass, the `(ts, id)` cursor, and the pure text helpers.
+7. `notes.ts` — viewer-note types and the shared arithmetic (effective strength, reinforcement, default hints, cosine).
+8. `consolidation.ts` + `consolidator.ts` — the consolidation pass (fade, suppression, the `memory.consolidator` hook, versioned per-viewer commit, lock, retention) and the hook's prompt, validation and local-provider rule (`notesHookLlm`).
+9. `scheduler.ts` — when a pass runs: dirty threshold, startup catch-up, idle gating from `brain.status`, shutdown flag.
+10. `consolidate.ts` + `consolidate-run.ts` — the one-shot `consolidate` command (`pnpm consolidate`).
 
 ## Spec Coverage
 
@@ -92,8 +108,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Event handling | MEM-EVT-001 to MEM-EVT-002 | 2 | 0 | 0 | 2 |
 | Storing memories | MEM-WRITE-001 to MEM-WRITE-005 | 5 | 0 | 0 | 5 |
 | Test injection | MEM-INJ-001 to MEM-INJ-003 | 3 | 0 | 0 | 3 |
-| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 3 | 0 | 1 (VIEWER-002) | 3 |
-| Viewer notes (planned) | MEM-NOTE, MEM-REG, MEM-CAPTURE, MEM-CONSOL, MEM-SURF, MEM-ADMIN | 0 | 0 | 55 | 0 |
+| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 3 | 0 | 1 (VIEWER-002, chunk 3) | 3 |
+| Viewer notes: notes, regular, consolidation (chunk 1) | MEM-NOTE-001 to 011, MEM-REG-001 to 005, MEM-CONSOL-001 to 016 | 26 | 0 | 5 (NOTE-004, NOTE-009, NOTE-011, REG-002, CONSOL-001) | 26 |
+| Viewer notes: capture, surfacing, owner operations (chunks 2 to 4) | MEM-CAPTURE, MEM-SURF, MEM-ADMIN | 0 | 0 | 23 | 0 |
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
@@ -101,7 +118,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-010 | 10 | 0 | 0 | 9 |
 
-**Summary:** 53 of 54 specs implemented and annotated in code; 1 deferred (`MEM-VIEWER-005`); no gaps (`MEM-START-005` is closed: `ready` follows both groups' `onReady`). 49 spec lines have a test annotated with `@spec` (the "With test" column). Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts` and `reflect.ts` are wiring only and untested; the logic they used to hold is in `startup.ts` and `reflect-run.ts`, covered with fakes (no test runs against a real Postgres).
+**Summary:** 78 of 107 specs implemented and annotated in code; 29 gaps (23 are viewer-notes chunks 2 to 4, 5 are chunk-1 specs waiting on a later chunk, plus `MEM-VIEWER-002`); 0 deferred. Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts`, `reflect.ts` and `consolidate.ts` are wiring only and untested; the logic they hold is in `startup.ts`, `reflect-run.ts`, `scheduler.ts` and `consolidate-run.ts`, covered with fakes. No test run here executes against a real Postgres: the chunk-1 store behaviour is covered by the in-memory store and by recorded SQL, and `notes-store.pg.test.ts` runs the same contract against a real Postgres when `COHOST_TEST_DATABASE_URL` is set (not run in CI).
 
 ## Key Findings
 

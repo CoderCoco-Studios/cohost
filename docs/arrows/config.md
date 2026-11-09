@@ -4,13 +4,14 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented.
 
-## Planned: viewer notes (designed, not built)
+## Viewer notes: chunk 1 built
 
-Design: LLD § Schema key groups (the `brain.memory` viewer-notes row) and Decisions. The spec file now holds 53 specs: 47 `[x]`, 6 `[ ]`.
+The spec file holds 53 specs: 51 `[x]`, 2 `[ ]`.
 
-- New `[ ]`: `CFG-SCH-014` (`brain.memory.regular_messages`), `CFG-SCH-015` (`brain.memory.notes` numbers), `CFG-SCH-016` (`capture` and `consolidator` hooks), `CFG-USR-007` (example consolidator and keys), `CFG-USR-008` (example capture hook, `NOTES_MODEL`), `CFG-ENV-009` (`VIEWERS_TOKEN`, env-only; depends on the dashboard access option).
+- Built: `CFG-SCH-014` (`brain.memory.regular_messages`), `CFG-SCH-015` (`brain.memory.notes` numbers), `CFG-SCH-016` (`capture` and `consolidator` hooks), `CFG-USR-007` (the example's consolidator on the cortex's model via ollama, and the keys listed with their defaults). Tests: `packages/config/test/config.test.ts`.
+- Still `[ ]`: `CFG-USR-008` (example capture hook, `NOTES_MODEL`; viewer-notes chunk 2), `CFG-ENV-009` (`VIEWERS_TOKEN`, env-only; chunk 4, depends on the dashboard access option).
 
 ## Decisions applied
 
@@ -68,12 +69,12 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Config directory and seeding | CFG-DIR-001 to 005 | 5 | 0 | 0 | 5 |
 | Environment handling | CFG-ENV-001 to 008 | 8 | 0 | 0 | 7 |
 | Loading and validation pipeline | CFG-LOAD-001 to 006 | 6 | 0 | 0 | 6 |
-| Schema | CFG-SCH-001 to 013 | 13 | 0 | 0 | 9 |
+| Schema | CFG-SCH-001 to 016 | 16 | 0 | 0 | 12 |
 | Backend selection and presets | CFG-ISO-001 to 005 | 5 | 0 | 0 | 4 |
 | Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
-| User-owned files | CFG-USR-001 to 006 | 5 | 0 | 1 (USR-005) | 4 |
+| User-owned files | CFG-USR-001 to 008 | 6 | 0 | 2 (USR-008, chunk 2; USR-005 is ears-side) | 5 |
 
-**Summary:** 47 of 47 specs implemented; 0 deferred; 0 gaps. 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
+**Summary:** 51 of 53 specs implemented (47 at the audit, plus CFG-SCH-014 to 016 and CFG-USR-007 from viewer-notes chunk 1); 0 deferred; 2 gaps (CFG-USR-008, CFG-ENV-009, viewer-notes chunks 2 and 4). 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
 
 ## Key Findings
 

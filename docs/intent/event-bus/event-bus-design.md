@@ -86,7 +86,7 @@ Loop:
 - `index.ts` re-exports `./heartbeat.js` at its last line (`index.ts:358`) and `heartbeat.ts` imports `beforeShutdown` from `./index.js`; the cycle works because `beforeShutdown` is only called at runtime.
 - The subprocess fixture `packages/bus/test/shutdown.fixture.ts` proves the ordering `hb:starting`, `hb:ready`, `hb:stopping`, `bus.stop` (asserted at `bus.test.ts:257-261`). `shutdown-multi.fixture.ts` and `shutdown-hooks.fixture.ts` prove the composition: all callbacks in order with failures logged and one `exit(0)`, and a synchronously throwing hook that skips neither the other hooks nor the callbacks (`shutdown.test.ts`).
 
-## Event catalogue (19 types)
+## Event catalogue (19 types; 23 once viewer notes land)
 
 Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed from `publish(` and `subscribe(` call sites at `686cc8f`; the schema encodes neither (comments only). Optional fields marked `?`; `default` shows the zod default. Flags `injected?` and `remember?` are both `z.boolean().optional()` with no default.
 
@@ -101,7 +101,7 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 7 | `affect.state` | `valence` in -1..1, `arousal` in 0..1, `mood` (Emotion), `cause?` | affect (`affect.ts:110`) -> salience, avatar, cortex | 95-104 (BUS-EVT-003) |
 | 8 | `memory.recall.request` | `id`, `query`, `k?` (positive int) | cortex (`cortex.ts:182`) -> memory | 108-112 (BUS-EVT-010) |
 | 9 | `memory.recall.reply` | `id`, `memories` (array of `ts`, `kind` of `chat`, `speech`, `self`, `note`; `who`; `text`; `similarity?`) | memory (`region.ts:50`) -> cortex | 115-126 (BUS-EVT-010) |
-| 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `notes` default `""` | memory (`region.ts:27`) -> cortex | 130-135 (BUS-EVT-010) |
+| 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `notes` default `""`; intended: `regular` (boolean) replaces `notes` (gap) | memory (`region.ts:27`) -> cortex | 130-135 (BUS-EVT-010) |
 | 11 | `voice.utterance` | `id`, `text`, `emotion`, `gesture?`, `durationMs`, `envelopeHz`, `envelope` (number array), `audioUrl`, `sampleRate` | voice (`voice.ts:98`) -> avatar, ears (Discord sink), dashboard | 139-150 (BUS-EVT-016) |
 | 12 | `voice.playing` | `id`, `sink` | voice virtual sink (`voice.ts:109`), ears Discord sink (`playback.ts:46`) -> voice, avatar | 154 (BUS-EVT-017) |
 | 13 | `voice.done` | `id`, `sink` | voice (`voice.ts:110,115`), ears (`playback.ts:35`) -> cortex, avatar | 155 (BUS-EVT-017) |
@@ -111,6 +111,17 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 17 | `inject.result` | `id`, `ok`, `detail?` | eyes, ears, chat (`inject.ts` in each) -> dashboard | 207-211 (BUS-EVT-007) |
 | 18 | `service.lifecycle` | `service`, `action` (`start`, `stop`, `restart`), `by` (`dashboard` or `cohostctl` by convention), `ok`, `detail?` | dashboard (`control.ts:40`), control CLI (`packages/control/src/cli.ts:107`) -> dashboard tail | 215-222 (BUS-EVT-008) |
 | 19 | `service.heartbeat` | `service`, `instance`, `pid` (int), `version`, `startedAt`, `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (record of `ok`, `down`, `n/a`), `mode` (string; `live`, `mock`, `off` by convention), `detail?`, `intervalMs` (positive int) | every service via `publishHealth` on `cohost:health` -> dashboard tracker, control-plane | 229-243 (BUS-EVT-009) |
+
+Planned viewer-notes events (gap; names and shapes `[proposed]`; design in the memory, cortex and dashboard segments):
+
+| # | Type | Payload | Producers -> consumers (intended) | spec |
+|---|---|---|---|---|
+| 20 | `memory.notes.request` | `id`, `users` (non-empty string array; first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
+| 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
+| 22 | `memory.viewers.request` | `id`, `op` (`list`, `get`, `delete_note`, `restore`, `clear`, `set_regular`) with per-op fields | dashboard -> memory | BUS-EVT-021 |
+| 23 | `memory.viewers.reply` | `id`, `ok`, `error?` (`not_found`, `failed`), `detail?`, `data?` | memory -> dashboard | BUS-EVT-021 |
+
+These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.
 
 `Emotion` is imported from `@cohost/config` (`packages/config/src/schema.ts:4-7`): `neutral`, `happy`, `laugh`, `surprised`, `smug`, `sad`, `angry`, `confused`, `think`.
 

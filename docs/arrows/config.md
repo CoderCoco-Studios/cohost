@@ -6,6 +6,12 @@
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented.
 
+## Planned: viewer notes (designed, not built)
+
+Design: LLD § Schema key groups (the `brain.memory` viewer-notes row) and Decisions. The spec file now holds 53 specs: 47 `[x]`, 6 `[ ]`.
+
+- New `[ ]`: `CFG-SCH-014` (`brain.memory.regular_messages`), `CFG-SCH-015` (`brain.memory.notes` numbers), `CFG-SCH-016` (`capture` and `consolidator` hooks), `CFG-USR-007` (example consolidator and keys), `CFG-USR-008` (example capture hook, `NOTES_MODEL`), `CFG-ENV-009` (`VIEWERS_TOKEN`, env-only; depends on the dashboard access option).
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Viewer notes designed: CFG-SCH-014 to 016 and CFG-USR-007 (chunk 1), CFG-USR-008 (chunk 2), CFG-ENV-009 (chunk 4)."
     drift: null
 
   event-bus:
@@ -53,7 +53,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Viewer notes designed: BUS-EVT-010 and BUS-EVT-020 (chunk 3), BUS-EVT-021 (chunk 4); BUS-EVT-001 flips after chunk 4."
     drift: null
 
   model-backends:
@@ -77,7 +77,7 @@ arrows:
     blocks: [salience, affect, cortex]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Intent pass confirmed; no open gaps. Two planned consumers (memory.capture, memory.consolidator) need no runner change."
     drift: null
 
   working-memory:
@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Viewer notes designed (58 gaps; [proposed] items await the owner): build chunk 1 memory core (MEM-NOTE, MEM-REG, MEM-CONSOL), 2 capture (MEM-CAPTURE), 3 surfacing (MEM-SURF), 4 owner operations (MEM-ADMIN). See the memory LLD Build order."
     drift: null
 
   cortex:
@@ -173,7 +173,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: null
+    next: "Viewer notes designed: CTX-NOTES-001 to 008, CTX-VIEWER-001 and CTX-EVT-001 are gaps; they land in viewer-notes build chunk 3, after memory chunks 1 and 2."
     drift: null
 
   voice:
@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Viewer notes designed: DASH-FEED-007 (chunk 3) and DASH-VIEWERS-001 to 017 (chunk 4); access option A (VIEWERS_TOKEN) decided."
     drift: null
 
   control-plane:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Pending viewer-notes cascade: NOTES_MODEL pull, .env.example entries, a best-effort Compose one-shot for consolidate (see deployment.md)."
     drift: null
 
 unmapped:

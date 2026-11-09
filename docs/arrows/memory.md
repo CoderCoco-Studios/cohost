@@ -6,6 +6,16 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 54 specs: 53 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
 
+## Planned: viewer notes (designed, not built)
+
+Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file now holds 107 specs: 49 `[x]`, 58 `[ ]`, 0 `[D]`.
+
+- Retired: `MEM-VIEWER-004` (notes text in `memory.viewer`), `MEM-VIEWER-005` (deferred notes writer, superseded). Numbers not reused.
+- Amended to `[ ]`: `MEM-VIEWER-002` (`memory.viewer` carries `regular`, no notes), `MEM-STORE-001` (notes tables and viewer columns), `MEM-BACKEND-005` (in-memory store keeps notes).
+- New `[ ]`: `MEM-NOTE-001` to `011`, `MEM-REG-001` to `005`, `MEM-CAPTURE-001` to `011`, `MEM-CONSOL-001` to `016`, `MEM-SURF-001` to `005`, `MEM-ADMIN-001` to `007`.
+- Build order: (1) memory core (NOTE, REG, CONSOL, STORE-001, BACKEND-005, with config CFG-SCH-014 to 016 and CFG-USR-007); (2) capture (CAPTURE, with CFG-USR-008); (3) cortex surfacing (SURF, VIEWER-002, with CTX-NOTES-*, CTX-VIEWER-001, CTX-EVT-001, BUS-EVT-010, BUS-EVT-020, DASH-FEED-007); (4) Viewers page (ADMIN, with DASH-VIEWERS-*, BUS-EVT-021, CFG-ENV-009).
+- Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Still `[proposed]`: fade numbers, caps, event and route names, classifier slot specifics; capture model deferred to chunk 2.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
@@ -82,7 +92,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Event handling | MEM-EVT-001 to MEM-EVT-002 | 2 | 0 | 0 | 2 |
 | Storing memories | MEM-WRITE-001 to MEM-WRITE-005 | 5 | 0 | 0 | 5 |
 | Test injection | MEM-INJ-001 to MEM-INJ-003 | 3 | 0 | 0 | 3 |
-| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 | 5 | 1 (VIEWER-005) | 0 | 5 |
+| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 3 | 0 | 1 (VIEWER-002) | 3 |
+| Viewer notes (planned) | MEM-NOTE, MEM-REG, MEM-CAPTURE, MEM-CONSOL, MEM-SURF, MEM-ADMIN | 0 | 0 | 55 | 0 |
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
@@ -100,7 +111,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 4. **Reflection reads a `(ts, id)` cursor** — `meta.last_reflection` is `<ISO ts>#<id>` of the newest row read (`cursor.ts`, `reflect-run.ts:62`); `recentSince` reads `WHERE (ts, id) > ($1, $2) ORDER BY ts, id` (`store.ts:154-161`); a legacy plain timestamp is accepted; fewer than 5 rows leave the cursor alone. Reflection still needs a reachable embedder (`init()` embeds `"hello"`, `store.ts:69`) and takes no lock against the live service. The cursor timestamp is the exact microsecond text from Postgres (`"tsText"`), so no row is re-read. B7, `MEM-REFLECT-008`, `MEM-REFLECT-003`.
 5. **Learned block placement** — `appendLearned` inserts at the end of the `## Learned` section (`learned.ts:16-27`). S27, `MEM-REFLECT-007`.
 6. **Reflect announces the mock backend** — `runReflect` warns once when the chat provider is `mock` (`reflect-run.ts:25`). `MEM-REFLECT-010`, `LLM-MOCK-005` (that spec line lives in model-backends).
-7. **`viewers.notes` has no writer** — read and forwarded in `memory.viewer` (`store.ts:142-152`, `region.ts:32`) but never written anywhere; cortex surfaces it only for viewers above 25 messages. S26, `MEM-VIEWER-005` `[D]`.
+7. **`viewers.notes` has no writer** — read and forwarded in `memory.viewer` (`store.ts:142-152`, `region.ts:32`) but never written anywhere; cortex surfaces it only for viewers above 25 messages. Superseded by the viewer-notes design (Planned section above): `MEM-VIEWER-004` and `MEM-VIEWER-005` are retired and the column is left unread.
 8. **Restarts replay the backlog, by design** — both groups subscribe with `start: "resume"` (`startup.ts:60-61`, asserted in `startup.test.ts:28`); manifest default `resume` (`packages/control/src/manifest.ts:43`). P8, `MEM-EVT-001`.
 9. **`ready` waits for both consumer groups (resolved)** — `SubscribeOptions.onReady` fires after the group exists and is positioned; `startup.ts` reports `ready` once both fire. R3, `MEM-START-005`.
 10. **A failing viewer upsert no longer drops the chat event** — `region.ts:25-29` catches, logs a warning, skips `memory.viewer` and still remembers the mention. B8, `MEM-VIEWER-006`.

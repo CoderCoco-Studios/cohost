@@ -19,7 +19,7 @@ The governing rule is the last line of the header: "Whatever the kind, failure f
 
 The package has no bus subscriptions, no timers, no state beyond a warning timestamp, and no health surface. It depends on `@cohost/llm` (`createChatProvider`, `ChatProvider`, `Config` type) and `@cohost/config` (`Logger` type) (`index.ts:20-21`, `packages/modules/package.json:11`). The region owns the I/O types, the prompts, the rules and the `validate` functions; this package owns only the dispatch, timeout, parse and fallback mechanics.
 
-Consumers (each in its own segment): `services/salience/src/scoring.ts:61` (`salience.scorer`, called at `scheduler.ts:54`), `services/affect/src/appraise.ts:55` (`affect.appraiser`, called at `affect.ts:96`), `services/cortex/src/critic.ts:46` (`cortex.critic`, called at `cortex.ts:143`).
+Consumers (each in its own segment): `services/salience/src/scoring.ts:61` (`salience.scorer`, called at `scheduler.ts:54`), `services/affect/src/appraise.ts:55` (`affect.appraiser`, called at `affect.ts:96`), `services/cortex/src/critic.ts:46` (`cortex.critic`, called at `cortex.ts:143`). Planned (memory segment, Viewer notes): `memory.capture`, the live note classifier, and `memory.consolidator`, the model part of the consolidation pass; memory builds both on the local `ollama` provider when the hook names none, instead of inheriting `llm.provider`, even when the cortex uses a hosted model (memory `MEM-NOTE-011`). The runner itself does not change.
 
 ## The Module runner
 

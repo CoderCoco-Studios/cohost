@@ -40,8 +40,9 @@ Observed principles:
 
 Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mode `latest`, types
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
-memory.recall.reply, memory.viewer, affect.state, control`. The service publishes
-`brain.status`, `brain.say` and `memory.recall.request`.
+memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
+once viewer notes land (`CTX-EVT-001`). The service publishes `brain.status`,
+`brain.say`, `memory.recall.request` and (gap) `memory.notes.request`.
 
 Subscribing happens only after the model backend answered `ping()` (`index.ts:40`).
 Start mode `latest` resets the `cortex` group to the stream's newest entry on every
@@ -65,6 +66,7 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `voice.done` | if `d.id === speakingId`: clear it, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
+| `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | gap |
 | `memory.viewer` | build or clear a one-line note for that user | `cortex.ts:75-88` |
 | `affect.state` | store as the latest `Mood` | `cortex.ts:89-92` |
 | `control` | see Control commands | `cortex.ts:93-110` |
@@ -94,6 +96,9 @@ on arrival.
    `brain.cortex.recall_timeout_ms` (default 2500) for the reply; timeout logs
    `memory region did not answer in time` and continues with `[]`; a failed publish
    resolves `[]` immediately.
+   In parallel, publish `memory.notes.request` for the viewers in the focus and the
+   window and wait for its reply under the same deadline (`CTX-NOTES-001`,
+   `CTX-NOTES-002`; gap, see Viewer notes).
 4. Viewer note: look up `focus.focus.who` lowercased and put it in the prompt; it
    is deleted only once the reply's `brain.say` is published, so a vetoed, dropped
    or failed reply keeps it for the next one (`CTX-VIEWER-003`; looked up at
@@ -155,13 +160,48 @@ gestures are not validated.
 
 ### Viewer notes
 
-`memory.viewer` → note text: `isNew` gives "`<user>` is new here (first message).";
-`msgCount > 25` gives "`<user>` is a regular (N messages)." plus " Notes: ..." if the
-memory region sent notes; otherwise no note. The threshold is the literal 25
-(`cortex.ts:80`). Notes are keyed by lowercased user, a new event replaces or clears
+Two things reach the prompt about viewers.
+
+**The familiarity line** (the `viewerNotes` map in code). `memory.viewer` → note
+text: `isNew` gives "`<user>` is new here (first message)."; `regular` true gives
+"`<user>` is a regular (N messages)."; otherwise no note (`CTX-VIEWER-001`). Memory
+decides who is a regular (the owner's flag or the configured message threshold,
+memory `MEM-REG-001`); the code today still tests the literal `msgCount > 25`
+(`cortex.ts:80`) and appends memory's legacy notes text, both gaps of
+`CTX-VIEWER-001`. Notes are keyed by lowercased user, a new event replaces or clears
 the old one, and the map is capped at 50 with oldest-first eviction
-(`cortex.ts:83-86`). The counts come from the memory region; with its Postgres store
-`msgCount` is one less than the messages seen (memory segment, `MEM-VIEWER-001`).
+(`cortex.ts:83-86`).
+
+**Viewer notes from memory** (gap, `CTX-NOTES-*`). The co-host's short notes about
+viewers (core: who they are; recent: what they are up to lately) are fetched for
+each reply, for the viewer being replied to and for the other viewers in the
+working-memory window, whatever their message count. Step 3 of the think pipeline
+publishes `memory.notes.request {id, users}` alongside the recall request; `users`
+is the focus's `who` followed by the distinct chat users in the window, newest
+first (`CTX-NOTES-001`) `[proposed]`. Both replies share one
+`recall_timeout_ms` deadline, and a missing reply means no notes, never a stalled
+reply (`CTX-NOTES-002`, HLD tenet 3). Memory has already capped, ordered and
+filtered the notes (strongest first, a per-viewer and a total cap, sensitive
+notes only for the replied-to viewer and rarely; memory `MEM-SURF-*`).
+
+The notes are rendered in a `## People here` block of the system message
+(`CTX-NOTES-004`) `[proposed format]`:
+
+```
+## People here
+- alice (regular): got a new puppy named Biscuit; speedrunning Celeste lately
+  - handle gently: check in warmly and gently; never name or quote it
+- bob: new to the channel's Minecraft server
+```
+
+`general` notes are plain facts. For `health` and `family` notes the model receives
+only the handling hint, never the note text: memory leaves the text out of the
+reply (memory `MEM-SURF-004`), and a sympathetic check-in works from the hint
+alone (`CTX-NOTES-005`). Subscriber status, though memory stores it, never appears
+in the prompt, nor does any other money-related detail (`CTX-NOTES-006`). Notes live only
+for the think that asked for them, so a note the owner deletes is gone from the
+next reply and `forget_context` has nothing to clear (`CTX-NOTES-007`). Note text
+never appears in `info` logs or `brain.status` details (`CTX-NOTES-008`).
 
 ### Critic (`critic.ts`)
 
@@ -258,6 +298,10 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Stuck-sink release | `speaking_timeout_ms` inside `voiceBusy()`, plus a timer that publishes the release (`CTX-GATE-009`) | rely on `voice.done` only | Comment `cortex.ts:177` ("stuck-sink safety valve"), `packages/config/src/schema.ts:153` ("Give up on a stuck utterance / voice sink after this long") |
 | Operator `say` bypasses gates | no mute, pause or busy check | route through `think` | owner decision 2026-11-01: `say` is the operator's override; `cortex.ts:108`, `CTX-CTRL-006` |
 | Viewer notes one-shot, capped | delete after the reply is published, 50 entries FIFO | delete before the LLM call; persistent per-viewer notes | Per-viewer keying: comment `cortex.ts:32` ("so one viewer's framing never lands on another's reply"). Delete after success: owner decision 2026-11-01, so a vetoed or failed reply does not lose the note (`CTX-VIEWER-003`). The 50 cap bounds memory on a long stream: a note is replaced on each `memory.viewer` for that viewer and used once, so evicting the oldest only loses a note for a viewer not replied to since 50 newer viewer notes arrived |
+| Who gets viewer notes in the prompt | The replied-to viewer and every other chat user in the working-memory window, regardless of message count | replied-to viewer only; regulars only (the earlier `msgCount > 25` gate) | Owner decision: the co-host should know the people in the conversation it is answering, and notes are kept for everyone from their first message. `CTX-NOTES-001`, `CTX-NOTES-007` |
+| Fetching notes | Request/reply per think, in parallel with recall, one shared deadline | cache notes pushed by memory | `[proposed]`. Current notes on every reply (owner deletions take effect at once) and no added latency beyond the recall wait the cortex already accepts; memory's design records the alternatives. `CTX-NOTES-002` |
+| Rendering sensitive notes | Handling hint only; the note text never reaches the model | plain facts like any note; hint plus the text as private background | Owner decision (the safest option): sensitive notes shape behaviour rather than being quoted, and a model that never sees the text cannot repeat it on stream. The cost is a vaguer check-in than the text would allow. `CTX-NOTES-005` |
+| Subscriber status in the prompt | Never rendered | `(subscriber)` marker | Owner decision (the safest option): memory may remember it, but no money-related detail reaches the prompt, so the co-host cannot call anyone out by it. `CTX-NOTES-006` |
 | `forget_context` scope | clear the window, the vision summary and viewer notes; keep mood and pending recalls | keep the vision summary | owner decision 2026-11-01: a forgotten screen must not keep feeding the prompt and the recall fallback; `CTX-CTRL-004` |
 | Recall query | focus text, else the vision summary when the text is empty | fall back only when there is no focus object | owner decision 2026-11-01; `CTX-RECALL-001` |
 | Pause reported as `muted` | reuse existing status | add a `paused` state | Comment `cortex.ts:24`: "Reported as \"muted\" so salience stops waiting." |
@@ -281,7 +325,10 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 2. **Cast and mutability smells.** `emotion` is a `string` from `parseReply` cast to
    `Emotion` (`cortex.ts:145,156`); `let { text, emotion, gesture }` never reassigns
    `gesture`; `viewerNotes.keys().next().value!` uses a non-null assertion
-   (`cortex.ts:86`); the 25-message "regular" threshold is a literal (`cortex.ts:80`).
+   (`cortex.ts:86`); the 25-message "regular" threshold is a literal (`cortex.ts:80`),
+   which `CTX-VIEWER-001` replaces with memory's `regular` flag.
+
+
 3. **Critic misconfiguration fails outside `main()`.** A rejected critic config
    throws while the module is constructed (`index.ts:33`,
    `packages/modules/src/index.ts:41-48`), so it surfaces as an uncaught exception at

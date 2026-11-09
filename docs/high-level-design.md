@@ -49,8 +49,8 @@ noticing.
   model in the loop). `affect` keeps a valence/arousal mood that decays on
   its own (`affect.state`). `memory` is the only region that touches
   Postgres: it embeds what happened, answers `memory.recall.request`, knows
-  the regulars, and between streams consolidates what it learned into the
-  personality file. `cortex` is the only region that generates the main reply (salience and
+  the regulars, keeps short fading notes about every viewer, and between
+  streams consolidates what it learned into the personality file. `cortex` is the only region that generates the main reply (salience and
   affect `llm` hooks and the cortex critic hook may also call a model):
   it turns a focus plus personality, mood, viewer notes, recalled memories
   and the recent transcript into one spoken line, vetted by a critic hook.
@@ -120,8 +120,12 @@ for them to operate.
    thought. The co-host must never talk over itself or a line still playing.
 3. **Remember people and running jokes across streams.** Addressed chat,
    voice and the co-host's own lines are embedded and recalled; regulars are
-   recognised by message count; the personality file grows a dated
-   `## Learned` block after each stream that the owner can edit or delete.
+   recognised by lifetime message count or because the owner marked them; the
+   co-host keeps short notes about every viewer from their first message, who
+   they are (core) and what they are up to lately (recent), which mentions
+   strengthen and time fades, so it understands viewers as people; the
+   personality file grows a dated `## Learned` block after each stream that
+   the owner can edit or delete.
 4. **Run locally on one GPU box.** Senses, brain, body, memory and the
    dashboard all run in Compose on the AI PC; the LAN is the trust boundary
    for internal processing and storage (platform connections such as Twitch
@@ -144,8 +148,9 @@ for them to operate.
    I/O glue so it is unit-tested.
 8. **Let the operator see and steer during the stream.** One page shows the
    bus, brain status, mood, avatar preview and per-service health, and
-   offers mute, say, forget, personality reload, and (when enabled) service
-   restart.
+   offers mute, say, forget, personality reload, (when enabled) service
+   restart, and a Viewers page listing every stored viewer note for the owner
+   to delete or restore.
 9. **Hear chat from more than one platform.** `chat.message.platform` admits
    `twitch`, `youtube` and `discord`, and a new chat source is a new sense
    that publishes `chat.message` without touching the brain. Twitch is the
@@ -235,16 +240,23 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    service URL that points outside the LAN (for example STT, Ollama, TTS,
    `VOICE_URL`, `REDIS_URL` or `DATABASE_URL`), and Discord audio when the
    Discord source is enabled.
-   Audio, frames, chat text, embeddings and memories stay on the operator's
-   LAN unless that egress is configured. Reject a default that sends any of
-   them to a hosted service, and reject an embedding path that follows the
-   chat provider off the LAN.
+   Audio, frames, chat text, embeddings, memories and viewer notes stay on
+   the operator's LAN unless that egress is configured. Reject a default that
+   sends any of them to a hosted service, and reject an embedding or
+   viewer-notes model path that follows the chat provider off the LAN.
+9. **Viewers' sensitive details shape tone, never content.** The co-host may
+   know a viewer's health or family news; it changes how warmly the co-host
+   speaks to them, not what it says. Such notes are surfaced rarely, as
+   handling guidance, and never quoted; politics is never stored; money is
+   never remembered beyond subscriber status, and nobody is called out by
+   wealth. Reject a feature that stores politics, ranks or names viewers by
+   money, or can put a sensitive note's words on stream.
 
 ## System Design
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 18 event types) plus a separate `cohost:health` heartbeat stream (19 registered payloads in all). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 18 event types; 22 once viewer notes land) plus a separate `cohost:health` heartbeat stream (19 registered payloads in all; 23 with viewer notes). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -281,7 +293,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 18 event types plus 1 health type; consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 18 event types plus 1 health type (22 plus 1 with viewer notes); consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -291,11 +303,11 @@ flowchart LR
 | senses | ears | Discord voice → Whisper → `speech.heard`; Discord playback sink |
 | brain | salience | Scores events, decides when to speak, fires reflexes |
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
-| brain | memory | Embeds and recalls exchanges; viewer table; reflection pass |
+| brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
 | brain | cortex | `attention.focus` → recall → LLM → critic → `brain.say` |
 | body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration |
 | body | avatar | Canonical avatar state → VTube Studio / VMC driver |
-| operator | dashboard | Live feed, mute / say, audio sink, personality editor, Services tab, test-input injection |
+| operator | dashboard | Live feed, mute / say, audio sink, personality editor, Services tab, Viewers page, test-input injection |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology, single parameterized Dockerfile, installer, CI |
 
@@ -364,10 +376,11 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Binary payloads | Never on the bus: events carry text, numbers, envelopes and URLs; audio and uploads travel over HTTP | Base64 on the stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads |
 | Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |
-| Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand | Learned facts in the database only; a structured persona schema | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. | [memory](intent/memory/memory-design.md) Reflection pass; `config/personality.example.md` |
+| Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand. Viewer notes live in Postgres, and the dashboard's Viewers page lists every stored note, and every deletion with its reason, for the owner to delete or restore | Learned facts in the database only; a structured persona schema; viewer notes in the personality file | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. Viewer notes are per-viewer records that change during the stream, so a table fits them, and the Viewers page keeps them as visible and editable as the personality file. | [memory](intent/memory/memory-design.md) Reflection pass and Viewer notes; [dashboard](intent/dashboard/dashboard-design.md) Viewers page; `config/personality.example.md` |
+| Viewer notes | Two layers (core, recent) with a strength that mentions reinforce and time fades; captured live by a small classifier model behind a region hook, cleaned by a stronger model in a consolidation pass triggered by a dirty-note count and once after shutdown; surfaced to the cortex for the viewers in the conversation; sensitivity per tenet 9 | reflection-only notes between streams; regulars only; no fade | The co-host should know what viewers are up to now, not only what the last reflection saw; a cheap model can afford every chat line while a stronger one fixes its mistakes later; fading keeps notes current without manual cleanup. Owner decision; formulas, defaults and event names are `[proposed]`. | [memory](intent/memory/memory-design.md) Viewer notes; [cortex](intent/cortex/cortex-design.md) Viewer notes |
 | Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode; a failed bus publish is logged and the service continues, and a failed subscription or tail read retries with backoff inside the bus. Two cases still exit non-zero: a config value that is present but invalid (for example an unknown `AVATAR_DRIVER`) fails the config load, and the dashboard exits when Redis is unreachable at start | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. An invalid value is an operator mistake to fix, not a gap to idle through, and without Redis there is no bus to report on. The publish, retry and exit cases are owner decisions of 2026-11-01. | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
 | Health and control | Heartbeats on a separate capped stream; derived states computed by observers; control off by default, bearer-gated, manifest-only argv, loopback bind | Heartbeats on the event stream; always-on control | Liveness traffic never evicts domain events; a privileged endpoint has the smallest possible surface and is opt-in. | [control-plane](intent/control-plane/control-plane-design.md); `packages/control/src/manifest.ts:1-5` |
-| Trust boundary | The operator's LAN is the boundary. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle routes and other state-changing posts); reads (`/ws`, `GET /personality`, `GET /services`) stay open; `POST /sink` stays ungated; host-side audio sinks use the dashboard proxy | Gate reads and sink events with the same token; per-user accounts | cohost serves the owner's own stream on their own network. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, viewer notes, vision summaries); the operator keeps the dashboard port off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decision 2026-11-01. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
+| Trust boundary | The operator's LAN is the boundary. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle routes and other state-changing posts); reads (`/ws`, `GET /personality`, `GET /services`) stay open; `POST /sink` stays ungated; host-side audio sinks use the dashboard proxy | Gate reads and sink events with the same token; per-user accounts | cohost serves the owner's own stream on their own network. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard port off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decision 2026-11-01. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Licensing | Dual licence: the public gets AGPL-3.0-only; a separate commercial licence, without the AGPL obligations, is reserved to the owner (CoderCoco) and granted case by case (`COMMERCIAL.md`). Every outside contribution is accepted only under an individual Contributor License Agreement (`CLA.md`, adapted from the Apache ICLA) that lets the owner relicense it, enforced in CI | Plain AGPL-3.0 with a DCO sign-off; a permissive licence (MIT/Apache-2.0); a source-available non-commercial licence (PolyForm Noncommercial); the Business Source License | The goal is source that anyone can read, run, modify and contribute to, while a company cannot build a business on cohost for free. AGPL section 13 means anyone who offers a modified cohost to users over a network must offer those users its source, which removes a closed hosted competitor's advantage; it does not forbid commercial use, and running a modified private copy obliges nothing by itself. The commercial licence is what a business buys to be exempt from the AGPL obligations, and the owner can only grant it for code they hold relicensing rights to, which a DCO (a certificate of the right to submit under the project licence) does not give and a CLA does. A permissive licence lets anyone close and sell it; PolyForm Noncommercial and BUSL stop commercial use outright but are not open source licences. | [deployment](intent/deployment/deployment-design.md) Licensing and contribution; `LICENSE`, `CLA.md`, `COMMERCIAL.md` |
 | Deployment shape | One Dockerfile parameterised by `SERVICE`, infra ports on loopback, the dashboard as the only published port, optional senses behind Compose profiles | Per-service images; everything published | One build cached across ten images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
 
@@ -382,9 +395,11 @@ loopback), so a Browser Source on another PC needs `CONTROL_BIND` set; the
 `/ws` feed, the `GET` routes and `POST /sink` stay open in both modes. The
 open reads expose more than the stream shows: `GET /personality` returns the
 whole personality file including its `## Learned` notes, and `/ws` carries
-every domain event, including unaddressed chat, recall replies and viewer
-notes. The operator therefore keeps the dashboard port off networks they do
-not trust. The sink stays ungated because an OBS Browser Source cannot authenticate, and a
+every domain event, including unaddressed chat and recall replies. Viewer notes are the exception to the open reads, because they can hold
+viewers' health and family matters: the feed never forwards the events that
+carry them, and the dashboard's Viewers page routes require a dedicated token
+in both modes. The operator
+therefore keeps the dashboard port off networks they do not trust. The sink stays ungated because an OBS Browser Source cannot authenticate, and a
 host-side audio player reaches voice only through the dashboard's audio proxy,
 since Compose does not publish voice's port. Inside this boundary the voice
 HTTP server's CORS `*`, the fixed Postgres credentials and root containers are

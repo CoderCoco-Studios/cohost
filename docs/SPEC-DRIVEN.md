@@ -67,8 +67,12 @@ every segment was audited against the code on 2026-11-01/02, so every segment
 is `AUDITED`: code and tests carry `@spec` annotations, and the owner's
 answers to the audit questions are applied to the HLD, the LLDs and the EARS
 files. Decided behaviour the code does not have yet is a `[ ]` gap. The owner has
-confirmed the HLD and LLD intent; no `[proposed]` markers remain, and LLD rows
-marked `[inferred]` are the only items still awaiting an owner decision.
+confirmed the HLD and LLD intent of the mapped code. A `[proposed]` marker
+(inline in a design doc or a spec line) flags a design choice in new, not yet
+built work that awaits the owner's confirmation; today these belong to the
+viewer-notes design (memory, cortex, dashboard, config, event-bus). LLD rows
+marked `[inferred]` and `[proposed]` items are the only things still awaiting
+an owner decision.
 
 ## OpenSpec (retired)
 

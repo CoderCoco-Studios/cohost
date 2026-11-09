@@ -13,7 +13,7 @@ Describes the intended design and the code that realizes it; where the code lags
 
 The dashboard has almost no logic of its own. It publishes `control`, `voice.playing`, `voice.done`, `inject.request` and perception events onto the bus, proxies audio from `voice`, folds heartbeats through `HealthTracker` from `@cohost/control`, and delegates start/stop/restart to `ServiceController` from the same package (owned by the control-plane segment). This segment owns the HTTP surface, the gating rule, the injection panel and its upload store, the feed, and `public/index.html`.
 
-Security posture follows the project's trust boundary, which is the operator's LAN: with `CONTROL_ENABLED` unset, every route is open and the server listens on all interfaces; with `CONTROL_ENABLED=1` a shared bearer token guards the mutating routes and the server binds to loopback unless told otherwise (`control.ts:17-45`, `routes.ts:24-28`). Control mode guards mutations only. Reads (`/ws`, `GET /personality`, `GET /services`, `GET /audio/*`) stay open, and so does `POST /sink`, because the OBS Browser Source that serves as the stream's audio sink cannot present a token. A non-loopback `CONTROL_BIND` therefore exposes the read routes and `/sink` to the LAN; that is accepted under the LAN boundary.
+Security posture follows the project's trust boundary, which is the operator's LAN: with `CONTROL_ENABLED` unset, every route is open and the server listens on all interfaces; with `CONTROL_ENABLED=1` a shared bearer token guards the mutating routes and the server binds to loopback unless told otherwise (`control.ts:17-45`, `routes.ts:24-28`). Control mode guards mutations only. Reads (`/ws`, `GET /personality`, `GET /services`, `GET /audio/*`) stay open, and so does `POST /sink`, because the OBS Browser Source that serves as the stream's audio sink cannot present a token. A non-loopback `CONTROL_BIND` therefore exposes the read routes and `/sink` to the LAN; that is accepted under the LAN boundary. Viewer notes are the exception: they never travel on `/ws`, and the Viewers page routes need their own token, `VIEWERS_TOKEN`, in both modes (Viewers page).
 
 The dashboard is also the only path by which a player on the host (outside the Compose network) reaches voice's audio: Compose does not publish voice's port, so browsers and other host-side sinks fetch `/audio/<id>.wav` through the dashboard proxy, while in-network sinks such as ears fetch `http://voice:8700` directly.
 
@@ -30,7 +30,7 @@ The dashboard is also the only path by which a player on the host (outside the C
 7. `server.listen(PORT, bind?)`; the heartbeat becomes `ready` only once listening (`:53-54`). With control disabled `bind` is undefined, so Node listens on all interfaces; compose publishes `${DASHBOARD_PORT:-3000}:3000` (`docker-compose.yml`, dashboard service).
 8. `onShutdown` clears the sweeper, stops the feed, closes the WebSocket and HTTP servers, stops the bus (`:56`). The heartbeat's `stopping` is published by `startHeartbeat`'s own shutdown hook (control-plane).
 
-Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), plus the heartbeat interval env owned by control-plane.
+Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), `VIEWERS_TOKEN` (Viewers page, gap), plus the heartbeat interval env owned by control-plane.
 
 ## HTTP surface
 
@@ -49,6 +49,7 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | `PUT /personality` | save body, publish `control {cmd: "reload_personality"}`, `204` | yes | `:105-112` |
 | `POST /control` | publish `control {cmd, text, target}`, `204`; the event schema validates `cmd` | yes | `:113-120` |
 | `POST /sink` | `event: "playing"` publishes `voice.playing`, `event: "done"` publishes `voice.done`, both with `sink: "dashboard"`, `204`; any other `event` is `400` and publishes nothing (DASH-SINK-003) | no | `:121-128` |
+| `GET /viewers*`, `POST /viewers*` | Viewers page (below); gap | always, by `VIEWERS_TOKEN` | DASH-VIEWERS-* |
 | any method `/health` | `200 ok` | no | `:130` |
 | anything else | `404 not found` | n/a | `:132` |
 
@@ -67,7 +68,7 @@ When control is enabled, `POST /services/:id/(start|stop|restart)` takes an opti
 - `start()`: seeds `HealthTracker` from `bus.recentHealth(500)`, tails the health stream from the last seen id with `bus.tailHealth` into `tracker.ingest`, tails the main stream with `bus.tail` and broadcasts every event as JSON to all OPEN sockets, subscribes `tracker.onChange` to push a `{type:"services", services}` message, and ticks the tracker every 1000 ms (unref'd) so staleness transitions are pushed even without new heartbeats (`feed.ts:69-80`).
 - `onConnection(ws)`: sends the current services snapshot, then `bus.recent(60)` oldest-first, each event with `replay: true` added (`feed.ts:49-67`; `bus.recent` reverses an `XREVRANGE`, `packages/bus/src/index.ts:190-192`). The socket is already in `wss.clients` when `connection` fires, so the feed registers it in a `replaying` map before its first await: live events for that socket are held there, and after the replay they are sent once, skipping any id the replay already contained (DASH-FEED-001). Other clients get live events immediately. The page also de-duplicates by bus event id and never plays a `replay`-marked utterance (DASH-UI-013). `serveClient` wraps the call so a failed replay closes only that socket (DASH-HTTP-012).
 - Heartbeat events are filtered from both paths (`feed.ts`). They normally never appear on the main stream, since `publish` refuses them (`packages/bus/src/index.ts`, `publish`); the filter is defensive.
-- Everything else on the main stream goes to every browser unfiltered, including event types the page then ignores. There is no per-client subscription and no authentication on `/ws`.
+- Everything else on the main stream goes to every browser, including event types the page then ignores, except the viewer-notes events `memory.notes.request`, `memory.notes.reply`, `memory.viewers.request` and `memory.viewers.reply`, which carry note text (including health and family notes) and are never sent on `/ws`, live or in the connect replay (DASH-FEED-007, gap). There is no per-client subscription and no authentication on `/ws`.
 
 ## Test-input injection and uploads
 
@@ -97,10 +98,102 @@ A single static file with inline CSS and JS (no build step, no framework). The s
 - Test inputs panel: text box with viewer fields, level toggle (bus disables image/audio and shows the `as` selector), `remember` checkbox, image/audio pickers, and optional microphone recording where `MediaRecorder` + `getUserMedia` exist. The status line matches `inject.result` to the HTTP `id` (results that arrive before the HTTP response are cached, last 50) and reports "no response" after 10 s (`:175-238`).
 - Audio sink: every live `voice.utterance` the page sees while audio is on is pushed on a queue (not when it is `replay`-marked or audio is off, and turning audio off empties the queue; DASH-UI-014); `pump()` plays `/audio/<id>.wav` one at a time, posting `playing` on `onplay` and `done` on `ended`/`error` (`:136-148, 331`). `audioOn` starts true when the URL has a `sink` query parameter (presence, not value: `?sink=0` also enables it, `:133`); otherwise the operator clicks "enable audio". Sink mode adds a CSS class that hides everything but the header (`:41`). Utterances that arrive in the connect replay are shown but never played or reported (DASH-UI-013). Two pages with audio on (for example the operator tab and the OBS source) both play every utterance and both post `voice.playing`; voice accepts that (voice segment, Sink Arbitration Protocol).
 
+## Viewers page
+
+Gap: everything in this section is specified by `[ ]` lines (`DASH-VIEWERS-*`,
+`DASH-FEED-007`). The owner's requirements are settled: every stored viewer note is
+visible and deletable here, the regular flag is set here, and the layout is
+"panel A" below, and every `/viewers` route requires `VIEWERS_TOKEN`. Route
+names, the timeout and the response codes are `[proposed]`.
+
+The co-host keeps short, fading notes about viewers (memory segment, Viewer notes).
+This page is how the owner sees and controls them. It satisfies the HLD principle
+that nothing the co-host learns is hidden in a table: notes live in Postgres, but
+every one of them, and every deletion with its reason, is listed here and can be
+deleted or restored.
+
+### Layout ("panel A")
+
+A Viewers tab in `public/index.html`, in the existing theme (the same single static
+file, inline CSS and JS, dark navy palette, no new dependency):
+
+- **Left: viewer list.** A search box filters by display name. Each row shows the
+  display name, a `REGULAR` badge when the viewer is a regular, "set by you" when
+  the owner's flag (not the message count) makes them one, and the message and note
+  counts (DASH-VIEWERS-010). A name field above the list marks a viewer as regular
+  before they have ever chatted (DASH-VIEWERS-013) `[proposed]`.
+- **Right: detail panel** for the selected viewer: a "Mark as regular" toggle
+  (DASH-VIEWERS-013), the notes split into **Core** and **Recent**, each note
+  showing its text, a category tag, a strength bar and a delete link
+  (DASH-VIEWERS-011, DASH-VIEWERS-012), a "Clear all notes" button
+  (DASH-VIEWERS-014), and the viewer's deleted notes with their reasons and an
+  undo link (DASH-VIEWERS-015).
+
+Delete asks for an optional reason. A reason makes the deletion a rule the co-host
+will not re-learn similar notes against; no reason means the topic may come back
+weakly if the viewer keeps raising it (memory `MEM-ADMIN-003`, `MEM-CAPTURE-006`,
+`MEM-CAPTURE-007`). The page says so next to the reason prompt `[proposed]`.
+
+### Routes `[proposed]`
+
+The dashboard holds no notes and cannot read Postgres (HLD tenet 1). Each route
+publishes `memory.viewers.request {id, op, ...}` and waits up to 3000 ms for the
+`memory.viewers.reply` with the same `id`, which it receives from the feed's
+existing main-stream tail (DASH-VIEWERS-008).
+
+| Route | `op` sent to memory | Spec |
+|---|---|---|
+| `GET /viewers?q=` | `list` | DASH-VIEWERS-001 |
+| `GET /viewers/:key` | `get` | DASH-VIEWERS-002 |
+| `POST /viewers/:key/notes/:id/delete` `{reason?}` | `delete_note` | DASH-VIEWERS-003 |
+| `POST /viewers/deletions/:id/restore` | `restore` | DASH-VIEWERS-004 |
+| `POST /viewers/:key/clear` `{reason?}` | `clear` | DASH-VIEWERS-005 |
+| `POST /viewers/regular` `{key? , name?, regular}` | `set_regular` | DASH-VIEWERS-006 |
+
+A reply with `ok: true` answers 200 with its `data`; `error: "not_found"` answers
+404; any other failure 500; no reply in time answers 504 "memory did not answer"
+(DASH-VIEWERS-008). Bodies are capped at 64 KiB like the other JSON routes
+(DASH-VIEWERS-009).
+
+### Access protection
+
+Health and family notes must not leak to anyone who can reach the dashboard port.
+Two paths would leak them today: the open `/ws` feed (it forwards every bus event)
+and any open read route. The design closes both:
+
+1. The feed never forwards the viewer-notes events (DASH-FEED-007). This holds
+   whatever option below is chosen, and it lands with the first change that puts
+   notes on the bus (cortex surfacing).
+2. Every `/viewers` route, reads included, requires `Authorization: Bearer
+   <VIEWERS_TOKEN>`, a secret in `.env`, independent of control mode; with
+   `VIEWERS_TOKEN` unset every `/viewers` route answers 403 with a message telling
+   the owner to set it, and publishes nothing (DASH-VIEWERS-007). This is option
+   A below, the owner's choice. The page prompts for the token on a 401, as it
+   does for the control token, keeping the two in separate `sessionStorage` entries
+   (DASH-VIEWERS-016).
+
+The options considered (the owner chose A):
+
+| Option | What it is | Cost |
+|---|---|---|
+| **A. Dedicated `VIEWERS_TOKEN` on all `/viewers` routes (chosen)** | bearer token on reads and writes, always on, independent of `CONTROL_ENABLED`; page locked until set | one more `.env` secret; the token travels in cleartext over plain HTTP on the LAN, as the control token does; a fresh install shows a locked Viewers page until the owner sets it |
+| B. Reuse `CONTROL_TOKEN`, Viewers routes only with control mode on | same mechanism as lifecycle routes | Compose pins control mode off for the containerised dashboard (DEPLOY-COMPOSE-016), so the page would be unusable in the default deployment; turning control on also turns on service control the owner may not want |
+| C. Loopback-only Viewers routes | answer only requests from `127.0.0.1` / `::1` | inside Compose every request arrives from the Docker network gateway, not loopback, so the check either blocks the owner or must trust the gateway (which every LAN host also comes through); the owner could not use the page from a second PC |
+| D. `/ws` exclusion only, routes open like `GET /personality` | rely on the LAN boundary | anyone on the LAN can read health and family notes with one `curl`; consistent with today's open reads, but those reads expose stream-adjacent text, not viewers' private matters |
+| E. Never put notes on the bus; dashboard reads them another way | e.g. the dashboard queries Postgres | breaks HLD tenet 1 (only memory touches Postgres); rejected outright |
+
+A was chosen because it is the only option that protects notes in the
+default Compose deployment without changing control mode, and its cost is one
+`.env` line. Notes still cross the Redis stream, which the trust boundary already
+covers (Compose publishes Redis on the host's loopback only, deployment segment).
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
+| Viewer notes on `/ws` | Never forwarded, live or replayed (DASH-FEED-007) | forward like every other event; redact the text fields | Notes include health and family details the open feed must not carry; dropping whole events is simpler and safer than redacting fields of a shape that may grow. The page never rendered `memory.*` events anyway. |
+| Viewers page access | `VIEWERS_TOKEN` bearer on every `/viewers` route | reuse `CONTROL_TOKEN`; loopback-only; open like `GET /personality` | Owner decision (option A): the only option that protects notes in the default Compose deployment without turning on control mode; see Access protection. |
+| Viewers page transport | Bus request/reply with memory, correlated by id from the feed tail, 3000 ms timeout `[proposed]` | query Postgres; call memory over HTTP | HLD tenet 1. Reusing the feed's tail avoids a second Redis reader. |
 | UI technology | One static HTML file with inline JS/CSS, read once at boot | A bundled SPA | The page is one operator panel and one OBS sink view, small enough to need no framework: there is no build step, no frontend dependency (`package.json` has only `ws`, `services/dashboard/package.json:17-21`), and the server serves one file. A bundled SPA would add a toolchain and a build output to ship for no capability the page needs; reading the file once at boot means an edit needs a restart. |
 | Where service control lives | In the dashboard process, on a UI-agnostic core (`packages/control`), with the `cohostctl` CLI as a second client | Standalone CLI/TUI only; a compose-API wrapper container | One application that also works in OBS docks; the privilege risk is mitigated by gating. The wrapper container was rejected as compose-only and socket-mounting (`openspec/changes/archive/2026-11-01-add-service-control/design.md`, "Options considered"; commit `1d316ff`). |
 | Access control | Bearer token only on mutating routes, only when `CONTROL_ENABLED=1`; loopback bind then; reads (`/ws`, `GET /personality`, `GET /services`) stay open | Always-on auth; auth on every route; gate reads when control is enabled | Owner decision 2026-11-01: the LAN is the trust boundary and control mode guards mutations only. Off by default, loopback bind and a mandatory token when on; "when disabled, behaviour is exactly today's (binds as before, `/control` open)" (`add-service-control/design.md` Decision 4; comment at `control.ts:12`). |
@@ -131,6 +224,8 @@ A single static file with inline CSS and JS (no build step, no framework). The s
 2. Bus-level injection returns an `id` that no published event carries (`inject.ts:90, 102-113`), so it cannot be correlated; the UI special-cases this ("published at bus level (no service result)", `index.html:195`).
 3. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
 4. `index.html` carries a duplicated comment on the same CSS line (`:41`) and the pause/resume commands are reachable only by raw `POST /control` (`:165-171`).
+5. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
+6. **`.env.example` entry for `VIEWERS_TOKEN`.** Access option A is decided; documenting the variable in `.env.example` is a deployment cascade.
 
 ## References
 

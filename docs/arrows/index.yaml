@@ -53,7 +53,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Viewer notes designed: BUS-EVT-010 and BUS-EVT-020 (chunk 3), BUS-EVT-021 (chunk 4); BUS-EVT-001 flips after chunk 4."
+    next: "Viewer notes: BUS-EVT-010 and BUS-EVT-020 built (chunk 3, 21 event types). BUS-EVT-021 (chunk 4) is open and BUS-EVT-001 (23 types) flips after chunk 4."
     drift: null
 
   model-backends:
@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunk 1 (memory core) built: 78 of 107 specs implemented, 29 gaps. Open chunk-1 specs wait on later chunks (NOTE-004 restore, NOTE-009/011 capture half, REG-002, CONSOL-001 trigger call site). Next: 2 capture (MEM-CAPTURE), 3 surfacing (MEM-SURF, MEM-VIEWER-002), 4 owner operations (MEM-ADMIN); deployment and cohostctl wiring for consolidate. See the memory LLD Build order."
+    next: "Viewer-notes chunks 1 (memory core) and 3 (surfacing, MEM-SURF, MEM-VIEWER-002) built: 84 of 107 specs implemented, 23 gaps. Open chunk-1 specs wait on later chunks (NOTE-004 restore, NOTE-009/011 capture half, REG-002 capture half, CONSOL-001 trigger call site). Next: 2 capture (MEM-CAPTURE), 4 owner operations (MEM-ADMIN); deployment and cohostctl wiring for consolidate. See the memory LLD Build order."
     drift: null
 
   cortex:
@@ -173,7 +173,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Viewer notes designed: CTX-NOTES-001 to 008, CTX-VIEWER-001 and CTX-EVT-001 are gaps; they land in viewer-notes build chunk 3, after memory chunks 1 and 2."
+    next: "Viewer notes surfacing built (build chunk 3): CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 66 of 66 specs implemented; nothing open."
     drift: null
 
   voice:
@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Viewer notes designed: DASH-FEED-007 (chunk 3) and DASH-VIEWERS-001 to 017 (chunk 4); access option A (VIEWERS_TOKEN) decided."
+    next: "Viewer notes: DASH-FEED-001, 002 and 007 built (chunk 3, notes events never reach /ws). DASH-VIEWERS-001 to 017 (chunk 4) open; access option A (VIEWERS_TOKEN) decided."
     drift: null
 
   control-plane:

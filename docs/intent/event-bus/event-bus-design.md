@@ -101,7 +101,7 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 7 | `affect.state` | `valence` in -1..1, `arousal` in 0..1, `mood` (Emotion), `cause?` | affect (`affect.ts:110`) -> salience, avatar, cortex | 95-104 (BUS-EVT-003) |
 | 8 | `memory.recall.request` | `id`, `query`, `k?` (positive int) | cortex (`cortex.ts:182`) -> memory | 108-112 (BUS-EVT-010) |
 | 9 | `memory.recall.reply` | `id`, `memories` (array of `ts`, `kind` of `chat`, `speech`, `self`, `note`; `who`; `text`; `similarity?`) | memory (`region.ts:50`) -> cortex | 115-126 (BUS-EVT-010) |
-| 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `notes` default `""`; intended: `regular` (boolean) replaces `notes` (gap) | memory (`region.ts:27`) -> cortex | 130-135 (BUS-EVT-010) |
+| 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `regular` (boolean); no notes text | memory (`region.ts:27`) -> cortex | 130-135 (BUS-EVT-010) |
 | 11 | `voice.utterance` | `id`, `text`, `emotion`, `gesture?`, `durationMs`, `envelopeHz`, `envelope` (number array), `audioUrl`, `sampleRate` | voice (`voice.ts:98`) -> avatar, ears (Discord sink), dashboard | 139-150 (BUS-EVT-016) |
 | 12 | `voice.playing` | `id`, `sink` | voice virtual sink (`voice.ts:109`), ears Discord sink (`playback.ts:46`) -> voice, avatar | 154 (BUS-EVT-017) |
 | 13 | `voice.done` | `id`, `sink` | voice (`voice.ts:110,115`), ears (`playback.ts:35`) -> cortex, avatar | 155 (BUS-EVT-017) |
@@ -112,7 +112,7 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 18 | `service.lifecycle` | `service`, `action` (`start`, `stop`, `restart`), `by` (`dashboard` or `cohostctl` by convention), `ok`, `detail?` | dashboard (`control.ts:40`), control CLI (`packages/control/src/cli.ts:107`) -> dashboard tail | 215-222 (BUS-EVT-008) |
 | 19 | `service.heartbeat` | `service`, `instance`, `pid` (int), `version`, `startedAt`, `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (record of `ok`, `down`, `n/a`), `mode` (string; `live`, `mock`, `off` by convention), `detail?`, `intervalMs` (positive int) | every service via `publishHealth` on `cohost:health` -> dashboard tracker, control-plane | 229-243 (BUS-EVT-009) |
 
-Planned viewer-notes events (gap; names and shapes `[proposed]`; design in the memory, cortex and dashboard segments):
+Viewer-notes events (the two surfacing events are built; the two owner events are chunk 4; names and shapes `[proposed]`; design in the memory, cortex and dashboard segments):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|

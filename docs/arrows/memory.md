@@ -4,16 +4,17 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); viewer-notes build chunk 1 (memory core) added after the audit. 107 specs: 78 implemented, 29 gaps (viewer notes: see below), 0 deferred. At the audit the 54 then-current specs were 53 implemented and 1 deferred. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); viewer-notes build chunk 1 (memory core) added after the audit. 107 specs: 84 implemented, 23 gaps (viewer notes: see below), 0 deferred. At the audit the 54 then-current specs were 53 implemented and 1 deferred. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented, including `MEM-START-005` (via `SubscribeOptions.onReady`).
 
-## Viewer notes: chunk 1 built (memory core), chunks 2 to 4 designed
+## Viewer notes: chunks 1 (memory core) and 3 (cortex surfacing) built, chunks 2 and 4 designed
 
-Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file holds 107 specs: 78 `[x]`, 29 `[ ]`, 0 `[D]`.
+Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file holds 107 specs: 84 `[x]`, 23 `[ ]`, 0 `[D]`.
 
 - Retired: `MEM-VIEWER-004` (notes text in `memory.viewer`), `MEM-VIEWER-005` (deferred notes writer, superseded). Numbers not reused.
 - **Chunk 1 built** (notes store, regular flag, decay math, consolidation job and triggers, config): `[x]` `MEM-NOTE-001`, `002`, `003`, `005`, `006`, `007`, `008`, `010`; `MEM-REG-001`, `003`, `004`, `005`; `MEM-CONSOL-002` to `016`; `MEM-STORE-001`; `MEM-BACKEND-005`; with config `CFG-SCH-014` to `016` and `CFG-USR-007`.
 - **Chunk 1 specs still `[ ]`, each waiting on a later chunk**: `MEM-NOTE-004` (the version bump on *restore* is owned by `MEM-ADMIN-004`; insert, reinforce, layer move and rewrite already bump it), `MEM-NOTE-009` and `MEM-NOTE-011` (the capture half is chunk 2; the consolidator half and the shared `notesHookLlm` are built), `MEM-REG-002` (capture and surfacing are chunks 2 and 3), `MEM-CONSOL-001` (the dirty-count trigger `ConsolidationScheduler.notifyDirty` is built and tested; its call site is the capture writer of chunk 2).
-- Still planned: (2) capture (`MEM-CAPTURE-001` to `011`, `CFG-USR-008`); (3) cortex surfacing (`MEM-SURF`, `MEM-VIEWER-002`, with `CTX-NOTES-*`, `CTX-VIEWER-001`, `CTX-EVT-001`, `BUS-EVT-010`, `BUS-EVT-020`, `DASH-FEED-007`); (4) Viewers page (`MEM-ADMIN`, with `DASH-VIEWERS-*`, `BUS-EVT-021`, `CFG-ENV-009`). The store already carries `deleteNote`, which writes a deletion record, for the consolidation tests and chunk 4.
+- **Chunk 3 built** (cortex surfacing): `[x]` `MEM-SURF-001` to `005` (`surface.ts`, `memory.notes.request` handled in the `memory-recall` group, store methods `findViewerByDisplay` and `markSurfaced` in the shared store contract), `MEM-VIEWER-002` (`memory.viewer` carries `regular`, no notes text); with `CTX-NOTES-*`, `CTX-VIEWER-001`, `CTX-EVT-001`, `BUS-EVT-010`, `BUS-EVT-020`, `DASH-FEED-007`. `MEM-REG-002` stays `[ ]`: surfacing is built, capture (chunk 2) is not.
+- Still planned: (2) capture (`MEM-CAPTURE-001` to `011`, `CFG-USR-008`); (4) Viewers page (`MEM-ADMIN`, with `DASH-VIEWERS-*`, `BUS-EVT-021`, `CFG-ENV-009`). The store already carries `deleteNote`, which writes a deletion record, for the consolidation tests and chunk 4.
 - Deployment and control-plane follow-ups (not built): a Compose one-shot service and a `cohostctl` subcommand that run `consolidate`; the `models` container and `.env.example` entries for chunk 2.
 - Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Still `[proposed]`: fade numbers, caps, event and route names, classifier slot specifics; capture model deferred to chunk 2.
 
@@ -108,9 +109,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Event handling | MEM-EVT-001 to MEM-EVT-002 | 2 | 0 | 0 | 2 |
 | Storing memories | MEM-WRITE-001 to MEM-WRITE-005 | 5 | 0 | 0 | 5 |
 | Test injection | MEM-INJ-001 to MEM-INJ-003 | 3 | 0 | 0 | 3 |
-| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 3 | 0 | 1 (VIEWER-002, chunk 3) | 3 |
+| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 4 | 0 | 0 | 4 |
 | Viewer notes: notes, regular, consolidation (chunk 1) | MEM-NOTE-001 to 011, MEM-REG-001 to 005, MEM-CONSOL-001 to 016 | 26 | 0 | 5 (NOTE-004, NOTE-009, NOTE-011, REG-002, CONSOL-001) | 26 |
-| Viewer notes: capture, surfacing, owner operations (chunks 2 to 4) | MEM-CAPTURE, MEM-SURF, MEM-ADMIN | 0 | 0 | 23 | 0 |
+| Viewer notes: surfacing (chunk 3) | MEM-SURF-001 to 005 | 5 | 0 | 0 | 5 |
+| Viewer notes: capture, owner operations (chunks 2 and 4) | MEM-CAPTURE, MEM-ADMIN | 0 | 0 | 18 | 0 |
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |

@@ -56,11 +56,11 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts:52-60` |
 | in | `chat.message` | `memory-notes` `[proposed]` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | gap |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
-| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | gap |
+| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | gap |
-| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts:31-32`; `regular` is a gap (`MEM-VIEWER-002`) |
+| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
 | out | `memory.recall.reply` | | `{id, memories:[{ts(epoch ms), kind, who, text, similarity}]}` | `region.ts:55-58` |
-| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | gap (`MEM-SURF-001`) |
+| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | `surface.ts` (`MEM-SURF-001`) |
 | out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | gap (`MEM-ADMIN-007`) |
 
 Two consumer groups exist so a recall never queues behind the embed plus INSERT

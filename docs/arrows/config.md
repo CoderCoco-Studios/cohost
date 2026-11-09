@@ -11,7 +11,7 @@
 The spec file holds 53 specs: 53 `[x]`, 0 `[ ]`.
 
 - Built: `CFG-SCH-014` (`brain.memory.regular_messages`), `CFG-SCH-015` (`brain.memory.notes` numbers), `CFG-SCH-016` (`capture` and `consolidator` hooks), `CFG-USR-007` (the example's consolidator on the cortex's model via ollama, and the keys listed with their defaults). Tests: `packages/config/test/config.test.ts`.
-- Chunk 2 built: `CFG-USR-008` (the example's capture hook on `${NOTES_MODEL:-gemma3:1b}` via ollama, `.env.example` documents `NOTES_MODEL`).
+- Chunk 2 built: `CFG-USR-008` (the example's capture hook on `${NOTES_MODEL:-gemma3:4b}` via ollama, `.env.example` documents `NOTES_MODEL`).
 - Chunk 4 built: `CFG-ENV-009`. `VIEWERS_TOKEN` has no schema key (pinned by a `config.test.ts` test; a YAML key for it is reported unknown) and the dashboard reads it from `process.env` (`viewersTokenFromEnv`); `.env.example` documents it.
 
 ## Decisions applied

@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. Remaining work: deployment pull of NOTES_MODEL and cohostctl wiring for consolidate."
+    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. Remaining work: the Compose one-shot and cohostctl wiring for consolidate (the models container pulls NOTES_MODEL: DEPLOY-COMPOSE-008)."
     drift: null
 
   cortex:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Pending viewer-notes cascade: NOTES_MODEL pull, .env.example entries, a best-effort Compose one-shot for consolidate (see deployment.md)."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. NOTES_MODEL pull built (DEPLOY-COMPOSE-008/-011). Pending viewer-notes cascade: a best-effort Compose one-shot for consolidate (see deployment.md)."
     drift: null
 
 unmapped:

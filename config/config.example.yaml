@@ -136,7 +136,7 @@ brain:
       deleted_retention_days: 30     # deletions without a reason are forgotten after this long
       # Hook: live capture, run on every chat line (rules | llm | http). A very small model on its own slot, never the cortex's,
       # through local Ollama so chat lines and health or family notes stay on your LAN (name a provider here to change that).
-      # Failure = no note for that line. Pull the model first: `ollama pull gemma3:1b` (NOTES_MODEL in .env).
+      # Failure = no note for that line. The compose `models` service pulls NOTES_MODEL (.env; default gemma3:1b).
       capture:
         kind: llm
         url: ""

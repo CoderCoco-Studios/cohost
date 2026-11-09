@@ -666,9 +666,9 @@ rule, with no "never regular" option; the shutdown one-shot is best-effort and
 the catch-up pass is the guarantee.
 
 ### Cascades (not yet specified)
-1. **Deployment:** a Compose one-shot service for `consolidate`, the `models`
-   container pulling `NOTES_MODEL`, and `.env.example` entries for `NOTES_MODEL`
-   and `VIEWERS_TOKEN`.
+1. **Deployment:** a Compose one-shot service for `consolidate`. (The `models`
+   container pulls `NOTES_MODEL`, DEPLOY-COMPOSE-008, and `.env.example` carries
+   `NOTES_MODEL` and `VIEWERS_TOKEN`.)
 2. **Control-plane:** a `cohostctl` subcommand that runs `consolidate`.
 
 ### Deferred (observed, unexplained, or technical debt)

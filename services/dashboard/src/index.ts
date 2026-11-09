@@ -21,6 +21,7 @@ import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
 import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
+import { ViewersClient, viewersTokenFromEnv } from "./viewers.js";
 
 const log = createLogger("dashboard");
 const cfg = loadConfig();
@@ -40,12 +41,17 @@ const uploads = new UploadStore(uploadOptionsFromEnv(process.env));
 const sweeper = setInterval(() => uploads.sweep(), 60_000);
 sweeper.unref();
 
+// @spec CFG-ENV-009, DASH-VIEWERS-007
+const viewersToken = viewersTokenFromEnv(process.env);
+if (!viewersToken) log.warn("VIEWERS_TOKEN is not set: the Viewers page is locked (every /viewers route answers 403)");
+const viewers = new ViewersClient(bus);
+
 const server = http.createServer(
-  createDashboardHandler({ bus, log, html, uploads, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot(), control }),
+  createDashboardHandler({ bus, log, html, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot(), control }),
 );
 
 const wss = new WebSocketServer({ server, path: "/ws" });
-const feed = createFeed({ bus, tracker, clients: () => wss.clients });
+const feed = createFeed({ bus, tracker, clients: () => wss.clients, onViewersReply: (ev) => viewers.onReply(ev) });
 wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
 void startFeed(feed, log); // @spec DASH-HTTP-012
 

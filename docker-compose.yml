@@ -162,6 +162,7 @@ services:  # @spec DEPLOY-COMPOSE-001
   dashboard:  # @spec DEPLOY-COMPOSE-006
     <<: *ts-service
     build: { context: ., args: { SERVICE: dashboard } }
+    # VIEWERS_TOKEN (Viewers page secret) reaches the dashboard through `env_file: .env` above; unset locks the page.
     ports: ["${DASHBOARD_PORT:-3000}:3000"]
 
   eyes:

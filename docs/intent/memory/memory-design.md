@@ -57,11 +57,11 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | in | `chat.message` | `memory-notes` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | `capture.ts` |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
 | in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
-| in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | gap |
+| in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
 | out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
 | out | `memory.recall.reply` | | `{id, memories:[{ts(epoch ms), kind, who, text, similarity}]}` | `region.ts:55-58` |
 | out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | `surface.ts` (`MEM-SURF-001`) |
-| out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | gap (`MEM-ADMIN-007`) |
+| out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | `admin.ts` (`MEM-ADMIN-007`) |
 
 Two consumer groups exist so a recall never queues behind the embed plus INSERT
 writes (`startup.ts:59`). A third group, `memory-notes`, runs live note capture,

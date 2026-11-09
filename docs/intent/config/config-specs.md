@@ -20,7 +20,7 @@ Prefix `CFG`. Verified against the code at git `49ba935` (audit pass 2026-11-01)
 - [x] **CFG-ENV-006**: When an unquoted `.env` value is followed by whitespace and a `#` comment (the form `.env.example` uses on its API-key lines), `loadDotEnv` shall strip that suffix, matching Compose's `env_file` parsing, so the variable is empty rather than set to the comment text; a `#` inside a quoted value is kept. <!-- test: packages/config/test/config.test.ts:353 -->
 - [x] **CFG-ENV-007**: When `env(name)` is called and the variable is unset or empty, the system shall throw an error naming the variable and pointing at `.env`; `envOr(name, fallback)` shall return the fallback when the variable is unset or empty. <!-- openspec: config § Env helpers and URLs --> <!-- test: packages/config/test/config.test.ts:183 -->
 - [x] **CFG-ENV-008**: The system shall read service-control settings (`CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED`) and `HEARTBEAT_INTERVAL_MS` only from `process.env` in their owning packages; `ConfigSchema` shall have no keys for them. <!-- test: packages/config/test/config.test.ts:386 -->
-- [ ] **CFG-ENV-009**: The system shall read `VIEWERS_TOKEN` only from `process.env` in the dashboard; `ConfigSchema` shall have no key for it.
+- [x] **CFG-ENV-009**: The system shall read `VIEWERS_TOKEN` only from `process.env` in the dashboard; `ConfigSchema` shall have no key for it. <!-- test: packages/config/test/config.test.ts -->
 
 ## Loading and validation pipeline
 

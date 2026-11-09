@@ -8,7 +8,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Pending cascade: viewer notes
 
-The memory viewer-notes design (memory LLD § Viewer notes) will need, once the owner answers its open questions: the `models` container to pull `NOTES_MODEL`, `.env.example` entries for `NOTES_MODEL` and `VIEWERS_TOKEN`, and a Compose one-shot service that runs `consolidate` (also reachable from `cohostctl`, control-plane). The one-shot is best-effort: the owner stops the stack in several ways, so nothing depends on it running; memory catches up at the next start. No deployment spec is written yet.
+The memory viewer-notes design (memory LLD § Viewer notes) will need, once the owner answers its open questions: the `models` container to pull `NOTES_MODEL`, a `.env.example` entry for `NOTES_MODEL` (the `VIEWERS_TOKEN` entry is in place: `.env.example`, README; Compose passes it through `env_file`), and a Compose one-shot service that runs `consolidate` (also reachable from `cohostctl`, control-plane). The one-shot is best-effort: the owner stops the stack in several ways, so nothing depends on it running; memory catches up at the next start. No deployment spec is written yet.
 
 ## Decisions applied
 

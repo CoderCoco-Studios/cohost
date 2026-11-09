@@ -328,6 +328,27 @@ possible but is an explicit opt-in: it gives that container root-equivalent cont
 host, so only do it behind a loopback bind and a strong token. Compose is the only
 runtime; the control plane never starts host processes (run services directly with `pnpm dev`).
 
+## Viewer notes (Viewers tab)
+
+The co-host keeps short, fading notes about viewers. The dashboard's **viewers** tab
+lists every viewer and every stored note (core and recent, with a strength bar), lets
+you delete a note (with an optional reason: a reason stops the co-host re-learning
+similar notes), undo a deletion, clear all of a viewer's notes, and mark someone as a
+regular, even before they have chatted. Notes never travel on the `/ws` feed; the tab
+reads them through `/viewers` routes that always need a token, whatever
+`CONTROL_ENABLED` says:
+
+| Env | Meaning |
+|---|---|
+| `VIEWERS_TOKEN` | bearer token required on every `/viewers` route (the page prompts once per tab). Unset or empty: the tab is locked and every `/viewers` route answers 403. Put it in `.env`; Compose passes it to the dashboard. Env only, never `config.yaml`. |
+
+```bash
+echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env   # then restart the dashboard
+```
+
+The token travels in cleartext over plain HTTP like `CONTROL_TOKEN`, so keep the
+dashboard on a trusted LAN or behind a reverse proxy.
+
 ## Developing
 
 ```bash

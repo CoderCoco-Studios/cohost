@@ -40,7 +40,7 @@ const scheduler = new ConsolidationScheduler({
   log,
   runPass: ({ gate, signal }) => runConsolidation({ store, hook: consolidator, cfg: cfg.brain.memory, log, gate, signal }),
 });
-const onEvent = createMemoryHandler({ cfg, bus, store, log, onBrainStatus: (state) => scheduler.onBrainStatus(state) });
+const onEvent = createMemoryHandler({ cfg, bus, store, admin: store, log, onBrainStatus: (state) => scheduler.onBrainStatus(state) });
 // Live note capture: its own small model (never the cortex's), in its own consumer group; new dirty notes feed the scheduler.
 const onCaptureEvent = createCaptureHandler({
   cfg: cfg.brain.memory,

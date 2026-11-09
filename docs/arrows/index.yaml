@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Viewer-notes chunks 1 and 2 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008). Remaining gap: CFG-ENV-009 (chunk 4)."
+    next: "Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No open gaps."
     drift: null
 
   event-bus:
@@ -53,7 +53,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Viewer notes: BUS-EVT-010 and BUS-EVT-020 built (chunk 3, 21 event types). BUS-EVT-021 (chunk 4) is open and BUS-EVT-001 (23 types) flips after chunk 4."
+    next: "Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4); BUS-EVT-001 (exactly 23 types) pinned by a test. No open gaps."
     drift: null
 
   model-backends:
@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 (memory core), 2 (live capture) and 3 (surfacing) built: 99 of 107 specs implemented, 8 gaps. Open: NOTE-004 restore (chunk 4) and MEM-ADMIN-001 to 007 (chunk 4). Next: 4 owner operations (MEM-ADMIN); deployment pull of NOTES_MODEL and cohostctl wiring for consolidate. See the memory LLD Build order."
+    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. Remaining work: deployment pull of NOTES_MODEL and cohostctl wiring for consolidate."
     drift: null
 
   cortex:
@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Viewer notes: DASH-FEED-001, 002 and 007 built (chunk 3, notes events never reach /ws). DASH-VIEWERS-001 to 017 (chunk 4) open; access option A (VIEWERS_TOKEN) decided."
+    next: "Viewer notes: Viewers page built (DASH-VIEWERS-001 to 017); feed filter DASH-FEED-001/002/007 from chunk 3. Access option A (VIEWERS_TOKEN). Open item: dashboard visual design to be revisited later."
     drift: null
 
   control-plane:

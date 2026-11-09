@@ -165,6 +165,28 @@ export const EventPayloads = {
     ),
   }),
 
+  /** dashboard → memory: an owner operation on viewer notes (Viewers page). Never forwarded to the browser feed. */
+  // @spec BUS-EVT-021
+  "memory.viewers.request": z.union([
+    z.object({ id: z.string(), op: z.literal("list"), query: z.string().optional() }),
+    z.object({ id: z.string(), op: z.literal("get"), key: z.string() }),
+    z.object({ id: z.string(), op: z.literal("delete_note"), noteId: z.string(), reason: z.string().optional() }),
+    z.object({ id: z.string(), op: z.literal("restore"), deletionId: z.string() }),
+    z.object({ id: z.string(), op: z.literal("clear"), key: z.string(), reason: z.string().optional() }),
+    z.object({
+      id: z.string(), op: z.literal("set_regular"), regular: z.boolean(), key: z.string().optional(), name: z.string().min(1).optional(),
+    }).refine((d) => d.key !== undefined || d.name !== undefined, { message: "set_regular needs a key or a name" }),
+  ]),
+  /** memory → dashboard: the answer, correlated by `id`. `data` is the operation's result. */
+  // @spec BUS-EVT-021
+  "memory.viewers.reply": z.object({
+    id: z.string(),
+    ok: z.boolean(),
+    error: z.enum(["not_found", "failed"]).optional(),
+    detail: z.string().optional(),
+    data: z.unknown().optional(),
+  }),
+
   /** Audio for an utterance is ready. envelope = mouth-open level per frame (0..1). */
   // @spec BUS-EVT-016
   "voice.utterance": z.object({

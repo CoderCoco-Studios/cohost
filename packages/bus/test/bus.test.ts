@@ -419,3 +419,44 @@ test("avatar.state requires mouthSmile and keeps it", () => {
   const ok = EventPayloads["avatar.state"].parse({ ...base, mouthSmile: 7.5 });
   assert.equal(ok.mouthSmile, 7.5);
 });
+
+// @spec BUS-EVT-021
+test("memory.viewers.request validates each op and memory.viewers.reply its envelope", () => {
+  const req = EventPayloads["memory.viewers.request"];
+  const ok = (d: unknown) => req.safeParse(d).success;
+  assert.ok(EVENT_TYPES.includes("memory.viewers.request") && EVENT_TYPES.includes("memory.viewers.reply"));
+  assert.ok(ok({ id: "1", op: "list" }));
+  assert.ok(ok({ id: "1", op: "list", query: "al" }));
+  assert.ok(ok({ id: "1", op: "get", key: "k" }));
+  assert.ok(ok({ id: "1", op: "delete_note", noteId: "5" }) && ok({ id: "1", op: "delete_note", noteId: "5", reason: "r" }));
+  assert.ok(ok({ id: "1", op: "restore", deletionId: "9" }));
+  assert.ok(ok({ id: "1", op: "clear", key: "k" }) && ok({ id: "1", op: "clear", key: "k", reason: "r" }));
+  assert.ok(ok({ id: "1", op: "set_regular", regular: true, key: "k" }) && ok({ id: "1", op: "set_regular", regular: false, name: "Pat" }));
+  assert.equal(ok({ op: "list" }), false, "id is required");
+  assert.equal(ok({ id: "1", op: "get" }), false, "get needs a key");
+  assert.equal(ok({ id: "1", op: "delete_note", noteId: 5 }), false, "noteId is a string");
+  assert.equal(ok({ id: "1", op: "restore" }), false);
+  assert.equal(ok({ id: "1", op: "set_regular", regular: true }), false, "a key or a name is needed");
+  assert.equal(ok({ id: "1", op: "set_regular", regular: true, name: "" }), false, "the name is non-empty");
+  assert.equal(ok({ id: "1", op: "set_regular", name: "Pat" }), false, "regular is a boolean");
+  assert.equal(ok({ id: "1", op: "purge" }), false, "unknown op");
+  const rep = EventPayloads["memory.viewers.reply"];
+  assert.ok(rep.safeParse({ id: "1", ok: true }).success && rep.safeParse({ id: "1", ok: true, data: { viewers: [] } }).success);
+  assert.ok(rep.safeParse({ id: "1", ok: false, error: "not_found", detail: "no such viewer" }).success);
+  assert.ok(rep.safeParse({ id: "1", ok: false, error: "failed" }).success);
+  assert.equal(rep.safeParse({ id: "1", ok: false, error: "boom" }).success, false);
+  assert.equal(rep.safeParse({ id: "1" }).success, false);
+});
+
+// @spec BUS-EVT-001
+test("the catalogue is exactly the 23 documented event types, exported as EVENT_TYPES", () => {
+  const expected = [
+    "chat.message", "vision.summary", "speech.heard", "brain.say", "brain.status", "attention.focus", "affect.state",
+    "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
+    "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "avatar.state",
+    "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat",
+  ];
+  assert.equal(EVENT_TYPES.length, 23);
+  assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
+  assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
+});

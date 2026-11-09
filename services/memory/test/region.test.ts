@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
+import { InMemoryStore } from "../src/fake-store.js";
 
 function setup(viewer = { msgCount: 1, notes: "", isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
@@ -133,6 +134,31 @@ test("brain.status is passed on so consolidation knows when the cortex is idle; 
   assert.deepEqual(calls, []);
   const { onEvent: bare } = setup();
   await bare(event("brain.status", { state: "muted" })); // no listener: ignored
+});
+
+// @spec MEM-ADMIN-007
+test("a viewers request is answered on the bus with the same id and the operation's data; a store failure with ok:false", async () => {
+  const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } });
+  const admin = new InMemoryStore(cfg.brain.memory);
+  await admin.touchViewer("1", "Alice");
+  const bus = new FakeBus();
+  const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
+  const onEvent = createMemoryHandler({ cfg, bus, log, store: admin, admin });
+  await onEvent(event("memory.viewers.request", { id: "v-1", op: "list" }));
+  const [reply] = bus.of("memory.viewers.reply");
+  assert.equal(reply!.id, "v-1");
+  assert.equal(reply!.ok, true);
+  assert.deepEqual((reply!.data as { viewers: { key: string }[] }).viewers.map((v) => v.key), ["1"]);
+  admin.listViewers = async () => { throw new Error("db down"); };
+  await onEvent(event("memory.viewers.request", { id: "v-2", op: "list" }));
+  assert.deepEqual(bus.of("memory.viewers.reply")[1], { id: "v-2", ok: false, error: "failed", detail: "Error: db down" });
+});
+
+// @spec MEM-ADMIN-007
+test("without an admin store a viewers request is ignored", async () => {
+  const { onEvent, bus } = setup();
+  await onEvent(event("memory.viewers.request", { id: "v-1", op: "list" }));
+  assert.equal(bus.published.length, 0);
 });
 
 // @spec MEM-SURF-001, MEM-SURF-005

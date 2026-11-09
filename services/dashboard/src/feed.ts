@@ -15,6 +15,8 @@ export interface FeedDeps {
   /** How often staleness is re-evaluated and pushed; default 1000 ms. */
   tickMs?: number;
   replay?: number;
+  /** Receives each `memory.viewers.reply` seen on the stream (the Viewers routes wait on these); the feed itself never forwards it. */
+  onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void;
 }
 
 /** The slice of the service logger the feed's failure handling uses. */
@@ -77,6 +79,7 @@ export function createFeed(d: FeedDeps) {
       const fromId = history.at(-1)?.id ?? "$";
       void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId);
       void d.bus.tail((ev: BusEvent) => {
+        if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
         if (forwardable(ev)) for (const c of d.clients()) deliver(c, ev);
       });
       offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));

@@ -172,6 +172,24 @@ voice:
   voice: "af_heart"            # kokoro voice id
   speed: 1.05
   sample_rate: 24000
+  fallback:
+    # Said aloud when a line fails to play. Edit freely; voice regenerates the clips on its next start.
+    lines:
+      - "Error: unable to play line."
+      - "Sorry, that thought got lost somewhere between my brain and my mouth."
+      - "Uh. I had something really good there. It's gone now."
+      - "Line not found. Please insert witty remark and try again."
+      - "My voice just blue-screened. Pretend I said something clever."
+      - "Buffering. Buffering. Nope."
+      - "That was going to be hilarious. You'll have to trust me."
+      - "Packet loss. Emotional packet loss."
+      - "Hold on, my mouth is still loading."
+      - "I swear I was talking. The audio was not."
+      - "Speech module has left the chat."
+      - "Insert profound statement here."
+      - "Well, that line went straight into the void."
+      - "Technical difficulties. Please enjoy this awkward pause."
+      - "Error four oh four: words not found."
 
 avatar:
   driver: "${AVATAR_DRIVER:-null}"   # vtube-studio | vmc | null
@@ -195,6 +213,8 @@ ears:
   silence_ms: 700              # end-of-utterance detection
   min_speech_ms: 400
   stt_model: "${STT_MODEL}"
+  fallback:
+    min_interval_ms: 20000     # at most one fallback line per 20 s when many lines fail at once
 
 dashboard:
   port: 3000

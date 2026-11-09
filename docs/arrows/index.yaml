@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); gaps CFG-SCH-017, CFG-USR-009 (chunk 2); CFG-SCH-019, CFG-USR-010 (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); gaps CFG-SCH-019, CFG-USR-010 (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -185,7 +185,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); gaps VOICE-CLIP-001 to 012 (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
     drift: null
 
   avatar:

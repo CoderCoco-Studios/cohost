@@ -76,7 +76,7 @@ The store (`voice.ts:66-85`) is a `Map<id, Buffer>` plus an insertion-order arra
 | --- | --- |
 | `GET /audio/<id>.wav` where `id` matches `[\w-]+` and is stored | `200`, `content-type: audio/wav`, `content-length`, `access-control-allow-origin: *`, WAV body |
 | same path, id unknown or evicted | `404` body `gone` |
-| `GET /fallback/manifest.json`, `GET /fallback/<name>` (gap) | the fallback clip manifest and clips; see Fallback Clips (VOICE-CLIP-011, VOICE-CLIP-012) |
+| `GET /fallback/manifest.json`, `GET /fallback/<name>` | the fallback clip manifest and clips; see Fallback Clips (VOICE-CLIP-011, VOICE-CLIP-012) |
 | `GET /health` | `200` body `ok` (no check of Redis or TTS) |
 | anything else | `404`, empty body |
 
@@ -143,7 +143,7 @@ sequenceDiagram
 
 ## Fallback Clips
 
-voice generates the audio for the co-host's spoken fallback lines, the lines ears says when it cannot play an utterance ([ears](../ears/ears-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017). voice owns generation because it is the service that talks to TTS. It keeps one WAV per phrase in its own store and serves the set over its HTTP server. ears prefetches the set into its own cache, so playing a fallback never touches voice's HTTP server or TTS at the moment of failure. No file store is shared between the two services: binary transfer over HTTP is what HLD tenet 1 allows. All of this is a gap today (`VOICE-CLIP-*`, `[ ]`).
+voice generates the audio for the co-host's spoken fallback lines, the lines ears says when it cannot play an utterance ([ears](../ears/ears-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017). voice owns generation because it is the service that talks to TTS. It keeps one WAV per phrase in its own store and serves the set over its HTTP server. ears prefetches the set into its own cache, so playing a fallback never touches voice's HTTP server or TTS at the moment of failure. No file store is shared between the two services: binary transfer over HTTP is what HLD tenet 1 allows.
 
 Owner decisions:
 - voice generates the clips and serves them over HTTP; ears caches them.
@@ -270,8 +270,8 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 Files in this segment:
 
-- `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `wav.ts`, `health.ts`
-- `services/voice/test/boot.test.ts`, `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
+- `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `clips.ts`, `wav.ts`, `health.ts`
+- `services/voice/test/boot.test.ts`, `clips.test.ts`, `ears-sync.test.ts`, `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
 - `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
 

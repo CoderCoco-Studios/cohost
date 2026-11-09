@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import net, { type AddressInfo } from "node:net";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { wavWrap } from "@cohost/shared";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runVoice, type VoiceBus, type VoiceBoot } from "../src/boot.js";
 
@@ -28,14 +33,17 @@ class BootBus extends FakeBus {
   stop(): void { this.stopped = true; }
 }
 
-function boot(over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number } = {}) {
+function boot(over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number; lines?: string[]; clipDir?: string } = {}) {
   const bus = over.bus ?? new BootBus();
   const rec = recordingLog();
   const exits: number[] = [];
   const shutdown: (() => void | Promise<void>)[] = [];
   const b: VoiceBoot = {
     log: rec.log,
-    setup: () => ({ cfg: testConfig({ voice: { engine: over.engine ?? "stub" } }), bus, port: over.port ?? 0, publicUrl: "http://voice:8700" }),
+    setup: () => ({
+      cfg: testConfig({ voice: { engine: over.engine ?? "stub", fallback: { lines: over.lines ?? [] } } }),
+      bus, port: over.port ?? 0, publicUrl: "http://voice:8700", clipDir: over.clipDir,
+    }),
     onShutdown: (fn) => { shutdown.push(fn); },
     exit: (code) => { exits.push(code); },
   };
@@ -134,4 +142,72 @@ test("the stub engine logs a startup warning that utterances are silent", async 
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   assert.ok(t.rec.msgs("warn").some((m) => /stub/.test(String(m))));
   await t.close();
+});
+
+const freePort = async () => {
+  const probe = net.createServer();
+  await new Promise<void>((r) => probe.listen(0, r));
+  const port = (probe.address() as AddressInfo).port;
+  await new Promise((r) => probe.close(r));
+  return port;
+};
+
+// @spec VOICE-CLIP-008
+test("the stub engine never touches the clip store and answers 404 on the fallback routes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "voice-boot-"));
+  const clipDir = join(root, "voice", "fallback-clips");
+  const port = await freePort();
+  const t = boot({ engine: "stub", lines: ["Should never be spoken."], clipDir, port });
+  try {
+    void runVoice(t.b);
+    await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+    assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/manifest.json`)).status, 404);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/00-12345678.wav`)).status, 404);
+    assert.equal(existsSync(root + "/voice"), false, "nothing created under the data directory");
+  } finally {
+    await t.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// @spec VOICE-CLIP-003
+test("with the kokoro engine, clip generation starts after ready and does not hold up the bus loop", async () => {
+  const root = mkdtempSync(join(tmpdir(), "voice-boot-"));
+  const clipDir = join(root, "fallback-clips");
+  const requests: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const tts = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", async () => {
+      requests.push((JSON.parse(body) as { input: string }).input);
+      await gate;
+      res.writeHead(200, { "content-type": "audio/wav" });
+      res.end(wavWrap(Buffer.alloc(24000 * 2 * 0.3), 24000, 1));
+    });
+  });
+  await new Promise<void>((r) => tts.listen(0, "127.0.0.1", r));
+  const savedTts = process.env.TTS_URL;
+  process.env.TTS_URL = `http://127.0.0.1:${(tts.address() as AddressInfo).port}`;
+  const port = await freePort();
+  const t = boot({ engine: "kokoro", lines: ["Error: unable to play line."], clipDir, port });
+  try {
+    void runVoice(t.b);
+    await waitFor(() => states(t.bus).includes("ready") && t.bus.subscribed.length === 1, "ready and subscribed");
+    await waitFor(() => requests.length === 1, "first clip request");
+    assert.deepEqual(requests, ["Error: unable to play line."]);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/manifest.json`)).status, 404, "nothing committed while TTS is busy");
+    release();
+    await waitFor(() => existsSync(join(clipDir, "manifest.json")), "manifest committed");
+    const m = await (await fetch(`http://127.0.0.1:${port}/fallback/manifest.json`)).json() as { clips: { name: string }[] };
+    assert.equal(m.clips.length, 1);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/${m.clips[0]!.name}`)).status, 200);
+  } finally {
+    release();
+    await t.close();
+    await new Promise((r) => tts.close(r));
+    if (savedTts === undefined) delete process.env.TTS_URL; else process.env.TTS_URL = savedTts;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -581,3 +581,33 @@ test("ears.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects ne
   assert.equal(with_({ min_interval_ms: -1 }).success, false);
   assert.equal(with_({ min_interval_ms: 1.5 }).success, false);
 });
+
+// @spec CFG-SCH-017
+test("voice.fallback.lines defaults to an empty list, accepts duplicates, and rejects blank or over-long entries", () => {
+  const with_ = (fallback?: unknown) => ConfigSchema.safeParse({ ...baseCfg(), voice: fallback === undefined ? {} : { fallback } });
+  assert.deepEqual(with_().data!.voice.fallback.lines, []);
+  assert.deepEqual(with_({}).data!.voice.fallback.lines, []);
+  assert.deepEqual(with_({ lines: ["Oops.", "Oops."] }).data!.voice.fallback.lines, ["Oops.", "Oops."]);
+  assert.equal(with_({ lines: ["x".repeat(200)] }).success, true);
+  assert.equal(with_({ lines: ["x".repeat(201)] }).success, false, "over 200 characters");
+  assert.equal(with_({ lines: [""] }).success, false, "empty");
+  assert.equal(with_({ lines: ["   \t"] }).success, false, "blank after trimming");
+  assert.equal(with_({ lines: ["fine", " "] }).success, false, "one bad entry fails the load");
+  assert.equal(with_({ lines: "not a list" }).success, false);
+});
+
+// @spec CFG-USR-009
+test("the shipped config.example.yaml carries a starter fallback list of at least 12 lines, none naming the persona, with an edit comment, and ears.fallback.min_interval_ms 20000", () => {
+  const cfg = loadShipped();
+  const lines = cfg.voice.fallback.lines;
+  assert.ok(lines.length >= 12, `${lines.length} starter lines`);
+  for (const l of lines) {
+    assert.ok(!l.toLowerCase().includes(cfg.cohost.name.toLowerCase()), `names the persona: ${l}`);
+    assert.ok(l.length <= 120, `short enough to say in a few seconds: ${l}`);
+  }
+  assert.ok(lines.some((l) => l === "Error: unable to play line."));
+  const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  assert.match(text, /#[^\n]*[Ee]dit[^\n]*\n\s*lines:/, "a comment telling the owner to edit the list sits above it");
+  assert.match(text, /min_interval_ms:\s*20000\b/);
+  assert.equal(cfg.ears.fallback.min_interval_ms, 20000);
+});

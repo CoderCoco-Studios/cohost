@@ -6,6 +6,10 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 63 specs: 63 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
+## Pending cascade: viewer notes
+
+The memory viewer-notes design (memory LLD § Viewer notes) will need, once the owner answers its open questions: the `models` container to pull `NOTES_MODEL`, `.env.example` entries for `NOTES_MODEL` and `VIEWERS_TOKEN`, and a way to run the one-shot `consolidate` command after the stack stops (a stop script or a Compose one-shot service). No deployment spec is written yet; the launch mechanism depends on how the owner shuts the stack down.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

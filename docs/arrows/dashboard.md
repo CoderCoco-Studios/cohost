@@ -6,6 +6,14 @@ The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personali
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented. The server side and the page script (run under a stub DOM, `test/page.test.ts`) are covered by tests; UI-004, 005 and 007 to 011 and the wiring specs HTTP-009, HTTP-010 and CTRL-008 are not.
 
+## Planned: viewer notes (designed, not built)
+
+Design: LLD § Viewers page (layout "panel A", routes, Access protection options A to E). The spec file now holds 79 specs: 59 `[x]`, 20 `[ ]`.
+
+- Amended to `[ ]`: `DASH-FEED-001`, `DASH-FEED-002` (viewer-notes events excluded from `/ws`).
+- New `[ ]`: `DASH-FEED-007` (build chunk 3, with the first notes on the bus), `DASH-VIEWERS-001` to `017` (chunk 4).
+- Owner decision needed: the access option (A, a dedicated `VIEWERS_TOKEN`, is recommended). Open item: dashboard visual design to be revisited later.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

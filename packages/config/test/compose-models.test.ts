@@ -62,16 +62,16 @@ echo '{"status":"success"}' > "$out"
 const base = { LLM_MODEL: "llm:1", VISION_MODEL: "vis:1", EMBED_MODEL: "emb:1" };
 
 // @spec DEPLOY-COMPOSE-008
-test("models service pulls LLM, vision, embed and notes models, notes defaulting to gemma3:1b", () => {
-  assert.match(script, /\$\$\{NOTES_MODEL:-gemma3:1b\}/);
+test("models service pulls LLM, vision, embed and notes models, notes defaulting to gemma3:4b", () => {
+  assert.match(script, /\$\$\{NOTES_MODEL:-gemma3:4b\}/);
   assert.doesNotMatch(script, /STT_MODEL/);
   const unset = runModels(base, []);
   assert.equal(unset.status, 0);
-  assert.deepEqual(unset.pulled, ["llm:1", "vis:1", "emb:1", "gemma3:1b"]);
+  assert.deepEqual(unset.pulled, ["llm:1", "vis:1", "emb:1", "gemma3:4b"]);
   const empty = runModels({ ...base, NOTES_MODEL: "" }, []);
-  assert.equal(empty.pulled.at(-1), "gemma3:1b");
-  const custom = runModels({ ...base, NOTES_MODEL: "gemma3:4b" }, []);
-  assert.deepEqual(custom.pulled, ["llm:1", "vis:1", "emb:1", "gemma3:4b"]);
+  assert.equal(empty.pulled.at(-1), "gemma3:4b");
+  const custom = runModels({ ...base, NOTES_MODEL: "gemma3:12b" }, []);
+  assert.deepEqual(custom.pulled, ["llm:1", "vis:1", "emb:1", "gemma3:12b"]);
 });
 
 // @spec DEPLOY-COMPOSE-011
@@ -88,14 +88,14 @@ test("a failed LLM, vision or embed pull still exits non-zero after trying every
 
 // @spec DEPLOY-COMPOSE-011
 test("a failed notes-model pull is a warning and leaves the exit status at 0", () => {
-  const midstream = runModels(base, ["gemma3:1b"]);
+  const midstream = runModels(base, ["gemma3:4b"]);
   assert.equal(midstream.status, 0);
-  assert.match(midstream.stderr, /WARNING.*gemma3:1b/);
+  assert.match(midstream.stderr, /WARNING.*gemma3:4b/);
   const http = runModels({ ...base, NOTES_MODEL: "http-notes" }, ["http-notes"]);
   assert.equal(http.status, 0);
   assert.match(http.stderr, /WARNING/);
   // a required-model failure still wins when the notes pull also fails
-  assert.equal(runModels(base, ["llm:1", "gemma3:1b"]).status, 1);
+  assert.equal(runModels(base, ["llm:1", "gemma3:4b"]).status, 1);
 });
 
 // @spec DEPLOY-COMPOSE-011

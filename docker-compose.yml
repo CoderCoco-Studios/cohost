@@ -86,7 +86,7 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # Pulls the models named in .env once ollama is up, then exits; exits non-zero if a pull of the
   # LLM, vision or embedding model fails (no restart policy: a failed run stays visible in
-  # `docker compose ps`). NOTES_MODEL (viewer-note capture, default gemma3:1b) is pulled last and a
+  # `docker compose ps`). NOTES_MODEL (viewer-note capture, default gemma3:4b) is pulled last and a
   # failed pull of it is only a warning: capture then writes no notes.
   models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011, DEPLOY-COMPOSE-014
     image: curlimages/curl:latest
@@ -110,7 +110,7 @@ services:  # @spec DEPLOY-COMPOSE-001
         for m in "$$LLM_MODEL" "$$VISION_MODEL" "$$EMBED_MODEL"; do
           pull "$$m" || fail=1
         done
-        notes="$${NOTES_MODEL:-gemma3:1b}"
+        notes="$${NOTES_MODEL:-gemma3:4b}"
         pull "$$notes" || echo "WARNING: notes model $$notes not pulled; viewer-note capture will write no notes" >&2
         exit $$fail
 

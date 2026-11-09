@@ -222,7 +222,7 @@ It uses a very small, cheap classifier model through a region hook,
 `memory.capture`, configured by `brain.memory.notes.capture` (a `ModuleSchema`
 block: `kind`, `url`, `timeout_ms`, `llm{provider, model}`), so it has its own
 model slot and never shares the cortex's configuration
-(`MEM-CAPTURE-003`). The example ships `gemma3:1b` on local Ollama (`NOTES_MODEL`,
+(`MEM-CAPTURE-003`). The example ships `gemma3:4b` on local Ollama (`NOTES_MODEL`,
 CFG-USR-008). The hook decides whether the line is noteworthy, picks the
 category, drops politics and money, and writes the short note text and an optional
 hint (`MEM-CAPTURE-004`). Its rules fallback writes no note, so a slow, down or
@@ -607,6 +607,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Fade computation | Effective strength computed at read time from stored strength and time | a timer that decays stored values | Read-time math needs no scheduler and is exact for any gap; the consolidation pass only persists layer moves and drops. `[proposed]`; `MEM-NOTE-002` |
 | Sensitive categories | Politics never stored; health and family stored with a handling hint, surfaced rarely; money only as the subscriber flag | store everything and let the cortex decide; drop all sensitive topics | Owner decision: the co-host should understand viewers as people, including a death in the family, without quoting it back or exposing it; nobody is called out by wealth. `MEM-NOTE-009`, `MEM-NOTE-010`, `MEM-SURF-004` |
 | Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call | `[proposed]`. A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
+| Capture model | `gemma3:4b` (`NOTES_MODEL`), capture `timeout_ms` 20000 | `gemma3:1b` (rejected: a live run against Ollama on 2026-11-09 showed it answering in the wrong JSON shape, hint and category at the top level with `note: null`, so it silently writes no notes); a larger model (more GPU time for little gain on a short classification) | Owner decision 2026-11-09: `gemma3:4b` follows the schema and the politics, money and noise rules, at 2 to 4 s per line on CPU and about 13 s on the first, cold call; 20 s covers the cold call (`MEM-CAPTURE-003`, CFG-USR-008). The consolidator, on the cortex's model, cleans up what the small model gets wrong. |
 | Notes model egress | Notes hooks use local `ollama` unless the hook names a provider, even when the cortex is hosted; `mock` is inherited | inherit `llm.provider` like the other hooks | Owner decision. A hosted cortex model must not silently carry every chat line and health or family notes off the LAN (HLD tenet 8); the isolation preset still reaches the hooks. `MEM-NOTE-011` |
 | Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler | `[proposed]`. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
 | Consolidation trigger | Dirty-note count reaches `dirty_threshold` (default 20), plus one run after the owner shuts the AI down; dirty flags are the catch-up state | nightly schedule; every N minutes; after every write | Owner decision: no nightly schedule (the box may be off); work scales with what was captured; a missed run is caught up by the next one, as the reflection cursor does. `MEM-CONSOL-001`, `MEM-CONSOL-012`, `MEM-CONSOL-015` |
@@ -648,12 +649,7 @@ The running cortex does not learn of the change until a `reload_personality` con
    not reused.
 
 ### Open (viewer notes, owner decisions needed)
-1. **Capture model.** The example's `NOTES_MODEL` default is `gemma3:1b`
-   `[proposed]`: the smallest current non-reasoning instruct model on the Ollama
-   library that answers JSON reliably. A larger sibling (`gemma3:4b`) trades GPU
-   time for better sensitivity judgement; the consolidator, which runs on the
-   cortex's model, cleans up what the small model gets wrong.
-2. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
+1. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
    chat viewer is out of scope `[proposed]`.
 
 Settled by the owner and recorded above: categories are `general`, `health` and

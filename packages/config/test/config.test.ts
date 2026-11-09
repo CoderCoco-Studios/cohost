@@ -535,9 +535,10 @@ test("the shipped example configures the capture hook on its own small ollama mo
   const c = cfg.brain.memory.notes.capture;
   assert.equal(c.kind, "llm");
   assert.equal(c.llm.provider, "ollama");
-  assert.equal(c.llm.model, "gemma3:1b");
+  assert.equal(c.llm.model, "gemma3:4b");
+  assert.equal(c.timeout_ms, 20000);
   assert.notEqual(c.llm.model, cfg.llm.model, "its own model slot, not the cortex's");
   assert.equal(loadShippedBare({ NOTES_MODEL: "other:tag" }).cfg.brain.memory.notes.capture.llm.model, "other:tag");
-  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:1b\}/);
-  assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:1b$/m);
+  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:4b\}/);
+  assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:4b$/m);
 });

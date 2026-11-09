@@ -30,7 +30,7 @@ The dashboard is also the only path by which a player on the host (outside the C
 7. `server.listen(PORT, bind?)`; the heartbeat becomes `ready` only once listening (`:53-54`). With control disabled `bind` is undefined, so Node listens on all interfaces; compose publishes `${DASHBOARD_PORT:-3000}:3000` (`docker-compose.yml`, dashboard service).
 8. `onShutdown` clears the sweeper, stops the feed, closes the WebSocket and HTTP servers, stops the bus (`:56`). The heartbeat's `stopping` is published by `startHeartbeat`'s own shutdown hook (control-plane).
 
-Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), `VIEWERS_TOKEN` (Viewers page, gap), plus the heartbeat interval env owned by control-plane.
+Environment read by this segment: `PORT`, `VOICE_URL` / `VOICE_PORT` (via `urls.voice()`, `packages/config/src/index.ts:163`), `DASHBOARD_URL` (via `urls.dashboard()`, `:165`, used to build upload URLs), `CONTROL_ENABLED`, `CONTROL_TOKEN`, `CONTROL_BIND`, `CONTROL_ADVANCED` (`packages/control/src/config.ts:24-37`), `INJECT_MAX_IMAGE_BYTES`, `INJECT_MAX_AUDIO_BYTES`, `INJECT_TTL_MS` (`uploads.ts:27-39`), `VIEWERS_TOKEN` (Viewers page; env only), plus the heartbeat interval env owned by control-plane.
 
 ## HTTP surface
 
@@ -49,7 +49,7 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | `PUT /personality` | save body, publish `control {cmd: "reload_personality"}`, `204` | yes | `:105-112` |
 | `POST /control` | publish `control {cmd, text, target}`, `204`; the event schema validates `cmd` | yes | `:113-120` |
 | `POST /sink` | `event: "playing"` publishes `voice.playing`, `event: "done"` publishes `voice.done`, both with `sink: "dashboard"`, `204`; any other `event` is `400` and publishes nothing (DASH-SINK-003) | no | `:121-128` |
-| `GET /viewers*`, `POST /viewers*` | Viewers page (below); gap | always, by `VIEWERS_TOKEN` | DASH-VIEWERS-* |
+| `GET /viewers*`, `POST /viewers*` | Viewers page (below) | always, by `VIEWERS_TOKEN` | DASH-VIEWERS-* |
 | any method `/health` | `200 ok` | no | `:130` |
 | anything else | `404 not found` | n/a | `:132` |
 
@@ -100,8 +100,7 @@ A single static file with inline CSS and JS (no build step, no framework). The s
 
 ## Viewers page
 
-Gap: everything in this section is specified by `[ ]` lines (`DASH-VIEWERS-*`,
-`DASH-FEED-007`). The owner's requirements are settled: every stored viewer note is
+The owner's requirements are settled (`DASH-VIEWERS-*`, `DASH-FEED-007`): every stored viewer note is
 visible and deletable here, the regular flag is set here, and the layout is
 "panel A" below, and every `/viewers` route requires `VIEWERS_TOKEN`. Route
 names, the timeout and the response codes are `[proposed]`.
@@ -162,8 +161,7 @@ Two paths would leak them today: the open `/ws` feed (it forwards every bus even
 and any open read route. The design closes both:
 
 1. The feed never forwards the viewer-notes events (DASH-FEED-007). This holds
-   whatever option below is chosen, and it lands with the first change that puts
-   notes on the bus (cortex surfacing).
+   whatever option below is chosen.
 2. Every `/viewers` route, reads included, requires `Authorization: Bearer
    <VIEWERS_TOKEN>`, a secret in `.env`, independent of control mode; with
    `VIEWERS_TOKEN` unset every `/viewers` route answers 403 with a message telling
@@ -225,7 +223,6 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 3. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
 4. `index.html` carries a duplicated comment on the same CSS line (`:41`) and the pause/resume commands are reachable only by raw `POST /control` (`:165-171`).
 5. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
-6. **`.env.example` entry for `VIEWERS_TOKEN`.** Access option A is decided; documenting the variable in `.env.example` is a deployment cascade.
 
 ## References
 

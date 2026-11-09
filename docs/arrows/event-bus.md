@@ -6,12 +6,13 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented.
 
-## Planned: viewer notes (designed, not built)
+## Viewer notes events: `memory.viewers.*` built (chunk 4)
 
-Design: LLD § Event catalogue, "Planned viewer-notes events". The spec file now holds 64 specs: 60 `[x]`, 4 `[ ]`.
+Design: LLD § Event catalogue, "Planned viewer-notes events". The spec file holds 64 specs: 61 `[x]`, 3 `[ ]`.
 
 - Amended to `[ ]`: `BUS-EVT-001` (23 event types), `BUS-EVT-010` (`memory.viewer.regular` replaces `notes`).
-- New `[ ]`: `BUS-EVT-020` (`memory.notes.request` / `reply`, chunk 3), `BUS-EVT-021` (`memory.viewers.request` / `reply`, chunk 4). Names and shapes `[proposed]`.
+- `[x]` `BUS-EVT-021` (`memory.viewers.request` as a union of the six ops, `memory.viewers.reply`; test in `bus.test.ts`). Names and shapes `[proposed]`.
+- Still `[ ]`: `BUS-EVT-020` (`memory.notes.request` / `reply`, chunk 3). `BUS-EVT-001` stays `[ ]`: `EventPayloads` holds 21 types with the two `memory.viewers.*` events, and the count of 23 is reached when chunk 3 adds `memory.notes.*`.
 
 ## Decisions applied
 

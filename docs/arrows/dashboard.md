@@ -6,13 +6,13 @@ The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personali
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented. The server side and the page script (run under a stub DOM, `test/page.test.ts`) are covered by tests; UI-004, 005 and 007 to 011 and the wiring specs HTTP-009, HTTP-010 and CTRL-008 are not.
 
-## Planned: viewer notes (designed, not built)
+## Viewer notes: Viewers page built (chunk 4)
 
-Design: LLD § Viewers page (layout "panel A", routes, Access protection options A to E). The spec file now holds 79 specs: 59 `[x]`, 20 `[ ]`.
+Design: LLD § Viewers page (layout "panel A", routes, Access protection options A to E). The spec file holds 79 specs: 79 `[x]`, 0 `[ ]`.
 
-- Amended to `[ ]`: `DASH-FEED-001`, `DASH-FEED-002` (viewer-notes events excluded from `/ws`).
-- New `[ ]`: `DASH-FEED-007` (build chunk 3, with the first notes on the bus), `DASH-VIEWERS-001` to `017` (chunk 4).
-- Access: option A, a dedicated `VIEWERS_TOKEN` on every `/viewers` route (owner decision). Open item: dashboard visual design to be revisited later.
+- Built: `DASH-VIEWERS-001` to `017` (`src/viewers.ts`: `ViewersClient` request/reply over the bus with a 3000 ms timeout, `handleViewers` routes and `VIEWERS_TOKEN` gate; the Viewers tab in `public/index.html`), and `DASH-FEED-001`, `002`, `007` (`feed.ts` `VIEWER_NOTE_EVENTS`: the four viewer-notes events never reach `/ws`, live or in the replay; `memory.viewers.reply` is handed to the `ViewersClient` instead). The `memory.notes.*` names are filtered by name, so the filter already holds when cortex surfacing (chunk 3) puts them on the bus.
+- Tests: `test/viewers.test.ts` (routes, token gate, reply mapping, timeout, body caps), `test/feed.test.ts`, `test/page.test.ts` (page script under the stub DOM). The page was also driven once in headless Chrome against the real handler and memory admin (list, search, select, delete with reason, undo, regular toggle, name field, clear, token prompt); that check is not part of the suite.
+- Access: option A, a dedicated `VIEWERS_TOKEN` on every `/viewers` route (owner decision), env only (`CFG-ENV-009`). Open item: dashboard visual design to be revisited later (LLD Open Questions 5).
 
 ## Decisions applied
 

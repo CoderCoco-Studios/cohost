@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { MemoryBackend } from "../src/store.js";
+import { cosine } from "../src/notes.js";
 
 export const DAY = 86_400_000;
 export const T0 = new Date("2026-03-01T12:00:00Z").getTime();
@@ -115,6 +116,48 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.equal(clamped.strength, 1);
     assert.equal((await store.insertNote({ userKey: key, category: "general", text: "under", strength: -3 })).strength, 0);
     assert.equal((await store.listNotes(key)).length, 5);
+  });
+
+  // @spec MEM-CAPTURE-011, MEM-VIEWER-001
+  t("ensureViewer creates a missing row with msg_count 0 and leaves an existing row alone; the next chat line counts as the first", async ({ store }) => {
+    const key = uid();
+    const made = await store.ensureViewer(key.toUpperCase(), "Bob");
+    assert.deepEqual([made.key, made.display, made.msgCount, made.placeholder, made.regular], [key, "Bob", 0, false, false]);
+    await store.ensureViewer(key, "Other");
+    const same = (await store.getViewer(key))!;
+    assert.deepEqual([same.display, same.msgCount], ["Bob", 0], "an existing row is untouched");
+    const touch = await store.touchViewer(key, "Bob");
+    assert.deepEqual([touch.msgCount, touch.isNew], [1, true]);
+    await store.ensureViewer(key, "Bob");
+    assert.equal((await store.getViewer(key))!.msgCount, 1, "an existing counted row keeps its count");
+  });
+
+  // @spec MEM-CAPTURE-011, MEM-REG-004
+  t("ensureViewer claims a matching placeholder without counting a message, keeping the flag and notes", async ({ store }) => {
+    const name = `Quinn${uid("")}`;
+    await store.setRegular(name, true);
+    const note = await store.insertNote({ userKey: name.toLowerCase(), category: "general", text: "streams on fridays" });
+    const userId = `id-${uid("")}`;
+    const row = await store.ensureViewer(userId, name.toUpperCase());
+    assert.deepEqual([row.key, row.msgCount, row.placeholder, row.regularManual], [userId, 0, false, true]);
+    assert.equal(await store.getViewer(name.toLowerCase()), undefined);
+    assert.deepEqual((await store.listNotes(userId)).map((n) => n.id), [note.id]);
+    const touch = await store.touchViewer(userId, name);
+    assert.deepEqual([touch.msgCount, touch.isNew, touch.regular], [1, true, true]);
+  });
+
+  // @spec MEM-CAPTURE-005, MEM-CAPTURE-006
+  t("embedText embeds with the store's own embedder, so a note's embedding is comparable and insertNote can reuse it", async ({ store }) => {
+    const key = uid();
+    await store.touchViewer(key, "Bob");
+    const a = await store.embedText("plays Elden Ring every night");
+    const b = await store.embedText("plays Elden Ring every night");
+    assert.ok(a.length > 0);
+    assert.equal(cosine(a, b) > 0.999, true);
+    const n = await store.insertNote({ userKey: key, category: "general", text: "plays Elden Ring every night", embedding: a });
+    assert.ok(cosine(n.embedding, a) > 0.999, "the supplied embedding is stored");
+    const [stored] = await store.listNotes(key);
+    assert.ok(cosine(stored!.embedding, a) > 0.999);
   });
 
   // @spec MEM-NOTE-005, MEM-NOTE-004
@@ -312,5 +355,42 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.insertNote({ userKey: key, category: "general", text: "again" });
     assert.equal(await store.clearNotes(key, "   "), 1);
     assert.equal((await store.listDeletions(key)).at(-1)!.reason, null, "a blank reason stores none");
+  });
+
+  // @spec MEM-SURF-002
+  t("a viewer is found by display name, case-insensitively, the most recently seen when several share it", async ({ store, advance }) => {
+    const name = `Shared${uid("")}`;
+    const first = uid("first");
+    const second = uid("second");
+    await store.touchViewer(first, name);
+    advance(1000);
+    await store.touchViewer(second, name.toUpperCase());
+    assert.equal((await store.findViewerByDisplay(name.toLowerCase()))!.key, second, "latest last_seen wins");
+    advance(1000);
+    await store.touchViewer(first, name);
+    assert.equal((await store.findViewerByDisplay(name))!.key, first);
+    assert.equal(await store.findViewerByDisplay(`Nobody${uid("")}`), undefined);
+    const renamed = uid("renamed");
+    await store.touchViewer(renamed, `Old${renamed}`);
+    await store.touchViewer(renamed, `New${renamed}`);
+    assert.equal(await store.findViewerByDisplay(`Old${renamed}`), undefined, "lookups use the current display");
+    assert.equal((await store.findViewerByDisplay(`new${renamed}`))!.key, renamed);
+  });
+
+  // @spec MEM-SURF-004
+  t("markSurfaced records the time on the named notes only", async ({ store, now }) => {
+    const key = uid();
+    await store.touchViewer(key, "Bob");
+    const a = await store.insertNote({ userKey: key, category: "health", text: "has a cold" });
+    const b = await store.insertNote({ userKey: key, category: "general", text: "plays celeste" });
+    assert.equal(a.lastSurfacedAt, null);
+    const at = new Date(now() + 5000);
+    await store.markSurfaced([a.id], at);
+    await store.markSurfaced([], at);
+    const notes = new Map((await store.listNotes(key)).map((n) => [n.id, n]));
+    assert.equal(notes.get(a.id)!.lastSurfacedAt!.getTime(), at.getTime());
+    assert.equal(notes.get(b.id)!.lastSurfacedAt, null);
+    assert.equal(notes.get(a.id)!.version, a.version, "surfacing is not a content change: the version stays");
+    assert.equal(notes.get(a.id)!.dirty, a.dirty);
   });
 }

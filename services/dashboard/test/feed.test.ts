@@ -107,6 +107,34 @@ test("heartbeats never reach the event feed or the connect replay; other events 
   t.feed.stop();
 });
 
+// @spec DASH-FEED-007, DASH-FEED-001, DASH-FEED-002
+test("viewer-notes events never reach /ws: not in the connect replay, not live, not while a replay is held", async () => {
+  const t = setup();
+  const ws = new Sock(); t.socks.add(ws);
+  const notes = () => [
+    event("memory.notes.request", { id: "n", users: ["bob"] }),
+    event("memory.notes.reply", { id: "n", viewers: [{ user: "Bob", regular: true, msgCount: 9, notes: [{ layer: "core", category: "health", hint: "gently", strength: 1 }] }] }),
+    { ...event("brain.status", { state: "idle" }), type: "memory.viewers.request" } as unknown as BusEvent,
+    { ...event("brain.status", { state: "idle" }), type: "memory.viewers.reply" } as unknown as BusEvent,
+  ];
+  t.recentEvents.push(...notes(), event("brain.status", { state: "idle" }));
+  await t.feed.start();
+  await t.feed.onConnection(ws);
+  assert.deepEqual(ws.sent.filter((m) => m.type !== "services").map((m) => m.type), ["brain.status"]);
+  ws.sent.length = 0;
+  for (const n of notes()) t.emit(n);
+  t.emit(event("memory.recall.reply", { id: "r", memories: [] }));
+  assert.deepEqual(ws.sent.map((m) => m.type), ["memory.recall.reply"], "other memory events still flow");
+  const release = t.holdReplay();
+  const late = new Sock(); t.socks.add(late);
+  const done = t.feed.onConnection(late);
+  for (const n of notes()) t.emit(n);
+  release();
+  await done;
+  assert.deepEqual(late.sent.filter((m) => m.type !== "services").map((m) => m.type), ["brain.status"]);
+  t.feed.stop();
+});
+
 const ev = (id: string, type: "brain.status" | "voice.utterance" = "brain.status"): BusEvent =>
   ({ ...event("brain.status", { state: "idle" }), id, type }) as BusEvent;
 

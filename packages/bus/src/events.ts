@@ -125,13 +125,44 @@ export const EventPayloads = {
     ),
   }),
 
-  /** memory → cortex: who this viewer is, emitted when they address the co-host. */
+  /** memory → cortex: who this viewer is, emitted when they address the co-host. Carries no note text. */
   // @spec BUS-EVT-010
   "memory.viewer": z.object({
     user: z.string(),
     isNew: z.boolean(),
     msgCount: z.number().int(),
-    notes: z.string().default(""),
+    regular: z.boolean(),
+  }),
+
+  /** cortex → memory: the viewer notes for these names. The first is the viewer being replied to. */
+  // @spec BUS-EVT-020
+  "memory.notes.request": z.object({
+    id: z.string(),
+    users: z.array(z.string()).nonempty(),
+  }),
+  /**
+   * memory → cortex: the notes of each viewer memory resolved, no subscriber status. `text` is absent for
+   * `health` and `family` notes, which carry only a handling hint. Carries note text: never forwarded to `/ws`.
+   */
+  // @spec BUS-EVT-020
+  "memory.notes.reply": z.object({
+    id: z.string(),
+    viewers: z.array(
+      z.object({
+        user: z.string(),
+        regular: z.boolean(),
+        msgCount: z.number().int(),
+        notes: z.array(
+          z.object({
+            layer: z.enum(["core", "recent"]),
+            category: z.enum(["general", "health", "family"]),
+            text: z.string().optional(),
+            hint: z.string().optional(),
+            strength: z.number().min(0).max(1),
+          }),
+        ),
+      }),
+    ),
   }),
 
   /** dashboard → memory: an owner operation on viewer notes (Viewers page). Never forwarded to the browser feed. */

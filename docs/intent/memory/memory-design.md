@@ -54,19 +54,19 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance | `region.ts:38-43` |
 | in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts:45-50` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts:52-60` |
-| in | `chat.message` | `memory-notes` `[proposed]` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | gap |
+| in | `chat.message` | `memory-notes` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | `capture.ts` |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
-| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | gap |
-| in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `region.ts`, `admin.ts` |
-| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts:31-32`; `regular` is a gap (`MEM-VIEWER-002`) |
+| in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
+| in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
+| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
 | out | `memory.recall.reply` | | `{id, memories:[{ts(epoch ms), kind, who, text, similarity}]}` | `region.ts:55-58` |
-| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | gap (`MEM-SURF-001`) |
+| out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | `surface.ts` (`MEM-SURF-001`) |
 | out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | `admin.ts` (`MEM-ADMIN-007`) |
 
 Two consumer groups exist so a recall never queues behind the embed plus INSERT
 writes (`startup.ts:59`). A third group, `memory-notes`, runs live note capture,
 so a slow classifier call never delays memory writes or recall answers
-(`MEM-CAPTURE-001`) `[proposed]`. All subscribe with the bus start mode `resume`
+(`MEM-CAPTURE-001`). All subscribe with the bus start mode `resume`
 (`MEM-EVT-001`): a group the subscription creates starts at the newest entry
 (`XGROUP CREATE ... $`), and a group that already exists resumes after its last
 delivered entry. So:
@@ -79,9 +79,9 @@ delivered entry. So:
   uses start mode `latest`, which resets its group to `$` on each start; memory
   is the exception because the backlog is exactly what it exists to keep.
 
-Both subscriptions pass `start: "resume"` (`startup.ts:60-61`). The control-plane
-manifest also starts memory in `resume` mode (`packages/control/src/manifest.ts:43`);
-a control-plane `fresh` start resets both groups to `$` first.
+Every subscription passes `start: "resume"` (`startup.ts`). The control-plane
+manifest also starts memory in `resume` mode (`packages/control/src/manifest.ts`);
+a control-plane `fresh` start resets its three groups to `$` first.
 
 `ready` should be reported once both consumer groups exist (`MEM-START-005`, open).
 The bus reports no event for group creation, so `startup.ts` starts the
@@ -222,8 +222,8 @@ It uses a very small, cheap classifier model through a region hook,
 `memory.capture`, configured by `brain.memory.notes.capture` (a `ModuleSchema`
 block: `kind`, `url`, `timeout_ms`, `llm{provider, model}`), so it has its own
 model slot and never shares the cortex's configuration
-(`MEM-CAPTURE-003`). Which small model the example ships is chosen during build
-chunk 2 (Open Questions). The hook decides whether the line is noteworthy, picks the
+(`MEM-CAPTURE-003`). The example ships `gemma3:1b` on local Ollama (`NOTES_MODEL`,
+CFG-USR-008). The hook decides whether the line is noteworthy, picks the
 category, drops politics and money, and writes the short note text and an optional
 hint (`MEM-CAPTURE-004`). Its rules fallback writes no note, so a slow, down or
 confused classifier costs only a missed note. The hook input is the viewer's name,
@@ -401,6 +401,7 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Strength underflow after a long gap | effective strength is clamped to 0 to 1; a non-finite result counts as 0 | `MEM-NOTE-003` |
 | Clearing all notes | each note becomes a deletion record carrying the one reason (or none), so each can be restored | `MEM-ADMIN-005` |
 | Undoing a deletion | the note returns at the strength it had when deleted and fades from the restore time; its suppression rule is lifted | `MEM-ADMIN-004` |
+| Sensitive cooldown under concurrent requests | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a once-per-24-hours courtesy, not a safety property (the note text never leaves memory), and the cortex asks once per reply, so two requests racing in the same instant is rare and costs at most one repeated hint. `MEM-SURF-004` |
 | Suppression matching | embedding similarity against the same viewer's reason-carrying deletions only; the hash embedder (isolation) matches on shared words | `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected `[proposed]` | `MEM-EVT-002` |
 | How the stack was stopped | irrelevant: graceful stops set `notes.shutdown_run_owed` and the next start catches up; the one-shot is optional | `MEM-CONSOL-012`, `MEM-CONSOL-013` |
@@ -438,7 +439,7 @@ Factories in `services/memory/src/backend.ts`:
 Both stores implement `MemoryBackend` (`services/memory/src/store.ts`): `init, remember,
 recall, touchViewer, recentSince, getMeta, setMeta, close` for memories, viewers and
 metadata, and for viewer notes `getViewer, setRegular, insertNote, reinforceNote,
-listNotes, listDeletions, deleteNote, dirtyNoteCount, dirtyViewerKeys, commitViewer,
+listNotes, listDeletions, deleteNote, ensureViewer, embedText, dirtyNoteCount, dirtyViewerKeys, commitViewer,
 purgeSoftDeletions, withConsolidationLock`. `region.ts` types the store as
 `Pick<MemoryStore, ...>` of the methods it uses, which either backend satisfies
 structurally.
@@ -518,8 +519,8 @@ Redis, Ollama or Postgres):
    `DimensionMismatchError` is rethrown at once, without a retry
    (`MEM-STORE-002`). Otherwise a single `store.init()` on the fake
    (`startup.ts:56`).
-5. Start both subscriptions with `start: "resume"`, call `heartbeat.ready()`
-   (ideally once both groups exist, `MEM-START-005`), log `memory online`
+5. Start the subscriptions (`memory`, `memory-recall` and `memory-notes`) with `start: "resume"`, call `heartbeat.ready()`
+   (once every group exists, `MEM-START-005`), log `memory online`
    (`startup.ts:58-63`).
 
 Health (`health.ts`): `MemoryHealth` builds the `HeartbeatSpec`. `mode` is `live`
@@ -605,7 +606,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Note shape | Two layers (core, recent) with a strength that mentions reinforce and time fades; core fades slower and can fall back to recent and drop | one flat list with a fixed expiry; an importance score set once by the model; keep notes forever | Owner decision: something mentioned a lot becomes or stays core, stale recent notes disappear, and even core facts eventually go when never mentioned again. Formulas and defaults are `[proposed]`. `MEM-NOTE-002` to `MEM-NOTE-008` |
 | Fade computation | Effective strength computed at read time from stored strength and time | a timer that decays stored values | Read-time math needs no scheduler and is exact for any gap; the consolidation pass only persists layer moves and drops. `[proposed]`; `MEM-NOTE-002` |
 | Sensitive categories | Politics never stored; health and family stored with a handling hint, surfaced rarely; money only as the subscriber flag | store everything and let the cortex decide; drop all sensitive topics | Owner decision: the co-host should understand viewers as people, including a death in the family, without quoting it back or exposing it; nobody is called out by wealth. `MEM-NOTE-009`, `MEM-NOTE-010`, `MEM-SURF-004` |
-| Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call | `[proposed]` (the hook mechanism; the model name is chosen in build chunk 2). A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
+| Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call | `[proposed]`. A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
 | Notes model egress | Notes hooks use local `ollama` unless the hook names a provider, even when the cortex is hosted; `mock` is inherited | inherit `llm.provider` like the other hooks | Owner decision. A hosted cortex model must not silently carry every chat line and health or family notes off the LAN (HLD tenet 8); the isolation preset still reaches the hooks. `MEM-NOTE-011` |
 | Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler | `[proposed]`. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
 | Consolidation trigger | Dirty-note count reaches `dirty_threshold` (default 20), plus one run after the owner shuts the AI down; dirty flags are the catch-up state | nightly schedule; every N minutes; after every write | Owner decision: no nightly schedule (the box may be off); work scales with what was captured; a missed run is caught up by the next one, as the reflection cursor does. `MEM-CONSOL-001`, `MEM-CONSOL-012`, `MEM-CONSOL-015` |
@@ -647,10 +648,11 @@ The running cortex does not learn of the change until a `reload_personality` con
    not reused.
 
 ### Open (viewer notes, owner decisions needed)
-1. **Capture model (deliberately deferred).** Which small model the capture hook
-   uses, and therefore the `NOTES_MODEL` default in the example config, is chosen
-   during build chunk 2 by trying candidates on real chat; the consolidator uses
-   the cortex's model.
+1. **Capture model.** The example's `NOTES_MODEL` default is `gemma3:1b`
+   `[proposed]`: the smallest current non-reasoning instruct model on the Ollama
+   library that answers JSON reliably. A larger sibling (`gemma3:4b`) trades GPU
+   time for better sensitivity judgement; the consolidator, which runs on the
+   cortex's model, cleans up what the small model gets wrong.
 2. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
    chat viewer is out of scope `[proposed]`.
 

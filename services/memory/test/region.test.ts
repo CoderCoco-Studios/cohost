@@ -35,11 +35,11 @@ test("every chat line counts toward the viewer; only lines addressed to the co-h
   assert.deepEqual(calls[1], { op: "touchViewer", args: ["Bob", "Bob", { isSub: false }] });
 });
 
-// @spec MEM-WRITE-001, MEM-VIEWER-002, MEM-VIEWER-004
-test("a mention announces the viewer before the (slow) embed + store", async () => {
-  const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "speedrunner", isNew: false, regular: true });
+// @spec MEM-WRITE-001, MEM-VIEWER-002
+test("a mention announces the viewer (with regular, no notes text) before the (slow) embed + store", async () => {
+  const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "legacy text", isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
-  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, notes: "speedrunner" }]);
+  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, regular: true }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
   assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco"]);
 });
@@ -159,4 +159,26 @@ test("without an admin store a viewers request is ignored", async () => {
   const { onEvent, bus } = setup();
   await onEvent(event("memory.viewers.request", { id: "v-1", op: "list" }));
   assert.equal(bus.published.length, 0);
+});
+
+// @spec MEM-SURF-001, MEM-SURF-005
+test("memory.notes.request is answered with the same id; a store error answers an empty list and logs a warning", async () => {
+  const store = {
+    touchViewer: async () => ({ msgCount: 1, notes: "", isNew: true, regular: false }), remember: async () => {}, recall: async () => [],
+    findViewerByDisplay: async (name: string) => {
+      if (name === "Boom") throw new Error("db down");
+      return { key: "u1", display: "Alice", msgCount: 40, regular: true, regularManual: false, isSub: true, placeholder: false, firstSeen: new Date(), lastSeen: new Date() };
+    },
+    listNotes: async () => [], markSurfaced: async () => {},
+  };
+  const warnings: unknown[] = [];
+  const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
+  const bus = new FakeBus();
+  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log });
+  await onEvent(event("memory.notes.request", { id: "n1", users: ["alice"] }));
+  assert.deepEqual(bus.of("memory.notes.reply"), [{ id: "n1", viewers: [{ user: "Alice", regular: true, msgCount: 40, notes: [] }] }]);
+  await onEvent(event("memory.notes.request", { id: "n2", users: ["Boom"] }));
+  assert.deepEqual(bus.of("memory.notes.reply")[1], { id: "n2", viewers: [] });
+  assert.equal(warnings.length, 1);
+  assert.doesNotMatch(JSON.stringify(warnings), /Boom|Alice/, "no names or note text in the warning");
 });

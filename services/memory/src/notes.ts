@@ -68,6 +68,8 @@ export interface NewNote {
   strength?: number;
   mentions?: number;
   dirty?: boolean;
+  /** The text's embedding when the caller already computed it with the store's embedder (`embedText`), so the store does not embed twice. */
+  embedding?: number[];
 }
 
 /** One change a consolidation pass wants made to a viewer's notes; it applies only while the note's version is still `version`. */
@@ -127,6 +129,24 @@ export const defaultHint = (category: Category): string | undefined => DEFAULT_H
 /** The trimmed hint, or the category default when a `health` or `family` note has none. */
 export function withDefaultHint(category: Category, hint: string | null | undefined): string | undefined {
   return hint?.trim() || defaultHint(category);
+}
+
+// @spec MEM-NOTE-009
+const FORBIDDEN_TOPICS: readonly RegExp[] = [
+  // politics
+  /\b(politic\w*|election|vot(?:e|es|ed|ing)|democrat\w*|republican\w*|liberals?|conservatives?|trump|biden|maga|gop|leftists?|right-wing|left-wing|communis\w*|socialis\w*|fascis\w*|libertarian\w*|abortion|immigration)\b/i,
+  // money, wealth and spending
+  /\$\s?\d/,
+  /\b\d[\d,.]*\s?(?:k|usd|dollars?|bucks|euros?)\b/i,
+  /\b(salary|paycheck|income|net worth|wealth|wealthy|rich|millionaire|billionaire|in debt|mortgage|donat(?:e|es|ed|ing|ion|ions))\b/i,
+  /\b(?:spen[dt]|spending)\b[^.]*\b(?:money|cash|dollars|bucks)\b/i,
+  // subscriber status lives only on the viewer row
+  /\b(subs?|subscribers?|subscribed|subscriptions?|resub(?:bed)?)\b/i,
+];
+
+/** True when `text` is about the viewer's politics, money or subscriber status: a deterministic backstop to the model prompts, since such a note is never stored. */
+export function mentionsForbiddenTopic(text: string): boolean {
+  return FORBIDDEN_TOPICS.some((re) => re.test(text));
 }
 
 export function cosine(a: number[], b: number[]): number {

@@ -21,6 +21,7 @@ import { createMemoryEmbedder, createStore } from "./backend.js";
 import { createMemoryHandler } from "./region.js";
 import { runConsolidation } from "./consolidation.js";
 import { createConsolidatorHook } from "./consolidator.js";
+import { createCaptureHandler, createCaptureHook } from "./capture.js";
 import { ConsolidationScheduler } from "./scheduler.js";
 import { startMemory } from "./startup.js";
 
@@ -40,6 +41,14 @@ const scheduler = new ConsolidationScheduler({
   runPass: ({ gate, signal }) => runConsolidation({ store, hook: consolidator, cfg: cfg.brain.memory, log, gate, signal }),
 });
 const onEvent = createMemoryHandler({ cfg, bus, store, admin: store, log, onBrainStatus: (state) => scheduler.onBrainStatus(state) });
+// Live note capture: its own small model (never the cortex's), in its own consumer group; new dirty notes feed the scheduler.
+const onCaptureEvent = createCaptureHandler({
+  cfg: cfg.brain.memory,
+  store,
+  hook: createCaptureHook(cfg, log),
+  log,
+  onNotesWritten: () => scheduler.notifyDirty(), // @spec MEM-CONSOL-001
+});
 
 const main = () => startMemory({
   cfg: cfg.brain.memory,
@@ -50,6 +59,7 @@ const main = () => startMemory({
   heartbeat,
   ping: () => new Ollama(cfg.llm).ping(),
   onEvent,
+  onCaptureEvent,
   onStarted: () => scheduler.startup(), // @spec MEM-CONSOL-015
   sleep,
 });

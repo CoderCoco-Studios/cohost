@@ -16,7 +16,45 @@ test("every region event validates its documented shape", () => {
   assert.equal(EventPayloads["affect.state"].safeParse({ valence: 2, arousal: 0.4, mood: "happy" }).success, false);
   assert.ok(EventPayloads["memory.recall.request"].safeParse({ id: "x", query: "q" }).success);
   assert.ok(EventPayloads["memory.recall.reply"].safeParse({ id: "x", memories: [{ ts: 1, kind: "chat", who: "u", text: "t" }] }).success);
-  assert.ok(EventPayloads["memory.viewer"].safeParse({ user: "u", isNew: true, msgCount: 1 }).success);
+  const viewer = EventPayloads["memory.viewer"].safeParse({ user: "u", isNew: true, msgCount: 1, regular: false });
+  assert.ok(viewer.success);
+  assert.equal("notes" in viewer.data!, false, "memory.viewer carries no notes text");
+  assert.equal(EventPayloads["memory.viewer"].safeParse({ user: "u", isNew: true, msgCount: 1 }).success, false, "regular is required");
+  assert.equal(EventPayloads["memory.viewer"].safeParse({ user: "u", isNew: true, msgCount: 1.5, regular: true }).success, false);
+  assert.equal("notes" in EventPayloads["memory.viewer"].parse({ user: "u", isNew: false, msgCount: 2, regular: true, notes: "legacy" }), false);
+});
+
+// @spec BUS-EVT-020
+test("memory.notes.request/reply validate their shapes: text optional (absent for health/family), no subscriber field", () => {
+  const req = EventPayloads["memory.notes.request"];
+  assert.ok(req.safeParse({ id: "1", users: ["bob", "amy"] }).success);
+  assert.equal(req.safeParse({ id: "1", users: [] }).success, false, "users must be non-empty");
+  assert.equal(req.safeParse({ id: "1" }).success, false);
+  assert.equal(req.safeParse({ id: "1", users: [3] }).success, false);
+
+  const rep = EventPayloads["memory.notes.reply"];
+  const viewer = (notes: unknown[]) => ({ id: "1", viewers: [{ user: "Bob", regular: true, msgCount: 3, notes }] });
+  assert.ok(rep.safeParse({ id: "1", viewers: [] }).success, "an empty list is valid");
+  assert.ok(rep.safeParse(viewer([{ layer: "core", category: "general", text: "t", strength: 0.5 }])).success);
+  assert.ok(rep.safeParse(viewer([{ layer: "recent", category: "health", hint: "gently", strength: 1 }])).success, "text is optional");
+  assert.ok(rep.safeParse(viewer([{ layer: "recent", category: "family", text: "t", hint: "h", strength: 0 }])).success);
+  for (const bad of [
+    { layer: "other", category: "general", strength: 0.5 },
+    { layer: "core", category: "politics", strength: 0.5 },
+    { layer: "core", category: "general", strength: 1.1 },
+    { layer: "core", category: "general", strength: -0.1 },
+    { layer: "core", category: "general" },
+  ]) assert.equal(rep.safeParse(viewer([bad])).success, false, JSON.stringify(bad));
+  assert.equal(rep.safeParse({ id: "1", viewers: [{ user: "Bob", regular: "yes", msgCount: 3, notes: [] }] }).success, false);
+  assert.equal(rep.safeParse({ id: "1", viewers: [{ user: "Bob", regular: true, msgCount: 3.5, notes: [] }] }).success, false);
+  const parsed = rep.parse({ id: "1", viewers: [{ user: "Bob", regular: true, msgCount: 3, isSub: true, notes: [] }] });
+  assert.equal("isSub" in parsed.viewers[0]!, false, "no subscriber status survives validation");
+});
+
+// @spec BUS-EVT-001, BUS-EVT-020
+test("the catalogue includes the viewer-notes surfacing events", () => {
+  assert.ok(EVENT_TYPES.includes("memory.notes.request"));
+  assert.ok(EVENT_TYPES.includes("memory.notes.reply"));
 });
 
 // @spec BUS-STREAM-001, BUS-SUB-001, BUS-SUB-004
@@ -408,4 +446,17 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
   assert.ok(rep.safeParse({ id: "1", ok: false, error: "failed" }).success);
   assert.equal(rep.safeParse({ id: "1", ok: false, error: "boom" }).success, false);
   assert.equal(rep.safeParse({ id: "1" }).success, false);
+});
+
+// @spec BUS-EVT-001
+test("the catalogue is exactly the 23 documented event types, exported as EVENT_TYPES", () => {
+  const expected = [
+    "chat.message", "vision.summary", "speech.heard", "brain.say", "brain.status", "attention.focus", "affect.state",
+    "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
+    "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "avatar.state",
+    "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat",
+  ];
+  assert.equal(EVENT_TYPES.length, 23);
+  assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
+  assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
 });

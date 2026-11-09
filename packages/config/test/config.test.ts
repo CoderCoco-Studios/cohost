@@ -528,3 +528,16 @@ test("VIEWERS_TOKEN is env-only: no schema key at any depth, and a YAML key for 
   assert.equal(keys(loadShipped()).some((k) => /viewers?_?token/i.test(k)), false);
   { const raw = { dashboard: { viewers_token: "x" } }; assert.ok(unknownKeys(raw, loadShipped()).some((p) => /viewers_token/.test(p))); }
 });
+
+// @spec CFG-USR-008
+test("the shipped example configures the capture hook on its own small ollama model, overridable with NOTES_MODEL, and .env.example documents it", () => {
+  const { cfg } = loadShippedBare();
+  const c = cfg.brain.memory.notes.capture;
+  assert.equal(c.kind, "llm");
+  assert.equal(c.llm.provider, "ollama");
+  assert.equal(c.llm.model, "gemma3:1b");
+  assert.notEqual(c.llm.model, cfg.llm.model, "its own model slot, not the cortex's");
+  assert.equal(loadShippedBare({ NOTES_MODEL: "other:tag" }).cfg.brain.memory.notes.capture.llm.model, "other:tag");
+  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:1b\}/);
+  assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:1b$/m);
+});

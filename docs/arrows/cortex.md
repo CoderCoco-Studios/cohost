@@ -4,15 +4,15 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 58 specs: 58 implemented, 0 deferred, 0 gaps.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps.
 
-## Planned: viewer notes (designed, not built)
+## Viewer notes (built, build chunk 3)
 
-Design: LLD § Viewer notes. The spec file now holds 66 specs: 56 `[x]`, 10 `[ ]`.
+Design: LLD § Viewer notes. The spec file holds 66 specs: 66 `[x]`, 0 `[ ]`.
 
 - Amended to `[ ]`: `CTX-EVT-001` (subscribe to `memory.notes.reply`), `CTX-VIEWER-001` (regular from memory's `regular` flag, no notes text, no literal 25).
 - New `[ ]`: `CTX-NOTES-001` to `008` (notes requested per think for the replied-to viewer and the window's chat users, shared recall deadline, `## People here` block, sensitive notes as hint-only guidance, no subscriber status, no caching, no note text in logs).
-- Lands in build chunk 3 (memory LLD § Build order). Owner decisions: sensitive notes reach the prompt as hint only; subscriber status is never rendered.
+- Built in build chunk 3 (memory LLD § Build order): `fetchNotes` in `cortex.ts` (requested in parallel with recall, one deadline), `peopleBlock` in `prompt.ts`; no literal message threshold remains in the cortex. Owner decisions: sensitive notes reach the prompt as hint only; subscriber status is never rendered.
 
 ## Decisions applied
 
@@ -41,7 +41,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (58 specs, prefix `CTX`: 57 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (66 specs, prefix `CTX`: 66 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)

@@ -100,6 +100,42 @@ export class InMemoryStore implements MemoryBackend {
     return v && { ...v };
   }
 
+  // @spec MEM-SURF-002
+  async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    const want = name.toLowerCase();
+    const v = [...this.viewers.values()]
+      .filter((r) => r.display.toLowerCase() === want)
+      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
+    return v && { ...v };
+  }
+
+  // @spec MEM-CAPTURE-011, MEM-REG-004
+  async ensureViewer(userKey: string, display: string): Promise<ViewerRow> {
+    const key = userKey.toLowerCase();
+    let v = this.viewers.get(key);
+    if (!v) {
+      const placeholder = [...this.viewers.values()]
+        .filter((r) => r.placeholder && r.display.toLowerCase() === display.toLowerCase())
+        .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+      if (placeholder) {
+        v = this.rekey(placeholder, key);
+        v.display = display;
+        v.placeholder = false;
+      } else {
+        const now = new Date(this.clock());
+        v = { key, display, msgCount: 0, regularManual: false, isSub: false, placeholder: false, firstSeen: now, lastSeen: now, regular: false };
+        this.viewers.set(key, v);
+      }
+      this.refreshRegular(v);
+    }
+    return { ...v };
+  }
+
+  // @spec MEM-CAPTURE-005
+  async embedText(text: string): Promise<number[]> {
+    return hashEmbed(text);
+  }
+
   // @spec MEM-REG-001, MEM-REG-003
   async setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined> {
     const key = keyOrName.toLowerCase();
@@ -126,7 +162,7 @@ export class InMemoryStore implements MemoryBackend {
       id: this.nextNoteId++, userKey, layer: n.layer ?? "recent", category: n.category, text,
       hint: withDefaultHint(n.category, n.hint) ?? null,
       strength: clamp01(n.strength ?? 1), strengthAt: now, mentions: n.mentions ?? 1, dirty: n.dirty ?? true,
-      version: 1, createdAt: now, lastSurfacedAt: null, embedding: hashEmbed(text),
+      version: 1, createdAt: now, lastSurfacedAt: null, embedding: n.embedding ?? hashEmbed(text),
     };
     this.notes.set(row.id, row);
     return { ...row };
@@ -147,6 +183,14 @@ export class InMemoryStore implements MemoryBackend {
 
   async listNotes(userKey: string): Promise<NoteRow[]> {
     return [...this.notes.values()].filter((n) => n.userKey === userKey.toLowerCase()).sort((a, b) => a.id - b.id).map((n) => ({ ...n }));
+  }
+
+  // @spec MEM-SURF-004
+  async markSurfaced(noteIds: number[], at: Date): Promise<void> {
+    for (const id of noteIds) {
+      const n = this.notes.get(id);
+      if (n) n.lastSurfacedAt = at;
+    }
   }
 
   async listDeletions(userKey: string): Promise<DeletionRow[]> {

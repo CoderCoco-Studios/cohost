@@ -519,6 +519,23 @@ test("the shipped example configures the consolidator on the cortex's model via 
   for (const key of Object.keys(expected)) assert.match(yaml, new RegExp(`^\\s+${key}:`, "m"), `${key} listed in the example`);
 });
 
+// @spec CFG-SCH-019
+test("brain.cortex.fallback_ack_chance defaults to 0.25, accepts 0 to 1 inclusive and rejects anything outside", () => {
+  assert.equal(ConfigSchema.parse(baseCfg()).brain.cortex.fallback_ack_chance, 0.25);
+  const with_ = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { cortex: { fallback_ack_chance: v } } });
+  for (const v of [0, 0.5, 1]) assert.equal(with_(v).data!.brain.cortex.fallback_ack_chance, v);
+  for (const v of [-0.01, 1.01, "x", Number.NaN]) assert.equal(with_(v).success, false, `${String(v)}`);
+});
+
+// @spec CFG-USR-010
+test("the shipped example sets brain.cortex.fallback_ack_chance to 0.25 with a comment that it is a nudge, not an enforced rate", () => {
+  const { cfg, warnings } = loadShippedBare();
+  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
+  assert.equal(cfg.brain.cortex.fallback_ack_chance, 0.25);
+  const yaml = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  assert.match(yaml, /^\s+fallback_ack_chance: 0\.25\s+#.*nudge.*not.*enforced/im);
+});
+
 // @spec CFG-ENV-009
 test("VIEWERS_TOKEN is env-only: no schema key at any depth, and a YAML key for it is reported as unknown", () => {
   const keys = (o: unknown, out: string[] = []): string[] => {

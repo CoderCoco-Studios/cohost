@@ -157,6 +157,7 @@ brain:
   cortex:
     recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
     speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
+    fallback_ack_chance: 0.25  # base chance she riffs on a line that failed to play: a nudge stated to the model, not an enforced rate
     # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
     # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     critic:

@@ -192,6 +192,8 @@ export const ConfigSchema = z.object({
       recall_timeout_ms: z.number().int().positive().default(2500),
       /** Give up on a stuck utterance / voice sink after this long. */
       speaking_timeout_ms: z.number().int().positive().default(20000),
+      /** Base chance, stated to the model as a nudge, that she riffs on a spoken line that failed to play. Never enforced. */
+      fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
       /** Inhibition: a check on each reply before it's spoken. rules = pass-through. */
       critic: ModuleSchema,
     }).default({}),

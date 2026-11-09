@@ -18,7 +18,7 @@ function wiring(over: { resetGroup?: () => Promise<void> } = {}) {
   return { calls, start, fatals, opts: () => subscribed };
 }
 
-// @spec CTX-START-003, CTX-EVT-001
+// @spec CTX-START-003, CTX-EVT-001, CTX-EVT-008
 test("startup: idle, then the cortex group exists (resetGroup), then subscribe at latest, then ready", async () => {
   const w = wiring();
   await w.start();
@@ -29,7 +29,7 @@ test("startup: idle, then the cortex group exists (resetGroup), then subscribe a
   assert.equal("fromNow" in o, false);
   assert.deepEqual([...(o.types as string[])].sort(), [
     "affect.state", "attention.focus", "brain.say", "chat.message", "control",
-    "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "vision.summary", "voice.done",
+    "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "vision.summary", "voice.done", "voice.failed",
   ]);
 });
 

@@ -1,6 +1,6 @@
 # ears specs
 
-Segment `ears` (prefix `EARS`). Mapped 2026-10-31 at git `686cc8f`; verified against the code in the audit pass of 2026-11-01. Owner decisions of 2026-11-01 applied at git `1b57790`. LLD: [ears-design.md](ears-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred.
+Segment `ears` (prefix `EARS`). Mapped 2026-10-31 at git `686cc8f`; verified against the code in the audit pass of 2026-11-01. Owner decisions of 2026-11-01 applied at git `1b57790`. LLD: [ears-design.md](ears-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. `[proposed]` inside a line marks a value or choice awaiting the owner's confirmation (spoken fallback line).
 
 ## Startup plans
 
@@ -46,11 +46,29 @@ Segment `ears` (prefix `EARS`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **EARS-PLAY-002**: When a `voice.utterance` arrives, the ears service shall queue it and play queued utterances one at a time in arrival order, fetching the WAV from the event's `audioUrl`, converting it, and handing it to the Discord audio player. <!-- test: services/ears/test/ears.test.ts:25,56 --> <!-- openspec: ears § Utterance playback -->
 - [x] **EARS-PLAY-003**: When the ears service starts playing an utterance, it shall publish `voice.playing` with the utterance `id` and `sink` set to `discord`. <!-- test: services/ears/test/ears.test.ts:25 --> <!-- openspec: ears § Utterance playback -->
 - [x] **EARS-PLAY-004**: When the Discord audio player becomes idle while an utterance is current, the ears service shall publish `voice.done` with that `id` and `sink` `discord` and start the next queued utterance; when idle with nothing current it shall publish nothing. <!-- test: services/ears/test/ears.test.ts:25 --> <!-- openspec: ears § Utterance playback -->
-- [x] **EARS-PLAY-005**: If fetching or converting the audio for a queued utterance fails, then the ears service shall log the warning "playback failed", publish no `voice.playing` for it, and continue with the next queued utterance. <!-- test: services/ears/test/ears.test.ts:44,56 --> <!-- openspec: ears § Utterance playback -->
-- [D] **EARS-PLAY-006**: If fetching or converting the audio for a queued utterance fails, then the ears playback sink shall report that it gave up on that `id` rather than relying on voice's 1.5 s virtual sink to time it. Deferred: the sink skips an unplayable line silently (EARS-PLAY-005, pinned by `services/ears/test/ears.test.ts:51`) and voice's virtual sink times it.
+- [ ] **EARS-PLAY-005**: If fetching or converting the audio for a queued utterance fails, or handing it to the Discord audio player throws, then the ears service shall log the warning "playback failed", give up on that utterance (playing none of its audio and handling it by EARS-PLAY-006 and the EARS-FALL lines) and only then start the next queued utterance. <!-- implemented today as a silent skip with no voice.playing: services/ears/test/ears.test.ts:44,56 --> <!-- openspec: ears § Utterance playback -->
+- [ ] **EARS-PLAY-006**: When the ears playback sink gives up on a queued utterance, it shall publish exactly one `voice.failed` for that utterance with its `id`, `sink` `discord` and `reason` set to the failure's error text `[proposed]`, so voice, avatar and cortex need not wait for voice's 1.5 s virtual sink to time the line.
 - [x] **EARS-PLAY-007**: If the Discord audio player emits an error, then the ears service shall log the warning "player error".
 - [x] **EARS-PLAY-008**: The ears service shall not subscribe to `control`: it plays every `voice.utterance` it receives and publishes `speech.heard` regardless of `mute` or `pause`, which cortex and salience enforce upstream.
 - [x] **EARS-PLAY-009**: If publishing `voice.done` for a finished utterance fails, then the ears service shall log a warning and continue with the next queued utterance. <!-- test: services/ears/test/ears.test.ts:56 -->
+
+## Fallback line
+
+Design: LLD § Fallback Line. "Give up" means EARS-PLAY-005. "The clip store" is the directory `clipsDir()` (CFG-DIR-006, CFG-DIR-007) holding `manifest.json` and the clip files voice writes (VOICE-CLIP-*). A "real sink" is any `sink` other than `virtual`.
+
+- [ ] **EARS-FALL-001**: When the ears playback sink gives up on a queued utterance and none of EARS-FALL-005, EARS-FALL-007, EARS-FALL-008 or EARS-FALL-009 applies, the ears service shall play one fallback clip from the clip store in that utterance's place, converted as in EARS-AUD-002, before starting the next queued utterance.
+- [ ] **EARS-FALL-002**: When the ears service has handed a fallback clip to the Discord audio player, it shall publish `voice.playing` with the given-up utterance's `id` and `sink` `discord`, and after that publish the utterance's `voice.failed` (EARS-PLAY-006).
+- [ ] **EARS-FALL-003**: While a fallback clip is playing, the ears service shall treat the given-up utterance as the current item, so that when the Discord audio player becomes idle it publishes `voice.done` with that `id` and `sink` `discord` (EARS-PLAY-004) and starts the next queued utterance.
+- [ ] **EARS-FALL-004**: When the ears service gives up on an utterance, it shall read `manifest.json` from the clip store at that moment and choose only among the clips that manifest lists, with no cached copy from an earlier give-up `[proposed]`.
+- [ ] **EARS-FALL-005**: If the clip store directory or its `manifest.json` is missing or unreadable, or the manifest lists no clips, then the ears service shall play no fallback for the given-up utterance.
+- [ ] **EARS-FALL-006**: When choosing a fallback clip, the ears service shall pick uniformly at random among the listed clips that are not marked bad (EARS-FALL-008), excluding the clip it played last whenever at least one other eligible clip is listed `[proposed]`.
+- [ ] **EARS-FALL-007**: If the ears service started a fallback clip less than `ears.fallback.min_interval_ms` (default 20000 `[proposed]`, CFG-SCH-018) before a give-up, then it shall play no fallback for that give-up.
+- [ ] **EARS-FALL-008**: If the chosen fallback clip's file is missing or empty, cannot be parsed or converted as a WAV, or handing it to the Discord audio player throws, then the ears service shall play no fallback for that give-up, log a warning naming the clip file, and not pick that clip again until the manifest's `fingerprint` changes `[proposed]`.
+- [ ] **EARS-FALL-009**: If a real sink other than `discord` has published `voice.playing` for an utterance `id` before the ears service gives up on that utterance, then the ears service shall play no fallback for it `[proposed]`.
+- [ ] **EARS-FALL-010**: While the ears plan is `discord`, the ears service shall also read `voice.playing` on its one `ears` loop (EARS-PLAY-001) and remember, for the newest 50 utterance ids, which ids a real sink other than `discord` has claimed `[proposed]`.
+- [ ] **EARS-FALL-011**: When the ears service publishes `voice.failed` for a given-up utterance, it shall include `fallback` with the clip's file name (`clip`) and phrase text (`text`) from the manifest if and only if a fallback clip is playing for that `id` `[proposed]`.
+- [ ] **EARS-FALL-012**: The ears service shall only read the clip store and shall never create, modify or delete a file in it.
+- [ ] **EARS-FALL-013**: While the voice connection is not ready, the ears service shall publish no `voice.failed` and play no fallback for a `voice.utterance` it skips (EARS-INJ-007).
 
 ## Audio injection
 

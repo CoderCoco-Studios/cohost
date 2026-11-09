@@ -30,7 +30,7 @@ The package also owns the plumbing for **test-injection flags** (OpenSpec `add-t
 | `chat` | bus `chat.message` | `ts` (bus event ts), `user`, `text`, `mention` (from `mentionsCohost`), `isMod`, `isSub`, `seen`, plus `InjectionFlags` | no |
 | `vision` | bus `vision.summary` | `ts`, `text`, `changed`, `seen`, plus `InjectionFlags` | `seen = !changed` |
 | `speech` | bus `speech.heard` | `ts`, `speaker`, `text`, `seen`, plus `InjectionFlags` | no |
-| `self` | `pushSelf(text, emotion)` (not a bus event) | `ts` (`Date.now()`), `text`, `emotion`, `seen: true` (literal type), no flags | always |
+| `self` | `pushSelf(text, emotion, id?)` (not a bus event) | `ts` (`Date.now()`), `text`, `emotion`, `seen: true` (literal type), no flags; `id` (the `brain.say` id) and `fallback` (the text heard instead) for the spoken fallback line (gap, WM-PUSH-007, WM-PUSH-008) | always |
 
 `Context` (`index.ts:29-105`) holds a private `events` array, the public string `lastVision`, and a `max` count from the constructor.
 
@@ -68,6 +68,17 @@ What follows for this package:
 
 Consumers of `transcript`: `services/cortex/src/prompt.ts:43` (the prompt) and `services/cortex/src/cortex.ts:143` (passed to the critic). Consumers of `lastVision`: `services/cortex/src/prompt.ts:33` and the recall query fallback `cortex.ts:127`.
 
+### Fallback lines (gap)
+
+When a line the co-host meant to say fails to play and a pre-generated fallback line is said in its place ([ears](../ears/ears-design.md) Fallback Line), the transcript must show what was actually heard and that the intended line glitched, so the co-host knows she glitched. The owner decided the fallback goes into the transcript as something she said, together with a note that the line she meant failed to play; the format below is `[proposed]`.
+
+- `pushSelf(text, emotion, id?)` keeps the optional `id` on the `self` event; it is not rendered (WM-PUSH-007). cortex passes the `brain.say` id.
+- `markFallback(id, fallbackText)` finds the `self` event with that id still in the window and records the fallback text on it; with no such event it changes nothing and reports that it marked nothing (WM-PUSH-008). Marking does not move the event or change its `seen` state.
+- `hasSelf(id)` reports whether a `self` event with that id is still in the window (WM-WIN-007); cortex uses it to drop an acknowledgement hint whose line has scrolled out.
+- A marked `self` event renders as one line: `<cohostName>: [<emotion>] <fallback text> [your line "<intended text>" failed to play; this came out instead]`, with CR and LF in both texts flattened to a space (WM-TRANS-010) `[proposed]`.
+
+The note rides on the co-host's own line rather than a new tagged line. Every tag in `TRANSCRIPT_TAGS` is an LLM stop sequence, and the reply-stop list is already at the four entries OpenAI-style APIs accept (model-backends), so a fifth tag could not be a stop. A bracketed note after the text is safe on the output side too: `parseReply` strips every `[...]` from a reply (cortex), so a model that imitates the note cannot put it on stream. The fallback is shown as the spoken text because it is what viewers heard; the intended line stays visible inside the note so the co-host knows what she meant.
+
 ## Injection flags
 
 Defined in `index.ts:4-20`.
@@ -91,6 +102,7 @@ Defined in `index.ts:4-20`.
 | Multi-line fields | Flatten `\r`/`\n` to a space when rendering | Escape them; reject multi-line text at ingest | Owner decision 2026-11-01: `transcript` is the one place lines are built, and flattening keeps the text readable to the model (WM-TRANS-008). |
 | `all()` result | A shallow copy, elements identical | The live array | Owner decision 2026-11-01: callers cannot mutate the window, and identity-based `markSeenEvents` keeps working (WM-WIN-006). |
 | Injected events in the prompt | Rendered exactly like real ones | A visible marker for the model or critic | Owner decision 2026-11-01: injection exists to exercise the real path (WM-TRANS-007). |
+| Fallback line in the transcript | The co-host's `self` line shows the fallback text, followed by a bracketed note quoting the line that failed (WM-TRANS-010) `[proposed]` | A new `[glitch]` tagged line; replace the text silently; drop the failed line | The owner decided both must appear: what she said and that the intended line failed. A new tag would need a fifth stop sequence where the provider cap allows four; a silent replacement hides the glitch from her; dropping the line loses what she meant. |
 | Injection flag propagation | Free function `propagatedFlags(src)` in this package; copy only when `injected` is truthy | Each region copies flags itself; always copy | Copy "only for injected inputs, never for real ones (a stray `remember` is dropped)" (comment `index.ts:15`); commit `3fae9f7` "flags propagate via working-memory → salience/cortex". The helper lives here because this package already keeps the flags on its context entries (WM-FLAG-001, WM-FLAG-002) and both salience and cortex need the same rule; one function keeps the rule from drifting between them (WM-FLAG-003, WM-FLAG-004). |
 
 ## Open Questions & Future Decisions

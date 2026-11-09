@@ -37,7 +37,8 @@ noticing.
 
 - **Senses** publish what they observe and consume nothing from the brain
   on the sensing path (`ears` also consumes `voice.utterance` and reports
-  Discord playback events as a sink for `voice`):
+  Discord playback events as a sink for `voice`, including a line it could not
+  play):
   `chat` turns Twitch IRC into `chat.message`, `eyes` turns an OBS screenshot
   into a one-line `vision.summary` from a local vision model, `ears` turns
   each Discord speaker's audio into `speech.heard` through local
@@ -167,6 +168,18 @@ code keeps the seams they need.
 - **Typing in chat.** The chat sense is read-only today. A future body output
   beside `voice` will post the co-host's lines to chat; the optional Twitch
   user credentials in `services/chat/src/index.ts:4-6` stay for it.
+- **Separate listening and speaking modules with tunable audio routing.**
+  `ears` does two jobs on one Discord session: it listens (speech to
+  `speech.heard`) and it speaks (the `discord` playback sink). The owner's
+  direction is a source-agnostic listening module that takes audio from more
+  sources than Discord and a source-agnostic speaking module that sends the
+  co-host's voice to outputs beyond today's sinks, with audio routing the
+  owner can tune and define. It is deferred because both jobs share one
+  Discord client and one voice connection (a bot holds one voice connection
+  per guild), so splitting them is a large refactor of ears, its health,
+  Compose profile and manifest entry. Until then ears keeps both jobs,
+  including the spoken fallback line ([ears](intent/ears/ears-design.md)
+  Deferred decisions).
 - **Breaking a dead stream's silence.** Idle chatter fires only after
   `idle_chatter_ms` of quiet *and* at least one unseen event
   (`services/salience/src/scheduler.ts:48,72-73`); a fully silent stream
@@ -208,7 +221,10 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    transfer (such as voice audio), operator APIs, and configured `http` hooks
    that POST JSON to `module.url`. Reject a design in which two services
    call each other over HTTP, share a database, or import each other's
-   runtime code.
+   runtime code. The one shared file store is voice's fallback clip
+   directory: voice is its only writer, ears only reads it, and it holds
+   audio and its manifest, never control or state another service acts on
+   (Key Design Decisions, Spoken fallback line).
 2. **Senses and body are swappable without touching the brain.** A new chat
    source, TTS engine, avatar driver, model provider or hook implementation
    changes config and one adapter file. Reject a change to a sense or body
@@ -256,7 +272,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 18 event types; 22 once viewer notes land) plus a separate `cohost:health` heartbeat stream (19 registered payloads in all; 23 with viewer notes). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 22 event types; 23 once `voice.failed` lands) plus a separate `cohost:health` heartbeat stream (23 registered payloads in all; 24 with `voice.failed`). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -293,19 +309,19 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 18 event types plus 1 health type (22 plus 1 with viewer notes); consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 22 event types plus 1 health type (23 plus 1 with `voice.failed`); consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
 | platform | working-memory | Rolling window of recent events rendered as a prompt transcript |
 | senses | chat | Twitch chat → `chat.message` |
 | senses | eyes | OBS screenshot → vision model → `vision.summary` |
-| senses | ears | Discord voice → Whisper → `speech.heard`; Discord playback sink |
+| senses | ears | Discord voice → Whisper → `speech.heard`; Discord playback sink, including the spoken fallback line when a line cannot play |
 | brain | salience | Scores events, decides when to speak, fires reflexes |
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
 | brain | cortex | `attention.focus` → recall → LLM → critic → `brain.say` |
-| body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration |
+| body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration; generates the fallback clips |
 | body | avatar | Canonical avatar state → VTube Studio / VMC driver |
 | operator | dashboard | Live feed, mute / say, audio sink, personality editor, Services tab, Viewers page, test-input injection |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, heartbeat health tracker, `cohostctl` CLI |
@@ -333,6 +349,10 @@ flowchart LR
   real claim that arrives after the window cancels the pending virtual
   `voice.done` so cortex is not released while audio still plays.
   avatar lip-syncs on `voice.playing` using the envelope from the utterance.
+  A sink that cannot play a line reports `voice.failed`; ears then says a
+  pre-generated fallback line under the same id (claiming it with
+  `voice.playing` and releasing cortex with `voice.done`), and when nothing
+  plays voice releases cortex as soon as the claim window closes (gap).
   Sinks inside Compose fetch audio from `http://voice:8700`; a player on the
   host or another PC goes through the dashboard's audio proxy, since voice's
   port is not published.
@@ -373,6 +393,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control`; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
 | Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (Discord bot, dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
+| Spoken fallback line | When ears cannot play a line it reports `voice.failed` and says a short funny line instead, picked at random from an owner-edited list; voice pre-generates the lines as clips in the co-host's TTS voice and stores them in a directory ears reads; clips regenerate when the list or voice settings change; the transcript keeps the fallback as her line with a note that the intended one failed; her next reply gets a hint with a base chance (default 1 in 4) and the model decides in character whether to riff on it | Stay silent and let the virtual sink time the line; synthesize the fallback when the failure happens; enforce the acknowledgement rate in code | Dead air after a glitch is worse on stream than owning it; playback of the fallback must not depend on the voice HTTP and TTS path that just failed; the character, not a dice roll, decides how she reacts, so the real rate drifts with the personality. The fallback replaces a line that already passed the speaking gates (tenet 4) and is not a new `brain.say`. The shared clip directory is the one exception to tenet 1. Owner decision; event shape, store layout, storm limit and transcript format are `[proposed]`. | [ears](intent/ears/ears-design.md) Fallback Line; [voice](intent/voice/voice-design.md) Fallback Clips and Sink Arbitration Protocol; [working-memory](intent/working-memory/working-memory-design.md); [cortex](intent/cortex/cortex-design.md) Fallback acknowledgement |
 | Binary payloads | Never on the bus: events carry text, numbers, envelopes and URLs; audio and uploads travel over HTTP | Base64 on the stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads |
 | Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |

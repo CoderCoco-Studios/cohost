@@ -41,7 +41,8 @@ Observed principles:
 Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mode `latest`, types
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
 memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
-once viewer notes land (`CTX-EVT-001`). The service publishes `brain.status`,
+once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallback
+line (gap, `CTX-EVT-008`). The service publishes `brain.status`,
 `brain.say`, `memory.recall.request` and `memory.notes.request`.
 
 Subscribing happens only after the model backend answered `ping()` (`index.ts:40`).
@@ -64,6 +65,7 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `chat.message`, `speech.heard`, `vision.summary` | `ctx.push(ev)` into the `Context` window (`brain.working_memory_events`, default 24) | `cortex.ts:43-47`, `cortex.ts:37` |
 | `brain.say` (any source) | `ctx.pushSelf(text, emotion)`; if `ev.source !== "cortex"` also record `speakingId = d.id` and the time and arm the speaking-timeout release (`startSpeaking`) | `cortex.ts:49-55`, `cortex.ts:184-197` |
 | `voice.done` | if `d.id === speakingId`: clear it, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
+| `voice.failed` (gap) | with `fallback`: mark the line's transcript entry and keep a pending glitch for the next reply (see Fallback acknowledgement); without `fallback`: nothing | `CTX-FALL-002`, `CTX-FALL-003`, `CTX-FALL-007` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
 | `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | `cortex.ts` |
@@ -183,7 +185,19 @@ reply (`CTX-NOTES-002`, HLD tenet 3). Memory has already capped, ordered and
 filtered the notes (strongest first, a per-viewer and a total cap, sensitive
 notes only for the replied-to viewer and rarely; memory `MEM-SURF-*`).
 
-The notes are rendered in a `## People here` block of the system message
+The notes are rendered in a `### Fallback acknowledgement (gap)
+
+When one of the co-host's lines fails to play and a fallback line is said in its place ([ears](../ears/ears-design.md) Fallback Line), she should know she glitched and may joke about it. Owner decisions: the transcript records the fallback as her line with a note that the intended line failed; her next reply gets a prompt hint about the failed line that states a base chance of 1 in 4 (`brain.cortex.fallback_ack_chance`, default 0.25) as a nudge; the model decides in character whether to acknowledge. The cortex does not enforce the chance: there is no random draw, no per-personality number and no check of the reply (`CTX-FALL-006`). A shy personality will mostly shrug it off and a goofy one will milk it, so the real acknowledgement rate drifts with the personality, the model and the moment, and it is not expected to match the configured number. The hint wording, expiry and the handling of several glitches are `[proposed]`.
+
+- Every `brain.say` goes into working memory with its id (`CTX-FALL-001`, working-memory `WM-PUSH-007`).
+- A `voice.failed` carrying `fallback` marks that line's transcript entry with the fallback text (`CTX-FALL-002`, `WM-PUSH-008`), so every later prompt and the critic's transcript show what was heard and that the intended line failed. It applies to any line, including reflexes and operator lines, because each is in the transcript.
+- The same event sets a **pending glitch** (intended text, fallback text), replacing an older one (`CTX-FALL-003`) `[proposed]`.
+- The next think that builds a prompt while a glitch is pending and its line is still in the window (`WM-WIN-007`) adds one line to the `## Now` block (`CTX-FALL-004`) `[proposed]`: `- Your voice glitched: your line "<intended>" failed to play and everyone heard "<fallback>" instead. You may react to it in character if that fits you; as a rough guide, about <N>% of the time. If it does not fit, let it go.` where `<N>` is the chance as a whole percentage.
+- The glitch is consumed once that think's reply is published as `brain.say`; a vetoed, empty or failed reply keeps it for the next think. `forget_context` drops it, and so does its line leaving the window (`CTX-FALL-005`) `[proposed]`. One reply is the window in which a reaction still reads as one.
+- With `fallback_ack_chance` 0 there is no hint line at all; the transcript note stays (`CTX-FALL-004`).
+- A `voice.failed` without `fallback` (nothing played) changes nothing in the cortex (`CTX-FALL-007`) `[proposed]`: the line may still have been heard on another sink, and voice already releases the speaking state through the arbitration protocol.
+
+## People here` block of the system message
 (`CTX-NOTES-004`) `[proposed format]`:
 
 ```
@@ -296,6 +310,8 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Re-check busy and mute after the LLM | drop the reply if something else started speaking | speak anyway | Comment `cortex.ts:149`: "A reflex or operator line may have started while we were thinking; don't talk over it."; test `cortex.region.test.ts:183` |
 | Stuck-sink release | `speaking_timeout_ms` inside `voiceBusy()`, plus a timer that publishes the release (`CTX-GATE-009`) | rely on `voice.done` only | Comment `cortex.ts:177` ("stuck-sink safety valve"), `packages/config/src/schema.ts:153` ("Give up on a stuck utterance / voice sink after this long") |
 | Operator `say` bypasses gates | no mute, pause or busy check | route through `think` | owner decision 2026-11-01: `say` is the operator's override; `cortex.ts:108`, `CTX-CTRL-006` |
+| Acknowledging a fallback line | A one-shot hint stating the base chance; the model decides in character; no enforcement | A random draw in code that adds the hint only on a hit; a per-personality chance; always acknowledge | Owner decision: the co-host's character should decide, so a shy personality shrugs a glitch off and a goofy one milks it. The cost is that the real rate drifts from the configured value; the configured value is a nudge, not a guarantee. `CTX-FALL-004`, `CTX-FALL-006` |
+| Glitch lifetime | Consumed by the next published reply; dropped by `forget_context` or when its line leaves the window `[proposed]` | A time limit; keep until the model acknowledges | The next reply is where a reaction makes sense; tying expiry to the window needs no new setting. `CTX-FALL-005` |
 | Viewer notes one-shot, capped | delete after the reply is published, 50 entries FIFO | delete before the LLM call; persistent per-viewer notes | Per-viewer keying: comment `cortex.ts:32` ("so one viewer's framing never lands on another's reply"). Delete after success: owner decision 2026-11-01, so a vetoed or failed reply does not lose the note (`CTX-VIEWER-003`). The 50 cap bounds memory on a long stream: a note is replaced on each `memory.viewer` for that viewer and used once, so evicting the oldest only loses a note for a viewer not replied to since 50 newer viewer notes arrived |
 | Who gets viewer notes in the prompt | The replied-to viewer and every other chat user in the working-memory window, regardless of message count | replied-to viewer only; regulars only (the earlier `msgCount > 25` gate) | Owner decision: the co-host should know the people in the conversation it is answering, and notes are kept for everyone from their first message. `CTX-NOTES-001`, `CTX-NOTES-007` |
 | Fetching notes | Request/reply per think, in parallel with recall, one shared deadline | cache notes pushed by memory | `[proposed]`. Current notes on every reply (owner deletions take effect at once) and no added latency beyond the recall wait the cortex already accepts; memory's design records the alternatives. `CTX-NOTES-002` |

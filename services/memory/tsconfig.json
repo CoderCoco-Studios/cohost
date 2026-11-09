@@ -5,6 +5,7 @@
   "references": [
     { "path": "../../packages/config" },
     { "path": "../../packages/bus" },
-    { "path": "../../packages/llm" }
+    { "path": "../../packages/llm" },
+    { "path": "../../packages/modules" }
   ]
 }

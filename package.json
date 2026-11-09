@@ -15,6 +15,7 @@
     "dev": "pnpm -r --parallel --filter './services/*' dev",
     "lint": "tsc -b --noEmit",
     "reflect": "pnpm --filter @cohost/memory reflect",
+    "consolidate": "pnpm --filter @cohost/memory consolidate",
     "clean": "rm -rf packages/*/dist services/*/dist",
     "test": "tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
     "docs:prepare": "node scripts/docs-prepare.mjs",

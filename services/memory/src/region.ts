@@ -1,12 +1,15 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { MemoryStore } from "./store.js";
+import type { CortexState } from "./scheduler.js";
 
 export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
   log: Logger;
   store: Pick<MemoryStore, "touchViewer" | "remember" | "recall">;
+  /** Told the cortex's latest `brain.status`, so consolidation runs only while it is idle (MEM-CONSOL-002). */
+  onBrainStatus?: (state: CortexState) => void;
 }
 
 // @spec MEM-INJ-001, MEM-INJ-002, MEM-INJ-003
@@ -15,15 +18,15 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 
 // @spec MEM-EVT-002
 /** The memory region's event handler; index.ts subscribes it to both consumer groups. */
-export function createMemoryHandler({ cfg, bus, store, log }: MemoryDeps): (ev: BusEvent) => Promise<void> {
+export function createMemoryHandler({ cfg, bus, store, log, onBrainStatus }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
-      // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004
+      // @spec MEM-WRITE-001, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-004, MEM-REG-005
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory
         // @spec MEM-VIEWER-006
-        const v = await store.touchViewer(d.userId ?? d.user, d.user).catch((err) => {
+        const v = await store.touchViewer(d.userId ?? d.user, d.user, { isSub: d.isSub }).catch((err) => {
           log.warn({ err: String(err), user: d.user }, "viewer upsert failed; no memory.viewer for this message");
           return undefined;
         });
@@ -46,6 +49,11 @@ export function createMemoryHandler({ cfg, bus, store, log }: MemoryDeps): (ev: 
         const d = ev.data as BusEvent<"brain.say">["data"];
         if (skipInjected(d)) break; // a reply to an injected input
         if (d.text.length >= 2) await store.remember("self", cfg.cohost.name, d.text);
+        break;
+      }
+      // @spec MEM-CONSOL-002, MEM-CONSOL-003
+      case "brain.status": {
+        onBrainStatus?.((ev.data as BusEvent<"brain.status">["data"]).state);
         break;
       }
       // @spec MEM-RECALL-001

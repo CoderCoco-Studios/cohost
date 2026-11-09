@@ -26,6 +26,7 @@ function setup(over: { store?: "postgres" | "memory"; embedder?: "ollama" | "has
     heartbeat: { ready: () => events.push("ready"), degraded: (d?: string) => events.push(`degraded:${d}`) },
     ping: async () => pings.shift() ?? true,
     onEvent: async () => {},
+    onStarted: over.onStarted && (async () => { events.push("started"); await over.onStarted!(); }),
     sleep: async () => { events.push("sleep"); },
   };
   return { deps, events, subs, warnings, readies, inits: () => inits };
@@ -36,7 +37,7 @@ test("both consumer groups subscribe with start mode resume", async () => {
   const t = setup();
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start, "fromNow" in s]), [
-    ["memory", ["chat.message", "speech.heard", "brain.say"], "resume", false],
+    ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume", false],
     ["memory-recall", ["memory.recall.request"], "resume", false],
   ]);
   assert.equal(t.events.at(-1), "ready");
@@ -116,4 +117,15 @@ test("a subscription that fails before its group is ready fails startup instead 
   (t.deps.bus as { subscribe: unknown }).subscribe = () => Promise.reject(new Error("READONLY"));
   await assert.rejects(startMemory(t.deps), /READONLY/);
   assert.ok(!t.events.includes("ready"));
+});
+
+// @spec MEM-CONSOL-015
+test("the consolidation catch-up check runs once the service is ready, and its failure does not fail startup", async () => {
+  const ok = setup({ onStarted: async () => {} });
+  await startMemory(ok.deps);
+  assert.deepEqual(ok.events.slice(-2), ["ready", "started"]);
+  const failing = setup({ onStarted: async () => { throw new Error("count failed"); } });
+  await startMemory(failing.deps);
+  assert.equal(failing.events.at(-1), "started");
+  assert.ok(failing.warnings.some((w) => w.includes("catch-up")));
 });

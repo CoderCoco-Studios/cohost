@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { appendLearned, learnedBlock, parseBullets } from "../src/learned.js";
 import { DimensionMismatchError, MemoryStore } from "../src/store.js";
 import { MemoryHealth } from "../src/health.js";
-import { runHeartbeat } from "@cohost/testing";
+import { runHeartbeat, testConfig } from "@cohost/testing";
 
 // ---- reflection → personality.md
 
@@ -46,19 +46,24 @@ function store(opts: { rows?: (q: Query) => unknown[]; fail?: (q: Query) => bool
   const embedded: string[] = [];
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
   const embedder = { embed: opts.embed ?? (async (t: string) => { embedded.push(t); return [0.5, -1, 2]; }) };
-  const s = new MemoryStore(embedder, { recall_k: 3, min_similarity: 0.4 }, log, opts.onQuery);
+  const s = new MemoryStore(embedder, { ...testConfig().brain.memory, recall_k: 3, min_similarity: 0.4 }, log, opts.onQuery);
+  const query = async (sql: string, params?: unknown[]) => {
+    const q = { sql: sql.replace(/\s+/g, " ").trim(), params };
+    queries.push(q);
+    if (opts.fail?.(q)) throw new Error("db down");
+    const rows = opts.rows?.(q) ?? [];
+    return { rows, rowCount: rows.length };
+  };
+  let released = 0;
   const pool = {
-    query: async (sql: string, params?: unknown[]) => {
-      const q = { sql: sql.replace(/\s+/g, " ").trim(), params };
-      queries.push(q);
-      if (opts.fail?.(q)) throw new Error("db down");
-      return { rows: opts.rows?.(q) ?? [] };
-    },
+    query,
+    connect: async () => ({ query, release: () => { released++; } }),
+    released: () => released,
     end: async () => {},
   };
   void (s as unknown as { pool: { end(): Promise<void> } }).pool.end();
   (s as unknown as { pool: unknown }).pool = pool;
-  return { s, queries, warnings, embedded };
+  return { s, queries, warnings, embedded, pool };
 }
 
 // @spec MEM-STORE-001
@@ -70,6 +75,26 @@ test("init sizes the vector column from a probe embedding and survives a missing
   assert.ok(queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS viewers")));
   assert.ok(queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS meta")));
   assert.equal(warnings.length, 1);
+});
+
+// @spec MEM-STORE-001
+test("init creates the notes tables with embeddings and adds the viewer columns without dropping anything", async () => {
+  const { s, queries } = store();
+  await s.init();
+  const sql = queries.map((q) => q.sql);
+  const notes = sql.find((q) => q.includes("CREATE TABLE IF NOT EXISTS viewer_notes"))!;
+  for (const col of ["layer TEXT", "category TEXT", "hint TEXT", "strength DOUBLE PRECISION", "strength_at TIMESTAMPTZ", "mentions INT", "dirty BOOLEAN", "version INT", "last_surfaced_at TIMESTAMPTZ", "embedding vector(3)"]) {
+    assert.ok(notes.includes(col), `viewer_notes has ${col}`);
+  }
+  const deletions = sql.find((q) => q.includes("CREATE TABLE IF NOT EXISTS viewer_note_deletions"))!;
+  for (const col of ["reason TEXT", "deleted_at TIMESTAMPTZ", "embedding vector(3)", "strength DOUBLE PRECISION"]) assert.ok(deletions.includes(col), `viewer_note_deletions has ${col}`);
+  const viewersTable = sql.findIndex((q) => q.includes("CREATE TABLE IF NOT EXISTS viewers ("));
+  for (const col of ["regular_manual", "is_sub", "placeholder"]) {
+    const at = sql.findIndex((q) => q.startsWith(`ALTER TABLE viewers ADD COLUMN IF NOT EXISTS ${col} `));
+    assert.ok(at > viewersTable, `viewers gains ${col} after the table is ensured`);
+  }
+  assert.ok(!sql.some((q) => /DROP |TRUNCATE|DELETE FROM viewers/i.test(q)), "no destructive statement");
+  assert.ok(sql[viewersTable]!.includes("notes TEXT"), "the legacy notes column stays");
 });
 
 // @spec MEM-WRITE-004
@@ -119,15 +144,31 @@ test("recall: k=0 skips the database, and failures return nothing instead of thr
   assert.equal(down.warnings.length, 1);
 });
 
-// @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-VIEWER-004
-test("touchViewer keys viewers case-insensitively and flags first-timers", async () => {
-  let count = 1;
-  const { s, queries } = store({ rows: () => [{ msg_count: count, notes: "likes cats", first_seen: new Date(), last_seen: new Date() }] });
-  assert.deepEqual(await s.touchViewer("BoB123", "Bob"), { msgCount: 1, notes: "likes cats", isNew: true });
-  assert.deepEqual(queries[0]!.params, ["bob123", "Bob"]);
-  assert.match(queries[0]!.sql, /ON CONFLICT \(user_key\) DO UPDATE .*msg_count = viewers\.msg_count \+ 1/);
-  count = 2;
+// @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-REG-001, MEM-REG-005
+test("touchViewer keys viewers case-insensitively, flags first-timers, stores isSub and derives regular", async () => {
+  let row: Record<string, unknown> = { msg_count: 1, notes: "likes cats", regular_manual: false };
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [row] : []) });
+  assert.deepEqual(await s.touchViewer("BoB123", "Bob", { isSub: true }), { msgCount: 1, notes: "likes cats", isNew: true, regular: false });
+  const insert = queries.find((q) => q.sql.startsWith("INSERT INTO viewers"))!;
+  assert.deepEqual(insert.params, ["bob123", "Bob", true]);
+  assert.match(insert.sql, /ON CONFLICT \(user_key\) DO UPDATE .*msg_count = viewers\.msg_count \+ 1.*is_sub = EXCLUDED\.is_sub/);
+  row = { msg_count: 2, notes: "", regular_manual: false };
   assert.equal((await s.touchViewer("bob123", "Bob")).isNew, false);
+  assert.equal((await s.touchViewer("bob123", "Bob")).regular, false);
+  row = { msg_count: 26, notes: "", regular_manual: false }; // default threshold 25: above it
+  assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
+  row = { msg_count: 2, notes: "", regular_manual: true }; // the owner's flag
+  assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
+});
+
+// @spec MEM-REG-004
+test("touchViewer first tries to claim a placeholder with the same display for a key that has no row", async () => {
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("UPDATE viewers") ? [{ msg_count: 1, notes: "", regular_manual: true }] : []) });
+  assert.deepEqual(await s.touchViewer("Id77", "Pat"), { msgCount: 1, notes: "", isNew: true, regular: true });
+  assert.equal(queries.length, 1, "a claimed placeholder needs no upsert");
+  assert.match(queries[0]!.sql, /SET user_key = \$1, display = \$2, placeholder = false, msg_count = msg_count \+ 1/);
+  assert.match(queries[0]!.sql, /p\.placeholder AND lower\(p\.display\) = lower\(\$2\) AND NOT EXISTS \(SELECT 1 FROM viewers e WHERE e\.user_key = \$1\)/);
+  assert.deepEqual(queries[0]!.params, ["id77", "Pat", false]);
 });
 
 // @spec MEM-STORE-003
@@ -152,9 +193,9 @@ test("meta get/set and recentSince", async () => {
 
 // @spec MEM-VIEWER-001
 test("touchViewer inserts a new viewer row with msg_count 1", async () => {
-  const { s, queries } = store({ rows: () => [{ msg_count: 1, notes: "", first_seen: new Date(), last_seen: new Date() }] });
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [{ msg_count: 1, notes: "", regular_manual: false }] : []) });
   await s.touchViewer("Bob", "Bob");
-  assert.match(queries[0]!.sql, /^INSERT INTO viewers \(user_key, display, msg_count\) VALUES \(\$1,\$2,1\) ON CONFLICT/);
+  assert.match(queries.at(-1)!.sql, /^INSERT INTO viewers \(user_key, display, msg_count, is_sub\) VALUES \(\$1,\$2,1,\$3\) ON CONFLICT/);
 });
 
 // @spec MEM-STORE-002
@@ -186,4 +227,87 @@ test("deps.postgres follows the outcome of the latest pool query", async () => {
   down = false;
   await s.getMeta("k");
   assert.deepEqual((await deps()).deps, { postgres: "ok", ollama: "down" });
+});
+
+// @spec MEM-CONSOL-010
+test("the consolidation lock is a session advisory lock: taken, held while fn runs, released after, and a pass without it does not run", async () => {
+  const held = store({ rows: (q) => (q.sql.startsWith("SELECT pg_try_advisory_lock") ? [{ locked: true }] : []) });
+  const out = await held.s.withConsolidationLock(async () => { held.queries.push({ sql: "FN", params: [] }); return 7; });
+  assert.deepEqual(out, { ran: true, value: 7 });
+  assert.deepEqual(held.queries.map((q) => q.sql.split(" (")[0]!.split("(")[0]), ["SELECT pg_try_advisory_lock", "FN", "SELECT pg_advisory_unlock"]);
+  assert.equal(held.queries[0]!.params![0], held.queries[2]!.params![0], "same lock key");
+  assert.equal(held.pool.released(), 1);
+  const busy = store({ rows: (q) => (q.sql.startsWith("SELECT pg_try_advisory_lock") ? [{ locked: false }] : []) });
+  let ran = false;
+  assert.deepEqual(await busy.s.withConsolidationLock(async () => { ran = true; }), { ran: false });
+  assert.equal(ran, false);
+  assert.equal(busy.queries.length, 1, "no unlock for a lock never taken");
+  assert.equal(busy.pool.released(), 1);
+  const boom = store({ rows: (q) => (q.sql.startsWith("SELECT pg_try_advisory_lock") ? [{ locked: true }] : []) });
+  await assert.rejects(boom.s.withConsolidationLock(async () => { throw new Error("pass failed"); }), /pass failed/);
+  assert.ok(boom.queries.some((q) => q.sql.startsWith("SELECT pg_advisory_unlock")), "unlocked after a throw");
+});
+
+// @spec MEM-CONSOL-007, MEM-CONSOL-008, MEM-NOTE-004
+test("commitViewer runs in one transaction, locks the viewer's notes and writes only notes still at the version it read", async () => {
+  const current = [{ id: "1", version: 2, category: "general", hint: null }, { id: "2", version: 1, category: "general", hint: null }, { id: "3", version: 1, category: "general", hint: null }];
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("SELECT id, version") ? current : []) });
+  await s.commitViewer("BOB", [
+    { kind: "update", id: 1, version: 2, set: { text: "new text", layer: "core" } },
+    { kind: "update", id: 2, version: 9, set: { text: "stale" } }, // read at an older version
+    { kind: "delete", id: 3, version: 1 },
+    { kind: "clean", id: 4, version: 1 }, // deleted meanwhile
+  ]);
+  const sql = queries.map((q) => q.sql);
+  assert.equal(sql[0], "BEGIN");
+  assert.equal(sql.at(-1), "COMMIT");
+  assert.match(sql[1]!, /^SELECT id, version, category, hint FROM viewer_notes WHERE user_key = \$1 FOR UPDATE$/);
+  assert.deepEqual(queries[1]!.params, ["bob"]);
+  const updates = queries.filter((q) => q.sql.startsWith("UPDATE viewer_notes SET layer"));
+  assert.equal(updates.length, 1, "only the note at its read version is rewritten");
+  assert.match(updates[0]!.sql, /dirty = false, version = version \+ 1 WHERE id = \$1 AND version = \$2/);
+  assert.deepEqual(updates[0]!.params!.slice(0, 2), [1, 2]);
+  assert.deepEqual(queries.filter((q) => q.sql.startsWith("DELETE FROM viewer_notes")).map((q) => q.params), [[3, 1]]);
+  assert.equal(queries.filter((q) => q.sql.includes("SET dirty = false")).length, 0);
+});
+
+// @spec MEM-CONSOL-007
+test("commitViewer rolls back when a statement fails, so a viewer is committed whole or not at all", async () => {
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("SELECT id, version") ? [{ id: "1", version: 1, category: "general", hint: null }] : []), fail: (q) => q.sql.startsWith("UPDATE viewer_notes") });
+  await assert.rejects(s.commitViewer("bob", [{ kind: "update", id: 1, version: 1, set: { text: "x" } }]), /db down/);
+  assert.equal(queries.at(-1)!.sql, "ROLLBACK");
+  assert.ok(!queries.some((q) => q.sql === "COMMIT"));
+});
+
+// @spec MEM-NOTE-004, MEM-NOTE-005
+test("reinforceNote reads the note under a row lock, then writes the reinforced strength, mentions + 1, dirty and version + 1", async () => {
+  const note = { id: "5", user_key: "bob", layer: "recent", category: "general", text: "t", hint: null, strength: 0.5, strength_at: new Date(Date.UTC(2026, 0, 1)), mentions: 1, dirty: false, version: 3, created_at: new Date(), last_surfaced_at: null, embedding: "[1,2,3]" };
+  const { s, queries } = store({ rows: (q) => (q.sql.includes("FROM viewer_notes WHERE id = $1 FOR UPDATE") || q.sql.startsWith("UPDATE viewer_notes") ? [note] : []) });
+  (s as unknown as { clock: () => number }).clock = () => Date.UTC(2026, 0, 1); // no time passed: effective 0.5
+  await s.reinforceNote(5);
+  const update = queries.find((q) => q.sql.startsWith("UPDATE viewer_notes"))!;
+  assert.match(update.sql, /strength = \$2, strength_at = \$3, mentions = mentions \+ 1, dirty = true, version = version \+ 1/);
+  assert.ok(Math.abs((update.params![1] as number) - 0.8) < 1e-9);
+  assert.deepEqual(queries.map((q) => q.sql).filter((x) => x === "BEGIN" || x === "COMMIT"), ["BEGIN", "COMMIT"]);
+});
+
+// @spec MEM-CONSOL-016
+test("purging deletes only deletion records without a reason older than the cutoff", async () => {
+  const { s, queries } = store({ rows: () => [] });
+  const cutoff = new Date("2026-01-01T00:00:00Z");
+  await s.purgeSoftDeletions(cutoff);
+  assert.match(queries[0]!.sql, /^DELETE FROM viewer_note_deletions WHERE reason IS NULL AND deleted_at < \$1$/);
+  assert.deepEqual(queries[0]!.params, [cutoff]);
+});
+
+// @spec MEM-NOTE-001, MEM-NOTE-010
+test("insertNote embeds the text, defaults a sensitive hint and stores strength clamped to 0..1", async () => {
+  const row = { id: "1", user_key: "bob", layer: "recent", category: "health", text: "t", hint: "h", strength: 1, strength_at: new Date(), mentions: 1, dirty: true, version: 1, created_at: new Date(), last_surfaced_at: null, embedding: "[0.5,-1,2]" };
+  const { s, queries, embedded } = store({ rows: () => [row] });
+  const n = await s.insertNote({ userKey: "BOB", category: "health", text: " had surgery ", strength: 4 });
+  assert.deepEqual(embedded, ["had surgery"]);
+  assert.match(queries[0]!.sql, /^INSERT INTO viewer_notes \(user_key, layer, category, text, hint, strength, strength_at, mentions, dirty, version, embedding\)/);
+  const p = queries[0]!.params!;
+  assert.deepEqual([p[0], p[1], p[2], p[3], p[4], p[5], p[7], p[8], p[9]], ["bob", "recent", "health", "had surgery", "only if they bring it up; never quote it", 1, 1, true, "[0.5,-1,2]"]);
+  assert.deepEqual(n.embedding, [0.5, -1, 2]);
 });

@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testConfig } from "@cohost/testing";
 import { InMemoryStore, hashEmbed } from "../src/fake-store.js";
 
 const T0 = new Date("2026-01-01T00:00:00Z").getTime();
 function make(over: { recall_k?: number; min_similarity?: number } = {}) {
   let now = T0;
-  const s = new InMemoryStore({ recall_k: 3, min_similarity: 0.3, ...over }, () => now);
+  const s = new InMemoryStore({ ...testConfig().brain.memory, recall_k: 3, min_similarity: 0.3, ...over }, () => now);
   return { s, advance: (ms: number) => { now += ms; } };
 }
 
@@ -47,8 +48,8 @@ test("recall respects k", async () => {
 // @spec MEM-BACKEND-005
 test("touchViewer counts per case-insensitive key; first sight is new", async () => {
   const { s } = make();
-  assert.deepEqual(await s.touchViewer("ABC", "Bob"), { msgCount: 1, notes: "", isNew: true });
-  assert.deepEqual(await s.touchViewer("abc", "Bobby"), { msgCount: 2, notes: "", isNew: false });
+  assert.deepEqual(await s.touchViewer("ABC", "Bob"), { msgCount: 1, notes: "", isNew: true, regular: false });
+  assert.deepEqual(await s.touchViewer("abc", "Bobby"), { msgCount: 2, notes: "", isNew: false, regular: false });
 });
 
 // @spec MEM-BACKEND-006

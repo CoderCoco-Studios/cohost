@@ -15,6 +15,8 @@ export interface StartupDeps {
   /** True once Ollama answers. */
   ping: () => Promise<boolean>;
   onEvent: (ev: BusEvent) => Promise<void>;
+  /** Called once the service is ready: the consolidation catch-up check (MEM-CONSOL-015). Its failure never fails startup. */
+  onStarted?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
 }
 
@@ -22,7 +24,7 @@ const RETRY_MS = 3000;
 const MAX_INIT_RETRIES = 20;
 
 /** Wait for dependencies, initialise the store, subscribe both consumer groups, report ready. Throws on fatal startup errors. */
-export async function startMemory({ cfg, log, bus, store, health, heartbeat, ping, onEvent, sleep }: StartupDeps): Promise<void> {
+export async function startMemory({ cfg, log, bus, store, health, heartbeat, ping, onEvent, onStarted, sleep }: StartupDeps): Promise<void> {
   const { store: storeKind, embedder: embedderKind } = cfg;
   // @spec MEM-START-004
   if (storeKind !== "postgres" || embedderKind !== "ollama") {
@@ -66,11 +68,13 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   const main = groupReady();
   const recall = groupReady();
   const running = [
-    bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say"], start: "resume", onReady: main.onReady }, onEvent),
+    bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
     bus.subscribe({ group: "memory-recall", types: ["memory.recall.request"], start: "resume", onReady: recall.onReady }, onEvent),
   ];
   // The subscriptions run until the bus stops; only their early failure matters here.
   await Promise.race([Promise.all([main.ready, recall.ready]), ...running]);
   heartbeat.ready();
   log.info({ recall_k: cfg.recall_k }, "memory online");
+  // @spec MEM-CONSOL-015
+  await onStarted?.().catch((err) => log.warn({ err: String(err) }, "consolidation catch-up check failed"));
 }

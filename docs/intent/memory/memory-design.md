@@ -435,9 +435,13 @@ Factories in `services/memory/src/backend.ts`:
   `InMemoryStore`, which ignores the supplied embedder; anything else gives the
   Postgres `MemoryStore` (`backend.ts:14-18`).
 
-Both stores implement `MemoryBackend` (`store.ts:21-30`): `init, remember, recall,
-touchViewer, recentSince, getMeta, setMeta, close`. `region.ts:9` types the store as
-`Pick<MemoryStore, ...>`, which either backend satisfies structurally.
+Both stores implement `MemoryBackend` (`services/memory/src/store.ts`): `init, remember,
+recall, touchViewer, recentSince, getMeta, setMeta, close` for memories, viewers and
+metadata, and for viewer notes `getViewer, setRegular, insertNote, reinforceNote,
+listNotes, listDeletions, deleteNote, dirtyNoteCount, dirtyViewerKeys, commitViewer,
+purgeSoftDeletions, withConsolidationLock`. `region.ts` types the store as
+`Pick<MemoryStore, ...>` of the methods it uses, which either backend satisfies
+structurally.
 
 ### Postgres `MemoryStore` (`store.ts:49-175`)
 
@@ -609,6 +613,8 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (BUS-STOP-002) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
 | Pass vs live writes | Per-viewer transaction that commits only notes whose version is unchanged since the pass read them | hold row locks across the model call; pause capture during a pass | `[proposed]`. Locks held across a model call would stall capture and owner deletions for seconds; a version check lets the newer write win and leaves the note dirty for the next pass. `MEM-CONSOL-007` |
 | One pass at a time | Postgres advisory lock shared by the service and the one-shot | a `meta` flag | `[proposed]`. An advisory lock is released when its session ends, so a crashed pass never leaves a stale lock behind. `MEM-CONSOL-010` |
+| Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
+| Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
 | Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres | `[proposed]`. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
 | Viewer lookup for surfacing | By current display name, case-insensitive, most recently seen first | carry `userId` through working memory and `attention.focus` | `[proposed]`. The cortex holds names only (`attention.focus.who`, the working-memory chat lines); a name lookup needs no change to working-memory or salience. A name shared by two viewers resolves to the one seen last. `MEM-SURF-002` |
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model | `[proposed]`. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |

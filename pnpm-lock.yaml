@@ -263,6 +263,9 @@ importers:
       '@cohost/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@cohost/modules':
+        specifier: workspace:*
+        version: link:../../packages/modules
       pg:
         specifier: ^8.13.0
         version: 8.23.1

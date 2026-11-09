@@ -4,12 +4,12 @@ import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
 
-function setup(viewer = { msgCount: 1, notes: "", isNew: true }, recalled: Memory[] = [], opts: { touchFails?: boolean } = {}) {
+function setup(viewer = { msgCount: 1, notes: "", isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
   const warnings: unknown[] = [];
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
   const store = {
-    touchViewer: async (...args: [string, string]) => {
+    touchViewer: async (...args: [string, string, { isSub?: boolean }?]) => {
       calls.push({ op: "touchViewer", args });
       if (opts.touchFails) throw new Error("db down");
       return viewer;
@@ -18,7 +18,7 @@ function setup(viewer = { msgCount: 1, notes: "", isNew: true }, recalled: Memor
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
   };
   const bus = new FakeBus();
-  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log });
+  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log, onBrainStatus: opts.onBrainStatus as never });
   return { onEvent, bus, calls, warnings };
 }
 const chat = (extra: Record<string, unknown> = {}) =>
@@ -28,15 +28,15 @@ const chat = (extra: Record<string, unknown> = {}) =>
 test("every chat line counts toward the viewer; only lines addressed to the co-host are remembered", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat());
-  assert.deepEqual(calls, [{ op: "touchViewer", args: ["123", "Bob"] }]);
+  assert.deepEqual(calls, [{ op: "touchViewer", args: ["123", "Bob", { isSub: false }] }]);
   assert.equal(bus.published.length, 0);
   await onEvent(chat({ userId: undefined })); // no platform id: key by name
-  assert.deepEqual(calls[1], { op: "touchViewer", args: ["Bob", "Bob"] });
+  assert.deepEqual(calls[1], { op: "touchViewer", args: ["Bob", "Bob", { isSub: false }] });
 });
 
 // @spec MEM-WRITE-001, MEM-VIEWER-002, MEM-VIEWER-004
 test("a mention announces the viewer before the (slow) embed + store", async () => {
-  const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "speedrunner", isNew: false });
+  const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "speedrunner", isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
   assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, notes: "speedrunner" }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
@@ -112,4 +112,25 @@ test("a failed viewer upsert is logged, publishes no memory.viewer, and the ment
   await onEvent(chat()); // unaddressed: nothing to remember, still no throw
   assert.equal(warnings.length, 2);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember", "touchViewer"]);
+});
+
+// @spec MEM-REG-005
+test("a chat line passes its isSub flag to the viewer upsert, mentioning the co-host or not", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(chat({ isSub: true }));
+  await onEvent(chat({ isSub: false, mentionsCohost: true }));
+  assert.deepEqual(calls.filter((c) => c.op === "touchViewer").map((c) => c.args[2]), [{ isSub: true }, { isSub: false }]);
+});
+
+// @spec MEM-CONSOL-002, MEM-CONSOL-003
+test("brain.status is passed on so consolidation knows when the cortex is idle; memory publishes nothing for it", async () => {
+  const seen: string[] = [];
+  const { onEvent, bus, calls } = setup(undefined, [], { onBrainStatus: (s) => seen.push(s) });
+  await onEvent(event("brain.status", { state: "thinking" }));
+  await onEvent(event("brain.status", { state: "idle", detail: "x" }));
+  assert.deepEqual(seen, ["thinking", "idle"]);
+  assert.equal(bus.published.length, 0);
+  assert.deepEqual(calls, []);
+  const { onEvent: bare } = setup();
+  await bare(event("brain.status", { state: "muted" })); // no listener: ignored
 });

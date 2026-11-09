@@ -9,12 +9,14 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "start": "node dist/index.js",
-    "reflect": "tsx src/reflect.ts"
+    "reflect": "tsx src/reflect.ts",
+    "consolidate": "tsx src/consolidate.ts"
   },
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
     "@cohost/llm": "workspace:*",
+    "@cohost/modules": "workspace:*",
     "pg": "^8.13.0"
   },
   "devDependencies": { "@cohost/testing": "workspace:*", "@types/pg": "^8.11.0" }

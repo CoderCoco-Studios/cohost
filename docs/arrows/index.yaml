@@ -41,7 +41,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Spoken fallback line designed (gaps): CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 (chunk 1); CFG-SCH-017, CFG-USR-009 (chunk 2); CFG-SCH-019, CFG-USR-010 (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); gaps CFG-SCH-017, CFG-USR-009 (chunk 2); CFG-SCH-019, CFG-USR-010 (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -53,7 +53,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Spoken fallback line designed (gaps): BUS-EVT-001 (24 types), BUS-EVT-022 (voice.failed), build chunk 1. Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4); the 23 current types pinned by a test. No other open gaps."
+    next: "Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). No open gaps."
     drift: null
 
   model-backends:
@@ -125,7 +125,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Spoken fallback line designed (gaps): EARS-PLAY-005, EARS-PLAY-006 (rewritten), EARS-FALL-001 to 019, build chunk 1 (ears LLD Fallback Line, Build order). Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line chunk 1 built (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-001 to 019); it plays nothing until voice serves clips (voice chunk 2). Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
     drift: null
 
   salience:
@@ -185,7 +185,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Spoken fallback line designed (gaps): VOICE-SINK-010 to 013 (chunk 1), VOICE-CLIP-001 to 012 (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); gaps VOICE-CLIP-001 to 012 (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
     drift: null
 
   avatar:

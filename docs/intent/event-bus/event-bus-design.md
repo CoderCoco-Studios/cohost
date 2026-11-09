@@ -123,7 +123,7 @@ Viewer-notes events (the two surfacing events are built; the two owner events ar
 
 These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.
 
-Spoken fallback line (gap; shape `[proposed]`; design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
+Spoken fallback line (shape `[proposed]`; design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|

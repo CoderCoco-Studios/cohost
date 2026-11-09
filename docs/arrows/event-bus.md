@@ -4,14 +4,14 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line designed: 65 specs: 63 implemented, 2 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line (build chunk 1): 65 specs: 65 implemented, 0 gaps, 0 deferred.
 
-## Spoken fallback line: designed, not built
+## Spoken fallback line: built (chunk 1)
 
 Design: LLD § Event catalogue (`voice.failed`, shape `[proposed]`); semantics in the voice LLD (Sink Arbitration Protocol rule 8).
 
-- Rewritten (now a gap): `BUS-EVT-001` (exactly 24 types with `voice.failed`; the 23 existing types stay pinned by their tests).
-- New gap: `BUS-EVT-022` (`voice.failed` shape).
+- `BUS-EVT-001`: the catalogue is exactly 24 types, with `voice.failed`, pinned by `packages/bus/test/bus.test.ts`.
+- `BUS-EVT-022`: the `voice.failed` shape (`id`, `sink`, `reason`, optional `fallback { clip, text }`).
 - Build chunk 1 (ears LLD § Fallback Line, Build order).
 
 ## Viewer notes events (built)

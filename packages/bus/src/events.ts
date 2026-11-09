@@ -207,6 +207,18 @@ export const EventPayloads = {
   "voice.playing": z.object({ id: z.string(), sink: z.string() }),
   "voice.done": z.object({ id: z.string(), sink: z.string() }),
 
+  /**
+   * A sink gave up on an utterance (it will not play, or a spoken fallback line plays in its place). `fallback` is
+   * present exactly when the sink is playing a fallback clip for this id.
+   */
+  // @spec BUS-EVT-022
+  "voice.failed": z.object({
+    id: z.string(),
+    sink: z.string(),
+    reason: z.string(),
+    fallback: z.object({ clip: z.string(), text: z.string() }).optional(),
+  }),
+
   /** Avatar's smoothed state, for the dashboard preview. */
   // @spec BUS-EVT-018
   "avatar.state": z.object({

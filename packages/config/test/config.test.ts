@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, cop
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir } from "../src/index.js";
 
 // @spec CFG-ENV-001, CFG-ENV-002
 test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
@@ -541,4 +541,43 @@ test("the shipped example configures the capture hook on its own small ollama mo
   assert.equal(loadShippedBare({ NOTES_MODEL: "other:tag" }).cfg.brain.memory.notes.capture.llm.model, "other:tag");
   assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:4b\}/);
   assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:4b$/m);
+});
+
+// @spec CFG-DIR-006, CFG-DIR-007
+test("dataDir honours COHOST_DATA_DIR, else <workspace root>/data, else <cwd>/data", () => {
+  const root = mkdtempSync(join(tmpdir(), "cohost-data-ws-"));
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - services/*\n");
+  const svc = join(root, "services", "ears");
+  mkdirSync(svc, { recursive: true });
+  const prevCwd = process.cwd();
+  const prevEnv = process.env.COHOST_DATA_DIR;
+  delete process.env.COHOST_DATA_DIR;
+  try {
+    process.chdir(svc);
+    assert.equal(dataDir(), join(realpathSync(root), "data"));
+    process.env.COHOST_DATA_DIR = "/explicit/data";
+    assert.equal(dataDir(), "/explicit/data");
+    process.env.COHOST_DATA_DIR = "relative/data";
+    assert.equal(dataDir(), join(realpathSync(svc), "relative", "data"), "resolved to an absolute path");
+    delete process.env.COHOST_DATA_DIR;
+    const lone = mkdtempSync(join(tmpdir(), "cohost-data-lone-"));
+    process.chdir(lone);
+    assert.equal(dataDir(), join(realpathSync(lone), "data"));
+  } finally {
+    process.chdir(prevCwd);
+    if (prevEnv === undefined) delete process.env.COHOST_DATA_DIR; else process.env.COHOST_DATA_DIR = prevEnv;
+  }
+});
+
+// @spec CFG-SCH-018
+test("ears.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects negatives and fractions", () => {
+  const base = { cohost: { name: "C", streamer: "S" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: { channel: "c" } },
+    voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {} };
+  const with_ = (fallback?: unknown) => ConfigSchema.safeParse({ ...base, ears: { discord: {}, ...(fallback === undefined ? {} : { fallback }) } });
+  assert.equal(with_().data!.ears.fallback.min_interval_ms, 20000);
+  assert.equal(with_({}).data!.ears.fallback.min_interval_ms, 20000);
+  assert.equal(with_({ min_interval_ms: 0 }).data!.ears.fallback.min_interval_ms, 0);
+  assert.equal(with_({ min_interval_ms: 5000 }).data!.ears.fallback.min_interval_ms, 5000);
+  assert.equal(with_({ min_interval_ms: -1 }).success, false);
+  assert.equal(with_({ min_interval_ms: 1.5 }).success, false);
 });

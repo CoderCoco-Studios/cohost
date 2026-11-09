@@ -286,3 +286,113 @@ test("every brain.say is synthesized, whatever its reason, injected or remember 
   await voice.onEvent(event("brain.say", { id: "b", text: "idle chatter", emotion: "neutral", reason: "idle" }));
   assert.deepEqual(bus.of("voice.utterance").map((u) => u.id), ["a", "b"]);
 });
+
+// ---- voice.failed (the give-up report)
+
+const failed = (id: string, extra: Record<string, unknown> = {}) => event("voice.failed", { id, sink: "discord", reason: "fetch audio 404", ...extra } as never);
+
+// @spec VOICE-SINK-011
+test("a voice.failed inside the claim window: the window runs in full, then the virtual done is published at once with no virtual playing", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  await voice.onEvent(failed("u1"));
+  mock.timers.tick(1499);
+  await flush();
+  assert.deepEqual(bus.published.map((p) => p.type), ["voice.utterance"], "nothing before the window ends");
+  mock.timers.tick(1);
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), []);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+  mock.timers.tick(10_000);
+  await flush();
+  assert.equal(bus.of("voice.done").length, 1, "no second done from the line's duration");
+});
+
+// @spec VOICE-SINK-011, VOICE-SINK-004
+test("a claim inside the window still wins over a voice.failed: no virtual events at all", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  await voice.onEvent(failed("u1"));
+  await voice.onEvent(event("voice.playing", { id: "u1", sink: "dashboard" }));
+  mock.timers.tick(10_000);
+  await flush();
+  assert.deepEqual(bus.types(), ["voice.utterance"]);
+});
+
+// @spec VOICE-SINK-012
+test("a voice.failed after the virtual playing cancels the pending virtual done and publishes it at once", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "u1", sink: "virtual" }]);
+  mock.timers.tick(100);
+  await voice.onEvent(failed("u1"));
+  await flush();
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+  mock.timers.tick(10_000);
+  await flush();
+  assert.equal(bus.of("voice.done").length, 1, "the cancelled timer does not publish a second done");
+});
+
+// @spec VOICE-SINK-012
+test("a voice.failed that arrives while the virtual playing publish is pending releases right after that publish", async () => {
+  const { voice, bus } = setup();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const publish = bus.publish.bind(bus) as (type: never, data: never) => Promise<string>;
+  bus.publish = (async (type: never, data: never) => { if ((type as string) === "voice.playing") await gate; return publish(type, data); }) as typeof bus.publish;
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  await voice.onEvent(failed("u1"));
+  release();
+  await flush();
+  assert.deepEqual(bus.types(), ["voice.utterance", "voice.playing", "voice.done"]);
+  mock.timers.tick(10_000);
+  await flush();
+  assert.equal(bus.of("voice.done").length, 1);
+});
+
+// @spec VOICE-SINK-013
+test("a voice.failed with a fallback, for a claimed id, or for an unknown id changes nothing", async () => {
+  // with fallback: the line is virtual-timed exactly as without the report
+  const a = setup();
+  await a.voice.onEvent(say("u1"));
+  await a.voice.onEvent(failed("u1", { fallback: { clip: "00-aaaaaaaa.wav", text: "Error: unable to play line." } }));
+  mock.timers.tick(1500);
+  await flush();
+  assert.deepEqual(a.bus.of("voice.playing"), [{ id: "u1", sink: "virtual" }]);
+  await a.voice.onEvent(failed("u1", { fallback: { clip: "00-aaaaaaaa.wav", text: "t" } }));
+  assert.deepEqual(a.bus.of("voice.done"), [], "the virtual done still waits for the duration");
+  mock.timers.tick(500);
+  assert.deepEqual(a.bus.of("voice.done"), [{ id: "u1", sink: "virtual" }]);
+  // already claimed by a real sink
+  const b = setup();
+  await b.voice.onEvent(say("u2"));
+  await b.voice.onEvent(event("voice.playing", { id: "u2", sink: "dashboard" }));
+  await b.voice.onEvent(failed("u2"));
+  mock.timers.tick(10_000);
+  await flush();
+  assert.deepEqual(b.bus.types(), ["voice.utterance"]);
+  // an id voice does not hold
+  const c = setup();
+  await c.voice.onEvent(failed("nope"));
+  mock.timers.tick(10_000);
+  await flush();
+  assert.deepEqual(c.bus.published, []);
+});
+
+// @spec VOICE-SINK-013
+test("a voice.failed for an id whose virtual done was already published changes nothing", async () => {
+  const { voice, bus } = setup();
+  await voice.onEvent(say("u1"));
+  mock.timers.tick(1500);
+  await flush();
+  mock.timers.tick(500);
+  assert.equal(bus.of("voice.done").length, 1);
+  await voice.onEvent(failed("u1"));
+  await flush();
+  assert.equal(bus.of("voice.done").length, 1);
+  assert.equal(bus.of("voice.playing").length, 1);
+});

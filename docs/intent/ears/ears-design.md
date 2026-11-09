@@ -5,7 +5,7 @@ prefix: EARS
 
 # ears
 
-> Brownfield LLD, mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at `1b57790` with the owner's decisions of 2026-11-01 applied. Describes the implemented behaviour, plus the designed but not yet built spoken fallback line (Fallback Line; `[ ]` specs). HLD: [high-level-design](../../high-level-design.md).
+> Brownfield LLD, mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at `1b57790` with the owner's decisions of 2026-11-01 applied. Describes the implemented behaviour, including the spoken fallback line (Fallback Line). HLD: [high-level-design](../../high-level-design.md).
 
 ## Context and Design Philosophy
 
@@ -78,7 +78,7 @@ There is no cap on utterance length (a speaker who never pauses for `silence_ms`
 
 - `enqueue(id, url)` pushes and calls `pump()`.
 - `pump()` returns if something is current or the queue is empty; otherwise it shifts the head, sets `current = id`, fetches the WAV (`httpAudio`: plain `fetch`, throws `fetch audio <status>` on non-2xx, `playback.ts:14-18`), converts it with `wavToDiscordPcm` (any-rate mono/stereo 16-bit WAV to 48 kHz stereo by linear interpolation, `audio.ts:22-41`), calls `play(pcm)` (which becomes `player.play(createAudioResource(Readable.from([pcm]), { inputType: Raw }))`, `discord.ts:33-36`), and **then** publishes `voice.playing { id, sink: "discord" }` (`playback.ts:44-46`).
-- If fetch/convert/play throws, it logs `"playback failed"`, clears `current`, and pumps the next item. It publishes **neither** `voice.playing` nor `voice.done` for the failed item (`playback.ts:47-51`; asserted deliberately by `ears.test.ts:44-53`). The intended behaviour replaces this silent skip: ears gives up on the utterance, reports it on the bus, and says a spoken fallback line in its place (see Fallback Line below; EARS-PLAY-005, EARS-PLAY-006 and EARS-FALL-*, gaps).
+- If fetch, convert or the player hand-over throws before any audio has started, it logs `"playback failed"` and gives up on the utterance (EARS-PLAY-005): it publishes `voice.failed` for it (EARS-PLAY-006), says a spoken fallback line in its place when one is eligible, and publishes no `voice.done` for a given-up item unless a fallback clip is playing (see Fallback Line below; EARS-FALL-*). When no clip plays, it clears `current` and pumps the next item. A failure of the `voice.playing` publish after the player has the audio is logged (`voice.playing publish failed`) and is not a give-up.
 - `AudioPlayerStatus.Idle` calls `onIdle()`, which publishes `voice.done { id: current, sink: "discord" }` and pumps (`Playback.onIdle`). Idle with nothing current publishes nothing. A failed `voice.done` publish is caught, logged as a warning (`voice.done publish failed`) and the queue continues (EARS-PLAY-009); `onIdle` awaits the publish so `voice.done` precedes the next `voice.playing`.
 - Player errors are only logged (`discord.ts:106`); the queue is unbounded and the fetch has no timeout.
 
@@ -88,7 +88,7 @@ The sink's behavior relative to the protocol: ears always plays every utterance 
 
 ## Fallback Line
 
-When ears cannot play a line, the co-host says something funny aloud instead of going silent. It is a short line such as "Error: unable to play line.", picked at random from a list the owner edits in `config.yaml`. The lines are **spoken**: voice pre-generates one audio clip per line with the co-host's TTS voice and serves the clips over its HTTP server. ears fetches them ahead of time and keeps its own local copy, so playing one never depends on the fetch and convert path that just failed. ears never synthesizes clips. The co-host's transcript records the fallback as something she said, with a note that the line she meant failed to play. Her next reply gets a hint inviting her to riff on the glitch in character. All of this is a gap today; the specs are `[ ]`.
+When ears cannot play a line, the co-host says something funny aloud instead of going silent. It is a short line such as "Error: unable to play line.", picked at random from a list the owner edits in `config.yaml`. The lines are **spoken**: voice pre-generates one audio clip per line with the co-host's TTS voice and serves the clips over its HTTP server. ears fetches them ahead of time and keeps its own local copy, so playing one never depends on the fetch and convert path that just failed. ears never synthesizes clips. The co-host's transcript records the fallback as something she said, with a note that the line she meant failed to play. Her next reply gets a hint inviting her to riff on the glitch in character. The spec markers show which parts are built.
 
 Owner decisions:
 - The fallback is said aloud, chosen at random from a configurable list.
@@ -294,8 +294,8 @@ Behaviors and debt observed but not explained by the code or specs.
 
 Files in this segment:
 
-- `services/ears/src/index.ts`, `discord.ts`, `session.ts`, `hearing.ts`, `playback.ts`, `audio.ts`, `inject.ts`, `health.ts`
-- `services/ears/test/audio.test.ts`, `ears.test.ts`, `health.test.ts`, `inject.test.ts`, `session.test.ts`
+- `services/ears/src/index.ts`, `discord.ts`, `session.ts`, `hearing.ts`, `playback.ts`, `fallback.ts`, `audio.ts`, `inject.ts`, `health.ts`
+- `services/ears/test/audio.test.ts`, `ears.test.ts`, `fallback.test.ts`, `health.test.ts`, `inject.test.ts`, `session.test.ts`
 - `services/ears/package.json`, `services/ears/tsconfig.json`
 
 Other segments (arrow shows direction):

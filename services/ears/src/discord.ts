@@ -6,11 +6,13 @@ import {
 import prism from "prism-media";
 import { Readable } from "node:stream";
 import type { Bus, Heartbeat, BusEvent } from "@cohost/bus";
-import { env, type Config, type Logger } from "@cohost/config";
+import { join as joinPath } from "node:path";
+import { dataDir, env, urls, type Config, type Logger } from "@cohost/config";
 import { Hearing, sttTranscriber } from "./hearing.js";
+import { ClipCache, ClipMirror, FallbackLine, startClipSync } from "./fallback.js";
 import { Playback, httpAudio } from "./playback.js";
 import type { EarsHealth } from "./health.js";
-import { createEarsHandler, createJoiner, subscribeEars, voiceTarget } from "./session.js";
+import { DISCORD_LOOP_TYPES, createEarsHandler, createJoiner, subscribeEars, voiceTarget } from "./session.js";
 
 export interface DiscordDeps {
   cfg: Config;
@@ -41,8 +43,11 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   let connection: VoiceConnection | undefined;
   const listening = new Set<string>();
   const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
+  // The spoken fallback line: ears' own clip cache (memory + disk mirror), refreshed from voice's HTTP routes.
+  const clipCache = new ClipCache();
+  const fallback = new FallbackLine({ cache: clipCache, minIntervalMs: cfg.ears.fallback.min_interval_ms });
   const playback = new Playback({
-    bus, log, fetchAudio: httpAudio,
+    bus, log, fallback, fetchAudio: httpAudio,
     play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
   });
 
@@ -138,13 +143,16 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
 
   // Bus handling starts before the join and does not depend on it (injection works whether or not the join succeeds).
   // One loop for the whole `ears` group: two loops with different type filters would drop each other's events.
-  // @spec EARS-PLAY-001, EARS-INJ-007, EARS-START-006
+  // @spec EARS-PLAY-001, EARS-INJ-007, EARS-START-006, EARS-FALL-010
   await subscribeEars(
     bus,
-    ["voice.utterance", "inject.request"],
-    createEarsHandler({ onInject: deps.onInject, playback, isVoiceReady: deps.isVoiceReady, log }),
+    DISCORD_LOOP_TYPES,
+    createEarsHandler({ onInject: deps.onInject, playback, isVoiceReady: deps.isVoiceReady, log, claims: fallback }),
     log,
   );
+
+  // @spec EARS-FALL-012, EARS-FALL-014, EARS-FALL-018
+  const clipSync = startClipSync({ baseUrl: urls.voice(), cache: clipCache, mirror: new ClipMirror(joinPath(dataDir(), "ears", "fallback-clips")), log });
 
   client.once("ready", () => {
     log.info({ user: client.user?.tag }, "discord ready");
@@ -158,6 +166,7 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
     // @spec EARS-SESS-008
     async stop() {
       stopped = true;
+      clipSync.stop();
       connection?.destroy();
       await client.destroy();
     },

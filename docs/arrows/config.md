@@ -4,13 +4,14 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line designed: 60 specs: 53 implemented, 7 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 56 implemented, 4 gaps (chunks 2 and 3), 0 deferred.
 
-## Spoken fallback line: designed, not built
+## Spoken fallback line: chunk 1 built, chunks 2 and 3 designed
 
 Design: LLD § Schema key groups, Files table and Decisions (`[proposed]` items marked).
 
-- New gaps: `CFG-DIR-006`, `CFG-DIR-007` (`dataDir()`, `COHOST_DATA_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`) in build chunk 1; `CFG-SCH-017` (`voice.fallback.lines`) and `CFG-USR-009` (starter list) in chunk 2; `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
+- Built in chunk 1: `CFG-DIR-006`, `CFG-DIR-007` (`dataDir()`, `COHOST_DATA_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`).
+- Gaps: `CFG-SCH-017` (`voice.fallback.lines`) and `CFG-USR-009` (starter list) in chunk 2; `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
 
 ## Viewer notes: chunk 1 built
 

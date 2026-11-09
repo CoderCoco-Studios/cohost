@@ -4,13 +4,14 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line designed: 50 specs: 34 implemented, 16 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 38 implemented, 12 gaps (VOICE-CLIP-*, build chunk 2), 0 deferred.
 
-## Spoken fallback line: designed, not built
+## Spoken fallback line: sink arbitration built (chunk 1), clips designed (chunk 2)
 
 Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips (`[proposed]` items marked). voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for ears to cache.
 
-- New gaps: `VOICE-SINK-010` to `013` (build chunk 1), `VOICE-CLIP-001` to `012` (build chunk 2; 011 and 012 are the `/fallback/*` HTTP routes).
+- Built in chunk 1: `VOICE-SINK-010` to `013` (voice reads `voice.failed` and releases cortex early when nothing plays).
+- Gaps: `VOICE-CLIP-001` to `012` (build chunk 2; 011 and 012 are the `/fallback/*` HTTP routes). Until then every `/fallback/*` request is a 404.
 - Deferred decisions recorded in the LLD: owner-facing voice tuning knobs (depend on what Kokoro-FastAPI accepts, unverified); a separate speaking module with tunable routing.
 
 ## Decisions applied
@@ -36,7 +37,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (50 specs: 34 `[x]`, 16 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (50 specs: 38 `[x]`, 12 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)

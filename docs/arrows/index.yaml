@@ -125,7 +125,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Spoken fallback line designed (gaps): EARS-PLAY-005, EARS-PLAY-006 (rewritten), EARS-FALL-001 to 013, build chunk 1 (ears LLD Fallback Line, Build order). Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line designed (gaps): EARS-PLAY-005, EARS-PLAY-006 (rewritten), EARS-FALL-001 to 019, build chunk 1 (ears LLD Fallback Line, Build order). Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
     drift: null
 
   salience:
@@ -185,7 +185,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Spoken fallback line designed (gaps): VOICE-SINK-010 to 013 (chunk 1), VOICE-CLIP-001 to 010 (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "Spoken fallback line designed (gaps): VOICE-SINK-010 to 013 (chunk 1), VOICE-CLIP-001 to 012 (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
     drift: null
 
   avatar:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Spoken fallback line designed (gap): DEPLOY-COMPOSE-018 (clip store bind mount), build chunk 1. Intent pass confirmed; no other spec gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. NOTES_MODEL pull built (DEPLOY-COMPOSE-008/-011). Pending viewer-notes cascade: a best-effort Compose one-shot for consolidate (see deployment.md)."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. NOTES_MODEL pull built (DEPLOY-COMPOSE-008/-011). Pending viewer-notes cascade: a best-effort Compose one-shot for consolidate (see deployment.md)."
     drift: null
 
 unmapped:

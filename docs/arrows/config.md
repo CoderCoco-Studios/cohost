@@ -10,7 +10,7 @@
 
 Design: LLD § Schema key groups, Files table and Decisions (`[proposed]` items marked).
 
-- New gaps: `CFG-DIR-006`, `CFG-DIR-007` (`clipsDir()`, `FALLBACK_CLIPS_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`) in build chunk 1; `CFG-SCH-017` (`voice.fallback.lines`) and `CFG-USR-009` (starter list) in chunk 2; `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
+- New gaps: `CFG-DIR-006`, `CFG-DIR-007` (`dataDir()`, `COHOST_DATA_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`) in build chunk 1; `CFG-SCH-017` (`voice.fallback.lines`) and `CFG-USR-009` (starter list) in chunk 2; `CFG-SCH-019` (`brain.cortex.fallback_ack_chance`, default 0.25) and `CFG-USR-010` in chunk 3.
 
 ## Viewer notes: chunk 1 built
 
@@ -73,7 +73,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | With test |
 |----------|----------|-------------|----------|------|-----------|
-| Config directory and seeding | CFG-DIR-001 to 007 | 5 | 0 | 2 (DIR-006, DIR-007: clip directory) | 5 |
+| Config directory and seeding | CFG-DIR-001 to 007 | 5 | 0 | 2 (DIR-006, DIR-007: per-service data directory) | 5 |
 | Environment handling | CFG-ENV-001 to 008 | 8 | 0 | 0 | 7 |
 | Loading and validation pipeline | CFG-LOAD-001 to 006 | 6 | 0 | 0 | 6 |
 | Schema | CFG-SCH-001 to 019 | 16 | 0 | 3 (SCH-017 to 019: fallback line) | 12 |

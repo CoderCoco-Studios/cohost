@@ -1,6 +1,6 @@
 # deployment specs
 
-Prefix `DEPLOY`. Design: [deployment-design.md](deployment-design.md). No OpenSpec capability covers this segment (the retired `openspec/specs/` baseline has none for Compose, the Dockerfile, the installer, CI, the docs site or licensing), so no spec below carries an OpenSpec reference. `[proposed]` inside a line marks a value or choice awaiting the owner's confirmation (spoken fallback line).
+Prefix `DEPLOY`. Design: [deployment-design.md](deployment-design.md). No OpenSpec capability covers this segment (the retired `openspec/specs/` baseline has none for Compose, the Dockerfile, the installer, CI, the docs site or licensing), so no spec below carries an OpenSpec reference.
 
 Verified against the files at git `49ba935` (audit pass 2026-11-01). Owner decisions of 2026-11-01 applied at git `1b57790`.
 
@@ -27,7 +27,6 @@ Annotations: `@spec DEPLOY-…` comments sit in the deployment files themselves.
 - [x] **DEPLOY-COMPOSE-015**: The application services, `redis`, `postgres`, `ollama`, `tts` and `stt` shall restart unless stopped; only the one-shot `models` shall carry no restart policy.
 - [x] **DEPLOY-COMPOSE-016**: The shared `x-ts-service` `environment:` block shall set `CONTROL_ENABLED: "0"`, so every application container, the `dashboard` among them, ignores a `CONTROL_ENABLED=1` in `.env`; service control runs only from a host-run dashboard or `cohostctl`. Only the dashboard reads the variable, and with it enabled it binds `127.0.0.1` inside the container (`packages/control/src/config.ts:32-35`), so the published port would stop answering.
 - [x] **DEPLOY-COMPOSE-017**: The `x-ts-service` `environment:` block shall pass through the isolation variables the control plane's isolated start sets (`CHAT_SOURCE`, `MEMORY_STORE`, `MEMORY_EMBEDDER`, `LLM_PROVIDER`, `VOICE_ENGINE`, `AVATAR_DRIVER`, `VISION_ENABLED`, `EARS_SOURCE`) as `${VAR:-}` entries, so a value set on the `docker compose` process (`packages/control/src/runtime.ts:61`) reaches the container and an unset one falls through to the `${VAR:-default}` in `config.yaml` (control-plane CTRL-RUNTIME-009).
-- [ ] **DEPLOY-COMPOSE-018**: The `voice` service shall bind-mount the host directory `./data/fallback-clips` at `/app/data/fallback-clips` read-write and the `ears` service shall bind-mount it at the same path read-only, each also keeping the `./config:/app/config` mount of DEPLOY-COMPOSE-002 `[proposed]`.
 
 ## Container health
 

@@ -4,13 +4,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 63 specs: 63 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`). With the spoken fallback line designed: 64 specs: 63 implemented, 1 gap, 0 deferred.
-
-## Spoken fallback line: designed, not built
-
-Design: LLD § Compose topology, Fallback clip store (`[proposed]`). voice and ears bind-mount `./data/fallback-clips` at `/app/data/fallback-clips`, read-write for voice and read-only for ears, each restating the `./config` mount.
-
-- New gap: `DEPLOY-COMPOSE-018` (build chunk 1).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 63 specs: 63 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
 ## Pending cascade: viewer notes
 
@@ -47,7 +41,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (64 specs, prefix `DEPLOY`: 63 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (63 specs, prefix `DEPLOY`: 63 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - scripts/compose-smoke.sh (1 test annotation: DEPLOY-IMG-002, DEPLOY-IMG-003; run by `.github/workflows/compose-smoke.yml`)
@@ -84,7 +78,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to 018 | 17 | 0 | 1 (COMPOSE-018: clip store) |
+| Compose topology | DEPLOY-COMPOSE-001 to 017 | 17 | 0 | 0 |
 | Container health | DEPLOY-HC-001 to 002 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to 005 | 5 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to 012 | 12 | 0 | 0 |

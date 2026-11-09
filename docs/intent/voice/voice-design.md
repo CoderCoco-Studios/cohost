@@ -76,6 +76,7 @@ The store (`voice.ts:66-85`) is a `Map<id, Buffer>` plus an insertion-order arra
 | --- | --- |
 | `GET /audio/<id>.wav` where `id` matches `[\w-]+` and is stored | `200`, `content-type: audio/wav`, `content-length`, `access-control-allow-origin: *`, WAV body |
 | same path, id unknown or evicted | `404` body `gone` |
+| `GET /fallback/manifest.json`, `GET /fallback/<name>` (gap) | the fallback clip manifest and clips; see Fallback Clips (VOICE-CLIP-011, VOICE-CLIP-012) |
 | `GET /health` | `200` body `ok` (no check of Redis or TTS) |
 | anything else | `404`, empty body |
 
@@ -127,7 +128,7 @@ sequenceDiagram
 5. **Sinks' duties.** A sink should publish `voice.playing` when audio actually starts and `voice.done` when it ends. Dashboard: on the `<audio>` element's `play` / `ended` / `error`, via `POST /sink` which the dashboard turns into `voice.playing` / `voice.done` with `sink: "dashboard"` (`services/dashboard/public/index.html:145-146`, `services/dashboard/src/routes.ts:120-122`). ears: `Playback` as described in the [ears LLD](../ears/ears-design.md). Both receive `voice.utterance` over the bus (dashboard through its tail).
 6. **Who is released by `voice.done`.** cortex clears `speakingId` on the first `voice.done` for its own id from **any** sink (`services/cortex/src/cortex.ts:56-60`), with `brain.cortex.speaking_timeout_ms` (20 s) as a backstop (`cortex.ts:169`, `packages/config/src/schema.ts:153-154`). avatar starts lip-sync on `voice.playing` and ends it on `voice.done` for the matching id (`services/avatar/src/boot.ts`, `voice.playing` and `voice.done` cases).
 7. **Voice never reads `voice.done`.** It does not subscribe to it and keeps no per-id lifecycle; completion tracking is entirely the consumers'.
-8. **Give-up report (gap).** A sink that cannot play an utterance publishes `voice.failed { id, sink, reason, fallback? }` (schema: [event-bus](../event-bus/event-bus-design.md) BUS-EVT-022). `fallback` is present when the sink is playing a pre-generated fallback clip in the line's place; that sink has then already claimed the id with its own `voice.playing` and will publish its own `voice.done` when the clip ends, so the protocol treats it like any real playback. Without `fallback`, nothing will play on that sink. voice reads `voice.failed` on its one loop (VOICE-SINK-010) and, for an id no real sink has claimed, releases cortex without making it wait out the line's duration `[proposed]`:
+8. **Give-up report (gap).** A sink that cannot play an utterance publishes `voice.failed { id, sink, reason, fallback? }` (schema: [event-bus](../event-bus/event-bus-design.md) BUS-EVT-022). `fallback` is present when the sink is playing a pre-generated fallback clip in the line's place; that sink has then already claimed the id with its own `voice.playing` and will publish its own `voice.done` when the clip ends, so the protocol treats it like any real playback. Without `fallback`, nothing will play on that sink. voice reads `voice.failed` on its one loop (VOICE-SINK-010) and, for an id no real sink has claimed, releases cortex without making it wait out the line's duration (owner decision):
    - still inside the 1.5 s claim window: when the window ends with no claim, voice publishes the virtual `voice.done` at once and no virtual `voice.playing` (VOICE-SINK-011). The window still runs in full, because another sink (the dashboard) may yet claim the line; a claim inside it wins as usual (VOICE-SINK-004). Avatar gets no `voice.playing`, so it does not lip-sync a line nobody hears;
    - after the virtual `voice.playing` was published: voice cancels the pending virtual `voice.done` timer and publishes it at once (VOICE-SINK-012).
    A `voice.failed` with `fallback`, for an id a real sink claimed, or for an id voice does not know changes nothing (VOICE-SINK-013). Today ears is the only sink that reports a give-up ([ears](../ears/ears-design.md) Fallback Line).
@@ -142,35 +143,77 @@ sequenceDiagram
 
 ## Fallback Clips
 
-voice generates the audio for the co-host's spoken fallback lines: the lines ears says when it cannot play an utterance ([ears](../ears/ears-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017); voice owns generation because it is the service that talks to TTS, and it stores one WAV per phrase in a directory ears can read, so ears plays them without voice's HTTP server or TTS. Clips regenerate automatically whenever the phrase list or the voice settings change; when regeneration fails the previous clips stay in use, a set is never half-replaced, and with no clips at all ears falls back to a silent skip. All of this is a gap today (`VOICE-CLIP-*`, `[ ]`). Owner decisions: voice generates, ears only plays stored files, automatic regeneration on a list or voice-settings change, old clips kept on failure. The fingerprint, the trigger, the layout, the retry schedule and the per-line rules below are `[proposed]`.
+voice generates the audio for the co-host's spoken fallback lines, the lines ears says when it cannot play an utterance ([ears](../ears/ears-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017). voice owns generation because it is the service that talks to TTS. It keeps one WAV per phrase in its own store and serves the set over its HTTP server. ears prefetches the set into its own cache, so playing a fallback never touches voice's HTTP server or TTS at the moment of failure. No file store is shared between the two services: binary transfer over HTTP is what HLD tenet 1 allows. All of this is a gap today (`VOICE-CLIP-*`, `[ ]`).
+
+Owner decisions:
+- voice generates the clips and serves them over HTTP; ears caches them.
+- Regeneration is automatic when the phrase list or the voice settings change.
+- When regeneration fails, the previous clips stay in use.
+- A set is never half-replaced.
+- With no clips, ears falls back to a silent skip.
+
+The fingerprint, the store layout, the route and manifest shape, the retry schedule and the per-line rules below are `[proposed]`.
 
 ### When clips are generated
 
-At startup, where `voice.engine` is `kokoro`, voice computes a **fingerprint**: SHA-256 over a canonical JSON of the phrase list (in order, each phrase trimmed), `voice.engine`, the TTS model name, every `voice` setting the synthesizer sends to TTS (today `voice.voice` and `voice.speed`) and a clip-format version (VOICE-CLIP-001) `[proposed]`. Taking "every setting the synthesizer sends" rather than a fixed key list means a voice knob added later is covered with no change here. If the fingerprint equals the one in the store's `manifest.json` and every listed clip file exists and is not empty, voice makes no TTS call for clips (VOICE-CLIP-002); a damaged set regenerates. Otherwise it regenerates in the background after reporting `ready`, so `brain.say` is never delayed by more than sharing the TTS server: one phrase at a time, in list order, through the same Kokoro request as an utterance (VOICE-CLIP-003).
+At startup, where `voice.engine` is `kokoro`, voice computes a **fingerprint** (VOICE-CLIP-001) `[proposed]`. It is the SHA-256 of a canonical JSON over:
+- the phrase list, in order, each phrase trimmed;
+- `voice.engine`;
+- the TTS model name;
+- every `voice` setting the synthesizer sends to TTS (today `voice.voice` and `voice.speed`);
+- a clip-format version.
 
-Config is read once per process ([config](../config/config-design.md): no file watching), so any change to the phrase list or the voice settings takes a voice restart, and the startup check covers every change. The fingerprint cannot see a change inside the TTS server itself (a new Kokoro image with the same model name); deleting `manifest.json` forces a regeneration on the next start.
+Hashing "every setting the synthesizer sends" rather than a fixed key list means a voice knob added later is covered with no change here.
 
-Where `voice.engine` is `stub`, voice neither generates nor modifies the store (VOICE-CLIP-008): stub clips would be silent, and an isolated run must not overwrite the owner's real clips.
+voice makes no TTS call for clips when the fingerprint equals the one in its store's `manifest.json` and every listed clip file exists and is not empty (VOICE-CLIP-002). A damaged set regenerates. Otherwise voice regenerates in the background after reporting `ready`, so a `brain.say` is never delayed beyond sharing the TTS server. It synthesizes one phrase at a time, in list order, with the same Kokoro request as an utterance (VOICE-CLIP-003).
 
-### Store layout and atomic swap `[proposed]`
+Config is read once per process ([config](../config/config-design.md): no file watching), so any change to the phrase list or the voice settings takes a voice restart, and the startup check covers every change. The fingerprint cannot see a change inside the TTS server itself, such as a new Kokoro image with the same model name. Deleting `manifest.json` forces a regeneration on the next start.
+
+Where `voice.engine` is `stub`, voice neither generates, modifies nor serves clips: the manifest route answers 404 (VOICE-CLIP-008). Stub clips would be silent, so an isolated run must neither overwrite the owner's real clips nor hand silent ones to ears. ears keeps its cache when voice answers 404 (EARS-FALL-016).
+
+### Store and atomic swap `[proposed]`
+
+voice's store belongs to voice alone:
 
 ```
-<clipsDir()>/                    data/fallback-clips under the workspace root (CFG-DIR-006, CFG-DIR-007)
-  manifest.json                  the current set; replaced only by rename
+<dataDir()>/voice/fallback-clips/   (CFG-DIR-006, CFG-DIR-007)
+  manifest.json                     the current set; replaced only by rename
   sets/<generatedAt>-<rand>/NN.wav  one complete set per regeneration
-  .tmp-<random>/                 a set being written
+  .tmp-<random>/                    a set being written
 ```
 
-`manifest.json` holds `version`, `fingerprint`, `generatedAt`, `set` (the set directory) and `clips` (each `file`, `text`, `durationMs`) (VOICE-CLIP-009). A regeneration writes every clip into its own `.tmp-<random>` directory, renames it to a set directory of its own (`sets/<generatedAt>-<random>`), writes the new manifest to a temporary file and renames it over `manifest.json` (VOICE-CLIP-004). A reader therefore sees either the complete old set or the complete new set. Two voice processes regenerating at once (a host-run voice beside the Compose one, both on the same bind mount) each write only their own temporary directory, and the last rename wins with a complete set. Within one process regenerations do not overlap.
+`manifest.json` holds these fields (VOICE-CLIP-009):
+- `version`, `fingerprint`, `generatedAt`, and `set` (the set directory);
+- `clips`: for each clip, its `name`, `text`, `durationMs`, `bytes` and `sha256`.
 
-After a commit voice deletes set directories other than the new and the previous one, and temporary directories older than one hour (VOICE-CLIP-007). Keeping the previous set means a clip ears is about to read after reading the old manifest is still there. A voice that restarts mid-regeneration leaves a temporary directory behind and the old manifest in place; the next start sees the fingerprint mismatch and regenerates.
+A regeneration commits in three steps (VOICE-CLIP-004):
+1. Write every clip into its own `.tmp-<random>` directory.
+2. Rename that directory to a set directory of its own.
+3. Write the new manifest to a temporary file and rename it over `manifest.json`.
+
+The routes therefore only ever serve a complete set. After a commit, voice deletes every other set directory and every temporary directory older than one hour (VOICE-CLIP-007). An ears download that spans the swap gets a 404 for an old clip name; it abandons that refresh and catches up on its next poll (EARS-FALL-017). A voice that restarts mid-regeneration leaves a temporary directory behind and the old manifest in place; the next start sees the fingerprint mismatch and regenerates.
+
+In Compose the store lives in the voice container's filesystem with no volume `[proposed]`. It survives a container restart; after a recreate, voice regenerates in the background. That costs one TTS call per phrase. If TTS is down at that moment, ears keeps playing its own cached copy.
+
+### HTTP routes `[proposed]`
+
+Added to `Voice.handle`, beside `/audio/<id>.wav`:
+
+| Request | Response |
+| --- | --- |
+| `GET /fallback/manifest.json`, a set is committed and the engine is not `stub` | `200`, `content-type: application/json`: the committed manifest without `set` (VOICE-CLIP-011) |
+| same path, no committed set, or `stub` engine | `404` |
+| `GET /fallback/<name>` naming a clip of the committed set | `200`, `content-type: audio/wav`, `content-length`, WAV body (VOICE-CLIP-012) |
+| `GET /fallback/<name>`, any other name | `404` |
+
+Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its name. The routes are reachable only inside the Compose network, like `/audio/*`.
 
 ### Failures `[proposed]`
 
-- **TTS down or failing** (connection error or 5xx on any phrase): the regeneration is abandoned, the manifest and its set stay as they were, a warning is logged, and voice retries after 60 s, doubling to a 15 min cap, until a regeneration succeeds (VOICE-CLIP-005). Config is read only at start, so the fingerprint does not change while voice runs. The synthesizer is the health-tracked one, so `deps.kokoro` reports the outage as for any synthesis (VOICE-HLTH-002).
-- **One unspeakable phrase** (a 4xx for that phrase, a reply that does not parse as WAV, or a clip shorter than 100 ms): that phrase is skipped with a warning naming its index, and the rest of the set is committed under the computed fingerprint (VOICE-CLIP-006), so the phrase is not retried until the list or settings change. One bad phrase must not keep the whole list on stale audio forever; if every phrase fails this way the manifest lists no clips. Phrase length is bounded by the schema (CFG-SCH-017).
-- **Empty phrase list:** voice commits a manifest that lists no clips (VOICE-CLIP-010), so turning the feature off is emptying the list, and ears goes back to the silent skip.
-- **Directory not writable** (for example root-owned files from a container, written by a host-run voice): the regeneration fails like a TTS outage and the old set stays in use.
+- **TTS down or failing** (a connection error or 5xx on any phrase). The regeneration is abandoned, the manifest and its set stay as they were, and a warning is logged. voice retries after 60 s, doubling up to a 15 min cap, until a regeneration succeeds (VOICE-CLIP-005). The synthesizer is the health-tracked one, so `deps.kokoro` reports the outage as for any synthesis (VOICE-HLTH-002).
+- **One unspeakable phrase** (a 4xx for that phrase, a reply that does not parse as WAV, or a clip shorter than 100 ms). That phrase is skipped with a warning naming its index, and the rest of the set is committed under the computed fingerprint (VOICE-CLIP-006). The skipped phrase is therefore not retried until the list or the settings change. One bad phrase must not keep the whole list on stale audio forever. If every phrase fails this way, the manifest lists no clips. The schema bounds phrase length (CFG-SCH-017).
+- **Empty phrase list.** voice commits a manifest that lists no clips (VOICE-CLIP-010). Turning the feature off is therefore emptying the list, and ears empties its cache on the next poll.
+- **Store not writable.** The regeneration fails like a TTS outage, and the old set keeps being served.
 
 ## Health
 
@@ -199,11 +242,12 @@ After a commit voice deletes set directories other than the new and the previous
 | Bus failures | Virtual-sink publish failures are logged and voice continues; a subscription rejection that survives the bus's retry is logged `fatal` and exits non-zero | Crash on any failure; ignore silently | Owner decision 2026-11-01 (cross-cutting): a failed publish never ends a service; a dead subscription is a clear, restartable failure. |
 | Readiness | `ready` after the HTTP server listens and the `voice` group is positioned with `resetGroup`, before the subscription loop starts | `ready` when the server listens (before the bus is usable); a "subscribed" hook in event-bus | Owner decision 2026-11-01 (R3): ready means "can receive `brain.say`". The bus has no hook that fires when `subscribe` has created the group and `subscribe` resolves only at stop, so boot positions the group itself; a hook would remove the duplicate positioning but needs an event-bus change. |
 | Give-up report | A separate `voice.failed` event; `voice.playing` and `voice.done` keep their shape `[proposed]` | `ok: false` or a `fallback` marker on `voice.done`; a new `sink` value such as `discord-failed` | A give-up is a distinct fact that cortex and the dashboard feed read on their own; one new type leaves every existing `voice.playing` / `voice.done` consumer (avatar, cortex, dashboard) untouched, where a marker on `voice.done` would make each of them decide what a failed done means. |
-| Releasing cortex after a give-up with no fallback | Keep the 1.5 s claim window, then release at once with a virtual `voice.done` and no virtual `voice.playing` `[proposed]` | Release on the report itself with `voice.done` sink `error`; leave the virtual sink to time the full line | The window still lets another sink (the dashboard) claim the line, so cortex never moves on while the line plays there; after it, waiting the line's duration only delays the next reply for a line nobody hears, and skipping the virtual `voice.playing` keeps avatar from mouthing it. |
+| Releasing cortex after a give-up with no fallback | Keep the 1.5 s claim window, then release at once with a virtual `voice.done` and no virtual `voice.playing` | Release on the report itself with `voice.done` sink `error`; leave the virtual sink to time the full line | Owner decision. The window still lets another sink (the dashboard) claim the line, so cortex never moves on while the line plays there. After the window, waiting out the line's duration only delays the next reply for a line nobody hears. Skipping the virtual `voice.playing` keeps avatar from mouthing it. |
 | Who generates fallback clips | voice, at startup, in the background | ears synthesizes them; a separate one-shot job | Owner decision: voice is the service that talks to TTS and knows the voice settings, so the clips come out in the co-host's current voice. Generating after `ready` keeps live lines first. |
-| Regeneration trigger | Fingerprint of phrase list, engine, TTS model, the synthesizer's voice settings and a format version, checked at startup `[proposed]` | Regenerate on every start; compare file timestamps; an operator button | Automatic regeneration is the owner's decision; a fingerprint regenerates exactly when the inputs change and costs nothing otherwise. Config is read only at start, so startup sees every change. |
-| Atomic swap | Complete set in its own directory, manifest replaced by rename, previous set kept `[proposed]` | Overwrite files in place; a lock file | Owner decision: never half-replaced. Rename is atomic on one filesystem and needs no lock even with two writers; keeping the previous set covers a reader that read the old manifest just before the swap. |
-| Stub engine and clips | Leave the store untouched | Generate silent clips | Silent clips would replace the owner's real ones whenever an isolated run starts voice. |
+| How ears gets the clips | voice serves the committed set over its HTTP server (`/fallback/manifest.json`, `/fallback/<name>`); ears prefetches and caches it | A directory shared by voice and ears; clips on the bus | Owner decision: no shared file store (HLD tenet 1), and binary data never rides the bus. HTTP for binary transfer is already how sinks get utterance audio. |
+| Regeneration trigger | Fingerprint of phrase list, engine, TTS model, the synthesizer's voice settings and a format version, checked at startup `[proposed]` | Regenerate on every start; compare file timestamps; an operator button | Automatic regeneration is the owner's decision. A fingerprint regenerates exactly when the inputs change and costs nothing otherwise. Config is read only at start, so startup sees every change. |
+| Atomic swap | Complete set in its own directory, manifest replaced by rename `[proposed]` | Overwrite files in place; a lock file | Owner decision: a set is never half-replaced. Rename is atomic on one filesystem, so the routes only ever serve a complete set. |
+| Stub engine and clips | Leave the store untouched and serve no manifest (404) | Generate and serve silent clips | Silent clips would replace the owner's real ones in voice's store and in ears' cache whenever an isolated run starts voice. |
 | Serving | Plain `node:http`, CORS `*` | Express | Two routes need no framework, so voice adds no dependency; CORS `*` lets a browser sink fetch cross-origin (`voice.ts:162`), and compose publishes voice's port to no host (browsers reach audio through the dashboard proxy). |
 
 ## Open Questions & Future Decisions
@@ -215,7 +259,7 @@ After a commit voice deletes set directories other than the new and the previous
 5. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
 6. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
 7. **Tests missing.** `services/voice/test/boot.test.ts` covers boot wiring, but no test covers real signal handling or process exit (`onShutdown` and `process.exit` are injected). The 1.5 s timer is not cleared on shutdown.
-8. **Avatar and fallback clips.** A fallback clip is claimed under the given-up utterance's id, so avatar lip-syncs that utterance's envelope while the clip plays. The manifest carries no envelope; giving avatar the clip's envelope is possible later and would change avatar `[proposed]` accepted for now.
+8. **Avatar and fallback clips.** A fallback clip is claimed under the given-up utterance's id, so avatar lip-syncs that utterance's envelope while the clip plays. The manifest carries no envelope; giving avatar the clip's envelope is possible later and would change avatar. Owner decision: accepted for now.
 
 ### Deferred decisions
 
@@ -234,7 +278,7 @@ Files in this segment:
 Other segments (arrow shows direction):
 
 - voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing`, and (fallback line) `voice.failed` (group `voice`, moved to the newest entry on every start); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
-- voice -> clip store: writes the fallback clips and `manifest.json` under `clipsDir()` ([config](../config/config-design.md) CFG-DIR-006, CFG-DIR-007); [ears](../ears/ears-design.md) reads them; Compose bind-mounts the directory ([deployment](../deployment/deployment-design.md) DEPLOY-COMPOSE-018).
+- voice -> own clip store: writes the fallback clips and `manifest.json` under `<dataDir()>/voice/fallback-clips` ([config](../config/config-design.md) CFG-DIR-006, CFG-DIR-007) and serves them on `/fallback/*`; [ears](../ears/ears-design.md) fetches them over HTTP into its own cache.
 - voice -> [config](../config/config-design.md): `loadConfig` (`voice.*`), `urls.tts()`, `urls.voice()`, `envOr("VOICE_PORT")`.
 - voice <- [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md): publish `brain.say`; cortex consumes `voice.done`.
 - voice <-> [ears](../ears/ears-design.md): ears is the `discord` sink and fetches `audioUrl`.

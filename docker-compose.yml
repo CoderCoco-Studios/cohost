@@ -5,6 +5,7 @@
 #   docker compose up -d chat salience affect memory cortex voice avatar dashboard   # minimal talking path
 #   docker compose --profile ears up -d  # add the Discord voice bot
 #   docker compose --profile eyes up -d  # add OBS vision
+#   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
 
 x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
   restart: unless-stopped
@@ -146,6 +147,22 @@ services:  # @spec DEPLOY-COMPOSE-001
     build: { context: ., args: { SERVICE: memory } }
     depends_on:  # @spec DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      ollama: { condition: service_started }
+
+  # One-shot viewer-note consolidation (the memory image, `consolidate` entry point): run it by hand after
+  # shutting the AI down, `docker compose run --rm consolidate` (or `cohostctl consolidate`). Profile `tools`
+  # keeps it out of `docker compose up`. Best-effort: memory catches up at its next start if it never runs.
+  # No redis: the entry point never opens the bus. Inherits the anchor's env_file, environment, volumes
+  # (./config) and extra_hosts; depends_on is restated because a service's own map replaces the anchor's.
+  consolidate:  # @spec DEPLOY-COMPOSE-018, DEPLOY-COMPOSE-019
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: memory } }
+    command: ["node", "services/memory/dist/consolidate.js"]
+    restart: "no"
+    profiles: [tools]  # @spec DEPLOY-COMPOSE-004
+    healthcheck: { disable: true }  # no heartbeat to check: the one-shot never joins the bus
+    depends_on:
       postgres: { condition: service_healthy }
       ollama: { condition: service_started }
 

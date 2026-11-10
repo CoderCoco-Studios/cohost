@@ -1,6 +1,6 @@
 /**
  * consolidate — run once after the AI is shut down (`pnpm consolidate`, or
- * `node services/memory/dist/consolidate.js`; `docker compose run --rm memory node services/memory/dist/consolidate.js`).
+ * `node services/memory/dist/consolidate.js`; `docker compose run --rm consolidate`, or `cohostctl consolidate`).
  *
  * Tidies every viewer note that has not been looked at yet: fades and promotes
  * notes, drops what the owner asked to forget, and has the consolidator model merge

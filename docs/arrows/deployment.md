@@ -4,11 +4,11 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 63 specs: 63 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
-## Pending cascade: viewer notes
+## Viewer-notes cascade (built)
 
-The memory viewer-notes design (memory LLD § Viewer notes) needs a `.env.example` entry for `NOTES_MODEL` (in place, with `VIEWERS_TOKEN`: `.env.example`, README; Compose passes both through `env_file`) and a Compose one-shot service that runs `consolidate` (also reachable from `cohostctl`, control-plane). The one-shot is best-effort: the owner stops the stack in several ways, so nothing depends on it running; memory catches up at the next start. No spec is written yet for the one-shot. The `models` container pulls `NOTES_MODEL` (DEPLOY-COMPOSE-008, warning-only on failure per DEPLOY-COMPOSE-011): built.
+The memory viewer-notes design needs a `.env.example` entry for `NOTES_MODEL` (in place, with `VIEWERS_TOKEN`: `.env.example`, README; Compose passes both through `env_file`) and a Compose one-shot that runs `consolidate`. Both are built: the `models` container pulls `NOTES_MODEL` (DEPLOY-COMPOSE-008, warning-only on failure per DEPLOY-COMPOSE-011) and the `consolidate` service (profile `tools`, `docker compose run --rm consolidate`; DEPLOY-COMPOSE-018, -019) is also reachable from `cohostctl consolidate` (control-plane CTRL-CLI-008). The one-shot is best-effort: the owner stops the stack in several ways, so nothing depends on it running; memory catches up at the next start.
 
 ## Decisions applied
 
@@ -41,16 +41,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (63 specs, prefix `DEPLOY`: 63 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (65 specs, prefix `DEPLOY`: 65 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - scripts/compose-smoke.sh (1 test annotation: DEPLOY-IMG-002, DEPLOY-IMG-003; run by `.github/workflows/compose-smoke.yml`)
 - .github/workflows/cla.yml has no test: it runs only on `pull_request_target` from the base branch, and the test globs cover only `packages/*/test` and `services/*/test`. DEPLOY-CI-005 is verified by reading the pinned action's source and on the first pull request after it lands.
+- packages/config/test/compose-consolidate.test.ts (7: DEPLOY-COMPOSE-001, -004, -015, -018, -019)
 - packages/control/test/healthcheck.test.ts (control-plane's file; cited from DEPLOY-HC-002 by `<!-- test: -->` comments, not annotated here)
 
 ### Code
-`@spec` annotation lines in code: 46.
-- docker-compose.yml (20, trailing comments on mapping keys), docker-compose.gpu.yml (1), Dockerfile (3, appended to existing comment lines), .dockerignore (1)
+`@spec` annotation lines in code: 48.
+- docker-compose.yml (22, trailing comments on mapping keys), docker-compose.gpu.yml (1), Dockerfile (3, appended to existing comment lines), .dockerignore (1)
 - scripts/install.sh (8, appended to section dividers), scripts/compose-smoke.sh (2: the header and the test annotation above), scripts/docs-prepare.mjs (2), scripts/dev/bus-pub.ts (1), scripts/dev/bus-tail.ts (1), scripts/dev/stub-llm.ts (1), scripts/dev/stub-tts.ts (1)
 - .github/workflows/test.yml (1), .github/workflows/compose-smoke.yml (1), .github/workflows/pages.yml (1), .github/workflows/cla.yml (1), .github/workflows/docs-build.yml (1)
 - Cited from the specs with `<!-- impl: -->` (29 cites on 19 specs, files owned elsewhere or plain data): package.json, pnpm-workspace.yaml, tsconfig.json, tsconfig.base.json, services/dashboard/tsconfig.json, .gitignore, LICENSE, CONTRIBUTING.md, CLA.md, COMMERCIAL.md, README.md, .github/workflows/cla.yml, docs/.vitepress/config.ts, packages/control/src/healthcheck.ts
@@ -65,7 +66,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 **Purpose:** Turn the repository into a running stack (Compose), a verified build (CI), a published site (Pages) and a licensed, contributable project (AGPL-3.0-only plus a commercial licence; CLA). Owns no cohost runtime logic.
 
 **Key Components:**
-1. `docker-compose.yml` — 6 infra services (redis, postgres, ollama, tts, stt, one-shot models that exits non-zero on a failed pull) and 10 TS services from one `x-ts-service` anchor (which also pins `CONTROL_ENABLED=0` and passes the isolation env through); `eyes` / `ears` behind profiles; dashboard the only public port.
+1. `docker-compose.yml` — 6 infra services (redis, postgres, ollama, tts, stt, one-shot models that exits non-zero on a failed pull), the `tools`-profile one-shot `consolidate` (memory image, `consolidate.js` command) and 10 TS services from one `x-ts-service` anchor (which also pins `CONTROL_ENABLED=0` and passes the isolation env through); `eyes` / `ears` behind profiles; dashboard the only public port.
 2. `Dockerfile` — base / build / runtime on node:22-slim; whole workspace compiled once per image; `SERVICE` selects the entrypoint; no prune.
 3. Container healthcheck — `node packages/control/dist/healthcheck.js $SERVICE` from `@cohost/control`.
 4. `docker-compose.gpu.yml` — NVIDIA overlay for ollama, tts, stt, selected via `COMPOSE_FILE`.
@@ -78,7 +79,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to 017 | 17 | 0 | 0 |
+| Compose topology | DEPLOY-COMPOSE-001 to 019 | 19 | 0 | 0 |
 | Container health | DEPLOY-HC-001 to 002 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to 005 | 5 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to 012 | 12 | 0 | 0 |
@@ -89,7 +90,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Documentation consistency | DEPLOY-README-001 to 003 | 3 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to 003 | 3 | 0 | 0 |
 
-**Summary:** 63 of 63 specs implemented; 0 deferred; 0 gaps. Every `[x]` spec is linked to its implementation by an in-file `@spec` annotation or an `<!-- impl: -->` cite. Tests: DEPLOY-IMG-002 and -003 by `scripts/compose-smoke.sh`; DEPLOY-HC-002 by control-plane's `healthcheck.test.ts`; the rest is configuration verified by reading, by CI running it, or (the `models` pull loop, the installer's `probe`/port parsing/Node-major check) by running the script against stubs or a throwaway repository. No Docker was available when the gap fixes were made: the Compose file was parsed as YAML, not run. The `cla` workflow (DEPLOY-CI-005) cannot run before it is on `main`.
+**Summary:** 65 of 65 specs implemented; 0 deferred; 0 gaps. Every `[x]` spec is linked to its implementation by an in-file `@spec` annotation or an `<!-- impl: -->` cite. Tests: DEPLOY-IMG-002 and -003 by `scripts/compose-smoke.sh`; DEPLOY-HC-002 by control-plane's `healthcheck.test.ts`; the rest is configuration verified by reading, by CI running it, or (the `models` pull loop, the installer's `probe`/port parsing/Node-major check) by running the script against stubs or a throwaway repository. No Docker was available when the gap fixes were made: the Compose file was parsed as YAML, not run. The `cla` workflow (DEPLOY-CI-005) cannot run before it is on `main`.
 
 ## Key Findings
 

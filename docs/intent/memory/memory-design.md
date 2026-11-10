@@ -288,8 +288,9 @@ processed it. A pass is triggered:
   `beforeShutdown` cap (event-bus BUS-STOP-002), are far too short for a model
   pass. The owner stops the stack in several ways (`docker compose down`,
   Ctrl-C, the dashboard), so the design depends on none of them: the one-shot is
-  a best-effort extra, reachable from Compose (a one-shot service) and from
-  `cohostctl` (deployment and control-plane cascades), and the guaranteed path is
+  a best-effort extra, reachable from Compose (the `consolidate` one-shot service, deployment
+  DEPLOY-COMPOSE-018) and from `cohostctl consolidate` (control-plane
+  CTRL-CLI-008), and the guaranteed path is
   the catch-up pass at the next start described below.
 
 Missing a run is safe. Dirty flags are the catch-up state, mirroring the reflection
@@ -661,12 +662,6 @@ command (the owner deletes notes by hand, keeping the "not a command bot"
 non-goal); turning "Mark as regular" off returns the viewer to the message-count
 rule, with no "never regular" option; the shutdown one-shot is best-effort and
 the catch-up pass is the guarantee.
-
-### Cascades (not yet specified)
-1. **Deployment:** a Compose one-shot service for `consolidate`. (The `models`
-   container pulls `NOTES_MODEL`, DEPLOY-COMPOSE-008, and `.env.example` carries
-   `NOTES_MODEL` and `VIEWERS_TOKEN`.)
-2. **Control-plane:** a `cohostctl` subcommand that runs `consolidate`.
 
 ### Deferred (observed, unexplained, or technical debt)
 1. **Migrating a table to a new vector dimension.** `MEM-STORE-002` stops startup

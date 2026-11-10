@@ -6,6 +6,17 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
+## Standalone dashboard (designed, not built)
+
+The spec file now holds 68 specs: 56 `[x]`, 12 `[ ]`. Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values are `[proposed]`.
+
+- New `[ ]`: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`), DEPLOY-HOST-003 (README), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
+- Reworded `[ ]`: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (`DASHBOARD_URL` through the host gateway), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
+- Retired: DEPLOY-COMPOSE-016 (the `CONTROL_ENABLED: "0"` pin).
+- Unchanged by design: the `Dockerfile` (no dashboard-specific stage exists; images still compile the whole workspace), `.dockerignore`, the CI workflows other than what `compose-smoke.sh` starts.
+- Also in chunk 3: `docs/TESTING.md` commands that start a containerised dashboard (DEPLOY-README-003 keeps the guide current).
+- Build: chunks 2 (start script) and 3 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).
+
 ## Viewer-notes cascade (built)
 
 The memory viewer-notes design needs a `.env.example` entry for `NOTES_MODEL` (in place, with `VIEWERS_TOKEN`: `.env.example`, README; Compose passes both through `env_file`) and a Compose one-shot that runs `consolidate`. Both are built: the `models` container pulls `NOTES_MODEL` (DEPLOY-COMPOSE-008, warning-only on failure per DEPLOY-COMPOSE-011) and the `consolidate` service (profile `tools`, `docker compose run --rm consolidate`; DEPLOY-COMPOSE-018, -019) is also reachable from `cohostctl consolidate` (control-plane CTRL-CLI-008). The one-shot is best-effort: the owner stops the stack in several ways, so nothing depends on it running; memory catches up at the next start.
@@ -112,7 +123,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 None.
 
 ### Should Fix
-None.
+- Standalone dashboard: the `[ ]` lines listed above (chunks 2 and 3).
 
 ### Nice to Have
 1. Unify action versions and the pnpm pin; pin `latest` image tags (DEPLOY-COMPOSE-014, DEPLOY-CI-001).

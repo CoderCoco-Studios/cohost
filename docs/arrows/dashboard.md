@@ -6,6 +6,43 @@ The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personali
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes are implemented. The server side and the page script (run under a stub DOM, `test/page.test.ts`) are covered by tests; UI-004, 005 and 007 to 011 and the wiring specs HTTP-009, HTTP-010 and CTRL-008 are not.
 
+## Standalone host-run dashboard (designed, not built)
+
+The spec file now holds 98 specs: 69 `[x]`, 29 `[ ]`. Design: LLD § Host process and stack control, Listeners, Stack routes; [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Owner decisions (settled): the dashboard is a standalone host program started first; Compose drops its `dashboard` service; Launch brings up the whole stack through the compose runtime; restart of services from the dashboard; stack actions behind `CONTROL_ENABLED=1` + `CONTROL_TOKEN`; stack state in the UI. Everything else is `[proposed]`.
+
+- New `[ ]`: DASH-HOST-001 to 006 (LAN listener, its route allow-list, bind failure, Host and Origin checks, token never logged), DASH-STACK-001 to 007 (`GET /stack`, async stack actions, one action slot, Docker-unavailable 503, preconditions, result and audit, probe cadence), DASH-FEED-008, 009 (stack pushes, bus reachability), DASH-UI-017 to 020 (stack panel, state badge, consolidate offer, progress and result).
+- Reworded `[ ]`: DASH-HTTP-009 (`DASHBOARD_PORT`), DASH-HTTP-010 (shutdown leaves containers alone), DASH-HTTP-012 (no exit without Redis; a failed replay keeps the socket), DASH-FEED-001 (stack snapshot in the connect sequence), DASH-CTRL-001, 004, 005 (stack routes), DASH-SVC-003 (no 409 self conflict), DASH-INJ-005 (advertised upload base), DASH-UI-008 (buttons on manifest units only).
+- Retired: none in this segment (control-plane CTRL-GUARD-002 and deployment DEPLOY-COMPOSE-016 retire with it).
+
+### Build order
+
+Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
+
+| Chunk | Segment(s) | Specs | Notes |
+|---|---|---|---|
+| 1. Stack controller and CLI | control-plane (+ one dashboard test) | CTRL-STACK-001 to 011, CTRL-CLI-001, 009, 010, 011, 012, CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005; retire CTRL-GUARD-002; DASH-SVC-003 | Removing `dashboard` from the manifest changes the dashboard's 409 path to 404, so the DASH-SVC-003 test moves with it. Usable at once from `cohostctl` against today's Compose file. |
+| 2. Host dashboard | dashboard, deployment (start script) | DASH-HOST-001 to 006, DASH-STACK-001 to 007, DASH-FEED-001, 008, 009, DASH-HTTP-009, 010, 012, DASH-CTRL-001, 004, 005, DASH-INJ-005, DASH-UI-008, 017 to 020; DEPLOY-HOST-001, DEPLOY-REPO-002 | Works beside today's Compose file only if the containerised dashboard is stopped first or `PORT`/`DASHBOARD_LAN_PORT` avoid 3000/3001; land chunk 3 right after. |
+| 3. Compose and docs | deployment | DEPLOY-COMPOSE-001, 002, 003, 006, 007, DEPLOY-CI-002, DEPLOY-INST-008, 013, DEPLOY-HOST-002, 003; retire DEPLOY-COMPOSE-016; README, `docs/TESTING.md`, `.env.example`, `scripts/install.sh`, `scripts/compose-smoke.sh` | Removes the `dashboard` service and the `CONTROL_ENABLED` pin, publishes voice on loopback, points containers' `DASHBOARD_URL` at the host gateway. |
+
+### Edge audit (cross-spec, cross-segment)
+
+Resolved in the specs:
+
+1. **A page opened while Redis is down.** DASH-FEED-008 sends the stack snapshot before the replay, but the audited DASH-HTTP-012 closed a socket whose replay failed, so every page would be closed right after its snapshots and loop on reconnect. DASH-HTTP-012 now keeps the socket open without the replay `[proposed]` (it reverses part of the 2026-11-01 decision R1; owner question).
+2. **Upload URL agreement.** DASH-INJ-005 (what the dashboard advertises) and DEPLOY-COMPOSE-002 (what eyes and ears accept, EYES-INJ-005, EARS-INJ-004) share one default, `http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}`, and one override, `DASHBOARD_URL`. Host-run eyes or ears under `pnpm dev` keep the `urls.dashboard()` loopback default (CFG-URL-003) and need `DASHBOARD_URL` set to match; accepted for the dev loop.
+3. **The `dashboard` id.** CTRL-MANIFEST-001 drops it, so DASH-SVC-003 answers 404 (not 409) and DASH-UI-008 shows no buttons on its row; CTRL-HEALTH-005 still shows the dashboard's own heartbeat as "another service".
+4. **One action at a time.** DASH-STACK-003 covers per-service lifecycle requests too, so a restart cannot interleave with a launch or stop in one dashboard; `cohostctl` in another process is not locked out (control-plane LLD Deferred 3).
+5. **Infrastructure guards.** CTRL-STACK-010: launch and stop-all ignore `CONTROL_ADVANCED`; restart-all goes through the controller and never restarts infrastructure; per-service Redis/Postgres actions keep CTRL-GUARD-003.
+6. **Graceful stop and viewer notes.** CTRL-STACK-006 uses `stop` (reverse dependency order, SIGTERM), so memory stops before Postgres and sets `notes.shutdown_run_owed` (MEM-CONSOL-013); DASH-STACK-005 refuses the consolidate route while memory runs, while `cohostctl consolidate` (CTRL-CLI-008) still runs any time.
+7. **Host and Origin checks vs control off.** DASH-HOST-004 applies only while the full surface is on loopback; DASH-HOST-005 applies always on the full surface. A reverse proxy that rewrites `Host` without `Origin` would be refused by DASH-HOST-005; no proxy is part of the design.
+8. **The LAN listener serves the page.** DASH-HOST-002 serves `GET /`, but the page's other reads (`/services/control`, `/personality`, `/stack`) answer 404 there; the LAN listener is for the `?sink=1` view, which hides everything but the header.
+9. **Voice on loopback with CORS `*`.** DEPLOY-COMPOSE-007 makes voice's audio and clip routes readable by any page in the owner's browser that guesses an id; ids are not guessable and the HLD accepts CORS `*` inside the boundary.
+10. **Launch converges.** CTRL-STACK-002: a Launch after an isolated start recreates that service without its preset, and `--remove-orphans` removes the old `dashboard` container; profile services start only when `COMPOSE_PROFILES` names them.
+
+11. **Blind divergence probe.** A reader given only the spec lines found forks that are now narrowed in the lines themselves: the `kind` wire values and the refusal order (DASH-STACK-002), no probe yet means 503 (DASH-STACK-004), one probe at a time including the launch wait (DASH-STACK-007), `ready` after both listeners (DASH-HTTP-009), shutdown never kills a running `docker compose` (DASH-HTTP-010), IPv6 `Host` parsing (DASH-HOST-004), `Origin: null` (DASH-HOST-005), what a successful read is (DASH-FEED-009), container comparison ignoring order (DASH-FEED-008), long-running means present in the status (CTRL-STACK-003, 011), CLI status lines on failure too (CTRL-CLI-010), what an empty token is (DEPLOY-INST-013). Not narrowed: CTRL-CLI-001's grammar shorthand versus "no options to `stop`" predates this design; a printed URL built from `DASHBOARD_PORT` is wrong when the owner also sets `PORT`, which the README does not use.
+
+Left to the owner: see the PR's owner questions (listener split, LAN port, voice publish, stop scope, restart-all scope, `CONTROL_ADVANCED`, token generation, launch command and timeouts, stack-state source, consolidate offer, no stack audit event, R1 reversal, WSL2 checks).
+
 ## Viewer notes: Viewers page built (chunk 4)
 
 Design: LLD § Viewers page (layout "panel A", routes, Access protection options A to E). The spec file holds 79 specs: 79 `[x]`, 0 `[ ]`.

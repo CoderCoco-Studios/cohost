@@ -1,6 +1,7 @@
 import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import dgram from "node:dgram";
+import dns from "node:dns";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -292,40 +293,59 @@ test("vts: a failed fire-and-forget request is logged, never an unhandled reject
   await d.disconnect();
 });
 
+/**
+ * Make `*.invalid` hosts fail to resolve at once, through the same `dns.lookup` that dgram calls. A real lookup goes
+ * to the system resolver, which under load (or behind the WSL2 DNS proxy) can take longer than any test deadline.
+ */
+function unresolvableInvalidHosts() {
+  const real = dns.lookup;
+  return mock.method(dns, "lookup", ((host: string, opts: unknown, cb?: (err: Error) => void) => {
+    if (!host.endsWith(".invalid")) return (real as (...a: unknown[]) => void)(host, opts, cb);
+    const err = Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", hostname: host });
+    process.nextTick(() => (typeof opts === "function" ? (opts as (e: Error) => void) : cb!)(err));
+  }) as typeof dns.lookup);
+}
+
 // @spec AVATAR-VMC-005
 test("vmc: a failed UDP send (unresolvable host) is logged once per interval and the driver keeps running", async () => {
+  const lookup = unresolvableInvalidHosts();
   const d = new VmcDriver({ host: "no-such-host.invalid", port: 39539 });
-  await d.connect(ctx());
-  warnings.length = 0;
   const uncaught: unknown[] = [];
   const onUncaught = (e: unknown) => { uncaught.push(e); };
   process.on("uncaughtException", onUncaught);
   try {
+    await d.connect(ctx());
+    warnings.length = 0;
     for (let i = 0; i < 3; i++) d.setParams(NEUTRAL);
-    await waitFor(() => warnings.length >= 1, "send failure logged", 5000);
+    await waitFor(() => warnings.length >= 1, "send failure logged");
     await new Promise((r) => setTimeout(r, 100));
-  } finally { process.off("uncaughtException", onUncaught); }
-  assert.deepEqual(uncaught, []);
-  assert.equal(warnings.length, 1); // 3 frames x 7 datagrams, one log line
-  assert.equal(d.connected(), true);
-  await d.disconnect();
+    assert.deepEqual(uncaught, []);
+    assert.equal(warnings.length, 1); // 3 frames x 7 datagrams, one log line
+    assert.equal(d.connected(), true);
+  } finally {
+    process.off("uncaughtException", onUncaught);
+    await d.disconnect();
+    lookup.mock.restore();
+  }
 });
 
 // @spec AVATAR-VMC-005
 test("vmc: the once-per-10 s send-failure log measures elapsed time, not the wall clock: a clock stepped forward does not log again", async () => {
+  const lookup = unresolvableInvalidHosts();
   const d = new VmcDriver({ host: "no-such-host.invalid", port: 39539 });
-  await d.connect(ctx());
-  warnings.length = 0;
   const realNow = Date.now.bind(Date);
   let calls = 0;
   const stepped = mock.method(Date, "now", () => realNow() + (calls++ % 2) * 25_000); // a clock flapping by 25 s
   try {
+    await d.connect(ctx());
+    warnings.length = 0;
     for (let i = 0; i < 3; i++) d.setParams(NEUTRAL);
-    await waitFor(() => warnings.length >= 1, "send failure logged", 5000);
+    await waitFor(() => warnings.length >= 1, "send failure logged");
     await new Promise((r) => setTimeout(r, 100));
   } finally {
     stepped.mock.restore();
     await d.disconnect();
+    lookup.mock.restore();
   }
   assert.equal(warnings.length, 1);
 });

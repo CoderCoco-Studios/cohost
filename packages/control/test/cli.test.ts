@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseCli, runCli, buildRuntime, ComposeRuntime, UsageError, ServiceController, type Runtime, type ServiceHealth } from "../src/index.js";
 
 // @spec CTRL-CLI-001
@@ -9,11 +10,12 @@ test("parseCli: commands, flags, defaults", () => {
   assert.deepEqual(parseCli(["stop", "memory"]), { cmd: "stop", id: "memory", opts: {} });
   assert.deepEqual(parseCli(["restart", "cortex", "--mode", "fresh", "--isolated"]), { cmd: "restart", id: "cortex", opts: { mode: "fresh", isolated: true } });
   assert.deepEqual(parseCli(["start", "voice", "--mode=resume"]), { cmd: "start", id: "voice", opts: { mode: "resume" } });
+  assert.deepEqual(parseCli(["consolidate"]), { cmd: "consolidate" });
 });
 
 // @spec CTRL-CLI-001
 test("parseCli: bad input throws UsageError", () => {
-  for (const argv of [[], ["bogus"], ["start"], ["start", "a", "b"], ["start", "a", "--mode", "x"], ["start", "a", "--nope"], ["stop", "a", "--isolated"], ["status", "--isolated"]]) {
+  for (const argv of [[], ["bogus"], ["start"], ["start", "a", "b"], ["start", "a", "--mode", "x"], ["start", "a", "--nope"], ["stop", "a", "--isolated"], ["status", "--isolated"], ["consolidate", "memory"], ["consolidate", "--isolated"], ["consolidate", "--mode", "fresh"]]) {
     assert.throws(() => parseCli(argv), UsageError, JSON.stringify(argv));
   }
 });
@@ -30,7 +32,14 @@ function harness() {
   const controller = new ServiceController({ runtime, groups: { resetGroup: async (g) => { log.push(`reset ${g}`); } }, by: "cohostctl", audit: (r) => { audits.push(r); } });
   const out: string[] = [], err: string[] = [];
   const health = async (): Promise<ServiceHealth[]> => [{ service: "cortex", state: "up", restarts: 0, lastSeenAgeMs: 2000, heartbeat: { mode: "mock" } as never }];
-  return { log, audits, out, err, run: (argv: string[]) => runCli(argv, { controller, health, out: (l) => out.push(l), err: (l) => err.push(l) }) };
+  const consolidations: number[] = [];
+  let consolidateResult: { ok: boolean; detail?: string } = { ok: true, detail: "consolidate completed" };
+  const consolidate = async () => { consolidations.push(1); return consolidateResult; };
+  return {
+    log, audits, out, err, consolidations,
+    setConsolidate: (r: { ok: boolean; detail?: string }) => { consolidateResult = r; },
+    run: (argv: string[]) => runCli(argv, { controller, health, consolidate, out: (l) => out.push(l), err: (l) => err.push(l) }),
+  };
 }
 
 // @spec CTRL-CLI-003
@@ -66,6 +75,40 @@ test("usage errors exit 2; status prints rows", async () => {
   assert.equal(await h.run(["status"]), 0);
   assert.match(h.out[0]!, /cortex\s+up\s+mock\s+2s ago/);
   assert.equal(await h.run(["status", "nope"]), 1);
+});
+
+// @spec CTRL-CLI-008, CTRL-CLI-009
+test("consolidate runs the one-shot, prints the result, and bypasses the controller and its audit", async () => {
+  const h = harness();
+  assert.equal(await h.run(["consolidate"]), 0);
+  assert.deepEqual(h.out, ["consolidate: ok (consolidate completed)"]);
+  assert.deepEqual(h.consolidations, [1]);
+  assert.deepEqual(h.log, []);
+  assert.deepEqual(h.audits, []);
+  h.setConsolidate({ ok: true });
+  assert.equal(await h.run(["consolidate"]), 0);
+  assert.equal(h.out[1], "consolidate: ok");
+});
+
+// @spec CTRL-CLI-008
+test("consolidate failure prints the detail and exits 1; a usage error exits 2 without running it", async () => {
+  const h = harness();
+  h.setConsolidate({ ok: false, detail: "connection refused" });
+  assert.equal(await h.run(["consolidate"]), 1);
+  assert.deepEqual(h.err, ["consolidate failed: connection refused"]);
+  h.err.length = 0;
+  h.setConsolidate({ ok: false });
+  assert.equal(await h.run(["consolidate"]), 1);
+  assert.deepEqual(h.err, ["consolidate failed: unknown error"]);
+  assert.equal(await h.run(["consolidate", "memory"]), 2);
+  assert.equal(h.consolidations.length, 2);
+});
+
+// @spec CTRL-CLI-009
+test("the CLI opens its bus lazily, so consolidate never connects to redis", () => {
+  const src = readFileSync(new URL("../src/cli.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /const bus = new Bus/);
+  assert.match(src, /bus \?\?= new Bus\("cohostctl"\)/);
 });
 
 // @spec CTRL-CLI-004

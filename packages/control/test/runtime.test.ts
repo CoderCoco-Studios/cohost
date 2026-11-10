@@ -76,3 +76,27 @@ test("compose: a failing command is ok:false with stderr as detail", async () =>
   const rt = new ComposeRuntime({ exec: fakeExec("no such service").exec });
   assert.deepEqual(await rt.start("cortex"), { ok: false, detail: "no such service" });
 });
+
+// @spec CTRL-RUNTIME-010
+test("compose: consolidate runs the fixed one-shot argv with a long timeout and reports the last stdout line", async () => {
+  const seen: { args: string[]; timeoutMs?: number; cwd?: string }[] = [];
+  const exec: ExecFile = async (_file, args, opts) => {
+    seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
+    return { stdout: "starting\nconsolidate completed\n\n", stderr: "warn" };
+  };
+  const rt = new ComposeRuntime({ exec, env: {}, cwd: "/stack" });
+  assert.deepEqual(await rt.consolidate(), { ok: true, detail: "consolidate completed" });
+  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "consolidate"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
+  const quiet = new ComposeRuntime({ exec: async () => ({ stdout: "", stderr: "" }) });
+  assert.deepEqual(await quiet.consolidate(), { ok: true });
+});
+
+// @spec CTRL-RUNTIME-010
+test("compose: a failing consolidate is ok:false with stderr, else stdout tail, else the error message, cut to 500", async () => {
+  const fail = (stdout: string, stderr: string, message = "exit 1"): ExecFile => async () => { throw Object.assign(new Error(message), { stdout, stderr }); };
+  assert.deepEqual(await new ComposeRuntime({ exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
+  assert.deepEqual(await new ComposeRuntime({ exec: fail("a\nconsolidate failed\n", "") }).consolidate(), { ok: false, detail: "consolidate failed" });
+  assert.deepEqual(await new ComposeRuntime({ exec: fail("", "") }).consolidate(), { ok: false, detail: "exit 1" });
+  const long = await new ComposeRuntime({ exec: fail("", "x".repeat(900)) }).consolidate();
+  assert.equal(long.detail?.length, 500);
+});

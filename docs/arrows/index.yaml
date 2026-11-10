@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Standalone host-run dashboard: chunks 1 (stack controller, control-plane; DASH-SVC-003) and 2 (host dashboard) built. Chunk 2: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-001/008/009, DASH-UI-008/017..020, HTTP-009/010/012, CTRL-001/003/004/005, INJ-005 all [x] (99 specs, 0 gaps); event-bus gained BUS-TAIL-005 (read-outcome callback) for DASH-FEED-009; the dead 'conflict' refusal is removed. Chunk 3 (deployment: Compose drops the dashboard service, installer, CI smoke, README/TESTING) is open. Open items: dashboard visual design to be revisited later; a Redis outage that stalls an already-running tail (ioredis queues the blocking read) is not reported as bus unreachable until a read fails."
+    next: "Standalone host-run dashboard: chunks 1 (stack controller, control-plane; DASH-SVC-003), 2 (host dashboard) and 3 (deployment) built. Chunk 2: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-001/008/009, DASH-UI-008/017..020, HTTP-009/010/012, CTRL-001/003/004/005, INJ-005 all [x] (99 specs, 0 gaps); event-bus gained BUS-TAIL-005 (read-outcome callback) for DASH-FEED-009; the dead 'conflict' refusal is removed. Chunk 3 (deployment: Compose drops the dashboard service, installer, CI smoke, README/TESTING) is built. Open items: dashboard visual design to be revisited later; a Redis outage that stalls an already-running tail (ioredis queues the blocking read) is not reported as bus unreachable until a read fails."
     drift: null
 
   control-plane:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Standalone dashboard designed, not built: Compose drops the dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004); DEPLOY-COMPOSE-016 retired. Built in chunk 2: the root pnpm dashboard script (DEPLOY-HOST-001, REPO-002). Chunk 3 of the build order (dashboard.md) is open. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md."
+    next: "Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 69 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

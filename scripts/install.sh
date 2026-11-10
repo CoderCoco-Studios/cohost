@@ -101,6 +101,20 @@ else
 fi
 mkdir -p data
 
+# begin control-token
+# Fill an empty CONTROL_TOKEN in .env with 24 random bytes as hex. The line is matched as text
+# (nothing sourced); a non-empty value stays, and a missing line is not added. Never printed.
+# @spec DEPLOY-INST-013
+fill_control_token() {
+  local tok
+  grep -Eq '^CONTROL_TOKEN=[[:space:]]*(#.*)?$' .env || return 0
+  tok=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+  sed -i -E "s#^CONTROL_TOKEN=[[:space:]]*(\#.*)?\$#CONTROL_TOKEN=${tok}#" .env
+  log "Generated CONTROL_TOKEN in .env (the dashboard asks for it)."
+}
+# end control-token
+fill_control_token
+
 # ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-012
 log "Installing workspace dependencies"
 # Frozen only, like CI and the Dockerfile: a lockfile mismatch stops here with pnpm's own error
@@ -145,24 +159,30 @@ probe postgres 60 probe_postgres
 if [[ $PULL -eq 1 ]]; then probe ollama 60 probe_ollama; fi
 
 # ---------------------------------------------------------------- next steps  @spec DEPLOY-INST-008, DEPLOY-INST-011
-# DASHBOARD_PORT for the final URL: the calling shell wins (as in Compose), then .env. .env is
-# parsed with sed, never sourced, so nothing in it is executed.
-DASH_PORT=${DASHBOARD_PORT:-}
-if [[ -z "$DASH_PORT" ]]; then
-  DASH_PORT=$(sed -n 's/^[[:space:]]*DASHBOARD_PORT=//p' .env | tail -n 1 | tr -d '\r' \
-    | sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^[\"']//" -e "s/[\"']\$//")
-fi
-[[ "$DASH_PORT" =~ ^[0-9]+$ ]] || DASH_PORT=3000
-
-cat <<EOF
+# begin next-steps
+# @spec DEPLOY-INST-008
+print_next_steps() {
+  # DASHBOARD_PORT for the URL: the calling shell wins (as in Compose), then .env. .env is
+  # parsed with sed, never sourced, so nothing in it is executed.
+  local port=${DASHBOARD_PORT:-}
+  if [[ -z "$port" ]]; then
+    port=$(sed -n 's/^[[:space:]]*DASHBOARD_PORT=//p' .env | tail -n 1 | tr -d '\r' \
+      | sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^[\"']//" -e "s/[\"']\$//")
+  fi
+  [[ "$port" =~ ^[0-9]+$ ]] || port=3000
+  cat <<EOF
 
 Done. Next:
   1. Edit .env (Twitch token, Discord token, OBS password, AVATAR_DRIVER).
-  2. docker compose up -d            # core stack
-  3. open http://localhost:${DASH_PORT}   # dashboard: bus feed, audio sink, personality editor
+  2. pnpm dashboard                    # start the dashboard on this machine (it brings up the stack)
+  3. open http://localhost:${port}     # enter CONTROL_TOKEN from .env when asked, press Launch
+     (the dashboard's startup log shows the URL it actually listens on; it differs when PORT or DASHBOARD_HOST is set)
   4. docker compose --profile eyes --profile ears up -d   # when ready for vision + Discord voice
 
 Dev loop without Docker for the TS services:
   docker compose up -d redis postgres ollama tts stt   # infra only
   pnpm dev                                             # all services with tsx watch
 EOF
+}
+# end next-steps
+print_next_steps

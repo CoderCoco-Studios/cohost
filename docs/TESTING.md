@@ -115,7 +115,7 @@ What each service needs to come up, and what it does if that is missing
 | `salience` | Redis | works fully (rules scorer) |
 | `affect` | Redis | works fully (rules appraiser) |
 | `avatar` | Redis | works with `AVATAR_DRIVER=null`; publishes `avatar.state` at 5 Hz |
-| `dashboard` | Redis | works; http://localhost:3000. Audio needs `voice` (`VOICE_URL`) |
+| `dashboard` | nothing (host process) | works with Redis down; http://localhost:3000. Audio needs `voice` (`VOICE_URL`, default `http://127.0.0.1:8700`, published by Compose) |
 | `voice` | Redis + a TTS server at `TTS_URL` (default `:8880`) | starts; each `brain.say` logs a synth failure and still emits `voice.done`. Use the stub TTS (§5) |
 | `cortex` | Redis + a chat model (Ollama by default) | starts, logs `waiting for the model backend` every 3 s until Ollama answers. Use the stub LLM (§5) |
 | `memory` | Redis + Ollama (embeddings) + Postgres | logs `waiting for ollama (embeddings)...` forever; **cannot be stubbed** with `stub-llm` (no `/api/embed`). Bring up the real `postgres` + `ollama` (§5b) or leave it out. `cortex` copes without it (see below) |
@@ -244,11 +244,12 @@ Also verified on the same machine:
 * **The services as containers:** `docker compose build` succeeds for all of them
   and the images start (`scripts/compose-smoke.sh` guards that in CI; the
   Dockerfile deliberately does not `pnpm prune --prod`).
-  `docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar dashboard`
-  runs all of them. A chat message published with `bus-pub` then went
+  `docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar`
+  runs all of them (the dashboard is not a Compose service: start it on the host with
+  `pnpm dashboard`). A chat message published with `bus-pub` then went
   salience → cortex → real Ollama → real Kokoro → `voice.done`, and
-  `http://localhost:3000/audio/<id>.wav` (dashboard → voice proxy) returned the WAV.
-  Compose sets `VOICE_URL=http://voice:8700` itself.
+  `http://localhost:3000/audio/<id>.wav` (host dashboard → voice on `127.0.0.1:8700`) returned the WAV.
+  Compose sets `VOICE_URL=http://voice:8700` for the containers itself.
   `chat` was left out: it exits without `TWITCH_CHANNEL` and compose restarts it forever.
 
 ## 6. Unit-test helpers: `@cohost/testing`
@@ -357,7 +358,7 @@ chat.message → affect.state (mood: happy)
 expected. Add `avatar.state` to the tail filter only if you want the 5 Hz stream
 (it floods an unfiltered tail).
 
-Add the dashboard (`node --import tsx services/dashboard/src/index.ts`, then
+Add the dashboard (`pnpm dashboard`, then
 http://localhost:3000) to watch the same events in a browser. Its controls are
 plain HTTP, handy for scripting: `curl -XPOST localhost:3000/control -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'` → 204 and a
 `control` event on the bus (verified). The dashboard plays audio only after you
@@ -393,6 +394,23 @@ validate; whether salience picks them up depends on its score vs
 `brain.salience.speak_threshold` (mention 1.0, voice 0.9, question 0.55, plain chat 0.15).
 To force a spoken line without scoring, use a `reflexes` entry in
 `config.yaml` (reflexes go straight to `brain.say`), or publish `brain.say`.
+
+## Single-PC WSL2 with Docker Desktop
+
+Checklist for one machine, no second PC: the dashboard runs in the WSL distro, Docker
+Desktop runs the containers, and a Windows browser and OBS are the clients.
+
+1. In the WSL distro: `./scripts/install.sh --no-pull` (or copy `.env.example` to `.env`) and `pnpm dashboard`.
+   If `docker` is not on the WSL path (Docker Desktop's WSL integration is off for this
+   distro), set `COHOST_DOCKER_BIN=docker.exe` in `.env` first.
+2. In a Windows browser open `http://localhost:3000` (WSL forwards localhost). Enter `CONTROL_TOKEN` from `.env` when asked.
+3. Press **Launch** and wait for the stack to reach `up`.
+4. Load `http://localhost:3001/?sink=1` in a second browser tab, or add it as an OBS Browser
+   Source on the same PC, and click enable audio. Send a chat line and hear a reply.
+5. Inject an image from the dashboard and see `eyes` answer (`--profile eyes`). The eyes container fetches the upload from
+   `host.docker.internal:3001`. If it cannot reach that name, set `DASHBOARD_URL=http://<distro-address>:3001`
+   in `.env` (`hostname -I` inside the distro) and relaunch.
+6. Press **Stop**, then run the consolidation pass (`docker compose run --rm consolidate`).
 
 ## Known problems
 

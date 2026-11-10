@@ -12,7 +12,7 @@ monolithic and anything can be swapped.
    Discord ► ears ──┘        ▲         │    memory    cortex ──► say  │                             └─► Discord (ears)
                              │         └──────┬──────────────────────┘ ──► avatar ──► VTube Studio / VMC app
                              │                └── postgres (pgvector)
-                             └──► dashboard (feed, controls, personality editor)
+                             └──► dashboard (host process: feed, controls, personality editor, Launch/Stop)
 ```
 
 The brain itself is not one process. It is four small regions that only talk to
@@ -36,7 +36,7 @@ each other over the same bus, the way the rest of the stack does:
 | `cortex`    | `attention.focus` → LLM → `brain.say`                        | Ollama                      |
 | `voice`     | `brain.say` → TTS → audio + lip-sync envelope                | Kokoro (TTS)                |
 | `avatar`    | canonical avatar state → app-specific driver                 | VTube Studio / VMC          |
-| `dashboard` | live feed, mute/say, audio sink, edit personality, services tab | browser                  |
+| `dashboard` | runs on the host, not in Compose: live feed, mute/say, audio sink, edit personality, services tab, Launch / Stop for the stack | browser, docker CLI |
 
 Infra containers: `redis`, `postgres` (pgvector), `ollama`, `tts` (Kokoro-FastAPI), `stt` (speaches / faster-whisper).
 
@@ -46,14 +46,28 @@ Infra containers: `redis`, `postgres` (pgvector), `ollama`, `tts` (Kokoro-FastAP
 git clone <this repo> cohost && cd cohost
 ./scripts/install.sh          # docker, nvidia toolkit, node, .env, pulls images + models
 # edit .env (tokens, OBS password, AVATAR_DRIVER) and config/config.yaml (model, hooks, behaviour)
-docker compose up -d          # core: chat + brain regions + voice avatar dashboard + infra
-open http://localhost:3000    # dashboard
+pnpm dashboard                # start the dashboard on the host (nothing else needs to be running)
+open http://localhost:3000    # enter CONTROL_TOKEN from .env when asked, then press Launch
 ```
+
+The dashboard is the one thing you start. It is a host process, not a Compose
+service, so it can bring the stack up before anything else exists: **Launch**
+runs `docker compose up -d` (core: chat + brain regions + voice avatar + infra),
+**Stop** stops it, and a **consolidate** pass is offered after a shutdown.
+`install.sh` generates `CONTROL_TOKEN` into `.env` (by hand: `openssl rand -hex 24`).
+`PORT` overrides `DASHBOARD_PORT` for the dashboard; its startup log prints the URL
+it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to other
+machines (it then refuses to start without `CONTROL_ENABLED=1` and a token).
+
+Upgrading from a containerised dashboard: run `docker compose down --remove-orphans`
+once, or just press Launch, which removes the orphaned `dashboard` container.
 
 Works on **Ubuntu/Debian** natively and inside **WSL2** (Docker Desktop with WSL
 integration, or docker-ce in the distro). On WSL the GPU is provided by the
 Windows NVIDIA driver — nothing to install in Linux beyond the container toolkit,
-which `install.sh` handles.
+which `install.sh` handles. On a single PC with WSL2 and Docker Desktop (no second
+machine), set `COHOST_DOCKER_BIN=docker.exe` in `.env` if `docker` is not on the WSL
+path; the step-by-step check is the [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop).
 
 Add the optional pieces when you're ready:
 
@@ -65,8 +79,8 @@ docker compose --profile ears up -d   # Discord voice bot
 ### Minimal first run (no avatar app, no Discord, no OBS)
 
 1. Set `TWITCH_CHANNEL` in `.env`, leave `AVATAR_DRIVER=null`.
-2. `docker compose up -d`
-3. Open the dashboard, click **enable audio**, type something in chat. You'll see
+2. `pnpm dashboard`, open it and press **Launch**
+3. In the dashboard, click **enable audio**, type something in chat. You'll see
    the message hit the bus, salience focus, the cortex think, and the reply get spoken, with the
    preview face lip-syncing.
 
@@ -221,8 +235,11 @@ machine.
 
 ## Getting the voice onto stream
 
-No virtual audio cables: add `http://<ai-pc>:3000/?sink=1` as an OBS **Browser
-Source** with *Control audio via OBS* ticked. The page plays every utterance and
+No virtual audio cables: add an OBS **Browser Source** with *Control audio via OBS*
+ticked. On the same PC as the dashboard use `http://localhost:3000/?sink=1` (the
+`DASHBOARD_PORT`); from a second PC use `http://<ai-pc>:3001/?sink=1` (the
+`DASHBOARD_LAN_PORT`, a listener that serves only the sink page, audio and test
+uploads, never the controls). The page plays every utterance and
 reports playback to the bus so the avatar lip-syncs in time. For the avatar
 itself, capture the VTS/VRM window (same PC) or send it over NDI (second PC).
 
@@ -288,21 +305,22 @@ process exits.
 
 ## Starting and stopping services (service control)
 
-Off by default. When enabled, the dashboard's **services** tab gets Start / Stop /
-Restart buttons (each asks for confirmation) and `cohostctl` works from a shell.
-Nothing else changes while it is off: `POST /control` stays open as before.
+The host-run dashboard has stack and service controls on by default (`CONTROL_ENABLED=1`
+in `.env.example`): **Launch**, **Stop**, **restart all**, and per-service Start / Stop /
+Restart buttons (each asks for confirmation); `cohostctl` offers the same from a shell.
+Startup fails if `CONTROL_ENABLED=1` has no `CONTROL_TOKEN`.
 
 ```bash
-export CONTROL_ENABLED=1
-export CONTROL_TOKEN=$(openssl rand -hex 24)   # required: startup fails without it
-pnpm --filter @cohost/dashboard start           # run the dashboard ON THE HOST; it drives services with `docker compose up -d|stop|restart <service>`
+pnpm dashboard     # tsc -b services/dashboard, then runs it on the host; it drives Compose with the docker CLI
 ```
 
 | Env | Meaning |
 |---|---|
 | `CONTROL_ENABLED=1` | turns the routes on; otherwise `POST /services/:id/*` is 404 |
 | `CONTROL_TOKEN` | bearer token, required on `POST /services/:id/start\|stop\|restart`, `POST /control` and `PUT /personality` while enabled (the UI prompts once per tab) |
-| `CONTROL_BIND` | listen address; defaults to `127.0.0.1` when enabled (a non-loopback value logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel) |
+| `DASHBOARD_HOST` | where the full surface listens; `127.0.0.1` by default (`CONTROL_BIND` is the older name). A non-loopback value needs `CONTROL_ENABLED=1` with a token and logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel |
+| `DASHBOARD_LAN_PORT` | the second listener (default 3001, all interfaces): sink page, audio, test uploads only. Containers fetch uploads from it at `host.docker.internal` |
+| `COHOST_DOCKER_BIN` | the docker executable to run; unset uses `docker`, else `docker.exe` (WSL2 without Docker Desktop's integration) |
 | `CONTROL_ADVANCED=1` | also allow `redis` and `postgres` (otherwise 403). The dashboard can never stop itself (409) |
 
 Only service ids in the manifest (`packages/control/src/manifest.ts`) are accepted
@@ -332,11 +350,8 @@ pnpm --filter @cohost/control exec cohostctl consolidate     # the same through 
 `consolidate` is in the `tools` profile, so a plain `docker compose up -d` never
 starts it. It starts `postgres` and `ollama` if they are down and leaves them running.
 
-Host-run vs docker socket: run the control-enabled dashboard on the host (as above)
-so it needs no extra privilege. The containerised dashboard stays monitor-only. Mounting
-`/var/run/docker.sock` into the dashboard container so `compose` works from inside it is
-possible but is an explicit opt-in: it gives that container root-equivalent control of the
-host, so only do it behind a loopback bind and a strong token. Compose is the only
+The dashboard runs on the host so it needs no privilege beyond your own `docker` access;
+no container gets the Docker socket. Compose is the only
 runtime; the control plane never starts host processes (run services directly with `pnpm dev`).
 
 ## Viewer notes (Viewers tab)

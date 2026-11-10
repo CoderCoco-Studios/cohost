@@ -1,8 +1,10 @@
 # Base stack. CPU-only by default; GPU is layered on via docker-compose.gpu.yml
 # (install.sh writes COMPOSE_FILE into .env so plain `docker compose up` picks both).
 #
+#   The dashboard is not a Compose service: it runs on the host (`pnpm dashboard`) and its Launch button
+#   runs `docker compose up -d` for the stack. By hand:
 #   docker compose up -d                 # everything
-#   docker compose up -d chat salience affect memory cortex voice avatar dashboard   # minimal talking path
+#   docker compose up -d chat salience affect memory cortex voice avatar   # minimal talking path
 #   docker compose --profile ears up -d  # add the Discord voice bot
 #   docker compose --profile eyes up -d  # add OBS vision
 #   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
@@ -17,10 +19,9 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
     TTS_URL: http://tts:8880
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
-    DASHBOARD_URL: http://dashboard:3000   # eyes/ears fetch injected test uploads from here
+    # eyes/ears fetch injected test uploads from the host-run dashboard's LAN listener, through the host gateway.
+    DASHBOARD_URL: ${DASHBOARD_URL:-http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}}
     CONFIG_DIR: /app/config
-    # Monitor-only in containers: a CONTROL_ENABLED=1 in .env must not rebind the dashboard to loopback.
-    CONTROL_ENABLED: "0"  # @spec DEPLOY-COMPOSE-016
     # Isolation preset the control plane sets on the `docker compose` process; unset falls through to config.yaml.
     CHAT_SOURCE: ${CHAT_SOURCE:-}  # @spec DEPLOY-COMPOSE-017
     MEMORY_STORE: ${MEMORY_STORE:-}
@@ -173,9 +174,10 @@ services:  # @spec DEPLOY-COMPOSE-001
       redis: { condition: service_healthy }
       ollama: { condition: service_started }
 
-  voice:  # @spec DEPLOY-COMPOSE-005, DEPLOY-COMPOSE-007
+  voice:  # @spec DEPLOY-COMPOSE-005, DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-007
     <<: *ts-service
     build: { context: ., args: { SERVICE: voice } }
+    ports: ["127.0.0.1:8700:8700"]   # for the host-run dashboard (audio proxy, /health); containers use http://voice:8700
     depends_on:
       redis: { condition: service_healthy }
       tts: { condition: service_started }
@@ -183,12 +185,6 @@ services:  # @spec DEPLOY-COMPOSE-001
   avatar:
     <<: *ts-service
     build: { context: ., args: { SERVICE: avatar } }
-
-  dashboard:  # @spec DEPLOY-COMPOSE-006
-    <<: *ts-service
-    build: { context: ., args: { SERVICE: dashboard } }
-    # VIEWERS_TOKEN (Viewers page secret) reaches the dashboard through `env_file: .env` above; unset locks the page.
-    ports: ["${DASHBOARD_PORT:-3000}:3000"]
 
   eyes:
     <<: *ts-service

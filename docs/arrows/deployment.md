@@ -8,9 +8,9 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Standalone dashboard (designed, not built)
 
-The spec file now holds 68 specs: 56 `[x]`, 12 `[ ]`. Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values are `[proposed]`.
+The spec file now holds 69 specs: 56 `[x]`, 13 `[ ]`. Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.
 
-- New `[ ]`: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`), DEPLOY-HOST-003 (README), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
+- New `[ ]`: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`, `DASHBOARD_HOST=127.0.0.1`, commented `COHOST_DOCKER_BIN=`), DEPLOY-HOST-003 (README), DEPLOY-HOST-004 (single-PC WSL2 + Docker Desktop checklist in `docs/TESTING.md`), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
 - Reworded `[ ]`: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (`DASHBOARD_URL` through the host gateway), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
 - Retired: DEPLOY-COMPOSE-016 (the `CONTROL_ENABLED: "0"` pin).
 - Unchanged by design: the `Dockerfile` (no dashboard-specific stage exists; images still compile the whole workspace), `.dockerignore`, the CI workflows other than what `compose-smoke.sh` starts.

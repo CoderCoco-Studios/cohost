@@ -4,14 +4,14 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 60 specs: 40 `[x]`, 20 `[ ]` (the stack controller design below).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 61 specs: 40 `[x]`, 21 `[ ]` (the stack controller design below).
 
 ## Standalone dashboard: stack controller (designed, not built)
 
-Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Mechanics are `[proposed]`.
+Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Mechanics confirmed by the owner (recommended defaults).
 
-- New `[ ]`: CTRL-STACK-001 to 011 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
-- Reworded `[ ]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (nine known services), CTRL-CLI-001 (parse), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
+- New `[ ]`: CTRL-STACK-001 to 012 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state, `COHOST_DOCKER_BIN` / `docker` / `docker.exe`), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
+- Reworded `[ ]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (nine known services), CTRL-CLI-001 (parse; `stop` takes no options), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
 - Retired: CTRL-GUARD-002 (`self` conflict).
 - Cross-segment: the dashboard consumes the controller (DASH-STACK-*); the readiness wait relies on the Compose healthcheck (CTRL-CHECK-003, deployment DEPLOY-HC-001).
 - Build: chunk 1 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).

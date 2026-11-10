@@ -6,16 +6,17 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
-## Standalone dashboard (designed, not built)
+## Standalone dashboard (built)
 
-The spec file holds 69 specs: 58 `[x]`, 11 `[ ]` (DEPLOY-HOST-001 and DEPLOY-REPO-002, the root `pnpm dashboard` script, are built with dashboard chunk 2). Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.
+The spec file holds 69 specs: 69 `[x]`, 0 `[ ]`, 0 `[D]` (DEPLOY-HOST-001 and DEPLOY-REPO-002, the root `pnpm dashboard` script, were built with dashboard chunk 2; the rest with chunk 3). Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.
 
-- New `[ ]`: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`, `DASHBOARD_HOST=127.0.0.1`, commented `COHOST_DOCKER_BIN=`), DEPLOY-HOST-003 (README), DEPLOY-HOST-004 (single-PC WSL2 + Docker Desktop checklist in `docs/TESTING.md`), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
-- Reworded `[ ]`: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (`DASHBOARD_URL` through the host gateway), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
+- New: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`, `DASHBOARD_HOST=127.0.0.1`, commented `COHOST_DOCKER_BIN=`), DEPLOY-HOST-003 (README), DEPLOY-HOST-004 (single-PC WSL2 + Docker Desktop checklist in `docs/TESTING.md`), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
+- Reworded: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (`DASHBOARD_URL` through the host gateway), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
 - Retired: DEPLOY-COMPOSE-016 (the `CONTROL_ENABLED: "0"` pin).
 - Unchanged by design: the `Dockerfile` (no dashboard-specific stage exists; images still compile the whole workspace), `.dockerignore`, the CI workflows other than what `compose-smoke.sh` starts.
-- Also in chunk 3: `docs/TESTING.md` commands that start a containerised dashboard (DEPLOY-README-003 keeps the guide current).
-- Build: chunks 2 (start script) and 3 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-chunks-1-and-2-built-chunk-3-open).
+- `docs/TESTING.md` no longer starts a containerised dashboard (DEPLOY-README-003 keeps the guide current).
+- Tests: `packages/config/test/compose-standalone.test.ts` (Compose topology, `.env.example`, smoke script) and `packages/config/test/installer.test.ts` (installer `CONTROL_TOKEN` fill and next steps, run by extracting the marked functions from `scripts/install.sh`). DEPLOY-HOST-003 and 004 are documentation (`README.md`, `docs/TESTING.md`) with no automated test; the single-PC checklist is run by hand.
+- Build: chunks 2 (start script) and 3 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-chunks-1-3-built).
 
 ## Viewer-notes cascade (built)
 

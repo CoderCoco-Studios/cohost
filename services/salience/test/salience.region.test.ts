@@ -8,7 +8,7 @@ import { scoreRules, type ScoreInput, type ScoreOutput } from "../src/scoring.js
 
 const DIED = { match: "you died", say: ["Oof."], emotion: "surprised", gesture: "facepalm", cooldown_ms: 0 };
 
-function setup(salience: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+function setup(salience: Record<string, unknown> = {}, extra: Record<string, unknown> = {}, now?: () => number) {
   const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0, ...salience } }, ...extra });
   const bus = new FakeBus();
   let scorerCalls = 0;
@@ -18,7 +18,7 @@ function setup(salience: Record<string, unknown> = {}, extra: Record<string, unk
   }, silentLog);
   const run = scorer.run.bind(scorer);
   scorer.run = async (i) => { if (gate) await gate; return run(i); };
-  const s = new Salience({ cfg, bus, scorer, log: silentLog });
+  const s = new Salience({ cfg, bus, scorer, log: silentLog, now });
   return { s, bus, calls: () => scorerCalls, setGate: (g?: Promise<void>) => { gate = g; } };
 }
 const chat = (text: string, extra: Record<string, unknown> = {}) =>
@@ -70,6 +70,19 @@ test("a speaking cortex blocks focus until done, with a speaking_timeout_ms safe
   await new Promise((r) => setTimeout(r, 40));
   await s.tick();
   assert.equal(bus.of("attention.focus").length, 1);
+});
+
+test("the speaking_timeout_ms safety valve measures elapsed time, not the wall clock: a clock stepped back does not extend it", async () => { // @spec SAL-BUSY-002
+  const { s, bus } = setup({}, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 }, cortex: { speaking_timeout_ms: 30 } } });
+  await s.onEvent(event("brain.say", { id: "x", text: "hi", emotion: "happy" }));
+  const realNow = Date.now.bind(Date);
+  const stepped = mock.method(Date, "now", () => realNow() - 25_000); // e.g. an NTP / VM time-sync step
+  try {
+    await s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+    await new Promise((r) => setTimeout(r, 40));
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, "the valve opened after 40 ms of real time");
+  } finally { stepped.mock.restore(); }
 });
 
 test("brain.say from anyone starts the cooldown", async () => { // @spec SAL-BUSY-003
@@ -261,28 +274,30 @@ test("tick: a decision nothing interrupted still publishes after the scorer retu
 });
 
 test("busy: a thinking cortex stops counting as busy after brain.salience.thinking_timeout_ms", async () => { // @spec SAL-BUSY-001
-  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
-  try {
-    const short = setup({ thinking_timeout_ms: 5_000 });
+  let clock = 1_000_000;
+  const now = () => clock;
+  const advance = (ms: number) => { clock += ms; };
+  {
+    const short = setup({ thinking_timeout_ms: 5_000 }, {}, now);
     await short.s.onEvent(event("brain.status", { state: "thinking" }));
     await short.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
-    mock.timers.tick(4_999);
+    advance(4_999);
     await short.s.tick();
     assert.equal(short.bus.of("attention.focus").length, 0, "still inside the configured valve");
-    mock.timers.tick(2);
+    advance(2);
     await short.s.tick();
     assert.equal(short.bus.of("attention.focus").length, 1, "past the configured valve, not the old 60 s literal");
 
-    const dflt = setup();
+    const dflt = setup({}, {}, now);
     await dflt.s.onEvent(event("brain.status", { state: "thinking" }));
     await dflt.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
-    mock.timers.tick(59_000);
+    advance(59_000);
     await dflt.s.tick();
     assert.equal(dflt.bus.of("attention.focus").length, 0, "default valve is 60 s");
-    mock.timers.tick(2_000);
+    advance(2_000);
     await dflt.s.tick();
     assert.equal(dflt.bus.of("attention.focus").length, 1);
-  } finally { mock.timers.reset(); }
+  }
 });
 
 test("reflex: publishing starts the cooldown and marks the voice speaking before the echo returns", async () => { // @spec SAL-REFLEX-007

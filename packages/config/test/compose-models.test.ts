@@ -51,7 +51,10 @@ esac
 echo '{"status":"success"}' > "$out"
 `);
   chmodSync(join(dir, "curl"), 0o755);
-  const r = spawnSync("sh", ["-c", script.replaceAll("$$", "$")], {
+  // The script keeps each pull's body in /tmp/pull.out, which is private inside the one-shot container but shared on
+  // the host: point it into this run's own directory so concurrent test runs cannot read each other's pulls.
+  const hostScript = script.replaceAll("$$", "$").replaceAll("/tmp/pull.out", join(dir, "pull.out"));
+  const r = spawnSync("sh", ["-c", hostScript], {
     env: { PATH: `${dir}:${process.env.PATH}`, PULL_LOG: log, FAIL_MODELS: failing.join(" "), ...env },
     encoding: "utf8",
   });

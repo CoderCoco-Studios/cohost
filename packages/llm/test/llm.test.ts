@@ -294,9 +294,9 @@ test("timeout: a black-holed Ollama and OpenAI-compatible backend fails chat, em
   const o = new Ollama(withTimeout(150, { provider: "ollama" }), holeUrl);
   const oa = new OpenAICompatible(withTimeout(150, { openai: { base_url: `${holeUrl}/v1` } }));
   for (const call of [() => o.chat(user), () => o.embed("x"), () => oa.chat(user)]) {
-    const t0 = Date.now();
+    const t0 = performance.now();
     await assert.rejects(call());
-    assert.ok(Date.now() - t0 < 3000, "gave up near the timeout, not never");
+    assert.ok(performance.now() - t0 < 3000, "gave up near the timeout, not never");
   }
   assert.equal(await o.ping(), false);
   assert.match(o.lastError!, /cannot reach ollama/);

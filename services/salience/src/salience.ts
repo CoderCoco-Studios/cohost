@@ -12,6 +12,11 @@ export interface SalienceDeps {
   bus: Publisher;
   scorer: Module<ScoreInput, ScoreOutput>;
   log: Logger;
+  /**
+   * Monotonic millisecond clock for the busy valves and the cooldown (default `performance.now`): they are durations,
+   * so a stepped wall clock must not stretch or cut them. Tests inject a fake one.
+   */
+  now?: () => number;
 }
 
 /** The salience region's state and event handling; index.ts wires it to the bus and the tick timer. */
@@ -25,12 +30,15 @@ export class Salience {
   private arousal = 0; // @spec SAL-IN-006
   /** What the cortex / voice are up to, as last reported on the bus. */
   private cortexState: "idle" | "thinking" | "speaking" | "muted" = "idle"; // @spec SAL-IN-006
-  private cortexSince = Date.now();
+  private readonly now: () => number;
+  private cortexSince: number;
   private deciding = false;
 
   constructor(private d: SalienceDeps) {
     this.ctx = new Context(d.cfg.brain.working_memory_events);
-    this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer);
+    this.now = d.now ?? (() => performance.now());
+    this.cortexSince = this.now();
+    this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
   }
 
@@ -60,12 +68,12 @@ export class Salience {
         // Whoever spoke (cortex, a reflex, the operator), the cooldown starts now.
         this.scheduler.noteSpoke();
         this.cortexState = "speaking";
-        this.cortexSince = Date.now();
+        this.cortexSince = this.now();
         break;
       case "brain.status": { // @spec SAL-IN-005
         const d = ev.data as BusEvent<"brain.status">["data"];
         this.cortexState = d.state;
-        this.cortexSince = Date.now();
+        this.cortexSince = this.now();
         break;
       }
       case "affect.state": // @spec SAL-IN-004
@@ -91,19 +99,19 @@ export class Salience {
     // Gate before test(), which spends the rule's own cooldown on a hit.
     if (this.busy() || this.scheduler.cooling()) return; // @spec SAL-REFLEX-005
     const trigger = this.ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
-    const hit = this.reflexes.test(sense, text);
+    const hit = this.reflexes.test(sense, text, this.now());
     if (!hit) return;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");
     if (trigger) this.ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count; @spec SAL-REFLEX-004
     // Own the cooldown and the voice state now; the brain.say echo would only arrive later.
     this.scheduler.noteSpoke(); // @spec SAL-REFLEX-007
     this.cortexState = "speaking";
-    this.cortexSince = Date.now();
+    this.cortexSince = this.now();
     await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}`, ...propagatedFlags(trigger) }); // @spec SAL-INJ-004
   }
 
   private busy(): boolean {
-    const age = Date.now() - this.cortexSince;
+    const age = this.now() - this.cortexSince;
     // Safety valves: a cortex that never reports back, or a voice sink that never says done.
     if (this.cortexState === "thinking") return age < this.d.cfg.brain.salience.thinking_timeout_ms; // @spec SAL-BUSY-001
     if (this.cortexState === "speaking") return age < this.d.cfg.brain.cortex.speaking_timeout_ms; // @spec SAL-BUSY-002
@@ -131,7 +139,7 @@ export class Salience {
     const prevState = this.cortexState;
     const prevSince = this.cortexSince;
     this.cortexState = "thinking";
-    const since = this.cortexSince = Date.now();
+    const since = this.cortexSince = this.now();
     const f = decision.focus;
     try {
     await this.d.bus.publish("attention.focus", { // @spec SAL-FOCUS-003

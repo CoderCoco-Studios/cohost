@@ -90,12 +90,14 @@ test("events reach the engine: brain.say shows the emotion, utterance + playing 
   await t.bus.deliver(event("brain.say", { id: "u1", text: "hi", emotion: "smug" }));
   assert.deepEqual(t.driver.expressions.at(-1), ["smug", 1]);
   await t.bus.deliver(event("voice.utterance", {
-    id: "u1", text: "hi", emotion: "happy", gesture: "wave", durationMs: 1000, envelopeHz: 30, envelope: [0.9, 0.9, 0.9], audioUrl: "http://v/audio/u1.wav", sampleRate: 24000,
+    id: "u1", text: "hi", emotion: "happy", gesture: "wave", durationMs: 1000, envelopeHz: 30, envelope: Array(30).fill(0.9), audioUrl: "http://v/audio/u1.wav", sampleRate: 24000,
   }));
   assert.deepEqual(t.driver.gestures, []); // prepared, not playing
   await t.bus.deliver(event("voice.playing", { id: "u1", sink: "discord" }));
   assert.deepEqual(t.driver.gestures, ["wave"]);
   assert.deepEqual(t.driver.expressions.at(-1), ["happy", 1]);
+  // The envelope spans the whole 1 s line, so any frame while it plays opens the mouth: a 100 ms envelope needed a
+  // frame inside that window, which an event loop stalled under load could miss.
   await waitFor(() => t.driver.params.some((p) => p.mouthOpen > 0.5), "mouth moves");
   await t.bus.deliver(event("voice.done", { id: "u1", sink: "discord" }));
   await waitFor(() => t.driver.params.at(-1)!.mouthOpen < 0.3, "mouth closes");

@@ -20,26 +20,36 @@ export interface Decision {
  * chattier.
  */
 export class Scheduler {
-  private lastSpoke = 0;
-  private lastActivity = Date.now();
+  private lastSpoke = -Infinity;
+  private lastActivity: number;
   private scoreCache = new WeakMap<ContextEvent, number>();
 
-  constructor(private cfg: Config["brain"]["salience"], private scorer: Module<ScoreInput, ScoreOutput>) {}
+  /**
+   * `now` is a monotonic millisecond clock: cooldown and idle chatter are durations, so they must not move when the
+   * wall clock is stepped (NTP, VM time sync). Tests inject a fake one.
+   */
+  constructor(
+    private cfg: Config["brain"]["salience"],
+    private scorer: Module<ScoreInput, ScoreOutput>,
+    private now: () => number = () => performance.now(),
+  ) {
+    this.lastActivity = this.now();
+  }
 
   noteSpoke(): void {
-    this.lastSpoke = Date.now();
+    this.lastSpoke = this.now();
     this.lastActivity = this.lastSpoke;
   }
   /** Inside the minimum gap since the last line (anyone's, including reflexes). */
   cooling(): boolean {
-    return Date.now() - this.lastSpoke < this.cfg.cooldown_ms;
+    return this.now() - this.lastSpoke < this.cfg.cooldown_ms;
   }
   noteActivity(): void {
-    this.lastActivity = Date.now();
+    this.lastActivity = this.now();
   }
 
   async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0): Promise<Decision> {
-    const now = Date.now();
+    const now = this.now();
     if (muted) return { speak: false, reason: "muted", score: 0, scored: [] }; // @spec SAL-DECIDE-001, SAL-CTRL-004
     if (busy) return { speak: false, reason: "cortex busy", score: 0, scored: [] };
     if (now - this.lastSpoke < this.cfg.cooldown_ms) return { speak: false, reason: "cooldown", score: 0, scored: [] };

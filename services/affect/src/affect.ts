@@ -9,6 +9,8 @@ export interface AffectDeps {
   bus: Publisher;
   appraiser: Module<AppraiseInput, AppraiseOutput>;
   log: Logger;
+  /** Monotonic millisecond clock for mood decay and the publish heartbeat (default `performance.now`); tests inject a fake one. */
+  now?: () => number;
 }
 
 /**
@@ -22,8 +24,9 @@ const MAX_QUEUED = 8;
 /** The affect region's state and event handling; index.ts wires it to the bus and the publish timer. */
 export class Affect {
   readonly mood: Mood;
+  private readonly now: () => number;
   private lastPublished = "";
-  private lastPublishedAt = 0;
+  private lastPublishedAt = -Infinity;
   private queue: { input: AppraiseInput; cause: string; epoch: number }[] = [];
   private draining?: Promise<void>;
   /** Bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
@@ -32,7 +35,8 @@ export class Affect {
   private paused = false; // @spec AFF-CTRL-005
 
   constructor(private d: AffectDeps) {
-    this.mood = new Mood(d.cfg.brain.affect);
+    this.now = d.now ?? (() => performance.now());
+    this.mood = new Mood(d.cfg.brain.affect, this.now);
   }
 
   onEvent(ev: BusEvent): void {
@@ -115,7 +119,7 @@ export class Affect {
     this.mood.tick();
     const s = this.mood.state();
     const key = `${s.mood}:${s.valence.toFixed(2)}:${s.arousal.toFixed(2)}`;
-    const now = Date.now();
+    const now = this.now();
     // Only publish when it moved, plus a heartbeat so late joiners get a value.
     if (key === this.lastPublished && now - this.lastPublishedAt < 15_000) return;
     this.lastPublished = key;

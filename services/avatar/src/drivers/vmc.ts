@@ -54,9 +54,12 @@ export class VmcDriver implements AvatarDriver {
     this.sock?.send(m, this.opts.port, this.opts.host, (err) => { if (err) this.sendFailed(err); });
   }
 
-  /** Log a send failure at most once every 10 s: setParams sends several datagrams per frame. */
+  /**
+   * Log a send failure at most once every 10 s: setParams sends several datagrams per frame. The interval is a
+   * duration, so it is measured on the monotonic clock: a stepped wall clock must not open or shut it.
+   */
   private sendFailed(err: Error): void {
-    const now = Date.now();
+    const now = performance.now();
     if (now - this.sendFailedAt < 10_000) return;
     this.sendFailedAt = now;
     this.ctx.log.warn({ err: err.message, host: this.opts.host, port: this.opts.port }, "vmc send failed");

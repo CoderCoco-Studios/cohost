@@ -45,8 +45,8 @@ const busyGroup = async () => { throw new Error("BUSYGROUP Consumer Group name a
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 async function until(cond: () => boolean, ms = 1000) {
-  const end = Date.now() + ms;
-  while (!cond()) { if (Date.now() > end) throw new Error("timed out"); await tick(2); }
+  const end = performance.now() + ms;
+  while (!cond()) { if (performance.now() > end) throw new Error("timed out"); await tick(2); }
 }
 const entry = (id: string, type = "control", data: object = { cmd: "mute" }): [string, [string, string[]][]][] =>
   [[STREAM, [[id, ["type", type, "ts", "1", "source", "t", "data", JSON.stringify(data)]]]]];
@@ -165,10 +165,10 @@ test("stop() ends a retry backoff promptly", async () => {
   const { bus, l } = busWith(fake, { retryBaseMs: 60_000, retryMaxMs: 60_000 });
   const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
   await until(() => l.at("warn").length === 1);
-  const t0 = Date.now();
+  const t0 = performance.now();
   bus.stop();
   await done;
-  assert.ok(Date.now() - t0 < 500);
+  assert.ok(performance.now() - t0 < 500);
 });
 
 // @spec BUS-TAIL-003

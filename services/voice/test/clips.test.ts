@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeBus, recordingLog } from "@cohost/testing";
+import { FakeBus, recordingLog, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { ClipService, clipFingerprint, CLIP_RETRY_INITIAL_MS, CLIP_RETRY_MAX_MS } from "../src/clips.js";
 import { TtsError, Voice } from "../src/voice.js";
@@ -101,8 +101,9 @@ test("start returns before the regeneration finishes and a second start does not
   const { svc, dir } = service({ synth: tts.synth, lines: ["A.", "B."] });
   const first = svc.start();
   const second = svc.start();
-  await new Promise((r) => setImmediate(r));
-  await new Promise((r) => setImmediate(r));
+  // start first reads the stored manifest (async fs on the libuv pool), so the first TTS request lands after an
+  // unbounded number of event-loop turns: wait for it rather than for a fixed number of ticks.
+  await waitFor(() => tts.calls.length > 0, "the first TTS request");
   assert.equal(existsSync(join(dir, "manifest.json")), false, "nothing committed while TTS is busy");
   assert.deepEqual(tts.calls, ["A."], "one request at a time, one regeneration");
   release();
@@ -163,7 +164,7 @@ test("the committed set is replaced whole: the old set is served until the new m
   const tts = fakeTts(async (t, n) => { if (n === 2) await gate; return wav(fillFor(t)); });
   const { svc } = service({ dir, lines: ["New one.", "New two."], synth: tts.synth });
   const run = svc.start();
-  await new Promise((r) => setTimeout(r, 30));
+  await waitFor(() => tts.calls.length === 2, "the second (gated) TTS request"); // not a fixed sleep: async fs first
   assert.equal(tts.calls.length, 2, "mid-regeneration");
   assert.deepEqual(readManifest(dir), oldManifest, "manifest untouched while the new set is being written");
   assert.deepEqual(setDirs(dir), [oldManifest.set.split("/")[1]], "no new set directory yet");

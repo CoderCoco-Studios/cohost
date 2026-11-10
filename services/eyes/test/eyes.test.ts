@@ -98,7 +98,7 @@ test("ollamaDescriber aborts a describe call the model has not answered within v
   after(() => { server.closeAllConnections(); server.close(); });
   process.env.OLLAMA_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const describe = ollamaDescriber(testConfig({ vision: { model: "llava", timeout_ms: 50 } }).vision);
-  const t0 = Date.now();
+  const t0 = performance.now();
   await assert.rejects(describe("IMG", ""), /did not answer within 50 ms/);
-  assert.ok(Date.now() - t0 < 2000);
+  assert.ok(performance.now() - t0 < 2000);
 });

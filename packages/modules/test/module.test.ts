@@ -113,9 +113,9 @@ test("kind=llm falls back to rules on prose, wrong shape and timeout", async () 
   llmReplies.push('{"score": 9}');
   assert.deepEqual(await m.run({ n: 3 }), { out: 6 });
   llmReplies.push("hang");
-  const t0 = Date.now();
+  const t0 = performance.now();
   assert.deepEqual(await m.run({ n: 4 }), { out: 8 });
-  assert.ok(Date.now() - t0 < 1000, "gave up at the hook timeout");
+  assert.ok(performance.now() - t0 < 1000, "gave up at the hook timeout");
 });
 
 // @spec HOOK-WARN-001

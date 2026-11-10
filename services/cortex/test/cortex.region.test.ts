@@ -99,9 +99,9 @@ test("recall: no focus text falls back to what's on screen; nothing at all skips
 // @spec CTX-RECALL-003
 test("recall: a silent memory region costs the timeout, not the reply", async () => {
   const { cortex, bus, llm, rec } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 50 } } } });
-  const t0 = Date.now();
+  const t0 = performance.now();
   await cortex.think(mention());
-  assert.ok(Date.now() - t0 >= 45);
+  assert.ok(performance.now() - t0 >= 45);
   assert.equal(llm.calls.length, 1);
   assert.equal(bus.of("brain.say").length, 1);
   assert.deepEqual(rec.msgs("warn"), ["memory region did not answer in time"]);
@@ -111,9 +111,9 @@ test("recall: a silent memory region costs the timeout, not the reply", async ()
 test("recall: a failed publish answers immediately without memories", async () => {
   const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 5000 } } } });
   bus.fail = (t) => t === "memory.recall.request";
-  const t0 = Date.now();
+  const t0 = performance.now();
   await cortex.think(mention());
-  assert.ok(Date.now() - t0 < 1000);
+  assert.ok(performance.now() - t0 < 1000);
   assert.equal(llm.calls.length, 1);
 });
 
@@ -577,9 +577,9 @@ test("notes are requested even when recall is off or has nothing to search for",
 // @spec CTX-NOTES-002
 test("a silent memory costs the shared deadline, not the reply: no notes block, one warning, no text logged", async () => {
   const { cortex, bus, llm, rec } = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { recall_timeout_ms: 50 } } }, notes: () => undefined });
-  const t0 = Date.now();
+  const t0 = performance.now();
   await cortex.think(mention("amy"));
-  assert.ok(Date.now() - t0 >= 45);
+  assert.ok(performance.now() - t0 >= 45);
   assert.equal(llm.calls.length, 1);
   assert.equal(bus.of("brain.say").length, 1);
   assert.doesNotMatch(llm.system, /People here/);
@@ -589,18 +589,18 @@ test("a silent memory costs the shared deadline, not the reply: no notes block, 
 // @spec CTX-NOTES-002
 test("recall and notes share one deadline when both are silent: the wait is one timeout, not two", async () => {
   const { cortex } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 80 } } }, notes: () => undefined });
-  const t0 = Date.now();
+  const t0 = performance.now();
   await cortex.think(mention("amy"));
-  assert.ok(Date.now() - t0 < 150, `waited ${Date.now() - t0} ms`);
+  assert.ok(performance.now() - t0 < 150, `waited ${performance.now() - t0} ms`);
 });
 
 // @spec CTX-NOTES-002
 test("a failed publish of the notes request continues at once with no notes", async () => {
   const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { recall_timeout_ms: 5000 } } } });
   bus.fail = (t) => t === "memory.notes.request";
-  const t0 = Date.now();
+  const t0 = performance.now();
   await cortex.think(mention("amy"));
-  assert.ok(Date.now() - t0 < 1000);
+  assert.ok(performance.now() - t0 < 1000);
   assert.equal(llm.calls.length, 1);
   assert.doesNotMatch(llm.system, /People here/);
 });

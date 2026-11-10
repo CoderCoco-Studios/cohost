@@ -104,9 +104,9 @@ export async function runHeartbeat(
 
 // @spec BUS-TEST-008
 export async function waitFor(cond: () => boolean, what = "condition", ms = 2000): Promise<void> {
-  const t0 = Date.now();
+  const t0 = performance.now();
   while (!cond()) {
-    if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
+    if (performance.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 2));
   }
 }

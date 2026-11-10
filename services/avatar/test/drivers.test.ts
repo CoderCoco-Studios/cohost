@@ -1,4 +1,4 @@
-import { test, after } from "node:test";
+import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import dgram from "node:dgram";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -20,9 +20,9 @@ const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
   ...over,
 });
 async function waitFor(cond: () => boolean, what: string, ms = 2000) {
-  const t0 = Date.now();
+  const t0 = performance.now();
   while (!cond()) {
-    if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
+    if (performance.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 5));
   }
 }
@@ -309,4 +309,23 @@ test("vmc: a failed UDP send (unresolvable host) is logged once per interval and
   assert.equal(warnings.length, 1); // 3 frames x 7 datagrams, one log line
   assert.equal(d.connected(), true);
   await d.disconnect();
+});
+
+// @spec AVATAR-VMC-005
+test("vmc: the once-per-10 s send-failure log measures elapsed time, not the wall clock: a clock stepped forward does not log again", async () => {
+  const d = new VmcDriver({ host: "no-such-host.invalid", port: 39539 });
+  await d.connect(ctx());
+  warnings.length = 0;
+  const realNow = Date.now.bind(Date);
+  let calls = 0;
+  const stepped = mock.method(Date, "now", () => realNow() + (calls++ % 2) * 25_000); // a clock flapping by 25 s
+  try {
+    for (let i = 0; i < 3; i++) d.setParams(NEUTRAL);
+    await waitFor(() => warnings.length >= 1, "send failure logged", 5000);
+    await new Promise((r) => setTimeout(r, 100));
+  } finally {
+    stepped.mock.restore();
+    await d.disconnect();
+  }
+  assert.equal(warnings.length, 1);
 });

@@ -199,7 +199,10 @@ test("with the kokoro engine, clip generation starts after ready and does not ho
     assert.deepEqual(requests, ["Error: unable to play line."]);
     assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/manifest.json`)).status, 404, "nothing committed while TTS is busy");
     release();
-    await waitFor(() => existsSync(join(clipDir, "manifest.json")), "manifest committed");
+    // The file lands on disk (rename on the libuv pool) a turn before the service adopts it and the route serves it:
+    // wait for the commit itself, not for the file.
+    await waitFor(() => t.rec.msgs("info").includes("fallback clips committed"), "manifest committed");
+    assert.ok(existsSync(join(clipDir, "manifest.json")));
     const m = await (await fetch(`http://127.0.0.1:${port}/fallback/manifest.json`)).json() as { clips: { name: string }[] };
     assert.equal(m.clips.length, 1);
     assert.equal((await fetch(`http://127.0.0.1:${port}/fallback/${m.clips[0]!.name}`)).status, 200);

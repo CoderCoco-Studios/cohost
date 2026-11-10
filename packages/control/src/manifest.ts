@@ -19,8 +19,6 @@ export interface ServiceDef {
   defaultMode: StartMode;
   /** redis/postgres: read-only unless CONTROL_ADVANCED=1. */
   infra: boolean;
-  /** The dashboard: it may not stop or restart itself. */
-  self: boolean;
   /** Units an isolated start of this unit also starts (transitively); never applied to restart or stop. */
   requires?: readonly string[];
   /** Env presets (add-isolated-backends) applied by an "isolated" start: one service, no external backends. */
@@ -31,7 +29,7 @@ const svc = (
   id: string,
   over: Partial<Omit<ServiceDef, "id" | "composeName">> = {},
 ): ServiceDef => ({
-  id, composeName: id, pnpmFilter: `@cohost/${id}`, groups: [], defaultMode: "resume", infra: false, self: false, isolatedEnv: {}, ...over,
+  id, composeName: id, pnpmFilter: `@cohost/${id}`, groups: [], defaultMode: "resume", infra: false, isolatedEnv: {}, ...over,
 });
 
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
@@ -48,7 +46,6 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),
   svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false" } }),
   svc("ears", { groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off" } }),
-  svc("dashboard", { self: true }),
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),
   compose("ollama"),

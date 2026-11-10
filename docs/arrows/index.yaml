@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Standalone host-run dashboard designed, not built: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-008/009, DASH-UI-017..020 new; HTTP-009/010/012, FEED-001, CTRL-001/003/004/005, SVC-003, INJ-005, UI-008 reworded (all [ ]). Build order chunks 1-3 in dashboard.md; owner questions answered (DASHBOARD_HOST, single-PC WSL2 testing). Open item: dashboard visual design to be revisited later."
+    next: "Standalone host-run dashboard: chunk 1 (stack controller, control-plane) built, DASH-SVC-003 landed with it; chunks 2 and 3 not built. Designed, not built: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-008/009, DASH-UI-017..020 new; HTTP-009/010/012, FEED-001, CTRL-001/003/004/005, SVC-003, INJ-005, UI-008 reworded (all [ ]). Build order chunks 1-3 in dashboard.md; owner questions answered (DASHBOARD_HOST, single-PC WSL2 testing). Open item: dashboard visual design to be revisited later."
     drift: null
 
   control-plane:
@@ -221,7 +221,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Stack controller designed, not built: CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard leaves the manifest); CTRL-GUARD-002 retired. Chunk 1 of the standalone-dashboard build order (dashboard.md)."
+    next: "Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
     drift: null
 
   deployment:

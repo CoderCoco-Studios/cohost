@@ -88,14 +88,6 @@ test("unknown id: refused 'unknown', nothing executed or audited", async () => {
   assert.deepEqual(audits, []);
 });
 
-// @spec CTRL-GUARD-002
-test("dashboard cannot stop or restart itself (conflict)", async () => {
-  const { c, log } = setup();
-  assert.equal((await c.stop("dashboard")).refused, "conflict");
-  assert.equal((await c.restart("dashboard")).refused, "conflict");
-  assert.deepEqual(log, []);
-});
-
 // @spec CTRL-GUARD-003
 test("infra is forbidden unless advanced, then executed (never reset)", async () => {
   const off = setup();

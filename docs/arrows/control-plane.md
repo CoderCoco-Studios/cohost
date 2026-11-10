@@ -4,17 +4,19 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 61 specs: 40 `[x]`, 21 `[ ]` (the stack controller design below).
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 61 specs, all `[x]`: the stack controller landed as chunk 1 of the standalone-dashboard build order (see below).
 
-## Standalone dashboard: stack controller (designed, not built)
+## Standalone dashboard: stack controller (built, chunk 1)
 
 Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Mechanics confirmed by the owner (recommended defaults).
 
-- New `[ ]`: CTRL-STACK-001 to 012 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state, `COHOST_DOCKER_BIN` / `docker` / `docker.exe`), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
-- Reworded `[ ]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (nine known services), CTRL-CLI-001 (parse; `stop` takes no options), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
-- Retired: CTRL-GUARD-002 (`self` conflict).
+- New `[x]`: CTRL-STACK-001 to 012 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state, `COHOST_DOCKER_BIN` / `docker` / `docker.exe`), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
+- Reworded `[x]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (nine known services), CTRL-CLI-001 (parse; `stop` takes no options), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
+- Retired: CTRL-GUARD-002 (`self` conflict); `ServiceDef.self` and the manifest's `dashboard` entry are removed.
+- Built in `packages/control/src/stack.ts` (`StackController`, `stackState`) and `docker.ts` (`resolveDockerBin`, shared by `ComposeRuntime`); `cohostctl launch`, `stop-all` and `restart-all` in `cli.ts`. `restart-all` returns per-unit outcomes in `restarts` beside the `{ok, detail?, services?}` result so the CLI can print one line per unit.
+- Cross-segment test edit: three dashboard-service tests (DASH-SVC-003, DASH-FEED-001, DASH-FEED-006) follow the manifest and known-list change (404 for `dashboard`, nine known services); the dashboard service code is untouched.
 - Cross-segment: the dashboard consumes the controller (DASH-STACK-*); the readiness wait relies on the Compose healthcheck (CTRL-CHECK-003, deployment DEPLOY-HC-001).
-- Build: chunk 1 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).
+- Build: chunk 1 (done) of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).
 
 ## Decisions applied
 
@@ -38,20 +40,21 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (47 specs, all `[x]`; CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
+- docs/intent/control-plane/control-plane-specs.md (61 specs, all `[x]`; CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
 
 ### Tests (`@spec` lines)
-- packages/control/test/cli.test.ts (10)
+- packages/control/test/cli.test.ts (16)
 - packages/control/test/config.test.ts (5)
-- packages/control/test/controller.test.ts (18)
+- packages/control/test/controller.test.ts (17)
 - packages/control/test/health.test.ts (13)
 - packages/control/test/healthcheck.test.ts (4; the CLI case needs Redis and a built `dist`)
-- packages/control/test/manifest.test.ts (4)
-- packages/control/test/runtime.test.ts (7)
+- packages/control/test/manifest.test.ts (5)
+- packages/control/test/runtime.test.ts (9)
+- packages/control/test/stack.test.ts (18)
 - packages/bus/test/bus.test.ts (6 `CTRL-*` citations: heartbeat, `tracked`, SIGTERM) and packages/bus/test/shutdown.fixture.ts
 
 ### Code (`@spec` lines)
-- packages/control/src/cli.ts (4), config.ts (3), controller.ts (2), health.ts (5), healthcheck.ts (2), manifest.ts (2), runtime.ts (4); index.ts (re-exports only)
+- packages/control/src/cli.ts (4), config.ts (3), controller.ts (2), docker.ts (1), health.ts (5), healthcheck.ts (2), manifest.ts (2), runtime.ts (4), stack.ts (7); index.ts (re-exports only)
 - packages/control/package.json, packages/control/tsconfig.json
 - packages/bus/src/heartbeat.ts (2); packages/bus/src/index.ts cites no `CTRL-*` ID
 - Consumers (owned elsewhere): services/dashboard/src/control.ts, routes.ts, feed.ts, index.ts; docker-compose.yml:30-35 (realizes CTRL-CHECK-003, not annotated); Dockerfile:20

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
@@ -190,6 +190,19 @@ test("a stuck voice sink is ignored after speaking_timeout_ms", async () => {
   await new Promise((r) => setTimeout(r, 40));
   await cortex.think(mention());
   assert.equal(llm.calls.length, 1);
+});
+
+// @spec CTX-GATE-004
+test("speaking_timeout_ms measures elapsed time, not the wall clock: a clock stepped forward does not release a playing line early", async () => {
+  const { cortex, llm } = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { speaking_timeout_ms: 5_000 } } } });
+  await cortex.onEvent(event("brain.say", { id: "playing", text: "x", emotion: "neutral" }, "operator"));
+  const realNow = Date.now.bind(Date);
+  const stepped = mock.method(Date, "now", () => realNow() + 25_000); // e.g. an NTP / VM time-sync step
+  try {
+    await cortex.think(mention());
+  } finally { stepped.mock.restore(); }
+  assert.equal(llm.calls.length, 0, "the line is still playing: no reply over it");
+  await cortex.onEvent(event("voice.done", { id: "playing", sink: "discord" }));
 });
 
 // @spec CTX-GATE-003, CTX-SAY-004

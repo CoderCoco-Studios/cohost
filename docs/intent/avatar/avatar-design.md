@@ -49,7 +49,7 @@ Lip-sync is deliberately keyed to `voice.playing`, not `voice.utterance`: the en
 
 ## Engine
 
-`Engine` (`engine.ts:10-115`) is a fixed-rate loop (`setInterval(1000 / cfg.fps)`, `engine.ts:26-29`) over three pieces of state:
+`Engine` (`engine.ts:10-115`) is a fixed-rate loop (`setInterval(1000 / cfg.fps)`, `engine.ts:26-29`) over three pieces of state. Every time it reads (lip-sync position, emotion holds, blinks, idle motion) comes from one monotonic millisecond clock, the constructor's optional `now` (default `performance.now`), so a wall clock stepped by NTP or VM time sync neither jumps the mouth through an envelope nor ends a hold early; tests inject the mocked clock. The three pieces of state:
 
 - `cur` / `target`: `AvatarParams` current and goal values, both starting at `NEUTRAL` (`engine.ts:11-12`, `types.ts:49`).
 - Emotion state: `emotion` (what is shown), `emotionUntil` (hold deadline, epoch ms), and `mood` (the resting face from `affect.state`) (`engine.ts:13-16`).
@@ -61,7 +61,7 @@ Emotion rules:
 
 - `setEmotion(e, holdMs=4000)` sets the emotion, the hold deadline, and calls `driver.setExpression(e, 1)` immediately (`engine.ts:51-55`).
 - `play(id)` for a known id starts playback, calls `setEmotion(u.emotion, durationMs + 4000)` and fires the utterance's gesture through `driver.trigger` if present (`engine.ts:39-45`). Unknown ids are silently ignored. Note the second `setEmotion` replaces the 6000 ms hold set by `brain.say`; a short utterance therefore shortens the hold.
-- `setMood(e)` is a no-op for the same mood; otherwise it stores the mood and, only if no hold is active (`Date.now() > emotionUntil`), shows it immediately at intensity 0.5 (0 for neutral) (`engine.ts:58-65`).
+- `setMood(e)` is a no-op for the same mood; otherwise it stores the mood and, only if no hold is active (`now() > emotionUntil`), shows it immediately at intensity 0.5 (0 for neutral) (`engine.ts:58-65`).
 - When a hold expires and `emotion !== mood`, the frame loop falls back to the mood with the same 0.5/0 intensity (`engine.ts:82-85`).
 - Reported intensity for `avatar.state` is 0 for neutral, 1 while a hold is active, else 0.5 (`engine.ts:113`). This is computed separately from the intensity passed to `driver.setExpression`, so a held `neutral` emotion is `1` to the driver and `0` in `avatar.state`.
 

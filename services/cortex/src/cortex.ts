@@ -207,7 +207,7 @@ export class Cortex {
   // @spec CTX-GATE-004
   /** Someone's line is still playing (with the stuck-sink safety valve). */
   private voiceBusy(): boolean {
-    if (this.speakingId && Date.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.stopSpeaking();
+    if (this.speakingId && performance.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.stopSpeaking();
     return !!this.speakingId;
   }
 
@@ -215,7 +215,7 @@ export class Cortex {
   private startSpeaking(id: string): void {
     this.stopSpeaking();
     this.speakingId = id;
-    this.speakingSince = Date.now();
+    this.speakingSince = performance.now(); // monotonic: a stepped wall clock must not move the valve
     // @spec CTX-GATE-009
     this.speakingTimer = setTimeout(() => {
       this.speakingTimer = undefined;

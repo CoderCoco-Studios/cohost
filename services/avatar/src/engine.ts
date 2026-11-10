@@ -16,12 +16,24 @@ export class Engine {
   private mood: Emotion = "neutral";
   private known = new Map<string, Utterance>();
   private playing?: { u: Utterance; startedAt: number };
-  private nextBlink = Date.now() + 3000;
+  private nextBlink: number;
   private blinkUntil = 0;
   private timer?: NodeJS.Timeout;
-  private t0 = Date.now();
+  private t0: number;
 
-  constructor(private cfg: Config["avatar"], private driver: AvatarDriver, private onState?: (p: AvatarParams, emotion: Emotion, intensity: number) => void) {}
+  /**
+   * `now` is a monotonic millisecond clock (default `performance.now`): lip-sync position, emotion holds and blinks are
+   * elapsed times, so a wall clock stepped by NTP or VM time sync must not jump them. Tests inject a fake one.
+   */
+  constructor(
+    private cfg: Config["avatar"],
+    private driver: AvatarDriver,
+    private onState?: (p: AvatarParams, emotion: Emotion, intensity: number) => void,
+    private now: () => number = () => performance.now(),
+  ) {
+    this.t0 = this.now();
+    this.nextBlink = this.t0 + 3000;
+  }
 
   start(): void { // @spec AVATAR-ENG-001
     const dt = 1000 / this.cfg.fps;
@@ -39,7 +51,7 @@ export class Engine {
   play(id: string): void { // @spec AVATAR-ENG-003, AVATAR-ENG-004
     const u = this.known.get(id);
     if (!u) return;
-    this.playing = { u, startedAt: Date.now() };
+    this.playing = { u, startedAt: this.now() };
     this.setEmotion(u.emotion, u.durationMs + 4000);
     if (u.gesture) this.driver.trigger(u.gesture);
   }
@@ -50,7 +62,7 @@ export class Engine {
 
   setEmotion(e: Emotion, holdMs = 4000): void { // @spec AVATAR-ENG-008
     this.emotion = e;
-    this.emotionUntil = Date.now() + holdMs;
+    this.emotionUntil = this.now() + holdMs;
     this.driver.setExpression(e, 1);
   }
 
@@ -58,14 +70,14 @@ export class Engine {
   setMood(e: Emotion): void { // @spec AVATAR-ENG-009, AVATAR-ENG-010
     if (e === this.mood) return;
     this.mood = e;
-    if (Date.now() > this.emotionUntil) {
+    if (this.now() > this.emotionUntil) {
       this.emotion = e;
       this.driver.setExpression(e, e === "neutral" ? 0 : 0.5);
     }
   }
 
   private frame(): void {
-    const now = Date.now();
+    const now = this.now();
     const t = (now - this.t0) / 1000;
 
     // --- mouth from envelope

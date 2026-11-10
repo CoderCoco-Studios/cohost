@@ -127,7 +127,10 @@ on arrival.
     swallowed, `cortex.ts:159-161`).
 
 `voiceBusy()` also resets `speakingId` once `speaking_timeout_ms` (default 20000)
-has elapsed (`cortex.ts:178-181`): a stuck voice sink releases the cortex. A timer
+has elapsed (`cortex.ts:178-181`): a stuck voice sink releases the cortex. The
+elapsed time is measured on the monotonic clock (`performance.now`), so a wall
+clock stepped forward by NTP or VM time sync does not release a playing line early.
+A timer
 armed when a line starts (`startSpeaking`, `cortex.ts:184-197`; cleared by the
 matching `voice.done` or the next line, `cortex.ts:199-203`) publishes `idle` (or
 `muted` when muted or paused) when the timeout elapses, so salience and the

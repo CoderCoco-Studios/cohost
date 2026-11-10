@@ -28,7 +28,7 @@ let driver: FakeDriver;
 let states: { emotion: Emotion; intensity: number }[];
 let engine: Engine;
 const make = (over: Record<string, unknown> = {}) => {
-  engine = new Engine(avatarCfg(over), driver, (_p, emotion, intensity) => states.push({ emotion, intensity }));
+  engine = new Engine(avatarCfg(over), driver, (_p, emotion, intensity) => states.push({ emotion, intensity }), () => Date.now()); // the mocked Date is the engine clock
   engine.start();
   return engine;
 };

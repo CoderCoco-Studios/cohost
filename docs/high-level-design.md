@@ -63,7 +63,10 @@ noticing.
 - **The operator** watches and steers through the `dashboard` (live feed,
   mute, say, personality editor, test-input injection, Services tab) and the
   control plane (heartbeats on a separate health stream, gated
-  start/stop/restart from the dashboard or `cohostctl`).
+  start/stop/restart from the dashboard or `cohostctl`). The dashboard is a
+  standalone program the owner starts on the host, outside Docker Compose;
+  it is the first thing started, and its Launch button brings up the whole
+  Compose stack, which runs every other piece.
 
 Three cross-cutting choices make the metaphor hold up in practice. Judgement
 that could use a model is a **hook** (`rules` / `llm` / `http`) that always
@@ -82,8 +85,9 @@ cohost is built for one streamer: the owner, on their own stream.
 1. **The owner, streaming.** One person running cohost on their own Linux or
    WSL2 box with an NVIDIA GPU, OBS on the same or a second PC, a Twitch
    channel, a Discord voice channel, and a Live2D or VRM avatar app. They
-   edit `.env`, `config.yaml` and `personality.md` by hand, run
-   `docker compose up -d`, and watch the dashboard during the stream.
+   edit `.env`, `config.yaml` and `personality.md` by hand, start the
+   dashboard on the host, press Launch, and watch the dashboard during the
+   stream.
 2. **The owner, developing.** The same person between streams: running one
    service under `pnpm dev` against the rest in Compose, injecting test chat,
    screenshots and audio from the dashboard, reading the reflection pass's
@@ -128,7 +132,8 @@ for them to operate.
    personality file grows a dated `## Learned` block after each stream that
    the owner can edit or delete.
 4. **Run locally on one GPU box.** Senses, brain, body, memory and the
-   dashboard all run in Compose on the AI PC; the LAN is the trust boundary
+   dashboard all run on the AI PC: the dashboard as a host process, everything
+   else in Compose; the LAN is the trust boundary
    for internal processing and storage (platform connections such as Twitch
    chat are intentional external integrations);
    chat-model, reflection and hook calls leave the LAN only when explicitly
@@ -149,8 +154,8 @@ for them to operate.
    I/O glue so it is unit-tested.
 8. **Let the operator see and steer during the stream.** One page shows the
    bus, brain status, mood, avatar preview and per-service health, and
-   offers mute, say, forget, personality reload, (when enabled) service
-   restart, and a Viewers page listing every stored viewer note for the owner
+   offers mute, say, forget, personality reload, (when enabled) launching,
+   stopping and restarting the whole stack or one service, and a Viewers page listing every stored viewer note for the owner
    to delete or restore.
 9. **Hear chat from more than one platform.** `chat.message.platform` admits
    `twitch`, `youtube` and `discord`, and a new chat source is a new sense
@@ -290,7 +295,7 @@ flowchart LR
     voice[voice<br/>TTS + sink arbitration]
     avatar[avatar<br/>VTS / VMC / null]
   end
-  dashboard[dashboard<br/>feed, control, sink]
+  dashboard[dashboard on the host<br/>feed, control, sink, launch]
   bus[(redis bus)]
 
   chat & eyes & ears --> bus
@@ -320,9 +325,9 @@ flowchart LR
 | brain | cortex | `attention.focus` → recall → LLM → critic → `brain.say` |
 | body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration; generates and serves the fallback clips |
 | body | avatar | Canonical avatar state → VTube Studio / VMC driver |
-| operator | dashboard | Live feed, mute / say, audio sink, personality editor, Services tab, Viewers page, test-input injection |
-| operator | control-plane | Service manifest, start / stop / restart runtimes, heartbeat health tracker, `cohostctl` CLI |
-| operator | deployment | Compose topology, single parameterized Dockerfile, installer, CI |
+| operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection |
+| operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
+| operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
 
 ### Shared package
 
@@ -350,15 +355,21 @@ flowchart LR
   pre-generated fallback line under the same id (claiming it with
   `voice.playing` and releasing cortex with `voice.done`), and when nothing
   plays voice releases cortex as soon as the claim window closes (gap).
-  Sinks inside Compose fetch audio from `http://voice:8700`; a player on the
-  host or another PC goes through the dashboard's audio proxy, since voice's
-  port is not published.
+  Sinks inside Compose fetch audio from `http://voice:8700`; the host-run
+  dashboard fetches it from voice's port published on the host's loopback
+  address, and every browser or player (on the host or another
+  PC) goes through the dashboard's audio proxy, since voice's port is never
+  published to the LAN.
 - **Region hooks.** salience.scorer, affect.appraiser, cortex.critic each run
   as rules / llm / http per config, falling back to rules on any failure.
 - **Service health and control.** Every service publishes `service.heartbeat`
   to `cohost:health`; the control plane derives up / degraded / stale / down /
   crash-looping and the dashboard shows it. Start / stop / restart go through
   the control plane's manifest-gated runtimes and emit `service.lifecycle`.
+  Stack actions (launch, stop-all, restart-all) also live in the control
+  plane, so the dashboard and `cohostctl` share one implementation; the
+  dashboard shows the stack's state (Docker unreachable, down, starting, up,
+  degraded) beside the per-service health.
 - **Test injection and isolated backends.** `inject.request` / `inject.result`
   let the dashboard feed synthetic chat, screenshots, or audio into a sense;
   mock / stub / fake / off backends let any service run on Redis alone.
@@ -396,30 +407,40 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |
 | Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand. Viewer notes live in Postgres, and the dashboard's Viewers page lists every stored note, and every deletion with its reason, for the owner to delete or restore | Learned facts in the database only; a structured persona schema; viewer notes in the personality file | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. Viewer notes are per-viewer records that change during the stream, so a table fits them, and the Viewers page keeps them as visible and editable as the personality file. | [memory](intent/memory/memory-design.md) Reflection pass and Viewer notes; [dashboard](intent/dashboard/dashboard-design.md) Viewers page; `config/personality.example.md` |
 | Viewer notes | Two layers (core, recent) with a strength that mentions reinforce and time fades; captured live by a small classifier model behind a region hook, cleaned by a stronger model in a consolidation pass triggered by a dirty-note count and once after shutdown; surfaced to the cortex for the viewers in the conversation; sensitivity per tenet 9 | reflection-only notes between streams; regulars only; no fade | The co-host should know what viewers are up to now, not only what the last reflection saw; a cheap model can afford every chat line while a stronger one fixes its mistakes later; fading keeps notes current without manual cleanup. Owner decision; formulas, defaults and event names are `[proposed]`. | [memory](intent/memory/memory-design.md) Viewer notes; [cortex](intent/cortex/cortex-design.md) Viewer notes |
-| Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode; a failed bus publish is logged and the service continues, and a failed subscription or tail read retries with backoff inside the bus. Two cases still exit non-zero: a config value that is present but invalid (for example an unknown `AVATAR_DRIVER`) fails the config load, and the dashboard exits when Redis is unreachable at start | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. An invalid value is an operator mistake to fix, not a gap to idle through, and without Redis there is no bus to report on. The publish, retry and exit cases are owner decisions of 2026-11-01. | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
-| Health and control | Heartbeats on a separate capped stream; derived states computed by observers; control off by default, bearer-gated, manifest-only argv, loopback bind | Heartbeats on the event stream; always-on control | Liveness traffic never evicts domain events; a privileged endpoint has the smallest possible surface and is opt-in. | [control-plane](intent/control-plane/control-plane-design.md); `packages/control/src/manifest.ts:1-5` |
-| Trust boundary | The operator's LAN is the boundary. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle routes and other state-changing posts); reads (`/ws`, `GET /personality`, `GET /services`) stay open; `POST /sink` stays ungated; host-side audio sinks use the dashboard proxy | Gate reads and sink events with the same token; per-user accounts | cohost serves the owner's own stream on their own network. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard port off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decision 2026-11-01. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
+| Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode; a failed bus publish is logged and the service continues, and a failed subscription or tail read retries with backoff inside the bus. One case still exits non-zero: a config value that is present but invalid (for example an unknown `AVATAR_DRIVER`) fails the config load. The dashboard starts and serves its page with Redis and Docker absent, because it is the program that brings them up | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. An invalid value is an operator mistake to fix, not a gap to idle through. The publish and retry cases are owner decisions of 2026-11-01; the dashboard's start without Redis follows from it being the host-side launcher (owner decision). | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
+| Health and control | Heartbeats on a separate capped stream; derived states computed by observers; control off unless `CONTROL_ENABLED=1`, bearer-gated, manifest-only argv, loopback bind; stack actions (launch, stop-all, restart-all) in the control package beside the per-service controller | Heartbeats on the event stream; always-on control; stack actions written separately in the dashboard and the CLI | Liveness traffic never evicts domain events; a privileged endpoint has the smallest possible surface and is opt-in; one implementation of each stack action keeps the dashboard and `cohostctl` from drifting. | [control-plane](intent/control-plane/control-plane-design.md); `packages/control/src/manifest.ts:1-5` |
+| Where the dashboard runs | A standalone host process the owner starts first (`pnpm dashboard`); its Launch button runs the Compose stack, which no longer contains a dashboard service; it reaches Redis and voice on the host's loopback ports and drives Compose with the host's `docker` CLI | The dashboard as a Compose service (monitor-only, with control from a separate host-run copy or `cohostctl`); the dashboard as a Compose service with the Docker socket mounted; a desktop wrapper (Electron) around the page | The owner wants one thing to start, which then starts everything else; a containerised dashboard cannot start the stack it is part of, and a mounted Docker socket gives a container root-equivalent control of the host. A host process needs no extra privilege: it uses the owner's own `docker` access. A desktop wrapper adds a toolchain for no capability the browser page lacks, and OBS still needs an HTTP URL. Owner decision. | [dashboard](intent/dashboard/dashboard-design.md) Host process and stack control; [deployment](intent/deployment/deployment-design.md); [dashboard decision: standalone dashboard](intent/dashboard/decisions/standalone-dashboard.md) |
+| Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`) stay open; `POST /sink` stays ungated; LAN players (an OBS Browser Source on another PC) and containers fetching test uploads use a second listener that carries only the ungated sink and upload routes; browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Licensing | Dual licence: the public gets AGPL-3.0-only; a separate commercial licence, without the AGPL obligations, is reserved to the owner (CoderCoco) and granted case by case (`COMMERCIAL.md`). Every outside contribution is accepted only under an individual Contributor License Agreement (`CLA.md`, adapted from the Apache ICLA) that lets the owner relicense it, enforced in CI | Plain AGPL-3.0 with a DCO sign-off; a permissive licence (MIT/Apache-2.0); a source-available non-commercial licence (PolyForm Noncommercial); the Business Source License | The goal is source that anyone can read, run, modify and contribute to, while a company cannot build a business on cohost for free. AGPL section 13 means anyone who offers a modified cohost to users over a network must offer those users its source, which removes a closed hosted competitor's advantage; it does not forbid commercial use, and running a modified private copy obliges nothing by itself. The commercial licence is what a business buys to be exempt from the AGPL obligations, and the owner can only grant it for code they hold relicensing rights to, which a DCO (a certificate of the right to submit under the project licence) does not give and a CLA does. A permissive licence lets anyone close and sell it; PolyForm Noncommercial and BUSL stop commercial use outright but are not open source licences. | [deployment](intent/deployment/deployment-design.md) Licensing and contribution; `LICENSE`, `CLA.md`, `COMMERCIAL.md` |
-| Deployment shape | One Dockerfile parameterised by `SERVICE`, infra ports on loopback, the dashboard as the only published port, optional senses behind Compose profiles | Per-service images; everything published | One build cached across ten images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
+| Deployment shape | Compose runs everything except the dashboard: one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN | Per-service images; everything published; the dashboard in Compose | One build cached across nine images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
 
 ### Trust boundary
 
-The trust boundary is the operator's LAN. With service control off (the
-default; Compose pins it off for the containerised dashboard,
-DEPLOY-COMPOSE-016) the dashboard listens on all interfaces. With `CONTROL_ENABLED=1` every mutating
-route needs the bearer token, and the dashboard binds `127.0.0.1` unless
-`CONTROL_BIND` names another address (it warns when that address is not
-loopback), so a Browser Source on another PC needs `CONTROL_BIND` set; the
-`/ws` feed, the `GET` routes and `POST /sink` stay open in both modes. The
+The trust boundary is the operator's LAN, and the control surface is
+host-local by default. The dashboard runs on the host, outside Compose. Its
+full surface listens on `127.0.0.1` unless `DASHBOARD_HOST` names another
+address, which the owner sets (for example to `0.0.0.0`) to open the full
+dashboard from another machine; the dashboard then warns, and refuses to
+start unless control mode is on, so every stack action and other mutating
+route needs `CONTROL_TOKEN` and every Viewers route needs `VIEWERS_TOKEN`.
+With `CONTROL_ENABLED=1` (what the shipped `.env.example` sets) every
+mutating route, the stack actions included, needs the bearer token. A second
+listener on all interfaces carries only the routes an OBS Browser Source on
+another PC and a container fetching a test upload need (the page, `/ws`,
+`/audio/*`, `POST /sink`, `/uploads/:id`, `/health`) and answers nothing
+else. With control off nothing but the Viewers routes is gated, and the full
+surface must stay on loopback. The `/ws` feed, the `GET` routes and
+`POST /sink` stay open in both modes. The
 open reads expose more than the stream shows: `GET /personality` returns the
 whole personality file including its `## Learned` notes, and `/ws` carries
 every domain event, including unaddressed chat and recall replies. Viewer notes are the exception to the open reads, because they can hold
 viewers' health and family matters: the feed never forwards the events that
 carry them, and the dashboard's Viewers page routes require a dedicated token
 in both modes. The operator
-therefore keeps the dashboard port off networks they do not trust. The sink stays ungated because an OBS Browser Source cannot authenticate, and a
-host-side audio player reaches voice only through the dashboard's audio proxy,
-since Compose does not publish voice's port. Inside this boundary the voice
+therefore keeps the dashboard's ports off networks they do not trust. The sink stays ungated because an OBS Browser Source cannot authenticate, and a
+browser or other audio player reaches voice only through the dashboard's audio
+proxy: Compose publishes voice's port on the host's loopback address only, for
+the host-run dashboard. Inside this boundary the voice
 HTTP server's CORS `*`, the fixed Postgres credentials and root containers are
 accepted; hardening against other hosts on the LAN is a non-goal.
 
@@ -461,7 +482,9 @@ what to measure once it has. All targets are proposals.
    supported host to hearing a reply in the dashboard, editing only `.env`,
    in under 30 minutes excluding model downloads.
 7. **Isolation coverage.** Every one of the ten services starts and reports
-   `ready` on Redis alone in CI; the Compose smoke test today covers four.
+   `ready` on Redis alone in CI; the Compose smoke test covers three of the
+   nine containerised services, and the dashboard's start without Redis is
+   covered by its unit tests.
 
 ## References
 

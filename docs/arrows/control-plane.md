@@ -4,7 +4,17 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 61 specs: 40 `[x]`, 21 `[ ]` (the stack controller design below).
+
+## Standalone dashboard: stack controller (designed, not built)
+
+Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Mechanics confirmed by the owner (recommended defaults).
+
+- New `[ ]`: CTRL-STACK-001 to 012 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state, `COHOST_DOCKER_BIN` / `docker` / `docker.exe`), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
+- Reworded `[ ]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (nine known services), CTRL-CLI-001 (parse; `stop` takes no options), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
+- Retired: CTRL-GUARD-002 (`self` conflict).
+- Cross-segment: the dashboard consumes the controller (DASH-STACK-*); the readiness wait relies on the Compose healthcheck (CTRL-CHECK-003, deployment DEPLOY-HC-001).
+- Build: chunk 1 of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).
 
 ## Decisions applied
 
@@ -102,10 +112,13 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-1. Make isolation env reach containers under the compose runtime through pass-through entries in `docker-compose.yml`, and pin `CONTROL_ENABLED: "0"` for the dashboard container (deployment change; B17; CTRL-RUNTIME-009). Control-plane code and tests are ready; the spec stays `[ ]` until the compose entries exist.
+None outstanding: the isolation pass-through entries are in `docker-compose.yml` (CTRL-RUNTIME-009, DEPLOY-COMPOSE-017). The `CONTROL_ENABLED: "0"` pin that accompanied them is retired with the containerised dashboard (DEPLOY-COMPOSE-016).
+
+### Should Fix
+- Build the stack controller and the `cohostctl` stack commands (CTRL-STACK-*, CTRL-CLI-010 to 012) and remove `dashboard` from the manifest (CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005; CTRL-GUARD-002 retired).
 
 ### Nice to Have
-2. Drop the unused `@cohost/config` dependency or use it; tighten the `cli.js` entry guard (CTRL-CLI-005).
+2. Drop the unused `@cohost/config` dependency or use it (the stack controller's workspace-root cwd, CTRL-STACK-001, uses it); tighten the `cli.js` entry guard (CTRL-CLI-005).
 3. Single source for the known-service list instead of `KNOWN_SERVICES` plus the manifest (CTRL-HEALTH-005, CTRL-MANIFEST-001, CTRL-MANIFEST-005).
 4. Tests for `main()` wiring (CTRL-CLI-005), the heartbeat payload fields (CTRL-HEARTBEAT-001), `isLoopback`, compose `cwd`, the entry guard, and the partial gaps in Key Finding 9.
 5. Annotate the compose healthcheck wiring (`docker-compose.yml:30-35`) for CTRL-CHECK-003 in a deployment pass.

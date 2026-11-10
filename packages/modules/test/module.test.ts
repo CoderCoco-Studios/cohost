@@ -49,7 +49,9 @@ after(() => server.close());
 // @spec HOOK-HTTP-002
 test("kind=http posts the input and uses a valid answer", async () => {
   answers.push({ out: 99 });
-  const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 500 }), llmCfg, { rules, http: { validate } }, log);
+  // The deadline is not under test here (the fallback tests below cover it). The first request in the process also
+  // loads the fetch stack, which a loaded machine can stretch past a tight deadline and turn this into a fallback.
+  const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 30_000 }), llmCfg, { rules, http: { validate } }, log);
   assert.deepEqual(await m.run({ n: 2 }), { out: 99 });
 });
 

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { Redis } from "ioredis";
 import { Bus, EVENT_TYPES, EventPayloads, type BusEvent } from "../src/index.js";
@@ -236,16 +236,24 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // @spec CTRL-HEARTBEAT-002
 test("startHeartbeat publishes starting, then ready, then repeats every interval", async () => {
-  const bus = new RecBus();
-  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 100 });
-  await sleep(20);
-  assert.deepEqual(bus.sent.map((s) => s.state), ["starting"]);
-  h.ready();
-  await sleep(20);
-  assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready"]);
-  await sleep(250);
-  assert.ok(bus.sent.filter((s) => s.state === "ready").length >= 3, "ready repeats");
-  await h.stop();
+  // Mocked intervals: with real ones, a loop stalled past the 100 ms beat between two checks adds an extra "ready".
+  mock.timers.enable({ apis: ["setInterval"] });
+  try {
+    const bus = new RecBus();
+    const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 100 });
+    await Promise.resolve();
+    assert.deepEqual(bus.sent.map((s) => s.state), ["starting"]);
+    mock.timers.tick(99);
+    assert.deepEqual(bus.sent.map((s) => s.state), ["starting"], "no beat before the interval");
+    h.ready();
+    await Promise.resolve();
+    assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready"]);
+    mock.timers.tick(1);
+    mock.timers.tick(100);
+    await Promise.resolve();
+    assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready", "ready", "ready"], "ready repeats every interval");
+    await h.stop();
+  } finally { mock.timers.reset(); }
 });
 
 // @spec CTRL-HEARTBEAT-003

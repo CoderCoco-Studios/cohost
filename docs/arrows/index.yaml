@@ -53,7 +53,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). No open gaps."
+    next: "Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). BUS-TAIL-005 (onRead on tail and tailHealth) built with the standalone dashboard chunk 2. No open gaps."
     drift: null
 
   model-backends:
@@ -209,7 +209,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Standalone host-run dashboard: chunk 1 (stack controller, control-plane) built, DASH-SVC-003 landed with it; chunks 2 and 3 not built. Designed, not built: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-008/009, DASH-UI-017..020 new; HTTP-009/010/012, FEED-001, CTRL-001/003/004/005, SVC-003, INJ-005, UI-008 reworded (all [ ]). Build order chunks 1-3 in dashboard.md; owner questions answered (DASHBOARD_HOST, single-PC WSL2 testing). Open item: dashboard visual design to be revisited later."
+    next: "Standalone host-run dashboard: chunks 1 (stack controller, control-plane; DASH-SVC-003) and 2 (host dashboard) built. Chunk 2: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-001/008/009, DASH-UI-008/017..020, HTTP-009/010/012, CTRL-001/003/004/005, INJ-005 all [x] (99 specs, 0 gaps); event-bus gained BUS-TAIL-005 (read-outcome callback) for DASH-FEED-009; the dead 'conflict' refusal is removed. Chunk 3 (deployment: Compose drops the dashboard service, installer, CI smoke, README/TESTING) is open. Open items: dashboard visual design to be revisited later; a Redis outage that stalls an already-running tail (ioredis queues the blocking read) is not reported as bus unreachable until a read fails."
     drift: null
 
   control-plane:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Standalone dashboard designed, not built: Compose drops the dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), pnpm dashboard + .env.example + README + single-PC checklist (DEPLOY-HOST-001..004, REPO-002); DEPLOY-COMPOSE-016 retired. Chunks 2-3 of the build order (dashboard.md). Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md."
+    next: "Standalone dashboard designed, not built: Compose drops the dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004); DEPLOY-COMPOSE-016 retired. Built in chunk 2: the root pnpm dashboard script (DEPLOY-HOST-001, REPO-002). Chunk 3 of the build order (dashboard.md) is open. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md."
     drift: null
 
 unmapped:

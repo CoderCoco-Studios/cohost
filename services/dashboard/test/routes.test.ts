@@ -4,6 +4,7 @@ import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { HealthTracker } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
+import { StackService } from "../src/stack.js";
 
 // The voice service the dashboard proxies audio from.
 const voice = http.createServer((req, res) => {
@@ -27,6 +28,7 @@ const server = http.createServer(createDashboardHandler({
   loadPersonality: () => personality,
   savePersonality: (t) => { personality = t; },
   services: () => tracker.snapshot(),
+  stack: new StackService({ log: rec.log, bus: () => "connected" }),
 }));
 await new Promise<void>((r) => server.listen(0, r));
 after(() => server.close());

@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit",
+    "dashboard": "tsc -b services/dashboard && node services/dashboard/dist/index.js",
     "dev": "pnpm -r --parallel --filter './services/*' dev",
     "lint": "tsc -b --noEmit",
     "reflect": "pnpm --filter @cohost/memory reflect",

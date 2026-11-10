@@ -9,6 +9,17 @@ const PLATFORMS = ["twitch", "youtube", "discord"] as const;
 type Platform = (typeof PLATFORMS)[number];
 const TEXT_LIMIT = 64 * 1024;
 
+/**
+ * The base URL eyes and ears fetch uploads from: `DASHBOARD_URL` when set and non-empty, else the host gateway at the
+ * LAN listener's port (`DASHBOARD_LAN_PORT`, default 3001).
+ */
+// @spec DASH-INJ-005
+export function uploadBase(env: NodeJS.ProcessEnv): string {
+  const url = env.DASHBOARD_URL?.trim();
+  if (url) return url;
+  return `http://host.docker.internal:${env.DASHBOARD_LAN_PORT?.trim() || "3001"}`;
+}
+
 export interface InjectDeps {
   bus: Publisher;
   uploads: UploadStore;

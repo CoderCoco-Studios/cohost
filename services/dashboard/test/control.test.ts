@@ -5,6 +5,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import type { Runtime } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
+import { StackService } from "../src/stack.js";
 
 class CtlBus extends FakeBus {
   resets: string[] = [];
@@ -31,7 +32,7 @@ async function boot(env: NodeJS.ProcessEnv) {
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => personality, savePersonality: (t) => { personality = t; },
-    services: () => [], control: setup.control,
+    services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -49,8 +50,9 @@ async function boot(env: NodeJS.ProcessEnv) {
 test("disabled: service routes 404, /control and /personality stay open, flag reports disabled", async () => {
   const t = await boot({});
   assert.equal(t.setup.control, undefined);
-  assert.equal(t.setup.bind, undefined);
+  assert.equal(t.setup.bind, "127.0.0.1");
   assert.equal((await t.send("/services/cortex/stop")).status, 404);
+  for (const k of ["launch", "stop", "restart", "consolidate"]) assert.equal((await t.send(`/stack/${k}`)).status, 404);
   assert.equal((await t.send("/control", { body: { cmd: "mute" } })).status, 204);
   assert.equal((await t.send("/personality", { method: "PUT", body: "hi" })).status, 204);
   assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: false });
@@ -65,16 +67,45 @@ test("enabling without a token fails startup naming CONTROL_TOKEN", () => {
 });
 
 // @spec DASH-CTRL-003
-test("bind: loopback by default, CONTROL_BIND overrides and warns when non-loopback", () => {
+test("bind: loopback by default in both modes; DASHBOARD_HOST wins over CONTROL_BIND; empty values are skipped; a non-loopback address warns", () => {
   const a = recordingLog();
   assert.equal(setupControl(ON, new CtlBus(), a.log).bind, "127.0.0.1");
   assert.deepEqual(a.msgs("warn"), []);
+  const off = recordingLog();
+  assert.equal(setupControl({}, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ DASHBOARD_HOST: "", CONTROL_BIND: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.deepEqual(off.msgs("warn"), []);
   const b = recordingLog();
   assert.equal(setupControl({ ...ON, CONTROL_BIND: "0.0.0.0" }, new CtlBus(), b.log).bind, "0.0.0.0");
   assert.equal(b.msgs("warn").length, 1);
   const c = recordingLog();
   assert.equal(setupControl({ ...ON, CONTROL_BIND: "127.0.0.1" }, new CtlBus(), c.log).bind, "127.0.0.1");
   assert.deepEqual(c.msgs("warn"), []);
+  const d = recordingLog();
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5", CONTROL_BIND: "127.0.0.1" }, new CtlBus(), d.log).bind, "192.168.1.5");
+  assert.equal(d.msgs("warn").length, 1);
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1", CONTROL_BIND: "0.0.0.0" }, new CtlBus(), recordingLog().log).bind, "::1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "  ", CONTROL_BIND: "10.0.0.2" }, new CtlBus(), recordingLog().log).bind, "10.0.0.2");
+});
+
+// @spec DASH-HOST-007
+test("a non-loopback full-surface address without CONTROL_ENABLED=1 fails startup naming DASHBOARD_HOST and CONTROL_ENABLED", () => {
+  for (const env of [{ DASHBOARD_HOST: "0.0.0.0" }, { CONTROL_BIND: "0.0.0.0" }, { DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }]) {
+    assert.throws(() => setupControl(env, new CtlBus(), recordingLog().log), (e: Error) => /DASHBOARD_HOST/.test(e.message) && /CONTROL_ENABLED/.test(e.message), JSON.stringify(env));
+  }
+  assert.doesNotThrow(() => setupControl({ DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), recordingLog().log));
+  assert.doesNotThrow(() => setupControl({ DASHBOARD_HOST: "localhost" }, new CtlBus(), recordingLog().log));
+  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), recordingLog().log));
+});
+
+// @spec DASH-HOST-006
+test("the control token is accepted only from the Authorization header and never reaches the log", async () => {
+  const t = await boot(ON);
+  assert.equal((await t.send("/control?token=s3cret", { body: { cmd: "mute" } })).status, 401);
+  assert.equal((await t.send("/control", { body: { cmd: "mute", token: "s3cret" } })).status, 401);
+  assert.equal((await t.send("/control", { body: "{not json", token: "s3cret" })).status, 500); // logged error path, with the header present
+  assert.equal(JSON.stringify(t.rec.lines).includes("s3cret"), false);
+  assert.equal(JSON.stringify(t.rec.lines).toLowerCase().includes("authorization"), false);
 });
 
 // @spec DASH-CTRL-004

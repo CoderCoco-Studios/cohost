@@ -1,8 +1,9 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
-import { urls, type Logger } from "@cohost/config";
-import { bearerOk, type ServiceController, type ServiceHealth, type StartMode } from "@cohost/control";
-import { handleInject } from "./inject.js";
+import type { Logger } from "@cohost/config";
+import { bearerOk, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { handleInject, uploadBase } from "./inject.js";
+import type { StackService } from "./stack.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
 
@@ -31,10 +32,13 @@ export interface DashboardDeps {
    * token requirement on every mutating route (`POST /control`, `PUT /personality`).
    */
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
+  /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
+  stack: StackService;
 }
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
-const REFUSAL_STATUS = { unknown: 404, conflict: 409, forbidden: 403 } as const;
+const REFUSAL_STATUS = { unknown: 404, forbidden: 403 } as const;
+const STACK_ACTION = /^\/stack\/(launch|stop|restart|consolidate)$/;
 
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
@@ -43,7 +47,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const inject = {
     bus: d.bus,
     uploads,
-    dashboardUrl: d.dashboardUrl ?? urls.dashboard(),
+    dashboardUrl: d.dashboardUrl ?? uploadBase(process.env),
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
       return true;
@@ -94,7 +98,10 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         const opts = parseLifecycleBody(await body(req));
         if (!opts) { res.writeHead(400); res.end("bad request body"); return; }
         const action = life[2] as "start" | "stop" | "restart";
-        const out = await ctl.controller[action](id, opts);
+        const release = d.stack.tryAcquire(`service-${action}`); // @spec DASH-STACK-003
+        if (!release) { res.writeHead(409, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: `busy: ${d.stack.busyKind()}` })); return; }
+        let out;
+        try { out = await ctl.controller[action](id, opts); } finally { release(); }
         if (out.refused) {
           res.writeHead(REFUSAL_STATUS[out.refused], { "content-type": "application/json" });
           res.end(JSON.stringify({ ok: false, detail: out.detail }));
@@ -102,6 +109,24 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: out.ok, ...(out.detail ? { detail: out.detail } : {}) }));
+        return;
+      }
+      // @spec DASH-STACK-001, DASH-CTRL-005
+      if (req.method === "GET" && url.pathname === "/stack") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify(d.stack.snapshot()));
+        return;
+      }
+      // @spec DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005, DASH-CTRL-001, DASH-CTRL-004
+      const stackAct = req.method === "POST" ? STACK_ACTION.exec(url.pathname) : null;
+      if (stackAct) {
+        const ctl = d.control;
+        if (!ctl) { res.writeHead(404); res.end("not found"); return; }
+        if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
+        req.resume(); // any body is ignored: nothing from the request reaches an argv
+        const out = d.stack.request(stackAct[1] as StackActionKind, ctl.controller);
+        res.writeHead(out.ok ? 202 : out.status, { "content-type": "application/json" });
+        res.end(JSON.stringify(out.ok ? { ok: true, action: out.action } : { ok: false, detail: out.detail }));
         return;
       }
       // @spec DASH-HTTP-005

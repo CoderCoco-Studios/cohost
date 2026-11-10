@@ -234,6 +234,30 @@ test("a throwing tailHealth handler is logged and the loop continues", async () 
   bus.stop(); await done;
 });
 
+// @spec BUS-TAIL-005
+test("tail reports each blocking read to onRead: an empty read and a delivering read as success, a failed one with its error", async () => {
+  const fake = new FakeRedis();
+  fake.script.xread = [async () => null, async () => { throw new Error("ECONNRESET"); }, async () => entry("3-0")];
+  const { bus } = busWith(fake);
+  const seen: (string | undefined)[] = [];
+  const done = bus.tail(() => {}, "$", (err) => { seen.push(err === undefined ? undefined : (err as Error).message); });
+  await until(() => seen.length >= 3);
+  assert.deepEqual(seen.slice(0, 3), [undefined, "ECONNRESET", undefined]);
+  bus.stop(); await done;
+});
+
+// @spec BUS-TAIL-005
+test("tailHealth reports each blocking read to onRead the same way", async () => {
+  const fake = new FakeRedis();
+  fake.script.xread = [async () => { throw new Error("ECONNRESET"); }, async () => null];
+  const { bus } = busWith(fake);
+  const seen: boolean[] = [];
+  const done = bus.tailHealth(() => {}, "$", (err) => { seen.push(err === undefined); });
+  await until(() => seen.length >= 2);
+  assert.deepEqual(seen.slice(0, 2), [false, true]);
+  bus.stop(); await done;
+});
+
 // @spec BUS-STREAM-007
 test("a rejected XADD is logged at warn with the type and the original error is propagated", async () => {
   const fake = new FakeRedis();

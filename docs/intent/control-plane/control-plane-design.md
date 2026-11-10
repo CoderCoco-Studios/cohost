@@ -74,7 +74,7 @@ Guard order (`controller.ts:64-70`):
 1. Unknown id: `refused: "unknown"` (HTTP 404 in the dashboard). `dashboard` is an unknown id.
 2. `infra` and not `advanced`: `refused: "forbidden"` (403); detail names `CONTROL_ADVANCED=1`.
 
-The code still has a `self` guard between the two (`refused: "conflict"`, 409), which goes with the `self` flag; CTRL-GUARD-002 is retired.
+There is no third refusal: the manifest has no `self` flag, so nothing is refused as a conflict; CTRL-GUARD-002 is retired.
 
 Refusals are returned before anything runs and are not audited, by design (commit `1d316ff`).
 
@@ -183,7 +183,7 @@ Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. 
 | `REDIS_URL` | `Bus` (via `@cohost/config` `urls.redis()`), CLI, healthcheck | bus address |
 | `HEARTBEAT_INTERVAL_MS`, `COHOST_VERSION` | `heartbeat.ts` | beat interval (default 5000) and reported version (default `dev`) |
 
-Consumers of this segment: dashboard `control.ts` (`setupControl`, warns on non-loopback bind and on `CONTROL_ADVANCED`), `routes.ts` (404 when disabled, 401 without a bearer, body parsing of `mode` and `isolated`, refusal-to-status map unknown 404 / conflict 409 / forbidden 403 at `routes.ts:32`), `feed.ts`, `index.ts`; and the compose healthcheck. Those files are specified in the dashboard segment; this segment owns the semantics they delegate to. The bearer gate guards mutations only: the LAN is the trust boundary, so health reads (`GET /services`, the WebSocket feed) stay open.
+Consumers of this segment: dashboard `control.ts` (`setupControl`, warns on non-loopback bind and on `CONTROL_ADVANCED`), `routes.ts` (404 when disabled, 401 without a bearer, body parsing of `mode` and `isolated`, refusal-to-status map unknown 404 / forbidden 403, and the stack routes), `feed.ts`, `index.ts`; and the compose healthcheck. Those files are specified in the dashboard segment; this segment owns the semantics they delegate to. The bearer gate guards mutations only: the LAN is the trust boundary, so health reads (`GET /services`, the WebSocket feed) stay open.
 
 ## Divergence from the original plan
 

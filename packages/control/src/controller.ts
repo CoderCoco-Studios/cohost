@@ -4,10 +4,10 @@ import type { Runtime, RuntimeResult, StartOptions } from "./runtime.js";
 export type LifecycleAction = "start" | "stop" | "restart";
 
 /** Why a request was refused before anything ran. */
-export type Refusal = "unknown" | "conflict" | "forbidden";
+export type Refusal = "unknown" | "forbidden";
 
 export interface ControlResult extends RuntimeResult {
-  /** Set when the request was refused (404 / 409 / 403) and nothing was executed. */
+  /** Set when the request was refused (404 / 403) and nothing was executed. */
   refused?: Refusal;
 }
 

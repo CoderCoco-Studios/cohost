@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { SERVICE_MANIFEST } from "@cohost/control";
 
 /**
  * The page's inline <script> run under a hand-written stub DOM (no browser dependency). The script's
@@ -98,12 +99,13 @@ test("esc() escapes & < > \" and ' so a value cannot break out of an attribute",
 });
 
 // @spec DASH-UI-016
-test("a service id with quotes is escaped inside data-svc in the services table", async () => {
+test("a service id with quotes is escaped in the services table (buttons, and so data-svc, exist only for the fixed manifest ids)", async () => {
   const p = await boot({ control: true });
   p.deliver({ type: "services", services: [{ service: `x" onmouseover="alert(1)`, state: "up", restarts: 0 }] });
   const rows = p.get("#svcRows").innerHTML;
-  assert.match(rows, /data-svc="x&quot; onmouseover=&quot;alert\(1\)"/);
-  assert.doesNotMatch(rows, /data-svc="x"/);
+  assert.match(rows, /<td>x&quot; onmouseover=&quot;alert\(1\)<\/td>/);
+  assert.doesNotMatch(rows, /onmouseover="/);
+  assert.doesNotMatch(rows, /data-svc=/);
 });
 
 // @spec DASH-UI-013
@@ -472,4 +474,168 @@ test("notes data is never taken from the /ws feed: a viewers event on the socket
   p.deliver({ id: "1-0", type: "memory.viewers.reply", ts: 1, source: "memory", data: { id: "x", ok: true, data: DETAIL } });
   assert.equal(p.get("#feed").children.length, 0);
   assert.equal(p.get("#vDetail").innerHTML, "");
+});
+
+// ---------- stack panel and lifecycle buttons
+const stackMsg = (over: Record<string, unknown> = {}) =>
+  ({ type: "stack", state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...over });
+const svcRow = (service: string) => ({ service, state: "up", restarts: 0 });
+
+// @spec DASH-UI-008
+test("lifecycle buttons appear on manifest-unit rows only: none on the dashboard's row or any other non-unit service", async () => {
+  const p = await boot({ control: true });
+  p.deliver({ type: "services", services: [svcRow("chat"), svcRow("redis"), svcRow("dashboard"), svcRow("mystery")] });
+  const rows = p.get("#svcRows").innerHTML.split("</tr>");
+  const row = (name: string) => rows.find((r) => r.includes(`<td>${name}</td>`))!;
+  for (const unit of ["chat", "redis"]) assert.equal((row(unit).match(/data-act="/g) ?? []).length, 3, unit);
+  for (const other of ["dashboard", "mystery"]) assert.doesNotMatch(row(other), /data-act=/, other);
+  assert.match(row("dashboard"), /<td class="act"><\/td>/); // the cell stays so the columns line up
+});
+
+// @spec DASH-UI-008
+test("the page's unit list is exactly the control plane's manifest", async () => {
+  const p = await boot({ control: true });
+  assert.deepEqual((JSON.parse(p.run("JSON.stringify(UNITS)") as string) as string[]).sort(), SERVICE_MANIFEST.map((d) => d.id).sort());
+});
+
+// @spec DASH-UI-008
+test("with service control disabled no row has a button", async () => {
+  const p = await boot();
+  p.deliver({ type: "services", services: [svcRow("chat")] });
+  assert.doesNotMatch(p.get("#svcRows").innerHTML, /data-act=/);
+});
+
+// @spec DASH-UI-017
+test("the stack panel is shown only where control is enabled", async () => {
+  const on = await boot({ control: true });
+  on.deliver(stackMsg());
+  assert.notEqual(on.get("#stackPanel").style.display, "none");
+  const off = await boot();
+  off.deliver(stackMsg());
+  assert.equal(off.get("#stackPanel").style.display, "none");
+});
+
+// @spec DASH-UI-017
+test("Launch, Stop and Restart-all each ask for confirmation, then POST their route through the authenticated fetch", async () => {
+  const p = await boot({ control: true, token: "tok", handler: (_p, init) => res(init.headers?.authorization === "Bearer tok" ? 202 : 401, { ok: true }) });
+  p.deliver(stackMsg());
+  for (const [btn, route] of [["#stLaunch", "launch"], ["#stStop", "stop"], ["#stRestart", "restart"]] as const) {
+    p.calls.length = 0; p.confirms.length = 0;
+    await p.get(btn).onclick!();
+    assert.equal(p.confirms.length, 1, btn);
+    // the first 401 prompts for the token and retries; the token is then remembered for the tab
+    const expected = btn === "#stLaunch" ? [[`/stack/${route}`, "POST", undefined], [`/stack/${route}`, "POST", "Bearer tok"]] : [[`/stack/${route}`, "POST", "Bearer tok"]];
+    assert.deepEqual(p.calls.map((c) => [c.path, c.method, c.auth]), expected, btn);
+  }
+});
+
+// @spec DASH-UI-017
+test("declining the confirmation sends nothing", async () => {
+  const p = await boot({ control: true, confirm: () => false });
+  p.deliver(stackMsg());
+  p.calls.length = 0;
+  await p.get("#stLaunch").onclick!();
+  assert.deepEqual(p.calls.filter((c) => c.path.startsWith("/stack")), []);
+});
+
+// @spec DASH-UI-017
+test("a non-2xx answer shows the response's detail; a 2xx clears it", async () => {
+  let next: FakeRes = res(503, { ok: false, detail: "docker: command not found" });
+  const p = await boot({ control: true, token: "tok", handler: () => next });
+  p.deliver(stackMsg());
+  await p.get("#stLaunch").onclick!();
+  assert.match(p.get("#stackMsg").textContent, /docker: command not found/);
+  next = res(409, { ok: false, detail: "busy: launch" });
+  await p.get("#stStop").onclick!();
+  assert.match(p.get("#stackMsg").textContent, /busy: launch/);
+  next = res(202, { ok: true, action: "launch" });
+  await p.get("#stLaunch").onclick!();
+  assert.doesNotMatch(p.get("#stackMsg").textContent, /busy|docker/);
+});
+
+// @spec DASH-UI-017
+test("the three buttons are disabled while an action runs or Docker is unavailable, and enabled otherwise", async () => {
+  const p = await boot({ control: true });
+  const states = () => ["#stLaunch", "#stStop", "#stRestart"].map((b) => p.get(b).disabled);
+  p.deliver(stackMsg());
+  assert.deepEqual(states(), [false, false, false]);
+  p.deliver(stackMsg({ state: "starting", action: { kind: "launch", phase: "waiting", startedAt: Date.now() } }));
+  assert.deepEqual(states(), [true, true, true]);
+  p.deliver(stackMsg({ state: "docker-unavailable", docker: { ok: false, detail: "docker: command not found" } }));
+  assert.deepEqual(states(), [true, true, true]);
+  p.deliver(stackMsg({ state: "down" }));
+  assert.deepEqual(states(), [false, false, false]);
+});
+
+// @spec DASH-UI-018
+test("the header badge and the panel show the stack state; docker detail, a down stack and an unreachable bus are each said", async () => {
+  const p = await boot({ control: true });
+  p.deliver(stackMsg({ state: "degraded" }));
+  assert.match(p.get("#stackBadge").textContent, /degraded/);
+  p.deliver(stackMsg({ state: "docker-unavailable", docker: { ok: false, detail: "docker: command not found" } }));
+  assert.match(p.get("#stackState").textContent, /docker: command not found/);
+  assert.match(p.get("#stackBadge").textContent, /docker/i);
+  p.deliver(stackMsg({ state: "down" }));
+  assert.match(p.get("#stackState").textContent, /stack is down/i);
+  p.deliver(stackMsg({ state: "up", bus: "unreachable" }));
+  assert.match(p.get("#stackBus").textContent, /unreachable/i);
+  p.deliver(stackMsg({ state: "up" }));
+  assert.equal(p.get("#stackBus").textContent, "");
+});
+
+// @spec DASH-UI-018
+test("the badge also shows where control is disabled (read-only state)", async () => {
+  const p = await boot();
+  p.deliver(stackMsg({ state: "up" }));
+  assert.match(p.get("#stackBadge").textContent, /up/);
+});
+
+// @spec DASH-UI-019
+test("after a successful stop the page offers the consolidation pass, which asks for confirmation and POSTs /stack/consolidate; never at any other time", async () => {
+  const p = await boot({ control: true, handler: () => res(202, { ok: true, action: "consolidate" }) });
+  const shown = () => p.get("#stConsolidate").style.display !== "none";
+  p.deliver(stackMsg());
+  assert.equal(shown(), false);
+  p.deliver(stackMsg({ last: { kind: "launch", ok: true, finishedAt: 1 } }));
+  assert.equal(shown(), false);
+  p.deliver(stackMsg({ state: "down", last: { kind: "stop", ok: false, detail: "boom", finishedAt: 2 } }));
+  assert.equal(shown(), false);
+  p.deliver(stackMsg({ state: "down", last: { kind: "stop", ok: true, finishedAt: 3 } }));
+  assert.equal(shown(), true);
+  p.calls.length = 0; p.confirms.length = 0;
+  await p.get("#stConsolidate").onclick!();
+  assert.equal(p.confirms.length, 1);
+  assert.deepEqual(p.calls.map((c) => [c.path, c.method]), [["/stack/consolidate", "POST"]]);
+  p.deliver(stackMsg({ state: "starting", action: { kind: "launch", phase: "compose-up", startedAt: 4 }, last: { kind: "stop", ok: true, finishedAt: 3 } }));
+  assert.equal(shown(), false); // not while another action runs
+  p.deliver(stackMsg({ last: { kind: "launch", ok: true, finishedAt: 9 } }));
+  assert.equal(shown(), false);
+});
+
+// @spec DASH-UI-020
+test("a running action shows its kind, phase and elapsed time", async () => {
+  const p = await boot({ control: true });
+  p.deliver(stackMsg({ state: "starting", action: { kind: "launch", phase: "waiting", startedAt: Date.now() - 125_000 } }));
+  const t = p.get("#stackAction").textContent;
+  assert.match(t, /launch/);
+  assert.match(t, /waiting/);
+  assert.match(t, /2m ?0\ds/);
+  p.deliver(stackMsg());
+  assert.equal(p.get("#stackAction").textContent, "");
+});
+
+// @spec DASH-UI-020
+test("a changed last result is shown with every not-ready service the result lists and its status, escaped", async () => {
+  const p = await boot({ control: true });
+  p.deliver(stackMsg({ state: "degraded", last: { kind: "launch", ok: false, detail: "not ready after 180s", finishedAt: 1, services: [{ service: "voice", status: "running", health: "starting" }, { service: "x<b>", status: "exited" }] } }));
+  const html = p.get("#stackLast").innerHTML;
+  assert.match(html, /launch/);
+  assert.match(html, /not ready after 180s/);
+  assert.match(html, /voice/);
+  assert.match(html, /running, starting/);
+  assert.match(html, /x&lt;b&gt;/);
+  assert.doesNotMatch(html, /x<b>/);
+  p.deliver(stackMsg({ last: { kind: "stop", ok: true, finishedAt: 2 } }));
+  assert.match(p.get("#stackLast").innerHTML, /stop/);
+  assert.doesNotMatch(p.get("#stackLast").innerHTML, /voice/);
 });

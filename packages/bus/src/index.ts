@@ -47,6 +47,12 @@ export interface BusOptions {
   retryMaxMs?: number;
 }
 
+/** Called after each blocking read of a tail loop: no argument on success (an empty read counts), the error on failure. */
+export type ReadOutcome = (err?: unknown) => void;
+const report = (cb: ReadOutcome | undefined, err?: unknown): void => {
+  try { if (err === undefined) cb?.(); else cb?.(err ?? new Error("read failed")); } catch { /* a reporting callback must not stop the loop */ }
+};
+
 const RETRY_BASE_MS = 250;
 const RETRY_MAX_MS = 30_000;
 
@@ -115,9 +121,9 @@ export class Bus {
     }
   }
 
-  /** Non-group live tail of the health stream. Does not ack. */
-  // @spec BUS-HEALTH-003, BUS-TAIL-003, BUS-TAIL-004
-  async tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$"): Promise<void> {
+  /** Non-group live tail of the health stream. Does not ack. `onRead` hears each read's outcome (BUS-TAIL-005). */
+  // @spec BUS-HEALTH-003, BUS-TAIL-003, BUS-TAIL-004, BUS-TAIL-005
+  async tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
     const conn = this.connect(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
     let last = fromId;
@@ -128,10 +134,12 @@ export class Bus {
         res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", HEALTH_STREAM, last)) as typeof res;
       } catch (err) {
         if (this.stopped) break;
+        report(onRead, err ?? new Error("read failed"));
         await this.backoff(err, ++failures, "tailHealth read failed");
         continue;
       }
       failures = 0;
+      report(onRead);
       if (!res) continue;
       for (const [id, fields] of res[0]?.[1] ?? []) {
         last = id;
@@ -230,9 +238,9 @@ export class Bus {
     conn.disconnect();
   }
 
-  /** Non-group live tail (dashboard). Does not ack, does not replay. */
-  // @spec BUS-TAIL-001, BUS-TAIL-003, BUS-TAIL-004
-  async tail(handler: (ev: BusEvent) => void, fromId = "$"): Promise<void> {
+  /** Non-group live tail (dashboard). Does not ack, does not replay. `onRead` hears each read's outcome (BUS-TAIL-005). */
+  // @spec BUS-TAIL-001, BUS-TAIL-003, BUS-TAIL-004, BUS-TAIL-005
+  async tail(handler: (ev: BusEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
     const conn = this.connect(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
     let last = fromId;
@@ -243,10 +251,12 @@ export class Bus {
         res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", STREAM, last)) as typeof res;
       } catch (err) {
         if (this.stopped) break;
+        report(onRead, err ?? new Error("read failed"));
         await this.backoff(err, ++failures, "tail read failed");
         continue;
       }
       failures = 0;
+      report(onRead);
       if (!res) continue;
       for (const [id, fields] of res[0]?.[1] ?? []) {
         last = id;

@@ -35,7 +35,7 @@ export const silentLog = { warn() {}, info() {}, error() {}, debug() {}, fatal()
 export function recordingLog() {
   const lines: { level: string; obj: unknown; msg?: string }[] = [];
   const at = (level: string) => (obj: unknown, msg?: string) => { lines.push({ level, obj, msg: typeof obj === "string" ? obj : msg }); };
-  const log = { warn: at("warn"), info: at("info"), error: at("error"), debug: at("debug") } as never;
+  const log = { warn: at("warn"), info: at("info"), error: at("error"), debug: at("debug"), fatal: at("fatal") } as never;
   return { log, lines, msgs: (level: string) => lines.filter((l) => l.level === level).map((l) => l.msg) };
 }
 

@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line (build chunk 1): 65 specs: 65 implemented, 0 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line (build chunk 1): 65 specs: 65 implemented, 0 gaps, 0 deferred. The standalone host-run dashboard (chunk 2) adds BUS-TAIL-005, an optional `onRead` callback on `tail` and `tailHealth` that reports every read's outcome, so the dashboard feed can report whether Redis answers (DASH-FEED-009): 66 specs, 66 implemented.
 
 ## Spoken fallback line: built (chunk 1)
 

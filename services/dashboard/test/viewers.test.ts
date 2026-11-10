@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, event, recordingLog, waitFor } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
+import { StackService } from "../src/stack.js";
 import { ViewersClient, viewersTokenFromEnv } from "../src/viewers.js";
 
 const TOKEN = "s3cret-viewers";
@@ -29,7 +30,7 @@ async function boot(o: BootOpts = {}) {
   const control = o.control ? { token: "ctl", runtime: "t", advanced: false, controller: {} as never } : undefined;
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, viewersToken: token, control,
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, viewersToken: token, control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

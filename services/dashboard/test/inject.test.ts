@@ -5,6 +5,8 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { UploadStore } from "../src/uploads.js";
+import { StackService } from "../src/stack.js";
+import { uploadBase } from "../src/inject.js";
 
 class CtlBus extends FakeBus {
   async resetGroup() {}
@@ -18,7 +20,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
-    control: setup.control, uploads, dashboardUrl: "http://dashboard:3000",
+    control: setup.control, uploads, dashboardUrl: "http://dashboard:3000", stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -96,6 +98,36 @@ test("image upload: stored, served at /uploads/:id, request carries the URL", as
   assert.equal(got.status, 200);
   assert.equal(got.headers.get("content-type"), "image/png");
   assert.equal(Buffer.from(await got.arrayBuffer()).toString(), "PNGDATA");
+});
+
+// @spec DASH-INJ-005
+test("the advertised upload base is DASHBOARD_URL when set and non-empty, else host.docker.internal on the LAN port (default 3001)", () => {
+  assert.equal(uploadBase({}), "http://host.docker.internal:3001");
+  assert.equal(uploadBase({ DASHBOARD_LAN_PORT: "4001" }), "http://host.docker.internal:4001");
+  assert.equal(uploadBase({ DASHBOARD_LAN_PORT: "" }), "http://host.docker.internal:3001");
+  assert.equal(uploadBase({ DASHBOARD_URL: "http://192.168.1.5:3001" }), "http://192.168.1.5:3001");
+  assert.equal(uploadBase({ DASHBOARD_URL: "", DASHBOARD_LAN_PORT: "4001" }), "http://host.docker.internal:4001");
+  assert.equal(uploadBase({ DASHBOARD_URL: "http://192.168.1.5:3001", DASHBOARD_LAN_PORT: "4001" }), "http://192.168.1.5:3001");
+});
+
+// @spec DASH-INJ-005
+test("without an explicit dashboardUrl the handler advertises the env-derived base in inject.request", async () => {
+  const bus = new CtlBus();
+  const rec = recordingLog();
+  const prev = { url: process.env.DASHBOARD_URL, lan: process.env.DASHBOARD_LAN_PORT };
+  delete process.env.DASHBOARD_URL; process.env.DASHBOARD_LAN_PORT = "4321";
+  const handler = createDashboardHandler({
+    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }),
+  });
+  if (prev.url !== undefined) process.env.DASHBOARD_URL = prev.url;
+  if (prev.lan === undefined) delete process.env.DASHBOARD_LAN_PORT; else process.env.DASHBOARD_LAN_PORT = prev.lan;
+  const server = http.createServer(handler);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  after(() => server.close());
+  const r = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/inject/image`, { method: "POST", body: "PNG", headers: { "content-type": "image/png" } });
+  assert.equal(r.status, 202);
+  assert.match(bus.of("inject.request")[0]!.url!, /^http:\/\/host\.docker\.internal:4321\/uploads\/[0-9a-f]{32}$/);
 });
 
 // @spec DASH-INJ-005

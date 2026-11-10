@@ -32,12 +32,13 @@ test("label maps the valence/arousal plane to canonical emotions", () => { // @s
 });
 
 test("Mood: nudges clamp, decay halves the distance to baseline per half-life", () => { // @spec AFF-MOOD-002, AFF-MOOD-003
-  const m = new Mood(cfg({ half_life_ms: 1000, baseline_valence: 0 }));
+  const clock = 1_000_000;
+  const m = new Mood(cfg({ half_life_ms: 1000, baseline_valence: 0 }), () => clock);
   m.nudge(5, 5, "test");
   assert.equal(m.valence, 1);
   assert.equal(m.arousal, 1);
   assert.equal(m.cause, "test");
-  const t0 = Date.now();
+  const t0 = clock;
   m.tick(t0 + 1000);
   assert.ok(Math.abs(m.valence - 0.5) < 0.01, `valence ${m.valence}`);
   assert.ok(Math.abs(m.arousal - 0.55) < 0.01, `arousal ${m.arousal}`); // resting arousal is 0.1

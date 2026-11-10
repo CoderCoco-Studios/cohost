@@ -8,7 +8,7 @@ import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "../src/a
 
 const cfg = testConfig({ brain: { affect: { baseline_valence: 0, half_life_ms: 10_000_000 } } });
 
-function setup(kind: "rules" | "http" = "rules") {
+function setup(kind: "rules" | "http" = "rules", now?: () => number) {
   const bus = new FakeBus();
   const mod = new Module<AppraiseInput, AppraiseOutput>(
     "a", ModuleSchema.parse(kind === "http" ? { kind, url: "http://unused" } : {}), cfg.llm,
@@ -24,9 +24,11 @@ function setup(kind: "rules" | "http" = "rules") {
       return { valence_delta: 0.1, arousal_delta: 0 };
     };
   }
-  const affect = new Affect({ cfg, bus, appraiser: mod, log: silentLog });
+  const affect = new Affect({ cfg, bus, appraiser: mod, log: silentLog, now });
   return { affect, bus, seen, next: () => release?.() };
 }
+/** A fake monotonic clock to inject as `now`; `tick` steps it. */
+const fakeClock = (start = 1_000_000) => { let t = start; return { now: () => t, tick: (ms: number) => { t += ms; } }; };
 const chat = (text: string, extra: Record<string, unknown> = {}) =>
   event("chat.message", { platform: "twitch", user: "bob", text, isMod: false, isSub: false, mentionsCohost: false, ...extra });
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
@@ -75,9 +77,9 @@ test("forget_context snaps the mood back to baseline", () => { // @spec AFF-IN-0
 });
 
 test("publish: only when the state moved, plus a 15 s heartbeat", () => { // @spec AFF-PUB-001, AFF-PUB-002, AFF-PUB-003
-  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
-  try {
-    const { affect, bus } = setup();
+  const clock = fakeClock();
+  {
+    const { affect, bus } = setup("rules", clock.now);
     affect.publish();
     affect.publish();
     assert.equal(bus.of("affect.state").length, 1);
@@ -85,13 +87,27 @@ test("publish: only when the state moved, plus a 15 s heartbeat", () => { // @sp
     affect.publish();
     assert.equal(bus.of("affect.state").length, 2);
     assert.ok(bus.of("affect.state")[1]!.valence > 0);
-    mock.timers.tick(14_000);
+    clock.tick(14_000);
     affect.publish();
     assert.equal(bus.of("affect.state").length, 2);
-    mock.timers.tick(1_000);
+    clock.tick(1_000);
     affect.publish();
     assert.equal(bus.of("affect.state").length, 3);
-  } finally { mock.timers.reset(); }
+  }
+});
+
+test("mood decay measures elapsed time, not the wall clock: a clock stepped back neither amplifies nor freezes the mood", () => { // @spec AFF-MOOD-003
+  const c = testConfig({ brain: { affect: { baseline_valence: 0, half_life_ms: 45_000 } } });
+  const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), c.llm, { rules: appraiseRules }, silentLog);
+  const affect = new Affect({ cfg: c, bus: new FakeBus(), appraiser: mod, log: silentLog });
+  affect.mood.nudge(0.5, 0, "test");
+  const peak = affect.mood.valence;
+  const realNow = Date.now.bind(Date);
+  const stepped = mock.method(Date, "now", () => realNow() - 25_000); // e.g. an NTP / VM time-sync step
+  try {
+    affect.mood.tick();
+  } finally { stepped.mock.restore(); }
+  assert.ok(affect.mood.valence <= peak, `valence ${affect.mood.valence} grew past ${peak}`);
 });
 
 test("llm/http kind: lines queue for the slow appraiser instead of blocking the handler", async () => { // @spec AFF-HOOK-005
@@ -157,44 +173,44 @@ test("pause: decay continues while paused", () => { // @spec AFF-CTRL-003
 });
 
 test("forget_context applies the pending decay first, so the mood lands exactly on baseline", () => { // @spec AFF-IN-007
-  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
-  try {
+  const clock = fakeClock();
+  {
     const bus = new FakeBus();
     const real = testConfig({ brain: { affect: { half_life_ms: 45_000 } } }); // baseline_valence 0.15, baseline_arousal 0.1
     const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), real.llm, { rules: appraiseRules }, silentLog);
-    const affect = new Affect({ cfg: real, bus, appraiser: mod, log: silentLog });
+    const affect = new Affect({ cfg: real, bus, appraiser: mod, log: silentLog, now: clock.now });
     for (let i = 0; i < 5; i++) affect.onEvent(chat("LOL POGGERS!!!"));
     assert.ok(affect.mood.valence > 0.5 && affect.mood.arousal > 0.5, "a real peak");
-    mock.timers.tick(2_000); // the default publish interval: decay accrued since the last touch
+    clock.tick(2_000); // the default publish interval: decay accrued since the last touch
     affect.onEvent(event("control", { cmd: "forget_context" }));
     assert.ok(near(affect.mood.valence, 0.15), `valence ${affect.mood.valence}`);
     assert.ok(near(affect.mood.arousal, 0.1), `arousal ${affect.mood.arousal}`);
     assert.equal(affect.mood.cause, "reset");
-    mock.timers.tick(100_000);
+    clock.tick(100_000);
     affect.publish();
     assert.ok(near(bus.of("affect.state")[0]!.valence, 0.15));
-  } finally { mock.timers.reset(); }
+  }
 });
 
 test("brain.affect.baseline_arousal is the initial arousal, the decay target and the reset value", () => { // @spec AFF-MOOD-006
-  mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
-  try {
+  const clock = fakeClock();
+  {
     const bus = new FakeBus();
     const c = testConfig({ brain: { affect: { baseline_arousal: 0.4, half_life_ms: 10_000 } } });
     const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), c.llm, { rules: appraiseRules }, silentLog);
-    const affect = new Affect({ cfg: c, bus, appraiser: mod, log: silentLog });
+    const affect = new Affect({ cfg: c, bus, appraiser: mod, log: silentLog, now: clock.now });
     assert.equal(affect.mood.arousal, 0.4, "initial");
 
     affect.onEvent(event("vision.summary", { text: "x", changed: true }));
     assert.ok(near(affect.mood.arousal, 0.48));
-    mock.timers.tick(10_000 * 40); // forty half-lives
+    clock.tick(10_000 * 40); // forty half-lives
     affect.mood.tick();
     assert.ok(Math.abs(affect.mood.arousal - 0.4) < 1e-6, "decays to the configured resting arousal, not 0.1");
 
     affect.onEvent(event("vision.summary", { text: "x", changed: true }));
     affect.onEvent(event("control", { cmd: "forget_context" }));
     assert.ok(near(affect.mood.arousal, 0.4), "reset value");
-  } finally { mock.timers.reset(); }
+  }
 });
 
 test("forget_context discards queued appraisals and the one in flight; pause drops queued jobs unapplied", async () => { // @spec AFF-HOOK-008

@@ -14,15 +14,20 @@ export class Mood {
   valence: number;
   arousal: number;
   cause: string | undefined;
-  private lastTick = Date.now();
+  private lastTick: number;
 
-  constructor(private cfg: Config["brain"]["affect"]) { // @spec AFF-MOOD-001
+  /**
+   * `now` is a monotonic millisecond clock (default `performance.now`): decay is a function of elapsed time, so a
+   * stepped wall clock (NTP, VM time sync) must neither decay the mood at once nor amplify it. Tests inject a fake one.
+   */
+  constructor(private cfg: Config["brain"]["affect"], private now: () => number = () => performance.now()) { // @spec AFF-MOOD-001
+    this.lastTick = now();
     this.valence = cfg.baseline_valence;
     this.arousal = cfg.baseline_arousal; // @spec AFF-MOOD-006
   }
 
   /** Apply decay for the time elapsed since the last call. */
-  tick(now = Date.now()): void { // @spec AFF-MOOD-003
+  tick(now = this.now()): void { // @spec AFF-MOOD-003
     const dt = now - this.lastTick;
     this.lastTick = now;
     const k = Math.pow(0.5, dt / this.cfg.half_life_ms);

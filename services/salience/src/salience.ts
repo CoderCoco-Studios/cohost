@@ -99,7 +99,7 @@ export class Salience {
     // Gate before test(), which spends the rule's own cooldown on a hit.
     if (this.busy() || this.scheduler.cooling()) return; // @spec SAL-REFLEX-005
     const trigger = this.ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
-    const hit = this.reflexes.test(sense, text);
+    const hit = this.reflexes.test(sense, text, this.now());
     if (!hit) return;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");
     if (trigger) this.ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count; @spec SAL-REFLEX-004

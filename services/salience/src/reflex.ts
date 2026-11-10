@@ -14,12 +14,12 @@ export class Reflexes {
   private rules: { re: RegExp; rule: Rule; lastFired: number }[];
 
   constructor(rules: Rule[]) {
-    this.rules = rules.map((rule) => ({ re: new RegExp(rule.match, "i"), rule, lastFired: 0 }));
+    this.rules = rules.map((rule) => ({ re: new RegExp(rule.match, "i"), rule, lastFired: -Infinity }));
   }
 
   get size(): number { return this.rules.length; }
 
-  test(sense: Sense, text: string, now = Date.now()): ReflexHit | undefined { // @spec SAL-REFLEX-001, SAL-REFLEX-003
+  test(sense: Sense, text: string, now = performance.now()): ReflexHit | undefined { // @spec SAL-REFLEX-001, SAL-REFLEX-003
     for (const r of this.rules) {
       if (!r.rule.on.includes(sense)) continue;
       if (now - r.lastFired < r.rule.cooldown_ms) continue;

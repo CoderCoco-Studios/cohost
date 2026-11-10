@@ -90,7 +90,7 @@ When the decision returns, `tick` re-checks `muted`, `paused` and `busy()` and d
 - `speaking`: busy while age < `brain.cortex.speaking_timeout_ms` (default 20000) - a key owned by the cortex segment's config block (`schema.ts:154`), read here.
 - `idle` and `muted` (and the initial `idle`): not busy. A cortex reporting `muted` does not gate salience; salience's own mute flag (from `control`) does.
 
-Every duration here (both valves, the cooldown, the idle-chatter timer) is measured on one monotonic millisecond clock, `SalienceDeps.now` (default `performance.now`), which `Salience` hands to its `Scheduler`. A wall clock stepped by NTP or VM time sync therefore neither stretches nor cuts a valve or the cooldown. Tests inject a fake clock to step time.
+Every duration here (both valves, the cooldown, the idle-chatter timer, each reflex rule's cooldown) is measured on one monotonic millisecond clock, `SalienceDeps.now` (default `performance.now`), which `Salience` hands to its `Scheduler` and passes to `Reflexes.test`. A wall clock stepped by NTP or VM time sync therefore neither stretches nor cuts a valve or the cooldown. Tests inject a fake clock to step time.
 
 Cortex state is set from `brain.status` (`salience.ts:65-70`), set to `speaking` on any `brain.say` (`salience.ts:62`) and set to `thinking` locally after publishing `attention.focus` (`salience.ts:131`). The return to `idle` depends on the cortex publishing `brain.status idle` (cortex segment); the two valves above are the safety net.
 

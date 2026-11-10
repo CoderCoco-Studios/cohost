@@ -321,6 +321,17 @@ pnpm --filter @cohost/control exec cohostctl status
 pnpm --filter @cohost/control exec cohostctl restart cortex --mode fresh
 ```
 
+Tidy the viewer notes after shutting the AI down (optional; the memory service
+also catches up at its next start, so skipping it loses nothing):
+
+```bash
+docker compose run --rm consolidate                          # the one-shot, any shutdown route
+pnpm --filter @cohost/control exec cohostctl consolidate     # the same through cohostctl (exit 0 ok, 1 failed)
+```
+
+`consolidate` is in the `tools` profile, so a plain `docker compose up -d` never
+starts it. It starts `postgres` and `ollama` if they are down and leaves them running.
+
 Host-run vs docker socket: run the control-enabled dashboard on the host (as above)
 so it needs no extra privilege. The containerised dashboard stays monitor-only. Mounting
 `/var/run/docker.sock` into the dashboard container so `compose` works from inside it is

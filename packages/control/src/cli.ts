@@ -4,6 +4,7 @@
  *
  *   cohostctl status [service]
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
+ *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
  *
  * Always drives services through the compose runtime. Honours CONTROL_ADVANCED and REDIS_URL.
  * It runs as the invoking user, so CONTROL_ENABLED / CONTROL_TOKEN (the dashboard's HTTP gate) do not apply.
@@ -11,18 +12,20 @@
  */
 import { parseArgs } from "node:util";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
-import { ComposeRuntime, type Runtime } from "./runtime.js";
+import { ComposeRuntime, type RuntimeResult } from "./runtime.js";
 import { ServiceController, type ActionOptions, type GroupResetter, type LifecycleRecord } from "./controller.js";
 import { HealthTracker, type ServiceHealth } from "./health.js";
 import { SERVICE_MANIFEST } from "./manifest.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
-  | { cmd: "start" | "stop" | "restart"; id: string; opts: ActionOptions };
+  | { cmd: "start" | "stop" | "restart"; id: string; opts: ActionOptions }
+  | { cmd: "consolidate" };
 
 export const USAGE = `usage:
   cohostctl status [service]
-  cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]`;
+  cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
+  cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)`;
 
 export class UsageError extends Error {}
 
@@ -46,6 +49,11 @@ export function parseCli(argv: readonly string[]): CliCommand {
     if (mode !== undefined || isolated) throw new UsageError("status takes no options");
     return { cmd, ...(id ? { id } : {}) };
   }
+  if (cmd === "consolidate") {
+    if (id) throw new UsageError("consolidate takes no arguments");
+    if (mode !== undefined || isolated) throw new UsageError("consolidate takes no options");
+    return { cmd };
+  }
   if (cmd === "start" || cmd === "stop" || cmd === "restart") {
     if (!id) throw new UsageError(`${cmd} needs a service name`);
     if (cmd === "stop" && (mode !== undefined || isolated)) throw new UsageError("stop takes no options");
@@ -57,12 +65,13 @@ export function parseCli(argv: readonly string[]): CliCommand {
 export interface CliDeps {
   controller: Pick<ServiceController, "start" | "stop" | "restart">;
   health: () => Promise<ServiceHealth[]>;
+  consolidate: () => Promise<RuntimeResult>;
   out: (line: string) => void;
   err: (line: string) => void;
 }
 
 /** Returns the process exit code: 0 ok, 1 failed or refused, 2 usage. */
-// @spec CTRL-CLI-002, CTRL-CLI-003
+// @spec CTRL-CLI-002, CTRL-CLI-003, CTRL-CLI-008
 export async function runCli(argv: readonly string[], d: CliDeps): Promise<number> {
   let c: CliCommand;
   try { c = parseCli(argv); } catch (e) {
@@ -79,6 +88,12 @@ export async function runCli(argv: readonly string[], d: CliDeps): Promise<numbe
     }
     return 0;
   }
+  if (c.cmd === "consolidate") {
+    const r = await d.consolidate();
+    if (!r.ok) { d.err(`consolidate failed: ${r.detail ?? "unknown error"}`); return 1; }
+    d.out(`consolidate: ok${r.detail ? ` (${r.detail})` : ""}`);
+    return 0;
+  }
   const r = await (c.cmd === "stop" ? d.controller.stop(c.id) : d.controller[c.cmd](c.id, c.opts));
   if (r.refused) { d.err(`refused (${r.refused}): ${r.detail ?? ""}`); return 1; }
   if (!r.ok) { d.err(`${c.cmd} ${c.id} failed: ${r.detail ?? "unknown error"}`); return 1; }
@@ -87,34 +102,37 @@ export async function runCli(argv: readonly string[], d: CliDeps): Promise<numbe
 }
 
 /** Compose is the only runtime. */
-export function buildRuntime(): Runtime {
+export function buildRuntime(): ComposeRuntime {
   return new ComposeRuntime();
 }
 
-// @spec CTRL-CLI-002, CTRL-CLI-004
+// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009
 async function main(): Promise<number> {
-  const bus = new Bus("cohostctl");
+  // Opened on first use, so `consolidate` (run when redis may be stopped) never connects.
+  let bus: Bus | undefined;
+  const getBus = (): Bus => (bus ??= new Bus("cohostctl"));
   try {
-    const groups: GroupResetter = bus;
+    const runtime = buildRuntime();
+    const groups: GroupResetter = { resetGroup: (g) => getBus().resetGroup(g) };
     const controller = new ServiceController({
-      runtime: buildRuntime(),
+      runtime,
       groups,
       by: "cohostctl",
       advanced: process.env.CONTROL_ADVANCED === "1",
-      audit: async (rec: LifecycleRecord) => { await bus.publish("service.lifecycle", rec); },
+      audit: async (rec: LifecycleRecord) => { await getBus().publish("service.lifecycle", rec); },
     });
     const health = async () => {
       const tracker = new HealthTracker({ known: SERVICE_MANIFEST.filter((s) => !s.infra && s.pnpmFilter).map((s) => s.id) });
-      const recent: HeartbeatEvent[] = await bus.recentHealth(200);
+      const recent: HeartbeatEvent[] = await getBus().recentHealth(200);
       tracker.seed(recent.map((h) => ({ ts: h.ts, data: h.data })));
       return tracker.snapshot();
     };
-    return await runCli(process.argv.slice(2), { controller, health, out: console.log, err: console.error });
+    return await runCli(process.argv.slice(2), { controller, health, consolidate: () => runtime.consolidate(), out: console.log, err: console.error });
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;
   } finally {
-    bus.stop();
+    bus?.stop();
   }
 }
 

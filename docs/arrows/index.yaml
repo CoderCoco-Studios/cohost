@@ -161,7 +161,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. Remaining work: the Compose one-shot and cohostctl wiring for consolidate (the models container pulls NOTES_MODEL: DEPLOY-COMPOSE-008)."
+    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. The consolidate one-shot is reachable from Compose (DEPLOY-COMPOSE-018) and cohostctl (CTRL-CLI-008). No open gaps."
     drift: null
 
   cortex:
@@ -221,7 +221,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "Intent pass confirmed; no open gaps. cohostctl consolidate built (CTRL-CLI-008, CTRL-CLI-009, CTRL-RUNTIME-010)."
     drift: null
 
   deployment:
@@ -233,7 +233,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. NOTES_MODEL pull built (DEPLOY-COMPOSE-008/-011). Pending viewer-notes cascade: a best-effort Compose one-shot for consolidate (see deployment.md)."
+    next: "Intent pass confirmed; no open gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. NOTES_MODEL pull built (DEPLOY-COMPOSE-008/-011). The consolidate one-shot service is built (DEPLOY-COMPOSE-018, -019)."
     drift: null
 
 unmapped:

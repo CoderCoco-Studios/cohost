@@ -23,13 +23,18 @@ const unknown = (id: string): RuntimeResult => ({ ok: false, detail: `unknown se
 
 // ---- compose ----
 
-export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string }) => Promise<{ stdout: string; stderr: string }>;
+export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number }) => Promise<{ stdout: string; stderr: string }>;
+
+/** A consolidation pass makes model calls and can take minutes; the lifecycle verbs' 120 s would kill it. */
+export const CONSOLIDATE_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 const defaultExec: ExecFile = (file, args, opts) =>
   new Promise((resolve, reject) => {
     // execFile never spawns a shell; args is an argv array.
-    nodeExecFile(file, args, { ...opts, timeout: 120_000 }, (err, stdout, stderr) => {
-      if (err) reject(Object.assign(err, { stderr }));
+    const { timeoutMs, ...rest } = opts;
+    nodeExecFile(file, args, { ...rest, timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(Object.assign(err, { stdout, stderr }));
       else resolve({ stdout, stderr });
     });
   });
@@ -73,4 +78,22 @@ export class ComposeRuntime implements Runtime {
     // `restart` keeps the container's env; recreate through `up` when overrides must be applied.
     return opts.env && Object.keys(opts.env).length > 0 ? this.run(id, ["up", "-d", "--force-recreate"], opts.env) : this.run(id, ["restart"]);
   }
+
+  /**
+   * Runs the one-shot viewer-note consolidation (`docker compose run --rm -T consolidate`) and waits for it. A job, not a
+   * service: the argv is fixed and takes nothing from the caller. `run` starts postgres and ollama if they are down.
+   */
+  // @spec CTRL-RUNTIME-010
+  async consolidate(): Promise<RuntimeResult> {
+    try {
+      const { stdout } = await this.exec("docker", ["compose", "run", "--rm", "-T", "consolidate"], { env: this.o.env ?? process.env, cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
+      const last = lastLine(stdout);
+      return last ? { ok: true, detail: last.slice(0, 500) } : { ok: true };
+    } catch (err) {
+      const e = err as { message?: string; stderr?: string; stdout?: string };
+      return { ok: false, detail: (e.stderr?.trim() || lastLine(e.stdout ?? "") || e.message || String(err)).slice(0, 500) };
+    }
+  }
 }
+
+const lastLine = (text: string): string => text.split("\n").map((l) => l.trim()).filter(Boolean).at(-1) ?? "";

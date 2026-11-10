@@ -13,7 +13,7 @@ The control plane is the operator-facing half of "know what is running and chang
 
 1. A **heartbeat contract**: every app service publishes `service.heartbeat` on a separate Redis stream, `cohost:health`. The publisher half lives in `packages/bus/src/heartbeat.ts` (`startHeartbeat`), the consumer half in `packages/control/src/health.ts` (`HealthTracker`).
 2. A **controller**: `ServiceController` (`packages/control/src/controller.ts`) turns "start/stop/restart service X, resume or fresh, optionally isolated" into runtime calls, behind a small set of guards, and emits an audit event. The one runtime is `ComposeRuntime` (`runtime.ts`): compose is the only runtime, and the control plane never spawns or supervises host processes, so no service handles another service outside the container runtime.
-3. A **stack controller** (`packages/control/src/stack.ts`, gap CTRL-STACK-*): whole-stack actions (launch, stop-all, restart-all, and the consolidate one-shot), a Compose status probe, and the derivation of one stack state from it. The host-run dashboard's Launch button and `cohostctl launch` run the same code (Stack controller, below).
+3. A **stack controller** (`packages/control/src/stack.ts`, CTRL-STACK-*): whole-stack actions (launch, stop-all, restart-all, and the consolidate one-shot), a Compose status probe, and the derivation of one stack state from it. The host-run dashboard's Launch button and `cohostctl launch` run the same code (Stack controller, below).
 4. Two clients of that core: the dashboard (HTTP routes, `services/dashboard/src/control.ts`, `routes.ts`, `feed.ts`; owned by the dashboard segment), which runs on the host outside Compose, and the `cohostctl` CLI (`packages/control/src/cli.ts`). A third consumer, `healthcheck.ts`, is the docker-compose container healthcheck.
 
 Guiding ideas:
@@ -27,7 +27,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 ## Service manifest
 
-`SERVICE_MANIFEST` (`manifest.ts:39-55`) lists 14 units: every Compose service the controller may act on. The dashboard is not one: it runs on the host, outside Compose, so there is no container to start, stop or restart, and the `self` flag that protected it from stopping itself is gone with it. The code still lists `dashboard` with `self` (gaps CTRL-MANIFEST-001, CTRL-MANIFEST-003; CTRL-GUARD-002 is retired).
+`SERVICE_MANIFEST` (`manifest.ts:39-55`) lists 14 units: every Compose service the controller may act on. The dashboard is not one: it runs on the host, outside Compose, so there is no container to start, stop or restart, and the `self` flag that protected it from stopping itself is gone with it. CTRL-GUARD-002 (the `self` conflict) is retired.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
@@ -46,7 +46,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 Two small builders (`svc`, `compose`, `manifest.ts:28-36`) fill defaults: `composeName` equals `id`, `pnpmFilter` is `@cohost/<id>` for `svc` and removed for `compose`. The preset variable names are the env spellings introduced by `add-isolated-backends` (`config/config.example.yaml:19,38,49,109,110,128,134,148` interpolate them).
 
-Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of the app ids (nine once `dashboard` leaves it, gap CTRL-HEALTH-005; the dashboard's own heartbeat still shows in every snapshot as a service that has sent one); `manifest.test.ts:23` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:30`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:110`).
+Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of the app ids (nine services, CTRL-HEALTH-005; the dashboard's own heartbeat still shows in every snapshot as a service that has sent one); `manifest.test.ts:23` asserts it is a subset of the manifest. The dashboard uses `KNOWN_SERVICES` through `HealthTracker`'s default (`services/dashboard/src/index.ts:30`), whereas `cohostctl status` derives its list from the manifest (`cli.ts:110`).
 
 **Start modes and the bus.** Where a restarted service starts reading is decided by the service itself: every subscription names a bus start mode, `latest` (reset the group to `$` on every start) or `resume` (keep the stored position); memory subscribes with `resume`, every other service with `latest` (event-bus BUS-SUB-010, BUS-SUB-011). The controller's `fresh` / `resume` mode is an operator override on top of that: `fresh` resets the unit's manifest groups before the start, which matters for `resume` subscribers (memory) and is redundant for `latest` ones; `resume` leaves the groups alone, so a `latest` service still skips its backlog. The manifest defaults agree with the bus modes for every unit: `fresh` for each service that owns groups except memory (the `latest` subscribers), `resume` for memory and the compose-only units. Each pnpm service that subscribes owns a group of its own name (memory also `memory-recall` and `memory-notes`), so a `fresh` start resets exactly the groups the service reads under.
 
@@ -62,7 +62,7 @@ Drift risk: `KNOWN_SERVICES` in `health.ts:9-11` is a second, hand-kept copy of 
 
 - start: `docker compose up -d <composeName>`; stop: `docker compose stop <composeName>`; restart: `docker compose restart <composeName>`.
 - With a non-empty env override, restart becomes `up -d --force-recreate` because a native `restart` keeps the container's environment (comment at `runtime.ts:73`).
-- Executed via `execFile` (argv array, no shell), 120 s timeout, `cwd` defaults to the process cwd, so `docker-compose.yml` must be found there (`runtime.ts:28-35`, `runtime.ts:40`). Both clients construct it with `cwd` set to the workspace root (`findWorkspaceRoot()` from `@cohost/config`, else the process cwd), so Compose finds the file, `.env` and the project name however the client was started (gap CTRL-STACK-001). The override env is merged over `process.env` and applied to the `docker` CLI process (`runtime.ts:61`).
+- Executed via `execFile` (argv array, no shell), 120 s timeout, `cwd` defaults to the process cwd, so `docker-compose.yml` must be found there (`runtime.ts:28-35`, `runtime.ts:40`). Both clients construct it with `cwd` set to the workspace root (`findWorkspaceRoot()` from `@cohost/config`, else the process cwd), so Compose finds the file, `.env` and the project name however the client was started (CTRL-STACK-001). The override env is merged over `process.env` and applied to the `docker` CLI process (`runtime.ts:61`).
 - Isolation env reaches the container through pass-through entries in the compose `x-ts-service` environment, one per preset variable, each written `VAR: ${VAR:-}` so an unset variable leaves the `${VAR:-default}` in `config.yaml` in charge (CTRL-RUNTIME-009): `CHAT_SOURCE`, `MEMORY_STORE`, `MEMORY_EMBEDDER`, `LLM_PROVIDER`, `VOICE_ENGINE`, `AVATAR_DRIVER`, `VISION_ENABLED`, `EARS_SOURCE`. The entries belong to `docker-compose.yml` (deployment segment); without them an isolated compose start would set the preset only in the `docker compose` CLI's own environment and nothing would reach the container.
 - The compose runtime is driven from the host: by the dashboard, which always runs on the host outside Compose, and by `cohostctl`. Both use the host's own `docker` CLI and the owner's access to it; no container receives the Docker socket.
 - Failure returns `ok: false` with stderr (else message) truncated to 500 chars (`runtime.ts:65`).
@@ -97,7 +97,7 @@ Audit (`controller.ts:95-98`): after any executed attempt the controller calls `
 
 ## Stack controller
 
-The owner's decisions are settled: the host-run dashboard has a Launch button that brings up the whole application through the compose runtime, it can stop the stack and restart its services, and the stack actions live in this package so the dashboard and `cohostctl` share one implementation. The mechanics below are owner-confirmed; none is built (gaps CTRL-STACK-001 to 011, CTRL-CLI-010 to 012).
+The owner's decisions are settled: the host-run dashboard has a Launch button that brings up the whole application through the compose runtime, it can stop the stack and restart its services, and the stack actions live in this package so the dashboard and `cohostctl` share one implementation. The mechanics below are owner-confirmed (CTRL-STACK-001 to 012, CTRL-CLI-010 to 012).
 
 `StackController` wraps the same injected exec as `ComposeRuntime` (argv array, no shell, the workspace root as `cwd`, the caller's environment) and takes no caller input that reaches an argv: every command is fixed (CTRL-STACK-001, CTRL-STACK-009). It reports progress through an optional `onPhase(kind, phase)` callback and returns a result `{ ok, detail?, services? }`, where `services` is the last status the action saw.
 
@@ -164,7 +164,7 @@ Unlike the tracker, the healthcheck compares the heartbeat's bus-side `ts` (publ
 
 ## cohostctl and configuration
 
-CLI (`cli.ts`): `cohostctl status [service]`, `cohostctl start|restart <service> [--mode resume|fresh] [--isolated]`, `cohostctl stop <service>` (no options), `cohostctl consolidate`, and the stack commands `cohostctl launch`, `cohostctl stop-all` and `cohostctl restart-all` (gaps CTRL-CLI-001, CTRL-CLI-010 to 012). The stack commands take no arguments or options; `launch` and `stop-all` never open the bus (the bus is not up before a launch and goes down during a stop), print the phases and the final per-container status, and exit 0 or 1; `stop-all` ends with a hint that `cohostctl consolidate` can tidy viewer notes; `restart-all` opens the bus to audit each restart with `by: "cohostctl"`. Parsing uses `node:util.parseArgs` (`cli.ts:30-55`); any parse problem raises `UsageError` and exit code 2 with the usage text. Exit codes: 0 success, 1 refusal or failure (`cli.ts:64`), 2 usage.
+CLI (`cli.ts`): `cohostctl status [service]`, `cohostctl start|restart <service> [--mode resume|fresh] [--isolated]`, `cohostctl stop <service>` (no options), `cohostctl consolidate`, and the stack commands `cohostctl launch`, `cohostctl stop-all` and `cohostctl restart-all` (CTRL-CLI-001, CTRL-CLI-010 to 012). The stack commands take no arguments or options; `launch` and `stop-all` never open the bus (the bus is not up before a launch and goes down during a stop), print the phases and the final per-container status, and exit 0 or 1; `stop-all` ends with a hint that `cohostctl consolidate` can tidy viewer notes; `restart-all` opens the bus to audit each restart with `by: "cohostctl"`. Parsing uses `node:util.parseArgs` (`cli.ts:30-55`); any parse problem raises `UsageError` and exit code 2 with the usage text. Exit codes: 0 success, 1 refusal or failure (`cli.ts:64`), 2 usage.
 
 - `status` builds a throwaway `HealthTracker` with known = manifest entries that are not infra and have a `pnpmFilter`, seeds it from `bus.recentHealth(200)` and prints `service  state  mode  Ns ago` per row (`cli.ts:72-81,109-114`). Because the known list excludes infra and compose-only units, `cohostctl status redis` reports `unknown service` and exits 1.
 - `main()` constructs `new Bus("cohostctl")` lazily, on first use by `status`, `start`, `stop` or `restart` (never for `consolidate`), always builds a `ComposeRuntime` (no runtime selection and no `CONTROL_RUNTIME` or `CONTROL_PROCESS_MODE` setting exists), passes `by: "cohostctl"` and `advanced` from `CONTROL_ADVANCED === "1"`. It stops the bus in `finally` when it was opened.
@@ -265,7 +265,7 @@ Compared with `docs/plans/control-plane.md` (written at `95afa19`), what landed:
 ## References
 
 Files in this segment (git `49ba935`):
-- `packages/control/src/index.ts`, `cli.ts`, `config.ts`, `controller.ts`, `health.ts`, `healthcheck.ts`, `manifest.ts`, `runtime.ts`; `stack.ts` (not yet written)
+- `packages/control/src/index.ts`, `cli.ts`, `config.ts`, `controller.ts`, `health.ts`, `healthcheck.ts`, `manifest.ts`, `runtime.ts`, `docker.ts`, `stack.ts`
 - `packages/control/test/cli.test.ts`, `config.test.ts`, `controller.test.ts`, `health.test.ts`, `healthcheck.test.ts`, `manifest.test.ts`, `runtime.test.ts`
 - `packages/control/package.json`, `packages/control/tsconfig.json`
 - `packages/bus/src/heartbeat.ts` (tests: `packages/bus/test/bus.test.ts:136-275`, `packages/bus/test/shutdown.fixture.ts`)

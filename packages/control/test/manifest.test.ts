@@ -14,7 +14,7 @@ test("every manifest entry carries the runtime fields", () => {
     assert.ok(Array.isArray(s.groups));
     assert.ok(s.defaultMode === "resume" || s.defaultMode === "fresh");
     assert.equal(typeof s.infra, "boolean");
-    assert.equal(typeof s.self, "boolean");
+    assert.equal("self" in s, false, `${s.id} carries no self flag`);
     assert.equal(typeof s.isolatedEnv, "object");
   }
 });
@@ -26,15 +26,19 @@ test("every health-tracked service is in the manifest", () => {
 
 // @spec CTRL-MANIFEST-002, CTRL-MANIFEST-003
 test("flags and defaults match the spec", () => {
-  assert.equal(findService("dashboard")!.self, true);
+  assert.equal(findService("dashboard"), undefined);
+  assert.equal(SERVICE_MANIFEST.length, 14);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id), ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "redis", "postgres", "ollama", "tts", "stt"]);
+  assert.equal(findService("cortex")!.pnpmFilter, "@cohost/cortex");
+  assert.equal(findService("redis")!.pnpmFilter, undefined);
   assert.equal(findService("redis")!.infra, true);
   assert.equal(findService("postgres")!.infra, true);
   for (const id of ["salience", "affect", "cortex", "voice", "avatar", "chat", "eyes", "ears"]) {
     assert.equal(findService(id)!.defaultMode, "fresh", id);
     assert.deepEqual(findService(id)!.groups, [id], id);
   }
-  for (const id of ["memory", "dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
-  for (const id of ["dashboard", "redis", "postgres", "ollama", "tts", "stt"]) assert.deepEqual(findService(id)!.groups, [], id);
+  for (const id of ["memory", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
+  for (const id of ["redis", "postgres", "ollama", "tts", "stt"]) assert.deepEqual(findService(id)!.groups, [], id);
   assert.deepEqual(findService("memory")!.groups, ["memory", "memory-recall", "memory-notes"]);
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
 });
@@ -43,4 +47,10 @@ test("flags and defaults match the spec", () => {
 test("unknown ids are not found", () => {
   assert.equal(findService("nope"), undefined);
   assert.equal(findService("cortex; rm -rf /"), undefined);
+});
+
+// @spec CTRL-HEALTH-005
+test("the known list is the nine app services, without dashboard", () => {
+  assert.equal(KNOWN_SERVICES.length, 9);
+  assert.equal((KNOWN_SERVICES as readonly string[]).includes("dashboard"), false);
 });

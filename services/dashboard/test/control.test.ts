@@ -152,10 +152,10 @@ test("unknown id 404, crafted id 404, nothing executed or audited", async () => 
 });
 
 // @spec DASH-SVC-003
-test("dashboard stop/restart is 409; infra is 403 unless CONTROL_ADVANCED=1", async () => {
+test("dashboard is not a manifest unit (404); infra is 403 unless CONTROL_ADVANCED=1", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/services/dashboard/stop", { token: "s3cret" })).status, 409);
-  assert.equal((await t.send("/services/dashboard/restart", { token: "s3cret" })).status, 409);
+  assert.equal((await t.send("/services/dashboard/stop", { token: "s3cret" })).status, 404);
+  assert.equal((await t.send("/services/dashboard/restart", { token: "s3cret" })).status, 404);
   assert.equal((await t.send("/services/redis/stop", { token: "s3cret" })).status, 403);
   assert.deepEqual(t.calls, []);
   const adv = await boot({ ...ON, CONTROL_ADVANCED: "1" });

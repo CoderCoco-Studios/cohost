@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ComposeRuntime, SERVICE_MANIFEST, type ExecFile } from "../src/index.js";
 
+const hasDocker = (name: string) => name === "docker";
+
 // ---- compose ----
 
 function fakeExec(fail?: string) {
@@ -18,7 +20,7 @@ function fakeExec(fail?: string) {
 // @spec CTRL-RUNTIME-001
 test("compose: exact argv for start / stop / restart, via execFile (no shell string)", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ exec, env: {} });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
   assert.deepEqual(await rt.start("cortex"), { ok: true });
   await rt.stop("cortex");
   await rt.restart("cortex");
@@ -32,7 +34,7 @@ test("compose: exact argv for start / stop / restart, via execFile (no shell str
 // @spec CTRL-RUNTIME-004
 test("compose: crafted ids are rejected without exec", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ exec });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec });
   for (const id of ["nope", "cortex; rm -rf /", "$(id)", "--help"]) {
     const r = await rt.start(id);
     assert.equal(r.ok, false);
@@ -43,7 +45,7 @@ test("compose: crafted ids are rejected without exec", async () => {
 // @spec CTRL-RUNTIME-002
 test("compose: isolated env goes in the child env and restart recreates", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ exec, env: { A: "1" } });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { A: "1" } });
   await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
   assert.deepEqual(calls[0]!.args, ["compose", "up", "-d", "--force-recreate", "cortex"]);
   assert.equal(calls[0]!.env.LLM_PROVIDER, "mock");
@@ -65,7 +67,7 @@ test("compose: every isolation preset variable reaches the container through x-t
   }
   // And the runtime does hand the preset to the compose process for start and recreate.
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ exec, env: {} });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
   await rt.start("cortex", { env: { LLM_PROVIDER: "mock" } });
   await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
   assert.deepEqual(calls.map((c) => c.env.LLM_PROVIDER), ["mock", "mock"]);
@@ -73,7 +75,7 @@ test("compose: every isolation preset variable reaches the container through x-t
 
 // @spec CTRL-RUNTIME-003
 test("compose: a failing command is ok:false with stderr as detail", async () => {
-  const rt = new ComposeRuntime({ exec: fakeExec("no such service").exec });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec: fakeExec("no such service").exec });
   assert.deepEqual(await rt.start("cortex"), { ok: false, detail: "no such service" });
 });
 
@@ -84,19 +86,45 @@ test("compose: consolidate runs the fixed one-shot argv with a long timeout and 
     seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
     return { stdout: "starting\nconsolidate completed\n\n", stderr: "warn" };
   };
-  const rt = new ComposeRuntime({ exec, env: {}, cwd: "/stack" });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {}, cwd: "/stack" });
   assert.deepEqual(await rt.consolidate(), { ok: true, detail: "consolidate completed" });
   assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "consolidate"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
-  const quiet = new ComposeRuntime({ exec: async () => ({ stdout: "", stderr: "" }) });
+  const quiet = new ComposeRuntime({ onPath: hasDocker, exec: async () => ({ stdout: "", stderr: "" }) });
   assert.deepEqual(await quiet.consolidate(), { ok: true });
 });
 
 // @spec CTRL-RUNTIME-010
 test("compose: a failing consolidate is ok:false with stderr, else stdout tail, else the error message, cut to 500", async () => {
   const fail = (stdout: string, stderr: string, message = "exit 1"): ExecFile => async () => { throw Object.assign(new Error(message), { stdout, stderr }); };
-  assert.deepEqual(await new ComposeRuntime({ exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
-  assert.deepEqual(await new ComposeRuntime({ exec: fail("a\nconsolidate failed\n", "") }).consolidate(), { ok: false, detail: "consolidate failed" });
-  assert.deepEqual(await new ComposeRuntime({ exec: fail("", "") }).consolidate(), { ok: false, detail: "exit 1" });
-  const long = await new ComposeRuntime({ exec: fail("", "x".repeat(900)) }).consolidate();
+  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
+  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("a\nconsolidate failed\n", "") }).consolidate(), { ok: false, detail: "consolidate failed" });
+  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", "") }).consolidate(), { ok: false, detail: "exit 1" });
+  const long = await new ComposeRuntime({ onPath: hasDocker, exec: fail("", "x".repeat(900)) }).consolidate();
   assert.equal(long.detail?.length, 500);
+});
+
+// @spec CTRL-STACK-012
+test("compose: the docker binary is COHOST_DOCKER_BIN, else docker, else docker.exe, with the same argv", async () => {
+  const run = async (env: NodeJS.ProcessEnv, onPath: (n: string) => boolean) => {
+    const { exec, calls } = fakeExec();
+    const r = await new ComposeRuntime({ exec, env, onPath }).start("cortex");
+    return { r, calls };
+  };
+  const a = await run({ COHOST_DOCKER_BIN: "/opt/d" }, () => true);
+  assert.deepEqual([a.calls[0]!.file, ...a.calls[0]!.args], ["/opt/d", "compose", "up", "-d", "cortex"]);
+  const b = await run({ COHOST_DOCKER_BIN: "" }, (n) => n === "docker" || n === "docker.exe");
+  assert.equal(b.calls[0]!.file, "docker");
+  const c = await run({}, (n) => n === "docker.exe");
+  assert.deepEqual([c.calls[0]!.file, ...c.calls[0]!.args], ["docker.exe", "compose", "up", "-d", "cortex"]);
+});
+
+// @spec CTRL-STACK-012
+test("compose: with no docker found every action resolves ok:false naming COHOST_DOCKER_BIN, without exec or throwing", async () => {
+  const { exec, calls } = fakeExec();
+  const rt = new ComposeRuntime({ exec, env: {}, onPath: () => false });
+  for (const r of [await rt.start("cortex"), await rt.stop("cortex"), await rt.restart("cortex"), await rt.consolidate()]) {
+    assert.equal(r.ok, false);
+    assert.match(r.detail!, /COHOST_DOCKER_BIN/);
+  }
+  assert.equal(calls.length, 0);
 });

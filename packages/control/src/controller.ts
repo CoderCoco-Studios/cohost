@@ -45,7 +45,7 @@ export async function resetConsumerGroups(r: GroupResetter, groups: readonly str
 }
 
 /**
- * Applies the safety guards (manifest-only ids, self, infra) and the resume/fresh orchestration
+ * Applies the safety guards (manifest-only ids, infra) and the resume/fresh orchestration
  * (stop, reset groups, start) on top of a Runtime. UI-agnostic: the dashboard and cohostctl share it.
  */
 export class ServiceController {
@@ -58,11 +58,10 @@ export class ServiceController {
   stop(id: string) { return this.act("stop", id, {}); }
   restart(id: string, opts: ActionOptions = {}) { return this.act("restart", id, opts); }
 
-  // @spec CTRL-GUARD-001, CTRL-GUARD-002, CTRL-GUARD-003
+  // @spec CTRL-GUARD-001, CTRL-GUARD-003
   private guard(action: LifecycleAction, id: string): { def: ServiceDef } | { refusal: ControlResult } {
     const def = findService(id, this.manifest);
     if (!def) return { refusal: { ok: false, refused: "unknown", detail: "unknown service" } };
-    if (def.self && action !== "start") return { refusal: { ok: false, refused: "conflict", detail: `${id} cannot ${action} itself` } };
     if (def.infra && !this.o.advanced) return { refusal: { ok: false, refused: "forbidden", detail: `${id} is infrastructure; set CONTROL_ADVANCED=1 to control it` } };
     return { def };
   }

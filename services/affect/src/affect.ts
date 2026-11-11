@@ -1,6 +1,7 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
+import { controlFor } from "@cohost/shared";
 import { Mood } from "./mood.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "./appraise.js";
 
@@ -29,19 +30,23 @@ export class Affect {
   private lastPublishedAt = -Infinity;
   private queue: { input: AppraiseInput; cause: string; epoch: number }[] = [];
   private draining?: Promise<void>;
-  /** Bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
-  private epoch = 0;
-  /** Paused by `control pause`: events no longer nudge the mood; decay and publishing continue. */
-  private paused = false; // @spec AFF-CTRL-005
+  /** `control` state (shared reader). Paused: events no longer nudge the mood, decay and publishing continue (AFF-CTRL-005). Its epoch is bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
+  private readonly control: ReturnType<typeof controlFor>;
 
   constructor(private d: AffectDeps) {
     this.now = d.now ?? (() => performance.now());
     this.mood = new Mood(d.cfg.brain.affect, this.now);
+    this.control = controlFor("affect", {
+      forget_context: () => { // @spec AFF-HOOK-008
+        this.queue.length = 0;
+        this.mood.reset("reset"); // @spec AFF-IN-007
+      },
+    }, { log: d.log });
   }
 
   onEvent(ev: BusEvent): void {
     const mood = this.mood;
-    if (this.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
+    if (this.control.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
     switch (ev.type) {
       case "chat.message": { // @spec AFF-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
@@ -66,18 +71,10 @@ export class Affect {
         mood.nudge(dv, 0.05, `said: ${d.emotion}`);
         break;
       }
-      case "control": {
-        const d = ev.data as BusEvent<"control">["data"];
-        if (d.target && d.target !== "affect") break; // addressed to another service; @spec AFF-CTRL-001
-        if (d.cmd === "pause") { this.paused = true; this.epoch++; } // @spec AFF-CTRL-002, AFF-HOOK-008
-        if (d.cmd === "resume") this.paused = false; // @spec AFF-CTRL-004
-        if (d.cmd === "forget_context") { // @spec AFF-HOOK-008
-          this.epoch++;
-          this.queue.length = 0;
-          mood.reset("reset"); // @spec AFF-IN-007
-        }
+      // @spec AFF-CTRL-001, AFF-CTRL-002, AFF-CTRL-004, AFF-HOOK-008
+      case "control":
+        this.control.handle(ev); // a command addressed to another service changes nothing
         break;
-      }
     }
   }
 
@@ -96,7 +93,7 @@ export class Affect {
       mood.applyAppraisal(appraiseRules(input), cause);
       return;
     }
-    this.queue.push({ input, cause, epoch: this.epoch }); // @spec AFF-HOOK-005
+    this.queue.push({ input, cause, epoch: this.control.epoch }); // @spec AFF-HOOK-005
     while (this.queue.length > MAX_QUEUED) this.queue.shift(); // @spec AFF-HOOK-006
     if (!this.draining) this.draining = this.drain().finally(() => { this.draining = undefined; });
   }
@@ -112,7 +109,7 @@ export class Affect {
 
   /** A job that must not touch the mood: affect is paused, or a pause or reset happened since it was queued. */
   private stale(job: { epoch: number }): boolean {
-    return this.paused || job.epoch !== this.epoch;
+    return this.control.paused || job.epoch !== this.control.epoch;
   }
 
   publish(): void { // @spec AFF-PUB-001, AFF-PUB-002, AFF-PUB-003, AFF-CTRL-003

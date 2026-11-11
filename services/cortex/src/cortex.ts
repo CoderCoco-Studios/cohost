@@ -3,6 +3,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
+import { controlFor } from "@cohost/shared";
 import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
@@ -20,9 +21,8 @@ export interface CortexDeps {
 export class Cortex {
   readonly ctx: Context;
   private personality: string;
-  private muted = false;
-  /** Paused by `control pause`: keeps reading events but starts no LLM call. Reported as "muted" so salience stops waiting. */
-  private paused = false;
+  /** `control` state and dispatch (shared reader). Paused: keeps reading events but starts no LLM call, reported as "muted" so salience stops waiting. */
+  private readonly control: ReturnType<typeof controlFor>;
   private thinking = false;
   private speakingId: string | undefined;
   private speakingSince = 0;
@@ -39,6 +39,20 @@ export class Cortex {
   constructor(private d: CortexDeps) {
     this.ctx = new Context(d.cfg.brain.working_memory_events);
     this.personality = d.loadPersonality();
+    this.control = controlFor("cortex", {
+      // @spec CTX-CTRL-002
+      pause: () => this.status("muted", "paused"),
+      resume: () => this.status(this.control.muted ? "muted" : "idle"),
+      // @spec CTX-CTRL-003
+      mute: () => this.status("muted"),
+      unmute: () => this.status(this.control.paused ? "muted" : "idle"),
+      // @spec CTX-CTRL-004
+      forget_context: () => { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ },
+      // @spec CTX-CTRL-005
+      reload_personality: () => { this.personality = d.loadPersonality(); d.log.info("personality reloaded"); },
+      // @spec CTX-CTRL-006, CTX-INJ-002
+      say: async (c) => { if (c.text) await this.say(c.text, "neutral", undefined, "operator"); },
+    }, { log: d.log });
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
@@ -60,7 +74,7 @@ export class Cortex {
       // @spec CTX-EVT-005
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
-        if (d.id === this.speakingId) { this.stopSpeaking(); await this.status(this.muted || this.paused ? "muted" : "idle"); }
+        if (d.id === this.speakingId) { this.stopSpeaking(); await this.status(this.control.muted || this.control.paused ? "muted" : "idle"); }
         break;
       }
       // @spec CTX-EVT-008, CTX-FALL-002, CTX-FALL-003, CTX-FALL-007
@@ -110,24 +124,10 @@ export class Cortex {
       case "affect.state":
         this.mood = ev.data as Mood;
         break;
-      case "control": {
-        const d = ev.data as BusEvent<"control">["data"];
-        // @spec CTX-CTRL-001
-        if (d.target && d.target !== "cortex") break; // addressed to another service
-        // @spec CTX-CTRL-002
-        if (d.cmd === "pause") { this.paused = true; await this.status("muted", "paused"); }
-        if (d.cmd === "resume") { this.paused = false; await this.status(this.muted ? "muted" : "idle"); }
-        // @spec CTX-CTRL-003
-        if (d.cmd === "mute") { this.muted = true; await this.status("muted"); }
-        if (d.cmd === "unmute") { this.muted = false; await this.status(this.paused ? "muted" : "idle"); }
-        // @spec CTX-CTRL-004
-        if (d.cmd === "forget_context") { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ }
-        // @spec CTX-CTRL-005
-        if (d.cmd === "reload_personality") { this.personality = this.d.loadPersonality(); this.d.log.info("personality reloaded"); }
-        // @spec CTX-CTRL-006, CTX-INJ-002
-        if (d.cmd === "say" && d.text) await this.say(d.text, "neutral", undefined, "operator");
+      // @spec CTX-CTRL-001
+      case "control":
+        await this.control.handleAsync(ev); // a command addressed to another service changes nothing
         break;
-      }
     }
   }
 
@@ -138,7 +138,7 @@ export class Cortex {
     // @spec CTX-GATE-001
     if (this.thinking) { await this.statusLogged("thinking", focus.reason); return; }
     // @spec CTX-GATE-002
-    if (this.muted || this.paused) { await this.statusLogged("muted"); return; } // @spec CTX-GATE-008
+    if (this.control.muted || this.control.paused) { await this.statusLogged("muted"); return; } // @spec CTX-GATE-008
     // @spec CTX-GATE-003, CTX-SAY-004
     if (this.voiceBusy()) { await this.statusLogged("speaking"); return; }
 
@@ -178,7 +178,7 @@ export class Cortex {
       if (verdict.emotion) emotion = verdict.emotion;
       // A reflex or operator line may have started while we were thinking; don't talk over it.
       // @spec CTX-GATE-005
-      if (this.muted || this.paused) { await this.status("muted"); return; }
+      if (this.control.muted || this.control.paused) { await this.status("muted"); return; }
       // @spec CTX-GATE-006
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
       // @spec CTX-INJ-001
@@ -222,7 +222,7 @@ export class Cortex {
       if (this.speakingId !== id) return;
       this.speakingId = undefined;
       // A think in flight ends with its own status; don't contradict it.
-      if (!this.thinking) void this.statusLogged(this.muted || this.paused ? "muted" : "idle");
+      if (!this.thinking) void this.statusLogged(this.control.muted || this.control.paused ? "muted" : "idle");
     }, this.d.cfg.brain.cortex.speaking_timeout_ms);
     this.speakingTimer.unref();
   }

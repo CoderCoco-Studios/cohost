@@ -1,4 +1,5 @@
-import { Bus, onShutdown as busOnShutdown, startHeartbeat, type HealthPublisher, type Publisher } from "@cohost/bus";
+import { Bus, type Publisher } from "@cohost/bus";
+import { onShutdown as busOnShutdown, startHeartbeat, type HealthPublisher } from "@cohost/shared";
 import { loadConfig as loadCfg, type Config, type Logger } from "@cohost/config";
 import { createScorer as createScorerFor } from "./scoring.js";
 import { Salience } from "./salience.js";

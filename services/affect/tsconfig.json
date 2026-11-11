@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
-  "references": [
+  "references": [{ "path": "../../packages/shared" }, 
     { "path": "../../packages/config" },
     { "path": "../../packages/bus" },
     { "path": "../../packages/modules" }

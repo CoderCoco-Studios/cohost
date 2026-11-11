@@ -12,7 +12,8 @@
  * past the window — those are other regions' jobs. If the memory region is
  * down it simply answers without recall.
  */
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { createLogger, loadConfig, loadPersonality } from "@cohost/config";
 import { createChatProvider } from "@cohost/llm";
 import { createCritic } from "./critic.js";

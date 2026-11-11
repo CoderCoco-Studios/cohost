@@ -214,6 +214,13 @@ ears:
   silence_ms: 700              # end-of-utterance detection
   min_speech_ms: 400
   stt_model: "${STT_MODEL}"
+  stt_engine: "${EARS_STT_ENGINE:-speaches}"  # speaches | stub (fixed text, no STT server; isolated runs)
+  # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
+  # hallucinations on silence. Empty by default; uncomment to use.
+  drop_phrases: []
+  #  - "Thank you."
+  #  - "Thanks for watching!"
+  #  - "you"
 
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:

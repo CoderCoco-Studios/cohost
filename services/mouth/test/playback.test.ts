@@ -126,7 +126,7 @@ test("fallback: a give-up plays one cached clip converted like an utterance, cla
   const { p, bus, played, fetched } = withFallback({ clips: [c] });
   await p.enqueue("bad", "http://voice/bad.wav");
   assert.equal(played.length, 1);
-  assert.deepEqual(played[0], wavToDiscordPcm(c.wav), "converted as in MOUTH-AUD-001");
+  assert.deepEqual(played[0], wavToDiscordPcm(c.wav), "converted as in MOUTH-AUD-002");
   assert.deepEqual(fetched, ["http://voice/bad.wav"], "no network request to choose or play the clip");
   assert.deepEqual(bus.published, [
     { type: "voice.playing", data: { id: "bad", sink: "discord" } },

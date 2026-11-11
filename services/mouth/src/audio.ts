@@ -1,27 +1,11 @@
 /** PCM helpers: a synthesized WAV of any rate becomes the 48 kHz stereo s16le Discord plays, and an output's gain scales it. */
-import { parseWav } from "@cohost/shared";
+import { parseWav, resample } from "@cohost/shared";
 
-// @spec MOUTH-AUD-001
-/** Any-rate mono/stereo 16-bit WAV -> 48k stereo s16le raw PCM (for Discord playback). Linear interpolation. */
+// @spec MOUTH-AUD-002
+/** Any-rate mono/stereo 16-bit WAV -> 48k stereo s16le raw PCM (for Discord playback), by the shared `resample`. */
 export function wavToDiscordPcm(wav: Buffer): Buffer {
   const { sampleRate, channels, dataOffset, dataLength } = readWavHeader(wav);
-  const inFrames = Math.floor(dataLength / (channels * 2));
-  const outFrames = Math.floor((inFrames * 48000) / sampleRate);
-  const out = Buffer.alloc(outFrames * 4);
-  const ratio = sampleRate / 48000;
-  for (let o = 0; o < outFrames; o++) {
-    const pos = o * ratio;
-    const i0 = Math.floor(pos);
-    const i1 = Math.min(inFrames - 1, i0 + 1);
-    const frac = pos - i0;
-    for (let c = 0; c < 2; c++) {
-      const ch = Math.min(c, channels - 1);
-      const a = wav.readInt16LE(dataOffset + (i0 * channels + ch) * 2);
-      const b = wav.readInt16LE(dataOffset + (i1 * channels + ch) * 2);
-      out.writeInt16LE(Math.round(a + (b - a) * frac), (o * 2 + c) * 2);
-    }
-  }
-  return out;
+  return resample(wav.subarray(dataOffset, dataOffset + dataLength), { from: { rate: sampleRate, channels }, to: { rate: 48000, channels: 2 } });
 }
 
 // @spec MOUTH-ROUTE-005

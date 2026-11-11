@@ -1,4 +1,4 @@
-import type { HeartbeatSpec } from "@cohost/bus";
+import type { HeartbeatSpec } from "@cohost/shared";
 
 /** `off`: no output enabled. `no-token`: the discord output is enabled without DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
 export type MouthPlan = "off" | "no-token" | "discord";

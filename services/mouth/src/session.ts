@@ -1,4 +1,5 @@
-import type { Bus, BusEvent, Heartbeat } from "@cohost/bus";
+import type { Bus, BusEvent } from "@cohost/bus";
+import type { Heartbeat } from "@cohost/shared";
 import type { Config, Logger } from "@cohost/config";
 
 /** The guild and voice channel the Discord output joins, from `mouth.outputs.discord.guild_id` / `voice_channel_id`. */

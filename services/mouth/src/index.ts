@@ -9,7 +9,8 @@
  * guild and channel under `mouth.outputs.discord` (DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID by default).
  * This MUST be a bot account — automating a user account gets it banned.
  */
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { createLogger, loadConfig } from "@cohost/config";
 import { MouthHealth, mouthPlan, readToken } from "./health.js";
 import { startIdle, stopMouth } from "./session.js";

@@ -124,7 +124,7 @@ ears gives up on a queued utterance in three cases (EARS-PLAY-005):
 - converting its audio fails;
 - handing it to the Discord player throws before any audio has started.
 
-It logs `playback failed` as today. It then publishes exactly one `voice.failed` for that utterance id, with `sink: "discord"` and a `reason` (the error text) (EARS-PLAY-006). The event carries a `fallback` object (clip name and phrase text) exactly when a fallback clip is playing for that id (EARS-FALL-011) `[proposed]`.
+It logs `playback failed` as today. It then publishes exactly one `voice.failed` for that utterance id, with `sink: "discord"` and a `reason` (the error text) (EARS-PLAY-006). The event carries a `fallback` object (clip name and phrase text) exactly when a fallback clip is playing for that id (EARS-FALL-011).
 
 The give-up report is what the deferred intent of EARS-PLAY-006 asked for: voice, avatar and cortex learn that the line will not play instead of waiting on the virtual sink's timer. The voice LLD covers how voice releases cortex when nothing plays (VOICE-SINK-011, VOICE-SINK-012).
 

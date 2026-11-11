@@ -589,16 +589,14 @@ test("dataDir honours COHOST_DATA_DIR, else <workspace root>/data, else <cwd>/da
 });
 
 // @spec CFG-SCH-018
-test("ears.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects negatives and fractions", () => {
+test("the ears section defines no fallback key: an old ears.fallback is dropped and reported as unknown", () => {
   const base = { cohost: { name: "C", streamer: "S" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: { channel: "c" } },
     voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {} };
-  const with_ = (fallback?: unknown) => ConfigSchema.safeParse({ ...base, ears: { discord: {}, ...(fallback === undefined ? {} : { fallback }) } });
-  assert.equal(with_().data!.ears.fallback.min_interval_ms, 20000);
-  assert.equal(with_({}).data!.ears.fallback.min_interval_ms, 20000);
-  assert.equal(with_({ min_interval_ms: 0 }).data!.ears.fallback.min_interval_ms, 0);
-  assert.equal(with_({ min_interval_ms: 5000 }).data!.ears.fallback.min_interval_ms, 5000);
-  assert.equal(with_({ min_interval_ms: -1 }).success, false);
-  assert.equal(with_({ min_interval_ms: 1.5 }).success, false);
+  const raw = { ...base, ears: { discord: {}, fallback: { min_interval_ms: 5000 } } };
+  const parsed = ConfigSchema.safeParse(raw);
+  assert.equal(parsed.success, true);
+  assert.equal("fallback" in parsed.data!.ears, false);
+  assert.deepEqual(unknownKeys(raw, parsed.data), ["ears.fallback"]);
 });
 
 // @spec CFG-SCH-018
@@ -698,4 +696,8 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   assert.match(text, /min_interval_ms:\s*20000\b/);
   assert.equal(cfg.mouth.fallback.min_interval_ms, 20000);
   assert.match(text, /mouth:[\s\S]*fallback:\s*\n\s*min_interval_ms:\s*20000\b/);
+  // @spec CFG-SCH-018
+  const earsBlock = text.match(/^ears:\n((?:[ \t]+.*\n|\n)*)/m)![1]!;
+  assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
+  assert.equal("fallback" in cfg.ears, false);
 });

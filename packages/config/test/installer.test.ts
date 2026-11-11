@@ -63,4 +63,5 @@ test("next steps say pnpm dashboard, the URL from the shell then .env then 3000,
   assert.match(o, /Launch/);
   assert.match(o, /startup log/);
   assert.doesNotMatch(o, /^\s*\d\. docker compose up -d\b/m);
+  assert.match(o, /docker compose --profile eyes --profile ears --profile mouth up -d/, "the optional profiles step names ears and mouth");
 });

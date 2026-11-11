@@ -8,7 +8,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Spoken fallback line: built (chunk 1)
 
-Design: LLD § Event catalogue (`voice.failed`, shape `[proposed]`); semantics in the voice LLD (Sink Arbitration Protocol rule 8).
+Design: LLD § Event catalogue (`voice.failed`); semantics in the voice LLD (Sink Arbitration Protocol rule 8).
 
 - `BUS-EVT-001`: the catalogue is exactly 24 types, with `voice.failed`, pinned by `packages/bus/test/bus.test.ts`.
 - `BUS-EVT-022`: the `voice.failed` shape (`id`, `sink`, `reason`, optional `fallback { clip, text }`).
@@ -20,7 +20,7 @@ Design: LLD § Event catalogue, "Planned viewer-notes events". The spec file hol
 
 - Chunk 3: `BUS-EVT-010` (`memory.viewer.regular` replaces `notes`) and `BUS-EVT-020` (`memory.notes.request` / `reply`, `text` optional, no subscriber field).
 - Chunk 4: `BUS-EVT-021` (`memory.viewers.request` as a union of the six ops, `memory.viewers.reply`).
-- `BUS-EVT-001` is `[x]`: `EventPayloads` holds exactly 23 types, pinned by a test in `bus.test.ts` that lists them. Names and shapes of the notes events remain `[proposed]`.
+- `BUS-EVT-001` is `[x]`: `EventPayloads` holds exactly 23 types, pinned by a test in `bus.test.ts` that lists them.
 
 ## Decisions applied
 

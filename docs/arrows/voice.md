@@ -8,7 +8,7 @@
 
 ## Spoken fallback line: built (chunks 1 and 2)
 
-Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips (`[proposed]` items marked). voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for ears to cache.
+Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for ears to cache.
 
 - Built in chunk 1: `VOICE-SINK-010` to `013` (voice reads `voice.failed` and releases cortex early when nothing plays).
 - Built in chunk 2: `VOICE-CLIP-001` to `012`: `clips.ts` (`ClipService`: fingerprint, startup check, background regeneration, atomic set swap, retry, cleanup) and the `/fallback/*` routes in `Voice.handle`. The stub engine builds no clip service, so it never touches the store and answers 404.

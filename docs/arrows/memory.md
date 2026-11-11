@@ -8,7 +8,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Viewer notes: chunks 1 to 4 built (memory core, live capture, cortex surfacing, owner operations)
 
-Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The spec file holds 107 specs: 107 `[x]`, 0 `[ ]`, 0 `[D]`.
+Design: LLD § Viewer notes (build order, edge cases). The spec file holds 107 specs: 107 `[x]`, 0 `[ ]`, 0 `[D]`.
 
 - Retired: `MEM-VIEWER-004` (notes text in `memory.viewer`), `MEM-VIEWER-005` (deferred notes writer, superseded). Numbers not reused.
 - **Chunk 1 built** (notes store, regular flag, decay math, consolidation job and triggers, config): `[x]` `MEM-NOTE-001`, `002`, `003`, `005`, `006`, `007`, `008`, `010`; `MEM-REG-001`, `003`, `004`, `005`; `MEM-CONSOL-002` to `016`; `MEM-STORE-001`; `MEM-BACKEND-005`; with config `CFG-SCH-014` to `016` and `CFG-USR-007`.
@@ -16,7 +16,7 @@ Design: LLD § Viewer notes (build order, edge cases, `[proposed]` items). The s
 - **Chunk 3 built** (cortex surfacing): `[x]` `MEM-SURF-001` to `005` (`surface.ts`, `memory.notes.request` handled in the `memory-recall` group, store methods `findViewerByDisplay` and `markSurfaced` in the shared store contract), `MEM-VIEWER-002` (`memory.viewer` carries `regular`, no notes text), `MEM-REG-002` (capture and surfacing both built and tested); with `CTX-NOTES-*`, `CTX-VIEWER-001`, `CTX-EVT-001`, `BUS-EVT-010`, `BUS-EVT-020`, `DASH-FEED-007`.
 - **Chunk 4 built** (owner operations for the dashboard Viewers page): `[x]` `MEM-ADMIN-001` to `007` (`src/admin.ts` `answerViewersRequest`, wired in `region.ts` for `memory.viewers.request`, consumed in the `memory-recall` group) and `MEM-NOTE-004` (a restored note is a new row at version 1, like any insert). New store methods `listViewers`, `restoreDeletion`, `clearNotes` on `MemoryStore` and `InMemoryStore`, specified by the shared store contract (`test/store-contract.ts`, run against Postgres only when `COHOST_TEST_DATABASE_URL` is set, so the SQL is unrun in CI). Dashboard side: `DASH-VIEWERS-*`, `BUS-EVT-021`, `CFG-ENV-009`.
 - Deployment and control-plane follow-ups (built): the Compose `consolidate` one-shot service (DEPLOY-COMPOSE-018, -019) and `cohostctl consolidate` (CTRL-CLI-008) run `consolidate`. The `models` container pulls `NOTES_MODEL` (DEPLOY-COMPOSE-008); if that pull fails, capture falls back to writing no notes.
-- Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Still `[proposed]`: fade numbers, caps, event and route names, classifier slot specifics; the capture model is settled: `gemma3:4b`, 20 s hook timeout (memory LLD Decisions).
+- Owner answers of 2026-11-08 applied (access option A, hint-only sensitive notes, no subscriber status in the prompt, local notes models, best-effort shutdown one-shot with guaranteed catch-up, retention and cooldown). Fade numbers, caps, event and route names and classifier slot specifics are settled in the LLD; the capture model is `gemma3:4b`, 20 s hook timeout (memory LLD Decisions).
 
 ## Decisions applied
 

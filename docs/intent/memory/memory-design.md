@@ -125,7 +125,7 @@ captured or shown: notes are kept for every viewer from their first message
 (see Viewer notes below). `memory.viewer` carries `{user, isNew, msgCount,
 regular}` (`MEM-VIEWER-002`); the threshold is a config value rather than a
 literal in the cortex. The legacy `viewers.notes` text column is no longer read or
-published; it stays in the table so no migration drops data `[proposed]`.
+published; it stays in the table so no migration drops data.
 
 ## Viewer notes
 
@@ -133,19 +133,17 @@ The co-host remembers recent, relevant things about viewers (what they are doing
 a cool new thing they got) and who they are as people, without storing or
 surfacing sensitive things badly. Notes are kept for every viewer from their first
 message; regular status does not gate them. The feature is implemented: its specs
-are `[x]`, with tests citing them. Items marked `[proposed]` are design choices
-the owner has not yet confirmed (numbers to tune, wire names, storage layout);
-everything else is settled intent.
+are `[x]`, with tests citing them.
 
-Markers in this section: the owner settled the purpose, the two layers, strength
+Settled intent: the purpose, the two layers, strength
 with reinforcement and fade, the sensitivity rules, live capture by a small model,
 the consolidation pass and its two triggers, the delete semantics, owner control
 in the dashboard and that every number is configurable; also the categories, the
 local-only notes models, hint-only surfacing of sensitive notes, no subscriber
 status in the prompt, the 24-hour sensitive cooldown, the 30-day retention of
 soft memories, the best-effort shutdown one-shot with a guaranteed catch-up pass,
-and the consolidator on the cortex's model. Other formulas, defaults, names,
-event shapes and storage layout are `[proposed]`.
+and the consolidator on the cortex's model; also the other formulas, defaults,
+names, event shapes and storage layout described below.
 
 ### Notes, layers and strength
 
@@ -166,8 +164,7 @@ quote"); when the writer supplies none, the category default applies
 (`MEM-NOTE-010`).
 
 Strength is stored as a value and the time it was set; the effective strength at
-any later time decays exponentially with the layer's half-life (`MEM-NOTE-002`)
-`[proposed]`:
+any later time decays exponentially with the layer's half-life (`MEM-NOTE-002`):
 
 ```
 effective(t) = strength × 0.5 ^ ((t − strength_at) / half_life(layer))
@@ -177,8 +174,7 @@ half_life(core)   = brain.memory.notes.core_half_life_days     (default 60)
 
 Effective strength is computed when read, so nothing has to run for a note to
 fade; values outside 0 to 1 (including a non-finite result after a very long gap)
-are clamped (`MEM-NOTE-003`). The rules that move notes between layers
-`[proposed]`:
+are clamped (`MEM-NOTE-003`). The rules that move notes between layers:
 
 | Event | Effect | Spec |
 |---|---|---|
@@ -194,7 +190,7 @@ strength, and a note mentioned on three separate occasions becomes core. Notes
 whose effective strength is below `drop_below` are never sent to the cortex even
 before a pass deletes them (`MEM-SURF-003`).
 
-### Storage `[proposed]`
+### Storage
 
 Postgres (created by `init`, `MEM-STORE-001`):
 
@@ -218,7 +214,7 @@ it does for everything else (`MEM-BACKEND-005`).
 
 Capture runs as chat comes in, in the `memory-notes` consumer group, on every
 `chat.message` except injected lines not marked `remember` and lines shorter than
-`capture_min_chars` (default 8) `[proposed]` (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`).
+`capture_min_chars` (default 8) (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`).
 It uses a very small, cheap classifier model through a region hook,
 `memory.capture`, configured by `brain.memory.notes.capture` (a `ModuleSchema`
 block: `kind`, `url`, `timeout_ms`, `llm{provider, model}`), so it has its own
@@ -229,7 +225,7 @@ category, drops politics and money, and writes the short note text and an option
 hint (`MEM-CAPTURE-004`). Its rules fallback writes no note, so a slow, down or
 confused classifier costs only a missed note. The hook input is the viewer's name,
 the line, the viewer's current note texts and the reasons of their suppression
-rules, so the model can avoid duplicates and learned refusals `[proposed]`.
+rules, so the model can avoid duplicates and learned refusals.
 
 Model calls for notes stay on the LAN unless the operator names a hosted provider
 on the notes hook itself: with no provider on the hook, memory builds it on the
@@ -240,8 +236,7 @@ uses a hosted model. This keeps viewer
 notes, including health and family notes, under the HLD rule that memories leave
 the LAN only through explicitly configured egress.
 
-The writer then applies, in order (`MEM-CAPTURE-006` to `MEM-CAPTURE-009`)
-`[proposed]`:
+The writer then applies, in order (`MEM-CAPTURE-006` to `MEM-CAPTURE-009`):
 
 1. **Suppression.** A candidate whose embedding is at least `suppress_similarity`
    (default 0.8) similar to one of the viewer's suppression rules is discarded.
@@ -276,10 +271,9 @@ processed it. A pass is triggered:
 - **Mid-stream**, when the number of dirty notes reaches `dirty_threshold`
   (default 20) (`MEM-CONSOL-001`). It starts only while the cortex is idle and
   pauses between viewers whenever the cortex starts thinking or speaking
-  (`MEM-CONSOL-002`, `MEM-CONSOL-003`) `[proposed]`. Memory learns the cortex's
+  (`MEM-CONSOL-002`, `MEM-CONSOL-003`). Memory learns the cortex's
   state from `brain.status`; `muted` counts as idle, and so does no status seen
-  since memory started (no cortex running means nothing to compete with)
-  `[proposed]`.
+  since memory started (no cortex running means nothing to compete with).
 - **Once after the owner shuts the AI down**, by a separate one-shot command,
   `consolidate` (`pnpm consolidate`, `node services/memory/dist/consolidate.js`),
   started once the services are down. It processes every dirty note, ignores the
@@ -335,8 +329,7 @@ leaves the rest dirty (`MEM-CONSOL-011`). Each completed pass records
 ### Surfacing to the cortex
 
 The cortex asks for notes when it replies, with `memory.notes.request {id, users}`,
-handled in the `memory-recall` group next to recall (`MEM-SURF-001`)
-`[proposed]`. The first name in `users` is the viewer being replied to; the rest
+handled in the `memory-recall` group next to recall (`MEM-SURF-001`). The first name in `users` is the viewer being replied to; the rest
 are the other viewers in the cortex's working-memory window. A name resolves to
 the viewer row whose display name matches it case-insensitively, the most recently
 seen one when several do (`MEM-SURF-002`), so a renamed viewer is found by their
@@ -344,7 +337,7 @@ current name once they have chatted under it. The reply lists, per resolved
 viewer, `regular`, `msgCount` and their notes (never subscriber status, which is
 stored but not surfaced), strongest first, at most
 `max_notes_per_viewer` (default 5) each and `max_notes_total` (default 15) overall,
-filling the replied-to viewer first (`MEM-SURF-003`) `[proposed]`. `health` and
+filling the replied-to viewer first (`MEM-SURF-003`). `health` and
 `family` notes are included only for the replied-to viewer and at most once per
 `sensitive_cooldown_hours` (default 24) per note, and with their category and
 hint only: the note text never leaves memory toward the cortex. Including one
@@ -357,7 +350,7 @@ guidance, is the cortex's design.
 The owner sees and controls every stored note from the dashboard's Viewers page.
 The dashboard cannot touch Postgres (HLD tenet 1), so it sends
 `memory.viewers.request {id, op, ...}` and memory answers `memory.viewers.reply
-{id, ok, error?, detail?, data?}` (`MEM-ADMIN-*`) `[proposed]`. Operations:
+{id, ok, error?, detail?, data?}` (`MEM-ADMIN-*`). Operations:
 
 | `op` | Effect | Spec |
 |---|---|---|
@@ -380,8 +373,7 @@ creates a placeholder row keyed by the lower-cased name with `msg_count` 0
 (`MEM-REG-003`). Twitch rows are keyed by user id, so when the first
 `chat.message` arrives from a key with no row and a placeholder's display matches
 the message's `user` case-insensitively, memory re-keys the placeholder to the
-message's key and counts the message on it, keeping the flag (`MEM-REG-004`)
-`[proposed]`.
+message's key and counts the message on it, keeping the flag (`MEM-REG-004`).
 
 ### Edge cases
 
@@ -394,7 +386,7 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Pass interrupted by shutdown or an error | committed viewers stay committed; the others stay dirty; the next pass catches up | `MEM-CONSOL-011` |
 | Mid-stream pass and the one-shot overlap | advisory lock: the second pass is skipped | `MEM-CONSOL-010` |
 | Classifier model down or slow | rules fallback: no note for that line; the hook warns at most once per 30 s (region-hooks) | `MEM-CAPTURE-003`, `MEM-CAPTURE-010` |
-| Consolidator model down | arithmetic still runs; no merges or rewrites; notes are marked clean, so the next model attempt happens only for notes that become dirty again `[proposed]` | `MEM-CONSOL-005`, `MEM-CONSOL-008` |
+| Consolidator model down | arithmetic still runs; no merges or rewrites; notes are marked clean, so the next model attempt happens only for notes that become dirty again | `MEM-CONSOL-005`, `MEM-CONSOL-008` |
 | Capture runs before the `memory` group created the viewer row | the writer creates the row without counting a message | `MEM-CAPTURE-011` |
 | Manual regular flag for a viewer with no row | placeholder row, claimed by the first matching chat line | `MEM-REG-003`, `MEM-REG-004` |
 | Viewer renames | rows are keyed by user id; `display` follows the latest message; notes follow the key; name lookups use the current display | `MEM-VIEWER-001`, `MEM-SURF-002` |
@@ -405,9 +397,9 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Undoing a deletion | the note returns at the strength it had when deleted and fades from the restore time; its suppression rule is lifted | `MEM-ADMIN-004` |
 | Sensitive cooldown under concurrent requests | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a once-per-24-hours courtesy, not a safety property (the note text never leaves memory), and the cortex asks once per reply, so two requests racing in the same instant is rare and costs at most one repeated hint. `MEM-SURF-004` |
 | Suppression matching | embedding similarity against the same viewer's reason-carrying deletions only; the hash embedder (isolation) matches on shared words | `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
-| Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected `[proposed]` | `MEM-EVT-002` |
+| Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected | `MEM-EVT-002` |
 | How the stack was stopped | irrelevant: graceful stops set `notes.shutdown_run_owed` and the next start catches up; the one-shot is optional | `MEM-CONSOL-012`, `MEM-CONSOL-013` |
-| Voice speakers | `speech.heard` speakers have no viewer row and get no notes `[proposed]` | `MEM-CAPTURE-002` |
+| Voice speakers | `speech.heard` speakers have no viewer row and get no notes | `MEM-CAPTURE-002` |
 
 ### Build order
 
@@ -605,25 +597,25 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Mute and pause | Memory never reads `control`; it records while the co-host is muted | honour mute/pause | owner decision 2026-11-01: only the services that act on mute and pause (cortex, salience) see them |
 | Viewer count | A new viewer row starts at `msg_count` 1 in both stores | keep Postgres at 0 | owner decision 2026-11-01: `isNew` once and `msgCount` equal to messages seen, matching the in-memory store; `MEM-VIEWER-001` |
 | Viewer notes writer | Live capture by a small classifier model, cleaned by a consolidation pass; the owner deletes and restores from the dashboard | reflection pass writes notes between streams; dashboard-only hand-written notes; hand-edited SQL | Owner decision: notes must be current during the stream ("what they're doing lately"), which a between-streams reflection cannot give, and the owner wants to curate, not author, them. A cheap model can afford every line; a stronger model cleans up its mistakes afterwards. `MEM-CAPTURE-*`, `MEM-CONSOL-*`, `MEM-ADMIN-*` |
-| Note shape | Two layers (core, recent) with a strength that mentions reinforce and time fades; core fades slower and can fall back to recent and drop | one flat list with a fixed expiry; an importance score set once by the model; keep notes forever | Owner decision: something mentioned a lot becomes or stays core, stale recent notes disappear, and even core facts eventually go when never mentioned again. Formulas and defaults are `[proposed]`. `MEM-NOTE-002` to `MEM-NOTE-008` |
-| Fade computation | Effective strength computed at read time from stored strength and time | a timer that decays stored values | Read-time math needs no scheduler and is exact for any gap; the consolidation pass only persists layer moves and drops. `[proposed]`; `MEM-NOTE-002` |
+| Note shape | Two layers (core, recent) with a strength that mentions reinforce and time fades; core fades slower and can fall back to recent and drop | one flat list with a fixed expiry; an importance score set once by the model; keep notes forever | Owner decision: something mentioned a lot becomes or stays core, stale recent notes disappear, and even core facts eventually go when never mentioned again. Formulas and defaults are. `MEM-NOTE-002` to `MEM-NOTE-008` |
+| Fade computation | Effective strength computed at read time from stored strength and time | a timer that decays stored values | Read-time math needs no scheduler and is exact for any gap; the consolidation pass only persists layer moves and drops.; `MEM-NOTE-002` |
 | Sensitive categories | Politics never stored; health and family stored with a handling hint, surfaced rarely; money only as the subscriber flag | store everything and let the cortex decide; drop all sensitive topics | Owner decision: the co-host should understand viewers as people, including a death in the family, without quoting it back or exposing it; nobody is called out by wealth. `MEM-NOTE-009`, `MEM-NOTE-010`, `MEM-SURF-004` |
-| Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call | `[proposed]`. A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
+| Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call |. A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
 | Capture model | `gemma3:4b` (`NOTES_MODEL`), capture `timeout_ms` 20000 | `gemma3:1b` (rejected: a live run against Ollama on 2026-11-09 showed it answering in the wrong JSON shape, hint and category at the top level with `note: null`, so it silently writes no notes); a larger model (more GPU time for little gain on a short classification) | Owner decision 2026-11-09: `gemma3:4b` follows the schema and the politics, money and noise rules, at 2 to 4 s per line on CPU and about 13 s on the first, cold call; 20 s covers the cold call (`MEM-CAPTURE-003`, CFG-USR-008). The consolidator, on the cortex's model, cleans up what the small model gets wrong. |
 | Notes model egress | Notes hooks use local `ollama` unless the hook names a provider, even when the cortex is hosted; `mock` is inherited | inherit `llm.provider` like the other hooks | Owner decision. A hosted cortex model must not silently carry every chat line and health or family notes off the LAN (HLD tenet 8); the isolation preset still reaches the hooks. `MEM-NOTE-011` |
-| Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler | `[proposed]`. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
+| Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler |. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
 | Consolidation trigger | Dirty-note count reaches `dirty_threshold` (default 20), plus one run after the owner shuts the AI down; dirty flags are the catch-up state | nightly schedule; every N minutes; after every write | Owner decision: no nightly schedule (the box may be off); work scales with what was captured; a missed run is caught up by the next one, as the reflection cursor does. `MEM-CONSOL-001`, `MEM-CONSOL-012`, `MEM-CONSOL-015` |
-| Mid-stream pacing | Start only while the cortex is idle (from `brain.status`), pause between viewers when it gets busy | run immediately; run only between streams | `[proposed]`. On one GPU a consolidation call competing with a reply call delays the co-host's line; between-viewer pauses bound the delay to one hook call. `MEM-CONSOL-002`, `MEM-CONSOL-003` |
+| Mid-stream pacing | Start only while the cortex is idle (from `brain.status`), pause between viewers when it gets busy | run immediately; run only between streams |. On one GPU a consolidation call competing with a reply call delays the co-host's line; between-viewer pauses bound the delay to one hook call. `MEM-CONSOL-002`, `MEM-CONSOL-003` |
 | Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (BUS-STOP-002) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
-| Pass vs live writes | Per-viewer transaction that commits only notes whose version is unchanged since the pass read them | hold row locks across the model call; pause capture during a pass | `[proposed]`. Locks held across a model call would stall capture and owner deletions for seconds; a version check lets the newer write win and leaves the note dirty for the next pass. `MEM-CONSOL-007` |
-| One pass at a time | Postgres advisory lock shared by the service and the one-shot | a `meta` flag | `[proposed]`. An advisory lock is released when its session ends, so a crashed pass never leaves a stale lock behind. `MEM-CONSOL-010` |
+| Pass vs live writes | Per-viewer transaction that commits only notes whose version is unchanged since the pass read them | hold row locks across the model call; pause capture during a pass |. Locks held across a model call would stall capture and owner deletions for seconds; a version check lets the newer write win and leaves the note dirty for the next pass. `MEM-CONSOL-007` |
+| One pass at a time | Postgres advisory lock shared by the service and the one-shot | a `meta` flag |. An advisory lock is released when its session ends, so a crashed pass never leaves a stale lock behind. `MEM-CONSOL-010` |
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
 | Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
-| Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres | `[proposed]`. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
-| Viewer lookup for surfacing | By current display name, case-insensitive, most recently seen first | carry `userId` through working memory and `attention.focus` | `[proposed]`. The cortex holds names only (`attention.focus.who`, the working-memory chat lines); a name lookup needs no change to working-memory or salience. A name shared by two viewers resolves to the one seen last. `MEM-SURF-002` |
-| Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model | `[proposed]`. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
-| Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. `[proposed]` event names. `MEM-ADMIN-*` |
-| Legacy `viewers.notes` column | Left in place, unread | drop it in `init` | `[proposed]`. Dropping a column is irreversible and the column is empty in practice (nothing ever wrote it). |
+| Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres |. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
+| Viewer lookup for surfacing | By current display name, case-insensitive, most recently seen first | carry `userId` through working memory and `attention.focus` |. The cortex holds names only (`attention.focus.who`, the working-memory chat lines); a name lookup needs no change to working-memory or salience. A name shared by two viewers resolves to the one seen last. `MEM-SURF-002` |
+| Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
+| Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
+| Legacy `viewers.notes` column | Left in place, unread | drop it in `init` |. Dropping a column is irreversible and the column is empty in practice (nothing ever wrote it). |
 | Postgres health | Every pool query feeds `deps.postgres` through `tracked()`; `degraded` with a detail while waiting for Ollama or Postgres at startup | startup-only flag; stay `starting` while waiting | owner decision 2026-11-01: the heartbeat reflects runtime dependency state, as the cortex does; `MEM-HEALTH-005`, `MEM-HEALTH-007` |
 | Recall k=0 | Short-circuit with no embed or query | query anyway | `config/config.example.yaml:111` documents `recall_k: 0` as "disables recall"; `store.ts:123`, `fake-store.ts:40` |
 | Isolated backend | Separate in-process store with its own 64-dim hash embedder | reuse `HashEmbedder` inside the fake | the fake is self-contained and ignores `brain.memory.embedder`; its unsigned counts keep similarity scores non-negative, so `min_similarity` stays meaningful for plain word overlap; it needs no async embedder; the fake store (commit `719ce5a`) predates `HashEmbedder` (commit `51d5a9c`), and OpenSpec `add-isolated-backends` accepts the fake's "own bag-of-words hashed vectors"; `fake-store.ts:8-17`, comment `backend.ts:16` |
@@ -652,7 +644,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 
 ### Open (viewer notes, owner decisions needed)
 1. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
-   chat viewer is out of scope `[proposed]`.
+   chat viewer is out of scope.
 
 Settled by the owner and recorded above: categories are `general`, `health` and
 `family` plus the politics drop; soft memories are purged after 30 days and

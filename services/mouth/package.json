@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev:mouth": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "start": "node dist/index.js"
   },

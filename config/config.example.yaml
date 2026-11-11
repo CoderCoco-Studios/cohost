@@ -214,8 +214,6 @@ ears:
   silence_ms: 700              # end-of-utterance detection
   min_speech_ms: 400
   stt_model: "${STT_MODEL}"
-  fallback:
-    min_interval_ms: 20000     # at most one fallback line per 20 s when many lines fail at once
 
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:

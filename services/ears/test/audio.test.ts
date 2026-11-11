@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { discordPcmToWav16k, wavToDiscordPcm, readWavHeader } from "../src/audio.js";
+import { discordPcmToWav16k, readWavHeader } from "../src/audio.js";
 import { wavWrap } from "@cohost/shared";
 
 const pcm16 = (samples: number[]): Buffer => {
@@ -52,36 +52,4 @@ test("discordPcmToWav16k clamps rather than wrapping at full scale", () => {
   assert.deepEqual(samplesOf(w, 44), [32767]);
   const n = discordPcmToWav16k(pcm16(new Array(6).fill(-32768)));
   assert.deepEqual(samplesOf(n, 44), [-32768]);
-});
-
-// @spec EARS-AUD-002
-test("wavToDiscordPcm: 48k stereo in is passed through unchanged", () => {
-  const src = pcm16([1, -1, 2, -2, 3, -3]);
-  assert.deepEqual(wavToDiscordPcm(wavWrap(src, 48000, 2)), src);
-});
-
-// @spec EARS-AUD-002
-test("wavToDiscordPcm: 24k mono → 48k stereo, duplicating channels and interpolating between samples", () => {
-  const out = wavToDiscordPcm(wavWrap(pcm16([0, 1000, 2000]), 24000, 1));
-  // 3 input frames → 6 output frames; odd frames land halfway between inputs; the last holds.
-  assert.deepEqual(samplesOf(out), [0, 0, 500, 500, 1000, 1000, 1500, 1500, 2000, 2000, 2000, 2000]);
-});
-
-// @spec EARS-AUD-002
-test("wavToDiscordPcm keeps the duration when resampling Kokoro's 24k output", () => {
-  const oneSecond = wavWrap(pcm16(new Array(24000).fill(0)), 24000, 1);
-  assert.equal(wavToDiscordPcm(oneSecond).length, 48000 * 4);
-});
-
-// @spec EARS-AUD-001, EARS-AUD-002
-test("round trip: Discord audio → STT WAV → back to Discord keeps the length and the signal", () => {
-  const frames = 4800; // 100 ms
-  const tone: number[] = [];
-  for (let i = 0; i < frames; i++) { const s = Math.round(8000 * Math.sin((2 * Math.PI * 200 * i) / 48000)); tone.push(s, s); }
-  const back = wavToDiscordPcm(discordPcmToWav16k(pcm16(tone)));
-  assert.equal(back.length, frames * 4);
-  const orig = tone.filter((_, i) => i % 2 === 0);
-  const got = samplesOf(back).filter((_, i) => i % 2 === 0);
-  const maxErr = Math.max(...orig.map((s, i) => Math.abs(s - got[i]!)));
-  assert.ok(maxErr < 400, `max error ${maxErr}`); // a 200 Hz tone survives 3:1 decimation nearly intact
 });

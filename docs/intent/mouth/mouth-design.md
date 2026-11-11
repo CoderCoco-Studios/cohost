@@ -99,7 +99,7 @@ The Discord output is the co-host's own Discord bot, the one viewers see speak. 
 3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (MOUTH-SESS-006). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (MOUTH-SESS-005). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
 4. **Shutdown.** One sequence: stop the clip refresh, destroy the voice connection and the client, then stop the bus (MOUTH-SESS-007).
 
-The player and resampling are the ones ears has today: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (MOUTH-AUD-001), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
+The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (MOUTH-AUD-001), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
 
 ## Playback
 

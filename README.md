@@ -314,7 +314,7 @@ has an opt-in preset env var (wired into `config/config.example.yaml` as
 predates them). Defaults are unchanged: with none set you get the live backends.
 A service on a mock/off backend logs a warning at startup and reports heartbeat
 mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
-`DISCORD_TOKEN`) idles as `degraded` instead of exiting.
+`EARS_DISCORD_TOKEN` or `DISCORD_TOKEN`) idles as `degraded` instead of exiting.
 
 | Service | Preset | Result (mode) |
 |---|---|---|

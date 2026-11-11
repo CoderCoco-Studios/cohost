@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
-import { DISCORD_LOOP_TYPES, createEarsHandler, stopEars, subscribeEars, voiceTarget } from "../src/session.js";
+import { event, recordingLog, testConfig } from "@cohost/testing";
+import { EARS_LOOP_TYPES, EARS_JOIN_OPTIONS, createEarsHandler, isHumanSpeaker, stopEars, subscribeEars, voiceTarget } from "../src/session.js";
 
 // @spec EARS-SESS-007, CFG-USR-005
 test("the guild and voice channel come from the ears.discord config keys, not the environment", () => {
@@ -23,31 +23,53 @@ const utterance = () => event("voice.utterance", { id: "u1", text: "hi", emotion
 const inject = () => event("inject.request", { id: "i1", target: "ears", kind: "audio", url: "http://d/uploads/x", remember: false });
 
 // @spec EARS-INJ-007
-test("inject.request is handled whether or not the voice connection is ready", async () => {
-  for (const ready of [false, true]) {
-    const handled: string[] = [];
-    const h = createEarsHandler({
-      onInject: async (ev) => { handled.push(ev.data.id); },
-      playback: { enqueue: async () => {} }, isVoiceReady: () => ready, log: recordingLog().log,
-    });
-    await h(inject());
-    assert.deepEqual(handled, ["i1"], `ready=${ready}`);
-  }
+test("inject.request is handled by the one ears handler", async () => {
+  const handled: string[] = [];
+  const h = createEarsHandler({ onInject: async (ev) => { handled.push(ev.data.id); } });
+  await h(inject());
+  assert.deepEqual(handled, ["i1"]);
 });
 
-// @spec EARS-INJ-007
-test("a voice.utterance is skipped (not queued) while the voice connection is not ready, and queued once it is", async () => {
-  const queued: [string, string][] = [];
-  let ready = false;
-  const h = createEarsHandler({
-    onInject: async () => {}, playback: { enqueue: async (id, url) => { queued.push([id, url]); } },
-    isVoiceReady: () => ready, log: recordingLog().log,
-  });
+// @spec EARS-START-003
+test("the ears loop reads inject.request only, and the handler ignores anything else it is handed", async () => {
+  assert.deepEqual([...EARS_LOOP_TYPES], ["inject.request"]);
+  const handled: string[] = [];
+  const h = createEarsHandler({ onInject: async (ev) => { handled.push(ev.data.id); } });
   await h(utterance());
-  assert.deepEqual(queued, []);
-  ready = true;
-  await h(utterance());
-  assert.deepEqual(queued, [["u1", "http://voice/u1.wav"]]);
+  await h(event("voice.playing", { id: "u1", sink: "discord" }));
+  assert.deepEqual(handled, []);
+});
+
+// @spec EARS-HEAR-009
+test("the ears loop never reads control", () => {
+  assert.ok(!(EARS_LOOP_TYPES as readonly string[]).includes("control"));
+});
+
+// @spec EARS-SESS-002, EARS-SESS-004
+test("ears joins self-muted and not self-deafened", () => {
+  assert.deepEqual(EARS_JOIN_OPTIONS, { selfMute: true, selfDeaf: false });
+});
+
+// @spec EARS-HEAR-001
+test("isHumanSpeaker: a human is captured; a bot account (cached or fetched) is not", async () => {
+  const users = new Map([["human", { bot: false }], ["cachedbot", { bot: true }]]);
+  const fetched: string[] = [];
+  const lookup = {
+    cache: { get: (id: string) => users.get(id) },
+    fetch: async (id: string) => { fetched.push(id); return { bot: id === "fetchedbot" }; },
+  };
+  assert.equal(await isHumanSpeaker("human", lookup), true);
+  assert.equal(await isHumanSpeaker("cachedbot", lookup), false);
+  assert.deepEqual(fetched, [], "a cached user is not fetched");
+  assert.equal(await isHumanSpeaker("fetchedbot", lookup), false);
+  assert.equal(await isHumanSpeaker("newhuman", lookup), true);
+  assert.deepEqual(fetched, ["fetchedbot", "newhuman"], "an uncached user is fetched before capture");
+});
+
+// @spec EARS-HEAR-001
+test("isHumanSpeaker: a speaker whose account cannot be fetched is not captured", async () => {
+  const lookup = { cache: { get: () => undefined }, fetch: async () => { throw new Error("unknown user"); } };
+  assert.equal(await isHumanSpeaker("boom", lookup), false);
 });
 
 // @spec EARS-START-006
@@ -58,9 +80,9 @@ test("the ears group is created first, then subscribed with start mode latest fo
     resetGroup: async (g: string) => { calls.push(`reset:${g}`); },
     subscribe: async (o: unknown) => { calls.push("subscribe"); opts = o; },
   };
-  await subscribeEars(bus, ["voice.utterance", "inject.request"], async () => {}, recordingLog().log);
+  await subscribeEars(bus, ["inject.request"], async () => {}, recordingLog().log);
   assert.deepEqual(calls, ["reset:ears", "subscribe"]);
-  assert.deepEqual(opts, { group: "ears", types: ["voice.utterance", "inject.request"], start: "latest" });
+  assert.deepEqual(opts, { group: "ears", types: ["inject.request"], start: "latest" });
 });
 
 // @spec EARS-SESS-008, EARS-START-005
@@ -72,43 +94,4 @@ test("one shutdown sequence: idle timer, voice connection and client, then the b
   order.length = 0;
   await stopEars({ session: { stop: async () => { order.push("discord"); throw new Error("destroy failed"); } }, bus, log: recordingLog().log });
   assert.deepEqual(order, ["discord", "bus"], "the bus is stopped even if the teardown throws");
-});
-
-// ---- fallback line wiring
-
-const playingEv = (id: string, sink: string) => event("voice.playing", { id, sink });
-const failedEv = () => event("voice.failed", { id: "u1", sink: "discord", reason: "x" });
-
-// @spec EARS-FALL-010
-test("the loop reads voice.playing and forwards each claim to the fallback line, ignoring voice.failed", async () => {
-  const seen: string[] = [];
-  const claims: [string, string][] = [];
-  const h = createEarsHandler({
-    onInject: async () => {}, playback: { enqueue: async () => {} }, isVoiceReady: () => true, log: recordingLog().log,
-    claims: { seen: (id) => { seen.push(id); }, claim: (id, sink) => { claims.push([id, sink]); } },
-  });
-  await h(utterance());
-  await h(playingEv("u1", "dashboard"));
-  await h(playingEv("u1", "discord"));
-  await h(playingEv("u1", "virtual"));
-  await h(failedEv()); // ears never acts on voice.failed
-  assert.deepEqual(seen, ["u1"]);
-  assert.deepEqual(claims, [["u1", "dashboard"], ["u1", "discord"], ["u1", "virtual"]], "every claim is forwarded; the fallback line ignores discord's own and voice's virtual ones");
-});
-
-// @spec EARS-FALL-010
-test("in the discord plan the one ears loop reads voice.utterance, voice.playing and inject.request", () => {
-  assert.deepEqual([...DISCORD_LOOP_TYPES].sort(), ["inject.request", "voice.playing", "voice.utterance"]);
-});
-
-// @spec EARS-FALL-013, EARS-INJ-007
-test("while the voice connection is not ready a skipped voice.utterance is neither queued nor reported as failed", async () => {
-  const queued: string[] = [];
-  const bus = new FakeBus();
-  const h = createEarsHandler({
-    onInject: async () => {}, playback: { enqueue: async (id) => { queued.push(id); } }, isVoiceReady: () => false, log: recordingLog().log,
-  });
-  await h(utterance());
-  assert.deepEqual(queued, []);
-  assert.deepEqual(bus.published, [], "no voice.failed and no fallback clip for an utterance ears never took");
 });

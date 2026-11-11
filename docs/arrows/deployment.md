@@ -6,9 +6,9 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
-## Listening and speaking split (chunk 3 built, chunk 4 pending)
+## Listening and speaking split (built)
 
-Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no data volume), DEPLOY-README-004 (`.env.example` with two Discord tokens) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new. All seven are `[x]`, tested in `packages/config/test/compose-mouth.test.ts`. The `mouth` service and the two-bot documentation exist; ears itself still reads `DISCORD_TOKEN` until chunk 4 (ears listens only), so the `ears` and `mouth` profiles must not be enabled together before then.
+Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no data volume), DEPLOY-README-004 (`.env.example` with two Discord tokens) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new. All seven are `[x]`, tested in `packages/config/test/compose-mouth.test.ts`. The `mouth` service and the two-bot documentation exist; Chunk 4 (ears listens only) landed: ears reads `EARS_DISCORD_TOKEN`, so the `ears` and `mouth` profiles can be enabled together. The installer's next steps start the `eyes`, `ears` and `mouth` profiles and name the two bot tokens (DEPLOY-INST-008).
 
 ## Standalone dashboard (built)
 

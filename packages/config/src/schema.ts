@@ -235,10 +235,6 @@ export const ConfigSchema = z.object({
     silence_ms: z.number().int().positive().default(700),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: z.string().default("Systran/faster-whisper-small"),
-    fallback: z.object({
-      /** At most one spoken fallback line per this many ms (storm limit). */
-      min_interval_ms: z.number().int().nonnegative().default(20000), // @spec CFG-SCH-018
-    }).default({}),
   }),
   /**
    * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.

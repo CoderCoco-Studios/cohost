@@ -104,7 +104,6 @@ Owner decisions:
 - memory keeps the failed line as said.
 - The feature stays in ears.
 
-Items marked `[proposed]` below are design choices awaiting the owner's confirmation; everything else is settled.
 
 Ownership across segments:
 

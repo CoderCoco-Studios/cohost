@@ -31,6 +31,8 @@ export class InMemoryStore implements MemoryBackend {
 
   async init(): Promise<void> {}
 
+  async connect(): Promise<void> {}
+
   async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
     this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: await hashEmbed(`${who}: ${text}`) });
   }

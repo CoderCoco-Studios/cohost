@@ -8,7 +8,7 @@ import {
   type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
-export type MemoryKind = "chat" | "speech" | "self" | "note";
+export type MemoryKind = "chat" | "speech" | "self";
 
 export interface Memory {
   id: number;
@@ -24,6 +24,11 @@ export interface Memory {
 /** What the region needs from a memory store: Postgres-backed (MemoryStore) or in-process (InMemoryStore). */
 export interface MemoryBackend {
   init(): Promise<void>;
+  /**
+   * Open the store for a read-mostly one-shot (`reflect`): no schema work and no embedder call. Rejects when the tables the
+   * service creates are missing; resolves at once for the in-process store (MEM-REFLECT-011).
+   */
+  connect(): Promise<void>;
   remember(kind: MemoryKind, who: string, text: string): Promise<void>;
   recall(query: string, k?: number): Promise<Memory[]>;
   /** Count one chat line for the viewer: upsert by lowercased key, keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
@@ -185,6 +190,16 @@ export class MemoryStore implements MemoryBackend {
       "CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)",
     ).catch((e) => this.log.warn({ e: String(e) }, "hnsw index not created (fine on tiny tables)"));
     this.log.info({ dims: this.dims }, "memory ready");
+  }
+
+  // @spec MEM-REFLECT-011
+  async connect(): Promise<void> {
+    const { rows } = await this.query<{ memories: string | null; meta: string | null }>(
+      "SELECT to_regclass('memories') AS memories, to_regclass('meta') AS meta",
+    );
+    if (!rows[0]?.memories || !rows[0]?.meta) {
+      throw new Error("the memory tables do not exist yet: start the memory service once so it creates them");
+    }
   }
 
   // @spec MEM-STORE-002

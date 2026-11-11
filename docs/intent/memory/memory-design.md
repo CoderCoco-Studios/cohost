@@ -462,8 +462,7 @@ structurally.
   (`MEM-STORE-002`). Migrating or re-embedding an existing table is a separate,
   open decision (Open Questions).
 - `remember` embeds `"<who>: <text>"` and inserts the pgvector literal `[a,b,...]`
-  (`store.ts:109-119`, `toVector` at `store.ts:177`). Kinds: `chat`, `speech`, `self`,
-  `note`; the code only ever writes the first three.
+  (`store.ts:109-119`, `toVector` at `store.ts:177`). Kinds: `chat`, `speech`, `self`.
 - `recall` (`store.ts:122-140`): `k <= 0` returns `[]` with no query; otherwise embeds
   the query and selects `1 - (embedding <=> $1) AS similarity` where `ts < now() -
   interval '2 minutes'` ordered by cosine distance, limit `k`, then filters in JS by
@@ -484,8 +483,7 @@ model-backends LLM-EMBED-005, 006), the same embedder `store=postgres` with
 (MEM-BACKEND-004). Signed buckets make unrelated texts score near or below zero
 and related texts lower than plain word overlap would, so the fake store's recall
 tests choose fixtures whose similarity clears `min_similarity` (default 0.35)
-rather than relying on any overlap scoring positive. The code today still carries
-a hasher of its own (`fake-store.ts:8-17`, unsigned counts) until chunk C8. `recall` mirrors the SQL semantics: 2-minute cutoff against an
+rather than relying on any overlap scoring positive. `recall` mirrors the SQL semantics: 2-minute cutoff against an
 injectable clock, cosine by dot product, sort, top `k`, `min_similarity` filter
 (`fake-store.ts:39-49`). `touchViewer` lowercases the key, counts from 1 and never
 returns notes other than `""` (`fake-store.ts:52-58`). `recentSince` returns rows
@@ -539,12 +537,16 @@ Before closing the store, memory records that a shutdown consolidation run is ow
 ## Reflection pass (`reflect.ts`, `learned.ts`)
 
 A CLI run between streams (`pnpm reflect` which is `tsx src/reflect.ts`, or
-`node services/memory/dist/reflect.js`). It is not a bus region and holds no
-mutex against the live service.
+`node services/memory/dist/reflect.js`). It is not a bus region. It takes the
+consolidation advisory lock (`withConsolidationLock`, the one the service's note
+passes and the `consolidate` one-shot share), so it never overlaps them.
 
 1. `store=memory`: log a warning and return (nothing persists across processes).
-2. `init()` the store (this embeds `"hello"` so the embedder must be reachable),
-   read `meta.last_reflection` (default: before the first row), `recentSince(cursor, 600)`.
+2. `connect()` the store: check that `memories` and `meta` exist, with no DDL and no
+   embedder call, so reflection works while Ollama is down (`MEM-REFLECT-011`).
+   Take the consolidation lock; when another pass holds it, log a warning and
+   return with nothing read or changed (`MEM-REFLECT-012`). Read
+   `meta.last_reflection` (default: before the first row), `recentSince(cursor, 600)`.
 3. Fewer than 5 rows: log and return with the cursor unchanged, so those rows are
    read again, together with the ones that arrive later, in a later pass. The final
    batch of a backlog may be partial: 5 to 599 rows reflect normally.
@@ -561,7 +563,7 @@ mutex against the live service.
    (`config/personality.example.md:26`). The result is saved with
    `savePersonality`, `meta.last_reflection` advances (below), and the block is
    printed (`reflect-run.ts:59-64`).
-7. Failures (including an unreachable embedder at `init`) log `reflect failed` and
+7. Failures (including missing tables at `connect`) log `reflect failed` and
    set `process.exitCode = 1`; the store is closed in `finally` (`reflect-run.ts:26-29`).
 
 The pass itself is `runReflect` in `reflect-run.ts`, with the config, chat provider,

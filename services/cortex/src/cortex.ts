@@ -3,7 +3,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
-import { controlFor } from "@cohost/shared";
+import { controlFor, type Heartbeat } from "@cohost/shared";
 import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
@@ -15,19 +15,26 @@ export interface CortexDeps {
   critic: Module<CriticInput, CriticOutput>;
   log: Logger;
   loadPersonality: () => string;
+  /** The service's heartbeat: a pause shows as its standing detail `paused` (CTX-HEALTH-005). */
+  heartbeat?: Pick<Heartbeat, "setDetail">;
 }
 
-/** The cortex's state and event handling; index.ts wires it to the bus. */
+/** Most viewer notes kept at once (CTX-VIEWER-002). */
+const MAX_VIEWER_NOTES = 50;
+
+/** The cortex's state and event handling; main.ts wires it to the bus. */
 export class Cortex {
   readonly ctx: Context;
   private personality: string;
   /** `control` state and dispatch (shared reader). Paused: keeps reading events but starts no LLM call, reported as "muted" so salience stops waiting. */
   private readonly control: ReturnType<typeof controlFor>;
   private thinking = false;
-  private speakingId: string | undefined;
-  private speakingSince = 0;
-  /** Fires `speaking_timeout_ms` after a line starts, to release a stuck voice sink (CTX-GATE-009). */
-  private speakingTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Lines that have begun and not yet ended, by `brain.say` id: the cortex's own, a reflex's and the operator's. An operator
+   * `say` over a playing line leaves that line here, so its `voice.done` is still reconciled (CTX-SAY-005). Each entry has
+   * `speaking_timeout_ms` to end before it is released as a stuck sink (CTX-GATE-004, CTX-GATE-009).
+   */
+  private pending = new Map<string, { since: number; timer: ReturnType<typeof setTimeout> }>();
   private mood: Mood | undefined;
   /** Who-is-this notes from the memory region, keyed by lowercase user so one viewer's framing never lands on another's reply. */
   private viewerNotes = new Map<string, string>();
@@ -52,7 +59,7 @@ export class Cortex {
       reload_personality: () => { this.personality = d.loadPersonality(); d.log.info("personality reloaded"); },
       // @spec CTX-CTRL-006, CTX-INJ-002
       say: async (c) => { if (c.text) await this.say(c.text, "neutral", undefined, "operator"); },
-    }, { log: d.log });
+    }, { log: d.log, heartbeat: d.heartbeat });
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
@@ -68,13 +75,13 @@ export class Cortex {
         // Our own lines and anyone else's (reflexes, operator) all land in the transcript.
         const d = ev.data as BusEvent<"brain.say">["data"];
         this.ctx.pushSelf(d.text, d.emotion, ev.ts, d.id); // @spec CTX-FALL-001
-        if (ev.source !== "cortex") this.startSpeaking(d.id);
+        if (ev.source !== "cortex") this.startSpeaking(d.id); // @spec CTX-EVT-004
         break;
       }
       // @spec CTX-EVT-005
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
-        if (d.id === this.speakingId) { this.stopSpeaking(); await this.status(this.control.muted || this.control.paused ? "muted" : "idle"); }
+        if (this.endSpeaking(d.id) && this.pending.size === 0) await this.status(this.control.muted || this.control.paused ? "muted" : "idle");
         break;
       }
       // @spec CTX-EVT-008, CTX-FALL-002, CTX-FALL-003, CTX-FALL-007
@@ -117,7 +124,9 @@ export class Cortex {
         const key = d.user.toLowerCase();
         this.viewerNotes.delete(key);
         if (note) this.viewerNotes.set(key, note);
-        if (this.viewerNotes.size > 50) this.viewerNotes.delete(this.viewerNotes.keys().next().value!);
+        if (this.viewerNotes.size > MAX_VIEWER_NOTES) {
+          for (const oldest of this.viewerNotes.keys()) { this.viewerNotes.delete(oldest); break; } // a Map iterates in insertion order
+        }
         break;
       }
       // @spec CTX-EVT-007
@@ -164,7 +173,9 @@ export class Cortex {
       const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch });
       const t0 = Date.now();
       const raw = await llm.chat(messages);
-      let { text, emotion, gesture } = parseReply(raw);
+      const parsed = parseReply(raw);
+      let { text, emotion } = parsed;
+      const { gesture } = parsed;
       // @spec CTX-PROMPT-007
       log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length }, "llm reply");
       log.debug({ raw }, "llm reply text"); // raw text can echo chat and is not yet through the critic
@@ -172,7 +183,7 @@ export class Cortex {
       if (!text || text.length < 2) { await this.status("idle"); return; }
       // Inhibition: let the critic veto or touch up the line before it's spoken.
       // @spec CTX-CRITIC-001, CTX-CRITIC-002, CTX-CRITIC-003
-      const verdict = await critic.run({ text, emotion: emotion as Emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+      const verdict = await critic.run({ text, emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
       if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await this.status("idle"); return; }
       if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
       if (verdict.emotion) emotion = verdict.emotion;
@@ -183,7 +194,7 @@ export class Cortex {
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
       // @spec CTX-INJ-001
       // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
-      await this.say(text, emotion as Emotion, gesture, focus.reason, propagatedFlags(focus), () => {
+      await this.say(text, emotion, gesture, focus.reason, propagatedFlags(focus), () => {
         if (who && this.viewerNotes.get(who) === viewerNote) this.viewerNotes.delete(who);
         if (carried && this.glitch === carried) this.glitch = undefined; // a newer glitch stays pending (CTX-FALL-005)
       });
@@ -205,32 +216,38 @@ export class Cortex {
   }
 
   // @spec CTX-GATE-004
-  /** Someone's line is still playing (with the stuck-sink safety valve). */
+  /** Some line is still pending on the voice (with the stuck-sink safety valve per line). */
   private voiceBusy(): boolean {
-    if (this.speakingId && performance.now() - this.speakingSince > this.d.cfg.brain.cortex.speaking_timeout_ms) this.stopSpeaking();
-    return !!this.speakingId;
+    const limit = this.d.cfg.brain.cortex.speaking_timeout_ms;
+    for (const [id, line] of this.pending) if (performance.now() - line.since > limit) this.endSpeaking(id); // monotonic: a stepped wall clock must not move the valve
+    return this.pending.size > 0;
   }
 
-  /** A line began playing: remember it and arm the stuck-sink release. */
+  /** A line began playing: remember it and arm the stuck-sink release. Lines already pending stay pending. */
   private startSpeaking(id: string): void {
-    this.stopSpeaking();
-    this.speakingId = id;
-    this.speakingSince = performance.now(); // monotonic: a stepped wall clock must not move the valve
+    this.endSpeaking(id); // the same id again restarts its valve
     // @spec CTX-GATE-009
-    this.speakingTimer = setTimeout(() => {
-      this.speakingTimer = undefined;
-      if (this.speakingId !== id) return;
-      this.speakingId = undefined;
-      // A think in flight ends with its own status; don't contradict it.
-      if (!this.thinking) void this.statusLogged(this.control.muted || this.control.paused ? "muted" : "idle");
+    const timer = setTimeout(() => {
+      if (!this.endSpeaking(id)) return;
+      // A think in flight ends with its own status; another pending line will report on its own end.
+      if (!this.thinking && this.pending.size === 0) void this.statusLogged(this.control.muted || this.control.paused ? "muted" : "idle");
     }, this.d.cfg.brain.cortex.speaking_timeout_ms);
-    this.speakingTimer.unref();
+    timer.unref();
+    this.pending.set(id, { since: performance.now(), timer });
   }
 
-  private stopSpeaking(): void {
-    this.speakingId = undefined;
-    if (this.speakingTimer) clearTimeout(this.speakingTimer);
-    this.speakingTimer = undefined;
+  /** Release every pending line's valve timer (service shutdown). */
+  stop(): void {
+    for (const id of [...this.pending.keys()]) this.endSpeaking(id);
+  }
+
+  /** A line ended (voice.done or its valve); false when it was not pending. */
+  private endSpeaking(id: string): boolean {
+    const line = this.pending.get(id);
+    if (!line) return false;
+    clearTimeout(line.timer);
+    this.pending.delete(id);
+    return true;
   }
 
   // @spec CTX-RECALL-002, CTX-RECALL-003, CTX-RECALL-004

@@ -34,7 +34,7 @@ Observed principles:
   startup and reported `degraded`.
 - All logic lives in the `Cortex` class (`cortex.ts`) with the bus, LLM, critic,
   logger and personality loader injected (`CortexDeps`, `cortex.ts:10-17`);
-  `index.ts` is only wiring.
+  `index.ts` and `main.ts` are only wiring.
 
 ## Event wiring
 
@@ -45,7 +45,7 @@ once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallba
 line (`CTX-EVT-008`). The service publishes `brain.status`,
 `brain.say`, `memory.recall.request` and `memory.notes.request`.
 
-Subscribing happens only after the model backend answered `ping()` (`index.ts:40`).
+Subscribing happens only after the model backend answered `ping()` (`main.ts`).
 Start mode `latest` resets the `cortex` group to the stream's newest entry on every
 start (`CTX-EVT-001`), so nothing published while the cortex was down or waiting
 for its backend is delivered: a stale `attention.focus` must never trigger an LLM
@@ -63,8 +63,8 @@ the caller no signal when it has, so readiness cannot hang off it.
 | Event in | Handling | Evidence |
 |----------|----------|----------|
 | `chat.message`, `speech.heard`, `vision.summary` | `ctx.push(ev)` into the `Context` window (`brain.working_memory_events`, default 24) | `cortex.ts:43-47`, `cortex.ts:37` |
-| `brain.say` (any source) | `ctx.pushSelf(text, emotion)`; if `ev.source !== "cortex"` also record `speakingId = d.id` and the time and arm the speaking-timeout release (`startSpeaking`) | `cortex.ts:49-55`, `cortex.ts:184-197` |
-| `voice.done` | if `d.id === speakingId`: clear it, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
+| `brain.say` (any source) | `ctx.pushSelf(text, emotion)`; if `ev.source !== "cortex"` also add `d.id` to the pending lines with the time and arm its speaking-timeout release (`startSpeaking`) | `cortex.ts:49-55`, `cortex.ts:184-197` |
+| `voice.done` | if `d.id` is a pending line: end it; once no line is pending, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
 | `voice.failed` | with `fallback`: mark the line's transcript entry and keep a pending glitch for the next reply (see Fallback acknowledgement); without `fallback`: nothing | `CTX-FALL-002`, `CTX-FALL-003`, `CTX-FALL-007` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
@@ -75,9 +75,11 @@ the caller no signal when it has, so readiness cannot hang off it.
 
 Own versus other lines are distinguished purely by the bus source string:
 `ev.source !== "cortex"` (`cortex.ts:54`) depends on `new Bus("cortex", ...)`
-(`index.ts:25`). The cortex's own line sets `speakingId` inside `say()` before it
-publishes (`cortex.ts:221-227`); lines from salience reflexes or the operator set it
-on arrival.
+(`main.ts`). The cortex's own line is added to the pending lines inside `say()` before
+it publishes; lines from salience reflexes or the operator are added on arrival. Pending
+lines are a map by `brain.say` id, not a single id: a line stays pending until its own
+`voice.done` or its valve, so an operator `say` over a playing line does not forget it
+(`CTX-SAY-005`).
 
 ## The think pipeline
 
@@ -126,16 +128,16 @@ on arrival.
 10. Any thrown error is logged `think failed` and publishes `idle` (publish failure
     swallowed, `cortex.ts:159-161`).
 
-`voiceBusy()` also resets `speakingId` once `speaking_timeout_ms` (default 20000)
-has elapsed (`cortex.ts:178-181`): a stuck voice sink releases the cortex. The
+`voiceBusy()` also ends every pending line once `speaking_timeout_ms` (default 20000)
+has elapsed since it began (`cortex.ts`): a stuck voice sink releases the cortex. The
 elapsed time is measured on the monotonic clock (`performance.now`), so a wall
 clock stepped forward by NTP or VM time sync does not release a playing line early.
 A timer
-armed when a line starts (`startSpeaking`, `cortex.ts:184-197`; cleared by the
-matching `voice.done` or the next line, `cortex.ts:199-203`) publishes `idle` (or
-`muted` when muted or paused) when the timeout elapses, so salience and the
-dashboard see the release (`CTX-GATE-009`); it stays silent while a think is in
-flight, which ends with a status of its own, and it schedules no think.
+armed per line when it starts (`startSpeaking`; cleared by that line's `voice.done`)
+publishes `idle` (or `muted` when muted or paused) when the timeout elapses and no other
+line is pending, so salience and the dashboard see the release (`CTX-GATE-009`); it
+stays silent while a think is in flight, which ends with a status of its own, and it
+schedules no think.
 
 ### Prompt and reply (`prompt.ts`)
 
@@ -233,7 +235,8 @@ back to the rules result (pass-through) inside `Module.run`
 (`packages/modules/src/index.ts:53-63`), so the critic can never block speech by
 failing at run time. A critic configuration the `Module` constructor rejects (for
 example `kind: http` with an empty `url`, `packages/modules/src/index.ts:41-48`)
-throws while `index.ts:33` builds the critic, before `main()` runs.
+throws while `cortexMain` builds the critic, inside the bootstrap's handler, so it
+takes the `fatal` path and exits 1 (`CTX-START-005`).
 
 ## Control commands and status machine
 
@@ -248,7 +251,7 @@ throws while `index.ts:33` builds the critic, before `main()` runs.
 | `mute` / `unmute` | `muted` flag; `unmute` publishes `muted` if still paused, else `idle` | `cortex.ts:101-102` |
 | `forget_context` | clear the `Context` event window, the last vision summary and viewer notes; the mood and pending recalls are kept (`CTX-CTRL-004`; the cortex resets `ctx.lastVision` itself rather than relying on `Context.clear`) | `cortex.ts:104`, `packages/working-memory/src/index.ts:81-84` |
 | `reload_personality` | re-read via injected `loadPersonality` | `cortex.ts:106` |
-| `say` with `text` | operator override: `say(text, "neutral", undefined, "operator")` with no mute, pause or busy check, and no injection flags; overwrites `speakingId` | `cortex.ts:108`, `cortex.ts:221-227` |
+| `say` with `text` | operator override: `say(text, "neutral", undefined, "operator")` with no mute, pause or busy check, and no injection flags; leaves any pending line pending (`CTX-SAY-005`) | `cortex.ts:108`, `cortex.ts:221-227` |
 
 These are all seven `control` commands in the bus schema
 (`packages/bus/src/events.ts:177`). State summary: the cortex reports `muted` for
@@ -258,20 +261,21 @@ until `speaking_timeout_ms` releases it (`CTX-GATE-009`).
 
 ## Startup, health and shutdown
 
-`index.ts:23-34` builds config, `Bus("cortex")`, the chat provider
-(`createChatProvider(cfg.llm)`), the critic and the `Cortex`. The heartbeat starts
-immediately with `cortexHealth(() => llmOk, cfg.llm.provider, () => llmProbed)`
-(`index.ts:30`); the `Cortex` is given the provider wrapped by `trackLlm`
-(`index.ts:32`). `main()`:
+`index.ts` calls `runCortex()` (`main.ts`), which runs `cortexMain` on the shared
+bootstrap `runService`: logger, configuration, `Bus("cortex")` and the heartbeat in
+`starting` come from the bootstrap, whose `health` reads the model backend state
+`cortexMain` keeps current (`cortexHealth(() => llmOk, cfg.llm.provider, () => llmProbed)`).
+`cortexMain` then builds the chat provider (`createChatProvider(cfg.llm)`), wrapped by
+`trackLlm`, the critic and the `Cortex`, and:
 
-1. Warn if the provider is `mock` (`index.ts:38`).
-2. `waitForLlm` (`startup.ts:22-33`): loop `llm.ping()`; every result goes to
+1. Warns if the provider is `mock` (`main.ts`).
+2. `waitForLlm` (`startup.ts`): loop `llm.ping()`; every result goes to
    `setOk` (so `llmOk`); each miss logs a warning and calls
    `heartbeat.degraded("model backend unreachable (name/model): lastError")`; sleep 3 s
    (`retryMs`); never throws, never gives up. The mock provider answers at once.
-3. `startCortex` (`startup.ts:55-60`): publish `brain.status idle`, await
+3. `startCortex` (`startup.ts`): publish `brain.status idle`, await
    `bus.resetGroup("cortex")`, start the subscription, `heartbeat.ready()`
-   (`CTX-START-003`); then log `cortex online` (`index.ts:41-42`).
+   (`CTX-START-003`); then log `cortex online`.
 
 Health (`health.ts:9-15`): service `cortex`, mode `mock` if the provider is `mock`
 else `live`, deps `{llm: ok|down|n/a}` read from `llmOk` and `llmProbed`. After
@@ -284,9 +288,11 @@ intended marker is a standing heartbeat `detail` (`CTX-HEALTH-004`); the heartbe
 API clears `detail` on `ready()` and `HeartbeatSpec` has no `detail`
 (`packages/bus/src/heartbeat.ts`), so the text waits on a bus change.
 
-Shutdown: `onShutdown` stops the bus (`index.ts:47`); the `stopping` heartbeat is the
-heartbeat package's job. Errors thrown inside `main()` log `fatal` and exit 1
-(`index.ts:46`).
+Shutdown: the bootstrap runs the teardown steps (`Cortex.stop` releases the line timers),
+then stops the bus; the `stopping` heartbeat is the heartbeat module's job. A pause also
+shows as the heartbeat `detail` `paused` (`CTX-HEALTH-005`). Errors thrown inside
+`cortexMain` log `fatal` and exit 1; a configuration that does not load logs the
+loader's message and exits 1 (`CTX-START-004`).
 
 Config keys read: `brain.working_memory_events`, `brain.memory.recall_k`,
 `brain.cortex.{recall_timeout_ms, speaking_timeout_ms, critic.*}`, `cohost.{name,
@@ -298,6 +304,9 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
 | Do not await `attention.focus` | `void this.think()` | await inside the handler | Comment `cortex.ts:65-66`: "the LLM call must not block the subscription loop, or the memory reply we're waiting on could never be delivered"; test `cortex.region.test.ts:97` |
+| Pending lines | A map of lines by id, each with its own valve and timer; idle is published when the map empties | A single speaking id that a newer line overwrites | Owner decision 2026-11-11: an operator `say` over a playing line must not make the cortex forget it, so each line's `voice.done` is reconciled and the cortex reports idle only when nothing is playing. Overlap itself is voice's documented non-exclusivity. |
+| Service construction | Provider, critic and `Cortex` are built inside `cortexMain` under `runService` | Build them at module load | A critic configuration the hook rejects must fail through the `fatal` path with the other startup errors, not as an uncaught exception at import (`CTX-START-005`). |
+| Reply emotion type | `parseReply` returns an `Emotion`, narrowing the model's tag against the emotion list | A string cast to `Emotion` at each use | The cast hid the one place where the value is checked. |
 | Recall over the bus with timeout | request/reply with `recall_timeout_ms`, proceed with `[]` | call Postgres directly; no timeout | Only memory touches Postgres and the cortex answers without recall when memory is down or slow: comment `index.ts:11-13`, `config/config.example.yaml:115`, commit `969f6d7` ("cortex: ... answers without recall if memory doesn't reply in time") |
 | One thought at a time | `thinking` flag plus status echo | queue focuses; cancel in-flight | Status echo: comment `cortex.ts:117` ("Salience assumes we're busy once it fires, so every path out of here reports a status"). Single flight instead of a queue: a queued focus would be answered after the conversation had moved on, and salience re-decides on fresh context every tick once the cortex reports idle, so a dropped focus costs nothing; cancelling the in-flight call would waste the model work already spent. Test `cortex.region.test.ts:106` |
 | Own vs other `brain.say` | compare `ev.source` to `"cortex"` | tag lines with an origin field | The bus stamps every event with the publishing service's name (`new Bus("cortex")`), so no extra field is needed. Cortex marks its own lines speaking at publish time (`say()`), so only another source's line (for example a salience reflex) starts the speaking state from the echo. This relies on each service using its own name as the bus source; `cortex.ts:54` |
@@ -336,25 +345,8 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
    runtime model health, tag/stop ownership) are recorded in the Decisions table and
    the spec lines they cite.
 
-### Deferred (observed, unexplained, or technical debt)
-1. **Operator `say` and a pending line.** The override overwrites `speakingId`
-   (`cortex.ts:184-197`, `cortex.ts:221-227`), so a line it interrupts gets no `voice.done`
-   reconciliation in the cortex.
-2. **Cast and mutability smells.** `emotion` is a `string` from `parseReply` cast to
-   `Emotion` (`cortex.ts:145,156`); `let { text, emotion, gesture }` never reassigns
-   `gesture`; `viewerNotes.keys().next().value!` uses a non-null assertion
-   (`cortex.ts:86`); the 25-message "regular" threshold is a literal (`cortex.ts:80`),
-   which `CTX-VIEWER-001` replaces with memory's `regular` flag.
-
-
-3. **Critic misconfiguration fails outside `main()`.** A rejected critic config
-   throws while the module is constructed (`index.ts:33`,
-   `packages/modules/src/index.ts:41-48`), so it surfaces as an uncaught exception at
-   import rather than through `CTX-START-004`'s `fatal` log; no spec line covers it.
-4. **Test coverage.** `index.ts` itself is untested (the startup order and the
-   subscription are tested through `startCortex`); `cortex.test.ts` only covers
-   `parseReply`; the 50-entry cap, the post-think `muted` path with pause, the
-   `recall_k <= 0` skip and the operator-`say` gate bypass have no direct assertion.
+### Deferred
+None.
 
 ## References
 

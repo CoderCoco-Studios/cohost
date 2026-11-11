@@ -261,7 +261,7 @@ function loadShipped(env: Record<string, string> = {}) {
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
@@ -283,13 +283,14 @@ test("isolation presets: unset env equals the live defaults", () => {
   assert.equal(cfg.chat.source, "twitch");
   assert.equal(cfg.chat.fake.interval_ms, 8000);
   assert.equal(cfg.ears.source, "discord");
+  assert.equal(cfg.mouth.outputs.discord.enabled, true);
 });
 
 // @spec CFG-ISO-004
 test("isolation presets: each env var flips its key without editing config.yaml", () => {
   const cfg = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
-    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off",
+    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off", MOUTH_DISCORD_ENABLED: "false",
   });
   assert.equal(cfg.llm.provider, "mock");
   assert.equal(cfg.brain.memory.store, "memory");
@@ -298,6 +299,7 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   assert.equal(cfg.chat.source, "fake");
   assert.equal(cfg.vision.enabled, true);
   assert.equal(cfg.ears.source, "off");
+  assert.equal(cfg.mouth.outputs.discord.enabled, false);
 });
 
 // @spec CFG-ISO-001, CFG-ISO-003
@@ -305,8 +307,8 @@ test("new keys default to live backends when omitted; bad enum values are reject
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: { discord: {} }, dashboard: {}, brain: {} };
   const ok = ConfigSchema.parse(base);
-  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, ok.ears.source],
-    ["kokoro", "postgres", "ollama", "twitch", "discord"]);
+  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, ok.ears.source, ok.mouth.outputs.discord.enabled],
+    ["kokoro", "postgres", "ollama", "twitch", "discord", true]);
   const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
   assert.equal(bad.success, false);
   assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
@@ -599,6 +601,74 @@ test("ears.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects ne
   assert.equal(with_({ min_interval_ms: 1.5 }).success, false);
 });
 
+// @spec CFG-SCH-018
+test("mouth.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects negatives and fractions", () => {
+  const with_ = (fallback?: unknown) => ConfigSchema.safeParse({ ...baseCfg(), ...(fallback === undefined ? {} : { mouth: { fallback } }) });
+  assert.equal(with_().data!.mouth.fallback.min_interval_ms, 20000);
+  assert.equal(with_({}).data!.mouth.fallback.min_interval_ms, 20000);
+  assert.equal(with_({ min_interval_ms: 0 }).data!.mouth.fallback.min_interval_ms, 0);
+  assert.equal(with_({ min_interval_ms: 5000 }).data!.mouth.fallback.min_interval_ms, 5000);
+  assert.equal(with_({ min_interval_ms: -1 }).success, false);
+  assert.equal(with_({ min_interval_ms: 1.5 }).success, false);
+});
+
+// @spec CFG-SCH-020
+test("the mouth section is optional: absent or partial, it loads with the Discord output on, empty target, gain 0 and interval 20000", () => {
+  const absent = ConfigSchema.safeParse(baseCfg());
+  assert.ok(absent.success);
+  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 } }, fallback: { min_interval_ms: 20000 } });
+  for (const partial of [{}, { outputs: {} }, { outputs: { discord: {} } }, { fallback: {} }]) {
+    const r = ConfigSchema.safeParse({ ...baseCfg(), mouth: partial });
+    assert.ok(r.success, JSON.stringify(partial));
+    assert.deepEqual(r.data.mouth, absent.data!.mouth, JSON.stringify(partial));
+  }
+  const set = ConfigSchema.parse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 } } } });
+  assert.deepEqual(set.mouth.outputs.discord, { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 });
+});
+
+// @spec CFG-SCH-020
+test("mouth.outputs.discord.gain_db accepts -40 to 12 inclusive and a failure names the key outside it", () => {
+  const gain = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { discord: { gain_db: v } } } });
+  assert.equal(gain(-40).success, true);
+  assert.equal(gain(12).success, true);
+  assert.equal(gain(0).success, true);
+  for (const bad of [-40.1, 12.1, 100, "loud", null]) {
+    const r = gain(bad);
+    assert.equal(r.success, false, String(bad));
+    assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === "mouth.outputs.discord.gain_db"), String(bad));
+  }
+  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: "yes" } } } }).success, false);
+});
+
+// @spec CFG-USR-011
+test("the shipped config.example.yaml routes the co-host's voice to the Discord channel she listens to, at gain 0, with comments", () => {
+  const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  assert.match(text, /enabled:\s*\$\{MOUTH_DISCORD_ENABLED:-true\}/);
+  const mouthBlock = text.slice(text.indexOf("\nmouth:"));
+  assert.match(mouthBlock, /guild_id:\s*"\$\{DISCORD_GUILD_ID\}"/);
+  assert.match(mouthBlock, /voice_channel_id:\s*"\$\{DISCORD_VOICE_CHANNEL_ID\}"/);
+  assert.match(mouthBlock, /gain_db:\s*0\b[^\n]*#/, "gain_db carries a comment");
+  assert.match(mouthBlock, /enabled:[^\n]*#/, "enabled carries a comment");
+  const cfg = loadShipped({ DISCORD_GUILD_ID: "g-9", DISCORD_VOICE_CHANNEL_ID: "vc-9" });
+  assert.deepEqual(cfg.mouth.outputs.discord, { enabled: true, guild_id: "g-9", voice_channel_id: "vc-9", gain_db: 0 });
+  assert.equal(cfg.mouth.outputs.discord.guild_id, cfg.ears.discord.guild_id);
+  assert.equal(cfg.mouth.outputs.discord.voice_channel_id, cfg.ears.discord.voice_channel_id);
+});
+
+// @spec CFG-USR-011
+test("the shipped example has no unknown mouth keys: loading it warns about none", () => {
+  const dir = sandbox();
+  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
+  copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
+  const saved = { ...process.env };
+  try {
+    const warnings = captureWarnings(() => { loadConfig(true); });
+    assert.deepEqual(warnings.filter((w) => w.includes("mouth")), []);
+  } finally {
+    process.env = saved;
+  }
+});
+
 // @spec CFG-SCH-017
 test("voice.fallback.lines defaults to an empty list, accepts duplicates, and rejects blank or over-long entries", () => {
   const with_ = (fallback?: unknown) => ConfigSchema.safeParse({ ...baseCfg(), voice: fallback === undefined ? {} : { fallback } });
@@ -614,7 +684,7 @@ test("voice.fallback.lines defaults to an empty list, accepts duplicates, and re
 });
 
 // @spec CFG-USR-009
-test("the shipped config.example.yaml carries a starter fallback list of at least 12 lines, none naming the persona, with an edit comment, and ears.fallback.min_interval_ms 20000", () => {
+test("the shipped config.example.yaml carries a starter fallback list of at least 12 lines, none naming the persona, with an edit comment, and mouth.fallback.min_interval_ms 20000", () => {
   const cfg = loadShipped();
   const lines = cfg.voice.fallback.lines;
   assert.ok(lines.length >= 12, `${lines.length} starter lines`);
@@ -626,5 +696,6 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   assert.match(text, /#[^\n]*[Ee]dit[^\n]*\n\s*lines:/, "a comment telling the owner to edit the list sits above it");
   assert.match(text, /min_interval_ms:\s*20000\b/);
-  assert.equal(cfg.ears.fallback.min_interval_ms, 20000);
+  assert.equal(cfg.mouth.fallback.min_interval_ms, 20000);
+  assert.match(text, /mouth:[\s\S]*fallback:\s*\n\s*min_interval_ms:\s*20000\b/);
 });

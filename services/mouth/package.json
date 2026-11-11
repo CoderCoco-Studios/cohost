@@ -1,0 +1,27 @@
+{
+  "name": "@cohost/mouth",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*",
+    "@cohost/shared": "workspace:*",
+    "@discordjs/voice": "^0.19.2",
+    "@snazzah/davey": "^0.1.12",
+    "discord.js": "^14.27.0",
+    "libsodium-wrappers": "^0.7.15",
+    "opusscript": "^0.0.8",
+    "prism-media": "^1.3.5"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
+  }
+}

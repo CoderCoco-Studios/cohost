@@ -459,8 +459,7 @@ structurally.
   `DimensionMismatchError` (`store.ts:33-42`, code `MEMORY_DIM_MISMATCH`) naming
   both when they differ. Startup does not retry that error, so the service ends in
   its fatal exit instead of running with every write and recall failing
-  (`MEM-STORE-002`). Migrating or re-embedding an existing table is a separate,
-  open decision (Open Questions).
+  (`MEM-STORE-002`). The operator's way out is the `reembed` command (Re-embedding).
 - `remember` embeds `"<who>: <text>"` and inserts the pgvector literal `[a,b,...]`
   (`store.ts:109-119`, `toVector` at `store.ts:177`). Kinds: `chat`, `speech`, `self`.
 - `recall` (`store.ts:122-140`): `k <= 0` returns `[]` with no query; otherwise embeds
@@ -489,6 +488,31 @@ injectable clock, cosine by dot product, sort, top `k`, `min_similarity` filter
 returns notes other than `""` (`fake-store.ts:52-58`). `recentSince` returns rows
 after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 `meta` is a `Map` (`fake-store.ts:61-71`).
+
+## Re-embedding (`reembed.ts`, `reembed-run.ts`)
+
+After the owner changes the embedder to one with another vector size, `init` refuses the
+existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
+`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `tools` profile, or
+`cohostctl reembed`) is the way forward; run it with the memory service stopped.
+
+- `runReembed` (`reembed-run.ts`) takes the consolidation lock (`MEM-REEMBED-004`), calls
+  `MemoryStore.reembed`, logs per-table progress and a summary, and closes the store.
+  With `store=memory` it only warns (`MEM-REEMBED-005`); a failure logs `reembed failed` and
+  sets exit code 1 (`MEM-REEMBED-006`).
+- `MemoryStore.reembed` probes the embedder's dimension, then for each of `memories`,
+  `viewer_notes` and `viewer_note_deletions` that exists and whose `embedding` column has another
+  dimension: adds a staging column `embedding_new vector(N)` (dropping a leftover one of another
+  dimension), embeds the rows that still have no new vector in pages of 100 (`memories` from
+  `<who>: <text>`, the note tables from `text`, the text the write path embeds) and stores each
+  vector as it is made. Only when every row of every table is done does one transaction drop the old
+  columns and rename the staging ones, after which the hnsw index on `memories` is recreated
+  (a failure is a warning, as in `init`). Nothing but the vectors changes (`MEM-REEMBED-001`,
+  `MEM-REEMBED-003`). When every column already has the right dimension it does nothing
+  (`MEM-REEMBED-002`).
+- The old columns keep serving until the swap, so a failed or killed run is harmless and a rerun
+  continues where it stopped. The lock is a session advisory lock, so a crashed run never leaves
+  it held.
 
 ## Startup, health and shutdown
 
@@ -598,6 +622,13 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Recency exclusion | `ts < now() - 2 minutes` | include everything | Keeps the live conversation, which the cortex already has in its working-memory transcript, out of recalled memories, so a reply does not "remember" what was said a moment ago. The window is a fixed time span while the cortex window is a count of events (`brain.working_memory_events`), so the two are an approximation of each other, not an exact match; `store.ts:129`, `fake-store.ts:42` |
 | Write error handling | `remember`/`recall` swallow and warn; a failed `touchViewer` is caught, logged, and the mention is still remembered | throw everywhere; let the bus drop the whole event | owner decision 2026-11-01: the show goes on without memory, and a viewer-table error must not lose the memory itself; `store.ts:116-118,135-138`, `MEM-VIEWER-006` |
 | Vector dimension mismatch | Fail `init` loudly, no retry, fatal exit | silently keep running; report degraded; migrate or re-embed | owner decision 2026-11-01: a mismatch makes every write and recall fail while health says `ok`, so it must stop startup; migration is decided separately; `MEM-STORE-002` |
+| Moving to a new vector dimension | A `reembed` one-shot (also `cohostctl reembed`) that stages new vectors in `embedding_new` and swaps every table's column in one transaction | a table per model; drop and start over; migrate lazily inside the running service | The stored text is the source of truth and the owner keeps memories and viewer notes across an embedder change; staging keeps the old vectors serving until every row is done, so an interrupted run loses nothing. A table per model would split recall across vector spaces that cannot be compared; starting over throws away notes the owner curated; a running service would race live writes with half-migrated columns. The dimension check at `init` stays fatal (`MEM-STORE-002`). `MEM-REEMBED-*` |
+| Reflection's access to the store | `connect()` (tables exist, no DDL, no embedder) and the consolidation lock | `init()` with its embed probe; no lock | Reflection reads rows and a cursor and calls the chat model, so an unreachable embedder must not stop it; the lock keeps it from overlapping a note pass or another reflection. `MEM-REFLECT-011`, `MEM-REFLECT-012` |
+| Unused kind `note` | Removed from `MemoryKind` | keep it declared | Nothing wrote it; the stored kinds are `chat`, `speech` and `self`. |
+| Recall `k` validation | Left to the bus schema, which rejects `k <= 0` (`packages/bus/src/events.ts`); the stores keep their `k <= 0` short-circuit for `recall_k: 0` from config | validate again in the handler | A second check would restate the schema; `recall_k: 0` never reaches the store as a request because the cortex sends none. |
+| Voice speakers and viewer notes | Voice speakers get no notes; no link between a Discord voice speaker and a chat viewer | map a Discord user id to a viewer identity | Owner decision: out of scope. A mapping needs an identity source the system does not have, and notes about people should come from lines they addressed to the co-host in chat. |
+| Consumer-group readiness | The bus's `onReady` subscription option (event-bus); startup waits for every group's `onReady` before `ready` | wait with a timer; `resetGroup` first | Implemented in the shared foundation; `MEM-START-005`. |
+| Real-Postgres coverage | The store contract and the Postgres-specific checks run against pgvector in CI (`COHOST_TEST_DATABASE_URL`); they skip with a message where no database is configured | recorded SQL only | The `atttypmod` dimension query, the `(ts, id)` row comparison and `listViewers` are SQL the fakes cannot check. |
 | Restart start mode | `resume` for both groups: the backlog published while memory was down is stored | `latest` (reset to `$` each start) like every other subscriber | owner decision 2026-11-01: memory is the durable region and wants the backlog; delivery is still at-most-once across a crash (event-bus); `MEM-EVT-001` |
 | Mute and pause | Memory never reads `control`; it records while the co-host is muted | honour mute/pause | owner decision 2026-11-01: only the services that act on mute and pause (cortex, salience) see them |
 | Viewer count | A new viewer row starts at `msg_count` 1 in both stores | keep Postgres at 0 | owner decision 2026-11-01: `isNew` once and `msgCount` equal to messages seen, matching the in-memory store; `MEM-VIEWER-001` |

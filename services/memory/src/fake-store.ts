@@ -1,7 +1,7 @@
 import type { Config } from "@cohost/config";
 import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
-import type { Memory, MemoryKind, MemoryBackend, ViewerTouch } from "./store.js";
+import type { Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
   clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
   type DeletionRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
@@ -32,6 +32,9 @@ export class InMemoryStore implements MemoryBackend {
   async init(): Promise<void> {}
 
   async connect(): Promise<void> {}
+
+  /** Nothing persists, so nothing is stored at another dimension. */
+  async reembed(): Promise<ReembedResult> { return { dims: (await embedder.embed("hello")).length, tables: {} }; }
 
   async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
     this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: await hashEmbed(`${who}: ${text}`) });

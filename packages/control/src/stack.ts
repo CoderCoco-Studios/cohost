@@ -45,7 +45,7 @@ export interface StackControllerOptions {
 }
 
 /** Containers that run to completion; they are never waited for and never count as down or degraded. */
-export const ONE_SHOTS: readonly string[] = ["models", "consolidate"];
+export const ONE_SHOTS: readonly string[] = ["models", "consolidate", "reembed"];
 
 export const LAUNCH_TIMEOUT_MS = 30 * 60_000;
 export const READY_TIMEOUT_MS = 180_000;

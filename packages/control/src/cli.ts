@@ -5,6 +5,7 @@
  *   cohostctl status [service]
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
  *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
+ *   cohostctl reembed         one-shot re-embedding of stored memory vectors after an embedder change (the compose `reembed` job)
  *   cohostctl launch          bring the whole stack up and wait until it is ready (never opens the bus)
  *   cohostctl stop-all        stop every container of the stack, never removing any (never opens the bus)
  *   cohostctl restart-all     restart every running application service
@@ -26,6 +27,7 @@ export type CliCommand =
   | { cmd: "status"; id?: string }
   | { cmd: "start" | "stop" | "restart"; id: string; opts: ActionOptions }
   | { cmd: "consolidate" }
+  | { cmd: "reembed" }
   | { cmd: "launch" }
   | { cmd: "stop-all" }
   | { cmd: "restart-all" };
@@ -34,6 +36,7 @@ export const USAGE = `usage:
   cohostctl status [service]
   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
   cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)
+  cohostctl reembed            re-embed stored memory vectors after changing the embedder (exit 0 ok, 1 failed)
   cohostctl launch             bring the whole stack up and wait until it is ready
   cohostctl stop-all           stop every container of the stack (nothing is removed)
   cohostctl restart-all        restart every running application service`;
@@ -60,9 +63,9 @@ export function parseCli(argv: readonly string[]): CliCommand {
     if (mode !== undefined || isolated) throw new UsageError("status takes no options");
     return { cmd, ...(id ? { id } : {}) };
   }
-  if (cmd === "consolidate") {
-    if (id) throw new UsageError("consolidate takes no arguments");
-    if (mode !== undefined || isolated) throw new UsageError("consolidate takes no options");
+  if (cmd === "consolidate" || cmd === "reembed") {
+    if (id) throw new UsageError(`${cmd} takes no arguments`);
+    if (mode !== undefined || isolated) throw new UsageError(`${cmd} takes no options`);
     return { cmd };
   }
   if (cmd === "launch" || cmd === "stop-all" || cmd === "restart-all") {
@@ -82,6 +85,7 @@ export interface CliDeps {
   controller: Pick<ServiceController, "start" | "stop" | "restart">;
   health: () => Promise<ServiceHealth[]>;
   consolidate: () => Promise<RuntimeResult>;
+  reembed: () => Promise<RuntimeResult>;
   /** The whole-stack actions; `restartAll` runs through `controller`. */
   stack: {
     launch(onPhase: (phase: string) => void): Promise<StackResult>;
@@ -114,6 +118,12 @@ export async function runCli(argv: readonly string[], d: CliDeps): Promise<numbe
     const r = await d.consolidate();
     if (!r.ok) { d.err(`consolidate failed: ${r.detail ?? "unknown error"}`); return 1; }
     d.out(`consolidate: ok${r.detail ? ` (${r.detail})` : ""}`);
+    return 0;
+  }
+  if (c.cmd === "reembed") {
+    const r = await d.reembed();
+    if (!r.ok) { d.err(`reembed failed: ${r.detail ?? "unknown error"}`); return 1; }
+    d.out(`reembed: ok${r.detail ? ` (${r.detail})` : ""}`);
     return 0;
   }
   if (c.cmd === "launch") {
@@ -181,7 +191,7 @@ async function main(): Promise<number> {
       stopAll: () => new StackController().stopAll(),
       restartAll: () => new StackController().restartAll(controller),
     };
-    return await runCli(process.argv.slice(2), { controller, health, consolidate: () => runtime.consolidate(), stack, out: console.log, err: console.error });
+    return await runCli(process.argv.slice(2), { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, out: console.log, err: console.error });
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;

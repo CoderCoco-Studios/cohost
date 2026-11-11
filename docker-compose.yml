@@ -9,6 +9,7 @@
 #   docker compose --profile mouth up -d # add the Discord speaker (her own bot)
 #   docker compose --profile eyes up -d  # add OBS vision
 #   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
+#   docker compose run --rm reembed      # one-shot vector migration after changing the embedder (memory stopped first)
 
 x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
   restart: unless-stopped
@@ -162,6 +163,20 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
     command: ["node", "services/memory/dist/consolidate.js"]
+    restart: "no"
+    profiles: [tools]  # @spec DEPLOY-COMPOSE-004
+    healthcheck: { disable: true }  # no heartbeat to check: the one-shot never joins the bus
+    depends_on:
+      postgres: { condition: service_healthy }
+      ollama: { condition: service_started }
+
+  # One-shot vector migration (the memory image, `reembed` entry point): after changing the embedder to one with another
+  # vector size the memory service refuses to start ("memories table has vector(N)"); stop it, then run
+  # `docker compose run --rm reembed` (or `cohostctl reembed`) to re-embed every stored row. Profile `tools`, no redis.
+  reembed:  # @spec DEPLOY-COMPOSE-021
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: memory } }
+    command: ["node", "services/memory/dist/reembed.js"]
     restart: "no"
     profiles: [tools]  # @spec DEPLOY-COMPOSE-004
     healthcheck: { disable: true }  # no heartbeat to check: the one-shot never joins the bus

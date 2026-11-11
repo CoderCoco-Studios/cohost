@@ -8,7 +8,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Viewer notes: chunks 1 to 4 built (memory core, live capture, cortex surfacing, owner operations)
 
-Design: LLD § Viewer notes (build order, edge cases). The spec file holds 107 specs: 107 `[x]`, 0 `[ ]`, 0 `[D]`.
+Design: LLD § Viewer notes (build order, edge cases). The spec file holds 115 specs: 115 `[x]`, 0 `[ ]`, 0 `[D]`.
 
 - Retired: `MEM-VIEWER-004` (notes text in `memory.viewer`), `MEM-VIEWER-005` (deferred notes writer, superseded). Numbers not reused.
 - **Chunk 1 built** (notes store, regular flag, decay math, consolidation job and triggers, config): `[x]` `MEM-NOTE-001`, `002`, `003`, `005`, `006`, `007`, `008`, `010`; `MEM-REG-001`, `003`, `004`, `005`; `MEM-CONSOL-002` to `016`; `MEM-STORE-001`; `MEM-BACKEND-005`; with config `CFG-SCH-014` to `016` and `CFG-USR-007`.
@@ -43,7 +43,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (107 specs, prefix `MEM`: 107 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/memory/memory-specs.md (115 specs, prefix `MEM`: 115 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 132 lines citing 81 distinct `MEM-*` IDs)
 - services/memory/test/region.test.ts (11)
@@ -120,14 +120,15 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
 | Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 5 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
-| Reflection | MEM-REFLECT-001 to MEM-REFLECT-010 | 10 | 0 | 0 | 9 |
+| Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
+| Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 107 of 107 specs implemented and annotated in code (viewer-notes chunks 1 to 4 built); 0 gaps; 0 deferred. Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts`, `reflect.ts` and `consolidate.ts` are wiring only and untested; the logic they hold is in `startup.ts`, `reflect-run.ts`, `scheduler.ts` and `consolidate-run.ts`, covered with fakes. No test run here executes against a real Postgres: the chunk-1 store behaviour is covered by the in-memory store and by recorded SQL, and `notes-store.pg.test.ts` runs the same contract against a real Postgres when `COHOST_TEST_DATABASE_URL` is set (not run in CI).
+**Summary:** 115 of 115 specs implemented and annotated in code (viewer-notes chunks 1 to 4 built); 0 gaps; 0 deferred. Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts`, `reflect.ts` and `consolidate.ts` are wiring only and untested; the logic they hold is in `startup.ts`, `reflect-run.ts`, `scheduler.ts` and `consolidate-run.ts`, covered with fakes. No test run here executes against a real Postgres: the chunk-1 store behaviour is covered by the in-memory store and by recorded SQL, and `notes-store.pg.test.ts` runs the same contract against a real Postgres when `COHOST_TEST_DATABASE_URL` is set (not run in CI).
 
 ## Key Findings
 
 1. **Viewer counts agree across stores** — the Postgres INSERT sets `msg_count` 1 (`store.ts:144`), as the fake counts from 1 (`fake-store.ts:54-57`); the insert SQL is asserted in `memory.test.ts:154`. B6, `MEM-VIEWER-001`.
-2. **Vector dimension is checked** — `init` reads `atttypmod` of `memories.embedding` and throws `DimensionMismatchError` on a mismatch (`store.ts:100-106`); `startup.ts:48` rethrows it without retrying, so the service exits through `MEM-START-006`. B5, `MEM-STORE-002`. Migrating a table to a new dimension stays an open decision.
+2. **Vector dimension is checked** — `init` reads `atttypmod` of `memories.embedding` and throws `DimensionMismatchError` on a mismatch (`store.ts:100-106`); `startup.ts:48` rethrows it without retrying, so the service exits through `MEM-START-006`. B5, `MEM-STORE-002`. Migrating a table to a new dimension is the `reembed` one-shot (`MEM-REEMBED-001` to `006`).
 3. **`deps.postgres` follows the latest query** — every pool query goes through `MemoryStore.query` (`store.ts:54,62`), which reports to `health.setPostgres` (`index.ts:28`). R4, `MEM-HEALTH-005`.
 4. **Reflection reads a `(ts, id)` cursor** — `meta.last_reflection` is `<ISO ts>#<id>` of the newest row read (`cursor.ts`, `reflect-run.ts:62`); `recentSince` reads `WHERE (ts, id) > ($1, $2) ORDER BY ts, id` (`store.ts:154-161`); a legacy plain timestamp is accepted; fewer than 5 rows leave the cursor alone. Reflection still needs a reachable embedder (`init()` embeds `"hello"`, `store.ts:69`) and takes no lock against the live service. The cursor timestamp is the exact microsecond text from Postgres (`"tsText"`), so no row is re-read. B7, `MEM-REFLECT-008`, `MEM-REFLECT-003`.
 5. **Learned block placement** — `appendLearned` inserts at the end of the `## Learned` section (`learned.ts:16-27`). S27, `MEM-REFLECT-007`.

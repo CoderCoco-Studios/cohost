@@ -377,6 +377,20 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.equal((await store.findViewerByDisplay(`new${renamed}`))!.key, renamed);
   });
 
+  // @spec MEM-STORE-003, MEM-BACKEND-006, MEM-REFLECT-008
+  t("recentSince lists memories strictly after a (ts, id) cursor in (ts, id) order, whatever the cursor's timestamp precision", async ({ store }) => {
+    const tag = uid("cursor");
+    for (const x of ["a", "b", "c"]) await store.remember("chat", "bob", `${tag} ${x}`);
+    const epoch = { ts: "1970-01-01T00:00:00.000Z", id: 0 };
+    const mine = async (after: { ts: string; id: number }) => (await store.recentSince(after, 1_000_000)).filter((m) => m.text.startsWith(tag));
+    const all = await mine(epoch);
+    assert.deepEqual(all.map((m) => m.text.slice(-1)), ["a", "b", "c"]);
+    const cursorOf = (m: (typeof all)[number]) => ({ ts: m.tsText ?? m.ts.toISOString(), id: Number(m.id) });
+    assert.deepEqual((await mine(cursorOf(all[0]!))).map((m) => m.text.slice(-1)), ["b", "c"], "the cursor row itself is not read again");
+    assert.deepEqual(await mine(cursorOf(all[2]!)), []);
+    assert.equal((await store.recentSince(epoch, 2)).length, 2, "the limit caps the page");
+  });
+
   // @spec MEM-SURF-004
   t("markSurfaced records the time on the named notes only", async ({ store, now }) => {
     const key = uid();

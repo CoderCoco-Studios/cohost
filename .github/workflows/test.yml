@@ -24,8 +24,22 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # pgvector lets the memory store's real-Postgres tests run instead of skipping themselves (DEPLOY-CI-006).
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cohost
+          POSTGRES_PASSWORD: cohost
+          POSTGRES_DB: cohost_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cohost -d cohost_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       REDIS_URL: redis://127.0.0.1:6379
+      COHOST_TEST_DATABASE_URL: postgres://cohost:cohost@127.0.0.1:5432/cohost_test
     steps:
       - uses: actions/checkout@v4
       # pnpm version comes from "packageManager" in package.json.

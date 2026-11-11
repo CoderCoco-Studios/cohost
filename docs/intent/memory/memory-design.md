@@ -83,13 +83,11 @@ Every subscription passes `start: "resume"` (`startup.ts`). The control-plane
 manifest also starts memory in `resume` mode (`packages/control/src/manifest.ts`);
 a control-plane `fresh` start resets its three groups to `$` first.
 
-`ready` should be reported once both consumer groups exist (`MEM-START-005`, open).
-The bus reports no event for group creation, so `startup.ts` starts the
-subscriptions with `void` and calls `heartbeat.ready()` at once (`startup.ts:60-62`):
-`ready` can precede group creation. Closing the gap needs a bus hook (for example
-`onReady` in `SubscribeOptions`, called once the group exists and is positioned,
-before the first read) owned by the event-bus segment. Calling `resetGroup` from
-memory is not an option: it would move a resumed group to `$` and drop the backlog.
+`ready` is reported once every consumer group exists (`MEM-START-005`). Each
+subscription passes the bus's `onReady` option, which the bus calls once the group
+exists and is positioned, before the first read; `startup.ts` waits for all of them
+and fails startup if a subscription rejects first. Calling `resetGroup` from memory
+would move a resumed group to `$` and drop the backlog, so it is not used.
 
 Bus handler errors are caught, logged, and the entry is acked
 (`packages/bus/src/index.ts:160-166`), so an exception in this handler drops
@@ -663,7 +661,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Learned block placement | End of the `## Learned` section | end of file | owner decision 2026-11-01 (low priority: the shipped template ends with `## Learned`); `MEM-REFLECT-007` |
 | Pure text helpers split out | `learned.ts` holds bullet parsing and heading logic | inline in reflect.ts | Extracted so the reflection logic could be tested (`reflect.ts` runs at import): commit `95afa19` ("reflection merge logic (extracted from reflect.ts into learned.ts, behaviour unchanged)"), `learned.ts:1` |
 | Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `index.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
-| Startup readiness vs group creation | `ready` is reported right after the subscriptions are started | call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the correct fix is a bus `onReady` hook (open, `MEM-START-005`) |
+| Startup readiness vs group creation | `ready` is reported once every subscription's `onReady` has fired | report ready right after starting the subscriptions; call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the bus's `onReady` hook is the group-exists signal (`MEM-START-005`) |
 
 ## Open Questions & Future Decisions
 
@@ -678,50 +676,26 @@ The running cortex does not learn of the change until a `reload_personality` con
    and MEM-VIEWER-005 (deferred notes writer) are retired by it; their numbers are
    not reused.
 
-### Open (viewer notes, owner decisions needed)
-1. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
-   chat viewer is out of scope.
+### Open
 
-Settled by the owner and recorded above: categories are `general`, `health` and
+None. Settled by the owner and recorded above: categories are `general`, `health` and
 `family` plus the politics drop; soft memories are purged after 30 days and
 suppression rules kept until restored; "surfaced rarely" means at most once per
 note per 24 hours, replied-to viewer only; there is no viewer-initiated forget
 command (the owner deletes notes by hand, keeping the "not a command bot"
 non-goal); turning "Mark as regular" off returns the viewer to the message-count
 rule, with no "never regular" option; the shutdown one-shot is best-effort and
-the catch-up pass is the guarantee.
-
-### Deferred (observed, unexplained, or technical debt)
-1. **Migrating a table to a new vector dimension.** `MEM-STORE-002` stops startup
-   on a mismatch; what an operator does next (re-embed, a table per model, drop and
-   start over) is not decided. `dims` is held in memory only (`store.ts:51,69`).
-2. **Reflection needs a reachable embedder** because `init()` embeds `"hello"`
-   (`store.ts:69`) even though reflect only reads. It also runs without any lock
-   alongside the live service.
-3. **Two hash embedders.** `fake-store.ts:hashEmbed` and `@cohost/llm` `HashEmbedder`
-   differ in tokenisation, sign handling and empty-text output; both 64 dims. The
-   fake keeps its own: it is self-contained and its non-negative scores suit
-   `min_similarity` (it also predates `HashEmbedder`, commit `719ce5a`).
-4. **Kind `note` is declared but never written** (`store.ts:7`).
-5. **Recall request validation:** the bus schema makes `k` positive
-   (`packages/bus/src/events.ts:108-112`, `k` at 111), so `k=0` can only occur
-   through config (`recall_k=0`, where the cortex does not send a request) even
-   though the store handles it.
-6. **Test gaps.** `index.ts` and `reflect.ts` (wiring only) have no tests;
-   `startup.ts` and `reflect-run.ts` are tested with fakes, so no test runs
-   against a real Postgres: the `atttypmod` dimension query and the
-   `(ts, id)` row comparison are exercised only against recorded SQL.
-7. **Consumer-group readiness.** `MEM-START-005` waits on a bus hook that does not
-   exist yet.
+the catch-up pass is the guarantee; Discord voice speakers get no notes (see the
+Decisions table).
 
 ## References
 
 - Code: `services/memory/src/{index,startup,region,store,cursor,backend,fake-store,reflect,reflect-run,learned,health}.ts`,
   `services/memory/package.json`, `services/memory/tsconfig.json`
-- Tests: `services/memory/test/{backend,fake-store,health,memory,region,reflect,startup}.test.ts`
+- Tests: `services/memory/test/{backend,fake-store,health,memory,region,reflect,reembed,startup,notes-store,notes-store.pg}.test.ts`
 - Parent: [high-level-design](../../high-level-design.md)
 - Depends on: event-bus (events `chat.message`, `speech.heard`, `brain.say`,
-  `memory.*`, `Bus.subscribe/publish`, start mode `resume`, a future group-ready hook), config
+  `memory.*`, `Bus.subscribe/publish`, start mode `resume`, the `onReady` group-ready option), config
   (`loadConfig`, `urls.database`, `loadPersonality/savePersonality`,
   `brain.memory.*`), model-backends (`Ollama`, `HashEmbedder`, `createChatProvider`),
   region-hooks (`Module` for `memory.capture` and `memory.consolidator`, planned),

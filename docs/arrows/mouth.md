@@ -41,7 +41,7 @@ Running ears from before chunk 4 together with mouth puts one bot (`DISCORD_TOKE
 
 Resolved in the specs:
 
-1. **The co-host hearing herself.** With both bots in one channel, ears receives mouth's audio. EARS-HEAR-001 ignores every bot account (by the user's `bot` flag, fetched when not cached), so her own lines never become `speech.heard`. Other bots (music, TTS) are ignored too `[proposed]`. Her voice leaking through a human's microphone is still unfiltered, as before.
+1. **The co-host hearing herself.** With both bots in one channel, ears receives mouth's audio. EARS-HEAR-001 ignores every bot account (by the user's `bot` flag, fetched when not cached), so her own lines never become `speech.heard`. Other bots (music, TTS) are ignored too. Her voice leaking through a human's microphone is still unfiltered, as before.
 2. **One bot in two processes.** EARS-SESS-009 and MOUTH-SESS-008 give each service one token variable; EARS-START-004 and EARS-START-007 make ears refuse `DISCORD_TOKEN`, so a copy-pasted token idles ears with a message rather than making both connections flap. mouth does not check ears' token: the refusal lives on the side that is new to the owner.
 3. **Sink name continuity.** MOUTH-ROUTE-001 keeps `discord` for the Discord output. No spec in voice, avatar, cortex, working-memory or dashboard names the `discord` sink, and the fallback claim check (MOUTH-FALL-009) now excludes only the giving-up output's own name, which equals the old rule while there is one output.
 4. **Two outputs and the early release.** VOICE-SINK-011 releases cortex at the end of the claim window when a `voice.failed` without `fallback` arrives and nothing has claimed. With two mouth outputs, one giving up and the other starting late, cortex can be released while the second still plays, and the next line can then overlap on the first output. This is the existing non-exclusivity between sinks (voice LLD Decisions); it needs two outputs, which do not exist yet.
@@ -58,18 +58,9 @@ Resolved in the specs:
 
 Blind divergence probe (forks narrowed in the lines): readiness judged at intake (MOUTH-ROUTE-003), "for that output" on the storm, pick and bad-clip lines (MOUTH-FALL-005 to 008), the gain also applying to fallback clips (MOUTH-ROUTE-005, MOUTH-FALL-001), `deps` keys present for disabled outputs as `n/a` (MOUTH-HLTH-001), how a bot is recognised (EARS-HEAR-001), what "has a token" means for ears (EARS-START-004), idle plans subscribing to nothing (MOUTH-START-001, 002).
 
-### Open questions for the owner
+### Owner decisions
 
-Recommended defaults are what the specs say today; each is marked `[proposed]` where it appears.
-
-1. Two Discord bots (the co-host's existing bot speaks via `DISCORD_TOKEN`; a new listen-only bot via `EARS_DISCORD_TOKEN`).
-2. The name `mouth` for the speaking service; `ears` kept for listening.
-3. ears ignores every bot account, not only the speaking bot.
-4. Per-output `gain_db` (-40 to 12 dB, default 0).
-5. One profile each (`ears`, `mouth`), both off by default.
-6. The dashboard page stays outside `mouth.outputs`.
-7. Per-output queues and storm limit.
-8. mouth joins self-deafened; ears joins self-muted.
+Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the names `ears` and `mouth`; ears ignores every bot account; per-output `gain_db` (-40 to 12 dB, default 0); one Compose profile each, off by default; the dashboard page outside `mouth.outputs`; per-output queues, storm limit and bad-clip marks; mouth self-deafened and ears self-muted.
 
 ## References
 

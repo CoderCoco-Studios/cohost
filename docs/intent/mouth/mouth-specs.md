@@ -1,6 +1,6 @@
 # mouth specs
 
-Segment `mouth` (prefix `MOUTH`). LLD: [mouth-design.md](mouth-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. A spec line marked `[proposed]` states a design choice that awaits the owner's confirmation.
+Segment `mouth` (prefix `MOUTH`). LLD: [mouth-design.md](mouth-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred.
 
 Terms used below: an "output" is one entry under `mouth.outputs` (today only `discord`), and its "sink name" is the entry's key. An output is "ready" while its connection can play audio (for `discord`, while the voice connection is Ready). "Give up" means MOUTH-PLAY-005. "The clip cache" is the set of fallback clips mouth holds in memory, mirrored under `<dataDir()>/mouth/fallback-clips` (CFG-DIR-006, CFG-DIR-007). "Voice's manifest" and the clip routes are VOICE-CLIP-011 and VOICE-CLIP-012. A "real sink" is any `sink` other than `virtual` and `error`.
 
@@ -15,21 +15,21 @@ Terms used below: an "output" is one entry under `mouth.outputs` (today only `di
 ## Discord output session
 
 - [ ] **MOUTH-SESS-001**: If the Discord login fails while the mouth plan is `discord`, then the mouth service shall log the error and exit the process with code 1.
-- [ ] **MOUTH-SESS-002**: When the Discord client is ready in the mouth `discord` plan, the mouth service shall join the voice channel `mouth.outputs.discord.voice_channel_id` of guild `mouth.outputs.discord.guild_id`, self-deafened and not self-muted, and wait up to 20 s for the connection to reach Ready. `[proposed]` (self-deafened)
+- [ ] **MOUTH-SESS-002**: When the Discord client is ready in the mouth `discord` plan, the mouth service shall join the voice channel `mouth.outputs.discord.voice_channel_id` of guild `mouth.outputs.discord.guild_id`, self-deafened and not self-muted, and wait up to 20 s for the connection to reach Ready.
 - [ ] **MOUTH-SESS-003**: If `mouth.outputs.discord.guild_id` or `mouth.outputs.discord.voice_channel_id` is empty, or the configured channel is not a voice-based channel, then the mouth join attempt shall fail with the error "mouth.outputs.discord.guild_id is not set", "mouth.outputs.discord.voice_channel_id is not set" or "mouth.outputs.discord.voice_channel_id is not a voice channel" respectively, handled as a failed join (MOUTH-SESS-006).
 - [ ] **MOUTH-SESS-004**: When the mouth Discord voice connection reaches Ready, the mouth service shall subscribe the `discord` output's audio player to it, mark the `discord` output ready, set `deps.discord` to `ok`, and report the heartbeat `ready`.
 - [ ] **MOUTH-SESS-005**: When the mouth Discord voice connection is Disconnected and does not enter Signalling or Connecting within 5 s, the mouth service shall mark the `discord` output not ready, set `deps.discord` to `down`, destroy the connection, and attempt to rejoin after 5 s.
 - [ ] **MOUTH-SESS-006**: If a mouth voice-channel join fails (the initial join or a rejoin after a disconnect), then the mouth service shall log the failure, report heartbeat `degraded` with `deps.discord` `down` and the failure in the detail, keep its bus loop running, and retry the join after a delay that starts at 5 s and doubles up to 60 s until a join succeeds or mouth stops.
 - [ ] **MOUTH-SESS-007**: When the process receives a shutdown signal in the mouth `discord` plan, the mouth service shall run one shutdown sequence that stops the fallback clip refresh, destroys the voice connection and the Discord client, and then stops the bus before exiting.
-- [ ] **MOUTH-SESS-008**: The mouth service shall log in to Discord with the token in `DISCORD_TOKEN` and shall read no other Discord token variable. `[proposed]`
+- [ ] **MOUTH-SESS-008**: The mouth service shall log in to Discord with the token in `DISCORD_TOKEN` and shall read no other Discord token variable.
 
 ## Routing
 
 - [ ] **MOUTH-ROUTE-001**: When the mouth service publishes `voice.playing`, `voice.done` or `voice.failed` for an output, it shall set `sink` to that output's sink name (`discord` for the Discord output).
 - [ ] **MOUTH-ROUTE-002**: Where an output's `enabled` is false, the mouth service shall open no connection for that output and shall queue, play, claim and give up no utterance on it.
 - [ ] **MOUTH-ROUTE-003**: When a `voice.utterance` arrives in the mouth `discord` plan, the mouth service shall queue it on every enabled output that is ready, and on every enabled output that is not ready shall skip it without queueing it, publishing no `voice.playing` and no `voice.failed` for it on that output.
-- [ ] **MOUTH-ROUTE-004**: The mouth service shall keep a separate playback queue, current item, fallback storm timer, last-started fallback phrase and bad-clip marks for each enabled output, so that a give-up, a stall or a fallback on one output does not delay or suppress playback on another. `[proposed]`
-- [ ] **MOUTH-ROUTE-005**: When the mouth service hands utterance or fallback-clip audio to an output whose `gain_db` is not 0, it shall first multiply every sample by 10^(`gain_db`/20) and clamp each result to the signed 16-bit range. `[proposed]`
+- [ ] **MOUTH-ROUTE-004**: The mouth service shall keep a separate playback queue, current item, fallback storm timer, last-started fallback phrase and bad-clip marks for each enabled output, so that a give-up, a stall or a fallback on one output does not delay or suppress playback on another.
+- [ ] **MOUTH-ROUTE-005**: When the mouth service hands utterance or fallback-clip audio to an output whose `gain_db` is not 0, it shall first multiply every sample by 10^(`gain_db`/20) and clamp each result to the signed 16-bit range.
 
 ## Playback
 

@@ -14,7 +14,6 @@ Design: LLD (Context, Startup Plans, Speaking, Decisions), [decision doc](../int
 - New `[ ]`: EARS-START-007 (same token as mouth idles ears), EARS-SESS-009 (logs in with `EARS_DISCORD_TOKEN`).
 - Reworded, already true of the code (`[x]`): EARS-START-001, EARS-START-006, EARS-INJ-007. New `[x]`: EARS-HEAR-009 (no `control`, the listening half of the retired EARS-PLAY-008).
 - Retired, numbers not reused: EARS-AUD-002, EARS-PLAY-001 to 009, EARS-FALL-001 to 019, now MOUTH-AUD-001, MOUTH-PLAY-*, MOUTH-FALL-*.
-- `[proposed]`: the second bot and its variable name, ignoring all bots, self-mute, the same-token guard.
 - Drift until build chunk 4: `services/ears` code and tests still implement and annotate the retired IDs.
 
 ## Spoken fallback line: built (chunk 1), moving to mouth

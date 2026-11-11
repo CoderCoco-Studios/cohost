@@ -8,7 +8,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Listening and speaking split (designed, not built)
 
-Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile, `[proposed]`), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded `[ ]`; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no volume), DEPLOY-README-004 (`.env.example` with two Discord tokens, `[proposed]`) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new `[ ]`.
+Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded `[ ]`; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no volume), DEPLOY-README-004 (`.env.example` with two Discord tokens,) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new `[ ]`.
 
 ## Standalone dashboard (built)
 

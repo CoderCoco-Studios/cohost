@@ -8,7 +8,7 @@
 
 ## Listening and speaking split (designed, not built)
 
-Build chunks 2 and 4 in [mouth.md](mouth.md): CFG-SCH-018 moves the storm interval to `mouth.fallback.min_interval_ms`, CFG-ISO-001 and CFG-ISO-004 add `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED`, CFG-USR-009 ships the interval under `mouth` (all reworded `[ ]`); CFG-SCH-020 (optional `mouth` section and its defaults, gain range `[proposed]`) and CFG-USR-011 (example keys for the Discord output) are new `[ ]`. An unknown output name gets the ordinary unknown-key warning.
+Build chunks 2 and 4 in [mouth.md](mouth.md): CFG-SCH-018 moves the storm interval to `mouth.fallback.min_interval_ms`, CFG-ISO-001 and CFG-ISO-004 add `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED`, CFG-USR-009 ships the interval under `mouth` (all reworded `[ ]`); CFG-SCH-020 (optional `mouth` section and its defaults, gain range) and CFG-USR-011 (example keys for the Discord output) are new `[ ]`. An unknown output name gets the ordinary unknown-key warning.
 
 ## Spoken fallback line: built (chunks 1 to 3)
 

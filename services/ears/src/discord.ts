@@ -8,11 +8,12 @@ import { Readable } from "node:stream";
 import type { Bus, Heartbeat, BusEvent } from "@cohost/bus";
 import { join as joinPath } from "node:path";
 import { dataDir, env, urls, type Config, type Logger } from "@cohost/config";
+import { createJoiner } from "@cohost/shared";
 import { Hearing, sttTranscriber } from "./hearing.js";
 import { ClipCache, ClipMirror, FallbackLine, startClipSync } from "./fallback.js";
 import { Playback, httpAudio } from "./playback.js";
 import type { EarsHealth } from "./health.js";
-import { DISCORD_LOOP_TYPES, createEarsHandler, createJoiner, subscribeEars, voiceTarget } from "./session.js";
+import { DISCORD_LOOP_TYPES, createEarsHandler, subscribeEars, voiceTarget } from "./session.js";
 
 export interface DiscordDeps {
   cfg: Config;

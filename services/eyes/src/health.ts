@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
 // @spec EYES-HEALTH-001, EYES-HEALTH-002, EYES-HEALTH-003, EYES-HEALTH-004
 /** eyes: `off` (deps n/a) when vision is disabled; otherwise obs follows the websocket and ollama the last describe call. */

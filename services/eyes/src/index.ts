@@ -11,11 +11,12 @@
  * AI box is another machine, untick "localhost only" / allow LAN.
  */
 import OBSWebSocket from "obs-websocket-js";
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
+import { onShutdown, startHeartbeat, subscribeInject } from "@cohost/shared";
 import { createLogger, loadConfig, urls } from "@cohost/config";
 import { Eyes, ollamaDescriber, startEyes, stripDataUrl } from "./eyes.js";
 import { EyesHealth } from "./health.js";
-import { createInjectHandler, subscribeInject } from "./inject.js";
+import { createInjectHandler } from "./inject.js";
 import { createObsLink, stopEyes } from "./obs.js";
 
 const log = createLogger("eyes");
@@ -49,14 +50,13 @@ const eyes = new Eyes({ bus, log, screenshot, describe });
 // Injected images never touch OBS, so this is wired whether vision is enabled or idle. The
 // subscription is established before `ready` is signalled (OBS connect, or the idle branch below).
 // @spec EYES-ENAB-004, EYES-INJ-001, EYES-INJ-011, EYES-INJ-014
-await subscribeInject(
-  bus,
-  createInjectHandler({
+await subscribeInject({
+  bus, group: "eyes", log,
+  handler: createInjectHandler({
     bus, log, dashboardUrl: urls.dashboard(), describe,
     uploadTimeoutMs: cfg.vision.upload_timeout_ms, uploadMaxBytes: cfg.vision.upload_max_bytes,
   }),
-  log,
-).catch(fatal);
+}).catch(fatal);
 
 // @spec EYES-LOOK-003, EYES-LOOK-004, EYES-LOOK-005, EYES-OBS-005
 async function loop() {

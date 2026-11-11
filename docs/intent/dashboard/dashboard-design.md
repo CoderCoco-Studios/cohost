@@ -53,6 +53,10 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | `POST /control` | publish `control {cmd, text, target}`, `204`; the event schema validates `cmd` | yes | `:113-120` |
 | `POST /sink` | `event: "playing"` publishes `voice.playing`, `event: "done"` publishes `voice.done`, both with `sink: "dashboard"`, `204`; any other `event` is `400` and publishes nothing (DASH-SINK-003) | no | `:121-128` |
 | `GET /viewers*`, `POST /viewers*` | Viewers page (below) | always, by `VIEWERS_TOKEN` | DASH-VIEWERS-* |
+| `GET /services/manifest` | the manifest's units and their descriptors (module-contract MOD-MAN-007) | no | MOD-MAN-007 |
+| `GET /config/schema`, `GET /config/:section` | the settings editor's reads (module-contract MOD-CFG-001 to 006) | no | MOD-CFG-* |
+| `PUT /config/:section` | validate and write one section of `config.yaml` (MOD-CFG-007 to 016) | yes | MOD-CFG-* |
+| `POST /inject/event` | publish one declared bus test input for a unit (MOD-TEST-002 to 005) | yes | MOD-TEST-* |
 | any method `/health` | `200 ok` | no | `:130` |
 | anything else | `404 not found` | n/a | `:132` |
 
@@ -81,7 +85,7 @@ First run, documented in the README (DEPLOY-HOST-003): run the installer (it see
 - **Redis.** `urls.redis()` defaults to `redis://127.0.0.1:6379`, the loopback port Compose publishes (deployment DEPLOY-COMPOSE-006). No `.env` change is needed.
 - **Voice.** `urls.voice()` defaults to `http://127.0.0.1:8700`; Compose publishes voice's port on `127.0.0.1:8700` for this (deployment DEPLOY-COMPOSE-007). This replaces the earlier rule that host-side players reach voice only through the dashboard: the dashboard is now the host-side player of record, and every browser still goes through its proxy.
 - **Postgres.** Never read by the dashboard (HLD tenet 1). Viewer notes arrive over the bus (Viewers page).
-- **Containers reaching the dashboard.** eyes and ears fetch injected uploads from the URL in `inject.request`, which must lie under their own `DASHBOARD_URL` (eyes EYES-INJ-005, ears EARS-INJ-004). Compose sets their `DASHBOARD_URL` to `http://host.docker.internal:<DASHBOARD_LAN_PORT>` (deployment DEPLOY-COMPOSE-002), and the dashboard advertises the same base by default (DASH-INJ-005), so both sides agree with no `.env` entry.
+- **Containers reaching the dashboard.** eyes and ears fetch injected uploads from the URL in `inject.request`, which must lie under their own `DASHBOARD_URL` (eyes SHARED-INJ-004, ears SHARED-INJ-004). Compose sets their `DASHBOARD_URL` to `http://host.docker.internal:<DASHBOARD_LAN_PORT>` (deployment DEPLOY-COMPOSE-002), and the dashboard advertises the same base by default (DASH-INJ-005), so both sides agree with no `.env` entry.
 
 ### One PC: WSL2 with Docker Desktop
 
@@ -138,7 +142,7 @@ The page shows a stack panel at the top of the Services tab and a stack badge in
 
 ### When Redis is down or restarts
 
-The dashboard starts and serves its page with Redis absent (DASH-HTTP-012). Until the bus answers, the feed reports `bus: unreachable`, the Services tab shows every service `unknown`, routes that publish (`/control`, `/inject/*`, `PUT /personality`) answer `500` with the publish error (DASH-HTTP-004), `/viewers` routes answer `504`, and the dashboard's own heartbeat publishes fail with a logged warning (control-plane CTRL-HEARTBEAT-006). When Redis comes up (by Launch or otherwise), the seed succeeds, the tails resume through the bus's own retry, and the bus reports `connected`.
+The dashboard starts and serves its page with Redis absent (DASH-HTTP-012). Until the bus answers, the feed reports `bus: unreachable`, the Services tab shows every service `unknown`, routes that publish (`/control`, `/inject/*`, `PUT /personality`) answer `500` with the publish error (DASH-HTTP-004), `/viewers` routes answer `504`, and the dashboard's own heartbeat publishes fail with a logged warning (control-plane SHARED-LIFE-011). When Redis comes up (by Launch or otherwise), the seed succeeds, the tails resume through the bus's own retry, and the bus reports `connected`.
 
 Restarting Redis or Postgres from the dashboard stays behind `CONTROL_ADVANCED=1` per service (control-plane CTRL-GUARD-003). A Redis restart drops the dashboard's connections for its duration; the tails resume from their last seen ids (stream ids are time-based, so new entries sort after them), the tracker shows services `stale` until fresh heartbeats arrive, and the audit record of the restart itself may be lost (the audit is best effort). Stack actions ignore `CONTROL_ADVANCED`: stopping the whole stack is a deliberate whole-stack act, and Launch has to start Redis and Postgres.
 
@@ -157,6 +161,8 @@ A stack created by a Compose file that still had a `dashboard` service leaves th
 - Everything else on the main stream goes to every browser, including event types the page then ignores, except the viewer-notes events `memory.notes.request`, `memory.notes.reply`, `memory.viewers.request` and `memory.viewers.reply`, which carry note text (including health and family notes) and are never sent on `/ws`, live or in the connect replay (DASH-FEED-007). There is no per-client subscription and no authentication on `/ws`.
 
 ## Test-input injection and uploads
+
+The per-unit test drawer, `POST /inject/event`, the refusal of an injection for a unit that is not running (MOD-TEST-005) and the Settings tab are the [module contract](../module-contract/module-contract-design.md)'s; this section describes the inject routes as they stand.
 
 `handleInject` (`inject.ts:48-63`) serves `GET /uploads/:id` and the three `POST /inject/*` routes. It runs after the `/audio` proxy and before the services, personality and control routes (`routes.ts:64`).
 
@@ -316,7 +322,7 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 3. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
 4. `index.html` carries a duplicated comment on the same CSS line (`:41`) and the pause/resume commands are reachable only by raw `POST /control` (`:165-171`).
 5. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
-6. **Heartbeat warnings while the stack is down.** With Redis absent the dashboard's own heartbeat fails every interval and logs a warning each time (control-plane CTRL-HEARTBEAT-006); whether to throttle that while the bus reports `unreachable` is open.
+6. **Heartbeat warnings while the stack is down.** With Redis absent the dashboard's own heartbeat fails every interval and logs a warning each time (control-plane SHARED-LIFE-011); whether to throttle that while the bus reports `unreachable` is open.
 7. **Images after a code update.** Launch runs `up -d` without `--build`, so after updating the checkout the containers keep their old images while `pnpm dashboard` rebuilds the dashboard from source; the owner rebuilds with `docker compose build`. A Rebuild action is not designed.
 
 ## References

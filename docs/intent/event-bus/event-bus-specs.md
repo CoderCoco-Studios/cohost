@@ -69,12 +69,9 @@ Design: [event-bus-design.md](event-bus-design.md). Prefix `BUS`. Verified again
 
 ## Shutdown
 
+The process shutdown sequence (`onShutdown`, `beforeShutdown`) lives in `@cohost/shared`: BUS-STOP-002 to BUS-STOP-006 are retired, now shared-runtime SHARED-LIFE-001 to SHARED-LIFE-005; the numbers are not reused. This section keeps the transport's own stop.
+
 - [x] **BUS-STOP-001**: When `Bus.stop()` is called, the system shall mark the instance stopped, disconnect every subscribe, tail and tailHealth connection and the publish connection, and cause pending `subscribe`, `tail` and `tailHealth` promises to resolve without surfacing the resulting read error. <!-- openspec: bus § Shutdown --> <!-- test: packages/bus/test/bus.test.ts:119 -->
-- [x] **BUS-STOP-002**: When a process that has called `onShutdown(fn)` receives SIGINT or SIGTERM, the system shall run every function registered with `beforeShutdown` concurrently (waiting at most 2000 ms for them to settle and ignoring rejections), then run the registered callbacks, then exit the process with code 0. <!-- openspec: bus § Shutdown --> <!-- test: packages/bus/test/bus.test.ts:257 --> <!-- test: packages/bus/test/shutdown.test.ts:18 -->
-- [x] **BUS-STOP-003**: When the process receives a second SIGINT or SIGTERM after the shutdown sequence has started, the system shall ignore it (the sequence runs at most once). <!-- test: packages/bus/test/shutdown.test.ts:9 -->
-- [x] **BUS-STOP-004**: If a callback passed to `onShutdown` throws or rejects, then the system shall still exit the process with code 0. <!-- test: packages/bus/test/shutdown.test.ts:9 -->
-- [x] **BUS-STOP-005**: When a process that has registered more than one `onShutdown` callback receives SIGINT or SIGTERM, the system shall run the `beforeShutdown` hooks once, then run every registered callback to completion, logging (and otherwise ignoring) any callback that throws or rejects so the others still run, and then exit the process once with code 0. <!-- test: packages/bus/test/shutdown.test.ts:9 -->
-- [x] **BUS-STOP-006**: If a function registered with `beforeShutdown` throws synchronously, then the system shall treat it like a rejected hook: ignore it, still wait for the other hooks within the 2000 ms window, and still run the `onShutdown` callbacks. <!-- test: packages/bus/test/shutdown.test.ts:18 -->
 
 ## Test double (packages/testing)
 

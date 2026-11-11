@@ -31,7 +31,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 3. **S53** (superseded) restart of a stopped or untracked service → it started the service under the host-process runtime. CTRL-RUNTIME-008 and CTRL-GUARD-009 are retired with that runtime.
 4. **S54** audit `detail` on success → keep. Specs: CTRL-GUARD-007 (unchanged).
 5. **S55** (superseded) invalid `CONTROL_PROCESS_MODE` rejected by `cohostctl`; CTRL-CLI-007 is retired, the setting no longer exists.
-6. **H1** overlap with event-bus → event-bus owns the heartbeat transport and shutdown mechanics; CTRL-HEARTBEAT-007 deleted (number not reused), CTRL-HEARTBEAT-005 narrowed to the heartbeat's `beforeShutdown` registration.
+6. **H1** overlap with event-bus → event-bus owns the heartbeat transport and shutdown mechanics; CTRL-HEARTBEAT-007 deleted (number not reused), SHARED-LIFE-010 narrowed to the heartbeat's `beforeShutdown` registration.
 8. **R1** (2026-11-08) remove the host-process runtime: compose is the only runtime ("no service should be handling other services"); `CONTROL_RUNTIME` and `CONTROL_PROCESS_MODE` are gone. Retired specs: CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006, CTRL-CLI-007; amended: CTRL-RUNTIME-004, CTRL-GUARD-005, CTRL-CONFIG-002, CTRL-CLI-004. Retired IDs are not reused.
 7. **P8** (related) where a restarted service starts reading is its bus start mode (memory `resume`, every other `latest`); the controller's `fresh` / `resume` stays as an operator override; the manifest groups and default modes match the subscriptions (CTRL-MANIFEST-002), recorded in the LLD.
 
@@ -93,26 +93,26 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Runtime | CTRL-RUNTIME-001 to 004, 009, 010 (005 to 008 retired) | 6 | 0 | 0 | 6 |
 | Guards | CTRL-GUARD-001 to 008 (009 retired) | 8 | 0 | 0 | 8 |
 | Config | CTRL-CONFIG-001 to 003 | 3 | 0 | 0 | 3 |
-| Heartbeat | CTRL-HEARTBEAT-001 to 009 (007 retired) | 8 | 0 | 0 | 6 |
+| Heartbeat | SHARED-LIFE-006 to 009 (007 retired) | 8 | 0 | 0 | 6 |
 | Health | CTRL-HEALTH-001 to 007 | 7 | 0 | 0 | 7 |
 | Healthcheck | CTRL-CHECK-001 to 003 | 3 | 0 | 0 | 2 |
 | CLI | CTRL-CLI-001 to 005, 008, 009 (006, 007 retired) | 7 | 0 | 0 | 6 |
 
-**Summary:** 47 of 47 specs implemented ([x]); 0 deferred; 0 gaps. 43 of the 47 have a test carrying their `@spec` ID. Implemented specs with no test: CTRL-HEARTBEAT-001, CTRL-HEARTBEAT-009, CTRL-CHECK-003, CTRL-CLI-005. Implemented spec with no code annotation: CTRL-CHECK-003 (lives in `docker-compose.yml`).
+**Summary:** 47 of 47 specs implemented ([x]); 0 deferred; 0 gaps. 43 of the 47 have a test carrying their `@spec` ID. Implemented specs with no test: SHARED-LIFE-006, SHARED-LIFE-013, CTRL-CHECK-003, CTRL-CLI-005. Implemented spec with no code annotation: CTRL-CHECK-003 (lives in `docker-compose.yml`).
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line was confirmed in code at `49ba935`; CTRL-CLI-006 and CTRL-CLI-007 are retired with the host-process runtime. The owner decisions narrowed CTRL-HEARTBEAT-005 and retired CTRL-HEARTBEAT-007; CTRL-GUARD-008 is implemented and tested, and CTRL-MANIFEST-002 lists the chat and eyes groups and the `fresh` defaults for chat, eyes and ears.
-2. **Spec lines corrected to match the code** (IDs kept): CTRL-GUARD-005 (a failed reset during a fresh restart returns without starting), CTRL-GUARD-007 (the audit carries `detail` whenever the runtime returned one, success included; S54), CTRL-CLI-002 (the named-service check runs against the whole snapshot), CTRL-CLI-003 (exact output strings), CTRL-HEARTBEAT-006 (the warning needs a supplied logger). CTRL-MANIFEST-005 pins the `KNOWN_SERVICES` ⊆ manifest invariant that `manifest.test.ts:23` tests.
+1. **Markers.** Every `[x]` line was confirmed in code at `49ba935`; CTRL-CLI-006 and CTRL-CLI-007 are retired with the host-process runtime. The owner decisions narrowed SHARED-LIFE-010 and retired CTRL-HEARTBEAT-007; CTRL-GUARD-008 is implemented and tested, and CTRL-MANIFEST-002 lists the chat and eyes groups and the `fresh` defaults for chat, eyes and ears.
+2. **Spec lines corrected to match the code** (IDs kept): CTRL-GUARD-005 (a failed reset during a fresh restart returns without starting), CTRL-GUARD-007 (the audit carries `detail` whenever the runtime returned one, success included; S54), CTRL-CLI-002 (the named-service check runs against the whole snapshot), CTRL-CLI-003 (exact output strings), SHARED-LIFE-011 (the warning needs a supplied logger). CTRL-MANIFEST-005 pins the `KNOWN_SERVICES` ⊆ manifest invariant that `manifest.test.ts:23` tests.
 3. **Compose isolated starts do not reach the container** — the isolation preset is set only on the `docker compose` process env (`packages/control/src/runtime.ts:61`), while `docker-compose.yml:11-20` has a fixed `environment` block and `env_file: .env` with no pass-through. Tests assert only the exec env (`runtime.test.ts:44`). (CTRL-RUNTIME-009, B17)
 4. **Isolated starts start the `requires` closure** — the manifest has an optional `requires` field (cortex: salience, affect) and an isolated start runs the closure first, depth-first, each unit in its own default mode and audited separately (CTRL-GUARD-008, S52).
 5. **Compose is the only runtime** — the host-process runtime (in-memory pids, `notRunning` stop signal) is removed; the controller, `cohostctl` and the dashboard always build `ComposeRuntime`. (R1)
 6. **Clock semantics differ between consumers** — live `HealthTracker.ingest` uses local receive time (`health.ts:61`), but `seed` and `cohostctl status` pass the publisher-stamped `ts` (`health.ts:77-79`, `cli.ts:112`), and `healthcheck.ts:14` compares bus `ts` with the local clock, so container clock skew affects those two.
 7. **No runtime selection** — `loadControlConfig` and `cohostctl` read no `CONTROL_RUNTIME` or `CONTROL_PROCESS_MODE`; stale values in `.env` are ignored. (CTRL-CLI-004, CTRL-CONFIG-002)
 8. **Entry-point plumbing is fragile and untested** — `index.ts` re-exports `cli.js`, which runs `main()` when `argv[1]` merely ends with `cli.js` (`cli.ts:125`); `cohostctl` therefore only works from the built `dist`. No test reaches `main()`, so CTRL-CLI-005 is untested; CTRL-CLI-004 is tested through `buildRuntime`. `@cohost/config` is declared and referenced in tsconfig but never imported (`packages/control/package.json:14`), and `heartbeat.ts` and `packages/bus/src/index.ts` import each other (`heartbeat.ts:2`, `packages/bus/src/index.ts:259`).
-9. **Partial test coverage behind annotated tests** — CTRL-MANIFEST-001 (field shapes, not the 15 ids), CTRL-MANIFEST-003 (flags; presets only through `controller.test.ts:63`), CTRL-RUNTIME-001 (argv, not timeout or `cwd`), CTRL-CONFIG-002 (`isLoopback` untested), CTRL-HEARTBEAT-004 (ignoring `ready()` after `stop()` untested), CTRL-HEALTH-007 (no-overwrite on replay untested).
+9. **Partial test coverage behind annotated tests** — CTRL-MANIFEST-001 (field shapes, not the 15 ids), CTRL-MANIFEST-003 (flags; presets only through `controller.test.ts:63`), CTRL-RUNTIME-001 (argv, not timeout or `cwd`), CTRL-CONFIG-002 (`isLoopback` untested), SHARED-LIFE-009 (ignoring `ready()` after `stop()` untested), CTRL-HEALTH-007 (no-overwrite on replay untested).
 10. **`stopping` depends on a graceful `onShutdown`** — a crash or SIGKILL publishes nothing and the service only goes stale (3x) then down (10x) (`heartbeat.ts:111-117`, `packages/bus/src/index.ts:242-257`).
-11. **Single ownership with event-bus** — the heartbeat transport and shutdown mechanics are BUS-STREAM-004, BUS-HEALTH-001 and BUS-STOP-002 only; `packages/bus/src/index.ts` and the transport tests cite only `BUS-*` IDs, and CTRL-HEARTBEAT-005 is cited at `heartbeat.ts:60` and on the SIGTERM test (`bus.test.ts:256`). (H1)
+11. **Single ownership with event-bus** — the heartbeat transport and shutdown mechanics are BUS-STREAM-004, BUS-HEALTH-001 and SHARED-LIFE-001 only; `packages/bus/src/index.ts` and the transport tests cite only `BUS-*` IDs, and SHARED-LIFE-010 is cited at `heartbeat.ts:60` and on the SIGTERM test (`bus.test.ts:256`). (H1)
 12. **Manifest groups match the subscriptions** — chat and eyes own groups of their own name and chat, eyes and ears default to `fresh`, as every `latest` subscriber does; memory alone is `resume` (CTRL-MANIFEST-002).
 13. **OpenSpec baselines exist and are frozen** — `openspec/specs/service-health/` and `openspec/specs/service-control/` hold the archived capabilities; the code comments that cite intent (`manifest.ts:4`, `health.ts:46`) point at this segment's specs.
 
@@ -127,5 +127,5 @@ None outstanding: the isolation pass-through entries are in `docker-compose.yml`
 ### Nice to Have
 2. Drop the unused `@cohost/config` dependency or use it (the stack controller's workspace-root cwd, CTRL-STACK-001, uses it); tighten the `cli.js` entry guard (CTRL-CLI-005).
 3. Single source for the known-service list instead of `KNOWN_SERVICES` plus the manifest (CTRL-HEALTH-005, CTRL-MANIFEST-001, CTRL-MANIFEST-005).
-4. Tests for `main()` wiring (CTRL-CLI-005), the heartbeat payload fields (CTRL-HEARTBEAT-001), `isLoopback`, compose `cwd`, the entry guard, and the partial gaps in Key Finding 9.
+4. Tests for `main()` wiring (CTRL-CLI-005), the heartbeat payload fields (SHARED-LIFE-006), `isLoopback`, compose `cwd`, the entry guard, and the partial gaps in Key Finding 9.
 5. Annotate the compose healthcheck wiring (`docker-compose.yml:30-35`) for CTRL-CHECK-003 in a deployment pass.

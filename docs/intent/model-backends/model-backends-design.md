@@ -121,6 +121,10 @@ Who builds embedders: memory, not this package. `services/memory/src/backend.ts:
 
 From `cfg.llm` (`packages/config/src/schema.ts:43-73`): `provider`, `model`, `num_ctx` (Ollama only, `index.ts:96`), `temperature` (Ollama/OpenAI only), `max_tokens` (Ollama/OpenAI reply cap; the Claude path uses its own), `embed_model`, `openai.base_url`, `openai.api_key`, `claude.api_key`, `claude.effort`, `claude.max_tokens`, `claude.fallbacks`, `bedrock.region`. Environment: `OLLAMA_URL` via `urls.ollama()`; `ANTHROPIC_API_KEY` and AWS credentials are resolved inside the SDKs, not by this package. Operator-facing recipes are in `examples/providers/README.md`; their keys exist in the schema (`schema.ts:43-73`). `scripts/dev/stub-llm.ts` is a separate fake Ollama server (`GET /api/tags`, `POST /api/chat`; `:11434` or `STUB_LLM_PORT`; no `/api/embed`; ignores `stop`, `options` and `json`; always replies `Stub brain here. You said: <tail>`, which carries no emotion tag and is not JSON) used for local runs without a GPU. `docs/TESTING.md:130` documents the stub and never mentions `llm.provider: mock`.
 
+## Hash embedder users
+
+`HashEmbedder` is the one deterministic offline embedder: memory's hash mode on Postgres and memory's in-memory store both embed with it (memory MEM-BACKEND-003, MEM-BACKEND-004), and no other package carries a hasher of its own.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |

@@ -9,6 +9,7 @@ taxonomy:
     - model-backends
     - region-hooks
     - working-memory
+    - shared-runtime
   senses:
     - chat
     - eyes
@@ -26,13 +27,42 @@ taxonomy:
     - dashboard
     - control-plane
     - deployment
+    - module-contract
 
-# The `@cohost/shared` workspace package (small inject helpers owned by the eyes
-# segment, and the `parseWav` WAV parser and `wavWrap` WAV writer used by voice and ears, and the `createJoiner` Discord voice-join retry loop used by ears and mouth) is deliberately not a segment and not listed in blocks / blockedBy.
-# blocks / blockedBy follow the workspace-package import graph observed at
-# mapping time (git 686cc8f). Bus-event coupling between services is not
-# encoded here; see each LLD's References section.
+# The `@cohost/shared` workspace package is the shared-runtime segment. Its
+# blocks / blockedBy follow the import graph it is designed to have (it imports
+# config and bus; every service imports it). The other segments' blocks /
+# blockedBy still follow the import graph observed at mapping time (git
+# 686cc8f) and gain shared-runtime as each service moves onto it.
+# module-contract's edges follow the segments that implement it.
+# Bus-event coupling between services is not encoded here; see each LLD's
+# References section.
 arrows:
+  shared-runtime:
+    status: MAPPED
+    parent: null
+    sampled: 2026-11-11
+    audited: null
+    audited_sha: null
+    blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract]
+    blockedBy: [config, event-bus]
+    detail: shared-runtime.md
+    next: "EARS written 2026-11-11 (shared-runtime-specs.md): 72 specs, all [ ] (SHARED-BOOT 8, LIFE 15, RETRY 7, IDLE 5, CTRL 8, INJ 12, AUDIO 8, DVS 7, BOUND 2); 35 lines moved in from event-bus, control-plane, ears, eyes, voice, mouth (old IDs retired). Awaiting owner review of the specs; then gap-closure chunk C1."
+    drift: null
+
+  module-contract:
+    status: MAPPED
+    parent: null
+    sampled: 2026-11-11
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
+    detail: module-contract.md
+    next: "EARS written 2026-11-11 (module-contract-specs.md): 44 specs, all [ ] (MOD-MAN 9, CFG 16, LIFE 3, PAUSE 3, TEST 7, UI 6). Awaiting owner review; then chunks C2 to C4."
+    drift: null
+
+
   config:
     status: AUDITED
     parent: null
@@ -42,7 +72,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: New [ ]: CFG-SCH-021 (vision.engine), CFG-SCH-022 (ears.stt_engine), CFG-SCH-023 (mouth.outputs.dryrun); CFG-ISO-004 reopened [ ] for their placeholders. Settings editor support is module-contract MOD-CFG-*. Earlier: Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -54,7 +84,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). BUS-TAIL-005 (onRead on tail and tailHealth) built with the standalone dashboard chunk 2. No open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: BUS-STOP-002..006 retired (now SHARED-LIFE-001..005); decision row added: poison entries dropped without logging (disposition O7). Earlier: Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). BUS-TAIL-005 (onRead on tail and tailHealth) built with the standalone dashboard chunk 2. No open gaps."
     drift: null
 
   model-backends:
@@ -114,7 +144,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: EYES-INJ-002..006, 012, 013, 015 retired (now SHARED-INJ-001..008); new [ ]: EYES-INJ-016, EYES-STUB-001/002. Earlier: Intent pass confirmed; no open gaps."
     drift: null
 
   ears:
@@ -126,7 +156,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    next: "2026-11-11 shared-runtime/module-contract cascade: EARS-SESS-005/006, EARS-AUD-001/003/004, EARS-INJ-001..004 retired (now SHARED-DVS/AUDIO/INJ); new [ ]: EARS-SESS-010, EARS-AUD-005, EARS-INJ-010, EARS-STUB-001/002. Earlier: Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
     drift: null
 
   salience:
@@ -162,7 +192,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. The consolidate one-shot is reachable from Compose (DEPLOY-COMPOSE-018) and cohostctl (CTRL-CLI-008). No open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: MEM-BACKEND-004 reopened [ ]: the in-memory store embeds with @cohost/llm's HashEmbedder. Earlier: Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. The consolidate one-shot is reachable from Compose (DEPLOY-COMPOSE-018) and cohostctl (CTRL-CLI-008). No open gaps."
     drift: null
 
   cortex:
@@ -186,7 +216,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts is now mouth-sync.test.ts (mouth build chunk 2). Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: VOICE-ENV-001/002 retired (now SHARED-AUDIO-001/002); new [ ]: VOICE-ENV-005. Earlier: Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts is now mouth-sync.test.ts (mouth build chunk 2). Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
     drift: null
 
   mouth:
@@ -198,7 +228,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "All four build chunks built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-AUD-001, MOUTH-FALL-001..019, MOUTH-HLTH-001..002); ears is listen-only (chunk 4). No open gaps."
+    next: "2026-11-11 shared-runtime/module-contract cascade: MOUTH-SESS-005/006 and MOUTH-AUD-001 retired (now SHARED-DVS-003/004, SHARED-AUDIO-006); new [ ]: MOUTH-SESS-009, MOUTH-AUD-002, MOUTH-DRY-001..005; MOUTH-START-002/003/005 reopened [ ] for the local plan. Earlier: All four build chunks built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, SHARED-AUDIO-006, MOUTH-FALL-001..019, MOUTH-HLTH-001..002); ears is listen-only (chunk 4). No open gaps."
     drift: null
 
   avatar:
@@ -234,7 +264,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Listening and speaking split (mouth.md build order chunk 3 built): CTRL-MANIFEST-001..003 and CTRL-HEALTH-005 reworded and [x] (mouth unit, group mouth, preset MOUTH_DISCORD_ENABLED=false, ten known services). Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
+    next: "2026-11-11 shared-runtime/module-contract cascade: CTRL-HEARTBEAT-001..006, 008, 009 retired (now SHARED-LIFE-006..013); CTRL-MANIFEST-003 and CTRL-RUNTIME-009 reopened [ ] for the stub and dry-run presets (VISION_ENGINE, EARS_STT_ENGINE, MOUTH_DRYRUN_ENABLED); module-contract adds manifest fields (MOD-MAN-*). Earlier: Listening and speaking split (mouth.md build order chunk 3 built): CTRL-MANIFEST-001..003 and CTRL-HEALTH-005 reworded and [x] (mouth unit, group mouth, preset MOUTH_DISCORD_ENABLED=false, ten known services). Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
     drift: null
 
   deployment:
@@ -246,7 +276,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Listening and speaking split (mouth.md build order chunk 3 built): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded and [x]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new and [x] (mouth profile, two-bot .env and README; ears reads EARS_DISCORD_TOKEN since chunk 4; the installer next steps name both bots and the eyes, ears and mouth profiles, DEPLOY-INST-008). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 72 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "2026-11-11 shared-runtime/module-contract cascade: DEPLOY-COMPOSE-017 reopened [ ]: pass through VISION_ENGINE, EARS_STT_ENGINE, MOUTH_DRYRUN_ENABLED. Earlier: Listening and speaking split (mouth.md build order chunk 3 built): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded and [x]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new and [x] (mouth profile, two-bot .env and README; ears reads EARS_DISCORD_TOKEN since chunk 4; the installer next steps name both bots and the eyes, ears and mouth profiles, DEPLOY-INST-008). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 72 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

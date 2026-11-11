@@ -1,0 +1,67 @@
+# module-contract specs
+
+Segment `module-contract` (prefix `MOD`). LLD: [module-contract-design.md](module-contract-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. Every line is new and `[ ]`.
+
+Terms: a "unit" is an application unit of the control plane's manifest (a unit with a `pnpmFilter`: chat, eyes, ears, salience, affect, memory, cortex, voice, mouth, avatar). A "section" is a dotted path into the config schema declared by some unit (or `dashboard`). The "tracker" is the control plane's `HealthTracker`; a unit's "derived state" is the state it computes (control-plane CTRL-HEALTH-*). "Gated" means guarded by the control token when `CONTROL_ENABLED=1`, like the dashboard's other mutating routes (dashboard DASH-CTRL-*).
+
+## Service descriptor and derived lists (MOD-MAN)
+
+- [ ] **MOD-MAN-001**: Each unit in `SERVICE_MANIFEST` shall carry `config` (a list of sections), `uses` (a list of unit ids), `pause` (boolean) and `test` (`inputs`: a list of service-level kinds `text`, `image`, `audio` or bus event types; `observe`: a list of bus event types).
+- [ ] **MOD-MAN-002**: The manifest shall declare `config` as: chat `chat`; eyes `vision`; ears `ears`; salience `brain.salience`, `brain.working_memory_events`, `cohost`, `llm`; affect `brain.affect`, `cohost`, `llm`; memory `brain.memory`, `cohost`, `llm`; cortex `brain.cortex`, `brain.working_memory_events`, `cohost`, `llm`; voice `voice`; mouth `mouth`; avatar `avatar`.
+- [ ] **MOD-MAN-003**: The manifest shall declare `uses` as: salience `affect`, `cortex`; cortex `salience`, `affect`, `memory`; mouth `voice`; avatar `voice`; every other unit none; and every unit's `requires` shall be a subset of its `uses`.
+- [ ] **MOD-MAN-004**: The manifest shall set `pause` true for salience, cortex and affect and false for every other unit.
+- [ ] **MOD-MAN-005**: The manifest shall declare `test.inputs` as: chat `text`; eyes `image`; ears `audio`; salience `chat.message`, `speech.heard`, `vision.summary`; affect `chat.message`, `speech.heard`, `vision.summary`, `brain.say`; memory `chat.message`, `memory.recall.request`; cortex `attention.focus`; voice `brain.say`; mouth `brain.say`; avatar `brain.say`, `affect.state`; and `test.observe` as: chat `chat.message`, `inject.result`; eyes `vision.summary`, `inject.result`; ears `speech.heard`, `inject.result`; salience `attention.focus`, `brain.say`; affect `affect.state`; memory `memory.recall.reply`, `memory.viewer`; cortex `brain.status`, `brain.say`; voice `voice.utterance`, `voice.playing`, `voice.done`; mouth `voice.playing`, `voice.done`, `voice.failed`; avatar `avatar.state`.
+- [ ] **MOD-MAN-006**: The tracker's default known services and `cohostctl status`'s list shall be the manifest's unit ids, with no separately maintained list.
+- [ ] **MOD-MAN-007**: When `GET /services/manifest` is requested, the dashboard shall answer `200` with each unit's `id`, `config`, `uses`, `requires`, `pause`, `test`, `infra` and `defaultMode`, ungated, and the page shall take its unit list from that answer and hold no list of unit ids of its own.
+- [ ] **MOD-MAN-008**: A test shall fail when a unit has no Compose service of the same name, when a Compose service built from the shared Dockerfile has no unit, when a declared section is not a path of `ConfigSchema`, when a section of `ConfigSchema` (each top-level key, and each child of `brain`) is declared by no unit and is not `dashboard`, or when a declared bus input or observed type is not in the bus event registry or is `service.heartbeat`, `service.lifecycle` or a viewer-notes event.
+- [ ] **MOD-MAN-009**: Each unit's entry file shall call `runService` (shared-runtime SHARED-BOOT-001) and nothing else, and a test shall fail when one does not.
+
+## Settings editor (MOD-CFG)
+
+- [ ] **MOD-CFG-001**: When `GET /config/schema` is requested, the dashboard shall answer `200` with one entry per declared section (and `dashboard`) carrying `path`, `services` (the units that declare it), `schema` (JSON Schema generated from the section's zod schema) and `secrets` (the paths of its secret keys), ungated.
+- [ ] **MOD-CFG-002**: The config package shall mark `llm.openai.api_key` and `llm.claude.api_key` as secret, and the settings editor shall treat exactly the marked keys as secret.
+- [ ] **MOD-CFG-003**: When `GET /config/:section` is requested for a declared section, the dashboard shall answer `200` with `etag` (the SHA-256 of `config.yaml` as read), `keys` and `unknown`, ungated; for any other `:section` it shall answer `404`.
+- [ ] **MOD-CFG-004**: For each key of the section, `keys` shall carry `source` (`literal`, `env`, `env-default`, `default` or `composite`), `editable` (false for secrets, `env` and `composite`), `value` (the effective value after substitution from the dashboard's environment and schema defaults; absent for secrets), `raw` (the file text for `literal`, the default part for `env-default`, the whole string for `composite`) and, for `env` and `env-default`, `env: { name, set }`.
+- [ ] **MOD-CFG-005**: For a secret key, `GET /config/:section` shall return only whether its effective value is non-empty, never the value or raw text.
+- [ ] **MOD-CFG-006**: `unknown` shall list the dotted paths of keys present in the file under the section that the schema does not define.
+- [ ] **MOD-CFG-007**: `PUT /config/:section` shall be gated, take a JSON body `{ etag, values }` capped at 64 KiB, and answer `413` for a larger body with nothing written.
+- [ ] **MOD-CFG-008**: If the `etag` in a `PUT` differs from the SHA-256 of `config.yaml` as it is when the request is handled, then the dashboard shall answer `409 { ok: false, etag }` with the current etag and write nothing.
+- [ ] **MOD-CFG-009**: If `values` names a key that is not in the section's schema, or one whose `editable` is false, then the dashboard shall answer `400 { ok: false, issues }` naming each such key and write nothing.
+- [ ] **MOD-CFG-010**: When applying `values`, the dashboard shall set a `literal` or `default` key to the given value as a YAML scalar (keeping the existing quote style of a replaced string), set the default part of an `env-default` key and keep its `${VAR:-…}` form, and leave every comment, the key order, every other section and every unknown key unchanged; a key absent from the file shall be added under its section, and an absent section shall be appended at the end of the file.
+- [ ] **MOD-CFG-011**: When applying `values` to an array-valued key, the dashboard shall replace the whole array with the given array.
+- [ ] **MOD-CFG-012**: Before writing, the dashboard shall run the edited text through the configuration loader's substitution, null-dropping and `ConfigSchema` validation, and if validation fails it shall answer `400 { ok: false, issues: [{ path, message }] }` and write nothing; a file that was already invalid before the edit therefore accepts only an edit that makes it valid.
+- [ ] **MOD-CFG-013**: Where the request carries `?dryRun=1`, the dashboard shall perform MOD-CFG-008 to MOD-CFG-012, write nothing, and answer `200 { ok: true, dryRun: true, warnings }` when they pass.
+- [ ] **MOD-CFG-014**: When validation passes without `dryRun`, the dashboard shall write the edited text to a temporary file in the config directory and rename it over `config.yaml`, and if the write or rename fails it shall answer `500` with the error text and leave `config.yaml` unchanged.
+- [ ] **MOD-CFG-015**: After a successful write, the dashboard shall answer `200 { ok: true, etag, restart, warnings }`, where `restart` lists, in manifest order, the units that declare the section and that the latest stack status shows running (none when Docker is unavailable), and `warnings` names each edited `env-default` key whose variable is set in the dashboard's environment and, when the section is `dashboard`, that the change applies at the dashboard's next start.
+- [ ] **MOD-CFG-016**: The settings editor shall never read or write `.env`, and `PUT /config/:section` shall never start, stop or restart a unit.
+
+## Lifecycle and health (MOD-LIFE)
+
+- [ ] **MOD-LIFE-001**: When the tracker builds a unit's snapshot entry, it shall add `needs`, the list of `{ service, state }` for each unit in that unit's `uses` whose derived state is `down`, `stale`, `crash-looping` or `unknown`, and shall leave the unit's own derived state unchanged.
+- [ ] **MOD-LIFE-002**: When a snapshot entry has a non-empty `needs`, the Services tab shall show `needs <service> (<state>)` for each entry beside the unit's own state.
+- [ ] **MOD-LIFE-003**: Each unit shall keep running and keep publishing its heartbeat while a unit in its `uses` is stopped (HLD tenet 5).
+
+## Pause and resume (MOD-PAUSE)
+
+- [ ] **MOD-PAUSE-001**: Where control is enabled, the Services tab shall show Pause and Resume on the row of each unit whose `pause` is true and on no other row.
+- [ ] **MOD-PAUSE-002**: When the operator presses Pause or Resume on a unit's row, the page shall `POST /control` with `{ cmd: "pause" | "resume", target: <unit id> }`.
+- [ ] **MOD-PAUSE-003**: The Services tab shall show a unit as paused exactly while the unit's latest heartbeat `detail` is `paused` (shared-runtime SHARED-CTRL-007), and shall keep no paused flag of its own; while a higher-precedence detail (an explicit `degraded` detail or `dependency down`) is published, the row shows that detail instead.
+
+## Test drawer and inputs (MOD-TEST)
+
+- [ ] **MOD-TEST-001**: Each unit's row shall open a test drawer offering the unit's isolated start (when control is enabled), one input form per entry in `test.inputs`, and the live feed filtered to the unit's `test.observe` types and the `inject.result` events answering its injections.
+- [ ] **MOD-TEST-002**: When `POST /inject/event` receives `{ unit, type, data }`, the dashboard shall answer `400` unless `unit` is a unit and `type` is in that unit's `test.inputs`, and `400` with the schema issues unless `data` validates against the bus schema for `type`.
+- [ ] **MOD-TEST-003**: When `POST /inject/event` is accepted, the dashboard shall publish one event of `type` with `data`, setting `injected: true` where the event schema has an `injected` field, and answer `202 { id }` with the published event's bus id.
+- [ ] **MOD-TEST-004**: `POST /inject/event` shall be gated like the other inject routes and its body capped at 64 KiB.
+- [ ] **MOD-TEST-005**: If the derived state of the unit an injection is for (`unit` of `POST /inject/event`; the service-level target of `POST /inject/text` with `level: service`, `/inject/image` and `/inject/audio`) is `down` or `unknown`, then the dashboard shall answer `409 { ok: false, detail: "service not running: <unit>" }` and publish nothing.
+- [ ] **MOD-TEST-006**: An injected `brain.say` shall be a test input, not an operator `say`: the dashboard shall publish it only through `POST /inject/event` with `injected: true`, and it shall reach only services that consume `brain.say` (it is not routed through cortex).
+- [ ] **MOD-TEST-007**: With every unit started with its isolation preset (control-plane CTRL-MANIFEST-003), each unit's declared inputs shall be answered with no Twitch, Discord, OBS, avatar app, model server or speech server running.
+
+## Page (MOD-UI)
+
+- [ ] **MOD-UI-001**: The page shall have a Settings tab that lists the sections from `GET /config/schema`, renders the chosen section as a form from its JSON Schema with each key's `source` shown, and shows which units read it.
+- [ ] **MOD-UI-002**: The Settings form shall render non-editable keys read-only, showing the variable name for `env` keys and only set or not set for secrets.
+- [ ] **MOD-UI-003**: When the operator presses Validate, the page shall send the section's changed keys with `?dryRun=1` and show the returned issues or warnings; when the operator presses Save it shall send them without `dryRun`.
+- [ ] **MOD-UI-004**: When a save answers `409`, the page shall say that the file changed since it was loaded and offer to reload the section, discarding the unsaved edits only when the operator reloads.
+- [ ] **MOD-UI-005**: When a save succeeds with a non-empty `restart`, the page shall offer "Apply: restart <units>"; when the operator applies, it shall `POST /services/<id>/restart` for each listed unit one after another with an empty body, continue after a failure, and show each result.
+- [ ] **MOD-UI-006**: Where control is disabled, the page shall not offer Apply and shall instead name the units to restart and the `cohostctl restart <unit>` command.

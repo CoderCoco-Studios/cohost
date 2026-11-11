@@ -56,7 +56,7 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 | `voice.engine` | Synthesizer | Network | Heartbeat |
 | --- | --- | --- | --- |
 | `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }`; non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
-| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, EARS-AUD-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
+| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, SHARED-AUDIO-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
 
 `voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (schema default 1, example YAML 1.05), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
 
@@ -217,6 +217,10 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 `VoiceHealth` (`health.ts:7-19`): `service: "voice"`; `kokoro` engine gives mode `live` and `deps.kokoro` `ok` initially, `down` after any failed synthesis, `ok` again after the next success (the synthesizer is wrapped with `tracked`, `boot.ts:33`); `stub` gives mode `mock` and `kokoro: "n/a"`. `heartbeat.ready()` is called once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts:42`), so `ready` means voice can receive `brain.say`. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. Shutdown closes the HTTP server and stops the bus after the pre-shutdown `stopping` heartbeat (`boot.ts:37`, `packages/bus/src/index.ts:231-257`).
 
+## Shared WAV parsing
+
+voice parses every WAV it synthesizes with the shared `parseWav` (shared-runtime SHARED-AUDIO-001 to 003), which rejects non-PCM and non-16-bit data; a rejected WAV takes the `tts failed` path (VOICE-ENV-005).
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -271,7 +275,7 @@ Files in this segment:
 - `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `clips.ts`, `wav.ts`, `health.ts`
 - `services/voice/test/boot.test.ts`, `clips.test.ts`, `mouth-sync.test.ts` (voice's clip routes read by mouth's real clip sync), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
-- `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
+- `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; SHARED-AUDIO-001, SHARED-AUDIO-002)
 
 Other segments (arrow shows direction):
 

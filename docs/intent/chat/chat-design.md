@@ -76,7 +76,7 @@ Payload: `platform: "twitch"` (hard-coded, also for `fake`), `user: info.display
 
 1. `target !== "chat"` returns silently.
 2. Any other path answers with `inject.result {id, ok, detail?}`.
-3. Stale if `now() - ev.ts > INJECT_STALE_MS` (60 000, imported from `@cohost/shared`; the eyes LLD owns it, EYES-INJ-015) gives `ok:false, detail:"stale"`.
+3. Stale if `now() - ev.ts > INJECT_STALE_MS` (60 000, imported from `@cohost/shared`; the eyes LLD owns it, SHARED-INJ-008) gives `ok:false, detail:"stale"`.
 4. `kind !== "text"` gives `ok:false` with `chat cannot handle kind '<kind>'`.
 5. Text is collapsed and trimmed; blank gives `ok:false, detail:"blank text"`.
 6. Publishes `chat.message` with `platform: meta.platform ?? "twitch"`, `user: meta.user || "injected_viewer"`, `isMod`/`isSub` from `meta` (default false), `mentionsCohost` from the lowercased `cohostName` substring, `injected: true`, `remember: r.remember`; no `userId` (the field is optional and an injected viewer has no Twitch id). `ignore_users`/`ignore_prefixes` are deliberately not applied.

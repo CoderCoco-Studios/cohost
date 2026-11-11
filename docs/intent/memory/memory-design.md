@@ -279,7 +279,7 @@ processed it. A pass is triggered:
   started once the services are down. It processes every dirty note, ignores the
   threshold and does not wait for idle (`MEM-CONSOL-012`). It runs outside the
   memory service because Docker's default 10 s stop grace, and the bus's 2 s
-  `beforeShutdown` cap (event-bus BUS-STOP-002), are far too short for a model
+  `beforeShutdown` cap (event-bus SHARED-LIFE-001), are far too short for a model
   pass. The owner stops the stack in several ways (`docker compose down`,
   Ctrl-C, the dashboard), so the design depends on none of them: the one-shot is
   a best-effort extra, reachable from Compose (the `consolidate` one-shot service, deployment
@@ -476,13 +476,16 @@ structurally.
 
 ### In-memory `InMemoryStore` (`fake-store.ts`)
 
-Same interface, state in JS arrays and maps, lost on exit. It embeds with its own
-`hashEmbed` (`fake-store.ts:8-17`): 64 dims, tokens `[\p{L}\p{N}']+`, FNV-style hash,
-unsigned counts, L2-normalised, and an all-zero vector for text with no tokens.
-`@cohost/llm`'s `HashEmbedder` is a second, different hash embedder (also 64 dims
-but signed, tokens `[\p{L}\p{N}]+`, a fixed unit vector for empty text,
-`packages/llm/src/mock.ts:26-50`); it is used only when `store=postgres` and
-`embedder=hash`. `recall` mirrors the SQL semantics: 2-minute cutoff against an
+Same interface, state in JS arrays and maps, lost on exit. It embeds with
+`@cohost/llm`'s `HashEmbedder` (64 dims, signed FNV-1a buckets over
+`[\p{L}\p{N}]+` tokens, L2-normalised, a fixed unit vector for empty text;
+model-backends LLM-EMBED-005, 006), the same embedder `store=postgres` with
+`embedder=hash` uses, so hash-mode recall behaves the same in both stores
+(MEM-BACKEND-004). Signed buckets make unrelated texts score near or below zero
+and related texts lower than plain word overlap would, so the fake store's recall
+tests choose fixtures whose similarity clears `min_similarity` (default 0.35)
+rather than relying on any overlap scoring positive. The code today still carries
+a hasher of its own (`fake-store.ts:8-17`, unsigned counts) until chunk C8. `recall` mirrors the SQL semantics: 2-minute cutoff against an
 injectable clock, cosine by dot product, sort, top `k`, `min_similarity` filter
 (`fake-store.ts:39-49`). `touchViewer` lowercases the key, counts from 1 and never
 returns notes other than `""` (`fake-store.ts:52-58`). `recentSince` returns rows
@@ -606,7 +609,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler |. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
 | Consolidation trigger | Dirty-note count reaches `dirty_threshold` (default 20), plus one run after the owner shuts the AI down; dirty flags are the catch-up state | nightly schedule; every N minutes; after every write | Owner decision: no nightly schedule (the box may be off); work scales with what was captured; a missed run is caught up by the next one, as the reflection cursor does. `MEM-CONSOL-001`, `MEM-CONSOL-012`, `MEM-CONSOL-015` |
 | Mid-stream pacing | Start only while the cortex is idle (from `brain.status`), pause between viewers when it gets busy | run immediately; run only between streams |. On one GPU a consolidation call competing with a reply call delays the co-host's line; between-viewer pauses bound the delay to one hook call. `MEM-CONSOL-002`, `MEM-CONSOL-003` |
-| Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (BUS-STOP-002) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
+| Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (SHARED-LIFE-001) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
 | Pass vs live writes | Per-viewer transaction that commits only notes whose version is unchanged since the pass read them | hold row locks across the model call; pause capture during a pass |. Locks held across a model call would stall capture and owner deletions for seconds; a version check lets the newer write win and leaves the note dirty for the next pass. `MEM-CONSOL-007` |
 | One pass at a time | Postgres advisory lock shared by the service and the one-shot | a `meta` flag |. An advisory lock is released when its session ends, so a crashed pass never leaves a stale lock behind. `MEM-CONSOL-010` |
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
@@ -618,7 +621,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Legacy `viewers.notes` column | Left in place, unread | drop it in `init` |. Dropping a column is irreversible and the column is empty in practice (nothing ever wrote it). |
 | Postgres health | Every pool query feeds `deps.postgres` through `tracked()`; `degraded` with a detail while waiting for Ollama or Postgres at startup | startup-only flag; stay `starting` while waiting | owner decision 2026-11-01: the heartbeat reflects runtime dependency state, as the cortex does; `MEM-HEALTH-005`, `MEM-HEALTH-007` |
 | Recall k=0 | Short-circuit with no embed or query | query anyway | `config/config.example.yaml:111` documents `recall_k: 0` as "disables recall"; `store.ts:123`, `fake-store.ts:40` |
-| Isolated backend | Separate in-process store with its own 64-dim hash embedder | reuse `HashEmbedder` inside the fake | the fake is self-contained and ignores `brain.memory.embedder`; its unsigned counts keep similarity scores non-negative, so `min_similarity` stays meaningful for plain word overlap; it needs no async embedder; the fake store (commit `719ce5a`) predates `HashEmbedder` (commit `51d5a9c`), and OpenSpec `add-isolated-backends` accepts the fake's "own bag-of-words hashed vectors"; `fake-store.ts:8-17`, comment `backend.ts:16` |
+| Isolated backend | Separate in-process store that embeds with `@cohost/llm`'s `HashEmbedder` | Its own unsigned hash embedder | One embedder means fake-store tests exercise the vectors hash mode really stores; a second hasher with different tokens, signs and empty-text output made the two disagree. The fake still ignores `brain.memory.embedder` and needs no network. Owner decision (shared-runtime, Hash embedding). |
 | Reflection with the in-memory store | Logged no-op | reflect over the fake | Commit `719ce5a`: "`reflect` still uses the Postgres store (it runs in a separate process, so a fake would be empty)"; `reflect.ts:22-25` |
 | Mode reporting | `mock` if either store or embedder is non-default | per-dependency mode | `live` means memory as a real stream needs it: persistent rows and semantic recall. Either substitute (the in-process store forgets on restart; the hash embedder matches words, not meaning) means recall is not real, so the mode says `mock`; which dependency is substituted is already visible per dependency as `n/a` in `deps`; `health.ts:7-11,24` |
 | Reflection placement | Offline CLI, writes personality file | in-service timer; DB-only learned facts | Comments `index.ts:12` ("Consolidation (\"sleep\") is reflect.ts, run between streams") and `reflect.ts:1-9` ("This is how the personality drifts over time instead of resetting every stream. Edit the file by hand whenever you like.") |

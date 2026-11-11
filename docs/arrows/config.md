@@ -108,7 +108,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 None outstanding in this segment. Implemented: no-`.env` load (CFG-ISO-005) and inline `.env` comment stripping (CFG-ENV-006).
 
 ### Should Fix
-1. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, EYES-INJ-012, EYES-INJ-013), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
+1. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, SHARED-INJ-006, SHARED-INJ-007), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
 2. Add tests for the remaining untested implemented specs: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, and the uncovered halves of the partially tested ones (Key Finding 7).
 
 ### Nice to Have

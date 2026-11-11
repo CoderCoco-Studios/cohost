@@ -96,17 +96,17 @@ The Discord output is the co-host's own Discord bot, the one viewers see speak. 
 
 1. **Intents.** `Guilds` and `GuildVoiceStates`. mouth needs no member names, so it does not request the privileged `GuildMembers` intent.
 2. **Join.** On the client's `ready` event mouth fetches the guild and channel named by `mouth.outputs.discord.guild_id` and `voice_channel_id` (MOUTH-SESS-003 for empty or non-voice values), joins with `selfDeaf: true, selfMute: false` (MOUTH-SESS-002), and waits up to 20 s for Ready. Self-deafened, the bot receives no audio it would only discard, and the channel shows that the speaking bot does not listen. On Ready it subscribes its audio player to the connection, marks the output ready, sets `deps.discord: ok` and reports `ready` (MOUTH-SESS-004).
-3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (MOUTH-SESS-006). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (MOUTH-SESS-005). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
+3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (SHARED-DVS-004). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (SHARED-DVS-003). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
 4. **Shutdown.** One sequence: stop the clip refresh, destroy the voice connection and the client, then stop the bus (MOUTH-SESS-007).
 
-The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (MOUTH-AUD-001), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
+The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (SHARED-AUDIO-006), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
 
 ## Playback
 
 Each enabled output has a `Playback` queue: FIFO with one current slot.
 
 - **Intake.** A `voice.utterance` is queued on every enabled output that is ready; an output that is not ready skips it (MOUTH-ROUTE-003). mouth plays every utterance it reads, whatever the mute or pause state: it never subscribes to `control`, because cortex and salience enforce mute and pause upstream (MOUTH-PLAY-008).
-- **Play.** The output takes the head, fetches the WAV from `audioUrl`, converts it (MOUTH-AUD-001), applies the output's gain (MOUTH-ROUTE-005), hands it to its player, and **then** publishes `voice.playing { id, sink: <name> }` (MOUTH-PLAY-002, MOUTH-PLAY-003).
+- **Play.** The output takes the head, fetches the WAV from `audioUrl`, converts it (SHARED-AUDIO-006), applies the output's gain (MOUTH-ROUTE-005), hands it to its player, and **then** publishes `voice.playing { id, sink: <name> }` (MOUTH-PLAY-002, MOUTH-PLAY-003).
 - **Finish.** When the player goes idle with an item current, the output publishes `voice.done { id, sink: <name> }` and starts the next item (MOUTH-PLAY-004). A failed `voice.done` publish is logged and the queue continues (MOUTH-PLAY-009).
 - **Give up.** If the fetch, the conversion or the hand-over to the player throws before any audio started, the output logs `playback failed` and gives up on that line (MOUTH-PLAY-005): exactly one `voice.failed { id, sink: <name>, reason }` (MOUTH-PLAY-006), a fallback clip in its place when one is eligible, and the next item. A player error after audio started is not a give-up; it is logged (MOUTH-PLAY-007) and ends in Idle like any line.
 
@@ -165,7 +165,7 @@ On a give-up, in the same queue slot and before the next queued line:
 2. **Storm limit.** If this output last handed a fallback clip to its player less than `mouth.fallback.min_interval_ms` ago, no fallback (MOUTH-FALL-007). `voice.failed` still goes out for every give-up.
 3. **Use the cache.** The clip comes from the in-memory cache, with no network or disk read at that moment (MOUTH-FALL-004). An empty cache, or one where every clip is marked bad, means no fallback (MOUTH-FALL-005).
 4. **Pick.** Uniformly at random among clips not marked bad, excluding the phrase this output started last when another eligible clip exists (MOUTH-FALL-006).
-5. **Play.** Convert as an utterance (MOUTH-AUD-001), apply the output's gain, hand to the player (MOUTH-FALL-001). A clip that fails conversion means no fallback, a warning naming the clip, and the clip is not picked again until the cache's `fingerprint` changes; a player throw means no fallback and marks nothing; there is no second try (MOUTH-FALL-008).
+5. **Play.** Convert as an utterance (SHARED-AUDIO-006), apply the output's gain, hand to the player (MOUTH-FALL-001). A clip that fails conversion means no fallback, a warning naming the clip, and the clip is not picked again until the cache's `fingerprint` changes; a player throw means no fallback and marks nothing; there is no second try (MOUTH-FALL-008).
 6. **Report.** Once the player has the clip: `voice.playing { id, sink: <name> }` for the given-up id, then `voice.failed` with `fallback` (MOUTH-FALL-002). The clip is then the current item; on Idle the output publishes `voice.done` for the id and moves on (MOUTH-FALL-003).
 
 Bad-clip marks, the last-started phrase and the storm timer live in memory, per output, and reset on restart.
@@ -193,7 +193,7 @@ Bad-clip marks, the last-started phrase and the storm timer live in memory, per 
 
 - `mode`: `off` in the `off` plan, else `live`.
 - `deps`: one key per output kind under `mouth.outputs` (today `discord`): `n/a` for a disabled output, `ok` only while that output's connection is ready, `down` otherwise, so `no-token` is always `down` (MOUTH-HLTH-002).
-- State: `starting` until the first join attempt resolves; `ready` on Ready; `degraded` with a detail while a join fails (MOUTH-SESS-006); `startHeartbeat` turns any `down` dep on a `ready` service into `degraded`.
+- State: `starting` until the first join attempt resolves; `ready` on Ready; `degraded` with a detail while a join fails (SHARED-DVS-004); `startHeartbeat` turns any `down` dep on a `ready` service into `degraded`.
 
 mouth has no `voice` dependency in its heartbeat: an unreachable voice shows up as give-ups and an unchanged clip cache, and voice reports its own health.
 
@@ -210,6 +210,12 @@ ears and mouth share no process, connection, consumer group or file, so either r
 | Only ears deployed | hears Discord | no Discord output; the dashboard page or the virtual sink times every line |
 | ears and mouth in different channels or guilds | hears its channel | speaks in its own; allowed, the owner's choice |
 | voice down | unaffected | every line gives up; fallback clips play from the cache, at most one per 20 s |
+
+## Dry-run output and shared modules
+
+An output named `dryrun` (`mouth.outputs.dryrun`, CFG-SCH-023; enabled by the isolation preset) lets mouth be tested with no Discord. It is ready from startup, fetches each line like any output, reads its duration, claims it with `voice.playing` under sink name `dryrun`, waits that long and publishes `voice.done`, sending audio nowhere. With `fail_every` n > 0 it gives up on every n-th line, so the fallback line path runs end to end (MOUTH-DRY-*). When `dryrun` is enabled and the Discord output is disabled or has no token, mouth runs in the `local` plan: no Discord client, the bus loop, the clip refresh and the `dryrun` output (MOUTH-START-003). It is a real sink in voice's arbitration while enabled, so it is off by default and on only in the isolation preset or when the owner turns it on.
+
+The Discord connection runs through the shared Discord voice session (MOUTH-SESS-009) and conversion through the shared audio module (MOUTH-AUD-002).
 
 ## Decisions & Alternatives
 

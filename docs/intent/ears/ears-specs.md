@@ -2,7 +2,7 @@
 
 Segment `ears` (prefix `EARS`). Mapped 2026-10-31 at git `686cc8f`; verified against the code in the audit pass of 2026-11-01. Owner decisions of 2026-11-01 applied at git `1b57790`; reworded for the listening and speaking split, built 2026-11-11. LLD: [ears-design.md](ears-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred.
 
-The listening and speaking split moved the playback sink and the spoken fallback line to [mouth](../mouth/mouth-specs.md). Retired with it, numbers not reused: EARS-AUD-002 (now MOUTH-AUD-001), EARS-PLAY-001 to 009 (now MOUTH-PLAY-001 to 009) and EARS-FALL-001 to 019 (now MOUTH-FALL-001 to 019).
+The listening and speaking split moved the playback sink and the spoken fallback line to [mouth](../mouth/mouth-specs.md). Retired with it, numbers not reused: EARS-AUD-002 (now SHARED-AUDIO-006), EARS-PLAY-001 to 009 (now MOUTH-PLAY-001 to 009) and EARS-FALL-001 to 019 (now MOUTH-FALL-001 to 019).
 
 ## Startup plans
 
@@ -20,11 +20,10 @@ The listening and speaking split moved the playback sink and the spoken fallback
 - [x] **EARS-SESS-002**: When the Discord client is ready in the `discord` plan, the ears service shall join the voice channel `ears.discord.voice_channel_id` of guild `ears.discord.guild_id` (EARS-SESS-007) self-muted and not self-deafened, and wait up to 20 s for the connection to reach Ready. <!-- test: services/ears/test/session.test.ts:49 --> <!-- openspec: ears § Discord session -->
 - [x] **EARS-SESS-003**: If the configured channel is not a voice-based channel, then the ears join attempt shall fail with the error "ears.discord.voice_channel_id is not a voice channel". <!-- openspec: ears § Discord session -->
 - [x] **EARS-SESS-004**: When the ears voice connection reaches Ready, the ears service shall mark `deps.discord` `ok` and report the heartbeat `ready`, attaching no audio player to the connection. <!-- test: services/ears/test/session.test.ts:49 --> <!-- openspec: ears § Heartbeat (add-service-health) -->
-- [x] **EARS-SESS-005**: When the ears voice connection is Disconnected and does not enter Signalling or Connecting within 5 s, the ears service shall mark `deps.discord` `down`, destroy the connection, and attempt to rejoin after 5 s. <!-- openspec: ears § Discord session -->
-- [x] **EARS-SESS-006**: If a voice-channel join fails in the `discord` plan (the initial join or a rejoin after a disconnect), then the ears service shall log the failure, report heartbeat `degraded` with `deps.discord` `down`, keep its bus subscription running, and retry the join with increasing delay until it succeeds. <!-- test: packages/shared/test/join.test.ts:11 --> <!-- test: packages/shared/test/join.test.ts:27 --> <!-- test: packages/shared/test/join.test.ts:35 -->
 - [x] **EARS-SESS-007**: When joining in the `discord` plan, the ears service shall select the guild and voice channel from the configuration keys `ears.discord.guild_id` and `ears.discord.voice_channel_id` (which the example configuration fills from `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID`), not by reading those environment variables directly. <!-- test: services/ears/test/session.test.ts:7 -->
 - [x] **EARS-SESS-008**: When the process receives a shutdown signal in the `discord` plan, the ears service shall run one shutdown sequence that destroys the voice connection and the Discord client and then stops the bus before exiting. <!-- test: services/ears/test/session.test.ts:89 -->
 - [x] **EARS-SESS-009**: The ears service shall log in to Discord with the token in `EARS_DISCORD_TOKEN` and shall never log in with `DISCORD_TOKEN`. <!-- test: services/ears/test/health.test.ts:32 -->
+- [ ] **EARS-SESS-010**: The ears service shall hold its voice connection through the shared Discord voice session (shared-runtime SHARED-DVS-*), self-muted and not self-deafened, with join retry base 5 s and cap 60 s; when the session reports a failed join it shall log the failure, report heartbeat `degraded` with `deps.discord` `down` and keep its bus subscription running, and when the session disconnects it shall set `deps.discord` `down`. (Replaces EARS-SESS-005 and EARS-SESS-006, retired, numbers not reused.)
 
 ## Listening and transcription
 
@@ -40,21 +39,23 @@ The listening and speaking split moved the playback sink and the spoken fallback
 
 ## Audio conversion
 
-- [x] **EARS-AUD-001**: When converting captured Discord audio for speech-to-text, the ears service shall downsample 48 kHz stereo s16le PCM to a 16 kHz mono WAV by averaging each group of 3 frames and both channels, clamping to the int16 range and dropping a trailing partial group. <!-- test: services/ears/test/audio.test.ts:32,44,50 --> <!-- openspec: ears § Audio conversion -->
-- [x] **EARS-AUD-003**: When parsing a WAV in the ears service, `readWavHeader` (a thin adapter over the shared `parseWav`, `@cohost/shared`) shall walk the RIFF chunks without requiring the RIFF/WAVE header (skipping unknown and odd-sized chunks), return sample rate, channel count and clamped data offset and length, and throw "bad wav" if there is no data chunk. <!-- test: services/ears/test/audio.test.ts:18,23 --> <!-- test: packages/shared/test/wav.test.ts:39,46,60 --> <!-- openspec: ears § Audio conversion -->
-- [x] **EARS-AUD-004**: When a service wraps raw s16le PCM as a WAV, the shared `wavWrap` (`@cohost/shared`, used by ears for the STT clip and by voice for the stub engine) shall prepend a canonical 44-byte PCM16 header carrying the given sample rate and channel count, with byte rate, block align and RIFF and data lengths derived from them, so that the shared `parseWav` reads the same rate, channels, data span and duration back. <!-- test: packages/shared/test/wav.test.ts:71 --> <!-- test: packages/shared/test/wav.test.ts:90 -->
+Retired, numbers not reused: EARS-AUD-001 (now shared-runtime SHARED-AUDIO-005), EARS-AUD-003 (now SHARED-AUDIO-001), EARS-AUD-004 (now SHARED-AUDIO-004).
+
+- [ ] **EARS-AUD-005**: When converting captured Discord audio for speech-to-text, the ears service shall convert 48 kHz stereo s16le PCM to 16 kHz mono with the shared `resample` (SHARED-AUDIO-005) and wrap it with the shared `wavWrap` (SHARED-AUDIO-004).
 
 ## Audio injection
 
-- [x] **EARS-INJ-001**: When an `inject.request` with `target` other than `ears` arrives, the ears service shall ignore it and publish nothing. <!-- test: services/ears/test/inject.test.ts:81 --> <!-- openspec: ears § Injected audio -->
-- [x] **EARS-INJ-002**: If an `inject.request` for ears is older than 60 s by its event timestamp, then the ears service shall publish `inject.result` with `ok` false and detail `stale` and no `speech.heard`. <!-- test: services/ears/test/inject.test.ts:81 --> <!-- openspec: ears § Injected audio -->
-- [x] **EARS-INJ-003**: If an `inject.request` for ears has `kind` other than `audio`, then the ears service shall publish `inject.result` with `ok` false and detail "ears cannot handle kind '<kind>'".
-- [x] **EARS-INJ-004**: If an `inject.request` URL is not on the origin of `urls.dashboard()` under `/uploads/` (or carries credentials), then the ears service shall fetch nothing and publish `inject.result` with `ok` false and detail "url is not an upload of this dashboard"; an accepted fetch shall refuse redirects and a non-2xx response shall yield `ok` false with detail "fetch upload <status>". <!-- test: services/ears/test/inject.test.ts:72 --> <!-- openspec: ears § Injected audio -->
 - [x] **EARS-INJ-005**: When an `inject.request` for ears with `kind` `audio` and an accepted URL arrives, the ears service shall send the fetched bytes unchanged to speech-to-text with the response content type as hint, without applying `ears.min_speech_ms`. <!-- test: services/ears/test/inject.test.ts:27,36,46 --> <!-- openspec: ears § Injected audio -->
 - [x] **EARS-INJ-006**: When an injected clip transcribes to a transcript with at least one word character, the ears service shall publish `speech.heard` with `speaker` set to `meta.user` or `injected`, `durationMs` from the WAV header (0 for non-WAV), `injected` true and the request's `remember`, followed by `inject.result` with `ok` true and the text as detail. <!-- test: services/ears/test/inject.test.ts:27,36,46,91 --> <!-- openspec: ears § Injected audio -->
 - [x] **EARS-INJ-007**: While the ears plan is `discord`, the ears service shall start handling `inject.request` for ears before it logs in to Discord and keep handling it whether or not the voice-channel join succeeds. <!-- openspec: ears § Injected audio (MUST work when Discord is not connected) --> <!-- test: services/ears/test/session.test.ts:26 -->
 - [x] **EARS-INJ-008**: If an injected clip's transcript is empty or non-word, or speech-to-text or the upload fetch throws, then the ears service shall publish `inject.result` with `ok` false (detail "empty transcript" or the error text) and no `speech.heard`. <!-- test: services/ears/test/inject.test.ts:54,64 --> <!-- openspec: ears § Injected audio -->
 - [x] **EARS-INJ-009**: Where the ears plan is `off` or `no-token`, the ears service shall still handle `inject.request` for ears. <!-- openspec: ears § Injected audio -->
+- [ ] **EARS-INJ-010**: The ears service shall handle `inject.request` through the shared inject handler (shared-runtime SHARED-INJ-*) with target `ears`, the single kind `audio`, a byte cap of 26214400 (the dashboard's default audio upload cap) and a fetch timeout of 30000 ms. (EARS-INJ-001 to 004 are retired, now SHARED-INJ-001 to 005; numbers not reused.)
+
+## Stub transcriber
+
+- [ ] **EARS-STUB-001**: Where `ears.stt_engine` is `stub`, the ears service shall transcribe every captured or injected clip without any network request, returning the text `stub transcript (<n> ms)` where n is the clip's duration (0 when unknown).
+- [ ] **EARS-STUB-002**: Where `ears.stt_engine` is `stub`, the ears heartbeat shall report mode `mock` (or `off` when `ears.source` is `off`) and `deps.stt` `n/a`, and the service shall log a startup warning that transcripts are stubbed.
 
 ## Health
 

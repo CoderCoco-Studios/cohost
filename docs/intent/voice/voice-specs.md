@@ -25,8 +25,9 @@ Design: [voice-design.md](voice-design.md). Prefix `VOICE`. Audited against the 
 
 ## WAV and lip-sync envelope
 
-- [x] **VOICE-ENV-001**: When the voice service parses a WAV with the shared `parseWav` (`@cohost/shared`), it shall require a `RIFF`/`WAVE` header, skip unknown and odd-sized chunks, read channels, sample rate and bit depth from `fmt `, clamp the data length to the bytes present, and compute duration in milliseconds from the frame count. <!-- test: packages/shared/test/wav.test.ts:27 --> <!-- test: packages/shared/test/wav.test.ts:39 --> <!-- test: packages/shared/test/wav.test.ts:46 -->
-- [x] **VOICE-ENV-002**: If a buffer is not RIFF/WAVE or has no data chunk, then the shared `parseWav` shall throw "not a RIFF/WAVE file" or "no data chunk" respectively. <!-- openspec: voice § Envelope extraction --> <!-- test: packages/shared/test/wav.test.ts:53 -->
+Retired, numbers not reused: VOICE-ENV-001 and VOICE-ENV-002 (now shared-runtime SHARED-AUDIO-001 and SHARED-AUDIO-002).
+
+- [ ] **VOICE-ENV-005**: The voice service shall parse every WAV it synthesizes with the shared `parseWav` (SHARED-AUDIO-001 to SHARED-AUDIO-003), and a WAV it rejects shall take the `tts failed` path (VOICE-UTT-003).
 - [x] **VOICE-ENV-003**: When computing a lip-sync envelope, the voice service shall emit one value per window of `floor(sampleRate / 30)` frames of the first channel (including a partial last window), each `min(1, (rms / 0.22) ^ 0.8)`, smoothed so each value is at least 0.6 times the previous one, rounded to 2 decimals. <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts:21 --> <!-- test: services/voice/test/wav.test.ts:35 -->
 - [x] **VOICE-ENV-004**: If a WAV is not 16-bit, then envelope extraction shall throw "unsupported bit depth <n>". <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts:55 -->
 

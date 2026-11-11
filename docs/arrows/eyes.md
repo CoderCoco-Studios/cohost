@@ -14,7 +14,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 2. **R4** Boot health while OBS is unreachable → `degraded` with `obs: down`. Specs: EYES-HEALTH-006 (`[x]`).
 3. **R4** Shared tracked describer → keep; an injected failure marks `ollama` down. Specs: EYES-HEALTH-003 (reworded, `[x]`).
 4. **R2** Shutdown with vision disabled → one shutdown sequence that stops the bus and sends `stopping`. Specs: EYES-ENAB-005 (new, `[x]`); EYES-OBS-008 stays `[x]` for the enabled plan.
-5. **R1** Timeouts and upload cap → configured timeouts on the describe call and the upload fetch, configured maximum upload size. Specs: EYES-DESC-006, EYES-INJ-012, EYES-INJ-013 (new, `[x]`).
+5. **R1** Timeouts and upload cap → configured timeouts on the describe call and the upload fetch, configured maximum upload size. Specs: EYES-DESC-006, SHARED-INJ-006, SHARED-INJ-007 (new, `[x]`).
 6. **S14** `vision.summary.changed` → keep, always `true` because eyes publishes only changes. Specs: EYES-LOOK-001 (reworded).
 7. **P8** Restart replay → `inject.request` subscription uses start mode `latest`. Specs: EYES-INJ-014 (new, `[x]`), EYES-INJ-001 (reworded).
 
@@ -78,7 +78,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/s
 | Test injection | EYES-INJ-001 to 015 | 15 | 0 | 0 |
 | Health | EYES-HEALTH-001 to 006 | 6 | 0 | 0 |
 
-**Summary:** 45 of 45 specs implemented; 0 gaps; 0 deferred. 33 of the 45 have a test citing them. The 12 without a test are the `index.ts` wiring (EYES-ENAB-002, EYES-ENAB-004, EYES-OBS-001, EYES-OBS-005, EYES-OBS-006, EYES-LOOK-003 to 005, EYES-INJ-001, EYES-HEALTH-005) plus EYES-DESC-005 (prompt text) and EYES-INJ-004 (wrong kind). The redirect half of EYES-INJ-006 is also untested.
+**Summary:** 45 of 45 specs implemented; 0 gaps; 0 deferred. 33 of the 45 have a test citing them. The 12 without a test are the `index.ts` wiring (EYES-ENAB-002, EYES-ENAB-004, EYES-OBS-001, EYES-OBS-005, EYES-OBS-006, EYES-LOOK-003 to 005, EYES-INJ-001, EYES-HEALTH-005) plus EYES-DESC-005 (prompt text) and SHARED-INJ-003 (wrong kind). The redirect half of SHARED-INJ-005 is also untested.
 
 ## Key Findings
 
@@ -88,8 +88,8 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/s
 4. **Disabled gate is correct and tested** — `startEyes` (`eyes.ts:86-94`, test `test/eyes.test.ts:70`) fixed the earlier bug where eyes connected to OBS with `vision.enabled=false` (463b1bb). Injection still works while disabled.
 5. **Change detection is entirely model-driven** — the service trusts the literal word `SAME` (`eyes.ts:65`, prompt at `:35-37`); every interval costs a model call. `changed` is always `true` (`eyes.ts:71`) by contract (S14).
 6. **One tracked `describe` is shared by loop and injection** — a bad injected image marks `ollama` down for the live heartbeat (`index.ts:56`, `:63`; `health.ts:17-19`); kept by decision (R4).
-7. **Outbound calls are bounded** — the Ollama call aborts after `vision.timeout_ms` (EYES-DESC-006); the upload fetch aborts after `vision.upload_timeout_ms` and the body is cut off past `vision.upload_max_bytes` (EYES-INJ-012, EYES-INJ-013; R1). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
-8. **`uploadUrl`/`INJECT_STALE_MS` shared** — one definition in `packages/shared/src/inject.ts`, imported by eyes, ears and chat (EYES-INJ-015, owner decision of 2026-11-08); the former copies are deleted.
+7. **Outbound calls are bounded** — the Ollama call aborts after `vision.timeout_ms` (EYES-DESC-006); the upload fetch aborts after `vision.upload_timeout_ms` and the body is cut off past `vision.upload_max_bytes` (SHARED-INJ-006, SHARED-INJ-007; R1). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
+8. **`uploadUrl`/`INJECT_STALE_MS` shared** — one definition in `packages/shared/src/inject.ts`, imported by eyes, ears and chat (SHARED-INJ-008, owner decision of 2026-11-08); the former copies are deleted.
 9. **Decisions evidenced** — LLD Decisions rows cite a comment, commit (463b1bb, 51d5a9c), archived OpenSpec design or the owner decision of 2026-11-01; change detection, OBS retry, prompt options and stay `[inferred]`; the shared-helper row cites the owner decision of 2026-11-08.
 
 ## Work Required
@@ -101,6 +101,6 @@ None: all seven gap specs are implemented.
 None.
 
 ### Nice to Have
-1. Add tests for the loop wiring, cadence, wrong-kind injection and redirect refusal (EYES-LOOK-003, EYES-INJ-004, EYES-INJ-006).
+1. Add tests for the loop wiring, cadence, wrong-kind injection and redirect refusal (EYES-LOOK-003, SHARED-INJ-003, SHARED-INJ-005).
 2. Make the system prompt, `num_predict`, `keep_alive` and JPEG quality configurable (EYES-DESC-001).
 3. Add backoff to the OBS connect retries (EYES-OBS-002).

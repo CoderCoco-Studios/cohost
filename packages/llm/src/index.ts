@@ -24,7 +24,11 @@ export interface ChatMessage { role: "system" | "user" | "assistant"; content: s
 export interface ChatOptions {
   maxTokens?: number;
   temperature?: number;
-  /** JSON reply wanted: don't send stop sequences (a blank line or a transcript tag inside JSON would truncate it). */
+  /**
+   * JSON reply wanted: send no stop sequences (a blank line or a transcript tag inside JSON would truncate it) and,
+   * where the backend has a JSON mode, ask for one (Ollama `format: "json"`, OpenAI-compatible `response_format`).
+   * Claude has no schema-free JSON mode, so its reply is parsed by the caller (`extractJson`).
+   */
   json?: boolean;
   /** Abort the in-flight request (hook timeouts). */
   signal?: AbortSignal;
@@ -81,6 +85,7 @@ export function createEmbedder(cfg: Config["llm"]): Embedder { // @spec LLM-EMBE
 export class Ollama implements ChatProvider, Embedder {
   readonly name = "ollama";
   readonly model: string;
+  lastError?: string;
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006
@@ -92,6 +97,7 @@ export class Ollama implements ChatProvider, Embedder {
         messages,
         stream: false,
         keep_alive: "24h",
+        ...(opts.json ? { format: "json" } : {}), // @spec LLM-CHAT-010
         options: {
           temperature: opts.temperature ?? this.cfg.temperature,
           num_ctx: this.cfg.num_ctx,
@@ -120,7 +126,6 @@ export class Ollama implements ChatProvider, Embedder {
     return v;
   }
 
-  lastError?: string;
   async ping(): Promise<boolean> { // @spec LLM-PING-001, LLM-PING-005
     try {
       const r = await fetch(`${this.base}/api/tags`, { signal: requestSignal(this.cfg) }); // @spec LLM-CHAT-008
@@ -139,6 +144,7 @@ export class Ollama implements ChatProvider, Embedder {
 export class OpenAICompatible implements ChatProvider {
   readonly name = "openai";
   readonly model: string;
+  lastError?: string;
   private base: string;
   constructor(private cfg: Config["llm"]) {
     this.model = cfg.model;
@@ -161,7 +167,7 @@ export class OpenAICompatible implements ChatProvider {
         stream: false,
         temperature: opts.temperature ?? this.cfg.temperature,
         max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
-        ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-002, LLM-STOP-003
+        ...(opts.json ? { response_format: { type: "json_object" } } : { stop: REPLY_STOPS }), // @spec LLM-STOP-002, LLM-STOP-003, LLM-CHAT-010
       }),
       signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
@@ -170,7 +176,6 @@ export class OpenAICompatible implements ChatProvider {
     return (json.choices?.[0]?.message?.content ?? "").trim(); // @spec LLM-CHAT-007, LLM-IF-004
   }
 
-  lastError?: string;
   async ping(): Promise<boolean> { // @spec LLM-PING-002, LLM-PING-005
     try {
       const r = await fetch(`${this.base}/models`, { headers: this.headers(), signal: requestSignal(this.cfg) }); // @spec LLM-CHAT-008
@@ -185,12 +190,17 @@ export class OpenAICompatible implements ChatProvider {
 /**
  * Claude. Shared by the Claude API and Bedrock paths; only the client and the
  * fallback option differ. Thinking is always on for current Claude models and
- * `max_tokens` caps thinking + text together, so this path uses its own,
- * roomier `max_tokens` and keeps effort low — the prompt asks for one line.
+ * `max_tokens` caps thinking + text together, so a call that names no budget
+ * gets `llm.claude.max_tokens` (roomier than the Ollama/OpenAI cap) and effort
+ * stays low — the prompt asks for one line. A call that names a budget gets it.
  */
+/** The smallest `max_tokens` the Claude API accepts. */
+const CLAUDE_MIN_MAX_TOKENS = 1;
+
 abstract class ClaudeBase implements ChatProvider {
   abstract readonly name: string;
   readonly model: string;
+  lastError?: string;
   protected abstract client: Anthropic | AnthropicBedrockMantle;
   protected abstract serverFallbacks: boolean;
 
@@ -203,7 +213,8 @@ abstract class ClaudeBase implements ChatProvider {
       .map((m) => ({ role: m.role, content: m.content }));
     if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" }); // @spec LLM-CLAUDE-002
 
-    const maxTokens = Math.max(opts.maxTokens ?? 0, this.cfg.claude.max_tokens); // @spec LLM-CLAUDE-003
+    // The caller's budget is honoured (thinking shares it; hooks run at low effort), down to the API's minimum of 1.
+    const maxTokens = opts.maxTokens === undefined ? this.cfg.claude.max_tokens : Math.max(CLAUDE_MIN_MAX_TOKENS, Math.floor(opts.maxTokens)); // @spec LLM-CLAUDE-003
     const res = await this.client.beta.messages.create({
       model: this.cfg.model,
       max_tokens: maxTokens,
@@ -223,7 +234,6 @@ abstract class ClaudeBase implements ChatProvider {
       .trim();
   }
 
-  lastError?: string;
   abstract ping(): Promise<boolean>;
 }
 

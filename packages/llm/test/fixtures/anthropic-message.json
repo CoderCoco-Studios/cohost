@@ -1,0 +1,14 @@
+{
+  "id": "msg_01FixtureAnthropic",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    { "type": "thinking", "thinking": "The viewer greeted me; keep it to one line.", "signature": "fixture-signature" },
+    { "type": "text", "text": " [happy] Hello chat! " },
+    { "type": "text", "text": "Welcome in. " }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": { "input_tokens": 41, "output_tokens": 63 }
+}

@@ -1,6 +1,7 @@
 import { Bus, type Publisher } from "@cohost/bus";
 import { onShutdown as busOnShutdown, startHeartbeat, type HealthPublisher } from "@cohost/shared";
 import { loadConfig as loadCfg, type Config, type Logger } from "@cohost/config";
+import { hookHealth, pingHooks } from "@cohost/modules";
 import { createAppraiser as createAppraiserFor } from "./appraise.js";
 import { Affect } from "./affect.js";
 import { affectHealth } from "./health.js";
@@ -35,8 +36,10 @@ export async function main(log: Logger, over: Partial<MainEnv> = {}): Promise<vo
   try {
     const cfg = env.loadConfig();
     const bus = env.createBus(log);
-    const heartbeat = startHeartbeat(bus, { ...affectHealth, log }); // @spec AFF-HEALTH-001
     const appraiser = env.createAppraiser(cfg, log); // @spec AFF-HOOK-001
+    const hooks = hookHealth([appraiser]); // @spec HOOK-HEALTH-004: mode mock and the appraiser hook's dependency
+    const heartbeat = startHeartbeat(bus, { ...affectHealth, ...hooks, log }); // @spec AFF-HEALTH-001
+    void pingHooks([appraiser], log); // @spec HOOK-HEALTH-005
     const affect = new Affect({ cfg, bus, appraiser, log });
 
     // The group must exist before `ready`: bus.subscribe only resolves when stopped, so it cannot be awaited.

@@ -54,6 +54,11 @@ export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: str
   };
 }
 
+/** The path of a request target, without its query string; a target that does not parse matches no route. */
+function pathOf(target: string | undefined): string {
+  try { return new URL(target ?? "/", "http://voice.invalid").pathname; } catch { return ""; }
+}
+
 /** The voice region: synthesis, the bounded audio store, the virtual sink and the audio HTTP endpoint. */
 export class Voice {
   // ---- audio store (in-memory, bounded)
@@ -68,10 +73,60 @@ export class Voice {
   private phase = new Map<string, "window" | "publishing">();
   /** Ids a sink gave up on (a `voice.failed` without fallback) before the window ended or the virtual `voice.playing` finished publishing. */
   private givenUp = new Set<string>();
+  /** Pending claim-window timers; `stop` clears them. */
+  private windows = new Set<NodeJS.Timeout>();
+  // ---- synthesis queue
+  /** `brain.say` events waiting for synthesis, oldest first; handled one at a time off the bus read loop. */
+  private queue: BusEvent<"brain.say">[] = [];
+  private draining: Promise<void> | undefined;
+  private stopped = false;
 
   constructor(private d: VoiceDeps) {}
 
-  private put(id: string, wav: Buffer) { // @spec VOICE-HTTP-001
+  /** Resolves once every queued `brain.say` has been handled (and immediately when none is queued). */
+  async whenIdle(): Promise<void> {
+    while (this.draining) await this.draining;
+  }
+
+  /**
+   * Shut the region down: drop queued lines, stop an in-flight line from publishing or arming timers, and clear the
+   * claim-window and virtual-done timers so nothing is published after the bus has stopped.
+   */
+  stop(): void { // @spec VOICE-SYN-008, VOICE-HLTH-005
+    this.stopped = true;
+    this.queue.length = 0;
+    for (const t of this.windows) clearTimeout(t);
+    this.windows.clear();
+    for (const t of this.virtualDone.values()) clearTimeout(t);
+    this.virtualDone.clear();
+  }
+
+  /** Queue a line for synthesis; the loop that reads the bus returns at once (VOICE-SYN-007). */
+  private enqueue(ev: BusEvent<"brain.say">): void { // @spec VOICE-SYN-007
+    if (this.stopped) return;
+    this.queue.push(ev);
+    this.draining ??= this.drain();
+  }
+
+  private async drain(): Promise<void> {
+    try {
+      while (!this.stopped) {
+        const ev = this.queue.shift();
+        if (!ev) break;
+        try {
+          await this.onSay(ev);
+        } catch (err) {
+          this.d.log.error({ err, id: ev.data.id }, "synthesis failed");
+        }
+      }
+    } finally {
+      this.draining = undefined;
+    }
+  }
+
+  private put(id: string, wav: Buffer) { // @spec VOICE-HTTP-001, VOICE-HTTP-008
+    const at = this.order.indexOf(id);
+    if (at >= 0) this.order.splice(at, 1); // a re-used id is the newest entry, once
     this.store.set(id, wav);
     this.order.push(id);
     while (this.order.length > 50) {
@@ -103,6 +158,7 @@ export class Voice {
     this.phase.set(id, "publishing");
     await this.publishVirtual("voice.playing", id);
     this.phase.delete(id);
+    if (this.stopped) return;
     const reported = this.givenUp.delete(id);
     if (this.claimed.has(id)) return;
     if (reported) { // a sink gave up on the line meanwhile: release at once instead of waiting out its duration
@@ -117,7 +173,7 @@ export class Voice {
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
-    if (ev.type === "brain.say") await this.onSay(ev as BusEvent<"brain.say">);
+    if (ev.type === "brain.say") this.enqueue(ev as BusEvent<"brain.say">);
     else if (ev.type === "voice.failed") await this.onFailed(ev as BusEvent<"voice.failed">);
     else if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
@@ -150,6 +206,7 @@ export class Voice {
     const t0 = Date.now();
     try {
       const wav = await this.d.synth(text);
+      if (this.stopped) return;
       const info = parseWav(wav);
       const env = envelope(wav, info, ENVELOPE_HZ);
       this.put(id, wav);
@@ -164,7 +221,8 @@ export class Voice {
       });
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
       this.phase.set(id, "window");
-      setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004, VOICE-SINK-011
+      const timer = setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004, VOICE-SINK-011
+        this.windows.delete(timer);
         this.phase.delete(id);
         const reported = this.givenUp.delete(id);
         if (this.claimed.has(id)) return;
@@ -172,6 +230,7 @@ export class Voice {
         if (reported) { void this.publishVirtual("voice.done", id); return; }
         void this.playVirtual(id, info.durationMs);
       }, 1500);
+      this.windows.add(timer);
     } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");
       // Let the brain continue even though nothing was said.
@@ -179,9 +238,13 @@ export class Voice {
     }
   }
 
-  /** HTTP: GET /audio/<id>.wav, GET /fallback/manifest.json, GET /fallback/<name>, GET /health */
+  /** HTTP, GET and HEAD only: GET /audio/<id>.wav, GET /fallback/manifest.json, GET /fallback/<name>, GET /health */
   handle = (req: http.IncomingMessage, res: http.ServerResponse): void => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004, VOICE-CLIP-008, VOICE-CLIP-011, VOICE-CLIP-012
-    const m = /^\/audio\/([\w-]+)\.wav$/.exec(req.url ?? "");
+    if (req.method !== "GET" && req.method !== "HEAD") { // @spec VOICE-HTTP-006
+      res.writeHead(405, { allow: "GET, HEAD" }); res.end(); return;
+    }
+    const path = pathOf(req.url); // @spec VOICE-HTTP-007
+    const m = /^\/audio\/([\w-]+)\.wav$/.exec(path);
     if (m) {
       const wav = this.store.get(m[1]!);
       if (!wav) { res.writeHead(404); res.end("gone"); return; }
@@ -190,14 +253,14 @@ export class Voice {
       return;
     }
     const clips = this.d.clips;
-    if (clips && req.url === "/fallback/manifest.json") {
+    if (clips && path === "/fallback/manifest.json") {
       const manifest = clips.manifest();
       if (!manifest) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(manifest));
       return;
     }
-    const clip = clips ? /^\/fallback\/([\w][\w.-]*)$/.exec(req.url ?? "") : null;
+    const clip = clips ? /^\/fallback\/([\w][\w.-]*)$/.exec(path) : null;
     if (clips && clip) {
       void clips.clipBytes(clip[1]!).then((wav) => {
         if (!wav) { res.writeHead(404); res.end(); return; }
@@ -206,7 +269,7 @@ export class Voice {
       });
       return;
     }
-    if (req.url === "/health") { res.writeHead(200); res.end("ok"); return; }
+    if (path === "/health") { res.writeHead(200); res.end("ok"); return; }
     res.writeHead(404); res.end();
   };
 }

@@ -614,7 +614,7 @@ test("mouth.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects n
 test("the mouth section is optional: absent or partial, it loads with the Discord output on, empty target, gain 0 and interval 20000", () => {
   const absent = ConfigSchema.safeParse(baseCfg());
   assert.ok(absent.success);
-  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 } }, fallback: { min_interval_ms: 20000 } });
+  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 } }, fallback: { min_interval_ms: 20000 } });
   for (const partial of [{}, { outputs: {} }, { outputs: { discord: {} } }, { fallback: {} }]) {
     const r = ConfigSchema.safeParse({ ...baseCfg(), mouth: partial });
     assert.ok(r.success, JSON.stringify(partial));
@@ -622,6 +622,15 @@ test("the mouth section is optional: absent or partial, it loads with the Discor
   }
   const set = ConfigSchema.parse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 } } } });
   assert.deepEqual(set.mouth.outputs.discord, { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 });
+});
+
+// @spec CFG-SCH-023
+test("mouth.outputs.dryrun defaults to disabled with fail_every 0, and fail_every is an integer of 0 or more", () => {
+  const dry = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { dryrun: v } } });
+  assert.deepEqual(dry({}).data!.mouth.outputs.dryrun, { enabled: false, fail_every: 0 });
+  assert.deepEqual(dry({ enabled: true, fail_every: 3 }).data!.mouth.outputs.dryrun, { enabled: true, fail_every: 3 });
+  for (const bad of [-1, 1.5, "2"]) assert.equal(dry({ fail_every: bad }).success, false, String(bad));
+  assert.equal(dry({ enabled: "yes" }).success, false);
 });
 
 // @spec CFG-SCH-020

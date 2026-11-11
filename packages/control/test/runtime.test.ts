@@ -59,7 +59,7 @@ test("compose: every isolation preset variable reaches the container through x-t
   const compose = readFileSync(new URL("../../../docker-compose.yml", import.meta.url), "utf8");
   const block = compose.slice(compose.indexOf("x-ts-service:"), compose.indexOf("\nservices:"));
   const presetVars = new Set(SERVICE_MANIFEST.flatMap((d) => Object.keys(d.isolatedEnv)));
-  for (const v of ["CHAT_SOURCE", "MEMORY_STORE", "MEMORY_EMBEDDER", "LLM_PROVIDER", "VOICE_ENGINE", "AVATAR_DRIVER", "VISION_ENABLED", "EARS_SOURCE"]) {
+  for (const v of ["CHAT_SOURCE", "MEMORY_STORE", "MEMORY_EMBEDDER", "LLM_PROVIDER", "VOICE_ENGINE", "AVATAR_DRIVER", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED"]) {
     assert.ok(presetVars.has(v), `${v} is a manifest preset variable`);
   }
   for (const v of presetVars) {

@@ -116,7 +116,7 @@ test("snapshot lists every known service, unseen ones as unknown", () => {
   const snap = tracker.snapshot();
   assert.equal(snap.length, KNOWN_SERVICES.length + 1);
   const unknown = snap.filter((s) => s.state === "unknown");
-  assert.equal(unknown.length, 8);
+  assert.equal(unknown.length, 9);
   assert.ok(unknown.every((s) => s.heartbeat === undefined && s.restarts === 0));
   assert.equal(snap.find((s) => s.service === "cortex")!.state, "up");
   assert.ok(snap.find((s) => s.service === "extra"));

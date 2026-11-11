@@ -64,10 +64,10 @@ test("consolidate disables the heartbeat healthcheck it can never satisfy", () =
 });
 
 // @spec DEPLOY-COMPOSE-004, DEPLOY-COMPOSE-019
-test("only consolidate is in the tools profile, and eyes and ears keep theirs; no other service has a profile", () => {
+test("only consolidate is in the tools profile, and eyes, ears and mouth each keep a profile of their own name; no other service has a profile", () => {
   assert.deepEqual(svc.profiles, ["tools"]);
   const profiled = Object.entries(compose.services).filter(([, s]) => s.profiles).map(([n, s]) => [n, s.profiles]);
-  assert.deepEqual(profiled.sort(), [["consolidate", ["tools"]], ["ears", ["ears"]], ["eyes", ["eyes"]]]);
+  assert.deepEqual(profiled.sort(), [["consolidate", ["tools"]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]]]);
 });
 
 // @spec DEPLOY-COMPOSE-015

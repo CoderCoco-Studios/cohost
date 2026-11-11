@@ -46,6 +46,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),
   svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false" } }),
   svc("ears", { groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off" } }),
+  svc("mouth", { groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false" } }),
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),
   compose("ollama"),

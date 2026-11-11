@@ -4,10 +4,10 @@ export type HeartbeatData = EventData<"service.heartbeat">;
 
 export type HealthState = "up" | "degraded" | "stale" | "down" | "unknown" | "crash-looping";
 
-/** The nine cohost application services; always present in a snapshot even if never seen. */
+/** The ten cohost application services; always present in a snapshot even if never seen. */
 // @spec CTRL-MANIFEST-005, CTRL-HEALTH-005
 export const KNOWN_SERVICES = [
-  "chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears",
+  "chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth",
 ] as const;
 
 export const STALE_FACTOR = 3;

@@ -6,13 +6,13 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
-## Listening and speaking split (designed, not built)
+## Listening and speaking split (chunk 3 built, chunk 4 pending)
 
-Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded `[ ]`; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no volume), DEPLOY-README-004 (`.env.example` with two Discord tokens,) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new `[ ]`.
+Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no data volume), DEPLOY-README-004 (`.env.example` with two Discord tokens) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new. All seven are `[x]`, tested in `packages/config/test/compose-mouth.test.ts`. The `mouth` service and the two-bot documentation exist; ears itself still reads `DISCORD_TOKEN` until chunk 4 (ears listens only), so the `ears` and `mouth` profiles must not be enabled together before then.
 
 ## Standalone dashboard (built)
 
-The spec file holds 69 specs: 69 `[x]`, 0 `[ ]`, 0 `[D]` (DEPLOY-HOST-001 and DEPLOY-REPO-002, the root `pnpm dashboard` script, were built with dashboard chunk 2; the rest with chunk 3). Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.
+The spec file holds 72 specs: 72 `[x]`, 0 `[ ]`, 0 `[D]` (DEPLOY-HOST-001 and DEPLOY-REPO-002, the root `pnpm dashboard` script, were built with dashboard chunk 2; the rest with chunk 3). Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.
 
 - New: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`, `DASHBOARD_HOST=127.0.0.1`, commented `COHOST_DOCKER_BIN=`), DEPLOY-HOST-003 (README), DEPLOY-HOST-004 (single-PC WSL2 + Docker Desktop checklist in `docs/TESTING.md`), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
 - Reworded: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (`DASHBOARD_URL` through the host gateway), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
@@ -82,7 +82,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 **Purpose:** Turn the repository into a running stack (Compose), a verified build (CI), a published site (Pages) and a licensed, contributable project (AGPL-3.0-only plus a commercial licence; CLA). Owns no cohost runtime logic.
 
 **Key Components:**
-1. `docker-compose.yml` — 6 infra services (redis, postgres, ollama, tts, stt, one-shot models that exits non-zero on a failed pull), the `tools`-profile one-shot `consolidate` (memory image, `consolidate.js` command) and 10 TS services from one `x-ts-service` anchor (which also pins `CONTROL_ENABLED=0` and passes the isolation env through); `eyes` / `ears` behind profiles; dashboard the only public port.
+1. `docker-compose.yml` — 6 infra services (redis, postgres, ollama, tts, stt, one-shot models that exits non-zero on a failed pull), the `tools`-profile one-shot `consolidate` (memory image, `consolidate.js` command) and 11 TS services from one `x-ts-service` anchor (which also pins `CONTROL_ENABLED=0` and passes the isolation env through); `eyes` / `ears` / `mouth` behind profiles of their own name; dashboard the only public port.
 2. `Dockerfile` — base / build / runtime on node:22-slim; whole workspace compiled once per image; `SERVICE` selects the entrypoint; no prune.
 3. Container healthcheck — `node packages/control/dist/healthcheck.js $SERVICE` from `@cohost/control`.
 4. `docker-compose.gpu.yml` — NVIDIA overlay for ollama, tts, stt, selected via `COMPOSE_FILE`.

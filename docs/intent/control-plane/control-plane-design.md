@@ -27,7 +27,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 ## Service manifest
 
-`SERVICE_MANIFEST` (`manifest.ts:39-55`) lists 15 units (14 before the listening and speaking split added `mouth`, a gap): every Compose service the controller may act on. The dashboard is not one: it runs on the host, outside Compose, so there is no container to start, stop or restart, and the `self` flag that protected it from stopping itself is gone with it. CTRL-GUARD-002 (the `self` conflict) is retired.
+`SERVICE_MANIFEST` (`manifest.ts:39-55`) lists 15 units: every Compose service the controller may act on. The dashboard is not one: it runs on the host, outside Compose, so there is no container to start, stop or restart, and the `self` flag that protected it from stopping itself is gone with it. CTRL-GUARD-002 (the `self` conflict) is retired.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
@@ -40,7 +40,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 | avatar | pnpm | avatar | fresh | | `AVATAR_DRIVER=null` |
 | eyes | pnpm | eyes | fresh | | `VISION_ENABLED=false` |
 | ears | pnpm | ears | fresh | | `EARS_SOURCE=off` |
-| mouth (gap) | pnpm | mouth | fresh | | `MOUTH_DISCORD_ENABLED=false` |
+| mouth | pnpm | mouth | fresh | | `MOUTH_DISCORD_ENABLED=false` |
 | redis | compose-only | none | resume | `infra` | none |
 | postgres | compose-only | none | resume | `infra` | none |
 | ollama, tts, stt | compose-only | none | resume | | none |

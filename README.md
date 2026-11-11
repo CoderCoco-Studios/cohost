@@ -9,7 +9,7 @@ monolithic and anything can be swapped.
 ```
    Twitch ──► chat ─┐                 ┌─────────── brain ───────────┐
    OBS ────► eyes ──┼──► [ redis bus ] ◄──► salience  affect           │ ──► voice ──► (audio) ──► dashboard sink / OBS browser source
-   Discord ► ears ──┘        ▲         │    memory    cortex ──► say  │                             └─► Discord (ears)
+   Discord ► ears ──┘        ▲         │    memory    cortex ──► say  │                             └─► Discord (mouth)
                              │         └──────┬──────────────────────┘ ──► avatar ──► VTube Studio / VMC app
                              │                └── postgres (pgvector)
                              └──► dashboard (host process: feed, controls, personality editor, Launch/Stop)
@@ -29,7 +29,8 @@ each other over the same bus, the way the rest of the stack does:
 | ----------- | ------------------------------------------------------------ | --------------------------- |
 | `chat`      | Twitch chat → `chat.message`                                 | Twitch IRC                  |
 | `eyes`      | OBS screenshot → vision model → `vision.summary`             | obs-websocket, Ollama       |
-| `ears`      | Discord voice → Whisper → `speech.heard`; plays the voice    | Discord, speaches (STT)     |
+| `ears`      | Discord voice → Whisper → `speech.heard` (listens only)      | Discord, speaches (STT)     |
+| `mouth`     | `voice.utterance` → her Discord bot, plus a fallback line    | Discord, voice (audio)      |
 | `salience`  | when to talk; reflexes → `brain.say` directly, no LLM        | bus only                    |
 | `affect`    | mood → `affect.state` (avatar resting face, prompt colour)   | bus only                    |
 | `memory`    | embeds + recalls; viewer table; reflection pass              | Ollama (embed), Postgres    |
@@ -73,8 +74,50 @@ Add the optional pieces when you're ready:
 
 ```bash
 docker compose --profile eyes up -d   # OBS vision (set vision.enabled: true in config.yaml)
-docker compose --profile ears up -d   # Discord voice bot
+docker compose --profile ears up -d   # Discord listener (hears the voice channel)
+docker compose --profile mouth up -d  # Discord speaker (plays her voice there)
 ```
+
+### Discord: two bots
+
+Listening and speaking are separate optional services with a Discord bot each,
+so either can run, restart or be routed without the other. Create two
+applications at <https://discord.com/developers> and invite both to your server:
+
+| service | `.env` key | permissions | profile |
+|---|---|---|---|
+| `mouth` (speaks) | `DISCORD_TOKEN` | Connect, Speak | `mouth` |
+| `ears` (listens) | `EARS_DISCORD_TOKEN` | Connect, plus the Server Members intent | `ears` |
+
+The two tokens must differ: one bot cannot hold a voice connection in two
+processes. ears ignores every bot account, so it never transcribes her own voice.
+Set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`. To keep both
+profiles on across restarts and Launch, list them in `.env`:
+`COMPOSE_PROFILES=ears,mouth` (add `eyes` for vision).
+
+**Where her voice goes** is the `mouth.outputs` table in `config/config.yaml`.
+Each key is one output; today there is one, `discord`:
+
+```yaml
+mouth:
+  outputs:
+    discord:
+      enabled: true      # false = mouth plays nothing
+      guild_id: "${DISCORD_GUILD_ID}"
+      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+      gain_db: 0         # loudness on this output only, -40..12 dB
+  fallback:
+    min_interval_ms: 20000   # at most one fallback line per 20 s on an output
+```
+
+The dashboard's browser page (`?sink=1`, often an OBS Browser Source) is a
+separate sink, not an output: open it wherever you want her voice to play. A
+routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
+
+**Upgrading from the combined ears** (which both listened and spoke): create the
+listening bot and set `EARS_DISCORD_TOKEN`; keep your existing `DISCORD_TOKEN` as
+the speaking bot; add `mouth` to `COMPOSE_PROFILES`; and move
+`ears.fallback.min_interval_ms` to `mouth.fallback.min_interval_ms` in `config.yaml`.
 
 ### Minimal first run (no avatar app, no Discord, no OBS)
 
@@ -281,6 +324,7 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 | chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
 | eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`) |
 | ears | `EARS_SOURCE=off` | idles, no Discord client (`off`) |
+| mouth | `MOUTH_DISCORD_ENABLED=false` | idles, plays nothing (`off`) |
 | avatar | `AVATAR_DRIVER=null` | no app needed |
 | salience, affect, dashboard | none | already Redis-only |
 

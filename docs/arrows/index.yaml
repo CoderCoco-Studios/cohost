@@ -42,7 +42,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Listening and speaking split (mouth.md build order): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; the one open gap is CFG-SCH-018 (drop ears.fallback, chunk 4). Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -126,8 +126,8 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Listening and speaking split designed (not built; see mouth.md build order): ears narrows to listening with its own bot (EARS_DISCORD_TOKEN). Reworded [ ]: EARS-START-002/003/004, EARS-SESS-002/004, EARS-HEAR-001; new [ ]: EARS-START-007, EARS-SESS-009; reworded [x] (true today): EARS-START-001/006, EARS-INJ-007; new [x]: EARS-HEAR-009. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources. Mouth build chunk 1 done: createJoiner (EARS-SESS-006) now lives in @cohost/shared."
-    drift: "Until build chunk 4 lands, services/ears code and tests still carry @spec annotations for the retired EARS-AUD-002, EARS-PLAY-* and EARS-FALL-* IDs (now MOUTH-*); chunk 4 deletes that code from ears."
+    next: "Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    drift: null
 
   salience:
     status: AUDITED
@@ -198,8 +198,8 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "Build chunks 2 and 3 built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-AUD-001, MOUTH-FALL-001..019, MOUTH-HLTH-001..002). Next: chunk 4 (ears listens only, EARS_DISCORD_TOKEN), in mouth.md."
-    drift: "mouth has no dev script so pnpm dev leaves it out; ears keeps its Discord sink and both use DISCORD_TOKEN until chunk 4, so the mouth and ears Compose profiles must not run together before then."
+    next: "All four build chunks built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-AUD-001, MOUTH-FALL-001..019, MOUTH-HLTH-001..002); ears is listen-only (chunk 4). No open gaps."
+    drift: null
 
   avatar:
     status: AUDITED
@@ -246,7 +246,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Listening and speaking split (mouth.md build order chunk 3 built): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded and [x]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new and [x] (mouth profile, two-bot .env and README; ears itself reads EARS_DISCORD_TOKEN only after chunk 4). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 72 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "Listening and speaking split (mouth.md build order chunk 3 built): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded and [x]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new and [x] (mouth profile, two-bot .env and README; ears reads EARS_DISCORD_TOKEN since chunk 4; the installer next steps name both bots and the eyes, ears and mouth profiles, DEPLOY-INST-008). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 72 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

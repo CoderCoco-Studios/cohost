@@ -1,43 +1,32 @@
 # Arrow: ears
 
-Discord voice in (per-speaker capture, STT, `speech.heard`), audio-upload injection, and the `off` / no-token idle modes. Discord voice out (the `discord` audio sink and the spoken fallback line) moves to [mouth](mouth.md) with the listening and speaking split.
+Discord voice in (per-speaker capture, STT, `speech.heard`), audio-upload injection, and the `off` / no-token idle modes. ears only listens: Discord voice out (the `discord` audio sink and the spoken fallback line) is [mouth](mouth.md).
 
 ## Status
 
-**AUDITED** (the listening and speaking split is designed on top, not built) — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed. With the spoken fallback line (build chunk 1): 66 specs: 66 implemented, 0 gaps, 0 deferred.
+**AUDITED**, 2026-11-11 (git SHA `ae84c73` plus the listen-only change): the listening and speaking split is built (build chunk 4 of [mouth.md](mouth.md)). 40 specs: 40 implemented, 0 deferred, 0 gaps. Before the split the segment held 66 specs; the 29 that moved to mouth are retired and their numbers are not reused. Audited 2026-11-02 (`1b57790`), mapped 2026-10-31 (`686cc8f`); the owner's audit decisions of 2026-11-01 are applied below.
 
-## Listening and speaking split: designed, not built
+## Listening and speaking split: built
 
-Design: LLD (Context, Startup Plans, Speaking, Decisions), [decision doc](../intent/ears/decisions/listen-speak-split.md); build order and edge audit in [mouth.md](mouth.md). ears keeps listening and injection and logs in with a bot of its own (`EARS_DISCORD_TOKEN`); mouth speaks through the co-host's existing bot (`DISCORD_TOKEN`).
+Design: LLD (Context, Startup Plans, Decisions), [decision doc](../intent/ears/decisions/listen-speak-split.md); build order and edge audit in [mouth.md](mouth.md). ears keeps listening and injection and logs in with a bot of its own (`EARS_DISCORD_TOKEN`); mouth speaks through the co-host's existing bot (`DISCORD_TOKEN`).
 
-- Reworded `[ ]`: EARS-START-002 (token variable), EARS-START-003 (reads `inject.request` only, every plan), EARS-START-004 (`hasToken` excludes mouth's token), EARS-SESS-002 (self-muted), EARS-SESS-004 (no audio player), EARS-HEAR-001 (ignore every bot account).
-- New `[ ]`: EARS-START-007 (same token as mouth idles ears), EARS-SESS-009 (logs in with `EARS_DISCORD_TOKEN`).
-- Reworded, already true of the code (`[x]`): EARS-START-001, EARS-START-006, EARS-INJ-007. New `[x]`: EARS-HEAR-009 (no `control`, the listening half of the retired EARS-PLAY-008).
-- Retired, numbers not reused: EARS-AUD-002, EARS-PLAY-001 to 009, EARS-FALL-001 to 019, now MOUTH-AUD-001, MOUTH-PLAY-*, MOUTH-FALL-*.
-- Drift until build chunk 4: `services/ears` code and tests still implement and annotate the retired IDs.
-
-## Spoken fallback line: built (chunk 1), moving to mouth
-
-Design: LLD § Fallback Line (owner decisions, edge cases, build order). When ears cannot play a line it reports `voice.failed` and says a pre-generated funny line in its place, played from ears' own cache of the clips voice serves over HTTP.
-
-- `EARS-PLAY-005` (give up instead of a silent skip) and `EARS-PLAY-006` (publish `voice.failed`) are implemented in `playback.ts`; `services/ears/test/ears.test.ts` now asserts the give-up report instead of the old silent skip.
-- `EARS-FALL-001` to `019` are implemented: `fallback.ts` holds the clip cache, the disk mirror, the manifest refresh (startup, then every 60 s) and clip choice; `session.ts` reads `voice.playing` for the claim memory; `discord.ts` wires them.
-- Chunk 1 of the build order. Chunk 2 (voice generates and serves clips) and chunk 3 (the cortex's transcript entry and acknowledgement hint) have landed, so a give-up reports `voice.failed` and plays a cached clip when one is eligible.
-- Deferred decisions recorded in the LLD: separate source-agnostic listening and speaking modules with owner-tunable routing (HLD Deferred goals); tuning the co-host's voice (voice segment).
+- Reworded and implemented: EARS-START-002 (token variable), EARS-START-003 (reads `inject.request` only, every plan), EARS-START-004 (`hasToken` excludes mouth's token), EARS-SESS-002 (self-muted), EARS-SESS-004 (no audio player), EARS-HEAR-001 (ignore every bot account).
+- New and implemented: EARS-START-007 (same token as mouth idles ears), EARS-SESS-009 (logs in with `EARS_DISCORD_TOKEN`), EARS-HEAR-009 (no `control`, the listening half of the retired EARS-PLAY-008).
+- Retired, numbers not reused: EARS-AUD-002, EARS-PLAY-001 to 009, EARS-FALL-001 to 019, now MOUTH-AUD-001, MOUTH-PLAY-*, MOUTH-FALL-*. `playback.ts`, `fallback.ts`, `wavToDiscordPcm` and their tests are deleted from `services/ears`.
+- Config: `ears.fallback` is gone from the schema and `config.example.yaml` (CFG-SCH-018 `[x]`); the storm limit is `mouth.fallback.min_interval_ms`. An old `ears.fallback` key draws the unknown-key warning (CFG-LOAD-006).
+- Upgrade for an existing install: create the listening bot, set `EARS_DISCORD_TOKEN` and add `mouth` to `COMPOSE_PROFILES` (README upgrade note, DEPLOY-README-005). Until `EARS_DISCORD_TOKEN` is set, ears idles `degraded` with `EARS_DISCORD_TOKEN is not set`; an install that copies its `DISCORD_TOKEN` into `EARS_DISCORD_TOKEN` idles with the conflict detail (EARS-START-007).
 
 ## Decisions applied
 
-Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
+Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping). Items that concerned the playback sink moved with it to [mouth.md](mouth.md).
 
-1. **B12** Failed voice join → log, report `degraded` / `discord: down`, keep the subscription, retry with increasing delay (also for rejoins). Specs: EARS-SESS-006 (`[x]`, reworded).
-2. **B13** Injection before the Discord join → subscribe before joining. Specs: EARS-INJ-007 (`[x]`, reworded).
-3. **S15** Unplayable line → keep the silent skip; voice's virtual sink times it. Specs: EARS-PLAY-006 (`[ ]` → `[D]`); EARS-PLAY-005 unchanged.
-4. **B19** `ears.discord.guild_id` / `voice_channel_id` → read the config keys. Specs: EARS-SESS-007 (`[x]`, reworded).
-5. **R2** Shutdown in the `discord` plan → one sequence: destroy connection and client, then stop the bus. Specs: EARS-SESS-008 (`[x]`, reworded).
-6. **S16** Injected `speech.heard` in the `off` plan → confirmed as the exception. Specs: EARS-START-001 (unchanged, `[x]`).
-7. **P7** Mute and pause → ears stays unaware; cortex and salience enforce them. Specs: EARS-PLAY-008 (new, `[x]`).
-8. **P8** Restart replay → the `ears` group uses start mode `latest`. Specs: EARS-START-006 (new, `[x]`); EARS-START-003, EARS-PLAY-001 (reworded).
-9. **R1** Publish failures → log and continue. Specs: EARS-PLAY-009 (new, `[x]`, the `voice.done` publish).
+1. **B12** Failed voice join -> log, report `degraded` / `discord: down`, keep the subscription, retry with increasing delay (also for rejoins). Specs: EARS-SESS-006 (`[x]`, reworded).
+2. **B13** Injection before the Discord join -> subscribe before joining. Specs: EARS-INJ-007 (`[x]`, reworded).
+3. **B19** `ears.discord.guild_id` / `voice_channel_id` -> read the config keys. Specs: EARS-SESS-007 (`[x]`, reworded).
+4. **R2** Shutdown in the `discord` plan -> one sequence: destroy connection and client, then stop the bus. Specs: EARS-SESS-008 (`[x]`, reworded).
+5. **S16** Injected `speech.heard` in the `off` plan -> confirmed as the exception. Specs: EARS-START-001 (unchanged, `[x]`).
+6. **P7** Mute and pause -> ears stays unaware; cortex and salience enforce them. Specs: EARS-HEAR-009 (`[x]`; formerly EARS-PLAY-008).
+7. **P8** Restart replay -> the `ears` group uses start mode `latest`. Specs: EARS-START-006 (`[x]`).
 
 ## References
 
@@ -48,33 +37,31 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (40 specs: 32 `[x]`, 8 `[ ]`, 0 `[D]`; 29 retired to mouth)
+- docs/intent/ears/ears-specs.md (40 specs: 40 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### Tests
 - services/ears/test/audio.test.ts
-- services/ears/test/fallback.test.ts (clip cache, mirror, refresh against a fake voice HTTP server, clip choice)
-- services/ears/test/ears.test.ts (playback queue, hearing, STT client)
-- services/ears/test/health.test.ts
+- services/ears/test/ears.test.ts (hearing, STT client)
+- services/ears/test/health.test.ts (plans, token reading, the shared-token refusal, heartbeat)
 - services/ears/test/inject.test.ts
-- packages/shared/test/join.test.ts (3; the `createJoiner` retry loop behind EARS-SESS-006)
-- services/ears/test/session.test.ts (config target, event handler gating, subscription, shutdown)
+- services/ears/test/session.test.ts (config target, inject-only loop, self-muted join, bot filtering, subscription, shutdown)
+- packages/shared/test/join.test.ts (the `createJoiner` retry loop behind EARS-SESS-006)
+- packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`)
 
-37 `@spec` annotations in tests, citing 31 distinct spec IDs.
+34 `@spec` annotations in the ears tests, citing 31 distinct spec IDs. The 7 specs with no test of their own are discord.js and plan glue: EARS-SESS-001 (login failure exits), EARS-SESS-003 (not a voice channel), EARS-SESS-005 (disconnect and rejoin), EARS-HEAR-002 and 003 (decode), EARS-INJ-003 (wrong kind) and EARS-INJ-009 (inject in the idle plans).
 
 ### Code
 - services/ears/src/index.ts
 - services/ears/src/discord.ts
 - services/ears/src/session.ts
 - services/ears/src/hearing.ts
-- services/ears/src/playback.ts
-- services/ears/src/fallback.ts
 - services/ears/src/audio.ts
 - services/ears/src/inject.ts
 - services/ears/src/health.ts
 - services/ears/package.json, services/ears/tsconfig.json
 
-32 `@spec` annotations in code, citing 45 of the 46 spec IDs (EARS-PLAY-006 is deferred); EARS-PLAY-008 (ears does not subscribe to `control`) is a boundary statement with no code entry point. No annotation cites a missing ID.
+31 `@spec` annotations in code, citing all 40 spec IDs (EARS-SESS-004 and EARS-SESS-002 at `EARS_JOIN_OPTIONS`, EARS-HEAR-009 at `EARS_LOOP_TYPES`). No annotation cites a missing ID.
 
 ### OpenSpec (frozen, historical)
 - openspec/specs/ears/spec.md
@@ -84,50 +71,49 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Architecture
 
-**Purpose:** Be the co-host's ears. Turns each human Discord speaker's audio into `speech.heard` and transcribes uploaded audio on request. (Until build chunk 4 of the split it also plays `voice.utterance` as the `discord` sink; that job belongs to [mouth](mouth.md).)
+**Purpose:** Be the co-host's ears. Turns each human Discord speaker's audio into `speech.heard` and transcribes uploaded audio on request. It plays nothing and never reads `voice.*` or `control`.
 
 **Key Components:**
-1. `index.ts` — picks a startup plan (`off` / `no-token` / `discord`) with `earsPlan`, wires the heartbeat and inject handler, lazy-loads `discord.ts`, registers the one shutdown (`stopEars`).
-2. `discord.ts` — Discord client, voice join/rejoin (with the shared `createJoiner` retry from `@cohost/shared`), per-speaker Opus capture; establishes the single `ears` bus loop for `voice.utterance` + `inject.request` before logging in.
-3. `session.ts` — testable session logic: `voiceTarget` (config keys), `createEarsHandler` (inject always; utterance only while voice is ready), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
-4. `hearing.ts` — min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish.
-5. `playback.ts` — FIFO playback queue; publishes `voice.playing` / `voice.done` with `sink: "discord"`.
-6. `audio.ts` — PCM resampling; the WAV writer `wavWrap` and parser `parseWav` come from `@cohost/shared`, and `readWavHeader` is a thin adapter over `parseWav` from `@cohost/shared`.
-7. `inject.ts` — `inject.request` (audio) handler with dashboard-origin URL guard.
-8. `health.ts` — startup plan decision and `EarsHealth` heartbeat spec.
+1. `index.ts`: reads the token (`readEarsToken`), picks a startup plan (`off` / `no-token` / `discord`) with `earsPlan`, wires the heartbeat and inject handler, lazy-loads `discord.ts`, registers the one shutdown (`stopEars`).
+2. `discord.ts`: Discord client (ears' own bot), voice join/rejoin self-muted (with the shared `createJoiner` retry from `@cohost/shared`), per-speaker Opus capture for non-bot speakers; establishes the single `ears` bus loop for `inject.request` before logging in.
+3. `session.ts`: testable session logic: `voiceTarget` (config keys), `EARS_LOOP_TYPES`, `EARS_JOIN_OPTIONS`, `createEarsHandler` (inject only), `isHumanSpeaker` (the bot filter), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
+4. `hearing.ts`: min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish.
+5. `audio.ts`: PCM downsampling; the WAV writer `wavWrap` and parser `parseWav` come from `@cohost/shared`, and `readWavHeader` is a thin adapter over `parseWav`.
+6. `inject.ts`: `inject.request` (audio) handler with dashboard-origin URL guard.
+7. `health.ts`: `readEarsToken`, `idleDetail`, the startup plan decision and the `EarsHealth` heartbeat spec.
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Startup plans | EARS-START-001 to 007 | 3 | 0 | 4 |
-| Discord session | EARS-SESS-001 to 009 | 6 | 0 | 3 |
-| Listening and transcription | EARS-HEAR-001 to 009 | 8 | 0 | 1 |
+| Startup plans | EARS-START-001 to 007 | 7 | 0 | 0 |
+| Discord session | EARS-SESS-001 to 009 | 9 | 0 | 0 |
+| Listening and transcription | EARS-HEAR-001 to 009 | 9 | 0 | 0 |
 | Audio conversion | EARS-AUD-001, 003, 004 (002 retired) | 3 | 0 | 0 |
 | Audio injection | EARS-INJ-001 to 009 | 9 | 0 | 0 |
 | Health | EARS-HLTH-001 to 003 | 3 | 0 | 0 |
 
-**Summary (after the split design):** 40 specs, 32 implemented, 8 gaps, all from the split. Before the split: 66 of 66 specs implemented; 0 gaps; 0 deferred (counts of specs with a test below are from the 2026-11-02 audit; the fallback-line specs each cite a test). 32 of the 46 implemented specs have a test citing them. The 14 without a test are the Discord and plan glue in `discord.ts` / `index.ts` (EARS-START-003, EARS-SESS-001 to 005, EARS-HEAR-001 to 003, EARS-PLAY-001, EARS-PLAY-007, EARS-INJ-009) plus EARS-INJ-003 (wrong kind) and EARS-PLAY-008 (boundary statement). EARS-INJ-004's redirect and non-2xx paths are untested in ears.
+**Summary:** 40 specs, 40 implemented, 0 gaps. 33 have a test citing them; the other 7 are the glue listed under Tests. EARS-INJ-004's redirect and non-2xx paths are untested in ears.
 
 ## Key Findings
 
 1. **EARS-START-001** excludes only non-injected `speech.heard` in the `off` plan, consistent with EARS-INJ-009 (S16). EARS-START-005 `[x]` covers shutdown in the idle plans.
-2. **A failed voice join no longer ends the process.** `createJoiner` (`@cohost/shared`, `packages/shared/src/join.ts`; moved from `services/ears/src/session.ts` in mouth build chunk 1) retries the join (initial and rejoin) with a delay doubling from 5 s to a 60 s cap, `onFailure` marks `deps.discord` down and the heartbeat `degraded`, and the bus subscription is independent of the join. (EARS-SESS-006, B12)
-3. **Injection works before Discord is joined in the `discord` plan.** `startDiscord` establishes the `ears` loop before login; `createEarsHandler` always handles `inject.request` and skips a `voice.utterance` while the voice connection is not ready. The shared loop still awaits the inject handler, so a slow STT call delays `voice.utterance` pickup. (EARS-INJ-007, B13)
+2. **A failed voice join does not end the process.** `createJoiner` (`@cohost/shared`, `packages/shared/src/join.ts`) retries the join (initial and rejoin) with a delay doubling from 5 s to a 60 s cap, `onFailure` marks `deps.discord` down and the heartbeat `degraded`, and the bus subscription is independent of the join. (EARS-SESS-006, B12)
+3. **Injection works before Discord is joined in the `discord` plan.** `startDiscord` establishes the `ears` loop before login; the loop reads `inject.request` only. The shared loop awaits the inject handler, so a slow STT call delays the next `inject.request` (nothing else waits behind it now that speaking is in mouth). (EARS-INJ-007, B13)
 4. **Shutdown in the `discord` plan is one sequence.** `index.ts` registers a single `onShutdown` running `stopEars`: Discord teardown, then `bus.stop()`. (EARS-SESS-008, R2)
-5. **A given-up line is reported with `voice.failed`, and the queue still has no fetch timeout.** `Playback.giveUp` (`services/ears/src/playback.ts`) publishes `voice.failed` and plays a cached fallback clip when one is eligible (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-*), replacing the silent skip of decision S15; a hung `httpAudio` fetch (no timeout) still blocks every later utterance, so a hang is never a give-up. Publish failures are logged (EARS-PLAY-009).
-6. **Guild/channel come from config.** `voiceTarget` reads `ears.discord.guild_id` / `voice_channel_id`; the env vars are no longer read by ears. (EARS-SESS-007, B19)
-7. **`mute` / `pause` are ignored by ears by design.** It never subscribes to `control` (`discord.ts:113`); cortex and salience enforce muting (EARS-PLAY-008, P7).
-8. **Decisions evidenced; WAV parser and writer shared** — LLD Decisions rows cite a comment, test, commit, archived OpenSpec design (add-isolated-backends D7, add-test-injection D2/D8) or the owner decision of 2026-11-01; utterance boundary, resampling, STT language and playback format stay `[inferred]`. `readWavHeader` (`services/ears/src/audio.ts`) now wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`, owner decision of 2026-11-08); `wavWrap` (`packages/shared/src/wav.ts`, EARS-AUD-004) is the one WAV writer, also used by voice's stub engine.
+5. **ears never logs in as the speaking bot.** `readEarsToken` reads `EARS_DISCORD_TOKEN` alone and reads `DISCORD_TOKEN` only to refuse a token that equals it; the refusal is an idle `degraded` heartbeat with a detail naming the conflict (EARS-START-004, EARS-START-007, EARS-SESS-009).
+6. **Bot accounts are never transcribed.** `isHumanSpeaker` checks the user's `bot` flag (cache, else one fetch) before a stream is opened; a speaker whose account cannot be fetched is skipped (EARS-HEAR-001). Her own lines through mouth's bot therefore never become `speech.heard`.
+7. **Guild/channel come from config.** `voiceTarget` reads `ears.discord.guild_id` / `voice_channel_id`; the env vars are no longer read by ears. (EARS-SESS-007, B19)
+8. **`mute` / `pause` are ignored by ears by design.** It never subscribes to `control`; cortex and salience enforce muting (EARS-HEAR-009, P7).
+9. **WAV parser and writer shared.** `readWavHeader` (`services/ears/src/audio.ts`) wraps the `parseWav` shared with voice (`packages/shared/src/wav.ts`); `wavWrap` (EARS-AUD-004) is the one WAV writer, also used by voice's stub engine.
 
 ## Work Required
 
 ### Must Fix
-None: all six gap specs are implemented.
+None: all 40 specs are implemented.
 
 ### Should Fix
-1. Add a fetch timeout / stuck-playback guard to the playback queue (LLD Open Question 2).
-2. Add tests for the remaining `discord.ts` glue (login failure, rejoin on disconnect, per-speaker capture) behind a fake client.
+1. Add tests for the remaining `discord.ts` glue (login failure, rejoin on disconnect, per-speaker capture) behind a fake client.
 
 ### Nice to Have
-3. Make the transcript filter Unicode-aware (`services/ears/src/hearing.ts:44`).
+2. Make the transcript filter Unicode-aware (`services/ears/src/hearing.ts`).

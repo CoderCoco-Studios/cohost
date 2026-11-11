@@ -1,8 +1,9 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
-import type { Logger } from "@cohost/config";
-import { bearerOk, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { ensureFromExample, type Logger } from "@cohost/config";
+import { bearerOk, SERVICE_MANIFEST, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { handleInject, uploadBase } from "./inject.js";
+import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
@@ -32,6 +33,12 @@ export interface DashboardDeps {
    * token requirement on every mutating route (`POST /control`, `PUT /personality`).
    */
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
+  /** Path of `config.yaml` for the settings routes. Defaults to the loader's file, seeded from the example when missing. */
+  configFile?: () => string;
+  /** The environment the settings routes substitute placeholders from. Defaults to `process.env`. */
+  configEnv?: NodeJS.ProcessEnv;
+  /** Replaces `config.yaml` atomically. Defaults to `writeFileAtomic`. */
+  configWrite?: (file: string, text: string) => void;
   /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
   stack: StackService;
 }
@@ -52,6 +59,15 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
       return true;
     },
+  };
+  const settings = {
+    file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
+    env: d.configEnv ?? process.env,
+    write: d.configWrite ?? defaultWrite,
+    manifest: SERVICE_MANIFEST,
+    stack: () => d.stack.snapshot(),
+    authorize: inject.authorize,
+    body,
   };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
@@ -75,6 +91,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-VIEWERS-001, DASH-VIEWERS-002, DASH-VIEWERS-003, DASH-VIEWERS-004, DASH-VIEWERS-005, DASH-VIEWERS-006, DASH-VIEWERS-007, DASH-VIEWERS-008, DASH-VIEWERS-009
       if (await handleViewers(viewers, req, res, url)) return;
       if (await handleInject(inject, req, res, url)) return;
+      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
+      if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });

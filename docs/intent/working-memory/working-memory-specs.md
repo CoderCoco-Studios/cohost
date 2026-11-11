@@ -1,6 +1,6 @@
 # working-memory specs
 
-Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. Verified against the code at git `49ba935` (audit pass 2026-11-01). Owner decisions of 2026-11-01 applied at git `1b57790`. `[x]` = implemented, `[ ]` = intended but not yet implemented (gap), `[D]` = deferred. Test paths are relative to the repo root. "Context" means the `Context` class in `packages/working-memory/src/index.ts`. `[proposed]` inside a line marks a value or choice awaiting the owner's confirmation (spoken fallback line).
+Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. Verified against the code at git `49ba935` (audit pass 2026-11-01). Owner decisions of 2026-11-01 applied at git `1b57790`. `[x]` = implemented, `[ ]` = intended but not yet implemented (gap), `[D]` = deferred. Test paths are relative to the repo root. "Context" means the `Context` class in `packages/working-memory/src/index.ts`.
 
 ## Window
 
@@ -40,7 +40,7 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. Verif
 - [x] **WM-TRANS-007**: When `transcript` renders any event, the system shall not include the event's injection flags, `isSub`, `mention` or `changed` values in the line, so an injected event renders exactly like a real one. <!-- test: packages/working-memory/test/context.test.ts:86 (exact-output assertion; no injected event is rendered) -->
 - [x] **WM-TRANS-008**: When `transcript` renders a `chat`, `speech` or `vision` event, the system shall replace every `\r` and `\n` in the interpolated user, speaker and text with a single space, so each event renders as exactly one line and no field can forge a transcript tag or co-host line. <!-- test: packages/working-memory/test/context.test.ts:147 -->
 - [x] **WM-TRANS-009**: The working-memory package shall export `TRANSCRIPT_TAGS`, the list `[chat]`, `[voice]`, `[screen]` that `transcript` renders for chat, speech and vision events, as the single definition of the tags that other packages derive from. <!-- test: packages/working-memory/test/context.test.ts:161 -->
-- [x] **WM-TRANS-010**: When `transcript(cohostName)` renders a `self` context event that carries a fallback text, the system shall emit, in place of the WM-TRANS-005 line, `<cohostName>: [<emotion>] <fallback text> [your line "<text>" failed to play; this came out instead]`, replacing every `\r` and `\n` in the fallback text and the original text with a single space `[proposed format]`. <!-- test: packages/working-memory/test/fallback.test.ts -->
+- [x] **WM-TRANS-010**: When `transcript(cohostName)` renders a `self` context event that carries a fallback text, the system shall emit, in place of the WM-TRANS-005 line, `<cohostName>: [<emotion>] <fallback text> [your line "<text>" failed to play; this came out instead]`, replacing every `\r` and `\n` in the fallback text and the original text with a single space. <!-- test: packages/working-memory/test/fallback.test.ts -->
 
 ## Injection flags
 

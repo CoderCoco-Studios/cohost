@@ -8,7 +8,7 @@ Discord voice in (per-speaker capture, STT, `speech.heard`), Discord voice out (
 
 ## Spoken fallback line: built (chunk 1)
 
-Design: LLD § Fallback Line (owner decisions, `[proposed]` items, edge cases, build order). When ears cannot play a line it reports `voice.failed` and says a pre-generated funny line in its place, played from ears' own cache of the clips voice serves over HTTP.
+Design: LLD § Fallback Line (owner decisions, edge cases, build order). When ears cannot play a line it reports `voice.failed` and says a pre-generated funny line in its place, played from ears' own cache of the clips voice serves over HTTP.
 
 - `EARS-PLAY-005` (give up instead of a silent skip) and `EARS-PLAY-006` (publish `voice.failed`) are implemented in `playback.ts`; `services/ears/test/ears.test.ts` now asserts the give-up report instead of the old silent skip.
 - `EARS-FALL-001` to `019` are implemented: `fallback.ts` holds the clip cache, the disk mirror, the manifest refresh (startup, then every 60 s) and clip choice; `session.ts` reads `voice.playing` for the claim memory; `discord.ts` wires them.

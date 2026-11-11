@@ -188,8 +188,7 @@ A single static file with inline CSS and JS (no build step, no framework). The s
 
 The owner's requirements are settled (`DASH-VIEWERS-*`, `DASH-FEED-007`): every stored viewer note is
 visible and deletable here, the regular flag is set here, and the layout is
-"panel A" below, and every `/viewers` route requires `VIEWERS_TOKEN`. Route
-names, the timeout and the response codes are `[proposed]`.
+"panel A" below, and every `/viewers` route requires `VIEWERS_TOKEN`.
 
 The co-host keeps short, fading notes about viewers (memory segment, Viewer notes).
 This page is how the owner sees and controls them. It satisfies the HLD principle
@@ -206,7 +205,7 @@ file, inline CSS and JS, dark navy palette, no new dependency):
   display name, a `REGULAR` badge when the viewer is a regular, "set by you" when
   the owner's flag (not the message count) makes them one, and the message and note
   counts (DASH-VIEWERS-010). A name field above the list marks a viewer as regular
-  before they have ever chatted (DASH-VIEWERS-013) `[proposed]`.
+  before they have ever chatted (DASH-VIEWERS-013).
 - **Right: detail panel** for the selected viewer: a "Mark as regular" toggle
   (DASH-VIEWERS-013), the notes split into **Core** and **Recent**, each note
   showing its text, a category tag, a strength bar and a delete link
@@ -217,9 +216,9 @@ file, inline CSS and JS, dark navy palette, no new dependency):
 Delete asks for an optional reason. A reason makes the deletion a rule the co-host
 will not re-learn similar notes against; no reason means the topic may come back
 weakly if the viewer keeps raising it (memory `MEM-ADMIN-003`, `MEM-CAPTURE-006`,
-`MEM-CAPTURE-007`). The page says so next to the reason prompt `[proposed]`.
+`MEM-CAPTURE-007`). The page says so next to the reason prompt.
 
-### Routes `[proposed]`
+### Routes
 
 The dashboard holds no notes and cannot read Postgres (HLD tenet 1). Each route
 publishes `memory.viewers.request {id, op, ...}` and waits up to 3000 ms for the
@@ -278,7 +277,7 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 |----------|--------|------------------------|-----------|
 | Viewer notes on `/ws` | Never forwarded, live or replayed (DASH-FEED-007) | forward like every other event; redact the text fields | Notes include health and family details the open feed must not carry; dropping whole events is simpler and safer than redacting fields of a shape that may grow. The page never rendered `memory.*` events anyway. |
 | Viewers page access | `VIEWERS_TOKEN` bearer on every `/viewers` route | reuse `CONTROL_TOKEN`; loopback-only; open like `GET /personality` | Owner decision (option A): the only option that protects notes in every control mode; see Access protection. |
-| Viewers page transport | Bus request/reply with memory, correlated by id from the feed tail, 3000 ms timeout `[proposed]` | query Postgres; call memory over HTTP | HLD tenet 1. Reusing the feed's tail avoids a second Redis reader. |
+| Viewers page transport | Bus request/reply with memory, correlated by id from the feed tail, 3000 ms timeout | query Postgres; call memory over HTTP | HLD tenet 1. Reusing the feed's tail avoids a second Redis reader. |
 | UI technology | One static HTML file with inline JS/CSS, read once at boot | A bundled SPA | The page is one operator panel and one OBS sink view, small enough to need no framework: there is no build step, no frontend dependency (`package.json` has only `ws`, `services/dashboard/package.json:17-21`), and the server serves one file. A bundled SPA would add a toolchain and a build output to ship for no capability the page needs; reading the file once at boot means an edit needs a restart. |
 | Where service control lives | In the dashboard process, on a UI-agnostic core (`packages/control`), with the `cohostctl` CLI as a second client | Standalone CLI/TUI only; a compose-API wrapper container | One application that also works in OBS docks; the privilege risk is mitigated by gating. The wrapper container was rejected as compose-only and socket-mounting (`openspec/changes/archive/2026-11-01-add-service-control/design.md`, "Options considered"; commit `1d316ff`). |
 | Where the dashboard runs | A standalone host process, started first; Compose has no `dashboard` service | Compose service (monitor-only) plus a host-run copy for control; Compose service with the Docker socket; desktop wrapper | Owner decision: one thing to start, which then starts everything else; no container gets root-equivalent host control. [Decision doc](decisions/standalone-dashboard.md). |

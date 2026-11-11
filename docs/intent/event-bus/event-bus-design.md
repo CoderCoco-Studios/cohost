@@ -112,7 +112,7 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 18 | `service.lifecycle` | `service`, `action` (`start`, `stop`, `restart`), `by` (`dashboard` or `cohostctl` by convention), `ok`, `detail?` | dashboard (`control.ts:40`), control CLI (`packages/control/src/cli.ts:107`) -> dashboard tail | 215-222 (BUS-EVT-008) |
 | 19 | `service.heartbeat` | `service`, `instance`, `pid` (int), `version`, `startedAt`, `state` (`starting`, `ready`, `degraded`, `stopping`), `deps` (record of `ok`, `down`, `n/a`), `mode` (string; `live`, `mock`, `off` by convention), `detail?`, `intervalMs` (positive int) | every service via `publishHealth` on `cohost:health` -> dashboard tracker, control-plane | 229-243 (BUS-EVT-009) |
 
-Viewer-notes events (the two surfacing events are built; the two owner events are chunk 4; names and shapes `[proposed]`; design in the memory, cortex and dashboard segments):
+Viewer-notes events (the two surfacing events are built; the two owner events are chunk 4; design in the memory, cortex and dashboard segments):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|
@@ -123,7 +123,7 @@ Viewer-notes events (the two surfacing events are built; the two owner events ar
 
 These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.
 
-Spoken fallback line (shape `[proposed]`; design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
+Spoken fallback line (design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|

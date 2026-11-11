@@ -8,7 +8,7 @@
 
 ## Spoken fallback line: built (chunks 1 to 3)
 
-Design: LLD § Schema key groups, Files table and Decisions (`[proposed]` items marked).
+Design: LLD § Schema key groups, Files table and Decisions.
 
 - Built in chunk 1: `CFG-DIR-006`, `CFG-DIR-007` (`dataDir()`, `COHOST_DATA_DIR`) and `CFG-SCH-018` (`ears.fallback.min_interval_ms`).
 - Built in chunk 2: `CFG-SCH-017` (`voice.fallback.lines`, schema in `packages/config/src/schema.ts`) and `CFG-USR-009` (the 15-line starter list and `ears.fallback.min_interval_ms: 20000` in `config/config.example.yaml`).

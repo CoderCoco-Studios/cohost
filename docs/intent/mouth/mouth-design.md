@@ -5,7 +5,7 @@ prefix: MOUTH
 
 # mouth
 
-> Designed 2026-11-10 by separating the speaking half out of [ears](../ears/ears-design.md); not built yet, so every spec in [mouth-specs.md](./mouth-specs.md) is `[ ]`. The split itself (two services, two Discord bots) is argued in the decision doc [listen-speak-split](../ears/decisions/listen-speak-split.md). HLD: [high-level-design](../../high-level-design.md).
+> The speaking half of the co-host, separate from the listening half in [ears](../ears/ears-design.md); its specs are in [mouth-specs.md](./mouth-specs.md). The split itself (two services, two Discord bots) is argued in the decision doc [listen-speak-split](../ears/decisions/listen-speak-split.md). HLD: [high-level-design](../../high-level-design.md).
 
 ## Context and Design Philosophy
 
@@ -254,10 +254,10 @@ ears and mouth share no process, connection, consumer group or file, so either r
 
 ## References
 
-Files in this segment (to be created; today the code is in `services/ears`):
+Files in this segment:
 
-- `services/mouth/src/index.ts` (plan, wiring, shutdown), `discord.ts` (the Discord output), `session.ts` (bus loop, handler), `playback.ts`, `fallback.ts`, `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts`
-- `services/mouth/test/*.test.ts`; `services/voice/test/ears-sync.test.ts` becomes `mouth-sync.test.ts`
+- `services/mouth/src/index.ts` (plan, wiring, shutdown), `discord.ts` (the Discord output), `session.ts` (output target, bus loop and handler, shutdown, idle plans), `playback.ts`, `fallback.ts`, `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts` (plan, token, `MouthHealth`)
+- `services/mouth/test/*.test.ts`; `services/voice/test/mouth-sync.test.ts` (voice's clip routes read by mouth's clip sync)
 - `packages/shared`: `createJoiner` (the join retry loop shared with ears)
 
 Other segments (arrow shows direction):

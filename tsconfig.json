@@ -18,6 +18,7 @@
     { "path": "services/avatar" },
     { "path": "services/eyes" },
     { "path": "services/ears" },
+    { "path": "services/mouth" },
     { "path": "services/dashboard" }
   ]
 }

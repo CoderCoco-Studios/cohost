@@ -8,7 +8,7 @@
 
 ## Listening and speaking split (designed, not built)
 
-No VOICE spec changes: the arbitration protocol, the events and the clip routes are unchanged. The LLD now names [mouth](mouth.md)'s outputs as the sinks (the Discord output keeps `sink: "discord"`) and mouth as the clip consumer. `services/voice/test/ears-sync.test.ts` becomes `mouth-sync.test.ts` in mouth build chunk 2; the Architecture list below names ears as the `discord` sink until chunk 4.
+No VOICE spec changes: the arbitration protocol, the events and the clip routes are unchanged. The LLD now names [mouth](mouth.md)'s outputs as the sinks (the Discord output keeps `sink: "discord"`) and mouth as the clip consumer. `services/voice/test/ears-sync.test.ts` became `mouth-sync.test.ts` (mouth build chunk 2); the Architecture list below names ears as the `discord` sink until chunk 4.
 
 ## Spoken fallback line: built (chunks 1 and 2)
 
@@ -47,7 +47,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
 - services/voice/test/boot.test.ts (boot wiring: subscription options, readiness, fatal paths, shutdown)
 - services/voice/test/clips.test.ts (fallback clips: fingerprint, generation, atomic swap, retry, per-phrase skips, cleanup, routes)
-- services/voice/test/ears-sync.test.ts (voice's manifest and routes accepted by ears' real clip sync)
+- services/voice/test/mouth-sync.test.ts (voice's manifest and routes accepted by mouth's real clip sync)
 - services/voice/test/stub.test.ts
 - services/voice/test/wav.test.ts
 - services/voice/test/health.test.ts

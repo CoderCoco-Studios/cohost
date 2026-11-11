@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
-import { ClipCache, ClipMirror, refreshClips } from "../../ears/src/fallback.js";
+import { ClipCache, ClipMirror, refreshClips } from "../../mouth/src/fallback.js";
 import { ClipService } from "../src/clips.js";
 import { Voice } from "../src/voice.js";
 
 const dirs: string[] = [];
-const tmp = () => { const d = mkdtempSync(join(tmpdir(), "voice-ears-")); dirs.push(d); return d; };
+const tmp = () => { const d = mkdtempSync(join(tmpdir(), "voice-mouth-")); dirs.push(d); return d; };
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 const settings = { model: "kokoro", voice: "af_heart", speed: 1, response_format: "wav" };
@@ -21,8 +21,8 @@ const wav = (text: string) => {
   return wavWrap(pcm, 24000, 1);
 };
 
-/** voice's real clip service and HTTP routes, read by ears' real clip-sync code. */
-test("voice's manifest and clip routes are accepted by ears' clip sync: replace, unchanged, regenerate, empty", async () => {
+/** voice's real clip service and HTTP routes, read by mouth' real clip-sync code. */
+test("voice's manifest and clip routes are accepted by mouth's clip sync: replace, unchanged, regenerate, empty", async () => {
   // @spec VOICE-CLIP-009, VOICE-CLIP-011, VOICE-CLIP-012
   const store = tmp();
   const log = recordingLog();
@@ -35,26 +35,26 @@ test("voice's manifest and clip routes are accepted by ears' clip sync: replace,
   const baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
     const cache = new ClipCache();
-    const mirror = new ClipMirror(join(tmp(), "ears", "fallback-clips"));
-    const ears = { baseUrl, cache, mirror, log: log.log as never };
+    const mirror = new ClipMirror(join(tmp(), "mouth", "fallback-clips"));
+    const mouth = { baseUrl, cache, mirror, log: log.log as never };
 
-    assert.equal(await refreshClips(ears), "kept", "no set committed yet: voice answers 404 and ears keeps its cache");
+    assert.equal(await refreshClips(mouth), "kept", "no set committed yet: voice answers 404 and mouth keeps its cache");
     await svc.start();
-    assert.equal(await refreshClips(ears), "replaced");
+    assert.equal(await refreshClips(mouth), "replaced");
     assert.deepEqual(cache.clips.map((c) => c.text), ["Error: unable to play line.", "Buffering. Buffering. Nope."]);
     assert.deepEqual(cache.clips[0]!.wav, wav("Error: unable to play line."));
     assert.equal(cache.fingerprint, svc.fingerprint);
-    assert.equal(await refreshClips(ears), "unchanged");
+    assert.equal(await refreshClips(mouth), "unchanged");
 
     svc = make(["Brand new line."]);
     await svc.start();
-    assert.equal(await refreshClips(ears), "replaced");
+    assert.equal(await refreshClips(mouth), "replaced");
     assert.deepEqual(cache.clips.map((c) => c.text), ["Brand new line."]);
 
     svc = make([]);
     await svc.start();
-    assert.equal(await refreshClips(ears), "replaced");
-    assert.deepEqual(cache.clips, [], "an empty list empties ears' cache");
+    assert.equal(await refreshClips(mouth), "replaced");
+    assert.deepEqual(cache.clips, [], "an empty list empties mouth' cache");
     assert.equal((await mirror.load())?.clips.length, 0);
   } finally {
     await new Promise((r) => server.close(r));

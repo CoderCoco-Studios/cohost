@@ -240,6 +240,26 @@ export const ConfigSchema = z.object({
       min_interval_ms: z.number().int().nonnegative().default(20000), // @spec CFG-SCH-018
     }).default({}),
   }),
+  /**
+   * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.
+   * Each key under `outputs` is one output and its sink name; `discord` is the only kind today.
+   */
+  // @spec CFG-SCH-020, CFG-SCH-018
+  mouth: z.object({
+    outputs: z.object({
+      discord: z.object({
+        enabled: z.boolean().default(true),
+        guild_id: z.string().default(""),
+        voice_channel_id: z.string().default(""),
+        /** Loudness on this output only, applied to utterances and fallback clips. */
+        gain_db: z.number().min(-40).max(12).default(0),
+      }).default({}),
+    }).default({}),
+    fallback: z.object({
+      /** At most one spoken fallback line per this many ms on an output (storm limit). */
+      min_interval_ms: z.number().int().nonnegative().default(20000),
+    }).default({}),
+  }).default({}),
   dashboard: z.object({ port: z.number().int().default(3000) }),
 });
 

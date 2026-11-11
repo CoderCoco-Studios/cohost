@@ -4,7 +4,7 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
-**MAPPED** (design only), 2026-11-10. A new segment split out of [ears](ears.md); no mouth code yet (build chunk 1, the shared `createJoiner`, has landed in `@cohost/shared`). 49 specs, all `[ ]`. Design: [LLD](../intent/mouth/mouth-design.md); decision doc [listen-speak-split](../intent/ears/decisions/listen-speak-split.md) (owned by ears, the node being split).
+**AUDITED**, 2026-11-11: build chunk 2 is built, so the service exists and all 49 specs are `[x]`. A segment split out of [ears](ears.md) (designed 2026-11-10). `services/mouth` is a workspace package but nothing starts it yet: it is not in Compose, the manifest or the dashboard (chunk 3), and it has no `dev` script so `pnpm dev` does not run it next to ears, whose Discord sink stays until chunk 4 (both use `DISCORD_TOKEN` until then, and two processes would displace each other's voice connection; use `pnpm --filter @cohost/mouth dev:mouth` to try it alone). Design: [LLD](../intent/mouth/mouth-design.md); decision doc [listen-speak-split](../intent/ears/decisions/listen-speak-split.md) (owned by ears, the node being split).
 
 ## Listening and speaking split
 
@@ -31,7 +31,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 | Chunk | Segment(s) | Specs | Notes |
 |---|---|---|---|
 | 1. Shared join loop (built) | ears (refactor) | none new; EARS-SESS-006 annotations follow `createJoiner` into `@cohost/shared` | No behaviour change. Gives mouth the same retry loop without copying it. |
-| 2. mouth service | mouth, config, voice (test only) | MOUTH-*; CFG-SCH-020, CFG-ISO-001, CFG-ISO-004, CFG-USR-011, and the `mouth.fallback.min_interval_ms` half of CFG-SCH-018 | `services/mouth` built from ears' playback, fallback and PCM code plus the routing layer; runnable with `pnpm dev` only, not yet in Compose or the manifest. `services/voice/test/ears-sync.test.ts` becomes `mouth-sync.test.ts`. ears is untouched, so both keys (`ears.fallback`, `mouth.fallback`) exist until chunk 4. |
+| 2. mouth service (built) | mouth, config, voice (test only) | MOUTH-*; CFG-SCH-020, CFG-ISO-001, CFG-ISO-004, CFG-USR-009, CFG-USR-011, and the `mouth.fallback.min_interval_ms` half of CFG-SCH-018 | `services/mouth` built from ears' playback, fallback and PCM code plus the routing layer; runnable by hand only, not in Compose or the manifest. `services/voice/test/ears-sync.test.ts` is now `mouth-sync.test.ts`. ears is untouched, so both keys (`ears.fallback`, `mouth.fallback`) exist until chunk 4; CFG-SCH-018 stays `[ ]` until chunk 4 removes `ears.fallback`. |
 | 3. Deploy and control | control-plane, deployment, dashboard (page list only) | CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005; DEPLOY-COMPOSE-001, 004, 017, 020, DEPLOY-REPO-001 | Manifest unit, `KNOWN_SERVICES`, Compose service in profile `mouth`, isolation pass-through, the dashboard page's hard-coded `UNITS` list (DASH-UI-008 needs no rewording). Off by default (profile), so nothing changes for an install that does not name `mouth`. |
 | 4. ears listens only | ears, config, deployment (docs) | EARS-START-001 to 004, 006, 007, EARS-SESS-002, 004, 009, EARS-HEAR-001, 009, EARS-INJ-007; retire EARS-AUD-002, EARS-PLAY-*, EARS-FALL-*; CFG-SCH-018 (drop `ears.fallback`), CFG-USR-009; DEPLOY-README-004, 005 | ears switches to `EARS_DISCORD_TOKEN`, ignores bots, joins self-muted and deletes its playback and fallback code and tests. `.env.example`, README, installer next steps. Land right after chunk 3: the switch is one upgrade step for the owner (second bot, `mouth` in `COMPOSE_PROFILES`). |
 
@@ -72,37 +72,58 @@ Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the nam
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (49 specs: 0 `[x]`, 49 `[ ]`, 0 `[D]`)
+- docs/intent/mouth/mouth-specs.md (49 specs: 49 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
-None yet.
+- services/mouth/test/audio.test.ts (WAV conversion)
+- services/mouth/test/fallback.test.ts (clip cache, mirror, refresh against a fake voice HTTP server, claim memory, per-output clip choice, storm limit and bad marks)
+- services/mouth/test/playback.test.ts (the per-output queue, give-up, fallback in the queue, sink names, gain, two independent outputs, `httpAudio`)
+- services/mouth/test/health.test.ts (`mouthPlan`, `readToken`, `MouthHealth`)
+- services/mouth/test/session.test.ts (output target, routing handler, subscription, shutdown, idle plans)
+- services/voice/test/mouth-sync.test.ts (voice's real clip service read by mouth's real clip sync)
+- packages/shared/test/join.test.ts (the `createJoiner` retry loop behind MOUTH-SESS-006)
+
+69 `@spec` annotations in the mouth tests, citing 44 distinct MOUTH IDs. Specs with no test of their own, all in the discord.js glue that no test reaches (LLD Open Questions 2): MOUTH-SESS-001 (login failure exits), MOUTH-SESS-004 (subscribe the player on Ready), MOUTH-SESS-005 (disconnect and rejoin), MOUTH-SESS-006 (the retry loop is the shared, tested `createJoiner`) and MOUTH-PLAY-007 (player error log).
 
 ### Code
-`packages/shared/src/join.ts` (`createJoiner`, chunk 1, annotated EARS-SESS-006). Otherwise none yet; the behaviour lives in `services/ears/src/playback.ts`, `fallback.ts`, `audio.ts` and `discord.ts` until build chunks 2 and 4.
+- services/mouth/src/index.ts
+- services/mouth/src/discord.ts
+- services/mouth/src/session.ts
+- services/mouth/src/playback.ts
+- services/mouth/src/fallback.ts
+- services/mouth/src/audio.ts
+- services/mouth/src/health.ts
+- services/mouth/package.json, services/mouth/tsconfig.json
+- `packages/shared/src/join.ts` (`createJoiner`, chunk 1, annotated EARS-SESS-006)
+- `packages/config/src/schema.ts` (the `mouth` section: CFG-SCH-020), `config/config.example.yaml` (CFG-USR-011, CFG-ISO-004, CFG-USR-009)
+
+36 `@spec` annotations in code, citing all 49 spec IDs (MOUTH-ROUTE-002 at `mouthPlan`, which leaves a disabled output with no connection); MOUTH-PLAY-008 (no `control` subscription) is carried by the `MOUTH_LOOP_TYPES` list.
+
+The playback, fallback, audio and Discord code is copied from `services/ears` (which keeps its own until chunk 4). The differences from ears: per-output state (a `FallbackLine` per output over one shared `ClipCache` and one `ClaimMemory`), the sink name taken from the output, `applyGain`, a self-deafened join without the `GuildMembers` intent, the `mouth.*` config keys, and the clip mirror under `<dataDir()>/mouth/fallback-clips`.
 
 ## Architecture
 
 **Purpose:** Be the co-host's mouth: put her synthesized voice on every output the owner routes it to, report each output as a sink, and cover a failed line with a spoken fallback.
 
-**Key Components (planned):**
+**Key Components:**
 1. `index.ts`: `mouthPlan`, heartbeat, lazy discord.js load, one shutdown.
 2. `discord.ts`: the Discord output (login, self-deafened join, rejoin, player).
-3. `session.ts`: the `mouth` loop (`voice.utterance`, `voice.playing`) and routing to outputs.
+3. `session.ts`: the output target, the `mouth` loop (`voice.utterance`, `voice.playing`) and routing to outputs, the idle plans, shutdown.
 4. `playback.ts`: one queue per output; claim, done, give-up.
-5. `fallback.ts`: clip cache, mirror, manifest refresh, choice, per-output storm limit.
+5. `fallback.ts`: clip cache, mirror, manifest refresh, claim memory, per-output choice, storm limit and bad marks.
 6. `audio.ts`: WAV to 48 kHz stereo PCM, gain.
-7. `health.ts`: `MouthHealth`, one dep per output.
+7. `health.ts`: `mouthPlan`, `readToken`, `MouthHealth` (one dep per output).
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Startup plans | MOUTH-START-001 to 005 | 0 | 0 | 5 |
-| Discord output session | MOUTH-SESS-001 to 008 | 0 | 0 | 8 |
-| Routing | MOUTH-ROUTE-001 to 005 | 0 | 0 | 5 |
-| Playback | MOUTH-PLAY-001 to 009 | 0 | 0 | 9 |
-| Audio conversion | MOUTH-AUD-001 | 0 | 0 | 1 |
-| Fallback line | MOUTH-FALL-001 to 019 | 0 | 0 | 19 |
-| Health | MOUTH-HLTH-001 to 002 | 0 | 0 | 2 |
+| Startup plans | MOUTH-START-001 to 005 | 5 | 0 | 0 |
+| Discord output session | MOUTH-SESS-001 to 008 | 8 | 0 | 0 |
+| Routing | MOUTH-ROUTE-001 to 005 | 5 | 0 | 0 |
+| Playback | MOUTH-PLAY-001 to 009 | 9 | 0 | 0 |
+| Audio conversion | MOUTH-AUD-001 | 1 | 0 | 0 |
+| Fallback line | MOUTH-FALL-001 to 019 | 19 | 0 | 0 |
+| Health | MOUTH-HLTH-001 to 002 | 2 | 0 | 0 |
 
-**Summary:** 49 specs, 49 gaps, by design: the segment is new.
+**Summary:** 49 specs, 49 implemented, 0 gaps. 44 have a test carrying their `@spec` ID; the other 5 are discord.js glue (see Tests). Open outside the segment: nothing starts mouth until chunk 3, and ears keeps its Discord sink until chunk 4.

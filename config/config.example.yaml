@@ -217,5 +217,16 @@ ears:
   fallback:
     min_interval_ms: 20000     # at most one fallback line per 20 s when many lines fail at once
 
+# The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
+mouth:
+  outputs:
+    discord:                   # her own Discord bot (DISCORD_TOKEN), self-deafened in the channel below
+      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth idles, plays nothing (isolated runs)
+      guild_id: "${DISCORD_GUILD_ID}"          # by default the guild and channel ears listens in; point them elsewhere if you like
+      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+      gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
+  fallback:
+    min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
+
 dashboard:
   port: 3000

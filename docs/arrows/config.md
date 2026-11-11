@@ -6,9 +6,9 @@
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 2 gaps (viewer notes, chunks 2 and 4); at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 60 implemented, 0 gaps, 0 deferred.
 
-## Listening and speaking split (designed, not built)
+## Listening and speaking split (mouth chunk 2 built, chunk 4 open)
 
-Build chunks 2 and 4 in [mouth.md](mouth.md): CFG-SCH-018 moves the storm interval to `mouth.fallback.min_interval_ms`, CFG-ISO-001 and CFG-ISO-004 add `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED`, CFG-USR-009 ships the interval under `mouth` (all reworded `[ ]`); CFG-SCH-020 (optional `mouth` section and its defaults, gain range) and CFG-USR-011 (example keys for the Discord output) are new `[ ]`. An unknown output name gets the ordinary unknown-key warning.
+Build chunks 2 and 4 in [mouth.md](mouth.md). Chunk 2 built: the optional `mouth` section and its defaults, gain range -40..12 (CFG-SCH-020), the example keys for the Discord output (CFG-USR-011), `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED` (CFG-ISO-001, CFG-ISO-004) and the starter interval under `mouth` (CFG-USR-009), all `[x]`; `mouth.fallback.min_interval_ms` is the mouth half of CFG-SCH-018. CFG-SCH-018 stays `[ ]` until chunk 4 removes `ears.fallback` (ears still reads it). An unknown output name gets the ordinary unknown-key warning.
 
 ## Spoken fallback line: built (chunks 1 to 3)
 

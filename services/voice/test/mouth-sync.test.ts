@@ -22,7 +22,7 @@ const wav = (text: string) => {
 };
 
 /** voice's real clip service and HTTP routes, read by mouth' real clip-sync code. */
-test("voice's manifest and clip routes are accepted by mouth' clip sync: replace, unchanged, regenerate, empty", async () => {
+test("voice's manifest and clip routes are accepted by mouth's clip sync: replace, unchanged, regenerate, empty", async () => {
   // @spec VOICE-CLIP-009, VOICE-CLIP-011, VOICE-CLIP-012
   const store = tmp();
   const log = recordingLog();

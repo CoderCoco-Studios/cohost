@@ -269,7 +269,7 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 Files in this segment:
 
 - `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `clips.ts`, `wav.ts`, `health.ts`
-- `services/voice/test/boot.test.ts`, `clips.test.ts`, `ears-sync.test.ts` (renamed `mouth-sync.test.ts` when the clip cache moves to mouth), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
+- `services/voice/test/boot.test.ts`, `clips.test.ts`, `mouth-sync.test.ts` (voice's clip routes read by mouth's real clip sync), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
 - `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
 

@@ -57,7 +57,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/ears/test/ears.test.ts (playback queue, hearing, STT client)
 - services/ears/test/health.test.ts
 - services/ears/test/inject.test.ts
-- services/ears/test/session.test.ts (join retry, config target, event handler gating, subscription, shutdown)
+- packages/shared/test/join.test.ts (3; the `createJoiner` retry loop behind EARS-SESS-006)
+- services/ears/test/session.test.ts (config target, event handler gating, subscription, shutdown)
 
 37 `@spec` annotations in tests, citing 31 distinct spec IDs.
 
@@ -87,8 +88,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 **Key Components:**
 1. `index.ts` — picks a startup plan (`off` / `no-token` / `discord`) with `earsPlan`, wires the heartbeat and inject handler, lazy-loads `discord.ts`, registers the one shutdown (`stopEars`).
-2. `discord.ts` — Discord client, voice join/rejoin (with `createJoiner` retry), per-speaker Opus capture; establishes the single `ears` bus loop for `voice.utterance` + `inject.request` before logging in.
-3. `session.ts` — testable session logic: `voiceTarget` (config keys), `createJoiner` (retry with increasing delay), `createEarsHandler` (inject always; utterance only while voice is ready), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
+2. `discord.ts` — Discord client, voice join/rejoin (with the shared `createJoiner` retry from `@cohost/shared`), per-speaker Opus capture; establishes the single `ears` bus loop for `voice.utterance` + `inject.request` before logging in.
+3. `session.ts` — testable session logic: `voiceTarget` (config keys), `createEarsHandler` (inject always; utterance only while voice is ready), `subscribeEars` (group created first, start mode `latest`), `stopEars` (single shutdown sequence).
 4. `hearing.ts` — min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish.
 5. `playback.ts` — FIFO playback queue; publishes `voice.playing` / `voice.done` with `sink: "discord"`.
 6. `audio.ts` — PCM resampling; the WAV writer `wavWrap` and parser `parseWav` come from `@cohost/shared`, and `readWavHeader` is a thin adapter over `parseWav` from `@cohost/shared`.
@@ -111,7 +112,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Key Findings
 
 1. **EARS-START-001** excludes only non-injected `speech.heard` in the `off` plan, consistent with EARS-INJ-009 (S16). EARS-START-005 `[x]` covers shutdown in the idle plans.
-2. **A failed voice join no longer ends the process.** `createJoiner` (`services/ears/src/session.ts`) retries the join (initial and rejoin) with a delay doubling from 5 s to a 60 s cap, `onFailure` marks `deps.discord` down and the heartbeat `degraded`, and the bus subscription is independent of the join. (EARS-SESS-006, B12)
+2. **A failed voice join no longer ends the process.** `createJoiner` (`@cohost/shared`, `packages/shared/src/join.ts`; moved from `services/ears/src/session.ts` in mouth build chunk 1) retries the join (initial and rejoin) with a delay doubling from 5 s to a 60 s cap, `onFailure` marks `deps.discord` down and the heartbeat `degraded`, and the bus subscription is independent of the join. (EARS-SESS-006, B12)
 3. **Injection works before Discord is joined in the `discord` plan.** `startDiscord` establishes the `ears` loop before login; `createEarsHandler` always handles `inject.request` and skips a `voice.utterance` while the voice connection is not ready. The shared loop still awaits the inject handler, so a slow STT call delays `voice.utterance` pickup. (EARS-INJ-007, B13)
 4. **Shutdown in the `discord` plan is one sequence.** `index.ts` registers a single `onShutdown` running `stopEars`: Discord teardown, then `bus.stop()`. (EARS-SESS-008, R2)
 5. **A given-up line is reported with `voice.failed`, and the queue still has no fetch timeout.** `Playback.giveUp` (`services/ears/src/playback.ts`) publishes `voice.failed` and plays a cached fallback clip when one is eligible (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-*), replacing the silent skip of decision S15; a hung `httpAudio` fetch (no timeout) still blocks every later utterance, so a hang is never a give-up. Publish failures are logged (EARS-PLAY-009).

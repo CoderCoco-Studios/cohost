@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -28,7 +28,7 @@ taxonomy:
     - deployment
 
 # The `@cohost/shared` workspace package (small inject helpers owned by the eyes
-# segment, and the `parseWav` WAV parser and `wavWrap` WAV writer used by voice and ears) is deliberately not a segment and not listed in blocks / blockedBy.
+# segment, and the `parseWav` WAV parser and `wavWrap` WAV writer used by voice and ears, and the `createJoiner` Discord voice-join retry loop used by ears and, later, mouth) is deliberately not a segment and not listed in blocks / blockedBy.
 # blocks / blockedBy follow the workspace-package import graph observed at
 # mapping time (git 686cc8f). Bus-event coupling between services is not
 # encoded here; see each LLD's References section.
@@ -126,7 +126,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Listening and speaking split designed (not built; see mouth.md build order): ears narrows to listening with its own bot (EARS_DISCORD_TOKEN). Reworded [ ]: EARS-START-002/003/004, EARS-SESS-002/004, EARS-HEAR-001; new [ ]: EARS-START-007, EARS-SESS-009; reworded [x] (true today): EARS-START-001/006, EARS-INJ-007; new [x]: EARS-HEAR-009. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    next: "Listening and speaking split designed (not built; see mouth.md build order): ears narrows to listening with its own bot (EARS_DISCORD_TOKEN). Reworded [ ]: EARS-START-002/003/004, EARS-SESS-002/004, EARS-HEAR-001; new [ ]: EARS-START-007, EARS-SESS-009; reworded [x] (true today): EARS-START-001/006, EARS-INJ-007; new [x]: EARS-HEAR-009. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources. Mouth build chunk 1 done: createJoiner (EARS-SESS-006) now lives in @cohost/shared."
     drift: "Until build chunk 4 lands, services/ears code and tests still carry @spec annotations for the retired EARS-AUD-002, EARS-PLAY-* and EARS-FALL-* IDs (now MOUTH-*); chunk 4 deletes that code from ears."
 
   salience:

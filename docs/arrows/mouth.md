@@ -4,7 +4,7 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
-**MAPPED** (design only), 2026-11-10. A new segment split out of [ears](ears.md); no code yet. 49 specs, all `[ ]`. Design: [LLD](../intent/mouth/mouth-design.md); decision doc [listen-speak-split](../intent/ears/decisions/listen-speak-split.md) (owned by ears, the node being split).
+**MAPPED** (design only), 2026-11-10. A new segment split out of [ears](ears.md); no mouth code yet (build chunk 1, the shared `createJoiner`, has landed in `@cohost/shared`). 49 specs, all `[ ]`. Design: [LLD](../intent/mouth/mouth-design.md); decision doc [listen-speak-split](../intent/ears/decisions/listen-speak-split.md) (owned by ears, the node being split).
 
 ## Listening and speaking split
 
@@ -30,7 +30,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 
 | Chunk | Segment(s) | Specs | Notes |
 |---|---|---|---|
-| 1. Shared join loop | ears (refactor) | none new; EARS-SESS-006 annotations follow `createJoiner` into `@cohost/shared` | No behaviour change. Gives mouth the same retry loop without copying it. |
+| 1. Shared join loop (built) | ears (refactor) | none new; EARS-SESS-006 annotations follow `createJoiner` into `@cohost/shared` | No behaviour change. Gives mouth the same retry loop without copying it. |
 | 2. mouth service | mouth, config, voice (test only) | MOUTH-*; CFG-SCH-020, CFG-ISO-001, CFG-ISO-004, CFG-USR-011, and the `mouth.fallback.min_interval_ms` half of CFG-SCH-018 | `services/mouth` built from ears' playback, fallback and PCM code plus the routing layer; runnable with `pnpm dev` only, not yet in Compose or the manifest. `services/voice/test/ears-sync.test.ts` becomes `mouth-sync.test.ts`. ears is untouched, so both keys (`ears.fallback`, `mouth.fallback`) exist until chunk 4. |
 | 3. Deploy and control | control-plane, deployment, dashboard (page list only) | CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005; DEPLOY-COMPOSE-001, 004, 017, 020, DEPLOY-REPO-001 | Manifest unit, `KNOWN_SERVICES`, Compose service in profile `mouth`, isolation pass-through, the dashboard page's hard-coded `UNITS` list (DASH-UI-008 needs no rewording). Off by default (profile), so nothing changes for an install that does not name `mouth`. |
 | 4. ears listens only | ears, config, deployment (docs) | EARS-START-001 to 004, 006, 007, EARS-SESS-002, 004, 009, EARS-HEAR-001, 009, EARS-INJ-007; retire EARS-AUD-002, EARS-PLAY-*, EARS-FALL-*; CFG-SCH-018 (drop `ears.fallback`), CFG-USR-009; DEPLOY-README-004, 005 | ears switches to `EARS_DISCORD_TOKEN`, ignores bots, joins self-muted and deletes its playback and fallback code and tests. `.env.example`, README, installer next steps. Land right after chunk 3: the switch is one upgrade step for the owner (second bot, `mouth` in `COMPOSE_PROFILES`). |
@@ -78,7 +78,7 @@ Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the nam
 None yet.
 
 ### Code
-None yet; the behaviour lives in `services/ears/src/playback.ts`, `fallback.ts`, `audio.ts` and `discord.ts` until build chunks 2 and 4.
+`packages/shared/src/join.ts` (`createJoiner`, chunk 1, annotated EARS-SESS-006). Otherwise none yet; the behaviour lives in `services/ears/src/playback.ts`, `fallback.ts`, `audio.ts` and `discord.ts` until build chunks 2 and 4.
 
 ## Architecture
 

@@ -172,3 +172,41 @@ test("smoothing eases the head, while the mouth moves 3x faster", () => { // @sp
   assert.ok(Math.abs(driver.last.mouthOpen - 0.6) < 1e-9); // rate = min(1, 0.2 * 3)
   assert.ok(Math.abs(driver.last.mouthSmile - 0.14) < 1e-9); // 0.7 target * 0.2
 });
+
+test("re-preparing a stored id makes it the newest, so a re-sent id is not evicted early", () => { // @spec AVATAR-ENG-002
+  make();
+  for (let i = 0; i < 20; i++) engine.prepare(utterance({ id: `u${i}`, gesture: "nod" }));
+  engine.prepare(utterance({ id: "u0", gesture: "wave" })); // re-sent: now the newest
+  engine.prepare(utterance({ id: "u20", gesture: "nod" })); // the 21st id evicts the oldest, which is u1, not u0
+  engine.play("u1");
+  assert.deepEqual(driver.gestures, [], "u1 was evicted");
+  engine.play("u0");
+  assert.deepEqual(driver.gestures, ["wave"], "u0 survived with its replaced data");
+});
+
+test("neutral is never shown above intensity 0: held, as a mood and on decay", () => { // @spec AVATAR-ENG-017, AVATAR-ENG-008
+  make();
+  engine.setEmotion("neutral", 1000); // a held neutral line
+  assert.deepEqual(driver.expressions, [["neutral", 0]]);
+  engine.prepare(utterance({ emotion: "neutral" }));
+  engine.play("u1"); // setEmotion through the utterance
+  assert.deepEqual(driver.expressions.at(-1), ["neutral", 0]);
+  engine.setMood("sad");
+  engine.setMood("neutral");
+  frames(60); // the hold expires: back to the resting mood
+  assert.ok(driver.expressions.every(([e, i]) => e !== "neutral" || i === 0), JSON.stringify(driver.expressions));
+  assert.deepEqual(states.at(-1), { emotion: "neutral", intensity: 0 });
+});
+
+test("a playing utterance is cleared once its envelope is spent and durationMs + 500 ms have passed, even without done", () => { // @spec AVATAR-ENG-006
+  make({ idle_motion: true });
+  const headX = (seconds: number) => 4 * Math.sin(seconds / 3.1) + 2 * Math.sin(seconds / 1.3); // the idle sway at t seconds since construction
+  engine.prepare(utterance({ envelope: [0.5], envelopeHz: 10, durationMs: 100 }));
+  engine.play("u1");
+  frames(1); // 100 ms in: envelope spent, still within durationMs + 500 ms
+  assert.ok(Math.abs(driver.last.headX - 1.6 * headX(0.1)) < 1e-9, "playing: head sway amplified");
+  frames(5); // 600 ms: not yet MORE than 600 ms
+  assert.ok(Math.abs(driver.last.headX - 1.6 * headX(0.6)) < 1e-9, "still playing at exactly durationMs + 500");
+  frames(1); // 700 ms
+  assert.ok(Math.abs(driver.last.headX - headX(0.7)) < 1e-9, "cleared: sway back to normal");
+});

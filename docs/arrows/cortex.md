@@ -6,6 +6,8 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps. With the spoken fallback line built: 74 specs: 74 implemented, 0 gaps, 0 deferred.
 
+Gap-closure chunk C10 (2026-11-11): CTX-SAY-005 and the pending-line map (CTX-EVT-004/005, CTX-GATE-003/004/009, CTX-CTRL-006), CTX-START-005 (critic misconfig fails in main), CTX-HEALTH-005; runService; coverage gaps covered. 77 of 77 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by a fallback; the next reply gets a hint stating the base chance (`brain.cortex.fallback_ack_chance`, 0.25) and the model decides in character; nothing enforces the rate, so it drifts.

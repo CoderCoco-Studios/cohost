@@ -11,12 +11,13 @@ export interface StatePublisherDeps {
   bus: Publisher;
   driver: { name: string; connected(): boolean };
   log: Logger;
+  /** Monotonic millisecond clock (default `performance.now`): the 200 ms spacing and the log interval are durations. */
   now?: () => number;
 }
 
 /** The engine's `onState` callback: throttles to 5 Hz and publishes `avatar.state`; a failed publish is dropped. */
 export function statePublisher(d: StatePublisherDeps): (p: AvatarParams, emotion: Emotion, intensity: number) => void { // @spec AVATAR-STATE-001, AVATAR-STATE-002
-  const now = d.now ?? Date.now;
+  const now = d.now ?? (() => performance.now());
   let lastPublished = -Infinity;
   let lastWarned = -Infinity;
   return (p, emotion, intensity) => {

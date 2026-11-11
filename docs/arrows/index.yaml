@@ -72,7 +72,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: New [ ]: CFG-SCH-021 (vision.engine), CFG-SCH-022 (ears.stt_engine), CFG-SCH-023 (mouth.outputs.dryrun); CFG-ISO-004 reopened [ ] for their placeholders. Settings editor support is module-contract MOD-CFG-*. Earlier: Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "C10 added CFG-SCH-024 (brain.affect republish_ms, short_line_chars and the five nudge sizes) [x]. 2026-11-11 shared-runtime/module-contract cascade: New [ ]: CFG-SCH-021 (vision.engine), CFG-SCH-022 (ears.stt_engine), CFG-SCH-023 (mouth.outputs.dryrun); CFG-ISO-004 reopened [ ] for their placeholders. Settings editor support is module-contract MOD-CFG-*. Earlier: Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -120,7 +120,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "Spoken fallback line built (chunk 3): WM-PUSH-007, WM-PUSH-008, WM-WIN-007, WM-TRANS-010. Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C10): WM-PUSH-006/007/009/010, WM-SEEN-002 (mark seen by event id), WM-PKG-001 (type-only dependencies); bus ts on self lines. 35 of 35 specs implemented; no open gaps. Earlier: Spoken fallback line built (chunk 3): WM-PUSH-007, WM-PUSH-008, WM-WIN-007, WM-TRANS-010. Intent pass confirmed; no open gaps."
     drift: null
 
   chat:
@@ -168,7 +168,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C10): SAL-CTRL-007 (resume skips the paused burst), SAL-REFLEX-008, SAL-HEALTH-004 (pause in the heartbeat), SAL-HEALTH-005 (mock mode); runService; test gaps covered. 55 of 55 specs implemented; no open gaps. Earlier: Intent pass confirmed; no open gaps."
     drift: null
 
   affect:
@@ -180,7 +180,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C10): CFG-SCH-024 keys for republish, nudge sizes and short-line cutoff; AFF-HEALTH-003 (mock mode), AFF-HEALTH-004; runService; test gaps covered. 39 of 39 specs implemented; no open gaps. Earlier: Intent pass confirmed; no open gaps."
     drift: null
 
   memory:
@@ -204,7 +204,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Spoken fallback line built (chunk 3): CTX-EVT-008, CTX-FALL-001 to 007. Viewer notes surfacing built: CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 74 of 74 specs implemented; no open gaps."
+    next: "2026-11-11 gap closure (C10): CTX-SAY-005 and the pending-line map (CTX-EVT-004/005, CTX-GATE-003/004/009, CTX-CTRL-006), CTX-START-005 (critic misconfig fails in main), CTX-HEALTH-005; runService; coverage gaps covered. 77 of 77 specs implemented; no open gaps. Earlier: Spoken fallback line built (chunk 3): CTX-EVT-008, CTX-FALL-001 to 007. Viewer notes surfacing built: CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 74 of 74 specs implemented; no open gaps."
     drift: null
 
   voice:
@@ -240,7 +240,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C10): AVATAR-ENG-002 (re-prepare moves to newest), AVATAR-ENG-017 (neutral clears), AVATAR-VTS-016 (handshake timeout), monotonic clocks, AVATAR-DEV-001 (tests type-checked); runService; untested specs covered. 61 of 61 specs implemented; no open gaps. Earlier: Intent pass confirmed; no open gaps."
     drift: null
 
   dashboard:

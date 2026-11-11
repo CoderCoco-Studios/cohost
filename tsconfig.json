@@ -16,6 +16,7 @@
     { "path": "services/cortex" },
     { "path": "services/voice" },
     { "path": "services/avatar" },
+    { "path": "services/avatar/test" },
     { "path": "services/eyes" },
     { "path": "services/ears" },
     { "path": "services/mouth" },

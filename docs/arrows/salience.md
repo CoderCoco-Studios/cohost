@@ -6,6 +6,8 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 51 specs: 51 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (cascade-audit PR for brain-front).
 
+Gap-closure chunk C10 (2026-11-11): SAL-CTRL-007 (resume skips the paused burst), SAL-REFLEX-008, SAL-HEALTH-004 (pause in the heartbeat), SAL-HEALTH-005 (mock mode); runService; test gaps covered. 55 of 55 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

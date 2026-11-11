@@ -6,6 +6,8 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 28 specs: 28 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (platform-models cascade fix). With the spoken fallback line built: 32 specs: 32 implemented, 0 gaps, 0 deferred.
 
+Gap-closure chunk C10 (2026-11-11): WM-PUSH-006/007/009/010, WM-SEEN-002 (mark seen by event id), WM-PKG-001 (type-only dependencies); bus ts on self lines. 35 of 35 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback lines. `self` events keep their `brain.say` id; a fallback marks the line, which renders as the fallback text plus a bracketed note quoting the failed line (no new transcript tag, so the stop list is unchanged).

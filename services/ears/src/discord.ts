@@ -4,22 +4,24 @@ import prism from "prism-media";
 import type { Bus, BusEvent } from "@cohost/bus";
 import type { Heartbeat } from "@cohost/shared";
 import type { Config, Logger } from "@cohost/config";
-import { createDiscordVoiceSession } from "@cohost/shared/discord-voice";
-import { Hearing, sttTranscriber } from "./hearing.js";
-import type { EarsHealth } from "./health.js";
+import { createDiscordVoiceSession as defaultCreateSession } from "@cohost/shared/discord-voice";
+import { Hearing } from "./hearing.js";
 import { EARS_JOIN_OPTIONS, EARS_LOOP_TYPES, createEarsHandler, isHumanSpeaker, subscribeEars, voiceTarget } from "./session.js";
 
 export interface DiscordDeps {
   cfg: Config;
   bus: Bus;
   log: Logger;
-  health: EarsHealth;
   heartbeat: Heartbeat;
   /** The listening bot's token (`EARS_DISCORD_TOKEN`); never `DISCORD_TOKEN`. */
   token: string;
   setVoiceReady(ready: boolean): void;
   /** Handles `inject.request` (shares the `ears` consumer group, so it must be subscribed here). */
   onInject: (ev: BusEvent<"inject.request">) => void | Promise<void>;
+  /** The tracked transcriber (real or stub), shared with injection. */
+  transcribe: (audio: Buffer, hint?: { contentType: string }) => Promise<string>;
+  /** Replacement for tests: the shared Discord voice session. */
+  createSession?: typeof defaultCreateSession;
 }
 
 /** A running Discord session; `stop` tears down the voice connection and the client. */
@@ -33,10 +35,10 @@ export interface DiscordSession {
  * token. The caller owns shutdown: it calls `stop()` and then stops the bus.
  */
 export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
-  const { cfg, bus, log, health } = deps;
+  const { cfg, bus, log } = deps;
   let connection: VoiceConnection | undefined;
   const listening = new Set<string>();
-  const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
+  const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: deps.transcribe });
 
   // @spec EARS-HEAR-001, EARS-HEAR-002, EARS-HEAR-003
   function listenTo(userId: string, channel: VoiceBasedChannel) {
@@ -61,12 +63,13 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   // The connection itself (join, retry, rejoin on disconnect) is the shared Discord voice session; ears only attaches its
   // receiver and reports what the heartbeat needs.
   // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004, EARS-SESS-007, EARS-SESS-010, CFG-USR-005
-  const session = createDiscordVoiceSession({
+  const session = (deps.createSession ?? defaultCreateSession)({
     token: deps.token,
     guildId: () => voiceTarget(cfg.ears.discord).guildId,
     channelId: () => voiceTarget(cfg.ears.discord).channelId,
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers],
     ...EARS_JOIN_OPTIONS,
+    join: { baseMs: 5000, maxMs: 60_000 },
     fetchMembers: true,
     log,
     onConnected(conn, { client, channel }) {
@@ -93,7 +96,8 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: deps.onInject }), log);
 
   // @spec EARS-SESS-001, EARS-SESS-009
-  await session.start().catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
+  // A failed login is fatal: the error propagates to `runService`, which exits with status 1.
+  await session.start().catch((err) => { log.error({ err }, "discord login failed"); throw err; });
 
   // @spec EARS-SESS-008
   return { stop: () => session.stop() };

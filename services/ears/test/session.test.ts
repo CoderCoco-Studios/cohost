@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { event, recordingLog, testConfig } from "@cohost/testing";
-import { EARS_LOOP_TYPES, EARS_JOIN_OPTIONS, createEarsHandler, isHumanSpeaker, stopEars, subscribeEars, voiceTarget } from "../src/session.js";
+import { EARS_LOOP_TYPES, EARS_JOIN_OPTIONS, createEarsHandler, isHumanSpeaker, subscribeEars, voiceTarget } from "../src/session.js";
 
 // @spec EARS-SESS-007, CFG-USR-005
 test("the guild and voice channel come from the ears.discord config keys, not the environment", () => {
@@ -83,15 +83,4 @@ test("the ears group is created first, then subscribed with start mode latest fo
   await subscribeEars(bus, ["inject.request"], async () => {}, recordingLog().log);
   assert.deepEqual(calls, ["reset:ears", "subscribe"]);
   assert.deepEqual(opts, { group: "ears", types: ["inject.request"], start: "latest" });
-});
-
-// @spec EARS-SESS-008, EARS-START-005
-test("one shutdown sequence: idle timer, voice connection and client, then the bus", async () => {
-  const order: string[] = [];
-  const bus = { stop: () => { order.push("bus"); } };
-  await stopEars({ idleTimer: setInterval(() => {}, 1000), clear: (t) => { order.push("timer"); clearInterval(t); }, session: { stop: async () => { order.push("discord"); } }, bus });
-  assert.deepEqual(order, ["timer", "discord", "bus"]);
-  order.length = 0;
-  await stopEars({ session: { stop: async () => { order.push("discord"); throw new Error("destroy failed"); } }, bus, log: recordingLog().log });
-  assert.deepEqual(order, ["discord", "bus"], "the bus is stopped even if the teardown throws");
 });

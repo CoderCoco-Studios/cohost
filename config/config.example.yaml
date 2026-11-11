@@ -78,7 +78,7 @@ brain:
     module:
       kind: rules
       url: ""                  # http: e.g. http://host.docker.internal:8900/salience
-      timeout_ms: 1500
+      timeout_ms: 8000
       llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
         provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
         model: ""              # while the cortex talks through something bigger.
@@ -107,7 +107,7 @@ brain:
     module:
       kind: rules
       url: ""                  # http: e.g. http://host.docker.internal:8900/affect
-      timeout_ms: 1500
+      timeout_ms: 8000
       llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
         provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
         model: ""              # while the cortex talks through something bigger.

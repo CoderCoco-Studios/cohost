@@ -149,11 +149,9 @@ test("clamp and isNum", () => {
 // @spec HOOK-WARN-003
 test("the next warning after a suppressed window carries the number of suppressed fallbacks", async () => {
   let now = 1_000_000_000_000;
-  const clock = mock.method(Date, "now", () => now);
-  after(() => clock.mock.restore());
   const warns: Record<string, unknown>[] = [];
   const counting = { info() {}, error() {}, debug() {}, warn: (o: Record<string, unknown>) => warns.push(o) } as never;
-  const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 300 }), llmCfg, { rules, http: { validate } }, counting);
+  const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 300 }), llmCfg, { rules, http: { validate } }, counting, { now: () => now, coolOffAfter: 1000 });
   answers.push("500", "500", "500", "500");
   await m.run({ n: 1 }); // logged
   now += 1_000; await m.run({ n: 2 }); // suppressed

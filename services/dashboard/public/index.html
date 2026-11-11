@@ -316,7 +316,8 @@ let ctlEnabled = false;
 const ACTIONS = ["start", "stop", "restart"];
 // The control plane's manifest units (packages/control/src/manifest.ts; a test pins this list to it). The
 // dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
-const UNITS = ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "redis", "postgres", "ollama", "tts", "stt"];
+// @spec DASH-UI-008
+const UNITS = ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "redis", "postgres", "ollama", "tts", "stt"];
 function actions(id) {
   if (!ctlEnabled) return "";
   return `<td class="act">${UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : ""}</td>`;

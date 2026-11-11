@@ -17,3 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/compose-smoke.sh
+      # The launch end-to-end test (CTRL-STACK-015): StackController.launch and stopAll on a real Compose project.
+      # @spec DEPLOY-CI-007
+      # pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node --import tsx --test packages/control/test/launch.e2e.test.ts

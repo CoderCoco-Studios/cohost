@@ -17,7 +17,7 @@ services:
     <<: *gpu
   tts:
     <<: *gpu
-    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:latest}
+    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0}
   stt:
     <<: *gpu
-    image: ${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:latest-cuda}
+    image: ${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:0.8.3-cuda}

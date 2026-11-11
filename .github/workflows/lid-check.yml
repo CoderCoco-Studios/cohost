@@ -1,0 +1,24 @@
+name: lid-check
+
+# @spec DEPLOY-CI-006
+# Linked-intent coherence: every @spec ID cited in code exists in a spec file, no ID is defined twice, and
+# no spec file cites an ID that was deleted. Reads files only, so there is no install step.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: lid-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+      - run: node scripts/lid-check.mjs

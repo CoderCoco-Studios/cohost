@@ -17,7 +17,7 @@ jobs:
     # Redis lets the bus round-trip test run instead of skipping itself.
     services:
       redis:
-        image: redis:7-alpine
+        image: redis:7.4.12-alpine
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"

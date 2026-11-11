@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
 export type EarsSource = "discord" | "off";
 /** `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */

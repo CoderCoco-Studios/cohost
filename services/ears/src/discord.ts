@@ -1,11 +1,10 @@
-import { Client, GatewayIntentBits, type VoiceBasedChannel } from "discord.js";
-import {
-  EndBehaviorType, entersState, joinVoiceChannel, VoiceConnectionStatus, type VoiceConnection,
-} from "@discordjs/voice";
+import { GatewayIntentBits, type VoiceBasedChannel } from "discord.js";
+import { EndBehaviorType, type VoiceConnection } from "@discordjs/voice";
 import prism from "prism-media";
-import type { Bus, Heartbeat, BusEvent } from "@cohost/bus";
+import type { Bus, BusEvent } from "@cohost/bus";
+import type { Heartbeat } from "@cohost/shared";
 import type { Config, Logger } from "@cohost/config";
-import { createJoiner } from "@cohost/shared";
+import { createDiscordVoiceSession } from "@cohost/shared/discord-voice";
 import { Hearing, sttTranscriber } from "./hearing.js";
 import type { EarsHealth } from "./health.js";
 import { EARS_JOIN_OPTIONS, EARS_LOOP_TYPES, createEarsHandler, isHumanSpeaker, subscribeEars, voiceTarget } from "./session.js";
@@ -20,7 +19,7 @@ export interface DiscordDeps {
   token: string;
   setVoiceReady(ready: boolean): void;
   /** Handles `inject.request` (shares the `ears` consumer group, so it must be subscribed here). */
-  onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
+  onInject: (ev: BusEvent<"inject.request">) => void | Promise<void>;
 }
 
 /** A running Discord session; `stop` tears down the voice connection and the client. */
@@ -35,7 +34,6 @@ export interface DiscordSession {
  */
 export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   const { cfg, bus, log, health } = deps;
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers] });
   let connection: VoiceConnection | undefined;
   const listening = new Set<string>();
   const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
@@ -60,63 +58,32 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
     decoder.on("error", (err: Error) => { listening.delete(userId); log.warn({ err: err.message }, "decoder error"); });
   }
 
-  let stopped = false;
-
-  // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004, EARS-SESS-007, CFG-USR-005
-  async function join() {
-    const target = voiceTarget(cfg.ears.discord);
-    const guild = await client.guilds.fetch(target.guildId);
-    const channel = (await guild.channels.fetch(target.channelId)) as VoiceBasedChannel | null;
-    if (!channel?.isVoiceBased()) throw new Error("ears.discord.voice_channel_id is not a voice channel");
-    await guild.members.fetch().catch(() => undefined);
-
-    connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: guild.id,
-      adapterCreator: guild.voiceAdapterCreator,
-      ...EARS_JOIN_OPTIONS,
-    });
-    try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
-    } catch (err) {
-      connection.destroy(); // a half-open connection would block the retry
-      connection = undefined;
-      throw err;
-    }
-    deps.setVoiceReady(true);
-    deps.heartbeat.ready();
-    log.info({ channel: channel.name }, "joined voice");
-
-    // @spec EARS-HEAR-001
-    connection.receiver.speaking.on("start", (userId) => {
-      if (listening.has(userId)) return;
-      void isHumanSpeaker(userId, client.users).then((human) => {
-        if (human) listenTo(userId, channel);
+  // The connection itself (join, retry, rejoin on disconnect) is the shared Discord voice session; ears only attaches its
+  // receiver and reports what the heartbeat needs.
+  // @spec EARS-SESS-002, EARS-SESS-003, EARS-SESS-004, EARS-SESS-007, EARS-SESS-010, CFG-USR-005
+  const session = createDiscordVoiceSession({
+    token: deps.token,
+    guildId: () => voiceTarget(cfg.ears.discord).guildId,
+    channelId: () => voiceTarget(cfg.ears.discord).channelId,
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers],
+    ...EARS_JOIN_OPTIONS,
+    fetchMembers: true,
+    log,
+    onConnected(conn, { client, channel }) {
+      connection = conn;
+      deps.setVoiceReady(true);
+      deps.heartbeat.ready();
+      // @spec EARS-HEAR-001
+      conn.receiver.speaking.on("start", (userId) => {
+        if (listening.has(userId)) return;
+        void isHumanSpeaker(userId, client.users).then((human) => {
+          if (human) listenTo(userId, channel);
+        });
       });
-    });
-    // @spec EARS-SESS-005
-    connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      try {
-        await Promise.race([
-          entersState(connection!, VoiceConnectionStatus.Signalling, 5_000),
-          entersState(connection!, VoiceConnectionStatus.Connecting, 5_000),
-        ]);
-      } catch {
-        deps.setVoiceReady(false);
-        log.warn("voice disconnected, rejoining in 5s");
-        connection?.destroy();
-        void joiner.run(5000);
-      }
-    });
-  }
-
-  // @spec EARS-SESS-006
-  const joiner = createJoiner({
-    join,
-    isStopped: () => stopped,
-    onFailure: (err, attempt) => {
+    },
+    onDisconnected: () => deps.setVoiceReady(false),
+    onJoinFailed(err) {
       deps.setVoiceReady(false);
-      log.warn({ err: String(err), attempt }, "voice join failed, retrying");
       deps.heartbeat.degraded(`voice join failed: ${String(err)}`);
     },
   });
@@ -125,20 +92,9 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   // @spec EARS-INJ-007, EARS-START-003, EARS-START-006
   await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: deps.onInject }), log);
 
-  client.once("ready", () => {
-    log.info({ user: client.user?.tag }, "discord ready");
-    void joiner.run().catch((err) => log.error({ err }, "voice join loop failed"));
-  });
-
   // @spec EARS-SESS-001, EARS-SESS-009
-  client.login(deps.token).catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
+  await session.start().catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
 
-  return {
-    // @spec EARS-SESS-008
-    async stop() {
-      stopped = true;
-      connection?.destroy();
-      await client.destroy();
-    },
-  };
+  // @spec EARS-SESS-008
+  return { stop: () => session.stop() };
 }

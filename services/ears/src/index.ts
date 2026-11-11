@@ -9,7 +9,8 @@
  * the Server Members intent, set EARS_DISCORD_TOKEN / DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID. It must be a
  * different bot from DISCORD_TOKEN. This MUST be a bot account — automating a user account gets it banned.
  */
-import { Bus, onShutdown, startHeartbeat, type BusEvent } from "@cohost/bus";
+import { Bus, type BusEvent } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { createLogger, loadConfig, urls } from "@cohost/config";
 import { EarsHealth, earsPlan, idleDetail, readEarsToken } from "./health.js";
 import { sttTranscriber } from "./hearing.js";

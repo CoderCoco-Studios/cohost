@@ -6,13 +6,13 @@
  * want the co-host to also *type* in chat).
  */
 import type { AuthProvider } from "@twurple/auth";
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
+import { onShutdown, startHeartbeat, subscribeInject } from "@cohost/shared";
 import { createLogger, loadConfig } from "@cohost/config";
 import { channelName, chatPlan, createChatFilter } from "./filter.js";
 import { chatHealth } from "./health.js";
 import { startFakeSource } from "./fake.js";
 import { createInjectHandler } from "./inject.js";
-import { subscribeInject } from "./subscribe.js";
 import { createMessageHandler, registerUserToken } from "./twitch.js";
 
 const log = createLogger("chat");
@@ -31,7 +31,7 @@ const fatal = (err: unknown): never => { log.error({ err }, "fatal"); process.ex
 // Test injection is handled whatever the source (twitch/fake/idle); it needs no channel or connection.
 // The subscription is established before any plan signals `ready`.
 // @spec CHAT-INJ-001, CHAT-INJ-009
-await subscribeInject(bus, createInjectHandler({ bus, log, cohostName: cfg.cohost.name }), log).catch(fatal);
+await subscribeInject({ bus, group: "chat", handler: createInjectHandler({ bus, log, cohostName: cfg.cohost.name }), log }).catch(fatal);
 
 // @spec CHAT-PLAN-001, CHAT-HEALTH-002
 if (plan === "fake") {

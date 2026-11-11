@@ -6,6 +6,10 @@
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 0 gaps; at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 60 implemented, 0 gaps, 0 deferred.
 
+## Gap closure C3 (built 2026-11-11)
+
+`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
+
 ## Listening and speaking split (built)
 
 Build chunks 2 and 4 in [mouth.md](mouth.md), both built. Chunk 2 built: the optional `mouth` section and its defaults, gain range -40..12 (CFG-SCH-020), the example keys for the Discord output (CFG-USR-011), `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED` (CFG-ISO-001, CFG-ISO-004) and the starter interval under `mouth` (CFG-USR-009), all `[x]`; `mouth.fallback.min_interval_ms` is the mouth half of CFG-SCH-018. Chunk 4 removed `ears.fallback` from the schema and `config.example.yaml`, so CFG-SCH-018 is `[x]`; an old `ears.fallback` key draws the unknown-key warning. An unknown output name gets the ordinary unknown-key warning.

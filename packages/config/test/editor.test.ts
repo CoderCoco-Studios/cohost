@@ -48,7 +48,8 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
   assert.deepEqual(voice.properties.engine.enum, ["kokoro", "stub"]);
   assert.equal(voice.properties.engine.default, "kokoro");
   assert.equal(voice.properties.speed.type, "number");
-  assert.match(voice.properties.sample_rate.description, /stub/);
+  assert.match(voice.properties.sample_rate.description, /stub/); // @spec CFG-SCH-026
+  assert.match((sectionJsonSchema("dashboard") as any).properties.port.description, /PORT environment variable/); // @spec CFG-SCH-026
   assert.equal(voice.properties.sample_rate.type, "integer");
   assert.equal(voice.properties.fallback.properties.lines.type, "array");
   const llm = sectionJsonSchema("llm") as any;

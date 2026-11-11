@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "salience hook reply",
+  "description": "Exactly one score per event in the request, in the same order. Scores outside 0..1 are clamped.",
+  "type": "object",
+  "required": [
+    "scores"
+  ],
+  "properties": {
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  }
+}

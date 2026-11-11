@@ -274,3 +274,4 @@ export async function pingHooks(hooks: Module<never, unknown>[], log: Logger): P
 
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x)); // @spec HOOK-HELP-004
 export const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x); // @spec HOOK-HELP-004
+export { HOOK_REPLY_SCHEMAS, type HookName } from "./schemas.js";

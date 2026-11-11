@@ -24,7 +24,7 @@ const names = Object.keys(compose.services).sort();
 test("compose defines infra, one-shots and one app service per services/ directory except dashboard, and no dashboard", () => {
   assert.deepEqual(
     names,
-    ["affect", "avatar", "chat", "consolidate", "cortex", "ears", "eyes", "memory", "models", "ollama", "postgres", "redis", "salience", "stt", "tts", "voice"],
+    ["affect", "avatar", "chat", "consolidate", "cortex", "ears", "eyes", "memory", "models", "mouth", "ollama", "postgres", "redis", "salience", "stt", "tts", "voice"],
   );
   assert.equal(compose.services.dashboard, undefined);
 });

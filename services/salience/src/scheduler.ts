@@ -52,7 +52,7 @@ export class Scheduler {
     const now = this.now();
     if (muted) return { speak: false, reason: "muted", score: 0, scored: [] }; // @spec SAL-DECIDE-001, SAL-CTRL-004
     if (busy) return { speak: false, reason: "cortex busy", score: 0, scored: [] };
-    if (now - this.lastSpoke < this.cfg.cooldown_ms) return { speak: false, reason: "cooldown", score: 0, scored: [] };
+    if (this.cooling()) return { speak: false, reason: "cooldown", score: 0, scored: [] }; // @spec SAL-DECIDE-001
 
     const unseen = ctx.unseen().filter((e) => e.kind !== "self"); // @spec SAL-DECIDE-007
     if (unseen.length === 0) return { speak: false, reason: "nothing new", score: 0, scored: [] }; // @spec SAL-DECIDE-005

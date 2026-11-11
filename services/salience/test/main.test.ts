@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { event, FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { Handler, SubscribeOptions } from "@cohost/bus";
 import type { EventType } from "@cohost/bus";
-import { main, type SalienceBus } from "../src/main.js";
+import { runSalience, type SalienceBus } from "../src/main.js";
 
 /** A FakeBus that also records the consumer-group calls main() makes, with a gate on group creation. */
 class GroupBus extends FakeBus {
@@ -47,7 +47,7 @@ test("main: subscribes in start mode latest and signals ready only after the con
   bus.gate = new Promise<void>((r) => (open = r));
   const { env: e, shutdown } = env(bus);
   const { log } = recordingLog();
-  const started = main(log, e);
+  const started = runSalience({ ...e, log });
   await waitFor(() => bus.calls.includes("resetGroup:salience"), "group creation");
   await waitFor(() => states(bus).includes("starting"), "starting heartbeat");
   await new Promise((r) => setTimeout(r, 20));
@@ -69,7 +69,7 @@ test("main: the tick timer drives tick and shutdown stops it and the bus", async
   const bus = new GroupBus();
   const { env: e, shutdown } = env(bus, { brain: { salience: { tick_ms: 1500 } } });
   try {
-    await main(recordingLog().log, e);
+    await runSalience({ ...e, log: recordingLog().log });
     await bus.handler!(event("chat.message", { platform: "twitch", user: "bob", text: "hey Coco?", isMod: false, isSub: false, mentionsCohost: true }));
     mock.timers.tick(1500);
     await waitFor(() => bus.of("attention.focus").length === 1, "attention.focus from the timer tick");
@@ -94,8 +94,14 @@ test("main: any startup failure logs fatal and exits 1", async () => { // @spec 
     const bus = new GroupBus();
     const x = build(bus);
     const { log, lines } = recordingLog();
-    await main(log, x.env);
+    await runSalience({ ...x.env, log });
     assert.deepEqual(x.exits, [1], `${name}: exit code`);
+    if (name === "config") {
+      // SHARED-BOOT-002: the loader's own message, no bus, no heartbeat.
+      assert.deepEqual(lines.filter((l) => l.level === "error").map((l) => l.msg), ["bad config"]);
+      assert.equal(bus.health.length, 0, "config: no heartbeat");
+      continue;
+    }
     const fatal = lines.filter((l) => l.level === "error" && l.msg === "fatal");
     assert.equal(fatal.length, 1, `${name}: one fatal log`);
     assert.ok((fatal[0]!.obj as { err?: unknown }).err instanceof Error, `${name}: the error is logged`);

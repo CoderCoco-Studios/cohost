@@ -190,6 +190,9 @@ test("pause: no attention.focus or reflex while paused, intake continues; resume
   await s.onEvent(event("control", { cmd: "resume" })); // no target = all
   await s.onEvent(idle);
   await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "what arrived during the pause is stale (SAL-CTRL-007)");
+  await s.onEvent(chat("welcome back Coco?", { mentionsCohost: true }));
+  await s.tick();
   assert.equal(bus.of("attention.focus").length, 1);
 });
 

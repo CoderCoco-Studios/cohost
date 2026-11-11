@@ -13,7 +13,7 @@ voice turns the brain's `brain.say` into audio and is the **owner of the audio-s
 
 1. **Synthesize.** Call a TTS server (Kokoro-FastAPI, OpenAI-compatible) or, with `voice.engine: stub`, fabricate a silent WAV of plausible length.
 2. **Describe and serve.** Parse the WAV, compute a 30 Hz mouth-open envelope for lip-sync, keep the WAV in a bounded in-memory store, publish `voice.utterance`, and serve the bytes over HTTP on `:8700` so any sink can fetch them.
-3. **Arbitrate sinks.** Voice does not play audio itself. Sinks ([ears](../ears/ears-design.md) as `discord`, [dashboard](../dashboard/dashboard-design.md) as `dashboard`) claim an utterance by publishing `voice.playing`; if nobody does within 1.5 s voice pretends to be a sink (`virtual`) so the brain never waits forever; if synthesis fails voice releases the brain with a `voice.done` from sink `error`.
+3. **Arbitrate sinks.** Voice does not play audio itself. Sinks (each [mouth](../mouth/mouth-design.md) output under its own name, today `discord`; the [dashboard](../dashboard/dashboard-design.md) page as `dashboard`) claim an utterance by publishing `voice.playing`; if nobody does within 1.5 s voice pretends to be a sink (`virtual`) so the brain never waits forever; if synthesis fails voice releases the brain with a `voice.done` from sink `error`.
 
 Design leanings visible in the code:
 
@@ -80,11 +80,11 @@ The store (`voice.ts:66-85`) is a `Map<id, Buffer>` plus an insertion-order arra
 | `GET /health` | `200` body `ok` (no check of Redis or TTS) |
 | anything else | `404`, empty body |
 
-Method is not checked (any method on those paths behaves like GET), and the match is on the raw request URL, so a query string turns a valid path into a 404. `/health` is a liveness ping only: container health comes from heartbeat freshness, and voice keeps `/health` alongside it (`openspec/changes/archive/2026-11-01-add-service-health/design.md`, D5). `urls.voice()` (`packages/config/src/index.ts:173`) is the base used in `audioUrl`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT>`, a loopback default chosen so host runs work outside Docker (commit `e53badc`, "default VOICE_URL to loopback outside Docker"); compose sets `VOICE_URL=http://voice:8700` for every TS service (`docker-compose.yml:18`). Compose does **not publish** port 8700 to the host (`docker-compose.yml:129-134`); in-network sinks (ears) fetch directly and browsers reach audio through the dashboard's `/audio/*` proxy (`services/dashboard/src/routes.ts:58-62`). That proxy is the only supported path for a player outside the compose network: a host-side sink is not a supported topology, so port 8700 stays unpublished and the loopback `urls.voice()` default serves only host runs of voice itself.
+Method is not checked (any method on those paths behaves like GET), and the match is on the raw request URL, so a query string turns a valid path into a 404. `/health` is a liveness ping only: container health comes from heartbeat freshness, and voice keeps `/health` alongside it (`openspec/changes/archive/2026-11-01-add-service-health/design.md`, D5). `urls.voice()` (`packages/config/src/index.ts:173`) is the base used in `audioUrl`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT>`, a loopback default chosen so host runs work outside Docker (commit `e53badc`, "default VOICE_URL to loopback outside Docker"); compose sets `VOICE_URL=http://voice:8700` for every TS service (`docker-compose.yml:18`). Compose does **not publish** port 8700 to the host (`docker-compose.yml:129-134`); in-network sinks (mouth) fetch directly and browsers reach audio through the dashboard's `/audio/*` proxy (`services/dashboard/src/routes.ts:58-62`). That proxy is the only supported path for a player outside the compose network: a host-side sink is not a supported topology, so port 8700 stays unpublished and the loopback `urls.voice()` default serves only host runs of voice itself.
 
 ## Sink Arbitration Protocol
 
-Voice owns this protocol; [ears](../ears/ears-design.md) and [dashboard](../dashboard/dashboard-design.md) are sinks that follow it, [cortex](../cortex/cortex-design.md) and [avatar](../avatar/avatar-design.md) consume its outcome. It is entirely carried by three events in `packages/bus/src/events.ts`:
+Voice owns this protocol; [mouth](../mouth/mouth-design.md)'s outputs and the [dashboard](../dashboard/dashboard-design.md) page are sinks that follow it, [cortex](../cortex/cortex-design.md) and [avatar](../avatar/avatar-design.md) consume its outcome. It is entirely carried by three events in `packages/bus/src/events.ts`:
 
 | Event | Payload | Meaning |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ Voice owns this protocol; [ears](../ears/ears-design.md) and [dashboard](../dash
 | `voice.playing` | `{ id, sink: string }` | The named sink started playing `id` (`events.ts:140`) |
 | `voice.done` | `{ id, sink: string }` | The named sink finished (or gave up on) `id` (`events.ts:141`) |
 
-`sink` is a free-form string. Values in use: `"discord"` (ears), `"dashboard"` (dashboard browser page), `"virtual"` (voice's fallback), `"error"` (voice, synthesis failed). A fourth event, `voice.failed`, lets a sink report that it gave up on an utterance (rule 8).
+`sink` is a free-form string. Values in use: `"discord"` (mouth's Discord output; every mouth output publishes under its own output name), `"dashboard"` (dashboard browser page), `"virtual"` (voice's fallback), `"error"` (voice, synthesis failed). A fourth event, `voice.failed`, lets a sink report that it gave up on an utterance (rule 8).
 
 ### Sequence
 
@@ -100,7 +100,7 @@ Voice owns this protocol; [ears](../ears/ears-design.md) and [dashboard](../dash
 sequenceDiagram
   participant C as cortex / salience
   participant V as voice
-  participant S as real sink (ears or dashboard)
+  participant S as real sink (a mouth output or the dashboard)
   participant A as avatar
   C->>V: brain.say {id}
   V->>V: synth, parse, envelope, store
@@ -125,32 +125,32 @@ sequenceDiagram
 2. **Virtual fallback.** Right after publishing `voice.utterance`, voice arms `setTimeout(1500)`. When it fires and the id is not in `claimed`, voice publishes `voice.playing { id, sink: "virtual" }`, waits for that publish to resolve (or fail, which is logged), and then, if the id is still not claimed, arms `setTimeout(info.durationMs)` to publish `voice.done { id, sink: "virtual" }` (`Voice.playVirtual`, `voice.ts`). The done is timed from the resolved playing publish, so a slow publish never puts the two back-to-back and avatar keeps its lip-sync interval; a real sink that claims the id during that publish prevents the done from being armed at all. If the id is claimed, voice does nothing further for it (VOICE-SINK-004).
 3. **Late claim.** A real sink's `voice.playing` that arrives after the virtual `voice.playing` but before the virtual `voice.done` cancels that pending `voice.done`, so the real sink's own `voice.done` is the one that releases cortex (VOICE-SINK-008). The pending done timers are kept per id (`virtualDone`, `voice.ts:73`) and cleared by the late claim (`voice.ts:120-122`). The fix stays inside voice; sinks keep their duties unchanged. A claim that arrives after the virtual `voice.done` was published changes nothing.
 4. **Error release.** On any synthesis-path failure voice publishes only `voice.done { id, sink: "error" }` (`voice.ts:152`). No virtual timers run.
-5. **Sinks' duties.** A sink should publish `voice.playing` when audio actually starts and `voice.done` when it ends. Dashboard: on the `<audio>` element's `play` / `ended` / `error`, via `POST /sink` which the dashboard turns into `voice.playing` / `voice.done` with `sink: "dashboard"` (`services/dashboard/public/index.html:145-146`, `services/dashboard/src/routes.ts:120-122`). ears: `Playback` as described in the [ears LLD](../ears/ears-design.md). Both receive `voice.utterance` over the bus (dashboard through its tail).
+5. **Sinks' duties.** A sink should publish `voice.playing` when audio actually starts and `voice.done` when it ends. Dashboard: on the `<audio>` element's `play` / `ended` / `error`, via `POST /sink` which the dashboard turns into `voice.playing` / `voice.done` with `sink: "dashboard"` (`services/dashboard/public/index.html:145-146`, `services/dashboard/src/routes.ts:120-122`). mouth: one `Playback` queue per output, as described in the [mouth LLD](../mouth/mouth-design.md). Both receive `voice.utterance` over the bus (dashboard through its tail).
 6. **Who is released by `voice.done`.** cortex clears `speakingId` on the first `voice.done` for its own id from **any** sink (`services/cortex/src/cortex.ts:56-60`), with `brain.cortex.speaking_timeout_ms` (20 s) as a backstop (`cortex.ts:169`, `packages/config/src/schema.ts:153-154`). avatar starts lip-sync on `voice.playing` and ends it on `voice.done` for the matching id (`services/avatar/src/boot.ts`, `voice.playing` and `voice.done` cases).
 7. **Voice never reads `voice.done`.** It does not subscribe to it and keeps no per-id lifecycle; completion tracking is entirely the consumers'.
 8. **Give-up report.** A sink that cannot play an utterance publishes `voice.failed { id, sink, reason, fallback? }` (schema: [event-bus](../event-bus/event-bus-design.md) BUS-EVT-022). `fallback` is present when the sink is playing a pre-generated fallback clip in the line's place; that sink has then already claimed the id with its own `voice.playing` and will publish its own `voice.done` when the clip ends, so the protocol treats it like any real playback. Without `fallback`, nothing will play on that sink. voice reads `voice.failed` on its one loop (VOICE-SINK-010) and, for an id no real sink has claimed, releases cortex without making it wait out the line's duration (owner decision):
    - still inside the 1.5 s claim window: when the window ends with no claim, voice publishes the virtual `voice.done` at once and no virtual `voice.playing` (VOICE-SINK-011). The window still runs in full, because another sink (the dashboard) may yet claim the line; a claim inside it wins as usual (VOICE-SINK-004). Avatar gets no `voice.playing`, so it does not lip-sync a line nobody hears;
    - after the virtual `voice.playing` was published: voice cancels the pending virtual `voice.done` timer and publishes it at once (VOICE-SINK-012).
-   A `voice.failed` with `fallback`, for an id a real sink claimed, or for an id voice does not know changes nothing (VOICE-SINK-013). Today ears is the only sink that reports a give-up ([ears](../ears/ears-design.md) Fallback Line).
+   A `voice.failed` with `fallback`, for an id a real sink claimed, or for an id voice does not know changes nothing (VOICE-SINK-013). Today mouth's outputs are the only sinks that report a give-up ([mouth](../mouth/mouth-design.md) Fallback Line).
 
 ### Known limits of the protocol
 
-- **Slow or queued real sinks look like absent sinks at first.** The claim window is a fixed 1.5 s measured from `voice.utterance`, but a sink may legitimately start later: ears queues utterances behind the one playing and then does a fetch, convert and play before publishing `voice.playing` (`services/ears/src/playback.ts:39-46`); a second line queued behind a long first line is always timed by the virtual sink. With the late-claim rule (VOICE-SINK-008) the virtual `voice.done` is cancelled, so cortex waits for the real sink; the id still sees two `voice.playing` events (virtual, then real), and [avatar](../avatar/avatar-design.md) restarts lip-sync from the first envelope value on the second one (`services/avatar/src/engine.ts:39-45`).
-- **No exclusivity.** If both ears and a dashboard sink are active they both claim, both play, and both publish `voice.playing` and `voice.done` for the same id; voice only uses claims to suppress its own fallback, never to pick one sink. The same line playing on two sinks is accepted (see Decisions): cortex is released by whichever `voice.done` arrives first, and avatar lip-syncs from the first `voice.playing` it sees (a second one restarts the envelope). Running two sinks is the operator's choice.
+- **Slow or queued real sinks look like absent sinks at first.** The claim window is a fixed 1.5 s measured from `voice.utterance`, but a sink may legitimately start later: a mouth output queues utterances behind the one playing and then does a fetch, convert and play before publishing `voice.playing` ([mouth](../mouth/mouth-design.md) Playback); a second line queued behind a long first line is always timed by the virtual sink. With the late-claim rule (VOICE-SINK-008) the virtual `voice.done` is cancelled, so cortex waits for the real sink; the id still sees two `voice.playing` events (virtual, then real), and [avatar](../avatar/avatar-design.md) restarts lip-sync from the first envelope value on the second one (`services/avatar/src/engine.ts:39-45`).
+- **No exclusivity.** If a mouth output and a dashboard sink (or two mouth outputs) are active they both claim, both play, and both publish `voice.playing` and `voice.done` for the same id; voice only uses claims to suppress its own fallback, never to pick one sink. The same line playing on two sinks is accepted (see Decisions): cortex is released by whichever `voice.done` arrives first, and avatar lip-syncs from the first `voice.playing` it sees (a second one restarts the envelope). Running two sinks is the operator's choice.
 - **Claim ordering.** Claims are read by the same sequential loop that runs TTS. A claim for utterance A can be queued behind the synthesis of utterance B, so the 1.5 s timer for A may fire before the claim is processed and publish a spurious virtual `voice.playing`. When the queued claim is then processed, the late-claim rule cancels the pending virtual `voice.done` (VOICE-SINK-008); only if the claim is still queued when A's `durationMs` has elapsed does a virtual `voice.done` release cortex early. (Loop semantics at `packages/bus/src/index.ts:194-222`; timer at `voice.ts:145`.)
 - **Timers outlive shutdown.** The 1.5 s timer is not tracked or cleared; shutdown closes the server and stops the bus (`boot.ts:37`).
 - **A silent dashboard sink is still "a sink".** The dashboard page queues every `voice.utterance` even while audio is disabled and only plays when enabled (`index.html:137,142,331`); because it publishes `voice.playing` only on actual playback, a disabled page falls through to the virtual sink correctly, but a later enable replays the stale backlog.
 
 ## Fallback Clips
 
-voice generates the audio for the co-host's spoken fallback lines, the lines ears says when it cannot play an utterance ([ears](../ears/ears-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017). voice owns generation because it is the service that talks to TTS. It keeps one WAV per phrase in its own store and serves the set over its HTTP server. ears prefetches the set into its own cache, so playing a fallback never touches voice's HTTP server or TTS at the moment of failure. No file store is shared between the two services: binary transfer over HTTP is what HLD tenet 1 allows.
+voice generates the audio for the co-host's spoken fallback lines, the lines a mouth output says when it cannot play an utterance ([mouth](../mouth/mouth-design.md) Fallback Line). The owner edits the phrases in `voice.fallback.lines` ([config](../config/config-design.md) CFG-SCH-017). voice owns generation because it is the service that talks to TTS. It keeps one WAV per phrase in its own store and serves the set over its HTTP server. mouth prefetches the set into its own cache, so playing a fallback never touches voice's HTTP server or TTS at the moment of failure. No file store is shared between the two services: binary transfer over HTTP is what HLD tenet 1 allows.
 
 Owner decisions:
-- voice generates the clips and serves them over HTTP; ears caches them.
+- voice generates the clips and serves them over HTTP; mouth caches them.
 - Regeneration is automatic when the phrase list or the voice settings change.
 - When regeneration fails, the previous clips stay in use.
 - A set is never half-replaced.
-- With no clips, ears falls back to a silent skip.
+- With no clips, mouth falls back to a silent skip.
 
 ### When clips are generated
 
@@ -167,7 +167,7 @@ voice makes no TTS call for clips when the fingerprint equals the one in its sto
 
 Config is read once per process ([config](../config/config-design.md): no file watching), so any change to the phrase list or the voice settings takes a voice restart, and the startup check covers every change. The fingerprint cannot see a change inside the TTS server itself, such as a new Kokoro image with the same model name. Deleting `manifest.json` forces a regeneration on the next start.
 
-Where `voice.engine` is `stub`, voice neither generates, modifies nor serves clips: the manifest route answers 404 (VOICE-CLIP-008). Stub clips would be silent, so an isolated run must neither overwrite the owner's real clips nor hand silent ones to ears. ears keeps its cache when voice answers 404 (EARS-FALL-016).
+Where `voice.engine` is `stub`, voice neither generates, modifies nor serves clips: the manifest route answers 404 (VOICE-CLIP-008). Stub clips would be silent, so an isolated run must neither overwrite the owner's real clips nor hand silent ones to mouth. mouth keeps its cache when voice answers 404 (MOUTH-FALL-016).
 
 ### Store and atomic swap
 
@@ -189,9 +189,9 @@ A regeneration commits in three steps (VOICE-CLIP-004):
 2. Rename that directory to a set directory of its own.
 3. Write the new manifest to a temporary file and rename it over `manifest.json`.
 
-The routes therefore only ever serve a complete set. After a commit, voice deletes every other set directory and every temporary directory older than one hour (VOICE-CLIP-007). An ears download that spans the swap gets a 404 for an old clip name; it abandons that refresh and catches up on its next poll (EARS-FALL-017). A voice that restarts mid-regeneration leaves a temporary directory behind and the old manifest in place; the next start sees the fingerprint mismatch and regenerates.
+The routes therefore only ever serve a complete set. After a commit, voice deletes every other set directory and every temporary directory older than one hour (VOICE-CLIP-007). A mouth download that spans the swap gets a 404 for an old clip name; it abandons that refresh and catches up on its next poll (MOUTH-FALL-017). A voice that restarts mid-regeneration leaves a temporary directory behind and the old manifest in place; the next start sees the fingerprint mismatch and regenerates.
 
-In Compose the store lives in the voice container's filesystem with no volume. It survives a container restart; after a recreate, voice regenerates in the background. That costs one TTS call per phrase. If TTS is down at that moment, ears keeps playing its own cached copy.
+In Compose the store lives in the voice container's filesystem with no volume. It survives a container restart; after a recreate, voice regenerates in the background. That costs one TTS call per phrase. If TTS is down at that moment, mouth keeps playing its own cached copy.
 
 ### HTTP routes
 
@@ -210,7 +210,7 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 - **TTS down or failing** (a connection error or 5xx on any phrase). The regeneration is abandoned, the manifest and its set stay as they were, and a warning is logged. voice retries after 60 s, doubling up to a 15 min cap, until a regeneration succeeds (VOICE-CLIP-005). The synthesizer is the health-tracked one, so `deps.kokoro` reports the outage as for any synthesis (VOICE-HLTH-002).
 - **One unspeakable phrase** (a 4xx for that phrase, a reply that does not parse as WAV, or a clip shorter than 100 ms). That phrase is skipped with a warning naming its index, and the rest of the set is committed under the computed fingerprint (VOICE-CLIP-006). The skipped phrase is therefore not retried until the list or the settings change. One bad phrase must not keep the whole list on stale audio forever. If every phrase fails this way, the manifest lists no clips. The schema bounds phrase length (CFG-SCH-017).
-- **Empty phrase list.** voice commits a manifest that lists no clips (VOICE-CLIP-010). Turning the feature off is therefore emptying the list, and ears empties its cache on the next poll.
+- **Empty phrase list.** voice commits a manifest that lists no clips (VOICE-CLIP-010). Turning the feature off is therefore emptying the list, and mouth empties its cache on the next poll.
 - **Store not writable.** The regeneration fails like a TTS outage, and the old set keeps being served.
 
 ## Health
@@ -241,11 +241,11 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 | Readiness | `ready` after the HTTP server listens and the `voice` group is positioned with `resetGroup`, before the subscription loop starts | `ready` when the server listens (before the bus is usable); a "subscribed" hook in event-bus | Owner decision 2026-11-01 (R3): ready means "can receive `brain.say`". The bus has no hook that fires when `subscribe` has created the group and `subscribe` resolves only at stop, so boot positions the group itself; a hook would remove the duplicate positioning but needs an event-bus change. |
 | Give-up report | A separate `voice.failed` event; `voice.playing` and `voice.done` keep their shape | `ok: false` or a `fallback` marker on `voice.done`; a new `sink` value such as `discord-failed` | A give-up is a distinct fact that cortex and the dashboard feed read on their own; one new type leaves every existing `voice.playing` / `voice.done` consumer (avatar, cortex, dashboard) untouched, where a marker on `voice.done` would make each of them decide what a failed done means. |
 | Releasing cortex after a give-up with no fallback | Keep the 1.5 s claim window, then release at once with a virtual `voice.done` and no virtual `voice.playing` | Release on the report itself with `voice.done` sink `error`; leave the virtual sink to time the full line | Owner decision. The window still lets another sink (the dashboard) claim the line, so cortex never moves on while the line plays there. After the window, waiting out the line's duration only delays the next reply for a line nobody hears. Skipping the virtual `voice.playing` keeps avatar from mouthing it. |
-| Who generates fallback clips | voice, at startup, in the background | ears synthesizes them; a separate one-shot job | Owner decision: voice is the service that talks to TTS and knows the voice settings, so the clips come out in the co-host's current voice. Generating after `ready` keeps live lines first. |
-| How ears gets the clips | voice serves the committed set over its HTTP server (`/fallback/manifest.json`, `/fallback/<name>`); ears prefetches and caches it | A directory shared by voice and ears; clips on the bus | Owner decision: no shared file store (HLD tenet 1), and binary data never rides the bus. HTTP for binary transfer is already how sinks get utterance audio. |
+| Who generates fallback clips | voice, at startup, in the background | mouth synthesizes them; a separate one-shot job | Owner decision: voice is the service that talks to TTS and knows the voice settings, so the clips come out in the co-host's current voice. Generating after `ready` keeps live lines first. |
+| How mouth gets the clips | voice serves the committed set over its HTTP server (`/fallback/manifest.json`, `/fallback/<name>`); mouth prefetches and caches it | A directory shared by voice and mouth; clips on the bus | Owner decision: no shared file store (HLD tenet 1), and binary data never rides the bus. HTTP for binary transfer is already how sinks get utterance audio. |
 | Regeneration trigger | Fingerprint of phrase list, engine, TTS model, the synthesizer's voice settings and a format version, checked at startup | Regenerate on every start; compare file timestamps; an operator button | Automatic regeneration is the owner's decision. A fingerprint regenerates exactly when the inputs change and costs nothing otherwise. Config is read only at start, so startup sees every change. |
 | Atomic swap | Complete set in its own directory, manifest replaced by rename | Overwrite files in place; a lock file | Owner decision: a set is never half-replaced. Rename is atomic on one filesystem, so the routes only ever serve a complete set. |
-| Stub engine and clips | Leave the store untouched and serve no manifest (404) | Generate and serve silent clips | Silent clips would replace the owner's real ones in voice's store and in ears' cache whenever an isolated run starts voice. |
+| Stub engine and clips | Leave the store untouched and serve no manifest (404) | Generate and serve silent clips | Silent clips would replace the owner's real ones in voice's store and in mouth's cache whenever an isolated run starts voice. |
 | Serving | Plain `node:http`, CORS `*` | Express | Two routes need no framework, so voice adds no dependency; CORS `*` lets a browser sink fetch cross-origin (`voice.ts:162`), and compose publishes voice's port to no host (browsers reach audio through the dashboard proxy). |
 
 ## Open Questions & Future Decisions
@@ -262,24 +262,24 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 ### Deferred decisions
 
 1. **Tuning the co-host's voice.** Owner-facing knobs for the TTS voice, such as speed and whatever else the engine supports, are deferred. Which knobs exist depends on what Kokoro-FastAPI's `/v1/audio/speech` accepts beyond `voice` and `speed`, which is unverified. Today `voice.voice` and `voice.speed` are the only settings sent. Fallback clips use whatever settings are active, and the fingerprint covers every setting the synthesizer sends, so a new knob regenerates them (VOICE-CLIP-001).
-2. **Separate speaking module with tunable routing.** The owner's direction is a source-agnostic speaking module whose output the owner can route and tune, with the co-host's voice able to reach outputs beyond today's sinks (the Discord channel through ears and the dashboard page), beside a source-agnostic listening module. Today the Discord output lives inside ears, coupled to the listening job through one Discord session; separating them is deferred as a large refactor ([ears](../ears/ears-design.md) Deferred decisions; HLD Deferred goals). The sink arbitration protocol already lets any new output join as a sink.
+2. **More outputs.** Outputs beyond Discord (a local audio device, a virtual cable) are adapters inside [mouth](../mouth/mouth-design.md) and keys under `mouth.outputs`; each joins this protocol as a sink under its own name, so voice needs no change for them.
 
 ## References
 
 Files in this segment:
 
 - `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `clips.ts`, `wav.ts`, `health.ts`
-- `services/voice/test/boot.test.ts`, `clips.test.ts`, `ears-sync.test.ts`, `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
+- `services/voice/test/boot.test.ts`, `clips.test.ts`, `ears-sync.test.ts` (renamed `mouth-sync.test.ts` when the clip cache moves to mouth), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
 - `services/voice/package.json`, `services/voice/tsconfig.json`
 - `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
 
 Other segments (arrow shows direction):
 
 - voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing`, and (fallback line) `voice.failed` (group `voice`, moved to the newest entry on every start); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
-- voice -> own clip store: writes the fallback clips and `manifest.json` under `<dataDir()>/voice/fallback-clips` ([config](../config/config-design.md) CFG-DIR-006, CFG-DIR-007) and serves them on `/fallback/*`; [ears](../ears/ears-design.md) fetches them over HTTP into its own cache.
+- voice -> own clip store: writes the fallback clips and `manifest.json` under `<dataDir()>/voice/fallback-clips` ([config](../config/config-design.md) CFG-DIR-006, CFG-DIR-007) and serves them on `/fallback/*`; [mouth](../mouth/mouth-design.md) fetches them over HTTP into its own cache.
 - voice -> [config](../config/config-design.md): `loadConfig` (`voice.*`), `urls.tts()`, `urls.voice()`, `envOr("VOICE_PORT")`.
 - voice <- [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md): publish `brain.say`; cortex consumes `voice.done`.
-- voice <-> [ears](../ears/ears-design.md): ears is the `discord` sink and fetches `audioUrl`.
+- voice <-> [mouth](../mouth/mouth-design.md): each mouth output is a sink (the Discord output is `discord`) and fetches `audioUrl`.
 - voice <-> [dashboard](../dashboard/dashboard-design.md): dashboard is the `dashboard` sink and proxies `GET /audio/*` to voice.
 - voice -> [avatar](../avatar/avatar-design.md): `voice.utterance` envelope + `voice.playing` / `voice.done` drive lip-sync.
 - voice -> [control-plane](../control-plane/control-plane-design.md): heartbeat contract; manifest entry sets `VOICE_ENGINE=stub` for isolated starts (`packages/control/src/manifest.ts:44`).

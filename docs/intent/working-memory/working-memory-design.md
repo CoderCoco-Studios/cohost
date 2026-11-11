@@ -70,7 +70,7 @@ Consumers of `transcript`: `services/cortex/src/prompt.ts:43` (the prompt) and `
 
 ### Fallback lines
 
-When a line the co-host meant to say fails to play and a pre-generated fallback line is said in its place ([ears](../ears/ears-design.md) Fallback Line), the transcript must show what was actually heard and that the intended line glitched, so the co-host knows she glitched. The owner decided the fallback goes into the transcript as something she said, together with a note that the line she meant failed to play; the format below is.
+When a line the co-host meant to say fails to play and a pre-generated fallback line is said in its place ([mouth](../mouth/mouth-design.md) Fallback Line), the transcript must show what was actually heard and that the intended line glitched, so the co-host knows she glitched. The owner decided the fallback goes into the transcript as something she said, together with a note that the line she meant failed to play; the format below is.
 
 - `pushSelf(text, emotion, id?)` keeps the optional `id` on the `self` event; it is not rendered (WM-PUSH-007). cortex passes the `brain.say` id.
 - `markFallback(id, fallbackText)` finds the `self` event with that id still in the window and records the fallback text on it; with no such event it changes nothing and reports that it marked nothing (WM-PUSH-008). Marking does not move the event or change its `seen` state.

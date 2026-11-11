@@ -102,9 +102,9 @@ Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed f
 | 8 | `memory.recall.request` | `id`, `query`, `k?` (positive int) | cortex (`cortex.ts:182`) -> memory | 108-112 (BUS-EVT-010) |
 | 9 | `memory.recall.reply` | `id`, `memories` (array of `ts`, `kind` of `chat`, `speech`, `self`, `note`; `who`; `text`; `similarity?`) | memory (`region.ts:50`) -> cortex | 115-126 (BUS-EVT-010) |
 | 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `regular` (boolean); no notes text | memory (`region.ts:27`) -> cortex | 130-135 (BUS-EVT-010) |
-| 11 | `voice.utterance` | `id`, `text`, `emotion`, `gesture?`, `durationMs`, `envelopeHz`, `envelope` (number array), `audioUrl`, `sampleRate` | voice (`voice.ts:98`) -> avatar, ears (Discord sink), dashboard | 139-150 (BUS-EVT-016) |
-| 12 | `voice.playing` | `id`, `sink` | voice virtual sink (`voice.ts:109`), ears Discord sink (`playback.ts:46`) -> voice, avatar | 154 (BUS-EVT-017) |
-| 13 | `voice.done` | `id`, `sink` | voice (`voice.ts:110,115`), ears (`playback.ts:35`) -> cortex, avatar | 155 (BUS-EVT-017) |
+| 11 | `voice.utterance` | `id`, `text`, `emotion`, `gesture?`, `durationMs`, `envelopeHz`, `envelope` (number array), `audioUrl`, `sampleRate` | voice (`voice.ts:98`) -> avatar, mouth (each output a sink), dashboard | 139-150 (BUS-EVT-016) |
+| 12 | `voice.playing` | `id`, `sink` | voice virtual sink (`voice.ts:109`), mouth outputs (today `discord`) -> voice, avatar, mouth | 154 (BUS-EVT-017) |
+| 13 | `voice.done` | `id`, `sink` | voice (`voice.ts:110,115`), mouth outputs -> cortex, avatar | 155 (BUS-EVT-017) |
 | 14 | `avatar.state` | `emotion`, `intensity`, `mouthOpen`, `mouthSmile`, `headX`, `headY`, `headZ`, `eyeX`, `eyeY`, `blink` (numbers, unconstrained), `driver`, `connected` | avatar (`services/avatar/src/index.ts:26`) -> dashboard | 159-171 (BUS-EVT-018) |
 | 15 | `control` | `cmd` (`mute`, `unmute`, `say`, `forget_context`, `reload_personality`, `pause`, `resume`), `text?`, `target?` (service name; absent = all) | dashboard (`routes.ts:107,115`) -> cortex, salience, affect | 175-180 (BUS-EVT-004) |
 | 16 | `inject.request` | `id`, `target` (`eyes`, `ears`, `chat`), `kind` (`image`, `audio`, `text`), `url?`, `text?`, `meta?` (`user?`, `platform?`, `isMod?`, `isSub?`), `remember` (required boolean) | dashboard (`inject.ts:94,134`) -> eyes, ears, chat | 188-203 (BUS-EVT-006; per-kind completeness is checked by each target service) |
@@ -123,11 +123,11 @@ Viewer-notes events (the two surfacing events are built; the two owner events ar
 
 These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.
 
-Spoken fallback line (design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [ears](../ears/ears-design.md) Fallback Line):
+Spoken fallback line (design in the [voice](../voice/voice-design.md) Sink Arbitration Protocol, rule 8, and the [mouth](../mouth/mouth-design.md) Fallback Line):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|
-| 24 | `voice.failed` | `id`, `sink`, `reason`, `fallback?` (`clip`, `text`) | ears Discord sink -> voice, cortex, dashboard feed | BUS-EVT-022 |
+| 24 | `voice.failed` | `id`, `sink`, `reason`, `fallback?` (`clip`, `text`) | mouth outputs (today `discord`) -> voice, cortex, dashboard feed | BUS-EVT-022 |
 
 `voice.failed` reports that a sink gave up on an utterance; `fallback` is present when the sink plays a pre-generated fallback clip in the line's place. `voice.playing` and `voice.done` keep their shape: a fallback clip is reported through them as ordinary playback under the given-up id.
 
@@ -214,6 +214,6 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 - Segment files: `packages/bus/src/index.ts`, `packages/bus/src/events.ts`, `packages/bus/test/bus.test.ts`, `packages/bus/test/shutdown.fixture.ts`, `packages/bus/package.json`, `packages/bus/tsconfig.json`, `packages/testing/src/index.ts`, `packages/testing/package.json`, `packages/testing/tsconfig.json`.
 - Owned elsewhere but exported from this package: `packages/bus/src/heartbeat.ts` (see [control-plane](../control-plane/control-plane-design.md)).
 - Segments depended on: [config](../config/config-design.md) (`urls.redis`, `Logger`, `Emotion`; bus -> config).
-- Segments that depend on this one: every service segment ([chat](../chat/chat-design.md), [eyes](../eyes/eyes-design.md), [ears](../ears/ears-design.md), [salience](../salience/salience-design.md), [affect](../affect/affect-design.md), [memory](../memory/memory-design.md), [cortex](../cortex/cortex-design.md), [voice](../voice/voice-design.md), [avatar](../avatar/avatar-design.md), [dashboard](../dashboard/dashboard-design.md)), [control-plane](../control-plane/control-plane-design.md), and [working-memory](../working-memory/working-memory-design.md) (type import). Services take `Publisher` (`Pick<Bus, "publish">`) in their region classes, e.g. `services/affect/src/affect.ts:9`, `services/eyes/src/eyes.ts:1`.
+- Segments that depend on this one: every service segment ([chat](../chat/chat-design.md), [eyes](../eyes/eyes-design.md), [ears](../ears/ears-design.md), [mouth](../mouth/mouth-design.md), [salience](../salience/salience-design.md), [affect](../affect/affect-design.md), [memory](../memory/memory-design.md), [cortex](../cortex/cortex-design.md), [voice](../voice/voice-design.md), [avatar](../avatar/avatar-design.md), [dashboard](../dashboard/dashboard-design.md)), [control-plane](../control-plane/control-plane-design.md), and [working-memory](../working-memory/working-memory-design.md) (type import). Services take `Publisher` (`Pick<Bus, "publish">`) in their region classes, e.g. `services/affect/src/affect.ts:9`, `services/eyes/src/eyes.ts:1`.
 - External: `ioredis` ^5.4.0 (Redis Streams commands), `zod` ^3.24.0 (`packages/bus/package.json`), Redis server.
 - OpenSpec (frozen, historical): `openspec/specs/bus/spec.md` (baseline, 12 requirements, includes the archived deltas); deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md`, `openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md`, `openspec/changes/archive/2026-11-01-add-test-injection/specs/bus/spec.md` (no bus delta in `add-isolated-backends`). `packages/testing` has no OpenSpec capability.

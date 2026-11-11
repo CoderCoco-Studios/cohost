@@ -6,6 +6,10 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps (CTRL-RUNTIME-009 landed via the `docker-compose.yml` pass-through, DEPLOY-COMPOSE-017). The owner answered the audit questions on 2026-11-01; the decisions are applied below and the control-plane gap fixes are landed. The owner decision of 2026-11-08 removed the host-process runtime; compose is the only runtime. The spec file now holds 61 specs, all `[x]`: the stack controller landed as chunk 1 of the standalone-dashboard build order (see below).
 
+## Listening and speaking split (designed, not built)
+
+Build chunk 3 in [mouth.md](mouth.md): CTRL-MANIFEST-001 (15 units, ten app services with `mouth`), CTRL-MANIFEST-002 (group `mouth`, default `fresh`), CTRL-MANIFEST-003 (`mouth` preset `MOUTH_DISCORD_ENABLED=false`) and CTRL-HEALTH-005 (`KNOWN_SERVICES` gains `mouth`) are reworded `[ ]`. Launch starts mouth only when `COMPOSE_PROFILES` names the `mouth` profile.
+
 ## Standalone dashboard: stack controller (built, chunk 1)
 
 Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Mechanics confirmed by the owner (recommended defaults).

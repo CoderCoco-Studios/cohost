@@ -1,12 +1,23 @@
 # Arrow: ears
 
-Discord voice in (per-speaker capture, STT, `speech.heard`), Discord voice out (the `discord` audio sink), audio-upload injection, and the `off` / no-token idle modes.
+Discord voice in (per-speaker capture, STT, `speech.heard`), audio-upload injection, and the `off` / no-token idle modes. Discord voice out (the `discord` audio sink and the spoken fallback line) moves to [mouth](mouth.md) with the listening and speaking split.
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed. With the spoken fallback line (build chunk 1): 66 specs: 66 implemented, 0 gaps, 0 deferred.
+**AUDITED** (the listening and speaking split is designed on top, not built) — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 46 implemented, 1 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed. With the spoken fallback line (build chunk 1): 66 specs: 66 implemented, 0 gaps, 0 deferred.
 
-## Spoken fallback line: built (chunk 1)
+## Listening and speaking split: designed, not built
+
+Design: LLD (Context, Startup Plans, Speaking, Decisions), [decision doc](../intent/ears/decisions/listen-speak-split.md); build order and edge audit in [mouth.md](mouth.md). ears keeps listening and injection and logs in with a bot of its own (`EARS_DISCORD_TOKEN`); mouth speaks through the co-host's existing bot (`DISCORD_TOKEN`).
+
+- Reworded `[ ]`: EARS-START-002 (token variable), EARS-START-003 (reads `inject.request` only, every plan), EARS-START-004 (`hasToken` excludes mouth's token), EARS-SESS-002 (self-muted), EARS-SESS-004 (no audio player), EARS-HEAR-001 (ignore every bot account).
+- New `[ ]`: EARS-START-007 (same token as mouth idles ears), EARS-SESS-009 (logs in with `EARS_DISCORD_TOKEN`).
+- Reworded, already true of the code (`[x]`): EARS-START-001, EARS-START-006, EARS-INJ-007. New `[x]`: EARS-HEAR-009 (no `control`, the listening half of the retired EARS-PLAY-008).
+- Retired, numbers not reused: EARS-AUD-002, EARS-PLAY-001 to 009, EARS-FALL-001 to 019, now MOUTH-AUD-001, MOUTH-PLAY-*, MOUTH-FALL-*.
+- `[proposed]`: the second bot and its variable name, ignoring all bots, self-mute, the same-token guard.
+- Drift until build chunk 4: `services/ears` code and tests still implement and annotate the retired IDs.
+
+## Spoken fallback line: built (chunk 1), moving to mouth
 
 Design: LLD § Fallback Line (owner decisions, edge cases, build order). When ears cannot play a line it reports `voice.failed` and says a pre-generated funny line in its place, played from ears' own cache of the clips voice serves over HTTP.
 
@@ -38,7 +49,8 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (66 specs: 66 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/ears/ears-specs.md (40 specs: 32 `[x]`, 8 `[ ]`, 0 `[D]`; 29 retired to mouth)
+- docs/intent/ears/decisions/listen-speak-split.md
 
 ### Tests
 - services/ears/test/audio.test.ts
@@ -72,7 +84,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Architecture
 
-**Purpose:** Be the co-host's ears and one of its mouths. Turns each Discord speaker's audio into `speech.heard`, plays `voice.utterance` audio into the voice channel as the `discord` sink, and transcribes uploaded audio on request.
+**Purpose:** Be the co-host's ears. Turns each human Discord speaker's audio into `speech.heard` and transcribes uploaded audio on request. (Until build chunk 4 of the split it also plays `voice.utterance` as the `discord` sink; that job belongs to [mouth](mouth.md).)
 
 **Key Components:**
 1. `index.ts` — picks a startup plan (`off` / `no-token` / `discord`) with `earsPlan`, wires the heartbeat and inject handler, lazy-loads `discord.ts`, registers the one shutdown (`stopEars`).
@@ -88,16 +100,14 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Startup plans | EARS-START-001 to 006 | 6 | 0 | 0 |
-| Discord session | EARS-SESS-001 to 008 | 8 | 0 | 0 |
-| Listening and transcription | EARS-HEAR-001 to 008 | 8 | 0 | 0 |
-| Audio conversion | EARS-AUD-001 to 004 | 4 | 0 | 0 |
-| Playback sink | EARS-PLAY-001 to 009 | 9 | 0 | 0 |
-| Fallback line | EARS-FALL-001 to 019 | 19 | 0 | 0 |
+| Startup plans | EARS-START-001 to 007 | 3 | 0 | 4 |
+| Discord session | EARS-SESS-001 to 009 | 6 | 0 | 3 |
+| Listening and transcription | EARS-HEAR-001 to 009 | 8 | 0 | 1 |
+| Audio conversion | EARS-AUD-001, 003, 004 (002 retired) | 3 | 0 | 0 |
 | Audio injection | EARS-INJ-001 to 009 | 9 | 0 | 0 |
 | Health | EARS-HLTH-001 to 003 | 3 | 0 | 0 |
 
-**Summary:** 66 of 66 specs implemented; 0 gaps; 0 deferred (counts of specs with a test below are from the 2026-11-02 audit; the fallback-line specs each cite a test). 32 of the 46 implemented specs have a test citing them. The 14 without a test are the Discord and plan glue in `discord.ts` / `index.ts` (EARS-START-003, EARS-SESS-001 to 005, EARS-HEAR-001 to 003, EARS-PLAY-001, EARS-PLAY-007, EARS-INJ-009) plus EARS-INJ-003 (wrong kind) and EARS-PLAY-008 (boundary statement). EARS-INJ-004's redirect and non-2xx paths are untested in ears.
+**Summary (after the split design):** 40 specs, 32 implemented, 8 gaps, all from the split. Before the split: 66 of 66 specs implemented; 0 gaps; 0 deferred (counts of specs with a test below are from the 2026-11-02 audit; the fallback-line specs each cite a test). 32 of the 46 implemented specs have a test citing them. The 14 without a test are the Discord and plan glue in `discord.ts` / `index.ts` (EARS-START-003, EARS-SESS-001 to 005, EARS-HEAR-001 to 003, EARS-PLAY-001, EARS-PLAY-007, EARS-INJ-009) plus EARS-INJ-003 (wrong kind) and EARS-PLAY-008 (boundary statement). EARS-INJ-004's redirect and non-2xx paths are untested in ears.
 
 ## Key Findings
 

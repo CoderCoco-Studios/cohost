@@ -5,7 +5,7 @@ prefix: SHARED
 
 # shared-runtime
 
-Status: designed; EARS specs written ([shared-runtime-specs.md](shared-runtime-specs.md)), all `[ ]`. Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract, Shared runtime). Sibling: [module-contract](../module-contract/module-contract-design.md), whose fourth obligation this segment fulfils.
+Status: implemented; every EARS spec in [shared-runtime-specs.md](shared-runtime-specs.md) is `[x]`. Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract, Shared runtime). Sibling: [module-contract](../module-contract/module-contract-design.md), whose fourth obligation this segment fulfils.
 
 ## Context and Design Philosophy
 

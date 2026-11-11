@@ -47,7 +47,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "EARS written 2026-11-11 (shared-runtime-specs.md): 72 specs, all [ ] (SHARED-BOOT 8, LIFE 15, RETRY 7, IDLE 5, CTRL 8, INJ 12, AUDIO 8, DVS 7, BOUND 2); 35 lines moved in from event-bus, control-plane, ears, eyes, voice, mouth (old IDs retired). Awaiting owner review of the specs; then gap-closure chunk C1."
+    next: "C1 built 2026-11-11: all 72 specs [x] (packages/shared). Next: service chunks adopt runService and startIdle in each entry file; owner review of the arrow overlay audit."
     drift: null
 
   module-contract:

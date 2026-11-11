@@ -4,14 +4,11 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Status
 
-**MAPPED**, 2026-11-11: LLD drafted ([shared-runtime-design.md](../intent/shared-runtime/shared-runtime-design.md)); EARS specs written, all `[ ]`. The package exists today with three helpers (`uploadUrl` / `INJECT_STALE_MS`, `createJoiner`, `parseWav` / `wavWrap`), each specified by another segment (EYES-INJ-015, EARS-SESS-006, VOICE-ENV-001/002, EARS-AUD-003/004). The rest of the designed modules are still copies inside the services.
+**BUILT**, 2026-11-11 (gap-closure chunk C1): every spec is `[x]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, and (at the `discord-voice` subpath) `createDiscordVoiceSession`. The lifecycle helpers left the bus package; salience, cortex and affect read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; ears and mouth hold their voice connection through the session. Not yet adopted, left to the service chunks: `runService` and `startIdle` in each service's entry file.
 
 ## Work required
 
-1. Owner review of the LLD (phase 2 stop).
-2. EARS specs per facet: SHARED-BOOT, SHARED-LIFE, SHARED-RETRY, SHARED-IDLE, SHARED-CTRL, SHARED-INJ, SHARED-AUDIO, SHARED-DVS, SHARED-EMB.
-3. Cross-segment spec moves (LLD, Spec ownership): event-bus shutdown lines, control-plane heartbeat publisher mechanics, ears join loop, eyes upload guard, voice/ears/mouth WAV and resampling lines. Each moved line retires in its old segment; numbers are not reused.
-4. Gap-closure chunk C1 builds the package; later chunks move each service onto it ([gap-closure dispositions](../plans/gap-closure-dispositions.md)).
+1. Service chunks (C5 to C11) move each service's entry onto `runService` and `startIdle` ([gap-closure dispositions](../plans/gap-closure-dispositions.md)).
 
 ## References
 
@@ -22,8 +19,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (72 specs: 0 `[x]`, 72 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (72 specs: 72 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Code
-- packages/shared/src/{index,inject,join,wav}.ts (today)
-- packages/bus/src/{index,heartbeat}.ts (lifecycle helpers to move)
+- packages/shared/src/{index,boot,lifecycle,retry,idle,control,inject,audio,discord-voice}.ts

@@ -45,6 +45,13 @@ test("ollama: json calls drop the stop list too", async () => {
   assert.equal("stop" in (lastBody.options as object), false);
 });
 
+// @spec LLM-VIS-001
+test("ollama: images on a message are sent with it", async () => {
+  const o = new Ollama(llmCfg({ provider: "ollama" }), base);
+  await o.chat([{ role: "user", content: "what is this?", images: ["QUJD"] }]);
+  assert.deepEqual((lastBody.messages as { images?: string[] }[])[0]!.images, ["QUJD"]);
+});
+
 // @spec LLM-PING-002, LLM-PING-005
 test("ping failure records why, including the auth hint", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1`, api_key: "bad" } }));

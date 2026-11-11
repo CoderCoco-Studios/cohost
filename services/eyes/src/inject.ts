@@ -1,6 +1,7 @@
 import type { Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { createInjectHandler as createSharedInjectHandler, type InjectHandler } from "@cohost/shared";
+import { isSame } from "./eyes.js";
 
 /** Defaults for the `vision.upload_timeout_ms` and `vision.upload_max_bytes` config keys. */
 export const UPLOAD_TIMEOUT_MS = 10_000;
@@ -36,7 +37,7 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
     kinds: {
       image: async (bytes, r) => {
         const text = (await d.describe(bytes.toString("base64"), "")).trim();
-        if (!text || /^same\b/i.test(text)) return { ok: false, detail: "no description" };
+        if (isSame(text)) return { ok: false, detail: "no description" };
         await d.bus.publish("vision.summary", { text, changed: true, injected: true, remember: r.remember });
         d.log.info({ id: r.id, text }, "saw (injected)");
         return { detail: text };

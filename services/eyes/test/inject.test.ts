@@ -51,6 +51,28 @@ test("SAME or empty reply: ok:false, no summary", async () => {
   }
 });
 
+// @spec EYES-INJ-008
+test("a reply that merely starts with Same is a description and is published", async () => {
+  const t = setup("Same old menu screen, but the cursor moved.");
+  await run(t.handle, req());
+  assert.equal(t.bus.of("vision.summary").length, 1);
+  assert.equal(t.bus.of("inject.result")[0]!.ok, true);
+});
+
+// @spec EYES-INJ-016
+test("eyes takes injection through the shared handler: target eyes, the single kind image, the configured cap and timeout", async () => {
+  const t = setup("a menu screen", { uploadMaxBytes: 2 });
+  await run(t.handle, req({ kind: "text", text: "hi" }));
+  assert.deepEqual(t.bus.of("inject.result")[0], { id: "i1", ok: false, detail: "eyes cannot handle kind 'text'" });
+  await run(t.handle, req({ id: "i2", target: "chat" }));
+  assert.equal(t.bus.of("inject.result").length, 1, "another target's request is ignored");
+  await run(t.handle, req({ id: "i3" }));
+  assert.match(t.bus.of("inject.result")[1]!.detail ?? "", /2 byte limit/);
+  const slow = setup("x", { uploadTimeoutMs: 20, fetch: (async (_u: unknown, init?: { signal?: AbortSignal }) => new Promise((_r, rej) => init?.signal?.addEventListener("abort", () => rej(init.signal!.reason)))) as never });
+  await run(slow.handle, req({ id: "i4" }));
+  assert.match(slow.bus.of("inject.result")[0]!.detail ?? "", /timed out after 20 ms/);
+});
+
 // @spec EYES-INJ-009
 test("model failure: ok:false with the error, no summary", async () => {
   const t = setup(new Error("vision model 503"));

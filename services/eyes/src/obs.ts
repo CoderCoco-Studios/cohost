@@ -76,16 +76,17 @@ export function createObsLink({ obs, url, password, log, heartbeat, sleep, retry
 }
 
 export interface StopEyesDeps {
-  idleTimer?: ReturnType<typeof setInterval>;
-  clear?: (t: ReturnType<typeof setInterval>) => void;
+  /** The idle plan of a disabled eyes; absent when vision is enabled. */
+  idle?: { stop(): void };
   link: Pick<ObsLink, "stop">;
-  bus: { stop(): void };
 }
 
-/** The one shutdown sequence, in both plans: idle timer, OBS, then the bus (the `stopping` heartbeat runs before it). */
+/**
+ * The one shutdown sequence, in both plans: the idle plan, then the OBS link. The bootstrap then stops the bus (the
+ * `stopping` heartbeat runs before any of it).
+ */
 // @spec EYES-ENAB-005, EYES-OBS-008
-export async function stopEyes({ idleTimer, clear = clearInterval, link, bus }: StopEyesDeps): Promise<void> {
-  if (idleTimer) clear(idleTimer);
+export async function stopEyes({ idle, link }: StopEyesDeps): Promise<void> {
+  idle?.stop();
   await link.stop();
-  bus.stop();
 }

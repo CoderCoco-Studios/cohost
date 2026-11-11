@@ -638,6 +638,27 @@ test("mouth.outputs.discord.gain_db accepts -40 to 12 inclusive and a failure na
   assert.equal(ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: "yes" } } } }).success, false);
 });
 
+// @spec CFG-SCH-021, EYES-DESC-007
+test("vision.engine defaults to ollama (blank too), accepts stub, rejects others; the describer tuning keys default and validate", () => {
+  const vision = (v: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), vision: { model: "v", obs: {}, ...v } });
+  const d = vision({});
+  assert.ok(d.success);
+  assert.equal(d.data.vision.engine, "ollama");
+  assert.equal(d.data.vision.temperature, 0.2);
+  assert.equal(d.data.vision.num_predict, 60);
+  assert.equal(d.data.vision.jpeg_quality, 70);
+  assert.match(d.data.vision.prompt, /exactly: SAME/);
+  assert.equal(vision({ engine: "" }).data!.vision.engine, "ollama");
+  assert.equal(vision({ engine: "stub" }).data!.vision.engine, "stub");
+  assert.equal(vision({ engine: "openai" }).success, false);
+  assert.equal(vision({ prompt: "  " }).data!.vision.prompt, d.data.vision.prompt, "a blank prompt is the default");
+  assert.equal(vision({ prompt: "Say SAME or one line." }).data!.vision.prompt, "Say SAME or one line.");
+  for (const bad of [{ temperature: -0.1 }, { temperature: 2.1 }, { num_predict: 0 }, { num_predict: 1.5 }, { jpeg_quality: 0 }, { jpeg_quality: 101 }]) {
+    assert.equal(vision(bad).success, false, JSON.stringify(bad));
+  }
+  assert.equal(vision({ temperature: 0, num_predict: 1, jpeg_quality: 100 }).success, true);
+});
+
 // @spec CFG-USR-011
 test("the shipped config.example.yaml routes the co-host's voice to the Discord channel she listens to, at gain 0, with comments", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");

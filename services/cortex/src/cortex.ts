@@ -67,7 +67,7 @@ export class Cortex {
       case "brain.say": {
         // Our own lines and anyone else's (reflexes, operator) all land in the transcript.
         const d = ev.data as BusEvent<"brain.say">["data"];
-        this.ctx.pushSelf(d.text, d.emotion, d.id); // @spec CTX-FALL-001
+        this.ctx.pushSelf(d.text, d.emotion, ev.ts, d.id); // @spec CTX-FALL-001
         if (ev.source !== "cortex") this.startSpeaking(d.id);
         break;
       }

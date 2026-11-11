@@ -115,7 +115,7 @@ importers:
         version: link:../shared
 
   packages/working-memory:
-    dependencies:
+    devDependencies:
       '@cohost/bus':
         specifier: workspace:*
         version: link:../bus

@@ -6,6 +6,10 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 65 specs: 65 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every gap fix has landed (compose, `.dockerignore`, installer, smoke script, `docs-build` workflow, `srcExclude`, `.env.example`, Bedrock docs, `docs/TESTING.md`).
 
+## Listening and speaking split (designed, not built)
+
+Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded `[ ]`; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no volume), DEPLOY-README-004 (`.env.example` with two Discord tokens,) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new `[ ]`.
+
 ## Standalone dashboard (built)
 
 The spec file holds 69 specs: 69 `[x]`, 0 `[ ]`, 0 `[D]` (DEPLOY-HOST-001 and DEPLOY-REPO-002, the root `pnpm dashboard` script, were built with dashboard chunk 2; the rest with chunk 3). Design: LLD § Host-run dashboard, § Compose topology (voice reachability, `DASHBOARD_URL`); owner decisions in the dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md). Values confirmed by the owner.

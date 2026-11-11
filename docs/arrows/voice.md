@@ -6,6 +6,10 @@
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 50 implemented, 0 gaps, 0 deferred.
 
+## Listening and speaking split (designed, not built)
+
+No VOICE spec changes: the arbitration protocol, the events and the clip routes are unchanged. The LLD now names [mouth](mouth.md)'s outputs as the sinks (the Discord output keeps `sink: "discord"`) and mouth as the clip consumer. `services/voice/test/ears-sync.test.ts` becomes `mouth-sync.test.ts` in mouth build chunk 2; the Architecture list below names ears as the `discord` sink until chunk 4.
+
 ## Spoken fallback line: built (chunks 1 and 2)
 
 Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for ears to cache.

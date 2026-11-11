@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -20,6 +20,7 @@ taxonomy:
     - cortex
   body:
     - voice
+    - mouth
     - avatar
   operator:
     - dashboard
@@ -41,7 +42,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "Listening and speaking split (designed, mouth.md build order): CFG-SCH-018, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 reworded [ ]; CFG-SCH-020, CFG-USR-011 new [ ] (optional mouth section, gain range -40..12). Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:
@@ -125,8 +126,8 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Spoken fallback line chunk 1 built (EARS-PLAY-005, EARS-PLAY-006, EARS-FALL-001 to 019); voice serves clips (chunk 2) and the cortex acknowledges a failed line (chunk 3), both built. Deferred: separate listening/speaking modules. Intent pass confirmed; no other open gaps."
-    drift: null
+    next: "Listening and speaking split designed (not built; see mouth.md build order): ears narrows to listening with its own bot (EARS_DISCORD_TOKEN). Reworded [ ]: EARS-START-002/003/004, EARS-SESS-002/004, EARS-HEAR-001; new [ ]: EARS-START-007, EARS-SESS-009; reworded [x] (true today): EARS-START-001/006, EARS-INJ-007; new [x]: EARS-HEAR-009. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    drift: "Until build chunk 4 lands, services/ears code and tests still carry @spec annotations for the retired EARS-AUD-002, EARS-PLAY-* and EARS-FALL-* IDs (now MOUTH-*); chunk 4 deletes that code from ears."
 
   salience:
     status: AUDITED
@@ -185,7 +186,19 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts becomes mouth-sync.test.ts in mouth build chunk 2. Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    drift: null
+
+  mouth:
+    status: MAPPED
+    parent: null
+    sampled: 2026-11-10
+    audited: null
+    audited_sha: null
+    blocks: []
+    blockedBy: [config, event-bus]
+    detail: mouth.md
+    next: "New segment, designed 2026-11-10 by splitting the speaking half out of ears; not built. 49 specs, all [ ]: MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-AUD-001, MOUTH-FALL-001..019, MOUTH-HLTH-001..002. Build order in mouth.md (4 chunks)."
     drift: null
 
   avatar:
@@ -221,7 +234,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
+    next: "Listening and speaking split (designed, mouth.md build order chunk 3): CTRL-MANIFEST-001..003 and CTRL-HEALTH-005 reworded [ ] (mouth unit, group mouth, preset MOUTH_DISCORD_ENABLED=false, ten known services). Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
     drift: null
 
   deployment:
@@ -233,7 +246,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 69 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "Listening and speaking split (designed, mouth.md build order chunks 3-4): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded [ ]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new [ ] (mouth profile, two-bot .env). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 69 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

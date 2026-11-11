@@ -23,7 +23,7 @@ function chunk(id: string, size: number): Buffer {
   return b;
 }
 
-// @spec VOICE-ENV-001
+// @spec SHARED-AUDIO-001
 test("parseWav reads the fmt chunk and computes the duration", () => {
   const info = parseWav(wav(new Array(24000).fill(0)));
   assert.equal(info.sampleRate, 24000);
@@ -35,28 +35,28 @@ test("parseWav reads the fmt chunk and computes the duration", () => {
   assert.equal(parseWav(wav(new Array(4800).fill(0), { channels: 2 })).durationMs, 100); // 2400 stereo frames
 });
 
-// @spec VOICE-ENV-001, EARS-AUD-003
+// @spec SHARED-AUDIO-001
 test("parseWav skips unknown chunks, including odd-sized ones padded to even", () => {
   const info = parseWav(wav([1, 2, 3], { before: [chunk("LIST", 4), chunk("junk", 3)] }));
   assert.equal(info.dataOffset, 12 + 24 + 12 + 12 + 8);
   assert.equal(info.dataLength, 6);
 });
 
-// @spec VOICE-ENV-001, EARS-AUD-003
+// @spec SHARED-AUDIO-001
 test("parseWav clamps a data chunk that claims more bytes than the buffer has", () => {
   const full = wav(new Array(100).fill(0));
   const info = parseWav(full.subarray(0, full.length - 50)); // e.g. a streamed/truncated TTS reply
   assert.equal(info.dataLength, 150);
 });
 
-// @spec VOICE-ENV-002
+// @spec SHARED-AUDIO-002
 test("parseWav rejects non-WAV input and a WAV with no data chunk", () => {
   assert.throws(() => parseWav(Buffer.from("not a wav file at all")), /not a RIFF\/WAVE file/);
   const headerOnly = wav([]).subarray(0, 36);
   assert.throws(() => parseWav(headerOnly), /no data chunk/);
 });
 
-// @spec EARS-AUD-003
+// @spec SHARED-AUDIO-001
 test("parseWav with requireRiff:false walks chunks without the RIFF/WAVE check", () => {
   const w = wav([1, 2]);
   const bare = Buffer.concat([Buffer.alloc(12), w.subarray(12)]); // zeroed RIFF/WAVE header
@@ -67,7 +67,7 @@ test("parseWav with requireRiff:false walks chunks without the RIFF/WAVE check",
   assert.throws(() => parseWav(bare.subarray(0, 36), { requireRiff: false }), /no data chunk/);
 });
 
-// @spec EARS-AUD-004
+// @spec SHARED-AUDIO-004
 test("wavWrap writes a canonical 44-byte PCM16 header that parseWav reads back", () => {
   const pcm = Buffer.from([1, 0, 2, 0, 3, 0, 4, 0]);
   const w = wavWrap(pcm, 16000, 1);
@@ -86,7 +86,7 @@ test("wavWrap writes a canonical 44-byte PCM16 header that parseWav reads back",
   assert.deepEqual(w.subarray(44), pcm);
 });
 
-// @spec EARS-AUD-004
+// @spec SHARED-AUDIO-004
 test("wavWrap then parseWav round-trips rate, channels, depth, data span and duration", () => {
   const w = wavWrap(Buffer.alloc(48000 * 2 * 2), 48000, 2); // 1 s stereo
   const info = parseWav(w);

@@ -1,7 +1,8 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
 import { randomUUID } from "node:crypto";
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, startHeartbeat, type BusEvent, type EventInput, type EventType, type HeartbeatSpec, type Publisher } from "@cohost/bus";
+import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+import { startHeartbeat, type HeartbeatSpec } from "@cohost/shared";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {

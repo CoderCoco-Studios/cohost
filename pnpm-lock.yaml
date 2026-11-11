@@ -78,7 +78,29 @@ importers:
         specifier: workspace:*
         version: link:../llm
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+      '@discordjs/voice':
+        specifier: ^0.19.2
+        version: 0.19.2(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(opusscript@0.0.8)
+      '@snazzah/davey':
+        specifier: ^0.1.12
+        version: 0.1.12(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
+      discord.js:
+        specifier: ^14.27.0
+        version: 14.27.0
+      libsodium-wrappers:
+        specifier: ^0.7.15
+        version: 0.7.16
+      opusscript:
+        specifier: ^0.0.8
+        version: 0.0.8
 
   packages/testing:
     dependencies:
@@ -88,6 +110,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/working-memory:
     dependencies:
@@ -109,6 +134,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
     devDependencies:
       '@cohost/testing':
         specifier: workspace:*
@@ -122,6 +150,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       ws:
         specifier: ^8.18.0
         version: 8.22.0
@@ -169,6 +200,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory
@@ -188,6 +222,9 @@ importers:
       '@cohost/control':
         specifier: workspace:*
         version: link:../../packages/control
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       ws:
         specifier: ^8.18.0
         version: 8.22.0
@@ -266,6 +303,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       pg:
         specifier: ^8.13.0
         version: 8.23.1
@@ -319,6 +359,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory

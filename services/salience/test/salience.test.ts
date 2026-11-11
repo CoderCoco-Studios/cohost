@@ -13,10 +13,11 @@ const salienceCfg = (over: Record<string, unknown> = {}) =>
 const rulesScorer = (replyOnMention = true) =>
   new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), {} as never, { rules: (i) => scoreRules(i, replyOnMention) }, log);
 
+let seq = 0;
 const chat = (text: string, extra: Record<string, unknown> = {}) =>
-  ({ id: "1", type: "chat.message", ts: Date.now(), source: "t", data: { platform: "twitch", user: "u", text, isMod: false, isSub: false, mentionsCohost: false, ...extra } }) as never;
+  ({ id: `c${seq++}`, type: "chat.message", ts: Date.now(), source: "t", data: { platform: "twitch", user: "u", text, isMod: false, isSub: false, mentionsCohost: false, ...extra } }) as never;
 const vision = (text: string, changed = true) =>
-  ({ id: "1", type: "vision.summary", ts: Date.now(), source: "t", data: { text, changed } }) as never;
+  ({ id: `v${seq++}`, type: "vision.summary", ts: Date.now(), source: "t", data: { text, changed } }) as never;
 
 test("scoreRules: the documented weights", () => { // @spec SAL-SCORE-001, SAL-SCORE-002
   const input: ScoreInput = {

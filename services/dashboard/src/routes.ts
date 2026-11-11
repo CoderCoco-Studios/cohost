@@ -1,7 +1,7 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
-import { bearerOk, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { bearerOk, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { handleInject, uploadBase } from "./inject.js";
 import type { StackService } from "./stack.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
@@ -38,7 +38,7 @@ export interface DashboardDeps {
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
 const REFUSAL_STATUS = { unknown: 404, forbidden: 403 } as const;
-const STACK_ACTION = /^\/stack\/(launch|stop|restart|consolidate)$/;
+const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
@@ -79,6 +79,12 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (req.method === "GET" && url.pathname === "/services") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ services: d.services() }));
+        return;
+      }
+      // @spec DASH-HTTP-014
+      if (req.method === "GET" && url.pathname === "/services/manifest") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ units: unitDescriptors() }));
         return;
       }
       // @spec DASH-CTRL-007

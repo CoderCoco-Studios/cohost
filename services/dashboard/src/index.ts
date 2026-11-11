@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import { Bus } from "@cohost/bus";
 import { onShutdown, startHeartbeat } from "@cohost/shared";
-import { HealthTracker } from "@cohost/control";
+import { HealthTracker, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { createLogger, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
@@ -57,10 +57,12 @@ const viewers = new ViewersClient(bus);
 const stack = new StackService({ log, bus: () => feed.busState() });
 stack.attach(new ObservedStackController({ onPhase: (kind, phase) => stack.hooks.onPhase(kind, phase) }, stack.hooks));
 
-const handler = createDashboardHandler({ bus, log, html, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => tracker.snapshot(), control, stack });
+// The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
+const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
+const handler = createDashboardHandler({ bus, log, html, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
 
 const wss = new WebSocketServer({ noServer: true });
-const feed = createFeed({ bus, tracker, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });
+const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });
 wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
 void startFeed(feed, log); // @spec DASH-HTTP-012
 

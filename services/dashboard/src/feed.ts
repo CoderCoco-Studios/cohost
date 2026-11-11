@@ -14,6 +14,8 @@ export type BusReach = "connected" | "unreachable";
 export interface FeedDeps {
   bus: Pick<Bus, "recent" | "tail" | "recentHealth" | "tailHealth">;
   tracker: HealthTracker;
+  /** Applied to every services snapshot before it is sent (the Compose restart counts overlay, DASH-FEED-010). */
+  decorate?: (snapshot: ServiceHealth[]) => ServiceHealth[];
   clients: () => Iterable<FeedSocket>;
   /** The stack state the feed carries to clients: the `GET /stack` body, and a hook for each change of it. */
   stack: { snapshot(): object; onChange(cb: (snapshot: object) => void): () => void };
@@ -78,7 +80,9 @@ export function createFeed(d: FeedDeps) {
     wake = done;
   }));
   // Subscribed at creation, not at start(): a page opened while Redis is down still hears every stack change.
-  const offStack = d.stack.onChange((snap) => broadcast(stackMessage(snap))); // @spec DASH-FEED-008
+  const snapshot = (): ServiceHealth[] => (d.decorate ?? ((s) => s))(d.tracker.snapshot());
+  // @spec DASH-FEED-008, DASH-FEED-010
+  const offStack = d.stack.onChange((snap) => { broadcast(stackMessage(snap)); if (d.decorate) broadcast(servicesMessage(snapshot())); });
 
   return {
     // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008
@@ -88,7 +92,7 @@ export function createFeed(d: FeedDeps) {
       const held: BusEvent[] = [];
       replaying.set(ws, held); // before the first await: the socket is already in the client set
       try {
-        ws.send(servicesMessage(d.tracker.snapshot()));
+        ws.send(servicesMessage(snapshot()));
         ws.send(stackMessage(d.stack.snapshot())); // before the replay read: a client that cannot get a replay still has both snapshots
         const sent = new Set<string>();
         let failure: { err: unknown } | undefined;
@@ -132,7 +136,7 @@ export function createFeed(d: FeedDeps) {
         if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
         if (forwardable(ev)) for (const c of d.clients()) deliver(c, ev);
       }, "$", readOutcome);
-      offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));
+      offChange = d.tracker.onChange(() => broadcast(servicesMessage(snapshot())));
       timer = setInterval(() => d.tracker.tick(), d.tickMs ?? 1000);
       timer.unref();
     },

@@ -138,7 +138,7 @@
   <div class="panel" id="stackPanel" style="display:none">
     <h2>stack <span id="stackState" class="hint"></span></h2>
     <div class="row">
-      <button id="stLaunch">Launch</button><button id="stStop">Stop</button><button id="stRestart">Restart all</button>
+      <button id="stLaunch">Launch</button><button id="stRebuild">Rebuild</button><button id="stStop">Stop</button><button id="stRestart">Restart all</button>
       <button id="stConsolidate" style="display:none">Run consolidation pass</button>
       <span id="stackMsg" class="hint"></span>
     </div>
@@ -314,10 +314,14 @@ function renderServices() {
 // @spec DASH-UI-008
 let ctlEnabled = false;
 const ACTIONS = ["start", "stop", "restart"];
-// The control plane's manifest units (packages/control/src/manifest.ts; a test pins this list to it). The
-// dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
-// @spec DASH-UI-008
-const UNITS = ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "redis", "postgres", "ollama", "tts", "stt"];
+// The control plane's manifest units, as GET /services/manifest lists them: the page holds no list of its own.
+// The dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
+// @spec DASH-UI-008, DASH-UI-021
+let UNITS = [];
+fetch("/services/manifest").then((r) => r.json()).then((m) => {
+  UNITS = (m.units || []).map((u) => u.id);
+  renderServices();
+}).catch(() => {});
 function actions(id) {
   if (!ctlEnabled) return "";
   return `<td class="act">${UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : ""}</td>`;
@@ -367,11 +371,12 @@ function renderStack() {
       (l.services || []).map((x) => `<div>${esc(x.service)} (${esc(x.status)}${x.health ? ", " + esc(x.health) : ""})</div>`).join("")
     : "";
   const locked = !!s.action || !s.docker.ok;
-  for (const b of ["#stLaunch", "#stStop", "#stRestart"]) $(b).disabled = locked;
+  for (const b of ["#stLaunch", "#stRebuild", "#stStop", "#stRestart"]) $(b).disabled = locked;
   $("#stConsolidate").style.display = !s.action && l && l.kind === "stop" && l.ok ? "" : "none"; // @spec DASH-UI-019
 }
 const STACK_ASK = {
   launch: "Launch the stack? This runs docker compose up and waits for every service; the first launch builds images and can take many minutes.",
+  rebuild: "Rebuild the stack? This runs docker compose up --build: the service images are rebuilt from the current code (many minutes when the code changed), then the stack is brought up.",
   stop: "Stop the whole stack (every container, Redis and Postgres included)?",
   restart: "Restart every running application service?",
   consolidate: "Run the viewer-note consolidation pass now? It can take up to 30 minutes.",
@@ -387,6 +392,7 @@ async function stackAct(kind) {
   } catch (e) { m.textContent = `${kind} failed: ${e}`; }
 }
 $("#stLaunch").onclick = () => stackAct("launch");
+$("#stRebuild").onclick = () => stackAct("rebuild");
 $("#stStop").onclick = () => stackAct("stop");
 $("#stRestart").onclick = () => stackAct("restart");
 $("#stConsolidate").onclick = () => stackAct("consolidate");

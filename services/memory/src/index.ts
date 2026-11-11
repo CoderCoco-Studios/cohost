@@ -13,7 +13,8 @@
  * tidied by a pass (consolidation.ts) the scheduler starts when enough notes are
  * dirty, while the cortex is idle; consolidate.ts runs one after shutdown.
  */
-import { Bus, onShutdown, startHeartbeat } from "@cohost/bus";
+import { Bus } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { createLogger, loadConfig } from "@cohost/config";
 import { Ollama } from "@cohost/llm";
 import { MemoryHealth } from "./health.js";

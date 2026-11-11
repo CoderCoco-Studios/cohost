@@ -1,5 +1,6 @@
 import type { Bus, BusEvent } from "@cohost/bus";
 import type { HealthTracker, ServiceHealth } from "@cohost/control";
+import { retryWithBackoff } from "@cohost/shared";
 
 /** The slice of a ws WebSocket the feed uses. */
 export interface FeedSocket {
@@ -112,18 +113,17 @@ export function createFeed(d: FeedDeps) {
      * follow the live feeds. Resolves once the tails are running, or when `stop()` ends the retry.
      */
     async start(): Promise<void> {
-      let history: Awaited<ReturnType<FeedDeps["bus"]["recentHealth"]>> | undefined;
-      for (let failures = 0; !stopped && !history; ) {
-        try {
-          history = await d.bus.recentHealth(500);
-          setBus("connected");
-        } catch (err) {
+      const history = await retryWithBackoff(async () => {
+        const h = await d.bus.recentHealth(500);
+        setBus("connected");
+        return h;
+      }, {
+        baseMs: RETRY_BASE_MS, maxMs: RETRY_MAX_MS, sleep, isStopped: () => stopped,
+        onFailure: (err, failures, delayMs) => {
           setBus("unreachable");
-          const delayMs = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(++failures - 1, 30));
           d.log?.warn({ err, delayMs, failures }, "feed seed failed: Redis is unreachable; retrying");
-          await sleep(delayMs);
-        }
-      }
+        },
+      });
       if (stopped || !history) return;
       d.tracker.seed(history.map((h) => ({ ts: h.ts, data: h.data })));
       const fromId = history.at(-1)?.id ?? "$";

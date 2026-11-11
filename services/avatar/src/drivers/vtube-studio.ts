@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import type { Emotion } from "@cohost/config";
+import { retryWithBackoff, singleFlight } from "@cohost/shared";
 import type { AvatarDriver, AvatarParams, DriverContext } from "../types.js";
 
 interface Hotkey { name: string; type: string; hotkeyID: string }
@@ -27,7 +28,7 @@ export class VTubeStudioDriver implements AvatarDriver {
   private hotkeys = new Map<string, Hotkey>();
   private activeExpr?: string;
   private failLoggedAt = new Map<string, number>();
-  private reconnectTimer?: NodeJS.Timeout;
+  private cancelWait?: () => void;
   private closing = false;
 
   constructor(private opts: { host: string; port: number; pluginName: string; pluginDeveloper: string }) {}
@@ -42,7 +43,7 @@ export class VTubeStudioDriver implements AvatarDriver {
 
   async disconnect(): Promise<void> { // @spec AVATAR-VTS-007
     this.closing = true;
-    clearTimeout(this.reconnectTimer);
+    this.cancelWait?.();
     this.ws?.close();
     this.ready = false;
   }
@@ -111,6 +112,27 @@ export class VTubeStudioDriver implements AvatarDriver {
 
   private tokenFile() { return join(this.ctx.stateDir, ".vts-token"); }
 
+  /** One attempt; rejects unless the socket opened and authenticated. */
+  private async dial(): Promise<void> {
+    await this.open();
+    if (!this.ready) throw new Error("vts is not connected");
+  }
+
+  /** After a drop or a failed connect: dial again every 5 s until connected or `disconnect()`; concurrent triggers share one loop. */
+  // @spec AVATAR-VTS-007
+  private reconnect = singleFlight(async (): Promise<void> => {
+    await retryWithBackoff(() => this.dial(), {
+      baseMs: 5000, maxMs: 5000, factor: 1, firstDelayMs: 5000,
+      isStopped: () => this.closing,
+      sleep: (ms) => new Promise<void>((resolve) => {
+        const t = setTimeout(done, ms);
+        function done() { clearTimeout(t); resolve(); }
+        this.cancelWait = done;
+      }),
+      onFailure: () => { if (!this.closing) this.ctx.log.warn("vts not reachable, retrying in 5s"); },
+    });
+  });
+
   private open(): Promise<void> {
     return new Promise((resolve) => {
       const url = `ws://${this.opts.host}:${this.opts.port}`;
@@ -138,7 +160,7 @@ export class VTubeStudioDriver implements AvatarDriver {
         this.pending.clear();
         if (!this.closing) {
           this.ctx.log.warn("vts disconnected, retrying in 5s");
-          this.reconnectTimer = setTimeout(() => void this.open(), 5000);
+          void this.reconnect();
         }
       });
       ws.on("error", (err) => {

@@ -1,5 +1,6 @@
 import http from "node:http";
-import { onShutdown, startHeartbeat, type Bus, type SubscribeStart } from "@cohost/bus";
+import { type Bus, type SubscribeStart } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { join } from "node:path";
 import { dataDir, type Config, type Logger } from "@cohost/config";
 import { Voice, kokoroRequestSettings, kokoroSynth, stubSynth } from "./voice.js";

@@ -1,4 +1,5 @@
-import { onShutdown, startHeartbeat, type Bus, type BusEvent, type SubscribeStart } from "@cohost/bus";
+import { type Bus, type BusEvent, type SubscribeStart } from "@cohost/bus";
+import { onShutdown, startHeartbeat } from "@cohost/shared";
 import type { Config, Logger } from "@cohost/config";
 import { Engine } from "./engine.js";
 import { avatarHealth } from "./health.js";

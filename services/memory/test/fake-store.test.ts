@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { testConfig } from "@cohost/testing";
-import { InMemoryStore, hashEmbed } from "../src/fake-store.js";
+import { HashEmbedder } from "@cohost/llm";
+import { InMemoryStore } from "../src/fake-store.js";
 
 const T0 = new Date("2026-01-01T00:00:00Z").getTime();
 function make(over: { recall_k?: number; min_similarity?: number } = {}) {
@@ -11,12 +12,19 @@ function make(over: { recall_k?: number; min_similarity?: number } = {}) {
 }
 
 // @spec MEM-BACKEND-004
-test("hashEmbed is deterministic, unit-length, and closer for overlapping text", () => {
-  const a = hashEmbed("the cursed sword in level three");
-  assert.deepEqual(a, hashEmbed("the cursed sword in level three"));
-  assert.ok(Math.abs(Math.hypot(...a) - 1) < 1e-9);
+test("the in-memory store embeds with @cohost/llm's HashEmbedder: recall ranks by its cosine similarity", async () => {
+  const { s, advance } = make({ min_similarity: 0 });
+  await s.remember("chat", "bob", "the cursed sword in level three");
+  await s.remember("chat", "amy", "pizza for dinner");
+  advance(3 * 60_000);
+  const got = await s.recall("cursed sword");
+  const e = new HashEmbedder();
   const dot = (x: number[], y: number[]) => x.reduce((n, v, i) => n + v * y[i]!, 0);
-  assert.ok(dot(a, hashEmbed("cursed sword")) > dot(a, hashEmbed("pizza for dinner")));
+  const q = await e.embed("cursed sword");
+  const expected = await e.embed("bob: the cursed sword in level three");
+  assert.ok(Math.abs(got.find((m) => m.who === "bob")!.similarity! - dot(q, expected)) < 1e-12);
+  assert.equal(got[0]!.who, "bob");
+  assert.deepEqual(await s.embedText("cursed sword"), q);
 });
 
 // @spec MEM-BACKEND-004, MEM-RECALL-004, MEM-RECALL-005

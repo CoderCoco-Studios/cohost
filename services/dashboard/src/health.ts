@@ -1,4 +1,4 @@
-import type { HeartbeatSpec } from "@cohost/bus";
+import type { HeartbeatSpec } from "@cohost/shared";
 
 // @spec DASH-HEALTH-001
 /** dashboard has no external dependencies besides Redis. */

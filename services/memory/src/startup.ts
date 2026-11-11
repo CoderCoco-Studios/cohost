@@ -1,4 +1,5 @@
-import type { Bus, Heartbeat } from "@cohost/bus";
+import type { Bus } from "@cohost/bus";
+import { retryWithBackoff, type Heartbeat } from "@cohost/shared";
 import type { Config, Logger } from "@cohost/config";
 import type { BusEvent } from "@cohost/bus";
 import type { MemoryHealth } from "./health.js";
@@ -34,27 +35,33 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   }
   // @spec MEM-START-001, MEM-HEALTH-007
   if (storeKind === "postgres" && embedderKind === "ollama") {
-    while (!(await ping())) {
-      health.setOllama(false);
-      heartbeat.degraded("waiting for ollama (embeddings)");
-      log.warn("waiting for ollama (embeddings)...");
-      await sleep(RETRY_MS);
-    }
+    await retryWithBackoff(async () => {
+      if (!(await ping())) { health.setOllama(false); throw new Error("ollama does not answer"); }
+    }, {
+      baseMs: RETRY_MS, maxMs: RETRY_MS, factor: 1, sleep,
+      onFailure: () => {
+        heartbeat.degraded("waiting for ollama (embeddings)");
+        log.warn("waiting for ollama (embeddings)...");
+      },
+    });
     health.setOllama(true);
   }
   // @spec MEM-START-002, MEM-HEALTH-004, MEM-HEALTH-006, MEM-HEALTH-007, MEM-STORE-002
   if (storeKind === "postgres") {
-    for (let attempt = 1; ; attempt++) {
-      try { await store.init(); health.setPostgres(true); break; }
-      catch (err) {
-        health.setPostgres(false);
-        // A configuration error, not an outage: retrying cannot fix it.
-        if (err instanceof DimensionMismatchError || attempt > MAX_INIT_RETRIES) throw err;
+    let tries = 0;
+    await retryWithBackoff(async () => {
+      tries++;
+      try { await store.init(); health.setPostgres(true); }
+      catch (err) { health.setPostgres(false); throw err; }
+    }, {
+      baseMs: RETRY_MS, maxMs: RETRY_MS, factor: 1, sleep,
+      // A configuration error, not an outage: retrying cannot fix it. Nor can retrying forever.
+      isFatal: (err) => err instanceof DimensionMismatchError || tries > MAX_INIT_RETRIES,
+      onFailure: (err, attempt) => {
         heartbeat.degraded(`waiting for postgres (init attempt ${attempt} failed)`);
         log.warn({ err: String(err) }, "postgres not ready, retrying in 3s");
-        await sleep(RETRY_MS);
-      }
-    }
+      },
+    });
   } else {
     // @spec MEM-START-003
     await store.init();

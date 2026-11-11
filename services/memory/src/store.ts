@@ -1,7 +1,7 @@
 import pg from "pg";
 import { urls, type Config, type Logger } from "@cohost/config";
 import type { Embedder } from "@cohost/llm";
-import { tracked } from "@cohost/bus";
+import { tracked } from "@cohost/shared";
 import type { ReflectCursor } from "./cursor.js";
 import {
   clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,

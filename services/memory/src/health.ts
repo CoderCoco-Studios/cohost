@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import { tracked, type HeartbeatSpec } from "@cohost/shared";
 import type { Config } from "@cohost/config";
 import type { Embedder } from "@cohost/llm";
 

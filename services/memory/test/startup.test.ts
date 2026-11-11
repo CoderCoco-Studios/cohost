@@ -100,11 +100,11 @@ test("ready is reported only after both consumer groups report ready", async () 
   const t = setup({ readyOrder: "manual" });
   let done = false;
   const p = startMemory(t.deps).then(() => { done = true; });
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.equal(done, false);
   assert.ok(!t.events.includes("ready"));
   t.readies[0]!();
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.ok(!t.events.includes("ready"), "one group is not enough");
   t.readies[1]!();
   await p;
@@ -147,10 +147,10 @@ test("note capture runs in a third consumer group, memory-notes, for chat.messag
 test("ready waits for the memory-notes group too", async () => {
   const t = setup({ capture: true, readyOrder: "manual" });
   const p = startMemory(t.deps);
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   t.readies[0]!();
   t.readies[1]!();
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.ok(!t.events.includes("ready"), "two of three groups is not enough");
   t.readies[2]!();
   await p;

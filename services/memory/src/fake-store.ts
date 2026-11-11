@@ -1,4 +1,5 @@
 import type { Config } from "@cohost/config";
+import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
 import type { Memory, MemoryKind, MemoryBackend, ViewerTouch } from "./store.js";
 import {
@@ -6,19 +7,9 @@ import {
   type DeletionRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
-const DIMS = 64;
-
-/** Bag-of-words hashed into a unit vector: texts sharing words score high, no model needed. */
-export function hashEmbed(text: string): number[] {
-  const v = new Array<number>(DIMS).fill(0);
-  for (const word of text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []) {
-    let h = 2166136261;
-    for (const ch of word) h = Math.imul(h ^ ch.codePointAt(0)!, 16777619) >>> 0;
-    v[h % DIMS]! += 1;
-  }
-  const norm = Math.hypot(...v);
-  return norm === 0 ? v : v.map((x) => x / norm);
-}
+/** The one deterministic offline embedder (`@cohost/llm`'s `HashEmbedder`), the same one hash mode uses (MEM-BACKEND-004). */
+const embedder = new HashEmbedder();
+const hashEmbed = (text: string): Promise<number[]> => embedder.embed(text);
 
 interface Row extends Memory { embedding: number[] }
 
@@ -41,13 +32,13 @@ export class InMemoryStore implements MemoryBackend {
   async init(): Promise<void> {}
 
   async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
-    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: hashEmbed(`${who}: ${text}`) });
+    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: await hashEmbed(`${who}: ${text}`) });
   }
 
   // @spec MEM-BACKEND-004, MEM-RECALL-002, MEM-RECALL-004, MEM-RECALL-005
   async recall(query: string, k = this.cfg.recall_k): Promise<Memory[]> {
     if (k <= 0) return [];
-    const q = hashEmbed(query);
+    const q = await hashEmbed(query);
     const cutoff = this.clock() - 2 * 60_000;
     return this.rows
       .filter((r) => r.ts.getTime() < cutoff)
@@ -162,7 +153,7 @@ export class InMemoryStore implements MemoryBackend {
       id: this.nextNoteId++, userKey, layer: n.layer ?? "recent", category: n.category, text,
       hint: withDefaultHint(n.category, n.hint) ?? null,
       strength: clamp01(n.strength ?? 1), strengthAt: now, mentions: n.mentions ?? 1, dirty: n.dirty ?? true,
-      version: 1, createdAt: now, lastSurfacedAt: null, embedding: n.embedding ?? hashEmbed(text),
+      version: 1, createdAt: now, lastSurfacedAt: null, embedding: n.embedding ?? await hashEmbed(text),
     };
     this.notes.set(row.id, row);
     return { ...row };
@@ -269,7 +260,7 @@ export class InMemoryStore implements MemoryBackend {
         const { set } = op;
         if (set.layer) n.layer = set.layer;
         if (set.category) n.category = set.category;
-        if (set.text !== undefined) { n.text = set.text.trim(); n.embedding = hashEmbed(n.text); }
+        if (set.text !== undefined) { n.text = set.text.trim(); n.embedding = await hashEmbed(n.text); }
         if (set.hint !== undefined) n.hint = set.hint;
         n.hint = withDefaultHint(n.category, n.hint) ?? null;
         if (set.strength !== undefined) n.strength = clamp01(set.strength);

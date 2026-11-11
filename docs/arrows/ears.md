@@ -37,7 +37,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (40 specs: 40 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
+- docs/intent/ears/ears-specs.md (39 specs: 39 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### Tests
@@ -45,14 +45,20 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/ears/test/ears.test.ts (hearing, STT client)
 - services/ears/test/health.test.ts (plans, token reading, the shared-token refusal, heartbeat)
 - services/ears/test/inject.test.ts
-- services/ears/test/session.test.ts (config target, inject-only loop, self-muted join, bot filtering, subscription, shutdown)
+- services/ears/test/session.test.ts (config target, inject-only loop, self-muted join, bot filtering, subscription)
+- services/ears/test/service.test.ts (`runService` start-up: plans, idle, Discord loader, shutdown order, stub engine)
+- services/ears/test/discord.test.ts (a faked shared voice session: join options, failed join, disconnect, per-speaker capture)
+- services/ears/test/filter.test.ts, transcript.test.ts (Unicode word filter, `ears.drop_phrases`, config keys)
+- services/ears/test/stub.test.ts, loop.test.ts, inject-limits.test.ts (stub engine, non-blocking inject loop, byte cap and kinds)
 - packages/shared/test/join.test.ts (the `createJoiner` retry loop behind SHARED-DVS-004)
 - packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`)
 
-34 `@spec` annotations in the ears tests, citing 31 distinct spec IDs. The 7 specs with no test of their own are discord.js and plan glue: EARS-SESS-001 (login failure exits), EARS-SESS-003 (not a voice channel), SHARED-DVS-003 (disconnect and rejoin), EARS-HEAR-002 and 003 (decode), SHARED-INJ-003 (wrong kind) and EARS-INJ-009 (inject in the idle plans).
+57 `@spec` annotations in the ears tests; every `[x]` ears spec has a test of its own except EARS-SESS-003 (not a voice channel) and EARS-HEAR-002 and 003 (decode), which run inside discord.js and prism-media; SHARED-DVS-003 (disconnect and rejoin) is covered in `packages/shared`.
 
 ### Code
 - services/ears/src/index.ts
+- services/ears/src/service.ts
+- services/ears/src/transcript.ts
 - services/ears/src/discord.ts
 - services/ears/src/session.ts
 - services/ears/src/hearing.ts

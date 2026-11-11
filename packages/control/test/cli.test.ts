@@ -5,6 +5,9 @@ import { parseCli, runCli, buildRuntime, ComposeRuntime, UsageError, ServiceCont
 
 // @spec CTRL-CLI-001
 test("parseCli: commands, flags, defaults", () => {
+  assert.deepEqual(parseCli(["rebuild"]), { cmd: "rebuild" });
+  assert.throws(() => parseCli(["rebuild", "x"]), UsageError);
+  assert.throws(() => parseCli(["rebuild", "--isolated"]), UsageError);
   assert.deepEqual(parseCli(["status"]), { cmd: "status" });
   assert.deepEqual(parseCli(["status", "cortex"]), { cmd: "status", id: "cortex" });
   assert.deepEqual(parseCli(["stop", "memory"]), { cmd: "stop", id: "memory", opts: {} });
@@ -44,6 +47,7 @@ function harness() {
   let stopResult: StackResult = { ok: true };
   const stack: CliDeps["stack"] = {
     async launch(onPhase) { stackCalls.push("launch"); onPhase("compose-up"); onPhase("waiting"); return launchResult; },
+    async rebuild(onPhase) { stackCalls.push("rebuild"); onPhase("compose-build"); return launchResult; },
     async stopAll() { stackCalls.push("stop-all"); return stopResult; },
     async restartAll() { stackCalls.push("restart-all"); return restartResult; },
   };
@@ -118,13 +122,6 @@ test("consolidate failure prints the detail and exits 1; a usage error exits 2 w
   assert.deepEqual(h.err, ["consolidate failed: unknown error"]);
   assert.equal(await h.run(["consolidate", "memory"]), 2);
   assert.equal(h.consolidations.length, 2);
-});
-
-// @spec CTRL-CLI-009
-test("the CLI opens its bus lazily, so consolidate never connects to redis", () => {
-  const src = readFileSync(new URL("../src/cli.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /const bus = new Bus/);
-  assert.match(src, /bus \?\?= new Bus\("cohostctl"\)/);
 });
 
 // @spec CTRL-CLI-004

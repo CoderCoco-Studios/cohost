@@ -53,6 +53,10 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+    devDependencies:
+      yaml:
+        specifier: ^2.6.0
+        version: 2.9.1
 
   packages/llm:
     dependencies:

@@ -35,7 +35,7 @@ export interface SubscribeOptions<T extends EventType> {
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
 /** The slice of an ioredis connection that `Bus` uses; `BusOptions.connect` may return a fake. */
-export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "disconnect">;
+export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "disconnect">;
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
@@ -148,6 +148,13 @@ export class Bus {
       }
     }
     conn.disconnect();
+  }
+
+  /** The Redis server's clock in ms (`TIME`): one reference for every observer, whatever its own clock says. */
+  // @spec CTRL-CHECK-004
+  async serverTime(): Promise<number> {
+    const [secs, micros] = await this.pub.time();
+    return Number(secs) * 1000 + Math.floor(Number(micros) / 1000);
   }
 
   /** Newest N heartbeats, oldest first. */

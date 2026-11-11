@@ -10,6 +10,8 @@ export interface ContainerStatus {
   status: string;
   health?: string;
   exitCode?: number;
+  /** Compose's restart count for the container, when `statusWithRestarts` read it. */
+  restartCount?: number;
 }
 
 export interface StackStatus {
@@ -17,7 +19,7 @@ export interface StackStatus {
   services: ContainerStatus[];
 }
 
-export type StackActionKind = "launch" | "stop" | "restart" | "consolidate";
+export type StackActionKind = "launch" | "rebuild" | "stop" | "restart" | "consolidate";
 export type StackState = "docker-unavailable" | "stopping" | "starting" | "down" | "up" | "degraded";
 
 export interface RestartOutcome { id: string; ok: boolean; detail?: string }
@@ -52,6 +54,9 @@ export const READY_TIMEOUT_MS = 180_000;
 export const POLL_INTERVAL_MS = 2000;
 export const STOP_TIMEOUT_MS = 300_000;
 export const STATUS_TIMEOUT_MS = 10_000;
+
+const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
+const INSPECT_FORMAT = '{{index .Config.Labels "com.docker.compose.service"}} {{.RestartCount}}';
 
 const isLongRunning = (c: ContainerStatus): boolean => !ONE_SHOTS.includes(c.service);
 const isReady = (c: ContainerStatus): boolean => c.status === "running" && (c.health === undefined || c.health === "healthy");
@@ -148,12 +153,46 @@ export class StackController {
     return { ...res, detail: [res.detail, ...warn].filter(Boolean).join("; ") };
   }
 
+  /**
+   * `status` plus each container's Compose restart count, read with two more fixed commands (`ps -q`, then one
+   * `docker inspect` over the ids it printed). A failure of either leaves the status as `status` returned it.
+   */
+  // @spec CTRL-STACK-014
+  async statusWithRestarts(): Promise<StackStatus> {
+    const st = await this.status();
+    if (!st.docker.ok) return st;
+    const ids = await this.compose(["ps", "--all", "-q"], STATUS_TIMEOUT_MS);
+    if (!ids.ok) return st;
+    const list = ids.stdout.split("\n").map((l) => l.trim()).filter((l) => CONTAINER_ID.test(l));
+    if (list.length === 0) return st;
+    const docker = resolveDockerBin(this.env, this.o.onPath);
+    if (!docker.ok) return st;
+    let stdout: string;
+    try {
+      ({ stdout } = await this.exec(docker.bin, ["inspect", "--format", INSPECT_FORMAT, ...list], { env: this.env, cwd: this.cwd, timeoutMs: STATUS_TIMEOUT_MS }));
+    } catch {
+      return st;
+    }
+    const counts = new Map<string, number>();
+    for (const line of stdout.split("\n")) {
+      const m = /^(\S+) (\d+)$/.exec(line.trim());
+      if (m) counts.set(m[1]!, Math.max(counts.get(m[1]!) ?? 0, Number(m[2])));
+    }
+    return { ...st, services: st.services.map((c) => (counts.has(c.service) ? { ...c, restartCount: counts.get(c.service)! } : c)) };
+  }
+
+  /** `launch` that also rebuilds the images (`up -d --build`), so changed code reaches the containers. */
+  // @spec CTRL-STACK-013
+  rebuild(): Promise<StackResult> { return this.bringUp(true); }
+
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005
-  async launch(): Promise<StackResult> {
-    this.phase("launch", "compose-up");
-    const up = await this.compose(["up", "-d", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
+  launch(): Promise<StackResult> { return this.bringUp(false); }
+
+  private async bringUp(build: boolean): Promise<StackResult> {
+    this.phase(build ? "rebuild" : "launch", build ? "compose-build" : "compose-up");
+    const up = await this.compose(["up", "-d", ...(build ? ["--build"] : []), "--remove-orphans"], LAUNCH_TIMEOUT_MS);
     if (!up.ok) return { ok: false, detail: up.detail };
-    this.phase("launch", "waiting");
+    this.phase(build ? "rebuild" : "launch", "waiting");
     const started = this.now();
     for (;;) {
       const st = await this.status();

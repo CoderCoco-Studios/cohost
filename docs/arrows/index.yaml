@@ -194,7 +194,7 @@ arrows:
     parent: null
     sampled: 2026-11-10
     audited: 2026-11-11
-    audited_sha: 4e517cc
+    audited_sha: 263ec19
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md

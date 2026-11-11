@@ -104,7 +104,7 @@ export const ConfigSchema = z.object({
    * salience (when to speak + reflexes), affect (mood), memory (hippocampus),
    * cortex (what to say). Each has its own knobs; they share working_memory_events.
    */
-  // @spec CFG-SCH-005
+  // @spec CFG-SCH-005, CFG-SCH-024
   brain: z.object({
     /** Recent events each region keeps as its working memory / prompt window. */
     working_memory_events: z.number().int().positive().default(24),
@@ -148,6 +148,16 @@ export const ConfigSchema = z.object({
       baseline_valence: z.number().min(-1).max(1).default(0.15),
       /** Resting arousal (0..1). */
       baseline_arousal: z.number().min(0).max(1).default(0.1),
+      /** An unchanged mood is published again this often so late joiners get a value. */
+      republish_ms: z.number().int().positive().default(15000),
+      /** With an llm/http appraiser, a line shorter than this (trimmed, no mention) is appraised by the rules inline. */
+      short_line_chars: z.number().int().nonnegative().default(4),
+      /** Mood nudges per event, as magnitudes 0..1: a sub's chat line, a changed screen, the co-host's own emotional line. */
+      nudge_sub_valence: z.number().min(0).max(1).default(0.05),
+      nudge_sub_arousal: z.number().min(0).max(1).default(0.05),
+      nudge_screen_arousal: z.number().min(0).max(1).default(0.08),
+      nudge_said_valence: z.number().min(0).max(1).default(0.08),
+      nudge_said_arousal: z.number().min(0).max(1).default(0.05),
       /** How a line of chat/speech moves the mood: rules | llm | http. */
       module: ModuleSchema,
     }).default({}),

@@ -58,6 +58,7 @@ Prefix `CFG`. Verified against the code at git `49ba935` (audit pass 2026-11-01)
 - [ ] **CFG-SCH-021**: The `vision` section shall define `vision.engine` (`ollama` | `stub`, blank to `ollama`), selecting the eyes describer (eyes EYES-STUB-*).
 - [ ] **CFG-SCH-022**: The `ears` section shall define `ears.stt_engine` (`speaches` | `stub`, blank to `speaches`), selecting the ears transcriber (ears EARS-STUB-*).
 - [ ] **CFG-SCH-023**: The optional `mouth` section shall define `mouth.outputs.dryrun` with `enabled` (default false) and `fail_every` (integer 0 or more, default 0), defaulted when absent like the rest of the section (CFG-SCH-020; mouth MOUTH-DRY-*).
+- [x] **CFG-SCH-024**: The `brain.affect` section shall define `republish_ms` (positive integer, default 15000), `short_line_chars` (non-negative integer, default 4), `nudge_sub_valence` (0 to 1, default 0.05), `nudge_sub_arousal` (0 to 1, default 0.05), `nudge_screen_arousal` (0 to 1, default 0.08), `nudge_said_valence` (0 to 1, default 0.08) and `nudge_said_arousal` (0 to 1, default 0.05), rejecting a value outside its range; affect reads them for AFF-PUB-002, AFF-PUB-003, AFF-HOOK-007, AFF-IN-004, AFF-IN-005 and AFF-IN-006. <!-- test: packages/config/test/config.test.ts -->
 
 ## Backend selection and isolation presets
 

@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 50 implemented, 0 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); gap closure (C5) 2026-11-11: 55 specs: 55 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. 
 
 ## Listening and speaking split (designed, not built)
 
@@ -41,10 +41,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (50 specs: 50 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (55 specs: 55 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
+- services/voice/test/queue.test.ts (synthesis queue, stop, id reuse, HTTP methods and query strings, rejected WAV)
 - services/voice/test/boot.test.ts (boot wiring: subscription options, readiness, fatal paths, shutdown)
 - services/voice/test/clips.test.ts (fallback clips: fingerprint, generation, atomic swap, retry, per-phrase skips, cleanup, routes)
 - services/voice/test/mouth-sync.test.ts (voice's manifest and routes accepted by mouth's real clip sync)
@@ -52,7 +53,6 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/voice/test/wav.test.ts
 - services/voice/test/health.test.ts
 
-38 `@spec` annotations in tests, citing all 34 spec IDs.
 
 ### Code
 - services/voice/src/index.ts

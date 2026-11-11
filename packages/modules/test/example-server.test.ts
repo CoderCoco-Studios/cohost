@@ -10,6 +10,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import net from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -75,17 +76,16 @@ test("every recorded reference-server response passes the real salience, affect 
 
 const hasPython = spawnSync("python3", ["--version"]).status === 0;
 
-// A throwaway Python entry point: serve server.py's Handler on an OS-assigned port and print the port.
+// A throwaway Python entry point: serve server.py's server on an OS-assigned port and print the port.
 const launcher = [
   "import sys; sys.path.insert(0, sys.argv[1])",
   "import server",
-  "from http.server import HTTPServer",
-  "s = HTTPServer(('127.0.0.1', 0), server.Handler)",
+  "s = server.make_server('127.0.0.1', 0)",
   "print(s.server_address[1], flush=True)",
   "s.serve_forever()",
 ].join("\n");
 
-// @spec HOOK-EX-001, HOOK-EX-002, HOOK-EX-003, HOOK-EX-004, HOOK-EX-005, HOOK-EX-006
+// @spec HOOK-EX-001, HOOK-EX-002, HOOK-EX-003, HOOK-EX-004, HOOK-EX-005, HOOK-EX-006, HOOK-EX-007, HOOK-EX-008, HOOK-EX-009, HOOK-EX-010
 test("server.py answers the fixture requests with the fixture responses, 404s unknown paths, and tolerates an empty body", { skip: !hasPython && "python3 not installed" }, async () => {
   const child = spawn("python3", ["-I", "-B", "-c", launcher, exampleDir], { stdio: ["ignore", "pipe", "inherit"] });
   after(() => { child.kill(); });
@@ -126,4 +126,26 @@ test("server.py answers the fixture requests with the fixture responses, 404s un
   assert.equal(zero.status, 500);
   assert.match(zero.body, /text/);
   assert.doesNotMatch(zero.body, /bytes|integer/);
+
+  // HOOK-EX-007: a client that has sent headers but not its body does not hold up other requests.
+  const stalled = net.connect(port, "127.0.0.1");
+  after(() => { stalled.destroy(); });
+  stalled.write("POST /critic HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{");
+  await new Promise((r) => setTimeout(r, 50));
+  const other = await fetch(`${base}/affect`, { method: "POST", body: JSON.stringify(fixtures.affect[0]!.request), signal: AbortSignal.timeout(3000) });
+  assert.equal(other.status, 200);
+
+  // HOOK-EX-008: routing uses the path alone; a query string or fragment does not make a known module unknown.
+  const withQuery = await post("/critic?debug=1", JSON.stringify(fixtures.critic[2]!.request));
+  assert.equal(withQuery.status, 200);
+  assert.deepEqual(await withQuery.json(), fixtures.critic[2]!.response);
+  assert.equal((await post("/critic/x", "{}")).status, 404);
+
+  // HOOK-EX-009: the link check ignores case.
+  const shout = await post("/critic", JSON.stringify({ text: "Watch HTTPS://EXAMPLE.COM now", emotion: "neutral", reason: "idle", transcript: "" }));
+  assert.deepEqual(await shout.json(), { ok: false, note: "no links on air" });
+
+  // HOOK-EX-010: a rewritten line keeps the request's emotion, as the contract in the file header shows.
+  const fixed = await post("/critic", JSON.stringify({ text: "Nice one. Did you see that?", emotion: "smug", reason: "idle", transcript: "" }));
+  assert.deepEqual(await fixed.json(), { ok: true, text: "Nice one.", emotion: "smug" });
 });

@@ -1,19 +1,14 @@
 import { Client, GatewayIntentBits, type VoiceBasedChannel } from "discord.js";
 import {
-  createAudioPlayer, createAudioResource, EndBehaviorType, entersState, joinVoiceChannel,
-  AudioPlayerStatus, StreamType, VoiceConnectionStatus, type VoiceConnection,
+  EndBehaviorType, entersState, joinVoiceChannel, VoiceConnectionStatus, type VoiceConnection,
 } from "@discordjs/voice";
 import prism from "prism-media";
-import { Readable } from "node:stream";
 import type { Bus, Heartbeat, BusEvent } from "@cohost/bus";
-import { join as joinPath } from "node:path";
-import { dataDir, env, urls, type Config, type Logger } from "@cohost/config";
+import type { Config, Logger } from "@cohost/config";
 import { createJoiner } from "@cohost/shared";
 import { Hearing, sttTranscriber } from "./hearing.js";
-import { ClipCache, ClipMirror, FallbackLine, startClipSync } from "./fallback.js";
-import { Playback, httpAudio } from "./playback.js";
 import type { EarsHealth } from "./health.js";
-import { DISCORD_LOOP_TYPES, createEarsHandler, subscribeEars, voiceTarget } from "./session.js";
+import { EARS_JOIN_OPTIONS, EARS_LOOP_TYPES, createEarsHandler, isHumanSpeaker, subscribeEars, voiceTarget } from "./session.js";
 
 export interface DiscordDeps {
   cfg: Config;
@@ -21,8 +16,9 @@ export interface DiscordDeps {
   log: Logger;
   health: EarsHealth;
   heartbeat: Heartbeat;
+  /** The listening bot's token (`EARS_DISCORD_TOKEN`); never `DISCORD_TOKEN`. */
+  token: string;
   setVoiceReady(ready: boolean): void;
-  isVoiceReady(): boolean;
   /** Handles `inject.request` (shares the `ears` consumer group, so it must be subscribed here). */
   onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
 }
@@ -33,24 +29,16 @@ export interface DiscordSession {
 }
 
 /**
- * The Discord session: handles the bus first, then joins the voice channel (retrying until it
- * succeeds), transcribes speakers and plays `voice.utterance`. Only loaded for `ears.source:
- * discord` with a token. The caller owns shutdown: it calls `stop()` and then stops the bus.
+ * The Discord session: handles the bus first, then logs in as ears' own bot, joins the voice channel self-muted
+ * (retrying until it succeeds) and transcribes each human speaker. Only loaded for `ears.source: discord` with a usable
+ * token. The caller owns shutdown: it calls `stop()` and then stops the bus.
  */
 export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   const { cfg, bus, log, health } = deps;
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers] });
-  const player = createAudioPlayer();
   let connection: VoiceConnection | undefined;
   const listening = new Set<string>();
   const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: health.track(sttTranscriber(cfg.ears)) });
-  // The spoken fallback line: ears' own clip cache (memory + disk mirror), refreshed from voice's HTTP routes.
-  const clipCache = new ClipCache();
-  const fallback = new FallbackLine({ cache: clipCache, minIntervalMs: cfg.ears.fallback.min_interval_ms });
-  const playback = new Playback({
-    bus, log, fallback, fetchAudio: httpAudio,
-    play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
-  });
 
   // @spec EARS-HEAR-001, EARS-HEAR-002, EARS-HEAR-003
   function listenTo(userId: string, channel: VoiceBasedChannel) {
@@ -60,19 +48,16 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
     const member = channel.guild.members.cache.get(userId);
     const name = member?.displayName ?? userId;
 
-    const start = () => {
-      const opus = receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: cfg.ears.silence_ms } });
-      const decoder = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
-      const chunks: Buffer[] = [];
-      opus.pipe(decoder);
-      decoder.on("data", (c: Buffer) => chunks.push(c));
-      decoder.on("end", () => {
-        listening.delete(userId);
-        void hearing.heard(Buffer.concat(chunks), name, userId);
-      });
-      decoder.on("error", (err: Error) => { listening.delete(userId); log.warn({ err: err.message }, "decoder error"); });
-    };
-    start();
+    const opus = receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: cfg.ears.silence_ms } });
+    const decoder = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
+    const chunks: Buffer[] = [];
+    opus.pipe(decoder);
+    decoder.on("data", (c: Buffer) => chunks.push(c));
+    decoder.on("end", () => {
+      listening.delete(userId);
+      void hearing.heard(Buffer.concat(chunks), name, userId);
+    });
+    decoder.on("error", (err: Error) => { listening.delete(userId); log.warn({ err: err.message }, "decoder error"); });
   }
 
   let stopped = false;
@@ -89,8 +74,7 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
       channelId: channel.id,
       guildId: guild.id,
       adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: false,
-      selfMute: false,
+      ...EARS_JOIN_OPTIONS,
     });
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
@@ -99,15 +83,16 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
       connection = undefined;
       throw err;
     }
-    connection.subscribe(player);
     deps.setVoiceReady(true);
     deps.heartbeat.ready();
     log.info({ channel: channel.name }, "joined voice");
 
     // @spec EARS-HEAR-001
     connection.receiver.speaking.on("start", (userId) => {
-      if (userId === client.user?.id) return;
-      listenTo(userId, channel);
+      if (listening.has(userId)) return;
+      void isHumanSpeaker(userId, client.users).then((human) => {
+        if (human) listenTo(userId, channel);
+      });
     });
     // @spec EARS-SESS-005
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
@@ -136,38 +121,22 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
     },
   });
 
-  // ---- playback
-  // @spec EARS-PLAY-004
-  player.on(AudioPlayerStatus.Idle, () => void playback.onIdle());
-  // @spec EARS-PLAY-007
-  player.on("error", (err) => log.warn({ err: err.message }, "player error"));
-
   // Bus handling starts before the join and does not depend on it (injection works whether or not the join succeeds).
-  // One loop for the whole `ears` group: two loops with different type filters would drop each other's events.
-  // @spec EARS-PLAY-001, EARS-INJ-007, EARS-START-006, EARS-FALL-010
-  await subscribeEars(
-    bus,
-    DISCORD_LOOP_TYPES,
-    createEarsHandler({ onInject: deps.onInject, playback, isVoiceReady: deps.isVoiceReady, log, claims: fallback }),
-    log,
-  );
-
-  // @spec EARS-FALL-012, EARS-FALL-014, EARS-FALL-018
-  const clipSync = startClipSync({ baseUrl: urls.voice(), cache: clipCache, mirror: new ClipMirror(joinPath(dataDir(), "ears", "fallback-clips")), log });
+  // @spec EARS-INJ-007, EARS-START-003, EARS-START-006
+  await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: deps.onInject }), log);
 
   client.once("ready", () => {
     log.info({ user: client.user?.tag }, "discord ready");
     void joiner.run().catch((err) => log.error({ err }, "voice join loop failed"));
   });
 
-  // @spec EARS-SESS-001
-  client.login(env("DISCORD_TOKEN")).catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
+  // @spec EARS-SESS-001, EARS-SESS-009
+  client.login(deps.token).catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
 
   return {
     // @spec EARS-SESS-008
     async stop() {
       stopped = true;
-      clipSync.stop();
       connection?.destroy();
       await client.destroy();
     },

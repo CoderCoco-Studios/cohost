@@ -1,7 +1,7 @@
 import { tracked, type HeartbeatSpec } from "@cohost/bus";
 
 export type EarsSource = "discord" | "off";
-/** `off`: source=off. `no-token`: discord without DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
+/** `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
 export type EarsPlan = "off" | "no-token" | "discord";
 
 // @spec EARS-START-004
@@ -9,6 +9,36 @@ export type EarsPlan = "off" | "no-token" | "discord";
 export function earsPlan(source: EarsSource, hasToken: boolean): EarsPlan {
   if (source === "off") return "off";
   return hasToken ? "discord" : "no-token";
+}
+
+/** What the environment says about ears' bot token. */
+export interface EarsToken {
+  /** `EARS_DISCORD_TOKEN`, or the empty string. */
+  token: string;
+  /** True only when the token is non-empty and differs from `DISCORD_TOKEN`. */
+  hasToken: boolean;
+  /** True when the token equals the non-empty `DISCORD_TOKEN` (the mouth bot's). */
+  conflict: boolean;
+}
+
+// @spec EARS-START-004, EARS-START-007, EARS-SESS-009
+/**
+ * ears' bot token is `EARS_DISCORD_TOKEN` and nothing else: `DISCORD_TOKEN` (mouth's bot) is read only to refuse a token
+ * that equals it, because one bot in two processes would make both voice connections displace each other.
+ */
+export function readEarsToken(e: Record<string, string | undefined> = process.env): EarsToken {
+  const token = e.EARS_DISCORD_TOKEN ?? "";
+  const mouthToken = e.DISCORD_TOKEN ?? "";
+  const conflict = token !== "" && token === mouthToken;
+  return { token, hasToken: token !== "" && !conflict, conflict };
+}
+
+// @spec EARS-START-002, EARS-START-007
+/** The heartbeat detail and log text for the `no-token` plan. */
+export function idleDetail(t: EarsToken): string {
+  return t.conflict
+    ? "EARS_DISCORD_TOKEN is the mouth bot's DISCORD_TOKEN; ears needs a bot of its own"
+    : "EARS_DISCORD_TOKEN is not set";
 }
 
 // @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003

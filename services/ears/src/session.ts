@@ -9,44 +9,46 @@ export function voiceTarget(cfg: Config["ears"]["discord"]): { guildId: string; 
   return { guildId: cfg.guild_id, channelId: cfg.voice_channel_id };
 }
 
-export type EarsEventType = "voice.utterance" | "voice.playing" | "inject.request";
+export type EarsEventType = "inject.request";
 
-/** The types the one `ears` loop reads in the `discord` plan (EARS-PLAY-001, EARS-FALL-010). */
-export const DISCORD_LOOP_TYPES = ["voice.utterance", "voice.playing", "inject.request"] as const satisfies readonly EarsEventType[];
+/** The one type the `ears` loop reads, in every plan; never `voice.*` or `control` (EARS-START-003, EARS-HEAR-009). */
+// @spec EARS-START-003, EARS-HEAR-009
+export const EARS_LOOP_TYPES = ["inject.request"] as const satisfies readonly EarsEventType[];
+
+/** How ears joins the voice channel: self-muted (it never speaks), not self-deafened (it listens). */
+// @spec EARS-SESS-002, EARS-SESS-004
+export const EARS_JOIN_OPTIONS = { selfMute: true, selfDeaf: false } as const;
 
 export interface EarsHandlerDeps {
   onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
-  playback: { enqueue(id: string, url: string): Promise<void> };
-  isVoiceReady: () => boolean;
-  log: Pick<Logger, "debug">;
-  /** Which utterance ids a real sink other than `discord` claimed (the fallback line's memory, EARS-FALL-010). */
-  claims?: { seen(id: string): void; claim(id: string, sink: string): void };
+}
+
+/** The one `ears` loop's handler: `inject.request` goes to the injection handler; anything else is ignored. */
+// @spec EARS-INJ-007, EARS-START-003
+export function createEarsHandler({ onInject }: EarsHandlerDeps) {
+  return async (ev: BusEvent): Promise<void> => {
+    if (ev.type === "inject.request") return onInject(ev as BusEvent<"inject.request">);
+  };
+}
+
+/** The slice of discord.js' `client.users` that `isHumanSpeaker` needs. */
+export interface UserLookup {
+  cache: { get(id: string): { bot: boolean } | undefined };
+  fetch(id: string): Promise<{ bot: boolean }>;
 }
 
 /**
- * The one `ears` loop's handler: `inject.request` always goes to the injection handler; a
- * `voice.utterance` is queued for playback only while the voice connection is ready, and is
- * skipped otherwise (no `voice.failed`, no fallback) so voice's virtual sink covers it. A `voice.playing` only
- * feeds the fallback line's claim memory.
+ * Whether a speaker may be captured: only a non-bot account. The `bot` flag comes from the cache, else from a fetch
+ * before capture; a speaker whose account cannot be fetched is not captured.
  */
-// @spec EARS-INJ-007, EARS-FALL-010, EARS-FALL-013
-export function createEarsHandler({ onInject, playback, isVoiceReady, log, claims }: EarsHandlerDeps) {
-  return async (ev: BusEvent): Promise<void> => {
-    if (ev.type === "inject.request") return onInject(ev as BusEvent<"inject.request">);
-    if (ev.type === "voice.playing") {
-      const d = ev.data as BusEvent<"voice.playing">["data"];
-      claims?.claim(d.id, d.sink);
-      return;
-    }
-    if (ev.type !== "voice.utterance") return;
-    const d = ev.data as BusEvent<"voice.utterance">["data"];
-    claims?.seen(d.id);
-    if (!isVoiceReady()) {
-      log.debug({ id: d.id }, "voice not connected: utterance skipped");
-      return;
-    }
-    void playback.enqueue(d.id, d.audioUrl);
-  };
+// @spec EARS-HEAR-001
+export async function isHumanSpeaker(userId: string, users: UserLookup): Promise<boolean> {
+  try {
+    const user = users.cache.get(userId) ?? (await users.fetch(userId));
+    return !user.bot;
+  } catch {
+    return false;
+  }
 }
 
 /** The slice of `Bus` the ears subscription needs. */

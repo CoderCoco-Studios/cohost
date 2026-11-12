@@ -2,7 +2,7 @@ import type { Logger } from "@cohost/config";
 import {
   ONE_SHOTS, StackController, stackState,
   type ContainerStatus, type RuntimeResult, type ServiceController, type StackActionKind, type StackControllerOptions,
-  type StackResult, type StackState, type StackStatus,
+  type LockResult, type StackResult, type StackState, type StackStatus,
 } from "@cohost/control";
 
 export type BusState = "connected" | "unreachable";
@@ -46,6 +46,8 @@ export interface StackServiceOptions {
   bus: () => BusState;
   now?: () => number;
   probeMs?: number;
+  /** The control plane's lifecycle lock, shared with cohostctl (DASH-STACK-009); absent means no cross-process lock. */
+  lock?: { tryAcquire(action: string): LockResult };
 }
 
 export const PROBE_MS = 5000;
@@ -59,11 +61,13 @@ const message = (err: unknown): string => (err instanceof Error ? err.message : 
  * It validates and starts stack actions (the routes only map its answer to HTTP), and tells listeners (the
  * `/ws` feed) whenever the snapshot changes.
  */
-// @spec DASH-STACK-001, DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005, DASH-STACK-006, DASH-STACK-007
+// @spec DASH-STACK-001, DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005, DASH-STACK-006, DASH-STACK-007, DASH-STACK-009
 export class StackService {
   private ops?: StackOps;
   private status?: StackStatus;
   private slot?: string;
+  private unlock?: () => void;
+  private foreign?: string;
   private action: StackSnapshot["action"] = null;
   private last: StackSnapshot["last"] = null;
   private waiting = false;
@@ -163,17 +167,31 @@ export class StackService {
 
   /** Claims the one action slot for a per-service lifecycle request; the returned function frees it. Undefined when busy. */
   // @spec DASH-STACK-003
+  // @spec DASH-STACK-003, DASH-STACK-009
   tryAcquire(kind: string): (() => void) | undefined {
     if (this.slot) return undefined;
+    const held = this.takeLock(kind);
+    if (!held.ok) return undefined;
     this.slot = kind;
-    return () => { if (this.slot === kind) this.slot = undefined; };
+    return () => { if (this.slot === kind) { this.slot = undefined; held.release(); } };
   }
 
   /** What holds the slot now (a stack action's kind or `service-<action>`), if anything. */
   busyKind(): string | undefined { return this.slot; }
 
+  /** The `detail` of a refused claim: the in-process holder, else the other process holding the lock. */
+  busyDetail(): string { return this.slot ? `busy: ${this.slot}` : this.foreign ?? "busy"; }
+
+  /** Takes the cross-process lock; a refusal is remembered as the `busy` detail. */
+  private takeLock(kind: string): LockResult {
+    this.foreign = undefined;
+    const r = this.o.lock?.tryAcquire(kind) ?? { ok: true as const, release: () => {} };
+    if (!r.ok) this.foreign = r.detail;
+    return r;
+  }
+
   /** Validates a stack action (DASH-STACK-003 to 005) and, when allowed, starts it in the background. */
-  // @spec DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005
+  // @spec DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005, DASH-STACK-009
   request(kind: StackActionKind, restarter: Pick<ServiceController, "restart">): StackRequest {
     if (this.slot) return { ok: false, status: 409, detail: `busy: ${this.slot}` };
     const st = this.status;
@@ -182,7 +200,10 @@ export class StackService {
     if (kind === "consolidate" && st.services.some((c) => c.service === "memory" && c.status === "running")) {
       return { ok: false, status: 409, detail: "the memory service is running and consolidates on its own; stop the stack (or memory) first" };
     }
+    const held = this.takeLock(kind);
+    if (!held.ok) return { ok: false, status: 409, detail: held.detail };
     this.slot = kind;
+    this.unlock = held.release;
     this.action = { kind, phase: "starting", startedAt: this.now() };
     this.o.log.info({ kind }, `stack ${kind} started`);
     this.refresh();
@@ -207,6 +228,8 @@ export class StackService {
       .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}) }));
     this.last = { kind, ok: res.ok, ...(res.detail ? { detail: res.detail } : {}), ...(notReady.length ? { services: notReady } : {}), finishedAt: this.now() };
     this.slot = undefined;
+    this.unlock?.();
+    this.unlock = undefined;
     this.action = null;
     this.waiting = false;
     if (res.ok) this.o.log.info({ kind, detail: res.detail }, `stack ${kind} finished`);

@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import { Bus } from "@cohost/bus";
 import { onShutdown, startHeartbeat } from "@cohost/shared";
-import { HealthTracker, withContainerRestarts, type ServiceHealth } from "@cohost/control";
+import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { createLogger, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
@@ -54,7 +54,7 @@ if (!viewersToken) log.warn("VIEWERS_TOKEN is not set: the Viewers page is locke
 const viewers = new ViewersClient(bus);
 
 // @spec DASH-STACK-007
-const stack = new StackService({ log, bus: () => feed.busState() });
+const stack = new StackService({ log, bus: () => feed.busState(), lock: new LifecycleLock({ by: "dashboard" }) });
 stack.attach(new ObservedStackController({ onPhase: (kind, phase) => stack.hooks.onPhase(kind, phase) }, stack.hooks));
 
 // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.

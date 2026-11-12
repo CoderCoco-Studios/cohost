@@ -39,7 +39,7 @@ llm:
 vision:
   enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
   model: "${VISION_MODEL:-qwen2.5vl:3b}"
-  engine: ollama               # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
+  engine: "${VISION_ENGINE:-ollama}"  # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
   interval_ms: 8000            # how often to look at the game
   temperature: 0.2             # vision model sampling temperature (0 to 2)
   num_predict: 60              # longest description the model may write, in tokens
@@ -242,6 +242,9 @@ mouth:
       guild_id: "${DISCORD_GUILD_ID}"          # by default the guild and channel ears listens in; point them elsewhere if you like
       voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
       gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
+    dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
+      enabled: ${MOUTH_DRYRUN_ENABLED:-false}
+      fail_every: 0            # 0 = never fail; N = fail every Nth line, to exercise the fallback path
   fallback:
     min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
 

@@ -269,7 +269,7 @@ function loadShipped(env: Record<string, string> = {}) {
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
@@ -292,6 +292,9 @@ test("isolation presets: unset env equals the live defaults", () => {
   assert.equal(cfg.chat.fake.interval_ms, 8000);
   assert.equal(cfg.ears.source, "discord");
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
+  assert.equal(cfg.vision.engine, "ollama");
+  assert.equal(cfg.ears.stt_engine, "speaches");
+  assert.equal(cfg.mouth.outputs.dryrun.enabled, false);
 });
 
 // @spec CFG-ISO-004
@@ -299,6 +302,7 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   const cfg = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
     VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off", MOUTH_DISCORD_ENABLED: "false",
+    VISION_ENGINE: "stub", EARS_STT_ENGINE: "stub", MOUTH_DRYRUN_ENABLED: "true",
   });
   assert.equal(cfg.llm.provider, "mock");
   assert.equal(cfg.brain.memory.store, "memory");
@@ -308,6 +312,9 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   assert.equal(cfg.vision.enabled, true);
   assert.equal(cfg.ears.source, "off");
   assert.equal(cfg.mouth.outputs.discord.enabled, false);
+  assert.equal(cfg.vision.engine, "stub");
+  assert.equal(cfg.ears.stt_engine, "stub");
+  assert.equal(cfg.mouth.outputs.dryrun.enabled, true);
 });
 
 // @spec CFG-ISO-001, CFG-ISO-003

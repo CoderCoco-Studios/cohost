@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Emotion } from "@cohost/config";
+import type { Emotion, ExpressionMap } from "@cohost/config";
 import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
-import { runAvatar, type AvatarBoot, type AvatarBus } from "../src/boot.js";
+import { expressionsFor, runAvatar, type AvatarBus, type AvatarEnv } from "../src/boot.js";
 import type { AvatarDriver, AvatarParams, DriverContext } from "../src/types.js";
 
 type SubscribeCall = { opts: Record<string, unknown>; handler: (ev: never) => unknown };
@@ -46,24 +46,28 @@ class FakeDriver implements AvatarDriver {
   trigger(g: string) { this.gestures.push(g); }
 }
 
-function boot(over: { bus?: BootBus; driver?: FakeDriver } = {}) {
+function boot(over: { bus?: BootBus; driver?: FakeDriver; env?: Partial<AvatarEnv> } = {}) {
   const bus = over.bus ?? new BootBus();
   const driver = over.driver ?? new FakeDriver();
   const rec = recordingLog();
   const exits: number[] = [];
   const shutdown: (() => void | Promise<void>)[] = [];
-  const b: AvatarBoot = {
+  const b: AvatarEnv = {
     log: rec.log,
-    setup: () => ({
-      cfg: testConfig({ avatar: { driver: "vmc", fps: 100, idle_motion: false } }),
-      bus, driver,
-      expressions: { happy: "Smile" }, gestures: { wave: "WAVE" }, stateDir: "/state",
-    }),
+    loadConfig: () => testConfig({ avatar: { driver: "vmc", fps: 100, idle_motion: false } }),
+    createBus: () => bus as unknown as AvatarBus,
+    createDriver: () => driver,
+    loadExpressions: () => blocks({ vmc: { happy: "Smile", gestures: { wave: "WAVE" } } }),
+    stateDir: "/state",
     onShutdown: (fn) => { shutdown.push(fn); },
     exit: (code) => { exits.push(code); },
+    ...over.env,
   };
   return { b, bus, driver, rec, exits, shutdown, close: async () => { for (const fn of shutdown) await fn(); } };
 }
+
+/** The zod type of an expression block cannot express `gestures` next to string-valued emotions, so literals are cast once, here. */
+const blocks = (x: unknown) => x as ExpressionMap;
 
 const states = (bus: FakeBus) => bus.health.map((h) => h.state);
 
@@ -138,9 +142,9 @@ test("the engine runs and the subscription starts while the first driver connect
 });
 
 // @spec AVATAR-BUS-007
-test("a setup failure (config load, driver creation, expressions load) logs fatal and exits 1", async () => {
+test("a startup failure after the config loads (driver creation, expressions load) logs fatal and exits 1", async () => {
   const t = boot();
-  t.b.setup = () => { throw new Error("config invalid"); };
+  t.b.createDriver = () => { throw new Error("driver invalid"); };
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.ok(t.rec.msgs("error").includes("fatal"));
@@ -181,4 +185,43 @@ test("shutdown stops the engine, disconnects the driver and stops the bus", asyn
   const frames = t.driver.params.length;
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(t.driver.params.length, frames); // the engine loop is stopped
+});
+
+// @spec AVATAR-BUS-007
+test("a configuration that does not load logs the loader's message and exits 1, with no bus and no heartbeat", async () => {
+  const t = boot({ env: { loadConfig: () => { throw new Error("bad config"); } } });
+  await runAvatar(t.b);
+  assert.deepEqual(t.exits, [1]);
+  assert.deepEqual(t.rec.msgs("error"), ["bad config"]);
+  assert.equal(t.bus.health.length, 0);
+});
+
+// @spec AVATAR-BUS-007
+test("a failed expressions load logs fatal and exits 1", async () => {
+  const t = boot({ env: { loadExpressions: () => { throw new Error("expressions.yaml invalid"); } } });
+  await runAvatar(t.b);
+  assert.deepEqual(t.exits, [1]);
+  assert.ok(t.rec.msgs("error").includes("fatal"));
+  assert.equal(t.bus.subscribed.length, 0);
+});
+
+// @spec AVATAR-DRV-005
+test("expressionsFor takes the block named after the active driver and splits its gestures", () => {
+  const all = blocks({
+    vmc: { happy: "Joy", sad: "Sorrow", gestures: { wave: "WAVE" } },
+    "vtube-studio": { happy: "Smile", gestures: {} },
+  });
+  assert.deepEqual(expressionsFor(all, "vmc"), { expressions: { happy: "Joy", sad: "Sorrow" }, gestures: { wave: "WAVE" } });
+  assert.deepEqual(expressionsFor(all, "vtube-studio"), { expressions: { happy: "Smile" }, gestures: {} });
+  assert.deepEqual(expressionsFor(all, "null"), { expressions: {}, gestures: {} }, "no block: empty maps");
+});
+
+// @spec AVATAR-DRV-005
+test("the service hands the driver the active driver's block of expressions.yaml", async () => {
+  const t = boot();
+  void runAvatar(t.b);
+  await waitFor(() => t.driver.ctx !== undefined, "driver connect started");
+  assert.deepEqual(t.driver.ctx!.expressions, { happy: "Smile" });
+  assert.deepEqual(t.driver.ctx!.gestures, { wave: "WAVE" });
+  await t.close();
 });

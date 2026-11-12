@@ -1,4 +1,4 @@
-import { EMOTIONS, type Config } from "@cohost/config";
+import { EMOTIONS, type Config, type Emotion } from "@cohost/config";
 import type { BusEvent } from "@cohost/bus";
 import type { ChatMessage } from "@cohost/llm";
 import type { Context } from "@cohost/working-memory";
@@ -107,18 +107,17 @@ function describeFocus(d: Focus, name: string): string {
 const TAG = /^\s*\[(\w+)\]\s*(?:\[gesture:([\w-]+)\]\s*)?/i;
 
 // @spec CTX-PROMPT-005
-export function parseReply(raw: string): { text: string; emotion: string; gesture?: string } {
+export function parseReply(raw: string): { text: string; emotion: Emotion; gesture?: string } {
   let text = (raw.trim().split("\n")[0] ?? "").replace(/^[\w ]{1,20}:\s*(?=\[)/, "");
-  let emotion = "neutral";
+  let tagged = "neutral";
   let gesture: string | undefined;
   const m = TAG.exec(text);
   if (m) {
-    emotion = (m[1] ?? "neutral").toLowerCase();
+    tagged = (m[1] ?? "neutral").toLowerCase();
     gesture = m[2]?.toLowerCase();
     text = text.slice(m[0].length);
   }
   // Strip anything the model shouldn't have emitted: stray tags, quotes, "Name:" prefixes.
   text = text.replace(/\[[^\]]*\]/g, "").replace(/^["'“”]+|["'“”]+$/g, "").replace(/^\w+:\s*/, "").trim();
-  if (!(EMOTIONS as readonly string[]).includes(emotion)) emotion = "neutral";
-  return { text, emotion, gesture };
+  return { text, emotion: EMOTIONS.find((e) => e === tagged) ?? "neutral", gesture };
 }

@@ -12,7 +12,6 @@
  * lowers the bar to speak), `brain.status` / `brain.say` (don't pile on while
  * the cortex is thinking or the voice is still playing).
  */
-import { createLogger } from "@cohost/config";
-import { main } from "./main.js";
+import { runSalience } from "./main.js";
 
-void main(createLogger("salience")); // main() handles its own failures: logs `fatal` and exits 1
+void runSalience(); // the shared bootstrap handles failures: it logs and exits 1

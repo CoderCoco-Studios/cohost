@@ -107,6 +107,13 @@ brain:
     half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
     baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
     baseline_arousal: 0.1      # resting energy, 0..1
+    republish_ms: 15000        # an unchanged mood is sent again this often
+    short_line_chars: 4        # llm/http only: shorter lines (no mention) are judged by the built-in rules
+    nudge_sub_valence: 0.05    # nudge per event (0..1): a subscriber's chat line ...
+    nudge_sub_arousal: 0.05
+    nudge_screen_arousal: 0.08 # ... a changed screen ...
+    nudge_said_valence: 0.08   # ... the co-host's own happy (+) or sad/angry (-) line ...
+    nudge_said_arousal: 0.05   # ... and any line she says
     # Hook: how a line of chat/voice moves the mood. rules (built in) | llm (ask a model) | http (POST to your own model).
     # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     module:

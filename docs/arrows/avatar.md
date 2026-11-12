@@ -6,6 +6,8 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 58 specs: 58 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed.
 
+Gap-closure chunk C10 (2026-11-11): AVATAR-ENG-002 (re-prepare moves to newest), AVATAR-ENG-017 (neutral clears), AVATAR-VTS-016 (handshake timeout), monotonic clocks, AVATAR-DEV-001 (tests type-checked); runService; untested specs covered. 61 of 61 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

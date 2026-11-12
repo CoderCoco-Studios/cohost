@@ -6,6 +6,8 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 37 specs: 37 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (cascade-audit PR for brain-front).
 
+Gap-closure chunk C10 (2026-11-11): CFG-SCH-028 keys for republish, nudge sizes and short-line cutoff; AFF-HEALTH-003 (mock mode), AFF-HEALTH-004; runService; test gaps covered. 39 of 39 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

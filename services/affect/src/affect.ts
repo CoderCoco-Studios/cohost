@@ -1,7 +1,7 @@
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
-import { controlFor } from "@cohost/shared";
+import { controlFor, type Heartbeat } from "@cohost/shared";
 import { Mood } from "./mood.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "./appraise.js";
 
@@ -12,17 +12,21 @@ export interface AffectDeps {
   log: Logger;
   /** Monotonic millisecond clock for mood decay and the publish heartbeat (default `performance.now`); tests inject a fake one. */
   now?: () => number;
+  /** The service's heartbeat: a pause shows as its standing detail `paused` (AFF-HEALTH-004). */
+  heartbeat?: Pick<Heartbeat, "setDetail">;
 }
 
+/** Most appraisal jobs kept waiting for an llm/http appraiser: a resource bound, not behaviour (AFF-HOOK-006). */
+const MAX_QUEUED = 8;
+
 /**
+ * The affect region's state and event handling; `main.ts` wires it to the bus and the publish timer.
+ *
  * rules appraise inline. An llm/http appraiser can take its whole timeout per line, so those run
  * on a small worker queue instead of the bus handler: the consumer never stalls behind a slow
  * module, and when appraisal falls behind the oldest waiting lines are dropped (mood is a
  * smoothed signal; a missed line costs less than a stale one).
  */
-const MAX_QUEUED = 8;
-
-/** The affect region's state and event handling; index.ts wires it to the bus and the publish timer. */
 export class Affect {
   readonly mood: Mood;
   private readonly now: () => number;
@@ -41,17 +45,18 @@ export class Affect {
         this.queue.length = 0;
         this.mood.reset("reset"); // @spec AFF-IN-007
       },
-    }, { log: d.log });
+    }, { log: d.log, heartbeat: d.heartbeat });
   }
 
   onEvent(ev: BusEvent): void {
     const mood = this.mood;
+    const k = this.d.cfg.brain.affect;
     if (this.control.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
     switch (ev.type) {
       case "chat.message": { // @spec AFF-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
         this.appraise("chat", d.user, d.text, d.mentionsCohost);
-        if (d.isSub) mood.nudge(0.05, 0.05, `sub: ${d.user}`); // @spec AFF-IN-004
+        if (d.isSub) mood.nudge(k.nudge_sub_valence, k.nudge_sub_arousal, `sub: ${d.user}`); // @spec AFF-IN-004
         break;
       }
       case "speech.heard": { // @spec AFF-IN-003
@@ -61,14 +66,14 @@ export class Affect {
       }
       case "vision.summary": {
         const d = ev.data as BusEvent<"vision.summary">["data"];
-        if (d.changed) mood.nudge(0, 0.08, "screen changed"); // @spec AFF-IN-005
+        if (d.changed) mood.nudge(0, k.nudge_screen_arousal, "screen changed"); // @spec AFF-IN-005
         break;
       }
       case "brain.say": { // @spec AFF-IN-006
         // Saying something emotional reinforces the mood a little (and talking is arousing).
         const d = ev.data as BusEvent<"brain.say">["data"];
-        const dv = ["happy", "laugh", "smug"].includes(d.emotion) ? 0.08 : ["sad", "angry"].includes(d.emotion) ? -0.08 : 0;
-        mood.nudge(dv, 0.05, `said: ${d.emotion}`);
+        const dv = ["happy", "laugh", "smug"].includes(d.emotion) ? k.nudge_said_valence : ["sad", "angry"].includes(d.emotion) ? -k.nudge_said_valence : 0;
+        mood.nudge(dv, k.nudge_said_arousal, `said: ${d.emotion}`);
         break;
       }
       // @spec AFF-CTRL-001, AFF-CTRL-002, AFF-CTRL-004, AFF-HOOK-008
@@ -88,8 +93,8 @@ export class Affect {
     mood.tick();
     const input: AppraiseInput = { source, who, text, mention, valence: mood.valence, arousal: mood.arousal };
     const cause = `${source === "speech" ? "voice" : "chat"}: ${who}`;
-    // Rules are instant, and a line too short to carry tone isn't worth a model call.
-    if (this.d.appraiser.kind === "rules" || (!mention && text.trim().length < 4)) { // @spec AFF-HOOK-004, AFF-HOOK-007
+    // Rules are instant, and a line too short to carry tone (brain.affect.short_line_chars) isn't worth a model call.
+    if (this.d.appraiser.kind === "rules" || (!mention && text.trim().length < this.d.cfg.brain.affect.short_line_chars)) { // @spec AFF-HOOK-004, AFF-HOOK-007
       mood.applyAppraisal(appraiseRules(input), cause);
       return;
     }
@@ -117,8 +122,8 @@ export class Affect {
     const s = this.mood.state();
     const key = `${s.mood}:${s.valence.toFixed(2)}:${s.arousal.toFixed(2)}`;
     const now = this.now();
-    // Only publish when it moved, plus a heartbeat so late joiners get a value.
-    if (key === this.lastPublished && now - this.lastPublishedAt < 15_000) return;
+    // Only publish when it moved, plus a republish every brain.affect.republish_ms so late joiners get a value.
+    if (key === this.lastPublished && now - this.lastPublishedAt < this.d.cfg.brain.affect.republish_ms) return;
     this.lastPublished = key;
     this.lastPublishedAt = now;
     this.d.bus.publish("affect.state", s).catch((err) => { // @spec AFF-PUB-004

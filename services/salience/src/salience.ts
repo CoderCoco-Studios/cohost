@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
-import { controlFor } from "@cohost/shared";
-import { Context, propagatedFlags } from "@cohost/working-memory";
+import { controlFor, type Heartbeat } from "@cohost/shared";
+import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-memory";
 import { Scheduler } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
@@ -18,6 +18,8 @@ export interface SalienceDeps {
    * so a stepped wall clock must not stretch or cut them. Tests inject a fake one.
    */
   now?: () => number;
+  /** The service's heartbeat: a pause shows as its standing detail `paused` (SAL-HEALTH-004). */
+  heartbeat?: Pick<Heartbeat, "setDetail">;
 }
 
 /** The salience region's state and event handling; index.ts wires it to the bus and the tick timer. */
@@ -33,14 +35,21 @@ export class Salience {
   private readonly now: () => number;
   private cortexSince: number;
   private deciding = false;
+  /** What the window took in since the last `pause`, to be marked seen on `resume` (SAL-CTRL-007); never longer than the window. */
+  private pausedArrivals: ContextEvent[] = [];
 
   constructor(private d: SalienceDeps) {
     this.ctx = new Context(d.cfg.brain.working_memory_events);
     this.now = d.now ?? (() => performance.now());
     this.cortexSince = this.now();
     this.control = controlFor("salience", {
-      forget_context: () => this.ctx.clear(), // @spec SAL-CTRL-005
-    }, { log: d.log });
+      pause: () => { this.pausedArrivals = []; },
+      resume: () => { // @spec SAL-CTRL-007
+        this.ctx.markSeenEvents(this.pausedArrivals);
+        this.pausedArrivals = [];
+      },
+      forget_context: () => { this.ctx.clear(); this.pausedArrivals = []; }, // @spec SAL-CTRL-005
+    }, { log: d.log, heartbeat: d.heartbeat });
     this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
   }
@@ -49,22 +58,22 @@ export class Salience {
     switch (ev.type) {
       case "chat.message": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
-        this.ctx.push(ev);
+        const entry = this.take(ev);
         this.scheduler.noteActivity();
-        await this.reflex("chat", d.text);
+        await this.reflex("chat", d.text, entry);
         break;
       }
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
-        this.ctx.push(ev);
+        const entry = this.take(ev);
         this.scheduler.noteActivity();
-        await this.reflex("speech", d.text);
+        await this.reflex("speech", d.text, entry);
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
         const d = ev.data as BusEvent<"vision.summary">["data"];
-        this.ctx.push(ev);
-        if (d.changed) await this.reflex("vision", d.text); // @spec SAL-REFLEX-002
+        const entry = this.take(ev);
+        if (d.changed) await this.reflex("vision", d.text, entry); // @spec SAL-REFLEX-002
         break;
       }
       case "brain.say": // @spec SAL-BUSY-003
@@ -89,13 +98,23 @@ export class Salience {
     }
   }
 
-  /** Fast path. Fires immediately, bypassing the scheduler and the LLM. */
-  private async reflex(sense: Sense, text: string) { // @spec SAL-REFLEX-001
+  /** Push a perception into the window; while paused, remember the entry so `resume` can mark it seen (SAL-CTRL-007). */
+  private take(ev: BusEvent): ContextEvent | undefined {
+    const entry = this.ctx.push(ev);
+    if (entry && this.control.paused) {
+      this.pausedArrivals.push(entry);
+      const over = this.pausedArrivals.length - this.d.cfg.brain.working_memory_events;
+      if (over > 0) this.pausedArrivals.splice(0, over);
+    }
+    return entry;
+  }
+
+  /** Fast path. Fires immediately, bypassing the scheduler and the LLM. `trigger` is the entry the event just became. */
+  private async reflex(sense: Sense, text: string, trigger: ContextEvent | undefined) { // @spec SAL-REFLEX-001, SAL-REFLEX-008
     if (this.control.paused || this.control.muted || this.reflexes.size === 0) return; // @spec SAL-REFLEX-006
     // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
     // Gate before test(), which spends the rule's own cooldown on a hit.
     if (this.busy() || this.scheduler.cooling()) return; // @spec SAL-REFLEX-005
-    const trigger = this.ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
     const hit = this.reflexes.test(sense, text, this.now());
     if (!hit) return;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");

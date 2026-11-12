@@ -739,3 +739,24 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
   assert.equal("fallback" in cfg.ears, false);
 });
+
+// @spec CFG-SCH-028
+test("brain.affect republish, short-line cutoff and nudge sizes default to the former constants and validate", () => {
+  const a = ConfigSchema.parse(baseCfg()).brain.affect;
+  assert.deepEqual(
+    [a.republish_ms, a.short_line_chars, a.nudge_sub_valence, a.nudge_sub_arousal, a.nudge_screen_arousal, a.nudge_said_valence, a.nudge_said_arousal],
+    [15000, 4, 0.05, 0.05, 0.08, 0.08, 0.05],
+  );
+  const withAffect = (affect: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { affect } }).success;
+  assert.equal(withAffect({ republish_ms: 0 }), false);
+  assert.equal(withAffect({ republish_ms: 1.5 }), false);
+  assert.equal(withAffect({ republish_ms: 30000 }), true);
+  assert.equal(withAffect({ short_line_chars: -1 }), false);
+  assert.equal(withAffect({ short_line_chars: 0 }), true);
+  for (const key of ["nudge_sub_valence", "nudge_sub_arousal", "nudge_screen_arousal", "nudge_said_valence", "nudge_said_arousal"]) {
+    assert.equal(withAffect({ [key]: 1.01 }), false, `${key} above 1`);
+    assert.equal(withAffect({ [key]: -0.01 }), false, `${key} below 0`);
+    assert.equal(withAffect({ [key]: 0 }), true, `${key} at 0`);
+    assert.equal(withAffect({ [key]: 1 }), true, `${key} at 1`);
+  }
+});

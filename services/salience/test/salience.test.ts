@@ -13,10 +13,11 @@ const salienceCfg = (over: Record<string, unknown> = {}) =>
 const rulesScorer = (replyOnMention = true) =>
   new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), {} as never, { rules: (i) => scoreRules(i, replyOnMention) }, log);
 
+let seq = 0;
 const chat = (text: string, extra: Record<string, unknown> = {}) =>
-  ({ id: "1", type: "chat.message", ts: Date.now(), source: "t", data: { platform: "twitch", user: "u", text, isMod: false, isSub: false, mentionsCohost: false, ...extra } }) as never;
+  ({ id: `c${seq++}`, type: "chat.message", ts: Date.now(), source: "t", data: { platform: "twitch", user: "u", text, isMod: false, isSub: false, mentionsCohost: false, ...extra } }) as never;
 const vision = (text: string, changed = true) =>
-  ({ id: "1", type: "vision.summary", ts: Date.now(), source: "t", data: { text, changed } }) as never;
+  ({ id: `v${seq++}`, type: "vision.summary", ts: Date.now(), source: "t", data: { text, changed } }) as never;
 
 test("scoreRules: the documented weights", () => { // @spec SAL-SCORE-001, SAL-SCORE-002
   const input: ScoreInput = {
@@ -38,7 +39,7 @@ test("scoreRules: the documented weights", () => { // @spec SAL-SCORE-001, SAL-S
 test("toScoreInput flattens the working memory in order and skips self lines", () => { // @spec SAL-SCORE-003
   const ctx = new Context(10);
   ctx.push(chat("a"));
-  ctx.pushSelf("me", "neutral");
+  ctx.pushSelf("me", "neutral", 1000);
   ctx.push(vision("v"));
   const input = toScoreInput(ctx.unseen().filter((e) => e.kind !== "self"), 0.5);
   assert.equal(input.arousal, 0.5);

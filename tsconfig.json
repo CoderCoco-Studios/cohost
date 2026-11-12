@@ -17,6 +17,7 @@
     { "path": "services/voice" },
     { "path": "services/voice/tsconfig.test.json" },
     { "path": "services/avatar" },
+    { "path": "services/avatar/test" },
     { "path": "services/eyes" },
     { "path": "services/ears" },
     { "path": "services/mouth" },

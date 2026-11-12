@@ -20,7 +20,7 @@ test("every manifest entry carries the runtime fields", () => {
   }
 });
 
-// @spec CTRL-MANIFEST-005
+// @spec CTRL-MANIFEST-005, MOD-MAN-006
 test("the tracker's known list and the CLI's list are the manifest's application units; no separate list exists", () => {
   const apps = SERVICE_MANIFEST.filter((s) => s.pnpmFilter).map((s) => s.id);
   assert.deepEqual(appServiceIds(), apps);

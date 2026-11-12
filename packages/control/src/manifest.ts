@@ -97,6 +97,10 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
     config: ["mouth"], uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
   }),
+  // The Discord connector (CONN-*): a connector, not a bus subscriber, so it owns no consumer group and takes no test input.
+  { ...svc("discord", {
+    isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"],
+  }), composeName: "connector-discord", pnpmFilter: "@cohost/connector-discord" },
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),
   compose("ollama"),

@@ -372,6 +372,19 @@ export const ConfigSchema = z.object({
       min_interval_ms: z.number().int().nonnegative().default(20000),
     }).default({}),
   }).default({}),
+  /**
+   * External connectors that attach to the bus (service `connector-discord`, unit `discord`). The whole section is optional so a
+   * config.yaml written before connectors existed still loads. The Discord connector reads the guild and voice channel.
+   */
+  // @spec CFG-SCH-032
+  connections: z.object({
+    discord: z.object({
+      /** false = the connector idles with heartbeat mode `off` and holds no Discord client. */
+      enabled: z.boolean().default(true),
+      guild_id: z.string().default(""),
+      voice_channel_id: z.string().default(""),
+    }).default({}),
+  }).default({}),
   dashboard: z.object({
     port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT environment variable is unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
   }),

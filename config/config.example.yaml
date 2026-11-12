@@ -263,6 +263,14 @@ ears:
   #  - "Thanks for watching!"
   #  - "you"
 
+# External connectors that attach to the bus. The Discord connector (service `connector-discord`, DISCORD_TOKEN) holds the
+# bot's one voice connection: it publishes what people say as source `discord` and plays sink `discord` into the channel.
+connections:
+  discord:
+    enabled: ${CONNECTIONS_DISCORD_ENABLED:-true}  # false = the connector idles and holds no connection (isolated runs)
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:
   outputs:

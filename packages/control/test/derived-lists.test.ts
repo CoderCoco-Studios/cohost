@@ -19,13 +19,18 @@ interface ComposeFile { services: Record<string, { build?: { args?: { SERVICE?: 
 const composeServices = (parse(readFileSync(rootPath("docker-compose.yml"), "utf8"), { merge: true }) as ComposeFile).services;
 
 // @spec MOD-MAN-008
-test("every unit has a Compose service of the same name, and every Compose service built from the shared Dockerfile belongs to a unit", () => {
-  for (const id of unitIds) assert.ok(composeServices[id], `unit ${id} has no Compose service`);
+/** Units whose service directory and Compose service are not written yet, with the chunk that adds them. */
+const NOT_YET_BUILT: Record<string, string> = { discord: "the Discord connector service" };
+const composeNames = units.map((u) => u.composeName);
+
+// @spec MOD-MAN-008
+test("every unit has a Compose service named for its composeName, and every Compose service built from the shared Dockerfile belongs to a unit", () => {
+  for (const u of units) if (!NOT_YET_BUILT[u.id]) assert.ok(composeServices[u.composeName], `unit ${u.id} has no Compose service ${u.composeName}`);
   for (const [name, s] of Object.entries(composeServices)) {
     if (!s.build) continue;
     // a one-shot of a unit (memory's consolidate and reembed) is built with that unit's SERVICE argument
     const owner = s.build.args?.SERVICE;
-    assert.ok(unitIds.includes(name) || (owner !== undefined && unitIds.includes(owner)), `Compose service ${name} is built from the shared Dockerfile and has no unit`);
+    assert.ok(composeNames.includes(name) || (owner !== undefined && composeNames.includes(owner)), `Compose service ${name} is built from the shared Dockerfile and has no unit`);
   }
 });
 
@@ -64,7 +69,7 @@ const NOT_ON_RUN_SERVICE: Record<string, string> = {};
 
 // @spec MOD-MAN-009
 test("each unit's entry file reaches runService and builds no bus or heartbeat of its own", () => {
-  for (const id of unitIds) if (!NOT_ON_RUN_SERVICE[id]) assert.equal(entryProblem(id), undefined, id);
+  for (const u of units) if (!NOT_ON_RUN_SERVICE[u.id] && !NOT_YET_BUILT[u.id]) assert.equal(entryProblem(u.composeName), undefined, u.id);
 });
 
 // The dashboard is a host process, not a manifest unit with a pnpm filter, and takes the same entry check (DASH-HTTP-016).

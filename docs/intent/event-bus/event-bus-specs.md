@@ -18,8 +18,8 @@ Design: [event-bus-design.md](event-bus-design.md). Prefix `BUS`. Verified again
 
 Live connector audio and connector registrations sit in Redis beside the event stream, never on it. The keys and streams use the prefix of BUS-STREAM-008 (default `cohost`); their layout and frame format are owned by [connections](../connections/connections-specs.md) (CONN-REG-*, CONN-AUD-*).
 
-- [ ] **BUS-AUD-001**: The system shall carry live connector audio only on the capped Redis streams `<prefix>:audio.in.<source>` and `<prefix>:audio.out.<sink>`, never on `<prefix>:events` or `<prefix>:health`, and `Bus.publish` shall neither write nor trim them.
-- [ ] **BUS-AUD-002**: The system shall hold each connector registration only in the expiring Redis key `<prefix>:connector:<id>`, which is not a stream entry, so a registration never counts against a stream's `MAXLEN`, is never delivered to a consumer group and never appears in a `/ws` backfill.
+- [x] **BUS-AUD-001**: The system shall carry live connector audio only on the capped Redis streams `<prefix>:audio.in.<source>` and `<prefix>:audio.out.<sink>`, never on `<prefix>:events` or `<prefix>:health`, and `Bus.publish` shall neither write nor trim them. <!-- test: packages/bus/test/connector.test.ts -->
+- [x] **BUS-AUD-002**: The system shall hold each connector registration only in the expiring Redis key `<prefix>:connector:<id>`, which is not a stream entry, so a registration never counts against a stream's `MAXLEN`, is never delivered to a consumer group and never appears in a `/ws` backfill. <!-- test: packages/bus/test/connector.test.ts -->
 
 ## Upload store
 

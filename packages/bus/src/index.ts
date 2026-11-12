@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { urls, type Logger } from "@cohost/config";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
 
+import {
+  AUDIO_MAXLEN, AUDIO_STREAM_TTL_MS, LEASE_INTERVALS, encodeFrame, decodeFrame, parseRegistration,
+  type AudioDirection, type DecodedFrame, type Frame, type Registration,
+} from "./connector.js";
+
 export * from "./events.js";
+export * from "./connector.js";
+export * from "./registrar.js";
 
 export const STREAM = "cohost:events";
 const MAXLEN = 20_000;
@@ -35,7 +42,7 @@ export interface SubscribeOptions<T extends EventType> {
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
 /** The slice of an ioredis connection that `Bus` uses; `BusOptions.connect` may return a fake. */
-export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "set" | "getdelBuffer" | "disconnect">;
+export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "set" | "getdelBuffer" | "get" | "del" | "mget" | "scan" | "pexpire" | "xreadBuffer" | "disconnect">;
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
@@ -84,6 +91,8 @@ export class Bus {
   private readonly healthStream: string;
   /** Prefix of the upload keys, `<prefix>:upload:<id>` (BUS-UPL-001). */
   private readonly uploadPrefix: string;
+  /** Prefix of the connector keys and audio streams (BUS-AUD-001, BUS-AUD-002). */
+  private readonly prefix: string;
 
   constructor(private source: string, private log?: Logger, private url = urls.redis(), options: BusOptions = {}) {
     this.connect = options.connect ?? ((u, o) => new Redis(u, o));
@@ -93,6 +102,7 @@ export class Bus {
     this.stream = `${prefix}:events`;
     this.healthStream = `${prefix}:health`;
     this.uploadPrefix = `${prefix}:upload:`;
+    this.prefix = prefix;
     this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3, ...(options.failFast ? { retryStrategy: () => null } : {}) });
     // @spec BUS-STREAM-009
     if (options.failFast) (this.pub as { on?: (ev: string, fn: () => void) => unknown }).on?.("error", () => {});
@@ -129,6 +139,90 @@ export class Bus {
   // @spec BUS-UPL-002
   async takeUpload(id: string): Promise<Buffer | null> {
     return await this.pub.getdelBuffer(this.uploadPrefix + id);
+  }
+
+  /** The key of a connector's registration, `<prefix>:connector:<id>` (BUS-AUD-002). */
+  connectorKey(id: string): string { return `${this.prefix}:connector:${id}`; }
+
+  /** The stream of a source (`in`) or sink (`out`), `<prefix>:audio.<dir>.<tag>` (BUS-AUD-001). */
+  audioStream(dir: AudioDirection, tag: string): string { return `${this.prefix}:audio.${dir}.${tag}`; }
+
+  /** Write a registration under its key with a lease of three intervals; not a stream entry. */
+  // @spec CONN-REG-001, CONN-REG-002, BUS-AUD-002
+  async writeRegistration(reg: Registration): Promise<void> {
+    await this.pub.set(this.connectorKey(reg.id), JSON.stringify(reg), "PX", reg.intervalMs * LEASE_INTERVALS);
+  }
+
+  /** The live registration of `id`, or `undefined`. */
+  async readRegistration(id: string): Promise<Registration | undefined> {
+    return parseRegistration(await this.pub.get(this.connectorKey(id)));
+  }
+
+  /** Delete the registration of `id` (orderly shutdown). */
+  // @spec CONN-REG-003
+  async deleteRegistration(id: string): Promise<void> {
+    await this.pub.del(this.connectorKey(id));
+  }
+
+  /** Every live registration: `SCAN <prefix>:connector:*` then one read. Invalid values are skipped. */
+  // @spec CONN-REG-006, BUS-AUD-002
+  async listConnectors(): Promise<Registration[]> {
+    const keys: string[] = [];
+    let cursor = "0";
+    do {
+      const [next, batch] = (await this.pub.scan(cursor, "MATCH", `${this.prefix}:connector:*`, "COUNT", 100)) as [string, string[]];
+      keys.push(...batch);
+      cursor = next;
+    } while (cursor !== "0");
+    if (keys.length === 0) return [];
+    const uniq = [...new Set(keys)];
+    const values = (await this.pub.mget(...uniq)) as (string | null)[];
+    return values.flatMap((v) => { const r = parseRegistration(v); return r ? [r] : []; });
+  }
+
+  /**
+   * Append one audio frame to `audio.<dir>.<tag>` with `MAXLEN ~` of the direction's cap and refresh the stream's 60 s
+   * expiry. Never waits for a consumer (CONN-BP-001); `publish` neither writes nor trims these streams (BUS-AUD-001).
+   */
+  // @spec CONN-AUD-001, CONN-BP-001, BUS-AUD-001
+  async publishFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+    const key = this.audioStream(dir, tag);
+    const id = (await this.pub.xadd(key, "MAXLEN", "~", AUDIO_MAXLEN[dir], "*", ...encodeFrame(frame))) as string;
+    await this.pub.pexpire(key, AUDIO_STREAM_TTL_MS);
+    return id;
+  }
+
+  /**
+   * Live read of `audio.<dir>.<tag>`: plain blocking `XREAD` from the end (`$`), no group, no acknowledgement, no replay
+   * (CONN-BP-002). Resolves when `stop()` is called. A handler throw is logged and the loop continues.
+   */
+  // @spec CONN-BP-002, BUS-AUD-001
+  async tailAudio(dir: AudioDirection, tag: string, handler: (decoded: DecodedFrame, id: string) => void, onRead?: ReadOutcome): Promise<void> {
+    const conn = this.connect(this.url, { maxRetriesPerRequest: null });
+    this.subs.push(conn);
+    const key = this.audioStream(dir, tag);
+    let last = "$";
+    let failures = 0;
+    while (!this.stopped) {
+      let res: [Buffer | string, [Buffer | string, (Buffer | string)[]][]][] | null;
+      try {
+        res = (await conn.xreadBuffer("COUNT", 100, "BLOCK", 5000, "STREAMS", key, last)) as typeof res;
+      } catch (err) {
+        if (this.stopped) break;
+        report(onRead, err ?? new Error("read failed"));
+        await this.backoff(err, ++failures, "tailAudio read failed");
+        continue;
+      }
+      failures = 0;
+      report(onRead);
+      if (!res) continue;
+      for (const [rawId, fields] of res[0]?.[1] ?? []) {
+        const id = rawId.toString();
+        last = id;
+        this.guard(() => handler(decodeFrame(fields), id), `audio.${dir}.${tag}`, id);
+      }
+    }
+    conn.disconnect();
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */

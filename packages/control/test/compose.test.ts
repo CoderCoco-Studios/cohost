@@ -39,7 +39,7 @@ test("every x-ts-service application service runs the heartbeat healthcheck on t
 test("the isolation preset variables of the manifest all pass through as ${VAR:-}", () => {
   const preset = [...new Set(SERVICE_MANIFEST.flatMap((s) => Object.keys(s.isolatedEnv)))].sort();
   assert.deepEqual(preset, [
-    "AVATAR_DRIVER", "CHAT_SOURCE", "EARS_SOURCE", "EARS_STT_ENGINE", "LLM_PROVIDER", "MEMORY_EMBEDDER", "MEMORY_STORE",
+    "AVATAR_DRIVER", "CHAT_SOURCE", "CONNECTIONS_DISCORD_ENABLED", "EARS_SOURCE", "EARS_STT_ENGINE", "LLM_PROVIDER", "MEMORY_EMBEDDER", "MEMORY_STORE",
     "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "VISION_ENABLED", "VISION_ENGINE", "VOICE_ENGINE",
   ]);
   const env = base["x-ts-service"]!.environment!;

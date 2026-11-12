@@ -44,7 +44,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (65 specs: 64 `[x]`, 1 `[ ]`, 0 `[D]` (CTRL-STACK-015, Docker-gated); CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
+- docs/intent/control-plane/control-plane-specs.md (66 specs: 66 `[x]`, 0 `[ ]`, 0 `[D]`; CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
 
 ### Tests (`@spec` lines)
 - packages/control/test/cli.test.ts (16)
@@ -90,9 +90,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
 | Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-005 | 5 | 0 | 0 | 5 |
-| Runtime adapters | CTRL-RUNTIME-001 to CTRL-RUNTIME-011 | 7 | 0 | 0 | 7 |
+| Runtime adapters | CTRL-RUNTIME-001 to CTRL-RUNTIME-012 | 8 | 0 | 0 | 8 |
 | Controller guards and orchestration | CTRL-GUARD-001 to CTRL-GUARD-008 | 7 | 0 | 0 | 7 |
-| Stack controller | CTRL-STACK-001 to CTRL-STACK-015 | 14 | 0 | 1 | 15 |
+| Stack controller | CTRL-STACK-001 to CTRL-STACK-015 | 15 | 0 | 0 | 15 |
 | Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 0 | 0 | 3 |
 | Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-010 | 10 | 0 | 0 | 10 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 0 | 0 | 4 |

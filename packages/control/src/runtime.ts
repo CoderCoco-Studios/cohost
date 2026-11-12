@@ -1,6 +1,6 @@
 import { execFile as nodeExecFile } from "node:child_process";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
-import { resolveDockerBin } from "./docker.js";
+import { resolveDockerBin, dockerEnv } from "./docker.js";
 
 export interface RuntimeResult {
   ok: boolean;
@@ -75,7 +75,7 @@ export class ComposeRuntime implements Runtime {
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: { ...base, ...extraEnv }, cwd: this.o.cwd });
+      await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: dockerEnv(docker.bin, base, extraEnv), cwd: this.o.cwd });
       return { ok: true };
     } catch (err) {
       return { ok: false, detail: execDetail(err) };

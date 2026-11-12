@@ -87,8 +87,12 @@ more is needed. Without it, set `COHOST_DOCKER_BIN=docker.exe` in `.env`; the da
 run every Compose command through it. For an NVIDIA GPU add the overlay to `COMPOSE_FILE` in `.env`
 (`install.sh` does this when it sees a GPU): `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`. A
 Windows `docker.exe` splits that list on `;` rather than `:` unless you also set
-`COMPOSE_PATH_SEPARATOR=:` in `.env` (this combination was not run where this was written; the step-by-step
-check is the [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop)). The GPU comes from the
+`COMPOSE_PATH_SEPARATOR=:` in `.env` (not run with the GPU overlay; the mock stack was run through `docker.exe` on 2026-11-11, see
+[docs/plans/live-verification.md](docs/plans/live-verification.md); the step-by-step check is the
+[single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop)). Isolated starts also reach `docker.exe`:
+the control plane lists the preset variables in `WSLENV`, which WSL interop requires. The `eyes` and `ears` containers
+reach the dashboard's upload listener at `host.docker.internal:3001` only where Docker Desktop forwards it; if the image or
+audio injection answers `fetch failed`, set `DASHBOARD_URL=http://<distro-address>:3001` in `.env`.. The GPU comes from the
 Windows NVIDIA driver; nothing to install in Linux except the container toolkit.
 
 ## Quick start with real accounts

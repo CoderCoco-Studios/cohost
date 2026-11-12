@@ -59,7 +59,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "43 of 44 specs [x], 1 [ ]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. Open: MOD-TEST-007 (the isolated stack answering every declared input) needs the whole stack running under Docker, the first real run of the deployment checklist."
+    next: "44 of 44 specs [x]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. MOD-TEST-007 passed against the isolated stack under Docker (live-stack.e2e.test.ts)."
     drift: null
 
 
@@ -264,7 +264,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "64 of 65 specs [x], 1 [ ]. The one open spec, CTRL-STACK-015 (launch end-to-end), needs a Docker daemon: its test skips without one and runs in CI (DEPLOY-CI-007, also [ ])."
+    next: "66 of 66 specs [x] (CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
     drift: null
 
   deployment:
@@ -276,7 +276,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "77 of 78 specs [x], 1 [ ]. The one open spec, DEPLOY-CI-007, is the CI step that runs the launch end-to-end test; it stays [ ] until CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "78 of 78 specs [x]. DEPLOY-CI-007 is [x]: CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

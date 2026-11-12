@@ -142,3 +142,18 @@ test("compose: with no docker found every action resolves ok:false naming COHOST
   }
   assert.equal(calls.length, 0);
 });
+
+// @spec CTRL-RUNTIME-012
+test("compose: a Windows docker.exe gets the preset variables named in WSLENV; another binary gets the env unchanged", async () => {
+  const run = async (bin: string, env: NodeJS.ProcessEnv) => {
+    const { exec, calls } = fakeExec();
+    await new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" } });
+    return calls[0]!.env;
+  };
+  const exe = await run("docker.exe", {});
+  assert.equal(exe.WSLENV, "MOUTH_DISCORD_ENABLED:MOUTH_DRYRUN_ENABLED");
+  assert.equal(exe.MOUTH_DRYRUN_ENABLED, "true");
+  const merged = await run("docker.exe", { WSLENV: "PATH/l:MOUTH_DRYRUN_ENABLED/u" });
+  assert.equal(merged.WSLENV, "PATH/l:MOUTH_DRYRUN_ENABLED/u:MOUTH_DISCORD_ENABLED");
+  assert.equal((await run("docker", {})).WSLENV, undefined);
+});

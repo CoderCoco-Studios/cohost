@@ -1,6 +1,6 @@
 # module-contract specs
 
-Segment `module-contract` (prefix `MOD`). LLD: [module-contract-design.md](module-contract-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. All specs are `[x]` except MOD-TEST-007 (it needs the whole isolated stack running, which is the first real run of the deployment checklist).
+Segment `module-contract` (prefix `MOD`). LLD: [module-contract-design.md](module-contract-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. All specs are `[x]`.
 
 Terms: a "unit" is an application unit of the control plane's manifest (a unit with a `pnpmFilter`: chat, eyes, ears, salience, affect, memory, cortex, voice, mouth, avatar). A "section" is a dotted path into the config schema declared by some unit (or `dashboard`). The "tracker" is the control plane's `HealthTracker`; a unit's "derived state" is the state it computes (control-plane CTRL-HEALTH-*). "Gated" means guarded by the control token when `CONTROL_ENABLED=1`, like the dashboard's other mutating routes (dashboard DASH-CTRL-*).
 
@@ -57,7 +57,7 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 - [x] **MOD-TEST-004**: `POST /inject/event` shall be gated like the other inject routes and its body capped at 64 KiB. <!-- test: services/dashboard/test/inject-event.test.ts -->
 - [x] **MOD-TEST-005**: If the derived state of the unit an injection is for (`unit` of `POST /inject/event`; the service-level target of `POST /inject/text` with `level: service`, `/inject/image` and `/inject/audio`) is `down` or `unknown`, then the dashboard shall answer `409 { ok: false, detail: "service not running: <unit>" }` and publish nothing. <!-- test: services/dashboard/test/inject-event.test.ts -->
 - [x] **MOD-TEST-006**: An injected `brain.say` shall be a test input, not an operator `say`: the dashboard shall publish it only through `POST /inject/event` with `injected: true`, and it shall reach only services that consume `brain.say` (it is not routed through cortex). <!-- test: services/dashboard/test/inject-event.test.ts -->
-- [ ] **MOD-TEST-007**: With every unit started with its isolation preset (control-plane CTRL-MANIFEST-003), each unit's declared inputs shall be answered with no Twitch, Discord, OBS, avatar app, model server or speech server running. Open: needs the whole isolated stack running under Docker (the first real run of the deployment checklist); no test can stand in for it.
+- [x] **MOD-TEST-007**: With every unit started with its isolation preset (control-plane CTRL-MANIFEST-003), each unit's declared inputs shall be answered with no Twitch, Discord, OBS, avatar app, model server or speech server running. <!-- test: services/dashboard/test/live-stack.e2e.test.ts --> The test runs where `COHOST_LIVE_STACK=1` and Docker answers; it passed on 2026-11-11 (docs/plans/live-verification.md).
 
 ## Page (MOD-UI)
 

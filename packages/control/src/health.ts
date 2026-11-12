@@ -70,7 +70,7 @@ interface Entry {
  * (so neither clock skew between containers nor a wall-clock step is relevant). Derived states
  * are never published. See docs/intent/control-plane/control-plane-specs.md.
  */
-// @spec CTRL-HEALTH-008
+// @spec CTRL-HEALTH-008, CTRL-HEALTH-011
 export class HealthTracker {
   private entries = new Map<string, Entry>();
   private listeners = new Set<(snapshot: ServiceHealth[]) => void>();
@@ -96,7 +96,7 @@ export class HealthTracker {
     const newer = prev && prev.receivedAt > at ? prev.hb : hb;
     // The current process's start is kept even when old, so it is not re-counted as a restart.
     const kept = starts.filter((s) => s.seenAt >= cutoff || s.startedAt === newer.startedAt);
-    this.entries.set(hb.service, { hb: newer, receivedAt: Math.max(at, prev?.receivedAt ?? 0), starts: kept });
+    this.entries.set(hb.service, { hb: newer, receivedAt: prev ? Math.max(at, prev.receivedAt) : at, starts: kept });
     this.notify();
   }
 

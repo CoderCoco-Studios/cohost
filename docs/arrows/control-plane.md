@@ -101,9 +101,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Controller guards and orchestration | CTRL-GUARD-001 to CTRL-GUARD-008 | 7 | 0 | 0 | 7 |
 | Stack controller | CTRL-STACK-001 to CTRL-STACK-015 | 15 | 0 | 0 | 15 |
 | Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 0 | 0 | 3 |
-| Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-010 | 10 | 0 | 0 | 10 |
+| Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 0 | 0 | 11 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 0 | 0 | 4 |
-| cohostctl command line | CTRL-CLI-001 to CTRL-CLI-016 | 14 | 0 | 0 | 14 |
+| cohostctl command line | CTRL-CLI-001 to CTRL-CLI-017 | 15 | 0 | 0 | 15 |
 
 **Summary:** 64 of 65 specs implemented; 0 deferred; 1 open. 65 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 

@@ -18,7 +18,7 @@
  */
 import { parseArgs } from "node:util";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
-import { findWorkspaceRoot } from "@cohost/config";
+import { findWorkspaceRoot, urls } from "@cohost/config";
 import { ComposeRuntime, type RuntimeResult } from "./runtime.js";
 import { ServiceController, type ActionOptions, type GroupResetter, type LifecycleRecord } from "./controller.js";
 import { StackController, ONE_SHOTS, type StackResult } from "./stack.js";
@@ -199,11 +199,29 @@ export interface CliWiring {
   err?: (line: string) => void;
 }
 
+const CONNECT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "ECONNRESET"]);
+
+/** The reason, when `e` is a failure to reach Redis (a connect error, possibly inside an AggregateError); otherwise undefined. */
+function connectFailure(e: unknown): string | undefined {
+  if (!(e instanceof Error)) return undefined;
+  const code = (e as { code?: unknown }).code;
+  if (typeof code === "string" && CONNECT_CODES.has(code)) return e.message || code;
+  if (e instanceof AggregateError) for (const inner of e.errors) { const r = connectFailure(inner); if (r !== undefined) return r; }
+  if (e.message === "Connection is closed.") return "connection refused";
+  return undefined;
+}
+
+/** The Redis URL the bus used, without credentials. */
+function redisUrl(env: NodeJS.ProcessEnv | undefined): string {
+  const raw = env?.REDIS_URL ?? urls.redis();
+  try { const u = new URL(raw); u.username = ""; u.password = ""; return u.toString().replace(/\/$/, ""); } catch { return "redis"; }
+}
+
 /**
  * The whole of cohostctl: parse, then build what the command needs. Arguments that do not parse never build a
  * runtime, open the bus or run Docker; the bus is opened on first use and always stopped.
  */
-// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-STACK-001, CTRL-LOCK-004
+// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-CLI-017, CTRL-STACK-001, CTRL-LOCK-004
 export async function executeCli(argv: readonly string[], w: CliWiring = {}): Promise<number> {
   const out = w.out ?? console.log;
   const err = w.err ?? console.error;
@@ -213,7 +231,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
   }
   // Opened on first use, so `consolidate`, `launch`, `rebuild` and `stop-all` (run when redis may be stopped) never connect.
   let bus: CliBus | undefined;
-  const getBus = (): CliBus => (bus ??= (w.openBus ?? (() => new Bus("cohostctl")))());
+  const getBus = (): CliBus => (bus ??= (w.openBus ?? (() => new Bus("cohostctl", undefined, undefined, { failFast: true })))());
   try {
     const runtime = (w.buildRuntime ?? buildRuntime)();
     const groups: GroupResetter = { resetGroup: (g) => getBus().resetGroup(g) };
@@ -241,7 +259,8 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
     };
     return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
   } catch (e) {
-    err(e instanceof Error ? e.message : String(e));
+    const refused = connectFailure(e);
+    err(refused !== undefined ? `cannot reach Redis at ${redisUrl(w.env)}: ${refused} (is the stack up? run cohostctl launch)` : e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;
   } finally {
     bus?.stop();

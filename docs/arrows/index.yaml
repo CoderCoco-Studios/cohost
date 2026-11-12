@@ -228,7 +228,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "all 57 specs [x]; built (listen-speak split, C6 guard and dryrun). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "all 73 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs and live routing via set_routing). Per-line routing is deliberately not built (LLD Decisions). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   avatar:

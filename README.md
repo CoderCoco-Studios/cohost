@@ -72,6 +72,7 @@ infra and show in the stack panel). Click **enable audio**: the fake viewers tal
 the cortex answers, and the preview face lip-syncs to silence. Chat lines you type into the test panel
 take the same path.
 
+- Launch always builds (`up -d --build`): an unchanged image is a quick cache hit, changed code is rebuilt.
 - The first Launch pulls the infra images and, through the `models` service, the Ollama models: several GB
   even in mock mode. To skip that, use the Redis-only smoke run under
   [Running one service on its own](#running-one-service-on-its-own-isolated).
@@ -107,7 +108,7 @@ open http://localhost:3000    # enter CONTROL_TOKEN from .env when asked, then p
 
 The dashboard is the one thing you start. It is a host process, not a Compose
 service, so it can bring the stack up before anything else exists: **Launch**
-runs `docker compose up -d` (core: chat + brain regions + voice avatar + infra),
+runs `docker compose up -d --build` (core: chat + brain regions + voice avatar + infra; images are rebuilt on every Launch, so they never lag the code),
 **Stop** stops it, and a **consolidate** pass is offered after a shutdown.
 `install.sh` generates `CONTROL_TOKEN` into `.env` (by hand: `openssl rand -hex 24`).
 `PORT` overrides `DASHBOARD_PORT` for the dashboard; its startup log prints the URL
@@ -409,6 +410,9 @@ process exits.
 The host-run dashboard has stack and service controls on by default (`CONTROL_ENABLED=1`
 in `.env.example`): **Launch**, **Stop**, **restart all**, and per-service Start / Stop /
 Restart buttons (each asks for confirmation); `cohostctl` offers the same from a shell.
+The dashboard and `cohostctl` share a lock file (`data/control.lock`): while one runs a stack or
+service action, the other refuses with `busy: <action> held by <who> (pid N)` (HTTP 409 from the
+dashboard, exit 1 from `cohostctl`); a lock left by a crashed process is cleared automatically.
 Startup fails if `CONTROL_ENABLED=1` has no `CONTROL_TOKEN`.
 
 ```bash

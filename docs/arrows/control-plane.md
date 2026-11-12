@@ -22,6 +22,13 @@ Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host pr
 - Cross-segment: the dashboard consumes the controller (DASH-STACK-*); the readiness wait relies on the Compose healthcheck (CTRL-CHECK-003, deployment DEPLOY-HC-001).
 - Build: chunk 1 (done) of the order in [dashboard.md](dashboard.md#standalone-host-run-dashboard-designed-not-built).
 
+## Reopened: Launch builds, lifecycle lock (built)
+
+- Reworded `[x]`: CTRL-STACK-002 (launch runs `up -d --build --remove-orphans`, phase `compose-build`), CTRL-STACK-013 (rebuild is the same command under kind `rebuild`).
+- New `[x]`: CTRL-LOCK-001 to 004 (`LifecycleLock` in `packages/control/src/lock.ts`, `data/control.lock` with stale-pid detection; `cohostctl` takes it for every command but `status`). Dashboard side: DASH-STACK-009.
+- Docker Engine API stays dropped, now with the concrete reason in the LLD Decisions table (Compose project model, profiles, `--project` handling and `build:` exist only in the Compose CLI). The restart-count overlay (CTRL-STACK-014) stays.
+- Tests: `packages/control/test/lock.test.ts`, `cli-main.test.ts`, `stack.test.ts`, `stack-rebuild.test.ts`; dashboard `stack-lock.test.ts`, `page.test.ts`.
+
 ## Decisions applied
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).

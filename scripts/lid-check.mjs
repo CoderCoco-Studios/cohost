@@ -5,6 +5,8 @@
  *   - a `@spec` ID cited outside the spec files that no `*-specs.md` file defines;
  *   - an ID defined twice;
  *   - an ID a spec file mentions that no spec file defines, unless the mentioning line says it is retired, moved or superseded;
+ *   - a workflow `uses:` ref that is not an exact `vX.Y.Z` tag or a full commit SHA, one action pinned to two different refs
+ *     across workflows, or a workflow or Compose `image:` whose tag is missing, `latest` or not an exact `x.y.z` version (DEPLOY-CI-009);
  * Exits 1 when there is any offence, 0 otherwise. Needs only Node.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -30,6 +32,52 @@ function walk(root, dir = root, out = []) {
 const DEFINITION = /^\s*- \[[ xD]\] \*\*([A-Z0-9-]+-\d{3})\*\*/;
 
 const LINEAGE = /retire|moved from|supersed|replac|formerly/i;
+
+const EXACT_TAG = /^v\d+\.\d+\.\d+$/;
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const IMAGE_FILE = /^(?:\.github\/workflows\/[^/]+\.ya?ml|docker-compose[^/]*\.ya?ml)$/;
+
+/** The default of a `${VAR:-default}` reference, or the text itself. Null when it has no default to judge. */
+function imageDefault(ref) {
+  const m = /^\$\{[A-Z0-9_]+(?::?-(.*))?\}$/.exec(ref);
+  if (!m) return ref;
+  return m[1] ?? null;
+}
+
+// @spec DEPLOY-CI-009
+export function checkPins(root, files) {
+  const problems = [];
+  const actionRefs = new Map(); // action -> { ref, where }
+  for (const f of files.filter((x) => IMAGE_FILE.test(x))) {
+    const lines = readFileSync(join(root, f), "utf8").split("\n");
+    lines.forEach((raw, i) => {
+      const text = raw.replace(/\s+#.*$/, "");
+      const where = `${f}:${i + 1}`;
+      const use = /^\s*(?:-\s+)?uses:\s*(\S+)\s*$/.exec(text);
+      if (use && !use[1].startsWith("./")) {
+        const [action, ref] = use[1].split("@");
+        if (!ref || !(EXACT_TAG.test(ref) || FULL_SHA.test(ref))) {
+          problems.push(`${where}: ${use[1]} is not pinned to an exact vX.Y.Z tag or a full commit SHA`);
+        } else {
+          const seen = actionRefs.get(action);
+          if (seen && seen.ref !== ref) problems.push(`${where}: ${action} is pinned to ${ref} but ${seen.where} pins ${seen.ref}`);
+          else if (!seen) actionRefs.set(action, { ref, where });
+        }
+      }
+      const img = /^\s*(?:-\s+)?image:\s*(\S+)\s*$/.exec(text);
+      if (img) {
+        const resolved = imageDefault(img[1].replace(/^["']|["']$/g, ""));
+        if (resolved === null) return;
+        const name = resolved.slice(resolved.lastIndexOf("/") + 1);
+        const tag = name.includes(":") ? name.slice(name.indexOf(":") + 1) : "";
+        if (!/\d+\.\d+\.\d+/.test(tag) || /^latest$/i.test(tag)) {
+          problems.push(`${where}: image ${resolved} is not pinned to an exact x.y.z tag`);
+        }
+      }
+    });
+  }
+  return problems;
+}
 
 // @spec DEPLOY-CI-006
 export function check(root) {
@@ -71,6 +119,7 @@ export function check(root) {
       }
     });
   }
+  problems.push(...checkPins(root, files));
   return { problems, defined: defined.size };
 }
 

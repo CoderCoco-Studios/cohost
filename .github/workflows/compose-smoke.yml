@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - run: scripts/compose-smoke.sh
       # The launch end-to-end test (CTRL-STACK-015): StackController.launch and stopAll on a real Compose project.
       # @spec DEPLOY-CI-007

@@ -44,7 +44,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (65 specs: 64 `[x]`, 1 `[ ]` (CTRL-STACK-015, Docker-gated); CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
+- docs/intent/control-plane/control-plane-specs.md (65 specs: 64 `[x]`, 1 `[ ]`, 0 `[D]` (CTRL-STACK-015, Docker-gated); CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
 
 ### Tests (`@spec` lines)
 - packages/control/test/cli.test.ts (16)

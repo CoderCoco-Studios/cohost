@@ -57,7 +57,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (77 specs, prefix `DEPLOY`: 76 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (78 specs, prefix `DEPLOY`: 77 `[x]`, 1 `[ ]`, 0 `[D]`)
 
 ### Tests
 - scripts/compose-smoke.sh (1 test annotation: DEPLOY-IMG-002, DEPLOY-IMG-003; run by `.github/workflows/compose-smoke.yml`)
@@ -95,7 +95,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-021 | 20 | 0 | 0 | 14 |
+| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-022 | 21 | 0 | 0 | 16 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 0 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-005 | 6 | 0 | 0 | 1 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-013 | 13 | 0 | 0 | 2 |
@@ -107,7 +107,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-005 | 5 | 0 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 0 | 0 | 0 |
 
-**Summary:** 76 of 77 specs implemented; 0 deferred; 1 open. 20 carry a test `@spec` annotation; 56 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 77 of 78 specs implemented; 0 deferred; 1 open. 22 carry a test `@spec` annotation; 55 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

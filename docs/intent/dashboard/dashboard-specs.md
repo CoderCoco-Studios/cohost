@@ -96,6 +96,7 @@ Prefix `DASH`. Design: [dashboard-design.md](dashboard-design.md). Verified agai
 - [x] **DASH-UI-019**: While no action is running and a `stack` message's `last` reports a stop that finished with `ok: true`, the page shall offer a "Run consolidation pass" button that asks for confirmation and sends `POST /stack/consolidate`; it shall not show the button at any other time. <!-- test: services/dashboard/test/page.test.ts:594 -->
 - [x] **DASH-UI-020**: While a `stack` message shows an action running, the page shall show its kind, phase and elapsed time; when `last` changes, it shall show the result and every service the result lists as not ready, with its status. <!-- test: services/dashboard/test/page.test.ts:616, services/dashboard/test/page.test.ts:628 -->
 - [x] **DASH-UI-021**: The page shall take the list of units that get Start/Stop/Restart buttons from `GET /services/manifest` and hold no list of unit ids of its own; if that request fails, no row shows buttons. <!-- test: services/dashboard/test/page.test.ts -->
+- [x] **DASH-UI-022**: If the browser refuses to start playback of an utterance (autoplay policy), then the page shall post `{event: "done", id}` to `/sink` for that utterance, turn audio off (showing "enable audio"), and keep the utterances already waiting in its queue, which play when the operator next turns audio on; operator-initiated turning off still drops the queue (DASH-UI-014). <!-- test: services/dashboard/test/page.test.ts -->
 
 ## Host process and listeners
 

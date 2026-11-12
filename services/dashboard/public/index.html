@@ -215,7 +215,8 @@ async function pump() {
   const a = new Audio(`/audio/${u.id}.wav`);
   a.onplay = () => post("/sink", { event: "playing", id: u.id });
   a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
-  try { await a.play(); } catch (e) { playing = false; audioOn = false; queue.length = 0; $("#audio").textContent = "🔇 enable audio"; }
+  // @spec DASH-UI-022
+  try { await a.play(); } catch (e) { post("/sink", { event: "done", id: u.id }); playing = false; audioOn = false; $("#audio").textContent = "🔇 enable audio"; $("#audio").classList.remove("on"); }
 }
 // @spec DASH-UI-006
 // When service control is enabled the server wants a bearer token on every mutating call.

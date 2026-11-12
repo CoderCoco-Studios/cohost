@@ -39,7 +39,7 @@ const res = (status: number, body: unknown = ""): FakeRes => ({
 
 type Handler = (path: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => FakeRes | Promise<FakeRes>;
 
-async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string } = {}) {
+async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string; playRejects?: () => boolean } = {}) {
   const prompts: string[] = [], confirms: string[] = [];
   const els = new Map<string, El>();
   const get = (sel: string) => { let e = els.get(sel); if (!e) els.set(sel, (e = new El())); return e; };
@@ -59,7 +59,7 @@ async function boot(opts: { manifestFails?: boolean; search?: string; handler?: 
     src: string; played = false;
     onplay?: () => void; onended?: () => void; onerror?: () => void;
     constructor(src: string) { this.src = src; audios.push(this); }
-    async play() { this.played = true; }
+    async play() { if (opts.playRejects?.()) throw new Error("NotAllowedError"); this.played = true; }
   }
   class WebSocket {
     url: string; onmessage?: (m: { data: string }) => void; onclose?: () => void;
@@ -160,6 +160,23 @@ test("while audio is off, utterances are not queued; enabling audio does not pla
   p.deliver(utterance("e"));
   assert.equal(p.run("queue.length"), 1);
   p.get("#audio").onclick!();
+  assert.equal(p.run("queue.length"), 0);
+});
+
+// @spec DASH-UI-022
+test("a browser that blocks playback gets a done for that utterance, audio goes off, and the waiting queue plays after audio is re-enabled", async () => {
+  let blocked = true;
+  const p = await boot({ search: "?sink=1", playRejects: () => blocked });
+  p.deliver(utterance("u1"));
+  p.deliver(utterance("u2"));
+  await p.tick();
+  assert.deepEqual(p.calls.filter((c) => c.path === "/sink").map((c) => JSON.parse(c.body!)), [{ event: "done", id: "u1" }]);
+  assert.equal(p.run("audioOn"), false);
+  assert.equal(p.run("playing"), false);
+  assert.equal(p.run("queue.length"), 1); // u2 is still waiting
+  blocked = false;
+  p.get("#audio").onclick!();
+  assert.deepEqual(p.audios.map((a) => a.src), ["/audio/u1.wav", "/audio/u2.wav"]);
   assert.equal(p.run("queue.length"), 0);
 });
 

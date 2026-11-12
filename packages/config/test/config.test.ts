@@ -499,7 +499,7 @@ test("brain.memory.notes.capture and consolidator are hook configs defaulting to
   const notes = ConfigSchema.parse(baseCfg()).brain.memory.notes;
   for (const hook of [notes.capture, notes.consolidator]) {
     assert.equal(hook.kind, "rules");
-    assert.equal(hook.timeout_ms, 1500);
+    assert.equal(hook.timeout_ms, 8000);
     assert.equal(hook.llm.provider, undefined);
   }
   const with_ = (hook: string, v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { memory: { notes: { [hook]: v } } } });

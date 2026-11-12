@@ -108,3 +108,14 @@ test("main: any startup failure logs fatal and exits 1", async () => { // @spec 
     assert.ok(!states(bus).includes("ready"), `${name}: never reported ready`);
   }
 });
+
+test("main: the heartbeat reports mode mock and a hook dependency when the scorer hook inherits the mock provider", async () => { // @spec HOOK-HEALTH-004, HOOK-HEALTH-005
+  const bus = new GroupBus();
+  const { env: e, shutdown } = env(bus, { llm: { provider: "mock" }, brain: { salience: { module: { kind: "llm" } } } });
+  await runSalience({ ...e, log: recordingLog().log });
+  await waitFor(() => states(bus).includes("ready"), "ready heartbeat");
+  const ready = bus.health.find((h) => h.state === "ready")!;
+  assert.equal(ready.mode, "mock");
+  assert.ok("hook.salience.scorer" in (ready.deps ?? {}));
+  for (const fn of shutdown) await fn();
+});

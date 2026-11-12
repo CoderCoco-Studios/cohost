@@ -183,11 +183,12 @@ test("claude: a conversation must open with a user turn", async () => {
 });
 
 // @spec LLM-CLAUDE-003
-test("claude: max_tokens never drops below claude.max_tokens (thinking shares the budget)", async () => {
+test("claude: the caller's maxTokens is honoured; claude.max_tokens applies only when the call names none", async () => {
   const { p, calls } = claude({ claude: { api_key: "k", max_tokens: 1024 } });
   await p.chat([{ role: "user", content: "x" }], { maxTokens: 60 });
   await p.chat([{ role: "user", content: "x" }], { maxTokens: 4000 });
-  assert.deepEqual(calls.map((c) => c.req.max_tokens), [1024, 4000]);
+  await p.chat([{ role: "user", content: "x" }]);
+  assert.deepEqual(calls.map((c) => c.req.max_tokens), [60, 4000, 1024]);
 });
 
 // @spec LLM-STOP-003, LLM-STOP-004, LLM-CLAUDE-007, LLM-CLAUDE-010

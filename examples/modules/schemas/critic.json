@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "critic hook reply",
+  "description": "ok false drops the line; a non-empty text replaces it; an emotion replaces its emotion; note says why.",
+  "type": "object",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "emotion": {
+      "enum": [
+        "neutral",
+        "happy",
+        "laugh",
+        "surprised",
+        "smug",
+        "sad",
+        "angry",
+        "confused",
+        "think"
+      ]
+    },
+    "note": {
+      "type": "string"
+    }
+  }
+}

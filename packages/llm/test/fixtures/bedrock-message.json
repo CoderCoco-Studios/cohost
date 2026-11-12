@@ -1,0 +1,13 @@
+{
+  "id": "msg_bdrk_01FixtureBedrock",
+  "type": "message",
+  "role": "assistant",
+  "model": "anthropic.claude-fixture",
+  "content": [
+    { "type": "thinking", "thinking": "One short line.", "signature": "fixture-signature" },
+    { "type": "text", "text": "[smug] From Bedrock, with love. " }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": { "input_tokens": 30, "output_tokens": 44 }
+}

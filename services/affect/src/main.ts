@@ -1,6 +1,7 @@
 import type { Bus, Publisher } from "@cohost/bus";
 import { runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { createLogger, type Config } from "@cohost/config";
+import { hookHealth, pingHooks } from "@cohost/modules";
 import { createAppraiser as createAppraiserFor } from "./appraise.js";
 import { Affect } from "./affect.js";
 import { affectHealth } from "./health.js";
@@ -13,14 +14,19 @@ export type AffectEnv = Pick<RunServiceOptions<AffectBus>, "loadConfig" | "creat
   createAppraiser?: typeof createAppraiserFor;
 };
 
+/** Where `affectMain` publishes its hooks' health so the heartbeat, started earlier by the bootstrap, can read it. */
+export interface HookSink { current?: ReturnType<typeof hookHealth> }
+
 /**
  * Builds and starts the service on the shared bootstrap: a failure in any step ends the process with status 1
  * (AFF-HEALTH-002), and `ready` follows the creation of the consumer group (AFF-HEALTH-001).
  */
-export async function affectMain(ctx: ServiceContext<AffectBus>, env: AffectEnv = {}): Promise<void> {
+export async function affectMain(ctx: ServiceContext<AffectBus>, env: AffectEnv = {}, hooks: HookSink = {}): Promise<void> {
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const exit = env.exit ?? ((code: number) => process.exit(code));
   const appraiser = (env.createAppraiser ?? createAppraiserFor)(cfg, log); // @spec AFF-HOOK-001
+  hooks.current = hookHealth([appraiser]); // @spec HOOK-HEALTH-004: mode mock and the appraiser hook's dependency, read by the heartbeat
+  void pingHooks([appraiser], log); // @spec HOOK-HEALTH-005
   const affect = new Affect({ cfg, bus, appraiser, log, heartbeat });
 
   // The group must exist before `ready`: bus.subscribe only resolves when stopped, so it cannot be awaited.
@@ -41,10 +47,19 @@ export function runAffect(env: AffectEnv = {}): Promise<void> { // @spec AFF-HEA
   const { createAppraiser, ...boot } = env;
   const exit = boot.exit ?? ((code: number) => process.exit(code));
   const log = boot.log ?? createLogger("affect");
+  const hooks: HookSink = {};
   return runService<AffectBus>({
     service: "affect",
-    health: (cfg: Config) => affectHealth(cfg),
-    main: (ctx) => affectMain(ctx, env),
+    health: (cfg: Config) => {
+      const base = affectHealth(cfg);
+      // Until main has built the hook the config-derived mode stands; afterwards the hook reports its own state.
+      return {
+        ...base,
+        mode: () => hooks.current?.mode() ?? (typeof base.mode === "function" ? base.mode() : base.mode),
+        deps: () => ({ ...(typeof base.deps === "function" ? base.deps() : base.deps), ...hooks.current?.deps() }),
+      };
+    },
+    main: (ctx) => affectMain(ctx, env, hooks),
     ...boot,
     log,
   }).catch((err) => { log.error({ err }, "fatal"); exit(1); }); // a bus that cannot be built is a startup failure too

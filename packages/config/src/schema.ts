@@ -27,7 +27,7 @@ export const ModuleSchema = z.object({
   kind: z.preprocess((v) => v || "rules", z.enum(["rules", "llm", "http"])),
   /** http: POST endpoint. */
   url: z.string().default(""),
-  timeout_ms: z.number().int().positive().default(1500),
+  timeout_ms: z.number().int().positive().default(8000),
   /** llm: override the provider/model (e.g. a small local model while the cortex uses Claude). */
   llm: z.object({
     provider: z.preprocess((v) => v || undefined, z.enum(["ollama", "openai", "anthropic", "bedrock"]).optional()),

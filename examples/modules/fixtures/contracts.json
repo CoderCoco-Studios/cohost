@@ -27,7 +27,7 @@
   "critic": [
     {
       "request": { "text": "Nice one. Did you see that?", "emotion": "happy", "reason": "mentioned", "transcript": "[chat] viewer: gg" },
-      "response": { "ok": true, "text": "Nice one." }
+      "response": { "ok": true, "text": "Nice one.", "emotion": "happy" }
     },
     {
       "request": { "text": "Watch this https://example.com/clip", "emotion": "neutral", "reason": "engaged", "transcript": "" },

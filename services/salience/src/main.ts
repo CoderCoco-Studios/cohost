@@ -1,6 +1,7 @@
 import type { Bus, Publisher } from "@cohost/bus";
 import { runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { createLogger, type Config } from "@cohost/config";
+import { hookHealth, pingHooks } from "@cohost/modules";
 import { createScorer as createScorerFor } from "./scoring.js";
 import { Salience } from "./salience.js";
 import { salienceHealth } from "./health.js";
@@ -13,14 +14,19 @@ export type SalienceEnv = Pick<RunServiceOptions<SalienceBus>, "loadConfig" | "c
   createScorer?: typeof createScorerFor;
 };
 
+/** Where `salienceMain` publishes its hooks' health so the heartbeat, started earlier by the bootstrap, can read it. */
+export interface HookSink { current?: ReturnType<typeof hookHealth> }
+
 /**
  * Builds and starts the service on the shared bootstrap: a failure in any step ends the process with status 1
  * (SAL-HEALTH-003), and `ready` follows the creation of the consumer group (SAL-HEALTH-001).
  */
-export async function salienceMain(ctx: ServiceContext<SalienceBus>, env: SalienceEnv = {}): Promise<void> {
+export async function salienceMain(ctx: ServiceContext<SalienceBus>, env: SalienceEnv = {}, hooks: HookSink = {}): Promise<void> {
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const exit = env.exit ?? ((code: number) => process.exit(code));
   const scorer = (env.createScorer ?? createScorerFor)(cfg, log); // @spec SAL-SCORE-007
+  hooks.current = hookHealth([scorer]); // @spec HOOK-HEALTH-004: mode mock and the scorer hook's dependency, read by the heartbeat
+  void pingHooks([scorer], log); // @spec HOOK-HEALTH-005
   const salience = new Salience({ cfg, bus, scorer, log, heartbeat });
 
   // The group must exist before `ready`: bus.subscribe only resolves when stopped, so it cannot be awaited.
@@ -45,10 +51,19 @@ export function runSalience(env: SalienceEnv = {}): Promise<void> { // @spec SAL
   const { createScorer, ...boot } = env;
   const exit = boot.exit ?? ((code: number) => process.exit(code));
   const log = boot.log ?? createLogger("salience");
+  const hooks: HookSink = {};
   return runService<SalienceBus>({
     service: "salience",
-    health: (cfg: Config) => salienceHealth(cfg),
-    main: (ctx) => salienceMain(ctx, env),
+    health: (cfg: Config) => {
+      const base = salienceHealth(cfg);
+      // Until main has built the hook the config-derived mode stands; afterwards the hook reports its own state.
+      return {
+        ...base,
+        mode: () => hooks.current?.mode() ?? (typeof base.mode === "function" ? base.mode() : base.mode),
+        deps: () => ({ ...(typeof base.deps === "function" ? base.deps() : base.deps), ...hooks.current?.deps() }),
+      };
+    },
+    main: (ctx) => salienceMain(ctx, env, hooks),
     ...boot,
     log,
   }).catch((err) => { log.error({ err }, "fatal"); exit(1); }); // a bus that cannot be built is a startup failure too

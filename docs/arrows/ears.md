@@ -1,10 +1,10 @@
 # Arrow: ears
 
-Discord voice in (per-speaker capture, STT, `speech.heard`), audio-upload injection, and the `off` / no-token idle modes. ears only listens: Discord voice out (the `discord` audio sink and the spoken fallback line) is [mouth](mouth.md).
+Discord voice in (per-speaker capture, STT, `speech.heard`), the account-free `http` and `dir` capture sources, audio-upload injection, and the `off` / no-token / no-dir idle modes. ears only listens: Discord voice out (the `discord` audio sink and the spoken fallback line) is [mouth](mouth.md).
 
 ## Status
 
-**AUDITED**, 2026-11-11 (git SHA `ae84c73` plus the listen-only change): the listening and speaking split is built (build chunk 4 of [mouth.md](mouth.md)). 40 specs: 40 implemented, 0 deferred, 0 gaps. Before the split the segment held 66 specs; the 29 that moved to mouth are retired and their numbers are not reused. Audited 2026-11-02 (`1b57790`), mapped 2026-10-31 (`686cc8f`); the owner's audit decisions of 2026-11-01 are applied below.
+**AUDITED**, 2026-11-11 (git SHA `ae84c73` plus the listen-only change): the listening and speaking split is built (build chunk 4 of [mouth.md](mouth.md)). 52 specs: 52 implemented, 0 deferred, 0 gaps (the 12 EARS-CAP specs are the capture sources, built in the reopened gap-closure pass). Before the split the segment held 66 specs; the 29 that moved to mouth are retired and their numbers are not reused. Audited 2026-11-02 (`1b57790`), mapped 2026-10-31 (`686cc8f`); the owner's audit decisions of 2026-11-01 are applied below.
 
 ## Listening and speaking split: built
 
@@ -15,6 +15,10 @@ Design: LLD (Context, Startup Plans, Decisions), [decision doc](../intent/ears/d
 - Retired, numbers not reused: EARS-AUD-002, EARS-PLAY-001 to 009, EARS-FALL-001 to 019, now SHARED-AUDIO-006, MOUTH-PLAY-*, MOUTH-FALL-*. `playback.ts`, `fallback.ts`, `wavToDiscordPcm` and their tests are deleted from `services/ears`.
 - Config: `ears.fallback` is gone from the schema and `config.example.yaml` (CFG-SCH-018 `[x]`); the storm limit is `mouth.fallback.min_interval_ms`. An old `ears.fallback` key draws the unknown-key warning (CFG-LOAD-006).
 - Upgrade for an existing install: create the listening bot, set `EARS_DISCORD_TOKEN` and add `mouth` to `COMPOSE_PROFILES` (README upgrade note, DEPLOY-README-005). Until `EARS_DISCORD_TOKEN` is set, ears idles `degraded` with `EARS_DISCORD_TOKEN is not set`; an install that copies its `DISCORD_TOKEN` into `EARS_DISCORD_TOKEN` idles with the conflict detail (EARS-START-007).
+
+## Capture sources: built
+
+Design: LLD [Capture sources](../intent/ears/ears-design.md#capture-sources) and the Decisions row "More listening sources". `ears.source` is `discord | off | http | dir` (CFG-SCH-030); `capture.ts` is the adapter contract and `decodeClip`, `Hearing.heardClip` the shared path (EARS-CAP-001, 002), `capture-http.ts` the `http` listener (EARS-CAP-005 to 007, 012), `capture-dir.ts` the polled directory (EARS-CAP-008, 009, 012). Plans `http`, `dir` and `no-dir` need no token and load no `discord.js` (EARS-CAP-003, 004, 010); their heartbeats add `deps.http` / `deps.dir` (EARS-CAP-011). Both sources work with `ears.stt_engine: stub`. `INJECT_QUEUE_LIMIT` is now exported by `@cohost/shared` (SHARED-INJ-010). Config keys `ears.http.host` / `port` and `ears.dir.path` / `poll_ms` are in `config.example.yaml`; no new environment variable (the Compose file passes only `EARS_SOURCE`, which now also accepts `http` and `dir`; a container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator).
 
 ## Decisions applied
 
@@ -37,7 +41,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (40 specs: 40 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
+- docs/intent/ears/ears-specs.md (52 specs: 52 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### Tests
@@ -48,10 +52,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/ears/test/session.test.ts (config target, inject-only loop, self-muted join, bot filtering, subscription)
 - services/ears/test/service.test.ts (`runService` start-up: plans, idle, Discord loader, shutdown order, stub engine)
 - services/ears/test/discord.test.ts (a faked shared voice session: join options, failed join, disconnect, per-speaker capture)
+- services/ears/test/capture.test.ts, capture-http.test.ts, capture-dir.test.ts (clip decoding, shared `heardClip` path, the http listener's statuses and bounds, the polled directory)
 - services/ears/test/filter.test.ts, transcript.test.ts (Unicode word filter, `ears.drop_phrases`, config keys)
 - services/ears/test/stub.test.ts, loop.test.ts, inject-limits.test.ts (stub engine, non-blocking inject loop, byte cap and kinds)
 - packages/shared/test/join.test.ts (the `createJoiner` retry loop behind SHARED-DVS-004)
-- packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`)
+- packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`; CFG-SCH-030: capture-source keys)
 
 57 `@spec` annotations in the ears tests; every `[x]` ears spec has a test of its own except EARS-SESS-003 (not a voice channel) and EARS-HEAR-002 and 003 (decode), which run inside discord.js and prism-media; SHARED-DVS-003 (disconnect and rejoin) is covered in `packages/shared`.
 
@@ -62,12 +67,15 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/ears/src/discord.ts
 - services/ears/src/session.ts
 - services/ears/src/hearing.ts
+- services/ears/src/capture.ts
+- services/ears/src/capture-http.ts
+- services/ears/src/capture-dir.ts
 - services/ears/src/audio.ts
 - services/ears/src/inject.ts
 - services/ears/src/health.ts
 - services/ears/package.json, services/ears/tsconfig.json
 
-31 `@spec` annotations in code, citing all 40 spec IDs (EARS-SESS-004 and EARS-SESS-002 at `EARS_JOIN_OPTIONS`, EARS-HEAR-009 at `EARS_LOOP_TYPES`). No annotation cites a missing ID.
+`@spec` annotations in code cite all 52 spec IDs (EARS-SESS-004 and EARS-SESS-002 at `EARS_JOIN_OPTIONS`, EARS-HEAR-009 at `EARS_LOOP_TYPES`). No annotation cites a missing ID.
 
 ### OpenSpec (frozen, historical)
 - openspec/specs/ears/spec.md
@@ -99,8 +107,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Audio injection | EARS-INJ-005 to EARS-INJ-011 | 7 | 0 | 0 | 6 |
 | Stub transcriber | EARS-STUB-001 to EARS-STUB-002 | 2 | 0 | 0 | 2 |
 | Health | EARS-HLTH-001 to EARS-HLTH-003 | 3 | 0 | 0 | 3 |
+| Capture sources | EARS-CAP-001 to EARS-CAP-012 | 12 | 0 | 0 | 12 |
 
-**Summary:** 40 of 40 specs implemented; 0 deferred; 0 open. 37 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 52 of 52 specs implemented; 0 deferred; 0 open. 49 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -117,7 +126,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-None: all 40 specs are implemented.
+None: all 52 specs are implemented.
 
 ### Should Fix
 1. Add tests for the remaining `discord.ts` glue (login failure, rejoin on disconnect, per-speaker capture) behind a fake client.

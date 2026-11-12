@@ -6,7 +6,10 @@ import type { Bus, BusEvent } from "@cohost/bus";
 import { urls, type Config } from "@cohost/config";
 import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { EarsHealth, earsPlan, idleDetail, readEarsToken } from "./health.js";
-import { sttTranscriber, stubTranscriber } from "./hearing.js";
+import { createDirCapture } from "./capture-dir.js";
+import { createHttpCapture } from "./capture-http.js";
+import type { HearClip } from "./capture.js";
+import { Hearing, sttTranscriber, stubTranscriber } from "./hearing.js";
 import { createInjectHandler } from "./inject.js";
 import { EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "./session.js";
 
@@ -26,17 +29,18 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
   const earsToken = readEarsToken(env);
   let voiceReady = false;
   let health: EarsHealth | undefined;
+  let captureStatus: () => "ok" | "down" = () => "down";
+  const planOf = (cfg: Config) => earsPlan(cfg.ears.source, earsToken.hasToken, cfg.ears.dir.path.trim() !== "");
 
   return {
     health(cfg) {
-      const plan = earsPlan(cfg.ears.source, earsToken.hasToken);
-      health = new EarsHealth(plan, () => voiceReady, cfg.ears.stt_engine === "stub");
+      health = new EarsHealth(planOf(cfg), () => voiceReady, cfg.ears.stt_engine === "stub", () => captureStatus());
       return health.spec;
     },
 
     // @spec EARS-START-008
     async main({ cfg, bus, log, heartbeat, onStop }) {
-      const plan = earsPlan(cfg.ears.source, earsToken.hasToken);
+      const plan = planOf(cfg);
       const stub = cfg.ears.stt_engine === "stub";
       const h = health!;
       // @spec EARS-STUB-002
@@ -60,13 +64,36 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
         return;
       }
 
-      // @spec EARS-START-003, EARS-INJ-009, EARS-START-006
-      // Idle: no Discord client; only inject.request is consumed, process stays up.
+      // @spec EARS-START-003, EARS-INJ-009, EARS-START-006, EARS-CAP-003
+      // No Discord client in any plan from here on; only inject.request is consumed, process stays up.
       await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: (ev: BusEvent<"inject.request">) => onInject(ev) }), log);
+
+      // @spec EARS-CAP-003, EARS-CAP-007, EARS-CAP-008, EARS-CAP-012
+      if (plan === "http" || plan === "dir") {
+        const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe });
+        const hear: HearClip = (clip, speaker) => hearing.heardClip(clip, speaker);
+        const adapter = plan === "http"
+          ? createHttpCapture({ ...cfg.ears.http, hear, log })
+          : createDirCapture({ path: cfg.ears.dir.path, pollMs: cfg.ears.dir.poll_ms, hear, log });
+        captureStatus = () => adapter.status();
+        // Stops first on shutdown (steps run in reverse registration order): the clip in flight finishes, then the bus stops.
+        onStop(() => adapter.stop());
+        try {
+          await adapter.start();
+          heartbeat.ready();
+        } catch (err) {
+          // A port that cannot be bound is a configuration gap: stay up, report it, never exit.
+          log.error({ err: String(err) }, `ears ${adapter.name} source failed to start`);
+          heartbeat.degraded(`ears ${adapter.name} source failed to start: ${String(err)}`);
+        }
+        return;
+      }
+
       // @spec EARS-START-001, EARS-START-002, EARS-START-007
+      // @spec EARS-CAP-010
       const idle = plan === "off"
         ? startIdle({ heartbeat, log, kind: "off", reason: "ears.source is off: idle, no Discord client, nothing heard (mode off)" })
-        : startIdle({ heartbeat, log, kind: "degraded", reason: idleDetail(earsToken) });
+        : startIdle({ heartbeat, log, kind: "degraded", reason: plan === "no-dir" ? "ears.dir.path is not set" : idleDetail(earsToken) });
       // @spec EARS-START-005
       onStop(() => idle.stop());
     },

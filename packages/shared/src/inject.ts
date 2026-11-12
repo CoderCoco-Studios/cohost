@@ -66,7 +66,8 @@ export interface InjectHandler {
 }
 
 /** Requests waiting behind the one being processed; one more is answered `busy`. */
-const QUEUE_LIMIT = 8;
+export const INJECT_QUEUE_LIMIT = 8;
+const QUEUE_LIMIT = INJECT_QUEUE_LIMIT;
 
 const isTimeout = (err: unknown): boolean => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 

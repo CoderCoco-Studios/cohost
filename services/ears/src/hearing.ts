@@ -1,6 +1,8 @@
 import type { Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
+import { resample, wavWrap } from "@cohost/shared";
 import { discordPcmToWav16k, wavDurationMs } from "./audio.js";
+import type { Clip, HearOutcome } from "./capture.js";
 import { hasWordCharacter, isDropPhrase } from "./transcript.js";
 
 export interface HearingDeps {
@@ -43,21 +45,40 @@ export function stubTranscriber(): (audio: Buffer, hint?: { contentType: string 
 export class Hearing {
   constructor(private d: HearingDeps) {}
 
+  /** One Discord speaker's utterance (48k stereo s16le) -> `speech.heard`. */
   async heard(pcm: Buffer, speaker: string, speakerId: string): Promise<void> {
     const durationMs = (pcm.length / 4 / 48000) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return;
+    await this.finish(discordPcmToWav16k(pcm), durationMs, speaker, speakerId);
+  }
+
+  // @spec EARS-CAP-001
+  /**
+   * One clip from a capture source (any rate and channel count) -> `speech.heard` without a `speakerId`, through the
+   * same gate, STT, word check and drop-phrase filter as a Discord utterance. Says what happened.
+   */
+  async heardClip(clip: Clip, speaker: string): Promise<HearOutcome> {
+    const durationMs = (clip.pcm.length / (2 * clip.channels) / clip.rate) * 1000;
+    if (durationMs < this.d.cfg.min_speech_ms) return { heard: false, reason: "too-short" };
+    const wav = wavWrap(resample(clip.pcm, { from: { rate: clip.rate, channels: clip.channels }, to: { rate: 16000, channels: 1 } }), 16000, 1);
+    return this.finish(wav, durationMs, speaker);
+  }
+
+  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string): Promise<HearOutcome> {
     try {
-      const text = await this.d.transcribe(discordPcmToWav16k(pcm));
-      if (!hasWordCharacter(text)) return;
+      const text = await this.d.transcribe(wav);
+      if (!hasWordCharacter(text)) return { heard: false, reason: "empty" };
       // @spec EARS-HEAR-010
       if (isDropPhrase(text, this.d.cfg.drop_phrases)) {
         this.d.log.debug({ speaker, text }, "dropped (drop phrase)");
-        return;
+        return { heard: false, reason: "drop-phrase" };
       }
       this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
-      await this.d.bus.publish("speech.heard", { speaker, speakerId, text, durationMs: Math.round(durationMs) });
+      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs) });
+      return { heard: true, text };
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "transcription failed");
+      return { heard: false, reason: "stt-error" };
     }
   }
 }

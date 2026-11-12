@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService, type Heartbeat } from "@cohost/shared";
 import { createEarsService } from "../src/service.js";
@@ -111,6 +115,70 @@ test("stub engine: a startup warning, mode mock, stt n/a", async () => {
     assert.equal(r.last().mode, "mock");
     assert.equal(r.last().deps.stt, "n/a");
     assert.ok(r.rec.msgs("warn").some((m) => /stub/i.test(String(m))));
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec EARS-CAP-003, EARS-CAP-007, EARS-CAP-011, EARS-CAP-012
+test("http plan: no token, no discord.js, inject.request only, ready with deps.http ok, stopped before the bus", async () => {
+  const r = await boot({ source: "http", stt_engine: "stub", http: { host: "127.0.0.1", port: 0 } }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
+    assert.equal(r.last().mode, "mock");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok" });
+    assert.equal(r.discordLoads(), 0);
+    assert.deepEqual(r.subs.map((s) => ({ g: s.group, t: [...s.types], s: s.start })), [{ g: "ears", t: ["inject.request"], s: "latest" }]);
+  } finally {
+    await r.stop();
+  }
+  assert.deepEqual(r.order, ["resetGroup:ears", "bus.stop"]);
+  assert.deepEqual(r.exits, []);
+});
+
+// @spec EARS-CAP-007
+test("http plan: a port already in use leaves the process up, degraded, deps.http down", async () => {
+  const blocker = createServer();
+  await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
+  const port = (blocker.address() as { port: number }).port;
+  const r = await boot({ source: "http", stt_engine: "stub", http: { host: "127.0.0.1", port } }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.equal(r.last().deps.http, "down");
+    assert.match(r.last().detail ?? "", /EADDRINUSE/);
+    assert.deepEqual(r.exits, []);
+  } finally {
+    await r.stop();
+    await new Promise((resolve) => blocker.close(resolve));
+  }
+});
+
+// @spec EARS-CAP-003, EARS-CAP-008, EARS-CAP-011
+test("dir plan: polls the directory, ready with deps.dir ok, no discord.js", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ears-svc-"));
+  const r = await boot({ source: "dir", stt_engine: "stub", dir: { path: dir, poll_ms: 20 } }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", dir: "ok" });
+    assert.equal(r.discordLoads(), 0);
+    assert.equal(r.subs.length, 1);
+  } finally {
+    await r.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(r.order, ["resetGroup:ears", "bus.stop"]);
+});
+
+// @spec EARS-CAP-010, EARS-CAP-003
+test("dir plan without a path: degraded idle naming ears.dir.path, still subscribed to inject.request", async () => {
+  const r = await boot({ source: "dir", stt_engine: "stub" }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.equal(r.last().detail, "ears.dir.path is not set");
+    assert.equal(r.last().deps.dir, "down");
+    assert.equal(r.subs.length, 1);
+    assert.deepEqual(r.rec.msgs("error"), ["ears.dir.path is not set"]);
+    assert.deepEqual(r.exits, []);
   } finally {
     await r.stop();
   }

@@ -156,7 +156,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "all 40 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes. No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "all 52 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes, http and dir capture sources (EARS-CAP-*). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   salience:

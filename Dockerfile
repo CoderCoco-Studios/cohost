@@ -3,9 +3,11 @@
 # Do NOT `pnpm prune --prod` here: on pnpm 10 it empties services/*/node_modules and drops the
 # @cohost/* workspace links, so every service dies with ERR_MODULE_NOT_FOUND (#6).
 # (`pnpm deploy --prod` was tried instead; it needs inject-workspace-packages lockfile settings.)  @spec DEPLOY-IMG-003
+# The pnpm version is the root package.json "packageManager" field and nothing else.  @spec DEPLOY-IMG-006
 FROM node:22-slim AS base
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 WORKDIR /app
+COPY package.json ./
+RUN corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
 
 FROM base AS build
 ENV CI=true

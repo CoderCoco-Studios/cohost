@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { SERVICE_MANIFEST } from "@cohost/control";
+import { SERVICE_MANIFEST, unitDescriptors } from "@cohost/control";
 
 /**
  * The page's inline <script> run under a hand-written stub DOM (no browser dependency). The script's
@@ -39,7 +39,7 @@ const res = (status: number, body: unknown = ""): FakeRes => ({
 
 type Handler = (path: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => FakeRes | Promise<FakeRes>;
 
-async function boot(opts: { search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string } = {}) {
+async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string } = {}) {
   const prompts: string[] = [], confirms: string[] = [];
   const els = new Map<string, El>();
   const get = (sel: string) => { let e = els.get(sel); if (!e) els.set(sel, (e = new El())); return e; };
@@ -51,6 +51,7 @@ async function boot(opts: { search?: string; handler?: Handler; control?: boolea
   const fetchStub = async (path: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body, auth: init.headers?.authorization });
     if (path === "/personality" && !init.method) return res(200, "# Coco\n");
+    if (path === "/services/manifest") return opts.manifestFails ? res(500) : res(200, { units: unitDescriptors() });
     if (path === "/services/control") return res(200, opts.control ? { enabled: true } : { enabled: false });
     return opts.handler ? opts.handler(path, init) : res(204);
   };
@@ -638,4 +639,33 @@ test("a changed last result is shown with every not-ready service the result lis
   p.deliver(stackMsg({ last: { kind: "stop", ok: true, finishedAt: 2 } }));
   assert.match(p.get("#stackLast").innerHTML, /stop/);
   assert.doesNotMatch(p.get("#stackLast").innerHTML, /voice/);
+});
+
+// @spec DASH-UI-021
+test("the page script names no unit of its own: its list comes from /services/manifest", async () => {
+  assert.doesNotMatch(script, /"chat",\s*"salience"/);
+  const p = await boot({ control: true });
+  assert.ok(p.calls.some((c) => c.path === "/services/manifest"));
+  p.deliver({ type: "services", services: [svcRow("chat")] });
+  assert.equal((p.get("#svcRows").innerHTML.match(/data-act="/g) ?? []).length, 3);
+});
+
+// @spec DASH-UI-021
+test("when the manifest cannot be fetched no row gets buttons", async () => {
+  const p = await boot({ control: true, manifestFails: true });
+  p.deliver({ type: "services", services: [svcRow("chat")] });
+  assert.doesNotMatch(p.get("#svcRows").innerHTML, /data-act=/);
+});
+
+// @spec DASH-STACK-008
+test("Rebuild asks for confirmation, then posts /stack/rebuild; cancelling sends nothing", async () => {
+  const p = await boot({ control: true, token: "tok", confirm: () => false });
+  p.get("#stRebuild").onclick!();
+  await p.tick();
+  assert.equal(p.calls.filter((c) => c.path === "/stack/rebuild").length, 0);
+  assert.match(p.confirms.at(-1)!, /Rebuild/);
+  const q = await boot({ control: true, token: "tok" });
+  q.get("#stRebuild").onclick!();
+  await q.tick(); await q.tick();
+  assert.deepEqual(q.calls.filter((c) => c.path === "/stack/rebuild").map((c) => c.method), ["POST"]);
 });

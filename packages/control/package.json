@@ -15,5 +15,8 @@
   },
   "bin": {
     "cohostctl": "dist/cli.js"
+  },
+  "devDependencies": {
+    "yaml": "^2.6.0"
   }
 }

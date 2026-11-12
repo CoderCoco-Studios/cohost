@@ -44,9 +44,9 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("cortex", { requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" } }),
   svc("voice", { groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" } }),
   svc("avatar", { groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" } }),
-  svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false" } }),
-  svc("ears", { groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off" } }),
-  svc("mouth", { groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false" } }),
+  svc("eyes", { groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_ENGINE: "stub" } }),
+  svc("ears", { groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" } }),
+  svc("mouth", { groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" } }),
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),
   compose("ollama"),
@@ -54,7 +54,23 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   compose("stt"),
 ];
 
+/** The public face of a unit, as `GET /services/manifest` lists it: no argv material, no compose or pnpm names. */
+export interface UnitDescriptor { id: string; requires: string[]; infra: boolean; defaultMode: StartMode }
+
+export function unitDescriptors(manifest: readonly ServiceDef[] = SERVICE_MANIFEST): UnitDescriptor[] {
+  return manifest.map((s) => ({ id: s.id, requires: [...(s.requires ?? [])], infra: s.infra, defaultMode: s.defaultMode }));
+}
+
 // @spec CTRL-MANIFEST-004
 export function findService(id: string, manifest: readonly ServiceDef[] = SERVICE_MANIFEST): ServiceDef | undefined {
   return manifest.find((s) => s.id === id);
+}
+
+/**
+ * Ids of the application units (those run from the pnpm workspace, which publish a heartbeat): the one list the health
+ * tracker's default known names and `cohostctl status` use. The host-run dashboard is not a unit.
+ */
+// @spec CTRL-MANIFEST-005, MOD-MAN-006
+export function appServiceIds(manifest: readonly ServiceDef[] = SERVICE_MANIFEST): string[] {
+  return manifest.filter((s) => s.pnpmFilter !== undefined).map((s) => s.id);
 }

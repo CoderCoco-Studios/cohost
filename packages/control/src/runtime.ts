@@ -67,7 +67,7 @@ export class ComposeRuntime implements Runtime {
     this.manifest = o.manifest ?? SERVICE_MANIFEST;
   }
 
-  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-STACK-012
+  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-STACK-012
   private async run(id: string, verb: string[], extraEnv?: Readonly<Record<string, string>>): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);

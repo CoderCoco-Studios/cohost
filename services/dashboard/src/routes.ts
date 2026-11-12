@@ -171,7 +171,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.writeHead(204); res.end();
         return;
       }
-      // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-016
+      // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-017
       if (req.method === "POST" && url.pathname === "/control") {
         if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
         const { cmd, text, target, route } = JSON.parse(await readText(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string; route?: string[] };

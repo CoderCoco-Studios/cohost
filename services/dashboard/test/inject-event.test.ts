@@ -142,7 +142,7 @@ test("an injected brain.say is published once, as injected, only through /inject
   assert.equal((await t.event({ unit: "salience", type: "brain.say", data: say })).status, 400);
 });
 
-// @spec DASH-HTTP-016
+// @spec DASH-HTTP-017
 test("an injected brain.say keeps its route; a route that is not an array of strings is a 400 and publishes nothing", async () => {
   const t = await boot();
   const say = { id: "s", text: "hi", emotion: "neutral" };

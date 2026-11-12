@@ -147,7 +147,7 @@ test("GET /services lists every known service; unseen ones are unknown, a heartb
   assert.equal(services.filter((s) => s.state === "unknown").length, 9);
 });
 
-// @spec DASH-HTTP-016
+// @spec DASH-HTTP-017
 test("POST /control forwards a say's route unchanged and publishes no route when the body has none", async () => {
   bus.clear();
   assert.equal((await post("/control", { cmd: "say", text: "to the archive", route: ["file", "http"] })).status, 204);

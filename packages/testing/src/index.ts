@@ -123,3 +123,4 @@ export async function waitFor(cond: () => boolean, what = "condition", ms = 2000
     await new Promise((r) => setTimeout(r, 2));
   }
 }
+export { unitContractTests, entryProblem } from "./unit-contract.js";

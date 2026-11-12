@@ -59,7 +59,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "44 of 44 specs [x]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. MOD-TEST-007 passed against the isolated stack under Docker (live-stack.e2e.test.ts)."
+    next: "46 of 46 specs [x]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. MOD-TEST-007 passed against the isolated stack under Docker (live-stack.e2e.test.ts)."
     drift: null
 
 

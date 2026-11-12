@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import { EVENT_TYPES } from "@cohost/bus";
 import { ConfigSchema, schemaAt } from "@cohost/config";
 import { SERVICE_MANIFEST } from "../src/index.js";
+import { entryProblem, OWN_BOOTSTRAP } from "../../testing/src/unit-contract.js";
 
 // The checks that keep the manifest and the files derived from it in step: Compose, the config schema, the bus
 // registry and each unit's entry file (module-contract MOD-MAN-008, MOD-MAN-009).
@@ -55,29 +56,11 @@ test("a declared bus input or observed type must be registered and not a heartbe
   }
 });
 
-/** The code of a source file with comments removed. */
-const codeOf = (file: string): string => readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").trim();
-const hasCall = (code: string, fn: string): boolean => new RegExp(`\\b${fn}\\s*(<[^>]*>)?\\(`).test(code);
-
 /**
  * A unit that has not yet moved onto the shared bootstrap, with the chunk that moves it. Empty when every unit complies;
  * an entry here is the only way a unit may fail the entry check.
  */
 const NOT_ON_RUN_SERVICE: Record<string, string> = {};
-
-const OWN_BOOTSTRAP = /\bnew Bus\(|\bstartHeartbeat\(|\bonShutdown\(/;
-
-/** Why the unit's entry file does not reach `runService`, or undefined when it does. */
-function entryProblem(id: string): string | undefined {
-  const code = codeOf(rootPath(`services/${id}/src/index.ts`));
-  if (OWN_BOOTSTRAP.test(code)) return "the entry builds its own bus, heartbeat or shutdown";
-  if (hasCall(code, "runService")) return undefined;
-  // otherwise its sole job is one call to a boot function whose module calls runService
-  const imports = [...code.matchAll(/import\s*\{([^}]*)\}\s*from\s*"\.\/([^"]+)\.js"/g)];
-  const boot = imports.find(([, names]) => names!.split(",").some((n) => new RegExp(`\\b${n.trim().split(/\s+as\s+/)[0]}\\s*\\(`).test(code)));
-  if (!boot) return "the entry neither calls runService nor calls a boot function";
-  return hasCall(codeOf(rootPath(`services/${id}/src/${boot[2]}.ts`)), "runService") ? undefined : `${boot[2]}.ts does not call runService`;
-}
 
 // @spec MOD-MAN-009
 test("each unit's entry file reaches runService and builds no bus or heartbeat of its own", () => {

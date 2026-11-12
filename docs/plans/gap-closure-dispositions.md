@@ -16,6 +16,7 @@ Item numbers follow each LLD's subsection numbering (R = Resolved, O = Observed/
 | C6 | mouth | mouth |
 | C7 | ears | ears |
 | C8 | memory | memory |
+| C8b | Voice speakers get viewer notes (Discord id to viewer identity; `link_discord` / `unlink_discord`; Viewers page links) | memory, ears, dashboard, event-bus |
 | C9 | chat and eyes | chat, eyes |
 | C10 | avatar, cortex, salience, affect, working-memory | those LLDs |
 | C11 | region-hooks and model-backends | those LLDs |
@@ -119,12 +120,12 @@ Specs written for the module contract land as follows: SHARED-* in C1; MOD-MAN-*
 | eyes | O7 EYES-INJ-004 and redirect untested | Implement: covered by the shared inject handler's tests | C1 |
 | memory | R1 Owner decisions of 2026-11-01 | Already resolved | — |
 | memory | R2 Viewer notes design | Already resolved | — |
-| memory | Op1 Voice speakers get no notes | Drop: owner settled it out of scope | — |
+| memory | Op1 Voice speakers get no notes | Implement: owner decision (final) reversed the earlier Drop: a Discord user id maps to a viewer identity (an unlinked id is its own voice viewer, linkable to a chat viewer from the Viewers page) so a voice speaker accrues notes like a chat viewer | C8b |
 | memory | D1 Migrating to a new vector dimension | Implement: an operator path (re-embed one-shot through `cohostctl`), designed at C8's LLD step | C8 |
 | memory | D2 Reflection needs a reachable embedder; no lock | Implement: no embed probe for reflection; an advisory lock against the live service | C8 |
 | memory | D3 Two hash embedders | Implement: the in-memory store embeds with `@cohost/llm`'s `HashEmbedder` (MEM-BACKEND-004); recall test fixtures chosen to clear `min_similarity` | C8 |
 | memory | D4 Kind `note` never written | Implement: remove the unused kind | C8 |
-| memory | D5 Recall `k` validation | Drop: the bus schema already rejects `k <= 0` | — |
+| memory | D5 Recall `k` validation | Drop: the bus schema already rejects `k <= 0` (the memory LLD records it as decided, not open, so C8b adds nothing) | — |
 | memory | D6 Test gaps; no real Postgres | Implement: a Postgres-backed integration test in CI | C8 |
 | memory | D7 Consumer-group readiness hook missing | Implement: the bus resolves a subscription-ready signal | C1 |
 | model-backends | O1 Claude/Bedrock surface not exercised; newer SDKs | Implement: upgrade after a registry check; an opt-in live smoke test when a key is present | C11 |

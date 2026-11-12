@@ -222,6 +222,11 @@ file, inline CSS and JS, dark navy palette, no new dependency):
   (DASH-VIEWERS-011, DASH-VIEWERS-012), a "Clear all notes" button
   (DASH-VIEWERS-014), and the viewer's deleted notes with their reasons and an
   undo link (DASH-VIEWERS-015).
+- **Voice speakers.** A person who spoke in the voice channel is listed like any
+  viewer, with a `VOICE` tag (memory `MEM-VOICE-009`). A voice viewer's panel has a
+  "Link to a chat viewer" button that asks for the chat viewer's name and sends the
+  link, moving its notes over; a chat viewer's panel lists the Discord ids linked to
+  it, each with an unlink link (DASH-VIEWERS-020, DASH-VIEWERS-021).
 
 Delete asks for an optional reason. A reason makes the deletion a rule the co-host
 will not re-learn similar notes against; no reason means the topic may come back
@@ -243,6 +248,8 @@ existing main-stream tail (DASH-VIEWERS-008).
 | `POST /viewers/deletions/:id/restore` | `restore` | DASH-VIEWERS-004 |
 | `POST /viewers/:key/clear` `{reason?}` | `clear` | DASH-VIEWERS-005 |
 | `POST /viewers/regular` `{key? , name?, regular}` | `set_regular` | DASH-VIEWERS-006 |
+| `POST /viewers/links` `{discordId, key? , name?}` | `link_discord` | DASH-VIEWERS-018 |
+| `POST /viewers/links/:discordId/delete` | `unlink_discord` | DASH-VIEWERS-019 |
 
 A reply with `ok: true` answers 200 with its `data`; `error: "not_found"` answers
 404; any other failure 500; no reply in time answers 504 "memory did not answer"

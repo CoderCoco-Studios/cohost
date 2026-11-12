@@ -59,8 +59,8 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "28 of 44 specs [x], 16 [ ]. Built: the manifest declarations, the settings editor and its page (MOD-MAN-001 to 006, MOD-CFG, MOD-UI). Open: MOD-MAN-007 to 009 and MOD-LIFE-001 to 003 (chunk C2 leftovers) and MOD-PAUSE-001 to 003 and MOD-TEST-001 to 007 (chunk C4: pause buttons, test drawer, POST /inject/event)."
-    drift: "The LLD describes the test drawer, the pause buttons and POST /inject/event as the dashboard's behaviour; the code does not have them yet (the open specs)."
+    next: "43 of 44 specs [x], 1 [ ]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. Open: MOD-TEST-007 (the isolated stack answering every declared input) needs the whole stack running under Docker, the first real run of the deployment checklist."
+    drift: null
 
 
   config:
@@ -84,8 +84,8 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "all 61 specs [x]. The LLD's Open Questions lists six transport items the gap-closure dispositions assigned to C1 and that are not built: drain pending until empty, no XACK after stop, test hygiene (own stream and group names), avatar.state ranges and one voice.playing/voice.done shape, the hostname in an events.ts comment, time-ordered FakeBus ids."
-    drift: "BUS-SUB-008's single-batch drain and the ack after stop differ from the intent in the LLD Open Questions; no spec line states the intended behaviour yet."
+    next: "all 64 specs [x]; gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
+    drift: null
 
   model-backends:
     status: AUDITED
@@ -156,7 +156,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "all 39 specs [x]; listen-only on its own bot, gap closure built (C7). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "all 40 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes. No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   salience:
@@ -192,7 +192,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "all 116 specs [x]; gap closure built (C8) and the notes hooks follow llm.provider mock (MEM-NOTE-012, so an isolated run reaches no model server). No open gaps."
+    next: "all 126 specs [x]; gap closure built (C8), voice speakers get viewer notes (MEM-VOICE), the entry runs on runService (main.ts) and the notes hooks follow llm.provider mock (MEM-NOTE-012, so an isolated run reaches no model server). No open gaps."
     drift: null
 
   cortex:
@@ -252,7 +252,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "all 104 specs [x]; host-run dashboard with the Settings tab; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
+    next: "all 110 specs [x]; host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:

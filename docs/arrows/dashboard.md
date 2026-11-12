@@ -80,7 +80,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/dashboard/dashboard-design.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (104 specs: 104 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/dashboard/dashboard-specs.md (110 specs: 110 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 `@spec` annotations in tests: 62.
@@ -127,20 +127,20 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| HTTP routes | DASH-HTTP-001 to DASH-HTTP-014 | 14 | 0 | 0 | 14 |
+| HTTP routes | DASH-HTTP-001 to DASH-HTTP-015 | 15 | 0 | 0 | 15 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-004 | 4 | 0 | 0 | 3 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-007 | 10 | 0 | 0 | 10 |
 | Control gating | DASH-CTRL-001 to DASH-CTRL-008 | 7 | 0 | 0 | 6 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 | 4 |
-| Test-input injection | DASH-INJ-001 to DASH-INJ-007 | 7 | 0 | 0 | 7 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-008 | 8 | 0 | 0 | 8 |
 | Upload store | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 | 3 |
 | Web page | DASH-UI-001 to DASH-UI-022 | 22 | 0 | 0 | 16 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 | 7 |
 | Stack control | DASH-STACK-001 to DASH-STACK-008 | 8 | 0 | 0 | 8 |
-| Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-017 | 17 | 0 | 0 | 17 |
+| Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-021 | 21 | 0 | 0 | 21 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 | 1 |
 
-**Summary:** 104 of 104 specs implemented; 0 deferred; 0 open. 96 carry a test `@spec` annotation; implemented without one: DASH-SINK-004, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007, DASH-UI-009, DASH-UI-010, DASH-UI-011 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 110 of 110 specs implemented; 0 deferred; 0 open. 102 carry a test `@spec` annotation; implemented without one: DASH-SINK-004, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007, DASH-UI-009, DASH-UI-010, DASH-UI-011 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

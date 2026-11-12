@@ -4,26 +4,24 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
-**PARTIAL**, 2026-11-11: C3 built the settings editor (MOD-CFG-001 to 016, MOD-UI-001 to 006) and the manifest declarations (MOD-MAN-001 to 005); MOD-MAN-006 to 009, MOD-LIFE, MOD-PAUSE and MOD-TEST are still `[ ]`. Original mapping: LLD drafted ([module-contract-design.md](../intent/module-contract/module-contract-design.md)); EARS specs written, all `[ ]`. Parts exist today in other segments: the manifest, controller and per-service lifecycle (control-plane), service-level injection for chat, eyes and ears and the personality editor (dashboard). Missing: the manifest's `config`, `uses`, `pause` and `test` fields, the settings editor routes and page, the derived dependents-degraded state, pause/resume buttons, bus-level per-unit test inputs, and the derived service lists (the page's `UNITS` constant and `KNOWN_SERVICES` are still hand-kept).
+**PARTIAL**, 2026-11-11: 43 of 44 specs implemented. Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts`), the settings editor and its page (MOD-CFG, MOD-UI), dependents shown `needs` in the Services tab (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test drawer and `POST /inject/event` (MOD-TEST-001 to 006). Open: MOD-TEST-007, the isolated stack answering every declared input, which needs the whole stack running under Docker (the first real run of the deployment checklist).
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-009 | 6 | 0 | 3 | 5 |
+| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-009 | 9 | 0 | 0 | 8 |
 | Settings editor | MOD-CFG-001 to MOD-CFG-016 | 16 | 0 | 0 | 16 |
-| Lifecycle and health | MOD-LIFE-001 to MOD-LIFE-003 | 0 | 0 | 3 | 0 |
-| Pause and resume | MOD-PAUSE-001 to MOD-PAUSE-003 | 0 | 0 | 3 | 0 |
-| Test drawer and inputs | MOD-TEST-001 to MOD-TEST-007 | 0 | 0 | 7 | 0 |
+| Lifecycle and health | MOD-LIFE-001 to MOD-LIFE-003 | 3 | 0 | 0 | 3 |
+| Pause and resume | MOD-PAUSE-001 to MOD-PAUSE-003 | 3 | 0 | 0 | 3 |
+| Test drawer and inputs | MOD-TEST-001 to MOD-TEST-007 | 6 | 0 | 1 | 6 |
 | Page | MOD-UI-001 to MOD-UI-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 28 of 44 specs implemented; 0 deferred; 16 open. 27 carry a test `@spec` annotation; implemented without one: MOD-MAN-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 43 of 44 specs implemented; 0 deferred; 1 open. 42 carry a test `@spec` annotation; implemented without one: MOD-MAN-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work required
 
-1. MOD-MAN-007 to 009 (the manifest route's wording, the manifest-versus-Compose test, `runService` as the only entry-file call): gap-closure chunk C2.
-2. MOD-LIFE-001 to 003 (dependents shown `needs` in the Services tab, units keep running when a dependency stops): chunk C2.
-3. MOD-PAUSE-001 to 003 (Pause and Resume buttons) and MOD-TEST-001 to 007 (test drawer, `POST /inject/event`, the refusal for a unit that is not running, the isolated-start end-to-end check): chunk C4.
+1. MOD-TEST-007: with every unit started with its isolation preset, each declared input is answered with no Twitch, Discord, OBS, avatar app, model server or speech server running. It is checked in the first real run on Docker (docs/TESTING.md).
 
 ## References
 
@@ -34,7 +32,7 @@ The four obligations every application service meets (dashboard-configurable thr
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (44 specs: 28 `[x]`, 16 `[ ]`, 0 `[D]`)
+- docs/intent/module-contract/module-contract-specs.md (44 specs: 43 `[x]`, 1 `[ ]`, 0 `[D]`)
 
 ### Code
 - packages/control/src/{manifest,health,cli}.ts

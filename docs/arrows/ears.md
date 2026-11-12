@@ -37,7 +37,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (39 specs: 39 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
+- docs/intent/ears/ears-specs.md (40 specs: 40 `[x]`, 0 `[ ]`, 0 `[D]`; 29 retired to mouth)
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### Tests
@@ -94,13 +94,13 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 |----------|----------|-------------|----------|------|----------------|
 | Startup plans | EARS-START-001 to EARS-START-008 | 8 | 0 | 0 | 8 |
 | Discord session | EARS-SESS-001 to EARS-SESS-010 | 8 | 0 | 0 | 7 |
-| Listening and transcription | EARS-HEAR-001 to EARS-HEAR-009 | 10 | 0 | 0 | 9 |
+| Listening and transcription | EARS-HEAR-001 to EARS-HEAR-009 | 11 | 0 | 0 | 10 |
 | Audio conversion | EARS-AUD-005 | 1 | 0 | 0 | 1 |
 | Audio injection | EARS-INJ-005 to EARS-INJ-011 | 7 | 0 | 0 | 6 |
 | Stub transcriber | EARS-STUB-001 to EARS-STUB-002 | 2 | 0 | 0 | 2 |
 | Health | EARS-HLTH-001 to EARS-HLTH-003 | 3 | 0 | 0 | 3 |
 
-**Summary:** 39 of 39 specs implemented; 0 deferred; 0 open. 36 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 40 of 40 specs implemented; 0 deferred; 0 open. 37 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

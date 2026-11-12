@@ -115,7 +115,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
-| Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 5 |
+| Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 6 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
 | Viewer notes: notes and strength | MEM-NOTE-001 to MEM-NOTE-012 | 12 | 0 | 0 | 12 |
@@ -124,8 +124,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Viewer notes: consolidation | MEM-CONSOL-001 to MEM-CONSOL-016 | 16 | 0 | 0 | 16 |
 | Viewer notes: surfacing to the cortex | MEM-SURF-001 to MEM-SURF-005 | 5 | 0 | 0 | 5 |
 | Viewer notes: owner operations | MEM-ADMIN-001 to MEM-ADMIN-007 | 7 | 0 | 0 | 7 |
+| Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 9 |
 
-**Summary:** 116 of 116 specs implemented; 0 deferred; 0 open. 113 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-START-006, MEM-REFLECT-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 126 of 126 specs implemented; 0 deferred; 0 open. 123 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-REFLECT-009, MEM-VOICE-010 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

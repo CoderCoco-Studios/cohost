@@ -8,6 +8,9 @@ import { UploadStore } from "../src/uploads.js";
 import { StackService } from "../src/stack.js";
 import { uploadBase } from "../src/inject.js";
 
+/** Every unit up: the not-running refusal (MOD-TEST-005) has its own tests in inject-event.test.ts. */
+const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
+
 class CtlBus extends FakeBus {
   async resetGroup() {}
 }
@@ -19,7 +22,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
   const setup = setupControl(env, bus, rec.log);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => UP,
     control: setup.control, uploads, dashboardUrl: "http://dashboard:3000", stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -118,7 +121,7 @@ test("without an explicit dashboardUrl the handler advertises the env-derived ba
   delete process.env.DASHBOARD_URL; process.env.DASHBOARD_LAN_PORT = "4321";
   const handler = createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => UP, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   });
   if (prev.url !== undefined) process.env.DASHBOARD_URL = prev.url;
   if (prev.lan === undefined) delete process.env.DASHBOARD_LAN_PORT; else process.env.DASHBOARD_LAN_PORT = prev.lan;

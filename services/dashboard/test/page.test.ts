@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { EventPayloads } from "@cohost/bus";
 import { SERVICE_MANIFEST, unitDescriptors } from "@cohost/control";
 
 /**
@@ -26,7 +27,8 @@ class El {
   appendChild(c: El) { c.parent = this; this.children.push(c); }
   remove() { this.parent?.children.splice(this.parent.children.indexOf(this), 1); }
   setAttribute() {}
-  addEventListener() {}
+  listeners: Record<string, ((e: unknown) => unknown)[]> = {};
+  addEventListener(type: string, fn: (e: unknown) => unknown) { (this.listeners[type] ??= []).push(fn); }
   closest() { return null; }
 }
 
@@ -39,7 +41,7 @@ const res = (status: number, body: unknown = ""): FakeRes => ({
 
 type Handler = (path: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => FakeRes | Promise<FakeRes>;
 
-async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string } = {}) {
+async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string; rejectPlay?: boolean } = {}) {
   const prompts: string[] = [], confirms: string[] = [];
   const els = new Map<string, El>();
   const get = (sel: string) => { let e = els.get(sel); if (!e) els.set(sel, (e = new El())); return e; };
@@ -59,7 +61,7 @@ async function boot(opts: { manifestFails?: boolean; search?: string; handler?: 
     src: string; played = false;
     onplay?: () => void; onended?: () => void; onerror?: () => void;
     constructor(src: string) { this.src = src; audios.push(this); }
-    async play() { this.played = true; }
+    async play() { this.played = true; if (opts.rejectPlay) throw new Error("NotAllowedError"); }
   }
   class WebSocket {
     url: string; onmessage?: (m: { data: string }) => void; onclose?: () => void;
@@ -84,7 +86,12 @@ async function boot(opts: { manifestFails?: boolean; search?: string; handler?: 
   await tick();
   const run = (code: string) => vm.runInContext(code, ctx) as unknown;
   const deliver = (ev: Record<string, unknown>) => sockets.at(-1)!.onmessage!({ data: JSON.stringify(ev) });
-  return { els, get, calls, sockets, audios, timers, run, deliver, tick, prompts, confirms, store };
+  /** Fires the click listeners of `sel` as if `button` (a bag of data-* values) had been clicked inside it. */
+  const click = async (sel: string, button: Record<string, string>) => {
+    for (const fn of get(sel).listeners.click ?? []) await fn({ target: { closest: () => ({ dataset: button }) } });
+    await tick();
+  };
+  return { els, get, calls, sockets, audios, timers, run, deliver, tick, prompts, confirms, store, click };
 }
 
 const utterance = (id: string, extra: Record<string, unknown> = {}) =>
@@ -840,4 +847,192 @@ test("with control disabled there is no Apply; the page names the units and the 
   assert.match(msg, /cohostctl restart voice/);
   assert.match(msg, /cohostctl restart mouth/);
   assert.equal(p.calls.filter((c) => /\/restart$/.test(c.path)).length, 0);
+});
+
+// ---- module contract: needs, pause, test drawer (MOD-LIFE-002, MOD-PAUSE-*, MOD-TEST-001), audio autoplay (DASH-UI-012)
+const rowOf = (p: Awaited<ReturnType<typeof boot>>, name: string) => p.get("#svcRows").innerHTML.split("</tr>").find((r) => r.includes(`<td>${name}</td>`)) ?? "";
+const unitRow = (service: string, over: Record<string, unknown> = {}) => ({ service, state: "up", restarts: 0, ...over });
+const beat = (detail?: string) => ({ state: "ready", mode: "live", deps: {}, instance: "i", ...(detail ? { detail } : {}) });
+
+// @spec MOD-LIFE-002
+test("a row with needs shows 'needs <service> (<state>)' for each beside its own, unchanged, state; a row with none shows nothing", async () => {
+  const p = await boot();
+  p.deliver({ type: "services", services: [
+    unitRow("salience", { needs: [{ service: "affect", state: "down" }, { service: "cortex", state: "unknown" }] }),
+    unitRow("cortex", { needs: [] }), unitRow("chat"),
+  ] });
+  const r = rowOf(p, "salience");
+  assert.match(r, /<span class="badge up">up<\/span>/);
+  assert.match(r, /needs affect \(down\)/);
+  assert.match(r, /needs cortex \(unknown\)/);
+  assert.doesNotMatch(rowOf(p, "cortex"), /needs /);
+  assert.doesNotMatch(rowOf(p, "chat"), /needs /);
+});
+
+// @spec MOD-PAUSE-001
+test("Pause and Resume appear on the rows of units whose manifest pause is true, with control enabled, and on no other row", async () => {
+  const on = await boot({ control: true });
+  on.deliver({ type: "services", services: SERVICE_MANIFEST.map((d) => unitRow(d.id)) });
+  for (const d of unitDescriptors()) {
+    const r = rowOf(on, d.id);
+    assert.equal(/data-ctl="pause"/.test(r) && /data-ctl="resume"/.test(r), d.pause, d.id);
+    if (!d.pause) assert.doesNotMatch(r, /data-ctl=/, d.id);
+  }
+  assert.deepEqual(unitDescriptors().filter((d) => d.pause).map((d) => d.id).sort(), ["affect", "cortex", "salience"]);
+  const off = await boot();
+  off.deliver({ type: "services", services: [unitRow("salience")] });
+  assert.doesNotMatch(rowOf(off, "salience"), /data-ctl=/);
+});
+
+// @spec MOD-PAUSE-002
+test("pressing Pause or Resume posts /control with the command and the unit as target, through the authenticated fetch", async () => {
+  const p = await boot({ control: true, token: "tok" });
+  p.deliver({ type: "services", services: [unitRow("salience")] });
+  await p.click("#svcRows", { ctl: "pause", svc: "salience" });
+  await p.click("#svcRows", { ctl: "resume", svc: "cortex" });
+  const sent = p.calls.filter((c) => c.path === "/control");
+  assert.deepEqual(sent.map((c) => [c.method, JSON.parse(c.body!)]), [
+    ["POST", { cmd: "pause", target: "salience" }],
+    ["POST", { cmd: "resume", target: "cortex" }],
+  ]);
+});
+
+// @spec MOD-PAUSE-003
+test("a unit is shown paused exactly while its heartbeat detail is 'paused'; another detail is shown in its place; the page keeps no paused flag", async () => {
+  const p = await boot({ control: true });
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat("paused") })] });
+  assert.match(rowOf(p, "salience"), /badge paused">paused</);
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat("degraded: scorer down") })] });
+  assert.doesNotMatch(rowOf(p, "salience"), /badge paused/);
+  assert.match(rowOf(p, "salience"), /degraded: scorer down/);
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat() })] });
+  assert.doesNotMatch(rowOf(p, "salience"), /paused/);
+  assert.doesNotMatch(script, /\bpaused\s*=\s*(true|false)|pausedUnits|isPaused/);
+});
+
+const openDrawer = async (p: Awaited<ReturnType<typeof boot>>, unit: string) => {
+  p.deliver({ type: "services", services: [unitRow(unit)] });
+  await p.click("#svcRows", { open: "test", svc: unit });
+};
+
+// @spec MOD-TEST-001
+test("every unit row has a test button, with control enabled or not; non-unit rows have none", async () => {
+  for (const control of [true, false]) {
+    const p = await boot({ control });
+    p.deliver({ type: "services", services: [unitRow("chat"), unitRow("redis"), unitRow("mystery")] });
+    assert.match(rowOf(p, "chat"), /data-open="test"/);
+    assert.doesNotMatch(rowOf(p, "redis"), /data-open=/);
+    assert.doesNotMatch(rowOf(p, "mystery"), /data-open=/);
+  }
+});
+
+// @spec MOD-TEST-001
+test("the drawer offers one input form per entry of the unit's test.inputs, and the isolated start only with control enabled", async () => {
+  const on = await boot({ control: true });
+  await openDrawer(on, "salience");
+  assert.notEqual(on.get("#testDrawer").style.display, "none");
+  const html = on.get("#testDrawer").innerHTML;
+  assert.match(html, /salience/);
+  assert.equal((html.match(/data-td="send"/g) ?? []).length, 3);
+  for (const t of ["chat.message", "speech.heard", "vision.summary"]) assert.match(html, new RegExp(t.replace(".", "\\.")));
+  assert.match(html, /data-td="isolated"/);
+  const off = await boot();
+  await openDrawer(off, "salience");
+  assert.doesNotMatch(off.get("#testDrawer").innerHTML, /data-td="isolated"/);
+  const chat = await boot();
+  await openDrawer(chat, "chat");
+  assert.equal((chat.get("#testDrawer").innerHTML.match(/data-td="send"/g) ?? []).length, 1);
+  assert.match(chat.get("#testDrawer").innerHTML, /<textarea/);
+  const eyes = await boot();
+  await openDrawer(eyes, "eyes");
+  assert.match(eyes.get("#testDrawer").innerHTML, /type="file"/);
+});
+
+// @spec MOD-TEST-001
+test("a bus-event form posts /inject/event {unit, type, data} and reports the published bus id, or the server's refusal", async () => {
+  let answer = res(202, { id: "17-0" });
+  const p = await boot({ handler: (path) => (path === "/inject/event" ? answer : res(204)) });
+  await openDrawer(p, "salience");
+  p.get("#tdIn0").value = JSON.stringify({ platform: "twitch", user: "bob", text: "hi" });
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  const call = p.calls.find((c) => c.path === "/inject/event")!;
+  assert.deepEqual(JSON.parse(call.body!), { unit: "salience", type: "chat.message", data: { platform: "twitch", user: "bob", text: "hi" } });
+  assert.match(p.get("#tdStatus").textContent, /published chat\.message.*17-0/);
+  answer = res(409, { ok: false, detail: "service not running: salience" });
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  assert.match(p.get("#tdStatus").textContent, /409.*service not running: salience/);
+  p.get("#tdIn0").value = "{not json";
+  const before = p.calls.length;
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  assert.equal(p.calls.length, before, "invalid JSON is not sent");
+  assert.match(p.get("#tdStatus").textContent, /JSON/);
+});
+
+// @spec MOD-TEST-001
+test("every bus input the manifest declares has a sample payload that its bus schema accepts", async () => {
+  const p = await boot();
+  const types = [...new Set(unitDescriptors().flatMap((d) => d.test.inputs).filter((t) => !["text", "image", "audio"].includes(t)))];
+  assert.ok(types.length >= 6);
+  for (const t of types) {
+    const sample = JSON.parse(p.run(`JSON.stringify(sampleFor(${JSON.stringify(t)}))`) as string);
+    const parsed = (EventPayloads as unknown as Record<string, { safeParse(v: unknown): { success: boolean } }>)[t]!.safeParse(sample);
+    assert.ok(parsed.success, `${t}: ${JSON.stringify(sample)}`);
+  }
+});
+
+// @spec MOD-TEST-001
+test("the chat unit's text form posts a service-level /inject/text and its inject.result shows in the drawer feed", async () => {
+  const p = await boot({ handler: (path) => (path === "/inject/text" ? res(202, { id: "req-1" }) : res(204)) });
+  await openDrawer(p, "chat");
+  p.get("#tdIn0").value = "hello there";
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  const call = p.calls.find((c) => c.path === "/inject/text")!;
+  assert.deepEqual(JSON.parse(call.body!), { level: "service", text: "hello there" });
+  p.deliver({ id: "e1", type: "inject.result", ts: 1, source: "chat", data: { id: "other", ok: true } });
+  assert.doesNotMatch(p.get("#tdFeed").innerHTML, /inject\.result/);
+  p.deliver({ id: "e2", type: "inject.result", ts: 1, source: "chat", data: { id: "req-1", ok: true, detail: "queued" } });
+  assert.match(p.get("#tdFeed").innerHTML, /inject\.result/);
+  assert.match(p.get("#tdFeed").innerHTML, /queued/);
+});
+
+// @spec MOD-TEST-001
+test("the drawer feed shows the unit's test.observe types, including ones the main feed drops, and nothing else", async () => {
+  const p = await boot();
+  await openDrawer(p, "salience");
+  p.deliver({ id: "a", type: "attention.focus", ts: 1, source: "salience", data: { reason: "mentioned", score: 0.9 } });
+  p.deliver({ id: "b", type: "brain.say", ts: 1, source: "cortex", data: { id: "s", text: "hello", emotion: "happy" } });
+  p.deliver({ id: "c", type: "affect.state", ts: 1, source: "affect", data: { valence: 0, arousal: 0, mood: "neutral" } });
+  const html = p.get("#tdFeed").innerHTML;
+  assert.match(html, /attention\.focus/);
+  assert.match(html, /brain\.say/);
+  assert.doesNotMatch(html, /affect\.state/);
+  assert.equal(p.get("#feed").children.length, 1, "the main feed still drops attention.focus");
+});
+
+// @spec MOD-TEST-001
+test("the isolated start asks for confirmation, then posts the unit's start with isolated: true", async () => {
+  const p = await boot({ control: true, confirm: () => true });
+  await openDrawer(p, "voice");
+  await p.click("#testDrawer", { td: "isolated" });
+  const call = p.calls.find((c) => c.path === "/services/voice/start")!;
+  assert.deepEqual([call.method, JSON.parse(call.body!)], ["POST", { isolated: true }]);
+  const declined = await boot({ control: true, confirm: () => false });
+  await openDrawer(declined, "voice");
+  await declined.click("#testDrawer", { td: "isolated" });
+  assert.equal(declined.calls.filter((c) => c.path === "/services/voice/start").length, 0);
+});
+
+// @spec DASH-UI-012
+test("when the browser refuses to start playback the dropped line is reported done, audio goes back to off, and the rest of the queue is kept for when audio is re-enabled", async () => {
+  const p = await boot({ rejectPlay: true });
+  p.get("#audio").onclick!(); // audio on
+  for (const id of ["a", "b", "c"]) p.deliver(utterance(id));
+  await p.tick();
+  assert.deepEqual(p.calls.filter((c) => c.path === "/sink").map((c) => JSON.parse(c.body!)), [{ event: "done", id: "a" }]);
+  assert.equal(p.run("audioOn"), false);
+  assert.match(p.get("#audio").textContent, /enable audio/);
+  assert.equal(p.run("queue.length"), 2);
+  p.get("#audio").onclick!(); // re-enable: the kept queue resumes
+  await p.tick();
+  assert.deepEqual(p.audios.map((a) => a.src), ["/audio/a.wav", "/audio/b.wav"]);
 });

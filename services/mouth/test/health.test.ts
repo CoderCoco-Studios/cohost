@@ -44,7 +44,7 @@ test("plan off: mode off, deps n/a for the disabled outputs, ready at once", asy
   const hbs = await runHeartbeat(new MouthHealth("off", offOutputs, () => false).spec);
   assert.equal(hbs[1]!.service, "mouth");
   assert.equal(hbs[1]!.mode, "off");
-  assert.deepEqual(hbs[1]!.deps, { discord: "n/a", dryrun: "n/a" });
+  assert.deepEqual(hbs[1]!.deps, { discord: "n/a", dryrun: "n/a", file: "n/a", http: "n/a" });
   assert.equal(hbs[1]!.state, "ready");
 });
 
@@ -61,10 +61,10 @@ test("no token: mode live, discord down, degraded with the detail (idle, not exi
 test("a discord plan reports ok only while the output is ready, and down otherwise", async () => {
   let up = true;
   const h = new MouthHealth("discord", on, (name) => name === "discord" && up);
-  assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "ok", dryrun: "n/a" });
+  assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "ok", dryrun: "n/a", file: "n/a", http: "n/a" });
   up = false;
   const hbs = await runHeartbeat(h.spec);
-  assert.deepEqual(hbs[1]!.deps, { discord: "down", dryrun: "n/a" });
+  assert.deepEqual(hbs[1]!.deps, { discord: "down", dryrun: "n/a", file: "n/a", http: "n/a" });
   assert.equal(hbs[1]!.mode, "live");
   assert.equal(hbs[1]!.service, "mouth");
 });
@@ -72,13 +72,13 @@ test("a discord plan reports ok only while the output is ready, and down otherwi
 // @spec MOUTH-HLTH-001
 test("an output that is disabled reports n/a even while the plan runs other outputs", async () => {
   const h = new MouthHealth("discord", offOutputs, () => true);
-  assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "n/a", dryrun: "n/a" });
+  assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "n/a", dryrun: "n/a", file: "n/a", http: "n/a" });
 });
 
 // @spec MOUTH-DRY-004
 test("dryrun: deps.dryrun is ok while enabled and n/a while disabled, and alone it makes the mode mock", async () => {
   const alone = (await runHeartbeat(new MouthHealth("local", dry, (n) => n === "dryrun").spec))[1]!;
-  assert.deepEqual(alone.deps, { discord: "n/a", dryrun: "ok" });
+  assert.deepEqual(alone.deps, { discord: "n/a", dryrun: "ok", file: "n/a", http: "n/a" });
   assert.equal(alone.mode, "mock");
   const off = (await runHeartbeat(new MouthHealth("discord", on, (n) => n === "discord").spec))[1]!;
   assert.equal(off.deps.dryrun, "n/a");
@@ -90,5 +90,5 @@ test("dryrun beside an enabled discord output keeps the mode live, and discord w
   const hb = (await runHeartbeat(new MouthHealth("local", both, (n) => n === "dryrun").spec, (h) => h.degraded("DISCORD_TOKEN is not set")))
     .find((h) => h.state === "degraded")!;
   assert.equal(hb.mode, "live");
-  assert.deepEqual(hb.deps, { discord: "down", dryrun: "ok" });
+  assert.deepEqual(hb.deps, { discord: "down", dryrun: "ok", file: "n/a", http: "n/a" });
 });

@@ -9,11 +9,11 @@ export function outputTarget(cfg: Config["mouth"]["outputs"]["discord"]): { guil
   return { guildId: cfg.guild_id, channelId: cfg.voice_channel_id };
 }
 
-export type MouthEventType = "voice.utterance" | "voice.playing";
+export type MouthEventType = "voice.utterance" | "voice.playing" | "control";
 
-/** The types the one `mouth` loop reads in the `discord` plan; never `control` (MOUTH-PLAY-008). */
+/** The types the one `mouth` loop reads in the `discord` and `local` plans; `control` is acted on only for `set_routing` (MOUTH-PLAY-008). */
 // @spec MOUTH-PLAY-001, MOUTH-PLAY-008
-export const MOUTH_LOOP_TYPES = ["voice.utterance", "voice.playing"] as const satisfies readonly MouthEventType[];
+export const MOUTH_LOOP_TYPES = ["voice.utterance", "voice.playing", "control"] as const satisfies readonly MouthEventType[];
 
 /** One enabled output as the loop sees it: a queue that is judged for readiness when an utterance arrives. */
 export interface MouthOutput {
@@ -30,16 +30,24 @@ export interface MouthHandlerDeps {
   log: Pick<Logger, "debug">;
   /** Which utterance ids real sinks claimed (the fallback line's memory, MOUTH-FALL-010). */
   claims?: { seen(id: string): void; claim(id: string, sink: string): void };
+  /** Whether an output is switched on live (`set_routing`); an output switched off skips utterances like a disabled one. Default: all on. */
+  enabled?: (name: string) => boolean;
+  /** The shared `control` reader, given every `control` event on the loop; mouth's only handler is `set_routing`. */
+  control?: { handleAsync(ev: BusEvent): Promise<boolean> };
 }
 
 /**
  * The one `mouth` loop's handler: a `voice.utterance` is queued on every ready output and skipped, without a
  * `voice.failed` or a fallback, on an output that is not ready, so voice's virtual sink covers it when nothing else does.
- * A `voice.playing` only feeds the fallback line's claim memory.
+ * A `voice.playing` only feeds the fallback line's claim memory; a `control` goes to the shared reader (`set_routing`).
  */
-// @spec MOUTH-ROUTE-003, MOUTH-FALL-010, MOUTH-FALL-013
-export function createMouthHandler({ outputs, log, claims }: MouthHandlerDeps) {
+// @spec MOUTH-ROUTE-003, MOUTH-FALL-010, MOUTH-FALL-013, MOUTH-LIVE-001, MOUTH-LIVE-002
+export function createMouthHandler({ outputs, log, claims, enabled, control }: MouthHandlerDeps) {
   return async (ev: BusEvent): Promise<void> => {
+    if (ev.type === "control") {
+      await control?.handleAsync(ev);
+      return;
+    }
     if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
       claims?.claim(d.id, d.sink);
@@ -49,6 +57,7 @@ export function createMouthHandler({ outputs, log, claims }: MouthHandlerDeps) {
     const d = ev.data as BusEvent<"voice.utterance">["data"];
     claims?.seen(d.id);
     for (const output of outputs) {
+      if (enabled && !enabled(output.name)) continue;
       if (!output.isReady()) {
         log.debug({ id: d.id, output: output.name }, "output not connected: utterance skipped");
         continue;

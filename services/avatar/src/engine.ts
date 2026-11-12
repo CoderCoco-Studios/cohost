@@ -41,6 +41,7 @@ export class Engine {
   start(): void { // @spec AVATAR-ENG-001
     const dt = 1000 / this.cfg.fps;
     this.timer = setInterval(() => this.frame(), dt);
+    this.timer.unref(); // @spec AVATAR-ENG-018: the bus connection keeps the service alive, not the frame loop
   }
   stop(): void { clearInterval(this.timer); }
 

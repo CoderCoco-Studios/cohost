@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { Emotion, ExpressionMap } from "@cohost/config";
 import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
@@ -46,7 +46,8 @@ class FakeDriver implements AvatarDriver {
   trigger(g: string) { this.gestures.push(g); }
 }
 
-function boot(over: { bus?: BootBus; driver?: FakeDriver; env?: Partial<AvatarEnv> } = {}) {
+/** Builds a run; its shutdown steps run when the test ends, pass or fail, so no engine timer or driver outlives it. */
+function boot(ctx: TestContext, over: { bus?: BootBus; driver?: FakeDriver; env?: Partial<AvatarEnv> } = {}) {
   const bus = over.bus ?? new BootBus();
   const driver = over.driver ?? new FakeDriver();
   const rec = recordingLog();
@@ -63,7 +64,10 @@ function boot(over: { bus?: BootBus; driver?: FakeDriver; env?: Partial<AvatarEn
     exit: (code) => { exits.push(code); },
     ...over.env,
   };
-  return { b, bus, driver, rec, exits, shutdown, close: async () => { for (const fn of shutdown) await fn(); } };
+  let closed: Promise<void> | undefined;
+  const close = () => (closed ??= (async () => { for (const fn of shutdown) await fn(); })());
+  ctx.after(close);
+  return { b, bus, driver, rec, exits, shutdown, close };
 }
 
 /** The zod type of an expression block cannot express `gestures` next to string-valued emotions, so literals are cast once, here. */
@@ -72,8 +76,8 @@ const blocks = (x: unknown) => x as ExpressionMap;
 const states = (bus: FakeBus) => bus.health.map((h) => h.state);
 
 // @spec AVATAR-BUS-001
-test("subscribes in group avatar with start mode latest to the five body events, after the engine started", async () => {
-  const t = boot();
+test("subscribes in group avatar with start mode latest to the five body events, after the engine started", async (ctx) => {
+  const t = boot(ctx);
   void runAvatar(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   assert.deepEqual(t.bus.calls, ["resetGroup:avatar", "subscribe"]);
@@ -83,12 +87,11 @@ test("subscribes in group avatar with start mode latest to the five body events,
   assert.equal("fromNow" in opts, false);
   assert.deepEqual([...(opts.types as string[])].sort(), ["affect.state", "brain.say", "voice.done", "voice.playing", "voice.utterance"]);
   await waitFor(() => t.driver.params.length > 0, "engine frames"); // the engine is running
-  await t.close();
 });
 
 // @spec AVATAR-BUS-002, AVATAR-BUS-003, AVATAR-BUS-004, AVATAR-BUS-005, AVATAR-BUS-006
-test("events reach the engine: brain.say shows the emotion, utterance + playing lip-syncs, done ends it, affect.state sets the mood", async () => {
-  const t = boot();
+test("events reach the engine: brain.say shows the emotion, utterance + playing lip-syncs, done ends it, affect.state sets the mood", async (ctx) => {
+  const t = boot(ctx);
   void runAvatar(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   await t.bus.deliver(event("brain.say", { id: "u1", text: "hi", emotion: "smug" }));
@@ -106,15 +109,14 @@ test("events reach the engine: brain.say shows the emotion, utterance + playing 
   await t.bus.deliver(event("voice.done", { id: "u1", sink: "discord" }));
   await waitFor(() => t.driver.params.at(-1)!.mouthOpen < 0.3, "mouth closes");
   await t.bus.deliver(event("affect.state", { mood: "sad", valence: -0.5, arousal: 0.2 } as never));
-  await t.close();
 });
 
 // @spec AVATAR-HEALTH-001, AVATAR-VTS-002
-test("ready once the consumer group is positioned, without waiting for the driver to connect", async () => {
+test("ready once the consumer group is positioned, without waiting for the driver to connect", async (ctx) => {
   const bus = new BootBus();
   let release!: () => void;
   bus.resetGate = new Promise<void>((r) => { release = r; });
-  const t = boot({ bus }); // driver.connect never settles
+  const t = boot(ctx, { bus }); // driver.connect never settles
   void runAvatar(t.b);
   await waitFor(() => bus.calls.includes("resetGroup:avatar"), "group positioning started");
   await new Promise((r) => setTimeout(r, 30));
@@ -125,12 +127,11 @@ test("ready once the consumer group is positioned, without waiting for the drive
   // the driver is still connecting: the heartbeat reports it as a down dependency, not as an unready service
   assert.equal(bus.health.at(-1)!.deps.driver, "down");
   assert.equal(t.driver.ctx !== undefined, true); // connect was started
-  await t.close();
 });
 
 // @spec AVATAR-VTS-002, AVATAR-DRV-006
-test("the engine runs and the subscription starts while the first driver connect is still pending", async () => {
-  const t = boot(); // connect() never resolves
+test("the engine runs and the subscription starts while the first driver connect is still pending", async (ctx) => {
+  const t = boot(ctx); // connect() never resolves
   void runAvatar(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   await waitFor(() => t.driver.params.length > 0, "engine frames");
@@ -138,12 +139,11 @@ test("the engine runs and the subscription starts while the first driver connect
   assert.deepEqual(t.driver.ctx?.gestures, { wave: "WAVE" });
   assert.equal(t.driver.ctx?.stateDir, "/state");
   assert.deepEqual(t.exits, []);
-  await t.close();
 });
 
 // @spec AVATAR-BUS-007
-test("a startup failure after the config loads (driver creation, expressions load) logs fatal and exits 1", async () => {
-  const t = boot();
+test("a startup failure after the config loads (driver creation, expressions load) logs fatal and exits 1", async (ctx) => {
+  const t = boot(ctx);
   t.b.createDriver = () => { throw new Error("driver invalid"); };
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
@@ -152,31 +152,29 @@ test("a startup failure after the config loads (driver creation, expressions loa
 });
 
 // @spec AVATAR-BUS-007
-test("a rejecting driver.connect logs fatal and exits 1", async () => {
+test("a rejecting driver.connect logs fatal and exits 1", async (ctx) => {
   const driver = new FakeDriver();
   driver.onConnect = async () => { throw new Error("bad ws url"); };
-  const t = boot({ driver });
+  const t = boot(ctx, { driver });
   void runAvatar(t.b);
   await waitFor(() => t.exits.length > 0, "fatal exit");
   assert.deepEqual(t.exits, [1]);
   assert.ok(t.rec.msgs("error").includes("fatal"));
-  await t.close();
 });
 
 // @spec AVATAR-BUS-008
-test("a rejecting subscription logs fatal and exits 1", async () => {
+test("a rejecting subscription logs fatal and exits 1", async (ctx) => {
   const bus = new BootBus();
   bus.subscribeError = new Error("NOGROUP consumer group deleted");
-  const t = boot({ bus });
+  const t = boot(ctx, { bus });
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.ok(t.rec.msgs("error").includes("fatal"));
-  await t.close();
 });
 
 // @spec AVATAR-HEALTH-004
-test("shutdown stops the engine, disconnects the driver and stops the bus", async () => {
-  const t = boot();
+test("shutdown stops the engine, disconnects the driver and stops the bus", async (ctx) => {
+  const t = boot(ctx);
   void runAvatar(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   await t.close();
@@ -188,8 +186,8 @@ test("shutdown stops the engine, disconnects the driver and stops the bus", asyn
 });
 
 // @spec AVATAR-BUS-007
-test("a configuration that does not load logs the loader's message and exits 1, with no bus and no heartbeat", async () => {
-  const t = boot({ env: { loadConfig: () => { throw new Error("bad config"); } } });
+test("a configuration that does not load logs the loader's message and exits 1, with no bus and no heartbeat", async (ctx) => {
+  const t = boot(ctx, { env: { loadConfig: () => { throw new Error("bad config"); } } });
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.deepEqual(t.rec.msgs("error"), ["bad config"]);
@@ -197,8 +195,8 @@ test("a configuration that does not load logs the loader's message and exits 1, 
 });
 
 // @spec AVATAR-BUS-007
-test("a failed expressions load logs fatal and exits 1", async () => {
-  const t = boot({ env: { loadExpressions: () => { throw new Error("expressions.yaml invalid"); } } });
+test("a failed expressions load logs fatal and exits 1", async (ctx) => {
+  const t = boot(ctx, { env: { loadExpressions: () => { throw new Error("expressions.yaml invalid"); } } });
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.ok(t.rec.msgs("error").includes("fatal"));
@@ -217,11 +215,10 @@ test("expressionsFor takes the block named after the active driver and splits it
 });
 
 // @spec AVATAR-DRV-005
-test("the service hands the driver the active driver's block of expressions.yaml", async () => {
-  const t = boot();
+test("the service hands the driver the active driver's block of expressions.yaml", async (ctx) => {
+  const t = boot(ctx);
   void runAvatar(t.b);
   await waitFor(() => t.driver.ctx !== undefined, "driver connect started");
   assert.deepEqual(t.driver.ctx!.expressions, { happy: "Smile" });
   assert.deepEqual(t.driver.ctx!.gestures, { wave: "WAVE" });
-  await t.close();
 });

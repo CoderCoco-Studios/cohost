@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { VoiceConnectionStatus } from "@discordjs/voice";
@@ -9,7 +9,7 @@ class FakeConnection extends EventEmitter {
   destroy() { this.destroyed = true; }
 }
 
-function rig(over: { enters?: (c: FakeConnection, status: string, ms: number) => Promise<void>; loginError?: Error; failJoins?: number; notVoice?: boolean } = {}) {
+function rig(ctx: TestContext, over: { enters?: (c: FakeConnection, status: string, ms: number) => Promise<void>; loginError?: Error; failJoins?: number; notVoice?: boolean } = {}) {
   const client = Object.assign(new EventEmitter(), {
     destroyed: 0,
     logins: [] as string[],
@@ -46,6 +46,7 @@ function rig(over: { enters?: (c: FakeConnection, status: string, ms: number) =>
       sleep: async (ms: number) => { sleeps.push(ms); await new Promise((r) => setImmediate(r)); },
     },
   });
+  ctx.after(() => session.stop()); // idempotent: runs when the test ends, pass or fail
   return { session, client, conns, joinOpts, sleeps, enters, events, members };
 }
 const tick = () => new Promise((r) => setTimeout(r, 5));
@@ -72,8 +73,8 @@ test("no module reachable from the main entry imports discord.js or @discordjs/v
 });
 
 // @spec SHARED-DVS-002
-test("start() logs in, joins once the client is ready with the given flags, and waits up to 20 s for Ready", async () => {
-  const r = rig();
+test("start() logs in, joins once the client is ready with the given flags, and waits up to 20 s for Ready", async (ctx) => {
+  const r = rig(ctx);
   await r.session.start();
   assert.deepEqual(r.client.logins, ["tok"]);
   assert.equal(r.conns.length, 0, "no join before the client is ready");
@@ -90,15 +91,15 @@ test("start() logs in, joins once the client is ready with the given flags, and 
 });
 
 // @spec SHARED-DVS-002
-test("a failed login rejects start() with the login error", async () => {
-  const r = rig({ loginError: new Error("TOKEN_INVALID") });
+test("a failed login rejects start() with the login error", async (ctx) => {
+  const r = rig(ctx, { loginError: new Error("TOKEN_INVALID") });
   await assert.rejects(r.session.start(), /TOKEN_INVALID/);
   assert.equal(r.conns.length, 0);
 });
 
 // @spec SHARED-DVS-005
-test("when the connection reaches Ready, isReady() turns true and onConnected runs", async () => {
-  const r = rig();
+test("when the connection reaches Ready, isReady() turns true and onConnected runs", async (ctx) => {
+  const r = rig(ctx);
   await r.session.start();
   assert.equal(r.session.isReady(), false);
   r.client.emit("ready");
@@ -109,8 +110,8 @@ test("when the connection reaches Ready, isReady() turns true and onConnected ru
 });
 
 // @spec SHARED-DVS-004
-test("a failed join destroys the half-open connection, reports onJoinFailed(err, attempt) and retries with a doubling delay up to the cap", async () => {
-  const r = rig({ failJoins: 3 });
+test("a failed join destroys the half-open connection, reports onJoinFailed(err, attempt) and retries with a doubling delay up to the cap", async (ctx) => {
+  const r = rig(ctx, { failJoins: 3 });
   await r.session.start();
   r.client.emit("ready");
   await until(() => r.events.includes("connected"));
@@ -122,8 +123,8 @@ test("a failed join destroys the half-open connection, reports onJoinFailed(err,
 });
 
 // @spec SHARED-DVS-004
-test("the retry delay is capped at the configured maximum", async () => {
-  const r = rig({ failJoins: 6 });
+test("the retry delay is capped at the configured maximum", async (ctx) => {
+  const r = rig(ctx, { failJoins: 6 });
   await r.session.start();
   r.client.emit("ready");
   await until(() => r.events.includes("connected"));
@@ -132,8 +133,8 @@ test("the retry delay is capped at the configured maximum", async () => {
 });
 
 // @spec SHARED-DVS-004
-test("a channel that is not a voice channel fails the join like any other failure", async () => {
-  const r = rig({ notVoice: true });
+test("a channel that is not a voice channel fails the join like any other failure", async (ctx) => {
+  const r = rig(ctx, { notVoice: true });
   await r.session.start();
   r.client.emit("ready");
   await tick(); await tick();
@@ -142,8 +143,8 @@ test("a channel that is not a voice channel fails the join like any other failur
 });
 
 // @spec SHARED-DVS-003, SHARED-DVS-006
-test("a Disconnected connection that does not recover within 5 s marks the session not ready, reports it, destroys the connection and rejoins after 5 s with the attempt count back at 1", async () => {
-  const r = rig({ enters: async (_c, status) => { if (status !== VoiceConnectionStatus.Ready) throw new Error("no recovery"); } });
+test("a Disconnected connection that does not recover within 5 s marks the session not ready, reports it, destroys the connection and rejoins after 5 s with the attempt count back at 1", async (ctx) => {
+  const r = rig(ctx, { enters: async (_c, status) => { if (status !== VoiceConnectionStatus.Ready) throw new Error("no recovery"); } });
   await r.session.start();
   r.client.emit("ready");
   await tick();
@@ -160,8 +161,8 @@ test("a Disconnected connection that does not recover within 5 s marks the sessi
 });
 
 // @spec SHARED-DVS-003
-test("a Disconnected connection that moves to Signalling or Connecting is left alone", async () => {
-  const r = rig();
+test("a Disconnected connection that moves to Signalling or Connecting is left alone", async (ctx) => {
+  const r = rig(ctx);
   await r.session.start();
   r.client.emit("ready");
   await tick();
@@ -174,10 +175,10 @@ test("a Disconnected connection that moves to Signalling or Connecting is left a
 });
 
 // @spec SHARED-DVS-006
-test("concurrent join-loop starts share one running loop", async () => {
+test("concurrent join-loop starts share one running loop", async (ctx) => {
   let release!: () => void;
   const gate = new Promise<void>((res) => { release = res; });
-  const r = rig({ enters: async (_c, status) => { if (status === VoiceConnectionStatus.Ready) await gate; } });
+  const r = rig(ctx, { enters: async (_c, status) => { if (status === VoiceConnectionStatus.Ready) await gate; } });
   await r.session.start();
   r.client.emit("ready");
   r.client.emit("ready");
@@ -189,8 +190,8 @@ test("concurrent join-loop starts share one running loop", async () => {
 });
 
 // @spec SHARED-DVS-007
-test("stop() ends the join loop, destroys the connection and the client, and a second stop does nothing", async () => {
-  const r = rig();
+test("stop() ends the join loop, destroys the connection and the client, and a second stop does nothing", async (ctx) => {
+  const r = rig(ctx);
   await r.session.start();
   r.client.emit("ready");
   await tick();
@@ -202,8 +203,8 @@ test("stop() ends the join loop, destroys the connection and the client, and a s
 });
 
 // @spec SHARED-DVS-007
-test("stop() while the join loop is retrying ends it", async () => {
-  const r = rig({ failJoins: 1000 });
+test("stop() while the join loop is retrying ends it", async (ctx) => {
+  const r = rig(ctx, { failJoins: 1000 });
   await r.session.start();
   r.client.emit("ready");
   await tick();

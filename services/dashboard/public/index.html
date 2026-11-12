@@ -534,7 +534,7 @@ function renderStack() {
   $("#stConsolidate").style.display = !s.action && l && l.kind === "stop" && l.ok ? "" : "none"; // @spec DASH-UI-019
 }
 const STACK_ASK = {
-  launch: "Launch the stack? This runs docker compose up and waits for every service; the first launch builds images and can take many minutes.",
+  launch: "Launch the stack? This runs docker compose up --build: the service images are rebuilt from the current code (an unchanged image is a quick cache hit; changed code takes minutes), then it waits for every service.",
   rebuild: "Rebuild the stack? This runs docker compose up --build: the service images are rebuilt from the current code (many minutes when the code changed), then the stack is brought up.",
   stop: "Stop the whole stack (every container, Redis and Postgres included)?",
   restart: "Restart every running application service?",

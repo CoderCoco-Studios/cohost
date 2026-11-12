@@ -555,6 +555,15 @@ test("Launch, Stop and Restart-all each ask for confirmation, then POST their ro
 });
 
 // @spec DASH-UI-017
+test("the Launch confirmation says the images are rebuilt first", async () => {
+  const p = await boot({ control: true, token: "tok", handler: () => res(202, { ok: true }) });
+  p.deliver(stackMsg());
+  await p.get("#stLaunch").onclick!();
+  assert.match(p.confirms[0]!, /docker compose up --build/);
+  assert.match(p.confirms[0]!, /rebuil/i);
+});
+
+// @spec DASH-UI-017
 test("declining the confirmation sends nothing", async () => {
   const p = await boot({ control: true, confirm: () => false });
   p.deliver(stackMsg());

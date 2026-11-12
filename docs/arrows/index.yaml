@@ -216,7 +216,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: VOICE-ENV-001/002 retired (now SHARED-AUDIO-001/002); new [ ]: VOICE-ENV-005. Earlier: Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts is now mouth-sync.test.ts (mouth build chunk 2). Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "C5 built 2026-11-11: 55 specs, all [x]. Synthesis on an internal serial queue (VOICE-SYN-007/008), GET/HEAD and query-string handling (VOICE-HTTP-006/007), id reuse (VOICE-HTTP-008), timers cleared on stop (VOICE-HLTH-005), VOICE-ENV-005 tested, runService adopted, tests type-checked. Earlier: VOICE-ENV-001/002 retired (now SHARED-AUDIO-001/002). Earlier: Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts is now mouth-sync.test.ts (mouth build chunk 2). Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
     drift: null
 
   mouth:

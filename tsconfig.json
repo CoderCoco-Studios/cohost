@@ -15,6 +15,7 @@
     { "path": "services/memory" },
     { "path": "services/cortex" },
     { "path": "services/voice" },
+    { "path": "services/voice/tsconfig.test.json" },
     { "path": "services/avatar" },
     { "path": "services/eyes" },
     { "path": "services/ears" },

@@ -40,10 +40,9 @@ function boot(over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number; 
   const shutdown: (() => void | Promise<void>)[] = [];
   const b: VoiceBoot = {
     log: rec.log,
-    setup: () => ({
-      cfg: testConfig({ voice: { engine: over.engine ?? "stub", fallback: { lines: over.lines ?? [] } } }),
-      bus, port: over.port ?? 0, publicUrl: "http://voice:8700", clipDir: over.clipDir,
-    }),
+    loadConfig: () => testConfig({ voice: { engine: over.engine ?? "stub", fallback: { lines: over.lines ?? [] } } }),
+    createBus: () => bus,
+    port: over.port ?? 0, publicUrl: "http://voice:8700", clipDir: over.clipDir,
     onShutdown: (fn) => { shutdown.push(fn); },
     exit: (code) => { exits.push(code); },
   };
@@ -110,12 +109,13 @@ test("a rejecting subscription logs fatal and exits 1", async () => {
 });
 
 // @spec VOICE-SYN-006
-test("a setup failure (config load, group positioning) logs fatal and exits 1", async () => {
+test("a startup failure (config load, group positioning) exits 1; past config it logs fatal", async () => {
   const bad = boot();
-  bad.b.setup = () => { throw new Error("config invalid"); };
+  bad.b.loadConfig = () => { throw new Error("config invalid"); };
   await runVoice(bad.b);
   assert.deepEqual(bad.exits, [1]);
-  assert.ok(bad.rec.msgs("error").includes("fatal"));
+  assert.ok(bad.rec.msgs("error").includes("config invalid")); // the shared bootstrap logs the loader's message
+  assert.deepEqual(bad.bus.health, []); // no heartbeat before a configuration exists
 
   const bus = new BootBus();
   bus.resetError = new Error("redis down");

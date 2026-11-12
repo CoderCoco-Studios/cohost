@@ -52,7 +52,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (47 specs, prefix `CFG`: 46 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/config/config-specs.md (74 specs, prefix `CFG`: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/config.test.ts (453 lines; 33 `@spec` lines, covering 37 of the 46 implemented specs)
@@ -81,17 +81,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| Config directory and seeding | CFG-DIR-001 to 007 | 5 | 0 | 2 (DIR-006, DIR-007: per-service data directory) | 5 |
-| Environment handling | CFG-ENV-001 to 008 | 8 | 0 | 0 | 7 |
-| Loading and validation pipeline | CFG-LOAD-001 to 006 | 6 | 0 | 0 | 6 |
-| Schema | CFG-SCH-001 to 019 | 19 | 0 | 0 | 15 |
-| Backend selection and presets | CFG-ISO-001 to 005 | 5 | 0 | 0 | 4 |
-| Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
-| User-owned files | CFG-USR-001 to 010 | 10 | 0 | 0 | 8 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 | 7 |
+| Environment handling | CFG-ENV-001 to CFG-ENV-010 | 10 | 0 | 0 | 9 |
+| Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-006 | 6 | 0 | 0 | 6 |
+| Schema | CFG-SCH-001 to CFG-SCH-028 | 28 | 0 | 0 | 23 |
+| Backend selection and isolation presets | CFG-ISO-001 to CFG-LOG-001 | 6 | 0 | 0 | 5 |
+| Service URLs and logger | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 | 3 |
+| User-owned files | CFG-USR-001 to CFG-USR-011 | 13 | 0 | 0 | 12 |
 
-**Summary:** 53 of 53 specs implemented (47 at the audit, plus CFG-SCH-014 to 016 and CFG-USR-007 from viewer-notes chunk 1 CFG-USR-008 from chunk 2 and CFG-ENV-009 from chunk 4); 0 deferred; 0 gaps. 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
+**Summary:** 74 of 74 specs implemented; 0 deferred; 0 open. 65 carry a test `@spec` annotation; implemented without one: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-SCH-022, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

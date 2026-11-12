@@ -27,7 +27,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (47 specs, prefix LLM: 47 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (52 specs, prefix LLM: 52 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/llm.test.ts (25 tests, 25 `@spec` lines citing 38 distinct LLM IDs; fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client, no external network)
@@ -60,17 +60,17 @@ Consumers: cortex (`services/cortex/src/index.ts:28`), memory (`services/memory/
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Code `@spec` | Test `@spec` |
-|----------|----------|-------------|----------|------|--------------|--------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 4 | 2 |
-| Ollama and OpenAI chat | LLM-CHAT-001 to LLM-CHAT-008 | 8 | 0 | 0 | 8 | 6 |
-| Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 | 6 |
-| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-010 | 10 | 0 | 0 | 10 | 9 |
-| Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 | 6 |
-| Embeddings | LLM-EMBED-001 to LLM-EMBED-006 | 6 | 0 | 0 | 5 | 5 |
-| Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 | 5 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 2 |
+| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 11 | 0 | 0 | 11 |
+| Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
+| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-013 | 13 | 0 | 0 | 13 |
+| Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 |
+| Embeddings | LLM-EMBED-001 to LLM-EMBED-006 | 6 | 0 | 0 | 5 |
+| Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 46 of 46 specs implemented; 0 deferred; 0 gaps. 46 specs cited from code (LLM-EMBED-004 is annotated at memory's switch, `services/memory/src/backend.ts:6`), 39 from tests. No reverse orphans. Implemented but without a test annotation: LLM-IF-001, LLM-IF-003 (structural), LLM-CHAT-001, LLM-CHAT-007, LLM-CLAUDE-009, LLM-STOP-006, LLM-EMBED-004.
+**Summary:** 52 of 52 specs implemented; 0 deferred; 0 open. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003, LLM-EMBED-004 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

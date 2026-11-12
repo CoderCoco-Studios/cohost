@@ -84,18 +84,18 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Tested | Deferred | Gaps |
-|----------|----------|-------------|--------|----------|------|
-| Synthesis | VOICE-SYN-001 to 006 | 6 | 6 | 0 | 0 |
-| Stub engine | VOICE-STUB-001 to 003 | 3 | 3 | 0 | 0 |
-| Utterance publication | VOICE-UTT-001 to 003 | 3 | 3 | 0 | 0 |
-| WAV and envelope | SHARED-AUDIO-001 to 004 | 4 | 4 | 0 | 0 |
-| Sink arbitration | VOICE-SINK-001 to 013 | 13 | 13 | 0 | 0 |
-| Fallback clips | VOICE-CLIP-001 to 012 | 12 | 12 | 0 | 0 |
-| Audio store and HTTP | VOICE-HTTP-001 to 005 | 5 | 5 | 0 | 0 |
-| Health | VOICE-HLTH-001 to 004 | 4 | 4 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Synthesis | VOICE-SYN-001 to VOICE-SYN-008 | 8 | 0 | 0 | 8 |
+| Stub engine | VOICE-STUB-001 to VOICE-STUB-003 | 3 | 0 | 0 | 3 |
+| Utterance publication | VOICE-UTT-001 to VOICE-UTT-003 | 3 | 0 | 0 | 3 |
+| WAV and lip-sync envelope | VOICE-ENV-005 to VOICE-ENV-004 | 3 | 0 | 0 | 3 |
+| Sink arbitration | VOICE-SINK-001 to VOICE-SINK-013 | 13 | 0 | 0 | 13 |
+| Audio store and HTTP | VOICE-HTTP-001 to VOICE-HTTP-008 | 8 | 0 | 0 | 8 |
+| Fallback clips | VOICE-CLIP-001 to VOICE-CLIP-012 | 12 | 0 | 0 | 12 |
+| Health | VOICE-HLTH-001 to VOICE-HLTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 34 of 34 specs implemented; 0 deferred; 0 gaps. Every spec has a test. VOICE-UTT-003 is tested for synthesis and parse failures only. Process exit and signal handling are injected in the boot tests, so VOICE-SYN-006 and VOICE-HLTH-004 are tested through `runVoice`, not through a real process.
+**Summary:** 55 of 55 specs implemented; 0 deferred; 0 open. 55 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

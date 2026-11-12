@@ -72,7 +72,7 @@ Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the nam
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (49 specs: 49 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/mouth/mouth-specs.md (57 specs: 57 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/mouth/test/audio.test.ts (WAV conversion)
@@ -116,14 +116,15 @@ The playback, fallback, audio and Discord code was copied from `services/ears`, 
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps |
-|----------|----------|-------------|----------|------|
-| Startup plans | MOUTH-START-001 to 005 | 5 | 0 | 0 |
-| Discord output session | MOUTH-SESS-001 to 008 | 8 | 0 | 0 |
-| Routing | MOUTH-ROUTE-001 to 005 | 5 | 0 | 0 |
-| Playback | MOUTH-PLAY-001 to 009 | 9 | 0 | 0 |
-| Audio conversion | SHARED-AUDIO-006 | 1 | 0 | 0 |
-| Fallback line | MOUTH-FALL-001 to 019 | 19 | 0 | 0 |
-| Health | MOUTH-HLTH-001 to 002 | 2 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Startup plans | MOUTH-START-001 to MOUTH-START-006 | 6 | 0 | 0 | 6 |
+| Discord output session | MOUTH-SESS-001 to MOUTH-SESS-009 | 7 | 0 | 0 | 7 |
+| Routing | MOUTH-ROUTE-001 to MOUTH-ROUTE-005 | 5 | 0 | 0 | 5 |
+| Playback | MOUTH-PLAY-001 to MOUTH-PLAY-012 | 12 | 0 | 0 | 12 |
+| Audio conversion | MOUTH-AUD-002 | 1 | 0 | 0 | 1 |
+| Dry-run output | MOUTH-DRY-001 to MOUTH-DRY-005 | 5 | 0 | 0 | 5 |
+| Fallback line | MOUTH-FALL-001 to MOUTH-FALL-019 | 19 | 0 | 0 | 19 |
+| Health | MOUTH-HLTH-001 to MOUTH-HLTH-002 | 2 | 0 | 0 | 2 |
 
-**Summary:** 49 specs, 49 implemented, 0 gaps. 44 have a test carrying their `@spec` ID; the other 5 are discord.js glue (see Tests). Nothing is open outside the segment.
+**Summary:** 57 of 57 specs implemented; 0 deferred; 0 open. 57 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.

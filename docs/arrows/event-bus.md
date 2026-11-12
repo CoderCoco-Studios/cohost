@@ -43,7 +43,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (61 specs: 60 `[x]`, 1 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (61 specs: 61 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)
@@ -78,18 +78,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| Publish and envelope | BUS-STREAM-001 to 007 | 7 | 0 | 0 | 4 |
-| Event catalogue and schemas | BUS-EVT-001 to 022 (011 retired) | 19 | 0 | 2 (EVT-001, EVT-022: `voice.failed`) | 10 |
-| Consumer-group subscription | BUS-SUB-001 to 011 | 10 | 0 | 1 (SUB-011) | 8 |
-| Live tail and backfill | BUS-TAIL-001 to 004 | 4 | 0 | 0 | 4 |
-| Health stream | BUS-HEALTH-001 to 004 | 4 | 0 | 0 | 4 |
-| Group reset | BUS-GROUP-001 | 1 | 0 | 0 | 1 |
-| Shutdown | BUS-STOP-001 to 006 | 6 | 0 | 0 | 6 |
-| Test double | BUS-TEST-001 to 010 | 10 | 0 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Publish and envelope | BUS-STREAM-001 to BUS-STREAM-007 | 7 | 0 | 0 | 5 |
+| Event catalogue and schemas | BUS-EVT-001 to BUS-EVT-022 | 21 | 0 | 0 | 13 |
+| Consumer-group subscription | BUS-SUB-001 to BUS-SUB-012 | 12 | 0 | 0 | 10 |
+| Live tail and backfill | BUS-TAIL-001 to BUS-TAIL-005 | 5 | 0 | 0 | 5 |
+| Health stream and group reset | BUS-HEALTH-001 to BUS-GROUP-001 | 5 | 0 | 0 | 5 |
+| Shutdown | BUS-STOP-001 | 1 | 0 | 0 | 1 |
+| Test double (packages/testing) | BUS-TEST-001 to BUS-TEST-010 | 10 | 0 | 0 | 0 |
 
-**Summary:** 61 of 61 specs implemented; 0 deferred; 0 gaps. 39 of the 61 implemented specs have a test carrying their `@spec` ID; every implemented spec has a code annotation. Implemented specs with no test: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012 to 017, BUS-EVT-019, BUS-SUB-003, BUS-SUB-006, BUS-TEST-001 to 010.
+**Summary:** 61 of 61 specs implemented; 0 deferred; 0 open. 39 carry a test `@spec` annotation; 22 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

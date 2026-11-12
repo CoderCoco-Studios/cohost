@@ -31,7 +31,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (58 specs: 58 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/avatar/avatar-specs.md (61 specs: 61 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/avatar/test/boot.test.ts (boot wiring: subscription options, event routing, readiness, non-blocking driver start, fatal paths, shutdown)
@@ -81,17 +81,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Tested | Deferred | Gaps |
-|----------|----------|-------------|--------|----------|------|
-| Bus wiring | AVATAR-BUS-001 to 008 | 8 | 8 | 0 | 0 |
-| Animation engine | AVATAR-ENG-001 to 016 | 16 | 15 | 0 | 0 |
-| Driver contract and selection | AVATAR-DRV-001 to 007 | 7 | 5 | 0 | 0 |
-| VTube Studio driver | AVATAR-VTS-001 to 015 | 15 | 12 | 0 | 0 |
-| VMC driver | AVATAR-VMC-001 to 006 | 6 | 6 | 0 | 0 |
-| State publication | AVATAR-STATE-001 to 002 | 2 | 2 | 0 | 0 |
-| Health | AVATAR-HEALTH-001 to 004 | 4 | 4 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-008 | 8 | 0 | 0 | 8 |
+| Animation engine | AVATAR-ENG-001 to AVATAR-ENG-017 | 17 | 0 | 0 | 17 |
+| Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 7 | 0 | 0 | 5 |
+| VTube Studio driver | AVATAR-VTS-001 to AVATAR-VTS-016 | 16 | 0 | 0 | 16 |
+| VMC driver | AVATAR-VMC-001 to AVATAR-VMC-006 | 6 | 0 | 0 | 6 |
+| State publication | AVATAR-STATE-001 to AVATAR-STATE-002 | 2 | 0 | 0 | 2 |
+| Health | AVATAR-HEALTH-001 to AVATAR-DEV-001 | 5 | 0 | 0 | 5 |
 
-**Summary:** 58 of 58 specs implemented; 0 deferred; 0 gaps. Implemented but untested: AVATAR-ENG-006 (auto-clear of a playing utterance), AVATAR-DRV-001 (held by the type checker), AVATAR-DRV-005 (`loadExpressions` in `index.ts`), AVATAR-VTS-006 (request timeout), AVATAR-VTS-007 (5 s reconnect and its cancellation), AVATAR-VTS-015 (expression-not-found warning); AVATAR-DRV-004 is tested in config. Process exit and signal handling are injected in the boot tests.
+**Summary:** 61 of 61 specs implemented; 0 deferred; 0 open. 59 carry a test `@spec` annotation; implemented without one: AVATAR-DRV-001, AVATAR-DRV-004 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

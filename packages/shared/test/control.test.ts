@@ -97,7 +97,7 @@ test("given a heartbeat, the standing detail is `paused` while paused and cleare
 });
 
 // @spec SHARED-CTRL-008
-test("only salience, cortex and affect read control, and only through controlFor", async () => {
+test("only salience, cortex, affect and mouth read control, and only through controlFor", async () => {
   const { readdirSync, readFileSync } = await import("node:fs");
   const root = new URL("../../../services/", import.meta.url);
   const users: string[] = [];
@@ -111,5 +111,5 @@ test("only salience, cortex and affect read control, and only through controlFor
       if (svc !== "dashboard" && /\.cmd\b/.test(text)) assert.fail(`${svc}/${f} reads control by hand`);
     }
   }
-  assert.deepEqual([...new Set(users)].sort(), ["affect", "cortex", "salience"]);
+  assert.deepEqual([...new Set(users)].sort(), ["affect", "cortex", "mouth", "salience"]);
 });

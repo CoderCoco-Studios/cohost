@@ -267,6 +267,16 @@ mouth:
     dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
       enabled: ${MOUTH_DRYRUN_ENABLED:-false}
       fail_every: 0            # 0 = never fail; N = fail every Nth line, to exercise the fallback path
+    file:                      # appends each line's WAV to a folder under the data directory; the newest max_files are kept
+      enabled: ${MOUTH_FILE_ENABLED:-false}
+      dir: mouth/outputs       # relative to the data directory (no absolute path, no "..")
+      max_files: 100
+    http:                      # POSTs each line's WAV (audio/wav) to a URL; retried with backoff, then dropped
+      enabled: ${MOUTH_HTTP_ENABLED:-false}
+      url: "${MOUTH_HTTP_URL:-}"  # an http(s) URL; empty while enabled = the output is down
+      timeout_ms: 5000         # per attempt
+      retries: 3               # attempts after the first
+      max_queue: 20            # undelivered lines held; the oldest is dropped past this
   fallback:
     min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
 

@@ -10,6 +10,9 @@ import { Emotion } from "@cohost/config";
 /** What `voice.playing` and `voice.done` carry: the utterance and the sink that reports it. */
 const PlaybackReport = z.object({ id: z.string(), sink: z.string() });
 
+/** `control.routing` (`set_routing`, read by mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
+export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean().optional(), gain_db: z.number().min(-40).max(12).optional() }).strict());
+
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
   // @spec BUS-EVT-002, BUS-EVT-005
@@ -250,10 +253,12 @@ export const EventPayloads = {
   /** Operator controls from the dashboard. */
   // @spec BUS-EVT-004
   control: z.object({
-    cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume"]),
+    cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume", "set_routing"]),
     text: z.string().optional(),
     /** Service the command is addressed to; absent = all services (back-compat). */
     target: z.string().optional(),
+    /** `set_routing` (mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
+    routing: RoutingPatch.optional(),
   }),
 
   /**

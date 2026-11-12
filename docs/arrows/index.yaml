@@ -72,7 +72,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "all 75 specs [x]; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
+    next: "all 78 specs [x]; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
     drift: null
 
   event-bus:
@@ -120,7 +120,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "all 35 specs [x]; gap closure built (C10). No open gaps."
+    next: "all 37 specs [x]; gap closure built (C10). No open gaps."
     drift: null
 
   chat:
@@ -228,7 +228,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "all 57 specs [x]; built (listen-speak split, C6 guard and dryrun). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "all 73 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs and live routing via set_routing). Per-line routing is deliberately not built (LLD Decisions). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   avatar:
@@ -252,7 +252,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "all 110 specs [x]; host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
+    next: "all 114 specs [x]; host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:

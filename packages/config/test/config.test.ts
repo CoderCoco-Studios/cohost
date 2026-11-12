@@ -629,7 +629,7 @@ test("mouth.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects n
 test("the mouth section is optional: absent or partial, it loads with the Discord output on, empty target, gain 0 and interval 20000", () => {
   const absent = ConfigSchema.safeParse(baseCfg());
   assert.ok(absent.success);
-  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 } }, fallback: { min_interval_ms: 20000 } });
+  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 }, file: { enabled: false, dir: "mouth/outputs", max_files: 100 }, http: { enabled: false, url: "", timeout_ms: 5000, retries: 3, max_queue: 20 } }, fallback: { min_interval_ms: 20000 } });
   for (const partial of [{}, { outputs: {} }, { outputs: { discord: {} } }, { fallback: {} }]) {
     const r = ConfigSchema.safeParse({ ...baseCfg(), mouth: partial });
     assert.ok(r.success, JSON.stringify(partial));

@@ -80,7 +80,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/dashboard/dashboard-design.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (110 specs: 110 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/dashboard/dashboard-specs.md (114 specs: 114 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 `@spec` annotations in tests: 62.
@@ -140,7 +140,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-021 | 21 | 0 | 0 | 21 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 | 1 |
 
-**Summary:** 110 of 110 specs implemented; 0 deferred; 0 open. 102 carry a test `@spec` annotation; implemented without one: DASH-SINK-004, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007, DASH-UI-009, DASH-UI-010, DASH-UI-011 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 114 of 114 specs implemented; 0 deferred; 0 open. 106 carry a test `@spec` annotation; implemented without one: DASH-SINK-004, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007, DASH-UI-009, DASH-UI-010, DASH-UI-011 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

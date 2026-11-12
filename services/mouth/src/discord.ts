@@ -23,6 +23,8 @@ export interface DiscordDeps {
   fallback?: FallbackLine;
   setReady(ready: boolean): void;
   isReady(): boolean;
+  /** The live `gain_db` (MOUTH-LIVE-002); default: the configured one. */
+  gainDb?: () => number;
   // Replacements for tests: no network, no real audio player.
   fetchAudio?: (url: string) => Promise<Buffer>;
   createPlayer?: () => AudioPlayer;
@@ -50,7 +52,7 @@ export function createDiscordOutput(deps: DiscordDeps): DiscordOutput {
   const resource = deps.createResource ?? ((pcm: Buffer) => createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw }));
 
   const playback = new Playback({
-    bus, log, sink: OUTPUT, gainDb: out.gain_db, fallback: deps.fallback, fetchAudio: deps.fetchAudio ?? httpAudio,
+    bus, log, sink: OUTPUT, gainDb: deps.gainDb ?? out.gain_db, fallback: deps.fallback, fetchAudio: deps.fetchAudio ?? httpAudio,
     play: (pcm) => player.play(resource(pcm)),
     stop: () => { player.stop(true); },
     ...deps.guard,

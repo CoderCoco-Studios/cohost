@@ -4,6 +4,7 @@ import { ensureFromExample, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import { handleInject, uploadBase } from "./inject.js";
+import { handleMouthRouting } from "./routing.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
@@ -94,6 +95,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (await handleViewers(viewers, req, res, url)) return;
       // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
+      // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003
+      if (await handleMouthRouting({ bus: d.bus, authorize: inject.authorize, body: readText }, req, res, url)) return;
       // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
       if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006

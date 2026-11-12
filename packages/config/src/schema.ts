@@ -321,7 +321,7 @@ export const ConfigSchema = z.object({
   }),
   /**
    * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.
-   * Each key under `outputs` is one output and its sink name; `discord` is the only kind today.
+   * Each key under `outputs` is one output and its sink name (`discord`, `dryrun`, `file`, `http`).
    */
   // @spec CFG-SCH-020, CFG-SCH-018
   mouth: z.object({
@@ -338,6 +338,25 @@ export const ConfigSchema = z.object({
       dryrun: z.object({
         enabled: z.boolean().default(false),
         fail_every: z.number().int().nonnegative().default(0),
+      }).default({}),
+      /** Appends each line's WAV to a bounded rotating directory under the data directory. */
+      // @spec CFG-SCH-031
+      file: z.object({
+        enabled: z.boolean().default(false),
+        /** Relative to the data directory; no absolute path and no `..` segment, so the output cannot write elsewhere. */
+        dir: z.string().refine((d) => d !== "" && !d.startsWith("/") && !/^[A-Za-z]:/.test(d) && !d.split(/[\\/]/).includes(".."), "must be a relative path without `..`").default("mouth/outputs"),
+        /** The newest this many files are kept. */
+        max_files: z.number().int().min(1).default(100),
+      }).default({}),
+      /** POSTs each line's WAV to `url`, with a timeout, bounded retries and a bounded queue. */
+      // @spec CFG-SCH-031
+      http: z.object({
+        enabled: z.boolean().default(false),
+        /** Empty or an http(s) URL; empty while enabled leaves the output down. */
+        url: z.string().refine((u) => u === "" || /^https?:\/\/\S+$/.test(u), "must be empty or an http(s) URL").default(""),
+        timeout_ms: z.number().int().positive().default(5000),
+        retries: z.number().int().nonnegative().default(3),
+        max_queue: z.number().int().positive().default(20),
       }).default({}),
     }).default({}),
     fallback: z.object({

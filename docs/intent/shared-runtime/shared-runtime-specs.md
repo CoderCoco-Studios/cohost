@@ -59,10 +59,10 @@ Terms: "the service" is the service that calls the module; "the bootstrap" is `r
 - [x] **SHARED-CTRL-002**: The control reader shall start every process with `paused` and `muted` false and `epoch` 0.
 - [x] **SHARED-CTRL-003**: When the reader applies `pause`, `resume`, `mute` or `unmute`, it shall set `paused` or `muted` accordingly before calling the service's matching handler, if any.
 - [x] **SHARED-CTRL-004**: When the reader applies `pause` or `forget_context`, it shall increase `epoch` by one before calling the service's handler.
-- [x] **SHARED-CTRL-005**: When the reader applies `forget_context`, `reload_personality` or `say`, it shall call the service's matching handler, if any, with the event's data, and do nothing else for a command the service gave no handler for.
+- [x] **SHARED-CTRL-005**: When the reader applies `forget_context`, `reload_personality` or `say`, it shall call the service's matching handler, if any, with the event's data, and do nothing else for a command the service gave no handler for; `set_routing` is likewise handed to the service's `set_routing` handler and changes no reader state.
 - [x] **SHARED-CTRL-006**: If a service handler throws or rejects, then the reader shall log the error and keep its state as already updated.
 - [x] **SHARED-CTRL-007**: Where `controlFor` is given the service's heartbeat, the reader shall set the heartbeat's standing detail to `paused` while `paused` is true and clear it on `resume` (SHARED-LIFE-014).
-- [x] **SHARED-CTRL-008**: The salience, cortex and affect services shall read `control` only through `controlFor`, and no other service shall call it.
+- [x] **SHARED-CTRL-008**: The salience, cortex, affect and mouth services shall read `control` only through `controlFor`, and no other service shall call it.
 
 ## Test injection (SHARED-INJ)
 

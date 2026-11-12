@@ -1,14 +1,14 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
+import assert from "node:assert/strict"; import { mkdtempSync, readdirSync, rmSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";
 import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService, wavWrap } from "@cohost/shared";
 import type { BusEvent } from "@cohost/bus";
-import { createMouth, type MouthBus } from "../src/mouth.js";
+import { createMouth, type MouthBus, type MouthOptions } from "../src/mouth.js";
 
 type Outputs = Record<string, Record<string, unknown>>;
 
 /** The whole service run by `runService` against a fake bus, a faked Discord module and a faked clip refresh. */
-function rig(outputs: Outputs, over: { token?: string; loginError?: Error } = {}) {
+function rig(outputs: Outputs, over: { token?: string; loginError?: Error; opts?: Partial<MouthOptions> } = {}) {
   const calls: string[] = [];
   const subs: { opts: Record<string, unknown>; handler: (ev: BusEvent) => Promise<void> }[] = [];
   const bus = Object.assign(new FakeBus(), {
@@ -22,7 +22,7 @@ function rig(outputs: Outputs, over: { token?: string; loginError?: Error } = {}
   const discordOutputs: string[] = [];
   const queued: string[] = [];
   const mouth = createMouth({
-    token: over.token ?? "tok",
+    token: over.token ?? "tok", ...over.opts,
     idleWarnEveryMs: 10,
     fetchAudio: async () => wavWrap(Buffer.alloc(24 * 30 * 2), 24000, 1),
     clipSync: (() => { calls.push("clips.start"); return { first: Promise.resolve(), stop: () => { calls.push("clips.stop"); } }; }) as never,
@@ -98,7 +98,7 @@ test("the local plan runs the dryrun output with no Discord: group mouth at late
   try {
     await r.done;
     assert.deepEqual(r.calls, ["reset:mouth", "subscribe", "clips.start"], "no Discord module loaded, subscription before the clip refresh");
-    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "voice.playing"], start: "latest" });
+    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "control"], start: "latest" });
     await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
     assert.equal(r.lastHealth().mode, "mock");
     assert.equal(r.lastHealth().deps.dryrun, "ok");
@@ -124,7 +124,7 @@ test("dryrun with a Discord output that has no token: no client, the dryrun outp
     await waitFor(() => r.bus.health.some((h) => h.state === "degraded"), "degraded heartbeat");
     const hb = r.bus.health.findLast((h) => h.state === "degraded")!;
     assert.equal(hb.detail, "DISCORD_TOKEN is not set");
-    assert.deepEqual(hb.deps, { discord: "down", dryrun: "ok" });
+    assert.deepEqual(hb.deps, { discord: "down", dryrun: "ok", file: "n/a", http: "n/a" });
     assert.equal(hb.mode, "live");
     await r.subs[0]!.handler(utterance("u1"));
     await waitFor(() => r.bus.of("voice.done").length === 1, "dryrun played it");
@@ -172,5 +172,85 @@ test("discord.js is loaded only in the discord plan", async () => {
     assert.ok(!r.calls.includes("discord.load"));
   } finally {
     await r.stop();
+  }
+});
+
+const setRoutingEv = (routing: unknown) => event("control", { cmd: "set_routing", target: "mouth", routing } as never);
+
+// @spec MOUTH-LIVE-001, MOUTH-LIVE-002, MOUTH-LIVE-006, MOUTH-HLTH-001
+test("live routing in the local plan: a set_routing on the one loop switches dryrun off (deps n/a, line skipped), reports the routing as the detail and switches it back on", async () => {
+  const r = rig({ discord: { enabled: false }, dryrun: { enabled: true } }, { token: "" });
+  try {
+    await r.done;
+    const handle = r.subs[0]!.handler;
+    await handle(setRoutingEv({ dryrun: { enabled: false } }));
+    await waitFor(() => r.lastHealth().deps.dryrun === "n/a", "dryrun n/a");
+    assert.equal(r.lastHealth().detail, 'routing {"dryrun":{"enabled":false}}');
+    await handle(utterance("u1"));
+    await new Promise((res) => setTimeout(res, 60));
+    assert.equal(r.bus.of("voice.playing").length, 0, "switched off: nothing claimed");
+    await handle(setRoutingEv({ dryrun: { enabled: true } }));
+    await waitFor(() => r.lastHealth().deps.dryrun === "ok", "dryrun ok again");
+    await handle(utterance("u2"));
+    await waitFor(() => r.bus.of("voice.done").length === 1, "played again");
+    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u2", sink: "dryrun" }]);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec MOUTH-LIVE-003, MOUTH-LIVE-004, MOUTH-LIVE-006
+test("live routing never creates a Discord client: naming discord in the local plan, or an unknown id, is rejected and reported in the detail", async () => {
+  const r = rig({ discord: { enabled: false }, dryrun: { enabled: true } }, { token: "tok" });
+  try {
+    await r.done;
+    await r.subs[0]!.handler(setRoutingEv({ discord: { enabled: true } }));
+    await waitFor(() => (r.lastHealth().detail ?? "").startsWith("set_routing rejected:"), "rejection detail");
+    assert.equal(r.lastHealth().detail, 'set_routing rejected: output "discord" is not running; routing {"dryrun":{"enabled":true}}');
+    await r.subs[0]!.handler(setRoutingEv({ discrod: { enabled: true } }));
+    await waitFor(() => (r.lastHealth().detail ?? "").includes('unknown output id "discrod"'), "unknown id detail");
+    assert.ok(!r.calls.includes("discord.load"), "no Discord module loaded");
+    assert.deepEqual(r.discordOutputs, [], "no Discord output created");
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec MOUTH-LIVE-001, MOUTH-START-001
+test("the idle off plan subscribes to nothing, so a set_routing has nothing to reach", async () => {
+  const r = rig({ discord: { enabled: false }, dryrun: { enabled: false } });
+  try {
+    await r.done;
+    assert.equal(r.subs.length, 0);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec MOUTH-FILE-001, MOUTH-HTTP-001, MOUTH-ROUTE-003
+test("file and http outputs run in the local plan with no Discord: each line is archived to the data directory and POSTed, and heartbeat mode is live", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "mouth-data-"));
+  const prev = process.env.COHOST_DATA_DIR;
+  process.env.COHOST_DATA_DIR = dataDir;
+  const posts: string[] = [];
+  const r = rig(
+    { discord: { enabled: false }, dryrun: { enabled: false }, file: { enabled: true, dir: "mouth/outputs", max_files: 5 }, http: { enabled: true, url: "http://sink.test/in" } },
+    { token: "", opts: { httpPost: async (url, init) => { posts.push(`${url}#${init.headers["x-cohost-utterance-id"]}`); return { status: 200 }; } } },
+  );
+  try {
+    await r.done;
+    assert.ok(!r.calls.includes("discord.load"));
+    await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
+    assert.equal(r.lastHealth().mode, "live");
+    assert.deepEqual(r.lastHealth().deps, { discord: "n/a", dryrun: "n/a", file: "ok", http: "ok" });
+    await r.subs[0]!.handler(utterance("u1"));
+    await waitFor(() => r.bus.of("voice.done").length === 2, "both outputs released the line");
+    assert.deepEqual(r.bus.of("voice.playing").map((p) => p.sink).sort(), ["file", "http"]);
+    assert.equal(readdirSync(join(dataDir, "mouth", "outputs")).length, 1);
+    assert.deepEqual(posts, ["http://sink.test/in#u1"]);
+  } finally {
+    await r.stop();
+    if (prev === undefined) delete process.env.COHOST_DATA_DIR; else process.env.COHOST_DATA_DIR = prev;
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });

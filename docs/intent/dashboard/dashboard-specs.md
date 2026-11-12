@@ -57,6 +57,12 @@ Prefix `DASH`. Design: [dashboard-design.md](dashboard-design.md). Verified agai
 - [x] **DASH-SVC-003**: When the controller refuses a lifecycle request, the dashboard shall respond 404 for an unknown service (including `dashboard`, which is not a manifest unit) and 403 for a forbidden target (infrastructure without `CONTROL_ADVANCED=1`), each with `{ok: false, detail}`. <!-- openspec: dashboard § (add-service-control) Service lifecycle routes --> <!-- test: services/dashboard/test/control.test.ts:177, services/dashboard/test/control.test.ts:186 -->
 - [x] **DASH-SVC-004**: If publishing the `service.lifecycle` audit record fails, then the dashboard shall log a warning and still answer the lifecycle request normally. <!-- test: services/dashboard/test/control.test.ts:198 -->
 
+## Mouth routing
+
+- [x] **DASH-ROUTE-001**: When `POST /mouth/routing` receives a JSON body `{"outputs": {<id>: {"enabled"?: boolean, "gain_db"?: number}}}` with at least one output, the dashboard shall publish `control` with `cmd` `set_routing`, `target` `mouth` and `routing` set to `outputs`, and respond 204; where `CONTROL_ENABLED=1` the route shall require the bearer token (DASH-CTRL-004). <!-- test: services/dashboard/test/routing.test.ts -->
+- [x] **DASH-ROUTE-002**: If the body of `POST /mouth/routing` is not JSON, is not an object with a non-empty `outputs` object, or has an `enabled` that is not a boolean, a `gain_db` that is not a number from -40 to 12, or any other key in an output entry, then the dashboard shall respond 400 and publish nothing; an unknown output id is mouth's to reject (MOUTH-LIVE-003). <!-- test: services/dashboard/test/routing.test.ts -->
+- [x] **DASH-ROUTE-003**: The dashboard shall carry no routing state: the current routing is mouth's heartbeat detail (MOUTH-LIVE-006), which `GET /services` already serves. <!-- test: services/dashboard/test/routing.test.ts -->
+
 ## Test-input injection
 
 - [x] **DASH-INJ-001**: When `POST /inject/text` carries a body that is not a JSON object, a `level` other than `service` or `bus`, an `as` other than `chat`, `speech` or `vision`, blank `text`, a mistyped optional field, or `level: "service"` with `as` other than `chat`, the dashboard shall respond 400 and publish nothing; a body over 64 KiB shall be answered 413. <!-- openspec: dashboard § (add-test-injection) Inject text route --> <!-- test: services/dashboard/test/inject.test.ts:68 -->

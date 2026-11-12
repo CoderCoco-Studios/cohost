@@ -15,12 +15,12 @@ export interface PlaybackDeps {
   log: Logger;
   /** The output's sink name, published as `sink` on every `voice.*` event this output sends (MOUTH-ROUTE-001). */
   sink: string;
-  /** The output's `gain_db`, applied to every utterance and fallback clip before the player gets it (MOUTH-ROUTE-005). */
-  gainDb: number;
+  /** The output's `gain_db` (a function for the live value, MOUTH-LIVE-002), applied to every utterance and fallback clip before the player gets it (MOUTH-ROUTE-005). */
+  gainDb: number | (() => number);
   /** Fetch the WAV a voice.utterance points at. */
   fetchAudio: (url: string) => Promise<Buffer>;
   /** Hand the prepared audio (48k stereo PCM, by default) to the output's audio player. */
-  play: (pcm: Buffer) => void;
+  play: (pcm: Buffer, id: string) => void;
   /** Stop the output's audio player (the watchdog's way out of a stuck item). The player's Idle that causes ends no item. */
   stop?: () => void;
   /** Turn a fetched WAV into what `play` takes; default: 48k stereo s16le PCM with the output's gain. */
@@ -131,7 +131,7 @@ export class Playback {
 
   /** Convert as an utterance and apply the output's gain. */
   private pcmOf(wav: Buffer): Buffer {
-    return this.d.prepare ? this.d.prepare(wav) : applyGain(wavToDiscordPcm(wav), this.d.gainDb);
+    return this.d.prepare ? this.d.prepare(wav) : applyGain(wavToDiscordPcm(wav), typeof this.d.gainDb === "function" ? this.d.gainDb() : this.d.gainDb);
   }
 
   private durationOf(audio: Buffer): number {
@@ -158,7 +158,7 @@ export class Playback {
     this.current = next.id;
     try {
       const pcm = this.pcmOf(await this.fetchWav(next.url));
-      this.d.play(pcm);
+      this.d.play(pcm, next.id);
       this.arm(next.id, this.durationOf(pcm));
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "playback failed");
@@ -187,7 +187,7 @@ export class Playback {
       }
       if (pcm) {
         try {
-          this.d.play(pcm);
+          this.d.play(pcm, id);
           this.d.fallback!.started(clip);
           playing = clip;
           this.clipPlaying = true;

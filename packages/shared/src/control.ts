@@ -14,6 +14,8 @@ export interface ControlHandlers {
   forget_context?: ControlHandler;
   reload_personality?: ControlHandler;
   say?: ControlHandler;
+  /** mouth: re-route its outputs live (MOUTH-LIVE-001). */
+  set_routing?: ControlHandler;
 }
 
 export interface ControlOptions {
@@ -34,7 +36,7 @@ export interface ControlReader {
 }
 
 /**
- * The one reader of `control` events for a service that honours them (salience, cortex, affect): target filter,
+ * The one reader of `control` events for a service that honours them (salience, cortex, affect, mouth): target filter,
  * `paused` / `muted` / `epoch` state and dispatch to the service's handlers.
  */
 // @spec SHARED-CTRL-001, SHARED-CTRL-002, SHARED-CTRL-003, SHARED-CTRL-004, SHARED-CTRL-005, SHARED-CTRL-006, SHARED-CTRL-007

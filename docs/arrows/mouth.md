@@ -83,7 +83,7 @@ Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the nam
 - services/voice/test/mouth-sync.test.ts (voice's real clip service read by mouth's real clip sync)
 - packages/shared/test/join.test.ts (the `createJoiner` retry loop behind SHARED-DVS-004)
 
-69 `@spec` annotations in the mouth tests, citing 44 distinct MOUTH IDs. Specs with no test of their own, all in the discord.js glue that no test reaches (LLD Open Questions 2): MOUTH-SESS-001 (login failure exits), MOUTH-SESS-004 (subscribe the player on Ready), SHARED-DVS-003 (disconnect and rejoin), SHARED-DVS-004 (the retry loop is the shared, tested `createJoiner`) and MOUTH-PLAY-007 (player error log).
+69 `@spec` annotations in the mouth tests, citing 44 distinct MOUTH IDs. Specs with no test of their own, all in the discord.js glue that no test reaches (the LLD's Context and Design Philosophy: the discord.js glue is the only untested layer): MOUTH-SESS-001 (login failure exits), MOUTH-SESS-004 (subscribe the player on Ready), SHARED-DVS-003 (disconnect and rejoin), SHARED-DVS-004 (the retry loop is the shared, tested `createJoiner`) and MOUTH-PLAY-007 (player error log).
 
 ### Code
 - services/mouth/src/index.ts

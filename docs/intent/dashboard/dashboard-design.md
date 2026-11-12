@@ -338,7 +338,9 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 
 ## Open Questions & Future Decisions
 
-### Manual verification
+None.
+
+## Manual verification
 
 1. **Autoplay in a real browser.** The refusal path (DASH-UI-022) is tested against a stub `Audio`; that a real browser's autoplay policy rejects `play()` the way the stub does is confirmed in the first run that opens the page in a normal tab and in an OBS Browser Source.
 

@@ -29,7 +29,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 Resolved in the specs:
 
 1. **A page opened while Redis is down.** DASH-FEED-008 sends the stack snapshot before the replay, but the audited DASH-HTTP-012 closed a socket whose replay failed, so every page would be closed right after its snapshots and loop on reconnect. DASH-HTTP-012 now keeps the socket open without the replay (it reverses part of the 2026-11-01 decision R1; owner question).
-2. **Upload URL agreement.** DASH-INJ-005 (what the dashboard advertises) and DEPLOY-COMPOSE-002 (what eyes and ears accept, SHARED-INJ-004, SHARED-INJ-004) share one default, `http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}`, and one override, `DASHBOARD_URL`. Host-run eyes or ears under `pnpm dev` keep the `urls.dashboard()` loopback default (CFG-URL-003) and need `DASHBOARD_URL` set to match; accepted for the dev loop.
+2. **Uploads over Redis.** DASH-INJ-005 stores each upload in `cohost:upload:<id>` (BUS-UPL-001, TTL DASH-UPL-002) and the request carries only the id; eyes and ears take it through their own bus connection (SHARED-INJ-005). There is no upload URL, no `/uploads/:id` route (DASH-INJ-007 retired), no `DASHBOARD_URL` and no host path a container must reach (owner decision of 2026-11-12).
 3. **The `dashboard` id.** CTRL-MANIFEST-001 drops it, so DASH-SVC-003 answers 404 (not 409) and DASH-UI-008 shows no buttons on its row; CTRL-HEALTH-005 still shows the dashboard's own heartbeat as "another service".
 4. **One action at a time.** DASH-STACK-003 covers per-service lifecycle requests too, so a restart cannot interleave with a launch or stop in one dashboard; `cohostctl` in another process is not locked out (control-plane LLD Deferred 3).
 5. **Infrastructure guards.** CTRL-STACK-010: launch and stop-all ignore `CONTROL_ADVANCED`; restart-all goes through the controller and never restarts infrastructure; per-service Redis/Postgres actions keep CTRL-GUARD-003.
@@ -115,11 +115,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 **Purpose:** Give the operator one place to watch the stack, steer it, and feed it test inputs, and let a browser (or OBS Browser Source) play the co-host's voice.
 
 **Key Components:**
-1. `index.ts` — wiring: bus, heartbeat, `HealthTracker`, `setupControl`, `UploadStore` + 60 s sweeper, HTTP server, `/ws` WebSocket server, shutdown.
+1. `index.ts` — wiring: bus, heartbeat, `HealthTracker`, `setupControl`, the upload limits, HTTP server, `/ws` WebSocket server, shutdown.
 2. `routes.ts` — `createDashboardHandler`: all HTTP routes, the bearer gate, the audio proxy, lifecycle body parsing and refusal mapping.
 3. `feed.ts` — `createFeed`: shared `bus.tail`, 60-event backfill per client, health stream seeding/tailing, `services` pushes and the 1 s staleness tick.
 4. `control.ts` — `setupControl`: reads `CONTROL_*`, builds `ServiceController` (from `@cohost/control`, owned by control-plane) with a `service.lifecycle` audit publisher.
-5. `inject.ts` + `uploads.ts` — `/inject/*` and `/uploads/:id`; the bounded in-memory upload store.
+5. `inject.ts` + `uploads.ts` — `/inject/*`; the upload size caps and TTL, with the bytes written to Redis through `Bus.putUpload`.
 6. `health.ts` — constant heartbeat spec (live, no deps).
 7. `public/index.html` — single-file UI: feed, avatar preview, operator controls, personality editor, services tab, test-inputs panel, audio sink.
 
@@ -133,7 +133,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Control gating | DASH-CTRL-001 to DASH-CTRL-008 | 7 | 0 | 0 | 6 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 | 4 |
 | Test-input injection | DASH-INJ-001 to DASH-INJ-008 | 8 | 0 | 0 | 8 |
-| Upload store | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 | 3 |
+| Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 | 3 |
 | Web page | DASH-UI-001 to DASH-UI-022 | 22 | 0 | 0 | 16 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 | 7 |
 | Stack control | DASH-STACK-001 to DASH-STACK-008 | 8 | 0 | 0 | 8 |

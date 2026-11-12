@@ -3,7 +3,7 @@
  * through `runService` with fakes. `index.ts` only hands this to `runService`.
  */
 import type { Bus, BusEvent } from "@cohost/bus";
-import { urls, type Config } from "@cohost/config";
+import type { Config } from "@cohost/config";
 import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { EarsHealth, earsPlan, idleDetail, readEarsToken } from "./health.js";
 import { createDirCapture } from "./capture-dir.js";
@@ -47,7 +47,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       if (stub) log.warn("ears.stt_engine is stub: transcripts are fixed text (stub transcript), nothing is sent to the STT service");
       const transcribe = h.track(stub ? stubTranscriber() : sttTranscriber(cfg.ears));
       // Injected clips only need the transcriber, so this works in every plan (off / no-token / discord).
-      const onInject = createInjectHandler({ bus, log, dashboardUrl: urls.dashboard(), transcribe });
+      const onInject = createInjectHandler({ bus, log, transcribe });
 
       // @spec EARS-START-004
       if (plan === "discord") {

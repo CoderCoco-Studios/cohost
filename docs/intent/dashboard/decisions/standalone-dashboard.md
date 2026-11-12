@@ -20,9 +20,8 @@ Two choices follow, and a cold reader could question either:
 2. **How the host process listens.** Launching and stopping the stack are the
    most powerful actions cohost offers, so they are host-local by default and
    token-gated whenever the owner opens them to other machines; but an OBS
-   Browser Source on a second PC must still load the sink page, and containers
-   must still fetch test uploads from the dashboard. One listener cannot be
-   both loopback-only and reachable from the LAN and from containers. This part
+   Browser Source on a second PC must still load the sink page. One listener
+   cannot be both loopback-only and reachable from the LAN. This part
    is also an owner decision.
 
 What is at stake: a containerised dashboard cannot start the stack it belongs
@@ -54,9 +53,9 @@ Weighted criteria:
 - **The sink keeps working from a second PC** (major; HLD Goal 8 and the
   two-PC setup in the README): an OBS Browser Source cannot authenticate, so
   the sink routes stay ungated and must stay reachable from the LAN.
-- **Containers can fetch test uploads** (moderate; HLD Goal 7, testable one
-  piece at a time): eyes and ears fetch `/uploads/:id` from the dashboard's
-  advertised URL, from inside the Compose network.
+- **Containers get test uploads** (moderate; HLD Goal 7, testable one
+  piece at a time): eyes and ears receive injected uploads without the host
+  having to be reachable from a container (they travel over Redis).
 - **URL stability** (moderate): the owner's bookmarks and OBS sources keep
   working across the change.
 - **Moving parts** (minor): ports, environment variables, and code paths to
@@ -90,14 +89,12 @@ page with Redis down.
 ### How it listens: one loopback listener (status quo of control mode)
 
 Everything on `127.0.0.1:3000`. Host-local by construction, but an OBS Browser
-Source on a second PC cannot load the sink, and containers cannot fetch uploads
-(a container reaches the host through the Docker bridge gateway, which a
-loopback listener does not serve). Fails two major or moderate criteria.
+Source on a second PC cannot load the sink. Fails a major criterion.
 
 ### How it listens: one all-interfaces listener with a loopback-peer check
 
 Everything on `0.0.0.0:3000`; every gated route also refuses a request whose
-peer address is not loopback. The sink, uploads and every URL stay where they
+peer address is not loopback. The sink and every URL stay where they
 are. Host-locality then depends on a check that each gated route, including
 routes added later, must apply; a missed check exposes a Docker-driving route
 to the LAN with only the cleartext token in front of it.
@@ -107,13 +104,11 @@ to the LAN with only the cleartext token in front of it.
 The full surface on `DASHBOARD_HOST` (default `127.0.0.1`; `0.0.0.0` makes it
 reachable from another machine) at the dashboard port (default 3000); a second
 listener on all interfaces at `DASHBOARD_LAN_PORT`
-(default 3001) whose handler knows only the ungated routes a sink page and an
-upload fetch need: `GET /`, `/ws`, `GET /audio/*`, `POST /sink`,
-`GET /uploads/:id`, `/health`. Host-locality holds by construction: the LAN
+(default 3001) whose handler knows only the ungated routes a sink page
+needs: `GET /`, `/ws`, `GET /audio/*`, `POST /sink`, `/health`. Host-locality holds by construction: the LAN
 listener has no code path to a gated route. The owner's own URL
 (`http://localhost:3000`) and a same-PC OBS source (`http://localhost:3000/?sink=1`)
-are unchanged; a second-PC OBS source moves to port 3001, and containers fetch
-uploads from `http://host.docker.internal:3001`. When the owner sets
+are unchanged; a second-PC OBS source moves to port 3001. When the owner sets
 `DASHBOARD_HOST` to a non-loopback address, the full surface is reachable from
 other machines, and the dashboard then refuses to start unless control mode
 and its token are on, so every stack and lifecycle action needs
@@ -125,8 +120,7 @@ and two more environment variables.
 A host process, because it is the only option that passes both gates (owner
 decision). Two listeners (owner decision), because it is the only listening
 option that keeps the control surface host-local by construction by default
-(HLD Trust boundary) while the sink and upload routes stay reachable from the
-LAN and from containers. A configurable full-surface host serves an owner who
+(HLD Trust boundary) while the sink routes stay reachable from the LAN. A configurable full-surface host serves an owner who
 runs cohost on a dedicated PC and opens the dashboard from another machine,
 with the token requirement holding the stack actions and viewer notes behind
 their secrets. The cost is one port and a second-PC OBS source at
@@ -136,9 +130,8 @@ The selection holds on the owner's first test machine, a single PC running
 WSL2 with Docker Desktop and no second box: the dashboard in the distro is
 reached from a Windows browser at `http://localhost:3000` through WSL's
 localhost forwarding; the sink page and an OBS-style browser source are tested
-on the same PC at `http://localhost:3001/?sink=1`; containers reach the LAN
-listener at `host.docker.internal:3001` (or at the distro's address set as
-`DASHBOARD_URL`), and voice on the Compose network; the dashboard reaches
+on the same PC at `http://localhost:3001/?sink=1`; test uploads reach eyes and ears over Redis
+(not over HTTP from a container to the host), and voice is reached on the Compose network; the dashboard reaches
 Redis and voice on loopback ports Docker Desktop forwards into the distro; and
 the control plane runs `docker.exe` when `docker` is not on the WSL path
 (`COHOST_DOCKER_BIN`). The dashboard LLD (One PC: WSL2 with Docker Desktop)

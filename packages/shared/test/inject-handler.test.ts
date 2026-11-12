@@ -1,13 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BusEvent } from "@cohost/bus";
-import { INJECT_STALE_MS, createInjectHandler, subscribeInject, uploadUrl } from "../src/index.js";
+import { INJECT_STALE_MS, createInjectHandler, subscribeInject } from "../src/index.js";
 
-const DASH = "http://dashboard:3000";
-const UP = `${DASH}/uploads/abc`;
+const ID = "0123456789abcdef0123456789abcdef";
 
 type Req = BusEvent<"inject.request">["data"];
-const req = (over: Partial<Req> = {}): Req => ({ id: "r1", target: "ears", kind: "audio", url: UP, remember: false, ...over } as Req);
+const req = (over: Partial<Req> = {}): Req => ({ id: "r1", target: "ears", kind: "audio", uploadId: ID, contentType: "audio/wav", remember: false, ...over } as Req);
 const evt = (data: Req, ts = Date.now()): BusEvent<"inject.request"> => ({ id: "1", type: "inject.request", ts, source: "dashboard", data });
 
 function setup(over: Record<string, unknown> = {}) {
@@ -16,15 +15,15 @@ function setup(over: Record<string, unknown> = {}) {
   const bus = { publish: async (type: string, data: Record<string, unknown>) => { published.push({ type, data }); return "1"; } };
   const calls: string[] = [];
   const log = { warn: (o: unknown) => warns.push(o), info() {}, error() {}, debug() {} };
-  const fetched: string[] = [];
-  const okFetch = async (url: string) => { fetched.push(url); return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "audio/wav" } }); };
+  const taken: string[] = [];
+  const okTake = async (id: string) => { taken.push(id); return Buffer.from([1, 2, 3]); };
   const h = createInjectHandler({
-    target: "ears", bus: bus as never, log: log as never, dashboardUrl: DASH,
-    kinds: { audio: async (bytes: Buffer) => { calls.push(`audio:${bytes.length}`); return { detail: "heard it" }; } },
-    maxBytes: { audio: 1000, image: 1000 }, fetchTimeoutMs: 200, fetch: okFetch as never,
+    target: "ears", bus: bus as never, log: log as never,
+    kinds: { audio: async (bytes: Buffer, _r: Req, info: { contentType: string | null }) => { calls.push(`audio:${bytes.length}:${info.contentType}`); return { detail: "heard it" }; } },
+    maxBytes: { audio: 1000, image: 1000 }, readTimeoutMs: 200, takeUpload: okTake,
     ...over,
   } as never);
-  return { h, published, warns, calls, fetched };
+  return { h, published, warns, calls, taken };
 }
 const results = (p: { type: string; data: Record<string, unknown> }[]) => p.filter((x) => x.type === "inject.result").map((x) => x.data);
 
@@ -34,16 +33,16 @@ test("a request for another target is ignored and publishes nothing", async () =
   s.h(evt(req({ target: "eyes" })));
   await s.h.drain();
   assert.deepEqual(s.published, []);
-  assert.deepEqual(s.fetched, []);
+  assert.deepEqual(s.taken, []);
 });
 
 // @spec SHARED-INJ-002, SHARED-INJ-008
-test("a request older than INJECT_STALE_MS when it leaves the queue gets `stale`, fetching and calling nothing", async () => {
+test("a request older than INJECT_STALE_MS when it leaves the queue gets `stale`, reading and calling nothing", async () => {
   const s = setup();
   s.h(evt(req(), Date.now() - INJECT_STALE_MS - 1000));
   await s.h.drain();
   assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "stale" }]);
-  assert.deepEqual(s.fetched, []);
+  assert.deepEqual(s.taken, []);
   assert.deepEqual(s.calls, []);
   assert.equal(INJECT_STALE_MS, 60_000);
 });
@@ -71,51 +70,56 @@ test("a kind the handler has no function for gets `<target> cannot handle kind '
 });
 
 // @spec SHARED-INJ-004
-test("a URL off the dashboard's /uploads/ origin, or with credentials, fetches nothing", async () => {
+test("an image or audio request with no upload id, or a malformed one, reads nothing", async () => {
   const s = setup();
-  for (const url of ["http://evil:3000/uploads/a", `${DASH}/other/a`, "http://u:p@dashboard:3000/uploads/a", undefined]) {
-    s.h(evt(req({ url })));
-  }
+  for (const uploadId of ["../etc/passwd", "ABC", "abc", "", undefined]) s.h(evt(req({ uploadId })));
   await s.h.drain();
-  assert.equal(results(s.published).length, 4);
-  for (const r of results(s.published)) assert.deepEqual(r, { id: "r1", ok: false, detail: "url is not an upload of this dashboard" });
-  assert.deepEqual(s.fetched, []);
-});
-
-// @spec SHARED-INJ-008
-test("uploadUrl accepts only same-origin /uploads/<id> and honours a base path", () => {
-  assert.equal(uploadUrl(UP, DASH), UP);
-  assert.equal(uploadUrl(`${DASH}/uploads/`, DASH), undefined);
-  assert.equal(uploadUrl("http://u:p@dashboard:3000/uploads/a", DASH), undefined);
-  assert.equal(uploadUrl(`${DASH}/uploads/../secret`, DASH), undefined);
-  assert.equal(uploadUrl("not a url", DASH), undefined);
-  assert.equal(uploadUrl(undefined, DASH), undefined);
-  assert.equal(uploadUrl("http://h/dash/uploads/a", "http://h/dash/"), "http://h/dash/uploads/a");
-  assert.equal(uploadUrl("http://h/uploads/a", "http://h/dash"), undefined);
+  assert.equal(results(s.published).length, 5);
+  for (const r of results(s.published)) assert.deepEqual(r, { id: "r1", ok: false, detail: "request carries no upload id" });
+  assert.deepEqual(s.taken, []);
+  assert.deepEqual(s.calls, []);
 });
 
 // @spec SHARED-INJ-005
-test("the fetch refuses redirects, and a redirect or non-2xx yields `fetch upload <status>` without calling the kind", async () => {
-  let init: RequestInit | undefined;
-  const s = setup({ fetch: async (_u: string, i: RequestInit) => { init = i; return new Response("no", { status: 503 }); } });
+test("the bytes come from takeUpload and the kind gets them with the request's content type; the key is taken exactly once", async () => {
+  const s = setup();
   s.h(evt(req()));
   await s.h.drain();
-  assert.equal(init?.redirect, "error");
-  assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "fetch upload 503" }]);
+  assert.deepEqual(s.taken, [ID]);
+  assert.deepEqual(s.calls, ["audio:3:audio/wav"]);
+  assert.deepEqual(results(s.published), [{ id: "r1", ok: true, detail: "heard it" }]);
+});
+
+// @spec SHARED-INJ-005
+test("the upload is taken (so deleted) even when the kind function throws", async () => {
+  const s = setup({ kinds: { audio: async () => { throw new Error("stt down"); } } });
+  s.h(evt(req()));
+  await s.h.drain();
+  assert.deepEqual(s.taken, [ID]);
+  assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "Error: stt down" }]);
+});
+
+// @spec SHARED-INJ-013
+test("a missing, taken or expired upload is answered `upload expired or missing` without calling the kind", async () => {
+  const s = setup({ takeUpload: async () => null });
+  s.h(evt(req()));
+  await s.h.drain();
+  assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "upload expired or missing" }]);
   assert.deepEqual(s.calls, []);
-  const r = setup({ fetch: async () => { throw new TypeError("fetch failed: redirect"); } });
-  r.h(evt(req()));
-  await r.h.drain();
-  assert.equal(results(r.published)[0]!.ok, false);
-  assert.deepEqual(r.calls, []);
+});
+
+// @spec SHARED-INJ-013
+test("a Redis read that rejects is reported with the error text and the kind is not called", async () => {
+  const s = setup({ takeUpload: async () => { throw new Error("redis down"); } });
+  s.h(evt(req()));
+  await s.h.drain();
+  assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "Error: redis down" }]);
+  assert.deepEqual(s.calls, []);
 });
 
 // @spec SHARED-INJ-006
-test("an upload fetch not completed within fetchTimeoutMs is aborted and reported as a timeout", async () => {
-  const s = setup({
-    fetchTimeoutMs: 30,
-    fetch: (_u: string, i: RequestInit) => new Promise((_res, rej) => { i.signal!.addEventListener("abort", () => rej(i.signal!.reason)); }),
-  });
+test("an upload read not completed within readTimeoutMs is reported as a timeout", async () => {
+  const s = setup({ readTimeoutMs: 30, takeUpload: () => new Promise(() => {}) });
   s.h(evt(req()));
   await s.h.drain();
   const [r] = results(s.published);
@@ -125,19 +129,18 @@ test("an upload fetch not completed within fetchTimeoutMs is aborted and reporte
 });
 
 // @spec SHARED-INJ-007
-test("an upload over the byte cap for its kind is not read further and is reported with the limit", async () => {
-  const big = new Uint8Array(5000);
-  const s = setup({ maxBytes: { audio: 1000 }, fetch: async () => new Response(big, { status: 200 }) });
+test("an upload over the byte cap for its kind is reported with the limit", async () => {
+  const s = setup({ maxBytes: { audio: 1000 }, takeUpload: async () => Buffer.alloc(5000) });
   s.h(evt(req()));
   await s.h.drain();
   assert.deepEqual(results(s.published), [{ id: "r1", ok: false, detail: "upload larger than the 1000 byte limit" }]);
   assert.deepEqual(s.calls, []);
-  let cancelled = false;
-  const stream = new ReadableStream<Uint8Array>({ pull(c) { c.enqueue(new Uint8Array(600)); }, cancel() { cancelled = true; } });
-  const t = setup({ maxBytes: { audio: 1000 }, fetch: async () => new Response(stream, { status: 200 }) });
-  t.h(evt(req()));
-  await t.h.drain();
-  assert.equal(cancelled, true, "body reading stopped");
+});
+
+// @spec SHARED-INJ-008
+test("@cohost/shared no longer exports the URL guard", async () => {
+  const shared = (await import("../src/index.js")) as Record<string, unknown>;
+  assert.equal("uploadUrl" in shared, false);
 });
 
 // @spec SHARED-INJ-009
@@ -150,7 +153,7 @@ test("the callback queues and returns without awaiting; requests run one at a ti
     kinds: { text: async (r: Req) => { active++; maxActive = Math.max(maxActive, active); if (r.id === "a") await gate; order.push(r.id); active--; return { detail: r.id }; } },
   });
   const t0 = performance.now();
-  const rets = ["a", "b", "c"].map((id) => s.h(evt(req({ id, kind: "text", url: undefined, text: "x" }))));
+  const rets = ["a", "b", "c"].map((id) => s.h(evt(req({ id, kind: "text", text: "x" }))));
   assert.ok(performance.now() - t0 < 50, "did not wait for the slow request");
   assert.deepEqual(rets, [undefined, undefined, undefined]);
   release();
@@ -165,7 +168,7 @@ test("a request arriving while 8 are waiting is answered `busy` and not queued",
   const gate = new Promise<void>((r) => { release = r; });
   const ran: string[] = [];
   const s = setup({ kinds: { text: async (r: Req) => { ran.push(r.id); await gate; return {}; } } });
-  for (let i = 0; i < 10; i++) s.h(evt(req({ id: `q${i}`, kind: "text", url: undefined, text: "x" })));
+  for (let i = 0; i < 10; i++) s.h(evt(req({ id: `q${i}`, kind: "text", text: "x" })));
   // q0 is being processed, q1..q8 wait (8), q9 is refused.
   assert.deepEqual(results(s.published), [{ id: "q9", ok: false, detail: "busy" }]);
   release();
@@ -182,8 +185,8 @@ test("a kind function's result is published with the request id; a throw becomes
       audio: async () => ({ ok: false, detail: "empty transcript" }),
     },
   });
-  s.h(evt(req({ id: "ok", kind: "text", url: undefined, text: "hi" })));
-  s.h(evt(req({ id: "bad", kind: "text", url: undefined, text: "boom" })));
+  s.h(evt(req({ id: "ok", kind: "text", text: "hi" })));
+  s.h(evt(req({ id: "bad", kind: "text", text: "boom" })));
   s.h(evt(req({ id: "soft" })));
   await s.h.drain();
   assert.deepEqual(results(s.published), [
@@ -200,11 +203,11 @@ test("a failing inject.result publish is logged and the next queued request stil
   const warns: unknown[] = [];
   const bus = { publish: async (_t: string, d: { id: string }) => { if (n++ === 0) throw new Error("bus down"); published.push(d.id); return "1"; } };
   const h = createInjectHandler({
-    target: "chat", bus: bus as never, log: { warn: (o: unknown) => warns.push(o) } as never, dashboardUrl: DASH,
-    kinds: { text: async () => ({}) }, maxBytes: {}, fetchTimeoutMs: 10,
+    target: "chat", bus: bus as never, log: { warn: (o: unknown) => warns.push(o) } as never,
+    kinds: { text: async () => ({}) }, maxBytes: {}, readTimeoutMs: 10,
   });
-  h(evt(req({ target: "chat", id: "one", kind: "text", url: undefined, text: "x" })));
-  h(evt(req({ target: "chat", id: "two", kind: "text", url: undefined, text: "x" })));
+  h(evt(req({ target: "chat", id: "one", kind: "text", text: "x" })));
+  h(evt(req({ target: "chat", id: "two", kind: "text", text: "x" })));
   await h.drain();
   assert.deepEqual(published, ["two"]);
   assert.ok(warns.length >= 1);

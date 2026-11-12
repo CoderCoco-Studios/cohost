@@ -11,13 +11,13 @@ test("the ears loop returns from an inject.request while STT is still working, s
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
   const started: string[] = [];
+  bus.takeUpload = async () => wavWrap(Buffer.alloc(32000), 16000, 1);
   const handle = createInjectHandler({
-    bus, log: silentLog, dashboardUrl: "http://dashboard:3000",
-    fetch: async () => new Response(wavWrap(Buffer.alloc(32000), 16000, 1), { headers: { "content-type": "audio/wav" } }),
+    bus, log: silentLog,
     transcribe: async () => { started.push("stt"); await gate; return "hello there"; },
   });
   const loop = createEarsHandler({ onInject: handle });
-  const req = (id: string) => event("inject.request", { id, target: "ears", kind: "audio", url: "http://dashboard:3000/uploads/abc", remember: false });
+  const req = (id: string) => event("inject.request", { id, target: "ears", kind: "audio", uploadId: "0123456789abcdef0123456789abcdef", contentType: "audio/wav", remember: false });
   try {
     const t0 = performance.now();
     await loop(req("a1"));

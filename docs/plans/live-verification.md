@@ -14,7 +14,6 @@ LLM_PROVIDER=mock  MEMORY_STORE=memory  MEMORY_EMBEDDER=hash  VOICE_ENGINE=stub 
 EARS_SOURCE=off  EARS_STT_ENGINE=stub  MOUTH_DISCORD_ENABLED=false  MOUTH_DRYRUN_ENABLED=true
 VISION_ENABLED=false  VISION_ENGINE=stub  COMPOSE_PROFILES=eyes,ears,mouth
 LLM_MODEL=VISION_MODEL=NOTES_MODEL=qwen2.5:0.5b-instruct   # about 0.7 GB pulled by `models` instead of several GB
-DASHBOARD_URL=http://<distro-address>:3001                 # Findings 3
 ```
 
 - `docker.exe info` shows an `nvidia` runtime; the GPU overlay was not used (mock needs none).
@@ -96,10 +95,11 @@ pause affect   -> detail=paused   resume affect   -> detail=None
    *isolated* start recreated the container without the preset (`ears degraded`). The page's Apply sends no body, so
    the mock-mode eyes/ears/mouth must have their presets in `.env`, as the README says; with them in `.env` all
    three passed restart. No change.
-3. **Upload fetch from eyes/ears.** With the default `host.docker.internal:3001` the injected image and audio failed
-   (`inject.result ok:false "TypeError: fetch failed"`, ECONNREFUSED 192.168.65.254:3001): Docker Desktop's host
-   gateway is not where WSL's listener is. The documented workaround (`DASHBOARD_URL=http://<distro-address>:3001`, TESTING
-   checklist step 5) worked; the README now says so. The distro address changes between WSL restarts.
+3. **Upload fetch from eyes/ears (resolved).** With the default `host.docker.internal:3001` the injected image and audio failed
+   (`inject.result ok:false "TypeError: fetch failed"`, ECONNREFUSED 192.168.65.254:3001), and on WSL NAT the Hyper-V firewall
+   blocks inbound connections from containers altogether. Fixed by carrying uploads over Redis (dashboard DASH-INJ-005,
+   shared-runtime SHARED-INJ-005): the dashboard stores the bytes in `cohost:upload:<id>` and the service takes them, so no host
+   network path is involved.
 4. The stack's `up -d` of the three profile units only happens with `COMPOSE_PROFILES` in `.env`; launching without it
    leaves eyes, ears and mouth `unknown` until started from the Services tab.
 

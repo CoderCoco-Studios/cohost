@@ -91,15 +91,7 @@ Windows `docker.exe` splits that list on `;` rather than `:` unless you also set
 `COMPOSE_PATH_SEPARATOR=:` in `.env` (not run with the GPU overlay; the mock stack was run through `docker.exe` on 2026-11-11, see
 [docs/plans/live-verification.md](docs/plans/live-verification.md); the step-by-step check is the
 [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop)). Isolated starts also reach `docker.exe`:
-the control plane lists the preset variables in `WSLENV`, which WSL interop requires. The `eyes` and `ears` containers
-reach the dashboard's upload listener at `host.docker.internal:3001` only where Docker Desktop forwards it; if the image or
-audio injection answers `fetch failed`, set `DASHBOARD_URL=http://<distro-address>:3001` in `.env` (`hostname -I` in the
-distro; the address changes after a WSL restart). In WSL's default NAT networking mode the Hyper-V firewall blocks
-inbound connections from containers, so that address may answer `EHOSTUNREACH` until an administrator PowerShell allows
-the port: `New-NetFirewallHyperVRule -Name cohost3001 -DisplayName cohost3001 -Direction Inbound -VMCreatorId
-'{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 3001 -Action Allow`. Alternatively set
-`networkingMode=mirrored` under `[wsl2]` in `%USERPROFILE%\.wslconfig` and run `wsl --shutdown`. Only image and audio
-injection into `eyes` and `ears` need this path; every other unit works without it. The GPU comes from the
+the control plane lists the preset variables in `WSLENV`, which WSL interop requires. Injected image and audio uploads travel over Redis, so nothing on the host needs to be reachable from containers. The GPU comes from the
 Windows NVIDIA driver; nothing to install in Linux except the container toolkit.
 
 ## Quick start with real accounts
@@ -432,7 +424,7 @@ pnpm dashboard     # tsc -b services/dashboard, then runs it on the host; it dri
 | `CONTROL_ENABLED=1` | turns the routes on; otherwise `POST /services/:id/*` is 404 |
 | `CONTROL_TOKEN` | bearer token, required on `POST /services/:id/start\|stop\|restart`, `POST /control` and `PUT /personality` while enabled (the UI prompts once per tab) |
 | `DASHBOARD_HOST` | where the full surface listens; `127.0.0.1` by default (`CONTROL_BIND` is the older name). A non-loopback value needs `CONTROL_ENABLED=1` with a token and logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel |
-| `DASHBOARD_LAN_PORT` | the second listener (default 3001, all interfaces): sink page, audio, test uploads only. Containers fetch uploads from it at `host.docker.internal` |
+| `DASHBOARD_LAN_PORT` | the second listener (default 3001, all interfaces): sink page and audio only |
 | `COHOST_DOCKER_BIN` | the docker executable to run; unset uses `docker`, else `docker.exe` (WSL2 without Docker Desktop's integration) |
 | `CONTROL_ADVANCED=1` | also allow `redis` and `postgres` (otherwise 403). The dashboard can never stop itself (409) |
 

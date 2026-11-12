@@ -6,6 +6,10 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line (build chunk 1): 65 specs: 65 implemented, 0 gaps, 0 deferred. The standalone host-run dashboard (chunk 2) adds BUS-TAIL-005, an optional `onRead` callback on `tail` and `tailHealth` that reports every read's outcome, so the dashboard feed can report whether Redis answers (DASH-FEED-009): 66 specs, 66 implemented.
 
+## Upload store over Redis: built
+
+Owner decision of 2026-11-12: injected test uploads travel as a Redis key beside the stream, not as a URL. `Bus.putUpload` / `Bus.takeUpload` (BUS-UPL-001 to BUS-UPL-003), `inject.request` carries `uploadId` and `contentType` (BUS-EVT-006) and `FakeBus` mirrors both (BUS-TEST-012). 69 specs, all implemented.
+
 ## Transport gap closure: built
 
 Design: LLD Decisions & Alternatives (pending drain, stop during a handler, streams for tests, avatar.state and playback shapes, fake ids); the LLD's Open Questions is empty.

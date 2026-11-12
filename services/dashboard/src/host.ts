@@ -18,11 +18,11 @@ export function resolvePorts(env: NodeJS.ProcessEnv, configPort: number): { port
   };
 }
 
-/** What the LAN listener serves: the sink page and what a container's upload fetch needs. */
+/** What the LAN listener serves: the sink page, its audio and the health check. */
 // @spec DASH-HOST-002
 export function lanAllows(method: string, pathname: string): boolean {
   if (pathname === "/health") return true;
-  if (method === "GET") return pathname === "/" || pathname.startsWith("/audio/") || /^\/uploads\/[^/]+$/.test(pathname);
+  if (method === "GET") return pathname === "/" || pathname.startsWith("/audio/");
   return method === "POST" && pathname === "/sink";
 }
 
@@ -163,7 +163,7 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const fullAddr = full.address() as AddressInfo, lanAddr = lan.address() as AddressInfo;
   const host = fullAddr.family === "IPv6" ? `[${fullAddr.address}]` : fullAddr.address;
   const fullUrl = `http://${host}:${fullAddr.port}`;
-  o.log.info({ url: fullUrl, lanPort: lanAddr.port }, `dashboard online: ${fullUrl} (full surface), LAN listener (sink, uploads) on port ${lanAddr.port}`);
+  o.log.info({ url: fullUrl, lanPort: lanAddr.port }, `dashboard online: ${fullUrl} (full surface), LAN listener (sink) on port ${lanAddr.port}`);
   return {
     full, lan, fullPort: fullAddr.port, lanPort: lanAddr.port, fullUrl,
     // Does not wait for anything else the dashboard started (a running docker compose command included).

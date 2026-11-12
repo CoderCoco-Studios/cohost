@@ -312,7 +312,7 @@ test("injection flags are accepted and kept; non-boolean rejected", () => {
 test("inject.request / inject.result are catalogued and validated", () => {
   assert.ok(EVENT_TYPES.includes("inject.request"));
   assert.ok(EVENT_TYPES.includes("inject.result"));
-  const req = { id: "a", target: "eyes", kind: "image", url: "http://dashboard:3000/uploads/abc", remember: false };
+  const req = { id: "a", target: "eyes", kind: "image", uploadId: "0123456789abcdef0123456789abcdef", contentType: "image/png", remember: false };
   assert.ok(EventPayloads["inject.request"].safeParse(req).success);
   assert.ok(EventPayloads["inject.request"].safeParse({ id: "a", target: "chat", kind: "text", text: "x", meta: { user: "u", platform: "youtube", isMod: true }, remember: true }).success);
   assert.equal(EventPayloads["inject.request"].safeParse({ ...req, target: "voice" }).success, false);

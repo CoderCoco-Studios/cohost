@@ -127,21 +127,21 @@ chat, eyes and ears take `inject.request` through one handler:
 
 ```ts
 createInjectHandler({
-  target: "ears", bus, log, dashboardUrl,
+  target: "ears", bus, log, takeUpload,
   kinds: { text?: (req) => Result, image?: (bytes, req) => Result, audio?: (bytes, req) => Result },
-  maxBytes: { image, audio }, fetchTimeoutMs, staleMs = INJECT_STALE_MS, now, fetch,
+  maxBytes: { image, audio }, readTimeoutMs, staleMs = INJECT_STALE_MS, now,
 })
 ```
 
 For each `inject.request`:
 
 1. A request for another `target` is ignored.
-2. A request older than `staleMs` (60 s, publisher `ts` against the local clock, judged when the request leaves the queue) gets `inject.result` with `ok: false` and detail `stale`; nothing is fetched.
+2. A request older than `staleMs` (60 s, publisher `ts` against the local clock, judged when the request leaves the queue) gets `inject.result` with `ok: false` and detail `stale`; nothing is read.
 3. A `kind` the service does not accept gets `inject.result` with `ok: false` and detail `<target> cannot handle kind '<kind>'`.
-4. For `image` and `audio`, the URL must pass the upload guard (`uploadUrl`: same origin as `DASHBOARD_URL`, under `/uploads/`, no credentials). The fetch refuses redirects, stops at `fetchTimeoutMs`, and stops reading past the kind's byte cap; a refused URL (`url is not an upload of this dashboard`), a redirect or non-2xx status (`fetch upload <status>`), a timeout or an oversized body each give `ok: false` with that detail.
+4. For `image` and `audio`, the request must carry an `uploadId` (32 hex digits; else `request carries no upload id`). The bytes are taken from Redis with `takeUpload(uploadId)` (`Bus.takeUpload`: `GETDEL` of `cohost:upload:<id>`, so the key is deleted by the read), bounded by `readTimeoutMs` and the kind's byte cap. A missing or expired key gives `upload expired or missing`, a timeout `read upload timed out after <ms> ms`, a body over the cap `upload larger than the <n> byte limit`; each gives `ok: false` with that detail. The kind function receives the bytes and `{ contentType }` from the request.
 5. The service's kind function runs and its result is published as `inject.result` with the request's `id`. A throw becomes `ok: false` with the error text.
 
-The details are the ones eyes and ears publish today, so the move changes no result a dashboard sees. Each service passes its own limits: eyes `vision.upload_max_bytes` and `vision.upload_timeout_ms`; ears 25 MiB (the dashboard's audio upload cap) and 30 s. chat's injection is text only and keeps its own lines (chat CHAT-INJ-*) until it moves onto the handler.
+Each service passes its own limits: eyes `vision.upload_max_bytes` and `vision.upload_timeout_ms`; ears 25 MiB (the dashboard's audio upload cap) and 30 s. chat's injection is text only and keeps its own lines (chat CHAT-INJ-*) until it moves onto the handler.
 
 Requests are handled one at a time in arrival order, off the bus read loop: the subscription handler queues the request and returns, so a slow transcription or vision call never delays reading the next event. The queue holds at most 8 requests; a request that arrives to a full queue gets `ok: false, error: "busy"`.
 
@@ -221,6 +221,7 @@ Each using segment keeps a line that states its own parameters and cites the mod
 | Idle reminder | Error once, then a reminder at most every 60 s while idle | One error only; a reminder forever at a fixed interval in each service | A single line scrolls away in a long-running container log, and the owner reads logs after the fact; a capped, uniform reminder keeps the cause visible without flooding. |
 | `control` handling | `controlFor` used by salience, cortex and affect only | Every service reads `control`; each region keeps its own switch | One reader keeps target filtering and the start-false state identical across the three regions. The body never reads `control` (HLD decision), so giving it the reader would invite half-applied mutes. |
 | Injection off the read loop | A serial queue of at most 8, handled in arrival order | Await the handler in the read loop; unbounded concurrency | Awaiting stalled the next read behind a slow STT call; concurrency would reorder results and let a burst of uploads exhaust memory. 8 matches affect's queue bound. |
+| Upload transport | Uploads are read from Redis by id through the service's own bus connection, then deleted | Keep the URL fetch from the dashboard and document the firewall; base64 in the event; a separate HTTP relay | A URL fetch needs the container to reach a host process, which WSL2 NAT with the Hyper-V firewall forbids; Redis is already the shared endpoint. Base64 bloats the stream and every backfill; a relay is one more listener. The fetch's SSRF guard, redirect refusal and `uploadUrl` disappear with the fetch. |
 | One resampler | Averaging for integer downsampling ratios, linear interpolation otherwise, exact output of today's two conversions preserved | Linear interpolation everywhere; a resampling library | Averaging is the low-pass ears relies on for 48 kHz to 16 kHz; linear interpolation is what mouth uses for any rate to 48 kHz. Preserving both outputs keeps the move behaviour-free. A library adds a native or WASM dependency for quality speech-to-text does not need. |
 | mouth `fallback.ts` split | Stays in mouth, split into a clip module and a fallback-line module | Move clip sync into shared for voice and mouth | Only mouth fetches and caches clips; voice serves them. Shared code with one user is the wrong abstraction. |
 | voice TTS and claim loop | Synthesis on an internal serial queue inside voice; one consumer group | Two consumer groups (`voice` for `brain.say`, a second for claims); keep one awaited loop | An awaited synthesis delayed claim reads and produced spurious virtual pairs. An internal queue fixes that without a new consumer group, manifest change or reset rule, and keeps `brain.say` order. A crash loses queued lines, which at-most-once delivery already accepts. |

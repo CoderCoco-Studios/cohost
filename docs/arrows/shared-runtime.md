@@ -1,6 +1,6 @@
 # Arrow: shared-runtime
 
-The `@cohost/shared` package as a segment: the one implementation of each runtime concern more than one service needs (bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling, WAV and resampling, the Discord voice session, hash embedding).
+The `@cohost/shared` package as a segment: the one implementation of each runtime concern more than one service needs (bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling (uploads read from Redis, SHARED-INJ-004 to SHARED-INJ-013), WAV and resampling, the Discord voice session, hash embedding).
 
 ## Status
 
@@ -15,7 +15,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Retry with backoff | SHARED-RETRY-001 to SHARED-RETRY-007 | 7 | 0 | 0 | 7 |
 | Missing-credentials idle plan | SHARED-IDLE-001 to SHARED-IDLE-005 | 5 | 0 | 0 | 5 |
 | Control handling | SHARED-CTRL-001 to SHARED-CTRL-008 | 8 | 0 | 0 | 8 |
-| Test injection | SHARED-INJ-001 to SHARED-INJ-012 | 12 | 0 | 0 | 12 |
+| Test injection | SHARED-INJ-001 to SHARED-INJ-013 | 13 | 0 | 0 | 13 |
 | Audio | SHARED-AUDIO-001 to SHARED-AUDIO-008 | 8 | 0 | 0 | 8 |
 | Discord voice session | SHARED-DVS-001 to SHARED-DVS-007 | 7 | 0 | 0 | 7 |
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |

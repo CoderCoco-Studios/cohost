@@ -1,4 +1,4 @@
-import type { Publisher } from "@cohost/bus";
+import type { Bus, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { createInjectHandler as createSharedInjectHandler, type InjectHandler } from "@cohost/shared";
 import { wavDurationMs } from "./audio.js";
@@ -6,18 +6,16 @@ import { hasWordCharacter } from "./transcript.js";
 
 export { wavDurationMs };
 
-/** The dashboard's audio upload cap (25 MiB) and the time one upload fetch may take. */
+/** The dashboard's audio upload cap (25 MiB) and the time one upload read may take. */
 export const INJECT_MAX_BYTES = 26_214_400;
-export const INJECT_FETCH_TIMEOUT_MS = 30_000;
+export const INJECT_READ_TIMEOUT_MS = 30_000;
 
 export interface InjectDeps {
-  bus: Publisher;
+  /** `takeUpload` reads the injected clip from Redis. */
+  bus: Publisher & Pick<Bus, "takeUpload">;
   log: Logger;
-  /** `urls.dashboard()`: the only origin uploads may be fetched from. */
-  dashboardUrl: string;
   /** Audio bytes as uploaded (any container the STT server decodes) -> text. */
   transcribe: (audio: Buffer, hint?: { contentType: string }) => Promise<string>;
-  fetch?: typeof fetch;
   now?: () => number;
 }
 
@@ -29,8 +27,9 @@ export interface InjectDeps {
  */
 export function createInjectHandler(d: InjectDeps): InjectHandler {
   return createSharedInjectHandler({
-    target: "ears", bus: d.bus, log: d.log, dashboardUrl: d.dashboardUrl, fetch: d.fetch, now: d.now,
-    fetchTimeoutMs: INJECT_FETCH_TIMEOUT_MS,
+    target: "ears", bus: d.bus, log: d.log, now: d.now,
+    takeUpload: (id) => d.bus.takeUpload(id),
+    readTimeoutMs: INJECT_READ_TIMEOUT_MS,
     maxBytes: { audio: INJECT_MAX_BYTES },
     kinds: {
       audio: async (audio, r, { contentType }) => {

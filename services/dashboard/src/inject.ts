@@ -1,9 +1,9 @@
 import type http from "node:http";
-import { randomUUID } from "node:crypto";
-import { EventPayloads, type EventType, type Publisher } from "@cohost/bus";
+import { randomBytes, randomUUID } from "node:crypto";
+import { EventPayloads, type Bus, type EventType, type Publisher } from "@cohost/bus";
 import { SERVICE_MANIFEST, type HealthState, type ServiceDef } from "@cohost/control";
 import { readBody } from "./body.js";
-import type { UploadKind, UploadStore } from "./uploads.js";
+import { uploadMaxBytes, type UploadKind, type UploadLimits } from "./uploads.js";
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/wav", "audio/x-wav", "audio/mpeg", "audio/ogg", "audio/webm", "audio/mp4"]);
@@ -11,22 +11,10 @@ const PLATFORMS = ["twitch", "youtube", "discord"] as const;
 type Platform = (typeof PLATFORMS)[number];
 const TEXT_LIMIT = 64 * 1024;
 
-/**
- * The base URL eyes and ears fetch uploads from: `DASHBOARD_URL` when set and non-empty, else the host gateway at the
- * LAN listener's port (`DASHBOARD_LAN_PORT`, default 3001).
- */
-// @spec DASH-INJ-005
-export function uploadBase(env: NodeJS.ProcessEnv): string {
-  const url = env.DASHBOARD_URL?.trim();
-  if (url) return url;
-  return `http://host.docker.internal:${env.DASHBOARD_LAN_PORT?.trim() || "3001"}`;
-}
-
 export interface InjectDeps {
-  bus: Publisher;
-  uploads: UploadStore;
-  /** `urls.dashboard()`: what eyes/ears will fetch uploads from. */
-  dashboardUrl: string;
+  /** `putUpload` stores an injected upload in Redis for eyes/ears to take. */
+  bus: Publisher & Pick<Bus, "putUpload">;
+  uploads: UploadLimits;
   /** Returns false (after sending 401) when the bearer gate rejects the request. */
   authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
   /** The derived health state of a unit (the tracker's snapshot with the Compose overlay); undefined for a unit not in it. */
@@ -55,17 +43,8 @@ function refuseNotRunning(d: InjectDeps, res: http.ServerResponse, unit: string)
   return true;
 }
 
-/** Serves GET /uploads/:id, POST /inject/{text,image,audio,event}. Returns false when the path is not ours. */
+/** Serves POST /inject/{text,image,audio,event}. Returns false when the path is not ours. */
 export async function handleInject(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
-  // @spec DASH-INJ-007
-  if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
-    const id = url.pathname.slice("/uploads/".length);
-    const up = d.uploads.get(id);
-    if (!up) { send(res, 404, "not found"); return true; }
-    res.writeHead(200, { "content-type": up.contentType, "content-length": up.data.length, "cache-control": "no-store" });
-    res.end(up.data);
-    return true;
-  }
   if (req.method !== "POST") return false;
   if (url.pathname === "/inject/text") { await injectText(d, req, res); return true; }
   if (url.pathname === "/inject/image") { await injectBinary(d, req, res, url, "image"); return true; }
@@ -166,7 +145,7 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   send(res, 202, { id });
 }
 
-// @spec DASH-INJ-005, DASH-INJ-006
+// @spec DASH-INJ-005, DASH-INJ-006, DASH-UPL-002, DASH-UPL-003
 async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL, kind: UploadKind): Promise<void> {
   if (!d.authorize(req, res)) return;
   const level = url.searchParams.get("level") ?? "service";
@@ -177,19 +156,25 @@ async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.
     req.resume();
     return send(res, 415, `unsupported content type '${contentType}'`);
   }
-  const { data, tooLarge } = await readBody(req, d.uploads.maxBytes(kind));
-  if (tooLarge) return send(res, 413, `${kind} exceeds ${d.uploads.maxBytes(kind)} bytes`);
+  const { data, tooLarge } = await readBody(req, uploadMaxBytes(d.uploads, kind));
+  if (tooLarge) return send(res, 413, `${kind} exceeds ${uploadMaxBytes(d.uploads, kind)} bytes`);
   if (data.length === 0) return send(res, 400, "empty body");
   if (refuseNotRunning(d, res, kind === "image" ? "eyes" : "ears")) return;
 
-  const uploadId = d.uploads.put(kind, contentType, data);
+  const uploadId = randomBytes(16).toString("hex");
+  try {
+    await d.bus.putUpload(uploadId, data, d.uploads.ttlMs);
+  } catch {
+    return send(res, 503, "upload store unavailable");
+  }
   const user = url.searchParams.get("user") || undefined;
   const id = randomUUID();
   await d.bus.publish("inject.request", {
     id,
     target: kind === "image" ? "eyes" : "ears",
     kind,
-    url: `${d.dashboardUrl.replace(/\/+$/, "")}/uploads/${uploadId}`,
+    uploadId,
+    contentType,
     meta: user ? { user } : undefined,
     remember: flag(url.searchParams.get("remember")),
   });

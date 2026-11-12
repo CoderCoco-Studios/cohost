@@ -20,7 +20,7 @@ test("the guild and voice channel come from the ears.discord config keys, not th
 });
 
 const utterance = () => event("voice.utterance", { id: "u1", text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 });
-const inject = () => event("inject.request", { id: "i1", target: "ears", kind: "audio", url: "http://d/uploads/x", remember: false });
+const inject = () => event("inject.request", { id: "i1", target: "ears", kind: "audio", uploadId: "0123456789abcdef0123456789abcdef", remember: false });
 
 // @spec EARS-INJ-007
 test("inject.request is handled by the one ears handler", async () => {

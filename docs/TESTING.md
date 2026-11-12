@@ -439,7 +439,7 @@ Every way to put a test input in front of a service, from the most realistic to 
 
 | surface | where | runs | needs |
 |---|---|---|---|
-| Service-level text, image, audio | dashboard test panel, `POST /inject/text` (`level: service`), `/inject/image`, `/inject/audio` | the real path through `chat`, `eyes` or `ears` (`inject.request`, answered by `inject.result`); uploads are fetched from the dashboard's LAN listener | the target service running; a model or STT unless its stub engine is on |
+| Service-level text, image, audio | dashboard test panel, `POST /inject/text` (`level: service`), `/inject/image`, `/inject/audio` | the real path through `chat`, `eyes` or `ears` (`inject.request`, answered by `inject.result`); the dashboard stores the upload in Redis and the service takes it from there | the target service running; a model or STT unless its stub engine is on |
 | Bus-level text | `POST /inject/text` with `level: bus` (`as` chat, speech or vision) | publishes `chat.message`, `speech.heard` or `vision.summary` directly with `injected: true`; no `inject.result` | Redis and the dashboard |
 | Any bus event | `scripts/dev/bus-pub.ts <type> '<json>'` | zod-validated `XADD`, source `dev-pub` | Redis only |
 | Operator controls | `POST /control` (`say`, `mute`, `unmute`, `forget_context`, `reload_personality`, `pause`, `resume` with an optional `target`) | the `control` event | Redis and the dashboard |
@@ -461,11 +461,7 @@ Desktop runs the containers, and a Windows browser and OBS are the clients.
 3. Press **Launch** and wait for the stack to reach `up`.
 4. Load `http://localhost:3001/?sink=1` in a second browser tab, or add it as an OBS Browser
    Source on the same PC, and click enable audio. Send a chat line and hear a reply.
-5. Inject an image from the dashboard and see `eyes` answer (`--profile eyes`). The eyes container fetches the upload from
-   `host.docker.internal:3001`. If it cannot reach that name, set `DASHBOARD_URL=http://<distro-address>:3001`
-   in `.env` (`hostname -I` inside the distro; it changes after a WSL restart) and relaunch. If that answers
-   `EHOSTUNREACH`, the Hyper-V firewall is blocking inbound traffic from containers (WSL NAT mode): allow TCP 3001 with
-   the administrator PowerShell rule in the README's WSL2 paragraph, or switch WSL to `networkingMode=mirrored`.
+5. Inject an image from the dashboard and see `eyes` answer (`--profile eyes`), then an audio clip and see `ears` answer. Uploads travel over Redis, so nothing on the host needs to be reachable from containers.
 6. Real Discord and OBS, once the mock path above is healthy: follow [Two-bot Discord setup](#two-bot-discord-setup) and [OBS requirements](#obs-requirements); that is the only place the native voice dependencies and the OBS WebSocket path are verified.
 7. Press **Stop**, then run the consolidation pass (`docker compose run --rm consolidate`).
 

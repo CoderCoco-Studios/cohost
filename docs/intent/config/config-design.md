@@ -60,7 +60,7 @@ All defaults below are in `packages/config/src/schema.ts`; "consumer" is where t
 | --- | --- | --- |
 | `cohost` | `name`, `streamer` (required, min 1), `timezone` ("UTC") | names in prompts of cortex, affect, salience, memory reflect; timezone in `services/cortex/src/prompt.ts:21` |
 | `llm` | `provider` (blank to `ollama`; `ollama\|openai\|anthropic\|bedrock\|mock`), `model`, `embed_model` (required), `num_ctx` 8192, `temperature` 0.9, `max_tokens` 120, `openai{base_url, api_key}`, `claude{api_key, effort low, max_tokens 2048 min 256, fallbacks true}`, `bedrock{region ""}`, `timeout_ms` 60000 (CFG-SCH-013) | `packages/llm` (model-backends); `mock` is opt-in, never default (`schema.ts:44`) |
-| `vision` | `enabled` false, `engine` (blank to `ollama`; `ollama\|stub`, CFG-SCH-021), `model` ("" by default; required, non-empty, only while `enabled`, CFG-SCH-025), `interval_ms` 8000, `timeout_ms` 30000, `upload_timeout_ms` 10000, `upload_max_bytes` 8388608, `obs{host, port 4455, password, source, width 896}` | eyes (`services/eyes/src/index.ts:24-83`); the three timeout/size keys are describe-call timeout, injected-upload fetch timeout and injected-image size cap (CFG-SCH-012) |
+| `vision` | `enabled` false, `engine` (blank to `ollama`; `ollama\|stub`, CFG-SCH-021), `model` ("" by default; required, non-empty, only while `enabled`, CFG-SCH-025), `interval_ms` 8000, `timeout_ms` 30000, `upload_timeout_ms` 10000, `upload_max_bytes` 8388608, `obs{host, port 4455, password, source, width 896}` | eyes (`services/eyes/src/index.ts:24-83`); the three timeout/size keys are describe-call timeout, injected-upload read timeout and injected-image size cap (CFG-SCH-012) |
 | `chat` | `source` (blank to `twitch`; `twitch\|fake`), `fake.interval_ms` 8000, `twitch.channel`, `ignore_users` [], `ignore_prefixes` ["!"] | chat (`services/chat/src/index.ts:20-22,43`, `filter.ts:33`) |
 | `brain` | `working_memory_events` 24 | salience and cortex `Context` size |
 | `brain.salience` | `tick_ms` 1500, `cooldown_ms` 6000, `thinking_timeout_ms` 60000 (how long a `thinking` cortex counts as busy), `idle_chatter_ms` 90000, `reply_on_mention` true, `speak_threshold` 0.6, `arousal_bias` 0.2, `module`, `reflexes []` (CFG-SCH-011) | salience |
@@ -141,7 +141,7 @@ Three tiers, none of which is validated by `ConfigSchema`.
 
 ## Service URLs and logger
 
-`urls` is an object of functions, each calling `envOr` at call time so tests and late-loaded `.env` values take effect (`index.ts:166-176`). `urls.voice()` defaults to loopback built from `VOICE_PORT` and `urls.dashboard()` to `http://127.0.0.1:3000`, so host-run (`pnpm dev`) services work outside Compose, where `docker-compose.yml:18-19` sets `VOICE_URL` and `DASHBOARD_URL` to in-network hostnames. `createLogger(service)` returns `pino({ name, level: LOG_LEVEL || "info" })` and `Logger` is its type (`index.ts:179-182`); packages' tests cast fake loggers to `never`.
+`urls` is an object of functions, each calling `envOr` at call time so tests and late-loaded `.env` values take effect (`index.ts:166-176`). `urls.voice()` defaults to loopback built from `VOICE_PORT` so host-run (`pnpm dev`) services work outside Compose, where `docker-compose.yml:18-19` sets `VOICE_URL` to an in-network hostname. `createLogger(service)` returns `pino({ name, level: LOG_LEVEL || "info" })` and `Logger` is its type (`index.ts:179-182`); packages' tests cast fake loggers to `never`.
 
 ## Tests
 

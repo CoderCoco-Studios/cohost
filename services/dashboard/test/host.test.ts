@@ -53,10 +53,10 @@ test("ports: PORT wins over DASHBOARD_PORT wins over the config port; empty valu
 });
 
 // @spec DASH-HOST-002
-test("the LAN allow-list is exactly GET /, GET /audio/*, POST /sink, GET /uploads/:id, any /health", () => {
-  const yes: [string, string][] = [["GET", "/"], ["GET", "/audio/abc.wav"], ["POST", "/sink"], ["GET", "/uploads/ab12"], ["GET", "/health"], ["POST", "/health"], ["DELETE", "/health"]];
+test("the LAN allow-list is exactly GET /, GET /audio/*, POST /sink, any /health", () => {
+  const yes: [string, string][] = [["GET", "/"], ["GET", "/audio/abc.wav"], ["POST", "/sink"], ["GET", "/health"], ["POST", "/health"], ["DELETE", "/health"]];
   const no: [string, string][] = [
-    ["POST", "/"], ["GET", "/sink"], ["POST", "/audio/x"], ["POST", "/uploads/x"], ["GET", "/uploads"], ["GET", "/stack"], ["POST", "/stack/launch"],
+    ["POST", "/"], ["GET", "/sink"], ["POST", "/audio/x"], ["GET", "/uploads/ab12"], ["POST", "/uploads/x"], ["GET", "/stack"], ["POST", "/stack/launch"],
     ["GET", "/services"], ["GET", "/services/control"], ["POST", "/services/cortex/restart"], ["GET", "/personality"], ["PUT", "/personality"],
     ["POST", "/control"], ["POST", "/inject/text"], ["GET", "/viewers"], ["GET", "/ws"], ["GET", "/index.html"], ["GET", "/healthz"],
   ];
@@ -73,12 +73,12 @@ test("the LAN handler delegates the allowed requests and answers every other req
   after(() => server.close());
   const port = (server.address() as net.AddressInfo).port;
   assert.equal((await raw(port, "/?sink=1")).status, 200);
-  assert.equal((await raw(port, "/uploads/ab")).status, 200);
+  assert.equal((await raw(port, "/audio/a.wav")).status, 200);
   for (const [m, p] of [["POST", "/stack/launch"], ["GET", "/stack"], ["PUT", "/personality"], ["POST", "/inject/text"], ["POST", "/services/cortex/stop"]] as const) {
     const r = await raw(port, p, { method: m });
     assert.deepEqual([r.status, r.body], [404, "not found"], `${m} ${p}`);
   }
-  assert.deepEqual(seen, ["GET /?sink=1", "GET /uploads/ab"]);
+  assert.deepEqual(seen, ["GET /?sink=1", "GET /audio/a.wav"]);
 });
 
 // @spec DASH-HOST-001

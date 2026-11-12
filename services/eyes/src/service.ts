@@ -14,7 +14,7 @@
  * and a test hands it a fake OBS client.
  */
 import type { Bus } from "@cohost/bus";
-import { urls, type Config } from "@cohost/config";
+import type { Config } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { Eyes, createDescriber, startEyes, stripDataUrl, type Describe } from "./eyes.js";
 import { EyesHealth } from "./health.js";
@@ -34,8 +34,6 @@ export interface EyesServiceDeps {
   now?: () => number;
   /** Waits between looks and between OBS connection attempts (default a timer). */
   sleep?: (ms: number) => Promise<void>;
-  dashboardUrl?: string;
-  fetch?: typeof fetch;
   exit?: (code: number) => void;
 }
 
@@ -89,7 +87,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
       await subscribeInject({
         bus, group: "eyes", log, exit: deps.exit,
         handler: createInjectHandler({
-          bus, log, dashboardUrl: deps.dashboardUrl ?? urls.dashboard(), describe, fetch: deps.fetch,
+          bus, log, describe,
           uploadTimeoutMs: cfg.vision.upload_timeout_ms, uploadMaxBytes: cfg.vision.upload_max_bytes,
         }),
       });

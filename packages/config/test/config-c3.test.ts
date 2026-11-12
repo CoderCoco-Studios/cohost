@@ -160,10 +160,11 @@ test(".env.example lists the isolation presets, control settings, injection limi
   const text = readFileSync(join(repo, ".env.example"), "utf8");
   const names = new Set([...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!));
   const want = ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED",
-    "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_BIND", "CONTROL_ADVANCED", "COMPOSE_PROFILES", "INJECT_MAX_IMAGE_BYTES", "INJECT_MAX_AUDIO_BYTES", "INJECT_TTL_MS", "EARS_DISCORD_TOKEN"];
+    "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_BIND", "CONTROL_ADVANCED", "COMPOSE_PROFILES", "INJECT_MAX_IMAGE_BYTES", "INJECT_MAX_AUDIO_BYTES", "INJECT_TTL_MS", "DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "CONNECTIONS_DISCORD_ENABLED"];
   const example = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   for (const m of example.matchAll(/\$\{(MOUTH_[A-Z0-9_]+)/g)) want.push(m[1]!);
   assert.deepEqual(want.filter((n) => !names.has(n)), []);
+  assert.ok(!names.has("EARS_DISCORD_TOKEN"), "the legacy listen-only bot token is gone (DEPLOY-README-004)");
   const lines = text.split("\n");
   const at = lines.findIndex((l) => /^STT_MODEL=/.test(l));
   const heading = lines.slice(0, at).reverse().find((l) => /^# ---/.test(l))!;

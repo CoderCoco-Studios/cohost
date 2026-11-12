@@ -88,7 +88,7 @@ Tests import sources through `tsx`, so no build is needed for these.
 | `services/salience`, `affect`, `cortex`, `memory` | the brain regions; `*.region.test.ts` use `FakeBus` |
 | `services/voice` | TTS client, WAV parser, envelope, HTTP endpoint, virtual sink |
 | `services/avatar` | engine smoothing/idle, drivers (VTS, VMC) against fake sockets |
-| `services/ears`, `mouth`, `eyes`, `chat` | transcription/describer logic with fake backends, the Discord layers against a faked voice session, chat filter |
+| `services/ears`, `mouth`, `eyes`, `chat` | transcription/describer logic with fake backends, the connector source and sink against a fake bus, chat filter |
 | `packages/shared`, `control` | the shared runtime (bootstrap, lifecycle, idle plan, inject handler, Discord session), the manifest and stack controller |
 | `services/dashboard` | HTTP routes, live feed, page script (stub DOM in `node:vm`) |
 
@@ -139,7 +139,7 @@ answers without memories.
 | `memory` | Ollama `nomic-embed-text` + Postgres (pgvector) | embeddings are light | none; run the real containers (§5b, verified) |
 | `eyes` | OBS WebSocket + Ollama vision model | yes | `VISION_ENGINE=stub` (fixed description) and inject an image from the dashboard, or publish `vision.summary` by hand (§7). Leave `vision.enabled: false` unless OBS is up |
 | `ears` | Discord listening bot + STT container (faster-whisper) | STT is GPU-friendly | `EARS_STT_ENGINE=stub` and inject audio from the dashboard, or publish `speech.heard` by hand (§7). Its logic is unit tested with fake transcribers and a faked Discord session |
-| `mouth` | Discord speaking bot (a second bot, see [Two-bot Discord setup](#two-bot-discord-setup)) + `voice` | no | `MOUTH_DRYRUN_ENABLED=true` (the `dryrun` output) with `MOUTH_DISCORD_ENABLED=false`; the dashboard's `?sink=1` page is a second, independent sink. Its logic is unit tested with a faked Discord session |
+| `mouth` | the Discord connector's sink (the one bot, see [One-bot Discord setup](#5d-one-bot-discord-setup)) + `voice` | no | `MOUTH_DRYRUN_ENABLED=true` (the `dryrun` output) with `MOUTH_DISCORD_ENABLED=false`; the dashboard's `?sink=1` page is a second, independent sink. Its logic is unit tested with a faked Discord session |
 | `chat` | Twitch IRC | no | publish `chat.message` by hand (§7) |
 | `avatar` | VTube Studio or a VMC receiver | no (the app renders) | `AVATAR_DRIVER=null` (default in `.env.example`); the driver unit tests use fake sockets |
 
@@ -463,7 +463,7 @@ Desktop runs the containers, and a Windows browser and OBS are the clients.
 4. Load `http://localhost:3001/?sink=1` in a second browser tab, or add it as an OBS Browser
    Source on the same PC, and click enable audio. Send a chat line and hear a reply.
 5. Inject an image from the dashboard and see `eyes` answer (`--profile eyes`), then an audio clip and see `ears` answer. Uploads travel over Redis, so nothing on the host needs to be reachable from containers.
-6. Real Discord and OBS, once the mock path above is healthy: follow [Two-bot Discord setup](#two-bot-discord-setup) and [OBS requirements](#obs-requirements); that is the only place the native voice dependencies and the OBS WebSocket path are verified.
+6. Real Discord and OBS, once the mock path above is healthy: follow [One-bot Discord setup](#5d-one-bot-discord-setup) and [OBS requirements](#obs-requirements); that is the only place the native voice dependencies and the OBS WebSocket path are verified.
 7. Press **Stop**, then run the consolidation pass (`docker compose run --rm consolidate`).
 
 ## Known problems
@@ -473,5 +473,5 @@ Found while writing this guide.
 1. **Unfiltered `bus-tail` is noisy:** `avatar.state` fires 5×/s.
 2. **Bus state persists** in Redis between runs (and `salience` etc. use
    start `latest`, but `bus-tail --replay` will show old traffic).
-3. **Not verified here:** the `tts` GPU image, `eyes`, `ears` and `mouth` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord (two bots), and `docker compose` behaviours that need a daemon (the launch end-to-end test skips without one and runs in CI). The README's Status section says the same for the
+3. **Not verified here:** the `tts` GPU image, `eyes`, `ears` and `mouth` in Docker, the authenticated Twitch path, VTube Studio against the real app (driver unit tests only), the OBS path, Discord (one bot), and `docker compose` behaviours that need a daemon (the launch end-to-end test skips without one and runs in CI). The README's Status section says the same for the
    real integrations; each is a manual verification item in its segment's LLD.

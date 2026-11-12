@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Bus } from "./index.js";
 import {
-  DEFAULT_CONNECTOR_INTERVAL_MS, REGISTRATION_VERSION, CONNECTOR_ID_PATTERN, findOffer, tagProblem,
-  type ConnectorSpec, type Registration,
+  DEFAULT_CONNECTOR_INTERVAL_MS, REGISTRATION_VERSION, CONNECTOR_ID_PATTERN, findOffer, findReady, tagProblem,
+  type Capability, type CapabilityEntry, type ConnectorSpec, type Registration,
 } from "./connector.js";
 
 /**
@@ -100,7 +100,7 @@ export class ConnectorRegistrar {
  * last read, so a consumer notices a connector appearing or disappearing without a restart (CONN-REG-006).
  */
 // @spec CONN-REG-006
-export function watchConnectors(bus: Bus, onChange: (regs: Registration[]) => void, intervalMs = DEFAULT_CONNECTOR_INTERVAL_MS, onError?: (err: unknown) => void): { poll: () => Promise<void>; stop: () => void } {
+export function watchConnectors(bus: Pick<Bus, "listConnectors">, onChange: (regs: Registration[]) => void, intervalMs = DEFAULT_CONNECTOR_INTERVAL_MS, onError?: (err: unknown) => void): { poll: () => Promise<void>; stop: () => void } {
   let prev = "";
   const poll = async (): Promise<void> => {
     try {
@@ -113,4 +113,38 @@ export function watchConnectors(bus: Bus, onChange: (regs: Registration[]) => vo
   timer.unref?.();
   void poll();
   return { poll, stop: () => clearInterval(timer) };
+}
+
+/**
+ * A consumer's view of the registry: the live registrations as of the last read, re-read every `intervalMs`, with
+ * listeners told when they change. `start()` resolves after the first read, so a consumer can decide its initial state
+ * from what is registered now (CONN-REG-006).
+ */
+// @spec CONN-REG-006
+export class ConnectorRegistry {
+  private regs: Registration[] = [];
+  private listeners = new Set<(regs: Registration[]) => void>();
+  private watcher: { poll: () => Promise<void>; stop: () => void } | undefined;
+
+  constructor(private readonly bus: Pick<Bus, "listConnectors">, private readonly intervalMs = DEFAULT_CONNECTOR_INTERVAL_MS, private readonly onError?: (err: unknown) => void) {}
+
+  /** Begin re-reading the registry and wait for the first read. */
+  async start(): Promise<void> {
+    this.watcher = watchConnectors(this.bus, (regs) => { this.regs = regs; for (const l of [...this.listeners]) l(regs); }, this.intervalMs, this.onError);
+    await this.watcher.poll();
+  }
+
+  stop(): void { this.watcher?.stop(); this.listeners.clear(); }
+
+  /** Call `cb` whenever the live registrations differ from the last read; returns the way to stop. */
+  on(cb: (regs: Registration[]) => void): () => void {
+    this.listeners.add(cb);
+    return () => { this.listeners.delete(cb); };
+  }
+
+  /** The live registration offering `cap` for `tag`, ready or not. */
+  offer(cap: Capability, tag: string): { reg: Registration; cap: Required<CapabilityEntry> } | undefined { return findOffer(this.regs, cap, tag); }
+
+  /** The live registration offering `cap` for `tag` with `ready` true. */
+  ready(cap: Capability, tag: string): { reg: Registration; cap: Required<CapabilityEntry> } | undefined { return findReady(this.regs, cap, tag); }
 }

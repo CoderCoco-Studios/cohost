@@ -64,3 +64,15 @@ test("a write that fails is skipped and the rest of the line is still paced out"
   assert.equal(n, 2);
   assert.deepEqual(frames.map((f) => f.seq), [0, 2]);
 });
+
+// @spec CONN-BP-004
+test("abort stops the line: no frame is written after it turns true", async () => {
+  const frames: Frame[] = [];
+  let stop = false;
+  const n = await writeUtterance(
+    { write: async (f) => { frames.push(f); if (f.seq === 1) stop = true; }, sequencer: new FrameSequencer(1), format: SINK, sleep: async () => {}, abort: () => stop },
+    { utt: "u", pcm: Buffer.alloc(3840 * 10), from: SINK },
+  );
+  assert.equal(n, 2);
+  assert.deepEqual(frames.map((f) => f.seq), [0, 1]);
+});

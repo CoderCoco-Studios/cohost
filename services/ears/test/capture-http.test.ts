@@ -11,10 +11,10 @@ import { Hearing, stubTranscriber } from "../src/hearing.js";
 const wav = (ms: number) => wavWrap(Buffer.alloc((ms / 1000) * 32000), 16000, 1);
 
 /** An http capture on a free port, wired to the real Hearing path with the stub transcriber, unless `hear` is given. */
-async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; token?: string; sources?: readonly string[] } = {}) {
+async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; token?: string; accepts?: (tag: string) => boolean } = {}) {
   const bus = new FakeBus();
   const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: stubTranscriber() });
-  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src) => hearing.heardClip(c, s, src)), ...over });
+  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src, id) => hearing.heardClip(c, s, src, id)), ...over });
   await cap.start();
   const url = (q = "") => `http://127.0.0.1:${cap.port}/audio${q}`;
   return { bus, cap, url };
@@ -178,7 +178,7 @@ test("stop closes the listener and waits for the clip in flight", async () => {
 
 // @spec EARS-SRC-006, EARS-SRC-010
 test("POST /audio?source=<tag>: the clip carries the tag as its source and, without speaker, as its speaker; no source means http", async () => {
-  const r = await rig({ sources: ["desktop"] });
+  const r = await rig({ accepts: (t) => t === "desktop" });
   try {
     assert.equal((await post(r.url(), wav(500))).status, 200);
     assert.equal((await post(r.url("?source=desktop"), wav(500))).status, 200);
@@ -195,7 +195,7 @@ test("POST /audio?source=<tag>: the clip carries the tag as its source and, with
 
 // @spec EARS-SRC-010
 test("an unknown or mistyped source tag is refused 400 and nothing is heard", async () => {
-  const r = await rig({ sources: ["desktop"] });
+  const r = await rig({ accepts: (t) => t === "desktop" });
   try {
     for (const q of ["?source=desktp", "?source=dir", "?source=Desktop", "?source="]) {
       assert.equal((await post(r.url(q), wav(500))).status, 400, q);

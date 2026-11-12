@@ -1,14 +1,6 @@
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
-import type { Config, Logger } from "@cohost/config";
+import type { Logger } from "@cohost/config";
 import { OUTPUT_KINDS } from "./health.js";
-
-/** The guild and voice channel the Discord output joins, from `mouth.outputs.discord.guild_id` / `voice_channel_id`. */
-// @spec MOUTH-SESS-002, MOUTH-SESS-003
-export function outputTarget(cfg: Config["mouth"]["outputs"]["discord"]): { guildId: string; channelId: string } {
-  if (!cfg.guild_id) throw new Error("mouth.outputs.discord.guild_id is not set");
-  if (!cfg.voice_channel_id) throw new Error("mouth.outputs.discord.voice_channel_id is not set");
-  return { guildId: cfg.guild_id, channelId: cfg.voice_channel_id };
-}
 
 export type MouthEventType = "voice.utterance" | "voice.playing" | "control";
 

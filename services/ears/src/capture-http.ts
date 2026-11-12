@@ -20,8 +20,11 @@ export interface HttpCaptureOptions {
   bodyTimeoutMs?: number;
   /** Bearer token `POST /audio` must carry; empty or absent requires none (EARS-SRC-013). */
   token?: string;
-  /** Source tags, besides `http`, that a `?source=` parameter may name; any other value is refused 400 (EARS-SRC-010). */
-  sources?: readonly string[];
+  /**
+   * Whether a tag besides `http` may be named by `?source=`: an enabled source whose live registration has transport
+   * `http`. Any other value is refused 400 (EARS-SRC-010).
+   */
+  accepts?: (tag: string) => boolean;
 }
 
 export interface HttpCapture extends CaptureAdapter {
@@ -74,7 +77,6 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
   const queueLimit = o.queueLimit ?? INJECT_QUEUE_LIMIT;
   const bodyTimeoutMs = o.bodyTimeoutMs ?? INJECT_READ_TIMEOUT_MS;
   const token = o.token ?? "";
-  const accepted = new Set(["http", ...(o.sources ?? [])]);
   let tail: Promise<unknown> = Promise.resolve();
   /** Accepted requests not yet answered: the one being processed plus those waiting (or still sending their body). */
   let inflight = 0;
@@ -98,7 +100,7 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
       return reply(res, 401, { error: "bearer token required" }, { "www-authenticate": "Bearer" });
     }
     const source = url.searchParams.has("source") ? url.searchParams.get("source")! : "http";
-    if (!accepted.has(source)) return reply(res, 400, { error: `unknown source '${source}'` });
+    if (source !== "http" && !(o.accepts?.(source) ?? false)) return reply(res, 400, { error: `unknown source '${source}'` });
     if (inflight > queueLimit) return reply(res, 503, { error: "busy" });
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > maxBytes) return reply(res, 413, { error: `body over ${maxBytes} bytes` });

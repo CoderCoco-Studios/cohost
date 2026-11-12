@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  Bus, ConnectorRegistrar, FrameSequencer, FrameTracker, watchConnectors, encodeFrame, decodeFrame, parseRegistration, findReady, findOffer,
+  Bus, ConnectorRegistrar, ConnectorRegistry, FrameSequencer, FrameTracker, watchConnectors, encodeFrame, decodeFrame, parseRegistration, findReady, findOffer,
   tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type Frame, type Registration, type CapabilityEntry,
 } from "../src/index.js";
 
@@ -164,6 +164,32 @@ test("watchConnectors reports a connector appearing and disappearing without a r
   await tick(30);
   w.stop();
   assert.deepEqual(seen, [[], ["discord"], []]);
+  bus.stop();
+});
+
+// @spec CONN-REG-006
+test("ConnectorRegistry: start awaits the first read, answers offer and ready, and calls listeners on a change", async () => {
+  const fake = new FakeRedis();
+  const bus = busWith(fake);
+  const reg = new ConnectorRegistry(bus, 5);
+  await reg.start();
+  assert.equal(reg.offer("audio-in", "discord"), undefined);
+  let changes = 0;
+  const off = reg.on(() => changes++);
+  const a = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", capabilities: () => caps() });
+  await a.tick();
+  await tick(30);
+  assert.ok(changes >= 1);
+  assert.equal(reg.offer("audio-in", "discord")?.reg.id, "discord");
+  assert.equal(reg.ready("audio-in", "discord")?.cap.ready, true);
+  assert.equal(reg.ready("audio-in", "nobody"), undefined);
+  off();
+  const before = changes;
+  await a.stop();
+  await tick(30);
+  assert.equal(changes, before, "an unsubscribed listener is not called");
+  assert.equal(reg.offer("audio-in", "discord"), undefined, "a removed registration is gone from the view");
+  reg.stop();
   bus.stop();
 });
 

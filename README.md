@@ -29,8 +29,9 @@ each other over the same bus, the way the rest of the stack does:
 | ----------- | ------------------------------------------------------------ | --------------------------- |
 | `chat`      | Twitch chat → `chat.message`                                 | Twitch IRC                  |
 | `eyes`      | OBS screenshot → vision model → `vision.summary`             | obs-websocket, Ollama       |
-| `ears`      | Discord voice → Whisper → `speech.heard` (listens only)      | Discord, speaches (STT)     |
-| `mouth`     | `voice.utterance` → her Discord bot, plus a fallback line    | Discord, voice (audio)      |
+| `ears`      | connector audio → Whisper → `speech.heard` (listens only)    | the bus, speaches (STT)     |
+| `mouth`     | `voice.utterance` → a connector sink, plus a fallback line   | the bus, voice (audio)      |
+| `connector-discord` | the one Discord bot: channel audio in, her voice out | Discord, the bus            |
 | `salience`  | when to talk; reflexes → `brain.say` directly, no LLM        | bus only                    |
 | `affect`    | mood → `affect.state` (avatar resting face, prompt colour)   | bus only                    |
 | `memory`    | embeds + recalls; viewer table; reflection pass              | Ollama (embed), Postgres    |
@@ -128,15 +129,17 @@ Add the optional pieces when you're ready:
 
 ```bash
 docker compose --profile eyes up -d   # OBS vision (set vision.enabled: true in config.yaml)
-docker compose --profile ears up -d   # Discord listener (hears the voice channel)
-docker compose --profile mouth up -d  # Discord speaker (plays her voice there)
+docker compose --profile ears up -d   # listener (hears what connectors publish)
+docker compose --profile mouth up -d  # speaker (writes her voice to the sinks)
+docker compose --profile discord up -d # the Discord connector (the one bot login, source and sink `discord`)
 ```
 
-### Discord: two bots
+### Discord: one bot
 
-Listening and speaking are separate optional services with a Discord bot each,
-so either can run, restart or be routed without the other. Create two
-applications at <https://discord.com/developers> and invite both to your server:
+Listening (`ears`), speaking (`mouth`) and the Discord connector are separate
+optional services in the `ears`, `mouth` and `discord` profiles, so any of them
+can run, restart or be routed without the others. Create one application at
+<https://discord.com/developers> and invite it to your server:
 
 | service | `.env` key | permissions | profile |
 |---|---|---|---|
@@ -173,9 +176,9 @@ separate sink, not an output: open it wherever you want her voice to play. A
 routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
 
 **Upgrading from two bots:** remove `EARS_DISCORD_TOKEN`, keep `DISCORD_TOKEN`, add
-`discord` to `COMPOSE_PROFILES`, and move `ears.discord.*` and
-`mouth.outputs.discord.guild_id` / `voice_channel_id` to `connections.discord.*` in
-`config.yaml`.
+`discord` to `COMPOSE_PROFILES`, and move the guild and channel (`ears.discord.*` and
+`mouth.outputs.discord.guild_id` / `voice_channel_id`) to `connections.discord.guild_id` and
+`connections.discord.voice_channel_id` in `config.yaml`.
 
 **Listening sources.** `ears.sources` is a list, so several run at once (default `[discord]`):
 `http` and `dir` need no account, and a connector tag such as `desktop` (the host capture
@@ -542,18 +545,19 @@ every service can boot alone with only Redis (each external dependency has a moc
 | piece | state |
 |---|---|
 | brain (salience, affect, memory, cortex), voice, avatar (null driver), dashboard, control plane | built and exercised against the stub voice, mock LLM and in-process memory; the real Ollama, Kokoro and Postgres containers were run on a CPU box |
-| `mouth` (speaks in Discord on her own bot) | built, with a stuck-playback guard, a spoken fallback line and a test-only `dryrun` output; never run against a real Discord server |
-| `ears` (listens in Discord on its own bot) | built; the Discord receive path and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are unverified against real Discord |
+| `mouth` (writes her voice to connector sinks) | built, with a stuck-playback guard, a spoken fallback line and a test-only `dryrun` output; its Discord sink is the connector's and has not been run against a real Discord server |
+| `ears` (listens to connector sources) | built; it holds no Discord client, and the Discord receive path lives in the connector, which is unverified against real Discord |
+| `connector-discord` (the one bot) | built; the join, the receive path and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are unverified against real Discord |
 | `eyes` (OBS vision) | built; the OBS WebSocket path has not been run against a real OBS, and the vision model needs a GPU for good latency |
 | `chat` (Twitch) | built; anonymous read-only chat was run against Twitch, the authenticated path and token refresh persistence were not |
 | avatar drivers | VMC was run against a UDP listener; VTube Studio only against a fake socket, so expect to tune parameter names on first contact |
 | Compose and installer | read and parsed; a Docker-gated end-to-end Launch test runs in CI, the full real stack awaits the single-PC checklist |
 
-What is left is a first run with real accounts and apps: Discord (two bots), Twitch, OBS and VTube Studio.
+What is left is a first run with real accounts and apps: Discord (one bot), Twitch, OBS and VTube Studio.
 The hands-on list, with what to look for at each step, is the
 [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop); the
 [OBS requirements](docs/TESTING.md#obs-requirements) and
-[two-bot Discord setup](docs/TESTING.md#two-bot-discord-setup) are in [`docs/TESTING.md`](docs/TESTING.md).
+[one-bot Discord setup](docs/TESTING.md#5d-one-bot-discord-setup) are in [`docs/TESTING.md`](docs/TESTING.md).
 
 ## License
 

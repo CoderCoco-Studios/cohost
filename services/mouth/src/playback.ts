@@ -19,8 +19,12 @@ export interface PlaybackDeps {
   gainDb: number | (() => number);
   /** Fetch the WAV a voice.utterance points at. */
   fetchAudio: (url: string) => Promise<Buffer>;
-  /** Hand the prepared audio (48k stereo PCM, by default) to the output's audio player. */
-  play: (pcm: Buffer, id: string) => void;
+  /**
+   * Hand the prepared audio (48k stereo PCM, by default) to the output's audio player. An output that writes the audio out
+   * over time returns a promise that settles once the first of it has gone out: it resolving is "audio has started", it
+   * rejecting is a give-up (MOUTH-PLAY-005).
+   */
+  play: (pcm: Buffer, id: string) => void | Promise<void>;
   /** Stop the output's audio player (the watchdog's way out of a stuck item). The player's Idle that causes ends no item. */
   stop?: () => void;
   /** Turn a fetched WAV into what `play` takes; default: 48k stereo s16le PCM with the output's gain. */
@@ -158,7 +162,7 @@ export class Playback {
     this.current = next.id;
     try {
       const pcm = this.pcmOf(await this.fetchWav(next.url));
-      this.d.play(pcm, next.id);
+      await this.d.play(pcm, next.id);
       this.arm(next.id, this.durationOf(pcm));
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "playback failed");
@@ -187,7 +191,7 @@ export class Playback {
       }
       if (pcm) {
         try {
-          this.d.play(pcm, id);
+          await this.d.play(pcm, id);
           this.d.fallback!.started(clip);
           playing = clip;
           this.clipPlaying = true;

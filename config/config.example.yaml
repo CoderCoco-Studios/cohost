@@ -227,7 +227,7 @@ avatar:
 
 ears:
   # Where audio comes from, read at start:
-  #   discord  a voice channel (needs EARS_DISCORD_TOKEN)
+  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord, DISCORD_TOKEN)
   #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
   #   off      idle, nothing heard (isolated runs)
@@ -237,9 +237,7 @@ ears:
   # wins over `source` below, which is the legacy single-source form. Each clip carries the name of its source.
   #   sources: [http, dir]
   source: "${EARS_SOURCE:-discord}"
-  discord:
-    guild_id: "${DISCORD_GUILD_ID}"
-    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+  discord: {}                  # accepted for older files and not read: the channel is connections.discord below
   # The `http` source's listener. Example: curl -X POST -H 'Content-Type: audio/wav' --data-binary @clip.wav 'http://127.0.0.1:8765/audio?speaker=Chris'
   # In Docker, bind 0.0.0.0 and publish the port yourself; the default is local only. Bodies are capped at 25 MiB.
   http:
@@ -274,10 +272,8 @@ connections:
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:
   outputs:
-    discord:                   # her own Discord bot (DISCORD_TOKEN), self-deafened in the channel below
-      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth idles, plays nothing (isolated runs)
-      guild_id: "${DISCORD_GUILD_ID}"          # by default the guild and channel ears listens in; point them elsewhere if you like
-      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+    discord:                   # sink `discord`: her voice goes to the Discord connector, into the channel set under connections.discord
+      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth plays nothing on it (isolated runs)
       gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
     dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
       enabled: ${MOUTH_DRYRUN_ENABLED:-false}

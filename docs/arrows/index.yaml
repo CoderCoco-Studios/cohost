@@ -155,7 +155,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "protocol library and services/connector-discord built: 32 of 41 specs [x] (8 gaps, 1 deferred). Next: ears' connector source (CONN-AUD-004, CONN-ISO-001, 003) and mouth's connector sink (CONN-AUD-005, CONN-BP-004, 005) using writeUtterance, then the desktop helper (docs/arrows/connections.md, Build order)."
+    next: "protocol library, services/connector-discord, ears' connector source and mouth's connector sink built: 39 of 41 specs [x] (1 gap, 1 deferred). Next: the desktop helper (CONN-DESK-001, EARS-SRC-014, 015), then live verification against a real guild (docs/arrows/connections.md, Build order)."
     drift: null
 
   ears:
@@ -167,7 +167,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "redesigned 2026-11-12 to consume connector sources and hold no Discord client (EARS-CON-*, connections); the per-service Discord specs are superseded `[D]` lines until the code is removed. Before that: all 52 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes, http and dir capture sources (EARS-CAP-*). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "consumes connector sources and holds no Discord client (EARS-CON-*, connections); the per-service Discord client and its specs are removed. 56 of 60 specs [x]; open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001); 2 deferred (EARS-SRC-011 retired, EARS-SRC-016). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   salience:
@@ -239,7 +239,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "redesigned 2026-11-12: the `discord` output is a connector sink (MOUTH-CONN-*, connections) and mouth holds no Discord client; the per-service Discord specs are superseded `[D]` lines until the code is removed. Before that: all 76 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs, live routing via set_routing and per-line `route`, MOUTH-ROUTE-006 to 008). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "the `discord` output is a connector sink written with the paced frame writer (MOUTH-CONN-*, connections) and mouth holds no Discord client; the per-service Discord specs are removed. All 73 specs [x]. No open gaps. Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   avatar:

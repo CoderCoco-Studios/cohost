@@ -5,7 +5,9 @@ import { wavWrap } from "@cohost/shared";
 import { Hearing } from "../src/hearing.js";
 import { createInjectHandler } from "../src/inject.js";
 
-const pcmMs = (ms: number) => Buffer.alloc(Math.round((ms / 1000) * 48000) * 4);
+const pcmMs = (ms: number) => Buffer.alloc(Math.round((ms / 1000) * 16000) * 2);
+/** One connector-source utterance: 16 kHz mono PCM from source `discord` with the speaker id the connector gave. */
+const heard = (h: Hearing, pcm: Buffer, speaker: string, id: string) => h.heardClip({ pcm, rate: 16000, channels: 1 }, speaker, "discord", id);
 
 function hearingWith(ears: Record<string, unknown>, reply: string) {
   const bus = new FakeBus();
@@ -17,21 +19,21 @@ function hearingWith(ears: Record<string, unknown>, reply: string) {
 // @spec EARS-HEAR-006, EARS-HEAR-007
 test("hearing: a transcript of non-ASCII letters is published, not dropped as non-word", async () => {
   const { h, bus } = hearingWith({}, "こんにちは");
-  await h.heard(pcmMs(500), "Chris", "u1");
+  await heard(h, pcmMs(500), "Chris", "u1");
   assert.equal(bus.of("speech.heard")[0]!.text, "こんにちは");
 });
 
 // @spec EARS-HEAR-010
 test("hearing: a transcript equal to an ears.drop_phrases entry publishes nothing; other text still does", async () => {
   const a = hearingWith({ drop_phrases: ["Thank you.", "Thanks for watching!"] }, " thank YOU ");
-  await a.h.heard(pcmMs(500), "Chris", "u1");
+  await heard(a.h, pcmMs(500), "Chris", "u1");
   assert.equal(a.bus.published.length, 0);
   assert.ok(a.rec.lines.some((l) => l.level === "debug"));
   const b = hearingWith({ drop_phrases: ["Thank you."] }, "thank you for the help");
-  await b.h.heard(pcmMs(500), "Chris", "u1");
+  await heard(b.h, pcmMs(500), "Chris", "u1");
   assert.equal(b.bus.of("speech.heard").length, 1);
   const c = hearingWith({}, "Thank you.");
-  await c.h.heard(pcmMs(500), "Chris", "u1");
+  await heard(c.h, pcmMs(500), "Chris", "u1");
   assert.equal(c.bus.of("speech.heard").length, 1, "the default list is empty");
 });
 

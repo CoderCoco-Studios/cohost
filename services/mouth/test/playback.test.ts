@@ -343,3 +343,27 @@ test("playback: a give-up logs 'playback failed' once and the failure text becom
   assert.deepEqual(o.rec.msgs("warn"), ["playback failed"]);
   assert.equal(o.bus.of("voice.failed")[0]!.reason, "Error: fetch audio 404");
 });
+
+// @spec MOUTH-PLAY-003, MOUTH-PLAY-005, MOUTH-PLAY-006, MOUTH-CONN-004
+test("playback: an output whose play returns a promise reports voice.playing when it resolves, and gives the line up when it rejects", async () => {
+  const bus = new FakeBus();
+  const rec = recordingLog();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let n = 0;
+  const p = new Playback({
+    bus, log: rec.log, sink: "discord", gainDb: 0,
+    fetchAudio: async () => wavWrap(Buffer.alloc(4800), 24000, 1),
+    play: () => (n++ === 0 ? gate : Promise.reject(new Error("first frame failed"))),
+  });
+  const first = p.enqueue("a", "http://voice/a.wav");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(bus.published.length, 0, "no voice.playing before the first audio has gone out");
+  release();
+  await first;
+  assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", sink: "discord" } }]);
+  await p.onIdle();
+  await p.enqueue("b", "http://voice/b.wav");
+  assert.deepEqual(bus.of("voice.failed"), [{ id: "b", sink: "discord", reason: "Error: first frame failed" }]);
+  assert.equal(bus.of("voice.playing").length, 1, "the rejected line never claimed playing");
+});

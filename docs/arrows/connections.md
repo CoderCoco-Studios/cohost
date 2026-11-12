@@ -4,14 +4,14 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
-**PARTIAL** (chunks 1 and 2 of the build order are built; sampled 2026-11-12): 41 specs, 32 implemented, 8 gaps (`[ ]`), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`), the utterance writer (`packages/shared/src/utterance.ts`) and `services/connector-discord`. Open: the consumers' halves, which land with ears (CONN-AUD-004, CONN-ISO-001, CONN-ISO-003) and mouth (CONN-AUD-005, CONN-BP-004, CONN-BP-005), and the desktop helper (CONN-DESK-001, CONN-DESK-003).
+**PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 41 specs, 39 implemented, 1 gap (`[ ]`, the desktop helper's registration, CONN-DESK-001), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001; EARS-SRC-014, 015 in ears) and the live verification of chunk 5.
 
 ## Cross-segment cascade
 
 | Segment | Change | Specs |
 | --- | --- | --- |
-| ears | consumes connector sources; holds no Discord client or token; the two-token guard is retired | new EARS-CON-001 to 005; amended EARS-START-004, 005, 008, EARS-HEAR-001, 002, 011, EARS-CAP-003, EARS-INJ-009, EARS-HLTH-002, EARS-SRC-001 to 006; superseded `[D]`: EARS-START-002, 007, EARS-SESS-001 to 004, 007 to 010, EARS-HEAR-003, EARS-AUD-005, EARS-INJ-007 |
-| mouth | the `discord` output is a connector sink writing `audio.out.discord`; no token, no join | new MOUTH-CONN-001 to 005; amended MOUTH-START-003, 004, 006, MOUTH-PLAY-001, MOUTH-AUD-002, MOUTH-DRY-005, MOUTH-HLTH-002; superseded `[D]`: MOUTH-START-002, MOUTH-SESS-001 to 004, 007 to 009 |
+| ears | consumes connector sources; holds no Discord client or token; the two-token guard is retired | new EARS-CON-001 to 005; amended EARS-START-004, 005, 008, EARS-HEAR-001, 002, 011, EARS-CAP-003, EARS-INJ-009, EARS-HLTH-002, EARS-SRC-001 to 006; retired (lines removed): EARS-START-002, 007, EARS-SESS-001 to 004, 007 to 010, EARS-HEAR-003, EARS-AUD-005, EARS-INJ-007 |
+| mouth | the `discord` output is a connector sink writing `audio.out.discord`; no token, no join | new MOUTH-CONN-001 to 005; amended MOUTH-START-003, 004, 006, MOUTH-PLAY-001, MOUTH-AUD-002, MOUTH-DRY-005, MOUTH-HLTH-002; retired (lines removed): MOUTH-START-002, MOUTH-SESS-001 to 004, 007 to 009 |
 | shared-runtime | the Discord voice session's only user is the connector (text only; SHARED-DVS-* unchanged) | SHARED-DVS-001 to 007 |
 | deployment | new Compose service and profile; one bot in `.env.example`, installer and README | DEPLOY-COMPOSE-004, 020 (amended), DEPLOY-COMPOSE-023 (new), DEPLOY-INST-008, DEPLOY-README-004, 005 |
 | event-bus | design pointer only: connector streams and keys share the bus prefix | none yet; BUS spec for the audio stream and registry keys depends on open question 3 (LLD) |
@@ -26,9 +26,9 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 |---|---|---|
 | 1. Client library | connections (+ bus pointer) | Registration, tag validation, frame encode and decode, paced writer, live `XREAD` reader, with a fake Redis. No service yet. |
 | 2. Discord connector | connections, config, control-plane, deployment | `services/connector-discord` reusing `createDiscordVoiceSession` undeafened and unmuted, with a fake Discord session; manifest unit, Compose service and profile, config keys. Runnable beside the old per-service path, which stays until live-verified. |
-| 3. ears consumer | ears | Connector source in `earsPlan` and the service, utterance assembler by `spk` gap, per-source health. |
-| 4. mouth sink | mouth | Connector-sink output with the registry readiness check and paced frame writer. |
-| 5. Live verification, then removal | ears, mouth, shared-runtime, config, deployment | Real guild, one bot, kill and restart the connector; then delete the per-service Discord clients, `EARS_DISCORD_TOKEN`, the `[D]` superseded lines and their tests; README and installer updated. |
+| 3. ears consumer (built) | ears | Connector source in `earsPlan` and the service, utterance assembler by `spk` gap, per-source health, registry liveness for stream and `http` tags. |
+| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; the per-service Discord clients, `EARS_DISCORD_TOKEN`, the superseded lines and their tests are removed; Compose blanks `DISCORD_TOKEN` for ears and mouth; README, installer and `.env.example` name the one bot. |
+| 5. Live verification | ears, mouth, connections | Real guild, one bot, kill and restart the connector. |
 
 ## Edge audit (open)
 
@@ -44,17 +44,21 @@ To settle before tests, beyond the LLD's open questions: that `voice.done` timed
 - docs/intent/connections/decisions/connector-protocol.md
 
 ### EARS
-- docs/intent/connections/connections-specs.md (41 specs: 32 `[x]`, 8 `[ ]`, 1 `[D]`)
+- docs/intent/connections/connections-specs.md (41 specs: 39 `[x]`, 1 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/bus/test/connector.test.ts
 - packages/shared/test/utterance.test.ts
 - services/connector-discord/test/connector.test.ts
+- services/ears/test/connector-source.test.ts, services/ears/test/service.test.ts
+- services/mouth/test/connector-output.test.ts, services/mouth/test/mouth.test.ts
+- packages/config/test/compose-chat-data.test.ts, packages/config/test/installer.test.ts
 
 ### Code
 - packages/bus/src/connector.ts, packages/bus/src/registrar.ts
 - packages/shared/src/utterance.ts
 - services/connector-discord/src/ (service, capture, playout, health)
+- services/ears/src/connector-source.ts, services/mouth/src/connector-output.ts
 
 Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 
@@ -62,7 +66,7 @@ Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 
 **Purpose:** Let external services attach to the stack as audio sources and sinks, and own the one Discord login.
 
-**Key Components (planned):**
+**Key Components:**
 1. Connector client library: registration lease, tag validation, frame codec, paced writer, live reader.
 2. `services/connector-discord`: login, undeafened voice connection, per-speaker capture to `audio.in.discord`, playback from `audio.out.discord`, heartbeat and registration.
 
@@ -72,9 +76,9 @@ Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 |----------|----------|-------------|----------|------|
 | Registration and liveness | CONN-REG-001 to 007 | 7 | 0 | 0 |
 | Tags | CONN-TAG-001 to 004 | 4 | 0 | 0 |
-| Audio streams and frames | CONN-AUD-001 to 005 | 3 | 0 | 2 |
-| Back-pressure and loss | CONN-BP-001 to 006 | 4 | 0 | 2 |
+| Audio streams and frames | CONN-AUD-001 to 005 | 5 | 0 | 0 |
+| Back-pressure and loss | CONN-BP-001 to 006 | 6 | 0 | 0 |
 | Discord connector | CONN-DISC-001 to 011 | 11 | 0 | 0 |
-| Failure isolation | CONN-ISO-001 to 003 | 1 | 0 | 2 |
+| Failure isolation | CONN-ISO-001 to 003 | 3 | 0 | 0 |
 | Health | CONN-HLTH-001, 002 | 2 | 0 | 0 |
-| Desktop audio helper | CONN-DESK-001 to 003 | 0 | 1 | 2 |
+| Desktop audio helper | CONN-DESK-001 to 003 | 1 | 1 | 1 |

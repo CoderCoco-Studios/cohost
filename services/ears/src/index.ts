@@ -1,13 +1,9 @@
 /**
- * ears — the co-host's hearing: a Discord bot that sits in your voice channel and listens.
- *
- * Each speaker's audio is captured separately, transcribed by the STT container (speaches / faster-whisper,
- * OpenAI-compatible) and published as `speech.heard` with the speaker's name — so the brain knows who said what.
- * It also transcribes uploaded audio on `inject.request`. ears never speaks: her voice is the `mouth` service.
- *
- * Setup: create a second bot at discord.com/developers (not the speaking bot), invite it with Connect permission and
- * the Server Members intent, set EARS_DISCORD_TOKEN / DISCORD_GUILD_ID / DISCORD_VOICE_CHANNEL_ID. It must be a
- * different bot from DISCORD_TOKEN. This MUST be a bot account — automating a user account gets it banned.
+ * ears — the co-host's hearing. It turns audio into `speech.heard`: each enabled source (a connector's `audio.in.<tag>`
+ * stream, `http` clips, `dir` files) hands utterances to one Hearing path, which transcribes them with the STT container
+ * (speaches / faster-whisper, OpenAI-compatible) and publishes the speaker, so the brain knows who said what. It also
+ * transcribes uploaded audio on `inject.request`. ears never speaks (her voice is the `mouth` service) and holds no Discord
+ * client: the Discord connector holds the one bot login and serves the source `discord`.
  */
 import { runService } from "@cohost/shared";
 import { createEarsService } from "./service.js";

@@ -12,6 +12,8 @@ export interface UtteranceWriterOptions {
   frameMs?: number;
   /** How far ahead of real time the writer may run, ms (default 1000). */
   leadMs?: number;
+  /** Checked before each frame: when it returns true the rest of the line is not written (an abandoned line). */
+  abort?: () => boolean;
   /** Replacements for tests. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -38,8 +40,10 @@ export async function writeUtterance(
   const start = now();
   let written = 0;
   for (let i = 0; i < count; i++) {
+    if (o.abort?.()) break;
     const wait = start + i * frameMs - leadMs - now();
     if (wait > 0) await sleep(wait);
+    if (o.abort?.()) break;
     const frame: Frame = {
       epoch: o.sequencer.epoch, seq: o.sequencer.next(), rate: o.format.rate, ch: o.format.channels,
       pcm: converted.subarray(i * frameBytes, (i + 1) * frameBytes), utt: line.utt,

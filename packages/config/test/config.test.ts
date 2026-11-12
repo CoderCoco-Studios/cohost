@@ -263,7 +263,7 @@ function loadShipped(env: Record<string, string> = {}) {
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
@@ -678,18 +678,23 @@ test("vision.engine defaults to ollama (blank too), accepts stub, rejects others
 });
 
 // @spec CFG-USR-011
-test("the shipped config.example.yaml routes the co-host's voice to the Discord channel she listens to, at gain 0, with comments", () => {
+test("the shipped config.example.yaml sends the co-host's voice to the Discord connector's channel, at gain 0, with comments; the channel is set once, under connections.discord", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   assert.match(text, /enabled:\s*\$\{MOUTH_DISCORD_ENABLED:-true\}/);
+  assert.match(text, /enabled:\s*\$\{CONNECTIONS_DISCORD_ENABLED:-true\}/);
+  const connBlock = text.slice(text.indexOf("\nconnections:"), text.indexOf("\nmouth:"));
+  assert.match(connBlock, /guild_id:\s*"\$\{DISCORD_GUILD_ID\}"/);
+  assert.match(connBlock, /voice_channel_id:\s*"\$\{DISCORD_VOICE_CHANNEL_ID\}"/);
   const mouthBlock = text.slice(text.indexOf("\nmouth:"));
-  assert.match(mouthBlock, /guild_id:\s*"\$\{DISCORD_GUILD_ID\}"/);
-  assert.match(mouthBlock, /voice_channel_id:\s*"\$\{DISCORD_VOICE_CHANNEL_ID\}"/);
+  assert.doesNotMatch(mouthBlock, /guild_id|voice_channel_id/, "mouth has no channel keys of its own");
+  assert.doesNotMatch(text.slice(text.indexOf("\nears:"), text.indexOf("\nconnections:")), /guild_id|voice_channel_id|EARS_DISCORD_TOKEN/, "ears has no channel keys or token of its own");
   assert.match(mouthBlock, /gain_db:\s*0\b[^\n]*#/, "gain_db carries a comment");
   assert.match(mouthBlock, /enabled:[^\n]*#/, "enabled carries a comment");
+  assert.match(connBlock, /enabled:[^\n]*#/, "connections.discord.enabled carries a comment");
   const cfg = loadShipped({ DISCORD_GUILD_ID: "g-9", DISCORD_VOICE_CHANNEL_ID: "vc-9" });
-  assert.deepEqual(cfg.mouth.outputs.discord, { enabled: true, guild_id: "g-9", voice_channel_id: "vc-9", gain_db: 0 });
-  assert.equal(cfg.mouth.outputs.discord.guild_id, cfg.ears.discord.guild_id);
-  assert.equal(cfg.mouth.outputs.discord.voice_channel_id, cfg.ears.discord.voice_channel_id);
+  assert.deepEqual(cfg.connections.discord, { enabled: true, guild_id: "g-9", voice_channel_id: "vc-9" });
+  assert.equal(cfg.mouth.outputs.discord.enabled, true);
+  assert.equal(cfg.mouth.outputs.discord.gain_db, 0);
 });
 
 // @spec CFG-USR-011

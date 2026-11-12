@@ -6,8 +6,8 @@
 #   docker compose up -d                 # everything
 #   docker compose up -d --build         # everything, rebuilding the service images first (cohostctl rebuild)
 #   docker compose up -d chat salience affect memory cortex voice avatar   # minimal talking path
-#   docker compose --profile ears up -d  # add the Discord listener (its own bot)
-#   docker compose --profile mouth up -d # add the Discord speaker (her own bot)
+#   docker compose --profile ears up -d  # add the listener (reads what connectors publish)
+#   docker compose --profile mouth up -d # add the speaker (writes her voice to the sinks)
 #   docker compose --profile discord up -d # add the Discord connector (the one bot login: source and sink `discord`)
 #   docker compose --profile eyes up -d  # add OBS vision
 #   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
@@ -16,7 +16,9 @@
 x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
   restart: unless-stopped
   env_file: .env
-  environment:  # @spec DEPLOY-COMPOSE-003
+  # The environment every application service gets; `ears` and `mouth` extend it (`*ts-env`) to blank the Discord token
+  # that `.env` would otherwise hand them (DEPLOY-COMPOSE-023).
+  environment: &ts-env  # @spec DEPLOY-COMPOSE-003
     REDIS_URL: redis://redis:6379
     DATABASE_URL: postgres://cohost:cohost@postgres:5432/cohost
     OLLAMA_URL: http://ollama:11434
@@ -221,21 +223,28 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: ears } }
     profiles: [ears]  # @spec DEPLOY-COMPOSE-004
+    environment:  # @spec DEPLOY-COMPOSE-023
+      <<: *ts-env
+      DISCORD_TOKEN: ""  # ears holds no Discord client; the connector holds the one token
     depends_on:  # @spec DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
       stt: { condition: service_started }
 
-  # The speaking half (the co-host's own Discord bot). Off by default like ears: profile `mouth`. Waits for redis
-  # only (the anchor's depends_on): it reaches voice by URL and covers a voice outage with its cached fallback clip.
+  # The speaking half (writes her voice to the connectors' sinks). Off by default like ears: profile `mouth`. Waits for
+  # redis only (the anchor's depends_on): it reaches voice by URL and covers a voice outage with its cached fallback clip.
   # No port and no volume of its own: the clip cache lives in the container's filesystem.
   mouth:  # @spec DEPLOY-COMPOSE-020
     <<: *ts-service
     build: { context: ., args: { SERVICE: mouth } }
     profiles: [mouth]  # @spec DEPLOY-COMPOSE-004
+    environment:  # @spec DEPLOY-COMPOSE-023
+      <<: *ts-env
+      DISCORD_TOKEN: ""  # mouth holds no Discord client; the connector holds the one token
 
   # The Discord connector (CONN-*): the one bot login and voice connection, publishing source `discord` and playing sink
-  # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume.
-  connector-discord:
+  # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume. It is the one
+  # service that takes DISCORD_TOKEN, from `.env` (DEPLOY-COMPOSE-023).
+  connector-discord:  # @spec DEPLOY-COMPOSE-023
     <<: *ts-service
     build: { context: ., args: { SERVICE: connector-discord } }
     profiles: [discord]  # @spec DEPLOY-COMPOSE-004

@@ -1,5 +1,5 @@
 /**
- * The capture-source contract. A capture source owns how audio arrives (a Discord voice channel, an HTTP POST, a dropped
+ * The capture-source contract. A capture source owns how audio arrives (a connector's audio stream, an HTTP POST, a dropped
  * file) and hands each finished clip to the one `Hearing` path; transcription, filtering and `speech.heard` stay there.
  */
 import { parseWav } from "@cohost/shared";
@@ -16,10 +16,10 @@ export type HearOutcome =
   | { heard: true; text: string }
   | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "stt-error" };
 
-/** The sink every adapter feeds: one clip, one speaker name, and the name of the source it came from. */
-export type HearClip = (clip: Clip, speaker: string, source?: string) => Promise<HearOutcome>;
+/** The sink every adapter feeds: one clip, one speaker name, the name of the source it came from and, when the source tells speakers apart, the speaker's id. */
+export type HearClip = (clip: Clip, speaker: string, source?: string, speakerId?: string) => Promise<HearOutcome>;
 
-/** A listening source other than the Discord session. `start` resolves once audio can arrive; `stop` waits for the clip in flight. */
+/** A listening source. `start` resolves once audio can arrive; `stop` waits for the clip in flight. */
 export interface CaptureAdapter {
   readonly name: string;
   start(): Promise<void>;

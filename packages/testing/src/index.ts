@@ -1,6 +1,6 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+import { EventPayloads, decodeFrame, encodeFrame, type BusEvent, type EventInput, type EventType, type Frame, type Publisher, type Registration } from "@cohost/bus";
 import { startHeartbeat, type HeartbeatSpec } from "@cohost/shared";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -138,4 +138,41 @@ export async function waitFor(cond: () => boolean, what = "condition", ms = 2000
     await new Promise((r) => setTimeout(r, 2));
   }
 }
+/**
+ * A `FakeBus` with an in-memory connector registry and audio streams, for the consumers of connectors (ears, mouth):
+ * `regs` is the registry, `frames` the frames written, `feed` delivers a frame to the live tail of a stream.
+ */
+// @spec CONN-REG-006, CONN-BP-002
+export class ConnectorFakeBus extends FakeBus {
+  regs = new Map<string, Registration>();
+  frames: { dir: string; tag: string; frame: Frame }[] = [];
+  /** Make `publishFrame` reject (a Redis outage). */
+  failFrames = false;
+  /** Streams whose `tailAudio` was called. */
+  tails: string[] = [];
+  private handlers = new Map<string, (d: ReturnType<typeof decodeFrame>, id: string) => void>();
+  private ends: (() => void)[] = [];
+  async listConnectors(): Promise<Registration[]> { return [...this.regs.values()].map((r) => structuredClone(r)); }
+  async publishFrame(dir: string, tag: string, frame: Frame): Promise<string> {
+    if (this.failFrames) throw new Error("redis down");
+    this.frames.push({ dir, tag, frame });
+    return "1-0";
+  }
+  tailAudio(dir: string, tag: string, handler: (d: ReturnType<typeof decodeFrame>, id: string) => void): Promise<void> {
+    this.tails.push(`${dir}.${tag}`);
+    this.handlers.set(`${dir}.${tag}`, handler);
+    return new Promise<void>((r) => this.ends.push(r));
+  }
+  /** Deliver a frame as it would arrive from Redis. */
+  feed(dir: string, tag: string, f: Frame): void { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(encodeFrame(f)), "1-0"); }
+  feedRaw(dir: string, tag: string, fields: (string | Buffer)[]): void { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(fields), "1-0"); }
+  stop(): void { for (const e of this.ends) e(); }
+  /** Put a registration offering `caps` under `id`, live. */
+  register(id: string, caps: Registration["capabilities"], over: Partial<Registration> = {}): void {
+    this.regs.set(id, {
+      v: 1, id, kind: id, version: "1", instance: `${id}-1`, pid: 1, startedAt: 0, intervalMs: 5000, state: "ready", detail: "", capabilities: caps, ...over,
+    });
+  }
+}
+
 export { unitContractTests, entryProblem } from "./unit-contract.js";

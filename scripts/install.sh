@@ -181,9 +181,9 @@ Done. Next:
   2. pnpm dashboard                    # start the dashboard on this machine (it brings up the stack)
   3. open http://localhost:${port}     # enter CONTROL_TOKEN from .env when asked, press Launch
      (the dashboard's startup log shows the URL it actually listens on; it differs when PORT or DASHBOARD_HOST is set)
-  4. docker compose --profile eyes --profile ears --profile mouth up -d
-     # when ready for vision, Discord listening (ears) and Discord speaking (mouth)
-     # ears and mouth are two separate Discord bots: set EARS_DISCORD_TOKEN and DISCORD_TOKEN in .env
+  4. docker compose --profile eyes --profile ears --profile mouth --profile discord up -d
+     # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
+     # the one Discord bot is DISCORD_TOKEN in .env, used by the Discord connector; ears and mouth need no token
 
 Dev loop without Docker for the TS services:
   docker compose up -d redis postgres ollama tts stt   # infra only

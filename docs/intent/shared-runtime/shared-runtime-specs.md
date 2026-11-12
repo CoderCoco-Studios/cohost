@@ -49,7 +49,8 @@ Terms: "the service" is the service that calls the module; "the bootstrap" is `r
 
 - [x] **SHARED-IDLE-001**: When `startIdle({ kind: "off", reason })` is called, the system shall log one warning containing `reason` (and no repeated warning while off), set the heartbeat mode to `off`, call `heartbeat.ready()`, and schedule no reminder.
 - [x] **SHARED-IDLE-002**: When `startIdle({ kind: "degraded", reason })` is called, the system shall log one error containing `reason` and call `heartbeat.degraded(reason)`.
-- [x] **SHARED-IDLE-003**: While a `degraded` idle plan is running, the system shall log the warning `<reason>; still idle` once every `warnEveryMs` (default 60000).
+- [x] **SHARED-IDLE-003**: While a `degraded` idle plan is running, the system shall log the warning `<reason>; still idle` first after `warnEveryMs` (default 60000) and then after a delay that doubles each time, so the reminders come at 60 s, 120 s, 240 s and so on.
+- [x] **SHARED-IDLE-006**: While a `degraded` idle plan is running, the system shall never wait longer than `maxWarnEveryMs` (default 3600000, one hour) between reminders and never less than the previous wait, so the reminder rate is bounded at one per hour and the cause stays in the log of a container that runs for days.
 - [x] **SHARED-IDLE-004**: When the idle plan's `stop()` is called, the system shall cancel the reminder; a second `stop()` does nothing.
 - [x] **SHARED-IDLE-005**: The idle plan shall subscribe to no bus event and publish nothing but through the heartbeat; a service that handles test injection while idle subscribes its inject handler itself.
 

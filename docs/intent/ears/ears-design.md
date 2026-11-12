@@ -44,7 +44,7 @@ At boot `index.ts` hands the service body (`service.ts`) to the shared `runServi
 In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`, `no-dir`):
 
 - `ready` (or `degraded` for `no-token`) is signalled after the subscription is established;
-- both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning every 60 s (EARS-START-008);
+- both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning backing off from 60 s (doubling to one hour, SHARED-IDLE-003, SHARED-IDLE-006) (EARS-START-008);
 - on shutdown the idle timer is cleared and the bus stopped, as one `runService` teardown (EARS-START-005).
 
 The `ears` consumer group uses the bus start mode `latest`: the group is reset to the newest entry on every start, so injection requests published while ears was down are not handled (EARS-START-006). `subscribeEars` creates the group first (`Bus.resetGroup`, so it exists before any `ready` signal) and then starts the read loop with `start: "latest"`.

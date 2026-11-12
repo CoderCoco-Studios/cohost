@@ -13,14 +13,14 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Service bootstrap | SHARED-BOOT-001 to SHARED-BOOT-008 | 8 | 0 | 0 | 8 |
 | Lifecycle: shutdown and heartbeat | SHARED-LIFE-001 to SHARED-LIFE-015 | 15 | 0 | 0 | 15 |
 | Retry with backoff | SHARED-RETRY-001 to SHARED-RETRY-007 | 7 | 0 | 0 | 7 |
-| Missing-credentials idle plan | SHARED-IDLE-001 to SHARED-IDLE-005 | 5 | 0 | 0 | 5 |
+| Missing-credentials idle plan | SHARED-IDLE-001 to SHARED-IDLE-006 | 6 | 0 | 0 | 6 |
 | Control handling | SHARED-CTRL-001 to SHARED-CTRL-008 | 8 | 0 | 0 | 8 |
 | Test injection | SHARED-INJ-001 to SHARED-INJ-013 | 13 | 0 | 0 | 13 |
 | Audio | SHARED-AUDIO-001 to SHARED-AUDIO-008 | 8 | 0 | 0 | 8 |
 | Discord voice session | SHARED-DVS-001 to SHARED-DVS-007 | 7 | 0 | 0 | 7 |
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |
 
-**Summary:** 72 of 72 specs implemented; 0 deferred; 0 open. 72 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 74 of 74 specs implemented; 0 deferred; 0 open. 74 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work required
 

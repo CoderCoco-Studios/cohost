@@ -105,7 +105,7 @@ Rules that follow:
 - **Bedrock:** always `true`, and the provider exposes `pingIsNominal = true` so a caller can tell the answer is not a probe (LLM-PING-006); the comment says there is no cheap probe and errors surface on the first chat (`index.ts:264`).
 - **Mock:** always `true`, `lastError` stays undefined (`mock.ts:23`).
 
-Consumers: cortex blocks startup in a 3-second retry loop until `ping()` is true (`services/cortex/src/startup.ts:20-31`, owned by `cortex`), reporting each miss through `heartbeat.degraded` via the `onDown` callback wired at `services/cortex/src/index.ts:36`; memory pings only an `Ollama` instance for its embeddings (`services/memory/src/index.ts:37-44`, owned by `memory`). Because Bedrock always reports reachable, a bad Bedrock credential or un-enabled model would show as a healthy `llm` dependency and fail only on the first `chat()`; the Bedrock ping stays optimistic, and cortex states that it is unprobed in its heartbeat `detail` (cortex segment).
+Consumers: cortex blocks startup in a 3-second retry loop until `ping()` is true (`services/cortex/src/startup.ts:20-31`, owned by `cortex`), reporting each miss through `heartbeat.degraded` via the `onDown` callback wired at `services/cortex/src/main.ts:45`; memory pings only an `Ollama` instance for its embeddings (`services/memory/src/startup.ts:39`, owned by `memory`). Because Bedrock always reports reachable, a bad Bedrock credential or un-enabled model would show as a healthy `llm` dependency and fail only on the first `chat()`; the Bedrock ping stays optimistic, and cortex states that it is unprobed in its heartbeat `detail` (cortex segment).
 
 ## Embeddings and the mock backend
 
@@ -167,7 +167,7 @@ Segment files:
 Other segments:
 - config (depends on, outbound): `Config["llm"]` schema (`packages/config/src/schema.ts:43-73`), `urls.ollama()`.
 - region-hooks (depended on by): builds providers for `llm`-kind hooks (`packages/modules/src/index.ts:43`).
-- cortex (depended on by): `createChatProvider`, `ping()` (`services/cortex/src/index.ts:28`, `startup.ts:23`).
+- cortex (depended on by): `createChatProvider`, `ping()` (`services/cortex/src/main.ts:34`, `startup.ts:23`).
 - memory (depended on by): `Ollama` / `HashEmbedder` / `createChatProvider` (`services/memory/src/backend.ts:2`, `reflect.ts:11`).
 - working-memory (implicit coupling): transcript tags vs stop sequences.
 - control-plane: cortex heartbeat `mode`/`deps.llm` derives from provider and ping (`services/cortex/src/health.ts:6`).

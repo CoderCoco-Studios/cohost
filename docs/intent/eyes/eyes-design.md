@@ -131,7 +131,7 @@ None open.
 - `dashboard` (called by): stores the upload in Redis, publishes `inject.request`, shows `inject.result`.
 - `ears` (sibling): imports `INJECT_STALE_MS` and the shared inject handler from `@cohost/shared`; `chat` imports `INJECT_STALE_MS`.
 - `@cohost/shared` (depends on, workspace package): `createInjectHandler`, `INJECT_STALE_MS`; see Test Injection.
-- `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`).
+- `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/main.ts:38`, `services/affect/src/main.ts:36`).
 - `deployment`: compose service `eyes`, profile `eyes` (`docker-compose.yml:145-148`).
 
 ### External

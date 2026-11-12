@@ -9,7 +9,7 @@ Segment `chat` (`services/chat`, package `@cohost/chat`). Mapped 2026-10-31 at g
 
 ## Context and Design Philosophy
 
-`chat` is the text sense. It turns Twitch IRC lines into `chat.message` events on the bus (see [HLD](../../high-level-design.md)). It is one of three senses (`chat`, `eyes`, `ears`) that publish and never consume brain events; it consumes only `inject.request` (test injection). Downstream consumers of `chat.message`: `salience`, `affect`, `memory` (each via `bus.subscribe`, `services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`, `services/memory/src/index.ts:63`) and the `dashboard` feed.
+`chat` is the text sense. It turns Twitch IRC lines into `chat.message` events on the bus (see [HLD](../../high-level-design.md)). It is one of three senses (`chat`, `eyes`, `ears`) that publish and never consume brain events; it consumes only `inject.request` (test injection). Downstream consumers of `chat.message`: `salience`, `affect`, `memory` (each via `bus.subscribe`, `services/salience/src/main.ts:38`, `services/affect/src/main.ts:36`, `services/memory/src/startup.ts:81`) and the `dashboard` feed.
 
 Multi-platform chat is a project goal; Twitch is the only implemented platform. `chat.message.platform` already admits `youtube` and `discord` (`packages/bus/src/events.ts:14`), so another platform arrives as a new chat source that sets its own `platform` value, with no change to the brain.
 
@@ -45,7 +45,7 @@ In all three plans the `inject.request` subscription is established before the p
 5. `onMessage` runs `createMessageHandler` (`twitch.ts`): `toEvent(user, text, msg.userInfo)` and, if it returns an event, publish `chat.message`. A failed publish is caught, logged at warn level (`chat.message publish failed`) and the next message is handled normally, as on the fake path (CHAT-TW-007).
 6. `client.connect()` is not awaited; the service's `onStop` step calls `client.quit()` and the bootstrap then stops the bus.
 
-The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/bus/src/heartbeat.ts:71`).
+The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/shared/src/lifecycle.ts:142`).
 
 ### Token persistence (`token-store.ts`)
 

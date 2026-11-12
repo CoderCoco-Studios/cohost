@@ -126,7 +126,7 @@ Start, stop and restart stay the control plane's: manifest-gated, one unit at a 
 
 **Needs.** For each unit with `uses`, the health tracker lists in the unit's snapshot entry, as `needs`, every used unit whose derived state is `down`, `stale`, `crash-looping` or `unknown`. The unit's own derived state is unchanged: `needs` is an annotation beside it, and the Services row shows `needs <id> (<state>)`. Like the derived states, it is computed by each observer and never published, so no service reads the health stream.
 
-**Pause and resume.** Each unit with `pause: true` gets Pause and Resume on its Services row, publishing `control { cmd: "pause" | "resume", target: <id> }` through `POST /control`. A service that honours `pause` reports it in its heartbeat `detail` (`paused`) through the shared control reader, so the row shows the real state rather than a page-local flag, and a restart (which starts unpaused) clears it. Units that never read `control` (the senses and the body) show no Pause; stopping them is the way to silence them.
+**Pause and resume.** Each unit with `pause: true` gets Pause and Resume on its Services row, publishing `control { cmd: "pause" | "resume", target: <id> }` through `POST /control`. A service that honours `pause` reports it in its heartbeat `detail` (`paused`) through the shared control reader, so the row shows the real state rather than a page-local flag, and a restart (which starts unpaused) clears it. Units that honour no `pause` (the senses and the body; mouth reads `control` only for `set_routing`) show no Pause; stopping them is the way to silence them.
 
 ## Test drawer
 

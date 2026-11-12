@@ -56,7 +56,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 6. `TRANSCRIPT_STOPS` / `REPLY_STOPS` (`index.ts:47-49`) - truncation lists implicitly coupled to working-memory transcript tags.
 7. `MockProvider` / `HashEmbedder` (`mock.ts`) - deterministic offline backends for isolated runs.
 
-Consumers: cortex (`services/cortex/src/index.ts:28`), memory (`services/memory/src/backend.ts`, `reflect.ts`), and the `Module` runner in region-hooks (`packages/modules/src/index.ts:43`).
+Consumers: cortex (`services/cortex/src/main.ts:34`), memory (`services/memory/src/backend.ts`, `reflect.ts`), and the `Module` runner in region-hooks (`packages/modules/src/index.ts:43`).
 
 ## Spec Coverage
 

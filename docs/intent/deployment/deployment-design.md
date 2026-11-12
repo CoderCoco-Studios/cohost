@@ -68,7 +68,7 @@ The reverse direction matters for the control plane's isolated starts: `ComposeR
 
 **Fallback clips** (gap): voice keeps its generated fallback clips under `/app/data/voice/fallback-clips` and serves them over its HTTP server; mouth fetches them into `/app/data/mouth/fallback-clips` ([voice](../voice/voice-design.md) Fallback Clips, [mouth](../mouth/mouth-design.md) Fallback Line, [config](../config/config-design.md) `dataDir()`). No volume is added and no directory is shared: both live in their container's filesystem. A container restart keeps them; after a recreate voice regenerates in the background (one TTS call per phrase), and mouth re-fetches from voice.
 
-**Voice reachability**: `voice` listens on `VOICE_PORT` (default 8700, `services/voice/src/index.ts:21`) and advertises `urls.voice()` = `http://voice:8700` inside Compose. Compose publishes it on `127.0.0.1:8700` only, because the dashboard runs on the host and proxies `/audio/*` to `urls.voice()`, whose default is `http://127.0.0.1:8700` (DEPLOY-COMPOSE-007). Browsers, OBS and any other player still go through the dashboard proxy, the only supported path for them; in-network sinks such as `ears` fetch `http://voice:8700` directly. A loopback publish also lets `pnpm dev` services on the host reach a containerised voice. The code today publishes nothing (gap).
+**Voice reachability**: `voice` listens on `VOICE_PORT` (default 8700, `services/voice/src/boot.ts:42`) and advertises `urls.voice()` = `http://voice:8700` inside Compose. Compose publishes it on `127.0.0.1:8700` only, because the dashboard runs on the host and proxies `/audio/*` to `urls.voice()`, whose default is `http://127.0.0.1:8700` (DEPLOY-COMPOSE-007). Browsers, OBS and any other player still go through the dashboard proxy, the only supported path for them; in-network sinks such as `ears` fetch `http://voice:8700` directly. A loopback publish also lets `pnpm dev` services on the host reach a containerised voice. The code today publishes nothing (gap).
 
 ## Host-run dashboard
 
@@ -163,10 +163,10 @@ Enforcement is the `cla` workflow (DEPLOY-CI-005):
 
 | Claim | Where | Reality |
 | --- | --- | --- |
-| VTube Studio token saved to `config/.vts-token` | README.md:214 | Correct: avatar passes `stateDir: configDir()` (`services/avatar/src/index.ts:30`, `drivers/vtube-studio.ts:104`); `.gitignore` ignores the file (`.gitignore:11-12`, DEPLOY-REPO-004) |
+| VTube Studio token saved to `config/.vts-token` | README.md:214 | Correct: avatar passes `stateDir: configDir()` (`services/avatar/src/boot.ts:47`, `drivers/vtube-studio.ts:104`); `.gitignore` ignores the file (`.gitignore:11-12`, DEPLOY-REPO-004) |
 | `docker compose up -d` is the "core" stack | README.md:49 | Starts everything without a profile, including `models`, `tts`, `stt`; the minimal command is in a compose comment (`:5`) |
 | `config.yaml`, `personality.md`, `expressions.yaml` are untracked | README.md:135-140 | True per `.gitignore:8-10`; text speaks to users upgrading from earlier tracked copies |
-| voice HTTP on 8700 | `docker-compose.yml:18`, `services/voice/src/index.ts:21` | Container-internal only today; intended published on `127.0.0.1:8700` for the host-run dashboard (DEPLOY-COMPOSE-007); browsers go through the dashboard's `/audio/` proxy |
+| voice HTTP on 8700 | `docker-compose.yml:18`, `services/voice/src/boot.ts:42` | Container-internal only today; intended published on `127.0.0.1:8700` for the host-run dashboard (DEPLOY-COMPOSE-007); browsers go through the dashboard's `/audio/` proxy |
 | `docker compose up -d` starts the dashboard; `open http://localhost:3000` | README.md:49-50 | Intended: the owner runs `pnpm dashboard` first and presses Launch (DEPLOY-HOST-003) |
 | `docs/plans/control-plane.md` is a proposal | its header | Implemented by PRs #20-#23 |
 

@@ -210,7 +210,9 @@ Enforcement is the `cla` workflow (DEPLOY-CI-005):
 
 ## Open Questions & Future Decisions
 
-### Manual verification
+None.
+
+## Manual verification
 
 Needs a Docker daemon, a real account or a real run; the single-PC checklist in `docs/TESTING.md` is where each is checked and ticked off.
 

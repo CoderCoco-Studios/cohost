@@ -152,7 +152,9 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 
 ## Open Questions & Future Decisions
 
-### Manual verification
+None.
+
+## Manual verification
 
 1. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus codec) itself; ears carries them without importing them. Whether this set is sufficient is checked by a first run against a real Discord guild and voice channel (receive and decode a human speaker).
 

@@ -271,7 +271,9 @@ The Discord connection runs through the shared Discord voice session (MOUTH-SESS
 
 ## Open Questions & Future Decisions
 
-### Manual verification
+None.
+
+## Manual verification
 
 1. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus codec) itself; mouth carries them without importing them. Whether this set is sufficient is checked by a first run against a real Discord guild and voice channel (join, play a line and hear it).
 

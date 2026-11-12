@@ -52,7 +52,7 @@ Design: LLD § Viewers page (layout "panel A", routes, Access protection options
 
 - Built: `DASH-VIEWERS-001` to `017` (`src/viewers.ts`: `ViewersClient` request/reply over the bus with a 3000 ms timeout, `handleViewers` routes and `VIEWERS_TOKEN` gate; the Viewers tab in `public/index.html`), and `DASH-FEED-001`, `002`, `007` (`feed.ts` `WITHHELD`: the four viewer-notes events never reach `/ws`, live or in the replay; `memory.viewers.reply` is handed to the `ViewersClient` instead). The `memory.notes.*` names are filtered by name, so the filter already holds when cortex surfacing (chunk 3) puts them on the bus.
 - Tests: `test/viewers.test.ts` (routes, token gate, reply mapping, timeout, body caps), `test/feed.test.ts`, `test/page.test.ts` (page script under the stub DOM). The page was also driven once in headless Chrome against the real handler and memory admin (list, search, select, delete with reason, undo, regular toggle, name field, clear, token prompt); that check is not part of the suite.
-- Access: option A, a dedicated `VIEWERS_TOKEN` on every `/viewers` route (owner decision), env only (`CFG-ENV-009`). Open item: dashboard visual design to be revisited later (LLD Open Questions 5).
+- Access: option A, a dedicated `VIEWERS_TOKEN` on every `/viewers` route (owner decision), env only (`CFG-ENV-009`). The dashboard visual design may be revisited later; no LLD item tracks it.
 
 ## Decisions applied
 

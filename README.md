@@ -41,7 +41,57 @@ each other over the same bus, the way the rest of the stack does:
 
 Infra containers: `redis`, `postgres` (pgvector), `ollama`, `tts` (Kokoro-FastAPI), `stt` (speaches / faster-whisper).
 
-## Quick start
+## Quickstart: mock mode, no accounts
+
+From a clean checkout to a healthy stack with no Twitch, Discord, OBS, avatar app, GPU or API key.
+Every external dependency has a mock backend (see [Running one service on its own](#running-one-service-on-its-own-isolated)),
+and one block of `.env` lines flips them all:
+
+```bash
+git clone <this repo> cohost && cd cohost
+pnpm install                       # Node >= 22, pnpm 10 (corepack enable)
+cp .env.example .env
+sed -i "s/^CONTROL_TOKEN=.*/CONTROL_TOKEN=$(openssl rand -hex 24)/" .env
+cat >> .env <<'EOF'
+LLM_PROVIDER=mock
+MEMORY_STORE=memory
+MEMORY_EMBEDDER=hash
+VOICE_ENGINE=stub
+CHAT_SOURCE=fake
+EOF
+pnpm dashboard                     # builds and starts the dashboard on the host; prints its URL
+```
+
+The lines mean: cortex answers with canned echoes (the viewer-note hooks follow it); memory is an in-process
+store with offline embeddings, lost on exit; voice returns silent WAVs with no TTS call; chat publishes a scripted
+message every 8 s. `AVATAR_DRIVER=null` is already the default in `.env.example`.
+
+Open <http://localhost:3000>, enter `CONTROL_TOKEN` from `.env`, press **Launch**, and wait for the
+Services tab to show every service `up` with mode `mock` (redis, postgres, ollama, tts and stt are
+infra and show in the stack panel). Click **enable audio**: the fake viewers talk, salience focuses,
+the cortex answers, and the preview face lip-syncs to silence. Chat lines you type into the test panel
+take the same path.
+
+- The first Launch pulls the infra images and, through the `models` service, the Ollama models: several GB
+  even in mock mode. To skip that, use the Redis-only smoke run under
+  [Running one service on its own](#running-one-service-on-its-own-isolated).
+- `eyes`, `ears` and `mouth` are optional profiles and stay off. To exercise them without accounts, set
+  `EARS_SOURCE=off` or `EARS_STT_ENGINE=stub`, `MOUTH_DISCORD_ENABLED=false` (or `MOUTH_DRYRUN_ENABLED=true`),
+  `VISION_ENABLED=false` with `VISION_ENGINE=stub`, and feed them from the dashboard's test inputs.
+  `eyes` with `VISION_ENABLED=true` always wants a reachable OBS: its mock covers injected images only.
+- Real backends one at a time: delete the matching line and fill in the account (Twitch, Discord, OBS and
+  VTube Studio sections of `.env`), then restart that service from the Services tab.
+
+**Docker from WSL2.** With Docker Desktop's WSL integration on, `docker` is on the distro's path and nothing
+more is needed. Without it, set `COHOST_DOCKER_BIN=docker.exe` in `.env`; the dashboard and `cohostctl` then
+run every Compose command through it. For an NVIDIA GPU add the overlay to `COMPOSE_FILE` in `.env`
+(`install.sh` does this when it sees a GPU): `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`. A
+Windows `docker.exe` splits that list on `;` rather than `:` unless you also set
+`COMPOSE_PATH_SEPARATOR=:` in `.env` (this combination was not run where this was written; the step-by-step
+check is the [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop)). The GPU comes from the
+Windows NVIDIA driver; nothing to install in Linux except the container toolkit.
+
+## Quick start with real accounts
 
 ```bash
 git clone <this repo> cohost && cd cohost
@@ -118,14 +168,6 @@ routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
 listening bot and set `EARS_DISCORD_TOKEN`; keep your existing `DISCORD_TOKEN` as
 the speaking bot; add `mouth` to `COMPOSE_PROFILES`; and move
 `ears.fallback.min_interval_ms` to `mouth.fallback.min_interval_ms` in `config.yaml`.
-
-### Minimal first run (no avatar app, no Discord, no OBS)
-
-1. Set `TWITCH_CHANNEL` in `.env`, leave `AVATAR_DRIVER=null`.
-2. `pnpm dashboard`, open it and press **Launch**
-3. In the dashboard, click **enable audio**, type something in chat. You'll see
-   the message hit the bus, salience focus, the cortex think, and the reply get spoken, with the
-   preview face lip-syncing.
 
 ## Configuration
 
@@ -326,13 +368,16 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 
 | Service | Preset | Result (mode) |
 |---|---|---|
-| cortex | `LLM_PROVIDER=mock` | deterministic echo replies, hash embeddings (`mock`) |
+| cortex (and the salience/affect/notes hooks that inherit it) | `LLM_PROVIDER=mock` | deterministic echo replies, hash embeddings (`mock`) |
 | memory | `MEMORY_STORE=memory MEMORY_EMBEDDER=hash` | in-process store, lost on exit (`mock`) |
 | voice | `VOICE_ENGINE=stub` | silent WAV, 60 ms per character (min 400 ms), no TTS call (`mock`) |
 | chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
-| eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`) |
-| ears | `EARS_SOURCE=off` | idles, no Discord client (`off`) |
+| eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`); injected images are still described |
+| eyes | `VISION_ENGINE=stub` | fixed description, no vision model (`mock`); with `VISION_ENABLED=true` it still needs OBS |
+| ears | `EARS_SOURCE=off` | idles, no Discord client (`off`); injected audio is still transcribed |
+| ears | `EARS_STT_ENGINE=stub` | fixed transcript, no `stt` server (`mock`) |
 | mouth | `MOUTH_DISCORD_ENABLED=false` | idles, plays nothing (`off`) |
+| mouth | `MOUTH_DRYRUN_ENABLED=true` | the `dryrun` output accepts every line and plays nothing (`mock`) |
 | avatar | `AVATAR_DRIVER=null` | no app needed |
 | salience, affect, dashboard | none | already Redis-only |
 
@@ -460,10 +505,25 @@ publishes a new event type.
 
 ## Status
 
-Scaffold. Built and type-checked; the `chat → salience → cortex → voice → avatar → dashboard`
-path has been exercised end-to-end against the stub voice engine (`VOICE_ENGINE=stub`). Not yet run against real
-Twitch / VTube Studio / Discord — expect to tune the VTS parameter names and the
-Discord receive path on first contact.
+All services are built, type-checked and covered by unit and glue tests; the loop
+`chat → salience → cortex → voice → avatar → dashboard` runs end to end in mock mode, and
+every service can boot alone with only Redis (each external dependency has a mock backend).
+
+| piece | state |
+|---|---|
+| brain (salience, affect, memory, cortex), voice, avatar (null driver), dashboard, control plane | built and exercised against the stub voice, mock LLM and in-process memory; the real Ollama, Kokoro and Postgres containers were run on a CPU box |
+| `mouth` (speaks in Discord on her own bot) | built, with a stuck-playback guard, a spoken fallback line and a test-only `dryrun` output; never run against a real Discord server |
+| `ears` (listens in Discord on its own bot) | built; the Discord receive path and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are unverified against real Discord |
+| `eyes` (OBS vision) | built; the OBS WebSocket path has not been run against a real OBS, and the vision model needs a GPU for good latency |
+| `chat` (Twitch) | built; anonymous read-only chat was run against Twitch, the authenticated path and token refresh persistence were not |
+| avatar drivers | VMC was run against a UDP listener; VTube Studio only against a fake socket, so expect to tune parameter names on first contact |
+| Compose and installer | read and parsed; a Docker-gated end-to-end Launch test runs in CI, the full real stack awaits the single-PC checklist |
+
+What is left is a first run with real accounts and apps: Discord (two bots), Twitch, OBS and VTube Studio.
+The hands-on list, with what to look for at each step, is the
+[single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop); the
+[OBS requirements](docs/TESTING.md#obs-requirements) and
+[two-bot Discord setup](docs/TESTING.md#two-bot-discord-setup) are in [`docs/TESTING.md`](docs/TESTING.md).
 
 ## License
 

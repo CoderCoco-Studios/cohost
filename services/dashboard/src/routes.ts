@@ -92,6 +92,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-VIEWERS-001, DASH-VIEWERS-002, DASH-VIEWERS-003, DASH-VIEWERS-004, DASH-VIEWERS-005, DASH-VIEWERS-006, DASH-VIEWERS-007, DASH-VIEWERS-008, DASH-VIEWERS-009
       if (await handleViewers(viewers, req, res, url)) return;
+      // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
       // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
       if (await handleConfig(settings, req, res, url)) return;
@@ -101,7 +102,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ services: d.services() }));
         return;
       }
-      // @spec DASH-HTTP-014
+      // @spec DASH-HTTP-014, MOD-MAN-007
       if (req.method === "GET" && url.pathname === "/services/manifest") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ units: unitDescriptors() }));

@@ -38,7 +38,12 @@
   .badge.up{color:var(--ok); border-color:var(--ok)} .badge.degraded{color:var(--warn); border-color:var(--warn)} .badge.stale{color:var(--warn)}
   .badge.down,.badge.crash-looping{color:var(--bad); border-color:var(--bad)} .badge.unknown{color:var(--dim)}
   .dep.ok{color:var(--ok)} .dep.down{color:var(--bad)} .dep.na{color:var(--dim)}
-  .sink main, .sink #services, .sink .tab { display:none }  /* ?sink=1 : audio only, for OBS browser source */  /* ?sink=1 : audio only, for OBS browser source */
+  .sink main, .sink #services, .sink .tab { display:none }  /* ?sink=1 : audio only, for OBS browser source */
+  .badge.paused { color:var(--warn); border-color:var(--warn); margin-left:6px }
+  .needs { display:block; color:var(--warn); font-size:12px }
+  #testDrawer { margin-top:12px } #testDrawer h3 { margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
+  .tdform { margin-bottom:8px } .tdform textarea { min-height:90px; margin-bottom:4px } .tdform label { display:block; color:var(--dim); font-size:12px; margin-bottom:2px }
+  #tdFeed { max-height:240px; overflow:auto; font-family:ui-monospace,Menlo,monospace; font-size:12.5px } #tdStatus.ok{color:var(--ok)} #tdStatus.bad{color:var(--bad)}
   .hint { color:var(--dim); font-size:12px }
   .svc td.act { white-space:nowrap } .svc td.act button { padding:2px 8px; font-size:12px }
   #ctlBar select, #ctlBar label { font-size:12px; color:var(--dim) } #ctlBar select { background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:3px }
@@ -161,10 +166,12 @@
       <span id="ctlMsg" class="hint"></span>
     </div>
     <table class="svc">
-      <thead><tr><th>service</th><th>state</th><th>mode</th><th>deps</th><th>last seen</th><th>restarts</th><th>detail</th><th id="actHead" style="display:none">control</th></tr></thead>
+      <thead><tr><th>service</th><th>state</th><th>mode</th><th>deps</th><th>last seen</th><th>restarts</th><th>detail</th><th>test</th><th id="actHead" style="display:none">control</th></tr></thead>
       <tbody id="svcRows"></tbody>
     </table>
   </div>
+  <!-- @spec MOD-TEST-001 -->
+  <div class="panel" id="testDrawer" style="display:none"></div>
 </section>
 <!-- @spec DASH-VIEWERS-010 -->
 <section id="viewers">
@@ -213,9 +220,13 @@ async function pump() {
   if (!audioOn || playing || !queue.length) return;
   const u = queue.shift(); playing = true;
   const a = new Audio(`/audio/${u.id}.wav`);
+  let finished = false; // the line is reported done once, whichever of ended, error or a refused play() comes first
+  const finish = () => { if (finished) return false; finished = true; post("/sink", { event: "done", id: u.id }); playing = false; return true; };
   a.onplay = () => post("/sink", { event: "playing", id: u.id });
-  a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
-  try { await a.play(); } catch (e) { playing = false; audioOn = false; queue.length = 0; $("#audio").textContent = "🔇 enable audio"; }
+  a.onended = a.onerror = () => { if (finish()) pump(); };
+  // Autoplay refused: the line that could not start is reported done, audio goes back to off, and the lines still queued
+  // wait for the operator to switch audio on again (turning it off by hand is what discards them).
+  try { await a.play(); } catch (e) { if (finish()) { audioOn = false; $("#audio").textContent = "🔇 enable audio"; $("#audio").classList.remove("on"); } }
 }
 // @spec DASH-UI-006
 // When service control is enabled the server wants a bearer token on every mutating call.
@@ -332,8 +343,11 @@ function renderServices() {
     const h = s.heartbeat;
     const deps = h ? Object.entries(h.deps).map(([k, v]) => `<span class="dep ${v === "n/a" ? "na" : v}">${esc(k)}: ${esc(v)}</span>`).join(" · ") || "—" : "—";
     const age = s.lastSeenAgeMs == null ? "never" : `${Math.round((s.lastSeenAgeMs + extra) / 1000)}s ago`;
-    return `<tr><td>${esc(s.service)}</td><td><span class="badge ${s.state}">${s.state}</span></td><td>${h ? esc(h.mode) : "—"}</td>` +
-      `<td>${deps}</td><td>${age}</td><td>${s.restarts}</td><td class="hint">${h && h.detail ? esc(h.detail) : ""}</td>${actions(s.service)}</tr>`;
+    // @spec MOD-PAUSE-003: paused is exactly the heartbeat's own detail; @spec MOD-LIFE-002: needs is an annotation beside the state
+    const paused = h && h.detail === "paused" ? '<span class="badge paused">paused</span>' : "";
+    const needs = (s.needs || []).map((n) => `<span class="needs">needs ${esc(n.service)} (${esc(n.state)})</span>`).join("");
+    return `<tr><td>${esc(s.service)}</td><td><span class="badge ${s.state}">${s.state}</span>${paused}${needs}</td><td>${h ? esc(h.mode) : "—"}</td>` +
+      `<td>${deps}</td><td>${age}</td><td>${s.restarts}</td><td class="hint">${h && h.detail ? esc(h.detail) : ""}</td>${testCell(s.service)}${actions(s.service)}</tr>`;
   }).join("");
   const bad = svc.filter((s) => ["down", "crash-looping", "stale"].includes(s.state)).length;
   $("#svcNote").textContent = bad ? `· ${bad} need attention` : "";
@@ -347,14 +361,23 @@ const ACTIONS = ["start", "stop", "restart"];
 // The dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
 // @spec DASH-UI-008, DASH-UI-021
 let UNITS = [];
+let UNIT_DEFS = Object.create(null); // id -> the manifest's descriptor (pause, test, ...)
 fetch("/services/manifest").then((r) => r.json()).then((m) => {
   UNITS = (m.units || []).map((u) => u.id);
+  UNIT_DEFS = Object.create(null);
+  for (const u of m.units || []) UNIT_DEFS[u.id] = u;
   renderServices();
 }).catch(() => {});
+// @spec MOD-PAUSE-001: Pause and Resume only on a unit whose manifest `pause` is true
 function actions(id) {
   if (!ctlEnabled) return "";
-  return `<td class="act">${UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : ""}</td>`;
+  const def = UNIT_DEFS[id];
+  const life = UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : "";
+  const pause = def && def.pause ? ` <button data-ctl="pause" data-svc="${esc(id)}">pause</button> <button data-ctl="resume" data-svc="${esc(id)}">resume</button>` : "";
+  return `<td class="act">${life}${pause}</td>`;
 }
+// @spec MOD-TEST-001: every unit's row opens the test drawer, with control enabled or not
+const testCell = (id) => `<td class="act">${UNIT_DEFS[id] && UNIT_DEFS[id].test.inputs.length ? `<button data-open="test" data-svc="${esc(id)}">test</button>` : ""}</td>`;
 fetch("/services/control").then((r) => r.json()).then((c) => {
   ctlEnabled = !!c.enabled;
   $("#ctlBar").style.display = ctlEnabled ? "" : "none";
@@ -363,8 +386,10 @@ fetch("/services/control").then((r) => r.json()).then((c) => {
   renderStack();
 }).catch(() => {});
 $("#svcRows").addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-act]");
+  const b = e.target.closest("button[data-act], button[data-ctl], button[data-open]");
   if (!b) return;
+  if (b.dataset.open) { openDrawer(b.dataset.svc); return; }
+  if (b.dataset.ctl) { await unitControl(b.dataset.ctl, b.dataset.svc); return; }
   const act = b.dataset.act, id = b.dataset.svc;
   const mode = $("#ctlMode").value, isolated = $("#ctlIso").checked;
   const how = [mode && `mode ${mode}`, isolated && "isolated"].filter(Boolean).join(", ");
@@ -377,6 +402,110 @@ $("#svcRows").addEventListener("click", async (e) => {
     $("#ctlMsg").textContent = r.ok && j.ok ? `${act} ${id}: ok${j.detail ? " · " + j.detail : ""}` : `${act} ${id} failed (${r.status})${j.detail ? ": " + j.detail : ""}`;
   } catch (err) { $("#ctlMsg").textContent = `${act} ${id} failed: ${err}`; }
 });
+// @spec MOD-PAUSE-002
+async function unitControl(cmd, id) {
+  $("#ctlMsg").textContent = `${cmd} ${id}…`;
+  try {
+    const r = await post("/control", { cmd, target: id });
+    $("#ctlMsg").textContent = r.ok ? `${cmd} ${id}: sent` : `${cmd} ${id} failed (${r.status})`;
+  } catch (err) { $("#ctlMsg").textContent = `${cmd} ${id} failed: ${err}`; }
+}
+
+// ---------- test drawer (module-contract MOD-TEST-001): the unit's declared inputs, from the manifest, and what it answers
+// Sample payloads by bus event type (not by unit): each is valid for its type's schema, ready to edit and send.
+const SAMPLES = {
+  "chat.message": () => ({ platform: "twitch", user: "injected_viewer", text: "hello cohost, how is the stream going?" }),
+  "speech.heard": () => ({ speaker: "injected", text: "hello cohost", durationMs: 0 }),
+  "vision.summary": () => ({ text: "A boss fight has started.", changed: true }),
+  "brain.say": () => ({ id: "test-" + Date.now(), text: "This is a test line.", emotion: "neutral" }),
+  "attention.focus": () => ({ reason: "test", score: 1, focus: { kind: "chat", who: "injected_viewer", text: "hello cohost", mention: true } }),
+  "affect.state": () => ({ valence: 0.5, arousal: 0.5, mood: "happy" }),
+  "memory.recall.request": () => ({ id: "test-" + Date.now(), query: "test", k: 3 }),
+};
+const sampleFor = (type) => (SAMPLES[type] ? SAMPLES[type]() : {});
+let tdUnit = null, tdFeed = [];
+const tdIds = new Set();  // ids of the service-level injections made from the drawer: their inject.result belongs in its feed
+const tdCorr = new Set(); // data.id of the bus events injected from the drawer: a reply carrying it answers the injection
+const tdSet = (msg, cls = "") => { const el = $("#tdStatus"); el.textContent = msg; el.className = "hint " + cls; };
+function tdForm(type, i) {
+  const send = (label) => `<button data-td="send" data-i="${i}">${label}</button>`;
+  if (type === "text") return `<div class="tdform"><label>text, as a chat message through the real pipeline</label><textarea id="tdIn${i}" placeholder="Type a fake viewer message…"></textarea>${send("send text")}</div>`;
+  if (type === "image") return `<div class="tdform"><label>image, through the real pipeline</label><input type="file" id="tdIn${i}" accept="image/png,image/jpeg,image/webp">${send("send image")}</div>`;
+  if (type === "audio") return `<div class="tdform"><label>audio, through the real pipeline</label><input type="file" id="tdIn${i}" accept="audio/*">${send("send audio")}</div>`;
+  return `<div class="tdform"><label>${esc(type)} (bus event, marked injected where its schema allows)</label><textarea id="tdIn${i}">${esc(JSON.stringify(sampleFor(type), null, 2))}</textarea>${send("send " + esc(type))}</div>`;
+}
+function openDrawer(id) {
+  const def = UNIT_DEFS[id];
+  if (!def) return;
+  tdUnit = def; tdFeed = []; tdIds.clear(); tdCorr.clear();
+  $("#testDrawer").innerHTML =
+    `<h2>test ${esc(id)} <a class="lnk" data-td="close">close</a></h2>` +
+    (ctlEnabled ? `<div class="row" style="margin-bottom:8px"><button data-td="isolated">start isolated</button><span class="hint">only this unit, with mock or off backends</span></div>` : "") +
+    def.test.inputs.map(tdForm).join("") +
+    '<div id="tdStatus" class="hint"></div><h3>live</h3><div id="tdFeed"></div>';
+  $("#testDrawer").style.display = "";
+}
+function tdRender() {
+  $("#tdFeed").innerHTML = tdFeed.map((ev) => {
+    const d = ev.data || {};
+    const corr = typeof d.id === "string" && tdCorr.has(d.id) && ev.type !== "inject.result" ? ' <span class="badge mem">answers your injection</span>' : "";
+    return `<div class="ev"><span class="k">${esc(ev.type)}</span><span>${esc(JSON.stringify(d).slice(0, 300))}${corr}</span></div>`;
+  }).join("");
+}
+function tdAdd(ev) { tdFeed.push(ev); if (tdFeed.length > 50) tdFeed.shift(); tdRender(); }
+function tdOnEvent(ev) {
+  if (!tdUnit) return;
+  if (ev.type === "inject.result" ? tdIds.has(ev.data.id) : tdUnit.test.observe.includes(ev.type)) tdAdd(ev);
+}
+async function tdFinish(r, kind) {
+  if (!r.ok) { tdSet(`rejected (${r.status}): ${(await r.text()).slice(0, 200)}`, "bad"); return; }
+  const { id } = await r.json();
+  tdIds.add(id);
+  tdSet(`sent ${kind} (id ${id}), waiting for its result…`);
+  if (injResults.has(id)) tdAdd({ type: "inject.result", data: injResults.get(id) }); // the result beat the HTTP response
+}
+async function tdSend(i) {
+  const def = tdUnit, type = def && def.test.inputs[i];
+  if (!type) return;
+  try {
+    if (type === "text") {
+      const text = $("#tdIn" + i).value.trim();
+      if (!text) { tdSet("type some text first", "bad"); return; }
+      await tdFinish(await post("/inject/text", { level: "service", text }), "text");
+    } else if (type === "image" || type === "audio") {
+      const f = $("#tdIn" + i).files[0];
+      if (!f) { tdSet(type === "image" ? "choose an image first" : "choose an audio file first", "bad"); return; }
+      await tdFinish(await authFetch(`/inject/${type}?level=service`, { method: "POST", headers: { "content-type": f.type }, body: f }), type);
+    } else {
+      let data;
+      try { data = JSON.parse($("#tdIn" + i).value); } catch (e) { tdSet("data is not valid JSON: " + e.message, "bad"); return; }
+      const r = await post("/inject/event", { unit: def.id, type, data });
+      if (!r.ok) { tdSet(`rejected (${r.status}): ${(await r.text()).slice(0, 300)}`, "bad"); return; }
+      const { id } = await r.json();
+      if (data && typeof data.id === "string") tdCorr.add(data.id);
+      tdSet(`published ${type} (bus id ${id}); replies that carry the same id are marked`, "ok");
+    }
+  } catch (e) { tdSet("failed: " + e, "bad"); }
+}
+async function tdIsolated() {
+  const id = tdUnit.id;
+  if (!confirm(`start ${id} isolated (only this unit, mock or off backends)?`)) return;
+  tdSet(`starting ${id} isolated…`);
+  try {
+    const r = await post(`/services/${encodeURIComponent(id)}/start`, { isolated: true });
+    const j = await r.json().catch(() => ({}));
+    tdSet(r.ok && j.ok !== false ? `${id} started isolated` : `start ${id} failed (${r.status})${j.detail ? ": " + j.detail : ""}`, r.ok && j.ok !== false ? "ok" : "bad");
+  } catch (e) { tdSet(`start ${id} failed: ${e}`, "bad"); }
+}
+$("#testDrawer").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-td]");
+  if (!b || !tdUnit) return;
+  const a = b.dataset.td;
+  if (a === "close") { tdUnit = null; $("#testDrawer").style.display = "none"; }
+  else if (a === "isolated") await tdIsolated();
+  else if (a === "send") await tdSend(Number(b.dataset.i));
+});
+
 setInterval(() => { renderServices(); renderStack(); }, 1000);
 function onServices(list) { svc = list; svcAt = Date.now(); renderServices(); }
 
@@ -696,6 +825,7 @@ function onEvent(ev) {
   if (ev.type === "stack") { onStack(ev); return; }
   if (ev.id) { if (seen.has(ev.id)) return; seen.add(ev.id); if (seen.size > 1000) seen.delete(seen.values().next().value); } // @spec DASH-UI-013
   if (ev.type === "inject.result") onInjectResult(ev.data);
+  tdOnEvent(ev); // @spec MOD-TEST-001
   if (ev.type === "avatar.state") { drawFace(ev.data); return; }
   if (ev.type === "brain.status") { const s = $("#status"); s.className = "pill " + ev.data.state; s.textContent = ev.data.state; }
   if (ev.type === "voice.utterance" && !ev.replay && audioOn) { queue.push(ev.data); pump(); } // @spec DASH-UI-013, DASH-UI-014 (replayed or audio off: shown, never queued)

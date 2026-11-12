@@ -318,16 +318,16 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 | Health in the UI | Server-side `HealthTracker`, pushed as `services` messages on change plus a 1 s tick, and available at `GET /services` | Browser derives state from raw heartbeats | Services report facts and thresholds belong to the monitor; the dashboard owns one tracker fed by `tailHealth` and pushes on change and on a 1 s tick (`openspec/changes/archive/2026-11-01-add-service-health/design.md` D3, D6; commit `691b079`). |
 | Audio sink location | Browser page plays audio and reports `voice.playing` / `voice.done` | Server-side playback | An OBS Browser Source with "control audio via OBS" puts the voice on stream "with no virtual cables" (`index.ts:5-7`). |
 | Voice URL default | `urls.voice()`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT or 8700>`; Compose sets `VOICE_URL=http://voice:8700` | Hard-coded `http://voice:8700` | Host runs outside Docker could not resolve `voice`; fixed for issue #10 (commit `e53badc`, "default VOICE_URL to loopback outside Docker"). |
+| Autoplay refusal | The line that could not start is reported `done`, audio goes back to off, and the lines still queued wait for the operator to switch audio on again (DASH-UI-012) | Clear the whole queue with no `done` | A line dropped without `done` leaves cortex and the avatar waiting on a sink that will never report; the lines behind it are still wanted once the browser allows sound. Chosen by recommendation. |
+| Bus-level injection id | `POST /inject/event` answers `202 { id }` with the published event's bus id; the drawer marks replies that carry the injected data's own `id` | A made-up correlation id no event carries | The id is the one thing every observer can see on the stream; replies that echo a request id (`memory.recall.reply`) are matched on that. |
+| Pause and Resume | Buttons on the rows of units whose manifest `pause` is true, posting `control { cmd, target }` through `POST /control`; the paused state shown is the heartbeat's own `detail` | Page-local paused flag; raw `POST /control` only | The row must show the real state after a restart or in a second tab (module-contract, Pause state). |
+| Request bodies | One reader (`body.ts`): bytes with a cap for the inject routes, text capped at 64 KiB for the JSON routes | A reader per module | The three copies differed only in what they returned; one place for the cap and the drain-on-overflow rule. |
 
 ## Open Questions & Future Decisions
 
-1. If the browser blocks autoplay, `a.play()` rejects, `audioOn` flips off, that utterance is dropped from the queue and the rest of the queue is cleared, with no `done` posted (`index.html:147`).
-2. Bus-level injection returns an `id` that no published event carries (`inject.ts:90, 102-113`), so it cannot be correlated; the UI special-cases this ("published at bus level (no service result)", `index.html:195`).
-3. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
-4. `index.html` carries a duplicated comment on the same CSS line (`:41`) and the pause/resume commands are reachable only by raw `POST /control` (`:165-171`).
-5. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
-6. **Heartbeat warnings while the stack is down.** With Redis absent the dashboard's own heartbeat fails every interval and logs a warning each time (control-plane SHARED-LIFE-011); whether to throttle that while the bus reports `unreachable` is open.
-7. **Images after a code update.** Launch runs `up -d` without `--build`, so after updating the checkout the containers keep their old images while `pnpm dashboard` rebuilds the dashboard from source; the owner rebuilds with `docker compose build`. A Rebuild action is not designed.
+1. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
+2. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
+3. **Images after a code update.** Launch runs `up -d` without `--build`, so after updating the checkout the containers keep their old images while `pnpm dashboard` rebuilds the dashboard from source; the owner rebuilds with `docker compose build`. A Rebuild action is not designed.
 
 ## References
 

@@ -97,7 +97,7 @@ test("with control enabled POST /inject/event needs the bearer token; a body ove
   assert.equal(t.bus.of("chat.message").length, 1);
 });
 
-// @spec MOD-TEST-005
+// @spec MOD-TEST-005, DASH-INJ-008
 test("an injection for a unit that is down or unknown is refused 409 and publishes nothing; one that is stale, degraded or crash-looping is accepted", async () => {
   const t = await boot({}, { salience: "down", affect: "unknown", cortex: "stale", memory: "degraded", voice: "crash-looping" });
   for (const unit of ["salience", "affect"]) {
@@ -111,7 +111,7 @@ test("an injection for a unit that is down or unknown is refused 409 and publish
   assert.equal((await t.event({ unit: "voice", type: "brain.say", data: { id: "s", text: "hi", emotion: "neutral" } })).status, 202);
 });
 
-// @spec MOD-TEST-005
+// @spec MOD-TEST-005, DASH-INJ-008
 test("the same refusal covers service-level text, image and audio, and bus-level text is not refused", async () => {
   const t = await boot({}, { chat: "down", eyes: "unknown", ears: "down" });
   const text = await fetch(`${t.base}/inject/text`, { method: "POST", body: JSON.stringify({ level: "service", text: "hi" }) });

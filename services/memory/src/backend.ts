@@ -13,6 +13,6 @@ export function createMemoryEmbedder(cfg: Config): Embedder {
 /** Store per `brain.memory.store` (Postgres is only opened when selected). */
 export function createStore(cfg: Config, embedder: Embedder, log: Logger, onQuery?: (ok: boolean) => void): MemoryBackend {
   return cfg.brain.memory.store === "memory"
-    ? new InMemoryStore(cfg.brain.memory) // main's fake: own hashed bag-of-words, ignores `embedder`
+    ? new InMemoryStore(cfg.brain.memory) // the fake embeds with HashEmbedder itself and ignores `embedder`
     : new MemoryStore(embedder, cfg.brain.memory, log, onQuery);
 }

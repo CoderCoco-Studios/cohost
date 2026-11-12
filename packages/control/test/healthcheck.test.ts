@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
-import { isHealthy } from "../src/healthcheck.js";
+import { isHealthy, checkHealth } from "../src/healthcheck.js";
 
 const rec = (service: string, ageMs: number, state: HeartbeatEvent["data"]["state"] = "ready", now = 1_000_000): HeartbeatEvent => ({
   id: "1", type: "service.heartbeat", ts: now - ageMs, source: service,
@@ -46,4 +46,33 @@ test("CLI exits 0 for a fresh service and 1 for a silent one (needs Redis)", { s
   assert.equal(run(name), 0);
   assert.equal(run(`${name}-silent`), 1);
   bus.stop();
+});
+
+const fakeBus = (recent: HeartbeatEvent[], serverTime: () => Promise<number>) => ({ recentHealth: async () => recent, serverTime });
+
+// @spec CTRL-CHECK-004
+test("freshness is judged against the Redis server's clock, not the container's", async () => {
+  const hbs = [rec("chat", 2000, "ready", 5_000_000)]; // stamped 2 s before Redis time 5 000 000
+  const realNow = Date.now(); // the container clock is nowhere near Redis time
+  assert.notEqual(Math.round(realNow / 1e6), 5);
+  assert.equal(await checkHealth("chat", fakeBus(hbs, async () => 5_000_000)), 0);
+  assert.equal(await checkHealth("chat", fakeBus(hbs, async () => 5_020_000)), 1, "20 s of Redis time later it is stale");
+});
+
+// @spec CTRL-CHECK-004
+test("an unreadable server time, or a bus that throws, is unhealthy", async () => {
+  const hbs = [rec("chat", 1000, "ready", 5_000_000)];
+  assert.equal(await checkHealth("chat", fakeBus(hbs, async () => { throw new Error("no redis"); })), 1);
+  assert.equal(await checkHealth("chat", { recentHealth: async () => { throw new Error("no redis"); }, serverTime: async () => 5_000_000 }), 1);
+});
+
+// @spec CTRL-CHECK-004
+test("Bus.serverTime reads Redis TIME and returns milliseconds", async () => {
+  const conn = { time: async () => ["1700000000", "250500"], disconnect: () => {} };
+  const bus = new Bus("t", undefined, "redis://fake", { connect: () => conn as never });
+  try {
+    assert.equal(await bus.serverTime(), 1_700_000_000_250);
+  } finally {
+    bus.stop();
+  }
 });

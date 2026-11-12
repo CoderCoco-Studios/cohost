@@ -4,7 +4,7 @@ import type { BusEvent } from "@cohost/bus";
 import { Context, propagatedFlags, TRANSCRIPT_TAGS, type ContextEvent } from "../src/index.js";
 
 let ts = 1000;
-const ev = (type: string, data: Record<string, unknown>) => ({ id: String(ts), type, ts: ts++, source: "t", data }) as unknown as BusEvent;
+const ev = (type: string, data: Record<string, unknown>) => ({ id: `e${ts}`, type, ts: ts++, source: "t", data }) as unknown as BusEvent;
 const chat = (text: string, extra: Record<string, unknown> = {}) =>
   ev("chat.message", { platform: "twitch", user: "viewer", text, isMod: false, isSub: false, mentionsCohost: false, ...extra });
 const vision = (text: string, changed = true) => ev("vision.summary", { text, changed });
@@ -15,9 +15,9 @@ test("push maps each sense into a context event, unseen", () => {
   const ctx = new Context(10);
   ctx.push(chat("hi", { mentionsCohost: true, isMod: true, isSub: true }));
   ctx.push(speech("hello"));
-  assert.deepEqual(ctx.all().map((e) => ({ ...e, ts: 0 })), [
-    { kind: "chat", ts: 0, user: "viewer", text: "hi", mention: true, isMod: true, isSub: true, seen: false },
-    { kind: "speech", ts: 0, speaker: "Streamer", text: "hello", seen: false },
+  assert.deepEqual(ctx.all().map((e) => ({ ...e, ts: 0, eventId: "-" })), [
+    { kind: "chat", ts: 0, eventId: "-", user: "viewer", text: "hi", mention: true, isMod: true, isSub: true, seen: false },
+    { kind: "speech", ts: 0, eventId: "-", speaker: "Streamer", text: "hello", seen: false },
   ]);
 });
 
@@ -49,17 +49,17 @@ test("the window is trimmed from the oldest end, self lines included", () => {
   const ctx = new Context(3);
   ctx.push(chat("1"));
   ctx.push(chat("2"));
-  ctx.pushSelf("me", "happy");
+  ctx.pushSelf("me", "happy", 1000);
   ctx.push(chat("3"));
   assert.deepEqual(ctx.all().map((e) => e.text), ["2", "me", "3"]);
-  ctx.pushSelf("me again", "neutral");
+  ctx.pushSelf("me again", "neutral", 1000);
   assert.deepEqual(ctx.all().map((e) => e.text), ["me", "3", "me again"]);
 });
 
 // @spec WM-PUSH-006, WM-SEEN-001, WM-SEEN-003, WM-WIN-003, WM-WIN-004
 test("self lines are always seen; markSeen marks everything; clear empties the window and resets lastVision", () => {
   const ctx = new Context(10);
-  ctx.pushSelf("me", "smug");
+  ctx.pushSelf("me", "smug", 1000);
   assert.equal(ctx.unseen().length, 0);
   ctx.push(chat("a"));
   ctx.push(vision("v"));
@@ -102,8 +102,63 @@ test("markSeenEvents ignores events that are no longer (or never were) in the wi
   ctx.push(chat("old"));
   const old = ctx.last()!;
   ctx.push(chat("new")); // trims "old"
-  ctx.markSeenEvents([old, { kind: "chat", ts: 0, user: "x", text: "stranger", mention: false, isMod: false, isSub: false, seen: false }]);
+  ctx.markSeenEvents([old, { kind: "chat", ts: 0, eventId: "never-pushed", user: "x", text: "stranger", mention: false, isMod: false, isSub: false, seen: false }]);
   assert.deepEqual(ctx.unseen().map((e) => e.text), ["new"]);
+});
+
+// @spec WM-SEEN-002
+test("markSeenEvents matches by event id: a copy marks the original, a self event marks nothing", () => {
+  const ctx = new Context(10);
+  ctx.push(chat("a"));
+  ctx.push(chat("b"));
+  ctx.pushSelf("me", "happy", 1);
+  const [a] = ctx.all();
+  ctx.markSeenEvents([{ ...a! }, ctx.all()[2]!]); // a clone of "a"; the self line
+  assert.deepEqual(ctx.unseen().map((e) => e.text), ["b"]);
+  assert.equal(ctx.all()[0]!.seen, true);
+});
+
+// @spec WM-PUSH-009, WM-PUSH-010
+test("push returns the event it appended, carrying the bus event id; an ignored type returns undefined", () => {
+  const ctx = new Context(10);
+  const c = chat("hi");
+  const pushed = ctx.push(c);
+  assert.equal(pushed, ctx.last());
+  assert.equal((pushed as { eventId?: string }).eventId, c.id);
+  const s = speech("x");
+  assert.equal((ctx.push(s) as { eventId?: string }).eventId, s.id);
+  const v = vision("v");
+  assert.equal((ctx.push(v) as { eventId?: string }).eventId, v.id);
+  assert.equal(ctx.push(ev("affect.state", { valence: 0, arousal: 0, mood: "neutral" })), undefined);
+  assert.equal(ctx.all().length, 3);
+});
+
+// @spec WM-PUSH-006
+test("a self line is stamped with the given bus ts, not the consumer's clock", () => {
+  const ctx = new Context(10);
+  ctx.pushSelf("me", "happy", 12345);
+  assert.equal(ctx.last()!.ts, 12345);
+});
+
+// @spec WM-WIN-002
+test("the window is bounded by count only: events are never evicted by age", () => {
+  const ctx = new Context(3);
+  ctx.push({ ...chat("ancient"), ts: 1 } as BusEvent);
+  ctx.push({ ...chat("recent"), ts: Date.now() } as BusEvent);
+  assert.deepEqual(ctx.all().map((e) => e.text), ["ancient", "recent"]);
+});
+
+// @spec WM-TRANS-007
+test("an injected event renders exactly like a real one", () => {
+  const real = new Context(10);
+  const injected = new Context(10);
+  real.push(chat("hello", { isMod: true }));
+  real.push(speech("hi"));
+  real.push(vision("screen"));
+  injected.push(chat("hello", { isMod: true, injected: true, remember: true }));
+  injected.push(ev("speech.heard", { speaker: "Streamer", text: "hi", durationMs: 500, injected: true, remember: false }));
+  injected.push(ev("vision.summary", { text: "screen", changed: true, injected: true }));
+  assert.equal(injected.transcript("Coco"), real.transcript("Coco"));
 });
 
 // @spec WM-TRANS-001, WM-TRANS-002, WM-TRANS-003, WM-TRANS-004, WM-TRANS-005, WM-TRANS-007
@@ -113,7 +168,7 @@ test("transcript renders each kind with the tags the LLM stop sequences rely on"
   ctx.push(chat("lol"));
   ctx.push(speech("did you see that"));
   ctx.push(vision("a boss appears"));
-  ctx.pushSelf("I saw it!", "surprised");
+  ctx.pushSelf("I saw it!", "surprised", 1000);
   assert.equal(
     ctx.transcript("Coco"),
     [
@@ -134,7 +189,7 @@ test("injection flags are retained on chat, speech and vision; real events and s
   ctx.push(speech("b"));
   ctx.push(ev("speech.heard", { speaker: "S", text: "c", durationMs: 1, injected: true, remember: true }));
   ctx.push(ev("vision.summary", { text: "d", changed: true, injected: true, remember: false }));
-  ctx.pushSelf("e", "happy");
+  ctx.pushSelf("e", "happy", 1000);
   const [c, real, sp, v, self] = ctx.all() as unknown as Record<string, unknown>[];
   assert.deepEqual([c!.injected, c!.remember], [true, false]);
   assert.equal("injected" in real! || "remember" in real!, false);

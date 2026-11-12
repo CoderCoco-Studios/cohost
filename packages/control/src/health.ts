@@ -1,14 +1,10 @@
 import type { EventData } from "@cohost/bus";
+import { appServiceIds, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
+import type { StackStatus } from "./stack.js";
 
 export type HeartbeatData = EventData<"service.heartbeat">;
 
 export type HealthState = "up" | "degraded" | "stale" | "down" | "unknown" | "crash-looping";
-
-/** The ten cohost application services; always present in a snapshot even if never seen. */
-// @spec CTRL-MANIFEST-005, CTRL-HEALTH-005
-export const KNOWN_SERVICES = [
-  "chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth",
-] as const;
 
 export const STALE_FACTOR = 3;
 export const DOWN_FACTOR = 10;
@@ -24,12 +20,41 @@ export interface ServiceHealth {
   lastSeenAgeMs?: number;
   /** Distinct `startedAt` values first seen within the last 60 s. */
   restarts: number;
+  /** The container's Compose restart count, when a stack status supplied one (`withContainerRestarts`). */
+  containerRestarts?: number;
+  /**
+   * Present on a unit that declares `uses`: each used unit whose derived state is `down`, `stale`, `crash-looping` or
+   * `unknown` (empty when every one is fine). An annotation only: the unit's own `state` never changes because of it.
+   */
+  needs?: Need[];
+}
+
+export interface Need { service: string; state: HealthState }
+
+const NEEDY_STATES: ReadonlySet<HealthState> = new Set<HealthState>(["down", "stale", "crash-looping", "unknown"]);
+
+/**
+ * Adds `needs` to each entry of a snapshot from the states in that same snapshot (a used unit absent from it counts as
+ * `unknown`). Pure and idempotent, so a layer that changes states afterwards calls it again.
+ */
+// @spec MOD-LIFE-001
+export function withNeeds(snapshot: ServiceHealth[], manifest: readonly ServiceDef[] = SERVICE_MANIFEST): ServiceHealth[] {
+  const state = new Map(snapshot.map((s) => [s.service, s.state]));
+  return snapshot.map((entry) => {
+    const uses = manifest.find((u) => u.id === entry.service)?.uses ?? [];
+    const { needs: _old, ...rest } = entry;
+    if (uses.length === 0) return rest;
+    const needs = uses.map((service) => ({ service, state: state.get(service) ?? ("unknown" as const) })).filter((n) => NEEDY_STATES.has(n.state));
+    return { ...rest, needs };
+  });
 }
 
 export interface HealthTrackerOptions {
-  /** Injectable clock for tests. */
+  /** Monotonic clock in ms (default `performance.now()`); every age is measured on it. Injectable for tests. */
   now?: () => number;
-  /** Service names always listed in snapshots. */
+  /** Wall clock in ms (default `Date.now`); read only to age seeded history, whose `ts` is a wall-clock stamp. */
+  wall?: () => number;
+  /** Service names always listed in snapshots (default `appServiceIds()`). */
   known?: readonly string[];
 }
 
@@ -41,23 +66,26 @@ interface Entry {
 }
 
 /**
- * Derives per-service health from heartbeats using its own receive-time clock
- * (so clock skew between containers is irrelevant). Derived states are never
- * published. See docs/intent/control-plane/control-plane-specs.md.
+ * Derives per-service health from heartbeats using its own monotonic receive-time clock
+ * (so neither clock skew between containers nor a wall-clock step is relevant). Derived states
+ * are never published. See docs/intent/control-plane/control-plane-specs.md.
  */
+// @spec CTRL-HEALTH-008
 export class HealthTracker {
   private entries = new Map<string, Entry>();
   private listeners = new Set<(snapshot: ServiceHealth[]) => void>();
   private lastKeys = new Map<string, string>();
   private readonly now: () => number;
+  private readonly wall: () => number;
   private readonly known: readonly string[];
 
   constructor(opts: HealthTrackerOptions = {}) {
-    this.now = opts.now ?? Date.now;
-    this.known = opts.known ?? KNOWN_SERVICES;
+    this.now = opts.now ?? (() => performance.now());
+    this.wall = opts.wall ?? Date.now;
+    this.known = opts.known ?? appServiceIds();
   }
 
-  /** Record a heartbeat. `at` defaults to now; pass a past time when seeding from history. */
+  /** Record a heartbeat. `at` (on the tracker's monotonic clock) defaults to now; `seed` passes a past time. */
   ingest(hb: HeartbeatData, at = this.now()): void {
     const prev = this.entries.get(hb.service);
     const starts = prev?.starts ?? [];
@@ -72,10 +100,15 @@ export class HealthTracker {
     this.notify();
   }
 
-  /** Feed history oldest-first (e.g. `recentHealth`); `ts` of each is its receive time. */
-  // @spec CTRL-HEALTH-007
+  /**
+   * Feed history oldest-first (e.g. `recentHealth`). Each record's wall-clock `ts` becomes a monotonic receive time
+   * `now - max(0, wallNow - ts)`: a stamp in the future (a publisher clock ahead of this one) counts as received now.
+   */
+  // @spec CTRL-HEALTH-007, CTRL-HEALTH-009
   seed(history: { ts: number; data: HeartbeatData }[]): void {
-    for (const h of history) this.ingest(h.data, h.ts);
+    const wallNow = this.wall();
+    const monoNow = this.now();
+    for (const h of history) this.ingest(h.data, monoNow - Math.max(0, wallNow - h.ts));
   }
 
   /** Re-derive states (staleness is time-based) and notify listeners if anything changed. */
@@ -95,7 +128,7 @@ export class HealthTracker {
   snapshot(): ServiceHealth[] {
     const names = [...this.known];
     for (const s of this.entries.keys()) if (!names.includes(s)) names.push(s);
-    return names.map((s) => this.derive(s));
+    return withNeeds(names.map((s) => this.derive(s)));
   }
 
   // @spec CTRL-HEALTH-001, CTRL-HEALTH-002, CTRL-HEALTH-003, CTRL-HEALTH-004
@@ -127,4 +160,27 @@ export class HealthTracker {
     }
     if (changed) for (const l of this.listeners) l(snap);
   }
+}
+
+/**
+ * Overlays Compose container facts on a snapshot: each entry whose container has a restart count gets
+ * `containerRestarts`, and an entry the heartbeats cannot vouch for (`unknown`, `stale`, `down`) whose container is
+ * restarting, or is down after at least `CRASH_LOOP_RESTARTS` restarts, is reported `crash-looping`. This catches a
+ * service that dies before its first heartbeat. Pure; a status without Docker changes nothing.
+ */
+// @spec CTRL-HEALTH-010
+export function withContainerRestarts(snapshot: ServiceHealth[], status: StackStatus): ServiceHealth[] {
+  if (!status.docker.ok) return snapshot;
+  const byService = new Map(status.services.map((c) => [c.service, c]));
+  const overlaid = snapshot.map((entry) => {
+    const c = byService.get(entry.service);
+    if (!c) return entry;
+    const out: ServiceHealth = { ...entry, ...(c.restartCount !== undefined ? { containerRestarts: c.restartCount } : {}) };
+    const unvouched = entry.state === "unknown" || entry.state === "stale" || entry.state === "down";
+    const looping = c.status === "restarting" || (c.status !== "running" && (c.restartCount ?? 0) >= CRASH_LOOP_RESTARTS);
+    if (unvouched && looping) out.state = "crash-looping";
+    return out;
+  });
+  // A state the overlay changed can change another unit's needs; recompute only then, so an untouched snapshot stays as it came.
+  return overlaid.some((e, i) => e.state !== snapshot[i]!.state) ? withNeeds(overlaid) : overlaid;
 }

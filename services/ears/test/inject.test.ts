@@ -4,6 +4,8 @@ import { FakeBus, event, silentLog } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { createInjectHandler, wavDurationMs } from "../src/inject.js";
 
+const run = async (h: { (ev: never): void; drain(): Promise<void> }, ev: unknown): Promise<void> => { h(ev as never); await h.drain(); };
+
 const DASH = "http://dashboard:3000";
 const UP = `${DASH}/uploads/abc123`;
 
@@ -26,7 +28,7 @@ const req = (over: Record<string, unknown> = {}) =>
 // @spec EARS-INJ-005, EARS-INJ-006
 test("transcribed: bytes unchanged to STT, injected speech.heard with speaker and WAV duration, ok result", async () => {
   const t = setup();
-  await t.handle(req({ meta: { user: "alice" } }));
+  await run(t.handle, req({ meta: { user: "alice" } }));
   assert.deepEqual(t.sent, [{ len: t.body.length, type: "audio/wav" }]);
   assert.deepEqual(t.bus.of("speech.heard"), [{ speaker: "alice", text: "hello there", durationMs: 1000, injected: true, remember: false }]);
   assert.deepEqual(t.bus.of("inject.result"), [{ id: "a1", ok: true, detail: "hello there" }]);
@@ -35,7 +37,7 @@ test("transcribed: bytes unchanged to STT, injected speech.heard with speaker an
 // @spec EARS-INJ-005, EARS-INJ-006
 test("default speaker 'injected', remember carried; short clips are still transcribed", async () => {
   const t = setup("hi", { body: wavWrap(Buffer.alloc(320), 16000, 1) });
-  await t.handle(req({ remember: true }));
+  await run(t.handle, req({ remember: true }));
   const [s] = t.bus.of("speech.heard");
   assert.equal(s!.speaker, "injected");
   assert.equal(s!.remember, true);
@@ -45,7 +47,7 @@ test("default speaker 'injected', remember carried; short clips are still transc
 // @spec EARS-INJ-005, EARS-INJ-006
 test("non-WAV upload: duration 0, content type passed to STT", async () => {
   const t = setup("hi", { body: Buffer.from("OggS...."), type: "audio/ogg" });
-  await t.handle(req());
+  await run(t.handle, req());
   assert.equal(t.bus.of("speech.heard")[0]!.durationMs, 0);
   assert.equal(t.sent[0]!.type, "audio/ogg");
 });
@@ -54,7 +56,7 @@ test("non-WAV upload: duration 0, content type passed to STT", async () => {
 test("empty / non-word transcript: ok:false, no speech.heard", async () => {
   for (const reply of ["", "  ", "...", "!?"]) {
     const t = setup(reply);
-    await t.handle(req());
+    await run(t.handle, req());
     assert.equal(t.bus.of("speech.heard").length, 0);
     assert.equal(t.bus.of("inject.result")[0]!.ok, false);
   }
@@ -63,27 +65,27 @@ test("empty / non-word transcript: ok:false, no speech.heard", async () => {
 // @spec EARS-INJ-008
 test("STT failure: ok:false with detail", async () => {
   const t = setup(new Error("stt 503: down"));
-  await t.handle(req());
+  await run(t.handle, req());
   assert.equal(t.bus.of("speech.heard").length, 0);
   assert.match(t.bus.of("inject.result")[0]!.detail!, /stt 503/);
 });
 
-// @spec EARS-INJ-004
+// @spec SHARED-INJ-004, SHARED-INJ-005
 test("foreign URL: nothing fetched, ok:false", async () => {
   const t = setup();
-  await t.handle(req({ url: "http://evil.example/uploads/x" }));
+  await run(t.handle, req({ url: "http://evil.example/uploads/x" }));
   assert.deepEqual(t.fetched, []);
   assert.equal(t.sent.length, 0);
   assert.equal(t.bus.of("inject.result")[0]!.ok, false);
 });
 
-// @spec EARS-INJ-001, EARS-INJ-002
+// @spec SHARED-INJ-001, SHARED-INJ-002
 test("stale request and other target", async () => {
   const stale = setup("x", { now: () => Date.now() + 61_000 });
-  await stale.handle(req());
+  await run(stale.handle, req());
   assert.deepEqual(stale.bus.of("inject.result"), [{ id: "a1", ok: false, detail: "stale" }]);
   const other = setup();
-  await other.handle(req({ target: "eyes", kind: "image" }));
+  await run(other.handle, req({ target: "eyes", kind: "image" }));
   assert.equal(other.bus.published.length, 0);
 });
 

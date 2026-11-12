@@ -1,24 +1,15 @@
 import type { Config } from "@cohost/config";
+import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
-import type { Memory, MemoryKind, MemoryBackend, ViewerTouch } from "./store.js";
+import type { Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
-  clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
-  type DeletionRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
+  clamp01, effectiveStrength, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  type DeletionRow, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
-const DIMS = 64;
-
-/** Bag-of-words hashed into a unit vector: texts sharing words score high, no model needed. */
-export function hashEmbed(text: string): number[] {
-  const v = new Array<number>(DIMS).fill(0);
-  for (const word of text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []) {
-    let h = 2166136261;
-    for (const ch of word) h = Math.imul(h ^ ch.codePointAt(0)!, 16777619) >>> 0;
-    v[h % DIMS]! += 1;
-  }
-  const norm = Math.hypot(...v);
-  return norm === 0 ? v : v.map((x) => x / norm);
-}
+/** The one deterministic offline embedder (`@cohost/llm`'s `HashEmbedder`), the same one hash mode uses (MEM-BACKEND-004). */
+const embedder = new HashEmbedder();
+const hashEmbed = (text: string): Promise<number[]> => embedder.embed(text);
 
 interface Row extends Memory { embedding: number[] }
 
@@ -31,6 +22,7 @@ export class InMemoryStore implements MemoryBackend {
   private viewers = new Map<string, ViewerRow>();
   private notes = new Map<number, NoteRow>();
   private deletions: DeletionRow[] = [];
+  private links = new Map<string, { userKey: string; discordDisplay: string | null; updatedAt: number }>();
   private nextNoteId = 1;
   private nextDeletionId = 1;
   private lockHeld = false;
@@ -40,14 +32,19 @@ export class InMemoryStore implements MemoryBackend {
 
   async init(): Promise<void> {}
 
+  async connect(): Promise<void> {}
+
+  /** Nothing persists, so nothing is stored at another dimension. */
+  async reembed(): Promise<ReembedResult> { return { dims: (await embedder.embed("hello")).length, tables: {} }; }
+
   async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
-    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: hashEmbed(`${who}: ${text}`) });
+    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: await hashEmbed(`${who}: ${text}`) });
   }
 
   // @spec MEM-BACKEND-004, MEM-RECALL-002, MEM-RECALL-004, MEM-RECALL-005
   async recall(query: string, k = this.cfg.recall_k): Promise<Memory[]> {
     if (k <= 0) return [];
-    const q = hashEmbed(query);
+    const q = await hashEmbed(query);
     const cutoff = this.clock() - 2 * 60_000;
     return this.rows
       .filter((r) => r.ts.getTime() < cutoff)
@@ -86,6 +83,7 @@ export class InMemoryStore implements MemoryBackend {
     this.viewers.delete(v.key);
     for (const n of this.notes.values()) if (n.userKey === v.key) n.userKey = key;
     for (const d of this.deletions) if (d.userKey === v.key) d.userKey = key;
+    for (const l of this.links.values()) if (l.userKey === v.key) l.userKey = key;
     v.key = key;
     this.viewers.set(key, v);
     return v;
@@ -100,13 +98,79 @@ export class InMemoryStore implements MemoryBackend {
     return v && { ...v };
   }
 
-  // @spec MEM-SURF-002
+  // @spec MEM-SURF-002, MEM-VOICE-007
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const want = name.toLowerCase();
     const v = [...this.viewers.values()]
       .filter((r) => r.display.toLowerCase() === want)
       .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
-    return v && { ...v };
+    if (v) return { ...v };
+    const alias = [...this.links.entries()]
+      .filter(([, l]) => l.discordDisplay?.toLowerCase() === want && this.viewers.has(l.userKey))
+      .sort(([ia, a], [ib, b]) => b.updatedAt - a.updatedAt || (ia < ib ? -1 : 1))[0];
+    const linked = alias && this.viewers.get(alias[1].userKey);
+    return linked && { ...linked };
+  }
+
+  // @spec MEM-VOICE-001
+  async touchSpeaker(speakerId: string, display: string): Promise<ViewerRow> {
+    const id = speakerId.toLowerCase();
+    const now = new Date(this.clock());
+    const link = this.links.get(id);
+    const linked = link && this.viewers.get(link.userKey);
+    if (link && linked) {
+      link.discordDisplay = display;
+      link.updatedAt = now.getTime();
+      linked.lastSeen = now;
+      return { ...linked };
+    }
+    const key = voiceKey(id);
+    let v = this.viewers.get(key);
+    if (!v) {
+      v = { key, display, msgCount: 0, regularManual: false, isSub: false, placeholder: false, firstSeen: now, lastSeen: now, regular: false };
+      this.viewers.set(key, v);
+    }
+    v.display = display;
+    v.lastSeen = now;
+    this.refreshRegular(v);
+    return { ...v };
+  }
+
+  // @spec MEM-VOICE-005
+  async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
+    const id = discordId.toLowerCase();
+    const want = target.trim().toLowerCase();
+    const t = this.viewers.get(want)
+      ?? [...this.viewers.values()].filter((r) => r.display.toLowerCase() === want).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+    if (!t || isVoiceKey(t.key)) return undefined;
+    const voice = this.viewers.get(voiceKey(id));
+    let moved = 0;
+    if (voice) {
+      for (const n of this.notes.values()) {
+        if (n.userKey !== voice.key) continue;
+        n.userKey = t.key;
+        n.dirty = true; // the consolidator merges what now duplicates the chat viewer's notes
+        n.version++;
+        moved++;
+      }
+      for (const d of this.deletions) if (d.userKey === voice.key) d.userKey = t.key;
+      this.viewers.delete(voice.key);
+    }
+    this.links.set(id, { userKey: t.key, discordDisplay: voice?.display ?? this.links.get(id)?.discordDisplay ?? null, updatedAt: this.clock() });
+    return { viewer: { ...t }, moved };
+  }
+
+  // @spec MEM-VOICE-006
+  async unlinkDiscord(discordId: string): Promise<boolean> {
+    return this.links.delete(discordId.toLowerCase());
+  }
+
+  async listLinks(userKey: string): Promise<LinkRow[]> {
+    const key = userKey.toLowerCase();
+    return [...this.links.entries()]
+      .filter(([, l]) => l.userKey === key)
+      .sort(([ia, a], [ib, b]) => a.updatedAt - b.updatedAt || (ia < ib ? -1 : 1))
+      .map(([discordId, l]) => ({ discordId, discordDisplay: l.discordDisplay }));
   }
 
   // @spec MEM-CAPTURE-011, MEM-REG-004
@@ -162,7 +226,7 @@ export class InMemoryStore implements MemoryBackend {
       id: this.nextNoteId++, userKey, layer: n.layer ?? "recent", category: n.category, text,
       hint: withDefaultHint(n.category, n.hint) ?? null,
       strength: clamp01(n.strength ?? 1), strengthAt: now, mentions: n.mentions ?? 1, dirty: n.dirty ?? true,
-      version: 1, createdAt: now, lastSurfacedAt: null, embedding: n.embedding ?? hashEmbed(text),
+      version: 1, createdAt: now, lastSurfacedAt: null, embedding: n.embedding ?? await hashEmbed(text),
     };
     this.notes.set(row.id, row);
     return { ...row };
@@ -269,7 +333,7 @@ export class InMemoryStore implements MemoryBackend {
         const { set } = op;
         if (set.layer) n.layer = set.layer;
         if (set.category) n.category = set.category;
-        if (set.text !== undefined) { n.text = set.text.trim(); n.embedding = hashEmbed(n.text); }
+        if (set.text !== undefined) { n.text = set.text.trim(); n.embedding = await hashEmbed(n.text); }
         if (set.hint !== undefined) n.hint = set.hint;
         n.hint = withDefaultHint(n.category, n.hint) ?? null;
         if (set.strength !== undefined) n.strength = clamp01(set.strength);

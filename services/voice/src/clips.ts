@@ -7,7 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "@cohost/config";
-import { parseWav } from "@cohost/shared";
+import { parseWav, retryWithBackoff } from "@cohost/shared";
 import { TtsError } from "./voice.js";
 
 /** Bump when the clip format (naming, manifest shape, what a clip is) changes, so every set regenerates. */
@@ -81,11 +81,16 @@ async function loadCommitted(dir: string): Promise<StoredManifest | undefined> {
 export class ClipService implements ClipRoutes {
   readonly fingerprint: string;
   private committed: StoredManifest | undefined;
+  /** The attempt in progress (or, while a retry timer is about to fire, the attempt it will start); what `idle()` waits for. */
   private current: Promise<void> = Promise.resolve();
+  private endCurrent: (() => void) | undefined;
+  /** A retry timer has fired and made `current` for the attempt the loop is about to run. */
+  private armed = false;
+  private first: Promise<void> | undefined;
   private started = false;
   private stopped = false;
-  private retryMs = CLIP_RETRY_INITIAL_MS;
   private timer: NodeJS.Timeout | undefined;
+  private wake: (() => void) | undefined;
   private now: () => number;
   private lines: string[];
 
@@ -112,34 +117,61 @@ export class ClipService implements ClipRoutes {
 
   /**
    * Check the store against the fingerprint and regenerate when it is stale. Returns when that first attempt has ended;
-   * callers that must not wait (boot) do not await it. Starting twice does nothing.
+   * callers that must not wait (boot) do not await it. A failed attempt is retried in the background by the shared
+   * `retryWithBackoff` (60 s doubling to 15 min). Starting twice does nothing.
    */
   start(): Promise<void> { // @spec VOICE-CLIP-002, VOICE-CLIP-003
-    if (!this.started) { this.started = true; this.current = this.attempt(true); }
-    return this.current;
+    if (!this.started) {
+      this.started = true;
+      let isFirst = true;
+      let firstDone!: () => void;
+      this.first = new Promise<void>((r) => { firstDone = r; });
+      void retryWithBackoff(async () => {
+        const wasFirst = isFirst;
+        isFirst = false;
+        if (!this.armed) { this.current = new Promise<void>((r) => { this.endCurrent = r; }); }
+        this.armed = false;
+        try { await this.attempt(wasFirst); firstDone(); }
+        finally { this.endCurrent?.(); }
+      }, {
+        baseMs: CLIP_RETRY_INITIAL_MS, maxMs: CLIP_RETRY_MAX_MS, isStopped: () => this.stopped,
+        sleep: (ms) => new Promise<void>((resolve) => {
+          const fire = () => {
+            clearTimeout(this.timer);
+            this.wake = undefined;
+            // The attempt this timer starts is what `idle()` must wait for, even before the loop gets to run it.
+            this.current = new Promise<void>((r) => { this.endCurrent = r; });
+            this.armed = true;
+            resolve();
+          };
+          this.timer = setTimeout(fire, ms);
+          this.wake = resolve;
+        }),
+        // @spec VOICE-CLIP-005
+        onFailure: (err, _n, delayMs) => {
+          this.d.log.warn({ err: String(err), retryInMs: delayMs }, "fallback clip regeneration abandoned: keeping the previous clips");
+          firstDone(); // the first attempt has ended, successfully or not
+        },
+      }).catch((err) => this.d.log.warn({ err: String(err) }, "fallback clip retry loop ended")).finally(() => firstDone());
+    }
+    return this.first!;
   }
 
   stop(): void {
     this.stopped = true;
     clearTimeout(this.timer);
+    this.wake?.();
+    this.endCurrent?.();
   }
 
+  /** One attempt; throws on failure so the retry loop reports and schedules the next. */
   private async attempt(first: boolean): Promise<void> {
-    try {
-      if (first) {
-        this.committed = await loadCommitted(this.d.dir);
-        if (this.committed?.fingerprint === this.fingerprint) return; // @spec VOICE-CLIP-002
-      }
-      if (this.stopped) return;
-      await this.regenerate();
-      this.retryMs = CLIP_RETRY_INITIAL_MS;
-    } catch (err) { // @spec VOICE-CLIP-005
-      this.d.log.warn({ err: String(err), retryInMs: this.retryMs }, "fallback clip regeneration abandoned: keeping the previous clips");
-      if (this.stopped) return;
-      const delay = this.retryMs;
-      this.retryMs = Math.min(this.retryMs * 2, CLIP_RETRY_MAX_MS);
-      this.timer = setTimeout(() => { this.current = this.attempt(false); }, delay);
+    if (first) {
+      this.committed = await loadCommitted(this.d.dir);
+      if (this.committed?.fingerprint === this.fingerprint) return; // @spec VOICE-CLIP-002
     }
+    if (this.stopped) return;
+    await this.regenerate();
   }
 
   /** Synthesize one phrase; `Unspeakable` for a 4xx, a reply that is not a 16-bit WAV, or a clip under 100 ms. Anything else throws. */

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { statePublisher } from "../src/state.js";
@@ -52,4 +52,18 @@ test("a failed avatar.state publish is dropped, logged once per interval, and ne
     at(1_000 + 20 * 200 + 10_400); publish(params, "sad", 1); await flush();
     assert.deepEqual(bus.of("avatar.state").map((s) => s.emotion), ["sad"]); // publishing resumed
   } finally { process.off("unhandledRejection", onRejection); }
+});
+
+// @spec AVATAR-STATE-001, AVATAR-STATE-002
+test("the default clock is monotonic: a wall clock stepped forward does not reopen the 200 ms spacing", async () => {
+  const bus = new FakeBus();
+  const publish = statePublisher({ bus, driver: { name: "vmc", connected: () => true }, log: recordingLog().log });
+  const realNow = Date.now.bind(Date);
+  const stepped = mock.method(Date, "now", () => realNow() + 25_000);
+  try {
+    publish(NEUTRAL, "neutral", 0);
+    publish(NEUTRAL, "happy", 1); // immediately after, though the wall clock "jumped"
+  } finally { stepped.mock.restore(); }
+  await flush();
+  assert.deepEqual(bus.of("avatar.state").map((s) => s.emotion), ["neutral"]);
 });

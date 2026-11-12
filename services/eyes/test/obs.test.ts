@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { recordingLog, runHeartbeat, waitFor } from "@cohost/testing";
 import { EyesHealth } from "../src/health.js";
 import { createObsLink, stopEyes, type ObsLike } from "../src/obs.js";
-import { subscribeInject } from "../src/inject.js";
+import { subscribeInject } from "@cohost/shared";
 
 /** An obs-websocket stand-in: `connect` fails the first `failures` times, then identifies. */
 class FakeObs extends EventEmitter implements ObsLike {
@@ -32,13 +32,13 @@ const link = (obs: FakeObs, hb = hbSpy(), sleeps: number[] = []) =>
   createObsLink({ obs, url: "ws://h:1", log: recordingLog().log, heartbeat: hb, sleep: async (ms) => { sleeps.push(ms); } });
 
 // @spec EYES-OBS-002, EYES-OBS-003
-test("connect retries every 10 s until OBS answers, then signals ready", async () => {
+test("connect retries with a delay that starts at 10 s and doubles until OBS answers, then signals ready", async () => {
   const obs = new FakeObs(2);
   const hb = hbSpy();
   const sleeps: number[] = [];
   await link(obs, hb, sleeps).connect();
   assert.equal(obs.connects, 3);
-  assert.deepEqual(sleeps, [10_000, 10_000]);
+  assert.deepEqual(sleeps, [10_000, 20_000]);
   assert.equal(hb.calls.at(-1), "ready");
 });
 
@@ -89,19 +89,22 @@ test("stop disconnects and the resulting close does not reconnect", async () => 
   assert.equal(obs.connects, 1);
 });
 
+// @spec EYES-OBS-002
+test("the retry delay caps at 60 s", async () => {
+  const obs = new FakeObs(6);
+  const sleeps: number[] = [];
+  await link(obs, hbSpy(), sleeps).connect();
+  assert.deepEqual(sleeps, [10_000, 20_000, 40_000, 60_000, 60_000, 60_000]);
+});
+
 // @spec EYES-ENAB-005, EYES-OBS-008
-test("one shutdown sequence: idle timer, OBS, then the bus", async () => {
+test("the shutdown sequence stops the idle plan, then closes the OBS link", async () => {
   const order: string[] = [];
-  await stopEyes({
-    idleTimer: setInterval(() => {}, 1000),
-    clear: (t) => { order.push("timer"); clearInterval(t); },
-    link: { stop: async () => { order.push("obs"); } },
-    bus: { stop: () => { order.push("bus"); } },
-  });
-  assert.deepEqual(order, ["timer", "obs", "bus"]);
+  await stopEyes({ idle: { stop: () => { order.push("idle"); } }, link: { stop: async () => { order.push("obs"); } } });
+  assert.deepEqual(order, ["idle", "obs"]);
   order.length = 0;
-  await stopEyes({ link: { stop: async () => { order.push("obs"); } }, bus: { stop: () => { order.push("bus"); } } });
-  assert.deepEqual(order, ["obs", "bus"], "no idle timer when vision is enabled");
+  await stopEyes({ link: { stop: async () => { order.push("obs"); } } });
+  assert.deepEqual(order, ["obs"], "no idle plan when vision is enabled");
 });
 
 // @spec EYES-INJ-014
@@ -112,7 +115,7 @@ test("the inject subscription is created first, then subscribed with start mode 
     resetGroup: async (g: string) => { calls.push(`reset:${g}`); },
     subscribe: async (o: unknown) => { calls.push("subscribe"); opts = o; },
   };
-  await subscribeInject(bus, async () => {}, recordingLog().log);
+  await subscribeInject({ bus: bus as never, group: "eyes", handler: async () => {}, log: recordingLog().log });
   assert.deepEqual(calls, ["reset:eyes", "subscribe"]);
   assert.deepEqual(opts, { group: "eyes", types: ["inject.request"], start: "latest" });
 });

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 const run = (name: string) =>
   spawnSync(process.execPath, ["--import", "tsx", new URL(`./${name}`, import.meta.url).pathname], { encoding: "utf8" });
 
-// @spec BUS-STOP-005, BUS-STOP-003, BUS-STOP-004
+// @spec SHARED-LIFE-004, SHARED-LIFE-002, SHARED-LIFE-003
 test("several onShutdown callbacks share one sequence: all run in order, failures are logged, one exit(0)", () => {
   const r = run("shutdown-multi.fixture.ts");
   assert.equal(r.status, 0, r.stderr);
@@ -14,9 +14,16 @@ test("several onShutdown callbacks share one sequence: all run in order, failure
   assert.match(r.stderr, /cb2 threw/);
 });
 
-// @spec BUS-STOP-006, BUS-STOP-002
+// @spec SHARED-LIFE-005, SHARED-LIFE-001
 test("a beforeShutdown hook that throws synchronously is ignored; other hooks and callbacks still run", () => {
   const r = run("shutdown-hooks.fixture.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.stdout.trim().split("\n"), ["hook2", "cb"]);
+});
+
+// @spec SHARED-LIFE-001
+test("a beforeShutdown hook that never settles delays the callbacks by at most 2000 ms, then the process exits 0", () => {
+  const r = run("shutdown-hang.fixture.ts");
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.trim().split("\n"), ["cb:2000", "exit:0"]);
 });

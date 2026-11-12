@@ -135,3 +135,47 @@ test("a store failure is answered ok:false, error failed, with a detail", async 
   assert.equal(r.error, "failed");
   assert.match(r.detail!, /db down/);
 });
+
+// @spec MEM-VOICE-009
+test("list and get mark a voice viewer with voice and discordId, and get lists the Discord ids linked to a chat viewer", async () => {
+  const { store, ask } = setup();
+  await store.touchViewer("1", "Alice");
+  await store.touchSpeaker("D9", "Vox");
+  const list = ((await ask({ op: "list" })).data as Data).viewers as Data[];
+  const voice = list.find((v) => v.key === "discord:d9")!;
+  assert.deepEqual(voice, { key: "discord:d9", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 0, voice: true, discordId: "d9" });
+  assert.ok(!("voice" in list.find((v) => v.key === "1")!));
+  await store.linkDiscord("D5", "1");
+  await store.touchSpeaker("D5", "AliceVoice");
+  const got = (await ask({ op: "get", key: "1" })).data as Data;
+  assert.deepEqual(got.links, [{ discordId: "d5", discordDisplay: "AliceVoice" }]);
+  assert.ok(!("links" in ((await ask({ op: "get", key: "discord:d9" })).data as Data)));
+  assert.equal(((await ask({ op: "get", key: "discord:d9" })).data as Data).viewer.voice, true);
+});
+
+// @spec MEM-VOICE-005
+test("link_discord moves the voice viewer's notes to a chat viewer found by key or name, and reports not_found otherwise", async () => {
+  const { store, ask } = setup();
+  await store.touchViewer("1", "Alice");
+  await store.touchSpeaker("D9", "Vox");
+  await store.insertNote({ userKey: "discord:d9", category: "general", text: "plays chess" });
+  const out = await ask({ op: "link_discord", discordId: "D9", name: "alice" });
+  assert.equal(out.ok, true);
+  assert.equal((out.data as Data).viewer.key, "1");
+  assert.equal((out.data as Data).moved, 1);
+  assert.equal((await store.listNotes("1")).length, 1);
+  const missing = await ask({ op: "link_discord", discordId: "D9", key: "nobody" });
+  assert.deepEqual([missing.ok, missing.error], [false, "not_found"]);
+  assert.equal((await ask({ op: "link_discord", discordId: "D8", key: "1" })).ok, true, "an id never heard can be linked in advance");
+});
+
+// @spec MEM-VOICE-006
+test("unlink_discord removes a link, and an unknown id is not_found", async () => {
+  const { store, ask } = setup();
+  await store.touchViewer("1", "Alice");
+  await store.linkDiscord("D5", "1");
+  assert.equal((await ask({ op: "unlink_discord", discordId: "D5" })).ok, true);
+  const again = await ask({ op: "unlink_discord", discordId: "D5" });
+  assert.deepEqual([again.ok, again.error], [false, "not_found"]);
+  assert.deepEqual(await store.listLinks("1"), []);
+});

@@ -80,7 +80,11 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node_major)" -lt 22 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/dev/null
   sudo apt-get install -y -qq nodejs
 fi
-command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo corepack enable; corepack prepare pnpm@10.0.0 --activate; }
+# begin pnpm-version
+# The pnpm version is the "packageManager" field of package.json (the Dockerfile reads it too).  @spec DEPLOY-IMG-006
+pnpm_spec() { node -p "require('./package.json').packageManager"; }
+# end pnpm-version
+command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo corepack enable; corepack prepare "$(pnpm_spec)" --activate; }
 
 # ---------------------------------------------------------------- .env  @spec DEPLOY-INST-005, DEPLOY-INST-006
 if [[ ! -f .env ]]; then

@@ -123,7 +123,7 @@ test("buildMessages: recalled memories are dated and attributed", () => {
 test("buildMessages: the transcript goes in the user turn, or (quiet) when empty", () => {
   assert.match(user(), /^## Recent transcript\n\(quiet\)\n\n/);
   const ctx = new Context(10);
-  ctx.pushSelf("hello", "happy");
+  ctx.pushSelf("hello", "happy", 1000);
   assert.match(user({ ctx }), /^## Recent transcript\nCoco: \[happy\] hello\n\n/);
 });
 

@@ -53,15 +53,19 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+    devDependencies:
+      yaml:
+        specifier: ^2.6.0
+        version: 2.9.1
 
   packages/llm:
     dependencies:
       '@anthropic-ai/bedrock-sdk':
-        specifier: ^1.0.0
-        version: 1.0.0(zod@3.25.76)
+        specifier: ^1.1.2
+        version: 1.1.2(zod@3.25.76)
       '@anthropic-ai/sdk':
-        specifier: ^1.1.0
-        version: 1.1.0(zod@3.25.76)
+        specifier: ^1.8.0
+        version: 1.8.0(zod@3.25.76)
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
@@ -78,7 +82,29 @@ importers:
         specifier: workspace:*
         version: link:../llm
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      '@cohost/bus':
+        specifier: workspace:*
+        version: link:../bus
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+      '@discordjs/voice':
+        specifier: ^0.19.2
+        version: 0.19.2(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(opusscript@0.0.8)
+      '@snazzah/davey':
+        specifier: ^0.1.12
+        version: 0.1.12(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
+      discord.js:
+        specifier: ^14.27.0
+        version: 14.27.0
+      libsodium-wrappers:
+        specifier: ^0.7.15
+        version: 0.7.16
+      opusscript:
+        specifier: ^0.0.8
+        version: 0.0.8
 
   packages/testing:
     dependencies:
@@ -88,9 +114,12 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/working-memory:
-    dependencies:
+    devDependencies:
       '@cohost/bus':
         specifier: workspace:*
         version: link:../bus
@@ -109,6 +138,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
     devDependencies:
       '@cohost/testing':
         specifier: workspace:*
@@ -122,6 +154,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       ws:
         specifier: ^8.18.0
         version: 8.22.0
@@ -169,6 +204,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory
@@ -188,6 +226,9 @@ importers:
       '@cohost/control':
         specifier: workspace:*
         version: link:../../packages/control
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       ws:
         specifier: ^8.18.0
         version: 8.22.0
@@ -241,6 +282,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@cohost/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -266,6 +310,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       pg:
         specifier: ^8.13.0
         version: 8.23.1
@@ -319,6 +366,9 @@ importers:
       '@cohost/modules':
         specifier: workspace:*
         version: link:../../packages/modules
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@cohost/working-memory':
         specifier: workspace:*
         version: link:../../packages/working-memory
@@ -421,11 +471,11 @@ packages:
     resolution: {integrity: sha512-Cx3D6S8NzSi9es4MIFljvImq+Ae2vo9gHyX+6RMMA0U+xy+C62mYE03X9u+mX+XXkgTWbkURCbMtuFDYRDNRig==}
     engines: {node: '>= 14.0.0'}
 
-  '@anthropic-ai/bedrock-sdk@1.0.0':
-    resolution: {integrity: sha512-dsxZ1FJA45vjbW79bA2BbhIbLfph0Q5rKjKzlcSEbIkknGqACalcdYw+RGx9oHRFFQAxFY3kGWK0l7DpW/89Hw==}
+  '@anthropic-ai/bedrock-sdk@1.1.2':
+    resolution: {integrity: sha512-ng1rVKUpPPBzPvS02i/wJ9fRpg3bb7zAs6w7NHvq+xGYBFLLrUk74LsHJ6zJtf/l/maWkZUOLSVqOYa7giG4QQ==}
 
-  '@anthropic-ai/sdk@1.1.0':
-    resolution: {integrity: sha512-Op/fKMsfVwFCfObc87leLOFlORE0RjOvLzRzPCWWLI7Ww6bobpKR6YmYC8ZYgulRh+m2a/3/61VUXoWHFtCXIw==}
+  '@anthropic-ai/sdk@1.8.0':
+    resolution: {integrity: sha512-yDOArk2+Qpd/djEKmZjrv7JZ+pn5iBHARJ9PAdvfhGf4H5wNqTgY/2K0/yDKdQdm8G8hrNQchMlBAHpPK7yBfg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -1152,6 +1202,9 @@ packages:
   '@smithy/core@3.36.2':
     resolution: {integrity: sha512-oRw0rB9QSUiCZfEs23G5F4Af+b2rQt1lItIICWu5IejFNd+uPM8SWqiKLMpQ6bX1Q7slsLbjuoE2niErFtkVPQ==}
     engines: {node: '>=18.0.0'}
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -2178,9 +2231,9 @@ snapshots:
     dependencies:
       '@algolia/client-common': 5.60.0
 
-  '@anthropic-ai/bedrock-sdk@1.0.0(zod@3.25.76)':
+  '@anthropic-ai/bedrock-sdk@1.1.2(zod@3.25.76)':
     dependencies:
-      '@anthropic-ai/sdk': 1.1.0(zod@3.25.76)
+      '@anthropic-ai/sdk': 1.8.0(zod@3.25.76)
       '@aws-crypto/sha256-js': 4.0.0
       '@aws-sdk/client-bedrock-runtime': 3.1156.0
       '@aws-sdk/credential-providers': 3.1156.0
@@ -2195,7 +2248,7 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  '@anthropic-ai/sdk@1.1.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@1.8.0(zod@3.25.76)':
     dependencies:
       '@opentelemetry/api': 1.10.0
       json-schema-to-ts: 3.1.1

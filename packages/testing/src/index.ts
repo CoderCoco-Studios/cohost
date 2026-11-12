@@ -1,7 +1,7 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
-import { randomUUID } from "node:crypto";
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, startHeartbeat, type BusEvent, type EventInput, type EventType, type HeartbeatSpec, type Publisher } from "@cohost/bus";
+import { EventPayloads, type BusEvent, type EventInput, type EventType, type Publisher } from "@cohost/bus";
+import { startHeartbeat, type HeartbeatSpec } from "@cohost/shared";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 function merge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
@@ -39,12 +39,22 @@ export function recordingLog() {
   return { log, lines, msgs: (level: string) => lines.filter((l) => l.level === level).map((l) => l.msg) };
 }
 
+let lastMs = 0;
+let lastSeq = 0;
+/** A Redis-form stream id, `<ms>-<seq>`, strictly increasing within the process (BUS-TEST-011). */
+function nextId(): string {
+  const now = Date.now();
+  if (now > lastMs) { lastMs = now; lastSeq = 0; } else lastSeq++;
+  return `${lastMs}-${lastSeq}`;
+}
+
 /** Validates like the real Bus, records instead of talking to Redis. */
 // @spec BUS-TEST-004, BUS-TEST-009
 export class FakeBus implements Publisher {
   published: { type: EventType; data: unknown }[] = [];
   /** Heartbeats published via publishHealth (the real Bus puts these on cohost:health). */
   health: BusEvent<"service.heartbeat">["data"][] = [];
+  private healthIds: string[] = [];
   readonly consumer = "fake-instance";
   fail?: (type: EventType) => boolean;
   /** Make publishHealth reject, to test publish-failure handling. */
@@ -53,13 +63,16 @@ export class FakeBus implements Publisher {
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     if (this.failHealth) throw new Error("publishHealth failed");
+    const id = nextId();
     this.health.push(parsed);
-    return String(this.health.length);
+    this.healthIds.push(id);
+    return id;
   }
   // @spec BUS-TEST-003
   async recentHealth(count = 100): Promise<BusEvent<"service.heartbeat">[]> {
-    return this.health.slice(-count).map((data, i) => ({
-      id: String(i), type: "service.heartbeat" as const, ts: Date.now(), source: data.service, data,
+    const from = Math.max(0, this.health.length - count);
+    return this.health.slice(from).map((data, i) => ({
+      id: this.healthIds[from + i] ?? String(from + i), type: "service.heartbeat" as const, ts: Date.now(), source: data.service, data,
     }));
   }
   // @spec BUS-TEST-001
@@ -68,7 +81,7 @@ export class FakeBus implements Publisher {
     const parsed = EventPayloads[type].parse(data);
     if (this.fail?.(type)) throw new Error(`publish ${type} failed`);
     this.published.push({ type, data: parsed });
-    return String(this.published.length);
+    return nextId();
   }
   of<T extends EventType>(type: T): BusEvent<T>["data"][] {
     return this.published.filter((p) => p.type === type).map((p) => p.data as BusEvent<T>["data"]);
@@ -76,13 +89,13 @@ export class FakeBus implements Publisher {
   types(): EventType[] {
     return this.published.map((p) => p.type);
   }
-  clear(): void { this.published = []; this.health = []; }
+  clear(): void { this.published = []; this.health = []; this.healthIds = []; }
 }
 
 /** A bus event as a subscriber would receive it. */
 // @spec BUS-TEST-006
 export function event<T extends EventType>(type: T, data: EventInput<T>, source = "test"): BusEvent<T> {
-  return { id: randomUUID(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
+  return { id: nextId(), type, ts: Date.now(), source, data: EventPayloads[type].parse(data) as never } as BusEvent<T>;
 }
 
 /**

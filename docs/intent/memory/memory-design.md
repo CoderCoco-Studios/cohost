@@ -51,10 +51,10 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | Direction | Event | Group | What happens | Evidence |
 |-----------|-------|-------|--------------|----------|
 | in | `chat.message` | `memory` | `touchViewer(userId ?? user, user)` on every line; if `mentionsCohost`, publish `memory.viewer` then `remember("chat", user, text)` | `region.ts:22-36` |
-| in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance | `region.ts:38-43` |
+| in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance; when it carries a `speakerId`, also `touchSpeaker` so the speaker has a viewer row (Voice speakers, `MEM-VOICE-002`) | `region.ts` |
 | in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts:45-50` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts:52-60` |
-| in | `chat.message` | `memory-notes` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | `capture.ts` |
+| in | `chat.message`, `speech.heard` | `memory-notes` | live note capture on every non-skipped chat line and every non-skipped voice line that carries a `speakerId` (Viewer notes, `MEM-CAPTURE-*`, `MEM-VOICE-003`) | `capture.ts` |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
 | in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
@@ -83,13 +83,11 @@ Every subscription passes `start: "resume"` (`startup.ts`). The control-plane
 manifest also starts memory in `resume` mode (`packages/control/src/manifest.ts`);
 a control-plane `fresh` start resets its three groups to `$` first.
 
-`ready` should be reported once both consumer groups exist (`MEM-START-005`, open).
-The bus reports no event for group creation, so `startup.ts` starts the
-subscriptions with `void` and calls `heartbeat.ready()` at once (`startup.ts:60-62`):
-`ready` can precede group creation. Closing the gap needs a bus hook (for example
-`onReady` in `SubscribeOptions`, called once the group exists and is positioned,
-before the first read) owned by the event-bus segment. Calling `resetGroup` from
-memory is not an option: it would move a resumed group to `$` and drop the backlog.
+`ready` is reported once every consumer group exists (`MEM-START-005`). Each
+subscription passes the bus's `onReady` option, which the bus calls once the group
+exists and is positioned, before the first read; `startup.ts` waits for all of them
+and fails startup if a subscription rejects first. Calling `resetGroup` from memory
+would move a resumed group to `$` and drop the backlog, so it is not used.
 
 Bus handler errors are caught, logged, and the entry is acked
 (`packages/bus/src/index.ts:160-166`), so an exception in this handler drops
@@ -212,9 +210,10 @@ it does for everything else (`MEM-BACKEND-005`).
 
 ### Live capture
 
-Capture runs as chat comes in, in the `memory-notes` consumer group, on every
-`chat.message` except injected lines not marked `remember` and lines shorter than
-`capture_min_chars` (default 8) (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`).
+Capture runs as chat and speech come in, in the `memory-notes` consumer group, on
+every `chat.message` and every `speech.heard` that carries a `speakerId`, except
+injected lines not marked `remember` and lines shorter than `capture_min_chars`
+(default 8) (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`, `MEM-VOICE-003`).
 It uses a very small, cheap classifier model through a region hook,
 `memory.capture`, configured by `brain.memory.notes.capture` (a `ModuleSchema`
 block: `kind`, `url`, `timeout_ms`, `llm{provider, model}`), so it has its own
@@ -231,7 +230,9 @@ Model calls for notes stay on the LAN unless the operator names a hosted provide
 on the notes hook itself: with no provider on the hook, memory builds it on the
 local `ollama` provider instead of inheriting `llm.provider` (which may be a
 hosted chat model), except that `llm.provider: mock` is still inherited so the
-isolation preset keeps working (`MEM-NOTE-011`). This holds even when the cortex
+isolation preset keeps working (`MEM-NOTE-011`). Under `llm.provider: mock` the mock
+provider also wins over a provider the hook names itself, since the shipped example
+names `ollama` on both hooks and an isolated run must reach no model server (`MEM-NOTE-012`). This holds even when the cortex
 uses a hosted model. This keeps viewer
 notes, including health and family notes, under the HLD rule that memories leave
 the LAN only through explicitly configured egress.
@@ -252,6 +253,61 @@ Every note the writer inserts or reinforces is dirty. If the viewer row does not
 exist yet (the `memory` group has not handled the same line), the writer creates
 it without counting a message (`MEM-CAPTURE-011`). A failing hook, embedding or
 write logs a warning and stores nothing for that line (`MEM-CAPTURE-010`).
+
+### Voice speakers
+
+A person who talks in the Discord voice channel accrues notes exactly as a chat
+viewer does: the same two layers, strength and fade, categories, capture hook,
+consolidation pass, surfacing and owner controls. Nothing about notes is
+voice-specific except how the speaker's identity is found.
+
+**Identity.** [ears](../ears/ears-design.md) publishes each transcript with the
+speaker's Discord display name (`speaker`) and Discord user id (`speakerId`).
+Memory keys viewers by `lower(userId ?? user)`, and a Twitch chat viewer's key is
+a Twitch user id, so a Discord id is a different namespace. A speaker's viewer key
+is therefore one of two things (`MEM-VOICE-001`, `MEM-VOICE-004`):
+
+- **Linked.** The owner has linked the Discord id to a chat viewer: the speaker
+  is that viewer, the notes are shared with their chat lines, and the viewer's
+  `display` stays the chat display name.
+- **Unlinked.** Otherwise the speaker is a **voice viewer** keyed
+  `discord:<speakerId>` whose `display` follows the latest Discord display name.
+  The row is created the first time the speaker is heard (with `msg_count` 0), so
+  nobody has to be configured in advance, and its notes are kept like any other
+  viewer's.
+
+An utterance is never counted as a chat message: `msg_count`, and so the regular
+rule, stays about chat lines; a voice viewer is regular only by the owner's flag
+(`MEM-VOICE-001`). An utterance without a `speakerId` (an injected clip, whose
+speaker is only a label) belongs to no identity, so it is remembered as a memory
+but never creates a viewer row or a note (`MEM-VOICE-002`, `MEM-VOICE-003`).
+
+**Linking.** The owner links a Discord id to a chat viewer from the Viewers page
+(`link_discord`, `MEM-VOICE-005`). The voice viewer's notes and deletion
+records move to the chat viewer, marked dirty so the next consolidation pass
+merges duplicates, and the voice row is removed. Later speech from that id goes to
+the chat viewer. Unlinking (`unlink_discord`, `MEM-VOICE-006`) removes only the
+link: notes already merged stay with the chat viewer, and the next utterance
+starts a fresh voice viewer. Linking replaces an earlier link of the same id. The
+target must be an existing viewer row that is not itself a voice viewer.
+
+**Names.** The cortex asks for notes by the display name it knows, and for a
+voice line that is the Discord display name. A name that matches no viewer's
+`display` also matches the latest Discord display name of a linked id, so a linked
+speaker's notes surface under the name they speak under (`MEM-VOICE-007`).
+
+**Privacy.** Voice lines go through the same capture hook, validation and writer
+as chat lines, so politics is never stored and money never becomes a note
+(`MEM-NOTE-009`); health and family notes carry a handling hint and leave memory
+as the hint only (`MEM-NOTE-010`, `MEM-SURF-004`, `MEM-VOICE-008`). Deleting,
+clearing, restoring and suppression work on a voice viewer by its key like any
+other. The Viewers page lists voice viewers with a `voice` tag
+(`MEM-VOICE-009`). Notes about a voice speaker egress nowhere beyond what
+`MEM-NOTE-011` allows for chat notes.
+
+Storage: a `viewer_links(discord_id, user_key, discord_display, created_at)` table,
+created additively by `init` (`MEM-VOICE-010`). Its `user_key` follows the viewer
+row on a re-key and the link is dropped with its viewer.
 
 ### Consolidation
 
@@ -279,7 +335,7 @@ processed it. A pass is triggered:
   started once the services are down. It processes every dirty note, ignores the
   threshold and does not wait for idle (`MEM-CONSOL-012`). It runs outside the
   memory service because Docker's default 10 s stop grace, and the bus's 2 s
-  `beforeShutdown` cap (event-bus BUS-STOP-002), are far too short for a model
+  `beforeShutdown` cap (event-bus SHARED-LIFE-001), are far too short for a model
   pass. The owner stops the stack in several ways (`docker compose down`,
   Ctrl-C, the dashboard), so the design depends on none of them: the one-shot is
   a best-effort extra, reachable from Compose (the `consolidate` one-shot service, deployment
@@ -360,6 +416,8 @@ The dashboard cannot touch Postgres (HLD tenet 1), so it sends
 | `restore` | undo a deletion: the note comes back as it was, at the strength it had when deleted, and its suppression rule (if any) is lifted | `MEM-ADMIN-004` |
 | `clear` | delete every note of one viewer with one optional reason; regular flag and counts unchanged | `MEM-ADMIN-005` |
 | `set_regular` | set or clear the owner's regular flag, by key or by a name with no row yet | `MEM-ADMIN-006` |
+| `link_discord` | link a Discord user id to a chat viewer (by key or name): the voice viewer's notes move over | `MEM-VOICE-005` |
+| `unlink_discord` | remove a Discord id's link | `MEM-VOICE-006` |
 
 **Delete semantics.** A deletion with a reason becomes a suppression rule: capture
 and consolidation discard similar notes for that viewer, and the reason text is
@@ -399,7 +457,9 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Suppression matching | embedding similarity against the same viewer's reason-carrying deletions only; the hash embedder (isolation) matches on shared words | `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected | `MEM-EVT-002` |
 | How the stack was stopped | irrelevant: graceful stops set `notes.shutdown_run_owed` and the next start catches up; the one-shot is optional | `MEM-CONSOL-012`, `MEM-CONSOL-013` |
-| Voice speakers | `speech.heard` speakers have no viewer row and get no notes | `MEM-CAPTURE-002` |
+| Voice speaker never seen in chat | a voice viewer keyed `discord:<id>`, notes kept like any viewer's | `MEM-VOICE-001`, `MEM-VOICE-003` |
+| Voice line with no `speakerId` (injected clip) | remembered as a memory; no viewer row, no note | `MEM-VOICE-002`, `MEM-VOICE-003` |
+| Owner links a Discord id after notes accrued | the voice viewer's notes and deletions move to the chat viewer, dirty; the voice row goes | `MEM-VOICE-005` |
 
 ### Build order
 
@@ -446,7 +506,7 @@ structurally.
   `reflect` (with the Postgres store) and the unit tests create one.
 - Every pool query goes through `MemoryStore.query` (`store.ts:62`), which wraps it
   with `tracked()` and reports the outcome to the `onQuery` callback; the service
-  passes `health.setPostgres` (`index.ts:28`), so `deps.postgres` follows the latest
+  passes `health.setPostgres` (`main.ts`), so `deps.postgres` follows the latest
   query (`MEM-HEALTH-005`).
 - `init()` (`store.ts:67-98`): embeds the literal `"hello"` to learn the vector
   dimension, then `CREATE EXTENSION IF NOT EXISTS vector`, `CREATE TABLE IF NOT
@@ -459,11 +519,9 @@ structurally.
   `DimensionMismatchError` (`store.ts:33-42`, code `MEMORY_DIM_MISMATCH`) naming
   both when they differ. Startup does not retry that error, so the service ends in
   its fatal exit instead of running with every write and recall failing
-  (`MEM-STORE-002`). Migrating or re-embedding an existing table is a separate,
-  open decision (Open Questions).
+  (`MEM-STORE-002`). The operator's way out is the `reembed` command (Re-embedding).
 - `remember` embeds `"<who>: <text>"` and inserts the pgvector literal `[a,b,...]`
-  (`store.ts:109-119`, `toVector` at `store.ts:177`). Kinds: `chat`, `speech`, `self`,
-  `note`; the code only ever writes the first three.
+  (`store.ts:109-119`, `toVector` at `store.ts:177`). Kinds: `chat`, `speech`, `self`.
 - `recall` (`store.ts:122-140`): `k <= 0` returns `[]` with no query; otherwise embeds
   the query and selects `1 - (embedding <=> $1) AS similarity` where `ts < now() -
   interval '2 minutes'` ordered by cosine distance, limit `k`, then filters in JS by
@@ -476,18 +534,45 @@ structurally.
 
 ### In-memory `InMemoryStore` (`fake-store.ts`)
 
-Same interface, state in JS arrays and maps, lost on exit. It embeds with its own
-`hashEmbed` (`fake-store.ts:8-17`): 64 dims, tokens `[\p{L}\p{N}']+`, FNV-style hash,
-unsigned counts, L2-normalised, and an all-zero vector for text with no tokens.
-`@cohost/llm`'s `HashEmbedder` is a second, different hash embedder (also 64 dims
-but signed, tokens `[\p{L}\p{N}]+`, a fixed unit vector for empty text,
-`packages/llm/src/mock.ts:26-50`); it is used only when `store=postgres` and
-`embedder=hash`. `recall` mirrors the SQL semantics: 2-minute cutoff against an
+Same interface, state in JS arrays and maps, lost on exit. It embeds with
+`@cohost/llm`'s `HashEmbedder` (64 dims, signed FNV-1a buckets over
+`[\p{L}\p{N}]+` tokens, L2-normalised, a fixed unit vector for empty text;
+model-backends LLM-EMBED-005, 006), the same embedder `store=postgres` with
+`embedder=hash` uses, so hash-mode recall behaves the same in both stores
+(MEM-BACKEND-004). Signed buckets make unrelated texts score near or below zero
+and related texts lower than plain word overlap would, so the fake store's recall
+tests choose fixtures whose similarity clears `min_similarity` (default 0.35)
+rather than relying on any overlap scoring positive. `recall` mirrors the SQL semantics: 2-minute cutoff against an
 injectable clock, cosine by dot product, sort, top `k`, `min_similarity` filter
 (`fake-store.ts:39-49`). `touchViewer` lowercases the key, counts from 1 and never
 returns notes other than `""` (`fake-store.ts:52-58`). `recentSince` returns rows
 after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 `meta` is a `Map` (`fake-store.ts:61-71`).
+
+## Re-embedding (`reembed.ts`, `reembed-run.ts`)
+
+After the owner changes the embedder to one with another vector size, `init` refuses the
+existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
+`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `tools` profile, or
+`cohostctl reembed`) is the way forward; run it with the memory service stopped.
+
+- `runReembed` (`reembed-run.ts`) takes the consolidation lock (`MEM-REEMBED-004`), calls
+  `MemoryStore.reembed`, logs per-table progress and a summary, and closes the store.
+  With `store=memory` it only warns (`MEM-REEMBED-005`); a failure logs `reembed failed` and
+  sets exit code 1 (`MEM-REEMBED-006`).
+- `MemoryStore.reembed` probes the embedder's dimension, then for each of `memories`,
+  `viewer_notes` and `viewer_note_deletions` that exists and whose `embedding` column has another
+  dimension: adds a staging column `embedding_new vector(N)` (dropping a leftover one of another
+  dimension), embeds the rows that still have no new vector in pages of 100 (`memories` from
+  `<who>: <text>`, the note tables from `text`, the text the write path embeds) and stores each
+  vector as it is made. Only when every row of every table is done does one transaction drop the old
+  columns and rename the staging ones, after which the hnsw index on `memories` is recreated
+  (a failure is a warning, as in `init`). Nothing but the vectors changes (`MEM-REEMBED-001`,
+  `MEM-REEMBED-003`). When every column already has the right dimension it does nothing
+  (`MEM-REEMBED-002`).
+- The old columns keep serving until the swap, so a failed or killed run is harmless and a rerun
+  continues where it stopped. The lock is a session advisory lock, so a crashed run never leaves
+  it held.
 
 ## Startup, health and shutdown
 
@@ -497,10 +582,10 @@ overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` via `config/config.example.yaml:109-
 `HEARTBEAT_INTERVAL_MS` (heartbeat package).
 
 Startup sequence (`startMemory` in `services/memory/src/startup.ts`, called from
-`index.ts:31`; its dependencies are injected so `startup.test.ts` runs it without
+`memoryMain` in `main.ts` (`runMemory`, on the shared `runService` bootstrap); its dependencies are injected so `startup.test.ts` runs it without
 Redis, Ollama or Postgres):
 
-1. `index.ts` starts the heartbeat immediately (`index.ts:26`): state `starting`.
+1. The shared bootstrap (`runService`) starts the heartbeat immediately: state `starting`.
 2. If store or embedder is non-default, warn `mode mock; data is not durable`.
 3. If `store=postgres` and `embedder=ollama`: ping Ollama every 3 s forever; each miss
    sets `deps.ollama=down` and reports heartbeat `degraded` with the detail
@@ -509,7 +594,7 @@ Redis, Ollama or Postgres):
 4. If `store=postgres`: `store.init()` with a retry every 3 s; each failure sets
    `deps.postgres=down` and reports `degraded` with a detail naming Postgres
    (`MEM-HEALTH-007`), success sets `ok`, and the 21st failure rethrows so the
-   process logs `fatal` and exits 1 (`startup.ts:41-54`, `index.ts:45-46`). A
+   process logs `fatal` and exits 1 (`startup.ts:41-54`, `main.ts`). A
    `DimensionMismatchError` is rethrown at once, without a retry
    (`MEM-STORE-002`). Otherwise a single `store.init()` on the fake
    (`startup.ts:56`).
@@ -528,7 +613,7 @@ shows as `degraded` even though `remember`/`recall` swallow the error
 (`MEM-HEALTH-005`). Heartbeat contract and `degraded` derivation are owned by the
 control-plane segment (`packages/bus/src/heartbeat.ts:68-85`).
 
-Shutdown: `onShutdown` stops the bus then closes the store (`index.ts:47`); the
+Shutdown: a teardown step registered with the bootstrap stops the bus then closes the store (`main.ts`); the
 `stopping` heartbeat is sent by the heartbeat package's `beforeShutdown` hook.
 Before closing the store, memory records that a shutdown consolidation run is owed
 (`MEM-CONSOL-013`, Viewer notes).
@@ -536,12 +621,16 @@ Before closing the store, memory records that a shutdown consolidation run is ow
 ## Reflection pass (`reflect.ts`, `learned.ts`)
 
 A CLI run between streams (`pnpm reflect` which is `tsx src/reflect.ts`, or
-`node services/memory/dist/reflect.js`). It is not a bus region and holds no
-mutex against the live service.
+`node services/memory/dist/reflect.js`). It is not a bus region. It takes the
+consolidation advisory lock (`withConsolidationLock`, the one the service's note
+passes and the `consolidate` one-shot share), so it never overlaps them.
 
 1. `store=memory`: log a warning and return (nothing persists across processes).
-2. `init()` the store (this embeds `"hello"` so the embedder must be reachable),
-   read `meta.last_reflection` (default: before the first row), `recentSince(cursor, 600)`.
+2. `connect()` the store: check that `memories` and `meta` exist, with no DDL and no
+   embedder call, so reflection works while Ollama is down (`MEM-REFLECT-011`).
+   Take the consolidation lock; when another pass holds it, log a warning and
+   return with nothing read or changed (`MEM-REFLECT-012`). Read
+   `meta.last_reflection` (default: before the first row), `recentSince(cursor, 600)`.
 3. Fewer than 5 rows: log and return with the cursor unchanged, so those rows are
    read again, together with the ones that arrive later, in a later pass. The final
    batch of a backlog may be partial: 5 to 599 rows reflect normally.
@@ -558,7 +647,7 @@ mutex against the live service.
    (`config/personality.example.md:26`). The result is saved with
    `savePersonality`, `meta.last_reflection` advances (below), and the block is
    printed (`reflect-run.ts:59-64`).
-7. Failures (including an unreachable embedder at `init`) log `reflect failed` and
+7. Failures (including missing tables at `connect`) log `reflect failed` and
    set `process.exitCode = 1`; the store is closed in `finally` (`reflect-run.ts:26-29`).
 
 The pass itself is `runReflect` in `reflect-run.ts`, with the config, chat provider,
@@ -593,6 +682,13 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Recency exclusion | `ts < now() - 2 minutes` | include everything | Keeps the live conversation, which the cortex already has in its working-memory transcript, out of recalled memories, so a reply does not "remember" what was said a moment ago. The window is a fixed time span while the cortex window is a count of events (`brain.working_memory_events`), so the two are an approximation of each other, not an exact match; `store.ts:129`, `fake-store.ts:42` |
 | Write error handling | `remember`/`recall` swallow and warn; a failed `touchViewer` is caught, logged, and the mention is still remembered | throw everywhere; let the bus drop the whole event | owner decision 2026-11-01: the show goes on without memory, and a viewer-table error must not lose the memory itself; `store.ts:116-118,135-138`, `MEM-VIEWER-006` |
 | Vector dimension mismatch | Fail `init` loudly, no retry, fatal exit | silently keep running; report degraded; migrate or re-embed | owner decision 2026-11-01: a mismatch makes every write and recall fail while health says `ok`, so it must stop startup; migration is decided separately; `MEM-STORE-002` |
+| Moving to a new vector dimension | A `reembed` one-shot (also `cohostctl reembed`) that stages new vectors in `embedding_new` and swaps every table's column in one transaction | a table per model; drop and start over; migrate lazily inside the running service | The stored text is the source of truth and the owner keeps memories and viewer notes across an embedder change; staging keeps the old vectors serving until every row is done, so an interrupted run loses nothing. A table per model would split recall across vector spaces that cannot be compared; starting over throws away notes the owner curated; a running service would race live writes with half-migrated columns. The dimension check at `init` stays fatal (`MEM-STORE-002`). `MEM-REEMBED-*` |
+| Reflection's access to the store | `connect()` (tables exist, no DDL, no embedder) and the consolidation lock | `init()` with its embed probe; no lock | Reflection reads rows and a cursor and calls the chat model, so an unreachable embedder must not stop it; the lock keeps it from overlapping a note pass or another reflection. `MEM-REFLECT-011`, `MEM-REFLECT-012` |
+| Unused kind `note` | Removed from `MemoryKind` | keep it declared | Nothing wrote it; the stored kinds are `chat`, `speech` and `self`. |
+| Recall `k` validation | Left to the bus schema, which rejects `k <= 0` (`packages/bus/src/events.ts`); the stores keep their `k <= 0` short-circuit for `recall_k: 0` from config | validate again in the handler | A second check would restate the schema; `recall_k: 0` never reaches the store as a request because the cortex sends none. |
+| Voice speakers and viewer notes | A voice speaker accrues notes like a chat viewer: an unlinked Discord id is its own viewer keyed `discord:<speakerId>`; the owner can link an id to a chat viewer from the Viewers page; the name the cortex asks for resolves through a linked id's Discord display name | Voice speakers get no notes (the earlier reading, which treated this as out of scope); require a link before any note is kept; guess a link by matching display names; count utterances as chat messages | Owner decision (final): voice speakers get viewer notes. Ears already carries the Discord user id, which is a stable identity, so no external identity source is needed to keep notes; requiring a link first would silently discard everything a person says until the owner configures them; matching names would merge strangers who share a name, and notes about a person must never land on someone else. Utterances are not chat messages, so counts and the regular rule stay about chat. Merging on link moves the notes and lets the consolidator deduplicate. `MEM-VOICE-*` |
+| Consumer-group readiness | The bus's `onReady` subscription option (event-bus); startup waits for every group's `onReady` before `ready` | wait with a timer; `resetGroup` first | Implemented in the shared foundation; `MEM-START-005`. |
+| Real-Postgres coverage | The store contract and the Postgres-specific checks run against pgvector in CI (`COHOST_TEST_DATABASE_URL`); they skip with a message where no database is configured | recorded SQL only | The `atttypmod` dimension query, the `(ts, id)` row comparison and `listViewers` are SQL the fakes cannot check. |
 | Restart start mode | `resume` for both groups: the backlog published while memory was down is stored | `latest` (reset to `$` each start) like every other subscriber | owner decision 2026-11-01: memory is the durable region and wants the backlog; delivery is still at-most-once across a crash (event-bus); `MEM-EVT-001` |
 | Mute and pause | Memory never reads `control`; it records while the co-host is muted | honour mute/pause | owner decision 2026-11-01: only the services that act on mute and pause (cortex, salience) see them |
 | Viewer count | A new viewer row starts at `msg_count` 1 in both stores | keep Postgres at 0 | owner decision 2026-11-01: `isNew` once and `msgCount` equal to messages seen, matching the in-memory store; `MEM-VIEWER-001` |
@@ -606,7 +702,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Capture consumer group | Third group `memory-notes` | classify inside the `memory` group handler |. The classifier call is slower than an embed; in the shared handler it would delay memory writes and, through ordering, `memory.viewer`. `MEM-CAPTURE-001` |
 | Consolidation trigger | Dirty-note count reaches `dirty_threshold` (default 20), plus one run after the owner shuts the AI down; dirty flags are the catch-up state | nightly schedule; every N minutes; after every write | Owner decision: no nightly schedule (the box may be off); work scales with what was captured; a missed run is caught up by the next one, as the reflection cursor does. `MEM-CONSOL-001`, `MEM-CONSOL-012`, `MEM-CONSOL-015` |
 | Mid-stream pacing | Start only while the cortex is idle (from `brain.status`), pause between viewers when it gets busy | run immediately; run only between streams |. On one GPU a consolidation call competing with a reply call delays the co-host's line; between-viewer pauses bound the delay to one hook call. `MEM-CONSOL-002`, `MEM-CONSOL-003` |
-| Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (BUS-STOP-002) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
+| Shutdown run placement | Guaranteed: memory leaves `notes.shutdown_run_owed` on every graceful stop and the next start runs an idle-gated catch-up pass. Best-effort extra: a one-shot `consolidate` command reachable from Compose and `cohostctl` | run in memory's `beforeShutdown` with a long Compose `stop_grace_period`; depend on one stop path launching the one-shot | Owner decision: the owner stops the stack in several ways (Compose `down`, Ctrl-C, the dashboard), so no single path may be required. The bus caps `beforeShutdown` hooks at 2 s (SHARED-LIFE-001) and Docker's default stop grace is 10 s; a model pass can take minutes, and a hung model would block every shutdown. Running only at the next start would not be "after shutdown". `MEM-CONSOL-012`, `MEM-CONSOL-013` |
 | Pass vs live writes | Per-viewer transaction that commits only notes whose version is unchanged since the pass read them | hold row locks across the model call; pause capture during a pass |. Locks held across a model call would stall capture and owner deletions for seconds; a version check lets the newer write win and leaves the note dirty for the next pass. `MEM-CONSOL-007` |
 | One pass at a time | Postgres advisory lock shared by the service and the one-shot | a `meta` flag |. An advisory lock is released when its session ends, so a crashed pass never leaves a stale lock behind. `MEM-CONSOL-010` |
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
@@ -618,7 +714,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Legacy `viewers.notes` column | Left in place, unread | drop it in `init` |. Dropping a column is irreversible and the column is empty in practice (nothing ever wrote it). |
 | Postgres health | Every pool query feeds `deps.postgres` through `tracked()`; `degraded` with a detail while waiting for Ollama or Postgres at startup | startup-only flag; stay `starting` while waiting | owner decision 2026-11-01: the heartbeat reflects runtime dependency state, as the cortex does; `MEM-HEALTH-005`, `MEM-HEALTH-007` |
 | Recall k=0 | Short-circuit with no embed or query | query anyway | `config/config.example.yaml:111` documents `recall_k: 0` as "disables recall"; `store.ts:123`, `fake-store.ts:40` |
-| Isolated backend | Separate in-process store with its own 64-dim hash embedder | reuse `HashEmbedder` inside the fake | the fake is self-contained and ignores `brain.memory.embedder`; its unsigned counts keep similarity scores non-negative, so `min_similarity` stays meaningful for plain word overlap; it needs no async embedder; the fake store (commit `719ce5a`) predates `HashEmbedder` (commit `51d5a9c`), and OpenSpec `add-isolated-backends` accepts the fake's "own bag-of-words hashed vectors"; `fake-store.ts:8-17`, comment `backend.ts:16` |
+| Isolated backend | Separate in-process store that embeds with `@cohost/llm`'s `HashEmbedder` | Its own unsigned hash embedder | One embedder means fake-store tests exercise the vectors hash mode really stores; a second hasher with different tokens, signs and empty-text output made the two disagree. The fake still ignores `brain.memory.embedder` and needs no network. Owner decision (shared-runtime, Hash embedding). |
 | Reflection with the in-memory store | Logged no-op | reflect over the fake | Commit `719ce5a`: "`reflect` still uses the Postgres store (it runs in a separate process, so a fake would be empty)"; `reflect.ts:22-25` |
 | Mode reporting | `mock` if either store or embedder is non-default | per-dependency mode | `live` means memory as a real stream needs it: persistent rows and semantic recall. Either substitute (the in-process store forgets on restart; the hash embedder matches words, not meaning) means recall is not real, so the mode says `mock`; which dependency is substituted is already visible per dependency as `n/a` in `deps`; `health.ts:7-11,24` |
 | Reflection placement | Offline CLI, writes personality file | in-service timer; DB-only learned facts | Comments `index.ts:12` ("Consolidation (\"sleep\") is reflect.ts, run between streams") and `reflect.ts:1-9` ("This is how the personality drifts over time instead of resetting every stream. Edit the file by hand whenever you like.") |
@@ -626,66 +722,21 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Cursor timestamp representation | The exact microsecond ISO text Postgres returns (`to_char(ts AT TIME ZONE 'UTC', ...US"Z"')`), compared as `$1::timestamptz` | the JS `Date` of the row's `ts` | A `Date` keeps milliseconds, so the cursor would round down and the newest row read would be read again every pass, inflating the "fewer than 5" count (`MEM-REFLECT-003`) and re-feeding a row to the LLM; `MEM-REFLECT-008` |
 | Learned block placement | End of the `## Learned` section | end of file | owner decision 2026-11-01 (low priority: the shipped template ends with `## Learned`); `MEM-REFLECT-007` |
 | Pure text helpers split out | `learned.ts` holds bullet parsing and heading logic | inline in reflect.ts | Extracted so the reflection logic could be tested (`reflect.ts` runs at import): commit `95afa19` ("reflection merge logic (extracted from reflect.ts into learned.ts, behaviour unchanged)"), `learned.ts:1` |
-| Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `index.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
-| Startup readiness vs group creation | `ready` is reported right after the subscriptions are started | call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the correct fix is a bus `onReady` hook (open, `MEM-START-005`) |
+| Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `main.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
+| Startup readiness vs group creation | `ready` is reported once every subscription's `onReady` has fired | report ready right after starting the subscriptions; call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the bus's `onReady` hook is the group-exists signal (`MEM-START-005`) |
 
 ## Open Questions & Future Decisions
 
-### Resolved
-1. The owner's decisions of 2026-11-01 (start mode, dimension mismatch, viewer
-   count, Postgres health, startup `degraded`, viewer-upsert failures, reflection
-   cursor and placement) are recorded in the Decisions table and the spec lines
-   they cite.
-2. The viewer notes design (purpose, layers, strength, sensitivity, capture,
-   consolidation triggers, delete semantics, owner control) is recorded in Viewer
-   notes and the Decisions table. MEM-VIEWER-004 (notes text in `memory.viewer`)
-   and MEM-VIEWER-005 (deferred notes writer) are retired by it; their numbers are
-   not reused.
-
-### Open (viewer notes, owner decisions needed)
-1. **Voice speakers.** Discord voice speakers get no notes; linking a speaker to a
-   chat viewer is out of scope.
-
-Settled by the owner and recorded above: categories are `general`, `health` and
-`family` plus the politics drop; soft memories are purged after 30 days and
-suppression rules kept until restored; "surfaced rarely" means at most once per
-note per 24 hours, replied-to viewer only; there is no viewer-initiated forget
-command (the owner deletes notes by hand, keeping the "not a command bot"
-non-goal); turning "Mark as regular" off returns the viewer to the message-count
-rule, with no "never regular" option; the shutdown one-shot is best-effort and
-the catch-up pass is the guarantee.
-
-### Deferred (observed, unexplained, or technical debt)
-1. **Migrating a table to a new vector dimension.** `MEM-STORE-002` stops startup
-   on a mismatch; what an operator does next (re-embed, a table per model, drop and
-   start over) is not decided. `dims` is held in memory only (`store.ts:51,69`).
-2. **Reflection needs a reachable embedder** because `init()` embeds `"hello"`
-   (`store.ts:69`) even though reflect only reads. It also runs without any lock
-   alongside the live service.
-3. **Two hash embedders.** `fake-store.ts:hashEmbed` and `@cohost/llm` `HashEmbedder`
-   differ in tokenisation, sign handling and empty-text output; both 64 dims. The
-   fake keeps its own: it is self-contained and its non-negative scores suit
-   `min_similarity` (it also predates `HashEmbedder`, commit `719ce5a`).
-4. **Kind `note` is declared but never written** (`store.ts:7`).
-5. **Recall request validation:** the bus schema makes `k` positive
-   (`packages/bus/src/events.ts:108-112`, `k` at 111), so `k=0` can only occur
-   through config (`recall_k=0`, where the cortex does not send a request) even
-   though the store handles it.
-6. **Test gaps.** `index.ts` and `reflect.ts` (wiring only) have no tests;
-   `startup.ts` and `reflect-run.ts` are tested with fakes, so no test runs
-   against a real Postgres: the `atttypmod` dimension query and the
-   `(ts, id)` row comparison are exercised only against recorded SQL.
-7. **Consumer-group readiness.** `MEM-START-005` waits on a bus hook that does not
-   exist yet.
+None.
 
 ## References
 
-- Code: `services/memory/src/{index,startup,region,store,cursor,backend,fake-store,reflect,reflect-run,learned,health}.ts`,
+- Code: `services/memory/src/{index,main,startup,region,store,cursor,backend,fake-store,reflect,reflect-run,learned,health}.ts`,
   `services/memory/package.json`, `services/memory/tsconfig.json`
-- Tests: `services/memory/test/{backend,fake-store,health,memory,region,reflect,startup}.test.ts`
+- Tests: `services/memory/test/{backend,fake-store,health,memory,region,reflect,reembed,startup,notes-store,notes-store.pg}.test.ts`
 - Parent: [high-level-design](../../high-level-design.md)
 - Depends on: event-bus (events `chat.message`, `speech.heard`, `brain.say`,
-  `memory.*`, `Bus.subscribe/publish`, start mode `resume`, a future group-ready hook), config
+  `memory.*`, `Bus.subscribe/publish`, start mode `resume`, the `onReady` group-ready option), config
   (`loadConfig`, `urls.database`, `loadPersonality/savePersonality`,
   `brain.memory.*`), model-backends (`Ollama`, `HashEmbedder`, `createChatProvider`),
   region-hooks (`Module` for `memory.capture` and `memory.consolidator`, planned),

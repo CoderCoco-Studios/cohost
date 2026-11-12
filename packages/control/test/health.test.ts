@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HealthTracker, KNOWN_SERVICES, type HeartbeatData } from "../src/index.js";
+import { HealthTracker, appServiceIds, type HeartbeatData } from "../src/index.js";
 
 const hb = (over: Partial<HeartbeatData> = {}): HeartbeatData => ({
   service: "chat", instance: "i", pid: 1, version: "0", startedAt: 1000, state: "ready",
@@ -9,7 +9,7 @@ const hb = (over: Partial<HeartbeatData> = {}): HeartbeatData => ({
 
 function setup() {
   const clock = { t: 1_000_000 };
-  const tracker = new HealthTracker({ now: () => clock.t });
+  const tracker = new HealthTracker({ now: () => clock.t, wall: () => clock.t });
   return { clock, tracker, advance: (ms: number) => { clock.t += ms; } };
 }
 
@@ -114,7 +114,7 @@ test("snapshot lists every known service, unseen ones as unknown", () => {
   tracker.ingest(hb({ service: "cortex", deps: { llm: "ok" } }));
   tracker.ingest(hb({ service: "extra", deps: {} }));
   const snap = tracker.snapshot();
-  assert.equal(snap.length, KNOWN_SERVICES.length + 1);
+  assert.equal(snap.length, appServiceIds().length + 1);
   const unknown = snap.filter((s) => s.state === "unknown");
   assert.equal(unknown.length, 9);
   assert.ok(unknown.every((s) => s.heartbeat === undefined && s.restarts === 0));

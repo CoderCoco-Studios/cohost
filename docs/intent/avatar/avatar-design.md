@@ -17,14 +17,14 @@ Everything is driven by the bus; the service exposes no HTTP surface and no inbo
 
 ## Process wiring and event flow
 
-Startup order. `index.ts` only supplies a `setup` function (steps 1, 2 and 4) to `runAvatar` (`boot.ts:39-87`), which runs every step inside one `try`, so any failure logs `fatal` and exits 1 (AVATAR-BUS-007), and nothing waits for the avatar app.
+Startup order. `index.ts` calls `runAvatar()` (`boot.ts`), which runs `avatarMain` on the shared bootstrap `runService`: a failure in any step ends the process with status 1 (AVATAR-BUS-007), a step after the configuration loads logging `fatal`, and nothing waits for the avatar app.
 
-1. `loadConfig()` then `new Bus("avatar")`.
+1. The bootstrap loads the configuration, creates `Bus("avatar")` and starts the heartbeat (`starting`) with `avatarHealth(cfg, () => driver)`, which publishes `ready` only at step 8.
 2. `createDriver(cfg.avatar)` selects the driver. An unknown `avatar.driver` never gets here: config validation rejects it before any service starts, and an unset or empty `AVATAR_DRIVER` loads as `null` (AVATAR-DRV-003, AVATAR-DRV-004).
-3. `startHeartbeat(bus, {...avatarHealth(driver), log})`. It publishes `starting` now and `ready` only at step 8.
-4. `loadExpressions()[cfg.avatar.driver] ?? { gestures: {} }`, then `gestures` is split from the emotion map. A missing driver block is silently an empty map.
+3. The heartbeat reads the driver through a reference `avatarMain` fills at step 2: a real driver that does not exist yet reads as `down`.
+4. `expressionsFor(loadExpressions(), cfg.avatar.driver)` takes the driver's block and splits `gestures` from the emotion map. A missing driver block is silently an empty map (AVATAR-DRV-005).
 5. The `Engine` is constructed with an `onState` callback (`statePublisher`, `state.ts`) that publishes `avatar.state` at most once per 200 ms; at the default 30 fps that is every 7th frame, about 4.3 Hz. A failed publish drops that state and is logged at most once per 10 s (AVATAR-STATE-002).
-6. `onShutdown` stops the engine, disconnects the driver and stops the bus (`boot.ts:49`). `startHeartbeat` registers its own pre-shutdown hook that publishes the `stopping` heartbeat (`packages/bus/src/index.ts`, owned by control-plane).
+6. The teardown step registered with `onStop` stops the engine and disconnects the driver; the bootstrap then stops the bus (`boot.ts`). `startHeartbeat` registers its own pre-shutdown hook that publishes the `stopping` heartbeat (`packages/bus/src/index.ts`, owned by control-plane).
 7. `driver.connect({log, expressions, gestures, stateDir})` is started without being awaited, with a `.catch` that logs `fatal` and exits 1 (a rejecting connect is a startup failure); `engine.start()` follows at once (AVATAR-VTS-002). The VTube Studio driver reports itself disconnected until it authenticates, and the heartbeat shows `degraded` meanwhile.
 8. `bus.resetGroup("avatar")` creates the consumer group at the newest entry, then `heartbeat.ready()`: readiness means "can receive events", not "driver connected"; connection state rides in `deps.driver` and can make the state `degraded` (see Health; AVATAR-HEALTH-001). Then the subscription loop starts. The bus has no "subscribed" notification, so boot positions the group itself and `subscribe` positions it again (`latest` resets once more); an event in the few milliseconds between is dropped, which `latest` allows.
 
@@ -53,7 +53,7 @@ Lip-sync is deliberately keyed to `voice.playing`, not `voice.utterance`: the en
 
 - `cur` / `target`: `AvatarParams` current and goal values, both starting at `NEUTRAL` (`engine.ts:11-12`, `types.ts:49`).
 - Emotion state: `emotion` (what is shown), `emotionUntil` (hold deadline, epoch ms), and `mood` (the resting face from `affect.state`) (`engine.ts:13-16`).
-- Playback state: `known` (a `Map` of up to 20 prepared utterances, oldest-inserted evicted, `engine.ts:33-36`) and `playing` (the utterance and its start time).
+- Playback state: `known` (a `Map` of up to 20 prepared utterances, the least recently prepared evicted, and a re-prepared id becomes the newest, AVATAR-ENG-002) and `playing` (the utterance and its start time).
 
 Public entry points: `prepare`, `play`, `done`, `setEmotion`, `setMood`, `start`, `stop`.
 
@@ -63,7 +63,7 @@ Emotion rules:
 - `play(id)` for a known id starts playback, calls `setEmotion(u.emotion, durationMs + 4000)` and fires the utterance's gesture through `driver.trigger` if present (`engine.ts:39-45`). Unknown ids are silently ignored. Note the second `setEmotion` replaces the 6000 ms hold set by `brain.say`; a short utterance therefore shortens the hold.
 - `setMood(e)` is a no-op for the same mood; otherwise it stores the mood and, only if no hold is active (`now() > emotionUntil`), shows it immediately at intensity 0.5 (0 for neutral) (`engine.ts:58-65`).
 - When a hold expires and `emotion !== mood`, the frame loop falls back to the mood with the same 0.5/0 intensity (`engine.ts:82-85`).
-- Reported intensity for `avatar.state` is 0 for neutral, 1 while a hold is active, else 0.5 (`engine.ts:113`). This is computed separately from the intensity passed to `driver.setExpression`, so a held `neutral` emotion is `1` to the driver and `0` in `avatar.state`.
+- Reported intensity for `avatar.state` is 0 for neutral, 1 while a hold is active, else 0.5 (`engine.ts:113`). `neutral` means no expression: the engine asks the driver for `neutral` only at intensity 0, held or resting, so VTube Studio deactivates its active expression and VMC sends the blendshape at 0, and `avatar.state` agrees (AVATAR-ENG-017).
 
 Per-frame pipeline (`engine.ts:67-114`):
 
@@ -94,7 +94,7 @@ Speaks the VTube Studio public WebSocket API at `ws://host:port` (default port 8
 
 - Connect: `open()` creates the socket; on `open` it runs `authenticate()` then `loadHotkeys()` and only then sets `ready` (`vtube-studio.ts:106-123`). `connected()` returns `ready` (`:37`). `connect()` resolves when the first attempt ends, whether it succeeded, failed auth or could not connect (`:111-137`; test `drivers.test.ts:192`), and never rejects. That first attempt can take long: on first pairing it includes up to 60 s for the operator to click Allow plus the 5 s auth and hotkey requests, and for a host that drops packets it is the operating system's TCP connect timeout, since the `ws` client is created with no handshake timeout (`:109`). The service therefore starts its engine and subscription without awaiting it (AVATAR-VTS-002, `boot.ts:52`).
 - Auth: token read from `<stateDir>/.vts-token` (`:104`, `stateDir = configDir()` from `index.ts`); `config/.vts-token` is git-ignored (`.gitignore:12`). With no token, sends `AuthenticationTokenRequest` with a 60 s timeout (the operator must click Allow in VTS) and writes the token; then `AuthenticationRequest`. A rejected token blanks the file and throws (`:141-155`).
-- Failure and reconnect: any auth or hotkey failure logs and closes the socket; the `close` handler rejects all pending requests and, unless `disconnect()` set `closing`, retries `open()` after 5 s (`:125-133`). There is no backoff and no retry cap.
+- Failure and reconnect: any auth or hotkey failure logs and closes the socket; the `close` handler rejects all pending requests and, unless `disconnect()` set `closing`, retries `open()` after 5 s, repeating every 5 s (AVATAR-VTS-007). There is no backoff and no retry cap. A WebSocket handshake not completed within 5 s is abandoned and counts as a failed attempt (AVATAR-VTS-016); the three timings (handshake, reconnect, request) are driver options defaulting to 5 s.
 - Params: while `ready`, `setParams` sends `InjectParameterDataRequest` (mode `set`, `faceFound: true`) with 11 values (`MouthOpen`, `MouthSmile`, `FaceAngleX/Y/Z`, `EyeLeft/RightX/Y`, `EyeOpenLeft/Right = 1 - blink`) clamped to VTS ranges, fire-and-forget (`:53-72`).
 - Expressions: `setExpression` picks `expressions[emotion]` when `intensity > 0.05` else nothing; if it equals the remembered `activeExpr` it returns; otherwise it deactivates the old and activates the new and records `activeExpr` (`:74-81`). `activate` sends `ExpressionActivationRequest` for `*.exp3.json` names and `HotkeyTriggerRequest` otherwise (`:93-102`). Hotkeys are toggles, so the driver triggers the same hotkey to turn an expression both on and off and relies on `activeExpr` as its only record of what VTS is showing. That record is cleared when the socket closes and when a connection opens (AVATAR-VTS-013), because VTS resets its model on a restart; expressions requested while disconnected are dropped, and the engine does not re-send the current one after a reconnect.
 - Gestures: `trigger` maps the gesture through `ctx.gestures`, finds the hotkey case-insensitively, warns if absent (`:83-90`).
@@ -110,7 +110,7 @@ Each `setParams` sends: `/VMC/Ext/Bone/Pos` for `Head` with a quaternion from `e
 
 ## Health
 
-`avatarHealth(driver)` (`health.ts:4-11`) returns a `HeartbeatSpec` for service `avatar`: mode `off` when the driver is `null`, else `live`; `deps` is re-read each tick as `{ driver: "n/a" }` for null, else `ok`/`down` from `driver.connected()`. The heartbeat contract is owned by control-plane; `ready()` is called once the consumer group is positioned, without waiting for the driver, so a real driver that is not yet connected shows `degraded` ("dependency down: driver") rather than `starting`.
+`avatarHealth(cfg, driver)` (`health.ts`) returns a `HeartbeatSpec` for service `avatar`: mode `off` when `avatar.driver` is `null`, else `live`; `deps` is re-read each tick as `{ driver: "n/a" }` for null, else `ok`/`down` from `driver.connected()`. The heartbeat contract is owned by control-plane; `ready()` is called once the consumer group is positioned, without waiting for the driver, so a real driver that is not yet connected shows `degraded` ("dependency down: driver") rather than `starting`.
 
 ## Decisions & Alternatives
 
@@ -120,6 +120,11 @@ Each `setParams` sends: `/VMC/Ext/Bone/Pos` for `Head` with a quaternion from `e
 | Lip-sync trigger | Cache envelope on `voice.utterance`, start on `voice.playing` | Start mouth motion on `voice.utterance` | Comments: `prepare` remembers the audio "so we can lip-sync when a sink starts playing" (`engine.ts:32`); the `voice.playing` schema note says "Avatar syncs to this" (`packages/bus/src/events.ts:139`). A sink can start well after `voice.utterance` (ears queues lines and fetches and converts the audio first), so the `voice.playing` a sink publishes when audio starts is the moment the viewer hears the line; starting on `voice.utterance` would move the mouth before, or without, any sound. |
 | Early emotion from `brain.say` | Show emotion before audio exists with a 6000 ms hold | Wait for `voice.utterance` | Comment: "Show the emotion as soon as it decides, before audio exists — feels more alive" (`boot.ts`, `brain.say` case). The 6000 ms hold is a starting value meant to outlast synthesis plus voice's 1.5 s claim window, so the face does not fall back to the mood before the line is heard; `play` then replaces it with the utterance's own `durationMs + 4000` hold. |
 | Resting face | `affect.state` mood is the fallback expression at intensity 0.5; held utterance emotions win | Mood overrides immediately | Comment: "Mood changes show up softly, and only when no utterance is holding the face" (`engine.ts:57`); test `engine.test.ts:110`. |
+| Neutral | `neutral` means no expression: every path asks the driver for it at intensity 0 | Toggle `expressions.neutral` for a held neutral line; leave drivers to decide | Owner delegated the choice (take the recommendation, 2026-11-11): the resting mood already clears at intensity 0 and `avatar.state` reports intensity 0 for neutral, so a held `neutral` line is the only path that differed. Clearing is also the one meaning that needs no `neutral` entry in `expressions.yaml`. |
+| Interrupted utterance | A newer `voice.playing` replaces the playing utterance without a `done` for the old one | Track overlapping utterances | The avatar follows the newest playing line by design; overlap between sinks is voice's documented non-exclusivity. |
+| Utterance eviction | The least recently prepared id is evicted; a re-sent id becomes the newest | Insertion order only | A re-sent id is a live one: evicting it early drops the lip-sync of a line about to play. |
+| Tests in the build | `services/avatar/test` is a project of the root `tsc -b`, emitting under `dist/test-build` | Type-check tests only in an editor | A type error in a test fails the build like one in the source (AVATAR-DEV-001). |
+| Bootstrap | `runService` from `@cohost/shared`; `avatarMain` holds the service, `runAvatar` wires it with replaceable collaborators | A hand-written `runAvatar` with its own `fatal` handling | One bootstrap gives every service the same logger, config failure, heartbeat, shutdown and `fatal` path; the driver is created in `main`, so the heartbeat reads it by reference. |
 | Connect behavior | VTS `connect()` resolves on error and is not awaited by startup; the engine and subscription start at once; reconnect every 5 s forever | Fail startup when the app is absent; await the first attempt (bounded or not) | Comment: "don't block startup; close handler schedules the retry" (`vtube-studio.ts:136`). Owner decision 2026-11-01: "not blocked" means the face and the subscription run while VTS is pairing or unreachable. Failures degrade and are reported (the heartbeat shows `degraded`), never end the service, so retrying never stops: the operator may start VTS at any point in a stream. VTS is a local LAN app, so a reconnect attempt is cheap, and a fixed 5 s interval means the face returns within 5 s of VTS starting, where a backoff would make a late start wait longer. |
 | Token persistence | Plain file `<configDir>/.vts-token`, git-ignored and kept out of the image build context | Env var, Redis | Header comment: the token "is saved to <config>/.vts-token so it only happens once" (`vtube-studio.ts:3-4`). Owner decision 2026-11-01: the token is a secret and stays out of git and the build context (`.gitignore:12`; `.dockerignore` is deployment's). VTS issues the token at runtime, after the operator clicks Allow, so the service must write it itself: an env var cannot be written back, and Redis is the event bus, not durable secret storage. The config dir is already a host-mounted volume (`docker-compose.yml:21-22`), so a file there survives container rebuilds. |
 | VMC transport | Own OSC encoder, UDP fire-and-forget | OSC library, TCP | Comment: "minimal OSC encoder (strings, int32, float32) — enough for VMC" (`vmc.ts:65`); UDP is what VMC receivers accept (`vmc.ts:1-3`). VMC needs three OSC argument types, which a few dozen lines encode, so the driver adds no dependency; TCP is not an option VMC receivers offer. |
@@ -137,11 +142,7 @@ Each `setParams` sends: `/VMC/Ext/Bone/Pos` for `Head` with a quaternion from `e
 
 ## Open Questions & Future Decisions
 
-1. `known` eviction uses `Map` insertion order (`engine.ts:35`): re-preparing an existing id does not move it to the newest slot, so a re-sent id can be evicted early.
-2. Neutral handling differs by path: a held `neutral` emotion (from `brain.say`) calls `driver.setExpression("neutral", 1)`, so VTS toggles `expressions.neutral`; returning to a neutral mood calls it with intensity 0, which VTS treats as "clear" (`intensity > 0.05` check, `vtube-studio.ts:76`) and VMC treats as value 0 (`vmc.ts:59`). `avatar.state` reports intensity 0 for neutral in both cases (`engine.ts:113`).
-3. Utterances interrupted by a new `voice.playing` for another id are replaced without a `done` (`engine.ts:42`); there is no explicit handling of overlapping sinks. The dashboard sink and Discord sink arbitration is a voice concern.
-4. `services/avatar/tsconfig.json` has `include: ["src"]` and references only config and bus (`tsconfig.json:4-5`), so tests are not type-checked by `tsc -b`; they run through tsx only.
-5. Boot wiring is tested through `runAvatar` with an injected setup, bus, driver, shutdown and exit (`services/avatar/test/boot.test.ts`); real signal handling and process exit are not exercised. Still untested: the VTS 5 s reconnect and its cancellation (AVATAR-VTS-007), the request timeout (AVATAR-VTS-006), the expression-not-found warning (AVATAR-VTS-015), the auto-clear of a playing utterance (AVATAR-ENG-006), and `loadExpressions` in `index.ts` (AVATAR-DRV-005). The non-blocking VTS start (AVATAR-VTS-002) is untested for a host that drops packets; for such a host the first attempt lasts the operating system's TCP connect timeout, because the `ws` client is created with no handshake timeout (`vtube-studio.ts:118`).
+None.
 
 ## References
 
@@ -149,7 +150,7 @@ Files in segment:
 - `services/avatar/src/index.ts`, `boot.ts`, `state.ts`, `engine.ts`, `types.ts`, `health.ts`
 - `services/avatar/src/drivers/index.ts`, `null.ts`, `vmc.ts`, `vtube-studio.ts`
 - `services/avatar/test/boot.test.ts`, `state.test.ts`, `engine.test.ts`, `drivers.test.ts`, `health.test.ts`
-- `services/avatar/package.json`, `services/avatar/tsconfig.json`
+- `services/avatar/package.json`, `services/avatar/tsconfig.json`, `services/avatar/test/tsconfig.json`
 - `config/expressions.example.yaml`
 
 Other segments (direction):

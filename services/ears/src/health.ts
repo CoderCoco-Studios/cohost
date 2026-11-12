@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
 export type EarsSource = "discord" | "off";
 /** `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
@@ -41,21 +41,21 @@ export function idleDetail(t: EarsToken): string {
     : "EARS_DISCORD_TOKEN is not set";
 }
 
-// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003
+// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003, EARS-STUB-002
 /**
- * ears: `off` (mode off, deps n/a) for source=off; otherwise mode live with discord following the
- * gateway session (down without a token) and stt the last transcription.
+ * ears: `off` (mode off, deps n/a) for source=off; otherwise mode live (`mock` with the stub engine, whose stt is n/a)
+ * with discord following the gateway session (down without a token) and stt the last transcription.
  */
 export class EarsHealth {
   private stt: "ok" | "down" = "ok";
-  constructor(private plan: EarsPlan, private discordReady: () => boolean) {}
+  constructor(private plan: EarsPlan, private discordReady: () => boolean, private stub = false) {}
 
   readonly spec: HeartbeatSpec = {
     service: "ears",
-    mode: () => (this.plan === "off" ? "off" : "live"),
+    mode: () => (this.plan === "off" ? "off" : this.stub ? "mock" : "live"),
     deps: () => (this.plan === "off"
       ? { discord: "n/a", stt: "n/a" }
-      : { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt: this.stt }),
+      : { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt: this.stub ? "n/a" : this.stt }),
   };
 
   track<A extends unknown[]>(transcribe: (...a: A) => Promise<string>) {

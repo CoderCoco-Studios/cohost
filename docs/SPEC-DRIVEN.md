@@ -21,12 +21,12 @@ HLD → LLDs → EARS → Tests → Code
 | Arrow overlay | `docs/arrows/index.yaml` + `docs/arrows/<segment>.md` | Status, dependencies, drift and work required per segment |
 | Code | `@spec PFX-FACET-NNN` comments | Links code and tests back to the spec line |
 
-Segments (17, flat): `config`, `event-bus`, `model-backends`, `region-hooks`,
-`working-memory`, `control-plane`, `chat`, `eyes`, `ears`, `salience`,
-`affect`, `memory`, `cortex`, `voice`, `avatar`, `dashboard`, `deployment`.
+Segments (20, flat): `config`, `event-bus`, `model-backends`, `region-hooks`,
+`working-memory`, `shared-runtime`, `control-plane`, `chat`, `eyes`, `ears`,
+`salience`, `affect`, `memory`, `cortex`, `voice`, `mouth`, `avatar`,
+`dashboard`, `deployment`, `module-contract`.
 Start at `docs/arrows/index.yaml`; `blockedBy` gives the dependency order.
-The `@cohost/shared` package (tiny helpers used by several services) is not a
-segment; the segment that owns the behavior specifies it.
+The `@cohost/shared` package is the `shared-runtime` segment.
 
 ## The flow
 

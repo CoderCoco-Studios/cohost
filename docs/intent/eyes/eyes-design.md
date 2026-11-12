@@ -9,49 +9,49 @@ Segment `eyes` (`services/eyes`, package `@cohost/eyes`). Mapped 2026-10-31 at g
 
 ## Context and Design Philosophy
 
-`eyes` is the visual sense. It polls a source in OBS through obs-websocket, asks an Ollama vision model for one sentence about what changed, and publishes `vision.summary` (see [HLD](../../high-level-design.md)). The header comment states the stance (`index.ts:2-9`): summaries, not frames, go on the bus because they are cheap and what the brain wants. It runs under the compose profile `eyes` (`docker-compose.yml:145-148`), unlike `chat` which is in the default set.
+`eyes` is the visual sense. It polls a source in OBS through obs-websocket, asks a vision model (Ollama, through `@cohost/llm`) for one sentence about what changed, and publishes `vision.summary` (see [HLD](../../high-level-design.md)). The header comment states the stance (the header of `service.ts`): summaries, not frames, go on the bus because they are cheap and what the brain wants. It runs under the compose profile `eyes` (`docker-compose.yml`), unlike `chat` which is in the default set.
 
 Design stance (evidence per bullet):
 
-- Change detection is delegated to the model. The prompt tells it to reply exactly `SAME` when nothing meaningful changed (`eyes.ts:51`); the service only parses that word (`eyes.ts:78`). There is no pixel or embedding diff. "Meaningful" is a judgement about the game, not about pixels, and the model is already looking at the frame to describe it.
-- Disabled by default and fully inert when disabled: no OBS connection, no model calls from the loop (`startEyes`, `eyes.ts:86-94`). The service still starts, heartbeats `off`, and still handles image injection. Evidence: commit 463b1bb (fixes #11, eyes connected to OBS while disabled); commit 51d5a9c; add-isolated-backends design D7.
-- Logic is separated from I/O by dependency injection: `Eyes` takes `screenshot` and `describe` functions (`eyes.ts:4-11`), `startEyes` takes `connect` and `loop`, the inject handler takes `fetch`, `describe`, `now`. `index.ts` is the untested composition root. Evidence: commit 95afa19 ("Split service entrypoints into testable region modules": eyes gained `Eyes.look` / `ollamaDescriber`).
-- One shared `describe` function serves both the polling loop and injected images, and it is wrapped by health tracking (`index.ts:56`, `:63`). Evidence: add-test-injection design D8 ("call the same `describe(b64, \"\")`") and the `describe` doc comment in `inject.ts` ("Same describer `Eyes.look()` uses").
+- Change detection is delegated to the model. The prompt (`vision.prompt`) tells it to reply exactly `SAME` when nothing meaningful changed; the service parses only a clear `SAME` (`isSame`, `eyes.ts`). There is no pixel or embedding diff. "Meaningful" is a judgement about the game, not about pixels, and the model is already looking at the frame to describe it.
+- Disabled by default and fully inert when disabled: no OBS connection, no model calls from the loop (`startEyes`, `eyes.ts`; `service.ts`). The service still starts, heartbeats `off`, and still handles image injection. Evidence: commit 463b1bb (fixes #11, eyes connected to OBS while disabled); commit 51d5a9c; add-isolated-backends design D7.
+- Logic is separated from I/O by dependency injection: `Eyes` takes `screenshot`, `describe` and a monotonic clock, `startEyes` takes `connect` and `loop`, the inject handler takes `fetch`, `describe`, `now`, and `eyesService(deps)` (`service.ts`) takes the OBS client, so a test runs the whole service through `runService` with a fake OBS and no Redis. `index.ts` only builds the real OBS client and calls `runService`.
+- One shared `describe` function serves both the polling loop and injected images, and it is wrapped by health tracking (`service.ts`). Evidence: add-test-injection design D8 ("call the same `describe(b64, \"\")`") and the `describe` doc comment in `inject.ts` ("Same describer `Eyes.look()` uses").
 
 ## Startup and Gating
 
-`index.ts` constructs `OBSWebSocket`, `EyesHealth`, the heartbeat, the OBS link (`createObsLink`, `obs.ts`), the describer and `Eyes` unconditionally, establishes the `inject.request` subscription (`subscribeInject`, `inject.ts`), then calls `startEyes`. The subscription is established before either `ready` signal (OBS connect, or the idle branch), so `ready` never precedes it.
+`eyesService(deps).main` (`service.ts`, run by `runService`) builds `EyesHealth` (in `health`, before the heartbeat starts), the OBS link (`createObsLink`, `obs.ts`), the describer and `Eyes`, establishes the `inject.request` subscription (`subscribeInject`, `inject.ts`), then either starts the look loop (vision enabled) or starts the shared idle plan (disabled). The subscription is established before either `ready` signal (OBS connect, or the idle plan), so `ready` never precedes it.
 
-`startEyes({enabled, log, connect, loop})` (`eyes.ts:86-94`):
+`startEyes({enabled, connect, loop})` (`eyes.ts`):
 
-- `enabled` false: warn `vision.enabled is false in config.yaml - eyes idle...`, return `false` without calling `connect` or `loop`.
+- `enabled` false: return `false` without calling `connect` or `loop` and without logging; the caller reports the disabled case.
 - `enabled` true: `await connect(); await loop();` return `true`. `loop` never returns, so in practice the promise never resolves when enabled.
 
-On `false`, `index.ts` signals `heartbeat.ready()` (mode `off`) and logs an idle warning every 60 s. Shutdown is one sequence in both plans (`stopEyes`, `obs.ts`; EYES-ENAB-005, EYES-OBS-008; see Shutdown below). A rejected startup (including a failure to create the subscription group) is `log.error("fatal")` then `process.exit(1)`; the connect loop swallows its own errors, so that path is reached only by those setup failures.
+Disabled, `main` runs `startIdle({kind: "off"})` (SHARED-IDLE-001; EYES-ENAB-002): one warning naming `vision.enabled`, heartbeat mode `off` and `ready`, never a repeated warning. Shutdown is one sequence in both plans (`stopEyes`, `obs.ts`, an `onStop` step; EYES-ENAB-005, EYES-OBS-008; see Shutdown below). A throw out of `main` (including a failure to create the subscription group) is logged `fatal` and exits 1 (`runService`); a rejected start of the loop is logged `fatal` and exits 1 too. The connect loop swallows its own errors, so those paths are reached only by setup failures.
 
-Config read: `vision.enabled` (default false; env `VISION_ENABLED`), `vision.model` (`VISION_MODEL`), `vision.interval_ms` (default 8000), `vision.obs.{host,port,password,source,width}` (defaults `host.docker.internal`, 4455, empty, `Game Capture`, 896) (`packages/config/src/schema.ts:74-85`); env `OLLAMA_URL` (default `http://127.0.0.1:11434`) and `DASHBOARD_URL` (default `http://127.0.0.1:3000`) via `urls.*` (`packages/config/src/index.ts:169`, `:175`).
+Config read: `vision.enabled` (default false; env `VISION_ENABLED`), `vision.model` (`VISION_MODEL`), `vision.engine` (`ollama` or `stub`, default `ollama`; EYES-STUB-*), `vision.interval_ms` (default 8000), `vision.timeout_ms`, `vision.prompt`, `vision.temperature` (0.2), `vision.num_predict` (60) and `vision.jpeg_quality` (70) (EYES-DESC-007), `vision.obs.{host,port,password,source,width}` (defaults `host.docker.internal`, 4455, empty, `Game Capture`, 896) (`packages/config/src/schema.ts`); env `OLLAMA_URL` (default `http://127.0.0.1:11434`) and `DASHBOARD_URL` (default `http://127.0.0.1:3000`) via `urls.*`.
 
 ## OBS Connection and Look Loop
 
-`createObsLink` (`obs.ts`) owns the OBS connection: `connect()` loops until `obs.connect("ws://host:port", password || undefined)` succeeds, logging the version and calling `heartbeat.ready()`; each failure warns, calls `heartbeat.degraded("OBS not reachable")` (EYES-HEALTH-006) and sleeps 10 s. There is no backoff or cap (OBS is often started after the stack). Concurrent `connect()` calls share one loop, and `stop()` ends it.
+`createObsLink` (`obs.ts`) owns the OBS connection: `connect()` runs `retryWithBackoff` until `obs.connect("ws://host:port", password || undefined)` succeeds, logging the version and calling `heartbeat.ready()`; each failure warns, calls `heartbeat.degraded("OBS not reachable")` (EYES-HEALTH-006) and waits 10 s, doubling per consecutive failure to a cap of 60 s (EYES-OBS-002; OBS is often started after the stack, and a long wait costs only a slower first look). Concurrent `connect()` calls share one loop, and `stop()` ends it.
 
-`screenshot()` (`index.ts:44-53`) calls `GetSourceScreenshot` with `sourceName`, `imageFormat: "jpg"`, `imageWidth: width`, `imageCompressionQuality: 70` and runs the result through `stripDataUrl` (`eyes.ts:15-17`), which removes a `data:image/<word>;base64,` prefix.
+`screenshot()` (`service.ts`) calls `GetSourceScreenshot` with `sourceName`, `imageFormat: "jpg"`, `imageWidth: width`, `imageCompressionQuality: vision.jpeg_quality` and runs the result through `stripDataUrl` (`eyes.ts`), which removes a `data:image/<word>;base64,` prefix.
 
-`loop()` (`index.ts:67-78`), per iteration:
+`loop()` (`service.ts`), until the shutdown step sets `stopped`, per iteration:
 
-1. If `cfg.vision.enabled && obs.identified`, `await eyes.look()`.
-2. A thrown error is warned as `look failed`; if `!obs.identified` it awaits `connectObs()`.
-3. Sleep `max(500, interval_ms - elapsed)`.
+1. If `obs.identified`, `await eyes.look()`.
+2. A thrown error is warned as `look failed`; if `!obs.identified` it awaits `link.connect()`.
+3. Sleep `nextDelay(interval_ms, elapsed)` = `max(500, interval_ms - elapsed)`, with `elapsed` on a monotonic clock (`performance.now`, injectable for tests).
 
 Any OBS close, clean or not, re-enters the link's `connect()` and the loop resumes looking (EYES-OBS-004): the link listens for `ConnectionClosed` and starts a connect loop unless one is already running (a failed connect attempt emits `ConnectionClosed` too, and the running loop already owns that case) or the link was stopped (shutdown closes the socket, which must not reconnect). obs-websocket-js 5.0.8 has no reconnect of its own: its close handler emits `ConnectionClosed` and then clears `identified` (`obs-websocket-js/dist/chunk-MVPOL3ZW.js:341-346`, `:186`). The loop also calls `link.connect()` from its `catch` when a look throws while OBS is no longer identified (EYES-OBS-005); the shared loop makes that call harmless beside the close handler.
 
-### `Eyes.look()` (`eyes.ts:54-75`)
+### `Eyes.look()` (`eyes.ts`)
 
-`screenshot()` then `describe(b64, previous)`. If the text is empty or matches `/^same\b/i`, log debug and return `false`, leaving `previous` untouched. Otherwise set `previous = text`, publish `vision.summary {text, changed: true}`, log info, return `true`. `changed` is always `true` on the wire because eyes publishes only changes; the field stays in the schema (`packages/bus/src/events.ts:32`) as the contract for other vision sources. There are no overlap guards; the loop is sequential, so a hung describe call stalls it until the describe timeout fires (EYES-DESC-006; no timeout exists yet).
+`screenshot()` then `describe(b64, previous)`. If `isSame(text)` (empty, or `SAME` in any case followed only by punctuation or whitespace), log debug and return `false`, leaving `previous` untouched. A reply that merely starts with the word (`Same old menu screen`) is a description: otherwise set `previous = text`, publish `vision.summary {text, changed: true}`, log info, return `true`. Durations in the log are measured on the monotonic clock. `changed` is always `true` on the wire because eyes publishes only changes; the field stays in the schema (`packages/bus/src/events.ts`) as the contract for other vision sources. There are no overlap guards; the loop is sequential, so a hung describe call stalls it until the describe timeout fires (EYES-DESC-006).
 
-### `ollamaDescriber(cfg.vision)` (`eyes.ts:21-51`)
+### `modelDescriber(cfg.vision, cfg.llm)` and `stubDescriber()` (`eyes.ts`)
 
-`POST ${urls.ollama()}/api/chat` JSON: `model: cfg.model`, `stream: false`, `keep_alive: "24h"`, `options {temperature: 0.2, num_predict: 60}`, a hard-coded system prompt, and a user message carrying either `Previous description: <previous>\nWhat is happening now?` or `What is happening now?` plus `images: [b64]`. Non-OK responses throw `vision model <status>: <body>`. The reply is `message.content`, trimmed, first line only. All parameters except `model` are hard-coded. The call carries `AbortSignal.timeout(vision.timeout_ms)` (default 30000); a call unanswered after that long throws `vision model did not answer within <ms> ms` (EYES-DESC-006), which the look loop logs and the injection path reports as `ok:false`, and which marks `ollama` down like any failed call.
+`createDescriber(cfg)` picks by `vision.engine`. `modelDescriber` asks the `ollama` provider of `@cohost/llm` (`createChatProvider({...llm, provider: "ollama", model: vision.model})`; the vision model is independent of the cortex's `llm.provider`), a non-streamed `POST ${urls.ollama()}/api/chat` carrying a system message (`vision.prompt`) and a user message with either `Previous description: <previous>\nWhat is happening now?` or `What is happening now?` and `images: [b64]` (`ChatMessage.images`, LLM-VIS-001), with `temperature: vision.temperature` and `maxTokens: vision.num_predict`. The provider keeps the model resident (`keep_alive` 24h) and throws `ollama chat <status>: <body>` on a non-OK response. The reply is trimmed, first line only. The call is aborted after `vision.timeout_ms` (default 30000) by a timer owned by the describer; a call unanswered after that long throws `vision model did not answer within <ms> ms` (EYES-DESC-006), which the look loop logs and the injection path reports as `ok:false`, and which marks `ollama` down like any failed call. `stubDescriber` is the stub section below.
 
 ## Test Injection (`inject.ts`)
 
@@ -61,75 +61,76 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 2. Stale (`now() - ev.ts > 60_000`) gives `inject.result {ok:false, detail:"stale"}`.
 3. `kind !== "image"` gives `ok:false` with `eyes cannot handle kind '<kind>'`.
 4. `uploadUrl(r.url, dashboardUrl)` (from `@cohost/shared`, `packages/shared/src/inject.ts`) must accept: same origin as `urls.dashboard()`, no userinfo, normalised pathname starting with `<dashboard path>/uploads/` and longer than that prefix. Result is `u.href` (query strings pass). Otherwise `ok:false` `url is not an upload of this dashboard`; nothing is fetched.
-5. `fetch(target, {redirect: "error", signal: AbortSignal.timeout(vision.upload_timeout_ms)})` (default 10000 ms); non-OK gives `ok:false` `fetch upload <status>`. The signal covers the headers and the body read: a fetch that has not completed in time gives `ok:false` `fetch upload timed out after <ms> ms` (EYES-INJ-012). The body is read in chunks and abandoned as soon as it passes `vision.upload_max_bytes` (default 8 MiB, the dashboard's image upload cap; a declared `content-length` over the limit is refused without reading), giving `ok:false` `upload larger than the <n> byte limit` (EYES-INJ-013). In both cases the model is not called.
-6. Bytes to base64, `describe(b64, "")` (empty previous so the model never needs `SAME`, and `Eyes.look()`'s `previous` is untouched); empty or `SAME` gives `ok:false` `no description`.
+5. `fetch(target, {redirect: "error", signal: AbortSignal.timeout(vision.upload_timeout_ms)})` (default 10000 ms); non-OK gives `ok:false` `fetch upload <status>`. The signal covers the headers and the body read: a fetch that has not completed in time gives `ok:false` `fetch upload timed out after <ms> ms` (SHARED-INJ-006). The body is read in chunks and abandoned as soon as it passes `vision.upload_max_bytes` (default 8 MiB, the dashboard's image upload cap; a declared `content-length` over the limit is refused without reading), giving `ok:false` `upload larger than the <n> byte limit` (SHARED-INJ-007). In both cases the model is not called.
+6. Bytes to base64, `describe(b64, "")` (empty previous so the model never needs `SAME`, and `Eyes.look()`'s `previous` is untouched); empty or a clear `SAME` (`isSame`) gives `ok:false` `no description`.
 7. Publishes `vision.summary {text, changed:true, injected:true, remember}` then `inject.result {ok:true, detail:text}`.
 8. Any throw becomes `ok:false` with `String(err)`; a failure to publish that is swallowed.
 
-`uploadUrl` and `INJECT_STALE_MS` live in `@cohost/shared` (`packages/shared/src/inject.ts`) and are imported by eyes, ears and chat (EYES-INJ-015). This LLD owns them as inject plumbing: the shared package is a home for small helpers that more than one service needs, not an arrow segment, so a change to either helper is a change to this section and EYES-INJ-005 / EYES-INJ-015, cascading to the ears and chat LLDs, which only cite them. The upload store and HTTP routes belong to `dashboard`; the `inject.*` schemas to `event-bus`.
+`uploadUrl` and `INJECT_STALE_MS` live in `@cohost/shared` (`packages/shared/src/inject.ts`) and are imported by eyes, ears and chat (SHARED-INJ-008). This LLD owns them as inject plumbing: the shared package is a home for small helpers that more than one service needs, not an arrow segment, so a change to either helper is a change to this section and SHARED-INJ-004 / SHARED-INJ-008, cascading to the ears and chat LLDs, which only cite them. The upload store and HTTP routes belong to `dashboard`; the `inject.*` schemas to `event-bus`.
 
 ## Health (`health.ts`)
 
-`EyesHealth(enabled, obsConnected)` exposes `spec` and `track(describe)` (`health.ts:5-20`).
+`EyesHealth(enabled, obsConnected, engine)` exposes `spec` and `track(describe)` (`health.ts`).
 
-- Mode: `live` when enabled, else `off` (getter).
-- Deps: enabled gives `{obs: ok|down from obsConnected(), ollama: ok|down}`; disabled gives `{obs:"n/a", ollama:"n/a"}`.
-- `ollama` starts `ok` and flips on each tracked `describe` outcome (`tracked` from `@cohost/bus`). Because the injection handler receives the same tracked function, a failing injected-image describe also flips the `ollama` dep, and vice versa.
-- `obsConnected` is `() => obs.identified` (`index.ts:24`), so a permanently closed OBS shows `obs: down`, which the shared heartbeat turns into `degraded` once `ready` (`packages/bus/src/heartbeat.ts:71`).
-- Heartbeat `ready()` is called on OBS connect when enabled (`createObsLink`), or immediately when disabled (`index.ts`). While OBS is unreachable at boot each failed attempt calls `heartbeat.degraded("OBS not reachable")`, so the heartbeat reports `degraded` with `obs: down` (EYES-HEALTH-006) instead of staying `starting`.
+- Mode: `live` when enabled, `mock` when enabled with the stub engine, else `off` (getter).
+- Deps: enabled gives `{obs: ok|down from obsConnected(), ollama: ok|down}` (`ollama: "n/a"` under the stub engine); disabled gives `{obs:"n/a", ollama:"n/a"}`.
+- `ollama` starts `ok` and flips on each tracked `describe` outcome (`tracked` from `@cohost/shared`). Because the injection handler receives the same tracked function, a failing injected-image describe also flips the `ollama` dep, and vice versa.
+- `obsConnected` is `() => obs.identified` (`service.ts`), so a permanently closed OBS shows `obs: down`, which the shared heartbeat turns into `degraded` once `ready` (SHARED-LIFE-008).
+- Heartbeat `ready()` is called on OBS connect when enabled (`createObsLink`), or by the idle plan when disabled. While OBS is unreachable at boot each failed attempt calls `heartbeat.degraded("OBS not reachable")`, so the heartbeat reports `degraded` with `obs: down` (EYES-HEALTH-006) instead of staying `starting`.
 
 ## Shutdown
 
-`index.ts` registers exactly one `onShutdown` callback, `stopEyes` (`obs.ts`), in both plans (EYES-ENAB-005, EYES-OBS-008): clear the idle timer if there is one (vision disabled), stop the OBS link (stop reconnecting, close the socket; harmless when never connected), then stop the bus. The `stopping` heartbeat is sent by the heartbeat's own pre-shutdown hook before any callback runs, and the bus runs every registered callback in order and exits once ([event-bus](../event-bus/event-bus-design.md)).
+`main` registers one `onStop` step, `stopEyes` (`obs.ts`), in both plans (EYES-ENAB-005, EYES-OBS-008), after setting the loop's `stopped` flag: stop the idle plan if there is one (vision disabled), then stop the OBS link (stop reconnecting, close the socket; harmless when never connected). `runService` then stops the bus. The `stopping` heartbeat is sent by the heartbeat's own pre-shutdown hook before any step runs (SHARED-LIFE-010, SHARED-BOOT-005).
+
+## Stub describer and shared injection
+
+Where `vision.engine` is `stub` (CFG-SCH-021; the isolation preset sets it; owned by this segment), the describer makes no network request: an injected image is described as `stub vision: <n> bytes`, and the look loop gets that text once and `SAME` after, so an isolated eyes with OBS reports a single change. The heartbeat reports mode `mock` (or `off` when vision is disabled) and `deps.ollama` `n/a` (EYES-STUB-*). Injection runs through the shared inject handler (shared-runtime SHARED-INJ-*) with eyes' kind and limits (EYES-INJ-016).
 
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
-| Change detection | Ask the model to answer `SAME` (`eyes.ts:51`, `:78`) | Pixel/perceptual diff; embedding distance | A game frame changes in pixels almost every interval (animation, HUD, camera), so a pixel or perceptual diff fires on noise, and an embedding distance needs a second model and a tuned threshold. The vision model already sees the frame and the previous description, so it can judge "meaningful" in the same call, and the service stays a few lines of parsing. The cost is one model call every interval even when nothing changed. |
-| Bus payload | One-line text summary, not frames (`index.ts:6-7`) | Publish images | Header comment (`index.ts:6-7`): "Summaries, not frames, go on the bus: cheap and what the brain actually wants." |
-| Idle when disabled | `startEyes` gate; service stays up with mode `off` (`eyes.ts:86-94`, `index.ts:87-90`) | Exit; connect to OBS anyway (old behaviour) | A disabled service must not touch OBS (commit 463b1bb, fixes #11) and must stay up rather than look like a crash (commit 51d5a9c; add-isolated-backends design D7: "the OBS connect loop never starts; process idles"). |
-| OBS retry | Fixed 10 s retry with no cap in `createObsLink` (`obs.ts:37`, `:57`) | Exponential backoff; give up after N attempts | OBS is often started after the stack or restarted mid-session, so eyes must keep trying and recover on its own; giving up would leave a disabled sense that only a restart fixes, against the degrade-and-report posture (heartbeat `degraded`, `obs: down`, EYES-HEALTH-006). A backoff would only lengthen the gap before eyes sees again once OBS is back; one connection attempt every 10 s to a LAN host costs nothing. |
+| Change detection | Ask the model to answer `SAME` (`vision.prompt`; `isSame`, `eyes.ts`) | Pixel/perceptual diff; embedding distance | A game frame changes in pixels almost every interval (animation, HUD, camera), so a pixel or perceptual diff fires on noise, and an embedding distance needs a second model and a tuned threshold. The vision model already sees the frame and the previous description, so it can judge "meaningful" in the same call, and the service stays a few lines of parsing. The cost is one model call every interval even when nothing changed. |
+| Bus payload | One-line text summary, not frames | Publish images | Header comment of `service.ts`: "Summaries, not frames, go on the bus: cheap and what the brain actually wants." |
+| Idle when disabled | `startEyes` gate; service stays up with mode `off` (`startEyes`, `eyes.ts`; the idle plan, `service.ts`) | Exit; connect to OBS anyway (old behaviour) | A disabled service must not touch OBS (commit 463b1bb, fixes #11) and must stay up rather than look like a crash (commit 51d5a9c; add-isolated-backends design D7: "the OBS connect loop never starts; process idles"). |
+| OBS retry | `retryWithBackoff`: 10 s doubling to a 60 s cap in `createObsLink` (EYES-OBS-002) | A fixed 10 s retry (the original); give up after N attempts | Owner disposition 2026-11-11: shared backoff. OBS is often started after the stack or restarted mid-session, so eyes must keep trying and recover on its own; giving up would leave a disabled sense that only a restart fixes, against the degrade-and-report posture (heartbeat `degraded`, `obs: down`, EYES-HEALTH-006). The cap keeps the gap before eyes sees again once OBS is back to a minute at most. |
 | Reconnect trigger | Reconnect on any `ConnectionClosed`, clean or not (EYES-OBS-004) | Reconnect only after a failed look (the original code, which the `obs.identified` guard in the loop never reaches) | Owner decision 2026-11-01: OBS restarts and clean closes must not leave eyes polling forever with `obs: down`; obs-websocket-js 5.0.8 has no reconnect of its own. |
 | Boot health while OBS is unreachable | `degraded` with `obs: down` (EYES-HEALTH-006) | Stay `starting` until the first connect (the original code) | Owner decision 2026-11-01 (project-wide): heartbeat deps reflect runtime state; a sense waiting on its backend is visibly degraded. add-isolated-backends also said SHOULD. |
 | Shared describer health | One tracked describer for the loop and injection; an injected failure marks `ollama` down (EYES-HEALTH-003) | Separate tracking for injection | Owner decision 2026-11-01: both paths use the same backend, so one dependency status is accurate. |
 | `changed` field | Always `true`; eyes publishes only changes (EYES-LOOK-001) | Publish every look with `changed: false`; drop the field | Owner decision 2026-11-01: keep the field and state the always-true contract. |
 | Shutdown | One shutdown sequence in both plans (EYES-ENAB-005, EYES-OBS-008) | One `onShutdown` per plan branch (the original code) | Owner decision 2026-11-01 (project-wide): the bus runs every registered callback and exits once, so a second registration must not cut the first short. |
-| Outbound timeouts and upload cap | Configured timeout on the describe call and the upload fetch; configured maximum upload size (EYES-DESC-006, EYES-INJ-012, EYES-INJ-013) | No limits (the original code) | Owner decision 2026-11-01: a hung model or upload must not stall the serial loop or the injection path. |
+| Outbound timeouts and upload cap | Configured timeout on the describe call and the upload fetch; configured maximum upload size (EYES-DESC-006, SHARED-INJ-006, SHARED-INJ-007) | No limits (the original code) | Owner decision 2026-11-01: a hung model or upload must not stall the serial loop or the injection path. |
 | Injection start mode | `latest`: the `eyes` group is reset to the newest entry on every start (EYES-INJ-014) | `resume` | Owner decision 2026-11-01 (project-wide): every subscriber except memory uses `latest`; delivery across restarts is at-most-once. |
-| Prompt and model options | Hard-coded in source (`eyes.ts:43-51`) | Configurable prompt / options | Only the model is expected to vary per install (`vision.model`), because it depends on the operator's GPU. The prompt carries the `SAME` contract the parser relies on (`eyes.ts:78`), so an operator-edited prompt could silently break change detection. `num_predict: 60` and `temperature: 0.2` keep the answer to one short, stable sentence; `keep_alive: "24h"` keeps the model resident in VRAM so a look never pays a cold load. |
-| Injection reuses `describe` | Same tracked describer, empty previous (`index.ts:63`, `inject.ts:57`) | Separate describer; pass `Eyes.previous` | Keeps change tracking untouched and exercises the real model path: doc comment `inject.ts:39-41`; add-test-injection design D8 ("previous = \"\" so injection neither sees SAME nor disturbs the change-tracking `previous`"). |
+| Prompt and model options | `vision.prompt`, `vision.temperature`, `vision.num_predict` and `vision.jpeg_quality` are config keys with today's values as defaults (EYES-DESC-007); `keep_alive` stays the provider's `24h` | Hard-coded in source (the original); a `vision.keep_alive` key | Owner disposition 2026-11-11: editable in the settings editor. The prompt carries the `SAME` contract the parser relies on, so the key's comment says to keep it; a prompt that drops it makes every reply a change, which is visible, not silent. The provider owns `keep_alive` so a look never pays a cold load, and one shared value for every Ollama caller is simpler than a per-segment key. |
+| Describer transport | The `ollama` provider of `@cohost/llm`, with an optional `images` list on `ChatMessage` (LLM-VIS-001) | A raw `fetch` of eyes' own (the original) | Owner disposition 2026-11-11: one Ollama client for the project, so timeouts, `keep_alive`, error shapes and mock-ability live in one place. The error text is the provider's (`ollama chat <status>: <body>`). |
+| `SAME` rule | A clear match only: empty, or `SAME` in any case followed by punctuation or whitespace (EYES-LOOK-002) | A prefix word match, `/^same\b/i` (the original) | A model that writes `Same old menu, but the cursor moved` has described something; a prefix rule dropped it. The conservative reading of the owner's "exact/clear match" instruction (2026-11-11) is the stricter one; a model that adds words to a true `SAME` costs one extra published line, which the next `SAME` stops. |
+| Clock for durations | Monotonic (`performance.now`) for look durations and the wait between looks | Wall clock (`Date.now`, the original) | A wall-clock step (NTP, WSL2 resume) would make a look appear to take hours or negative time, and `max(500, interval - elapsed)` would then skip or stall the wait. |
+| Idle when disabled, reporting | The shared idle plan, kind `off` (SHARED-IDLE-001): one warning, no reminder | A warning every 60 s (the original) | Owner disposition 2026-11-11: a configured-off service is not an error; one warning at startup says why, and the heartbeat (mode `off`) says it afterwards. |
+| Stub describer | `vision.engine: stub` selects fixed text, mode `mock` (EYES-STUB-*) | A mock provider behind `@cohost/llm` | Isolated runs must not need a vision model; the stub also keeps the OBS path exercisable. The text is deterministic (`stub vision: <n> bytes`, then `SAME`), so a test can assert it. |
+| Injection reuses `describe` | Same tracked describer, empty previous (`service.ts`, `inject.ts`) | Separate describer; pass `Eyes.previous` | Keeps change tracking untouched and exercises the real model path: doc comment `inject.ts:39-41`; add-test-injection design D8 ("previous = \"\" so injection neither sees SAME nor disturbs the change-tracking `previous`"). |
 | SSRF guard | `uploadUrl` (`@cohost/shared`) + `redirect:"error"` (`inject.ts`) | Allow any URL; allow-list of hosts | Stop the bus being used to make eyes fetch arbitrary URLs: comment at `inject.ts:20-22`; add-test-injection design D2 ("SSRF guard"). The origin and path check applies to the requested URL only; `redirect: "error"` makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
-| Shared inject helpers | `uploadUrl` and `INJECT_STALE_MS` in the `@cohost/shared` workspace package, imported by eyes, ears and chat (EYES-INJ-015) | A copy in each service (the original arrangement); a helper exported from eyes and imported by ears | Owner decision of 2026-11-08: code shared across modules or services belongs in shared packages. One definition means the SSRF guard and the staleness window cannot drift between services. A service importing a sibling service's source would couple deployables; a package keeps the dependency direction service to package. |
+| Shared inject helpers | `uploadUrl` and `INJECT_STALE_MS` in the `@cohost/shared` workspace package, imported by eyes, ears and chat (SHARED-INJ-008) | A copy in each service (the original arrangement); a helper exported from eyes and imported by ears | Owner decision of 2026-11-08: code shared across modules or services belongs in shared packages. One definition means the SSRF guard and the staleness window cannot drift between services. A service importing a sibling service's source would couple deployables; a package keeps the dependency direction service to package. |
 
 ## Open Questions & Future Decisions
 
-### Deferred / unexplained
-
-1. The OBS connect loop has no backoff. `stop()` ends a pending retry loop at its next wake-up; the process exit follows immediately.
-2. The `fatal` path (`log.error` then `process.exit(1)`) is reached only by setup failures such as the subscription group not being creatable.
-3. The `SAME` rule is a prefix word match (`/^same\b/i`), so `Same old menu screen` is treated as no change; the test pins `Same as before` and `same.` and that `Samurai attack!` is not (`test/eyes.test.ts:31-36`).
-4. Hard-coded system prompt, `num_predict: 60`, `temperature`, `keep_alive: "24h"`, JPEG quality 70 (`eyes.ts:28-37`, `index.ts:50`): not configurable.
-5. Config-example comment says vision.enabled `false = eyes idles, never touches OBS` (`config/config.example.yaml:38`), consistent with code. The frozen OpenSpec baseline ("loop never calls look()") is looser than the shipped gate; EYES-ENAB-001 governs.
-6. `index.ts` has no test; `startEyes` and the pure pieces are tested, the loop, `connectObs`, `screenshot` are not. 15 of 37 `[x]` specs have no test (see the arrow doc).
-7. EYES-INJ-004 (wrong kind) and the redirect half of EYES-INJ-006 have no test; EYES-HEALTH-003's recovery to `ok` after a success is not asserted (the test only drives a failure).
+None open.
 
 ## References
 
 ### Files in this segment
-- `services/eyes/src/index.ts`, `eyes.ts`, `health.ts`, `inject.ts`, `obs.ts`
-- `services/eyes/test/eyes.test.ts`, `health.test.ts`, `inject.test.ts`, `obs.test.ts`
+- `services/eyes/src/index.ts`, `service.ts`, `eyes.ts`, `health.ts`, `inject.ts`, `obs.ts`
+- `services/eyes/test/eyes.test.ts`, `health.test.ts`, `inject.test.ts`, `obs.test.ts`, `service.test.ts`
 - `services/eyes/package.json`, `services/eyes/tsconfig.json`
 - `packages/shared/src/inject.ts`, `packages/shared/test/inject.test.ts` (shared inject helpers)
 
 ### Other segments
 - `event-bus` (depends on): `Bus`, `vision.summary`, `inject.request`/`inject.result`.
-- `config` (depends on): `loadConfig`, `vision.*`, `urls.ollama()`, `urls.dashboard()`.
-- `control-plane` (depends on): `startHeartbeat`, `tracked`, `HeartbeatSpec`.
-- `model-backends`: not used; eyes calls Ollama directly with `fetch` rather than the shared `ChatProvider` (observation).
+- `config` (depends on): `vision.*` (CFG-SCH-021), `urls.ollama()`, `urls.dashboard()`.
+- `shared-runtime` (depends on): `runService`, `startIdle`, `retryWithBackoff`, the inject handler, `tracked`, `HeartbeatSpec`.
+- `model-backends` (depends on): the `ollama` `ChatProvider` of `@cohost/llm`, with `ChatMessage.images` (LLM-VIS-001).
 - `dashboard` (called by): serves `/uploads/:id`, publishes `inject.request`, shows `inject.result`.
 - `ears` (sibling): imports `uploadUrl` and `INJECT_STALE_MS` from `@cohost/shared`; `chat` imports `INJECT_STALE_MS`.
-- `@cohost/shared` (depends on, workspace package): `uploadUrl`, `INJECT_STALE_MS`; owned by this LLD, see Image Injection.
+- `@cohost/shared` (depends on, workspace package): `uploadUrl`, `INJECT_STALE_MS`; see Test Injection.
 - `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`).
 - `deployment`: compose service `eyes`, profile `eyes` (`docker-compose.yml:145-148`).
 

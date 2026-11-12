@@ -6,6 +6,10 @@
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 53 specs: 51 implemented, 0 deferred, 0 gaps; at the audit 47 of 47 were implemented. The owner decisions of 2026-11-01 are applied below; the config-segment gap fixes are implemented. With the spoken fallback line: 60 specs: 60 implemented, 0 gaps, 0 deferred.
 
+## Gap closure C3 (built 2026-11-11)
+
+`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
+
 ## Listening and speaking split (built)
 
 Build chunks 2 and 4 in [mouth.md](mouth.md), both built. Chunk 2 built: the optional `mouth` section and its defaults, gain range -40..12 (CFG-SCH-020), the example keys for the Discord output (CFG-USR-011), `mouth.outputs.discord.enabled` / `MOUTH_DISCORD_ENABLED` (CFG-ISO-001, CFG-ISO-004) and the starter interval under `mouth` (CFG-USR-009), all `[x]`; `mouth.fallback.min_interval_ms` is the mouth half of CFG-SCH-018. Chunk 4 removed `ears.fallback` from the schema and `config.example.yaml`, so CFG-SCH-018 is `[x]`; an old `ears.fallback` key draws the unknown-key warning. An unknown output name gets the ordinary unknown-key warning.
@@ -48,7 +52,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (47 specs, prefix `CFG`: 46 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/config/config-specs.md (74 specs, prefix `CFG`: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/config.test.ts (453 lines; 33 `@spec` lines, covering 37 of the 46 implemented specs)
@@ -77,17 +81,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| Config directory and seeding | CFG-DIR-001 to 007 | 5 | 0 | 2 (DIR-006, DIR-007: per-service data directory) | 5 |
-| Environment handling | CFG-ENV-001 to 008 | 8 | 0 | 0 | 7 |
-| Loading and validation pipeline | CFG-LOAD-001 to 006 | 6 | 0 | 0 | 6 |
-| Schema | CFG-SCH-001 to 019 | 19 | 0 | 0 | 15 |
-| Backend selection and presets | CFG-ISO-001 to 005 | 5 | 0 | 0 | 4 |
-| Service URLs and logger | CFG-URL-001 to 004 | 4 | 0 | 0 | 3 |
-| User-owned files | CFG-USR-001 to 010 | 10 | 0 | 0 | 8 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 | 7 |
+| Environment handling | CFG-ENV-001 to CFG-ENV-010 | 10 | 0 | 0 | 9 |
+| Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-006 | 6 | 0 | 0 | 6 |
+| Schema | CFG-SCH-001 to CFG-SCH-028 | 28 | 0 | 0 | 23 |
+| Backend selection and isolation presets | CFG-ISO-001 to CFG-LOG-001 | 6 | 0 | 0 | 5 |
+| Service URLs and logger | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 | 3 |
+| User-owned files | CFG-USR-001 to CFG-USR-011 | 13 | 0 | 0 | 12 |
 
-**Summary:** 53 of 53 specs implemented (47 at the audit, plus CFG-SCH-014 to 016 and CFG-USR-007 from viewer-notes chunk 1 CFG-USR-008 from chunk 2 and CFG-ENV-009 from chunk 4); 0 deferred; 0 gaps. 37 of the 46 implemented specs have a test carrying their `@spec` ID. Implemented specs with no test: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (comment-only). Implemented specs with no code annotation: CFG-ENV-008 (boundary statement), CFG-ISO-004, CFG-USR-003, CFG-USR-004, CFG-USR-006 (realized by the example files).
+**Summary:** 74 of 74 specs implemented; 0 deferred; 0 open. 65 carry a test `@spec` annotation; implemented without one: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-SCH-022, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -108,7 +112,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 None outstanding in this segment. Implemented: no-`.env` load (CFG-ISO-005) and inline `.env` comment stripping (CFG-ENV-006).
 
 ### Should Fix
-1. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, EYES-INJ-012, EYES-INJ-013), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
+1. Consumers read the new schema keys (the keys exist and default; nothing reads them yet): salience `brain.salience.thinking_timeout_ms` (SAL-BUSY-001), affect `brain.affect.baseline_arousal` (AFF-MOOD-006), eyes `vision.timeout_ms` / `upload_timeout_ms` / `upload_max_bytes` (EYES-DESC-006, SHARED-INJ-006, SHARED-INJ-007), model-backends `llm.timeout_ms` (LLM-CHAT-008). Owned by those segments.
 2. Add tests for the remaining untested implemented specs: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-ISO-002, CFG-URL-004, and the uncovered halves of the partially tested ones (Key Finding 7).
 
 ### Nice to Have

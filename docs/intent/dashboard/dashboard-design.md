@@ -53,6 +53,10 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | `POST /control` | publish `control {cmd, text, target}`, `204`; the event schema validates `cmd` | yes | `:113-120` |
 | `POST /sink` | `event: "playing"` publishes `voice.playing`, `event: "done"` publishes `voice.done`, both with `sink: "dashboard"`, `204`; any other `event` is `400` and publishes nothing (DASH-SINK-003) | no | `:121-128` |
 | `GET /viewers*`, `POST /viewers*` | Viewers page (below) | always, by `VIEWERS_TOKEN` | DASH-VIEWERS-* |
+| `GET /services/manifest` | the manifest's units and their descriptors (module-contract MOD-MAN-007) | no | MOD-MAN-007 |
+| `GET /config/schema`, `GET /config/:section` | the settings editor's reads (module-contract MOD-CFG-001 to 006) | no | MOD-CFG-* |
+| `PUT /config/:section` | validate and write one section of `config.yaml` (MOD-CFG-007 to 016) | yes | MOD-CFG-* |
+| `POST /inject/event` | publish one declared bus test input for a unit (MOD-TEST-002 to 005) | yes | MOD-TEST-* |
 | any method `/health` | `200 ok` | no | `:130` |
 | anything else | `404 not found` | n/a | `:132` |
 
@@ -63,6 +67,10 @@ Request bodies for `/control`, `/personality`, `/sink` and lifecycle posts are c
 ### Service lifecycle routes
 
 When control is enabled, `POST /services/:id/(start|stop|restart)` takes an optional JSON body. Only `mode` (`resume` | `fresh`) and `isolated` (boolean) are read; an empty body is `{}`; a malformed body, non-object, or bad field type is `400` (`routes.ts:148-158`). The controller's result maps to HTTP: refusal `unknown` to 404 (which includes `dashboard`, not a manifest unit because it is not a Compose service; DASH-SVC-003), `forbidden` (redis/postgres without `CONTROL_ADVANCED=1`) to 403, each with `{ok:false, detail}`; otherwise `200 {ok, detail?}` (`routes.ts:32, 89-97`). The controller has only these two refusals. While a stack action or another lifecycle request holds the action slot, the route answers `409 {ok: false, detail: "busy: <kind>"}` (`kind` is `service-start`, `service-stop` or `service-restart` for a lifecycle request) before the controller runs (DASH-STACK-003). The controller (manifest-only ids, consumer-group resets for `fresh`, isolated env) is control-plane's. The dashboard supplies `by: "dashboard"` and an `audit` callback that publishes `service.lifecycle`, logging and swallowing a publish failure (`control.ts:32-42`). `setupControl` warns on a non-loopback `CONTROL_BIND` (token travels in cleartext) and when `CONTROL_ADVANCED=1` (`control.ts:29-30`).
+
+## Settings routes
+
+`GET /config/schema`, `GET /config/:section` and `PUT /config/:section` (`services/dashboard/src/settings.ts`) are the settings editor's surface, specified by module-contract MOD-CFG-001 to 016 and driven by `@cohost/config`'s editor. The reads are ungated; the write is gated like `PUT /personality`, takes at most 64 KiB, reads and compares the file's etag and writes it without an await between, and never starts, stops or restarts a unit or touches `.env`. The Settings tab (MOD-UI-001 to 006) renders any section from its JSON Schema, offers Validate and Save, and, after a save, Apply through the lifecycle routes above. A section that needs a bespoke form registers a renderer in the page's `settingsForms` registry.
 
 ## Host process and stack control
 
@@ -81,7 +89,7 @@ First run, documented in the README (DEPLOY-HOST-003): run the installer (it see
 - **Redis.** `urls.redis()` defaults to `redis://127.0.0.1:6379`, the loopback port Compose publishes (deployment DEPLOY-COMPOSE-006). No `.env` change is needed.
 - **Voice.** `urls.voice()` defaults to `http://127.0.0.1:8700`; Compose publishes voice's port on `127.0.0.1:8700` for this (deployment DEPLOY-COMPOSE-007). This replaces the earlier rule that host-side players reach voice only through the dashboard: the dashboard is now the host-side player of record, and every browser still goes through its proxy.
 - **Postgres.** Never read by the dashboard (HLD tenet 1). Viewer notes arrive over the bus (Viewers page).
-- **Containers reaching the dashboard.** eyes and ears fetch injected uploads from the URL in `inject.request`, which must lie under their own `DASHBOARD_URL` (eyes EYES-INJ-005, ears EARS-INJ-004). Compose sets their `DASHBOARD_URL` to `http://host.docker.internal:<DASHBOARD_LAN_PORT>` (deployment DEPLOY-COMPOSE-002), and the dashboard advertises the same base by default (DASH-INJ-005), so both sides agree with no `.env` entry.
+- **Containers reaching the dashboard.** eyes and ears fetch injected uploads from the URL in `inject.request`, which must lie under their own `DASHBOARD_URL` (eyes SHARED-INJ-004, ears SHARED-INJ-004). Compose sets their `DASHBOARD_URL` to `http://host.docker.internal:<DASHBOARD_LAN_PORT>` (deployment DEPLOY-COMPOSE-002), and the dashboard advertises the same base by default (DASH-INJ-005), so both sides agree with no `.env` entry.
 
 ### One PC: WSL2 with Docker Desktop
 
@@ -138,7 +146,7 @@ The page shows a stack panel at the top of the Services tab and a stack badge in
 
 ### When Redis is down or restarts
 
-The dashboard starts and serves its page with Redis absent (DASH-HTTP-012). Until the bus answers, the feed reports `bus: unreachable`, the Services tab shows every service `unknown`, routes that publish (`/control`, `/inject/*`, `PUT /personality`) answer `500` with the publish error (DASH-HTTP-004), `/viewers` routes answer `504`, and the dashboard's own heartbeat publishes fail with a logged warning (control-plane CTRL-HEARTBEAT-006). When Redis comes up (by Launch or otherwise), the seed succeeds, the tails resume through the bus's own retry, and the bus reports `connected`.
+The dashboard starts and serves its page with Redis absent (DASH-HTTP-012). Until the bus answers, the feed reports `bus: unreachable`, the Services tab shows every service `unknown`, routes that publish (`/control`, `/inject/*`, `PUT /personality`) answer `500` with the publish error (DASH-HTTP-004), `/viewers` routes answer `504`, and the dashboard's own heartbeat publishes fail with a logged warning at most once per 60 s (SHARED-LIFE-011). When Redis comes up (by Launch or otherwise), the seed succeeds, the tails resume through the bus's own retry, and the bus reports `connected`.
 
 Restarting Redis or Postgres from the dashboard stays behind `CONTROL_ADVANCED=1` per service (control-plane CTRL-GUARD-003). A Redis restart drops the dashboard's connections for its duration; the tails resume from their last seen ids (stream ids are time-based, so new entries sort after them), the tracker shows services `stale` until fresh heartbeats arrive, and the audit record of the restart itself may be lost (the audit is best effort). Stack actions ignore `CONTROL_ADVANCED`: stopping the whole stack is a deliberate whole-stack act, and Launch has to start Redis and Postgres.
 
@@ -157,6 +165,8 @@ A stack created by a Compose file that still had a `dashboard` service leaves th
 - Everything else on the main stream goes to every browser, including event types the page then ignores, except the viewer-notes events `memory.notes.request`, `memory.notes.reply`, `memory.viewers.request` and `memory.viewers.reply`, which carry note text (including health and family notes) and are never sent on `/ws`, live or in the connect replay (DASH-FEED-007). There is no per-client subscription and no authentication on `/ws`.
 
 ## Test-input injection and uploads
+
+The per-unit test drawer, `POST /inject/event`, the refusal of an injection for a unit that is not running (MOD-TEST-005) and the Settings tab are the [module contract](../module-contract/module-contract-design.md)'s; this section describes the inject routes as they stand.
 
 `handleInject` (`inject.ts:48-63`) serves `GET /uploads/:id` and the three `POST /inject/*` routes. It runs after the `/audio` proxy and before the services, personality and control routes (`routes.ts:64`).
 
@@ -182,7 +192,7 @@ A single static file with inline CSS and JS (no build step, no framework). The s
 - HTML escaping: `esc()` escapes `&<>"'` because its output lands in attributes such as `data-svc` (DASH-UI-016, `:323`, used at `:272`).
 - Services tab: renders the latest `services` message once a second with age extrapolation, dependency colouring, restart counts, and a count of down/crash-looping/stale services on the tab (`:250-264, 295-296`). When `GET /services/control` says enabled, a control column, a start-mode select and an isolated checkbox appear, actions ask `confirm()`, and only rows of manifest units carry buttons (DASH-UI-008): the dashboard's own row, and any other service that is not a manifest unit, shows none. The page holds the manifest's unit ids as a constant (`UNITS`), which a test pins to the control plane's manifest. The stack panel sits above the rows (Host process and stack control).
 - Test inputs panel: text box with viewer fields, level toggle (bus disables image/audio and shows the `as` selector), `remember` checkbox, image/audio pickers, and optional microphone recording where `MediaRecorder` + `getUserMedia` exist. The status line matches `inject.result` to the HTTP `id` (results that arrive before the HTTP response are cached, last 50) and reports "no response" after 10 s (`:175-238`).
-- Audio sink: every live `voice.utterance` the page sees while audio is on is pushed on a queue (not when it is `replay`-marked or audio is off, and turning audio off empties the queue; DASH-UI-014); `pump()` plays `/audio/<id>.wav` one at a time, posting `playing` on `onplay` and `done` on `ended`/`error` (`:136-148, 331`). `audioOn` starts true when the URL has a `sink` query parameter (presence, not value: `?sink=0` also enables it, `:133`); otherwise the operator clicks "enable audio". Sink mode adds a CSS class that hides everything but the header (`:41`). Utterances that arrive in the connect replay are shown but never played or reported (DASH-UI-013). Two pages with audio on (for example the operator tab and the OBS source) both play every utterance and both post `voice.playing`; voice accepts that (voice segment, Sink Arbitration Protocol).
+- Audio sink: every live `voice.utterance` the page sees while audio is on is pushed on a queue (not when it is `replay`-marked or audio is off, and turning audio off empties the queue; DASH-UI-014); `pump()` plays `/audio/<id>.wav` one at a time, posting `playing` on `onplay` and `done` on `ended`/`error` (`:136-148, 331`). `audioOn` starts true when the URL has a `sink` query parameter (presence, not value: `?sink=0` also enables it, `:133`); otherwise the operator clicks "enable audio". Sink mode adds a CSS class that hides everything but the header (`:41`). Utterances that arrive in the connect replay are shown but never played or reported (DASH-UI-013). If the browser's autoplay policy refuses `play()`, the page posts `done` for that utterance so the avatar and cortex are not left waiting, turns audio off, and keeps the utterances already queued; they play when the operator clicks "enable audio" (DASH-UI-022). Turning audio off by hand still drops the queue. Two pages with audio on (for example the operator tab and the OBS source) both play every utterance and both post `voice.playing`; voice accepts that (voice segment, Sink Arbitration Protocol).
 
 ## Viewers page
 
@@ -212,6 +222,11 @@ file, inline CSS and JS, dark navy palette, no new dependency):
   (DASH-VIEWERS-011, DASH-VIEWERS-012), a "Clear all notes" button
   (DASH-VIEWERS-014), and the viewer's deleted notes with their reasons and an
   undo link (DASH-VIEWERS-015).
+- **Voice speakers.** A person who spoke in the voice channel is listed like any
+  viewer, with a `VOICE` tag (memory `MEM-VOICE-009`). A voice viewer's panel has a
+  "Link to a chat viewer" button that asks for the chat viewer's name and sends the
+  link, moving its notes over; a chat viewer's panel lists the Discord ids linked to
+  it, each with an unlink link (DASH-VIEWERS-020, DASH-VIEWERS-021).
 
 Delete asks for an optional reason. A reason makes the deletion a rule the co-host
 will not re-learn similar notes against; no reason means the topic may come back
@@ -233,6 +248,8 @@ existing main-stream tail (DASH-VIEWERS-008).
 | `POST /viewers/deletions/:id/restore` | `restore` | DASH-VIEWERS-004 |
 | `POST /viewers/:key/clear` `{reason?}` | `clear` | DASH-VIEWERS-005 |
 | `POST /viewers/regular` `{key? , name?, regular}` | `set_regular` | DASH-VIEWERS-006 |
+| `POST /viewers/links` `{discordId, key? , name?}` | `link_discord` | DASH-VIEWERS-018 |
+| `POST /viewers/links/:discordId/delete` | `unlink_discord` | DASH-VIEWERS-019 |
 
 A reply with `ok: true` answers 200 with its `data`; `error: "not_found"` answers
 404; any other failure 500; no reply in time answers 504 "memory did not answer"
@@ -306,18 +323,24 @@ covers (Compose publishes Redis on the host's loopback only, deployment segment)
 | Injection result reporting | `202 {id}` immediately; `inject.result` correlated by id on `/ws`; client-side 10 s "no response" | Block the HTTP call; rely on heartbeat deps | Without a per-request result, failures are indistinguishable; heartbeats describe a service, not a request (`add-test-injection/design.md` D5). |
 | Feed transport | One shared `bus.tail` fanned out to all sockets, with a 60-event backfill per client | Per-client consumer groups | `tail` is the event-bus "non-group live tail (dashboard). Does not ack, does not replay" (`packages/bus/src/index.ts:229`). Browsers only observe: every socket wants every event, nothing is acked, and nothing must survive a reconnect beyond the 60-event backfill. A consumer group per socket would leave groups and pending entries in Redis after each disconnect and add an ack path for work no one does; one shared read also keeps Redis load constant however many pages are open. |
 | Health in the UI | Server-side `HealthTracker`, pushed as `services` messages on change plus a 1 s tick, and available at `GET /services` | Browser derives state from raw heartbeats | Services report facts and thresholds belong to the monitor; the dashboard owns one tracker fed by `tailHealth` and pushes on change and on a 1 s tick (`openspec/changes/archive/2026-11-01-add-service-health/design.md` D3, D6; commit `691b079`). |
+| Visual design | The existing theme, reused by the Viewers page | Redesign now | A visual redesign is a separate, later decision by the owner (an owner-deferred goal, not a gap in this design). |
+| Bus-level injection id | `POST /inject/event` answers with the published event's own bus id (MOD-TEST-003); the older `/inject/text` bus level keeps a fresh UUID that no event carries, and the UI says no service result is expected | Make every bus-level route return the event's id | Only the unit-scoped route needs correlation with the feed, and the text route's UI never waits for a result. |
+| Whitespace in service-level text injection | The dashboard sends the raw text; chat collapses whitespace on its own path, and bus level collapses it in the dashboard | Collapse in the dashboard for both levels | Chat owns normalisation for the path that runs through it, so the outcome is the same either way. |
+| Pause and Resume | Buttons on the Services tab for units whose manifest `pause` is true (MOD-PAUSE-001 to 003) | Raw `POST /control` only | The operator should not need curl to idle a region. |
+| Heartbeat warnings while the stack is down | The dashboard's own heartbeat failures warn at most once per 60 s (SHARED-LIFE-011) | Silence them while the bus reports `unreachable` | A warning per minute is enough to see the cause and no spam; no special case for the bus state. |
+| Images after a code update | A Rebuild stack action runs `up -d --build` (DASH-STACK-008) | Launch always builds | Building on every Launch makes a plain start slow. |
 | Audio sink location | Browser page plays audio and reports `voice.playing` / `voice.done` | Server-side playback | An OBS Browser Source with "control audio via OBS" puts the voice on stream "with no virtual cables" (`index.ts:5-7`). |
 | Voice URL default | `urls.voice()`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT or 8700>`; Compose sets `VOICE_URL=http://voice:8700` | Hard-coded `http://voice:8700` | Host runs outside Docker could not resolve `voice`; fixed for issue #10 (commit `e53badc`, "default VOICE_URL to loopback outside Docker"). |
+| Autoplay refusal | The line that could not start is reported `done`, audio goes back to off, and the lines still queued wait for the operator to switch audio on again (DASH-UI-012) | Clear the whole queue with no `done` | A line dropped without `done` leaves cortex and the avatar waiting on a sink that will never report; the lines behind it are still wanted once the browser allows sound. Chosen by recommendation. |
+| Bus-level injection id | `POST /inject/event` answers `202 { id }` with the published event's bus id; the drawer marks replies that carry the injected data's own `id` | A made-up correlation id no event carries | The id is the one thing every observer can see on the stream; replies that echo a request id (`memory.recall.reply`) are matched on that. |
+| Pause and Resume | Buttons on the rows of units whose manifest `pause` is true, posting `control { cmd, target }` through `POST /control`; the paused state shown is the heartbeat's own `detail` | Page-local paused flag; raw `POST /control` only | The row must show the real state after a restart or in a second tab (module-contract, Pause state). |
+| Request bodies | One reader (`body.ts`): bytes with a cap for the inject routes, text capped at 64 KiB for the JSON routes | A reader per module | The three copies differed only in what they returned; one place for the cap and the drain-on-overflow rule. |
 
 ## Open Questions & Future Decisions
 
-1. If the browser blocks autoplay, `a.play()` rejects, `audioOn` flips off, that utterance is dropped from the queue and the rest of the queue is cleared, with no `done` posted (`index.html:147`).
-2. Bus-level injection returns an `id` that no published event carries (`inject.ts:90, 102-113`), so it cannot be correlated; the UI special-cases this ("published at bus level (no service result)", `index.html:195`).
-3. Service-level text injection sends the raw `b.text` whereas bus-level collapses whitespace (`inject.ts:91, 95`); chat normalises whitespace on the service path itself.
-4. `index.html` carries a duplicated comment on the same CSS line (`:41`) and the pause/resume commands are reachable only by raw `POST /control` (`:165-171`).
-5. **Dashboard visual design to be revisited later.** The Viewers page reuses the existing theme as is; a visual redesign of the dashboard is a separate, later decision.
-6. **Heartbeat warnings while the stack is down.** With Redis absent the dashboard's own heartbeat fails every interval and logs a warning each time (control-plane CTRL-HEARTBEAT-006); whether to throttle that while the bus reports `unreachable` is open.
-7. **Images after a code update.** Launch runs `up -d` without `--build`, so after updating the checkout the containers keep their old images while `pnpm dashboard` rebuilds the dashboard from source; the owner rebuilds with `docker compose build`. A Rebuild action is not designed.
+### Manual verification
+
+1. **Autoplay in a real browser.** The refusal path (DASH-UI-022) is tested against a stub `Audio`; that a real browser's autoplay policy rejects `play()` the way the stub does is confirmed in the first run that opens the page in a normal tab and in an OBS Browser Source.
 
 ## References
 

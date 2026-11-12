@@ -4,6 +4,8 @@ import { FakeBus, event, silentLog } from "@cohost/testing";
 import { Eyes } from "../src/eyes.js";
 import { createInjectHandler } from "../src/inject.js";
 
+const run = async (h: { (ev: never): void; drain(): Promise<void> }, ev: unknown): Promise<void> => { h(ev as never); await h.drain(); };
+
 const DASH = "http://dashboard:3000";
 const UP = `${DASH}/uploads/abc123`;
 
@@ -25,7 +27,7 @@ const req = (over: Record<string, unknown> = {}) =>
 // @spec EYES-INJ-007
 test("image described: base64 bytes, empty previous, injected vision.summary then ok result", async () => {
   const t = setup();
-  await t.handle(req());
+  await run(t.handle, req());
   assert.deepEqual(t.fetched, [UP]);
   assert.deepEqual(t.described, [[Buffer.from("IMG").toString("base64"), ""]]);
   assert.deepEqual(t.bus.of("vision.summary"), [{ text: "a menu screen", changed: true, injected: true, remember: false }]);
@@ -35,7 +37,7 @@ test("image described: base64 bytes, empty previous, injected vision.summary the
 // @spec EYES-INJ-007
 test("remember flag is carried", async () => {
   const t = setup();
-  await t.handle(req({ remember: true }));
+  await run(t.handle, req({ remember: true }));
   assert.equal(t.bus.of("vision.summary")[0]!.remember, true);
 });
 
@@ -43,49 +45,71 @@ test("remember flag is carried", async () => {
 test("SAME or empty reply: ok:false, no summary", async () => {
   for (const reply of ["SAME", "same.", ""]) {
     const t = setup(reply);
-    await t.handle(req());
+    await run(t.handle, req());
     assert.equal(t.bus.of("vision.summary").length, 0);
     assert.equal(t.bus.of("inject.result")[0]!.ok, false);
   }
 });
 
+// @spec EYES-INJ-008
+test("a reply that merely starts with Same is a description and is published", async () => {
+  const t = setup("Same old menu screen, but the cursor moved.");
+  await run(t.handle, req());
+  assert.equal(t.bus.of("vision.summary").length, 1);
+  assert.equal(t.bus.of("inject.result")[0]!.ok, true);
+});
+
+// @spec EYES-INJ-016
+test("eyes takes injection through the shared handler: target eyes, the single kind image, the configured cap and timeout", async () => {
+  const t = setup("a menu screen", { uploadMaxBytes: 2 });
+  await run(t.handle, req({ kind: "text", text: "hi" }));
+  assert.deepEqual(t.bus.of("inject.result")[0], { id: "i1", ok: false, detail: "eyes cannot handle kind 'text'" });
+  await run(t.handle, req({ id: "i2", target: "chat" }));
+  assert.equal(t.bus.of("inject.result").length, 1, "another target's request is ignored");
+  await run(t.handle, req({ id: "i3" }));
+  assert.match(t.bus.of("inject.result")[1]!.detail ?? "", /2 byte limit/);
+  const slow = setup("x", { uploadTimeoutMs: 20, fetch: (async (_u: unknown, init?: { signal?: AbortSignal }) => new Promise((_r, rej) => init?.signal?.addEventListener("abort", () => rej(init.signal!.reason)))) as never });
+  await run(slow.handle, req({ id: "i4" }));
+  assert.match(slow.bus.of("inject.result")[0]!.detail ?? "", /timed out after 20 ms/);
+});
+
 // @spec EYES-INJ-009
 test("model failure: ok:false with the error, no summary", async () => {
   const t = setup(new Error("vision model 503"));
-  await t.handle(req());
+  await run(t.handle, req());
   assert.equal(t.bus.of("vision.summary").length, 0);
   const [r] = t.bus.of("inject.result");
   assert.equal(r!.ok, false);
   assert.match(r!.detail!, /vision model 503/);
 });
 
-// @spec EYES-INJ-005
+// @spec SHARED-INJ-004
 test("foreign URLs are never fetched", async () => {
   for (const url of ["http://evil.example/uploads/abc", "http://dashboard:3000/other/abc", `${DASH}/uploads/../secret`, "http://user@dashboard:3000/uploads/a", "file:///etc/passwd", "garbage", undefined]) {
     const t = setup();
-    await t.handle(req({ url }));
+    await run(t.handle, req({ url }));
     assert.deepEqual(t.fetched, [], String(url));
     assert.equal(t.described.length, 0);
     assert.equal(t.bus.of("inject.result")[0]!.ok, false, String(url));
   }
 });
 
-// @spec EYES-INJ-006
+// @spec SHARED-INJ-005
 test("fetch failure (404): ok:false without calling the model", async () => {
   const t = setup("x", { fetch: async () => new Response("gone", { status: 404 }) });
-  await t.handle(req());
+  await run(t.handle, req());
   assert.equal(t.described.length, 0);
   assert.match(t.bus.of("inject.result")[0]!.detail!, /404/);
 });
 
-// @spec EYES-INJ-002, EYES-INJ-003
+// @spec SHARED-INJ-001, SHARED-INJ-002
 test("stale request: only ok:false stale; other target ignored", async () => {
   const stale = setup("x", { now: () => Date.now() + 61_000 });
-  await stale.handle(req());
+  await run(stale.handle, req());
   assert.deepEqual(stale.bus.of("inject.result"), [{ id: "i1", ok: false, detail: "stale" }]);
   assert.equal(stale.described.length, 0);
   const other = setup();
-  await other.handle(req({ target: "ears", kind: "audio" }));
+  await run(other.handle, req({ target: "ears", kind: "audio" }));
   assert.equal(other.bus.published.length, 0);
 });
 
@@ -98,18 +122,18 @@ test("injection does not disturb look()'s previous description (works with no OB
   const eyes = new Eyes({ bus, log: silentLog, screenshot: async () => "B", describe });
   const handle = createInjectHandler({ bus, log: silentLog, dashboardUrl: DASH, describe, fetch: async () => new Response("IMG") });
   await eyes.look();
-  await handle(req());
+  await run(handle, req());
   await eyes.look();
   assert.deepEqual(previous, ["", "", "first look"]);
 });
 
-// @spec EYES-INJ-012
+// @spec SHARED-INJ-006
 test("an upload fetch that does not finish within the timeout is aborted: ok:false naming the timeout, model not called", async () => {
   const hang: typeof fetch = (_u, init) => new Promise((_res, rej) => {
     init!.signal!.addEventListener("abort", () => rej(init!.signal!.reason));
   });
   const t = setup("x", { fetch: hang, uploadTimeoutMs: 20 });
-  await t.handle(req());
+  await run(t.handle, req());
   const [r] = t.bus.of("inject.result");
   assert.equal(r!.ok, false);
   assert.match(r!.detail!, /timed out after 20 ms/);
@@ -117,7 +141,7 @@ test("an upload fetch that does not finish within the timeout is aborted: ok:fal
   assert.equal(t.bus.of("vision.summary").length, 0);
 });
 
-// @spec EYES-INJ-012
+// @spec SHARED-INJ-006
 test("a body that stalls after the headers is also cut off by the timeout", async () => {
   const stall: typeof fetch = async (_u, init) => {
     const body = new ReadableStream<Uint8Array>({
@@ -126,15 +150,15 @@ test("a body that stalls after the headers is also cut off by the timeout", asyn
     return new Response(body);
   };
   const t = setup("x", { fetch: stall, uploadTimeoutMs: 20 });
-  await t.handle(req());
+  await run(t.handle, req());
   assert.match(t.bus.of("inject.result")[0]!.detail!, /timed out after 20 ms/);
   assert.equal(t.described.length, 0);
 });
 
-// @spec EYES-INJ-013
+// @spec SHARED-INJ-007
 test("a body over vision.upload_max_bytes is rejected naming the limit, whether declared or streamed; model not called", async () => {
   const declared = setup("x", { fetch: async () => new Response(Buffer.alloc(10), { headers: { "content-length": "10" } }), uploadMaxBytes: 5 });
-  await declared.handle(req());
+  await run(declared.handle, req());
   assert.equal(declared.bus.of("inject.result")[0]!.ok, false);
   assert.match(declared.bus.of("inject.result")[0]!.detail!, /5 byte limit/);
   assert.equal(declared.described.length, 0);
@@ -146,15 +170,15 @@ test("a body over vision.upload_max_bytes is rejected naming the limit, whether 
     })),
     uploadMaxBytes: 10,
   });
-  await streamed.handle(req());
+  await run(streamed.handle, req());
   assert.match(streamed.bus.of("inject.result")[0]!.detail!, /10 byte limit/);
   assert.ok(pulled < 10, `stopped reading after the limit (pulled ${pulled})`);
   assert.equal(streamed.described.length, 0);
 });
 
-// @spec EYES-INJ-013
+// @spec SHARED-INJ-007
 test("a body exactly at the limit is accepted", async () => {
   const t = setup("a menu", { fetch: async () => new Response(Buffer.alloc(5)), uploadMaxBytes: 5 });
-  await t.handle(req());
+  await run(t.handle, req());
   assert.equal(t.bus.of("inject.result")[0]!.ok, true);
 });

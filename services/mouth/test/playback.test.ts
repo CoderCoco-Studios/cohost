@@ -4,7 +4,7 @@ import http from "node:http";
 import { FakeBus, recordingLog, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { applyGain, wavToDiscordPcm } from "../src/audio.js";
-import { ClaimMemory, ClipCache, FallbackLine, type FallbackClip } from "../src/fallback.js";
+import { ClipCache, type FallbackClip } from "../src/clips.js"; import { ClaimMemory, FallbackLine } from "../src/fallback.js";
 import { Playback, httpAudio } from "../src/playback.js";
 
 // ---- playback queue
@@ -126,7 +126,7 @@ test("fallback: a give-up plays one cached clip converted like an utterance, cla
   const { p, bus, played, fetched } = withFallback({ clips: [c] });
   await p.enqueue("bad", "http://voice/bad.wav");
   assert.equal(played.length, 1);
-  assert.deepEqual(played[0], wavToDiscordPcm(c.wav), "converted as in MOUTH-AUD-001");
+  assert.deepEqual(played[0], wavToDiscordPcm(c.wav), "converted as in MOUTH-AUD-002");
   assert.deepEqual(fetched, ["http://voice/bad.wav"], "no network request to choose or play the clip");
   assert.deepEqual(bus.published, [
     { type: "voice.playing", data: { id: "bad", sink: "discord" } },

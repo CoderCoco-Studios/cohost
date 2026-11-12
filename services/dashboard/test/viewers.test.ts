@@ -216,3 +216,24 @@ test("the viewers routes are not on the page or the ws feed: GET / and /health a
   assert.equal((await t.call("GET", "/", undefined, null)).status, 200);
   assert.equal((await t.call("GET", "/health", undefined, null)).status, 200);
 });
+
+// @spec DASH-VIEWERS-018
+test("POST /viewers/links publishes link_discord for a discord id and a key or a name; anything else is 400 and publishes nothing", async () => {
+  const t = await boot();
+  assert.equal((await t.call("POST", "/viewers/links", { discordId: "123", key: "k1" })).status, 200);
+  assert.equal((await t.call("POST", "/viewers/links", { discordId: "123", name: "Pat" })).status, 200);
+  const [a, b] = t.requests() as Record<string, unknown>[];
+  assert.deepEqual([a!.op, a!.discordId, a!.key, a!.name], ["link_discord", "123", "k1", undefined]);
+  assert.deepEqual([b!.op, b!.discordId, b!.key, b!.name], ["link_discord", "123", undefined, "Pat"]);
+  for (const bad of [{ discordId: "123" }, { key: "k" }, { discordId: " ", key: "k" }, { discordId: 5, key: "k" }, { discordId: "1", name: "  ", key: " " }]) {
+    assert.equal((await t.call("POST", "/viewers/links", bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal(t.requests().length, 2);
+});
+
+// @spec DASH-VIEWERS-019
+test("POST /viewers/links/:discordId/delete publishes unlink_discord with the decoded id", async () => {
+  const t = await boot();
+  assert.equal((await t.call("POST", "/viewers/links/12%2034/delete")).status, 200);
+  assert.deepEqual(t.requests().map(({ id: _id, ...rest }) => rest), [{ op: "unlink_discord", discordId: "12 34" }]);
+});

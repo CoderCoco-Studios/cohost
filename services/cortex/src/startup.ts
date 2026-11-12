@@ -1,4 +1,5 @@
-import { tracked, type Bus } from "@cohost/bus";
+import { type Bus } from "@cohost/bus";
+import { retryWithBackoff, tracked } from "@cohost/shared";
 import type { Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Cortex } from "./cortex.js";
@@ -20,16 +21,22 @@ export interface WaitForLlmOptions {
  * instead of a service that just hangs. The mock provider answers immediately.
  */
 export async function waitForLlm(llm: ChatProvider, o: WaitForLlmOptions): Promise<void> {
-  const sleep = o.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-  for (;;) {
+  class PingMiss extends Error {}
+  const retryMs = o.retryMs ?? 3000;
+  await retryWithBackoff(async () => {
     const ok = await llm.ping();
     o.setOk?.(ok);
-    if (ok) return;
-    const detail = `model backend unreachable (${llm.name}/${llm.model})${llm.lastError ? `: ${llm.lastError}` : ""}`;
-    o.log.warn({ provider: llm.name, model: llm.model, error: llm.lastError }, "waiting for the model backend...");
-    o.onDown?.(detail);
-    await sleep(o.retryMs ?? 3000);
-  }
+    if (!ok) throw new PingMiss("ping failed");
+  }, {
+    baseMs: retryMs, maxMs: retryMs, factor: 1, // a fixed 3 s
+    isFatal: (err) => !(err instanceof PingMiss), // a ping that throws is not an unreachable backend: it propagates as before
+    sleep: o.sleep ? async (ms) => { await o.sleep!(ms); } : undefined,
+    onFailure: () => {
+      const detail = `model backend unreachable (${llm.name}/${llm.model})${llm.lastError ? `: ${llm.lastError}` : ""}`;
+      o.log.warn({ provider: llm.name, model: llm.model, error: llm.lastError }, "waiting for the model backend...");
+      o.onDown?.(detail);
+    },
+  });
 }
 
 /** Every bus event type the cortex reads. */

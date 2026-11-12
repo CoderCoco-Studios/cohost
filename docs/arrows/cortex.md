@@ -6,6 +6,8 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); gap fixes applied 2026-11-02. 66 specs: 66 implemented, 0 deferred, 0 gaps. With the spoken fallback line built: 74 specs: 74 implemented, 0 gaps, 0 deferred.
 
+Gap-closure chunk C10 (2026-11-11): CTX-SAY-005 and the pending-line map (CTX-EVT-004/005, CTX-GATE-003/004/009, CTX-CTRL-006), CTX-START-005 (critic misconfig fails in main), CTX-HEALTH-005; runService; coverage gaps covered. 77 of 77 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
+
 ## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by a fallback; the next reply gets a hint stating the base chance (`brain.cortex.fallback_ack_chance`, 0.25) and the model decides in character; nothing enforces the rate, so it drifts.
@@ -47,7 +49,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (74 specs, prefix `CTX`: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (77 specs, prefix `CTX`: 77 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)
@@ -91,22 +93,23 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| Event handling | CTX-EVT-001 to CTX-EVT-008 | 7 | 0 | 1 (EVT-008: `voice.failed`) | 7 |
-| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-007 | 0 | 0 | 7 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Event handling | CTX-EVT-001 to CTX-EVT-008 | 8 | 0 | 0 | 8 |
 | Think gating | CTX-GATE-001 to CTX-GATE-009 | 9 | 0 | 0 | 9 |
-| Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 | 4 |
+| Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 | 5 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-003 | 3 | 0 | 0 | 3 |
+| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-008 | 8 | 0 | 0 | 8 |
 | Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-008 | 8 | 0 | 0 | 8 |
+| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-007 | 7 | 0 | 0 | 7 |
 | Critic | CTX-CRITIC-001 to CTX-CRITIC-006 | 6 | 0 | 0 | 6 |
-| Saying | CTX-SAY-001 to CTX-SAY-004 | 4 | 0 | 0 | 4 |
+| Saying | CTX-SAY-001 to CTX-SAY-005 | 5 | 0 | 0 | 5 |
 | Control | CTX-CTRL-001 to CTX-CTRL-006 | 6 | 0 | 0 | 6 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 | 2 |
-| Startup and shutdown | CTX-START-001 to CTX-START-004 | 4 | 0 | 0 | 3 |
-| Health | CTX-HEALTH-001 to CTX-HEALTH-004 | 4 | 0 | 0 | 4 |
+| Startup and shutdown | CTX-START-001 to CTX-START-005 | 5 | 0 | 0 | 5 |
+| Health | CTX-HEALTH-001 to CTX-HEALTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 58 of 58 specs implemented and annotated in code; 0 deferred; 0 gaps. `CTX-HEALTH-004` rides on the standing `detail` option of `startHeartbeat` (`packages/bus/src/heartbeat.ts`); `deps.llm` is `n/a` for a provider whose ping is nominal (Bedrock) until the first reply.
+**Summary:** 77 of 77 specs implemented; 0 deferred; 0 open. 77 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

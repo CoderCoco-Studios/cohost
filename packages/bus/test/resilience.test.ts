@@ -25,6 +25,7 @@ class FakeRedis {
   xreadgroup(...a: unknown[]) { return this.next("xreadgroup", a); }
   xack(...a: unknown[]) { return this.next("xack", a); }
   xread(...a: unknown[]) { return this.next("xread", a); }
+  async xrevrange(...a: unknown[]) { this.calls.push(["xrevrange", ...a]); return []; }
   disconnect() { for (const w of this.waiters.splice(0)) w(new Error("Connection is closed.")); }
   of(method: string) { return this.calls.filter((c) => c[0] === method); }
 }
@@ -371,4 +372,89 @@ test("onReady fires after the group is created and positioned, before the first 
   await until(() => fake.of("xreadgroup").length > 0);
   assert.deepEqual(callsAtReady, ["xgroup", "xgroup"]);
   bus.stop(); await done;
+});
+
+const emptyRead = async () => [[STREAM, []]];
+const readCursors = (fake: FakeRedis) => fake.of("xreadgroup").map((c) => c.at(-1));
+
+// @spec BUS-SUB-003
+test("the pending drain reads batch after batch until none remain, then switches to new entries", async () => {
+  const fake = new FakeRedis();
+  fake.script.xreadgroup = [async () => entry("1-0"), async () => entry("2-0"), emptyRead];
+  const { bus } = busWith(fake);
+  const got: string[] = [];
+  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
+  await until(() => fake.of("xreadgroup").length >= 4);
+  assert.deepEqual(got, ["1-0", "2-0"]);
+  assert.deepEqual(readCursors(fake), ["0", "1-0", "2-0", ">"]);
+  bus.stop(); await done;
+});
+
+// @spec BUS-SUB-003
+test("an entry whose XACK failed does not keep the drain reading: it continues after the last id", async () => {
+  const fake = new FakeRedis();
+  fake.script.xreadgroup = [async () => entry("1-0"), emptyRead];
+  fake.script.xack = [async () => { throw new Error("ACK down"); }];
+  const { bus } = busWith(fake);
+  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
+  await until(() => fake.of("xreadgroup").length >= 3);
+  assert.deepEqual(readCursors(fake), ["0", "1-0", ">"]);
+  bus.stop(); await done;
+});
+
+// @spec BUS-SUB-013
+test("stop() during a handler lets it finish, then acks nothing and handles no later entry of the batch", async () => {
+  const fake = new FakeRedis();
+  fake.script.xreadgroup = [
+    async () => null, // pending drain: nothing
+    async () => [[STREAM, [
+      ["1-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "mute" })]],
+      ["2-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "pause" })]],
+    ]]],
+  ];
+  const { bus } = busWith(fake);
+  const got: string[] = [];
+  let finished = false;
+  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, async (ev) => {
+    got.push(ev.id);
+    bus.stop();
+    await tick(5);
+    finished = true;
+  });
+  await done;
+  assert.equal(finished, true, "the running handler was not cut short");
+  assert.deepEqual(got, ["1-0"]);
+  assert.equal(fake.of("xack").length, 0);
+});
+
+// @spec BUS-STREAM-008
+test("streamPrefix moves every stream command of the instance onto its own pair of streams", async () => {
+  const fake = new FakeRedis();
+  fake.script.xreadgroup = [async () => null, async () => entry("1-0")];
+  const { bus } = busWith(fake, { streamPrefix: "scratch:a" });
+  const hb = { service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready" as const, deps: {}, mode: "live", intervalMs: 1000 };
+  await bus.publish("control", { cmd: "mute" });
+  await bus.publishHealth(hb);
+  await bus.resetGroup("g");
+  await bus.recent(1);
+  await bus.recentHealth(1);
+  const got: string[] = [];
+  const sub = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
+  const tail = bus.tail(() => {});
+  const tailHealth = bus.tailHealth(() => {});
+  await until(() => got.length === 1 && fake.of("xack").length === 1 && fake.of("xread").length >= 2);
+  const streams = (method: string): unknown[] => fake.of(method).map((c) => (method === "xadd" ? c[1] : method === "xgroup" ? c[2] : method === "xack" ? c[1] : method === "xrevrange" ? c[1] : c[c.indexOf("STREAMS") + 1]));
+  assert.deepEqual(streams("xadd"), ["scratch:a:events", "scratch:a:health"]);
+  assert.ok(streams("xgroup").every((x) => x === "scratch:a:events"));
+  assert.deepEqual(streams("xrevrange"), ["scratch:a:events", "scratch:a:health"]);
+  assert.ok(streams("xreadgroup").every((x) => x === "scratch:a:events"));
+  assert.deepEqual(streams("xack"), ["scratch:a:events"]);
+  assert.deepEqual([...new Set(streams("xread"))].sort(), ["scratch:a:events", "scratch:a:health"]);
+  bus.stop(); await Promise.all([sub, tail, tailHealth]);
+  // and the default stays the production pair
+  const plain = new FakeRedis();
+  const { bus: b2 } = busWith(plain);
+  await b2.publish("control", { cmd: "mute" });
+  assert.equal(plain.of("xadd")[0]![1], STREAM);
+  b2.stop();
 });

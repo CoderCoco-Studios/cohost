@@ -13,7 +13,8 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
-    "@cohost/modules": "workspace:*"
+    "@cohost/modules": "workspace:*",
+    "@cohost/shared": "workspace:*"
   },
   "devDependencies": {
     "@cohost/testing": "workspace:*"

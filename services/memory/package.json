@@ -10,14 +10,19 @@
     "build": "tsc -b",
     "start": "node dist/index.js",
     "reflect": "tsx src/reflect.ts",
-    "consolidate": "tsx src/consolidate.ts"
+    "consolidate": "tsx src/consolidate.ts",
+    "reembed": "tsx src/reembed.ts"
   },
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
     "@cohost/llm": "workspace:*",
     "@cohost/modules": "workspace:*",
+    "@cohost/shared": "workspace:*",
     "pg": "^8.13.0"
   },
-  "devDependencies": { "@cohost/testing": "workspace:*", "@types/pg": "^8.11.0" }
+  "devDependencies": {
+    "@cohost/testing": "workspace:*",
+    "@types/pg": "^8.11.0"
+  }
 }

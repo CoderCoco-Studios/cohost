@@ -1,5 +1,6 @@
 import type { Bus, BusEvent } from "@cohost/bus";
 import type { HealthTracker, ServiceHealth } from "@cohost/control";
+import { retryWithBackoff } from "@cohost/shared";
 
 /** The slice of a ws WebSocket the feed uses. */
 export interface FeedSocket {
@@ -13,6 +14,8 @@ export type BusReach = "connected" | "unreachable";
 export interface FeedDeps {
   bus: Pick<Bus, "recent" | "tail" | "recentHealth" | "tailHealth">;
   tracker: HealthTracker;
+  /** Applied to every services snapshot before it is sent (the Compose restart counts overlay, DASH-FEED-010). */
+  decorate?: (snapshot: ServiceHealth[]) => ServiceHealth[];
   clients: () => Iterable<FeedSocket>;
   /** The stack state the feed carries to clients: the `GET /stack` body, and a hook for each change of it. */
   stack: { snapshot(): object; onChange(cb: (snapshot: object) => void): () => void };
@@ -77,7 +80,9 @@ export function createFeed(d: FeedDeps) {
     wake = done;
   }));
   // Subscribed at creation, not at start(): a page opened while Redis is down still hears every stack change.
-  const offStack = d.stack.onChange((snap) => broadcast(stackMessage(snap))); // @spec DASH-FEED-008
+  const snapshot = (): ServiceHealth[] => (d.decorate ?? ((s) => s))(d.tracker.snapshot());
+  // @spec DASH-FEED-008, DASH-FEED-010
+  const offStack = d.stack.onChange((snap) => { broadcast(stackMessage(snap)); if (d.decorate) broadcast(servicesMessage(snapshot())); });
 
   return {
     // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008
@@ -87,7 +92,7 @@ export function createFeed(d: FeedDeps) {
       const held: BusEvent[] = [];
       replaying.set(ws, held); // before the first await: the socket is already in the client set
       try {
-        ws.send(servicesMessage(d.tracker.snapshot()));
+        ws.send(servicesMessage(snapshot()));
         ws.send(stackMessage(d.stack.snapshot())); // before the replay read: a client that cannot get a replay still has both snapshots
         const sent = new Set<string>();
         let failure: { err: unknown } | undefined;
@@ -112,18 +117,17 @@ export function createFeed(d: FeedDeps) {
      * follow the live feeds. Resolves once the tails are running, or when `stop()` ends the retry.
      */
     async start(): Promise<void> {
-      let history: Awaited<ReturnType<FeedDeps["bus"]["recentHealth"]>> | undefined;
-      for (let failures = 0; !stopped && !history; ) {
-        try {
-          history = await d.bus.recentHealth(500);
-          setBus("connected");
-        } catch (err) {
+      const history = await retryWithBackoff(async () => {
+        const h = await d.bus.recentHealth(500);
+        setBus("connected");
+        return h;
+      }, {
+        baseMs: RETRY_BASE_MS, maxMs: RETRY_MAX_MS, sleep, isStopped: () => stopped,
+        onFailure: (err, failures, delayMs) => {
           setBus("unreachable");
-          const delayMs = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(++failures - 1, 30));
           d.log?.warn({ err, delayMs, failures }, "feed seed failed: Redis is unreachable; retrying");
-          await sleep(delayMs);
-        }
-      }
+        },
+      });
       if (stopped || !history) return;
       d.tracker.seed(history.map((h) => ({ ts: h.ts, data: h.data })));
       const fromId = history.at(-1)?.id ?? "$";
@@ -132,7 +136,7 @@ export function createFeed(d: FeedDeps) {
         if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
         if (forwardable(ev)) for (const c of d.clients()) deliver(c, ev);
       }, "$", readOutcome);
-      offChange = d.tracker.onChange((snap) => broadcast(servicesMessage(snap)));
+      offChange = d.tracker.onChange(() => broadcast(servicesMessage(snapshot())));
       timer = setInterval(() => d.tracker.tick(), d.tickMs ?? 1000);
       timer.unref();
     },

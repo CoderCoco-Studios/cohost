@@ -1,4 +1,4 @@
-import type { BusEvent } from "@cohost/bus";
+import type { BusEvent, EventType } from "@cohost/bus";
 import type { Emotion } from "@cohost/config";
 
 /** Set on events that came from test injection; absent on real ones. */
@@ -19,10 +19,17 @@ export function propagatedFlags(src: object | undefined): InjectionFlags { // @s
   return { injected: true, ...(e.remember !== undefined ? { remember: e.remember } : {}) };
 }
 
+/**
+ * A bus event narrowed on its `type`: `BusEvent` defaults to the union of every payload and does not correlate `type`
+ * with `data`, so one cast at the entry of `push` buys a `switch` that narrows each case.
+ */
+type TaggedEvent = { [K in EventType]: BusEvent<K> }[EventType];
+
+/** `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). */
 export type ContextEvent =
-  | ({ kind: "chat"; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
-  | ({ kind: "vision"; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)
-  | ({ kind: "speech"; ts: number; speaker: string; text: string; seen: boolean } & InjectionFlags)
+  | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
+  | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)
+  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; seen: boolean } & InjectionFlags)
   | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string };
 
 /** Rolling window of what's happened recently — the brain's working memory. */
@@ -32,34 +39,40 @@ export class Context {
 
   constructor(private max: number) {}
 
-  push(ev: BusEvent): void {
+  /** Append the perception in `bus` to the window and return its context entry; `undefined` for any other event type. */
+  push(bus: BusEvent): ContextEvent | undefined {
+    const ev = bus as TaggedEvent;
+    let entry: ContextEvent;
     switch (ev.type) {
-      case "chat.message": { // @spec WM-PUSH-001
-        const d = ev.data as BusEvent<"chat.message">["data"];
-        this.events.push({ kind: "chat", ts: ev.ts, user: d.user, text: d.text, mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) });
+      case "chat.message": { // @spec WM-PUSH-001, WM-PUSH-010
+        const d = ev.data;
+        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, user: d.user, text: d.text, mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
         break;
       }
       case "vision.summary": { // @spec WM-PUSH-004, WM-PUSH-005
-        const d = ev.data as BusEvent<"vision.summary">["data"];
+        const d = ev.data;
         this.lastVision = d.text;
         // Keep only the latest vision line in the window; older ones are noise.
         this.events = this.events.filter((e) => e.kind !== "vision");
-        this.events.push({ kind: "vision", ts: ev.ts, text: d.text, changed: d.changed, seen: !d.changed, ...flagsOf(d) });
+        entry = { kind: "vision", eventId: ev.id, ts: ev.ts, text: d.text, changed: d.changed, seen: !d.changed, ...flagsOf(d) };
         break;
       }
       case "speech.heard": { // @spec WM-PUSH-002
-        const d = ev.data as BusEvent<"speech.heard">["data"];
-        this.events.push({ kind: "speech", ts: ev.ts, speaker: d.speaker, text: d.text, seen: false, ...flagsOf(d) });
+        const d = ev.data;
+        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: d.speaker, text: d.text, seen: false, ...flagsOf(d) };
         break;
       }
       default: // @spec WM-PUSH-003
-        return;
+        return undefined;
     }
+    this.events.push(entry); // @spec WM-PUSH-009
     this.trim();
+    return entry;
   }
 
-  pushSelf(text: string, emotion: Emotion, id?: string): void { // @spec WM-PUSH-006, WM-PUSH-007
-    this.events.push({ kind: "self", ts: Date.now(), text, emotion, seen: true, ...(id !== undefined ? { id } : {}) });
+  /** Append the co-host's own line; `ts` is the bus `ts` of the `brain.say` it came from, so every kind shares the publisher's clock. */
+  pushSelf(text: string, emotion: Emotion, ts: number, id?: string): void { // @spec WM-PUSH-006, WM-PUSH-007
+    this.events.push({ kind: "self", ts, text, emotion, seen: true, ...(id !== undefined ? { id } : {}) });
     this.trim();
   }
 
@@ -79,10 +92,11 @@ export class Context {
   unseen(): ContextEvent[] { // @spec WM-SEEN-001
     return this.events.filter((e) => !e.seen);
   }
-  /** Mark only these events seen (not ones that arrived while a decision was in flight). */
+  /** Mark only these events seen (not ones that arrived while a decision was in flight), matched by event id. */
   markSeenEvents(events: readonly ContextEvent[]): void { // @spec WM-SEEN-002
-    const set = new Set<ContextEvent>(events);
-    for (const e of this.events) if (set.has(e)) e.seen = true;
+    const ids = new Set<string>();
+    for (const e of events) if (e.kind !== "self") ids.add(e.eventId);
+    for (const e of this.events) if (e.kind !== "self" && ids.has(e.eventId)) e.seen = true;
   }
   /** The most recently added event, if any. */
   last(): ContextEvent | undefined { // @spec WM-WIN-004

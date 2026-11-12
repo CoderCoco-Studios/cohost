@@ -2,6 +2,7 @@ import type { RefreshingAuthProvider } from "@twurple/auth";
 import type { EventInput, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import type { ChatUserInfo } from "./filter.js";
+import type { StoredToken } from "./token-store.js";
 
 export interface MessageDeps {
   toEvent: (user: string, text: string, info: ChatUserInfo) => EventInput<"chat.message"> | undefined;
@@ -28,21 +29,23 @@ export interface TokenRegistry {
   addUserForToken(token: Parameters<RefreshingAuthProvider["addUserForToken"]>[0], intents?: string[]): Promise<string>;
 }
 
-// @spec CHAT-TW-006, CHAT-TW-010
+// @spec CHAT-TW-006, CHAT-TW-010, CHAT-TW-012
 /**
  * Register the user token and wait for it, so the chat client never asks for credentials first.
  * A missing refresh token is rejected up front: twurple's `addUserForToken` cannot register without one.
+ * With `stored` the stored token is registered as it is; otherwise the `.env` pair is, marked as already
+ * expired so the first use refreshes it.
  */
 export async function registerUserToken(
   provider: TokenRegistry,
-  tokens: { accessToken: string; refreshToken: string | undefined },
+  tokens: { accessToken: string; refreshToken: string | undefined; stored?: StoredToken },
 ): Promise<void> {
   const refreshToken = tokens.refreshToken?.trim();
   if (!refreshToken) {
     throw new Error("TWITCH_REFRESH_TOKEN is required when TWITCH_ACCESS_TOKEN is set (the authenticated Twitch path)");
   }
   await provider.addUserForToken(
-    { accessToken: tokens.accessToken, refreshToken, expiresIn: 0, obtainmentTimestamp: 0 },
+    tokens.stored ?? { accessToken: tokens.accessToken, refreshToken, expiresIn: 0, obtainmentTimestamp: 0 },
     ["chat"],
   );
 }

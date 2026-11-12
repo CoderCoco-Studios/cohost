@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { FakeBus, recordingLog, testConfig } from "@cohost/testing";
 import { createChatFilter, type ChatUserInfo } from "../src/filter.js";
 import { createMessageHandler, registerUserToken } from "../src/twitch.js";
-import { subscribeInject } from "../src/subscribe.js";
+import { subscribeInject } from "@cohost/shared";
 
 const info: ChatUserInfo = { displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false };
 const toEvent = createChatFilter(testConfig());
@@ -67,7 +67,7 @@ test("the inject subscription is created first, then subscribed with start mode 
     resetGroup: async (g: string) => { calls.push(`reset:${g}`); },
     subscribe: async (o: unknown) => { calls.push("subscribe"); opts = o; },
   };
-  await subscribeInject(bus, async () => {}, recordingLog().log);
+  await subscribeInject({ bus: bus as never, group: "chat", handler: async () => {}, log: recordingLog().log });
   assert.deepEqual(calls, ["reset:chat", "subscribe"], "the group exists before subscribe is called, and before the caller signals ready");
   assert.deepEqual(opts, { group: "chat", types: ["inject.request"], start: "latest" });
 });

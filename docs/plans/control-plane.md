@@ -1,6 +1,6 @@
 # Control plane: one app to monitor and start/stop cohost services
 
-Status: proposal (planning only, no implementation)
+Status: SUPERSEDED. This is the original proposal, kept for its reasoning and history. What was built, and what is intended now, is the [control-plane LLD](../intent/control-plane/control-plane-design.md) and its [specs](../intent/control-plane/control-plane-specs.md); the LLD's "Divergence from the original plan" section compares the two. Where this document and the LLD disagree, the LLD wins.
 Branch: `control-plane-plan`
 
 ## 1. Goal

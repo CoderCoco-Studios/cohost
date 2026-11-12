@@ -8,6 +8,47 @@ async function redisUp(): Promise<boolean> {
   const r = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 500 });
   try { await r.connect(); await r.ping(); return true; } catch { return false; } finally { r.disconnect(); }
 }
+const hasRedis = await redisUp();
+const needsRedis = { skip: !hasRedis && `no Redis at ${url}` };
+/** Fails the test instead of hanging it when the awaited thing never happens. */
+const within = <T>(p: Promise<T>, ms = 3000) => {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timed out")), ms); })]).finally(() => clearTimeout(timer));
+};
+let scratchCount = 0;
+
+/** What a Redis test works with: buses and a raw connection on streams of its own. */
+interface Scratch {
+  /** The scratch stream keys. */
+  events: string;
+  health: string;
+  /** A Bus on the scratch streams; it is stopped when the test ends. */
+  bus(source: string, log?: ConstructorParameters<typeof Bus>[1]): Bus;
+  raw: Redis;
+}
+
+/**
+ * Runs a Redis test on its own pair of streams (so it neither reads nor writes `cohost:events` and `cohost:health`)
+ * and always cleans up: every bus is stopped and the streams, with their groups, are deleted whether the body passed,
+ * failed or timed out.
+ */
+async function scratch(body: (s: Scratch) => Promise<void>): Promise<void> {
+  const prefix = `cohost-test:${process.pid}:${Date.now()}:${scratchCount++}`;
+  const raw = new Redis(url);
+  const buses: Bus[] = [];
+  try {
+    await body({
+      events: `${prefix}:events`,
+      health: `${prefix}:health`,
+      bus: (source, log) => { const b = new Bus(source, log, url, { streamPrefix: prefix }); buses.push(b); return b; },
+      raw,
+    });
+  } finally {
+    for (const b of buses) b.stop();
+    await raw.del(`${prefix}:events`, `${prefix}:health`).catch(() => {});
+    raw.disconnect();
+  }
+}
 
 // @spec BUS-EVT-003, BUS-EVT-010
 test("every region event validates its documented shape", () => {
@@ -58,110 +99,103 @@ test("the catalogue includes the viewer-notes surfacing events", () => {
 });
 
 // @spec BUS-STREAM-001, BUS-SUB-001, BUS-SUB-004
-test("publish → consumer group subscribe round-trip (needs Redis)", { skip: !(await redisUp()) && `no Redis at ${url}` }, async () => {
-  const group = `test-${Date.now()}`;
-  const pub = new Bus(`pub-${group}`, undefined, url);
-  const sub = new Bus(`sub-${group}`, undefined, url);
+test("publish → consumer group subscribe round-trip (needs Redis)", needsRedis, () => scratch(async ({ bus }) => {
+  const group = "round-trip";
+  const pub = bus("pub");
+  const sub = bus("sub");
   const got: BusEvent[] = [];
+  let ready!: () => void;
+  const groupReady = new Promise<void>((r) => { ready = r; });
   const done = new Promise<void>((resolve) => {
-    void sub.subscribe({ group, types: ["attention.focus"], start: "latest", blockMs: 200 }, (ev) => { got.push(ev); resolve(); });
+    void sub.subscribe({ group, types: ["attention.focus"], start: "latest", blockMs: 200, onReady: ready }, (ev) => { got.push(ev); resolve(); });
   });
-  await new Promise((r) => setTimeout(r, 300)); // let the group get created at "$"
+  await within(groupReady);
   await pub.publish("affect.state", { valence: 0, arousal: 0, mood: "neutral" }); // filtered out by types
   await pub.publish("attention.focus", { reason: "test", score: 0.7 });
-  await Promise.race([done, new Promise((_, rej) => setTimeout(() => rej(new Error("timed out waiting for event")), 3000))]);
+  await within(done);
   assert.equal(got.length, 1);
   assert.equal(got[0]!.type, "attention.focus");
-  assert.equal(got[0]!.source, `pub-${group}`);
+  assert.equal(got[0]!.source, "pub");
   assert.deepEqual(got[0]!.data, { reason: "test", score: 0.7 });
-  sub.stop(); pub.stop();
-});
-
-const hasRedis = await redisUp();
-const needsRedis = { skip: !hasRedis && `no Redis at ${url}` };
-const within = <T>(p: Promise<T>, ms = 3000) =>
-  Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out")), ms))]);
+}));
 
 // @spec BUS-STREAM-003
-test("publish validates the payload before it reaches the stream (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("validate", undefined, url);
-  await assert.rejects(bus.publish("affect.state", { valence: 5, arousal: 0, mood: "happy" }));
-  await assert.rejects(bus.publish("affect.state", { valence: 0, arousal: 0, mood: "ecstatic" } as never));
-  bus.stop();
-});
+test("publish validates the payload before it reaches the stream (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events }) => {
+  const b = bus("validate");
+  await assert.rejects(b.publish("affect.state", { valence: 5, arousal: 0, mood: "happy" }));
+  await assert.rejects(b.publish("affect.state", { valence: 0, arousal: 0, mood: "ecstatic" } as never));
+  assert.equal(await raw.xlen(events), 0, "nothing reached the stream");
+}));
 
 // @spec BUS-SUB-005
-test("a throwing handler is logged, the event acked, and the loop keeps going (needs Redis)", needsRedis, async () => {
-  const group = `throw-${Date.now()}`;
+test("a throwing handler is logged, the event acked, and the loop keeps going (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events }) => {
+  const group = "throwing";
   const errors: unknown[] = [];
   const log = { error: (o: unknown) => errors.push(o), debug() {}, info() {}, warn() {} } as never;
-  const pub = new Bus("pub", undefined, url);
-  const sub = new Bus("sub", log, url);
+  const pub = bus("pub");
+  const sub = bus("sub", log);
   const seen: string[] = [];
+  let ready!: () => void;
+  const groupReady = new Promise<void>((r) => { ready = r; });
   const second = new Promise<void>((resolve) => {
-    void sub.subscribe({ group, types: ["control"], start: "latest", blockMs: 100 }, (ev) => {
+    void sub.subscribe({ group, types: ["control"], start: "latest", blockMs: 100, onReady: ready }, (ev) => {
       seen.push(ev.data.cmd);
       if (ev.data.cmd === "mute") throw new Error("handler blew up");
       resolve();
     });
   });
-  await new Promise((r) => setTimeout(r, 200));
+  await within(groupReady);
   await pub.publish("control", { cmd: "mute" });
   await pub.publish("control", { cmd: "unmute" });
   await within(second);
   assert.deepEqual(seen, ["mute", "unmute"]);
   assert.equal(errors.length, 1);
-  const r = new Redis(url);
-  const pending = (await r.xpending("cohost:events", group)) as [number, ...unknown[]];
-  assert.equal(pending[0], 0, "both events acked");
-  r.disconnect();
-  sub.stop(); pub.stop();
-});
+  await within((async () => {
+    for (;;) { // the ack of the second entry follows its handler
+      const pending = (await raw.xpending(events, group)) as [number, ...unknown[]];
+      if (pending[0] === 0) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  })());
+}));
 
 // @spec BUS-TAIL-002, BUS-SUB-007, BUS-STREAM-006
-test("recent() returns the newest events oldest-first and skips entries it can't decode (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("recent", undefined, url);
-  const tag = `r-${Date.now()}`;
-  const r = new Redis(url);
-  await bus.publish("brain.status", { state: "idle", detail: `${tag}-1` });
-  await r.xadd("cohost:events", "*", "type", "not.a.type", "ts", "1", "source", "x", "data", "{}");
-  await r.xadd("cohost:events", "*", "type", "brain.status", "ts", "1", "source", "x", "data", "{not json");
-  await r.xadd("cohost:events", "*", "type", "brain.status", "ts", "1", "source", "x", "data", JSON.stringify({ state: "dancing" }));
-  await bus.publish("brain.status", { state: "thinking", detail: `${tag}-2` });
-  const got = await bus.recent(5);
-  assert.deepEqual(got.map((e) => (e.data as { detail?: string }).detail), [`${tag}-1`, `${tag}-2`]);
+test("recent() returns the newest events oldest-first and skips entries it can't decode (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events }) => {
+  const b = bus("recent");
+  await b.publish("brain.status", { state: "idle", detail: "r-1" });
+  await raw.xadd(events, "*", "type", "not.a.type", "ts", "1", "source", "x", "data", "{}");
+  await raw.xadd(events, "*", "type", "brain.status", "ts", "1", "source", "x", "data", "{not json");
+  await raw.xadd(events, "*", "type", "brain.status", "ts", "1", "source", "x", "data", JSON.stringify({ state: "dancing" }));
+  await b.publish("brain.status", { state: "thinking", detail: "r-2" });
+  const got = await b.recent(5);
+  assert.deepEqual(got.map((e) => (e.data as { detail?: string }).detail), ["r-1", "r-2"]);
   assert.equal(got[1]!.source, "recent");
   assert.ok(got[1]!.ts > 0);
-  r.disconnect();
-  bus.stop();
-});
+}));
 
 // @spec BUS-TAIL-001
-test("tail() delivers live events without a consumer group (needs Redis)", needsRedis, async () => {
-  const pub = new Bus("tailpub", undefined, url);
-  const watcher = new Bus("tail", undefined, url);
-  const tag = `t-${Date.now()}`;
+test("tail() delivers live events without a consumer group (needs Redis)", needsRedis, () => scratch(async ({ bus, events }) => {
+  const pub = bus("tailpub");
+  const watcher = bus("tail");
   const got = new Promise<string>((resolve) => {
-    void watcher.tail((ev) => {
-      const d = ev.data as { detail?: string };
-      if (ev.type === "brain.status" && d.detail === tag) resolve(ev.source);
-    });
+    void watcher.tail((ev) => { if (ev.type === "brain.status") resolve(ev.source); }, "0"); // from the start of the scratch stream: no race with the publish
   });
-  await new Promise((r) => setTimeout(r, 200));
-  await pub.publish("brain.status", { state: "idle", detail: tag });
+  await pub.publish("brain.status", { state: "idle", detail: events });
   assert.equal(await within(got), "tailpub");
-  watcher.stop(); pub.stop();
-});
+}));
 
 // @spec BUS-STOP-001
-test("subscribe() and tail() resolve when stop() interrupts a blocking read (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("stopper", undefined, url);
-  const sub = bus.subscribe({ group: `stop-${Date.now()}`, start: "latest", blockMs: 5000 }, () => {});
-  const tail = bus.tail(() => {});
-  await new Promise((r) => setTimeout(r, 200)); // both are now parked in BLOCK
-  bus.stop();
+test("subscribe() and tail() resolve when stop() interrupts a blocking read (needs Redis)", needsRedis, () => scratch(async ({ bus }) => {
+  const b = bus("stopper");
+  let ready!: () => void;
+  const groupReady = new Promise<void>((r) => { ready = r; });
+  const sub = b.subscribe({ group: "stopping", start: "latest", blockMs: 5000, onReady: ready }, () => {});
+  const tail = b.tail(() => {});
+  await within(groupReady);
+  await new Promise((r) => setTimeout(r, 100)); // both are now parked in BLOCK
+  b.stop();
   await within(Promise.all([sub, tail]), 2000);
-});
+}));
 
 // ---- service.heartbeat / health stream ----
 
@@ -180,160 +214,36 @@ test("service.heartbeat is catalogued and validated", () => {
 });
 
 // @spec BUS-STREAM-004
-test("publish('service.heartbeat') throws and writes nothing (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("hb-reject", undefined, url);
-  const r = new Redis(url);
-  const before = await r.xlen("cohost:events");
-  await assert.rejects(bus.publish("service.heartbeat", hb()), /publishHealth/);
-  assert.equal(await r.xlen("cohost:events"), before);
-  r.disconnect(); bus.stop();
-});
+test("publish('service.heartbeat') throws and writes nothing (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events, health }) => {
+  const b = bus("hb-reject");
+  await assert.rejects(b.publish("service.heartbeat", hb()), /publishHealth/);
+  assert.equal(await raw.xlen(events), 0);
+  assert.equal(await raw.xlen(health), 0);
+}));
 
 // @spec BUS-HEALTH-001, BUS-HEALTH-002
-test("publishHealth writes to cohost:health only, and rejects an invalid state (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("hb-route", undefined, url);
-  const r = new Redis(url);
-  const ev = await r.xlen("cohost:events");
-  const h = await r.xlen("cohost:health");
-  await bus.publishHealth(hb({ service: "route" }));
-  assert.equal(await r.xlen("cohost:events"), ev);
-  assert.equal(await r.xlen("cohost:health"), h + 1);
-  await assert.rejects(bus.publishHealth(hb({ state: "dead" }) as never));
-  assert.equal(await r.xlen("cohost:health"), h + 1, "nothing written for the invalid heartbeat");
-  r.disconnect(); bus.stop();
-});
+test("publishHealth writes to the health stream only, and rejects an invalid state (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events, health }) => {
+  const b = bus("hb-route");
+  await b.publishHealth(hb({ service: "route" }));
+  assert.equal(await raw.xlen(events), 0);
+  assert.equal(await raw.xlen(health), 1);
+  await assert.rejects(b.publishHealth(hb({ state: "dead" }) as never));
+  assert.equal(await raw.xlen(health), 1, "nothing written for the invalid heartbeat");
+}));
 
 // @spec BUS-HEALTH-003, BUS-HEALTH-004
-test("recentHealth returns the newest heartbeats oldest-first; tailHealth delivers live ones (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("hb-recent", undefined, url);
-  const watcher = new Bus("hb-tail", undefined, url);
-  const tag = `rh-${Date.now()}`;
+test("recentHealth returns the newest heartbeats oldest-first; tailHealth delivers live ones (needs Redis)", needsRedis, () => scratch(async ({ bus }) => {
+  const b = bus("hb-recent");
+  const watcher = bus("hb-tail");
   const live = new Promise<string>((resolve) => {
-    void watcher.tailHealth((h) => { if (h.data.service === `${tag}-live`) resolve(h.source); });
+    void watcher.tailHealth((h) => { if (h.data.service === "live") resolve(h.source); }, "0");
   });
-  await new Promise((r) => setTimeout(r, 200));
-  for (let n = 1; n <= 4; n++) await bus.publishHealth(hb({ service: tag, pid: n }));
-  const got = await bus.recentHealth(3);
+  for (let n = 1; n <= 4; n++) await b.publishHealth(hb({ service: "rh", pid: n }));
+  const got = await b.recentHealth(3);
   assert.deepEqual(got.map((h) => h.data.pid), [2, 3, 4]);
-  await bus.publishHealth(hb({ service: `${tag}-live` }));
+  await b.publishHealth(hb({ service: "live" }));
   assert.equal(await within(live), "hb-recent");
-  watcher.stop(); bus.stop();
-});
-
-// startHeartbeat against a recording publisher (no Redis).
-import { startHeartbeat, tracked } from "../src/index.js";
-class RecBus {
-  readonly consumer = "rec-1";
-  sent: { state: string; deps: Record<string, string>; ts: number; detail?: string }[] = [];
-  fail = false;
-  async publishHealth(d: ReturnType<typeof hb>): Promise<string> {
-    if (this.fail) throw new Error("redis down");
-    this.sent.push({ state: d.state, deps: d.deps, ts: Date.now(), detail: d.detail });
-    return "1";
-  }
-}
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// @spec CTRL-HEARTBEAT-002
-test("startHeartbeat publishes starting, then ready, then repeats every interval", async () => {
-  // Mocked intervals: with real ones, a loop stalled past the 100 ms beat between two checks adds an extra "ready".
-  mock.timers.enable({ apis: ["setInterval"] });
-  try {
-    const bus = new RecBus();
-    const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 100 });
-    await Promise.resolve();
-    assert.deepEqual(bus.sent.map((s) => s.state), ["starting"]);
-    mock.timers.tick(99);
-    assert.deepEqual(bus.sent.map((s) => s.state), ["starting"], "no beat before the interval");
-    h.ready();
-    await Promise.resolve();
-    assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready"]);
-    mock.timers.tick(1);
-    mock.timers.tick(100);
-    await Promise.resolve();
-    assert.deepEqual(bus.sent.map((s) => s.state), ["starting", "ready", "ready", "ready"], "ready repeats every interval");
-    await h.stop();
-  } finally { mock.timers.reset(); }
-});
-
-// @spec CTRL-HEARTBEAT-003
-test("startHeartbeat publishes immediately when a dep changes, and reports degraded", async () => {
-  const bus = new RecBus();
-  let dep: "ok" | "down" = "ok";
-  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: () => ({ x: dep }), intervalMs: 60_000 });
-  h.ready();
-  await sleep(20);
-  const n = bus.sent.length;
-  dep = "down";
-  await sleep(1300); // change check runs at least once a second, interval is 60 s
-  const last = bus.sent.at(-1)!;
-  assert.ok(bus.sent.length > n);
-  assert.equal(last.state, "degraded");
-  assert.deepEqual(last.deps, { x: "down" });
-  await h.stop();
-});
-
-// @spec CTRL-HEARTBEAT-001, CTX-HEALTH-004, CTRL-HEARTBEAT-009
-test("a standing detail survives ready() and yields to an explicit degraded detail or a dependency-down detail", async () => {
-  const bus = new RecBus();
-  let dep: "ok" | "down" = "ok";
-  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: () => ({ x: dep }), detail: "x is not probed", intervalMs: 60_000 });
-  h.ready();
-  await sleep(20);
-  assert.equal(bus.sent.at(-1)!.detail, "x is not probed");
-  dep = "down";
-  await sleep(1300);
-  assert.equal(bus.sent.at(-1)!.detail, "dependency down: x");
-  h.degraded("boom");
-  await sleep(20);
-  assert.equal(bus.sent.at(-1)!.detail, "boom");
-  await h.stop();
-});
-
-// @spec CTRL-HEARTBEAT-004
-test("stop() publishes a single stopping heartbeat and cancels the timer", async () => {
-  const bus = new RecBus();
-  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 50 });
-  h.ready();
-  await h.stop(); await h.stop();
-  const n = bus.sent.length;
-  assert.equal(bus.sent.filter((s) => s.state === "stopping").length, 1);
-  assert.equal(bus.sent.at(-1)!.state, "stopping");
-  await sleep(150);
-  assert.equal(bus.sent.length, n);
-});
-
-// @spec CTRL-HEARTBEAT-006
-test("a failing publish is logged and does not throw into the service", async () => {
-  const bus = new RecBus();
-  bus.fail = true;
-  const warns: unknown[] = [];
-  const log = { warn: (o: unknown) => warns.push(o) } as never;
-  const h = startHeartbeat(bus as never, { service: "t", mode: "live", deps: {}, intervalMs: 50, log });
-  h.degraded("x"); h.ready();
-  await sleep(80);
-  await h.stop();
-  assert.ok(warns.length >= 2);
-});
-
-// @spec BUS-STOP-002, CTRL-HEARTBEAT-005
-test("SIGTERM publishes `stopping` before the service's own shutdown callback, then exits 0", async () => {
-  const { spawnSync } = await import("node:child_process");
-  const r = spawnSync(process.execPath, ["--import", "tsx", new URL("./shutdown.fixture.ts", import.meta.url).pathname], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(r.stdout.trim().split("\n"), ["hb:starting", "hb:ready", "hb:stopping", "bus.stop"]);
-});
-
-// @spec CTRL-HEARTBEAT-008
-test("tracked() reports each call's outcome and still propagates errors", async () => {
-  const seen: boolean[] = [];
-  let fail = false;
-  const fn = tracked(async (n: number) => { if (fail) throw new Error("x"); return n * 2; }, (ok) => seen.push(ok));
-  assert.equal(await fn(2), 4);
-  fail = true;
-  await assert.rejects(fn(1));
-  assert.deepEqual(seen, [true, false]);
-});
+}));
 
 // ---- service.lifecycle / control target ----
 
@@ -357,26 +267,19 @@ test("control: no target is still valid, target and pause/resume are accepted", 
 });
 
 // @spec BUS-GROUP-001
-test("resetGroup creates a missing group at $ and moves an existing one to $ (needs Redis)", needsRedis, async () => {
-  const bus = new Bus("t", undefined, url);
-  const raw = new Redis(url);
-  const group = `reset-${Date.now()}`;
-  try {
-    await bus.resetGroup(group); // missing: created
-    await bus.publish("control", { cmd: "mute" });
-    await raw.xgroup("SETID", "cohost:events", group, "0");
-    await bus.resetGroup(group); // existing: moved to $
-    const groups = (await raw.xinfo("GROUPS", "cohost:events")) as unknown[][];
-    const g = groups.find((row) => row[1] === group)!;
-    const lastDelivered = g[g.indexOf("last-delivered-id") + 1];
-    const tail = (await raw.xrevrange("cohost:events", "+", "-", "COUNT", 1)) as [string, string[]][];
-    assert.equal(lastDelivered, tail[0]![0]);
-    await raw.xgroup("DESTROY", "cohost:events", group);
-  } finally {
-    raw.disconnect();
-    bus.stop();
-  }
-});
+test("resetGroup creates a missing group at $ and moves an existing one to $ (needs Redis)", needsRedis, () => scratch(async ({ bus, raw, events }) => {
+  const b = bus("t");
+  const group = "reset";
+  await b.resetGroup(group); // missing: created
+  await b.publish("control", { cmd: "mute" });
+  await raw.xgroup("SETID", events, group, "0");
+  await b.resetGroup(group); // existing: moved to $
+  const groups = (await raw.xinfo("GROUPS", events)) as unknown[][];
+  const g = groups.find((row) => row[1] === group)!;
+  const lastDelivered = g[g.indexOf("last-delivered-id") + 1];
+  const tail = (await raw.xrevrange(events, "+", "-", "COUNT", 1)) as [string, string[]][];
+  assert.equal(lastDelivered, tail[0]![0]);
+}));
 
 // ---- test injection ----
 
@@ -424,8 +327,37 @@ test("inject.request / inject.result are catalogued and validated", () => {
 test("avatar.state requires mouthSmile and keeps it", () => {
   const base = { emotion: "happy", intensity: 1, mouthOpen: 0.2, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, driver: "x", connected: true };
   assert.equal(EventPayloads["avatar.state"].safeParse(base).success, false);
-  const ok = EventPayloads["avatar.state"].parse({ ...base, mouthSmile: 7.5 });
-  assert.equal(ok.mouthSmile, 7.5);
+  const ok = EventPayloads["avatar.state"].parse({ ...base, mouthSmile: 0.75 });
+  assert.equal(ok.mouthSmile, 0.75);
+});
+
+// @spec BUS-EVT-018
+test("avatar.state accepts each parameter at the ends of its range and rejects a value beyond them", () => {
+  const base = { emotion: "happy", intensity: 1, mouthOpen: 0.2, mouthSmile: 0.7, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, driver: "x", connected: true };
+  const parse = (over: Record<string, unknown>) => EventPayloads["avatar.state"].safeParse({ ...base, ...over }).success;
+  const ranges: Record<string, [number, number]> = {
+    intensity: [0, 1], mouthOpen: [0, 1], mouthSmile: [0, 1], blink: [0, 1],
+    eyeX: [-1, 1], eyeY: [-1, 1], headX: [-90, 90], headY: [-90, 90], headZ: [-90, 90],
+  };
+  for (const [key, [lo, hi]] of Object.entries(ranges)) {
+    assert.ok(parse({ [key]: lo }) && parse({ [key]: hi }), `${key} accepts ${lo} and ${hi}`);
+    assert.equal(parse({ [key]: lo - 0.01 }), false, `${key} rejects below ${lo}`);
+    assert.equal(parse({ [key]: hi + 0.01 }), false, `${key} rejects above ${hi}`);
+  }
+});
+
+// @spec BUS-EVT-017
+test("voice.playing and voice.done share one payload shape", () => {
+  const samples: unknown[] = [{ id: "u1", sink: "discord" }, { id: "u1" }, { sink: "x" }, { id: 1, sink: "x" }, { id: "u1", sink: "x", extra: 1 }, {}];
+  for (const sample of samples) {
+    const playing = EventPayloads["voice.playing"].safeParse(sample);
+    const done = EventPayloads["voice.done"].safeParse(sample);
+    assert.deepEqual(playing.success, done.success, JSON.stringify(sample));
+    if (playing.success) assert.deepEqual(playing.data, done.data);
+  }
+  assert.ok(EventPayloads["voice.playing"].safeParse({ id: "u1", sink: "discord" }).success);
+  assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1" }).success, false);
+  assert.equal(EventPayloads["voice.playing"], EventPayloads["voice.done"], "one schema serves both events");
 });
 
 // @spec BUS-EVT-021
@@ -447,6 +379,12 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
   assert.equal(ok({ id: "1", op: "set_regular", regular: true }), false, "a key or a name is needed");
   assert.equal(ok({ id: "1", op: "set_regular", regular: true, name: "" }), false, "the name is non-empty");
   assert.equal(ok({ id: "1", op: "set_regular", name: "Pat" }), false, "regular is a boolean");
+  assert.ok(ok({ id: "1", op: "link_discord", discordId: "9", key: "k" }) && ok({ id: "1", op: "link_discord", discordId: "9", name: "Pat" }));
+  assert.ok(ok({ id: "1", op: "unlink_discord", discordId: "9" }));
+  assert.equal(ok({ id: "1", op: "link_discord", discordId: "9" }), false, "a key or a name is needed");
+  assert.equal(ok({ id: "1", op: "link_discord", discordId: "", key: "k" }), false, "the discord id is non-empty");
+  assert.equal(ok({ id: "1", op: "link_discord", key: "k" }), false);
+  assert.equal(ok({ id: "1", op: "unlink_discord", discordId: "" }), false);
   assert.equal(ok({ id: "1", op: "purge" }), false, "unknown op");
   const rep = EventPayloads["memory.viewers.reply"];
   assert.ok(rep.safeParse({ id: "1", ok: true }).success && rep.safeParse({ id: "1", ok: true, data: { viewers: [] } }).success);

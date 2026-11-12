@@ -2,10 +2,10 @@ import type http from "node:http";
 import { randomUUID } from "node:crypto";
 import type { BusEvent, EventInput, Publisher } from "@cohost/bus";
 import { bearerOk } from "@cohost/control";
+import { BodyTooLarge, readText } from "./body.js";
 
 /** How long a `/viewers` route waits for memory's `memory.viewers.reply`. */
 export const REPLY_TIMEOUT_MS = 3000;
-const BODY_LIMIT = 64 * 1024;
 
 type Request = EventInput<"memory.viewers.request">;
 /** A `memory.viewers.request` without its correlation id, which the client assigns. */
@@ -54,8 +54,6 @@ export interface ViewersDeps {
   token: string | undefined;
 }
 
-class BodyTooLarge extends Error {}
-
 function send(res: http.ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
   const text = typeof payload === "string";
   res.writeHead(status, {
@@ -66,21 +64,6 @@ function send(res: http.ServerResponse, status: number, payload: unknown, header
   res.end(text ? payload : JSON.stringify(payload));
 }
 
-/** The body as text, up to 64 KiB; past the cap the rest is drained and `BodyTooLarge` thrown. */
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0, tooLarge = false;
-    req.on("data", (c: Buffer) => {
-      if (tooLarge) return;
-      size += c.length;
-      if (size > BODY_LIMIT) { tooLarge = true; chunks.length = 0; return; }
-      chunks.push(c);
-    });
-    req.on("end", () => (tooLarge ? reject(new BodyTooLarge()) : resolve(Buffer.concat(chunks).toString("utf8"))));
-    req.on("error", reject);
-  });
-}
 
 const decode = (s: string): string | undefined => { try { return decodeURIComponent(s); } catch { return undefined; } };
 const nonBlank = (x: unknown): x is string => typeof x === "string" && x.trim() !== "";
@@ -115,7 +98,7 @@ export async function handleViewers(d: ViewersDeps, req: http.IncomingMessage, r
   } else if (req.method === "POST") {
     let json: Record<string, unknown>;
     try {
-      const raw = await readBody(req);
+      const raw = await readText(req);
       const parsed: unknown = raw.trim() === "" ? {} : JSON.parse(raw);
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new SyntaxError("not an object");
       json = parsed as Record<string, unknown>;
@@ -132,6 +115,16 @@ export async function handleViewers(d: ViewersDeps, req: http.IncomingMessage, r
       const { regular, key: k, name } = json;
       if (typeof regular !== "boolean" || !(nonBlank(k) || nonBlank(name))) { send(res, 400, "body needs a boolean regular and a key or a name"); return true; }
       op = nonBlank(k) ? { op: "set_regular", key: k, regular } : { op: "set_regular", name: name as string, regular };
+    }
+    if (seg.length === 1 && seg[0] === "links") {
+      // @spec DASH-VIEWERS-018
+      const { discordId, key: k, name } = json;
+      if (!nonBlank(discordId) || !(nonBlank(k) || nonBlank(name))) { send(res, 400, "body needs a discordId and a key or a name"); return true; }
+      op = nonBlank(k) ? { op: "link_discord", discordId, key: k } : { op: "link_discord", discordId, name: name as string };
+    } else if (seg.length === 3 && seg[0] === "links" && seg[2] === "delete") {
+      // @spec DASH-VIEWERS-019
+      const discordId = decode(seg[1]!);
+      if (discordId) op = { op: "unlink_discord", discordId };
     }
     if (!op && seg.length === 3 && seg[0] === "deletions" && seg[2] === "restore") {
       // @spec DASH-VIEWERS-004

@@ -29,7 +29,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 Resolved in the specs:
 
 1. **A page opened while Redis is down.** DASH-FEED-008 sends the stack snapshot before the replay, but the audited DASH-HTTP-012 closed a socket whose replay failed, so every page would be closed right after its snapshots and loop on reconnect. DASH-HTTP-012 now keeps the socket open without the replay (it reverses part of the 2026-11-01 decision R1; owner question).
-2. **Upload URL agreement.** DASH-INJ-005 (what the dashboard advertises) and DEPLOY-COMPOSE-002 (what eyes and ears accept, EYES-INJ-005, EARS-INJ-004) share one default, `http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}`, and one override, `DASHBOARD_URL`. Host-run eyes or ears under `pnpm dev` keep the `urls.dashboard()` loopback default (CFG-URL-003) and need `DASHBOARD_URL` set to match; accepted for the dev loop.
+2. **Upload URL agreement.** DASH-INJ-005 (what the dashboard advertises) and DEPLOY-COMPOSE-002 (what eyes and ears accept, SHARED-INJ-004, SHARED-INJ-004) share one default, `http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}`, and one override, `DASHBOARD_URL`. Host-run eyes or ears under `pnpm dev` keep the `urls.dashboard()` loopback default (CFG-URL-003) and need `DASHBOARD_URL` set to match; accepted for the dev loop.
 3. **The `dashboard` id.** CTRL-MANIFEST-001 drops it, so DASH-SVC-003 answers 404 (not 409) and DASH-UI-008 shows no buttons on its row; CTRL-HEALTH-005 still shows the dashboard's own heartbeat as "another service".
 4. **One action at a time.** DASH-STACK-003 covers per-service lifecycle requests too, so a restart cannot interleave with a launch or stop in one dashboard; `cohostctl` in another process is not locked out (control-plane LLD Deferred 3).
 5. **Infrastructure guards.** CTRL-STACK-010: launch and stop-all ignore `CONTROL_ADVANCED`; restart-all goes through the controller and never restarts infrastructure; per-service Redis/Postgres actions keep CTRL-GUARD-003.
@@ -80,7 +80,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/dashboard/dashboard-design.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (61 specs: 61 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/dashboard/dashboard-specs.md (110 specs: 110 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 `@spec` annotations in tests: 62.
@@ -125,19 +125,22 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| HTTP routes | DASH-HTTP-001 to 013 | 13 | 0 | 0 | 11 |
-| Audio proxy and sink | DASH-SINK-001 to 004 | 4 | 0 | 0 | 3 (+004 via config) |
-| WebSocket feed | DASH-FEED-001 to 006 | 6 | 0 | 0 | 6 |
-| Control gating | DASH-CTRL-001 to 008 (006 retired) | 7 | 0 | 0 | 6 |
-| Service lifecycle | DASH-SVC-001 to 004 | 4 | 0 | 0 | 4 |
-| Test-input injection | DASH-INJ-001 to 007 | 7 | 0 | 0 | 7 |
-| Upload store | DASH-UPL-001 to 003 | 3 | 0 | 0 | 3 |
-| Web page | DASH-UI-001 to 016 | 16 | 0 | 0 | 9 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| HTTP routes | DASH-HTTP-001 to DASH-HTTP-015 | 15 | 0 | 0 | 15 |
+| Audio proxy and sink | DASH-SINK-001 to DASH-SINK-004 | 4 | 0 | 0 | 3 |
+| WebSocket feed | DASH-FEED-001 to DASH-FEED-007 | 10 | 0 | 0 | 10 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-008 | 7 | 0 | 0 | 6 |
+| Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 | 4 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-008 | 8 | 0 | 0 | 8 |
+| Upload store | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 | 3 |
+| Web page | DASH-UI-001 to DASH-UI-022 | 22 | 0 | 0 | 16 |
+| Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 | 7 |
+| Stack control | DASH-STACK-001 to DASH-STACK-008 | 8 | 0 | 0 | 8 |
+| Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-021 | 21 | 0 | 0 | 21 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 | 1 |
 
-**Summary:** 61 of 61 specs implemented; 0 deferred; 0 gaps. 50 specs carry a dashboard test annotation. Implemented but untested: DASH-HTTP-009, DASH-HTTP-010, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007 to DASH-UI-011 (DASH-SINK-004 is tested only through the config package). Every spec has a code annotation. DASH-CTRL-006 is retired; its number is not reused.
+**Summary:** 110 of 110 specs implemented; 0 deferred; 0 open. 102 carry a test `@spec` annotation; implemented without one: DASH-SINK-004, DASH-CTRL-008, DASH-UI-004, DASH-UI-005, DASH-UI-007, DASH-UI-009, DASH-UI-010, DASH-UI-011 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

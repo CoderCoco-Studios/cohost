@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
-import { ClipCache, ClipMirror, refreshClips } from "../../mouth/src/fallback.js";
+import { ClipCache, ClipMirror, refreshClips } from "../../mouth/src/clips.js";
 import { ClipService } from "../src/clips.js";
 import { Voice } from "../src/voice.js";
 

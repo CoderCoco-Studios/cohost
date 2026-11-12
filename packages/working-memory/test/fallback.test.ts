@@ -10,8 +10,8 @@ const chat = (text: string) =>
 // @spec WM-PUSH-007
 test("pushSelf with an id keeps it on the self event without rendering it; without one the event has no id key", () => {
   const ctx = new Context(10);
-  ctx.pushSelf("plain", "happy");
-  ctx.pushSelf("hello", "happy", "say-1");
+  ctx.pushSelf("plain", "happy", 1000);
+  ctx.pushSelf("hello", "happy", 1000, "say-1");
   const [a, b] = ctx.all();
   assert.equal("id" in a!, false);
   assert.equal((b as { id?: string }).id, "say-1");
@@ -21,13 +21,13 @@ test("pushSelf with an id keeps it on the self event without rendering it; witho
 // @spec WM-WIN-007
 test("hasSelf: true only while a self event with that id is in the window", () => {
   const ctx = new Context(2);
-  ctx.pushSelf("one", "happy", "a");
+  ctx.pushSelf("one", "happy", 1000, "a");
   ctx.push(chat("not self"));
   assert.equal(ctx.hasSelf("a"), true);
   assert.equal(ctx.hasSelf("b"), false);
   ctx.push(chat("pushes it out"));
   assert.equal(ctx.hasSelf("a"), false); // trimmed away
-  ctx.pushSelf("two", "happy", "b");
+  ctx.pushSelf("two", "happy", 1000, "b");
   ctx.clear();
   assert.equal(ctx.hasSelf("b"), false);
 });
@@ -35,7 +35,7 @@ test("hasSelf: true only while a self event with that id is in the window", () =
 // @spec WM-PUSH-008
 test("markFallback records the fallback text in place, keeping position and seen state; an unknown id changes nothing", () => {
   const ctx = new Context(10);
-  ctx.pushSelf("meant", "happy", "a");
+  ctx.pushSelf("meant", "happy", 1000, "a");
   ctx.push(chat("later"));
   const before = ctx.all().map((e) => ({ ...e }));
   assert.equal(ctx.markFallback("nope", "x"), false);
@@ -52,8 +52,8 @@ test("markFallback records the fallback text in place, keeping position and seen
 // @spec WM-TRANS-010
 test("transcript: a marked self line shows the fallback with a note quoting the failed line, on one line; unmarked lines are unchanged", () => {
   const ctx = new Context(10);
-  ctx.pushSelf("plain", "sad");
-  ctx.pushSelf("meant\nto say\r\nthis", "happy", "a");
+  ctx.pushSelf("plain", "sad", 1000);
+  ctx.pushSelf("meant\nto say\r\nthis", "happy", 1000, "a");
   ctx.markFallback("a", "oops\nlol");
   assert.equal(
     ctx.transcript("Coco"),

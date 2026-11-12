@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
-import { Context, propagatedFlags } from "@cohost/working-memory";
+import { controlFor, type Heartbeat } from "@cohost/shared";
+import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-memory";
 import { Scheduler } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
@@ -17,6 +18,8 @@ export interface SalienceDeps {
    * so a stepped wall clock must not stretch or cut them. Tests inject a fake one.
    */
   now?: () => number;
+  /** The service's heartbeat: a pause shows as its standing detail `paused` (SAL-HEALTH-004). */
+  heartbeat?: Pick<Heartbeat, "setDetail">;
 }
 
 /** The salience region's state and event handling; index.ts wires it to the bus and the tick timer. */
@@ -24,20 +27,29 @@ export class Salience {
   readonly ctx: Context;
   readonly scheduler: Scheduler;
   readonly reflexes: Reflexes;
-  private muted = false; // @spec SAL-CTRL-006
-  /** Paused by `control pause`: keeps reading events (context is not lost) but decides and reflexes nothing. */
-  private paused = false; // @spec SAL-CTRL-006
+  /** `control` state (shared reader). Paused: keeps reading events (context is not lost) but decides and reflexes nothing. @spec SAL-CTRL-006 */
+  private readonly control: ReturnType<typeof controlFor>;
   private arousal = 0; // @spec SAL-IN-006
   /** What the cortex / voice are up to, as last reported on the bus. */
   private cortexState: "idle" | "thinking" | "speaking" | "muted" = "idle"; // @spec SAL-IN-006
   private readonly now: () => number;
   private cortexSince: number;
   private deciding = false;
+  /** What the window took in since the last `pause`, to be marked seen on `resume` (SAL-CTRL-007); never longer than the window. */
+  private pausedArrivals: ContextEvent[] = [];
 
   constructor(private d: SalienceDeps) {
     this.ctx = new Context(d.cfg.brain.working_memory_events);
     this.now = d.now ?? (() => performance.now());
     this.cortexSince = this.now();
+    this.control = controlFor("salience", {
+      pause: () => { this.pausedArrivals = []; },
+      resume: () => { // @spec SAL-CTRL-007
+        this.ctx.markSeenEvents(this.pausedArrivals);
+        this.pausedArrivals = [];
+      },
+      forget_context: () => { this.ctx.clear(); this.pausedArrivals = []; }, // @spec SAL-CTRL-005
+    }, { log: d.log, heartbeat: d.heartbeat });
     this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
   }
@@ -46,22 +58,22 @@ export class Salience {
     switch (ev.type) {
       case "chat.message": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
-        this.ctx.push(ev);
+        const entry = this.take(ev);
         this.scheduler.noteActivity();
-        await this.reflex("chat", d.text);
+        await this.reflex("chat", d.text, entry);
         break;
       }
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
-        this.ctx.push(ev);
+        const entry = this.take(ev);
         this.scheduler.noteActivity();
-        await this.reflex("speech", d.text);
+        await this.reflex("speech", d.text, entry);
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
         const d = ev.data as BusEvent<"vision.summary">["data"];
-        this.ctx.push(ev);
-        if (d.changed) await this.reflex("vision", d.text); // @spec SAL-REFLEX-002
+        const entry = this.take(ev);
+        if (d.changed) await this.reflex("vision", d.text, entry); // @spec SAL-REFLEX-002
         break;
       }
       case "brain.say": // @spec SAL-BUSY-003
@@ -79,26 +91,30 @@ export class Salience {
       case "affect.state": // @spec SAL-IN-004
         this.arousal = (ev.data as BusEvent<"affect.state">["data"]).arousal;
         break;
-      case "control": {
-        const d = ev.data as BusEvent<"control">["data"];
-        if (d.target && d.target !== "salience") break; // addressed to another service; @spec SAL-CTRL-001
-        if (d.cmd === "pause") this.paused = true; // @spec SAL-CTRL-002
-        if (d.cmd === "resume") this.paused = false; // @spec SAL-CTRL-003
-        if (d.cmd === "mute") this.muted = true; // @spec SAL-CTRL-004
-        if (d.cmd === "unmute") this.muted = false;
-        if (d.cmd === "forget_context") this.ctx.clear(); // @spec SAL-CTRL-005
+      // @spec SAL-CTRL-001, SAL-CTRL-002, SAL-CTRL-003, SAL-CTRL-004
+      case "control":
+        this.control.handle(ev); // a command addressed to another service changes nothing
         break;
-      }
     }
   }
 
-  /** Fast path. Fires immediately, bypassing the scheduler and the LLM. */
-  private async reflex(sense: Sense, text: string) { // @spec SAL-REFLEX-001
-    if (this.paused || this.muted || this.reflexes.size === 0) return; // @spec SAL-REFLEX-006
+  /** Push a perception into the window; while paused, remember the entry so `resume` can mark it seen (SAL-CTRL-007). */
+  private take(ev: BusEvent): ContextEvent | undefined {
+    const entry = this.ctx.push(ev);
+    if (entry && this.control.paused) {
+      this.pausedArrivals.push(entry);
+      const over = this.pausedArrivals.length - this.d.cfg.brain.working_memory_events;
+      if (over > 0) this.pausedArrivals.splice(0, over);
+    }
+    return entry;
+  }
+
+  /** Fast path. Fires immediately, bypassing the scheduler and the LLM. `trigger` is the entry the event just became. */
+  private async reflex(sense: Sense, text: string, trigger: ContextEvent | undefined) { // @spec SAL-REFLEX-001, SAL-REFLEX-008
+    if (this.control.paused || this.control.muted || this.reflexes.size === 0) return; // @spec SAL-REFLEX-006
     // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
     // Gate before test(), which spends the rule's own cooldown on a hit.
     if (this.busy() || this.scheduler.cooling()) return; // @spec SAL-REFLEX-005
-    const trigger = this.ctx.last(); // reflex() runs synchronously after the push, so this is the triggering event
     const hit = this.reflexes.test(sense, text, this.now());
     if (!hit) return;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");
@@ -125,14 +141,14 @@ export class Salience {
   }
 
   private async decideAndPublish(): Promise<void> {
-    if (this.paused || this.deciding) return; // an llm/http scorer can take longer than a tick; @spec SAL-FOCUS-002, SAL-CTRL-002
+    if (this.control.paused || this.deciding) return; // an llm/http scorer can take longer than a tick; @spec SAL-FOCUS-002, SAL-CTRL-002
     this.deciding = true;
     let decision;
-    try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.muted, this.arousal); }
+    try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal); }
     finally { this.deciding = false; }
     if (!decision.speak) return;
     // A mute, pause or busy cortex may have arrived while the scorer ran: the decision is void then.
-    if (this.muted || this.paused || this.busy()) return; // @spec SAL-FOCUS-005
+    if (this.control.muted || this.control.paused || this.busy()) return; // @spec SAL-FOCUS-005
     // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
     this.ctx.markSeenEvents(decision.scored); // @spec SAL-FOCUS-004
     // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.

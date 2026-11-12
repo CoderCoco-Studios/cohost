@@ -55,11 +55,66 @@ test("an injected line not marked remember, and a line shorter than capture_min_
 });
 
 // @spec MEM-CAPTURE-002
-test("only chat.message is captured: speech.heard and other events are ignored", async () => {
+test("only chat.message and speech.heard are captured: other events are ignored", async () => {
   const t = setup();
-  await t.onEvent(event("speech.heard", { speaker: "Chris", text: "we are going live in a minute", durationMs: 800 }));
   await t.onEvent(event("brain.say", { id: "1", text: "Hello chat, welcome in!", emotion: "happy" }));
+  await t.onEvent(event("vision.summary", { text: "a long description of the screen here" } as never));
   assert.equal(t.inputs.length, 0);
+});
+
+const speech = (extra: Record<string, unknown> = {}) =>
+  event("speech.heard", { speaker: "Chris", speakerId: "D1", text: "I just adopted a puppy", durationMs: 800, ...extra });
+
+// @spec MEM-VOICE-003
+test("a voice line runs the hook for the speaker's voice viewer with the display name and writes the note there", async () => {
+  const t = setup();
+  t.answer(() => general("adopted a puppy"));
+  await t.onEvent(speech());
+  assert.deepEqual(t.inputs.map((i) => [i.viewer, i.line]), [["Chris", "I just adopted a puppy"]]);
+  const v = (await t.store.getViewer("discord:d1"))!;
+  assert.deepEqual([v.display, v.msgCount], ["Chris", 0], "created without counting a message");
+  assert.deepEqual((await t.store.listNotes("discord:d1")).map((n) => [n.text, n.dirty]), [["adopted a puppy", true]]);
+  assert.equal(t.written(), 1);
+});
+
+// @spec MEM-VOICE-003
+test("a voice line reinforces a duplicate note and is dropped by a suppression rule, like a chat line", async () => {
+  const t = setup();
+  await t.store.ensureViewer("discord:d1", "Chris");
+  const n = await t.store.insertNote({ userKey: "discord:d1", category: "general", text: "Adopted a puppy." });
+  t.answer(() => general("adopted a puppy"));
+  await t.onEvent(speech());
+  assert.equal((await t.store.listNotes("discord:d1"))[0]!.mentions, 2);
+  assert.equal(n.mentions, 1);
+  const g = await t.store.insertNote({ userKey: "discord:d1", category: "general", text: "plays chess nightly" });
+  await t.store.deleteNote(g.id, "private");
+  t.answer(() => general("plays chess nightly"));
+  await t.onEvent(speech({ text: "I play chess nightly" }));
+  assert.equal((await t.store.listNotes("discord:d1")).length, 1);
+});
+
+// @spec MEM-VOICE-003, MEM-VOICE-004
+test("a voice line from a linked id is captured onto the chat viewer, and the hook sees the chat display name", async () => {
+  const t = setup();
+  await t.store.touchViewer("ID1", "BobChat");
+  await t.store.linkDiscord("D1", "ID1");
+  t.answer(() => general("adopted a puppy"));
+  await t.onEvent(speech());
+  assert.equal(t.inputs[0]!.viewer, "BobChat");
+  assert.equal((await t.store.listNotes("ID1")).length, 1);
+  assert.equal(await t.store.getViewer("discord:d1"), undefined);
+});
+
+// @spec MEM-VOICE-003
+test("a voice line without a speakerId, an injected one not marked remember, or a short one never reaches the hook", async () => {
+  const t = setup();
+  await t.onEvent(speech({ speakerId: undefined }));
+  await t.onEvent(speech({ speakerId: undefined, injected: true, remember: true }));
+  await t.onEvent(speech({ injected: true }));
+  await t.onEvent(speech({ text: "ok yeah" }));
+  assert.equal(t.inputs.length, 0);
+  await t.onEvent(speech({ injected: true, remember: true }));
+  assert.equal(t.inputs.length, 1);
 });
 
 // @spec MEM-CAPTURE-002
@@ -151,6 +206,12 @@ test("the capture hook builds an ollama provider under a hosted cortex, mock is 
   assert.equal(providerOf(cfg("anthropic")), "ollama", "a hosted cortex model does not see chat lines or health notes");
   assert.equal(providerOf(cfg("openai")), "ollama");
   assert.equal(providerOf(cfg("anthropic", { llm: { provider: "openai", model: "gpt-x" } })), "openai");
+});
+
+// @spec MEM-NOTE-012
+test("under llm.provider mock the capture hook is built on mock even when the hook names ollama", () => {
+  const c = testConfig({ llm: { provider: "mock", model: "m" }, brain: { memory: { notes: { capture: { kind: "llm", llm: { provider: "ollama", model: "gemma3:4b" } } } } } });
+  assert.equal((createCaptureHook(c, recordingLog().log) as unknown as { provider: { name: string } }).provider.name, "mock");
 });
 
 // @spec MEM-CAPTURE-005, MEM-CAPTURE-009, MEM-CAPTURE-011, MEM-CONSOL-001

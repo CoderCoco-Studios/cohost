@@ -7,16 +7,6 @@
  * can fetch and play it. Sinks report `voice.playing` / `voice.done`; if no
  * sink picks an utterance up, a virtual sink times it so the brain moves on.
  */
-import { Bus } from "@cohost/bus";
-import { createLogger, envOr, loadConfig, urls } from "@cohost/config";
 import { runVoice } from "./boot.js";
 
-const log = createLogger("voice");
-
-void runVoice({
-  log,
-  setup: () => {
-    const cfg = loadConfig();
-    return { cfg, bus: new Bus("voice", log), port: Number(envOr("VOICE_PORT", "8700")), publicUrl: urls.voice() };
-  },
-});
+void runVoice();

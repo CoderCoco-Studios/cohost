@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { SERVICE_MANIFEST } from "@cohost/control";
+import { EventPayloads } from "@cohost/bus";
+import { SERVICE_MANIFEST, unitDescriptors } from "@cohost/control";
 
 /**
  * The page's inline <script> run under a hand-written stub DOM (no browser dependency). The script's
@@ -26,7 +27,8 @@ class El {
   appendChild(c: El) { c.parent = this; this.children.push(c); }
   remove() { this.parent?.children.splice(this.parent.children.indexOf(this), 1); }
   setAttribute() {}
-  addEventListener() {}
+  listeners: Record<string, ((e: unknown) => unknown)[]> = {};
+  addEventListener(type: string, fn: (e: unknown) => unknown) { (this.listeners[type] ??= []).push(fn); }
   closest() { return null; }
 }
 
@@ -39,7 +41,7 @@ const res = (status: number, body: unknown = ""): FakeRes => ({
 
 type Handler = (path: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => FakeRes | Promise<FakeRes>;
 
-async function boot(opts: { search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string } = {}) {
+async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string; rejectPlay?: boolean; playRejects?: () => boolean } = {}) {
   const prompts: string[] = [], confirms: string[] = [];
   const els = new Map<string, El>();
   const get = (sel: string) => { let e = els.get(sel); if (!e) els.set(sel, (e = new El())); return e; };
@@ -51,6 +53,7 @@ async function boot(opts: { search?: string; handler?: Handler; control?: boolea
   const fetchStub = async (path: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body, auth: init.headers?.authorization });
     if (path === "/personality" && !init.method) return res(200, "# Coco\n");
+    if (path === "/services/manifest") return opts.manifestFails ? res(500) : res(200, { units: unitDescriptors() });
     if (path === "/services/control") return res(200, opts.control ? { enabled: true } : { enabled: false });
     return opts.handler ? opts.handler(path, init) : res(204);
   };
@@ -58,7 +61,7 @@ async function boot(opts: { search?: string; handler?: Handler; control?: boolea
     src: string; played = false;
     onplay?: () => void; onended?: () => void; onerror?: () => void;
     constructor(src: string) { this.src = src; audios.push(this); }
-    async play() { this.played = true; }
+    async play() { if (opts.rejectPlay || opts.playRejects?.()) throw new Error("NotAllowedError"); this.played = true; }
   }
   class WebSocket {
     url: string; onmessage?: (m: { data: string }) => void; onclose?: () => void;
@@ -83,7 +86,12 @@ async function boot(opts: { search?: string; handler?: Handler; control?: boolea
   await tick();
   const run = (code: string) => vm.runInContext(code, ctx) as unknown;
   const deliver = (ev: Record<string, unknown>) => sockets.at(-1)!.onmessage!({ data: JSON.stringify(ev) });
-  return { els, get, calls, sockets, audios, timers, run, deliver, tick, prompts, confirms, store };
+  /** Fires the click listeners of `sel` as if `button` (a bag of data-* values) had been clicked inside it. */
+  const click = async (sel: string, button: Record<string, string>) => {
+    for (const fn of get(sel).listeners.click ?? []) await fn({ target: { closest: () => ({ dataset: button }) } });
+    await tick();
+  };
+  return { els, get, calls, sockets, audios, timers, run, deliver, tick, prompts, confirms, store, click };
 }
 
 const utterance = (id: string, extra: Record<string, unknown> = {}) =>
@@ -159,6 +167,23 @@ test("while audio is off, utterances are not queued; enabling audio does not pla
   p.deliver(utterance("e"));
   assert.equal(p.run("queue.length"), 1);
   p.get("#audio").onclick!();
+  assert.equal(p.run("queue.length"), 0);
+});
+
+// @spec DASH-UI-022
+test("a browser that blocks playback gets a done for that utterance, audio goes off, and the waiting queue plays after audio is re-enabled", async () => {
+  let blocked = true;
+  const p = await boot({ search: "?sink=1", playRejects: () => blocked });
+  p.deliver(utterance("u1"));
+  p.deliver(utterance("u2"));
+  await p.tick();
+  assert.deepEqual(p.calls.filter((c) => c.path === "/sink").map((c) => JSON.parse(c.body!)), [{ event: "done", id: "u1" }]);
+  assert.equal(p.run("audioOn"), false);
+  assert.equal(p.run("playing"), false);
+  assert.equal(p.run("queue.length"), 1); // u2 is still waiting
+  blocked = false;
+  p.get("#audio").onclick!();
+  assert.deepEqual(p.audios.map((a) => a.src), ["/audio/u1.wav", "/audio/u2.wav"]);
   assert.equal(p.run("queue.length"), 0);
 });
 
@@ -638,4 +663,455 @@ test("a changed last result is shown with every not-ready service the result lis
   p.deliver(stackMsg({ last: { kind: "stop", ok: true, finishedAt: 2 } }));
   assert.match(p.get("#stackLast").innerHTML, /stop/);
   assert.doesNotMatch(p.get("#stackLast").innerHTML, /voice/);
+});
+
+// @spec DASH-UI-021
+test("the page script names no unit of its own: its list comes from /services/manifest", async () => {
+  assert.doesNotMatch(script, /"chat",\s*"salience"/);
+  const p = await boot({ control: true });
+  assert.ok(p.calls.some((c) => c.path === "/services/manifest"));
+  p.deliver({ type: "services", services: [svcRow("chat")] });
+  assert.equal((p.get("#svcRows").innerHTML.match(/data-act="/g) ?? []).length, 3);
+});
+
+// @spec DASH-UI-021
+test("when the manifest cannot be fetched no row gets buttons", async () => {
+  const p = await boot({ control: true, manifestFails: true });
+  p.deliver({ type: "services", services: [svcRow("chat")] });
+  assert.doesNotMatch(p.get("#svcRows").innerHTML, /data-act=/);
+});
+
+// @spec DASH-STACK-008
+test("Rebuild asks for confirmation, then posts /stack/rebuild; cancelling sends nothing", async () => {
+  const p = await boot({ control: true, token: "tok", confirm: () => false });
+  p.get("#stRebuild").onclick!();
+  await p.tick();
+  assert.equal(p.calls.filter((c) => c.path === "/stack/rebuild").length, 0);
+  assert.match(p.confirms.at(-1)!, /Rebuild/);
+  const q = await boot({ control: true, token: "tok" });
+  q.get("#stRebuild").onclick!();
+  await q.tick(); await q.tick();
+  assert.deepEqual(q.calls.filter((c) => c.path === "/stack/rebuild").map((c) => c.method), ["POST"]);
+});
+
+// ---------- settings tab (module-contract MOD-UI-001 to 006)
+
+const SETTINGS_SCHEMA = {
+  sections: [
+    { path: "voice", services: ["voice"], secrets: [], schema: { type: "object", properties: {
+      engine: { type: "string", enum: ["kokoro", "stub"], default: "kokoro" },
+      speed: { type: "number", default: 1 },
+      fallback: { type: "object", properties: { lines: { type: "array", items: { type: "string" }, default: [] } } },
+    } } },
+    { path: "llm", services: ["salience", "cortex"], secrets: ["openai.api_key"], schema: { type: "object", properties: {
+      model: { type: "string" },
+      openai: { type: "object", properties: { api_key: { type: "string", "x-secret": true } } },
+    } } },
+  ],
+};
+const VOICE_SECTION = { section: "voice", etag: "e1", unknown: [], keys: {
+  engine: { source: "env-default", editable: true, value: "kokoro", raw: "kokoro", env: { name: "VOICE_ENGINE", set: false } },
+  speed: { source: "literal", editable: true, value: 1, raw: "1" },
+  "fallback.lines": { source: "literal", editable: true, value: ["a", "b"], raw: "[a, b]" },
+} };
+const LLM_SECTION = { section: "llm", etag: "e1", unknown: [], keys: {
+  model: { source: "env", editable: false, value: "qwen", env: { name: "LLM_MODEL", set: true } },
+  "openai.api_key": { source: "env", editable: false, secret: true, set: true, env: { name: "LLM_API_KEY", set: true } },
+} };
+
+interface SettingsOpts { control?: boolean; put?: (path: string, body: any) => FakeRes; apply?: (path: string) => FakeRes }
+async function bootSettings(o: SettingsOpts = {}) {
+  const p = await boot({
+    control: o.control ?? true, token: "tok",
+    handler: (path, init) => {
+      if (path === "/config/schema") return res(200, SETTINGS_SCHEMA);
+      if (path === "/config/voice" && !init.method) return res(200, VOICE_SECTION);
+      if (path === "/config/llm" && !init.method) return res(200, LLM_SECTION);
+      if (init.method === "PUT" && path.startsWith("/config/")) return (o.put ?? (() => res(200, { ok: true, etag: "e2", restart: [], warnings: [] })))(path, JSON.parse(init.body ?? "{}"));
+      if (/^\/services\/[^/]+\/restart$/.test(path)) return (o.apply ?? (() => res(200, { ok: true })))(path);
+      return res(404, "");
+    },
+  });
+  await p.get("#tabSettings").onclick!();
+  await p.tick();
+  return p;
+}
+type SettingsPage = Awaited<ReturnType<typeof bootSettings>>;
+const pick = async (p: SettingsPage, path: string) => { p.get("#sSection").value = path; await p.get("#sSection").onchange!(); await p.tick(); };
+const change = (p: SettingsPage, key: string, kind: string, v: string | boolean) =>
+  p.get("#sForm").onchange!({ target: { dataset: { key, kind }, value: String(v), checked: v === true } });
+
+// @spec MOD-UI-001
+test("the Settings tab lists the sections, renders the chosen one from its schema with each key's source, and names its readers", async () => {
+  const p = await bootSettings();
+  assert.ok(p.calls.some((c) => c.path === "/config/schema"));
+  const opts = p.get("#sSection").innerHTML;
+  assert.match(opts, /value="voice"/);
+  assert.match(opts, /value="llm"/);
+  await pick(p, "voice");
+  assert.ok(p.calls.some((c) => c.path === "/config/voice"));
+  assert.match(p.get("#sReaders").textContent, /read by: voice/);
+  const form = p.get("#sForm").innerHTML;
+  assert.match(form, /data-key="engine"/);
+  assert.match(form, /<option[^>]*value="stub"/); // an enum renders as a select
+  assert.match(form, /data-key="speed"[^>]*data-kind="number"/);
+  assert.match(form, /data-key="fallback\.lines"/); // nested keys are named relative to the section
+  assert.match(form, /env-default/);
+  assert.match(form, /literal/);
+  await pick(p, "llm");
+  assert.match(p.get("#sReaders").textContent, /read by: salience, cortex/);
+});
+
+// @spec MOD-UI-002
+test("non-editable keys are read-only, showing the variable for env keys and only set or not set for secrets", async () => {
+  const p = await bootSettings();
+  await pick(p, "llm");
+  const form = p.get("#sForm").innerHTML;
+  assert.match(form, /LLM_MODEL/);
+  assert.match(form, /data-key="model"[^>]*disabled/);
+  assert.match(form, /LLM_API_KEY/);
+  assert.match(form, /\bset\b/);
+  assert.doesNotMatch(form, /data-key="openai\.api_key"[^>]*value=/); // no value is ever put in a secret's control
+});
+
+// @spec MOD-UI-003
+test("Validate sends only the changed keys with ?dryRun=1 and shows issues or warnings; Save sends them without it", async () => {
+  const seen: { path: string; body: any }[] = [];
+  const p = await bootSettings({ put: (path, body) => {
+    seen.push({ path, body });
+    return path.includes("dryRun") ? res(400, { ok: false, issues: [{ path: "voice.speed", message: "too fast" }] }) : res(200, { ok: true, etag: "e2", restart: [], warnings: [] });
+  } });
+  await pick(p, "voice");
+  change(p, "speed", "number", "1.3");
+  change(p, "fallback.lines", "list", "x\ny");
+  change(p, "engine", "enum", "kokoro"); // back to the loaded value: not a change
+  await p.get("#sValidate").onclick!();
+  await p.tick();
+  assert.equal(seen[0]!.path, "/config/voice?dryRun=1");
+  assert.deepEqual(seen[0]!.body, { etag: "e1", values: { speed: 1.3, "fallback.lines": ["x", "y"] } });
+  assert.match(p.get("#sMsg").textContent, /voice\.speed/);
+  assert.match(p.get("#sMsg").textContent, /too fast/);
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(seen[1]!.path, "/config/voice");
+  assert.deepEqual(seen[1]!.body, { etag: "e1", values: { speed: 1.3, "fallback.lines": ["x", "y"] } });
+});
+
+// @spec MOD-UI-003
+test("Validate with a passing dry run reports it valid and shows the warnings", async () => {
+  const p = await bootSettings({ put: () => res(200, { ok: true, dryRun: true, warnings: ["voice.engine: VOICE_ENGINE is set"] }) });
+  await pick(p, "voice");
+  change(p, "engine", "enum", "stub");
+  await p.get("#sValidate").onclick!();
+  await p.tick();
+  assert.match(p.get("#sMsg").textContent, /valid/i);
+  assert.match(p.get("#sMsg").textContent, /VOICE_ENGINE is set/);
+});
+
+// @spec MOD-UI-004
+test("a 409 says the file changed and keeps the unsaved edits until the operator reloads the section", async () => {
+  const p = await bootSettings({ put: () => res(409, { ok: false, etag: "e9" }) });
+  await pick(p, "voice");
+  change(p, "speed", "number", "2");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.match(p.get("#sMsg").textContent, /changed since/i);
+  assert.equal(p.run("JSON.stringify(sEdits)"), '{"speed":2}'); // still held
+  assert.notEqual(p.get("#sReload").style.display, "none");
+  const before = p.calls.filter((c) => c.path === "/config/voice" && c.method === "GET").length;
+  await p.get("#sReload").onclick!();
+  await p.tick();
+  assert.equal(p.calls.filter((c) => c.path === "/config/voice" && c.method === "GET").length, before + 1);
+  assert.equal(p.run("JSON.stringify(sEdits)"), "{}");
+});
+
+// @spec MOD-UI-005
+test("after a save with units to restart, Apply restarts each one after another with an empty body and shows every result", async () => {
+  const p = await bootSettings({
+    put: () => res(200, { ok: true, etag: "e2", restart: ["salience", "cortex", "memory"], warnings: [] }),
+    apply: (path) => (path === "/services/cortex/restart" ? res(500, { ok: false, detail: "compose failed" }) : res(200, { ok: true })),
+  });
+  await pick(p, "voice");
+  assert.equal(p.get("#sApply").style.display, "none");
+  change(p, "speed", "number", "1.1");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(p.get("#sApply").textContent, "Apply: restart salience, cortex, memory");
+  assert.notEqual(p.get("#sApply").style.display, "none");
+  await p.get("#sApply").onclick!();
+  await p.tick(); await p.tick();
+  const restarts = p.calls.filter((c) => /\/restart$/.test(c.path));
+  assert.deepEqual(restarts.map((c) => [c.path, c.method, c.body]), [
+    ["/services/salience/restart", "POST", undefined],
+    ["/services/cortex/restart", "POST", undefined],
+    ["/services/memory/restart", "POST", undefined],
+  ]); // the failed middle one did not stop the last
+  const log = p.get("#sApplyLog").innerHTML;
+  assert.match(log, /salience[^<]*ok/i);
+  assert.match(log, /cortex[^<]*(failed|compose failed)/i);
+  assert.match(log, /memory[^<]*ok/i);
+});
+
+// @spec MOD-UI-006
+test("with control disabled there is no Apply; the page names the units and the cohostctl command instead", async () => {
+  const p = await bootSettings({ control: false, put: () => res(200, { ok: true, etag: "e2", restart: ["voice", "mouth"], warnings: [] }) });
+  await pick(p, "voice");
+  change(p, "speed", "number", "1.2");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(p.get("#sApply").style.display, "none");
+  const msg = p.get("#sMsg").textContent + p.get("#sApplyLog").innerHTML;
+  assert.match(msg, /cohostctl restart voice/);
+  assert.match(msg, /cohostctl restart mouth/);
+  assert.equal(p.calls.filter((c) => /\/restart$/.test(c.path)).length, 0);
+});
+
+// ---- module contract: needs, pause, test drawer (MOD-LIFE-002, MOD-PAUSE-*, MOD-TEST-001), audio autoplay (DASH-UI-012)
+const rowOf = (p: Awaited<ReturnType<typeof boot>>, name: string) => p.get("#svcRows").innerHTML.split("</tr>").find((r) => r.includes(`<td>${name}</td>`)) ?? "";
+const unitRow = (service: string, over: Record<string, unknown> = {}) => ({ service, state: "up", restarts: 0, ...over });
+const beat = (detail?: string) => ({ state: "ready", mode: "live", deps: {}, instance: "i", ...(detail ? { detail } : {}) });
+
+// @spec MOD-LIFE-002
+test("a row with needs shows 'needs <service> (<state>)' for each beside its own, unchanged, state; a row with none shows nothing", async () => {
+  const p = await boot();
+  p.deliver({ type: "services", services: [
+    unitRow("salience", { needs: [{ service: "affect", state: "down" }, { service: "cortex", state: "unknown" }] }),
+    unitRow("cortex", { needs: [] }), unitRow("chat"),
+  ] });
+  const r = rowOf(p, "salience");
+  assert.match(r, /<span class="badge up">up<\/span>/);
+  assert.match(r, /needs affect \(down\)/);
+  assert.match(r, /needs cortex \(unknown\)/);
+  assert.doesNotMatch(rowOf(p, "cortex"), /needs /);
+  assert.doesNotMatch(rowOf(p, "chat"), /needs /);
+});
+
+// @spec MOD-PAUSE-001
+test("Pause and Resume appear on the rows of units whose manifest pause is true, with control enabled, and on no other row", async () => {
+  const on = await boot({ control: true });
+  on.deliver({ type: "services", services: SERVICE_MANIFEST.map((d) => unitRow(d.id)) });
+  for (const d of unitDescriptors()) {
+    const r = rowOf(on, d.id);
+    assert.equal(/data-ctl="pause"/.test(r) && /data-ctl="resume"/.test(r), d.pause, d.id);
+    if (!d.pause) assert.doesNotMatch(r, /data-ctl=/, d.id);
+  }
+  assert.deepEqual(unitDescriptors().filter((d) => d.pause).map((d) => d.id).sort(), ["affect", "cortex", "salience"]);
+  const off = await boot();
+  off.deliver({ type: "services", services: [unitRow("salience")] });
+  assert.doesNotMatch(rowOf(off, "salience"), /data-ctl=/);
+});
+
+// @spec MOD-PAUSE-002
+test("pressing Pause or Resume posts /control with the command and the unit as target, through the authenticated fetch", async () => {
+  const p = await boot({ control: true, token: "tok" });
+  p.deliver({ type: "services", services: [unitRow("salience")] });
+  await p.click("#svcRows", { ctl: "pause", svc: "salience" });
+  await p.click("#svcRows", { ctl: "resume", svc: "cortex" });
+  const sent = p.calls.filter((c) => c.path === "/control");
+  assert.deepEqual(sent.map((c) => [c.method, JSON.parse(c.body!)]), [
+    ["POST", { cmd: "pause", target: "salience" }],
+    ["POST", { cmd: "resume", target: "cortex" }],
+  ]);
+});
+
+// @spec MOD-PAUSE-003
+test("a unit is shown paused exactly while its heartbeat detail is 'paused'; another detail is shown in its place; the page keeps no paused flag", async () => {
+  const p = await boot({ control: true });
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat("paused") })] });
+  assert.match(rowOf(p, "salience"), /badge paused">paused</);
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat("degraded: scorer down") })] });
+  assert.doesNotMatch(rowOf(p, "salience"), /badge paused/);
+  assert.match(rowOf(p, "salience"), /degraded: scorer down/);
+  p.deliver({ type: "services", services: [unitRow("salience", { heartbeat: beat() })] });
+  assert.doesNotMatch(rowOf(p, "salience"), /paused/);
+  assert.doesNotMatch(script, /\bpaused\s*=\s*(true|false)|pausedUnits|isPaused/);
+});
+
+const openDrawer = async (p: Awaited<ReturnType<typeof boot>>, unit: string) => {
+  p.deliver({ type: "services", services: [unitRow(unit)] });
+  await p.click("#svcRows", { open: "test", svc: unit });
+};
+
+// @spec MOD-TEST-001
+test("every unit row has a test button, with control enabled or not; non-unit rows have none", async () => {
+  for (const control of [true, false]) {
+    const p = await boot({ control });
+    p.deliver({ type: "services", services: [unitRow("chat"), unitRow("redis"), unitRow("mystery")] });
+    assert.match(rowOf(p, "chat"), /data-open="test"/);
+    assert.doesNotMatch(rowOf(p, "redis"), /data-open=/);
+    assert.doesNotMatch(rowOf(p, "mystery"), /data-open=/);
+  }
+});
+
+// @spec MOD-TEST-001
+test("the drawer offers one input form per entry of the unit's test.inputs, and the isolated start only with control enabled", async () => {
+  const on = await boot({ control: true });
+  await openDrawer(on, "salience");
+  assert.notEqual(on.get("#testDrawer").style.display, "none");
+  const html = on.get("#testDrawer").innerHTML;
+  assert.match(html, /salience/);
+  assert.equal((html.match(/data-td="send"/g) ?? []).length, 3);
+  for (const t of ["chat.message", "speech.heard", "vision.summary"]) assert.match(html, new RegExp(t.replace(".", "\\.")));
+  assert.match(html, /data-td="isolated"/);
+  const off = await boot();
+  await openDrawer(off, "salience");
+  assert.doesNotMatch(off.get("#testDrawer").innerHTML, /data-td="isolated"/);
+  const chat = await boot();
+  await openDrawer(chat, "chat");
+  assert.equal((chat.get("#testDrawer").innerHTML.match(/data-td="send"/g) ?? []).length, 1);
+  assert.match(chat.get("#testDrawer").innerHTML, /<textarea/);
+  const eyes = await boot();
+  await openDrawer(eyes, "eyes");
+  assert.match(eyes.get("#testDrawer").innerHTML, /type="file"/);
+});
+
+// @spec MOD-TEST-001
+test("a bus-event form posts /inject/event {unit, type, data} and reports the published bus id, or the server's refusal", async () => {
+  let answer = res(202, { id: "17-0" });
+  const p = await boot({ handler: (path) => (path === "/inject/event" ? answer : res(204)) });
+  await openDrawer(p, "salience");
+  p.get("#tdIn0").value = JSON.stringify({ platform: "twitch", user: "bob", text: "hi" });
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  const call = p.calls.find((c) => c.path === "/inject/event")!;
+  assert.deepEqual(JSON.parse(call.body!), { unit: "salience", type: "chat.message", data: { platform: "twitch", user: "bob", text: "hi" } });
+  assert.match(p.get("#tdStatus").textContent, /published chat\.message.*17-0/);
+  answer = res(409, { ok: false, detail: "service not running: salience" });
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  assert.match(p.get("#tdStatus").textContent, /409.*service not running: salience/);
+  p.get("#tdIn0").value = "{not json";
+  const before = p.calls.length;
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  assert.equal(p.calls.length, before, "invalid JSON is not sent");
+  assert.match(p.get("#tdStatus").textContent, /JSON/);
+});
+
+// @spec MOD-TEST-001
+test("every bus input the manifest declares has a sample payload that its bus schema accepts", async () => {
+  const p = await boot();
+  const types = [...new Set(unitDescriptors().flatMap((d) => d.test.inputs).filter((t) => !["text", "image", "audio"].includes(t)))];
+  assert.ok(types.length >= 6);
+  for (const t of types) {
+    const sample = JSON.parse(p.run(`JSON.stringify(sampleFor(${JSON.stringify(t)}))`) as string);
+    const parsed = (EventPayloads as unknown as Record<string, { safeParse(v: unknown): { success: boolean } }>)[t]!.safeParse(sample);
+    assert.ok(parsed.success, `${t}: ${JSON.stringify(sample)}`);
+  }
+});
+
+// @spec MOD-TEST-001
+test("the chat unit's text form posts a service-level /inject/text and its inject.result shows in the drawer feed", async () => {
+  const p = await boot({ handler: (path) => (path === "/inject/text" ? res(202, { id: "req-1" }) : res(204)) });
+  await openDrawer(p, "chat");
+  p.get("#tdIn0").value = "hello there";
+  await p.click("#testDrawer", { td: "send", i: "0" });
+  const call = p.calls.find((c) => c.path === "/inject/text")!;
+  assert.deepEqual(JSON.parse(call.body!), { level: "service", text: "hello there" });
+  p.deliver({ id: "e1", type: "inject.result", ts: 1, source: "chat", data: { id: "other", ok: true } });
+  assert.doesNotMatch(p.get("#tdFeed").innerHTML, /inject\.result/);
+  p.deliver({ id: "e2", type: "inject.result", ts: 1, source: "chat", data: { id: "req-1", ok: true, detail: "queued" } });
+  assert.match(p.get("#tdFeed").innerHTML, /inject\.result/);
+  assert.match(p.get("#tdFeed").innerHTML, /queued/);
+});
+
+// @spec MOD-TEST-001
+test("the drawer feed shows the unit's test.observe types, including ones the main feed drops, and nothing else", async () => {
+  const p = await boot();
+  await openDrawer(p, "salience");
+  p.deliver({ id: "a", type: "attention.focus", ts: 1, source: "salience", data: { reason: "mentioned", score: 0.9 } });
+  p.deliver({ id: "b", type: "brain.say", ts: 1, source: "cortex", data: { id: "s", text: "hello", emotion: "happy" } });
+  p.deliver({ id: "c", type: "affect.state", ts: 1, source: "affect", data: { valence: 0, arousal: 0, mood: "neutral" } });
+  const html = p.get("#tdFeed").innerHTML;
+  assert.match(html, /attention\.focus/);
+  assert.match(html, /brain\.say/);
+  assert.doesNotMatch(html, /affect\.state/);
+  assert.equal(p.get("#feed").children.length, 1, "the main feed still drops attention.focus");
+});
+
+// @spec MOD-TEST-001
+test("the isolated start asks for confirmation, then posts the unit's start with isolated: true", async () => {
+  const p = await boot({ control: true, confirm: () => true });
+  await openDrawer(p, "voice");
+  await p.click("#testDrawer", { td: "isolated" });
+  const call = p.calls.find((c) => c.path === "/services/voice/start")!;
+  assert.deepEqual([call.method, JSON.parse(call.body!)], ["POST", { isolated: true }]);
+  const declined = await boot({ control: true, confirm: () => false });
+  await openDrawer(declined, "voice");
+  await declined.click("#testDrawer", { td: "isolated" });
+  assert.equal(declined.calls.filter((c) => c.path === "/services/voice/start").length, 0);
+});
+
+// @spec DASH-UI-022
+test("when the browser refuses to start playback the dropped line is reported done, audio goes back to off, and the rest of the queue is kept for when audio is re-enabled", async () => {
+  const p = await boot({ rejectPlay: true });
+  p.get("#audio").onclick!(); // audio on
+  for (const id of ["a", "b", "c"]) p.deliver(utterance(id));
+  await p.tick();
+  assert.deepEqual(p.calls.filter((c) => c.path === "/sink").map((c) => JSON.parse(c.body!)), [{ event: "done", id: "a" }]);
+  assert.equal(p.run("audioOn"), false);
+  assert.match(p.get("#audio").textContent, /enable audio/);
+  assert.equal(p.run("queue.length"), 2);
+  p.get("#audio").onclick!(); // re-enable: the kept queue resumes
+  await p.tick();
+  assert.deepEqual(p.audios.map((a) => a.src), ["/audio/a.wav", "/audio/b.wav"]);
+});
+
+// ---------- Voice speakers on the Viewers page
+const VOICE_LIST = {
+  viewers: [
+    { key: "discord:77", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 1, voice: true, discordId: "77" },
+    { key: "1", display: "Alice", regular: false, regularManual: false, msgCount: 3, noteCount: 0 },
+  ],
+};
+const voiceApi = (detail: Record<string, unknown>): Handler => (path, init) => {
+  const m = init.method ?? "GET";
+  if (m === "GET" && (path.startsWith("/viewers?") || path === "/viewers")) return res(200, VOICE_LIST);
+  if (m === "GET" && path === "/viewers/1") return res(200, { viewer: VOICE_LIST.viewers[1], core: [], recent: [], deletions: [], links: detail.links });
+  if (m === "GET" && path.startsWith("/viewers/")) return res(200, detail);
+  return res(200, {});
+};
+const VOICE_DETAIL = { viewer: VOICE_LIST.viewers[0], core: [], recent: [], deletions: [] };
+const LINKED_DETAIL = { viewer: VOICE_LIST.viewers[1], core: [], recent: [], deletions: [], links: [{ discordId: "88", discordDisplay: "Ali <b>" }] };
+
+// @spec DASH-VIEWERS-020
+test("a voice viewer is listed with a VOICE tag and its panel offers Link to a chat viewer", async () => {
+  const p = await boot({ handler: voiceApi(VOICE_DETAIL), viewersToken: "tok" });
+  await p.get("#tabViewers").onclick!();
+  await p.tick();
+  const rows = p.get("#vRows").innerHTML;
+  assert.equal((rows.match(/VOICE/g) ?? []).length, 1, "only the voice viewer is tagged");
+  await p.run('selectViewer("discord:77")');
+  assert.match(p.get("#vDetail").innerHTML, /Link to a chat viewer/);
+  await p.run('selectViewer("1")');
+  assert.doesNotMatch(p.get("#vDetail").innerHTML, /Link to a chat viewer/);
+});
+
+// @spec DASH-VIEWERS-020
+test("Link to a chat viewer asks for a name, posts the discord id and the name, and reloads; cancel or empty posts nothing", async () => {
+  let answer: string | null = null;
+  const p = await boot({ handler: voiceApi(VOICE_DETAIL), viewersToken: "tok", prompt: () => answer });
+  await p.run('selectViewer("discord:77")');
+  p.calls.length = 0;
+  await p.run('linkVoice("discord:77", "77")');
+  answer = "   ";
+  await p.run('linkVoice("discord:77", "77")');
+  assert.deepEqual(vcalls(p), [], "cancelled or empty: nothing sent");
+  answer = " Alice ";
+  await p.run('linkVoice("discord:77", "77")');
+  const [post, ...rest] = vcalls(p);
+  assert.deepEqual([post!.method, post!.path, JSON.parse(post!.body!)], ["POST", "/viewers/links", { discordId: "77", name: "Alice" }]);
+  assert.ok(rest.some((c) => c.method === "GET" && c.path.startsWith("/viewers?")), "the list is reloaded");
+});
+
+// @spec DASH-VIEWERS-021
+test("a chat viewer's panel lists its linked Discord ids (escaped) with an unlink that posts and reloads", async () => {
+  const p = await boot({ handler: voiceApi(LINKED_DETAIL), viewersToken: "tok" });
+  await p.run('selectViewer("1")');
+  const html = p.get("#vDetail").innerHTML;
+  assert.match(html, /88/);
+  assert.match(html, /Ali &lt;b&gt;/);
+  assert.match(html, /data-act="unlink"/);
+  p.calls.length = 0;
+  await p.run('unlinkVoice("1", "88")');
+  const [post, ...rest] = vcalls(p);
+  assert.deepEqual([post!.method, post!.path], ["POST", "/viewers/links/88/delete"]);
+  assert.ok(rest.some((c) => c.method === "GET" && c.path === "/viewers/1"));
 });

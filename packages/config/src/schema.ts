@@ -5,6 +5,17 @@ export const Emotion = z.enum([
   "neutral", "happy", "laugh", "surprised", "smug", "sad", "angry", "confused", "think",
 ]);
 export type Emotion = z.infer<typeof Emotion>;
+
+/** A string key with a default: an empty string (an unset `${VAR}` that substituted to nothing) means "use the default". */
+// @spec CFG-SCH-024
+const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
+
+/**
+ * Dotted paths (from the config root) of the keys that hold secrets. The settings editor never shows or writes them
+ * and a section's `secrets` list is derived from this one list.
+ */
+// @spec MOD-CFG-002
+export const SECRET_PATHS: readonly string[] = ["llm.openai.api_key", "llm.claude.api_key", "vision.obs.password"];
 export const EMOTIONS = Emotion.options;
 
 /**
@@ -16,7 +27,7 @@ export const ModuleSchema = z.object({
   kind: z.preprocess((v) => v || "rules", z.enum(["rules", "llm", "http"])),
   /** http: POST endpoint. */
   url: z.string().default(""),
-  timeout_ms: z.number().int().positive().default(1500),
+  timeout_ms: z.number().int().positive().default(8000),
   /** llm: override the provider/model (e.g. a small local model while the cortex uses Claude). */
   llm: z.object({
     provider: z.preprocess((v) => v || undefined, z.enum(["ollama", "openai", "anthropic", "bedrock"]).optional()),
@@ -26,14 +37,21 @@ export const ModuleSchema = z.object({
     if (v.provider && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required when llm.provider is set on a hook (model ids are provider-specific)" });
   }),
 }).default({});
+// @spec CFG-SCH-027
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
+
+/** Default `vision.prompt`: one sentence for a co-host, and the exact `SAME` reply eyes parses as "nothing changed". */
+export const DEFAULT_VISION_PROMPT =
+  "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
+  "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
+  "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME";
 
 // @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
     streamer: z.string().min(1),
-    timezone: z.string().default("UTC"),
+    timezone: str("UTC"),
   }),
   /**
    * Which model answers for the co-host. Embeddings always use local Ollama so
@@ -54,7 +72,7 @@ export const ConfigSchema = z.object({
     /** Request timeout for chat(), embed() and ping() when the caller passes no AbortSignal. */
     timeout_ms: z.number().int().positive().default(60000),
     openai: z.object({
-      base_url: z.string().default("https://api.openai.com/v1"),
+      base_url: str("https://api.openai.com/v1"),
       api_key: z.string().default(""),
     }).default({}),
     /** Shared by provider=anthropic and provider=bedrock. */
@@ -62,7 +80,7 @@ export const ConfigSchema = z.object({
       /** Claude API key; leave empty to use ANTHROPIC_API_KEY or an `ant auth login` profile. */
       api_key: z.string().default(""),
       /** Thinking depth. "low" is right for one-line chat replies. */
-      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("low"),
+      effort: z.preprocess((v) => v || "low", z.enum(["low", "medium", "high", "xhigh", "max"])),
       /** Caps thinking + reply together, so it must be roomier than max_tokens above. */
       max_tokens: z.number().int().min(256).default(2048),
       /** Claude API only: re-run on another Claude model if a safety classifier declines. */
@@ -73,9 +91,20 @@ export const ConfigSchema = z.object({
       region: z.string().default(""),
     }).default({}),
   }),
+  // @spec CFG-SCH-021
   vision: z.object({
     enabled: z.boolean().default(false),
-    model: z.string().min(1),
+    /** Describer model id; required only while `enabled` (checked on the section below). */
+    model: z.string().default(""),
+    /** `stub` describes images with fixed text and no model call (isolated runs). */
+    engine: z.preprocess((v) => v || "ollama", z.enum(["ollama", "stub"])),
+    /** System prompt of the describe call. It must keep the instruction to reply exactly SAME when nothing changed. */
+    prompt: z.preprocess((v) => (typeof v === "string" && v.trim() ? v : undefined), z.string().default(DEFAULT_VISION_PROMPT)),
+    temperature: z.number().min(0).max(2).default(0.2),
+    /** Longest reply the vision model may write, in tokens. */
+    num_predict: z.number().int().positive().default(60),
+    /** JPEG quality of the OBS screenshot, 1 to 100. */
+    jpeg_quality: z.number().int().min(1).max(100).default(70),
     interval_ms: z.number().int().positive().default(8000),
     /** Describe-call (VLM request) timeout. */
     timeout_ms: z.number().int().positive().default(30000),
@@ -84,12 +113,15 @@ export const ConfigSchema = z.object({
     /** Largest injected image accepted (the dashboard's default image upload cap, 8 MiB). */
     upload_max_bytes: z.number().int().positive().default(8388608),
     obs: z.object({
-      host: z.string().default("host.docker.internal"),
+      host: str("host.docker.internal"),
       port: z.number().int().default(4455),
       password: z.string().default(""),
-      source: z.string().default("Game Capture"),
+      source: str("Game Capture"),
       width: z.number().int().positive().default(896),
     }),
+  }).superRefine((v, ctx) => {
+    // @spec CFG-SCH-025
+    if (v.enabled && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required while vision.enabled is true" });
   }),
   chat: z.object({
     /** `fake` publishes scripted/stdin messages with no Twitch connection (isolated runs). */
@@ -104,7 +136,7 @@ export const ConfigSchema = z.object({
    * salience (when to speak + reflexes), affect (mood), memory (hippocampus),
    * cortex (what to say). Each has its own knobs; they share working_memory_events.
    */
-  // @spec CFG-SCH-005
+  // @spec CFG-SCH-005, CFG-SCH-028
   brain: z.object({
     /** Recent events each region keeps as its working memory / prompt window. */
     working_memory_events: z.number().int().positive().default(24),
@@ -148,6 +180,16 @@ export const ConfigSchema = z.object({
       baseline_valence: z.number().min(-1).max(1).default(0.15),
       /** Resting arousal (0..1). */
       baseline_arousal: z.number().min(0).max(1).default(0.1),
+      /** An unchanged mood is published again this often so late joiners get a value. */
+      republish_ms: z.number().int().positive().default(15000),
+      /** With an llm/http appraiser, a line shorter than this (trimmed, no mention) is appraised by the rules inline. */
+      short_line_chars: z.number().int().nonnegative().default(4),
+      /** Mood nudges per event, as magnitudes 0..1: a sub's chat line, a changed screen, the co-host's own emotional line. */
+      nudge_sub_valence: z.number().min(0).max(1).default(0.05),
+      nudge_sub_arousal: z.number().min(0).max(1).default(0.05),
+      nudge_screen_arousal: z.number().min(0).max(1).default(0.08),
+      nudge_said_valence: z.number().min(0).max(1).default(0.08),
+      nudge_said_arousal: z.number().min(0).max(1).default(0.05),
       /** How a line of chat/speech moves the mood: rules | llm | http. */
       module: ModuleSchema,
     }).default({}),
@@ -201,9 +243,10 @@ export const ConfigSchema = z.object({
   voice: z.object({
     /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
     engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "stub"])),
-    voice: z.string().default("af_heart"),
+    voice: str("af_heart"),
     speed: z.number().positive().default(1),
-    sample_rate: z.number().int().positive().default(24000),
+    /** Read only by the `stub` engine to size its silence; the Kokoro engine ignores it. */
+    sample_rate: z.number().int().positive().default(24000).describe("Sample rate of the silence the stub voice engine returns. Read only by the stub engine; the Kokoro engine ignores it."), // @spec CFG-SCH-026
     fallback: z.object({
       /** Phrases the co-host says when a line fails to play; voice turns each into a clip. Empty turns the feature off. */
       lines: z.array(
@@ -220,8 +263,8 @@ export const ConfigSchema = z.object({
     vtube_studio: z.object({
       host: z.string(),
       port: z.number().int().default(8001),
-      plugin_name: z.string().default("cohost"),
-      plugin_developer: z.string().default("cohost"),
+      plugin_name: str("cohost"),
+      plugin_developer: str("cohost"),
     }),
     vmc: z.object({ host: z.string(), port: z.number().int().default(39539) }),
   }),
@@ -234,7 +277,13 @@ export const ConfigSchema = z.object({
     }),
     silence_ms: z.number().int().positive().default(700),
     min_speech_ms: z.number().int().positive().default(400),
-    stt_model: z.string().default("Systran/faster-whisper-small"),
+    stt_model: str("Systran/faster-whisper-small"),
+    /** `stub` transcribes every clip to fixed text with no STT server (isolated runs); blank is `speaches`. */
+    // @spec CFG-SCH-022
+    stt_engine: z.preprocess((v) => v || "speaches", z.enum(["speaches", "stub"])),
+    /** Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped: Whisper's silence hallucinations. */
+    // @spec EARS-HEAR-010
+    drop_phrases: z.array(z.string()).default([]),
   }),
   /**
    * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.
@@ -250,13 +299,21 @@ export const ConfigSchema = z.object({
         /** Loudness on this output only, applied to utterances and fallback clips. */
         gain_db: z.number().min(-40).max(12).default(0),
       }).default({}),
+      /** Test-only output: plays nothing, reports as a sink; `fail_every` n > 0 gives up on every n-th line. */
+      // @spec CFG-SCH-023
+      dryrun: z.object({
+        enabled: z.boolean().default(false),
+        fail_every: z.number().int().nonnegative().default(0),
+      }).default({}),
     }).default({}),
     fallback: z.object({
       /** At most one spoken fallback line per this many ms on an output (storm limit). */
       min_interval_ms: z.number().int().nonnegative().default(20000),
     }).default({}),
   }).default({}),
-  dashboard: z.object({ port: z.number().int().default(3000) }),
+  dashboard: z.object({
+    port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT environment variable is unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
+  }),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

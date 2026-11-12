@@ -1,4 +1,4 @@
-import type { Heartbeat } from "@cohost/bus";
+import { retryWithBackoff, type Heartbeat } from "@cohost/shared";
 import type { Logger } from "@cohost/config";
 
 /** The slice of obs-websocket-js's `OBSWebSocket` the link uses. */
@@ -16,8 +16,10 @@ export interface ObsLinkDeps {
   log: Logger;
   heartbeat: Pick<Heartbeat, "ready" | "degraded">;
   sleep?: (ms: number) => Promise<void>;
-  /** Delay between failed connection attempts, ms (default 10000). */
+  /** First delay after a failed connection attempt, ms (default 10000, doubling per failure). */
   retryMs?: number;
+  /** Cap on the delay between attempts, ms (default 60000). */
+  retryMaxMs?: number;
 }
 
 export interface ObsLink {
@@ -27,14 +29,12 @@ export interface ObsLink {
   stop(): Promise<void>;
 }
 
-const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
 /**
- * The connection to OBS: connect with a fixed retry, report `degraded` (obs down) while it is
+ * The connection to OBS: connect with a retry that backs off (10 s doubling to 60 s), report `degraded` (obs down) while it is
  * unreachable and `ready` once identified, and reconnect on any later close.
  */
 // @spec EYES-OBS-001, EYES-OBS-002, EYES-OBS-003, EYES-OBS-004, EYES-HEALTH-005, EYES-HEALTH-006
-export function createObsLink({ obs, url, password, log, heartbeat, sleep = wait, retryMs = 10_000 }: ObsLinkDeps): ObsLink {
+export function createObsLink({ obs, url, password, log, heartbeat, sleep, retryMs = 10_000, retryMaxMs = 60_000 }: ObsLinkDeps): ObsLink {
   let stopped = false;
   let inflight: Promise<void> | undefined;
   let running = false; // set synchronously: a failed attempt may emit its close before `inflight` is assigned
@@ -44,19 +44,18 @@ export function createObsLink({ obs, url, password, log, heartbeat, sleep = wait
     try { await attempts(); } finally { running = false; }
   }
   async function attempts(): Promise<void> {
-    while (!stopped) {
-      try {
-        const { obsWebSocketVersion } = await obs.connect(url, password || undefined);
-        log.info({ url, obsWebSocketVersion }, "connected to OBS");
-        heartbeat.ready();
-        return;
-      } catch (err) {
+    await retryWithBackoff(async () => {
+      const { obsWebSocketVersion } = await obs.connect(url, password || undefined);
+      log.info({ url, obsWebSocketVersion }, "connected to OBS");
+      heartbeat.ready();
+    }, {
+      baseMs: retryMs, maxMs: retryMaxMs, sleep, isStopped: () => stopped,
+      onFailure: (err, _n, delayMs) => {
         if (stopped) return;
-        log.warn({ err: String(err) }, "OBS not reachable, retrying in 10s");
+        log.warn({ err: String(err) }, `OBS not reachable, retrying in ${Math.round(delayMs / 1000)}s`);
         heartbeat.degraded("OBS not reachable");
-        await sleep(retryMs);
-      }
-    }
+      },
+    });
   }
   const connect = (): Promise<void> => (inflight ??= run().finally(() => { inflight = undefined; }));
 
@@ -77,16 +76,17 @@ export function createObsLink({ obs, url, password, log, heartbeat, sleep = wait
 }
 
 export interface StopEyesDeps {
-  idleTimer?: ReturnType<typeof setInterval>;
-  clear?: (t: ReturnType<typeof setInterval>) => void;
+  /** The idle plan of a disabled eyes; absent when vision is enabled. */
+  idle?: { stop(): void };
   link: Pick<ObsLink, "stop">;
-  bus: { stop(): void };
 }
 
-/** The one shutdown sequence, in both plans: idle timer, OBS, then the bus (the `stopping` heartbeat runs before it). */
+/**
+ * The one shutdown sequence, in both plans: the idle plan, then the OBS link. The bootstrap then stops the bus (the
+ * `stopping` heartbeat runs before any of it).
+ */
 // @spec EYES-ENAB-005, EYES-OBS-008
-export async function stopEyes({ idleTimer, clear = clearInterval, link, bus }: StopEyesDeps): Promise<void> {
-  if (idleTimer) clear(idleTimer);
+export async function stopEyes({ idle, link }: StopEyesDeps): Promise<void> {
+  idle?.stop();
   await link.stop();
-  bus.stop();
 }

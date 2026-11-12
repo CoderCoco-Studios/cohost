@@ -57,7 +57,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (65 specs, prefix `DEPLOY`: 65 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (78 specs, prefix `DEPLOY`: 77 `[x]`, 1 `[ ]`, 0 `[D]`)
 
 ### Tests
 - scripts/compose-smoke.sh (1 test annotation: DEPLOY-IMG-002, DEPLOY-IMG-003; run by `.github/workflows/compose-smoke.yml`)
@@ -93,20 +93,21 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps |
-|----------|----------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to 019 | 19 | 0 | 0 |
-| Container health | DEPLOY-HC-001 to 002 | 2 | 0 | 0 |
-| Image build | DEPLOY-IMG-001 to 005 | 5 | 0 | 0 |
-| Installer | DEPLOY-INST-001 to 012 | 12 | 0 | 0 |
-| Continuous integration | DEPLOY-CI-001 to 005 | 5 | 0 | 0 |
-| Docs site | DEPLOY-DOCS-001 to 006 | 6 | 0 | 0 |
-| Licensing and contribution | DEPLOY-LIC-001 to 004 | 4 | 0 | 0 |
-| Workspace and repo hygiene | DEPLOY-REPO-001 to 006 | 6 | 0 | 0 |
-| Documentation consistency | DEPLOY-README-001 to 003 | 3 | 0 | 0 |
-| Dev helpers | DEPLOY-DEV-001 to 003 | 3 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-022 | 21 | 0 | 0 | 16 |
+| Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 0 | 0 | 0 |
+| Image build | DEPLOY-IMG-001 to DEPLOY-IMG-005 | 6 | 0 | 0 | 1 |
+| Installer | DEPLOY-INST-001 to DEPLOY-INST-013 | 13 | 0 | 0 | 2 |
+| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-008 | 7 | 0 | 1 | 2 |
+| Docs site | DEPLOY-DOCS-001 to DEPLOY-DOCS-006 | 6 | 0 | 0 | 0 |
+| Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 0 | 0 | 0 |
+| Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 0 | 0 | 0 |
+| Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-004 | 4 | 0 | 0 | 1 |
+| Documentation consistency | DEPLOY-README-001 to DEPLOY-README-005 | 5 | 0 | 0 | 0 |
+| Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 0 | 0 | 0 |
 
-**Summary:** 65 of 65 specs implemented; 0 deferred; 0 gaps. Every `[x]` spec is linked to its implementation by an in-file `@spec` annotation or an `<!-- impl: -->` cite. Tests: DEPLOY-IMG-002 and -003 by `scripts/compose-smoke.sh`; DEPLOY-HC-002 by control-plane's `healthcheck.test.ts`; the rest is configuration verified by reading, by CI running it, or (the `models` pull loop, the installer's `probe`/port parsing/Node-major check) by running the script against stubs or a throwaway repository. No Docker was available when the gap fixes were made: the Compose file was parsed as YAML, not run. The `cla` workflow (DEPLOY-CI-005) cannot run before it is on `main`.
+**Summary:** 77 of 78 specs implemented; 0 deferred; 1 open. 22 carry a test `@spec` annotation; 55 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

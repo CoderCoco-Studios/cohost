@@ -1,14 +1,14 @@
 import pg from "pg";
 import { urls, type Config, type Logger } from "@cohost/config";
 import type { Embedder } from "@cohost/llm";
-import { tracked } from "@cohost/bus";
+import { tracked } from "@cohost/shared";
 import type { ReflectCursor } from "./cursor.js";
 import {
-  clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
-  type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
+  clamp01, effectiveStrength, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  type Category, type DeletionRow, type Layer, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
-export type MemoryKind = "chat" | "speech" | "self" | "note";
+export type MemoryKind = "chat" | "speech" | "self";
 
 export interface Memory {
   id: number;
@@ -24,6 +24,16 @@ export interface Memory {
 /** What the region needs from a memory store: Postgres-backed (MemoryStore) or in-process (InMemoryStore). */
 export interface MemoryBackend {
   init(): Promise<void>;
+  /**
+   * Open the store for a read-mostly one-shot (`reflect`): no schema work and no embedder call. Rejects when the tables the
+   * service creates are missing; resolves at once for the in-process store (MEM-REFLECT-011).
+   */
+  connect(): Promise<void>;
+  /**
+   * Re-embed every stored vector with the store's embedder and move the vector columns to its dimension (MEM-REEMBED-001).
+   * `tables` has one entry per migrated table with the rows embedded by this call, empty when nothing needed migrating.
+   */
+  reembed(onProgress?: (table: string, done: number) => void): Promise<ReembedResult>;
   remember(kind: MemoryKind, who: string, text: string): Promise<void>;
   recall(query: string, k?: number): Promise<Memory[]>;
   /** Count one chat line for the viewer: upsert by lowercased key, keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
@@ -33,6 +43,20 @@ export interface MemoryBackend {
   findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
   /** The viewer's row, created with `msg_count` 0 when missing (claiming a matching placeholder like `touchViewer` does) and never counting a message: capture's way to write a note before the `memory` group has seen the line (MEM-CAPTURE-011). */
   ensureViewer(userKey: string, display: string): Promise<ViewerRow>;
+  /**
+   * A speaker heard in Discord voice: resolve their viewer (the linked chat viewer, else the voice viewer `discord:<id>`), create the
+   * voice row when missing with no messages counted, and refresh `last_seen` and the Discord display name (MEM-VOICE-001).
+   */
+  touchSpeaker(speakerId: string, display: string): Promise<ViewerRow>;
+  /**
+   * Link a Discord id to the chat viewer named by `target` (a key or a display name): the voice viewer's notes and deletions move over, dirty,
+   * and the voice row goes; undefined when no such non-voice viewer exists (MEM-VOICE-005).
+   */
+  linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined>;
+  /** Remove a Discord id's link, leaving every note where it is; false when the id was not linked (MEM-VOICE-006). */
+  unlinkDiscord(discordId: string): Promise<boolean>;
+  /** The Discord ids linked to a viewer (MEM-VOICE-009). */
+  listLinks(userKey: string): Promise<LinkRow[]>;
   /** Embed `text` with the same embedder the store uses for notes, so the vectors compare with stored note and deletion embeddings (MEM-CAPTURE-005). */
   embedText(text: string): Promise<number[]>;
   /** Set or clear the owner's regular flag by key or display name; a name with no row gets a placeholder when setting (MEM-REG-003). Clearing a name with no row returns undefined. */
@@ -65,6 +89,12 @@ export interface MemoryBackend {
   getMeta(k: string): Promise<string | undefined>;
   setMeta(k: string, v: string): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface ReembedResult {
+  /** The embedder's vector dimension. */
+  dims: number;
+  tables: Record<string, number>;
 }
 
 export interface ViewerTouch {
@@ -176,6 +206,16 @@ export class MemoryStore implements MemoryBackend {
         deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         embedding vector(${this.dims})
       )`);
+    // @spec MEM-VOICE-010
+    await this.query(`
+      CREATE TABLE IF NOT EXISTS viewer_links (
+        discord_id TEXT PRIMARY KEY,
+        user_key TEXT NOT NULL REFERENCES viewers (user_key) ON UPDATE CASCADE ON DELETE CASCADE,
+        discord_display TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+    await this.query("CREATE INDEX IF NOT EXISTS viewer_links_user_idx ON viewer_links (user_key)");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_notes_user_idx ON viewer_notes (user_key)");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_notes_dirty_idx ON viewer_notes (user_key) WHERE dirty");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_note_deletions_user_idx ON viewer_note_deletions (user_key)");
@@ -185,6 +225,86 @@ export class MemoryStore implements MemoryBackend {
       "CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)",
     ).catch((e) => this.log.warn({ e: String(e) }, "hnsw index not created (fine on tiny tables)"));
     this.log.info({ dims: this.dims }, "memory ready");
+  }
+
+  // @spec MEM-REFLECT-011
+  async connect(): Promise<void> {
+    const { rows } = await this.query<{ memories: string | null; meta: string | null }>(
+      "SELECT to_regclass('memories') AS memories, to_regclass('meta') AS meta",
+    );
+    if (!rows[0]?.memories || !rows[0]?.meta) {
+      throw new Error("the memory tables do not exist yet: start the memory service once so it creates them");
+    }
+  }
+
+  // @spec MEM-REEMBED-001, MEM-REEMBED-002, MEM-REEMBED-003
+  /**
+   * New vectors go into `embedding_new` first and the swap of every table's column happens in one transaction at the end,
+   * so a failed run leaves the old columns serving and a rerun embeds only the rows without a new vector. Callers hold the
+   * consolidation lock and have the memory service stopped (its startup refuses a mismatching table anyway).
+   */
+  async reembed(onProgress?: (table: string, done: number) => void): Promise<ReembedResult> {
+    const dims = (await this.llm.embed("hello")).length;
+    this.dims = dims;
+    const todo: { name: string; select: string }[] = [];
+    for (const t of REEMBED_TABLES) {
+      const { rows: present } = await this.query<{ present: string | null }>("SELECT to_regclass($1) AS present", [t.name]);
+      if (!present[0]?.present) continue;
+      const have = await this.columnDims(t.name, "embedding");
+      if (have === undefined || have === dims) continue;
+      todo.push({ name: t.name, select: t.select });
+    }
+    const tables: Record<string, number> = {};
+    for (const t of todo) {
+      const staged = await this.columnDims(t.name, "embedding_new");
+      if (staged !== undefined && staged !== dims) await this.query(`ALTER TABLE ${t.name} DROP COLUMN embedding_new`);
+      await this.query(`ALTER TABLE ${t.name} ADD COLUMN IF NOT EXISTS embedding_new vector(${dims})`);
+      let done = 0;
+      for (;;) {
+        const { rows } = await this.query<{ id: string; who?: string; text: string }>(t.select);
+        if (rows.length === 0) break;
+        for (const r of rows) {
+          const emb = await this.llm.embed(t.name === "memories" ? `${r.who}: ${r.text}` : r.text.trim());
+          await this.query(`UPDATE ${t.name} SET embedding_new = $1 WHERE id = $2`, [toVector(emb), r.id]);
+          done++;
+        }
+        onProgress?.(t.name, done);
+      }
+      tables[t.name] = done;
+    }
+    if (todo.length === 0) return { dims, tables };
+    // Every row of every table has a vector of the new size: swap all the columns at once.
+    const client = await this.pool.connect();
+    const q = (sql: string) => this.run(() => client.query(sql));
+    try {
+      await q("BEGIN");
+      for (const t of todo) {
+        await q(`ALTER TABLE ${t.name} DROP COLUMN embedding`);
+        await q(`ALTER TABLE ${t.name} RENAME COLUMN embedding_new TO embedding`);
+      }
+      await q("COMMIT");
+    } catch (err) {
+      await q("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    if (todo.some((t) => t.name === "memories")) {
+      await this.query("CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)")
+        .catch((e) => this.log.warn({ e: String(e) }, "hnsw index not created (fine on tiny tables)"));
+    }
+    this.log.info({ dims, tables }, "re-embedded");
+    return { dims, tables };
+  }
+
+  /** The declared dimension of `table.col` (pgvector keeps it in `atttypmod`), undefined when the column does not exist or is unconstrained. */
+  private async columnDims(table: string, col: string): Promise<number | undefined> {
+    const { rows } = await this.query<{ dims: number }>(
+      "SELECT atttypmod AS dims FROM pg_attribute WHERE attrelid = to_regclass($1) AND attname = $2 AND NOT attisdropped",
+      [table, col],
+    );
+    const d = Number(rows[0]?.dims);
+    return d > 0 ? d : undefined;
   }
 
   // @spec MEM-STORE-002
@@ -260,13 +380,81 @@ export class MemoryStore implements MemoryBackend {
     return rows[0] && this.toViewer(rows[0]);
   }
 
-  // @spec MEM-SURF-002
+  // @spec MEM-SURF-002, MEM-VOICE-007
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const { rows } = await this.query<ViewerSql>(
       `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) ORDER BY last_seen DESC, user_key LIMIT 1`,
       [name],
     );
-    return rows[0] && this.toViewer(rows[0]);
+    if (rows[0]) return this.toViewer(rows[0]);
+    // No viewer is called that: the name may be a linked Discord id's display name.
+    const alias = await this.query<ViewerSql>(
+      `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}
+         FROM viewer_links l JOIN viewers v ON v.user_key = l.user_key
+        WHERE lower(l.discord_display) = lower($1)
+        ORDER BY l.updated_at DESC, l.discord_id LIMIT 1`,
+      [name],
+    );
+    return alias.rows[0] && this.toViewer(alias.rows[0]);
+  }
+
+  // @spec MEM-VOICE-001
+  async touchSpeaker(speakerId: string, display: string): Promise<ViewerRow> {
+    const id = speakerId.toLowerCase();
+    const linked = await this.query<{ user_key: string }>(
+      "UPDATE viewer_links SET discord_display = $2, updated_at = now() WHERE discord_id = $1 RETURNING user_key", [id, display]);
+    if (linked.rows[0]) {
+      const seen = await this.query<ViewerSql>(`UPDATE viewers SET last_seen = now() WHERE user_key = $1 RETURNING ${VIEWER_COLS}`, [linked.rows[0].user_key]);
+      if (seen.rows[0]) return this.toViewer(seen.rows[0]);
+    }
+    const { rows } = await this.query<ViewerSql>(
+      `INSERT INTO viewers (user_key, display, msg_count) VALUES ($1,$2,0)
+       ON CONFLICT (user_key) DO UPDATE SET display = EXCLUDED.display, last_seen = now()
+       RETURNING ${VIEWER_COLS}`,
+      [voiceKey(id), display],
+    );
+    return this.toViewer(rows[0]!);
+  }
+
+  // @spec MEM-VOICE-005
+  async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
+    const id = discordId.toLowerCase();
+    const want = target.trim().toLowerCase();
+    const voice = voiceKey(id);
+    return this.tx(async (q) => {
+      const byKey = await q<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1`, [want]);
+      const found = byKey.rows[0] ?? (await q<ViewerSql>(
+        `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = $1 ORDER BY last_seen DESC, user_key LIMIT 1`, [want])).rows[0];
+      if (!found || isVoiceKey(found.user_key)) return undefined;
+      const voiceRow = (await q<{ display: string }>("SELECT display FROM viewers WHERE user_key = $1", [voice])).rows[0];
+      let moved = 0;
+      if (voiceRow) {
+        const m = await q(
+          "UPDATE viewer_notes SET user_key = $1, dirty = true, version = version + 1 WHERE user_key = $2", [found.user_key, voice]);
+        moved = m.rowCount ?? 0;
+        await q("UPDATE viewer_note_deletions SET user_key = $1 WHERE user_key = $2", [found.user_key, voice]);
+        await q("DELETE FROM viewers WHERE user_key = $1", [voice]);
+      }
+      await q(
+        `INSERT INTO viewer_links (discord_id, user_key, discord_display) VALUES ($1,$2,$3)
+         ON CONFLICT (discord_id) DO UPDATE SET user_key = EXCLUDED.user_key,
+           discord_display = COALESCE(EXCLUDED.discord_display, viewer_links.discord_display), updated_at = now()`,
+        [id, found.user_key, voiceRow?.display ?? null],
+      );
+      return { viewer: this.toViewer(found), moved };
+    });
+  }
+
+  // @spec MEM-VOICE-006
+  async unlinkDiscord(discordId: string): Promise<boolean> {
+    const res = await this.query("DELETE FROM viewer_links WHERE discord_id = $1", [discordId.toLowerCase()]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async listLinks(userKey: string): Promise<LinkRow[]> {
+    const { rows } = await this.query<{ discord_id: string; discord_display: string | null }>(
+      "SELECT discord_id, discord_display FROM viewer_links WHERE user_key = $1 ORDER BY updated_at, discord_id", [userKey.toLowerCase()]);
+    return rows.map((r) => ({ discordId: r.discord_id, discordDisplay: r.discord_display }));
   }
 
   // @spec MEM-CAPTURE-011, MEM-REG-004
@@ -572,6 +760,13 @@ function parseVector(text: string | null): number[] {
 }
 
 /** Arbitrary constant naming the consolidation advisory lock. */
+/** Tables with an embedding column and the query for rows still lacking a new vector; the text embedded matches the write path. */
+const REEMBED_TABLES = [
+  { name: "memories", select: "SELECT id, who, text FROM memories WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+  { name: "viewer_notes", select: "SELECT id, text FROM viewer_notes WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+  { name: "viewer_note_deletions", select: "SELECT id, text FROM viewer_note_deletions WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+] as const;
+
 const CONSOLIDATION_LOCK = 7_431_900_601;
 
 const VIEWER_COLS = "user_key, display, msg_count, regular_manual, is_sub, placeholder, first_seen, last_seen";

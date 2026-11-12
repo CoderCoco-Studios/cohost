@@ -62,7 +62,8 @@ noticing.
   speaking (`mouth`) are separate services with a Discord bot each, so either
   restarts, fails or is routed without the other.
 - **The operator** watches and steers through the `dashboard` (live feed,
-  mute, say, personality editor, test-input injection, Services tab) and the
+  mute, say, personality editor, settings editor, test-input injection,
+  Services tab) and the
   control plane (heartbeats on a separate health stream, gated
   start/stop/restart from the dashboard or `cohostctl`). The dashboard is a
   standalone program the owner starts on the host, outside Docker Compose;
@@ -86,9 +87,9 @@ cohost is built for one streamer: the owner, on their own stream.
 1. **The owner, streaming.** One person running cohost on their own Linux or
    WSL2 box with an NVIDIA GPU, OBS on the same or a second PC, a Twitch
    channel, a Discord voice channel, and a Live2D or VRM avatar app. They
-   edit `.env`, `config.yaml` and `personality.md` by hand, start the
-   dashboard on the host, press Launch, and watch the dashboard during the
-   stream.
+   edit `.env` by hand and `config.yaml` and `personality.md` by hand or
+   from the dashboard, start the dashboard on the host, press Launch, and
+   watch the dashboard during the stream.
 2. **The owner, developing.** The same person between streams: running one
    service under `pnpm dev` against the rest in Compose, injecting test chat,
    screenshots and audio from the dashboard, reading the reflection pass's
@@ -150,13 +151,16 @@ for them to operate.
    reported in the heartbeat; it never wedges the brain or crash-loops a
    container.
 7. **Be testable one piece at a time.** Every service runs on Redis alone
-   with a mock/stub/off backend; the dashboard injects synthetic chat,
-   images and audio into the real pipeline; pure logic is separated from
-   I/O glue so it is unit-tested.
+   with a mock/stub/off backend; the dashboard injects a synthetic input
+   into every service (chat, images and audio into the senses, events into
+   the brain and body) with no platform account; pure logic is separated
+   from I/O glue so it is unit-tested.
 8. **Let the operator see and steer during the stream.** One page shows the
    bus, brain status, mood, avatar preview and per-service health, and
-   offers mute, say, forget, personality reload, (when enabled) launching,
-   stopping and restarting the whole stack or one service, and a Viewers page listing every stored viewer note for the owner
+   offers mute, say, forget, personality reload, pausing and resuming the
+   regions that decide to speak, editing any service's settings, (when
+   enabled) launching, stopping and restarting the whole stack or one
+   service, and a Viewers page listing every stored viewer note for the owner
    to delete or restore.
 9. **Hear chat from more than one platform.** `chat.message.platform` admits
    `twitch`, `youtube` and `discord`, and a new chat source is a new sense
@@ -266,6 +270,13 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    never remembered beyond subscriber status, and nobody is called out by
    wealth. Reject a feature that stores politics, ranks or names viewers by
    money, or can put a sensitive note's words on stream.
+10. **Settings take effect by restart, never by live reload.** A service
+    reads its configuration once per process; reject a design that makes a
+    service reload settings while it runs.
+11. **A second copy of behaviour moves to a shared module.** When a second
+    service needs a behaviour another already has, it moves into
+    `@cohost/shared` rather than being copied; reject a change that adds the
+    second copy.
 
 ## System Design
 
@@ -315,6 +326,7 @@ flowchart LR
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
 | platform | working-memory | Rolling window of recent events rendered as a prompt transcript |
+| platform | shared-runtime | `@cohost/shared`: service bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling, WAV and resampling, Discord voice session |
 | senses | chat | Twitch chat → `chat.message` |
 | senses | eyes | OBS screenshot → vision model → `vision.summary` |
 | senses | ears | Discord voice (human speakers) → Whisper → `speech.heard`; uploaded audio → `speech.heard` (test injection) |
@@ -328,10 +340,47 @@ flowchart LR
 | operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
+| operator | module-contract | The obligations every service meets: dashboard-configurable through one schema-driven settings editor, independently operable with per-service health, test-injectable with no platform account, built on the shared runtime; the manifest as the one list of services |
 
-### Shared package
+### Module contract
 
-`@cohost/shared` (`packages/shared`) holds small helpers that more than one service needs: today the `inject.request` upload-URL guard (`uploadUrl`) and staleness window (`INJECT_STALE_MS`), imported by chat, eyes and ears, and the Discord voice-join retry loop (`createJoiner`) used by ears and mouth. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It has no dependencies on other workspace packages and is not an arrow segment: each helper is specified by the segment that owns the behavior (the inject plumbing by `eyes`, EYES-INJ-015), and the package would earn its own segment only if it grew helpers with behavior of their own.
+Every application service in the control plane's manifest meets the same
+four obligations, so the owner operates any one of them the same way from
+the dashboard and `cohostctl`, and a new service is finished only when it
+meets all four ([module-contract](intent/module-contract/module-contract-design.md)):
+
+1. **Configurable from the dashboard.** Each service declares the
+   `config.yaml` sections it reads. The dashboard has one generic settings
+   editor driven by the zod config schema, not a page per service: it
+   renders a section from the schema, validates the edited file with the
+   loader every service uses, writes `config.yaml` in place (comments and
+   `${VAR}` placeholders kept; secrets are never shown or written, tenet 7),
+   and applies the change by restarting the services that read the section.
+   Configuration stays read once per process; nothing reloads it live.
+   `personality.md` keeps its own editor and reload command.
+2. **Independently operable.** Each service starts, stops and restarts on
+   its own through the manifest-gated controller, from the dashboard or
+   `cohostctl`, and reports its own health in its heartbeat. When a service
+   another one uses is stopped, the one that uses it keeps running
+   (tenet 5) and the dashboard marks it as needing the stopped service,
+   beside its own health. The
+   regions that honour `pause` can be paused and resumed one at a time.
+3. **Test-injectable with no platform account.** Each service has an
+   isolation preset (tenet 6) and a declared test input the dashboard can
+   feed it, so every service can be exercised from the dashboard with no
+   real Twitch, Discord, OBS or avatar app.
+4. **Built on the shared runtime.** Bootstrap, shutdown, heartbeat,
+   retries, the missing-credentials idle plan, `control` handling and the
+   other behaviour more than one service needs exist once, in
+   `@cohost/shared`, and a service composes them rather than copying them.
+
+The manifest is the one list of services: the dashboard's unit list, the
+health tracker's known services, the section-to-service map and the
+test-input descriptors all derive from it.
+
+### Shared runtime
+
+`@cohost/shared` (`packages/shared`) holds the runtime modules more than one service needs: the service bootstrap, the shutdown sequence and heartbeat publisher, retry with backoff, the missing-credentials idle plan, `control` handling for the regions that honour it, `inject.request` handling with its upload-URL guard and staleness window, WAV parsing, writing and resampling, and the Discord voice session ears and mouth each run with their own bot (behind the `@cohost/shared/discord-voice` entry point, so no other service loads Discord). The deterministic hash embedder stays in `@cohost/llm`, which memory's in-memory store also uses. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It depends on `@cohost/config` and `@cohost/bus` and on no service; the bus package keeps only the transport. It is the [shared-runtime](intent/shared-runtime/shared-runtime-design.md) segment: each shared behaviour is specified once there, and a segment that uses a module specifies only how it configures it.
 
 ### Cross-cutting protocols (observed)
 
@@ -411,8 +460,10 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Viewer notes | Two layers (core, recent) with a strength that mentions reinforce and time fades; captured live by a small classifier model behind a region hook, cleaned by a stronger model in a consolidation pass triggered by a dirty-note count and once after shutdown; surfaced to the cortex for the viewers in the conversation; sensitivity per tenet 9 | reflection-only notes between streams; regulars only; no fade | The co-host should know what viewers are up to now, not only what the last reflection saw; a cheap model can afford every chat line while a stronger one fixes its mistakes later; fading keeps notes current without manual cleanup. Owner decision; formulas, defaults and event names are. | [memory](intent/memory/memory-design.md) Viewer notes; [cortex](intent/cortex/cortex-design.md) Viewer notes |
 | Failure posture | Degrade and report, never exit: config gaps idle as `degraded`/`off`, model and store outages are waited for and reported, every backend has a mock/stub/off mode; a failed bus publish is logged and the service continues, and a failed subscription or tail read retries with backoff inside the bus. One case still exits non-zero: a config value that is present but invalid (for example an unknown `AVATAR_DRIVER`) fails the config load. The dashboard starts and serves its page with Redis and Docker absent, because it is the program that brings them up | Fail fast; supervisor restarts | Under Compose a crash loop hides the real cause; a heartbeat with a reason is actionable, and an isolated mode lets each piece be developed without accounts or a GPU. An invalid value is an operator mistake to fix, not a gap to idle through. The publish and retry cases are owner decisions of 2026-11-01; the dashboard's start without Redis follows from it being the host-side launcher (owner decision). | [chat](intent/chat/chat-design.md), [ears](intent/ears/ears-design.md), [mouth](intent/mouth/mouth-design.md), [eyes](intent/eyes/eyes-design.md) startup plans; [control-plane](intent/control-plane/control-plane-design.md) manifest presets |
 | Health and control | Heartbeats on a separate capped stream; derived states computed by observers; control off unless `CONTROL_ENABLED=1`, bearer-gated, manifest-only argv, loopback bind; stack actions (launch, stop-all, restart-all) in the control package beside the per-service controller | Heartbeats on the event stream; always-on control; stack actions written separately in the dashboard and the CLI | Liveness traffic never evicts domain events; a privileged endpoint has the smallest possible surface and is opt-in; one implementation of each stack action keeps the dashboard and `cohostctl` from drifting. | [control-plane](intent/control-plane/control-plane-design.md); `packages/control/src/manifest.ts:1-5` |
+| Module contract | Every manifest service is configurable from the dashboard's one schema-driven settings editor, starts, stops and restarts on its own with per-service health, takes a dashboard test input with no platform account, and is built on the shared runtime modules; the manifest is the one list of services | A settings page and a test panel per service; configuration edited by hand only; each service writing its own bootstrap, retry and idle code; service lists kept by hand in the dashboard, the tracker and the CLI | Ten services written to one shape are operated, tested and reviewed the same way, and a new service has a checklist rather than a precedent to copy. One editor generated from the schema the loader already validates cannot drift from it, where a hand-built page per service would. Hand-kept service lists have already drifted once and are tied together only by tests. Owner direction. | [module-contract](intent/module-contract/module-contract-design.md); [shared-runtime](intent/shared-runtime/shared-runtime-design.md) |
+| Applying an edited setting | Validate the whole edited file with the services' own loader, write `config.yaml` in place keeping comments and placeholders, then restart the services that read the changed section | Live reload inside each service; a separate overrides file written by the dashboard; settings in a database | Configuration is read once per process and a single-service restart is already a guarded, audited operation, so restart-to-apply adds no reload path to every service and no state a restart could disagree with. Writing `config.yaml` itself keeps one source of truth that the owner can still edit by hand and diff; an overrides file would hide which value wins, and a database would take the file out of the owner's editor. Owner direction. | [module-contract](intent/module-contract/module-contract-design.md); [config](intent/config/config-design.md) |
 | Where the dashboard runs | A standalone host process the owner starts first (`pnpm dashboard`); its Launch button runs the Compose stack, which no longer contains a dashboard service; it reaches Redis and voice on the host's loopback ports and drives Compose with the host's `docker` CLI | The dashboard as a Compose service (monitor-only, with control from a separate host-run copy or `cohostctl`); the dashboard as a Compose service with the Docker socket mounted; a desktop wrapper (Electron) around the page | The owner wants one thing to start, which then starts everything else; a containerised dashboard cannot start the stack it is part of, and a mounted Docker socket gives a container root-equivalent control of the host. A host process needs no extra privilege: it uses the owner's own `docker` access. A desktop wrapper adds a toolchain for no capability the browser page lacks, and OBS still needs an HTTP URL. Owner decision. | [dashboard](intent/dashboard/dashboard-design.md) Host process and stack control; [deployment](intent/deployment/deployment-design.md); [dashboard decision: standalone dashboard](intent/dashboard/decisions/standalone-dashboard.md) |
-| Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`) stay open; `POST /sink` stays ungated; LAN players (an OBS Browser Source on another PC) and containers fetching test uploads use a second listener that carries only the ungated sink and upload routes; browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
+| Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`, `GET /config/*`) stay open; `POST /sink` stays ungated; LAN players (an OBS Browser Source on another PC) and containers fetching test uploads use a second listener that carries only the ungated sink and upload routes; browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Licensing | Dual licence: the public gets AGPL-3.0-only; a separate commercial licence, without the AGPL obligations, is reserved to the owner (CoderCoco) and granted case by case (`COMMERCIAL.md`). Every outside contribution is accepted only under an individual Contributor License Agreement (`CLA.md`, adapted from the Apache ICLA) that lets the owner relicense it, enforced in CI | Plain AGPL-3.0 with a DCO sign-off; a permissive licence (MIT/Apache-2.0); a source-available non-commercial licence (PolyForm Noncommercial); the Business Source License | The goal is source that anyone can read, run, modify and contribute to, while a company cannot build a business on cohost for free. AGPL section 13 means anyone who offers a modified cohost to users over a network must offer those users its source, which removes a closed hosted competitor's advantage; it does not forbid commercial use, and running a modified private copy obliges nothing by itself. The commercial licence is what a business buys to be exempt from the AGPL obligations, and the owner can only grant it for code they hold relicensing rights to, which a DCO (a certificate of the right to submit under the project licence) does not give and a CLA does. A permissive licence lets anyone close and sell it; PolyForm Noncommercial and BUSL stop commercial use outright but are not open source licences. | [deployment](intent/deployment/deployment-design.md) Licensing and contribution; `LICENSE`, `CLA.md`, `COMMERCIAL.md` |
 | Deployment shape | Compose runs everything except the dashboard: one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN | Per-service images; everything published; the dashboard in Compose | One build cached across nine images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
 
@@ -434,8 +485,10 @@ else. With control off nothing but the Viewers routes is gated, and the full
 surface must stay on loopback. The `/ws` feed, the `GET` routes and
 `POST /sink` stay open in both modes. The
 open reads expose more than the stream shows: `GET /personality` returns the
-whole personality file including its `## Learned` notes, and `/ws` carries
-every domain event, including unaddressed chat and recall replies. Viewer notes are the exception to the open reads, because they can hold
+whole personality file including its `## Learned` notes, `GET /config/schema`
+and `GET /config/:section` return the settings file's current values (never
+secrets, which stay in `.env`), and `/ws` carries every domain event, including
+unaddressed chat and recall replies. Viewer notes are the exception to the open reads, because they can hold
 viewers' health and family matters: the feed never forwards the events that
 carry them, and the dashboard's Viewers page routes require a dedicated token
 in both modes. The operator

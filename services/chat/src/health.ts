@@ -1,4 +1,4 @@
-import type { HeartbeatSpec } from "@cohost/bus";
+import type { HeartbeatSpec } from "@cohost/shared";
 
 // @spec CHAT-HEALTH-002, CHAT-HEALTH-003, CHAT-HEALTH-004, CHAT-HEALTH-006
 /**

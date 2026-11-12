@@ -9,6 +9,7 @@ taxonomy:
     - model-backends
     - region-hooks
     - working-memory
+    - shared-runtime
   senses:
     - chat
     - eyes
@@ -26,167 +27,196 @@ taxonomy:
     - dashboard
     - control-plane
     - deployment
+    - module-contract
 
-# The `@cohost/shared` workspace package (small inject helpers owned by the eyes
-# segment, and the `parseWav` WAV parser and `wavWrap` WAV writer used by voice and ears, and the `createJoiner` Discord voice-join retry loop used by ears and mouth) is deliberately not a segment and not listed in blocks / blockedBy.
-# blocks / blockedBy follow the workspace-package import graph observed at
-# mapping time (git 686cc8f). Bus-event coupling between services is not
-# encoded here; see each LLD's References section.
+# The `@cohost/shared` workspace package is the shared-runtime segment. Its
+# blocks / blockedBy follow the import graph it is designed to have (it imports
+# config and bus; every service imports it). Every service has moved onto it
+# (runService); the other segments' blocks / blockedBy list the segments they
+# were designed against and do not repeat shared-runtime, which all of them use.
+# module-contract's edges follow the segments that implement it.
+# Bus-event coupling between services is not encoded here; see each LLD's
+# References section.
 arrows:
+  shared-runtime:
+    status: AUDITED
+    parent: null
+    sampled: 2026-11-11
+    audited: 2026-11-11
+    audited_sha: 458f98f
+    blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract]
+    blockedBy: [config, event-bus]
+    detail: shared-runtime.md
+    next: "Gap closure built (C1); all 72 specs [x]. Every service runs on runService and the shared modules. No open gaps."
+    drift: null
+
+  module-contract:
+    status: PARTIAL
+    parent: null
+    sampled: 2026-11-11
+    audited: 2026-11-11
+    audited_sha: 458f98f
+    blocks: []
+    blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
+    detail: module-contract.md
+    next: "44 of 44 specs [x]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. MOD-TEST-007 passed against the isolated stack under Docker (live-stack.e2e.test.ts)."
+    drift: null
+
+
   config:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "all 74 specs [x]; gap closure built (C3, C10, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
     drift: null
 
   event-bus:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "Spoken fallback line events built (chunk 1): BUS-EVT-001 (24 types, pinned by a test), BUS-EVT-022 (voice.failed). Viewer notes events built: BUS-EVT-010, 020 (chunk 3) and 021 (chunk 4). BUS-TAIL-005 (onRead on tail and tailHealth) built with the standalone dashboard chunk 2. No open gaps."
+    next: "all 64 specs [x]; gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
     drift: null
 
   model-backends:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 52 specs [x]; gap closure built (C11). No open gaps. Manual verification: Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
     drift: null
 
   region-hooks:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [salience, affect, cortex]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "Intent pass confirmed; no open gaps. Two planned consumers (memory.capture, memory.consolidator) need no runner change."
+    next: "all 51 specs [x]; gap closure built (C11): cool-off after repeated failures, provider ping, hook reply schemas. No open gaps."
     drift: null
 
   working-memory:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "Spoken fallback line built (chunk 3): WM-PUSH-007, WM-PUSH-008, WM-WIN-007, WM-TRANS-010. Intent pass confirmed; no open gaps."
+    next: "all 35 specs [x]; gap closure built (C10). No open gaps."
     drift: null
 
   chat:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 45 specs [x]; gap closure built (C9): refreshed tokens persisted (CHAT-TW-011/012; chat's ./data/chat is a Compose mount, DEPLOY-COMPOSE-022), shared idle plan, runService. No open gaps. Manual verification: the authenticated Twitch path."
     drift: null
 
   eyes:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 41 specs [x]; gap closure built (C9): stub describer, injection through the shared handler, OBS backoff, vision.* keys. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/TESTING.md, OBS requirements)."
     drift: null
 
   ears:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    next: "all 40 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes. No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   salience:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 55 specs [x]; gap closure built (C10). No open gaps."
     drift: null
 
   affect:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 39 specs [x]; gap closure built (C10). No open gaps."
     drift: null
 
   memory:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus, model-backends]
     detail: memory.md
-    next: "Viewer-notes chunks 1 to 4 built: 107 of 107 specs implemented. The consolidate one-shot is reachable from Compose (DEPLOY-COMPOSE-018) and cohostctl (CTRL-CLI-008). No open gaps."
+    next: "all 126 specs [x]; gap closure built (C8), voice speakers get viewer notes (MEM-VOICE), the entry runs on runService (main.ts) and the notes hooks follow llm.provider mock (MEM-NOTE-012, so an isolated run reaches no model server). No open gaps."
     drift: null
 
   cortex:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "Spoken fallback line built (chunk 3): CTX-EVT-008, CTX-FALL-001 to 007. Viewer notes surfacing built: CTX-NOTES-001 to 008, CTX-VIEWER-001, CTX-EVT-001. 74 of 74 specs implemented; no open gaps."
+    next: "all 77 specs [x]; gap closure built (C10). No open gaps."
     drift: null
 
   voice:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "Listening and speaking split: no VOICE spec changes; LLD text names mouth's outputs as the sinks and mouth as the clip consumer; ears-sync.test.ts is now mouth-sync.test.ts (mouth build chunk 2). Spoken fallback line: VOICE-SINK-010 to 013 built (chunk 1); VOICE-CLIP-001 to 012 built (chunk 2). Deferred: voice tuning knobs. Intent pass confirmed; no other open gaps."
+    next: "all 55 specs [x]; gap closure built (C5). No open gaps. Deferred by the owner: voice tuning knobs."
     drift: null
 
   mouth:
@@ -194,59 +224,59 @@ arrows:
     parent: null
     sampled: 2026-11-10
     audited: 2026-11-11
-    audited_sha: 263ec19
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "All four build chunks built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-AUD-001, MOUTH-FALL-001..019, MOUTH-HLTH-001..002); ears is listen-only (chunk 4). No open gaps."
+    next: "all 57 specs [x]; built (listen-speak split, C6 guard and dryrun). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   avatar:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "all 61 specs [x]; gap closure built (C10). No open gaps. Manual verification: VTube Studio against the real app."
     drift: null
 
   dashboard:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "Standalone host-run dashboard: chunks 1 (stack controller, control-plane; DASH-SVC-003), 2 (host dashboard) and 3 (deployment) built. Chunk 2: DASH-HOST-001..007, DASH-STACK-001..007, DASH-FEED-001/008/009, DASH-UI-008/017..020, HTTP-009/010/012, CTRL-001/003/004/005, INJ-005 all [x] (99 specs, 0 gaps); event-bus gained BUS-TAIL-005 (read-outcome callback) for DASH-FEED-009; the dead 'conflict' refusal is removed. Chunk 3 (deployment: Compose drops the dashboard service, installer, CI smoke, README/TESTING) is built. Open items: dashboard visual design to be revisited later; a Redis outage that stalls an already-running tail (ioredis queues the blocking read) is not reported as bus unreachable until a read fails."
+    next: "all 110 specs [x]; host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "Listening and speaking split (mouth.md build order chunk 3 built): CTRL-MANIFEST-001..003 and CTRL-HEALTH-005 reworded and [x] (mouth unit, group mouth, preset MOUTH_DISCORD_ENABLED=false, ten known services). Stack controller built (chunk 1 of the standalone-dashboard build order): CTRL-STACK-001..012, CTRL-CLI-010..012 new; CTRL-MANIFEST-001..003, CTRL-HEALTH-005, CTRL-CLI-001/009 reworded (dashboard left the manifest); CTRL-GUARD-002 retired. No open gaps; the dashboard consumes the controller in chunk 2 (DASH-STACK-*)."
+    next: "66 of 66 specs [x] (CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
     drift: null
 
   deployment:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-02
-    audited_sha: 1b57790
+    audited: 2026-11-11
+    audited_sha: 458f98f
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "Listening and speaking split (mouth.md build order chunk 3 built): DEPLOY-COMPOSE-001/004/017, DEPLOY-REPO-001 reworded and [x]; DEPLOY-COMPOSE-020, DEPLOY-README-004/005 new and [x] (mouth profile, two-bot .env and README; ears reads EARS_DISCORD_TOKEN since chunk 4; the installer next steps name both bots and the eyes, ears and mouth profiles, DEPLOY-INST-008). Standalone dashboard built (chunks 2 and 3): Compose has no dashboard service, voice on 127.0.0.1:8700, DASHBOARD_URL via host gateway (DEPLOY-COMPOSE-001/002/003/006/007), smoke without dashboard (CI-002), installer token + next steps (INST-008, INST-013), .env.example + README + single-PC checklist (DEPLOY-HOST-002..004), root pnpm dashboard script (DEPLOY-HOST-001, REPO-002); DEPLOY-COMPOSE-016 retired. 72 specs, 0 gaps. Owner setup for DEPLOY-LIC-004: add the commercial contact email to COMMERCIAL.md. Hand-run: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "78 of 78 specs [x]. DEPLOY-CI-007 is [x]: CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

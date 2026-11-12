@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 34 specs: 34 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. With the spoken fallback line: 50 specs: 50 implemented, 0 gaps, 0 deferred.
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); gap closure (C5) 2026-11-11: 55 specs: 55 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. 
 
 ## Listening and speaking split (designed, not built)
 
@@ -41,10 +41,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (50 specs: 50 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (55 specs: 55 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
+- services/voice/test/queue.test.ts (synthesis queue, stop, id reuse, HTTP methods and query strings, rejected WAV)
 - services/voice/test/boot.test.ts (boot wiring: subscription options, readiness, fatal paths, shutdown)
 - services/voice/test/clips.test.ts (fallback clips: fingerprint, generation, atomic swap, retry, per-phrase skips, cleanup, routes)
 - services/voice/test/mouth-sync.test.ts (voice's manifest and routes accepted by mouth's real clip sync)
@@ -52,7 +53,6 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/voice/test/wav.test.ts
 - services/voice/test/health.test.ts
 
-38 `@spec` annotations in tests, citing all 34 spec IDs.
 
 ### Code
 - services/voice/src/index.ts
@@ -84,18 +84,18 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Tested | Deferred | Gaps |
-|----------|----------|-------------|--------|----------|------|
-| Synthesis | VOICE-SYN-001 to 006 | 6 | 6 | 0 | 0 |
-| Stub engine | VOICE-STUB-001 to 003 | 3 | 3 | 0 | 0 |
-| Utterance publication | VOICE-UTT-001 to 003 | 3 | 3 | 0 | 0 |
-| WAV and envelope | VOICE-ENV-001 to 004 | 4 | 4 | 0 | 0 |
-| Sink arbitration | VOICE-SINK-001 to 013 | 13 | 13 | 0 | 0 |
-| Fallback clips | VOICE-CLIP-001 to 012 | 12 | 12 | 0 | 0 |
-| Audio store and HTTP | VOICE-HTTP-001 to 005 | 5 | 5 | 0 | 0 |
-| Health | VOICE-HLTH-001 to 004 | 4 | 4 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Synthesis | VOICE-SYN-001 to VOICE-SYN-008 | 8 | 0 | 0 | 8 |
+| Stub engine | VOICE-STUB-001 to VOICE-STUB-003 | 3 | 0 | 0 | 3 |
+| Utterance publication | VOICE-UTT-001 to VOICE-UTT-003 | 3 | 0 | 0 | 3 |
+| WAV and lip-sync envelope | VOICE-ENV-005 to VOICE-ENV-004 | 3 | 0 | 0 | 3 |
+| Sink arbitration | VOICE-SINK-001 to VOICE-SINK-013 | 13 | 0 | 0 | 13 |
+| Audio store and HTTP | VOICE-HTTP-001 to VOICE-HTTP-008 | 8 | 0 | 0 | 8 |
+| Fallback clips | VOICE-CLIP-001 to VOICE-CLIP-012 | 12 | 0 | 0 | 12 |
+| Health | VOICE-HLTH-001 to VOICE-HLTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 34 of 34 specs implemented; 0 deferred; 0 gaps. Every spec has a test. VOICE-UTT-003 is tested for synthesis and parse failures only. Process exit and signal handling are injected in the boot tests, so VOICE-SYN-006 and VOICE-HLTH-004 are tested through `runVoice`, not through a real process.
+**Summary:** 55 of 55 specs implemented; 0 deferred; 0 open. 55 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -105,7 +105,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 4. **Claims share the TTS loop.** One sequential subscription handles `brain.say` (seconds of synthesis) and `voice.playing` claims (`packages/bus/src/index.ts`), so a claim for line A can be stuck behind synthesis of line B and the virtual timer for A may fire anyway. `[inferred]` not reproduced in tests.
 5. **`claimed` is pruned with the store (fixed).** There is no sink exclusivity: Discord and a dashboard page both play and both report, which is accepted (S46, documented in the LLD). (VOICE-SINK-007)
 6. **`ready` needs a duplicate positioning call.** The bus has no "subscribed" notification, so boot calls `resetGroup` before `ready` and `subscribe` positions the group again. A hook in event-bus would remove the duplicate (cross-segment follow-up).
-7. **WAV parser and writer shared.** `parseWav` and `wavWrap` live in `@cohost/shared` (owner decision of 2026-11-08); voice uses both (`stubSynth` calls `wavWrap`, EARS-AUD-004) and ears' `readWavHeader` adapts `parseWav`. Voice tests import `wavWrap` from `@cohost/shared`.
+7. **WAV parser and writer shared.** `parseWav` and `wavWrap` live in `@cohost/shared` (owner decision of 2026-11-08); voice uses both (`stubSynth` calls `wavWrap`, SHARED-AUDIO-004) and ears' `readWavHeader` adapts `parseWav`. Voice tests import `wavWrap` from `@cohost/shared`.
 8. **Port 8700 is not published by compose, by design.** Compose sets `VOICE_URL=http://voice:8700` (`docker-compose.yml:18`) and never publishes the port; `urls.voice()` defaults to loopback (commit `e53badc`); host-side players go through the dashboard proxy (P4). The frozen OpenSpec's `http://voice:<VOICE_PORT>` default is stale and the LID line (VOICE-UTT-002) is authoritative.
 9. **WAV handling is narrow.** Only 16-bit PCM; envelope reads the first channel only; `parseWav` ignores the format tag and a missing `fmt ` gives a non-finite duration (`packages/shared/src/wav.ts`). Kokoro returns mono 16-bit today so nothing trips.
 10. **Store eviction counts duplicates.** Re-using an id pushes it into `order` twice (`voice.ts:77-85`); and a failed `voice.utterance` publish is reported as `tts failed` because the whole path shares one `try` (`voice.ts:130-153`).

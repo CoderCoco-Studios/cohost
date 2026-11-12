@@ -14,12 +14,12 @@ const samplesOf = (b: Buffer, from = 0): number[] => {
   return out;
 };
 
-// @spec EARS-AUD-003
+// @spec SHARED-AUDIO-001
 test("readWavHeader reads a wavWrap header back", () => {
   assert.deepEqual(readWavHeader(wavWrap(pcm16([1, 2, 3, 4]), 16000, 1)), { sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 8 });
 });
 
-// @spec EARS-AUD-003
+// @spec SHARED-AUDIO-001
 test("readWavHeader skips extra chunks and throws without a data chunk", () => {
   const w = wavWrap(pcm16([7]), 24000, 2);
   const list = Buffer.alloc(8 + 3 + 1); list.write("LIST", 0); list.writeUInt32LE(3, 4); // odd size, padded
@@ -28,7 +28,7 @@ test("readWavHeader skips extra chunks and throws without a data chunk", () => {
   assert.throws(() => readWavHeader(w.subarray(0, 36)), /bad wav/);
 });
 
-// @spec EARS-AUD-001
+// @spec EARS-AUD-005
 test("discordPcmToWav16k: 48k stereo → 16k mono, averaging channels and each group of 3 frames", () => {
   // 6 stereo frames → 2 mono frames
   const pcm = pcm16([
@@ -40,13 +40,13 @@ test("discordPcmToWav16k: 48k stereo → 16k mono, averaging channels and each g
   assert.deepEqual(samplesOf(w, 44), [300, -200]);
 });
 
-// @spec EARS-AUD-001
+// @spec EARS-AUD-005
 test("discordPcmToWav16k drops a trailing partial group and survives empty input", () => {
   assert.equal(discordPcmToWav16k(pcm16(new Array(2 * 7).fill(0))).length, 44 + 2 * 2); // 7 frames → 2
   assert.equal(discordPcmToWav16k(Buffer.alloc(0)).length, 44);
 });
 
-// @spec EARS-AUD-001
+// @spec EARS-AUD-005
 test("discordPcmToWav16k clamps rather than wrapping at full scale", () => {
   const w = discordPcmToWav16k(pcm16(new Array(6).fill(32767)));
   assert.deepEqual(samplesOf(w, 44), [32767]);

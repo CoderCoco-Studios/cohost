@@ -39,7 +39,12 @@ llm:
 vision:
   enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
   model: "${VISION_MODEL:-qwen2.5vl:3b}"
+  engine: "${VISION_ENGINE:-ollama}"  # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
   interval_ms: 8000            # how often to look at the game
+  temperature: 0.2             # vision model sampling temperature (0 to 2)
+  num_predict: 60              # longest description the model may write, in tokens
+  jpeg_quality: 70             # JPEG quality of the OBS screenshot (1 to 100)
+  # prompt: "..."              # system prompt; blank = built-in default. Keep its "reply exactly: SAME" rule or every reply counts as a change
   timeout_ms: 30000            # give up on a describe call after this long
   upload_timeout_ms: 10000     # injected uploads: timeout fetching the image from the dashboard
   upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)
@@ -78,7 +83,7 @@ brain:
     module:
       kind: rules
       url: ""                  # http: e.g. http://host.docker.internal:8900/salience
-      timeout_ms: 1500
+      timeout_ms: 8000
       llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
         provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
         model: ""              # while the cortex talks through something bigger.
@@ -102,12 +107,19 @@ brain:
     half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
     baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
     baseline_arousal: 0.1      # resting energy, 0..1
+    republish_ms: 15000        # an unchanged mood is sent again this often
+    short_line_chars: 4        # llm/http only: shorter lines (no mention) are judged by the built-in rules
+    nudge_sub_valence: 0.05    # nudge per event (0..1): a subscriber's chat line ...
+    nudge_sub_arousal: 0.05
+    nudge_screen_arousal: 0.08 # ... a changed screen ...
+    nudge_said_valence: 0.08   # ... the co-host's own happy (+) or sad/angry (-) line ...
+    nudge_said_arousal: 0.05   # ... and any line she says
     # Hook: how a line of chat/voice moves the mood. rules (built in) | llm (ask a model) | http (POST to your own model).
     # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     module:
       kind: rules
       url: ""                  # http: e.g. http://host.docker.internal:8900/affect
-      timeout_ms: 1500
+      timeout_ms: 8000
       llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
         provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
         model: ""              # while the cortex talks through something bigger.
@@ -214,6 +226,13 @@ ears:
   silence_ms: 700              # end-of-utterance detection
   min_speech_ms: 400
   stt_model: "${STT_MODEL}"
+  stt_engine: "${EARS_STT_ENGINE:-speaches}"  # speaches | stub (fixed text, no STT server; isolated runs)
+  # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
+  # hallucinations on silence. Empty by default; uncomment to use.
+  drop_phrases: []
+  #  - "Thank you."
+  #  - "Thanks for watching!"
+  #  - "you"
 
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:
@@ -223,6 +242,9 @@ mouth:
       guild_id: "${DISCORD_GUILD_ID}"          # by default the guild and channel ears listens in; point them elsewhere if you like
       voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
       gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
+    dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
+      enabled: ${MOUTH_DRYRUN_ENABLED:-false}
+      fail_every: 0            # 0 = never fail; N = fail every Nth line, to exercise the fallback path
   fallback:
     min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
 

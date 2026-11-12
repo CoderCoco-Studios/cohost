@@ -1,7 +1,7 @@
 import type { BusEvent } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { Module, type ModuleImpl } from "@cohost/modules";
-import { notesHookLlm } from "./consolidator.js";
+import { notesHookConfig, notesHookLlm } from "./consolidator.js";
 import {
   MAX_NOTE_HINT, MAX_NOTE_TEXT, cosine, isCategory, mentionsForbiddenTopic, type Category, type DeletionRow, type NoteRow,
 } from "./notes.js";
@@ -80,10 +80,10 @@ export const captureImpl: ModuleImpl<CaptureInput, CaptureOutput> = {
   http: { validate: (raw) => validateCapture(raw) },
 };
 
-// @spec MEM-CAPTURE-003, MEM-NOTE-011
+// @spec MEM-CAPTURE-003, MEM-NOTE-011, MEM-NOTE-012
 /** `memory.capture`: its own model slot, configured by `brain.memory.notes.capture` (never the cortex's), on local ollama unless the hook names a provider. */
 export function createCaptureHook(cfg: Config, log: Logger): Module<CaptureInput, CaptureOutput> {
-  const hook = cfg.brain.memory.notes.capture;
+  const hook = notesHookConfig(cfg.llm, cfg.brain.memory.notes.capture);
   return new Module("memory.capture", hook, notesHookLlm(cfg.llm, hook), captureImpl, log);
 }
 
@@ -95,7 +95,7 @@ export function normaliseNoteText(text: string): string {
 
 export interface CaptureDeps {
   cfg: Config["brain"]["memory"];
-  store: Pick<MemoryBackend, "getViewer" | "ensureViewer" | "embedText" | "listNotes" | "listDeletions" | "insertNote" | "reinforceNote">;
+  store: Pick<MemoryBackend, "getViewer" | "ensureViewer" | "touchSpeaker" | "embedText" | "listNotes" | "listDeletions" | "insertNote" | "reinforceNote">;
   hook: CaptureHook;
   log: Logger;
   /** Called after a note was inserted or reinforced: lets the consolidation scheduler count dirty notes (MEM-CONSOL-001). */
@@ -110,36 +110,54 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
  * The `memory-notes` consumer group's handler: classify each chat line with the capture hook and write the note it proposes.
  * Every failure is logged and costs only that line's note (MEM-CAPTURE-010).
  */
-// @spec MEM-CAPTURE-001, MEM-CAPTURE-002, MEM-CAPTURE-010
+// @spec MEM-CAPTURE-001, MEM-CAPTURE-002, MEM-CAPTURE-010, MEM-VOICE-003
 export function createCaptureHandler(deps: CaptureDeps): (ev: BusEvent) => Promise<void> {
   const { cfg, hook, log } = deps;
   return async (ev) => {
-    if (ev.type !== "chat.message") return;
-    const d = ev.data as BusEvent<"chat.message">["data"];
-    if (skipInjected(d)) return;
-    const line = d.text.trim();
+    let who: string, text: string;
+    let speakerId: string | undefined;
+    let key: string | undefined;
+    if (ev.type === "chat.message") {
+      const d = ev.data as BusEvent<"chat.message">["data"];
+      if (skipInjected(d)) return;
+      who = d.user;
+      text = d.text;
+      key = (d.userId ?? d.user).toLowerCase();
+    } else if (ev.type === "speech.heard") {
+      // @spec MEM-VOICE-003
+      const d = ev.data as BusEvent<"speech.heard">["data"];
+      if (skipInjected(d) || !d.speakerId) return; // no Discord id, no identity to keep notes under
+      who = d.speaker;
+      text = d.text;
+      speakerId = d.speakerId;
+    } else return;
+    const line = text.trim();
     if (line.length < cfg.notes.capture_min_chars) return;
     if (hook.kind === "rules") return; // the rules fallback writes no note, so skip the reads
     try {
-      if (await captureLine(deps, d, line)) {
+      if (speakerId !== undefined) {
+        const row = await deps.store.touchSpeaker(speakerId, who); // the linked chat viewer, or the voice viewer
+        key = row.key;
+        who = row.display;
+      }
+      if (await captureLine(deps, key!, who, line)) {
         await deps.onNotesWritten?.().catch((err) => log.warn({ err: String(err) }, "could not tell the consolidation scheduler about new notes"));
       }
     } catch (err) {
-      log.warn({ err: String(err), user: d.user }, "note capture failed; no note stored for this line");
+      log.warn({ err: String(err), user: who }, "note capture failed; no note stored for this line");
     }
   };
 }
 
 // @spec MEM-CAPTURE-004 through MEM-CAPTURE-009, MEM-CAPTURE-011
-/** Returns true when a note was inserted or reinforced. */
-async function captureLine({ cfg, store, hook }: CaptureDeps, d: BusEvent<"chat.message">["data"], line: string): Promise<boolean> {
-  const key = (d.userId ?? d.user).toLowerCase();
+/** Returns true when a note was inserted or reinforced. `key` is the viewer's row key (a chat key, or a voice speaker's resolved key); `display` is what the hook is told. */
+async function captureLine({ cfg, store, hook }: CaptureDeps, key: string, display: string, line: string): Promise<boolean> {
   const known = await store.getViewer(key);
   const notes: NoteRow[] = known ? await store.listNotes(key) : [];
   const deletions: DeletionRow[] = known ? await store.listDeletions(key) : [];
   const reasoned = deletions.filter((x) => x.reason !== null);
   const out = await hook.run({
-    viewer: d.user,
+    viewer: display,
     line,
     notes: notes.map((n) => n.text),
     suppressionReasons: reasoned.map((x) => x.reason!),
@@ -156,7 +174,7 @@ async function captureLine({ cfg, store, hook }: CaptureDeps, d: BusEvent<"chat.
     return (await store.reinforceNote(duplicate.id)) !== undefined;
   }
   const returning = similar(deletions.filter((x) => x.reason === null)); // MEM-CAPTURE-007
-  await store.ensureViewer(key, d.user); // MEM-CAPTURE-011
+  await store.ensureViewer(key, display); // MEM-CAPTURE-011
   await store.insertNote({
     userKey: key, category: note.category, text: note.text, hint: note.hint, embedding,
     strength: returning ? cfg.notes.returning_strength : 1, mentions: 1, dirty: true, // MEM-CAPTURE-007, MEM-CAPTURE-009

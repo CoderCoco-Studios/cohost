@@ -100,11 +100,11 @@ test("ready is reported only after both consumer groups report ready", async () 
   const t = setup({ readyOrder: "manual" });
   let done = false;
   const p = startMemory(t.deps).then(() => { done = true; });
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.equal(done, false);
   assert.ok(!t.events.includes("ready"));
   t.readies[0]!();
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.ok(!t.events.includes("ready"), "one group is not enough");
   t.readies[1]!();
   await p;
@@ -131,14 +131,14 @@ test("the consolidation catch-up check runs once the service is ready, and its f
   assert.ok(failing.warnings.some((w) => w.includes("catch-up")));
 });
 
-// @spec MEM-CAPTURE-001, MEM-EVT-001
-test("note capture runs in a third consumer group, memory-notes, for chat.message only, subscribed with start mode resume", async () => {
+// @spec MEM-CAPTURE-001, MEM-EVT-001, MEM-VOICE-003
+test("note capture runs in a third consumer group, memory-notes, for chat.message and speech.heard, subscribed with start mode resume", async () => {
   const t = setup({ capture: true });
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start]), [
     ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume"],
     ["memory-recall", ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], "resume"],
-    ["memory-notes", ["chat.message"], "resume"],
+    ["memory-notes", ["chat.message", "speech.heard"], "resume"],
   ]);
   assert.equal(t.events.at(-1), "ready");
 });
@@ -147,10 +147,10 @@ test("note capture runs in a third consumer group, memory-notes, for chat.messag
 test("ready waits for the memory-notes group too", async () => {
   const t = setup({ capture: true, readyOrder: "manual" });
   const p = startMemory(t.deps);
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   t.readies[0]!();
   t.readies[1]!();
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r)); // the startup sequence takes a few microtask turns; a macrotask lets it settle
   assert.ok(!t.events.includes("ready"), "two of three groups is not enough");
   t.readies[2]!();
   await p;

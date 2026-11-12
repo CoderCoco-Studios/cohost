@@ -26,7 +26,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/region-hooks/region-hooks-design.md
 
 ### EARS
-- docs/intent/region-hooks/region-hooks-specs.md (33 specs, prefix HOOK: 33 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/region-hooks/region-hooks-specs.md (51 specs, prefix HOOK: 51 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/modules/test/module.test.ts (15 tests, 15 `@spec` lines; fake HTTP servers for the `http` and OpenAI-compatible `llm` paths)
@@ -60,17 +60,21 @@ Consumers: `services/salience/src/scoring.ts:61`, `services/affect/src/appraise.
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Code `@spec` | Test `@spec` |
-|----------|----------|-------------|----------|------|--------------|--------------|
-| Kinds and construction | HOOK-KIND-001 to HOOK-KIND-005 | 5 | 0 | 0 | 5 | 5 |
-| LLM kind | HOOK-LLM-001 to HOOK-LLM-005 | 5 | 0 | 0 | 5 | 5 |
-| HTTP kind | HOOK-HTTP-001 to HOOK-HTTP-003 | 3 | 0 | 0 | 3 | 2 |
-| Fallback | HOOK-FALLBACK-001 to HOOK-FALLBACK-006 | 6 | 0 | 0 | 6 | 5 |
-| Warnings | HOOK-WARN-001 to HOOK-WARN-004 | 4 | 0 | 0 | 4 | 3 |
-| Helpers | HOOK-HELP-001 to HOOK-HELP-004 | 4 | 0 | 0 | 4 | 4 |
-| Reference HTTP server | HOOK-EX-001 to HOOK-EX-006 | 6 | 0 | 0 | 6 | 6 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Kinds and construction | HOOK-KIND-001 to HOOK-KIND-005 | 5 | 0 | 0 | 5 |
+| LLM kind | HOOK-LLM-001 to HOOK-LLM-006 | 6 | 0 | 0 | 6 |
+| HTTP kind | HOOK-HTTP-001 to HOOK-HTTP-003 | 3 | 0 | 0 | 3 |
+| Fallback | HOOK-FALLBACK-001 to HOOK-FALLBACK-006 | 6 | 0 | 0 | 6 |
+| Warnings | HOOK-WARN-001 to HOOK-WARN-004 | 4 | 0 | 0 | 4 |
+| Cool-off | HOOK-COOL-001 to HOOK-COOL-003 | 3 | 0 | 0 | 3 |
+| Health | HOOK-HEALTH-001 to HOOK-HEALTH-005 | 5 | 0 | 0 | 5 |
+| Configuration | HOOK-CFG-001 to HOOK-CFG-002 | 2 | 0 | 0 | 2 |
+| Helpers | HOOK-HELP-001 to HOOK-HELP-004 | 4 | 0 | 0 | 4 |
+| Reference HTTP server | HOOK-EX-001 to HOOK-EX-010 | 10 | 0 | 0 | 10 |
+| Reply schemas | HOOK-SCHEMA-001 to HOOK-SCHEMA-003 | 3 | 0 | 0 | 3 |
 
-**Summary:** 33 of 33 specs implemented; 0 deferred; 0 gaps. 33 specs cited from code (including `packages/llm/src/mock.ts` and `examples/modules/server.py`), 30 from tests. No reverse orphans. Without a test annotation: HOOK-HTTP-001 (the test never inspects the request), HOOK-FALLBACK-004 (no test throws from `validate`), HOOK-WARN-002 (the warn test ignores the message).
+**Summary:** 51 of 51 specs implemented; 0 deferred; 0 open. 51 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

@@ -214,6 +214,18 @@ test("init fails with an error naming both dimensions when the existing table ha
   assert.ok(same.queries.some((q) => q.sql.includes("CREATE TABLE IF NOT EXISTS meta")));
 });
 
+// @spec MEM-REFLECT-011
+test("connect checks the tables exist and neither embeds nor creates anything", async () => {
+  const ok = store({ rows: () => [{ memories: "memories", meta: "meta" }] });
+  await ok.s.connect();
+  assert.equal(ok.queries.length, 1);
+  assert.match(ok.queries[0]!.sql, /^SELECT to_regclass/);
+  assert.deepEqual(ok.embedded, []);
+  const missing = store({ rows: () => [{ memories: null, meta: "meta" }] });
+  await assert.rejects(missing.s.connect(), /start the memory service/);
+  assert.deepEqual(missing.embedded, []);
+});
+
 // @spec MEM-HEALTH-005
 test("deps.postgres follows the outcome of the latest pool query", async () => {
   const h = new MemoryHealth();

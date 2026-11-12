@@ -18,6 +18,7 @@
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
     "@cohost/control": "workspace:*",
+    "@cohost/shared": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

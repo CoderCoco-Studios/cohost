@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/bus";
+import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
 /**
  * voice depends on the TTS container; `kokoro` flips down on a failed synthesis and back ok on the next success.

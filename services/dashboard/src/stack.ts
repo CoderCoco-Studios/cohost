@@ -13,13 +13,16 @@ export interface StackSnapshot {
   bus: BusState;
   action: null | { kind: StackActionKind; phase: string; startedAt: number };
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: ContainerStatus[]; finishedAt: number };
-  services: { service: string; status: string; health?: string }[];
+  services: { service: string; status: string; health?: string; restartCount?: number }[];
 }
 
 /** The slice of `StackController` the service drives. */
 export interface StackOps {
   status(): Promise<StackStatus>;
+  /** `status` with Compose restart counts; a probe uses it when present. */
+  statusWithRestarts?(): Promise<StackStatus>;
   launch(): Promise<StackResult>;
+  rebuild(): Promise<StackResult>;
   stopAll(): Promise<StackResult>;
   restartAll(controller: Pick<ServiceController, "restart">): Promise<StackResult>;
   consolidate(): Promise<RuntimeResult>;
@@ -90,7 +93,7 @@ export class StackService {
   // @spec DASH-STACK-001
   snapshot(): StackSnapshot {
     const st = this.status;
-    const running = this.action?.kind === "launch" ? "launch" : this.action?.kind === "stop" ? "stop" : undefined;
+    const running = this.action?.kind === "launch" || this.action?.kind === "rebuild" ? "launch" : this.action?.kind === "stop" ? "stop" : undefined;
     const docker = st ? st.docker : { ok: false, detail: NOT_PROBED };
     return {
       state: st ? stackState(st, running) : "docker-unavailable",
@@ -99,7 +102,7 @@ export class StackService {
       action: this.action ? { ...this.action } : null,
       last: this.last ? { ...this.last } : null,
       services: (st?.services ?? [])
-        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}) }))
+        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}) }))
         .sort((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
     };
   }
@@ -127,7 +130,7 @@ export class StackService {
   private onPhase(kind: StackActionKind, phase: string): void {
     if (!this.action || this.action.kind !== kind) return;
     this.action.phase = phase;
-    if (kind === "launch" && phase === "waiting") this.waiting = true;
+    if ((kind === "launch" || kind === "rebuild") && phase === "waiting") this.waiting = true;
     this.refresh();
     if (!this.waiting) void this.probe();
   }
@@ -138,7 +141,7 @@ export class StackService {
     if (!this.ops || this.probing || this.waiting) return;
     this.probing = true;
     try {
-      this.observe(await this.ops.status());
+      this.observe(await (this.ops.statusWithRestarts ?? this.ops.status).call(this.ops));
     } catch (err) {
       this.observe({ docker: { ok: false, detail: message(err).slice(0, 500) }, services: [] });
     } finally {
@@ -192,6 +195,7 @@ export class StackService {
     let res: StackResult | RuntimeResult;
     try {
       res = kind === "launch" ? await ops.launch()
+        : kind === "rebuild" ? await ops.rebuild()
         : kind === "stop" ? await ops.stopAll()
         : kind === "restart" ? await ops.restartAll(restarter)
         : await ops.consolidate();

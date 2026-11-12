@@ -5,7 +5,7 @@ prefix: VOICE
 
 # voice
 
-> Mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at git `1b57790`. Describes the intended design; where the code does not yet match, the text names the gap and its spec ID. A rationale cell cites the code comment, commit, design note or owner decision (2026-11-01) that states the reason; where no such source exists, the cell gives the engineering reason the design rests on. HLD: [high-level-design](../../high-level-design.md).
+> Mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at git `1b57790`. Describes the intended design. A rationale cell cites the code comment, commit, design note or owner decision (2026-11-01) that states the reason; where no such source exists, the cell gives the engineering reason the design rests on. HLD: [high-level-design](../../high-level-design.md).
 
 ## Context and Design Philosophy
 
@@ -26,19 +26,19 @@ Ownership notes (from the mapping brief): `src/health.ts` implements the heartbe
 
 ## Synthesis Pipeline
 
-Boot (`runVoice`, `boot.ts:26-50`; `index.ts` only supplies the real `setup`): inside one `try`, load config, create `Bus("voice")`, read `VOICE_PORT` (default `8700`) and `urls.voice()`, build `VoiceHealth(cfg.voice.engine)`, start the heartbeat, pick the synthesizer, create `Voice`, listen on the port, position the consumer group with `bus.resetGroup("voice")`, call `heartbeat.ready()`, and start one bus loop:
+Boot (`runVoice` in `boot.ts`; `index.ts` only calls it) runs through the shared `runService` bootstrap (shared-runtime SHARED-BOOT-*), which loads config, creates `Bus("voice")` and starts the heartbeat in `starting` with the `VoiceHealth` spec. Voice's `main` then reads `VOICE_PORT` (default `8700`) and `urls.voice()`, picks the synthesizer, creates `Voice`, registers its teardown, listens on the port, positions the consumer group with `bus.resetGroup("voice")`, calls `heartbeat.ready()`, and starts one bus loop:
 
-`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing"], start: "latest" }, ev => voice.onEvent(ev))` (`boot.ts:45`).
+`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed"], start: "latest" }, ev => voice.onEvent(ev))`.
 
 Readiness means "can receive `brain.say`": `ready` is reported only once the HTTP server listens **and** the `voice` group exists at the stream's newest entry. The bus has no "subscribed" notification (`subscribe` resolves only when the bus stops), so boot creates and positions the group itself with `resetGroup` before `ready`, and `subscribe` then runs the same positioning (`latest` resets again); a `brain.say` published in the few milliseconds between the two is dropped, which is what `latest` allows. Everything runs inside the `try`, so a config error, a port in use, an unreachable Redis at the group call or a rejecting subscription all log `fatal` and exit 1 (VOICE-SYN-006).
 
-That single loop handles events strictly one at a time (`packages/bus/src/index.ts:157-167` awaits the handler per entry). While a `brain.say` is being synthesized, a following `voice.playing` claim waits behind it.
+The loop reads events one at a time, in stream order (the event-bus `subscribe` contract). It never waits for synthesis: a `brain.say` goes onto an internal queue and the handler returns at once, so a `voice.playing` or `voice.failed` that follows is read and applied while a line is still being synthesized (VOICE-SYN-007). One drain task takes queued lines in arrival order and synthesizes them one at a time, so TTS never runs two requests at once and `brain.say` order is kept. The queue is not bounded: cortex waits for each line's `voice.done` before it speaks the next, so it stays short in practice, and dropping a line would leave cortex waiting for a `voice.done` that never comes. A crash loses the queued lines, which the at-most-once delivery of the `latest` start mode already accepts. On shutdown the queue is dropped and an in-flight line publishes nothing (VOICE-SYN-008).
 
 **Start mode.** voice subscribes with the event-bus `latest` start mode: the `voice` group is moved to the newest stream entry on every start, so a `brain.say` published while voice was down is never spoken (VOICE-SYN-001). Delivery across a restart is therefore at-most-once, which suits a live co-host: a stale line spoken late is worse than a line dropped. This holds for every restart path, including a compose `restart: unless-stopped` restart (`docker-compose.yml:10`); the control plane's `fresh` start (voice's manifest default, `packages/control/src/manifest.ts:45`) is no longer the only thing that skips the backlog.
 
 The bus retries a failed subscription read with backoff (event-bus); a subscription rejection that still reaches voice is logged with message `fatal` and ends the process with a non-zero status, so compose restarts it with a clear cause (VOICE-SYN-006). A Redis outage does not reject it (the subscriber connection uses `maxRetriesPerRequest: null`, so its commands wait for the reconnect); another Redis error, such as the group being deleted, does.
 
-`onSay` (`voice.ts:126-154`), per `brain.say { id, text, emotion, gesture, ... }`:
+`onSay`, run by the drain task per `brain.say { id, text, emotion, gesture, ... }`:
 
 1. `wav = await synth(text)`.
 2. `info = parseWav(wav)`; `env = envelope(wav, info, 30)`.
@@ -47,7 +47,7 @@ The bus retries a failed subscription read with backoff (event-bus); a subscript
 5. Arm the 1.5 s virtual-sink timer (see Sink Arbitration).
 6. Any exception in 1-5 is caught: log `"tts failed"`, publish `voice.done { id, sink: "error" }` (`voice.ts:149-153`). That covers TTS HTTP errors, a non-WAV reply, a non-16-bit WAV (envelope throws), and a failed publish. No `voice.utterance` is emitted in that case (unless the failure was the timer-arming step, which cannot throw).
 
-The timer callbacks run outside that `try`. Their publishes go through `publishVirtual` (`voice.ts:91-97`), which logs a failure at warn (`virtual sink publish failed`) and returns, so voice keeps running (VOICE-SINK-009); the publishing connection gives up after three reconnect attempts (`maxRetriesPerRequest: 3`, `packages/bus/src/index.ts:44`), so a virtual-sink timer that fires during a Redis outage would otherwise end the process.
+The drain task also catches anything that escapes `onSay` (for example a failed `voice.done` publish) and logs it as `synthesis failed`, so one line never stops the queue. The timer callbacks run outside that `try`. Their publishes go through `publishVirtual` (`voice.ts:91-97`), which logs a failure at warn (`virtual sink publish failed`) and returns, so voice keeps running (VOICE-SINK-009); the publishing connection gives up after three reconnect attempts (`maxRetriesPerRequest: 3`, `packages/bus/src/index.ts:44`), so a virtual-sink timer that fires during a Redis outage would otherwise end the process.
 
 Voice speaks **everything** on `brain.say` regardless of `injected` / `remember` flags or `reason`, and it never subscribes to `control` (VOICE-SYN-005). Mute and pause are seen only by the regions that decide to speak, [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md); an operator `say` reaches voice as an ordinary `brain.say` and is spoken even while the co-host is muted.
 
@@ -56,7 +56,7 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 | `voice.engine` | Synthesizer | Network | Heartbeat |
 | --- | --- | --- | --- |
 | `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }`; non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
-| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, EARS-AUD-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
+| `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, SHARED-AUDIO-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
 
 `voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (schema default 1, example YAML 1.05), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
 
@@ -80,7 +80,7 @@ The store (`voice.ts:66-85`) is a `Map<id, Buffer>` plus an insertion-order arra
 | `GET /health` | `200` body `ok` (no check of Redis or TTS) |
 | anything else | `404`, empty body |
 
-Method is not checked (any method on those paths behaves like GET), and the match is on the raw request URL, so a query string turns a valid path into a 404. `/health` is a liveness ping only: container health comes from heartbeat freshness, and voice keeps `/health` alongside it (`openspec/changes/archive/2026-11-01-add-service-health/design.md`, D5). `urls.voice()` (`packages/config/src/index.ts:173`) is the base used in `audioUrl`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT>`, a loopback default chosen so host runs work outside Docker (commit `e53badc`, "default VOICE_URL to loopback outside Docker"); compose sets `VOICE_URL=http://voice:8700` for every TS service (`docker-compose.yml:18`). Compose publishes port 8700 on the host's loopback address only, `127.0.0.1:8700` (DEPLOY-COMPOSE-007), so the host-run dashboard reaches voice at the `urls.voice()` loopback default; it is never published to the LAN. In-network sinks (mouth) fetch directly from `http://voice:8700`, and browsers reach audio only through the dashboard's `/audio/*` proxy (`services/dashboard/src/routes.ts`). That proxy is the only supported path for a player: a host-side sink that fetches from voice directly is not a supported topology.
+Only `GET` and `HEAD` are served (VOICE-HTTP-006): any other method on any path gets `405` with `allow: GET, HEAD`; a `HEAD` gets the same status and headers as the `GET` with no body. Routes match the request's path, not its raw target, so a query string is ignored (VOICE-HTTP-007): `/audio/<id>.wav?t=1` serves the audio and `/health?probe=1` answers `ok`. `/health` is a liveness ping only: container health comes from heartbeat freshness, and voice keeps `/health` alongside it (`openspec/changes/archive/2026-11-01-add-service-health/design.md`, D5). `urls.voice()` (`packages/config/src/index.ts:173`) is the base used in `audioUrl`: `VOICE_URL`, else `http://127.0.0.1:<VOICE_PORT>`, a loopback default chosen so host runs work outside Docker (commit `e53badc`, "default VOICE_URL to loopback outside Docker"); compose sets `VOICE_URL=http://voice:8700` for every TS service (`docker-compose.yml:18`). Compose publishes port 8700 on the host's loopback address only, `127.0.0.1:8700` (DEPLOY-COMPOSE-007), so the host-run dashboard reaches voice at the `urls.voice()` loopback default; it is never published to the LAN. In-network sinks (mouth) fetch directly from `http://voice:8700`, and browsers reach audio only through the dashboard's `/audio/*` proxy (`services/dashboard/src/routes.ts`). That proxy is the only supported path for a player: a host-side sink that fetches from voice directly is not a supported topology.
 
 ## Sink Arbitration Protocol
 
@@ -137,8 +137,8 @@ sequenceDiagram
 
 - **Slow or queued real sinks look like absent sinks at first.** The claim window is a fixed 1.5 s measured from `voice.utterance`, but a sink may legitimately start later: a mouth output queues utterances behind the one playing and then does a fetch, convert and play before publishing `voice.playing` ([mouth](../mouth/mouth-design.md) Playback); a second line queued behind a long first line is always timed by the virtual sink. With the late-claim rule (VOICE-SINK-008) the virtual `voice.done` is cancelled, so cortex waits for the real sink; the id still sees two `voice.playing` events (virtual, then real), and [avatar](../avatar/avatar-design.md) restarts lip-sync from the first envelope value on the second one (`services/avatar/src/engine.ts:39-45`).
 - **No exclusivity.** If a mouth output and a dashboard sink (or two mouth outputs) are active they both claim, both play, and both publish `voice.playing` and `voice.done` for the same id; voice only uses claims to suppress its own fallback, never to pick one sink. The same line playing on two sinks is accepted (see Decisions): cortex is released by whichever `voice.done` arrives first, and avatar lip-syncs from the first `voice.playing` it sees (a second one restarts the envelope). Running two sinks is the operator's choice.
-- **Claim ordering.** Claims are read by the same sequential loop that runs TTS. A claim for utterance A can be queued behind the synthesis of utterance B, so the 1.5 s timer for A may fire before the claim is processed and publish a spurious virtual `voice.playing`. When the queued claim is then processed, the late-claim rule cancels the pending virtual `voice.done` (VOICE-SINK-008); only if the claim is still queued when A's `durationMs` has elapsed does a virtual `voice.done` release cortex early. (Loop semantics at `packages/bus/src/index.ts:194-222`; timer at `voice.ts:145`.)
-- **Timers outlive shutdown.** The 1.5 s timer is not tracked or cleared; shutdown closes the server and stops the bus (`boot.ts:37`).
+- **Claim ordering.** Synthesis runs on the internal queue, not on the loop that reads claims, so a claim for utterance A is applied while B synthesizes and A's 1.5 s window sees it. A claim can still arrive after the window because the sink itself is slow; the late-claim rule then applies (VOICE-SINK-008).
+- **Shutdown clears the timers.** Shutdown drops the queue, clears the claim-window and virtual-done timers, closes the server and stops the bus, so nothing is published after the bus has stopped (VOICE-HLTH-005).
 - **A silent dashboard sink is still "a sink".** The dashboard page queues every `voice.utterance` even while audio is disabled and only plays when enabled (`index.html:137,142,331`); because it publishes `voice.playing` only on actual playback, a disabled page falls through to the virtual sink correctly, but a later enable replays the stale backlog.
 
 ## Fallback Clips
@@ -215,7 +215,11 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 ## Health
 
-`VoiceHealth` (`health.ts:7-19`): `service: "voice"`; `kokoro` engine gives mode `live` and `deps.kokoro` `ok` initially, `down` after any failed synthesis, `ok` again after the next success (the synthesizer is wrapped with `tracked`, `boot.ts:33`); `stub` gives mode `mock` and `kokoro: "n/a"`. `heartbeat.ready()` is called once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts:42`), so `ready` means voice can receive `brain.say`. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. Shutdown closes the HTTP server and stops the bus after the pre-shutdown `stopping` heartbeat (`boot.ts:37`, `packages/bus/src/index.ts:231-257`).
+`VoiceHealth` (`health.ts:7-19`): `service: "voice"`; `kokoro` engine gives mode `live` and `deps.kokoro` `ok` initially, `down` after any failed synthesis, `ok` again after the next success (the synthesizer is wrapped with `tracked`); `stub` gives mode `mock` and `kokoro: "n/a"`. `heartbeat.ready()` is called once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts`), so `ready` means voice can receive `brain.say`. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. On SIGINT or SIGTERM the heartbeat publishes one `stopping` heartbeat, then the teardown registered with `runService` runs (stop the `Voice` region, stop clip generation, close the HTTP server), then the bootstrap stops the bus (SHARED-BOOT-005).
+
+## Shared WAV parsing
+
+voice parses every WAV it synthesizes with the shared `parseWav` (shared-runtime SHARED-AUDIO-001 to 003), which rejects non-PCM and non-16-bit data; a rejected WAV takes the `tts failed` path (VOICE-ENV-005).
 
 ## Decisions & Alternatives
 
@@ -232,7 +236,16 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 | WAV support | 16-bit PCM only | Floats / other depths | Comment: "PCM 16-bit only (what Kokoro emits)" (`wav.ts:1`). |
 | Stub engine | Silent WAV sized 60 ms/char (min 400 ms) | Skip voice.utterance entirely | Isolated-backends design D5: silence sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`; commit `51d5a9c`). |
 | `audioUrl` base default | `VOICE_URL`, else loopback `http://127.0.0.1:<VOICE_PORT>` | `http://voice:<VOICE_PORT>` | Commit `e53badc`: "default VOICE_URL to loopback outside Docker"; compose already sets `VOICE_URL=http://voice:8700`. |
-| Subscription | One sequential loop; event-bus start mode `latest` (group moved to the newest entry on every start; at-most-once across restarts) | Resume the backlog (`resume`); leave the reset to the control plane's `fresh` start only | Owner decision 2026-11-01: stale `brain.say` lines are never spoken after any restart, including a compose restart; the start mode is decided once in event-bus. The single sequential loop is the event-bus `subscribe` contract (one handler at a time, in stream order); it keeps voice's state free of concurrency, at the cost of claims waiting behind a synthesis (see Known limits and Open Question 1). |
+| Subscription | One consumer group, read one event at a time in stream order; event-bus start mode `latest` (group moved to the newest entry on every start; at-most-once across restarts) | Resume the backlog (`resume`); leave the reset to the control plane's `fresh` start only | Owner decision 2026-11-01: stale `brain.say` lines are never spoken after any restart, including a compose restart; the start mode is decided once in event-bus. The one-at-a-time read is the event-bus `subscribe` contract; with synthesis moved onto an internal queue the read never blocks, so voice's bookkeeping stays free of concurrent handlers. |
+| Synthesis vs claim intake | Synthesis on an internal serial queue inside voice; claims read on the bus loop | Two consumer groups (`voice` for `brain.say`, a second for claims); keep one awaited loop; concurrent synthesis | Shared-runtime decision. An awaited synthesis delayed claim reads and produced spurious virtual pairs. An internal queue fixes that without a new consumer group, manifest change or reset rule, and keeps `brain.say` order. Concurrent synthesis would reorder lines and load the TTS server with parallel requests. |
+| Queue bound | Unbounded | Drop the oldest or newest line past a bound | Cortex releases the next line only after a `voice.done`, so the queue is short; a dropped line would never get its `voice.done`. |
+| Re-used utterance id | The new WAV replaces the old and the id becomes the newest store entry once | Reject the duplicate; keep two entries | Ids are cortex's; a repeat means the line was said again. One entry per id keeps eviction removing the oldest distinct id (VOICE-HTTP-008). |
+| HTTP method and target | `GET` and `HEAD` only, `405` otherwise; routes match the parsed path | Accept any method; match the raw URL | Browsers and probes append query strings, and a `POST` to an audio URL should not read like a `GET`. |
+| Tests under the type-checker | `tsconfig.test.json` (no emit) covers `src` and `test`, referenced from the root `tsconfig.json`, so `tsc -b` and `pnpm typecheck` check them | Widen `tsconfig.json` to include `test`; leave tests to tsx | Widening the emitting project would move `dist/index.js`, which the image's start command names. |
+| `voice.speed` default | Schema default 1; `config.example.yaml` ships the owner's tuned 1.05 | Make the schema default 1.05 | Owner decision: the example carries the tuned value over a neutral schema default. |
+| Kokoro tuning knobs | None added; `voice` and `speed` stay the only synthesis settings | Expose further Kokoro parameters as config | Owner decision (deferred): the settings editor shows whatever keys `voice` gains, and the clip fingerprint covers every setting the synthesizer sends (VOICE-CLIP-001), so a later knob needs no new mechanism; a knob is added only for a parameter verified against Kokoro-FastAPI's `/v1/audio/speech`. |
+| Avatar and fallback clips | A fallback clip is claimed under the given-up utterance's id, so avatar lip-syncs that utterance's envelope while the clip plays | Carry the clip's envelope in the manifest for avatar | Owner decision: accepted. The manifest carries no envelope, and giving avatar the clip's envelope would change avatar. |
+| More outputs | Outputs beyond Discord (a local audio device, a virtual cable) are adapters inside [mouth](../mouth/mouth-design.md) under `mouth.outputs`; each joins this protocol as a sink under its own name | Voice-side output adapters | Voice needs no change for a new sink; mouth's deferred decisions own them. |
 | Late real sink | A real sink's `voice.playing` after the virtual one cancels the pending virtual `voice.done` (VOICE-SINK-008) | Widen the claim window to cover sink queues; have sinks drop lines voice already timed; a protocol-wide single-lifecycle rule enforced by sinks | Owner decision 2026-11-01: a voice-only change; cortex is released by the sink that is actually playing, and avatar keeps following every `voice.playing`. |
 | Sink exclusivity | None: two active sinks both play and both report | Exclusive first claim; sink priority | Owner decision 2026-11-01: accepted. Claims only suppress the virtual fallback; running Discord and an OBS dashboard sink together is the operator's choice. |
 | Mute awareness | voice is unaware of mute and pause; it speaks every `brain.say` | voice subscribes to `control` and drops lines while muted | Owner decision 2026-11-01: mute and pause are seen only by cortex and salience, which decide whether to speak; an operator `say` bypasses mute and must still be heard. |
@@ -250,28 +263,16 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 ## Open Questions & Future Decisions
 
-1. **Single sequential loop does TTS and claim intake.** A slow synthesis delays claim processing and can cause spurious virtual pairs; synthesis could be moved off the loop (as cortex does by not awaiting `this.think(...)`, `cortex.ts:67`).
-2. **Voice tests are not type-checked.** `services/voice/tsconfig.json` has `include: ["src"]`, so tests are not type-checked by `tsc -b` and only run through tsx (root `package.json:19`).
-3. **`parseWav` robustness.** No check of the `fmt ` format tag or that `fmt ` precedes `data`; a missing `fmt ` chunk (zero bits or channels) yields a non-finite duration (`packages/shared/src/wav.ts`). Envelope silently ignores extra channels.
-4. **HTTP method and query strings.** `Voice.handle` does not check the method, and it matches the raw URL, so `/audio/<id>.wav?x` or `/health?x` returns 404 (`voice.ts:158,166`).
-5. **Id reuse.** Re-synthesizing an existing id appends a second entry to `order` (`voice.ts:77-85`), so one eviction can remove an id that is still the newest.
-6. **Config defaults diverge.** `voice.speed` schema default is 1 (`schema.ts:163`) but `config/config.example.yaml:130` ships 1.05; the frozen OpenSpec says default 1.
-7. **Tests missing.** `services/voice/test/boot.test.ts` covers boot wiring, but no test covers real signal handling or process exit (`onShutdown` and `process.exit` are injected). The 1.5 s timer is not cleared on shutdown.
-8. **Avatar and fallback clips.** A fallback clip is claimed under the given-up utterance's id, so avatar lip-syncs that utterance's envelope while the clip plays. The manifest carries no envelope; giving avatar the clip's envelope is possible later and would change avatar. Owner decision: accepted for now.
-
-### Deferred decisions
-
-1. **Tuning the co-host's voice.** Owner-facing knobs for the TTS voice, such as speed and whatever else the engine supports, are deferred. Which knobs exist depends on what Kokoro-FastAPI's `/v1/audio/speech` accepts beyond `voice` and `speed`, which is unverified. Today `voice.voice` and `voice.speed` are the only settings sent. Fallback clips use whatever settings are active, and the fingerprint covers every setting the synthesizer sends, so a new knob regenerates them (VOICE-CLIP-001).
-2. **More outputs.** Outputs beyond Discord (a local audio device, a virtual cable) are adapters inside [mouth](../mouth/mouth-design.md) and keys under `mouth.outputs`; each joins this protocol as a sink under its own name, so voice needs no change for them.
+None.
 
 ## References
 
 Files in this segment:
 
 - `services/voice/src/index.ts`, `boot.ts`, `voice.ts`, `clips.ts`, `wav.ts`, `health.ts`
-- `services/voice/test/boot.test.ts`, `clips.test.ts`, `mouth-sync.test.ts` (voice's clip routes read by mouth's real clip sync), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
-- `services/voice/package.json`, `services/voice/tsconfig.json`
-- `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; VOICE-ENV-001, VOICE-ENV-002)
+- `services/voice/test/boot.test.ts`, `queue.test.ts` (synthesis queue, stop, id reuse, HTTP methods and query strings), `clips.test.ts`, `mouth-sync.test.ts` (voice's clip routes read by mouth's real clip sync), `health.test.ts`, `stub.test.ts`, `voice.test.ts`, `wav.test.ts`
+- `services/voice/package.json`, `services/voice/tsconfig.json`, `services/voice/tsconfig.test.json`
+- `packages/shared/src/wav.ts`, `packages/shared/test/wav.test.ts` (`parseWav`, shared with ears; SHARED-AUDIO-001, SHARED-AUDIO-002)
 
 Other segments (arrow shows direction):
 

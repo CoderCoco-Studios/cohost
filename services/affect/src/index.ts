@@ -11,7 +11,7 @@
  * (`brain.affect.module`) puts a model behind the appraisal of each line, never behind the
  * mood arithmetic itself.
  */
-import { createLogger } from "@cohost/config";
-import { main } from "./main.js";
 
-void main(createLogger("affect")); // main() handles its own failures: logs `fatal` and exits 1
+import { runAffect } from "./main.js";
+
+void runAffect(); // the shared bootstrap handles failures: it logs and exits 1

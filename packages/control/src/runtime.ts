@@ -1,6 +1,6 @@
 import { execFile as nodeExecFile } from "node:child_process";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
-import { resolveDockerBin } from "./docker.js";
+import { resolveDockerBin, dockerEnv } from "./docker.js";
 
 export interface RuntimeResult {
   ok: boolean;
@@ -67,7 +67,7 @@ export class ComposeRuntime implements Runtime {
     this.manifest = o.manifest ?? SERVICE_MANIFEST;
   }
 
-  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-STACK-012
+  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-STACK-012
   private async run(id: string, verb: string[], extraEnv?: Readonly<Record<string, string>>): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);
@@ -75,7 +75,7 @@ export class ComposeRuntime implements Runtime {
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: { ...base, ...extraEnv }, cwd: this.o.cwd });
+      await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: dockerEnv(docker.bin, base, extraEnv), cwd: this.o.cwd });
       return { ok: true };
     } catch (err) {
       return { ok: false, detail: execDetail(err) };
@@ -95,12 +95,18 @@ export class ComposeRuntime implements Runtime {
    * service: the argv is fixed and takes nothing from the caller. `run` starts postgres and ollama if they are down.
    */
   // @spec CTRL-RUNTIME-010, CTRL-STACK-012
-  async consolidate(): Promise<RuntimeResult> {
+  consolidate(): Promise<RuntimeResult> { return this.oneShot("consolidate"); }
+
+  /** Runs the one-shot memory re-embedding (`docker compose run --rm -T reembed`), a fixed job like `consolidate`. */
+  // @spec CTRL-RUNTIME-011
+  reembed(): Promise<RuntimeResult> { return this.oneShot("reembed"); }
+
+  private async oneShot(job: "consolidate" | "reembed"): Promise<RuntimeResult> {
     const base = this.o.env ?? process.env;
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", "consolidate"], { env: base, cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
+      const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", job], { env: base, cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
       const last = lastLine(stdout);
       return last ? { ok: true, detail: last.slice(0, 500) } : { ok: true };
     } catch (err) {

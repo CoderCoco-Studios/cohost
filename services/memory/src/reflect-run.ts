@@ -19,7 +19,7 @@ export interface ReflectDeps {
 const BATCH = 600;
 const MIN_ROWS = 5;
 
-// @spec MEM-REFLECT-001, MEM-REFLECT-002, MEM-REFLECT-003, MEM-REFLECT-004, MEM-REFLECT-006, MEM-REFLECT-007, MEM-REFLECT-008, MEM-REFLECT-010, LLM-MOCK-005
+// @spec MEM-REFLECT-011, MEM-REFLECT-012, MEM-REFLECT-001, MEM-REFLECT-002, MEM-REFLECT-003, MEM-REFLECT-004, MEM-REFLECT-006, MEM-REFLECT-007, MEM-REFLECT-008, MEM-REFLECT-010, LLM-MOCK-005
 /** One reflection pass: read up to 600 memories after the cursor, ask the LLM for bullets, save them under `## Learned`, advance the cursor. */
 export async function runReflect({ cfg, llm, memory, log, loadPersonality, savePersonality, now, print = console.log }: ReflectDeps): Promise<void> {
   if (llm.name === "mock") log.warn({ provider: llm.name }, "reflect is using the mock chat backend: the Learned bullets are canned text, not a real reflection");
@@ -27,7 +27,15 @@ export async function runReflect({ cfg, llm, memory, log, loadPersonality, saveP
     log.warn("brain.memory.store is memory: nothing persists between processes, so there is nothing to reflect on");
     return;
   }
-  await memory.init();
+  // Reflection only reads rows and the cursor: no schema work and no embedder (MEM-REFLECT-011).
+  await memory.connect();
+  // The consolidation lock is shared with the live service's passes and the consolidate one-shot, so reflection never
+  // overlaps them (MEM-REFLECT-012); a held lock ends the run and the unmoved cursor makes the next run catch up.
+  const locked = await memory.withConsolidationLock(() => reflectOnce({ cfg, llm, memory, log, loadPersonality, savePersonality, now, print }));
+  if (!locked.ran) log.warn("another memory pass holds the consolidation lock: reflection skipped, run it again later");
+}
+
+async function reflectOnce({ cfg, llm, memory, log, loadPersonality, savePersonality, now, print = console.log }: ReflectDeps): Promise<void> {
   const cursor = parseCursor(await memory.getMeta("last_reflection"));
   const rows = await memory.recentSince(cursor, BATCH);
   if (rows.length < MIN_ROWS) {

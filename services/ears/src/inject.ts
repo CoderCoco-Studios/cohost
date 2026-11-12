@@ -1,7 +1,14 @@
-import type { BusEvent, Publisher } from "@cohost/bus";
+import type { Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
-import { INJECT_STALE_MS, uploadUrl } from "@cohost/shared";
-import { readWavHeader } from "./audio.js";
+import { createInjectHandler as createSharedInjectHandler, type InjectHandler } from "@cohost/shared";
+import { wavDurationMs } from "./audio.js";
+import { hasWordCharacter } from "./transcript.js";
+
+export { wavDurationMs };
+
+/** The dashboard's audio upload cap (25 MiB) and the time one upload fetch may take. */
+export const INJECT_MAX_BYTES = 26_214_400;
+export const INJECT_FETCH_TIMEOUT_MS = 30_000;
 
 export interface InjectDeps {
   bus: Publisher;
@@ -14,48 +21,26 @@ export interface InjectDeps {
   now?: () => number;
 }
 
-// @spec EARS-INJ-006
-/** Duration from a WAV header, 0 for anything else (or an unreadable header). */
-export function wavDurationMs(buf: Buffer): number {
-  if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return 0;
-  try {
-    const { sampleRate, channels, dataLength } = readWavHeader(buf);
-    if (!sampleRate || !channels) return 0;
-    return Math.round((dataLength / (channels * 2) / sampleRate) * 1000);
-  } catch {
-    return 0;
-  }
-}
-
-// @spec EARS-INJ-001, EARS-INJ-002, EARS-INJ-003, EARS-INJ-004, EARS-INJ-005, EARS-INJ-006, EARS-INJ-008
+// @spec EARS-INJ-010, EARS-INJ-005, EARS-INJ-006, EARS-INJ-008
 /**
- * Handles `inject.request` for ears: fetches the uploaded clip, sends it unchanged to STT and
- * publishes an injected `speech.heard`. `ears.min_speech_ms` does not apply. Needs no Discord.
+ * Handles `inject.request` for ears through the shared inject handler (target `ears`, the one kind `audio`): the
+ * uploaded clip goes unchanged to STT and is published as an injected `speech.heard`. `ears.min_speech_ms` does not
+ * apply. Needs no Discord.
  */
-export function createInjectHandler(d: InjectDeps): (ev: BusEvent<"inject.request">) => Promise<void> {
-  const doFetch = d.fetch ?? fetch;
-  const now = d.now ?? Date.now;
-  return async (ev) => {
-    const r = ev.data;
-    if (r.target !== "ears") return;
-    const result = (ok: boolean, detail?: string) => d.bus.publish("inject.result", { id: r.id, ok, ...(detail ? { detail } : {}) });
-    try {
-      if (now() - ev.ts > INJECT_STALE_MS) return void (await result(false, "stale"));
-      if (r.kind !== "audio") return void (await result(false, `ears cannot handle kind '${r.kind}'`));
-      const target = uploadUrl(r.url, d.dashboardUrl);
-      if (!target) return void (await result(false, "url is not an upload of this dashboard"));
-      const res = await doFetch(target, { redirect: "error" });
-      if (!res.ok) return void (await result(false, `fetch upload ${res.status}`));
-      const audio = Buffer.from(await res.arrayBuffer());
-      const text = (await d.transcribe(audio, { contentType: res.headers.get("content-type") ?? "audio/wav" })).trim();
-      if (!text || /^\W*$/.test(text)) return void (await result(false, "empty transcript"));
-      const speaker = r.meta?.user || "injected";
-      await d.bus.publish("speech.heard", { speaker, text, durationMs: wavDurationMs(audio), injected: true, remember: r.remember });
-      d.log.info({ id: r.id, speaker, text }, "heard (injected)");
-      await result(true, text);
-    } catch (err) {
-      d.log.warn({ err: String(err), id: r.id }, "audio injection failed");
-      try { await result(false, String(err)); } catch { /* bus down */ }
-    }
-  };
+export function createInjectHandler(d: InjectDeps): InjectHandler {
+  return createSharedInjectHandler({
+    target: "ears", bus: d.bus, log: d.log, dashboardUrl: d.dashboardUrl, fetch: d.fetch, now: d.now,
+    fetchTimeoutMs: INJECT_FETCH_TIMEOUT_MS,
+    maxBytes: { audio: INJECT_MAX_BYTES },
+    kinds: {
+      audio: async (audio, r, { contentType }) => {
+        const text = (await d.transcribe(audio, { contentType: contentType ?? "audio/wav" })).trim();
+        if (!hasWordCharacter(text)) return { ok: false, detail: "empty transcript" };
+        const speaker = r.meta?.user || "injected";
+        await d.bus.publish("speech.heard", { speaker, text, durationMs: wavDurationMs(audio), injected: true, remember: r.remember });
+        d.log.info({ id: r.id, speaker, text }, "heard (injected)");
+        return { detail: text };
+      },
+    },
+  });
 }

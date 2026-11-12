@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SERVICE_MANIFEST, findService, KNOWN_SERVICES } from "../src/index.js";
+import * as control from "../src/index.js";
+import { SERVICE_MANIFEST, findService, appServiceIds, HealthTracker } from "../src/index.js";
 
 // @spec CTRL-MANIFEST-001
 test("every manifest entry carries the runtime fields", () => {
@@ -20,8 +21,14 @@ test("every manifest entry carries the runtime fields", () => {
 });
 
 // @spec CTRL-MANIFEST-005
-test("every health-tracked service is in the manifest", () => {
-  for (const id of KNOWN_SERVICES) assert.ok(findService(id), id);
+test("the tracker's known list and the CLI's list are the manifest's application units; no separate list exists", () => {
+  const apps = SERVICE_MANIFEST.filter((s) => s.pnpmFilter).map((s) => s.id);
+  assert.deepEqual(appServiceIds(), apps);
+  assert.equal("KNOWN_SERVICES" in control, false);
+  const snap = new HealthTracker().snapshot();
+  assert.deepEqual(snap.map((s) => s.service), apps);
+  const custom = [{ ...SERVICE_MANIFEST[0]!, id: "only", composeName: "only", pnpmFilter: "@cohost/only" }];
+  assert.deepEqual(appServiceIds(custom), ["only"]);
 });
 
 // @spec CTRL-MANIFEST-002, CTRL-MANIFEST-003
@@ -43,8 +50,9 @@ test("flags and defaults match the spec", () => {
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
   assert.equal(findService("mouth")!.pnpmFilter, "@cohost/mouth");
   assert.equal(findService("mouth")!.composeName, "mouth");
-  assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false" });
-  assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCE: "off" });
+  assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" });
+  assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" });
+  assert.deepEqual(findService("eyes")!.isolatedEnv, { VISION_ENABLED: "false", VISION_ENGINE: "stub" });
 });
 
 // @spec CTRL-MANIFEST-004
@@ -55,7 +63,23 @@ test("unknown ids are not found", () => {
 
 // @spec CTRL-HEALTH-005
 test("the known list is the ten app services, mouth among them, without dashboard", () => {
-  assert.equal(KNOWN_SERVICES.length, 10);
-  assert.ok((KNOWN_SERVICES as readonly string[]).includes("mouth"));
-  assert.equal((KNOWN_SERVICES as readonly string[]).includes("dashboard"), false);
+  const ids = appServiceIds();
+  assert.equal(ids.length, 10);
+  assert.ok(ids.includes("mouth"));
+  assert.equal(ids.includes("dashboard"), false);
+});
+
+// @spec CTRL-MANIFEST-003
+test("the isolation presets are exactly the specified ones; every other unit has none", () => {
+  const expected: Record<string, Record<string, string>> = {
+    chat: { CHAT_SOURCE: "fake" },
+    memory: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
+    cortex: { LLM_PROVIDER: "mock" },
+    voice: { VOICE_ENGINE: "stub" },
+    avatar: { AVATAR_DRIVER: "null" },
+    eyes: { VISION_ENABLED: "false", VISION_ENGINE: "stub" },
+    ears: { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" },
+    mouth: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
+  };
+  for (const s of SERVICE_MANIFEST) assert.deepEqual(s.isolatedEnv, expected[s.id] ?? {}, s.id);
 });

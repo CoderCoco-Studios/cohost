@@ -38,7 +38,12 @@
   .badge.up{color:var(--ok); border-color:var(--ok)} .badge.degraded{color:var(--warn); border-color:var(--warn)} .badge.stale{color:var(--warn)}
   .badge.down,.badge.crash-looping{color:var(--bad); border-color:var(--bad)} .badge.unknown{color:var(--dim)}
   .dep.ok{color:var(--ok)} .dep.down{color:var(--bad)} .dep.na{color:var(--dim)}
-  .sink main, .sink #services, .sink .tab { display:none }  /* ?sink=1 : audio only, for OBS browser source */  /* ?sink=1 : audio only, for OBS browser source */
+  .sink main, .sink #services, .sink .tab { display:none }  /* ?sink=1 : audio only, for OBS browser source */
+  .badge.paused { color:var(--warn); border-color:var(--warn); margin-left:6px }
+  .needs { display:block; color:var(--warn); font-size:12px }
+  #testDrawer { margin-top:12px } #testDrawer h3 { margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
+  .tdform { margin-bottom:8px } .tdform textarea { min-height:90px; margin-bottom:4px } .tdform label { display:block; color:var(--dim); font-size:12px; margin-bottom:2px }
+  #tdFeed { max-height:240px; overflow:auto; font-family:ui-monospace,Menlo,monospace; font-size:12.5px } #tdStatus.ok{color:var(--ok)} #tdStatus.bad{color:var(--bad)}
   .hint { color:var(--dim); font-size:12px }
   .svc td.act { white-space:nowrap } .svc td.act button { padding:2px 8px; font-size:12px }
   #ctlBar select, #ctlBar label { font-size:12px; color:var(--dim) } #ctlBar select { background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:3px }
@@ -61,6 +66,12 @@
   .bar i { display:block; height:100%; background:var(--acc) }
   a.lnk { color:var(--acc); cursor:pointer; font-size:12px } a.lnk:hover { text-decoration:underline }
   .sink #viewers { display:none }
+  #settings { padding:12px; display:none } #settings.show { display:block } .sink #settings { display:none }
+  .srow { display:grid; grid-template-columns:240px minmax(0,1fr) minmax(0,1fr); gap:8px; padding:5px 0; border-bottom:1px solid #1d2129; align-items:start }
+  .srow label { color:var(--fg); word-break:break-all } .srow select { width:100%; background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px }
+  .srow textarea { min-height:70px } .srow input[type=checkbox] { width:auto }
+  @media (max-width:800px){ .srow{grid-template-columns:1fr} }
+  #sMsg { white-space:pre-wrap; margin-top:8px }
   .inj-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px }
   .pill.stack-up{color:var(--ok)} .pill.stack-starting,.pill.stack-stopping,.pill.stack-degraded{color:var(--warn)} .pill.stack-down,.pill.stack-docker-unavailable{color:var(--bad)}
   .sink #stackBadge { display:none }
@@ -76,6 +87,7 @@
   <button id="tabLive" class="tab on">live</button>
   <button id="tabServices" class="tab">services</button>
   <button id="tabViewers" class="tab">viewers</button>
+  <button id="tabSettings" class="tab">settings</button>
   <span style="flex:1"></span>
   <button id="audio">🔇 enable audio</button>
   <button id="mute">mute</button><span id="muteMsg" class="hint"></span>
@@ -138,7 +150,7 @@
   <div class="panel" id="stackPanel" style="display:none">
     <h2>stack <span id="stackState" class="hint"></span></h2>
     <div class="row">
-      <button id="stLaunch">Launch</button><button id="stStop">Stop</button><button id="stRestart">Restart all</button>
+      <button id="stLaunch">Launch</button><button id="stRebuild">Rebuild</button><button id="stStop">Stop</button><button id="stRestart">Restart all</button>
       <button id="stConsolidate" style="display:none">Run consolidation pass</button>
       <span id="stackMsg" class="hint"></span>
     </div>
@@ -154,10 +166,12 @@
       <span id="ctlMsg" class="hint"></span>
     </div>
     <table class="svc">
-      <thead><tr><th>service</th><th>state</th><th>mode</th><th>deps</th><th>last seen</th><th>restarts</th><th>detail</th><th id="actHead" style="display:none">control</th></tr></thead>
+      <thead><tr><th>service</th><th>state</th><th>mode</th><th>deps</th><th>last seen</th><th>restarts</th><th>detail</th><th>test</th><th id="actHead" style="display:none">control</th></tr></thead>
       <tbody id="svcRows"></tbody>
     </table>
   </div>
+  <!-- @spec MOD-TEST-001 -->
+  <div class="panel" id="testDrawer" style="display:none"></div>
 </section>
 <!-- @spec DASH-VIEWERS-010 -->
 <section id="viewers">
@@ -170,6 +184,25 @@
       <div id="vRows"></div>
     </div>
     <div class="panel"><div id="vDetail"><span class="hint">select a viewer to see what the co-host remembers about them</span></div></div>
+  </div>
+</section>
+<!-- @spec MOD-UI-001 -->
+<section id="settings">
+  <div class="panel">
+    <h2>settings <span id="sReaders" class="hint"></span></h2>
+    <div class="row" style="margin-bottom:8px">
+      <label>section <select id="sSection"></select></label>
+      <span class="hint">Settings take effect when the services that read them restart.</span>
+    </div>
+    <div id="sUnknown" class="hint"></div>
+    <div id="sForm"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="sValidate">Validate</button><button id="sSave">Save</button>
+      <button id="sReload" style="display:none">Reload section</button>
+      <button id="sApply" style="display:none"></button>
+    </div>
+    <div id="sMsg" class="hint"></div>
+    <div id="sApplyLog" class="hint"></div>
   </div>
 </section>
 <script>
@@ -187,9 +220,14 @@ async function pump() {
   if (!audioOn || playing || !queue.length) return;
   const u = queue.shift(); playing = true;
   const a = new Audio(`/audio/${u.id}.wav`);
+  let finished = false; // the line is reported done once, whichever of ended, error or a refused play() comes first
+  const finish = () => { if (finished) return false; finished = true; post("/sink", { event: "done", id: u.id }); playing = false; return true; };
   a.onplay = () => post("/sink", { event: "playing", id: u.id });
-  a.onended = a.onerror = () => { post("/sink", { event: "done", id: u.id }); playing = false; pump(); };
-  try { await a.play(); } catch (e) { playing = false; audioOn = false; queue.length = 0; $("#audio").textContent = "🔇 enable audio"; }
+  a.onended = a.onerror = () => { if (finish()) pump(); };
+  // Autoplay refused: the line that could not start is reported done, audio goes back to off, and the lines still queued
+  // wait for the operator to switch audio on again (turning it off by hand is what discards them).
+  // @spec DASH-UI-022
+  try { await a.play(); } catch (e) { if (finish()) { audioOn = false; $("#audio").textContent = "🔇 enable audio"; $("#audio").classList.remove("on"); } }
 }
 // @spec DASH-UI-006
 // When service control is enabled the server wants a bearer token on every mutating call.
@@ -287,13 +325,16 @@ function showTab(name) {
   $("#live").classList.toggle("hide", name !== "live");
   $("#services").classList.toggle("show", name === "services");
   $("#viewers").classList.toggle("show", name === "viewers");
+  $("#settings").classList.toggle("show", name === "settings");
   $("#tabLive").classList.toggle("on", name === "live");
   $("#tabServices").classList.toggle("on", name === "services");
   $("#tabViewers").classList.toggle("on", name === "viewers");
+  $("#tabSettings").classList.toggle("on", name === "settings");
 }
 $("#tabLive").onclick = () => showTab("live");
 $("#tabServices").onclick = () => showTab("services");
 $("#tabViewers").onclick = () => { showTab("viewers"); return loadViewers(); }; // @spec DASH-VIEWERS-010
+$("#tabSettings").onclick = () => { showTab("settings"); return loadSettings(); }; // @spec MOD-UI-001
 
 let svc = [], svcAt = 0;
 // @spec DASH-UI-007
@@ -303,8 +344,11 @@ function renderServices() {
     const h = s.heartbeat;
     const deps = h ? Object.entries(h.deps).map(([k, v]) => `<span class="dep ${v === "n/a" ? "na" : v}">${esc(k)}: ${esc(v)}</span>`).join(" · ") || "—" : "—";
     const age = s.lastSeenAgeMs == null ? "never" : `${Math.round((s.lastSeenAgeMs + extra) / 1000)}s ago`;
-    return `<tr><td>${esc(s.service)}</td><td><span class="badge ${s.state}">${s.state}</span></td><td>${h ? esc(h.mode) : "—"}</td>` +
-      `<td>${deps}</td><td>${age}</td><td>${s.restarts}</td><td class="hint">${h && h.detail ? esc(h.detail) : ""}</td>${actions(s.service)}</tr>`;
+    // @spec MOD-PAUSE-003: paused is exactly the heartbeat's own detail; @spec MOD-LIFE-002: needs is an annotation beside the state
+    const paused = h && h.detail === "paused" ? '<span class="badge paused">paused</span>' : "";
+    const needs = (s.needs || []).map((n) => `<span class="needs">needs ${esc(n.service)} (${esc(n.state)})</span>`).join("");
+    return `<tr><td>${esc(s.service)}</td><td><span class="badge ${s.state}">${s.state}</span>${paused}${needs}</td><td>${h ? esc(h.mode) : "—"}</td>` +
+      `<td>${deps}</td><td>${age}</td><td>${s.restarts}</td><td class="hint">${h && h.detail ? esc(h.detail) : ""}</td>${testCell(s.service)}${actions(s.service)}</tr>`;
   }).join("");
   const bad = svc.filter((s) => ["down", "crash-looping", "stale"].includes(s.state)).length;
   $("#svcNote").textContent = bad ? `· ${bad} need attention` : "";
@@ -314,14 +358,27 @@ function renderServices() {
 // @spec DASH-UI-008
 let ctlEnabled = false;
 const ACTIONS = ["start", "stop", "restart"];
-// The control plane's manifest units (packages/control/src/manifest.ts; a test pins this list to it). The
-// dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
-// @spec DASH-UI-008
-const UNITS = ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "redis", "postgres", "ollama", "tts", "stt"];
+// The control plane's manifest units, as GET /services/manifest lists them: the page holds no list of its own.
+// The dashboard itself, which runs on the host and is not a unit, and any other service shows no buttons.
+// @spec DASH-UI-008, DASH-UI-021
+let UNITS = [];
+let UNIT_DEFS = Object.create(null); // id -> the manifest's descriptor (pause, test, ...)
+fetch("/services/manifest").then((r) => r.json()).then((m) => {
+  UNITS = (m.units || []).map((u) => u.id);
+  UNIT_DEFS = Object.create(null);
+  for (const u of m.units || []) UNIT_DEFS[u.id] = u;
+  renderServices();
+}).catch(() => {});
+// @spec MOD-PAUSE-001: Pause and Resume only on a unit whose manifest `pause` is true
 function actions(id) {
   if (!ctlEnabled) return "";
-  return `<td class="act">${UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : ""}</td>`;
+  const def = UNIT_DEFS[id];
+  const life = UNITS.includes(id) ? ACTIONS.map((a) => `<button data-act="${a}" data-svc="${esc(id)}">${a}</button>`).join(" ") : "";
+  const pause = def && def.pause ? ` <button data-ctl="pause" data-svc="${esc(id)}">pause</button> <button data-ctl="resume" data-svc="${esc(id)}">resume</button>` : "";
+  return `<td class="act">${life}${pause}</td>`;
 }
+// @spec MOD-TEST-001: every unit's row opens the test drawer, with control enabled or not
+const testCell = (id) => `<td class="act">${UNIT_DEFS[id] && UNIT_DEFS[id].test.inputs.length ? `<button data-open="test" data-svc="${esc(id)}">test</button>` : ""}</td>`;
 fetch("/services/control").then((r) => r.json()).then((c) => {
   ctlEnabled = !!c.enabled;
   $("#ctlBar").style.display = ctlEnabled ? "" : "none";
@@ -330,8 +387,10 @@ fetch("/services/control").then((r) => r.json()).then((c) => {
   renderStack();
 }).catch(() => {});
 $("#svcRows").addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-act]");
+  const b = e.target.closest("button[data-act], button[data-ctl], button[data-open]");
   if (!b) return;
+  if (b.dataset.open) { openDrawer(b.dataset.svc); return; }
+  if (b.dataset.ctl) { await unitControl(b.dataset.ctl, b.dataset.svc); return; }
   const act = b.dataset.act, id = b.dataset.svc;
   const mode = $("#ctlMode").value, isolated = $("#ctlIso").checked;
   const how = [mode && `mode ${mode}`, isolated && "isolated"].filter(Boolean).join(", ");
@@ -344,6 +403,110 @@ $("#svcRows").addEventListener("click", async (e) => {
     $("#ctlMsg").textContent = r.ok && j.ok ? `${act} ${id}: ok${j.detail ? " · " + j.detail : ""}` : `${act} ${id} failed (${r.status})${j.detail ? ": " + j.detail : ""}`;
   } catch (err) { $("#ctlMsg").textContent = `${act} ${id} failed: ${err}`; }
 });
+// @spec MOD-PAUSE-002
+async function unitControl(cmd, id) {
+  $("#ctlMsg").textContent = `${cmd} ${id}…`;
+  try {
+    const r = await post("/control", { cmd, target: id });
+    $("#ctlMsg").textContent = r.ok ? `${cmd} ${id}: sent` : `${cmd} ${id} failed (${r.status})`;
+  } catch (err) { $("#ctlMsg").textContent = `${cmd} ${id} failed: ${err}`; }
+}
+
+// ---------- test drawer (module-contract MOD-TEST-001): the unit's declared inputs, from the manifest, and what it answers
+// Sample payloads by bus event type (not by unit): each is valid for its type's schema, ready to edit and send.
+const SAMPLES = {
+  "chat.message": () => ({ platform: "twitch", user: "injected_viewer", text: "hello cohost, how is the stream going?" }),
+  "speech.heard": () => ({ speaker: "injected", text: "hello cohost", durationMs: 0 }),
+  "vision.summary": () => ({ text: "A boss fight has started.", changed: true }),
+  "brain.say": () => ({ id: "test-" + Date.now(), text: "This is a test line.", emotion: "neutral" }),
+  "attention.focus": () => ({ reason: "test", score: 1, focus: { kind: "chat", who: "injected_viewer", text: "hello cohost", mention: true } }),
+  "affect.state": () => ({ valence: 0.5, arousal: 0.5, mood: "happy" }),
+  "memory.recall.request": () => ({ id: "test-" + Date.now(), query: "test", k: 3 }),
+};
+const sampleFor = (type) => (SAMPLES[type] ? SAMPLES[type]() : {});
+let tdUnit = null, tdFeed = [];
+const tdIds = new Set();  // ids of the service-level injections made from the drawer: their inject.result belongs in its feed
+const tdCorr = new Set(); // data.id of the bus events injected from the drawer: a reply carrying it answers the injection
+const tdSet = (msg, cls = "") => { const el = $("#tdStatus"); el.textContent = msg; el.className = "hint " + cls; };
+function tdForm(type, i) {
+  const send = (label) => `<button data-td="send" data-i="${i}">${label}</button>`;
+  if (type === "text") return `<div class="tdform"><label>text, as a chat message through the real pipeline</label><textarea id="tdIn${i}" placeholder="Type a fake viewer message…"></textarea>${send("send text")}</div>`;
+  if (type === "image") return `<div class="tdform"><label>image, through the real pipeline</label><input type="file" id="tdIn${i}" accept="image/png,image/jpeg,image/webp">${send("send image")}</div>`;
+  if (type === "audio") return `<div class="tdform"><label>audio, through the real pipeline</label><input type="file" id="tdIn${i}" accept="audio/*">${send("send audio")}</div>`;
+  return `<div class="tdform"><label>${esc(type)} (bus event, marked injected where its schema allows)</label><textarea id="tdIn${i}">${esc(JSON.stringify(sampleFor(type), null, 2))}</textarea>${send("send " + esc(type))}</div>`;
+}
+function openDrawer(id) {
+  const def = UNIT_DEFS[id];
+  if (!def) return;
+  tdUnit = def; tdFeed = []; tdIds.clear(); tdCorr.clear();
+  $("#testDrawer").innerHTML =
+    `<h2>test ${esc(id)} <a class="lnk" data-td="close">close</a></h2>` +
+    (ctlEnabled ? `<div class="row" style="margin-bottom:8px"><button data-td="isolated">start isolated</button><span class="hint">only this unit, with mock or off backends</span></div>` : "") +
+    def.test.inputs.map(tdForm).join("") +
+    '<div id="tdStatus" class="hint"></div><h3>live</h3><div id="tdFeed"></div>';
+  $("#testDrawer").style.display = "";
+}
+function tdRender() {
+  $("#tdFeed").innerHTML = tdFeed.map((ev) => {
+    const d = ev.data || {};
+    const corr = typeof d.id === "string" && tdCorr.has(d.id) && ev.type !== "inject.result" ? ' <span class="badge mem">answers your injection</span>' : "";
+    return `<div class="ev"><span class="k">${esc(ev.type)}</span><span>${esc(JSON.stringify(d).slice(0, 300))}${corr}</span></div>`;
+  }).join("");
+}
+function tdAdd(ev) { tdFeed.push(ev); if (tdFeed.length > 50) tdFeed.shift(); tdRender(); }
+function tdOnEvent(ev) {
+  if (!tdUnit) return;
+  if (ev.type === "inject.result" ? tdIds.has(ev.data.id) : tdUnit.test.observe.includes(ev.type)) tdAdd(ev);
+}
+async function tdFinish(r, kind) {
+  if (!r.ok) { tdSet(`rejected (${r.status}): ${(await r.text()).slice(0, 200)}`, "bad"); return; }
+  const { id } = await r.json();
+  tdIds.add(id);
+  tdSet(`sent ${kind} (id ${id}), waiting for its result…`);
+  if (injResults.has(id)) tdAdd({ type: "inject.result", data: injResults.get(id) }); // the result beat the HTTP response
+}
+async function tdSend(i) {
+  const def = tdUnit, type = def && def.test.inputs[i];
+  if (!type) return;
+  try {
+    if (type === "text") {
+      const text = $("#tdIn" + i).value.trim();
+      if (!text) { tdSet("type some text first", "bad"); return; }
+      await tdFinish(await post("/inject/text", { level: "service", text }), "text");
+    } else if (type === "image" || type === "audio") {
+      const f = $("#tdIn" + i).files[0];
+      if (!f) { tdSet(type === "image" ? "choose an image first" : "choose an audio file first", "bad"); return; }
+      await tdFinish(await authFetch(`/inject/${type}?level=service`, { method: "POST", headers: { "content-type": f.type }, body: f }), type);
+    } else {
+      let data;
+      try { data = JSON.parse($("#tdIn" + i).value); } catch (e) { tdSet("data is not valid JSON: " + e.message, "bad"); return; }
+      const r = await post("/inject/event", { unit: def.id, type, data });
+      if (!r.ok) { tdSet(`rejected (${r.status}): ${(await r.text()).slice(0, 300)}`, "bad"); return; }
+      const { id } = await r.json();
+      if (data && typeof data.id === "string") tdCorr.add(data.id);
+      tdSet(`published ${type} (bus id ${id}); replies that carry the same id are marked`, "ok");
+    }
+  } catch (e) { tdSet("failed: " + e, "bad"); }
+}
+async function tdIsolated() {
+  const id = tdUnit.id;
+  if (!confirm(`start ${id} isolated (only this unit, mock or off backends)?`)) return;
+  tdSet(`starting ${id} isolated…`);
+  try {
+    const r = await post(`/services/${encodeURIComponent(id)}/start`, { isolated: true });
+    const j = await r.json().catch(() => ({}));
+    tdSet(r.ok && j.ok !== false ? `${id} started isolated` : `start ${id} failed (${r.status})${j.detail ? ": " + j.detail : ""}`, r.ok && j.ok !== false ? "ok" : "bad");
+  } catch (e) { tdSet(`start ${id} failed: ${e}`, "bad"); }
+}
+$("#testDrawer").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-td]");
+  if (!b || !tdUnit) return;
+  const a = b.dataset.td;
+  if (a === "close") { tdUnit = null; $("#testDrawer").style.display = "none"; }
+  else if (a === "isolated") await tdIsolated();
+  else if (a === "send") await tdSend(Number(b.dataset.i));
+});
+
 setInterval(() => { renderServices(); renderStack(); }, 1000);
 function onServices(list) { svc = list; svcAt = Date.now(); renderServices(); }
 
@@ -367,11 +530,12 @@ function renderStack() {
       (l.services || []).map((x) => `<div>${esc(x.service)} (${esc(x.status)}${x.health ? ", " + esc(x.health) : ""})</div>`).join("")
     : "";
   const locked = !!s.action || !s.docker.ok;
-  for (const b of ["#stLaunch", "#stStop", "#stRestart"]) $(b).disabled = locked;
+  for (const b of ["#stLaunch", "#stRebuild", "#stStop", "#stRestart"]) $(b).disabled = locked;
   $("#stConsolidate").style.display = !s.action && l && l.kind === "stop" && l.ok ? "" : "none"; // @spec DASH-UI-019
 }
 const STACK_ASK = {
   launch: "Launch the stack? This runs docker compose up and waits for every service; the first launch builds images and can take many minutes.",
+  rebuild: "Rebuild the stack? This runs docker compose up --build: the service images are rebuilt from the current code (many minutes when the code changed), then the stack is brought up.",
   stop: "Stop the whole stack (every container, Redis and Postgres included)?",
   restart: "Restart every running application service?",
   consolidate: "Run the viewer-note consolidation pass now? It can take up to 30 minutes.",
@@ -387,10 +551,130 @@ async function stackAct(kind) {
   } catch (e) { m.textContent = `${kind} failed: ${e}`; }
 }
 $("#stLaunch").onclick = () => stackAct("launch");
+$("#stRebuild").onclick = () => stackAct("rebuild");
 $("#stStop").onclick = () => stackAct("stop");
 $("#stRestart").onclick = () => stackAct("restart");
 $("#stConsolidate").onclick = () => stackAct("consolidate");
 function onStack(s) { stack = s; renderStack(); }
+
+// ---------- settings tab (module-contract MOD-UI-001 to 006)
+// One generic editor: the form is built from GET /config/schema (JSON Schema) and the section's keys, and nothing
+// here names a section or a service. A section that needs a bespoke form registers a renderer in `settingsForms`
+// (keyed by its path); none do yet. Settings take effect when the services that read them restart.
+const settingsForms = Object.create(null);
+let sSections = [], sCur = null, sData = null, sEdits = {}, sRestart = [];
+const sSay = (t) => { $("#sMsg").textContent = t; };
+const sSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sWarn = (j) => (j.warnings || []).map((w) => "\nwarning: " + w).join("");
+// The keys of a section: every leaf of its schema, named by its dotted path relative to the section (a leaf section is named for itself).
+const sKeysOf = (schema, rel = []) => schema && schema.type === "object" && schema.properties
+  ? Object.entries(schema.properties).flatMap(([k, v]) => sKeysOf(v, [...rel, k]))
+  : [{ key: rel.length ? rel.join(".") : sCur.path.split(".").pop(), schema: schema || {} }];
+function sSourceText(info) {
+  const e = info.env ? `${esc(info.env.name)} ${info.env.set ? "set" : "not set"}` : "";
+  if (info.secret) return `secret${e ? " · " + e : ""} · ${info.set ? "set" : "not set"}`;
+  if (info.source === "env") return `env · ${e}`;
+  if (info.source === "env-default") return `env-default · ${e} · default ${esc(info.raw)}`;
+  if (info.source === "composite") return `composite · ${esc(info.raw)}`;
+  return esc(info.source);
+}
+// @spec MOD-UI-002
+function sControl(key, schema, info) {
+  if (info.secret) return `<span class="hint">${info.set ? "set" : "not set"}</span>`;
+  const k = esc(key), dis = info.editable ? "" : " disabled", v = info.value;
+  if (schema.type === "boolean") return `<input type="checkbox" data-key="${k}" data-kind="bool"${v ? " checked" : ""}${dis}>`;
+  if (schema.enum) return `<select data-key="${k}" data-kind="enum"${dis}>${schema.enum.map((o) => `<option value="${esc(o)}"${o === v ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  if (schema.type === "integer" || schema.type === "number") return `<input type="number" step="${schema.type === "integer" ? "1" : "any"}" data-key="${k}" data-kind="number" value="${v === undefined ? "" : esc(v)}"${dis}>`;
+  if (schema.type === "string") return `<input data-key="${k}" data-kind="text" value="${v === undefined ? "" : esc(v)}"${dis}>`;
+  if (schema.type === "array" && schema.items && schema.items.type === "string") return `<textarea data-key="${k}" data-kind="list"${dis}>${esc((v || []).join("\n"))}</textarea>`;
+  return `<textarea data-key="${k}" data-kind="json"${dis}>${esc(JSON.stringify(v === undefined ? null : v, null, 2))}</textarea>`;
+}
+function renderSettingsForm() {
+  const form = $("#sForm");
+  if (settingsForms[sCur.path]) { settingsForms[sCur.path]({ el: form, section: sCur, data: sData, edits: sEdits }); return; }
+  form.innerHTML = sKeysOf(sCur.schema).filter((l) => sData.keys[l.key]).map(({ key, schema }) => {
+    const info = sData.keys[key];
+    return `<div class="srow"><label>${esc(key)}</label><div>${sControl(key, schema, info)}</div><div class="hint">${sSourceText(info)}</div></div>`;
+  }).join("") || '<div class="hint">this section has no keys</div>';
+}
+async function loadSettings() {
+  if (!sSections.length) {
+    try { sSections = (await (await fetch("/config/schema")).json()).sections || []; } catch (e) { sSay("Settings unavailable: " + (e && e.message || e)); return; }
+    $("#sSection").innerHTML = sSections.map((s) => `<option value="${esc(s.path)}">${esc(s.path)}</option>`).join("");
+  }
+  if (!sCur && sSections.length) { $("#sSection").value = sSections[0].path; await loadSection(sSections[0].path); }
+}
+async function loadSection(path) {
+  const sec = sSections.find((s) => s.path === path);
+  if (!sec) return;
+  let data;
+  try { const r = await fetch("/config/" + encodeURIComponent(path)); if (!r.ok) throw new Error("HTTP " + r.status); data = await r.json(); } catch (e) { sSay(`Could not load ${path}: ${e.message}`); return; }
+  sCur = sec; sData = data; sEdits = {};
+  $("#sReload").style.display = "none";
+  $("#sReaders").textContent = sec.services.length ? "read by: " + sec.services.join(", ") : "read by: the dashboard itself (applies at its next start)";
+  $("#sUnknown").textContent = data.unknown && data.unknown.length ? "keys in the file the schema does not define: " + data.unknown.join(", ") : "";
+  renderSettingsForm();
+  renderApply();
+}
+$("#sSection").onchange = () => loadSection($("#sSection").value);
+// An edit is kept only while it differs from the loaded value.
+$("#sForm").onchange = $("#sForm").oninput = (e) => {
+  const t = e.target, key = t && t.dataset && t.dataset.key;
+  const info = key && sData && sData.keys[key];
+  if (!info || !info.editable) return;
+  let v;
+  switch (t.dataset.kind) {
+    case "bool": v = !!t.checked; break;
+    case "number": v = t.value === "" ? undefined : Number(t.value); if (v !== undefined && Number.isNaN(v)) { sSay(`${key}: not a number`); return; } break;
+    case "list": v = t.value.split("\n").map((x) => x.trim()).filter(Boolean); break;
+    case "json": try { v = JSON.parse(t.value || "null"); } catch { sSay(`${key}: not valid JSON`); return; } break;
+    default: v = t.value;
+  }
+  if (v === undefined || sSame(v, info.value)) delete sEdits[key]; else sEdits[key] = v;
+};
+// @spec MOD-UI-003, MOD-UI-004
+async function sSend(dry) {
+  if (!sCur) return;
+  let r, text;
+  try {
+    r = await authFetch(`/config/${encodeURIComponent(sCur.path)}${dry ? "?dryRun=1" : ""}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ etag: sData.etag, values: sEdits }) });
+    text = await r.text();
+  } catch (e) { sSay("Request failed: " + (e && e.message || e)); return; }
+  let j; try { j = JSON.parse(text); } catch { j = { detail: text }; }
+  if (r.status === 409) { sSay("config.yaml changed since this section was loaded (a hand edit or another tab). Reload the section to continue; your unsaved edits are kept until you do."); $("#sReload").style.display = ""; return; }
+  if (r.status === 400 && j.issues) { sSay((dry ? "Not valid:\n" : "Not saved:\n") + j.issues.map((i) => `${i.path || "(file)"}: ${i.message}`).join("\n")); return; }
+  if (!r.ok) { sSay(`${dry ? "Validate" : "Save"} failed (HTTP ${r.status})${j.detail ? ": " + j.detail : ""}`); return; }
+  if (dry) { sSay("Valid." + sWarn(j)); return; }
+  for (const u of j.restart || []) if (!sRestart.includes(u)) sRestart.push(u);
+  const msg = "Saved." + sWarn(j);
+  await loadSection(sCur.path);
+  sSay(msg);
+}
+$("#sValidate").onclick = () => sSend(true);
+$("#sSave").onclick = () => sSend(false);
+$("#sReload").onclick = () => loadSection(sCur.path);
+// @spec MOD-UI-005, MOD-UI-006
+function renderApply() {
+  const btn = $("#sApply"), log = $("#sApplyLog");
+  if (!sRestart.length) { btn.style.display = "none"; return; }
+  if (ctlEnabled) { btn.textContent = "Apply: restart " + sRestart.join(", "); btn.style.display = ""; return; }
+  btn.style.display = "none";
+  log.innerHTML = '<div>Restart to apply: ' + sRestart.map((u) => `<code>cohostctl restart ${esc(u)}</code>`).join(", ") + "</div>";
+}
+$("#sApply").onclick = async () => {
+  const units = sRestart; sRestart = []; renderApply();
+  const lines = [];
+  for (const id of units) {
+    let line;
+    try {
+      const r = await authFetch(`/services/${encodeURIComponent(id)}/restart`, { method: "POST" });
+      const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch {}
+      line = r.ok && j.ok !== false ? `${id}: ok` : `${id}: failed${j.detail ? " (" + j.detail + ")" : ` (HTTP ${r.status})`}`;
+    } catch (e) { line = `${id}: failed (${e && e.message || e})`; }
+    lines.push(line);
+    $("#sApplyLog").innerHTML = lines.map((l) => `<div>${esc(l)}</div>`).join("");
+  }
+};
 
 // ---------- viewers page ("panel A")
 // Notes arrive only through the token-protected /viewers routes, never over /ws.
@@ -433,7 +717,7 @@ const vPost = async (path, body) => (await vCall(path, { method: "POST", headers
 function renderViewers(list) {
   vList = list;
   $("#vRows").innerHTML = list.length ? list.map((v) =>
-    `<div class="vrow${v.key === vSel ? " sel" : ""}" data-key="${esc(v.key)}"><div><b>${esc(v.display)}</b>${v.regular ? '<span class="badge reg">REGULAR</span>' : ""}${v.regularManual ? ' <span class="hint">set by you</span>' : ""}</div>` +
+    `<div class="vrow${v.key === vSel ? " sel" : ""}" data-key="${esc(v.key)}"><div><b>${esc(v.display)}</b>${v.regular ? '<span class="badge reg">REGULAR</span>' : ""}${v.regularManual ? ' <span class="hint">set by you</span>' : ""}${v.voice ? '<span class="badge">VOICE</span>' : ""}</div>` +
     `<div class="vmeta">${v.msgCount} msgs · ${v.noteCount} notes</div></div>`).join("") : '<div class="hint">no viewers</div>';
 }
 async function loadViewers() {
@@ -441,7 +725,7 @@ async function loadViewers() {
   const d = await vCall("/viewers?q=" + encodeURIComponent($("#vSearch").value.trim()));
   if (d && seq === vSeq) renderViewers(d.viewers || []);
 }
-// @spec DASH-VIEWERS-011, DASH-VIEWERS-013, DASH-VIEWERS-014, DASH-VIEWERS-015
+// @spec DASH-VIEWERS-011, DASH-VIEWERS-013, DASH-VIEWERS-014, DASH-VIEWERS-015, DASH-VIEWERS-020, DASH-VIEWERS-021
 function renderViewer(d) {
   const v = d.viewer, k = esc(v.key);
   const pct = (x) => Math.max(0, Math.min(100, Math.round(x * 100)));
@@ -453,7 +737,11 @@ function renderViewer(d) {
   $("#vDetail").innerHTML =
     `<div class="row"><b style="font-size:16px">${esc(v.display)}</b><span class="hint">${v.msgCount} msgs</span><span style="flex:1"></span>` +
     `<label><input type="checkbox" data-act="regular" data-key="${k}"${v.regularManual ? " checked" : ""} style="width:auto"> Mark as regular</label>` +
-    `<button data-act="clear" data-key="${k}">Clear all notes</button></div>` +
+    `<button data-act="clear" data-key="${k}">Clear all notes</button>` +
+    (v.voice ? `<button data-act="link" data-key="${k}" data-discord="${esc(v.discordId)}">Link to a chat viewer</button>` : "") + `</div>` +
+    (v.voice ? '<div class="hint">heard in the voice channel; not linked to a chat viewer</div>' : "") +
+    (d.links || []).map((l) => `<div class="vnote"><span class="txt">Discord id ${esc(l.discordId)}${l.discordDisplay ? " (" + esc(l.discordDisplay) + ")" : ""} <span class="tag">voice</span></span>` +
+      `<a class="lnk" data-act="unlink" data-key="${k}" data-discord="${esc(l.discordId)}">unlink</a></div>`).join("") +
     (v.regular && !v.regularManual ? '<div class="hint">regular by message count</div>' : "") +
     section("Core", d.core || []) + section("Recent", d.recent || []) +
     "<h3>Deleted notes</h3>" + ((d.deletions || []).length ? d.deletions.map(gone).join("") : '<div class="hint">none</div>');
@@ -491,6 +779,20 @@ async function clearNotes(key) {
   const r = reason.trim();
   if (await vPost(`/viewers/${encodeURIComponent(key)}/clear`, r ? { reason: r } : {})) await vReload(key);
 }
+// @spec DASH-VIEWERS-020
+async function linkVoice(key, discordId) {
+  const name = prompt("Which chat viewer is this? Type their name as it shows in chat. Their voice notes move to that viewer, and later speech from this Discord account goes there. Cancel keeps it as it is.");
+  if (name === null || !name.trim()) return;
+  if (await vPost("/viewers/links", { discordId, name: name.trim() })) {
+    vSel = ""; // the voice viewer is gone; its notes now belong to the chat viewer
+    $("#vDetail").innerHTML = '<span class="hint">linked: the notes moved to the chat viewer</span>';
+    await loadViewers();
+  }
+}
+// @spec DASH-VIEWERS-021
+async function unlinkVoice(key, discordId) {
+  if (await vPost(`/viewers/links/${encodeURIComponent(discordId)}/delete`, {})) await vReload(key);
+}
 // @spec DASH-VIEWERS-015
 async function restoreNote(key, deletionId) {
   if (await vPost(`/viewers/deletions/${encodeURIComponent(deletionId)}/restore`, {})) await vReload(key);
@@ -507,6 +809,8 @@ $("#vDetail").addEventListener("click", (e) => {
   else if (act === "restore") restoreNote(key, a.dataset.del);
   else if (act === "clear") clearNotes(key);
   else if (act === "regular") toggleRegular(key, a.checked);
+  else if (act === "link") linkVoice(key, a.dataset.discord);
+  else if (act === "unlink") unlinkVoice(key, a.dataset.discord);
 });
 
 // ---------- feed + state
@@ -542,6 +846,7 @@ function onEvent(ev) {
   if (ev.type === "stack") { onStack(ev); return; }
   if (ev.id) { if (seen.has(ev.id)) return; seen.add(ev.id); if (seen.size > 1000) seen.delete(seen.values().next().value); } // @spec DASH-UI-013
   if (ev.type === "inject.result") onInjectResult(ev.data);
+  tdOnEvent(ev); // @spec MOD-TEST-001
   if (ev.type === "avatar.state") { drawFace(ev.data); return; }
   if (ev.type === "brain.status") { const s = $("#status"); s.className = "pill " + ev.data.state; s.textContent = ev.data.state; }
   if (ev.type === "voice.utterance" && !ev.replay && audioOn) { queue.push(ev.data); pump(); } // @spec DASH-UI-013, DASH-UI-014 (replayed or audio off: shown, never queued)

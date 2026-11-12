@@ -1,8 +1,10 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
-import type { Logger } from "@cohost/config";
-import { bearerOk, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { ensureFromExample, type Logger } from "@cohost/config";
+import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { BodyTooLarge, readText } from "./body.js";
 import { handleInject, uploadBase } from "./inject.js";
+import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
 import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
@@ -32,13 +34,19 @@ export interface DashboardDeps {
    * token requirement on every mutating route (`POST /control`, `PUT /personality`).
    */
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
+  /** Path of `config.yaml` for the settings routes. Defaults to the loader's file, seeded from the example when missing. */
+  configFile?: () => string;
+  /** The environment the settings routes substitute placeholders from. Defaults to `process.env`. */
+  configEnv?: NodeJS.ProcessEnv;
+  /** Replaces `config.yaml` atomically. Defaults to `writeFileAtomic`. */
+  configWrite?: (file: string, text: string) => void;
   /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
   stack: StackService;
 }
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
 const REFUSAL_STATUS = { unknown: 404, forbidden: 403 } as const;
-const STACK_ACTION = /^\/stack\/(launch|stop|restart|consolidate)$/;
+const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
@@ -47,11 +55,21 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const inject = {
     bus: d.bus,
     uploads,
+    stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
     dashboardUrl: d.dashboardUrl ?? uploadBase(process.env),
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
       return true;
     },
+  };
+  const settings = {
+    file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
+    env: d.configEnv ?? process.env,
+    write: d.configWrite ?? defaultWrite,
+    manifest: SERVICE_MANIFEST,
+    stack: () => d.stack.snapshot(),
+    authorize: inject.authorize,
+    body: readText,
   };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
@@ -74,11 +92,20 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-VIEWERS-001, DASH-VIEWERS-002, DASH-VIEWERS-003, DASH-VIEWERS-004, DASH-VIEWERS-005, DASH-VIEWERS-006, DASH-VIEWERS-007, DASH-VIEWERS-008, DASH-VIEWERS-009
       if (await handleViewers(viewers, req, res, url)) return;
+      // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
+      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
+      if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ services: d.services() }));
+        return;
+      }
+      // @spec DASH-HTTP-014, MOD-MAN-007
+      if (req.method === "GET" && url.pathname === "/services/manifest") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ units: unitDescriptors() }));
         return;
       }
       // @spec DASH-CTRL-007
@@ -95,7 +122,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
         let id: string;
         try { id = decodeURIComponent(life[1]!); } catch { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: "unknown service" })); return; } // @spec DASH-HTTP-013
-        const opts = parseLifecycleBody(await body(req));
+        const opts = parseLifecycleBody(await readText(req));
         if (!opts) { res.writeHead(400); res.end("bad request body"); return; }
         const action = life[2] as "start" | "stop" | "restart";
         const release = d.stack.tryAcquire(`service-${action}`); // @spec DASH-STACK-003
@@ -138,7 +165,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-HTTP-006
       if (req.method === "PUT" && url.pathname === "/personality") {
         if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
-        d.savePersonality(await body(req));
+        d.savePersonality(await readText(req));
         await d.bus.publish("control", { cmd: "reload_personality" });
         res.writeHead(204); res.end();
         return;
@@ -146,14 +173,14 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-HTTP-007, DASH-HTTP-008
       if (req.method === "POST" && url.pathname === "/control") {
         if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
-        const { cmd, text, target } = JSON.parse(await body(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string };
+        const { cmd, text, target } = JSON.parse(await readText(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string };
         await d.bus.publish("control", { cmd, text, target });
         res.writeHead(204); res.end();
         return;
       }
       // @spec DASH-SINK-002
       if (req.method === "POST" && url.pathname === "/sink") {
-        const { event, id } = JSON.parse(await body(req)) as { event?: unknown; id: string };
+        const { event, id } = JSON.parse(await readText(req)) as { event?: unknown; id: string };
         if (event !== "playing" && event !== "done") { res.writeHead(400); res.end("event must be 'playing' or 'done'"); return; } // @spec DASH-SINK-003
         await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, sink: "dashboard" });
         res.writeHead(204); res.end();
@@ -194,23 +221,4 @@ function parseLifecycleBody(raw: string): { mode?: StartMode; isolated?: boolean
 function sendUnlessStarted(res: http.ServerResponse, status: number, text: string): void {
   if (res.headersSent) { res.destroy(); return; }
   res.writeHead(status); res.end(text);
-}
-
-const BODY_LIMIT = 64 * 1024;
-class BodyTooLarge extends Error {}
-
-/** The request body as text, up to 64 KiB. Over the cap the rest is drained and discarded, then `BodyTooLarge` is thrown. */
-function body(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0, tooLarge = false;
-    req.on("data", (c: Buffer) => {
-      if (tooLarge) return;
-      size += c.length;
-      if (size > BODY_LIMIT) { tooLarge = true; chunks.length = 0; return; }
-      chunks.push(c);
-    });
-    req.on("end", () => (tooLarge ? reject(new BodyTooLarge()) : resolve(Buffer.concat(chunks).toString("utf8"))));
-    req.on("error", reject);
-  });
 }

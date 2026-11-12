@@ -35,7 +35,7 @@ export interface SubscribeOptions<T extends EventType> {
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
 /** The slice of an ioredis connection that `Bus` uses; `BusOptions.connect` may return a fake. */
-export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "disconnect">;
+export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "disconnect">;
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
@@ -45,6 +45,8 @@ export interface BusOptions {
   retryBaseMs?: number;
   /** Cap on the retry delay, ms (default 30000). */
   retryMaxMs?: number;
+  /** Stream key prefix: the instance uses `<prefix>:events` and `<prefix>:health` (default `cohost`). Tests use their own. */
+  streamPrefix?: string;
 }
 
 /** Called after each blocking read of a tail loop: no argument on success (an empty read counts), the error on failure. */
@@ -53,6 +55,7 @@ const report = (cb: ReadOutcome | undefined, err?: unknown): void => {
   try { if (err === undefined) cb?.(); else cb?.(err ?? new Error("read failed")); } catch { /* a reporting callback must not stop the loop */ }
 };
 
+const DEFAULT_PREFIX = "cohost";
 const RETRY_BASE_MS = 250;
 const RETRY_MAX_MS = 30_000;
 
@@ -74,11 +77,17 @@ export class Bus {
   private retryBaseMs: number;
   private retryMaxMs: number;
   private wake = new Set<() => void>();
+  /** The domain-event stream and the heartbeat stream of this instance (BUS-STREAM-008). */
+  private readonly stream: string;
+  private readonly healthStream: string;
 
   constructor(private source: string, private log?: Logger, private url = urls.redis(), options: BusOptions = {}) {
     this.connect = options.connect ?? ((u, o) => new Redis(u, o));
     this.retryBaseMs = options.retryBaseMs ?? RETRY_BASE_MS;
     this.retryMaxMs = options.retryMaxMs ?? RETRY_MAX_MS;
+    const prefix = options.streamPrefix ?? DEFAULT_PREFIX;
+    this.stream = `${prefix}:events`;
+    this.healthStream = `${prefix}:health`;
     this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
   }
 
@@ -89,7 +98,7 @@ export class Bus {
     let id: string | null;
     try {
       id = await this.pub.xadd(
-        STREAM, "MAXLEN", "~", MAXLEN, "*",
+        this.stream, "MAXLEN", "~", MAXLEN, "*",
         "type", type,
         "ts", String(Date.now()),
         "source", this.source,
@@ -109,7 +118,7 @@ export class Bus {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     try {
       return (await this.pub.xadd(
-        HEALTH_STREAM, "MAXLEN", "~", HEALTH_MAXLEN, "*",
+        this.healthStream, "MAXLEN", "~", HEALTH_MAXLEN, "*",
         "type", "service.heartbeat",
         "ts", String(Date.now()),
         "source", this.source,
@@ -131,7 +140,7 @@ export class Bus {
     while (!this.stopped) {
       let res: [string, [string, string[]][]][] | null;
       try {
-        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", HEALTH_STREAM, last)) as typeof res;
+        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", this.healthStream, last)) as typeof res;
       } catch (err) {
         if (this.stopped) break;
         report(onRead, err ?? new Error("read failed"));
@@ -150,10 +159,17 @@ export class Bus {
     conn.disconnect();
   }
 
+  /** The Redis server's clock in ms (`TIME`): one reference for every observer, whatever its own clock says. */
+  // @spec CTRL-CHECK-004
+  async serverTime(): Promise<number> {
+    const [secs, micros] = await this.pub.time();
+    return Number(secs) * 1000 + Math.floor(Number(micros) / 1000);
+  }
+
   /** Newest N heartbeats, oldest first. */
   // @spec BUS-HEALTH-004
   async recentHealth(count = 100): Promise<HeartbeatEvent[]> {
-    const rows = (await this.pub.xrevrange(HEALTH_STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
+    const rows = (await this.pub.xrevrange(this.healthStream, "+", "-", "COUNT", count)) as [string, string[]][];
     return rows
       .map(([id, f]) => decode(id, f))
       .filter((e): e is HeartbeatEvent => e?.type === "service.heartbeat")
@@ -173,15 +189,15 @@ export class Bus {
   // @spec BUS-GROUP-001
   async resetGroup(group: string): Promise<void> {
     try {
-      await this.pub.xgroup("CREATE", STREAM, group, "$", "MKSTREAM");
+      await this.pub.xgroup("CREATE", this.stream, group, "$", "MKSTREAM");
     } catch (e) {
       if (!String(e).includes("BUSYGROUP")) throw e;
-      await this.pub.xgroup("SETID", STREAM, group, "$");
+      await this.pub.xgroup("SETID", this.stream, group, "$");
     }
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
-  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012
+  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012, BUS-SUB-013
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const mode = opts.start as unknown;
     if (mode !== "latest" && mode !== "resume") {
@@ -190,16 +206,17 @@ export class Bus {
     const conn = this.connect(this.url, { maxRetriesPerRequest: null });
     this.subs.push(conn);
     try {
-      await conn.xgroup("CREATE", STREAM, opts.group, "$", "MKSTREAM");
+      await conn.xgroup("CREATE", this.stream, opts.group, "$", "MKSTREAM");
     } catch (e) {
       if (!String(e).includes("BUSYGROUP")) throw e;
-      if (mode === "latest") await conn.xgroup("SETID", STREAM, opts.group, "$");
+      if (mode === "latest") await conn.xgroup("SETID", this.stream, opts.group, "$");
     }
     opts.onReady?.();
     const wanted = opts.types ? new Set<string>(opts.types) : undefined;
     const block = opts.blockMs ?? 5000;
 
-    // First drain one batch of this consumer's own pending entries, then read new ones. A restarted
+    // First drain this consumer's own pending entries, a batch at a time from the last id seen (so an entry that
+    // stays pending, for instance after a failed XACK, cannot hold the drain), then read new ones. A restarted
     // process has a new consumer name, so entries its predecessor left pending are not redelivered.
     let cursor: string = "0";
     let failures = 0;
@@ -207,7 +224,7 @@ export class Bus {
       let res: [string, [string, string[]][]][] | null;
       try {
         res = (await conn.xreadgroup(
-          "GROUP", opts.group, this.consumer, "COUNT", 50, "BLOCK", block, "STREAMS", STREAM, cursor,
+          "GROUP", opts.group, this.consumer, "COUNT", 50, "BLOCK", block, "STREAMS", this.stream, cursor,
         )) as typeof res;
       } catch (err) {
         if (this.stopped) break; // stop() closed the connection under a blocking read
@@ -217,8 +234,9 @@ export class Bus {
       failures = 0;
       if (!res) { cursor = ">"; continue; }
       const entries = res[0]?.[1] ?? [];
-      if (cursor === "0" && entries.length === 0) { cursor = ">"; continue; }
+      if (cursor !== ">" && entries.length === 0) { cursor = ">"; continue; }
       for (const [id, fields] of entries) {
+        if (this.stopped) break; // stop() landed during the previous handler: nothing further is handled or acked
         const ev = decode(id, fields);
         if (ev && (!wanted || wanted.has(ev.type))) {
           try {
@@ -227,13 +245,14 @@ export class Bus {
             this.log?.error({ err, type: ev.type, id }, "handler failed");
           }
         }
+        if (this.stopped) break; // the connection is closed: no XACK after stop
         try {
-          await conn.xack(STREAM, opts.group, id);
+          await conn.xack(this.stream, opts.group, id);
         } catch (err) {
           this.log?.warn({ err, id }, "ack failed"); // at-most-once: the handled entry is not redelivered
         }
+        if (cursor !== ">") cursor = id;
       }
-      if (cursor === "0") cursor = ">";
     }
     conn.disconnect();
   }
@@ -248,7 +267,7 @@ export class Bus {
     while (!this.stopped) {
       let res: [string, [string, string[]][]][] | null;
       try {
-        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", STREAM, last)) as typeof res;
+        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", this.stream, last)) as typeof res;
       } catch (err) {
         if (this.stopped) break;
         report(onRead, err ?? new Error("read failed"));
@@ -270,7 +289,7 @@ export class Bus {
   /** Most recent N events (dashboard backfill). */
   // @spec BUS-TAIL-002
   async recent(count = 100): Promise<BusEvent[]> {
-    const rows = (await this.pub.xrevrange(STREAM, "+", "-", "COUNT", count)) as [string, string[]][];
+    const rows = (await this.pub.xrevrange(this.stream, "+", "-", "COUNT", count)) as [string, string[]][];
     return rows.map(([id, f]) => decode(id, f)).filter((e): e is BusEvent => !!e).reverse();
   }
 
@@ -322,53 +341,3 @@ function decode(id: string, fields: string[]): BusEvent | undefined {
     return undefined;
   }
 }
-
-const shutdownHooks: (() => void | Promise<void>)[] = [];
-/** Max time pre-shutdown hooks (e.g. the `stopping` heartbeat) may delay exit. */
-const HOOK_TIMEOUT_MS = 2000;
-
-/** Register work that must finish before the service's own onShutdown callback runs. */
-export function beforeShutdown(fn: () => void | Promise<void>): void {
-  shutdownHooks.push(fn);
-}
-
-type ShutdownLog = Pick<Logger, "error">;
-const shutdownCallbacks: { fn: () => void | Promise<void>; log?: ShutdownLog }[] = [];
-let shutdownInstalled = false;
-let shutdownStarted = false;
-
-/** The process-wide shutdown sequence: hooks (<= 2 s), then every callback in order, then exit(0) once. */
-async function runShutdown(): Promise<void> {
-  if (shutdownStarted) return;
-  shutdownStarted = true;
-  try {
-    await Promise.race([
-      // `async` turns a synchronous throw from a hook into a rejection, which allSettled absorbs.
-      Promise.allSettled(shutdownHooks.map(async (h) => h())),
-      new Promise((r) => setTimeout(r, HOOK_TIMEOUT_MS).unref()),
-    ]);
-    for (const { fn, log } of shutdownCallbacks) {
-      try {
-        await fn();
-      } catch (err) {
-        if (log) log.error({ err }, "shutdown callback failed");
-        else console.error("shutdown callback failed", err);
-      }
-    }
-  } finally { process.exit(0); }
-}
-
-/**
- * Shared graceful-shutdown helper for services. Every registration joins one per-process sequence
- * (the signal handlers are installed once); `log` is optional and falls back to `console.error`.
- */
-// @spec BUS-STOP-002, BUS-STOP-003, BUS-STOP-004, BUS-STOP-005, BUS-STOP-006
-export function onShutdown(fn: () => void | Promise<void>, log?: ShutdownLog): void {
-  shutdownCallbacks.push({ fn, log });
-  if (shutdownInstalled) return;
-  shutdownInstalled = true;
-  process.on("SIGINT", () => { void runShutdown(); });
-  process.on("SIGTERM", () => { void runShutdown(); });
-}
-
-export * from "./heartbeat.js";

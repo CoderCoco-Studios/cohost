@@ -94,6 +94,20 @@ test("compose: consolidate runs the fixed one-shot argv with a long timeout and 
 });
 
 // @spec CTRL-RUNTIME-010
+// @spec CTRL-RUNTIME-011
+test("compose: reembed runs the fixed one-shot argv with a long timeout and reports the last stdout line or the failure", async () => {
+  const seen: { args: string[]; timeoutMs?: number; cwd?: string }[] = [];
+  const exec: ExecFile = async (_file, args, opts) => {
+    seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
+    return { stdout: "x\nreembed completed\n", stderr: "" };
+  };
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {}, cwd: "/stack" });
+  assert.deepEqual(await rt.reembed(), { ok: true, detail: "reembed completed" });
+  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "reembed"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
+  const boom: ExecFile = async () => { throw Object.assign(new Error("exit 1"), { stdout: "", stderr: " boom \n" }); };
+  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: boom }).reembed(), { ok: false, detail: "boom" });
+});
+
 test("compose: a failing consolidate is ok:false with stderr, else stdout tail, else the error message, cut to 500", async () => {
   const fail = (stdout: string, stderr: string, message = "exit 1"): ExecFile => async () => { throw Object.assign(new Error(message), { stdout, stderr }); };
   assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
@@ -127,4 +141,19 @@ test("compose: with no docker found every action resolves ok:false naming COHOST
     assert.match(r.detail!, /COHOST_DOCKER_BIN/);
   }
   assert.equal(calls.length, 0);
+});
+
+// @spec CTRL-RUNTIME-012
+test("compose: a Windows docker.exe gets the preset variables named in WSLENV; another binary gets the env unchanged", async () => {
+  const run = async (bin: string, env: NodeJS.ProcessEnv) => {
+    const { exec, calls } = fakeExec();
+    await new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" } });
+    return calls[0]!.env;
+  };
+  const exe = await run("docker.exe", {});
+  assert.equal(exe.WSLENV, "MOUTH_DISCORD_ENABLED:MOUTH_DRYRUN_ENABLED");
+  assert.equal(exe.MOUTH_DRYRUN_ENABLED, "true");
+  const merged = await run("docker.exe", { WSLENV: "PATH/l:MOUTH_DRYRUN_ENABLED/u" });
+  assert.equal(merged.WSLENV, "PATH/l:MOUTH_DRYRUN_ENABLED/u:MOUTH_DISCORD_ENABLED");
+  assert.equal((await run("docker", {})).WSLENV, undefined);
 });

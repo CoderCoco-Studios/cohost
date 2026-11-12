@@ -1,10 +1,18 @@
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger } from "../src/index.js";
+
+/** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
+const initialEnv = { ...process.env };
+function restoreEnv(to: NodeJS.ProcessEnv = initialEnv): void {
+  for (const k of Object.keys(process.env)) if (!(k in to)) delete process.env[k];
+  Object.assign(process.env, to);
+}
+afterEach(() => { restoreEnv(); setConfigLogger(undefined); });
 
 // @spec CFG-ENV-001, CFG-ENV-002
 test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
@@ -65,13 +73,13 @@ function sandbox(files: Record<string, string> = {}): string {
   mkdirSync(dir);
   for (const [name, text] of Object.entries(files)) writeFileSync(join(name === ".env" ? root : dir, name), text);
   process.env.CONFIG_DIR = dir;
+  process.env.COHOST_ENV_FILE = join(root, ".env");
   return dir;
 }
 function captureWarnings(fn: () => void): string[] {
   const out: string[] = [];
-  const orig = console.warn;
-  console.warn = (...a: unknown[]) => { out.push(a.join(" ")); };
-  try { fn(); } finally { console.warn = orig; }
+  setConfigLogger({ warn: ((...a: unknown[]) => { out.push(a.map(String).join(" ")); }) as never });
+  try { fn(); } finally { setConfigLogger(undefined); }
   return out;
 }
 const minimalYaml = `
@@ -99,7 +107,7 @@ test("the shipped config.example.yaml + .env.example load cleanly, with no unkno
     assert.equal(cfg.cohost.name, "Coco");
     assert.ok(cfg.llm.model.length > 0, "LLM_MODEL from .env.example filled in llm.model");
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 });
 
@@ -261,14 +269,14 @@ function loadShipped(env: Record<string, string> = {}) {
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
     captureWarnings(() => { cfg = loadConfig(true); });
     return cfg;
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 }
 
@@ -284,6 +292,9 @@ test("isolation presets: unset env equals the live defaults", () => {
   assert.equal(cfg.chat.fake.interval_ms, 8000);
   assert.equal(cfg.ears.source, "discord");
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
+  assert.equal(cfg.vision.engine, "ollama");
+  assert.equal(cfg.ears.stt_engine, "speaches");
+  assert.equal(cfg.mouth.outputs.dryrun.enabled, false);
 });
 
 // @spec CFG-ISO-004
@@ -291,6 +302,7 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   const cfg = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
     VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off", MOUTH_DISCORD_ENABLED: "false",
+    VISION_ENGINE: "stub", EARS_STT_ENGINE: "stub", MOUTH_DRYRUN_ENABLED: "true",
   });
   assert.equal(cfg.llm.provider, "mock");
   assert.equal(cfg.brain.memory.store, "memory");
@@ -300,6 +312,9 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   assert.equal(cfg.vision.enabled, true);
   assert.equal(cfg.ears.source, "off");
   assert.equal(cfg.mouth.outputs.discord.enabled, false);
+  assert.equal(cfg.vision.engine, "stub");
+  assert.equal(cfg.ears.stt_engine, "stub");
+  assert.equal(cfg.mouth.outputs.dryrun.enabled, true);
 });
 
 // @spec CFG-ISO-001, CFG-ISO-003
@@ -328,7 +343,7 @@ function loadShippedBare(env: Record<string, string> = {}) {
     const warnings = captureWarnings(() => { cfg = loadConfig(true); });
     return { cfg, warnings };
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 }
 
@@ -491,7 +506,7 @@ test("brain.memory.notes.capture and consolidator are hook configs defaulting to
   const notes = ConfigSchema.parse(baseCfg()).brain.memory.notes;
   for (const hook of [notes.capture, notes.consolidator]) {
     assert.equal(hook.kind, "rules");
-    assert.equal(hook.timeout_ms, 1500);
+    assert.equal(hook.timeout_ms, 8000);
     assert.equal(hook.llm.provider, undefined);
   }
   const with_ = (hook: string, v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { memory: { notes: { [hook]: v } } } });
@@ -614,7 +629,7 @@ test("mouth.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects n
 test("the mouth section is optional: absent or partial, it loads with the Discord output on, empty target, gain 0 and interval 20000", () => {
   const absent = ConfigSchema.safeParse(baseCfg());
   assert.ok(absent.success);
-  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 } }, fallback: { min_interval_ms: 20000 } });
+  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 } }, fallback: { min_interval_ms: 20000 } });
   for (const partial of [{}, { outputs: {} }, { outputs: { discord: {} } }, { fallback: {} }]) {
     const r = ConfigSchema.safeParse({ ...baseCfg(), mouth: partial });
     assert.ok(r.success, JSON.stringify(partial));
@@ -622,6 +637,15 @@ test("the mouth section is optional: absent or partial, it loads with the Discor
   }
   const set = ConfigSchema.parse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 } } } });
   assert.deepEqual(set.mouth.outputs.discord, { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 });
+});
+
+// @spec CFG-SCH-023
+test("mouth.outputs.dryrun defaults to disabled with fail_every 0, and fail_every is an integer of 0 or more", () => {
+  const dry = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { dryrun: v } } });
+  assert.deepEqual(dry({}).data!.mouth.outputs.dryrun, { enabled: false, fail_every: 0 });
+  assert.deepEqual(dry({ enabled: true, fail_every: 3 }).data!.mouth.outputs.dryrun, { enabled: true, fail_every: 3 });
+  for (const bad of [-1, 1.5, "2"]) assert.equal(dry({ fail_every: bad }).success, false, String(bad));
+  assert.equal(dry({ enabled: "yes" }).success, false);
 });
 
 // @spec CFG-SCH-020
@@ -636,6 +660,27 @@ test("mouth.outputs.discord.gain_db accepts -40 to 12 inclusive and a failure na
     assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === "mouth.outputs.discord.gain_db"), String(bad));
   }
   assert.equal(ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: "yes" } } } }).success, false);
+});
+
+// @spec CFG-SCH-021, EYES-DESC-007
+test("vision.engine defaults to ollama (blank too), accepts stub, rejects others; the describer tuning keys default and validate", () => {
+  const vision = (v: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), vision: { model: "v", obs: {}, ...v } });
+  const d = vision({});
+  assert.ok(d.success);
+  assert.equal(d.data.vision.engine, "ollama");
+  assert.equal(d.data.vision.temperature, 0.2);
+  assert.equal(d.data.vision.num_predict, 60);
+  assert.equal(d.data.vision.jpeg_quality, 70);
+  assert.match(d.data.vision.prompt, /exactly: SAME/);
+  assert.equal(vision({ engine: "" }).data!.vision.engine, "ollama");
+  assert.equal(vision({ engine: "stub" }).data!.vision.engine, "stub");
+  assert.equal(vision({ engine: "openai" }).success, false);
+  assert.equal(vision({ prompt: "  " }).data!.vision.prompt, d.data.vision.prompt, "a blank prompt is the default");
+  assert.equal(vision({ prompt: "Say SAME or one line." }).data!.vision.prompt, "Say SAME or one line.");
+  for (const bad of [{ temperature: -0.1 }, { temperature: 2.1 }, { num_predict: 0 }, { num_predict: 1.5 }, { jpeg_quality: 0 }, { jpeg_quality: 101 }]) {
+    assert.equal(vision(bad).success, false, JSON.stringify(bad));
+  }
+  assert.equal(vision({ temperature: 0, num_predict: 1, jpeg_quality: 100 }).success, true);
 });
 
 // @spec CFG-USR-011
@@ -663,7 +708,7 @@ test("the shipped example has no unknown mouth keys: loading it warns about none
     const warnings = captureWarnings(() => { loadConfig(true); });
     assert.deepEqual(warnings.filter((w) => w.includes("mouth")), []);
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 });
 
@@ -700,4 +745,25 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   const earsBlock = text.match(/^ears:\n((?:[ \t]+.*\n|\n)*)/m)![1]!;
   assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
   assert.equal("fallback" in cfg.ears, false);
+});
+
+// @spec CFG-SCH-028
+test("brain.affect republish, short-line cutoff and nudge sizes default to the former constants and validate", () => {
+  const a = ConfigSchema.parse(baseCfg()).brain.affect;
+  assert.deepEqual(
+    [a.republish_ms, a.short_line_chars, a.nudge_sub_valence, a.nudge_sub_arousal, a.nudge_screen_arousal, a.nudge_said_valence, a.nudge_said_arousal],
+    [15000, 4, 0.05, 0.05, 0.08, 0.08, 0.05],
+  );
+  const withAffect = (affect: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { affect } }).success;
+  assert.equal(withAffect({ republish_ms: 0 }), false);
+  assert.equal(withAffect({ republish_ms: 1.5 }), false);
+  assert.equal(withAffect({ republish_ms: 30000 }), true);
+  assert.equal(withAffect({ short_line_chars: -1 }), false);
+  assert.equal(withAffect({ short_line_chars: 0 }), true);
+  for (const key of ["nudge_sub_valence", "nudge_sub_arousal", "nudge_screen_arousal", "nudge_said_valence", "nudge_said_arousal"]) {
+    assert.equal(withAffect({ [key]: 1.01 }), false, `${key} above 1`);
+    assert.equal(withAffect({ [key]: -0.01 }), false, `${key} below 0`);
+    assert.equal(withAffect({ [key]: 0 }), true, `${key} at 0`);
+    assert.equal(withAffect({ [key]: 1 }), true, `${key} at 1`);
+  }
 });

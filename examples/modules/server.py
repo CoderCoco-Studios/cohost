@@ -38,7 +38,8 @@ Below, each handler has a tiny stand-in where a real model call would go.
 """
 import json
 import re
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 # --- the stand-ins. Replace these bodies with your model. --------------------
 
@@ -73,10 +74,12 @@ def affect(req):  # @spec HOOK-EX-003
 def critic(req):  # @spec HOOK-EX-004
     """Should this line be said? Here: block anything with a URL, trim to one sentence."""
     text = req["text"]
-    if "http" in text:
+    if "http" in text.lower():  # @spec HOOK-EX-009
         return {"ok": False, "note": "no links on air"}
     first = re.split(r"(?<=[.!?])\s+", text.strip())[0]
-    return {"ok": True, "text": first} if first != text else {"ok": True}
+    if first == text:
+        return {"ok": True}
+    return {"ok": True, "text": first, "emotion": req.get("emotion") or "neutral"}  # @spec HOOK-EX-010
 
 
 ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}  # @spec HOOK-EX-001
@@ -86,7 +89,7 @@ ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}  # @spec 
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # @spec HOOK-EX-001
-        fn = ROUTES.get(self.path)
+        fn = ROUTES.get(urlsplit(self.path).path)  # @spec HOOK-EX-008
         if not fn:
             return self._send(404, {"error": "unknown module"})
         try:
@@ -109,6 +112,13 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.path} {fmt % args}")
 
 
+def make_server(host="0.0.0.0", port=8900):  # @spec HOOK-EX-001, HOOK-EX-007
+    """One thread per request, so a slow or stalled client never blocks the others."""
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True
+    return server
+
+
 if __name__ == "__main__":
     print("custom brain modules on http://0.0.0.0:8900  (/salience /affect /critic)")
-    HTTPServer(("0.0.0.0", 8900), Handler).serve_forever()
+    make_server().serve_forever()

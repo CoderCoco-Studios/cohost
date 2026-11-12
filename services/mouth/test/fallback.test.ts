@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recordingLog, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
-import { CLIP_POLL_MS, ClaimMemory, ClipCache, ClipMirror, FallbackLine, clipDir, refreshClips, startClipSync, type ClipSet, type FallbackClip } from "../src/fallback.js";
+import { CLIP_POLL_MS, ClipCache, ClipMirror, clipDir, refreshClips, startClipSync, type ClipSet, type FallbackClip } from "../src/clips.js"; import { ClaimMemory, FallbackLine } from "../src/fallback.js";
 
 // ---- helpers
 

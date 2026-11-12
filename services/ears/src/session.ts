@@ -20,14 +20,14 @@ export const EARS_LOOP_TYPES = ["inject.request"] as const satisfies readonly Ea
 export const EARS_JOIN_OPTIONS = { selfMute: true, selfDeaf: false } as const;
 
 export interface EarsHandlerDeps {
-  onInject: (ev: BusEvent<"inject.request">) => Promise<void>;
+  onInject: (ev: BusEvent<"inject.request">) => void | Promise<void>;
 }
 
 /** The one `ears` loop's handler: `inject.request` goes to the injection handler; anything else is ignored. */
 // @spec EARS-INJ-007, EARS-START-003
 export function createEarsHandler({ onInject }: EarsHandlerDeps) {
   return async (ev: BusEvent): Promise<void> => {
-    if (ev.type === "inject.request") return onInject(ev as BusEvent<"inject.request">);
+    if (ev.type === "inject.request") await onInject(ev as BusEvent<"inject.request">);
   };
 }
 
@@ -71,26 +71,4 @@ export async function subscribeEars(
     log.error({ err }, "ears subscription failed");
     process.exit(1);
   });
-}
-
-export interface StopEarsDeps {
-  idleTimer?: ReturnType<typeof setInterval>;
-  clear?: (t: ReturnType<typeof setInterval>) => void;
-  /** The Discord session (`discord` plan only). */
-  session?: { stop(): Promise<void> };
-  bus: { stop(): void };
-  log?: Pick<Logger, "error">;
-}
-
-/** The one shutdown sequence: idle timer, voice connection and Discord client, then the bus. */
-// @spec EARS-SESS-008, EARS-START-005
-export async function stopEars({ idleTimer, clear = clearInterval, session, bus, log }: StopEarsDeps): Promise<void> {
-  if (idleTimer) clear(idleTimer);
-  try {
-    await session?.stop();
-  } catch (err) {
-    log?.error({ err }, "discord teardown failed");
-  } finally {
-    bus.stop();
-  }
 }

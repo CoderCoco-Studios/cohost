@@ -15,7 +15,7 @@ Every hook has the same shape:
 module:            # or `critic:` under cortex
   kind: rules      # rules | llm | http
   url: ""          # http: where to POST
-  timeout_ms: 1500
+  timeout_ms: 8000
   llm:             # llm: override the provider/model; empty = same as llm.* at the top of the file
     provider: ""
     model: ""
@@ -69,12 +69,13 @@ Leave `llm.provider` / `llm.model` under a hook empty to reuse the cortex's mode
 Setting `llm.provider` on a hook requires setting `llm.model` too (a model id is only
 valid for one provider), and config loading rejects the combination otherwise.
 
-Hook calls are cut off at `timeout_ms` (default 1500 for every hook;
-`config/config.example.yaml` sets the critic to 2500). A hosted Claude model with
-thinking usually takes longer than that, so every call would time out and fall back
-to rules while still being billed: for hooks, use a small fast model (local Ollama
-or a vLLM box) or raise `timeout_ms` to several seconds. The prompts live in
-`services/salience/src/scoring.ts`, `services/affect/src/appraise.ts` and
+Hook calls are cut off at `timeout_ms` (default 8000 for every hook, long enough for a
+hosted Claude model with thinking; `config/config.example.yaml` sets the critic to 2500).
+Small local models answer in well under a second, so lower it for those if you want a
+quick give-up. A hook that fails five calls in a row is skipped for a minute (the rules
+answer meanwhile, and nothing is billed), then tried again; the service's heartbeat shows
+`hook.<name>` as `down` while it is skipped or its provider does not answer. The prompts
+live in `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts` and
 `services/cortex/src/critic.ts`.
 
 ## 3. `http`: a model you trained
@@ -117,6 +118,12 @@ POST /critic
    | { "ok": true, "text": "fixed line", "emotion": "neutral" }
    | { "ok": false, "note": "why" }
 ```
+
+The same replies as JSON Schema, generated from `packages/modules/src/schemas.ts`
+(`node scripts/gen-hook-schemas.mjs`) and checked against each region's validator by a
+test: [`schemas/salience.json`](schemas/salience.json), [`schemas/affect.json`](schemas/affect.json),
+[`schemas/critic.json`](schemas/critic.json). A schema cannot say "one score per event";
+the region's validator enforces it, and a wrong count falls back to the rules.
 
 ### Training your own
 

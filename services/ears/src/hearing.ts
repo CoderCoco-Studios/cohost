@@ -1,6 +1,7 @@
 import type { Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
-import { discordPcmToWav16k } from "./audio.js";
+import { discordPcmToWav16k, wavDurationMs } from "./audio.js";
+import { hasWordCharacter, isDropPhrase } from "./transcript.js";
 
 export interface HearingDeps {
   cfg: Config["ears"];
@@ -31,6 +32,12 @@ export function sttTranscriber(cfg: Config["ears"]): (audio: Buffer, hint?: { co
   };
 }
 
+// @spec EARS-STUB-001
+/** The stub engine: no network, fixed text carrying the clip's duration (0 when the bytes are not a WAV). */
+export function stubTranscriber(): (audio: Buffer, hint?: { contentType: string }) => Promise<string> {
+  return async (audio) => `stub transcript (${wavDurationMs(audio)} ms)`;
+}
+
 // @spec EARS-HEAR-004, EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-007, EARS-HEAR-008
 /** One speaker's utterance (48k stereo PCM, ended by silence) → `speech.heard`. */
 export class Hearing {
@@ -41,7 +48,12 @@ export class Hearing {
     if (durationMs < this.d.cfg.min_speech_ms) return;
     try {
       const text = await this.d.transcribe(discordPcmToWav16k(pcm));
-      if (!text || /^\W*$/.test(text)) return;
+      if (!hasWordCharacter(text)) return;
+      // @spec EARS-HEAR-010
+      if (isDropPhrase(text, this.d.cfg.drop_phrases)) {
+        this.d.log.debug({ speaker, text }, "dropped (drop phrase)");
+        return;
+      }
       this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
       await this.d.bus.publish("speech.heard", { speaker, speakerId, text, durationMs: Math.round(durationMs) });
     } catch (err) {

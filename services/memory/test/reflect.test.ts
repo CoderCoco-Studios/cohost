@@ -142,3 +142,47 @@ test("the cursor stored after a pass is the newest row's exact microsecond text"
   await t.run();
   assert.equal(await t.memory.getMeta("last_reflection"), "2026-01-01T00:00:05.123456Z#5");
 });
+
+// @spec MEM-REFLECT-011
+test("reflect opens the store with connect(): no schema work and no embed probe, so an unreachable embedder does not stop it", async () => {
+  const t = setup();
+  await t.seed(5);
+  const calls: string[] = [];
+  const m = t.memory as unknown as { init(): Promise<void>; connect(): Promise<void>; embedText(s: string): Promise<number[]> };
+  m.init = async () => { calls.push("init"); throw new Error("ollama unreachable"); };
+  m.embedText = async () => { calls.push("embed"); throw new Error("ollama unreachable"); };
+  const connect = m.connect.bind(m);
+  m.connect = async () => { calls.push("connect"); await connect(); };
+  await t.run();
+  assert.deepEqual(calls, ["connect"]);
+  assert.equal(t.saved.length, 1);
+});
+
+// @spec MEM-REFLECT-012
+test("reflect runs under the consolidation lock and does nothing while another pass holds it", async () => {
+  const t = setup();
+  await t.seed(5);
+  const held = await t.memory.withConsolidationLock(async () => {
+    await t.run(); // the lock is taken: this run must stand down
+    return "held";
+  });
+  assert.deepEqual(held, { ran: true, value: "held" });
+  assert.equal(t.prompts.length, 0);
+  assert.equal(t.saved.length, 0);
+  assert.equal(await t.memory.getMeta("last_reflection"), undefined);
+  assert.ok(t.warnings.some((w) => /lock/.test(w)));
+  await t.run(); // lock free again
+  assert.equal(t.saved.length, 1);
+});
+
+// @spec MEM-REFLECT-012
+test("the reflect lock is released after a pass, even when it throws", async () => {
+  const t = setup();
+  await t.seed(5);
+  await assert.rejects(runReflect({
+    cfg: testConfig(), llm: { name: "ollama", chat: async () => { throw new Error("llm down"); } }, memory: t.memory,
+    log: { warn() {}, info() {}, error() {}, debug() {} } as never,
+    loadPersonality: () => "", savePersonality: () => {}, now: () => new Date(),
+  }), /llm down/);
+  assert.deepEqual(await t.memory.withConsolidationLock(async () => 1), { ran: true, value: 1 });
+});

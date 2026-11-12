@@ -1,6 +1,9 @@
 import type { Config, Emotion } from "@cohost/config";
 import { NEUTRAL, type AvatarDriver, type AvatarParams } from "./types.js";
 
+/** Most prepared utterances kept (AVATAR-ENG-002). */
+const MAX_KNOWN = 20;
+
 interface Utterance { id: string; emotion: Emotion; gesture?: string; envelope: number[]; envelopeHz: number; durationMs: number }
 
 /**
@@ -43,8 +46,11 @@ export class Engine {
 
   /** Audio is ready; remember it so we can lip-sync when a sink starts playing. */
   prepare(u: Utterance): void { // @spec AVATAR-ENG-002
+    this.known.delete(u.id); // a re-sent id moves to the newest slot: Map keeps insertion order
     this.known.set(u.id, u);
-    if (this.known.size > 20) this.known.delete(this.known.keys().next().value!);
+    if (this.known.size > MAX_KNOWN) {
+      for (const oldest of this.known.keys()) { this.known.delete(oldest); break; }
+    }
   }
 
   /** A sink started playing this utterance. */
@@ -63,7 +69,7 @@ export class Engine {
   setEmotion(e: Emotion, holdMs = 4000): void { // @spec AVATAR-ENG-008
     this.emotion = e;
     this.emotionUntil = this.now() + holdMs;
-    this.driver.setExpression(e, 1);
+    this.show(e, 1);
   }
 
   /** Mood changes show up softly, and only when no utterance is holding the face. */
@@ -72,8 +78,13 @@ export class Engine {
     this.mood = e;
     if (this.now() > this.emotionUntil) {
       this.emotion = e;
-      this.driver.setExpression(e, e === "neutral" ? 0 : 0.5);
+      this.show(e, 0.5);
     }
+  }
+
+  /** Ask the driver for an expression; `neutral` means no expression, so it is always asked at intensity 0 (AVATAR-ENG-017). */
+  private show(e: Emotion, intensity: number): void { // @spec AVATAR-ENG-017
+    this.driver.setExpression(e, e === "neutral" ? 0 : intensity);
   }
 
   private frame(): void {
@@ -93,7 +104,7 @@ export class Engine {
     // --- emotion decay back to the resting mood
     if (this.emotion !== this.mood && now > this.emotionUntil) { // @spec AVATAR-ENG-011
       this.emotion = this.mood;
-      this.driver.setExpression(this.mood, this.mood === "neutral" ? 0 : 0.5);
+      this.show(this.mood, 0.5);
     }
     this.target.mouthSmile = this.emotion === "happy" || this.emotion === "laugh" || this.emotion === "smug" ? 0.7 : 0.15; // @spec AVATAR-ENG-012
 

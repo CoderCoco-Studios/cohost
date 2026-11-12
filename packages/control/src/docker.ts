@@ -30,3 +30,18 @@ export function resolveDockerBin(env: NodeJS.ProcessEnv, onPath: (name: string, 
   for (const name of ["docker", "docker.exe"]) if (onPath(name, env)) return { ok: true, bin: name };
   return { ok: false, detail: DOCKER_NOT_FOUND };
 }
+
+/**
+ * The environment to hand a Docker process: for a Windows executable seen from WSL2 (`*.exe`) `WSLENV` names every
+ * variable in `extra`, since interop forwards nothing else; otherwise `base` and `extra` merged unchanged.
+ */
+// @spec CTRL-RUNTIME-012
+export function dockerEnv(bin: string, base: NodeJS.ProcessEnv, extra?: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
+  const merged: NodeJS.ProcessEnv = { ...base, ...extra };
+  const names = Object.keys(extra ?? {});
+  if (!/\.exe$/i.test(bin) || names.length === 0) return merged;
+  const have = (base.WSLENV ?? "").split(":").filter(Boolean);
+  const known = new Set(have.map((e) => e.split("/")[0]));
+  merged.WSLENV = [...have, ...names.filter((n) => !known.has(n))].join(":");
+  return merged;
+}

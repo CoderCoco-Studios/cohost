@@ -1,0 +1,10 @@
+{
+  "id": "msg_01FixtureRefusal",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [],
+  "stop_reason": "refusal",
+  "stop_sequence": null,
+  "usage": { "input_tokens": 41, "output_tokens": 0 }
+}

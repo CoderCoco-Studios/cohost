@@ -1,24 +1,12 @@
-/** PCM helpers: Discord gives us 48 kHz stereo s16le; Whisper wants 16 kHz mono. */
-import { parseWav, wavWrap } from "@cohost/shared";
+/** PCM helpers: Discord gives us 48 kHz stereo s16le; Whisper wants 16 kHz mono. The conversion itself is the shared `resample`. */
+import { parseWav, resample, wavWrap } from "@cohost/shared";
 
-// @spec EARS-AUD-001
-/** 48k stereo s16le -> 16k mono s16le WAV (for STT). Simple 3:1 decimation with averaging. */
+// @spec EARS-AUD-005
+/** 48k stereo s16le -> 16k mono s16le WAV (for STT). */
 export function discordPcmToWav16k(pcm: Buffer): Buffer {
-  const inFrames = Math.floor(pcm.length / 4);
-  const outFrames = Math.floor(inFrames / 3);
-  const out = Buffer.alloc(outFrames * 2);
-  for (let o = 0; o < outFrames; o++) {
-    let acc = 0;
-    for (let k = 0; k < 3; k++) {
-      const i = (o * 3 + k) * 4;
-      acc += (pcm.readInt16LE(i) + pcm.readInt16LE(i + 2)) / 2;
-    }
-    out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(acc / 3))), o * 2);
-  }
-  return wavWrap(out, 16000, 1);
+  return wavWrap(resample(pcm, { from: { rate: 48000, channels: 2 }, to: { rate: 16000, channels: 1 } }), 16000, 1);
 }
 
-// @spec EARS-AUD-003
 /** Thin adapter over the shared `parseWav`: no RIFF/WAVE check, and any failure reads as `bad wav`. */
 export function readWavHeader(buf: Buffer): { sampleRate: number; channels: number; dataOffset: number; dataLength: number } {
   try {
@@ -26,5 +14,18 @@ export function readWavHeader(buf: Buffer): { sampleRate: number; channels: numb
     return { sampleRate, channels, dataOffset, dataLength };
   } catch {
     throw new Error("bad wav");
+  }
+}
+
+// @spec EARS-INJ-006
+/** Duration from a WAV header, 0 for anything else (or an unreadable header). */
+export function wavDurationMs(buf: Buffer): number {
+  if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return 0;
+  try {
+    const { sampleRate, channels, dataLength } = readWavHeader(buf);
+    if (!sampleRate || !channels) return 0;
+    return Math.round((dataLength / (channels * 2) / sampleRate) * 1000);
+  } catch {
+    return 0;
   }
 }

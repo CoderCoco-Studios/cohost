@@ -1,4 +1,4 @@
-import type { Bus, BusEvent, Heartbeat } from "@cohost/bus";
+import type { Bus, BusEvent } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 
 /** The guild and voice channel the Discord output joins, from `mouth.outputs.discord.guild_id` / `voice_channel_id`. */
@@ -21,6 +21,8 @@ export interface MouthOutput {
   name: string;
   isReady(): boolean;
   playback: { enqueue(id: string, url: string): Promise<void> };
+  /** Cancel the output's timers; for shutdown. */
+  close?(): void;
 }
 
 export interface MouthHandlerDeps {
@@ -71,52 +73,4 @@ export async function subscribeMouth(bus: MouthBus, handler: (ev: BusEvent) => P
     log.error({ err }, "mouth subscription failed");
     process.exit(1);
   });
-}
-
-export interface StopMouthDeps {
-  idleTimer?: ReturnType<typeof setInterval>;
-  clear?: (t: ReturnType<typeof setInterval>) => void;
-  /** The fallback clip refresh (`discord` plan only). */
-  clipSync?: { stop(): void };
-  /** The Discord session (`discord` plan only). */
-  session?: { stop(): Promise<void> };
-  bus: { stop(): void };
-  log?: Pick<Logger, "error">;
-}
-
-/** The one shutdown sequence: idle timer, clip refresh, voice connection and Discord client, then the bus. */
-// @spec MOUTH-SESS-007, MOUTH-START-004
-export async function stopMouth({ idleTimer, clear = clearInterval, clipSync, session, bus, log }: StopMouthDeps): Promise<void> {
-  if (idleTimer) clear(idleTimer);
-  try {
-    clipSync?.stop();
-    await session?.stop();
-  } catch (err) {
-    log?.error({ err }, "discord teardown failed");
-  } finally {
-    bus.stop();
-  }
-}
-
-export interface IdleDeps {
-  log: Pick<Logger, "error" | "warn">;
-  heartbeat: Pick<Heartbeat, "ready" | "degraded">;
-  /** Repeat interval of the `no-token` warning; 60 s unless a test says otherwise. */
-  warnEveryMs?: number;
-}
-
-/**
- * The idle plans: no Discord client, no bus subscription, no clips, nothing published but the heartbeat. `off` is
- * `ready` at once; `no-token` is `degraded` with an error now and a warning every 60 s. Returns the warning timer, if any.
- */
-// @spec MOUTH-START-001, MOUTH-START-002
-export function startIdle(plan: "off" | "no-token", { log, heartbeat, warnEveryMs = 60_000 }: IdleDeps): ReturnType<typeof setInterval> | undefined {
-  if (plan === "off") {
-    log.warn("no mouth output is enabled: idle, no Discord client, nothing played (mode off)");
-    heartbeat.ready();
-    return undefined;
-  }
-  log.error("DISCORD_TOKEN is not set; mouth is idle (no Discord client)");
-  heartbeat.degraded("DISCORD_TOKEN is not set");
-  return setInterval(() => log.warn("DISCORD_TOKEN is not set; mouth still idle"), warnEveryMs);
 }

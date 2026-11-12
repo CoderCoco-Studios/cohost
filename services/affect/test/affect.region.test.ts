@@ -1,4 +1,4 @@
-import { test, mock } from "node:test";
+import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
@@ -8,21 +8,32 @@ import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "../src/a
 
 const cfg = testConfig({ brain: { affect: { baseline_valence: 0, half_life_ms: 10_000_000 } } });
 
+/** `fetch` stubs installed by `setup("http")`, restored after each test. */
+const stubs: { mock: { restore(): void } }[] = [];
+afterEach(() => { for (const s of stubs.splice(0)) s.mock.restore(); });
+
 function setup(kind: "rules" | "http" = "rules", now?: () => number) {
   const bus = new FakeBus();
   const mod = new Module<AppraiseInput, AppraiseOutput>(
-    "a", ModuleSchema.parse(kind === "http" ? { kind, url: "http://unused" } : {}), cfg.llm,
-    { rules: appraiseRules, http: { validate: () => undefined } }, silentLog,
+    "a", ModuleSchema.parse(kind === "http" ? { kind, url: "http://appraiser.test/affect" } : {}), cfg.llm,
+    {
+      rules: appraiseRules,
+      http: { validate: (raw) => {
+        const r = raw as Partial<AppraiseOutput>;
+        return typeof r.valence_delta === "number" && typeof r.arousal_delta === "number" ? { valence_delta: r.valence_delta, arousal_delta: r.arousal_delta } : undefined;
+      } },
+    }, silentLog,
   );
   const seen: AppraiseInput[] = [];
   let release: (() => void) | undefined;
   if (kind === "http") {
-    // Stand-in for a slow model: each call waits until the test lets it go, then nudges valence up.
-    mod.run = async (i) => {
-      seen.push(i);
+    // Stand-in for a slow model server: the real http hook path posts to a stubbed `fetch`; each call waits until the
+    // test lets it go, then answers a valence nudge.
+    stubs.push(mock.method(globalThis, "fetch", async (_url: unknown, init?: { body?: unknown }) => {
+      seen.push(JSON.parse(String(init?.body)) as AppraiseInput);
       await new Promise<void>((r) => (release = r));
-      return { valence_delta: 0.1, arousal_delta: 0 };
-    };
+      return new Response(JSON.stringify({ valence_delta: 0.1, arousal_delta: 0 }));
+    }));
   }
   const affect = new Affect({ cfg, bus, appraiser: mod, log: silentLog, now });
   return { affect, bus, seen, next: () => release?.() };

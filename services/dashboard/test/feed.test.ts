@@ -34,7 +34,7 @@ function fakeStack() {
 }
 
 function setup(clock = { t: 1_000_000 }, extra: { onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void; sleep?: (ms: number) => Promise<void>; onBusChange?: (s: "connected" | "unreachable") => void } = {}) {
-  const tracker = new HealthTracker({ now: () => clock.t });
+  const tracker = new HealthTracker({ now: () => clock.t, wall: () => clock.t });
   const socks = new Set<Sock>();
   let tailHandler: (ev: BusEvent) => void = () => {};
   let healthHandler: (h: never) => void = () => {};

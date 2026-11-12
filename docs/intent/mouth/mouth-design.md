@@ -37,6 +37,9 @@ mouth:
       guild_id: "${DISCORD_GUILD_ID}"
       voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
       gain_db: 0                                # loudness on this output only; -40..12
+    dryrun:
+      enabled: ${MOUTH_DRYRUN_ENABLED:-false}   # test-only output: plays nothing, reports as a sink (Dry-run output)
+      fail_every: 0                             # n > 0: give up on every n-th line
   fallback:
     min_interval_ms: 20000     # at most one fallback line per 20 s on an output
 ```
@@ -72,13 +75,18 @@ At boot mouth loads config, creates a `Bus("mouth")`, reads `DISCORD_TOKEN`, and
 
 | Outputs enabled | `DISCORD_TOKEN` | Plan | Discord client | Heartbeat |
 | --- | --- | --- | --- | --- |
-| none | any | `off` | none | mode `off`, `deps.discord: n/a`, state `ready` at once (MOUTH-START-001) |
-| `discord` | unset | `no-token` | none | mode `live`, `deps.discord: down`, state `degraded`, detail `DISCORD_TOKEN is not set` (MOUTH-START-002) |
+| none | any | `off` | none | mode `off`, every dep `n/a`, state `ready` at once (MOUTH-START-001) |
+| `discord` only | unset | `no-token` | none | mode `live`, `deps.discord: down`, state `degraded`, detail `DISCORD_TOKEN is not set` (MOUTH-START-002) |
 | `discord` | set | `discord` | yes | mode `live`; `ready` once the voice connection is Ready (MOUTH-SESS-004) |
+| `dryrun`, `discord` disabled | any | `local` | none | mode `mock`, `deps.dryrun: ok`, state `ready` (MOUTH-START-003, MOUTH-DRY-004, MOUTH-DRY-005) |
+| `dryrun` and `discord` | unset | `local` | none | mode `live`, `deps.discord: down`, state `degraded` with the `no-token` detail and reminder; the dryrun output still runs (MOUTH-START-003) |
+| `dryrun` and `discord` | set | `discord` | yes | as `discord`, with the dryrun output beside the Discord one (MOUTH-DRY-001) |
 
-In the idle plans (`off`, `no-token`) mouth subscribes to nothing, fetches no clips, plays nothing and publishes no `voice.*` event; in `no-token` it logs a warning every 60 s. Shutdown clears that timer and stops the bus (MOUTH-START-004). With more output kinds, the plan generalizes to "the set of enabled outputs that can start"; an output kind that needs no secret never makes the plan `no-token`.
+In the idle plans (`off`, `no-token`) mouth subscribes to nothing, fetches no clips, plays nothing and publishes no `voice.*` event; in `no-token`, and in `local` while the Discord output is enabled without a token, it logs the shared idle plan's error now and warning every 60 s (SHARED-IDLE-002, SHARED-IDLE-003). Shutdown clears that timer and stops the bus (MOUTH-START-004). With more output kinds, the plan generalizes to "the set of enabled outputs that can start"; an output kind that needs no secret never makes the plan `no-token`.
 
-In the `discord` plan mouth creates its consumer group `mouth` with start mode `latest` and starts one loop for `voice.utterance` and `voice.playing` before the Discord login (MOUTH-PLAY-001, MOUTH-START-005). The group is reset to the newest entry on every start, so lines published while mouth was down are never played late. One loop reads both types, because two loops with different type filters in one group would acknowledge and drop each other's events.
+The service starts through the shared `runService` (MOUTH-START-006): the plan, the bus loop, the clip refresh and the outputs are wired in `main`, each teardown is an `onStop` step, and a failed Discord login rejects `main`, which `runService` turns into the fatal exit with code 1.
+
+In the `discord` and `local` plans mouth creates its consumer group `mouth` with start mode `latest` and starts one loop for `voice.utterance` and `voice.playing` before the Discord login (MOUTH-PLAY-001, MOUTH-START-005). The group is reset to the newest entry on every start, so lines published while mouth was down are never played late. One loop reads both types, because two loops with different type filters in one group would acknowledge and drop each other's events.
 
 Environment and config read by mouth:
 
@@ -87,6 +95,7 @@ Environment and config read by mouth:
 | env | `DISCORD_TOKEN` | plan selection and login of the co-host's Discord bot (MOUTH-SESS-008) |
 | env | `VOICE_URL` | via `urls.voice()`: the base of the fallback clip routes; utterance audio comes from each event's `audioUrl` |
 | config | `mouth.outputs.discord.{enabled, guild_id, voice_channel_id, gain_db}` | the Discord output (CFG-SCH-020) |
+| config | `mouth.outputs.dryrun.{enabled, fail_every}` | the dry-run output (CFG-SCH-023) |
 | config | `mouth.fallback.min_interval_ms` (20000) | the storm limit (CFG-SCH-018) |
 | env | `COHOST_DATA_DIR` | via `dataDir()`: the clip cache under `<dataDir()>/mouth/fallback-clips` |
 
@@ -96,21 +105,25 @@ The Discord output is the co-host's own Discord bot, the one viewers see speak. 
 
 1. **Intents.** `Guilds` and `GuildVoiceStates`. mouth needs no member names, so it does not request the privileged `GuildMembers` intent.
 2. **Join.** On the client's `ready` event mouth fetches the guild and channel named by `mouth.outputs.discord.guild_id` and `voice_channel_id` (MOUTH-SESS-003 for empty or non-voice values), joins with `selfDeaf: true, selfMute: false` (MOUTH-SESS-002), and waits up to 20 s for Ready. Self-deafened, the bot receives no audio it would only discard, and the channel shows that the speaking bot does not listen. On Ready it subscribes its audio player to the connection, marks the output ready, sets `deps.discord: ok` and reports `ready` (MOUTH-SESS-004).
-3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (MOUTH-SESS-006). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (MOUTH-SESS-005). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
+3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (SHARED-DVS-004). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (SHARED-DVS-003). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
 4. **Shutdown.** One sequence: stop the clip refresh, destroy the voice connection and the client, then stop the bus (MOUTH-SESS-007).
 
-The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (MOUTH-AUD-001), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
+The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (SHARED-AUDIO-006), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
 
 ## Playback
 
 Each enabled output has a `Playback` queue: FIFO with one current slot.
 
 - **Intake.** A `voice.utterance` is queued on every enabled output that is ready; an output that is not ready skips it (MOUTH-ROUTE-003). mouth plays every utterance it reads, whatever the mute or pause state: it never subscribes to `control`, because cortex and salience enforce mute and pause upstream (MOUTH-PLAY-008).
-- **Play.** The output takes the head, fetches the WAV from `audioUrl`, converts it (MOUTH-AUD-001), applies the output's gain (MOUTH-ROUTE-005), hands it to its player, and **then** publishes `voice.playing { id, sink: <name> }` (MOUTH-PLAY-002, MOUTH-PLAY-003).
+- **Play.** The output takes the head, fetches the WAV from `audioUrl`, converts it (SHARED-AUDIO-006), applies the output's gain (MOUTH-ROUTE-005), hands it to its player, and **then** publishes `voice.playing { id, sink: <name> }` (MOUTH-PLAY-002, MOUTH-PLAY-003).
 - **Finish.** When the player goes idle with an item current, the output publishes `voice.done { id, sink: <name> }` and starts the next item (MOUTH-PLAY-004). A failed `voice.done` publish is logged and the queue continues (MOUTH-PLAY-009).
 - **Give up.** If the fetch, the conversion or the hand-over to the player throws before any audio started, the output logs `playback failed` and gives up on that line (MOUTH-PLAY-005): exactly one `voice.failed { id, sink: <name>, reason }` (MOUTH-PLAY-006), a fallback clip in its place when one is eligible, and the next item. A player error after audio started is not a give-up; it is logged (MOUTH-PLAY-007) and ends in Idle like any line.
 
-The queue is unbounded and the fetch has no timeout; both are carried over from ears (Open Questions 1).
+**Stuck-playback guard.** Three fixed limits keep one bad line from blocking an output's later lines (they are constants, not settings; Decisions):
+
+- The WAV fetch is abandoned 15 s after it starts and handled as a failed fetch, so it ends in the give-up path (MOUTH-PLAY-010).
+- A watchdog runs from the moment audio is handed to the player: if the player is not idle within the audio's duration plus 10 s, the output logs `playback stuck`, stops the player, gives up on an utterance (or ends a fallback clip with `voice.done`) and goes on to its next item (MOUTH-PLAY-011). The stop's own Idle event is ignored so it ends nothing twice.
+- Each output holds at most 20 queued utterances besides the current one; a 21st drops the oldest, which is skipped like a line on an output that is not connected, with no `voice.failed` and no fallback (MOUTH-PLAY-012). A stale line is never played late (the same stance as start mode `latest`).
 
 ## Fallback Line
 
@@ -165,7 +178,7 @@ On a give-up, in the same queue slot and before the next queued line:
 2. **Storm limit.** If this output last handed a fallback clip to its player less than `mouth.fallback.min_interval_ms` ago, no fallback (MOUTH-FALL-007). `voice.failed` still goes out for every give-up.
 3. **Use the cache.** The clip comes from the in-memory cache, with no network or disk read at that moment (MOUTH-FALL-004). An empty cache, or one where every clip is marked bad, means no fallback (MOUTH-FALL-005).
 4. **Pick.** Uniformly at random among clips not marked bad, excluding the phrase this output started last when another eligible clip exists (MOUTH-FALL-006).
-5. **Play.** Convert as an utterance (MOUTH-AUD-001), apply the output's gain, hand to the player (MOUTH-FALL-001). A clip that fails conversion means no fallback, a warning naming the clip, and the clip is not picked again until the cache's `fingerprint` changes; a player throw means no fallback and marks nothing; there is no second try (MOUTH-FALL-008).
+5. **Play.** Convert as an utterance (SHARED-AUDIO-006), apply the output's gain, hand to the player (MOUTH-FALL-001). A clip that fails conversion means no fallback, a warning naming the clip, and the clip is not picked again until the cache's `fingerprint` changes; a player throw means no fallback and marks nothing; there is no second try (MOUTH-FALL-008).
 6. **Report.** Once the player has the clip: `voice.playing { id, sink: <name> }` for the given-up id, then `voice.failed` with `fallback` (MOUTH-FALL-002). The clip is then the current item; on Idle the output publishes `voice.done` for the id and moves on (MOUTH-FALL-003).
 
 Bad-clip marks, the last-started phrase and the storm timer live in memory, per output, and reset on restart.
@@ -185,15 +198,17 @@ Bad-clip marks, the last-started phrase and the storm timer live in memory, per 
 | Failure storm (voice down, every queued line fails) | at most one fallback per 20 s per output; every failure still publishes `voice.failed` | MOUTH-FALL-007, MOUTH-PLAY-006 |
 | Dashboard page or another output already claimed the id | no fallback on this output; `voice.failed` without `fallback` | MOUTH-FALL-009 |
 | Fallback claim arrives after the 1.5 s window | voice's late-claim rule cancels the pending virtual `voice.done` while voice still holds the audio; if the audio was evicted, cortex can be released while the clip plays and the next line queues behind it on the same output | VOICE-SINK-007, VOICE-SINK-008 |
-| Hung fetch | never a give-up, because the fetch has no timeout (Open Questions 1) | — |
+| Hung fetch | abandoned after 15 s and given up like any failed fetch | MOUTH-PLAY-010 |
+| Player never reaches Idle | after the audio's duration plus 10 s the player is stopped and the line is given up (a clip ends with `voice.done`) | MOUTH-PLAY-011 |
+| Queue grows without bound (voice far ahead of the output) | the oldest queued line is dropped past 20, silently | MOUTH-PLAY-012 |
 
 ## Health
 
 `MouthHealth` is the `HeartbeatSpec` for `service: "mouth"` (MOUTH-HLTH-001):
 
-- `mode`: `off` in the `off` plan, else `live`.
-- `deps`: one key per output kind under `mouth.outputs` (today `discord`): `n/a` for a disabled output, `ok` only while that output's connection is ready, `down` otherwise, so `no-token` is always `down` (MOUTH-HLTH-002).
-- State: `starting` until the first join attempt resolves; `ready` on Ready; `degraded` with a detail while a join fails (MOUTH-SESS-006); `startHeartbeat` turns any `down` dep on a `ready` service into `degraded`.
+- `mode`: `off` in the `off` plan, `mock` when the `dryrun` output is the only enabled output (MOUTH-DRY-004), else `live`.
+- `deps`: one key per output kind under `mouth.outputs` (`discord`, `dryrun`): `n/a` for a disabled output, `ok` only while that output's connection is ready (`dryrun` is ready while enabled), `down` otherwise, so `no-token` is always `down` for `discord` (MOUTH-HLTH-002).
+- State: `starting` until the first join attempt resolves; `ready` on Ready; `degraded` with a detail while a join fails (SHARED-DVS-004); `startHeartbeat` turns any `down` dep on a `ready` service into `degraded`.
 
 mouth has no `voice` dependency in its heartbeat: an unreachable voice shows up as give-ups and an unchanged clip cache, and voice reports its own health.
 
@@ -210,6 +225,12 @@ ears and mouth share no process, connection, consumer group or file, so either r
 | Only ears deployed | hears Discord | no Discord output; the dashboard page or the virtual sink times every line |
 | ears and mouth in different channels or guilds | hears its channel | speaks in its own; allowed, the owner's choice |
 | voice down | unaffected | every line gives up; fallback clips play from the cache, at most one per 20 s |
+
+## Dry-run output and shared modules
+
+An output named `dryrun` (`mouth.outputs.dryrun`, CFG-SCH-023; enabled by the isolation preset) lets mouth be tested with no Discord. It is ready from startup, fetches each line like any output, reads its duration, claims it with `voice.playing` under sink name `dryrun`, waits that long and publishes `voice.done`, sending audio nowhere. With `fail_every` n > 0 it gives up on every n-th line, so the fallback line path runs end to end (MOUTH-DRY-*). When `dryrun` is enabled and the Discord output is disabled or has no token, mouth runs in the `local` plan: no Discord client, the bus loop, the clip refresh and the `dryrun` output (MOUTH-START-003). It is a real sink in voice's arbitration while enabled, so it is off by default and on only in the isolation preset or when the owner turns it on.
+
+The Discord connection runs through the shared Discord voice session (MOUTH-SESS-009) and conversion through the shared audio module (MOUTH-AUD-002).
 
 ## Decisions & Alternatives
 
@@ -237,28 +258,30 @@ ears and mouth share no process, connection, consumer group or file, so either r
 | Start mode | `latest` on group `mouth` | `resume` | Owner decision 2026-11-01 (project-wide): stale lines are never played late. |
 | Mute and pause | mouth does not subscribe to `control` | Gate playback on mute | Owner decision 2026-11-01 (project-wide): only cortex and salience see mute and pause; an operator `say` must still be heard. |
 | Publish failures | Logged; the queue continues | Unhandled rejection | Owner decision 2026-11-01 (project-wide). |
+| Stuck-playback limits | Fixed constants: fetch 15 s, watchdog duration + 10 s, queue 20 | Settings under `mouth.fallback` or per output | One fetch of a local WAV or one clip has no legitimate reason to take longer, and a setting would be a knob the owner has no way to size; the numbers are generous against the 1.5 s claim window and cortex's `speaking_timeout_ms`. A stuck output otherwise blocks every later line of that output. |
+| Stuck line outcome | Give up (`voice.failed` plus a fallback clip when eligible); a stuck fallback clip ends with `voice.done` | Report `voice.done` for a stuck line; silently stop | Owner disposition: the guard ends in the give-up path, so voice, avatar and cortex learn the line failed. A clip's failure is already reported, so only its release is owed. |
+| A full queue | Drop the oldest queued line, skip it silently | Drop the newest; give up on the dropped line | The oldest line is the stalest; a late line is worse than a missing one. A skip leaves voice's virtual sink to cover it, as for a disconnected output, instead of speaking a fallback for a line nobody was waiting on. |
+| Process wiring | The shared `runService` with `MouthHealth`; teardown as `onStop` steps | A bespoke `index.ts` | One bootstrap for every service (shared-runtime); `main` is a function a test runs with a fake bus and a faked Discord session. |
+| Source files | `clips.ts` (clip cache, mirror, refresh) and `fallback.ts` (claim memory, the fallback line) | One 317-line `fallback.ts` | The clip module is about files and HTTP, the fallback line about choosing; they share only the `FallbackClip` shape. |
+| More output kinds | Dropped for now (owner-deferred); the test-only `dryrun` output is the only second kind | A local audio device or virtual cable output now | The per-output queue, gain, health key and sink name generalize, so a kind is an adapter plus a key under `mouth.outputs` when an owner needs one. |
+| Routing per line | Dropped until an output kind needs it | A routing field on `brain.say` | With one real output kind there is nothing to route between. |
+| Re-routing | A change takes a restart, through the settings editor (module-contract) | A runtime routing API | Config is read once per process; the settings editor already restarts the service, so no second mechanism is needed. |
+| Avatar during a fallback clip | Avatar lip-syncs the given-up line's envelope while the clip plays | Publish a clip envelope | Owner decision: accepted. |
+| Long-term memory keeps the intended line | memory stores every `brain.say` when published, so a failed line is remembered as said | Correct memory on `voice.failed` | Owner decision: accepted. |
 
 ## Open Questions & Future Decisions
 
-1. **No stuck-playback guard.** Each output's queue is unbounded and the WAV fetch has no timeout; a hung fetch, or a player that never reaches Idle, blocks that output's later lines and is never a give-up. cortex's `speaking_timeout_ms` is the only backstop. Carried from ears.
-2. **Untested glue.** The discord.js layer (login, join, rejoin, player events) has no test, as in ears.
-3. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus encode) itself; mouth carries them as ears does. Unverified against real Discord.
-4. **Avatar during a fallback clip.** avatar lip-syncs the given-up line's envelope while the clip plays. Accepted for now (owner decision).
-5. **Long-term memory keeps the intended line.** memory stores every `brain.say` when published, so a failed line is remembered as said. Accepted (owner decision).
+### Manual verification
 
-### Deferred decisions
-
-1. **More output kinds.** A local audio device, a virtual audio cable, or another voice platform. Each is an adapter inside mouth and a key under `mouth.outputs`; the per-output queue, gain, health key and sink name already generalize.
-2. **Routing per line.** Sending some lines to some outputs only (for example, reflexes to Discord but not to the stream). Needs a routing field on `brain.say` or a rule in mouth; deferred until an output kind needs it.
-3. **Re-routing without a restart.** Config is read once per process, so a routing change takes a mouth restart (the Services tab's Restart). A live toggle from the dashboard would need a runtime routing API.
+1. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus codec) itself; mouth carries them without importing them. Whether this set is sufficient is checked by a first run against a real Discord guild and voice channel (join, play a line and hear it).
 
 ## References
 
 Files in this segment:
 
-- `services/mouth/src/index.ts` (plan, wiring, shutdown), `discord.ts` (the Discord output), `session.ts` (output target, bus loop and handler, shutdown, idle plans), `playback.ts`, `fallback.ts`, `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts` (plan, token, `MouthHealth`)
+- `services/mouth/src/index.ts` (the `runService` call), `mouth.ts` (plan, wiring, shutdown), `discord.ts` (the Discord output), `dryrun.ts` (the dry-run output), `session.ts` (output target, bus loop and handler), `playback.ts` (queue, stuck-playback guard), `clips.ts` (clip cache, mirror, refresh), `fallback.ts` (claim memory, the fallback line), `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts` (plan, token, `MouthHealth`)
 - `services/mouth/test/*.test.ts`; `services/voice/test/mouth-sync.test.ts` (voice's clip routes read by mouth's clip sync)
-- `packages/shared`: `createJoiner` (the join retry loop shared with ears)
+- `packages/shared`: `runService`, `startIdle`, `createDiscordVoiceSession`, `retryWithBackoff`, `parseWav`, `resample`
 
 Other segments (arrow shows direction):
 

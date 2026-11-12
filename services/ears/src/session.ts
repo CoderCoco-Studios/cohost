@@ -72,25 +72,3 @@ export async function subscribeEars(
     process.exit(1);
   });
 }
-
-export interface StopEarsDeps {
-  idleTimer?: ReturnType<typeof setInterval>;
-  clear?: (t: ReturnType<typeof setInterval>) => void;
-  /** The Discord session (`discord` plan only). */
-  session?: { stop(): Promise<void> };
-  bus: { stop(): void };
-  log?: Pick<Logger, "error">;
-}
-
-/** The one shutdown sequence: idle timer, voice connection and Discord client, then the bus. */
-// @spec EARS-SESS-008, EARS-START-005
-export async function stopEars({ idleTimer, clear = clearInterval, session, bus, log }: StopEarsDeps): Promise<void> {
-  if (idleTimer) clear(idleTimer);
-  try {
-    await session?.stop();
-  } catch (err) {
-    log?.error({ err }, "discord teardown failed");
-  } finally {
-    bus.stop();
-  }
-}

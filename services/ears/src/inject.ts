@@ -1,7 +1,10 @@
 import type { Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { createInjectHandler as createSharedInjectHandler, type InjectHandler } from "@cohost/shared";
-import { readWavHeader } from "./audio.js";
+import { wavDurationMs } from "./audio.js";
+import { hasWordCharacter } from "./transcript.js";
+
+export { wavDurationMs };
 
 /** The dashboard's audio upload cap (25 MiB) and the time one upload fetch may take. */
 export const INJECT_MAX_BYTES = 26_214_400;
@@ -18,19 +21,6 @@ export interface InjectDeps {
   now?: () => number;
 }
 
-// @spec EARS-INJ-006
-/** Duration from a WAV header, 0 for anything else (or an unreadable header). */
-export function wavDurationMs(buf: Buffer): number {
-  if (buf.length < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return 0;
-  try {
-    const { sampleRate, channels, dataLength } = readWavHeader(buf);
-    if (!sampleRate || !channels) return 0;
-    return Math.round((dataLength / (channels * 2) / sampleRate) * 1000);
-  } catch {
-    return 0;
-  }
-}
-
 // @spec EARS-INJ-010, EARS-INJ-005, EARS-INJ-006, EARS-INJ-008
 /**
  * Handles `inject.request` for ears through the shared inject handler (target `ears`, the one kind `audio`): the
@@ -45,7 +35,7 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
     kinds: {
       audio: async (audio, r, { contentType }) => {
         const text = (await d.transcribe(audio, { contentType: contentType ?? "audio/wav" })).trim();
-        if (!text || /^\W*$/.test(text)) return { ok: false, detail: "empty transcript" };
+        if (!hasWordCharacter(text)) return { ok: false, detail: "empty transcript" };
         const speaker = r.meta?.user || "injected";
         await d.bus.publish("speech.heard", { speaker, text, durationMs: wavDurationMs(audio), injected: true, remember: r.remember });
         d.log.info({ id: r.id, speaker, text }, "heard (injected)");

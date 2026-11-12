@@ -252,6 +252,12 @@ export const ConfigSchema = z.object({
     silence_ms: z.number().int().positive().default(700),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: str("Systran/faster-whisper-small"),
+    /** `stub` transcribes every clip to fixed text with no STT server (isolated runs); blank is `speaches`. */
+    // @spec CFG-SCH-022
+    stt_engine: z.preprocess((v) => v || "speaches", z.enum(["speaches", "stub"])),
+    /** Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped: Whisper's silence hallucinations. */
+    // @spec EARS-HEAR-010
+    drop_phrases: z.array(z.string()).default([]),
   }),
   /**
    * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.

@@ -156,7 +156,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: ears.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: EARS-SESS-005/006, EARS-AUD-001/003/004, EARS-INJ-001..004 retired (now SHARED-DVS/AUDIO/INJ); new [ ]: EARS-SESS-010, EARS-AUD-005, EARS-INJ-010, EARS-STUB-001/002. Earlier: Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
+    next: "2026-11-11 gap closure (chunk C7): EARS-SESS-010, EARS-AUD-005, EARS-INJ-010/011, EARS-STUB-001/002, EARS-HEAR-010 (ears.drop_phrases) and EARS-START-008 (runService, startIdle) built; transcript word filter is Unicode-aware; all 39 specs [x]. EARS-SESS-005/006, EARS-AUD-001/003/004, EARS-INJ-001..004 retired (now SHARED-DVS/AUDIO/INJ). Earlier: Listening and speaking split built (mouth.md build order chunk 4): ears listens only with its own bot (EARS_DISCORD_TOKEN, self-muted, ignores every bot account, refuses a token equal to DISCORD_TOKEN). EARS-START-002/003/004/007, EARS-SESS-002/004/009 and EARS-HEAR-001/009 are [x]; 40 specs, 0 gaps. Retired (moved to mouth): EARS-AUD-002, EARS-PLAY-001..009, EARS-FALL-001..019. Deferred: more listening sources."
     drift: null
 
   salience:

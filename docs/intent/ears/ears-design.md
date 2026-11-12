@@ -18,7 +18,7 @@ ears does not speak. The co-host's voice reaches Discord through [mouth](../mout
 
 Design leanings (evidence per bullet):
 
-- **Pure logic is split from the Discord glue.** `Hearing`, `createInjectHandler`, `EarsHealth`, the session helpers and the audio helpers take their effects as injected functions (`transcribe`, `fetch`, `now`) so they are unit-tested with fakes (`services/ears/test/*.test.ts`). `discord.ts` and `index.ts` hold the I/O glue and have **no tests**. Evidence: commit 95afa19 ("Split service entrypoints into testable region modules").
+- **Pure logic is split from the Discord glue.** `Hearing`, `createInjectHandler`, `EarsHealth`, the session helpers and the audio helpers take their effects as injected functions (`transcribe`, `fetch`, `now`), and the service body (`service.ts`) and the Discord session (`discord.ts`) take their environment, Discord loader and voice session as injected options, so all of it is unit-tested with fakes under `runService` (`services/ears/test/*.test.ts`). `index.ts` is the one line that hands the body to `runService`.
 - **Never exit for a configuration gap.** A missing `EARS_DISCORD_TOKEN` or `ears.source: off` leaves the process up and idle with an honest heartbeat rather than crash-looping (`services/ears/src/health.ts:8-12`, `services/ears/src/index.ts:40-58`). Evidence: `earsPlan` doc comment (`health.ts:8`); commit 51d5a9c; add-isolated-backends design D7.
 - **Discord libraries are only loaded when needed**, via a dynamic `import("./discord.js")` (`services/ears/src/index.ts:35-37`), so idle plans carry no gateway client. Evidence: comment at `index.ts:35`.
 - The bot must be a *bot* account, not a user account: header comment `services/ears/src/index.ts:11-13` ("automating a user account gets it banned").
@@ -27,7 +27,7 @@ Ownership notes: `src/health.ts` implements the heartbeat contract owned by [con
 
 ## Startup Plans
 
-At boot `index.ts` loads config, creates a `Bus("ears")`, reads `EARS_DISCORD_TOKEN` (and `DISCORD_TOKEN`, only to compare), and derives a **plan** with the pure function `earsPlan(cfg.ears.source, hasToken)`, where `hasToken` is true when `EARS_DISCORD_TOKEN` is set and differs from `DISCORD_TOKEN` (EARS-START-004):
+At boot `index.ts` hands the service body (`service.ts`) to the shared `runService`, which loads config, creates a `Bus("ears")` and starts the heartbeat (EARS-START-008); the body reads `EARS_DISCORD_TOKEN` (and `DISCORD_TOKEN`, only to compare), and derives a **plan** with the pure function `earsPlan(cfg.ears.source, hasToken)`, where `hasToken` is true when `EARS_DISCORD_TOKEN` is set and differs from `DISCORD_TOKEN` (EARS-START-004):
 
 | `ears.source` | token | plan | Discord client | Heartbeat |
 | --- | --- | --- | --- | --- |
@@ -41,12 +41,12 @@ At boot `index.ts` loads config, creates a `Bus("ears")`, reads `EARS_DISCORD_TO
 In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`):
 
 - `ready` (or `degraded` for `no-token`) is signalled after the subscription is established;
-- in `no-token` the warning naming the missing or conflicting token repeats every 60 s;
-- on shutdown the timer is cleared and the bus stopped, as one `stopEars` sequence (EARS-START-005).
+- both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning every 60 s (EARS-START-008);
+- on shutdown the idle timer is cleared and the bus stopped, as one `runService` teardown (EARS-START-005).
 
 The `ears` consumer group uses the bus start mode `latest`: the group is reset to the newest entry on every start, so injection requests published while ears was down are not handled (EARS-START-006). `subscribeEars` creates the group first (`Bus.resetGroup`, so it exists before any `ready` signal) and then starts the read loop with `start: "latest"`.
 
-In the `discord` plan shutdown is one sequence, `stopEars` (`session.ts`), registered once from `index.ts`: destroy the voice connection and the Discord client (`DiscordSession.stop()`), then stop the bus, even if the teardown throws (EARS-SESS-008). The heartbeat's pre-shutdown hook sends `stopping` before any callback runs, and the bus runs every registered callback in order and exits once ([event-bus](../event-bus/event-bus-design.md)).
+In the `discord` plan shutdown is one sequence, registered once with `runService`'s `onStop`: destroy the voice connection and the Discord client (`DiscordSession.stop()`), then `runService` stops the bus, even if the teardown throws (EARS-SESS-008). A failed Discord login rejects start-up and `runService` ends the process with status 1 (EARS-SESS-001). The heartbeat's pre-shutdown hook sends `stopping` before any callback runs, and the bus runs every registered callback in order and exits once ([event-bus](../event-bus/event-bus-design.md)).
 
 Environment and config read by ears:
 
@@ -57,7 +57,7 @@ Environment and config read by ears:
 | config | `ears.discord.guild_id`, `ears.discord.voice_channel_id` | guild and voice channel to join (EARS-SESS-007), resolved by `voiceTarget` (`session.ts`), which throws `ears.discord.guild_id is not set` / `ears.discord.voice_channel_id is not set` for an empty key; `config.example.yaml` fills them from `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID`. The environment variables are not read by ears |
 | env | `STT_URL` | via `urls.stt()`, default `http://127.0.0.1:8000` (`packages/config/src/index.ts:171`) |
 | env | `DASHBOARD_URL` | via `urls.dashboard()`; the only origin injected uploads may be fetched from (`index.ts:31`) |
-| config | `ears.source`, `ears.silence_ms` (700), `ears.min_speech_ms` (400), `ears.stt_model` (`Systran/faster-whisper-small`) | `packages/config/src/schema.ts` |
+| config | `ears.source`, `ears.stt_engine` (`speaches` default, or `stub`), `ears.silence_ms` (700), `ears.min_speech_ms` (400), `ears.stt_model` (`Systran/faster-whisper-small`), `ears.drop_phrases` (default empty) | `packages/config/src/schema.ts` |
 
 The listening bot needs the Connect permission in the channel and the privileged Server Members intent (for display names); it needs no Speak permission.
 
@@ -70,7 +70,7 @@ Implemented in `discord.ts` (capture) and `hearing.ts` (STT + publish).
 3. **Per-speaker capture.** `connection.receiver.speaking.on("start")` fires `listenTo(userId, channel)` for every user that is not a bot account (EARS-HEAR-001). That excludes ears' own bot and the co-host's speaking bot in [mouth](../mouth/mouth-design.md), so her own lines are never transcribed as a human's speech, and it excludes other bots in the channel (a music bot, another TTS bot). ears decides this from the speaker's user record (the cached `bot` flag, else one fetch), before it opens the speaker's stream; a speaker whose account cannot be fetched is skipped. `listenTo` keeps a `listening` set so a user already being captured is not subscribed twice (`discord.ts:40`). It subscribes to the user's Opus stream with `EndBehaviorType.AfterSilence` and `duration: ears.silence_ms`, pipes it through `prism-media`'s Opus decoder (`48000 Hz, 2 channels, frameSize 960`), and collects PCM chunks (`discord.ts:46-51`). On decoder `end` the user leaves the set and `Hearing.heard(pcm, name, userId)` runs un-awaited (`discord.ts:52-55`); on decoder `error` the user leaves the set and a warning is logged (`discord.ts:56`). The speaker's name is the guild member's `displayName`, falling back to the user id (`discord.ts:43-44`).
 4. **Gate, convert, transcribe.** `Hearing.heard` computes `durationMs = bytes / 4 / 48000 * 1000` and drops anything shorter than `ears.min_speech_ms` (`hearing.ts:39-41`). Otherwise it downsamples to 16 kHz mono WAV (`discordPcmToWav16k`, `audio.ts:5-18`: 3:1 decimation that averages 3 frames and both channels, clamped to int16) and calls the transcriber.
 5. **STT request.** `sttTranscriber` POSTs multipart form data to `<STT_URL>/v1/audio/transcriptions` with fields `file`, `model` (= `ears.stt_model`), `language` = `"en"` (hard-coded), `response_format` = `json`; a non-2xx throws `stt <status>: <body>`; the result is `json.text.trim()` (`hearing.ts:19-32`). The same function accepts an optional content-type hint so injected uploads keep their container (`hearing.ts:20-23`, extension table at `hearing.ts:13-15`).
-6. **Publish.** Text that is empty or matches `/^\W*$/` is dropped silently; otherwise `speech.heard { speaker, speakerId, text, durationMs }` is published (`hearing.ts:44-46`). Any exception becomes a `"transcription failed"` warning (`hearing.ts:47-49`). `speech.heard` is defined at `packages/bus/src/events.ts:40-48`.
+6. **Publish.** Text with no word character (a Unicode letter or number in any script, EARS-HEAR-007) is dropped silently, as is a transcript equal to an `ears.drop_phrases` entry (EARS-HEAR-010; compared case-insensitively with whitespace collapsed and leading and trailing punctuation ignored, so `Thank you.` matches `thank you`; the list is empty by default and `config.example.yaml` shows Whisper's common silence phrases); otherwise `speech.heard { speaker, speakerId, text, durationMs }` is published (`hearing.ts:44-46`). Any exception becomes a `"transcription failed"` warning (`hearing.ts:47-49`). `speech.heard` is defined at `packages/bus/src/events.ts:40-48`.
 
 The transcriber handed to `Hearing` (and to the inject handler) is wrapped by `EarsHealth.track`, so each STT call sets `deps.stt` ok/down (`discord.ts:32`, `index.ts:31`, `health.ts:31-33`).
 
@@ -84,7 +84,7 @@ ears does not subscribe to `control`: it publishes `speech.heard` whatever the m
 
 ## Audio Injection
 
-`createInjectHandler` (`inject.ts:52-78`) returns the `inject.request` handler. It is built in `index.ts` for **every** plan (`index.ts:31`) and is the only handler on the `ears` loop in every plan (EARS-START-003).
+`createInjectHandler` (`inject.ts`) returns the `inject.request` handler. It is built in `service.ts` for **every** plan and is the only handler on the `ears` loop in every plan (EARS-START-003). The shared handler queues a request and returns at once, so the loop reads the next `inject.request` while STT is still working on the last one; requests are answered in order, and a ninth waiting request is answered `busy` (EARS-INJ-011, SHARED-INJ-*).
 
 Processing order for a request `r` (publishing `inject.result { id, ok, detail? }` on every failure path):
 
@@ -94,7 +94,7 @@ Processing order for a request `r` (publishing `inject.result { id, ok, detail? 
 4. `uploadUrl(r.url, urls.dashboard())` (from `@cohost/shared`; the eyes LLD owns it, SHARED-INJ-008) must be same-origin, credential-free, and under `<dashboard path>/uploads/` with a non-empty id; otherwise `ok:false, "url is not an upload of this dashboard"` and nothing is fetched (`inject.ts:21-32,62-63`).
 5. `fetch(target, { redirect: "error" })`; non-2xx returns `ok:false, "fetch upload <status>"` (`inject.ts:64-65`).
 6. The bytes go **unchanged** to STT with the response content type as a hint (default `audio/wav`); `ears.min_speech_ms` does not apply (`inject.ts:66-67`, `inject.ts:48-51`).
-7. Empty/non-word transcript returns `ok:false, "empty transcript"` (`inject.ts:68`).
+7. A transcript with no word character (Unicode letter or number) returns `ok:false, "empty transcript"` (`inject.ts:68`).
 8. Success publishes `speech.heard { speaker: r.meta?.user || "injected", text, durationMs: wavDurationMs(audio), injected: true, remember: r.remember }` then `inject.result { ok:true, detail: text }` (`inject.ts:69-72`). `wavDurationMs` returns 0 for non-WAV or unreadable input (`inject.ts:36-45`). No `speakerId` is set.
 9. Any exception logs `"audio injection failed"` and attempts `inject.result { ok:false, detail: String(err) }` (swallowing a bus failure) (`inject.ts:73-76`).
 
@@ -142,30 +142,25 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 | Injection URL trust | Same origin as `urls.dashboard()`, under `/uploads/`, no redirects | Fetch any URL | SSRF guard: add-test-injection design D2 ("eyes/ears ... MUST only fetch URLs under `urls.dashboard()` + `/uploads/`"); doc comment on `dashboardUrl` (`inject.ts:11-12`). The origin and path check applies to the requested URL only; `redirect: "error"` (`inject.ts:64`) makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
 | Stale injected requests | Drop after 60 s | Process all backlog | Consumer groups resume after a restart: `INJECT_STALE_MS` in `@cohost/shared` (shared with eyes and chat, SHARED-INJ-008); add-test-injection design D8 ("Staleness"). |
 | Injected clips skip `min_speech_ms` | No minimum duration | Apply the gate | add-test-injection design D8: "`min_speech_ms` does not apply (that gates Discord PCM)"; doc comment `inject.ts:50`; test `inject.test.ts:36-43`. |
+| More listening sources | Not built; the HLD lists it as a deferred goal. When a second source exists, each source is a capture adapter feeding the same `Hearing` path and `ears.source` (one value) becomes a map `ears.sources.<name>` with a per-source `enabled`, mirroring `mouth.outputs` | Build adapters (a local microphone, an OBS audio source) now | A deferred goal is not a gap in the present design; with one source the single enum keeps today's config valid. |
+| Tuning the co-host's voice | Owned by the [voice](../voice/voice-design.md) segment | A listening-side knob | The voice knobs (speed and whatever the TTS engine exposes) act on synthesis, not on hearing. |
+| Inject loop and STT | The `ears` loop hands each `inject.request` to the shared inject handler's queue and returns (EARS-INJ-011) | Await the handler in the loop (the original code) | A slow STT call or upload fetch should not delay reading the next request. |
+| Word characters | A word character is a Unicode letter or number in any script (EARS-HEAR-007) | ASCII `\w` (the original code) | STT is forced to `en` today, but a transcript of non-ASCII letters or digits is still speech, and a language setting would otherwise silently drop it. |
+| `readWavHeader` bit depth | `readWavHeader` is a thin adapter over the shared `parseWav`, which rejects input that is not 16-bit PCM; an unreadable header reads as `bad wav` and as duration 0 | Parse the header locally | One parser for every service; 8- and 24-bit input is refused instead of misread. |
+| Whisper silence hallucinations | An `ears.drop_phrases` list (default empty, whole-transcript match) applied to live captures only (EARS-HEAR-010) | A built-in phrase list; fuzzy or substring matching; filtering injected clips too | Which phrases are hallucinations depends on the model and the room, so the owner lists them and the example config shows Whisper's usual ones. Whole-transcript matching never drops a sentence that merely contains "thank you". An injected clip is chosen by the owner, so it is transcribed as given. |
 
 ## Open Questions & Future Decisions
 
 Behaviors and debt observed but not explained by the code or specs.
 
-1. **The loop awaits the inject handler.** A slow STT call or upload fetch for an injected clip delays reading the next `inject.request` (`discord.ts:114`). With speaking in mouth, nothing else waits behind it.
-2. **Transcript filter is ASCII-only.** `/^\W*$/` treats every non-ASCII letter as non-word, so a transcript consisting only of such characters is dropped (`hearing.ts:44`, `inject.ts:68`). STT is forced to `en`, which masks it.
-3. **`readWavHeader` bit depth.** `readWavHeader` ignores bit depth, so 8- or 24-bit input is misread silently; `inject.ts` re-adds the RIFF check on top.
-4. **Untested glue.** `discord.ts` and `index.ts` have no tests: session lifecycle, capture, rejoin, plan wiring, shutdown. Only the injected-function classes are covered.
-5. **Dependencies of unclear role.** `@snazzah/davey`, `libsodium-wrappers` and `opusscript` are in `services/ears/package.json` but never imported from `src/`. They are runtime requirements that `@discordjs/voice` and `prism-media` load themselves: `libsodium-wrappers` for voice transport encryption, `@snazzah/davey` for Discord's DAVE end-to-end encryption protocol, and `opusscript` as the pure-JS Opus codec used to decode received audio. Whether this set is sufficient is unverified until ears first runs against real Discord.
-6. **Hallucinated transcripts.** There is no filter for known Whisper silence hallucinations ("Thank you.") other than the empty/punctuation check.
-7. **Untested `[x]` specs.** The Discord and plan glue (`discord.ts`, `index.ts`) specs have no test, nor does SHARED-INJ-003 (wrong kind). SHARED-INJ-004's redirect refusal and non-2xx paths are untested in ears (eyes tests the 404 path for its copy). EARS-HLTH-003's recovery to `ok` after a success is not asserted.
-
-### Deferred decisions
-
-1. **More listening sources.** The owner's direction is a listening module that takes audio from more sources than Discord (a local microphone, an OBS audio source). Each source is a capture adapter feeding the same `Hearing` path (gate, convert, transcribe, publish). When a second source exists, `ears.source` (one value) becomes a map `ears.sources.<name>` with a per-source `enabled`, mirroring `mouth.outputs`, and `ears.discord.*` moves under `ears.sources.discord`. Until then the single enum keeps today's config valid.
-2. **Tuning the co-host's voice.** Owner-facing voice knobs (speed and whatever else the TTS engine exposes) belong to the [voice](../voice/voice-design.md) segment and are deferred there.
+1. **Dependencies of unclear role.** `@snazzah/davey`, `libsodium-wrappers` and `opusscript` are in `services/ears/package.json` but never imported from `src/`. They are runtime requirements that `@discordjs/voice` and `prism-media` load themselves: `libsodium-wrappers` for voice transport encryption, `@snazzah/davey` for Discord's DAVE end-to-end encryption protocol, and `opusscript` as the pure-JS Opus codec used to decode received audio. Whether this set is sufficient is unverified until ears first runs against real Discord.
 
 ## References
 
 Files in this segment:
 
-- `services/ears/src/index.ts`, `discord.ts`, `session.ts`, `hearing.ts`, `audio.ts`, `inject.ts`, `health.ts` (`playback.ts`, `fallback.ts` and the playback half of `audio.ts` move to `services/mouth`)
-- `services/ears/test/audio.test.ts`, `ears.test.ts`, `health.test.ts`, `inject.test.ts`, `session.test.ts` (`fallback.test.ts` and the playback cases of `ears.test.ts` move to `services/mouth/test`)
+- `services/ears/src/index.ts`, `service.ts`, `discord.ts`, `session.ts`, `hearing.ts`, `transcript.ts`, `audio.ts`, `inject.ts`, `health.ts` (`playback.ts`, `fallback.ts` and the playback half of `audio.ts` move to `services/mouth`)
+- `services/ears/test/audio.test.ts`, `ears.test.ts`, `filter.test.ts`, `transcript.test.ts`, `stub.test.ts`, `loop.test.ts`, `service.test.ts`, `discord.test.ts`, `health.test.ts`, `inject.test.ts`, `inject-limits.test.ts`, `session.test.ts` (`fallback.test.ts` and the playback cases of `ears.test.ts` move to `services/mouth/test`)
 - `services/ears/package.json`, `services/ears/tsconfig.json`
 
 Other segments (arrow shows direction):

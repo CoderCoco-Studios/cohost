@@ -141,3 +141,15 @@ test("an injected brain.say is published once, as injected, only through /inject
   // salience consumes brain.say but only for its own bookkeeping; the manifest lists it as observed, not an input
   assert.equal((await t.event({ unit: "salience", type: "brain.say", data: say })).status, 400);
 });
+
+// @spec DASH-HTTP-017
+test("an injected brain.say keeps its route; a route that is not an array of strings is a 400 and publishes nothing", async () => {
+  const t = await boot();
+  const say = { id: "s", text: "hi", emotion: "neutral" };
+  assert.equal((await t.event({ unit: "voice", type: "brain.say", data: { ...say, route: ["file"] } })).status, 202);
+  assert.deepEqual(t.bus.of("brain.say")[0]!.route, ["file"]);
+  assert.equal((await t.event({ unit: "voice", type: "brain.say", data: say })).status, 202);
+  assert.equal("route" in t.bus.of("brain.say")[1]!, false);
+  assert.equal((await t.event({ unit: "voice", type: "brain.say", data: { ...say, route: "file" } })).status, 400);
+  assert.equal(t.bus.of("brain.say").length, 2);
+});

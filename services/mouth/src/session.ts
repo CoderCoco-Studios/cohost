@@ -1,5 +1,6 @@
-import type { Bus, BusEvent } from "@cohost/bus";
+import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
+import { OUTPUT_KINDS } from "./health.js";
 
 /** The guild and voice channel the Discord output joins, from `mouth.outputs.discord.guild_id` / `voice_channel_id`. */
 // @spec MOUTH-SESS-002, MOUTH-SESS-003
@@ -27,7 +28,11 @@ export interface MouthOutput {
 
 export interface MouthHandlerDeps {
   outputs: readonly MouthOutput[];
-  log: Pick<Logger, "debug">;
+  log: Pick<Logger, "debug" | "warn">;
+  /** Where mouth publishes the `voice.playing` and `voice.done` it gives a line that goes to no output (MOUTH-ROUTE-008). */
+  bus: Pick<Publisher, "publish">;
+  /** Told the ids of a `route` that are not output kinds, so the heartbeat can say they were ignored (MOUTH-ROUTE-007). */
+  onUnknownRoute?: (ids: string[]) => void;
   /** Which utterance ids real sinks claimed (the fallback line's memory, MOUTH-FALL-010). */
   claims?: { seen(id: string): void; claim(id: string, sink: string): void };
   /** Whether an output is switched on live (`set_routing`); an output switched off skips utterances like a disabled one. Default: all on. */
@@ -41,8 +46,8 @@ export interface MouthHandlerDeps {
  * `voice.failed` or a fallback, on an output that is not ready, so voice's virtual sink covers it when nothing else does.
  * A `voice.playing` only feeds the fallback line's claim memory; a `control` goes to the shared reader (`set_routing`).
  */
-// @spec MOUTH-ROUTE-003, MOUTH-FALL-010, MOUTH-FALL-013, MOUTH-LIVE-001, MOUTH-LIVE-002
-export function createMouthHandler({ outputs, log, claims, enabled, control }: MouthHandlerDeps) {
+// @spec MOUTH-ROUTE-003, MOUTH-ROUTE-006, MOUTH-ROUTE-007, MOUTH-ROUTE-008, MOUTH-FALL-010, MOUTH-FALL-013, MOUTH-LIVE-001, MOUTH-LIVE-002
+export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, enabled, control }: MouthHandlerDeps) {
   return async (ev: BusEvent): Promise<void> => {
     if (ev.type === "control") {
       await control?.handleAsync(ev);
@@ -56,7 +61,26 @@ export function createMouthHandler({ outputs, log, claims, enabled, control }: M
     if (ev.type !== "voice.utterance") return;
     const d = ev.data as BusEvent<"voice.utterance">["data"];
     claims?.seen(d.id);
+    const route = d.route;
+    if (route) {
+      const unknown = route.filter((id) => !(OUTPUT_KINDS as readonly string[]).includes(id));
+      if (unknown.length > 0) {
+        log.debug({ id: d.id, unknown }, "route names unknown output ids: ignored");
+        onUnknownRoute?.(unknown);
+      }
+      // A line that goes to no enabled output is completed here, so cortex is released and no fallback clip plays for it.
+      if (!outputs.some((o) => route.includes(o.name) && (!enabled || enabled(o.name)))) {
+        try {
+          await bus.publish("voice.playing", { id: d.id, sink: "mouth" });
+          await bus.publish("voice.done", { id: d.id, sink: "mouth" });
+        } catch (err) {
+          log.warn({ err, id: d.id }, "publishing the completion of an unrouted line failed");
+        }
+        return;
+      }
+    }
     for (const output of outputs) {
+      if (route && !route.includes(output.name)) continue;
       if (enabled && !enabled(output.name)) continue;
       if (!output.isReady()) {
         log.debug({ id: d.id, output: output.name }, "output not connected: utterance skipped");

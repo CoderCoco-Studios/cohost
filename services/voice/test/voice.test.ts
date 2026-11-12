@@ -403,3 +403,14 @@ test("a voice.failed for an id whose virtual done was already published changes 
   assert.equal(bus.of("voice.done").length, 1);
   assert.equal(bus.of("voice.playing").length, 1);
 });
+
+test("a route on the brain.say rides unchanged on the voice.utterance; none in, none out", async () => { // @spec VOICE-UTT-004
+  const { voice, bus } = setup();
+  await sayAndWait(voice, event("brain.say", { id: "r1", text: "hi", emotion: "happy", route: ["file", "nonsense"] }));
+  await sayAndWait(voice, event("brain.say", { id: "r2", text: "hi", emotion: "happy", route: [] }));
+  await sayAndWait(voice, say("r3"));
+  const [a, b, c] = bus.of("voice.utterance");
+  assert.deepEqual(a!.route, ["file", "nonsense"]);
+  assert.deepEqual(b!.route, []);
+  assert.equal("route" in c!, false);
+});

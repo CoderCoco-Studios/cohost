@@ -254,3 +254,21 @@ test("file and http outputs run in the local plan with no Discord: each line is 
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+// @spec MOUTH-ROUTE-007
+test("an unknown id in a line's route sets the heartbeat detail to the ignored id followed by the routing", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "mouth-route-"));
+  const prev = process.env.COHOST_DATA_DIR;
+  process.env.COHOST_DATA_DIR = dataDir;
+  const r = rig({ discord: { enabled: false }, dryrun: { enabled: true } });
+  try {
+    await r.done;
+    await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
+    await r.subs[0]!.handler(event("voice.utterance", { id: "x1", text: "hi", emotion: "neutral", route: ["bogus", "dryrun"], durationMs: 30, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/x1.wav", sampleRate: 24000 }));
+    await waitFor(() => r.bus.health.some((h) => h.detail?.startsWith('route ignored unknown output id "bogus"; routing {"dryrun":{"enabled":true}}')), "route detail heartbeat");
+  } finally {
+    await r.stop();
+    if (prev === undefined) delete process.env.COHOST_DATA_DIR; else process.env.COHOST_DATA_DIR = prev;
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});

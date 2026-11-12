@@ -57,8 +57,8 @@ export class Cortex {
       forget_context: () => { this.ctx.clear(); this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ },
       // @spec CTX-CTRL-005
       reload_personality: () => { this.personality = d.loadPersonality(); d.log.info("personality reloaded"); },
-      // @spec CTX-CTRL-006, CTX-INJ-002
-      say: async (c) => { if (c.text) await this.say(c.text, "neutral", undefined, "operator"); },
+      // @spec CTX-CTRL-006, CTX-CTRL-007, CTX-INJ-002
+      say: async (c) => { if (c.text) await this.say(c.text, "neutral", undefined, "operator", c.route ? { route: c.route } : {}); },
     }, { log: d.log, heartbeat: d.heartbeat });
   }
 
@@ -302,7 +302,7 @@ export class Cortex {
   }
 
   // @spec CTX-SAY-001
-  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags = {}, onPublished?: () => void) {
+  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags & { route?: string[] } = {}, onPublished?: () => void) {
     const id = randomUUID();
     this.startSpeaking(id);
     await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason, ...flags });

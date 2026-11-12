@@ -49,7 +49,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (77 specs, prefix `CTX`: 77 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (78 specs, prefix `CTX`: 78 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)
@@ -109,7 +109,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Startup and shutdown | CTX-START-001 to CTX-START-005 | 5 | 0 | 0 | 5 |
 | Health | CTX-HEALTH-001 to CTX-HEALTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 77 of 77 specs implemented; 0 deferred; 0 open. 77 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 78 of 78 specs implemented; 0 deferred; 0 open. 78 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

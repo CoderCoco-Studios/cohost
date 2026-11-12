@@ -208,9 +208,9 @@ export class Voice {
     await this.publishVirtual("voice.done", id);
   }
 
-  private async onSay(ev: BusEvent<"brain.say">) { // @spec VOICE-SYN-004, VOICE-SYN-005, VOICE-UTT-001
+  private async onSay(ev: BusEvent<"brain.say">) { // @spec VOICE-SYN-004, VOICE-SYN-005, VOICE-UTT-001, VOICE-UTT-004
     const { bus, log } = this.d;
-    const { id, text, emotion, gesture } = ev.data;
+    const { id, text, emotion, gesture, route } = ev.data;
     const t0 = Date.now();
     try {
       const wav = await this.d.synth(text);
@@ -220,7 +220,7 @@ export class Voice {
       this.put(id, wav);
       log.info({ id, ms: Date.now() - t0, durationMs: Math.round(info.durationMs), text }, "synthesized");
       await bus.publish("voice.utterance", {
-        id, text, emotion, gesture,
+        id, text, emotion, gesture, ...(route ? { route } : {}), // @spec VOICE-UTT-004
         durationMs: Math.round(info.durationMs),
         envelopeHz: ENVELOPE_HZ,
         envelope: env,

@@ -98,6 +98,7 @@ Design: LLD § Fallback acknowledgement. "The base chance" is `brain.cortex.fall
 - [x] **CTX-CTRL-004**: When `control` `forget_context` is addressed to the cortex, the cortex shall clear its working-memory window, the last vision summary and its viewer notes, keeping the mood and any pending recall. <!-- openspec: cortex § Saying and control --> <!-- test: services/cortex/test/cortex.region.test.ts:283, services/cortex/test/cortex.region.test.ts:449 -->
 - [x] **CTX-CTRL-005**: When `control` `reload_personality` is addressed to the cortex, the cortex shall re-read the personality file for later prompts. <!-- openspec: cortex § Saying and control --> <!-- test: services/cortex/test/cortex.region.test.ts:283 -->
 - [x] **CTX-CTRL-006**: When `control` `say` with text is addressed to the cortex, the cortex shall publish `brain.say` with that text, emotion `neutral` and reason `operator` as the operator override: it shall not check mute, pause or voice busy, and a line that is pending when it is said stays pending (CTX-SAY-005); `say` without text shall do nothing. <!-- openspec: cortex § Saying and control (Operator say) --> <!-- test: services/cortex/test/cortex.dispositions.test.ts -->
+- [x] **CTX-CTRL-007**: Where a `control` `say` carries a `route`, the cortex shall publish its `brain.say` with that `route` unchanged; where it carries none, the `brain.say` shall carry none. <!-- test: services/cortex/test/cortex.dispositions.test.ts -->
 
 ## Test injection
 

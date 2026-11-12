@@ -669,3 +669,175 @@ test("Rebuild asks for confirmation, then posts /stack/rebuild; cancelling sends
   await q.tick(); await q.tick();
   assert.deepEqual(q.calls.filter((c) => c.path === "/stack/rebuild").map((c) => c.method), ["POST"]);
 });
+
+// ---------- settings tab (module-contract MOD-UI-001 to 006)
+
+const SETTINGS_SCHEMA = {
+  sections: [
+    { path: "voice", services: ["voice"], secrets: [], schema: { type: "object", properties: {
+      engine: { type: "string", enum: ["kokoro", "stub"], default: "kokoro" },
+      speed: { type: "number", default: 1 },
+      fallback: { type: "object", properties: { lines: { type: "array", items: { type: "string" }, default: [] } } },
+    } } },
+    { path: "llm", services: ["salience", "cortex"], secrets: ["openai.api_key"], schema: { type: "object", properties: {
+      model: { type: "string" },
+      openai: { type: "object", properties: { api_key: { type: "string", "x-secret": true } } },
+    } } },
+  ],
+};
+const VOICE_SECTION = { section: "voice", etag: "e1", unknown: [], keys: {
+  engine: { source: "env-default", editable: true, value: "kokoro", raw: "kokoro", env: { name: "VOICE_ENGINE", set: false } },
+  speed: { source: "literal", editable: true, value: 1, raw: "1" },
+  "fallback.lines": { source: "literal", editable: true, value: ["a", "b"], raw: "[a, b]" },
+} };
+const LLM_SECTION = { section: "llm", etag: "e1", unknown: [], keys: {
+  model: { source: "env", editable: false, value: "qwen", env: { name: "LLM_MODEL", set: true } },
+  "openai.api_key": { source: "env", editable: false, secret: true, set: true, env: { name: "LLM_API_KEY", set: true } },
+} };
+
+interface SettingsOpts { control?: boolean; put?: (path: string, body: any) => FakeRes; apply?: (path: string) => FakeRes }
+async function bootSettings(o: SettingsOpts = {}) {
+  const p = await boot({
+    control: o.control ?? true, token: "tok",
+    handler: (path, init) => {
+      if (path === "/config/schema") return res(200, SETTINGS_SCHEMA);
+      if (path === "/config/voice" && !init.method) return res(200, VOICE_SECTION);
+      if (path === "/config/llm" && !init.method) return res(200, LLM_SECTION);
+      if (init.method === "PUT" && path.startsWith("/config/")) return (o.put ?? (() => res(200, { ok: true, etag: "e2", restart: [], warnings: [] })))(path, JSON.parse(init.body ?? "{}"));
+      if (/^\/services\/[^/]+\/restart$/.test(path)) return (o.apply ?? (() => res(200, { ok: true })))(path);
+      return res(404, "");
+    },
+  });
+  await p.get("#tabSettings").onclick!();
+  await p.tick();
+  return p;
+}
+type SettingsPage = Awaited<ReturnType<typeof bootSettings>>;
+const pick = async (p: SettingsPage, path: string) => { p.get("#sSection").value = path; await p.get("#sSection").onchange!(); await p.tick(); };
+const change = (p: SettingsPage, key: string, kind: string, v: string | boolean) =>
+  p.get("#sForm").onchange!({ target: { dataset: { key, kind }, value: String(v), checked: v === true } });
+
+// @spec MOD-UI-001
+test("the Settings tab lists the sections, renders the chosen one from its schema with each key's source, and names its readers", async () => {
+  const p = await bootSettings();
+  assert.ok(p.calls.some((c) => c.path === "/config/schema"));
+  const opts = p.get("#sSection").innerHTML;
+  assert.match(opts, /value="voice"/);
+  assert.match(opts, /value="llm"/);
+  await pick(p, "voice");
+  assert.ok(p.calls.some((c) => c.path === "/config/voice"));
+  assert.match(p.get("#sReaders").textContent, /read by: voice/);
+  const form = p.get("#sForm").innerHTML;
+  assert.match(form, /data-key="engine"/);
+  assert.match(form, /<option[^>]*value="stub"/); // an enum renders as a select
+  assert.match(form, /data-key="speed"[^>]*data-kind="number"/);
+  assert.match(form, /data-key="fallback\.lines"/); // nested keys are named relative to the section
+  assert.match(form, /env-default/);
+  assert.match(form, /literal/);
+  await pick(p, "llm");
+  assert.match(p.get("#sReaders").textContent, /read by: salience, cortex/);
+});
+
+// @spec MOD-UI-002
+test("non-editable keys are read-only, showing the variable for env keys and only set or not set for secrets", async () => {
+  const p = await bootSettings();
+  await pick(p, "llm");
+  const form = p.get("#sForm").innerHTML;
+  assert.match(form, /LLM_MODEL/);
+  assert.match(form, /data-key="model"[^>]*disabled/);
+  assert.match(form, /LLM_API_KEY/);
+  assert.match(form, /\bset\b/);
+  assert.doesNotMatch(form, /data-key="openai\.api_key"[^>]*value=/); // no value is ever put in a secret's control
+});
+
+// @spec MOD-UI-003
+test("Validate sends only the changed keys with ?dryRun=1 and shows issues or warnings; Save sends them without it", async () => {
+  const seen: { path: string; body: any }[] = [];
+  const p = await bootSettings({ put: (path, body) => {
+    seen.push({ path, body });
+    return path.includes("dryRun") ? res(400, { ok: false, issues: [{ path: "voice.speed", message: "too fast" }] }) : res(200, { ok: true, etag: "e2", restart: [], warnings: [] });
+  } });
+  await pick(p, "voice");
+  change(p, "speed", "number", "1.3");
+  change(p, "fallback.lines", "list", "x\ny");
+  change(p, "engine", "enum", "kokoro"); // back to the loaded value: not a change
+  await p.get("#sValidate").onclick!();
+  await p.tick();
+  assert.equal(seen[0]!.path, "/config/voice?dryRun=1");
+  assert.deepEqual(seen[0]!.body, { etag: "e1", values: { speed: 1.3, "fallback.lines": ["x", "y"] } });
+  assert.match(p.get("#sMsg").textContent, /voice\.speed/);
+  assert.match(p.get("#sMsg").textContent, /too fast/);
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(seen[1]!.path, "/config/voice");
+  assert.deepEqual(seen[1]!.body, { etag: "e1", values: { speed: 1.3, "fallback.lines": ["x", "y"] } });
+});
+
+// @spec MOD-UI-003
+test("Validate with a passing dry run reports it valid and shows the warnings", async () => {
+  const p = await bootSettings({ put: () => res(200, { ok: true, dryRun: true, warnings: ["voice.engine: VOICE_ENGINE is set"] }) });
+  await pick(p, "voice");
+  change(p, "engine", "enum", "stub");
+  await p.get("#sValidate").onclick!();
+  await p.tick();
+  assert.match(p.get("#sMsg").textContent, /valid/i);
+  assert.match(p.get("#sMsg").textContent, /VOICE_ENGINE is set/);
+});
+
+// @spec MOD-UI-004
+test("a 409 says the file changed and keeps the unsaved edits until the operator reloads the section", async () => {
+  const p = await bootSettings({ put: () => res(409, { ok: false, etag: "e9" }) });
+  await pick(p, "voice");
+  change(p, "speed", "number", "2");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.match(p.get("#sMsg").textContent, /changed since/i);
+  assert.equal(p.run("JSON.stringify(sEdits)"), '{"speed":2}'); // still held
+  assert.notEqual(p.get("#sReload").style.display, "none");
+  const before = p.calls.filter((c) => c.path === "/config/voice" && c.method === "GET").length;
+  await p.get("#sReload").onclick!();
+  await p.tick();
+  assert.equal(p.calls.filter((c) => c.path === "/config/voice" && c.method === "GET").length, before + 1);
+  assert.equal(p.run("JSON.stringify(sEdits)"), "{}");
+});
+
+// @spec MOD-UI-005
+test("after a save with units to restart, Apply restarts each one after another with an empty body and shows every result", async () => {
+  const p = await bootSettings({
+    put: () => res(200, { ok: true, etag: "e2", restart: ["salience", "cortex", "memory"], warnings: [] }),
+    apply: (path) => (path === "/services/cortex/restart" ? res(500, { ok: false, detail: "compose failed" }) : res(200, { ok: true })),
+  });
+  await pick(p, "voice");
+  assert.equal(p.get("#sApply").style.display, "none");
+  change(p, "speed", "number", "1.1");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(p.get("#sApply").textContent, "Apply: restart salience, cortex, memory");
+  assert.notEqual(p.get("#sApply").style.display, "none");
+  await p.get("#sApply").onclick!();
+  await p.tick(); await p.tick();
+  const restarts = p.calls.filter((c) => /\/restart$/.test(c.path));
+  assert.deepEqual(restarts.map((c) => [c.path, c.method, c.body]), [
+    ["/services/salience/restart", "POST", undefined],
+    ["/services/cortex/restart", "POST", undefined],
+    ["/services/memory/restart", "POST", undefined],
+  ]); // the failed middle one did not stop the last
+  const log = p.get("#sApplyLog").innerHTML;
+  assert.match(log, /salience[^<]*ok/i);
+  assert.match(log, /cortex[^<]*(failed|compose failed)/i);
+  assert.match(log, /memory[^<]*ok/i);
+});
+
+// @spec MOD-UI-006
+test("with control disabled there is no Apply; the page names the units and the cohostctl command instead", async () => {
+  const p = await bootSettings({ control: false, put: () => res(200, { ok: true, etag: "e2", restart: ["voice", "mouth"], warnings: [] }) });
+  await pick(p, "voice");
+  change(p, "speed", "number", "1.2");
+  await p.get("#sSave").onclick!();
+  await p.tick();
+  assert.equal(p.get("#sApply").style.display, "none");
+  const msg = p.get("#sMsg").textContent + p.get("#sApplyLog").innerHTML;
+  assert.match(msg, /cohostctl restart voice/);
+  assert.match(msg, /cohostctl restart mouth/);
+  assert.equal(p.calls.filter((c) => /\/restart$/.test(c.path)).length, 0);
+});

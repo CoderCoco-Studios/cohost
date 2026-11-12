@@ -18,9 +18,10 @@
  * rules fail, so `run` calls them unguarded, on the `rules` path and as the fallback.
  */
 import { createChatProvider, type ChatProvider, type Config } from "@cohost/llm";
-import type { Logger } from "@cohost/config";
+import type { Logger, ModuleConfig } from "@cohost/config";
 
-export type ModuleConfig = Config["brain"]["salience"]["module"];
+// The one definition lives in the config package (CFG-SCH-027).
+export type { ModuleConfig } from "@cohost/config";
 
 export interface ModuleImpl<I, O> {
   /** Built-in heuristic. Always present: it's the fallback. Must not throw: `run` calls it unguarded (HOOK-FALLBACK-005). */

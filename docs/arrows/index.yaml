@@ -59,7 +59,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "EARS written 2026-11-11 (module-contract-specs.md): 44 specs, all [ ] (MOD-MAN 9, CFG 16, LIFE 3, PAUSE 3, TEST 7, UI 6). Awaiting owner review; then chunks C2 to C4."
+    next: "C3 built 2026-11-11: MOD-MAN-001 to 005, MOD-CFG-001 to 016, MOD-UI-001 to 006 [x] (settings editor in @cohost/config and the dashboard, manifest declarations). Still [ ]: MOD-MAN-006 to 009 and MOD-LIFE (C2), MOD-PAUSE and MOD-TEST (C4)."
     drift: null
 
 
@@ -72,7 +72,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: New [ ]: CFG-SCH-021 (vision.engine), CFG-SCH-022 (ears.stt_engine), CFG-SCH-023 (mouth.outputs.dryrun); CFG-ISO-004 reopened [ ] for their placeholders. Settings editor support is module-contract MOD-CFG-*. Earlier: Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
+    next: "C3 built 2026-11-11: CFG-SCH-024 to 027, CFG-ENV-010, CFG-LOG-001, CFG-USR-012, CFG-USR-013 [x]; open-question items resolved. Remaining [ ] wait on the owning chunks adding their keys: CFG-SCH-021 to 023 and CFG-ISO-004. 2026-11-11 shared-runtime/module-contract cascade: New [ ]: CFG-SCH-021 (vision.engine), CFG-SCH-022 (ears.stt_engine), CFG-SCH-023 (mouth.outputs.dryrun); CFG-ISO-004 reopened [ ] for their placeholders. Settings editor support is module-contract MOD-CFG-*. Earlier: Listening and speaking split (mouth.md build order, all chunks built): chunk 2 built CFG-SCH-020 (optional mouth section, gain range -40..12), CFG-USR-011, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 and the mouth.fallback half of CFG-SCH-018; chunk 4 dropped ears.fallback and flipped CFG-SCH-018 to [x]. Spoken fallback line: CFG-DIR-006, CFG-DIR-007, CFG-SCH-018 built (chunk 1); CFG-SCH-017, CFG-USR-009 built (chunk 2); CFG-SCH-019, CFG-USR-010 built (chunk 3). Viewer-notes chunks 1, 2 and 4 built (CFG-SCH-014 to 016, CFG-USR-007, CFG-USR-008, CFG-ENV-009). No other open gaps."
     drift: null
 
   event-bus:

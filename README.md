@@ -140,6 +140,14 @@ The three `config/` files are yours and git-ignored. The committed
 `*.example.*` versions seed them: `install.sh` copies them, and any service
 that finds one missing copies it on first run.
 
+The dashboard's **Settings** tab edits `config.yaml` from the same schema the
+services load with: pick a section, change values, Validate, Save. It keeps
+your comments, `${VAR:-default}` placeholders and unknown keys, never shows or
+writes secrets (those stay in `.env`), and refuses a stale save if the file
+changed under it. Settings take effect when the services that read them
+restart; after a save the page offers to restart them (or names the
+`cohostctl restart <unit>` commands when stack control is off).
+
 Upgrading the GPU later is `LLM_MODEL=qwen2.5:14b-instruct-q4_K_M` in `.env` and
 `docker compose up -d models`. Nothing else changes.
 

@@ -4,7 +4,7 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
-**MAPPED**, 2026-11-11: LLD drafted ([module-contract-design.md](../intent/module-contract/module-contract-design.md)); EARS specs written, all `[ ]`. Parts exist today in other segments: the manifest, controller and per-service lifecycle (control-plane), service-level injection for chat, eyes and ears and the personality editor (dashboard). Missing: the manifest's `config`, `uses`, `pause` and `test` fields, the settings editor routes and page, the derived dependents-degraded state, pause/resume buttons, bus-level per-unit test inputs, and the derived service lists (the page's `UNITS` constant and `KNOWN_SERVICES` are still hand-kept).
+**PARTIAL**, 2026-11-11: C3 built the settings editor (MOD-CFG-001 to 016, MOD-UI-001 to 006) and the manifest declarations (MOD-MAN-001 to 005); MOD-MAN-006 to 009, MOD-LIFE, MOD-PAUSE and MOD-TEST are still `[ ]`. Original mapping: LLD drafted ([module-contract-design.md](../intent/module-contract/module-contract-design.md)); EARS specs written, all `[ ]`. Parts exist today in other segments: the manifest, controller and per-service lifecycle (control-plane), service-level injection for chat, eyes and ears and the personality editor (dashboard). Missing: the manifest's `config`, `uses`, `pause` and `test` fields, the settings editor routes and page, the derived dependents-degraded state, pause/resume buttons, bus-level per-unit test inputs, and the derived service lists (the page's `UNITS` constant and `KNOWN_SERVICES` are still hand-kept).
 
 ## Work required
 

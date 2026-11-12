@@ -1,10 +1,14 @@
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, renameSync, unlinkSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { dirname, join, resolve, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
-import { ConfigSchema, ExpressionMapSchema, type Config, type ExpressionMap } from "./schema.js";
+import { ExpressionMapSchema, type Config, type ExpressionMap } from "./schema.js";
+import { parseConfigText, unknownKeys, type ConfigIssue } from "./pipeline.js";
 
 export * from "./schema.js";
+export { substituteEnv, unknownKeys, parseConfigText, type ConfigIssue, type ParsedConfigText } from "./pipeline.js";
+export * from "./editor.js";
 
 /**
  * Walk up from `start` to the nearest dir containing pnpm-workspace.yaml.
@@ -32,36 +36,6 @@ export const configDir = (): string =>
 export const dataDir = (): string =>
   resolve(process.env.COHOST_DATA_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "data"));
 
-/**
- * Replace ${VAR} with process.env.VAR (empty string when unset), and
- * ${VAR:-default} with the default when VAR is unset or empty. The default
- * form lets config.yaml hold the normal value literally while still allowing
- * a per-machine override from .env.
- */
-// @spec CFG-ENV-001, CFG-ENV-002, CFG-ENV-003
-export function substituteEnv(text: string): string {
-  return text.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, k: string, def: string | undefined) => {
-    const v = process.env[k];
-    if (v !== undefined && v !== "") return v;
-    return def ?? "";
-  });
-}
-
-// @spec CFG-LOAD-002
-function coerceEmptyNumbers(raw: unknown): unknown {
-  // YAML like `port: ${OBS_PORT}` becomes `port: ` (null) when the var is unset. Leave it to defaults.
-  if (Array.isArray(raw)) return raw.map(coerceEmptyNumbers);
-  if (raw && typeof raw === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(raw)) {
-      if (v === null) continue;
-      out[k] = coerceEmptyNumbers(v);
-    }
-    return out;
-  }
-  return raw;
-}
-
 let cached: Config | undefined;
 
 /**
@@ -69,10 +43,22 @@ let cached: Config | undefined;
  * not inside compose (which injects env itself), load it without overriding
  * anything already set. Handles `KEY=value`, `KEY="quoted value"`, comments.
  */
-const dotEnvPath = (): string => join(configDir(), "..", ".env");
+// @spec CFG-ENV-010
+export const dotEnvPath = (): string =>
+  process.env.COHOST_ENV_FILE || join(findWorkspaceRoot() ?? dirname(configDir()), ".env");
 
-/** True when a dev run has no .env (compose injects env itself, so containers are exempt). */
-const missingDotEnv = (): boolean => !existsSync(dotEnvPath()) && !existsSync("/.dockerenv");
+/** True when a dev run has no .env (compose injects env itself, so containers, per `inContainer`, are exempt). */
+// @spec CFG-ENV-010, CFG-LOAD-004
+export const missingDotEnv = (inContainer: () => boolean = () => existsSync("/.dockerenv")): boolean =>
+  !existsSync(dotEnvPath()) && !inContainer();
+
+let diagnostics: Pick<Logger, "warn"> | undefined;
+/** Replace (or, with `undefined`, restore) the logger the loader reports its notices and warnings through. */
+// @spec CFG-LOG-001
+export function setConfigLogger(l: Pick<Logger, "warn"> | undefined): void { diagnostics = l; }
+const diag = (): Pick<Logger, "warn"> => (diagnostics ??= createLogger("config"));
+
+const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
 
 // @spec CFG-ENV-004, CFG-ENV-005, CFG-ENV-006
 export function loadDotEnv(file = dotEnvPath()): void {
@@ -94,40 +80,21 @@ export function loadDotEnv(file = dotEnvPath()): void {
   }
 }
 
-/** Keys present in the yaml that the schema doesn't know (typos, retired settings), including inside array entries as `path[index].key`. */
-export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] {
-  const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
-  if (Array.isArray(raw) && Array.isArray(parsed)) return raw.flatMap((v, i) => unknownKeys(v, parsed[i], `${path}[${i}]`));
-  if (!isObj(raw) || !isObj(parsed)) return [];
-  const out: string[] = [];
-  for (const [k, v] of Object.entries(raw)) {
-    const here = path ? `${path}.${k}` : k;
-    if (!(k in parsed)) out.push(here);
-    else out.push(...unknownKeys(v, parsed[k], here));
-  }
-  return out;
-}
-
 // @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-004, CFG-LOAD-005, CFG-LOAD-006
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
   const file = ensureFromExample("config.yaml", "config.example.yaml");
-  const raw = parseYaml(substituteEnv(readFileSync(file, "utf8")));
-  const parsed = ConfigSchema.safeParse(coerceEmptyNumbers(raw));
-  if (!parsed.success) {
+  const parsed = parseConfigText(readFileSync(file, "utf8"));
+  if (!parsed.ok) {
     throw new Error(
-      `Invalid ${file}:\n${parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n")}` +
+      `Invalid ${file}:\n${formatIssues(parsed.issues)}` +
       (missingDotEnv() ? `\n\nNo .env found at ${dotEnvPath()} — ${"${VAR}"} values in config.yaml came out empty. Run: cp .env.example .env` : ""),
     );
   }
-  const stray = unknownKeys(coerceEmptyNumbers(raw), parsed.data);
-  if (stray.length > 0) {
-    console.warn(
-      `[config] ${file}: ignoring unknown keys: ${stray.join(", ")}`,
-    );
-  }
-  cached = parsed.data;
+  const stray = unknownKeys(parsed.raw, parsed.config);
+  if (stray.length > 0) diag().warn(`[config] ${file}: ignoring unknown keys: ${stray.join(", ")}`);
+  cached = parsed.config;
   return cached;
 }
 
@@ -143,14 +110,34 @@ export function ensureFromExample(name: string, example: string): string {
   const src = join(configDir(), example);
   if (!existsSync(src)) throw new Error(`No ${file} and no ${src} to seed it from`);
   copyFileSync(src, file);
-  console.warn(`[config] created ${file} from ${example} — edit it, it's git-ignored`);
+  diag().warn(`[config] created ${file} from ${example} — edit it, it's git-ignored`);
   return file;
 }
 
 // @spec CFG-USR-002
 export function loadExpressions(): ExpressionMap {
   const file = ensureFromExample("expressions.yaml", "expressions.example.yaml");
-  return ExpressionMapSchema.parse(parseYaml(readFileSync(file, "utf8")) ?? {});
+  const parsed = ExpressionMapSchema.safeParse(parseYaml(readFileSync(file, "utf8")) ?? {});
+  if (!parsed.success) {
+    throw new Error(`Invalid ${file}:\n${formatIssues(parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })))}`);
+  }
+  return parsed.data;
+}
+
+/**
+ * Replace `file` with `text` through a temporary file in the same directory and a rename, so a failed write leaves the
+ * previous file whole. Shared by `savePersonality` and the settings editor's section writer.
+ */
+// @spec CFG-USR-013, MOD-CFG-014
+export function writeFileAtomic(file: string, text: string): void {
+  const tmp = join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+  try {
+    writeFileSync(tmp, text, "utf8");
+    renameSync(tmp, file);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* the temp file was never created */ }
+    throw e;
+  }
 }
 
 // @spec CFG-USR-001
@@ -160,8 +147,9 @@ export function personalityPath(): string {
 export function loadPersonality(): string {
   return readFileSync(personalityPath(), "utf8");
 }
+// @spec CFG-USR-013
 export function savePersonality(text: string): void {
-  writeFileSync(personalityPath(), text, "utf8");
+  writeFileAtomic(personalityPath(), text);
 }
 
 /** Required env var, throws a readable error if missing. */

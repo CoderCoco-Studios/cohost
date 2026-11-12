@@ -1,10 +1,18 @@
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger } from "../src/index.js";
+
+/** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
+const initialEnv = { ...process.env };
+function restoreEnv(to: NodeJS.ProcessEnv = initialEnv): void {
+  for (const k of Object.keys(process.env)) if (!(k in to)) delete process.env[k];
+  Object.assign(process.env, to);
+}
+afterEach(() => { restoreEnv(); setConfigLogger(undefined); });
 
 // @spec CFG-ENV-001, CFG-ENV-002
 test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
@@ -65,13 +73,13 @@ function sandbox(files: Record<string, string> = {}): string {
   mkdirSync(dir);
   for (const [name, text] of Object.entries(files)) writeFileSync(join(name === ".env" ? root : dir, name), text);
   process.env.CONFIG_DIR = dir;
+  process.env.COHOST_ENV_FILE = join(root, ".env");
   return dir;
 }
 function captureWarnings(fn: () => void): string[] {
   const out: string[] = [];
-  const orig = console.warn;
-  console.warn = (...a: unknown[]) => { out.push(a.join(" ")); };
-  try { fn(); } finally { console.warn = orig; }
+  setConfigLogger({ warn: ((...a: unknown[]) => { out.push(a.map(String).join(" ")); }) as never });
+  try { fn(); } finally { setConfigLogger(undefined); }
   return out;
 }
 const minimalYaml = `
@@ -99,7 +107,7 @@ test("the shipped config.example.yaml + .env.example load cleanly, with no unkno
     assert.equal(cfg.cohost.name, "Coco");
     assert.ok(cfg.llm.model.length > 0, "LLM_MODEL from .env.example filled in llm.model");
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 });
 
@@ -268,7 +276,7 @@ function loadShipped(env: Record<string, string> = {}) {
     captureWarnings(() => { cfg = loadConfig(true); });
     return cfg;
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 }
 
@@ -328,7 +336,7 @@ function loadShippedBare(env: Record<string, string> = {}) {
     const warnings = captureWarnings(() => { cfg = loadConfig(true); });
     return { cfg, warnings };
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 }
 
@@ -663,7 +671,7 @@ test("the shipped example has no unknown mouth keys: loading it warns about none
     const warnings = captureWarnings(() => { loadConfig(true); });
     assert.deepEqual(warnings.filter((w) => w.includes("mouth")), []);
   } finally {
-    process.env = saved;
+    restoreEnv(saved);
   }
 });
 

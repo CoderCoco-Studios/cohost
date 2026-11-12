@@ -61,6 +61,12 @@
   .bar i { display:block; height:100%; background:var(--acc) }
   a.lnk { color:var(--acc); cursor:pointer; font-size:12px } a.lnk:hover { text-decoration:underline }
   .sink #viewers { display:none }
+  #settings { padding:12px; display:none } #settings.show { display:block } .sink #settings { display:none }
+  .srow { display:grid; grid-template-columns:240px minmax(0,1fr) minmax(0,1fr); gap:8px; padding:5px 0; border-bottom:1px solid #1d2129; align-items:start }
+  .srow label { color:var(--fg); word-break:break-all } .srow select { width:100%; background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px }
+  .srow textarea { min-height:70px } .srow input[type=checkbox] { width:auto }
+  @media (max-width:800px){ .srow{grid-template-columns:1fr} }
+  #sMsg { white-space:pre-wrap; margin-top:8px }
   .inj-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px }
   .pill.stack-up{color:var(--ok)} .pill.stack-starting,.pill.stack-stopping,.pill.stack-degraded{color:var(--warn)} .pill.stack-down,.pill.stack-docker-unavailable{color:var(--bad)}
   .sink #stackBadge { display:none }
@@ -76,6 +82,7 @@
   <button id="tabLive" class="tab on">live</button>
   <button id="tabServices" class="tab">services</button>
   <button id="tabViewers" class="tab">viewers</button>
+  <button id="tabSettings" class="tab">settings</button>
   <span style="flex:1"></span>
   <button id="audio">🔇 enable audio</button>
   <button id="mute">mute</button><span id="muteMsg" class="hint"></span>
@@ -170,6 +177,25 @@
       <div id="vRows"></div>
     </div>
     <div class="panel"><div id="vDetail"><span class="hint">select a viewer to see what the co-host remembers about them</span></div></div>
+  </div>
+</section>
+<!-- @spec MOD-UI-001 -->
+<section id="settings">
+  <div class="panel">
+    <h2>settings <span id="sReaders" class="hint"></span></h2>
+    <div class="row" style="margin-bottom:8px">
+      <label>section <select id="sSection"></select></label>
+      <span class="hint">Settings take effect when the services that read them restart.</span>
+    </div>
+    <div id="sUnknown" class="hint"></div>
+    <div id="sForm"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="sValidate">Validate</button><button id="sSave">Save</button>
+      <button id="sReload" style="display:none">Reload section</button>
+      <button id="sApply" style="display:none"></button>
+    </div>
+    <div id="sMsg" class="hint"></div>
+    <div id="sApplyLog" class="hint"></div>
   </div>
 </section>
 <script>
@@ -287,13 +313,16 @@ function showTab(name) {
   $("#live").classList.toggle("hide", name !== "live");
   $("#services").classList.toggle("show", name === "services");
   $("#viewers").classList.toggle("show", name === "viewers");
+  $("#settings").classList.toggle("show", name === "settings");
   $("#tabLive").classList.toggle("on", name === "live");
   $("#tabServices").classList.toggle("on", name === "services");
   $("#tabViewers").classList.toggle("on", name === "viewers");
+  $("#tabSettings").classList.toggle("on", name === "settings");
 }
 $("#tabLive").onclick = () => showTab("live");
 $("#tabServices").onclick = () => showTab("services");
 $("#tabViewers").onclick = () => { showTab("viewers"); return loadViewers(); }; // @spec DASH-VIEWERS-010
+$("#tabSettings").onclick = () => { showTab("settings"); return loadSettings(); }; // @spec MOD-UI-001
 
 let svc = [], svcAt = 0;
 // @spec DASH-UI-007
@@ -397,6 +426,125 @@ $("#stStop").onclick = () => stackAct("stop");
 $("#stRestart").onclick = () => stackAct("restart");
 $("#stConsolidate").onclick = () => stackAct("consolidate");
 function onStack(s) { stack = s; renderStack(); }
+
+// ---------- settings tab (module-contract MOD-UI-001 to 006)
+// One generic editor: the form is built from GET /config/schema (JSON Schema) and the section's keys, and nothing
+// here names a section or a service. A section that needs a bespoke form registers a renderer in `settingsForms`
+// (keyed by its path); none do yet. Settings take effect when the services that read them restart.
+const settingsForms = Object.create(null);
+let sSections = [], sCur = null, sData = null, sEdits = {}, sRestart = [];
+const sSay = (t) => { $("#sMsg").textContent = t; };
+const sSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sWarn = (j) => (j.warnings || []).map((w) => "\nwarning: " + w).join("");
+// The keys of a section: every leaf of its schema, named by its dotted path relative to the section (a leaf section is named for itself).
+const sKeysOf = (schema, rel = []) => schema && schema.type === "object" && schema.properties
+  ? Object.entries(schema.properties).flatMap(([k, v]) => sKeysOf(v, [...rel, k]))
+  : [{ key: rel.length ? rel.join(".") : sCur.path.split(".").pop(), schema: schema || {} }];
+function sSourceText(info) {
+  const e = info.env ? `${esc(info.env.name)} ${info.env.set ? "set" : "not set"}` : "";
+  if (info.secret) return `secret${e ? " · " + e : ""} · ${info.set ? "set" : "not set"}`;
+  if (info.source === "env") return `env · ${e}`;
+  if (info.source === "env-default") return `env-default · ${e} · default ${esc(info.raw)}`;
+  if (info.source === "composite") return `composite · ${esc(info.raw)}`;
+  return esc(info.source);
+}
+// @spec MOD-UI-002
+function sControl(key, schema, info) {
+  if (info.secret) return `<span class="hint">${info.set ? "set" : "not set"}</span>`;
+  const k = esc(key), dis = info.editable ? "" : " disabled", v = info.value;
+  if (schema.type === "boolean") return `<input type="checkbox" data-key="${k}" data-kind="bool"${v ? " checked" : ""}${dis}>`;
+  if (schema.enum) return `<select data-key="${k}" data-kind="enum"${dis}>${schema.enum.map((o) => `<option value="${esc(o)}"${o === v ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  if (schema.type === "integer" || schema.type === "number") return `<input type="number" step="${schema.type === "integer" ? "1" : "any"}" data-key="${k}" data-kind="number" value="${v === undefined ? "" : esc(v)}"${dis}>`;
+  if (schema.type === "string") return `<input data-key="${k}" data-kind="text" value="${v === undefined ? "" : esc(v)}"${dis}>`;
+  if (schema.type === "array" && schema.items && schema.items.type === "string") return `<textarea data-key="${k}" data-kind="list"${dis}>${esc((v || []).join("\n"))}</textarea>`;
+  return `<textarea data-key="${k}" data-kind="json"${dis}>${esc(JSON.stringify(v === undefined ? null : v, null, 2))}</textarea>`;
+}
+function renderSettingsForm() {
+  const form = $("#sForm");
+  if (settingsForms[sCur.path]) { settingsForms[sCur.path]({ el: form, section: sCur, data: sData, edits: sEdits }); return; }
+  form.innerHTML = sKeysOf(sCur.schema).filter((l) => sData.keys[l.key]).map(({ key, schema }) => {
+    const info = sData.keys[key];
+    return `<div class="srow"><label>${esc(key)}</label><div>${sControl(key, schema, info)}</div><div class="hint">${sSourceText(info)}</div></div>`;
+  }).join("") || '<div class="hint">this section has no keys</div>';
+}
+async function loadSettings() {
+  if (!sSections.length) {
+    try { sSections = (await (await fetch("/config/schema")).json()).sections || []; } catch (e) { sSay("Settings unavailable: " + (e && e.message || e)); return; }
+    $("#sSection").innerHTML = sSections.map((s) => `<option value="${esc(s.path)}">${esc(s.path)}</option>`).join("");
+  }
+  if (!sCur && sSections.length) { $("#sSection").value = sSections[0].path; await loadSection(sSections[0].path); }
+}
+async function loadSection(path) {
+  const sec = sSections.find((s) => s.path === path);
+  if (!sec) return;
+  let data;
+  try { const r = await fetch("/config/" + encodeURIComponent(path)); if (!r.ok) throw new Error("HTTP " + r.status); data = await r.json(); } catch (e) { sSay(`Could not load ${path}: ${e.message}`); return; }
+  sCur = sec; sData = data; sEdits = {};
+  $("#sReload").style.display = "none";
+  $("#sReaders").textContent = sec.services.length ? "read by: " + sec.services.join(", ") : "read by: the dashboard itself (applies at its next start)";
+  $("#sUnknown").textContent = data.unknown && data.unknown.length ? "keys in the file the schema does not define: " + data.unknown.join(", ") : "";
+  renderSettingsForm();
+  renderApply();
+}
+$("#sSection").onchange = () => loadSection($("#sSection").value);
+// An edit is kept only while it differs from the loaded value.
+$("#sForm").onchange = $("#sForm").oninput = (e) => {
+  const t = e.target, key = t && t.dataset && t.dataset.key;
+  const info = key && sData && sData.keys[key];
+  if (!info || !info.editable) return;
+  let v;
+  switch (t.dataset.kind) {
+    case "bool": v = !!t.checked; break;
+    case "number": v = t.value === "" ? undefined : Number(t.value); if (v !== undefined && Number.isNaN(v)) { sSay(`${key}: not a number`); return; } break;
+    case "list": v = t.value.split("\n").map((x) => x.trim()).filter(Boolean); break;
+    case "json": try { v = JSON.parse(t.value || "null"); } catch { sSay(`${key}: not valid JSON`); return; } break;
+    default: v = t.value;
+  }
+  if (v === undefined || sSame(v, info.value)) delete sEdits[key]; else sEdits[key] = v;
+};
+// @spec MOD-UI-003, MOD-UI-004
+async function sSend(dry) {
+  if (!sCur) return;
+  let r, text;
+  try {
+    r = await authFetch(`/config/${encodeURIComponent(sCur.path)}${dry ? "?dryRun=1" : ""}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ etag: sData.etag, values: sEdits }) });
+    text = await r.text();
+  } catch (e) { sSay("Request failed: " + (e && e.message || e)); return; }
+  let j; try { j = JSON.parse(text); } catch { j = { detail: text }; }
+  if (r.status === 409) { sSay("config.yaml changed since this section was loaded (a hand edit or another tab). Reload the section to continue; your unsaved edits are kept until you do."); $("#sReload").style.display = ""; return; }
+  if (r.status === 400 && j.issues) { sSay((dry ? "Not valid:\n" : "Not saved:\n") + j.issues.map((i) => `${i.path || "(file)"}: ${i.message}`).join("\n")); return; }
+  if (!r.ok) { sSay(`${dry ? "Validate" : "Save"} failed (HTTP ${r.status})${j.detail ? ": " + j.detail : ""}`); return; }
+  if (dry) { sSay("Valid." + sWarn(j)); return; }
+  for (const u of j.restart || []) if (!sRestart.includes(u)) sRestart.push(u);
+  const msg = "Saved." + sWarn(j);
+  await loadSection(sCur.path);
+  sSay(msg);
+}
+$("#sValidate").onclick = () => sSend(true);
+$("#sSave").onclick = () => sSend(false);
+$("#sReload").onclick = () => loadSection(sCur.path);
+// @spec MOD-UI-005, MOD-UI-006
+function renderApply() {
+  const btn = $("#sApply"), log = $("#sApplyLog");
+  if (!sRestart.length) { btn.style.display = "none"; return; }
+  if (ctlEnabled) { btn.textContent = "Apply: restart " + sRestart.join(", "); btn.style.display = ""; return; }
+  btn.style.display = "none";
+  log.innerHTML = '<div>Restart to apply: ' + sRestart.map((u) => `<code>cohostctl restart ${esc(u)}</code>`).join(", ") + "</div>";
+}
+$("#sApply").onclick = async () => {
+  const units = sRestart; sRestart = []; renderApply();
+  const lines = [];
+  for (const id of units) {
+    let line;
+    try {
+      const r = await authFetch(`/services/${encodeURIComponent(id)}/restart`, { method: "POST" });
+      const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch {}
+      line = r.ok && j.ok !== false ? `${id}: ok` : `${id}: failed${j.detail ? " (" + j.detail + ")" : ` (HTTP ${r.status})`}`;
+    } catch (e) { line = `${id}: failed (${e && e.message || e})`; }
+    lines.push(line);
+    $("#sApplyLog").innerHTML = lines.map((l) => `<div>${esc(l)}</div>`).join("");
+  }
+};
 
 // ---------- viewers page ("panel A")
 // Notes arrive only through the token-protected /viewers routes, never over /ws.

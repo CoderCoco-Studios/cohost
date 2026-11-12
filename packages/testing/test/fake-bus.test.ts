@@ -40,3 +40,14 @@ test("recentHealth returns the last count heartbeats carrying the ids publishHea
   assert.deepEqual(got.map((h) => h.id), ids.slice(1));
   assert.ok(got.every((h) => h.type === "service.heartbeat"));
 });
+
+// @spec BUS-TEST-012
+test("FakeBus keeps uploads in memory: putUpload then takeUpload returns the bytes once; failUpload makes putUpload reject", async () => {
+  const bus = new FakeBus();
+  await bus.putUpload("a", Buffer.from("xyz"), 1000);
+  assert.deepEqual(bus.uploads.get("a")?.ttlMs, 1000);
+  assert.deepEqual(await bus.takeUpload("a"), Buffer.from("xyz"));
+  assert.equal(await bus.takeUpload("a"), null);
+  bus.failUpload = true;
+  await assert.rejects(bus.putUpload("b", Buffer.from("x"), 1), /putUpload failed/);
+});

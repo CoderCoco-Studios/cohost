@@ -35,7 +35,7 @@ export interface SubscribeOptions<T extends EventType> {
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
 /** The slice of an ioredis connection that `Bus` uses; `BusOptions.connect` may return a fake. */
-export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "disconnect">;
+export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "set" | "getdelBuffer" | "disconnect">;
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
@@ -82,6 +82,8 @@ export class Bus {
   /** The domain-event stream and the heartbeat stream of this instance (BUS-STREAM-008). */
   private readonly stream: string;
   private readonly healthStream: string;
+  /** Prefix of the upload keys, `<prefix>:upload:<id>` (BUS-UPL-001). */
+  private readonly uploadPrefix: string;
 
   constructor(private source: string, private log?: Logger, private url = urls.redis(), options: BusOptions = {}) {
     this.connect = options.connect ?? ((u, o) => new Redis(u, o));
@@ -90,6 +92,7 @@ export class Bus {
     const prefix = options.streamPrefix ?? DEFAULT_PREFIX;
     this.stream = `${prefix}:events`;
     this.healthStream = `${prefix}:health`;
+    this.uploadPrefix = `${prefix}:upload:`;
     this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3, ...(options.failFast ? { retryStrategy: () => null } : {}) });
     // @spec BUS-STREAM-009
     if (options.failFast) (this.pub as { on?: (ev: string, fn: () => void) => unknown }).on?.("error", () => {});
@@ -114,6 +117,18 @@ export class Bus {
     }
     this.log?.debug({ type, id }, "published");
     return id as string;
+  }
+
+  /** Store an injected test upload under `<prefix>:upload:<id>`, expiring after `ttlMs`. Not a stream entry. */
+  // @spec BUS-UPL-001, BUS-UPL-003
+  async putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void> {
+    await this.pub.set(this.uploadPrefix + id, bytes, "PX", ttlMs);
+  }
+
+  /** Read and delete an upload in one step; `null` when it does not exist or has expired. */
+  // @spec BUS-UPL-002
+  async takeUpload(id: string): Promise<Buffer | null> {
+    return await this.pub.getdelBuffer(this.uploadPrefix + id);
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */

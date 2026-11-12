@@ -1,27 +1,26 @@
 import type http from "node:http";
-import type { BusEvent, Publisher } from "@cohost/bus";
+import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import { ensureFromExample, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
-import { handleInject, uploadBase } from "./inject.js";
+import { handleInject } from "./inject.js";
 import { handleMouthRouting } from "./routing.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
-import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
+import { uploadOptionsFromEnv, type UploadLimits } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
 
 export interface DashboardDeps {
-  bus: Publisher;
+  /** `putUpload` stores injected uploads in Redis. */
+  bus: Publisher & Pick<Bus, "putUpload">;
   log: Logger;
   /** public/index.html, with __COHOST_NAME__ still in it. */
   html: string;
   cohostName: string;
   /** The voice service, which holds the audio. */
   voiceUrl: string;
-  /** Injected test uploads (served at /uploads/:id). Defaults to a store configured from INJECT_* env. */
-  uploads?: UploadStore;
-  /** Base URL eyes/ears fetch uploads from. Defaults to `urls.dashboard()`. */
-  dashboardUrl?: string;
+  /** Upload size caps and TTL. Defaults to the INJECT_* env. */
+  uploads?: UploadLimits;
   /** Request/reply client for the Viewers page; the feed hands it memory's replies. Defaults to a private client that never hears one. */
   viewers?: ViewersClient;
   /** `VIEWERS_TOKEN` (env only). Unset or empty locks every `/viewers` route with a 403; independent of `control`. */
@@ -52,12 +51,11 @@ const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
-  const uploads = d.uploads ?? new UploadStore(uploadOptionsFromEnv(process.env));
+  const uploads = d.uploads ?? uploadOptionsFromEnv(process.env);
   const inject = {
     bus: d.bus,
     uploads,
     stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
-    dashboardUrl: d.dashboardUrl ?? uploadBase(process.env),
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
       return true;

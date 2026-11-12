@@ -10,7 +10,6 @@ import { EventPayloads } from "@cohost/bus";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { SERVICE_MANIFEST, type HealthState, type ServiceController, type ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
-import { UploadStore } from "../src/uploads.js";
 import { StackService } from "../src/stack.js";
 
 // The module contract's per-unit obligations, one table row per unit of SERVICE_MANIFEST (MOD-MAN-010): a unit added
@@ -53,8 +52,8 @@ async function boot(states: Record<string, HealthState> = {}) {
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
     configFile: () => file, configEnv: {},
     control: { token: "tok", runtime: "compose", advanced: false, controller },
-    dashboardUrl: "http://dashboard:3000",
-    uploads: new UploadStore({ maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 600_000, maxEntries: 16, maxTotalBytes: 10_000 }),
+   
+    uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

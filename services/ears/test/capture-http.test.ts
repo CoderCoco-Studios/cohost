@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { request } from "node:http";
 import { FakeBus, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { INJECT_QUEUE_LIMIT, wavWrap } from "@cohost/shared";
-import { INJECT_FETCH_TIMEOUT_MS, INJECT_MAX_BYTES } from "../src/inject.js";
+import { INJECT_READ_TIMEOUT_MS, INJECT_MAX_BYTES } from "../src/inject.js";
 import { createHttpCapture, type HttpCapture } from "../src/capture-http.js";
 import type { HearClip, HearOutcome } from "../src/capture.js";
 import { Hearing, stubTranscriber } from "../src/hearing.js";
@@ -92,7 +92,7 @@ test("the byte cap is the shared inject cap; an oversize body is refused 413 by 
 
 // @spec EARS-CAP-006
 test("a body that does not arrive within the body timeout is cut off with 408", async () => {
-  assert.equal(INJECT_FETCH_TIMEOUT_MS, 30_000);
+  assert.equal(INJECT_READ_TIMEOUT_MS, 30_000);
   const r = await rig({ bodyTimeoutMs: 80 });
   try {
     const status = await new Promise<number>((resolve, reject) => {

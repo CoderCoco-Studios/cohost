@@ -1,4 +1,4 @@
-import type { Publisher } from "@cohost/bus";
+import type { Bus, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { createInjectHandler as createSharedInjectHandler, type InjectHandler } from "@cohost/shared";
 import { isSame } from "./eyes.js";
@@ -8,15 +8,13 @@ export const UPLOAD_TIMEOUT_MS = 10_000;
 export const UPLOAD_MAX_BYTES = 8_388_608;
 
 export interface InjectDeps {
-  bus: Publisher;
+  /** `takeUpload` reads the injected image from Redis. */
+  bus: Publisher & Pick<Bus, "takeUpload">;
   log: Logger;
-  /** `urls.dashboard()`: the only origin uploads may be fetched from. */
-  dashboardUrl: string;
   /** Same describer `Eyes.look()` uses. */
   describe: (b64: string, previous: string) => Promise<string>;
-  fetch?: typeof fetch;
   now?: () => number;
-  /** Abort the upload fetch (headers and body) after this long, ms (`vision.upload_timeout_ms`). */
+  /** Give up reading the upload from Redis after this long, ms (`vision.upload_timeout_ms`). */
   uploadTimeoutMs?: number;
   /** Refuse an upload larger than this many bytes (`vision.upload_max_bytes`). */
   uploadMaxBytes?: number;
@@ -31,8 +29,9 @@ export interface InjectDeps {
  */
 export function createInjectHandler(d: InjectDeps): InjectHandler {
   return createSharedInjectHandler({
-    target: "eyes", bus: d.bus, log: d.log, dashboardUrl: d.dashboardUrl, fetch: d.fetch, now: d.now,
-    fetchTimeoutMs: d.uploadTimeoutMs ?? UPLOAD_TIMEOUT_MS,
+    target: "eyes", bus: d.bus, log: d.log, now: d.now,
+    takeUpload: (id) => d.bus.takeUpload(id),
+    readTimeoutMs: d.uploadTimeoutMs ?? UPLOAD_TIMEOUT_MS,
     maxBytes: { image: d.uploadMaxBytes ?? UPLOAD_MAX_BYTES },
     kinds: {
       image: async (bytes, r) => {

@@ -18,7 +18,7 @@ export interface InjectDeps {
 export function createInjectHandler(d: InjectDeps): InjectHandler {
   const name = d.cohostName.toLowerCase();
   return createSharedInjectHandler({
-    target: "chat", bus: d.bus, log: d.log, dashboardUrl: "", now: d.now, maxBytes: {},
+    target: "chat", bus: d.bus, log: d.log, now: d.now, maxBytes: {},
     kinds: {
       text: async (r) => {
         const text = (r.text ?? "").replace(/\s+/g, " ").trim();

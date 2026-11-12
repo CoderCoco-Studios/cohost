@@ -6,29 +6,29 @@ import { createInjectHandler } from "../src/inject.js";
 
 const run = async (h: { (ev: never): void; drain(): Promise<void> }, ev: unknown): Promise<void> => { h(ev as never); await h.drain(); };
 
-const DASH = "http://dashboard:3000";
-const UP = `${DASH}/uploads/abc123`;
+const UP = "0123456789abcdef0123456789abcdef";
 
-function setup(reply: string | Error = "a menu screen", over: { fetch?: typeof fetch; now?: () => number; uploadTimeoutMs?: number; uploadMaxBytes?: number } = {}) {
+function setup(reply: string | Error = "a menu screen", over: { bytes?: Buffer | null; take?: (id: string) => Promise<Buffer | null>; now?: () => number; uploadTimeoutMs?: number; uploadMaxBytes?: number } = {}) {
   const bus = new FakeBus();
-  const fetched: string[] = [];
+  const taken: string[] = [];
+  const bytes = over.bytes === undefined ? Buffer.from("IMG") : over.bytes;
+  bus.takeUpload = over.take ?? (async (id) => { taken.push(id); return bytes; });
   const described: [string, string][] = [];
   const handle = createInjectHandler({
-    bus, log: silentLog, dashboardUrl: DASH,
-    fetch: over.fetch ?? (async (u) => { fetched.push(String(u)); return new Response(Buffer.from("IMG")); }),
+    bus, log: silentLog,
     describe: async (b64, prev) => { described.push([b64, prev]); if (reply instanceof Error) throw reply; return reply; },
     now: over.now, uploadTimeoutMs: over.uploadTimeoutMs, uploadMaxBytes: over.uploadMaxBytes,
   });
-  return { bus, handle, fetched, described };
+  return { bus, handle, taken, described };
 }
 const req = (over: Record<string, unknown> = {}) =>
-  event("inject.request", { id: "i1", target: "eyes", kind: "image", url: UP, remember: false, ...over });
+  event("inject.request", { id: "i1", target: "eyes", kind: "image", uploadId: UP, contentType: "image/png", remember: false, ...over });
 
 // @spec EYES-INJ-007
 test("image described: base64 bytes, empty previous, injected vision.summary then ok result", async () => {
   const t = setup();
   await run(t.handle, req());
-  assert.deepEqual(t.fetched, [UP]);
+  assert.deepEqual(t.taken, [UP]);
   assert.deepEqual(t.described, [[Buffer.from("IMG").toString("base64"), ""]]);
   assert.deepEqual(t.bus.of("vision.summary"), [{ text: "a menu screen", changed: true, injected: true, remember: false }]);
   assert.deepEqual(t.bus.of("inject.result"), [{ id: "i1", ok: true, detail: "a menu screen" }]);
@@ -68,7 +68,7 @@ test("eyes takes injection through the shared handler: target eyes, the single k
   assert.equal(t.bus.of("inject.result").length, 1, "another target's request is ignored");
   await run(t.handle, req({ id: "i3" }));
   assert.match(t.bus.of("inject.result")[1]!.detail ?? "", /2 byte limit/);
-  const slow = setup("x", { uploadTimeoutMs: 20, fetch: (async (_u: unknown, init?: { signal?: AbortSignal }) => new Promise((_r, rej) => init?.signal?.addEventListener("abort", () => rej(init.signal!.reason)))) as never });
+  const slow = setup("x", { uploadTimeoutMs: 20, take: () => new Promise(() => {}) });
   await run(slow.handle, req({ id: "i4" }));
   assert.match(slow.bus.of("inject.result")[0]!.detail ?? "", /timed out after 20 ms/);
 });
@@ -84,22 +84,22 @@ test("model failure: ok:false with the error, no summary", async () => {
 });
 
 // @spec SHARED-INJ-004
-test("foreign URLs are never fetched", async () => {
-  for (const url of ["http://evil.example/uploads/abc", "http://dashboard:3000/other/abc", `${DASH}/uploads/../secret`, "http://user@dashboard:3000/uploads/a", "file:///etc/passwd", "garbage", undefined]) {
+test("a request without a well-formed upload id reads nothing", async () => {
+  for (const uploadId of ["http://evil.example/uploads/abc", "../secret", "garbage", undefined]) {
     const t = setup();
-    await run(t.handle, req({ url }));
-    assert.deepEqual(t.fetched, [], String(url));
+    await run(t.handle, req({ uploadId }));
+    assert.deepEqual(t.taken, [], String(uploadId));
     assert.equal(t.described.length, 0);
-    assert.equal(t.bus.of("inject.result")[0]!.ok, false, String(url));
+    assert.deepEqual(t.bus.of("inject.result")[0], { id: "i1", ok: false, detail: "request carries no upload id" });
   }
 });
 
-// @spec SHARED-INJ-005
-test("fetch failure (404): ok:false without calling the model", async () => {
-  const t = setup("x", { fetch: async () => new Response("gone", { status: 404 }) });
+// @spec SHARED-INJ-013
+test("an expired or missing upload: ok:false `upload expired or missing`, model not called", async () => {
+  const t = setup("x", { bytes: null });
   await run(t.handle, req());
   assert.equal(t.described.length, 0);
-  assert.match(t.bus.of("inject.result")[0]!.detail!, /404/);
+  assert.deepEqual(t.bus.of("inject.result"), [{ id: "i1", ok: false, detail: "upload expired or missing" }]);
 });
 
 // @spec SHARED-INJ-001, SHARED-INJ-002
@@ -119,8 +119,9 @@ test("injection does not disturb look()'s previous description (works with no OB
   const previous: string[] = [];
   const replies = ["first look", "second look"];
   const describe = async (_b: string, prev: string) => { previous.push(prev); return replies.shift() ?? "an injected frame"; };
+  bus.takeUpload = async () => Buffer.from("IMG");
   const eyes = new Eyes({ bus, log: silentLog, screenshot: async () => "B", describe });
-  const handle = createInjectHandler({ bus, log: silentLog, dashboardUrl: DASH, describe, fetch: async () => new Response("IMG") });
+  const handle = createInjectHandler({ bus, log: silentLog, describe });
   await eyes.look();
   await run(handle, req());
   await eyes.look();
@@ -128,11 +129,8 @@ test("injection does not disturb look()'s previous description (works with no OB
 });
 
 // @spec SHARED-INJ-006
-test("an upload fetch that does not finish within the timeout is aborted: ok:false naming the timeout, model not called", async () => {
-  const hang: typeof fetch = (_u, init) => new Promise((_res, rej) => {
-    init!.signal!.addEventListener("abort", () => rej(init!.signal!.reason));
-  });
-  const t = setup("x", { fetch: hang, uploadTimeoutMs: 20 });
+test("an upload read that does not finish within the timeout: ok:false naming the timeout, model not called", async () => {
+  const t = setup("x", { take: () => new Promise(() => {}), uploadTimeoutMs: 20 });
   await run(t.handle, req());
   const [r] = t.bus.of("inject.result");
   assert.equal(r!.ok, false);
@@ -141,44 +139,18 @@ test("an upload fetch that does not finish within the timeout is aborted: ok:fal
   assert.equal(t.bus.of("vision.summary").length, 0);
 });
 
-// @spec SHARED-INJ-006
-test("a body that stalls after the headers is also cut off by the timeout", async () => {
-  const stall: typeof fetch = async (_u, init) => {
-    const body = new ReadableStream<Uint8Array>({
-      start(c) { c.enqueue(new Uint8Array([1])); init!.signal!.addEventListener("abort", () => c.error(init!.signal!.reason)); },
-    });
-    return new Response(body);
-  };
-  const t = setup("x", { fetch: stall, uploadTimeoutMs: 20 });
+// @spec SHARED-INJ-007
+test("an upload over vision.upload_max_bytes is rejected naming the limit; model not called", async () => {
+  const t = setup("x", { bytes: Buffer.alloc(10), uploadMaxBytes: 5 });
   await run(t.handle, req());
-  assert.match(t.bus.of("inject.result")[0]!.detail!, /timed out after 20 ms/);
+  assert.equal(t.bus.of("inject.result")[0]!.ok, false);
+  assert.match(t.bus.of("inject.result")[0]!.detail!, /5 byte limit/);
   assert.equal(t.described.length, 0);
 });
 
 // @spec SHARED-INJ-007
-test("a body over vision.upload_max_bytes is rejected naming the limit, whether declared or streamed; model not called", async () => {
-  const declared = setup("x", { fetch: async () => new Response(Buffer.alloc(10), { headers: { "content-length": "10" } }), uploadMaxBytes: 5 });
-  await run(declared.handle, req());
-  assert.equal(declared.bus.of("inject.result")[0]!.ok, false);
-  assert.match(declared.bus.of("inject.result")[0]!.detail!, /5 byte limit/);
-  assert.equal(declared.described.length, 0);
-
-  let pulled = 0;
-  const streamed = setup("x", {
-    fetch: async () => new Response(new ReadableStream<Uint8Array>({
-      pull(c) { pulled++; c.enqueue(new Uint8Array(4)); }, // no content-length: endless 4-byte chunks
-    })),
-    uploadMaxBytes: 10,
-  });
-  await run(streamed.handle, req());
-  assert.match(streamed.bus.of("inject.result")[0]!.detail!, /10 byte limit/);
-  assert.ok(pulled < 10, `stopped reading after the limit (pulled ${pulled})`);
-  assert.equal(streamed.described.length, 0);
-});
-
-// @spec SHARED-INJ-007
-test("a body exactly at the limit is accepted", async () => {
-  const t = setup("a menu", { fetch: async () => new Response(Buffer.alloc(5)), uploadMaxBytes: 5 });
+test("an upload exactly at the limit is accepted", async () => {
+  const t = setup("a menu", { bytes: Buffer.alloc(5), uploadMaxBytes: 5 });
   await run(t.handle, req());
   assert.equal(t.bus.of("inject.result")[0]!.ok, true);
 });

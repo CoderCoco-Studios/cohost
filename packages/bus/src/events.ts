@@ -263,15 +263,16 @@ export const EventPayloads = {
 
   /**
    * dashboard → eyes/ears/chat: run this test input through the service's real
-   * code path. Binaries never ride the stream; `url` points at the dashboard
-   * upload store.
+   * code path. Binaries never ride the stream; `uploadId` names the bytes the
+   * dashboard stored in Redis (`Bus.putUpload`) and `contentType` their type.
    */
   // @spec BUS-EVT-006
   "inject.request": z.object({
     id: z.string(),
     target: z.enum(["eyes", "ears", "chat"]),
     kind: z.enum(["image", "audio", "text"]),
-    url: z.string().optional(),
+    uploadId: z.string().optional(),
+    contentType: z.string().optional(),
     text: z.string().optional(),
     meta: z
       .object({

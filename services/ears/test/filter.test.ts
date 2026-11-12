@@ -53,12 +53,12 @@ test("config: ears.stt_engine is blank-to-speaches and accepts stub", () => {
 test("injected clips: non-ASCII transcripts are published, and drop phrases are not applied", async () => {
   for (const text of ["Привет", "Thank you."]) {
     const bus = new FakeBus();
+    bus.takeUpload = async () => wavWrap(Buffer.alloc(32000), 16000, 1);
     const handle = createInjectHandler({
-      bus, log: silentLog, dashboardUrl: "http://dashboard:3000",
-      fetch: async () => new Response(wavWrap(Buffer.alloc(32000), 16000, 1), { headers: { "content-type": "audio/wav" } }),
+      bus, log: silentLog,
       transcribe: async () => text,
     });
-    handle(event("inject.request", { id: "a1", target: "ears", kind: "audio", url: "http://dashboard:3000/uploads/abc", remember: false }) as never);
+    handle(event("inject.request", { id: "a1", target: "ears", kind: "audio", uploadId: "0123456789abcdef0123456789abcdef", contentType: "audio/wav", remember: false }) as never);
     await handle.drain();
     assert.equal(bus.of("speech.heard")[0]!.text, text);
     assert.equal(bus.of("inject.result")[0]!.ok, true);

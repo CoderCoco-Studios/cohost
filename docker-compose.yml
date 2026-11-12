@@ -22,8 +22,6 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
     TTS_URL: http://tts:8880
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
-    # eyes/ears fetch injected test uploads from the host-run dashboard's LAN listener, through the host gateway.
-    DASHBOARD_URL: ${DASHBOARD_URL:-http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}}
     CONFIG_DIR: /app/config
     # Isolation preset the control plane sets on the `docker compose` process; unset falls through to config.yaml.
     CHAT_SOURCE: ${CHAT_SOURCE:-}  # @spec DEPLOY-COMPOSE-017

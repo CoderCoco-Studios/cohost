@@ -59,6 +59,21 @@ export class FakeBus implements Publisher {
   fail?: (type: EventType) => boolean;
   /** Make publishHealth reject, to test publish-failure handling. */
   failHealth = false;
+  /** Uploads stored by `putUpload`, by id. */
+  uploads = new Map<string, { bytes: Buffer; ttlMs: number }>();
+  /** Make putUpload reject, to test upload-store failure handling. */
+  failUpload = false;
+  // @spec BUS-TEST-012
+  async putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void> {
+    if (this.failUpload) throw new Error("putUpload failed");
+    this.uploads.set(id, { bytes, ttlMs });
+  }
+  // @spec BUS-TEST-012
+  async takeUpload(id: string): Promise<Buffer | null> {
+    const u = this.uploads.get(id);
+    this.uploads.delete(id);
+    return u?.bytes ?? null;
+  }
   // @spec BUS-TEST-002
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);

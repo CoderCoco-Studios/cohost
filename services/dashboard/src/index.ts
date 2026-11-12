@@ -9,7 +9,7 @@
  * - Edit personality.md live (brain reloads it on save)
  *
  * Two listeners: the full surface on DASHBOARD_HOST (default 127.0.0.1) and a LAN listener on all interfaces
- * that serves only the sink page, its audio and the upload fetch.
+ * that serves only the sink page and its audio.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ import { onShutdown, startHeartbeat } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { createLogger, loadConfig, loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
-import { UploadStore, uploadOptionsFromEnv } from "./uploads.js";
+import { uploadOptionsFromEnv } from "./uploads.js";
 import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
@@ -43,10 +43,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const { control, bind } = setupControl(process.env, bus, log);
 const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
-const uploads = new UploadStore(uploadOptionsFromEnv(process.env));
-// @spec DASH-UPL-002
-const sweeper = setInterval(() => uploads.sweep(), 60_000);
-sweeper.unref();
+const uploads = uploadOptionsFromEnv(process.env);
 
 // @spec CFG-ENV-009, DASH-VIEWERS-007
 const viewersToken = viewersTokenFromEnv(process.env);
@@ -74,4 +71,4 @@ if (listeners) {
   stack.start();
 }
 // @spec DASH-HTTP-010
-onShutdown(() => { clearInterval(sweeper); feed.stop(); stack.stop(); void listeners?.close(); bus.stop(); });
+onShutdown(() => { feed.stop(); stack.stop(); void listeners?.close(); bus.stop(); });

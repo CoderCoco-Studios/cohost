@@ -16,7 +16,7 @@ test("chat takes injection through the shared handler: target chat, kind text on
   const { bus, handle } = setup();
   await run(handle, req({ text: "hello Coco" }));
   assert.deepEqual(bus.of("inject.result"), [{ id: "r1", ok: true }]);
-  await run(handle, req({ id: "r2", kind: "image", url: "http://x/uploads/1" }));
+  await run(handle, req({ id: "r2", kind: "image", uploadId: "0123456789abcdef0123456789abcdef" }));
   assert.deepEqual(bus.of("inject.result")[1], { id: "r2", ok: false, detail: "chat cannot handle kind 'image'" });
 });
 
@@ -78,7 +78,7 @@ test("stale request: only ok:false stale", async () => {
 // @spec SHARED-INJ-001, CHAT-INJ-004
 test("other target publishes nothing; wrong kind for chat is ok:false", async () => {
   const { bus, handle } = setup();
-  await run(handle, req({ target: "eyes", kind: "image", url: "http://x/uploads/1" }));
+  await run(handle, req({ target: "eyes", kind: "image", uploadId: "0123456789abcdef0123456789abcdef" }));
   assert.equal(bus.published.length, 0);
   await run(handle, req({ kind: "audio" }));
   assert.equal(bus.of("inject.result")[0]!.ok, false);

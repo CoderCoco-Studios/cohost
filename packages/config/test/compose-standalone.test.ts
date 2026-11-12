@@ -30,10 +30,10 @@ test("compose defines infra, one-shots and one app service per services/ directo
 });
 
 // @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-003
-test("app services get DASHBOARD_URL through the host gateway, overridable from .env or the shell", () => {
+test("app services get no DASHBOARD_URL (uploads reach eyes and ears over Redis) and keep the host-gateway extra host", () => {
   for (const s of ["chat", "voice", "eyes", "ears"]) {
     const svc = compose.services[s]!;
-    assert.equal(svc.environment?.DASHBOARD_URL, "${DASHBOARD_URL:-http://host.docker.internal:${DASHBOARD_LAN_PORT:-3001}}", s);
+    assert.equal(svc.environment?.DASHBOARD_URL, undefined, s);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${s} has the host-gateway extra host`);
   }
 });

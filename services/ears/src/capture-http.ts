@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import type { Logger } from "@cohost/config";
 import { INJECT_QUEUE_LIMIT } from "@cohost/shared";
 import { ClipError, decodeClip, type CaptureAdapter, type HearClip } from "./capture.js";
-import { INJECT_FETCH_TIMEOUT_MS, INJECT_MAX_BYTES } from "./inject.js";
+import { INJECT_READ_TIMEOUT_MS, INJECT_MAX_BYTES } from "./inject.js";
 
 export interface HttpCaptureOptions {
   host: string;
@@ -15,7 +15,7 @@ export interface HttpCaptureOptions {
   maxBytes?: number;
   /** Requests allowed to wait behind the one being processed (default `INJECT_QUEUE_LIMIT`). */
   queueLimit?: number;
-  /** Time a body may take to arrive (default `INJECT_FETCH_TIMEOUT_MS`). */
+  /** Time a body may take to arrive (default `INJECT_READ_TIMEOUT_MS`). */
   bodyTimeoutMs?: number;
 }
 
@@ -58,7 +58,7 @@ function readBody(req: IncomingMessage, max: number, timeoutMs: number): Promise
 export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
   const maxBytes = o.maxBytes ?? INJECT_MAX_BYTES;
   const queueLimit = o.queueLimit ?? INJECT_QUEUE_LIMIT;
-  const bodyTimeoutMs = o.bodyTimeoutMs ?? INJECT_FETCH_TIMEOUT_MS;
+  const bodyTimeoutMs = o.bodyTimeoutMs ?? INJECT_READ_TIMEOUT_MS;
   let tail: Promise<unknown> = Promise.resolve();
   /** Accepted requests not yet answered: the one being processed plus those waiting (or still sending their body). */
   let inflight = 0;

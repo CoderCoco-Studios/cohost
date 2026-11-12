@@ -5,7 +5,6 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
-import { UploadStore } from "../src/uploads.js";
 import { StackService } from "../src/stack.js";
 
 // Test injection at the bus level (POST /inject/event) and the not-running refusal every injection route shares
@@ -22,8 +21,8 @@ async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthSt
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
-    control: setup.control, dashboardUrl: "http://dashboard:3000",
-    uploads: new UploadStore({ maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 600_000, maxEntries: 16, maxTotalBytes: 10_000 }),
+    control: setup.control,
+    uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

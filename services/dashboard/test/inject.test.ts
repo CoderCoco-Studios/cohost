@@ -4,9 +4,8 @@ import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
-import { UploadStore } from "../src/uploads.js";
 import { StackService } from "../src/stack.js";
-import { uploadBase } from "../src/inject.js";
+import { uploadOptionsFromEnv } from "../src/uploads.js";
 
 /** Every unit up: the not-running refusal (MOD-TEST-005) has its own tests in inject-event.test.ts. */
 const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
@@ -18,12 +17,12 @@ class CtlBus extends FakeBus {
 async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
   const bus = new CtlBus();
   const rec = recordingLog();
-  const uploads = new UploadStore({ maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs: 600_000, maxEntries: 16, maxTotalBytes: 10_000 });
+  const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs: 300_000 };
   const setup = setupControl(env, bus, rec.log);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => UP,
-    control: setup.control, uploads, dashboardUrl: "http://dashboard:3000", stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    control: setup.control, uploads, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -84,8 +83,8 @@ test("text validation: 400s publish nothing", async () => {
   assert.equal(t.bus.published.length, 0);
 });
 
-// @spec DASH-INJ-005, DASH-INJ-007
-test("image upload: stored, served at /uploads/:id, request carries the URL", async () => {
+// @spec DASH-INJ-005, DASH-UPL-002
+test("image upload: bytes stored in Redis under a 128-bit id with the TTL, the request carries the id and content type and no URL", async () => {
   const t = await boot();
   const png = Buffer.from("PNGDATA");
   const r = await t.bin("/inject/image?remember=1", png, "image/png");
@@ -96,41 +95,30 @@ test("image upload: stored, served at /uploads/:id, request carries the URL", as
   assert.equal(req!.target, "eyes");
   assert.equal(req!.kind, "image");
   assert.equal(req!.remember, true);
-  assert.match(req!.url!, /^http:\/\/dashboard:3000\/uploads\/[0-9a-f]{32}$/);
-  const got = await fetch(`${t.base}${new URL(req!.url!).pathname}`);
-  assert.equal(got.status, 200);
-  assert.equal(got.headers.get("content-type"), "image/png");
-  assert.equal(Buffer.from(await got.arrayBuffer()).toString(), "PNGDATA");
+  assert.match(req!.uploadId!, /^[0-9a-f]{32}$/);
+  assert.equal(req!.contentType, "image/png");
+  assert.equal("url" in req!, false);
+  const stored = t.bus.uploads.get(req!.uploadId!);
+  assert.equal(stored!.bytes.toString(), "PNGDATA");
+  assert.equal(stored!.ttlMs, 300_000);
+  assert.equal(JSON.stringify(t.bus.published).includes("PNGDATA"), false, "the bytes are not on the event stream");
 });
 
-// @spec DASH-INJ-005
-test("the advertised upload base is DASHBOARD_URL when set and non-empty, else host.docker.internal on the LAN port (default 3001)", () => {
-  assert.equal(uploadBase({}), "http://host.docker.internal:3001");
-  assert.equal(uploadBase({ DASHBOARD_LAN_PORT: "4001" }), "http://host.docker.internal:4001");
-  assert.equal(uploadBase({ DASHBOARD_LAN_PORT: "" }), "http://host.docker.internal:3001");
-  assert.equal(uploadBase({ DASHBOARD_URL: "http://192.168.1.5:3001" }), "http://192.168.1.5:3001");
-  assert.equal(uploadBase({ DASHBOARD_URL: "", DASHBOARD_LAN_PORT: "4001" }), "http://host.docker.internal:4001");
-  assert.equal(uploadBase({ DASHBOARD_URL: "http://192.168.1.5:3001", DASHBOARD_LAN_PORT: "4001" }), "http://192.168.1.5:3001");
+// @spec DASH-UPL-002
+test("INJECT_TTL_MS sets the key's expiry; the default is 5 minutes", () => {
+  assert.equal(uploadOptionsFromEnv({}).ttlMs, 300_000);
+  assert.equal(uploadOptionsFromEnv({ INJECT_TTL_MS: "90000" }).ttlMs, 90_000);
+  assert.equal(uploadOptionsFromEnv({ INJECT_TTL_MS: "nope" }).ttlMs, 300_000);
 });
 
-// @spec DASH-INJ-005
-test("without an explicit dashboardUrl the handler advertises the env-derived base in inject.request", async () => {
-  const bus = new CtlBus();
-  const rec = recordingLog();
-  const prev = { url: process.env.DASHBOARD_URL, lan: process.env.DASHBOARD_LAN_PORT };
-  delete process.env.DASHBOARD_URL; process.env.DASHBOARD_LAN_PORT = "4321";
-  const handler = createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => UP, stack: new StackService({ log: rec.log, bus: () => "connected" }),
-  });
-  if (prev.url !== undefined) process.env.DASHBOARD_URL = prev.url;
-  if (prev.lan === undefined) delete process.env.DASHBOARD_LAN_PORT; else process.env.DASHBOARD_LAN_PORT = prev.lan;
-  const server = http.createServer(handler);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  after(() => server.close());
-  const r = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/inject/image`, { method: "POST", body: "PNG", headers: { "content-type": "image/png" } });
-  assert.equal(r.status, 202);
-  assert.match(bus.of("inject.request")[0]!.url!, /^http:\/\/host\.docker\.internal:4321\/uploads\/[0-9a-f]{32}$/);
+// @spec DASH-UPL-003
+test("a failed Redis write answers 503 and publishes nothing", async () => {
+  const t = await boot();
+  t.bus.failUpload = true;
+  const r = await t.bin("/inject/audio", Buffer.from("RIFF"), "audio/wav");
+  assert.equal(r.status, 503);
+  assert.equal(await r.text(), "upload store unavailable");
+  assert.equal(t.bus.of("inject.request").length, 0);
 });
 
 // @spec DASH-INJ-005
@@ -156,29 +144,30 @@ test("binary rejections: 413 too large, 415 wrong type, 400 empty / bus level; n
   assert.equal((await t.bin("/inject/image?level=bus", Buffer.from("x"), "image/png")).status, 400);
   assert.equal((await t.bin("/inject/audio?level=bus", Buffer.from("x"), "audio/wav")).status, 400);
   assert.equal(t.bus.published.length, 0);
-  assert.equal(t.uploads.size, 0);
+  assert.equal(t.bus.uploads.size, 0);
 });
 
 // @spec DASH-INJ-007
-test("GET /uploads/:id is 404 for unknown ids", async () => {
+test("there is no upload route: GET /uploads/<id> is 404 even for a stored upload", async () => {
   const t = await boot();
-  assert.equal((await fetch(`${t.base}/uploads/deadbeef`)).status, 404);
+  await t.bin("/inject/image", Buffer.from("x"), "image/png");
+  const id = t.bus.of("inject.request")[0]!.uploadId!;
+  assert.equal((await fetch(`${t.base}/uploads/${id}`)).status, 404);
 });
 
 // @spec DASH-CTRL-004, DASH-CTRL-005
-test("gate: with control enabled the three routes need the bearer token; /uploads stays open", async () => {
+test("gate: with control enabled the three routes need the bearer token", async () => {
   const t = await boot({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" });
   assert.equal((await t.text({ level: "bus", text: "hi" })).status, 401);
   assert.equal((await t.text({ level: "bus", text: "hi" }, "wrong")).status, 401);
   assert.equal((await t.bin("/inject/image", Buffer.from("x"), "image/png")).status, 401);
   assert.equal((await t.bin("/inject/audio", Buffer.from("x"), "audio/wav")).status, 401);
   assert.equal(t.bus.published.length, 0);
-  assert.equal(t.uploads.size, 0);
+  assert.equal(t.bus.uploads.size, 0);
   assert.equal((await t.text({ level: "bus", text: "hi" }, "s3cret")).status, 202);
   const r = await t.bin("/inject/image", Buffer.from("x"), "image/png", "s3cret");
   assert.equal(r.status, 202);
-  const url = new URL(t.bus.of("inject.request")[0]!.url!);
-  assert.equal((await fetch(`${t.base}${url.pathname}`)).status, 200);
+  assert.equal(t.bus.uploads.size, 1);
 });
 
 // @spec DASH-CTRL-001

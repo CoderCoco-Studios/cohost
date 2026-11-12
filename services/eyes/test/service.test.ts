@@ -45,7 +45,7 @@ function rig(over: Record<string, unknown>, deps: Record<string, unknown> = {}, 
   let heartbeat: { stop(): Promise<void> } | undefined;
   const svc = eyesService({
     obs, exit: (c) => { exits.push(c); }, sleep: () => new Promise((r) => setTimeout(r, 2)),
-    dashboardUrl: "http://dash:3000", ...deps,
+    ...deps,
   });
   const cfg = testConfig({ vision: { model: "v", engine: "stub", interval_ms: 1000, ...over } });
   const start = () => runService({
@@ -148,10 +148,11 @@ test("OBS unreachable at start: retries and reports degraded, then ready once it
 
 // @spec EYES-INJ-016, EYES-INJ-011, EYES-INJ-001
 test("an injected image is described and answered through the shared handler, with vision disabled and no OBS", async () => {
-  const r = rig({ enabled: false }, { fetch: (async () => new Response(Buffer.from("PIXELS"))) as never });
+  const r = rig({ enabled: false });
+  r.bus.takeUpload = async () => Buffer.from("PIXELS");
   try {
     await r.start();
-    r.bus.handler!(event("inject.request", { id: "i1", target: "eyes", kind: "image", url: "http://dash:3000/uploads/abc", remember: true }) as never);
+    r.bus.handler!(event("inject.request", { id: "i1", target: "eyes", kind: "image", uploadId: "0123456789abcdef0123456789abcdef", contentType: "image/png", remember: true }) as never);
     await waitFor(() => r.bus.of("inject.result").length === 1, "inject.result");
     assert.deepEqual(r.bus.of("inject.result")[0], { id: "i1", ok: true, detail: "stub vision: 6 bytes" });
     assert.deepEqual(r.bus.of("vision.summary"), [{ text: "stub vision: 6 bytes", changed: true, injected: true, remember: true }]);

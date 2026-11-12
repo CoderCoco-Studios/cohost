@@ -43,7 +43,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (115 specs, prefix `MEM`: 115 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/memory/memory-specs.md (116 specs, prefix `MEM`: 116 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines per file; 132 lines citing 81 distinct `MEM-*` IDs)
 - services/memory/test/region.test.ts (11)
@@ -105,25 +105,27 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
 | Event handling | MEM-EVT-001 to MEM-EVT-002 | 2 | 0 | 0 | 2 |
 | Storing memories | MEM-WRITE-001 to MEM-WRITE-005 | 5 | 0 | 0 | 5 |
 | Test injection | MEM-INJ-001 to MEM-INJ-003 | 3 | 0 | 0 | 3 |
-| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 (004, 005 retired) | 4 | 0 | 0 | 4 |
-| Viewer notes: notes, regular, consolidation (chunk 1) | MEM-NOTE-001 to 011, MEM-REG-001 to 005, MEM-CONSOL-001 to 016 | 31 | 0 | 1 (NOTE-004, restore, chunk 4) | 31 |
-| Viewer notes: surfacing (chunk 3) | MEM-SURF-001 to 005 | 5 | 0 | 0 | 5 |
-| Viewer notes: capture (chunk 2) | MEM-CAPTURE-001 to 011 | 11 | 0 | 0 | 11 |
-| Viewer notes: owner operations (chunk 4) | MEM-ADMIN-001 to 007 | 0 | 0 | 7 | 0 |
+| Viewers | MEM-VIEWER-001 to MEM-VIEWER-006 | 4 | 0 | 0 | 4 |
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
+| Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
 | Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 5 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
-| Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
+| Viewer notes: notes and strength | MEM-NOTE-001 to MEM-NOTE-012 | 12 | 0 | 0 | 12 |
+| Viewer notes: regular status and viewer row | MEM-REG-001 to MEM-REG-005 | 5 | 0 | 0 | 5 |
+| Viewer notes: live capture | MEM-CAPTURE-001 to MEM-CAPTURE-011 | 11 | 0 | 0 | 11 |
+| Viewer notes: consolidation | MEM-CONSOL-001 to MEM-CONSOL-016 | 16 | 0 | 0 | 16 |
+| Viewer notes: surfacing to the cortex | MEM-SURF-001 to MEM-SURF-005 | 5 | 0 | 0 | 5 |
+| Viewer notes: owner operations | MEM-ADMIN-001 to MEM-ADMIN-007 | 7 | 0 | 0 | 7 |
 
-**Summary:** 115 of 115 specs implemented and annotated in code (viewer-notes chunks 1 to 4 built); 0 gaps; 0 deferred. Implemented specs with no test: `MEM-BACKEND-002`, `MEM-START-006`, `MEM-REFLECT-009`. `index.ts`, `reflect.ts` and `consolidate.ts` are wiring only and untested; the logic they hold is in `startup.ts`, `reflect-run.ts`, `scheduler.ts` and `consolidate-run.ts`, covered with fakes. No test run here executes against a real Postgres: the chunk-1 store behaviour is covered by the in-memory store and by recorded SQL, and `notes-store.pg.test.ts` runs the same contract against a real Postgres when `COHOST_TEST_DATABASE_URL` is set (not run in CI).
+**Summary:** 116 of 116 specs implemented; 0 deferred; 0 open. 113 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-START-006, MEM-REFLECT-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

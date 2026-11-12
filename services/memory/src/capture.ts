@@ -1,7 +1,7 @@
 import type { BusEvent } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { Module, type ModuleImpl } from "@cohost/modules";
-import { notesHookLlm } from "./consolidator.js";
+import { notesHookConfig, notesHookLlm } from "./consolidator.js";
 import {
   MAX_NOTE_HINT, MAX_NOTE_TEXT, cosine, isCategory, mentionsForbiddenTopic, type Category, type DeletionRow, type NoteRow,
 } from "./notes.js";
@@ -80,10 +80,10 @@ export const captureImpl: ModuleImpl<CaptureInput, CaptureOutput> = {
   http: { validate: (raw) => validateCapture(raw) },
 };
 
-// @spec MEM-CAPTURE-003, MEM-NOTE-011
+// @spec MEM-CAPTURE-003, MEM-NOTE-011, MEM-NOTE-012
 /** `memory.capture`: its own model slot, configured by `brain.memory.notes.capture` (never the cortex's), on local ollama unless the hook names a provider. */
 export function createCaptureHook(cfg: Config, log: Logger): Module<CaptureInput, CaptureOutput> {
-  const hook = cfg.brain.memory.notes.capture;
+  const hook = notesHookConfig(cfg.llm, cfg.brain.memory.notes.capture);
   return new Module("memory.capture", hook, notesHookLlm(cfg.llm, hook), captureImpl, log);
 }
 

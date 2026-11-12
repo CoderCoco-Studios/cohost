@@ -36,7 +36,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (37 specs, prefix `AFF`: 37 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (39 specs, prefix `AFF`: 39 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (26 annotated tests, 41 spec citations)
 - services/affect/test/affect.region.test.ts (13 annotated: Affect class nudges, reset with a realistic half-life, baseline arousal, publish gating and failure, llm/http queue, pause and reset against the queue)
@@ -79,15 +79,15 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Event intake | AFF-IN-001 to AFF-IN-007 | 7 | 0 | 0 | 7 |
-| Mood model | AFF-MOOD-001 to AFF-MOOD-006 | 6 | 0 | 0 | 6 |
-| Rule appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 | 4 |
-| Appraiser hook and queue | AFF-HOOK-001 to AFF-HOOK-009 | 9 | 0 | 0 | 9 |
+| Event Intake | AFF-IN-001 to AFF-IN-007 | 7 | 0 | 0 | 7 |
+| Mood Model | AFF-MOOD-001 to AFF-MOOD-006 | 6 | 0 | 0 | 6 |
+| Rule Appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 | 4 |
+| Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-009 | 9 | 0 | 0 | 9 |
 | Publishing | AFF-PUB-001 to AFF-PUB-004 | 4 | 0 | 0 | 4 |
-| Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 | 4 |
-| Health and lifecycle | AFF-HEALTH-001 to AFF-HEALTH-002 | 2 | 0 | 0 | 2 |
+| Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 | 5 |
+| Health and Lifecycle | AFF-HEALTH-001 to AFF-HEALTH-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 37 of 37 specs implemented; 0 deferred; 0 gaps. 36 spec lines have a test annotation. Implemented specs with no test: AFF-CTRL-005. No reverse orphans (every `AFF-*` ID cited in code or tests exists in the spec file).
+**Summary:** 39 of 39 specs implemented; 0 deferred; 0 open. 39 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

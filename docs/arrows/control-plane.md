@@ -44,7 +44,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (61 specs, all `[x]`; CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
+- docs/intent/control-plane/control-plane-specs.md (65 specs: 64 `[x]`, 1 `[ ]`, 0 `[D]` (CTRL-STACK-015, Docker-gated); CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
 
 ### Tests (`@spec` lines)
 - packages/control/test/cli.test.ts (16)
@@ -87,18 +87,18 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | With test |
-|----------|----------|-------------|----------|------|-----------|
-| Manifest | CTRL-MANIFEST-001 to 005 | 5 | 0 | 0 | 5 |
-| Runtime | CTRL-RUNTIME-001 to 004, 009, 010 (005 to 008 retired) | 6 | 0 | 0 | 6 |
-| Guards | CTRL-GUARD-001 to 008 (009 retired) | 8 | 0 | 0 | 8 |
-| Config | CTRL-CONFIG-001 to 003 | 3 | 0 | 0 | 3 |
-| Heartbeat | SHARED-LIFE-006 to 009 (007 retired) | 8 | 0 | 0 | 6 |
-| Health | CTRL-HEALTH-001 to 007 | 7 | 0 | 0 | 7 |
-| Healthcheck | CTRL-CHECK-001 to 003 | 3 | 0 | 0 | 2 |
-| CLI | CTRL-CLI-001 to 005, 008, 009 (006, 007 retired) | 7 | 0 | 0 | 6 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-005 | 5 | 0 | 0 | 5 |
+| Runtime adapters | CTRL-RUNTIME-001 to CTRL-RUNTIME-011 | 7 | 0 | 0 | 7 |
+| Controller guards and orchestration | CTRL-GUARD-001 to CTRL-GUARD-008 | 7 | 0 | 0 | 7 |
+| Stack controller | CTRL-STACK-001 to CTRL-STACK-015 | 14 | 0 | 1 | 15 |
+| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 0 | 0 | 3 |
+| Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-010 | 10 | 0 | 0 | 10 |
+| Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 0 | 0 | 4 |
+| cohostctl command line | CTRL-CLI-001 to CTRL-CLI-016 | 14 | 0 | 0 | 14 |
 
-**Summary:** 47 of 47 specs implemented ([x]); 0 deferred; 0 gaps. 43 of the 47 have a test carrying their `@spec` ID. Implemented specs with no test: SHARED-LIFE-006, SHARED-LIFE-013, CTRL-CHECK-003, CTRL-CLI-005. Implemented spec with no code annotation: CTRL-CHECK-003 (lives in `docker-compose.yml`).
+**Summary:** 64 of 65 specs implemented; 0 deferred; 1 open. 65 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

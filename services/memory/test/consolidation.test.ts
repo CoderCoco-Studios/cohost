@@ -334,6 +334,12 @@ test("the consolidator hook builds an ollama provider under a hosted cortex, and
   assert.equal(providerOf(cfg("anthropic", { llm: { provider: "openai", model: "gpt-x" } })), "openai");
 });
 
+// @spec MEM-NOTE-012
+test("under llm.provider mock the consolidator hook is built on mock even when the hook names ollama", () => {
+  const c = testConfig({ llm: { provider: "mock", model: "m" }, brain: { memory: { notes: { consolidator: { kind: "llm", llm: { provider: "ollama", model: "q" } } } } } });
+  assert.equal((createConsolidatorHook(c, recordingLog().log) as unknown as { provider: { name: string } }).provider.name, "mock");
+});
+
 // @spec MEM-CONSOL-007
 test("a note reinforced while the model ran keeps its reinforcement and stays dirty; the rest of the viewer commits", async () => {
   const t = setup();

@@ -32,7 +32,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/chat/chat-design.md
 
 ### EARS
-- docs/intent/chat/chat-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/chat/chat-specs.md (45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/chat/test/filter.test.ts
@@ -78,16 +78,16 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat). Consumed by `sali
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps |
-|----------|----------|-------------|----------|------|
-| Source selection | CHAT-PLAN-001 to 006 | 6 | 0 | 0 |
-| Twitch connection | CHAT-TW-001 to 009 | 9 | 0 | 0 |
-| Filtering and payload | CHAT-FILT-001 to 007 | 7 | 0 | 0 |
-| Fake source | CHAT-FAKE-001 to 006 | 6 | 0 | 0 |
-| Test injection | CHAT-INJ-001 to 009 | 9 | 0 | 0 |
-| Health | CHAT-HEALTH-001 to 006 | 6 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Source selection | CHAT-PLAN-001 to CHAT-PLAN-006 | 6 | 0 | 0 | 5 |
+| Twitch connection | CHAT-TW-001 to CHAT-TW-012 | 12 | 0 | 0 | 9 |
+| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-007 | 7 | 0 | 0 | 7 |
+| Fake source | CHAT-FAKE-001 to CHAT-FAKE-006 | 6 | 0 | 0 | 4 |
+| Test injection | CHAT-INJ-001 to CHAT-INJ-009 | 8 | 0 | 0 | 7 |
+| Health | CHAT-HEALTH-001 to CHAT-HEALTH-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 44 of 44 specs implemented; 0 gaps; 0 deferred. 33 of the 44 have a test citing them. The 11 without a test are the `index.ts` wiring (CHAT-PLAN-005, CHAT-PLAN-006, CHAT-TW-001 to 005, CHAT-TW-009, CHAT-INJ-001) plus CHAT-FAKE-005 and CHAT-FAKE-006. CHAT-PLAN-001 to 003 are tested only through the pure `chatPlan`, not the branch wiring.
+**Summary:** 45 of 45 specs implemented; 0 deferred; 0 open. 38 carry a test `@spec` annotation; implemented without one: CHAT-PLAN-005, CHAT-TW-001, CHAT-TW-002, CHAT-TW-005, CHAT-FAKE-005, CHAT-FAKE-006, CHAT-INJ-001 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

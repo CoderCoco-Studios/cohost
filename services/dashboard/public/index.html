@@ -226,6 +226,7 @@ async function pump() {
   a.onended = a.onerror = () => { if (finish()) pump(); };
   // Autoplay refused: the line that could not start is reported done, audio goes back to off, and the lines still queued
   // wait for the operator to switch audio on again (turning it off by hand is what discards them).
+  // @spec DASH-UI-022
   try { await a.play(); } catch (e) { if (finish()) { audioOn = false; $("#audio").textContent = "🔇 enable audio"; $("#audio").classList.remove("on"); } }
 }
 // @spec DASH-UI-006

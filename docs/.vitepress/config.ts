@@ -8,7 +8,7 @@ export default defineConfig({
   base: '/cohost/',
   cleanUrls: true,
   lastUpdated: false,
-  ignoreDeadLinks: [/^https?:\/\/localhost/],
+  ignoreDeadLinks: [/^https?:\/\/localhost/, /\/intent\//], // the design tree is not published (srcExclude), so links into it from plans are fine
   srcExclude: ['arrows/**', 'intent/**', 'high-level-design.md'],
   themeConfig: {
     nav: [

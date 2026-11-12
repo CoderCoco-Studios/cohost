@@ -27,7 +27,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/eyes/eyes-design.md
 
 ### EARS
-- docs/intent/eyes/eyes-specs.md (45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/eyes/eyes-specs.md (41 specs: 41 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/eyes/test/eyes.test.ts
@@ -69,16 +69,17 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/s
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps |
-|----------|----------|-------------|----------|------|
-| Enablement | EYES-ENAB-001 to 005 | 5 | 0 | 0 |
-| OBS connection and capture | EYES-OBS-001 to 008 | 8 | 0 | 0 |
-| Vision description | EYES-DESC-001 to 006 | 6 | 0 | 0 |
-| Look loop and publication | EYES-LOOK-001 to 005 | 5 | 0 | 0 |
-| Test injection | EYES-INJ-001 to 015 | 15 | 0 | 0 |
-| Health | EYES-HEALTH-001 to 006 | 6 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Enablement | EYES-ENAB-001 to EYES-ENAB-005 | 5 | 0 | 0 | 5 |
+| OBS connection and capture | EYES-OBS-001 to EYES-OBS-008 | 8 | 0 | 0 | 8 |
+| Vision description | EYES-DESC-001 to EYES-DESC-006 | 7 | 0 | 0 | 7 |
+| Look loop and publication | EYES-LOOK-001 to EYES-LOOK-005 | 5 | 0 | 0 | 4 |
+| Test injection | EYES-INJ-001 to EYES-INJ-016 | 8 | 0 | 0 | 8 |
+| Stub describer | EYES-STUB-001 to EYES-STUB-002 | 2 | 0 | 0 | 2 |
+| Health | EYES-HEALTH-001 to EYES-HEALTH-006 | 6 | 0 | 0 | 5 |
 
-**Summary:** 45 of 45 specs implemented; 0 gaps; 0 deferred. 33 of the 45 have a test citing them. The 12 without a test are the `index.ts` wiring (EYES-ENAB-002, EYES-ENAB-004, EYES-OBS-001, EYES-OBS-005, EYES-OBS-006, EYES-LOOK-003 to 005, EYES-INJ-001, EYES-HEALTH-005) plus EYES-DESC-005 (prompt text) and SHARED-INJ-003 (wrong kind). The redirect half of SHARED-INJ-005 is also untested.
+**Summary:** 41 of 41 specs implemented; 0 deferred; 0 open. 39 carry a test `@spec` annotation; implemented without one: EYES-LOOK-004, EYES-HEALTH-005 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

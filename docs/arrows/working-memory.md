@@ -36,7 +36,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (32 specs: 28 `[x]`, 4 `[ ]`, 0 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (35 specs: 35 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)
@@ -65,15 +65,16 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Code `@spec` | Test `@spec` |
-|----------|----------|-------------|----------|------|--------------|--------------|
-| Window | WM-WIN-001 to 007 | 7 | 0 | 0 | 6 | 5 |
-| Ingest | WM-PUSH-001 to 008 | 8 | 0 | 0 | 8 | 8 |
-| Seen tracking | WM-SEEN-001 to 003 | 3 | 0 | 0 | 3 | 3 |
-| Transcript | WM-TRANS-001 to 010 | 10 | 0 | 0 | 10 | 10 |
-| Injection flags | WM-FLAG-001 to 004 | 4 | 0 | 0 | 4 | 4 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Window | WM-WIN-001 to WM-WIN-007 | 7 | 0 | 0 | 7 |
+| Ingest | WM-PUSH-001 to WM-PUSH-010 | 10 | 0 | 0 | 10 |
+| Seen tracking | WM-SEEN-001 to WM-SEEN-003 | 3 | 0 | 0 | 3 |
+| Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
+| Transcript | WM-TRANS-001 to WM-TRANS-010 | 10 | 0 | 0 | 10 |
+| Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 28 of 28 specs implemented; 0 deferred; 0 gaps. 27 specs cited from code, 26 from tests. No reverse orphans. Implemented but without a test annotation: WM-WIN-002 (negative property), WM-WIN-005 (implemented in salience/cortex, outside this package).
+**Summary:** 35 of 35 specs implemented; 0 deferred; 0 open. 35 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

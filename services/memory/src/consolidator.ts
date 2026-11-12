@@ -114,9 +114,15 @@ export function notesHookLlm(llm: Config["llm"], hook: ModuleConfig): Config["ll
   return { ...llm, provider: "ollama" };
 }
 
-// @spec MEM-CONSOL-005, MEM-NOTE-011
+// @spec MEM-NOTE-012
+/** Under `llm.provider: mock` a notes hook's own provider is dropped so the Module inherits mock (an isolated run reaches no model server). */
+export function notesHookConfig(llm: Config["llm"], hook: ModuleConfig): ModuleConfig {
+  return llm.provider === "mock" && hook.llm.provider ? { ...hook, llm: { ...hook.llm, provider: undefined } } : hook;
+}
+
+// @spec MEM-CONSOL-005, MEM-NOTE-011, MEM-NOTE-012
 /** `memory.consolidator`: the model part of consolidation, configured by `brain.memory.notes.consolidator`. */
 export function createConsolidatorHook(cfg: Config, log: Logger): Module<ConsolidatorInput, ConsolidatorOutput> {
-  const hook = cfg.brain.memory.notes.consolidator;
+  const hook = notesHookConfig(cfg.llm, cfg.brain.memory.notes.consolidator);
   return new Module("memory.consolidator", hook, notesHookLlm(cfg.llm, hook), consolidatorImpl, log);
 }

@@ -191,13 +191,6 @@ Not covered by any test: lower-case placeholder names (CFG-ENV-003), the `llm` d
 
 ## Open Questions & Future Decisions
 
-### Resolved by observation
-
-1. Where the VTube Studio token lives: avatar passes `stateDir: configDir()` (`services/avatar/src/index.ts:30`), so `config/.vts-token`, matching README.md:216. The file is git-ignored with the other user-owned files (`.gitignore`, deployment).
-2. OpenSpec divergence. The frozen OpenSpec `config` baseline says files are read from `CONFIG_DIR` "(default `./config`)", lists only five URLs, and has no requirement for `findWorkspaceRoot`, the `.env` hint or personality load/save. CFG-DIR-002, CFG-URL-002, CFG-URL-003, CFG-LOAD-004 and CFG-USR-001 describe the code and supersede it (`CLAUDE.md` § Specs: the LID spec wins).
-
-### Observed, unexplained, or debt
-
 None.
 
 ## References

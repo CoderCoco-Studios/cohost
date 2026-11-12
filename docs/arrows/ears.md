@@ -90,16 +90,17 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps |
-|----------|----------|-------------|----------|------|
-| Startup plans | EARS-START-001 to 007 | 7 | 0 | 0 |
-| Discord session | EARS-SESS-001 to 009 | 9 | 0 | 0 |
-| Listening and transcription | EARS-HEAR-001 to 009 | 9 | 0 | 0 |
-| Audio conversion | SHARED-AUDIO-005, 003, 004 (002 retired) | 3 | 0 | 0 |
-| Audio injection | SHARED-INJ-001 to 009 | 9 | 0 | 0 |
-| Health | EARS-HLTH-001 to 003 | 3 | 0 | 0 |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+|----------|----------|-------------|----------|------|----------------|
+| Startup plans | EARS-START-001 to EARS-START-008 | 8 | 0 | 0 | 8 |
+| Discord session | EARS-SESS-001 to EARS-SESS-010 | 8 | 0 | 0 | 7 |
+| Listening and transcription | EARS-HEAR-001 to EARS-HEAR-009 | 10 | 0 | 0 | 9 |
+| Audio conversion | EARS-AUD-005 | 1 | 0 | 0 | 1 |
+| Audio injection | EARS-INJ-005 to EARS-INJ-011 | 7 | 0 | 0 | 6 |
+| Stub transcriber | EARS-STUB-001 to EARS-STUB-002 | 2 | 0 | 0 | 2 |
+| Health | EARS-HLTH-001 to EARS-HLTH-003 | 3 | 0 | 0 | 3 |
 
-**Summary:** 40 specs, 40 implemented, 0 gaps. 33 have a test citing them; the other 7 are the glue listed under Tests. SHARED-INJ-004's redirect and non-2xx paths are untested in ears.
+**Summary:** 39 of 39 specs implemented; 0 deferred; 0 open. 36 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

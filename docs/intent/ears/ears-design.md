@@ -151,9 +151,9 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 
 ## Open Questions & Future Decisions
 
-Behaviors and debt observed but not explained by the code or specs.
+### Manual verification
 
-1. **Dependencies of unclear role.** `@snazzah/davey`, `libsodium-wrappers` and `opusscript` are in `services/ears/package.json` but never imported from `src/`. They are runtime requirements that `@discordjs/voice` and `prism-media` load themselves: `libsodium-wrappers` for voice transport encryption, `@snazzah/davey` for Discord's DAVE end-to-end encryption protocol, and `opusscript` as the pure-JS Opus codec used to decode received audio. Whether this set is sufficient is unverified until ears first runs against real Discord.
+1. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus codec) itself; ears carries them without importing them. Whether this set is sufficient is checked by a first run against a real Discord guild and voice channel (receive and decode a human speaker).
 
 ## References
 

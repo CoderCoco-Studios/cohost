@@ -6,10 +6,10 @@ export const Emotion = z.enum([
 ]);
 export type Emotion = z.infer<typeof Emotion>;
 
-/** A string key with a default: an empty string (an unset `${VAR}` that substituted to nothing) means "use the default". */
-// @spec CFG-SCH-024
 /** Kokoro-FastAPI voice-name syntax (its VOICE_NAME_BODY): ids and `+` mixes with optional `(weight)`. */
 const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
+/** A string key with a default: an empty string (an unset `${VAR}` that substituted to nothing) means "use the default". */
+// @spec CFG-SCH-024
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
 
 /**

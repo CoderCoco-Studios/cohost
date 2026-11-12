@@ -15,6 +15,11 @@ function setup(viewer = { msgCount: 1, notes: "", isNew: true, regular: false },
       if (opts.touchFails) throw new Error("db down");
       return viewer;
     },
+    touchSpeaker: async (...args: [string, string]) => {
+      calls.push({ op: "touchSpeaker", args });
+      if (opts.touchFails) throw new Error("db down");
+      return {} as never;
+    },
     remember: async (...args: [MemoryKind, string, string]) => { calls.push({ op: "remember", args }); },
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
   };
@@ -181,4 +186,31 @@ test("memory.notes.request is answered with the same id; a store error answers a
   assert.deepEqual(bus.of("memory.notes.reply")[1], { id: "n2", viewers: [] });
   assert.equal(warnings.length, 1);
   assert.doesNotMatch(JSON.stringify(warnings), /Boom|Alice/, "no names or note text in the warning");
+});
+
+const speech = (extra: Record<string, unknown> = {}) => event("speech.heard", { speaker: "Chris", speakerId: "D1", text: "hello there", durationMs: 500, ...extra });
+
+// @spec MEM-VOICE-002
+test("a voice line with a speakerId touches the speaker, is remembered, and announces no memory.viewer", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(speech());
+  assert.deepEqual(calls, [{ op: "touchSpeaker", args: ["D1", "Chris"] }, { op: "remember", args: ["speech", "Chris", "hello there"] }]);
+  assert.equal(bus.of("memory.viewer").length, 0);
+});
+
+// @spec MEM-VOICE-002
+test("a voice line without a speakerId, or an injected one, makes no viewer row (an injected remembered one is still remembered)", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(speech({ speakerId: undefined }));
+  await onEvent(speech({ injected: true }));
+  await onEvent(speech({ injected: true, remember: true, speakerId: undefined }));
+  assert.deepEqual(calls.map((c) => c.op), ["remember", "remember"]);
+});
+
+// @spec MEM-VOICE-002
+test("a failed speaker touch logs a warning and the utterance is still remembered", async () => {
+  const { onEvent, calls, warnings } = setup(undefined, [], { touchFails: true });
+  await onEvent(speech());
+  assert.deepEqual(calls.map((c) => c.op), ["touchSpeaker", "remember"]);
+  assert.equal(warnings.length, 1);
 });

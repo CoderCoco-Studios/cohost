@@ -9,7 +9,7 @@ export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
   log: Logger;
-  store: Pick<MemoryStore, "touchViewer" | "remember" | "recall"> & SurfaceStore;
+  store: Pick<MemoryStore, "touchViewer" | "touchSpeaker" | "remember" | "recall"> & SurfaceStore;
   /** The store the owner's Viewers-page operations run against; without it `memory.viewers.request` is ignored (MEM-ADMIN-007). */
   admin?: ViewersAdminStore;
   /** Told the cortex's latest `brain.status`, so consolidation runs only while it is idle (MEM-CONSOL-002). */
@@ -43,10 +43,16 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
         }
         break;
       }
-      // @spec MEM-WRITE-002
+      // @spec MEM-WRITE-002, MEM-VOICE-002
       case "speech.heard": {
         const d = ev.data as BusEvent<"speech.heard">["data"];
         if (skipInjected(d)) break;
+        // A speaker with a Discord id is a viewer who can accrue notes; a label with no id (an injected clip) is not.
+        if (d.speakerId) {
+          await store.touchSpeaker(d.speakerId, d.speaker).catch((err) => {
+            log.warn({ err: String(err), speaker: d.speaker }, "speaker upsert failed; the utterance is still remembered");
+          });
+        }
         await store.remember("speech", d.speaker, d.text);
         break;
       }

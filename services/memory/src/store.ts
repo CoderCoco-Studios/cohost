@@ -4,8 +4,8 @@ import type { Embedder } from "@cohost/llm";
 import { tracked } from "@cohost/shared";
 import type { ReflectCursor } from "./cursor.js";
 import {
-  clamp01, effectiveStrength, reinforcedStrength, withDefaultHint,
-  type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
+  clamp01, effectiveStrength, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  type Category, type DeletionRow, type Layer, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
 export type MemoryKind = "chat" | "speech" | "self";
@@ -43,6 +43,20 @@ export interface MemoryBackend {
   findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
   /** The viewer's row, created with `msg_count` 0 when missing (claiming a matching placeholder like `touchViewer` does) and never counting a message: capture's way to write a note before the `memory` group has seen the line (MEM-CAPTURE-011). */
   ensureViewer(userKey: string, display: string): Promise<ViewerRow>;
+  /**
+   * A speaker heard in Discord voice: resolve their viewer (the linked chat viewer, else the voice viewer `discord:<id>`), create the
+   * voice row when missing with no messages counted, and refresh `last_seen` and the Discord display name (MEM-VOICE-001).
+   */
+  touchSpeaker(speakerId: string, display: string): Promise<ViewerRow>;
+  /**
+   * Link a Discord id to the chat viewer named by `target` (a key or a display name): the voice viewer's notes and deletions move over, dirty,
+   * and the voice row goes; undefined when no such non-voice viewer exists (MEM-VOICE-005).
+   */
+  linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined>;
+  /** Remove a Discord id's link, leaving every note where it is; false when the id was not linked (MEM-VOICE-006). */
+  unlinkDiscord(discordId: string): Promise<boolean>;
+  /** The Discord ids linked to a viewer (MEM-VOICE-009). */
+  listLinks(userKey: string): Promise<LinkRow[]>;
   /** Embed `text` with the same embedder the store uses for notes, so the vectors compare with stored note and deletion embeddings (MEM-CAPTURE-005). */
   embedText(text: string): Promise<number[]>;
   /** Set or clear the owner's regular flag by key or display name; a name with no row gets a placeholder when setting (MEM-REG-003). Clearing a name with no row returns undefined. */
@@ -192,6 +206,16 @@ export class MemoryStore implements MemoryBackend {
         deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         embedding vector(${this.dims})
       )`);
+    // @spec MEM-VOICE-010
+    await this.query(`
+      CREATE TABLE IF NOT EXISTS viewer_links (
+        discord_id TEXT PRIMARY KEY,
+        user_key TEXT NOT NULL REFERENCES viewers (user_key) ON UPDATE CASCADE ON DELETE CASCADE,
+        discord_display TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+    await this.query("CREATE INDEX IF NOT EXISTS viewer_links_user_idx ON viewer_links (user_key)");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_notes_user_idx ON viewer_notes (user_key)");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_notes_dirty_idx ON viewer_notes (user_key) WHERE dirty");
     await this.query("CREATE INDEX IF NOT EXISTS viewer_note_deletions_user_idx ON viewer_note_deletions (user_key)");
@@ -356,13 +380,81 @@ export class MemoryStore implements MemoryBackend {
     return rows[0] && this.toViewer(rows[0]);
   }
 
-  // @spec MEM-SURF-002
+  // @spec MEM-SURF-002, MEM-VOICE-007
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const { rows } = await this.query<ViewerSql>(
       `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) ORDER BY last_seen DESC, user_key LIMIT 1`,
       [name],
     );
-    return rows[0] && this.toViewer(rows[0]);
+    if (rows[0]) return this.toViewer(rows[0]);
+    // No viewer is called that: the name may be a linked Discord id's display name.
+    const alias = await this.query<ViewerSql>(
+      `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}
+         FROM viewer_links l JOIN viewers v ON v.user_key = l.user_key
+        WHERE lower(l.discord_display) = lower($1)
+        ORDER BY l.updated_at DESC, l.discord_id LIMIT 1`,
+      [name],
+    );
+    return alias.rows[0] && this.toViewer(alias.rows[0]);
+  }
+
+  // @spec MEM-VOICE-001
+  async touchSpeaker(speakerId: string, display: string): Promise<ViewerRow> {
+    const id = speakerId.toLowerCase();
+    const linked = await this.query<{ user_key: string }>(
+      "UPDATE viewer_links SET discord_display = $2, updated_at = now() WHERE discord_id = $1 RETURNING user_key", [id, display]);
+    if (linked.rows[0]) {
+      const seen = await this.query<ViewerSql>(`UPDATE viewers SET last_seen = now() WHERE user_key = $1 RETURNING ${VIEWER_COLS}`, [linked.rows[0].user_key]);
+      if (seen.rows[0]) return this.toViewer(seen.rows[0]);
+    }
+    const { rows } = await this.query<ViewerSql>(
+      `INSERT INTO viewers (user_key, display, msg_count) VALUES ($1,$2,0)
+       ON CONFLICT (user_key) DO UPDATE SET display = EXCLUDED.display, last_seen = now()
+       RETURNING ${VIEWER_COLS}`,
+      [voiceKey(id), display],
+    );
+    return this.toViewer(rows[0]!);
+  }
+
+  // @spec MEM-VOICE-005
+  async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
+    const id = discordId.toLowerCase();
+    const want = target.trim().toLowerCase();
+    const voice = voiceKey(id);
+    return this.tx(async (q) => {
+      const byKey = await q<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1`, [want]);
+      const found = byKey.rows[0] ?? (await q<ViewerSql>(
+        `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = $1 ORDER BY last_seen DESC, user_key LIMIT 1`, [want])).rows[0];
+      if (!found || isVoiceKey(found.user_key)) return undefined;
+      const voiceRow = (await q<{ display: string }>("SELECT display FROM viewers WHERE user_key = $1", [voice])).rows[0];
+      let moved = 0;
+      if (voiceRow) {
+        const m = await q(
+          "UPDATE viewer_notes SET user_key = $1, dirty = true, version = version + 1 WHERE user_key = $2", [found.user_key, voice]);
+        moved = m.rowCount ?? 0;
+        await q("UPDATE viewer_note_deletions SET user_key = $1 WHERE user_key = $2", [found.user_key, voice]);
+        await q("DELETE FROM viewers WHERE user_key = $1", [voice]);
+      }
+      await q(
+        `INSERT INTO viewer_links (discord_id, user_key, discord_display) VALUES ($1,$2,$3)
+         ON CONFLICT (discord_id) DO UPDATE SET user_key = EXCLUDED.user_key,
+           discord_display = COALESCE(EXCLUDED.discord_display, viewer_links.discord_display), updated_at = now()`,
+        [id, found.user_key, voiceRow?.display ?? null],
+      );
+      return { viewer: this.toViewer(found), moved };
+    });
+  }
+
+  // @spec MEM-VOICE-006
+  async unlinkDiscord(discordId: string): Promise<boolean> {
+    const res = await this.query("DELETE FROM viewer_links WHERE discord_id = $1", [discordId.toLowerCase()]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async listLinks(userKey: string): Promise<LinkRow[]> {
+    const { rows } = await this.query<{ discord_id: string; discord_display: string | null }>(
+      "SELECT discord_id, discord_display FROM viewer_links WHERE user_key = $1 ORDER BY updated_at, discord_id", [userKey.toLowerCase()]);
+    return rows.map((r) => ({ discordId: r.discord_id, discordDisplay: r.discord_display }));
   }
 
   // @spec MEM-CAPTURE-011, MEM-REG-004

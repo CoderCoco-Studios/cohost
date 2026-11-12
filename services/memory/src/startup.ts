@@ -81,12 +81,12 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
     bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
     bus.subscribe({ group: "memory-recall", types: ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], start: "resume", onReady: recall.onReady }, onEvent),
   ];
-  // @spec MEM-CAPTURE-001
+  // @spec MEM-CAPTURE-001, MEM-VOICE-003
   // A third group for note capture, so a slow classifier call never delays memory writes or recall answers.
   if (onCaptureEvent) {
     const notes = groupReady();
     groups.push(notes);
-    running.push(bus.subscribe({ group: "memory-notes", types: ["chat.message"], start: "resume", onReady: notes.onReady }, onCaptureEvent));
+    running.push(bus.subscribe({ group: "memory-notes", types: ["chat.message", "speech.heard"], start: "resume", onReady: notes.onReady }, onCaptureEvent));
   }
   // The subscriptions run until the bus stops; only their early failure matters here.
   await Promise.race([Promise.all(groups.map((g) => g.ready)), ...running]);

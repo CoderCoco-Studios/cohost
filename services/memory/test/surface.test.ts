@@ -163,3 +163,33 @@ test("a viewer on their first message gets a note captured and surfaced: regular
   assert.equal(v!.regular, false);
   assert.deepEqual(v!.notes.map((n) => n.text), ["just got a Steam Deck"]);
 });
+
+// @spec MEM-VOICE-008, MEM-VOICE-007
+test("a voice viewer's health note reaches the cortex as a hint only, once per cooldown, found by the speaker's name", async () => {
+  const { store, ask, advance } = setup();
+  await store.touchSpeaker("D1", "Chris");
+  await store.insertNote({ userKey: "discord:d1", category: "health", text: "has the flu", hint: "check in gently" });
+  await store.insertNote({ userKey: "discord:d1", category: "general", text: "plays chess" });
+  const [first] = await ask(["chris"]);
+  assert.equal(first!.user, "Chris");
+  const health = first!.notes.find((n) => n.category === "health")!;
+  assert.deepEqual(health, { layer: "recent", category: "health", hint: "check in gently", strength: 1 });
+  assert.ok(!("text" in health), "health text never leaves memory");
+  assert.equal(first!.notes.find((n) => n.category === "general")!.text, "plays chess");
+  const [second] = await ask(["chris"]);
+  assert.ok(!second!.notes.some((n) => n.category === "health"), "the sensitive cooldown applies");
+  advance(25 * 3_600_000);
+  assert.ok((await ask(["chris"]))[0]!.notes.some((n) => n.category === "health"));
+});
+
+// @spec MEM-VOICE-007
+test("a linked speaker's notes surface under the Discord name they speak under", async () => {
+  const { store, ask } = setup();
+  await store.touchViewer("ID1", "BobChat");
+  await store.linkDiscord("D1", "ID1");
+  await store.touchSpeaker("D1", "bob_voice");
+  await store.insertNote({ userKey: "ID1", category: "general", text: "plays chess" });
+  const out = await ask(["Bob_Voice"]);
+  assert.deepEqual(out.map((v) => [v.user, v.notes.length]), [["BobChat", 1]]);
+});
+

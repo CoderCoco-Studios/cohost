@@ -131,14 +131,14 @@ test("the consolidation catch-up check runs once the service is ready, and its f
   assert.ok(failing.warnings.some((w) => w.includes("catch-up")));
 });
 
-// @spec MEM-CAPTURE-001, MEM-EVT-001
-test("note capture runs in a third consumer group, memory-notes, for chat.message only, subscribed with start mode resume", async () => {
+// @spec MEM-CAPTURE-001, MEM-EVT-001, MEM-VOICE-003
+test("note capture runs in a third consumer group, memory-notes, for chat.message and speech.heard, subscribed with start mode resume", async () => {
   const t = setup({ capture: true });
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start]), [
     ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume"],
     ["memory-recall", ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], "resume"],
-    ["memory-notes", ["chat.message"], "resume"],
+    ["memory-notes", ["chat.message", "speech.heard"], "resume"],
   ]);
   assert.equal(t.events.at(-1), "ready");
 });

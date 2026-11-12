@@ -82,6 +82,7 @@ take the same path.
   `eyes` with `VISION_ENABLED=true` always wants a reachable OBS: its mock covers injected images only.
 - Real backends one at a time: delete the matching line and fill in the account (Twitch, Discord, OBS and
   VTube Studio sections of `.env`), then restart that service from the Services tab.
+- `GET /services` without the bearer token returns `state: unknown` for every unit; send the control token to see unit details.
 
 **Docker from WSL2.** With Docker Desktop's WSL integration on, `docker` is on the distro's path and nothing
 more is needed. Without it, set `COHOST_DOCKER_BIN=docker.exe` in `.env`; the dashboard and `cohostctl` then

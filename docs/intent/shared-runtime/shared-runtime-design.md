@@ -25,7 +25,7 @@ Guiding rules:
 | `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio | `@cohost/config`, `@cohost/bus` |
 | `@cohost/shared/discord-voice` | the Discord voice session | the above, plus `discord.js`, `@discordjs/voice` and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) |
 
-The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package keeps only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers that sat in it because every service already imported it live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only ears and mouth import it.
+The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package keeps only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers that sat in it because every service already imported it live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client.
 
 ## Service bootstrap (`runService`)
 
@@ -80,7 +80,7 @@ Each user keeps its own delays, stated in its own segment:
 
 | User | Base | Cap | Factor |
 |---|---|---|---|
-| Discord join (ears, mouth) | 5 s | 60 s | 2 |
+| Discord join (Discord connector) | 5 s | 60 s | 2 |
 | OBS connect (eyes) | 10 s | 60 s | 2 |
 | Postgres wait (memory), recall startup (cortex) | 3 s | 3 s | 1 |
 | Fallback clip regeneration (voice) | 60 s | 15 min | 2 |
@@ -157,7 +157,7 @@ What one service alone needs stays with it: voice's lip-sync envelope and mouth'
 
 ## Discord voice session (`@cohost/shared/discord-voice`)
 
-ears and mouth each hold a Discord voice connection through their own bot (HLD, Listening and speaking). Both run the same session:
+The Discord connector holds the one Discord voice connection of the co-host's one bot (HLD, Connectors) and is the session's only user. ears and mouth reach Discord through the connector's audio streams, not through this session:
 
 ```ts
 createDiscordVoiceSession({
@@ -167,12 +167,12 @@ createDiscordVoiceSession({
 })  // -> { start(): Promise<void>, isReady(): boolean, stop(): Promise<void> }
 ```
 
-- `start()` logs in, waits for the client to be ready, then joins with `retryWithBackoff` under `singleFlight`, waiting up to 20 s for each join to reach Ready; each failed join destroys the half-open connection and calls `onJoinFailed` before the next attempt. A failed login rejects `start()`; ears and mouth treat that as fatal (exit 1), as they do today.
-- When the connection is ready, `isReady()` turns true and `onConnected` runs; the service attaches its receiver (ears) or player (mouth) there.
+- `start()` logs in, waits for the client to be ready, then joins with `retryWithBackoff` under `singleFlight`, waiting up to 20 s for each join to reach Ready; each failed join destroys the half-open connection and calls `onJoinFailed` before the next attempt. A failed login rejects `start()`; the connector treats that as fatal (exit 1).
+- When the connection is ready, `isReady()` turns true and `onConnected` runs; the connector attaches its receiver and its player there.
 - On a disconnect, the session waits up to 5 s for Discord to move the connection back to signalling or connecting; if it does not, `isReady()` turns false, `onDisconnected` runs, the connection is destroyed and the join loop starts again after a 5 s delay.
 - `stop()` ends the join loop, destroys the connection and the client, and resolves; a second `stop()` does nothing.
 
-The service decides what a failed join or a disconnect means for its heartbeat (both report `deps.discord` `down`). Service-specific parts stay in the service: ears refuses a token equal to `DISCORD_TOKEN`, ignores bot accounts and asks for the members intent to name speakers; mouth plays utterances and runs the fallback line.
+The connector decides what a failed join or a disconnect means for its heartbeat and registration (both report its Discord dependency `down` and its capabilities not ready, CONN-DISC-004). Connector-specific parts stay in the connector: it ignores bot accounts, asks for the members intent to name speakers and joins undeafened and unmuted; ears turns the audio into `speech.heard` and mouth plays utterances and runs the fallback line.
 
 ## Hash embedding
 
@@ -215,7 +215,7 @@ Each using segment keeps a line that states its own parameters and cites the mod
 | One leaf or several | One leaf with within-leaf facets (BOOT, LIFE, RETRY, IDLE, CTRL, INJ, AUDIO, DVS, BOUND) | A sub-HLD with a child leaf per module; one segment per module | The modules share one parent intent (one implementation of each cross-service concern) but no module has enough design of its own to warrant a node; a sub-HLD would be a table of contents. Promote if one module (most likely the Discord session) grows its own design. |
 | Lifecycle helpers' home | `@cohost/shared` | Stay in the bus package; a new `@cohost/lifecycle` package | They are process concerns, not transport, and their place in the bus package caused an import cycle. A package of their own would be a fourth package every service imports for three functions. |
 | `@cohost/shared` dependencies | Depends on config and bus | No workspace dependencies (helpers only) | Bootstrap and the heartbeat need the bus and the config loader; structural copies of their types would drift. The bus cannot then import shared, so the bus keeps its private read backoff. |
-| DiscordVoiceSession in shared | In `@cohost/shared` behind the `discord-voice` subpath export (owner decision) | A dedicated `@cohost/discord-voice` package; keep two copies in ears and mouth | Two services with near-identical session code is the case the owner's sharing rule covers. A subpath keeps `discord.js` and the native modules out of every other service's load path; the image already installs every workspace dependency, so a separate package buys nothing until per-service installs exist (deployment open question). Promote to its own package then. |
+| DiscordVoiceSession in shared | In `@cohost/shared` behind the `discord-voice` subpath export (owner decision) | A dedicated `@cohost/discord-voice` package; keep a copy in each service that uses it | Two services with near-identical session code is the case the owner's sharing rule covers. A subpath keeps `discord.js` and the native modules out of every other service's load path; the image already installs every workspace dependency, so a separate package buys nothing until per-service installs exist (deployment open question). Promote to its own package then. |
 | Hash embedder dedupe | memory's in-memory store embeds with `@cohost/llm`'s `HashEmbedder`; no embedder in shared | Keep both; make the fake's non-negative variant the one; move the hasher into shared | Two embedders that disagree make fake-store tests prove nothing about hash mode. Keeping the production algorithm keeps vectors already stored in Postgres comparable (same 64 dimensions, so a change would not trip the dimension check and would silently degrade recall). The embedder implements `@cohost/llm`'s `Embedder` interface, so it stays there; memory already depends on that package. Owner decision. |
 | Retry rule | One `retryWithBackoff` with per-user base, cap and factor | One fixed delay rule for all; leave each loop as written | Five loops with five rules had drifted (eyes had no backoff at all). One mechanism with per-user numbers keeps the behaviour each user chose and gives every loop stop handling and failure reporting. |
 | Idle reminder | Error once, then a reminder after 60 s, doubling to a one-hour cap (SHARED-IDLE-003, SHARED-IDLE-006) | One error only; a reminder every 60 s forever | A single line scrolls away in a long-running container log, and the owner reads logs after the fact, so the cause must reappear; but a fixed 60 s reminder writes 1440 lines a day for a fault that does not change. Backing off keeps it visible early and bounds the rate at one line an hour. |

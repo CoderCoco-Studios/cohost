@@ -41,6 +41,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 | eyes | pnpm | eyes | fresh | | `VISION_ENABLED=false`, `VISION_ENGINE=stub` |
 | ears | pnpm | ears | fresh | | `EARS_SOURCE=off`, `EARS_STT_ENGINE=stub` |
 | mouth | pnpm | mouth | fresh | | `MOUTH_DISCORD_ENABLED=false`, `MOUTH_DRYRUN_ENABLED=true` |
+| discord (Compose service `connector-discord`) | pnpm | none | resume | | `CONNECTIONS_DISCORD_ENABLED=false` |
 | redis | compose-only | none | resume | `infra` | none |
 | postgres | compose-only | none | resume | `infra` | none |
 | ollama, tts, stt | compose-only | none | resume | | none |

@@ -62,6 +62,10 @@ Blind divergence probe (forks narrowed in the lines): readiness judged at intake
 
 Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the names `ears` and `mouth`; ears ignores every bot account; per-output `gain_db` (-40 to 12 dB, default 0); one Compose profile each, off by default; the dashboard page outside `mouth.outputs`; per-output queues, storm limit and bad-clip marks; mouth self-deafened and ears self-muted.
 
+## Connector sink: designed
+
+The `discord` output becomes a connector sink: mouth writes frames to `audio.out.discord` and the Discord connector ([connections](connections.md)) plays them; mouth holds no Discord client, token or voice connection. Specs MOUTH-CONN-001 to 005 (`[ ]`); the per-service Discord specs (MOUTH-START-002, MOUTH-SESS-001 to 004, 007 to 009) are superseded `[D]` lines kept until the code and tests are removed. The sections above describe the two-bot arrangement that this replaces.
+
 ## References
 
 ### HLD

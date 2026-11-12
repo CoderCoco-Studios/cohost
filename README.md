@@ -140,25 +140,29 @@ applications at <https://discord.com/developers> and invite both to your server:
 
 | service | `.env` key | permissions | profile |
 |---|---|---|---|
-| `mouth` (speaks) | `DISCORD_TOKEN` | Connect, Speak | `mouth` |
-| `ears` (listens) | `EARS_DISCORD_TOKEN` | Connect, plus the Server Members intent | `ears` |
+| Discord connector (hears and speaks) | `DISCORD_TOKEN` | Connect, Speak, plus the Server Members intent | `discord` |
 
-The two tokens must differ: one bot cannot hold a voice connection in two
-processes. ears ignores every bot account, so it never transcribes her own voice.
-Set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`. To keep both
+One bot serves both halves: the Discord connector logs in, holds the one voice
+connection and carries her voice out and the channel's audio in over Redis, so
+`ears` (listens) and `mouth` (speaks) hold no Discord client and need no token.
+The connector ignores every bot account, so it never hears her own voice.
+Set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`. To keep the
 profiles on across restarts and Launch, list them in `.env`:
-`COMPOSE_PROFILES=ears,mouth` (add `eyes` for vision).
+`COMPOSE_PROFILES=discord,ears,mouth` (add `eyes` for vision).
 
 **Where her voice goes** is the `mouth.outputs` table in `config/config.yaml`.
 Each key is one output; today there is one, `discord`:
 
 ```yaml
+connections:
+  discord:
+    enabled: true        # false = the connector idles and holds no connection
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
 mouth:
   outputs:
     discord:
       enabled: true      # false = mouth plays nothing
-      guild_id: "${DISCORD_GUILD_ID}"
-      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
       gain_db: 0         # loudness on this output only, -40..12 dB
   fallback:
     min_interval_ms: 20000   # at most one fallback line per 20 s on an output
@@ -168,10 +172,16 @@ The dashboard's browser page (`?sink=1`, often an OBS Browser Source) is a
 separate sink, not an output: open it wherever you want her voice to play. A
 routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
 
-**Upgrading from the combined ears** (which both listened and spoke): create the
-listening bot and set `EARS_DISCORD_TOKEN`; keep your existing `DISCORD_TOKEN` as
-the speaking bot; add `mouth` to `COMPOSE_PROFILES`; and move
-`ears.fallback.min_interval_ms` to `mouth.fallback.min_interval_ms` in `config.yaml`.
+**Upgrading from two bots:** remove `EARS_DISCORD_TOKEN`, keep `DISCORD_TOKEN`, add
+`discord` to `COMPOSE_PROFILES`, and move `ears.discord.*` and
+`mouth.outputs.discord.guild_id` / `voice_channel_id` to `connections.discord.*` in
+`config.yaml`.
+
+**Listening sources.** `ears.sources` is a list, so several run at once (default `[discord]`):
+`http` and `dir` need no account, and a connector tag such as `desktop` (the host capture
+helper) is an open name that a connector registers. `EARS_SOURCE` still sets the legacy
+single `ears.source`, which `ears.sources` overrides when both are set. A source with no
+connector, token or path is `down` while the others keep running.
 
 ## Configuration
 
@@ -368,7 +378,7 @@ has an opt-in preset env var (wired into `config/config.example.yaml` as
 predates them). Defaults are unchanged: with none set you get the live backends.
 A service on a mock/off backend logs a warning at startup and reports heartbeat
 mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
-`EARS_DISCORD_TOKEN` or `DISCORD_TOKEN`) idles as `degraded` instead of exiting.
+`DISCORD_TOKEN`) idles as `degraded` instead of exiting.
 
 | Service | Preset | Result (mode) |
 |---|---|---|

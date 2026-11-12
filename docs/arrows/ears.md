@@ -4,7 +4,7 @@ Discord voice in (per-speaker capture, STT, `speech.heard`), the account-free `h
 
 ## Status
 
-**AUDITED**, 2026-11-11 (git SHA `ae84c73` plus the listen-only change): the listening and speaking split is built (build chunk 4 of [mouth.md](mouth.md)). 52 specs: 52 implemented, 0 deferred, 0 gaps (the 12 EARS-CAP specs are the capture sources, built in the reopened gap-closure pass). Before the split the segment held 66 specs; the 29 that moved to mouth are retired and their numbers are not reused. Audited 2026-11-02 (`1b57790`), mapped 2026-10-31 (`686cc8f`); the owner's audit decisions of 2026-11-01 are applied below.
+**AUDITED** (multi-source specs designed since, see below), 2026-11-11 (git SHA `ae84c73` plus the listen-only change): the listening and speaking split is built (build chunk 4 of [mouth.md](mouth.md)). 52 specs: 52 implemented, 0 deferred, 0 gaps (the 12 EARS-CAP specs are the capture sources, built in the reopened gap-closure pass). Before the split the segment held 66 specs; the 29 that moved to mouth are retired and their numbers are not reused. Audited 2026-11-02 (`1b57790`), mapped 2026-10-31 (`686cc8f`); the owner's audit decisions of 2026-11-01 are applied below.
 
 ## Listening and speaking split: built
 
@@ -19,6 +19,14 @@ Design: LLD (Context, Startup Plans, Decisions), [decision doc](../intent/ears/d
 ## Capture sources: built
 
 Design: LLD [Capture sources](../intent/ears/ears-design.md#capture-sources) and the Decisions row "More listening sources". `ears.source` is `discord | off | http | dir` (CFG-SCH-030); `capture.ts` is the adapter contract and `decodeClip`, `Hearing.heardClip` the shared path (EARS-CAP-001, 002), `capture-http.ts` the `http` listener (EARS-CAP-005 to 007, 012), `capture-dir.ts` the polled directory (EARS-CAP-008, 009, 012). Plans `http`, `dir` and `no-dir` need no token and load no `discord.js` (EARS-CAP-003, 004, 010); their heartbeats add `deps.http` / `deps.dir` (EARS-CAP-011). Both sources work with `ears.stt_engine: stub`. `INJECT_QUEUE_LIMIT` is now exported by `@cohost/shared` (SHARED-INJ-010). Config keys `ears.http.host` / `port` and `ears.dir.path` / `poll_ms` are in `config.example.yaml`; no new environment variable (the Compose file passes only `EARS_SOURCE`, which now also accepts `http` and `dir`; a container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator).
+
+## Multiple sources: designed
+
+Design: LLD [Multiple sources](../intent/ears/ears-design.md#multiple-sources) and the Decisions rows "Several sources at once" and "Source tag on `speech.heard`". `ears.sources` lists the enabled sources (`http`, `dir` or an open connector tag such as `discord` or `desktop`), each an independent `CaptureAdapter` with its own health; clips carry an optional `source`. Specs EARS-SRC-001 to EARS-SRC-016 (`[ ]`, except EARS-SRC-011 retired and EARS-SRC-016 deferred); the single-source specs EARS-START-001, EARS-START-004, EARS-CAP-003, EARS-CAP-004, EARS-CAP-011 and EARS-HLTH-001 are amended to the one-source case. The `desktop` source is a connector (registration and liveness per CONN-DESK-001) whose clips ship over the `http` listener as the interim path, migrating to `audio.in.desktop` (CONN-DESK-002, EARS-SRC-016, deferred); it is fed by a bundled cross-platform capture helper on the host (LLD [Desktop audio](../intent/ears/ears-design.md#desktop-audio)), a new component with no code yet. Cross-segment: BUS-EVT-013 (optional `source`) and CFG-SCH-030 (`ears.sources`) belong to event-bus and config.
+
+## Connector sources: designed
+
+Discord leaves ears: the Discord connector ([connections](connections.md)) holds the one bot and publishes `audio.in.discord`; ears consumes connector sources, holds no Discord client or token, and cuts utterances by `ears.silence_ms` of frame gap. Specs EARS-CON-001 to 005 (`[ ]`); the per-service Discord specs (EARS-START-002, 007, EARS-SESS-*, EARS-HEAR-003, EARS-AUD-005, EARS-INJ-007) are superseded `[D]` lines kept until the code and tests are removed. Cascade list and build order: [connections.md](connections.md). The sections above describe the two-bot arrangement that this replaces.
 
 ## Decisions applied
 
@@ -107,9 +115,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Audio injection | EARS-INJ-005 to EARS-INJ-011 | 7 | 0 | 0 | 6 |
 | Stub transcriber | EARS-STUB-001 to EARS-STUB-002 | 2 | 0 | 0 | 2 |
 | Health | EARS-HLTH-001 to EARS-HLTH-003 | 3 | 0 | 0 | 3 |
-| Capture sources | EARS-CAP-001 to EARS-CAP-012 | 12 | 0 | 0 | 12 |
+| Capture sources | EARS-CAP-001 to EARS-CAP-012 | 10 | 0 | 2 | 10 |
+| Multiple sources | EARS-SRC-001 to EARS-SRC-015 | 0 | 0 | 10 | 0 |
 
-**Summary:** 52 of 52 specs implemented; 0 deferred; 0 open. 49 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 62 specs: 52 earlier ones, of which 5 are amended for several sources (EARS-START-001, EARS-START-004, EARS-CAP-003, EARS-CAP-004, EARS-CAP-011; EARS-HLTH-001 too, in the Health row) and read `[ ]` until the code follows, plus 10 new unbuilt EARS-SRC specs; 0 deferred. Row counts above are rounded to the nearest whole category and not recounted per amended spec. 49 carry a test `@spec` annotation; implemented without one: EARS-SESS-003, EARS-HEAR-003, EARS-INJ-009 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

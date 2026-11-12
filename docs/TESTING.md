@@ -123,8 +123,8 @@ What each service needs to come up, and what it does if that is missing
 | `memory` | Redis + Ollama (embeddings) + Postgres | logs `waiting for ollama (embeddings)...` forever; **cannot be stubbed** with `stub-llm` (no `/api/embed`). Bring up the real `postgres` + `ollama` (§5b) or leave it out. `cortex` copes without it (see below) |
 | `chat` | `TWITCH_CHANNEL` | idles as `degraded` without it (`deps.twitch: down`) instead of exiting, and still accepts injected chat. With only a channel it reads anonymous IRC (**not verified**, needs the internet) |
 | `eyes` | OBS + a vision model | idles as `off` with `VISION_ENABLED=false` (default); injected images are still described, by the stub with `VISION_ENGINE=stub`. With `VISION_ENABLED=true` it needs OBS (see [OBS requirements](#obs-requirements)) and waits `degraded` until it answers |
-| `ears` | Discord listening bot (`EARS_DISCORD_TOKEN`) + STT | idles as `degraded` without `EARS_DISCORD_TOKEN` (no Discord client) and still accepts injected audio; `EARS_SOURCE=off` idles as `off`; `EARS_SOURCE=http` (`curl --data-binary @clip.wav -H 'Content-Type: audio/wav' http://127.0.0.1:8765/audio`) and `EARS_SOURCE=dir` (drop a `.wav` in `ears.dir.path`) feed clips through the live path with no Discord account; `EARS_STT_ENGINE=stub` answers every clip with a fixed transcript and needs no `stt` server. See §5 |
-| `mouth` | Redis (and `voice` for audio) | `MOUTH_DISCORD_ENABLED=false` idles as `off`; with no `DISCORD_TOKEN` it idles `degraded`; `MOUTH_DRYRUN_ENABLED=true` adds the `dryrun` output that accepts every `voice.utterance` and plays nothing (mode `mock`), so the whole speaking path above Discord runs |
+| `ears` | Discord connector (`DISCORD_TOKEN`, profile `discord`) + STT | holds no Discord client; with no connector present `deps.discord` is `down` and it still accepts injected audio; `EARS_SOURCE=off` idles as `off`; `EARS_SOURCE=http` (`curl --data-binary @clip.wav -H 'Content-Type: audio/wav' http://127.0.0.1:8765/audio`) and `EARS_SOURCE=dir` (drop a `.wav` in `ears.dir.path`) feed clips through the live path with no Discord account; `EARS_STT_ENGINE=stub` answers every clip with a fixed transcript and needs no `stt` server. See §5 |
+| `mouth` | Redis (and `voice` for audio) | `MOUTH_DISCORD_ENABLED=false` idles as `off`; with no connector the `discord` output is not ready; `MOUTH_DRYRUN_ENABLED=true` adds the `dryrun` output that accepts every `voice.utterance` and plays nothing (mode `mock`), so the whole speaking path above Discord runs |
 
 `cortex` without `memory` still replies: it waits `brain.cortex.recall_timeout_ms`
 for `memory.recall.reply`, logs `memory region did not answer in time`, and
@@ -256,27 +256,28 @@ Also verified on the same machine:
   Compose sets `VOICE_URL=http://voice:8700` for the containers itself.
   `chat` was left out: it exits without `TWITCH_CHANNEL` and compose restarts it forever.
 
-### 5d. Two-bot Discord setup
+### 5d. One-bot Discord setup
 
-Hearing and speaking are two services with a bot each, so either can run, restart or be tested without the other.
+One Discord connector holds the bot's login and voice connection; ears (hearing) and mouth (speaking) take audio from it and to it over Redis and hold no Discord client, so any of the three can run, restart or be tested without the others.
 This is the setup to verify on the first real Discord run; nothing here can be checked without a guild.
 
-| | `mouth` (speaks) | `ears` (listens) |
-|---|---|---|
-| token in `.env` | `DISCORD_TOKEN` | `EARS_DISCORD_TOKEN` |
-| bot permissions in the voice channel | Connect, Speak | Connect (no Speak) |
-| privileged intents | none | Server Members |
-| Compose profile | `mouth` | `ears` |
-| idles without its token | `degraded` | `degraded` |
+| | Discord connector |
+|---|---|
+| token in `.env` | `DISCORD_TOKEN` (the only Discord token) |
+| bot permissions in the voice channel | Connect, Speak |
+| privileged intents | Server Members |
+| Compose profile | `discord` (beside `ears` and `mouth`) |
+| idles without its token | `degraded`, registers nothing |
 
-Both also need `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`, and `COMPOSE_PROFILES=ears,mouth` keeps them on across Launch.
+Also set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env` (they reach `connections.discord.*`), and `COMPOSE_PROFILES=discord,ears,mouth` keeps the profiles on across Launch.
 Checks, in order:
 
-1. Start only `ears` (`docker compose --profile ears up -d ears`) with a token that equals `DISCORD_TOKEN`: ears idles `degraded` and says it needs its own bot. Fix the token.
-2. With `ears` joined (self-muted), speak in the channel: `speech.heard` appears on the feed with your display name. This is where the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are confirmed or found missing.
+1. Start only `ears` with no connector: `deps.discord` is `down` (`discord connector not connected`) and injected audio still works. Start the connector: `deps.discord` returns to `ok` without restarting ears.
+2. With the connector joined, undeafened and unmuted, speak in the channel: `speech.heard` appears on the feed with your display name and `source` `discord`. This is where the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are confirmed or found missing.
 3. Start `mouth`, send a chat line, hear the reply in the channel. Then stop `voice` and send another: mouth plays its cached fallback line, at most once per `mouth.fallback.min_interval_ms`.
-4. With both bots in the channel, the co-host's own voice never becomes `speech.heard` (ears ignores every bot account).
-5. Disable the output (`mouth.outputs.discord.enabled: false` in the Settings tab, restart `mouth`): it idles `off` and plays nothing.
+4. The co-host's own voice never becomes `speech.heard` (the connector reads no bot account).
+5. Disable the output (`mouth.outputs.discord.enabled: false` in the Settings tab, restart `mouth`): it idles `off` and plays nothing. Kill and restart the connector: it rejoins and both halves resume.
+6. Several sources: set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio`, and see `speech.heard` with `source` `http`; stop the connector and see only `deps.discord` go `down`.
 
 ### OBS requirements
 

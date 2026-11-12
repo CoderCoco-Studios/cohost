@@ -48,6 +48,8 @@ export interface StackServiceOptions {
   probeMs?: number;
   /** The control plane's lifecycle lock, shared with cohostctl (DASH-STACK-009); absent means no cross-process lock. */
   lock?: { tryAcquire(action: string): LockResult };
+  /** This process's pid, named as the holder in an in-process busy refusal; `process.pid` by default. */
+  pid?: number;
 }
 
 export const PROBE_MS = 5000;
@@ -166,7 +168,6 @@ export class StackService {
   }
 
   /** Claims the one action slot for a per-service lifecycle request; the returned function frees it. Undefined when busy. */
-  // @spec DASH-STACK-003
   // @spec DASH-STACK-003, DASH-STACK-009
   tryAcquire(kind: string): (() => void) | undefined {
     if (this.slot) return undefined;
@@ -180,7 +181,10 @@ export class StackService {
   busyKind(): string | undefined { return this.slot; }
 
   /** The `detail` of a refused claim: the in-process holder, else the other process holding the lock. */
-  busyDetail(): string { return this.slot ? `busy: ${this.slot}` : this.foreign ?? "busy"; }
+  busyDetail(): string { return this.slot ? this.inProcessDetail(this.slot) : this.foreign ?? "busy"; }
+
+  /** The lock's refusal text (CTRL-LOCK-002) for the action this process is running. */
+  private inProcessDetail(kind: string): string { return `busy: ${kind} held by dashboard (pid ${this.o.pid ?? process.pid})`; }
 
   /** Takes the cross-process lock; a refusal is remembered as the `busy` detail. */
   private takeLock(kind: string): LockResult {
@@ -193,7 +197,7 @@ export class StackService {
   /** Validates a stack action (DASH-STACK-003 to 005) and, when allowed, starts it in the background. */
   // @spec DASH-STACK-002, DASH-STACK-003, DASH-STACK-004, DASH-STACK-005, DASH-STACK-009
   request(kind: StackActionKind, restarter: Pick<ServiceController, "restart">): StackRequest {
-    if (this.slot) return { ok: false, status: 409, detail: `busy: ${this.slot}` };
+    if (this.slot) return { ok: false, status: 409, detail: this.inProcessDetail(this.slot) };
     const st = this.status;
     if (!st || !st.docker.ok || !this.ops) return { ok: false, status: 503, detail: st?.docker.detail ?? NOT_PROBED };
     if (kind === "restart" && stackState(st) === "down") return { ok: false, status: 409, detail: "the stack is down: nothing to restart; launch it first" };

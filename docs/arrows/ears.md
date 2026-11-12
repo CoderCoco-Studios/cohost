@@ -18,7 +18,7 @@ Design: LLD (Context, Startup Plans, Decisions), [decision doc](../intent/ears/d
 
 ## Capture sources: built
 
-Design: LLD [Capture sources](../intent/ears/ears-design.md#capture-sources) and the Decisions row "More listening sources". `ears.source` is `discord | off | http | dir` (CFG-SCH-029); `capture.ts` is the adapter contract and `decodeClip`, `Hearing.heardClip` the shared path (EARS-CAP-001, 002), `capture-http.ts` the `http` listener (EARS-CAP-005 to 007, 012), `capture-dir.ts` the polled directory (EARS-CAP-008, 009, 012). Plans `http`, `dir` and `no-dir` need no token and load no `discord.js` (EARS-CAP-003, 004, 010); their heartbeats add `deps.http` / `deps.dir` (EARS-CAP-011). Both sources work with `ears.stt_engine: stub`. `INJECT_QUEUE_LIMIT` is now exported by `@cohost/shared` (SHARED-INJ-010). Config keys `ears.http.host` / `port` and `ears.dir.path` / `poll_ms` are in `config.example.yaml`; no new environment variable (the Compose file passes only `EARS_SOURCE`, which now also accepts `http` and `dir`; a container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator).
+Design: LLD [Capture sources](../intent/ears/ears-design.md#capture-sources) and the Decisions row "More listening sources". `ears.source` is `discord | off | http | dir` (CFG-SCH-030); `capture.ts` is the adapter contract and `decodeClip`, `Hearing.heardClip` the shared path (EARS-CAP-001, 002), `capture-http.ts` the `http` listener (EARS-CAP-005 to 007, 012), `capture-dir.ts` the polled directory (EARS-CAP-008, 009, 012). Plans `http`, `dir` and `no-dir` need no token and load no `discord.js` (EARS-CAP-003, 004, 010); their heartbeats add `deps.http` / `deps.dir` (EARS-CAP-011). Both sources work with `ears.stt_engine: stub`. `INJECT_QUEUE_LIMIT` is now exported by `@cohost/shared` (SHARED-INJ-010). Config keys `ears.http.host` / `port` and `ears.dir.path` / `poll_ms` are in `config.example.yaml`; no new environment variable (the Compose file passes only `EARS_SOURCE`, which now also accepts `http` and `dir`; a container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator).
 
 ## Decisions applied
 
@@ -56,7 +56,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - services/ears/test/filter.test.ts, transcript.test.ts (Unicode word filter, `ears.drop_phrases`, config keys)
 - services/ears/test/stub.test.ts, loop.test.ts, inject-limits.test.ts (stub engine, non-blocking inject loop, byte cap and kinds)
 - packages/shared/test/join.test.ts (the `createJoiner` retry loop behind SHARED-DVS-004)
-- packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`; CFG-SCH-029: capture-source keys)
+- packages/config/test/config.test.ts (CFG-SCH-018: no `ears.fallback`; CFG-SCH-030: capture-source keys)
 
 57 `@spec` annotations in the ears tests; every `[x]` ears spec has a test of its own except EARS-SESS-003 (not a voice channel) and EARS-HEAR-002 and 003 (decode), which run inside discord.js and prism-media; SHARED-DVS-003 (disconnect and rejoin) is covered in `packages/shared`.
 

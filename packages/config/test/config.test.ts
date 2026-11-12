@@ -768,7 +768,7 @@ test("brain.affect republish, short-line cutoff and nudge sizes default to the f
   }
 });
 
-// @spec CFG-SCH-029
+// @spec CFG-SCH-030
 test("ears.source accepts http and dir; ears.http and ears.dir default when absent and are validated", async () => {
   const { ConfigSchema } = await import("../src/schema.js");
   const base = {

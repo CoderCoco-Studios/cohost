@@ -8,7 +8,7 @@
 
 ## Gap closure C3 (built 2026-11-11)
 
-`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-SCH-029` (`ears.source` http and dir, `ears.http`, `ears.dir`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
+`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-SCH-030` (`ears.source` http and dir, `ears.http`, `ears.dir`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
 
 ## Listening and speaking split (built)
 

@@ -293,7 +293,7 @@ export const ConfigSchema = z.object({
      * Where audio comes from: `discord` (a voice channel), `http` (clips POSTed to `ears.http`), `dir` (WAV files
      * dropped in `ears.dir.path`), or `off` (idle, no capture; isolated runs). Read at start.
      */
-    // @spec CFG-SCH-029
+    // @spec CFG-SCH-030
     source: z.preprocess((v) => v || "discord", z.enum(["discord", "off", "http", "dir"])),
     /** The `http` source's listener; port 0 picks a free port. */
     http: z.object({

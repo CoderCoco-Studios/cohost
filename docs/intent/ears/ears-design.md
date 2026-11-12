@@ -39,7 +39,7 @@ At boot `index.ts` hands the service body (`service.ts`) to the shared `runServi
 | `dir` | any | `dir` | none | mode `live`; `ready` once the directory is being polled (EARS-CAP-008) |
 | `dir`, `ears.dir.path` empty | any | `no-dir` | none | mode `live`, state `degraded` with detail `ears.dir.path is not set` (EARS-CAP-010) |
 
-`ears.source` is `discord | off | http | dir` (default `discord`), settable through `EARS_SOURCE` via `config.example.yaml` (`packages/config/src/schema.ts`, CFG-SCH-029). The `http` and `dir` plans need no token and never load `discord.js` (EARS-CAP-003). The source is read at start; changing it takes effect on restart.
+`ears.source` is `discord | off | http | dir` (default `discord`), settable through `EARS_SOURCE` via `config.example.yaml` (`packages/config/src/schema.ts`, CFG-SCH-030). The `http` and `dir` plans need no token and never load `discord.js` (EARS-CAP-003). The source is read at start; changing it takes effect on restart.
 
 In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`, `no-dir`):
 
@@ -60,7 +60,7 @@ Environment and config read by ears:
 | config | `ears.discord.guild_id`, `ears.discord.voice_channel_id` | guild and voice channel to join (EARS-SESS-007), resolved by `voiceTarget` (`session.ts`), which throws `ears.discord.guild_id is not set` / `ears.discord.voice_channel_id is not set` for an empty key; `config.example.yaml` fills them from `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID`. The environment variables are not read by ears |
 | env | `STT_URL` | via `urls.stt()`, default `http://127.0.0.1:8000` (`packages/config/src/index.ts:171`) |
 | env | `DASHBOARD_URL` | via `urls.dashboard()`; the only origin injected uploads may be fetched from (`index.ts:31`) |
-| config | `ears.http.host` (`127.0.0.1`), `ears.http.port` (`8765`), `ears.dir.path` (empty), `ears.dir.poll_ms` (`1000`) | the capture sources below (CFG-SCH-029) |
+| config | `ears.http.host` (`127.0.0.1`), `ears.http.port` (`8765`), `ears.dir.path` (empty), `ears.dir.poll_ms` (`1000`) | the capture sources below (CFG-SCH-030) |
 | config | `ears.source`, `ears.stt_engine` (`speaches` default, or `stub`), `ears.silence_ms` (700), `ears.min_speech_ms` (400), `ears.stt_model` (`Systran/faster-whisper-small`), `ears.drop_phrases` (default empty) | `packages/config/src/schema.ts` |
 
 The listening bot needs the Connect permission in the channel and the privileged Server Members intent (for display names); it needs no Speak permission.

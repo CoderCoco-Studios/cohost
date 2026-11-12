@@ -491,8 +491,19 @@ pnpm install
 pnpm dev                                              # every service with tsx watch
 ```
 
-`pnpm test` builds and runs the unit tests (Node's built-in runner via `tsx`);
-the bus round-trip test needs a Redis on `REDIS_URL` and skips itself otherwise.
+| script | does |
+|---|---|
+| `pnpm build` / `pnpm typecheck` (`pnpm lint` is the same check) | `tsc -b`, with and without emitting |
+| `pnpm test` | build, then every `test/*.test.ts` under `packages/*` and `services/*` (Node's runner via `tsx`) |
+| `pnpm test:only` | the same without the build |
+| `pnpm dashboard` | build and run the host dashboard |
+| `pnpm dev` | every service with `tsx watch` (infra from Compose) |
+| `pnpm reflect` / `pnpm consolidate` / `pnpm reembed` | the memory one-shots on the host (Compose and `cohostctl` run the same code, see above) |
+| `pnpm docs:dev` / `docs:build` / `docs:preview` | the VitePress site built from `docs/` and this README |
+| `pnpm clean` | remove every `dist/` |
+| `node scripts/lid-check.mjs` | the linked-intent check CI runs: every `@spec` ID exists, every ID is defined once |
+
+`pnpm test` skips the bus round-trip tests, each marked `(needs Redis)`, unless a Redis answers on `REDIS_URL`.
 
 Testing one piece at a time (single services, fake bus events, stub TTS/LLM, what needs a GPU): [`docs/TESTING.md`](docs/TESTING.md).
 

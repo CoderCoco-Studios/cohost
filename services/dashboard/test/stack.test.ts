@@ -34,7 +34,7 @@ function fakeOps(initial: StackStatus = none) {
 function service(o: { bus?: "connected" | "unreachable"; now?: () => number } = {}) {
   const rec = recordingLog();
   const bus = { v: o.bus ?? "connected" as "connected" | "unreachable" };
-  const svc = new StackService({ log: rec.log, bus: () => bus.v, ...(o.now ? { now: o.now } : {}) });
+  const svc = new StackService({ log: rec.log, bus: () => bus.v, pid: 4242, ...(o.now ? { now: o.now } : {}) });
   const f = fakeOps();
   svc.attach(f.ops);
   return { svc, f, rec, bus };
@@ -121,8 +121,8 @@ test("a stack request while another action runs is refused 409 busy: <kind>", as
   const { svc, f } = service();
   f.setStatus(up()); await svc.probe();
   assert.deepEqual(svc.request("launch", restarter), { ok: true, action: "launch" });
-  assert.deepEqual(svc.request("stop", restarter), { ok: false, status: 409, detail: "busy: launch" });
-  assert.deepEqual(svc.request("launch", restarter), { ok: false, status: 409, detail: "busy: launch" });
+  assert.deepEqual(svc.request("stop", restarter), { ok: false, status: 409, detail: "busy: launch held by dashboard (pid 4242)" });
+  assert.deepEqual(svc.request("launch", restarter), { ok: false, status: 409, detail: "busy: launch held by dashboard (pid 4242)" });
   assert.equal(f.calls.filter((c) => c === "launch").length, 1);
 });
 
@@ -133,7 +133,7 @@ test("a lifecycle request holds the same slot: stack requests see busy, and a se
   const release = svc.tryAcquire("service-restart");
   assert.ok(typeof release === "function");
   assert.equal(svc.tryAcquire("service-stop"), undefined);
-  assert.deepEqual(svc.request("stop", restarter), { ok: false, status: 409, detail: "busy: service-restart" });
+  assert.deepEqual(svc.request("stop", restarter), { ok: false, status: 409, detail: "busy: service-restart held by dashboard (pid 4242)" });
   assert.equal(svc.snapshot().action, null); // not a stack action: the page keeps its buttons
   release!();
   assert.equal(svc.request("stop", restarter).ok, true);
@@ -256,7 +256,7 @@ async function boot(env: NodeJS.ProcessEnv, statusAtBoot: StackStatus | null = u
     async restart(id) { lifecycle.push(`restart ${id}`); await lifeGate; return { ok: true }; },
   };
   const setup = setupControl(env, bus, rec.log, rt);
-  const svc = new StackService({ log: rec.log, bus: () => "connected" });
+  const svc = new StackService({ log: rec.log, bus: () => "connected", pid: 4242 });
   const f = fakeOps(statusAtBoot ?? none);
   // statusAtBoot === null: nothing has been probed yet
   svc.attach(f.ops);
@@ -326,10 +326,10 @@ test("a second stack POST is 409 busy: launch; a lifecycle POST is 409 too, and 
   await t.send("/stack/launch", { token: "s3cret" });
   const again = await t.send("/stack/launch", { token: "s3cret" });
   assert.equal(again.status, 409);
-  assert.deepEqual(await again.json(), { ok: false, detail: "busy: launch" });
+  assert.deepEqual(await again.json(), { ok: false, detail: "busy: launch held by dashboard (pid 4242)" });
   const life = await t.send("/services/cortex/restart", { token: "s3cret" });
   assert.equal(life.status, 409);
-  assert.deepEqual(await life.json(), { ok: false, detail: "busy: launch" });
+  assert.deepEqual(await life.json(), { ok: false, detail: "busy: launch held by dashboard (pid 4242)" });
   assert.deepEqual(t.lifecycle, []);
   t.f.finish({ ok: true }); await tick(); await tick();
 
@@ -338,7 +338,7 @@ test("a second stack POST is 409 busy: launch; a lifecycle POST is 409 too, and 
   await new Promise((r) => setTimeout(r, 30));
   const blocked = await t.send("/stack/stop", { token: "s3cret" });
   assert.equal(blocked.status, 409);
-  assert.match(((await blocked.json()) as { detail: string }).detail, /^busy: service-restart$/);
+  assert.match(((await blocked.json()) as { detail: string }).detail, /^busy: service-restart held by dashboard \(pid 4242\)$/);
   open();
   assert.equal((await pending).status, 200);
   assert.equal((await t.send("/stack/stop", { token: "s3cret" })).status, 202); // the lifecycle request released the slot

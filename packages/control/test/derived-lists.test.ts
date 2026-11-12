@@ -67,6 +67,12 @@ test("each unit's entry file reaches runService and builds no bus or heartbeat o
   for (const id of unitIds) if (!NOT_ON_RUN_SERVICE[id]) assert.equal(entryProblem(id), undefined, id);
 });
 
+// The dashboard is a host process, not a manifest unit with a pnpm filter, and takes the same entry check (DASH-HTTP-016).
+// @spec MOD-MAN-009, DASH-HTTP-016
+test("the dashboard's entry file reaches runService and builds no bus or heartbeat of its own", () => {
+  assert.equal(entryProblem("dashboard"), undefined);
+});
+
 // @spec MOD-MAN-009
 test("the entry check fails for an entry that builds its own bus, heartbeat or shutdown", () => {
   for (const code of ["const bus = new Bus('x');", "startHeartbeat(bus, spec);", "onShutdown(() => {});"]) assert.ok(OWN_BOOTSTRAP.test(code), code);

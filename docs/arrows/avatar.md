@@ -31,7 +31,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (61 specs: 61 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/avatar/avatar-specs.md (62 specs: 62 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/avatar/test/boot.test.ts (boot wiring: subscription options, event routing, readiness, non-blocking driver start, fatal paths, shutdown)
@@ -91,7 +91,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | State publication | AVATAR-STATE-001 to AVATAR-STATE-002 | 2 | 0 | 0 | 2 |
 | Health | AVATAR-HEALTH-001 to AVATAR-DEV-001 | 5 | 0 | 0 | 5 |
 
-**Summary:** 61 of 61 specs implemented; 0 deferred; 0 open. 59 carry a test `@spec` annotation; implemented without one: AVATAR-DRV-001, AVATAR-DRV-004 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 62 of 62 specs implemented; 0 deferred; 0 open. 60 carry a test `@spec` annotation; implemented without one: AVATAR-DRV-001, AVATAR-DRV-004 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

@@ -32,6 +32,7 @@ Mapped 2026-10-31 at git `686cc8f`; audited against the code on 2026-11-02; owne
 - [x] **AVATAR-ENG-015**: In each frame, the engine shall move every parameter toward its target by `avatar.smoothing`, except mouth-open at `min(1, smoothing * 3)` and blink at 1 (no smoothing). <!-- openspec: avatar § Animation loop --> <!-- test: services/avatar/test/engine.test.ts:167 -->
 - [x] **AVATAR-ENG-016**: In each frame, the engine shall report an intensity of 0 when the current emotion is `neutral`, 1 while an emotion hold is active, and 0.5 otherwise. <!-- openspec: avatar § State publication --> <!-- test: services/avatar/test/engine.test.ts:97 --> <!-- test: services/avatar/test/engine.test.ts:120 -->
 - [x] **AVATAR-ENG-017**: The engine shall never ask the driver to show `neutral` at an intensity above 0: `neutral`, whether held from a `brain.say` or reached as the resting mood, means no expression, so every driver clears whatever it showed (VTube Studio deactivates the active expression, VMC sends the blendshape at 0). <!-- test: services/avatar/test/engine.test.ts -->
+- [x] **AVATAR-ENG-018**: The engine's frame timer shall not keep the process alive (it is unref'd) and `stop()` shall clear it, so a run that is never stopped, such as a test that fails before its teardown, cannot hold a process open. <!-- test: services/avatar/test/engine.test.ts -->
 
 ## Driver contract and selection
 

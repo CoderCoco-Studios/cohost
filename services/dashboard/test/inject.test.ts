@@ -11,7 +11,14 @@ import { uploadOptionsFromEnv } from "../src/uploads.js";
 const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
 
 class CtlBus extends FakeBus {
+  /** The bus id `publish` answered for each event, in order. */
+  ids: string[] = [];
   async resetGroup() {}
+  override async publish(...a: Parameters<FakeBus["publish"]>): Promise<string> {
+    const id = await super.publish(...a);
+    this.ids.push(id);
+    return id;
+  }
 }
 
 async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
@@ -31,7 +38,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
     fetch(`${base}/inject/text`, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {} });
   const bin = (path: string, body: Buffer | string, type: string | undefined, token?: string) =>
     fetch(`${base}${path}`, { method: "POST", body, headers: { ...(type ? { "content-type": type } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
-  return { bus, base, uploads, text, bin };
+  return { bus, ids: bus.ids, base, uploads, text, bin };
 }
 
 // @spec DASH-INJ-002
@@ -39,16 +46,22 @@ test("bus-level chat publishes an injected chat.message and returns 202 {id}", a
   const t = await boot();
   const r = await t.text({ level: "bus", text: "  hi   there ", user: "bob", isMod: true });
   assert.equal(r.status, 202);
-  assert.ok(typeof ((await r.json()) as { id: string }).id === "string");
+  assert.equal(((await r.json()) as { id: string }).id, t.ids.at(-1), "the answer carries the published event's bus id");
   assert.deepEqual(t.bus.of("chat.message"), [{ platform: "twitch", user: "bob", text: "hi there", isMod: true, isSub: false, mentionsCohost: false, injected: true, remember: false }]);
 });
 
 // @spec DASH-INJ-003
 test("bus-level speech and vision", async () => {
   const t = await boot();
-  assert.equal((await t.text({ level: "bus", as: "speech", text: "hello", user: "al", remember: true })).status, 202);
-  assert.equal((await t.text({ level: "bus", as: "speech", text: "anon" })).status, 202);
-  assert.equal((await t.text({ level: "bus", as: "vision", text: "a boss fight", remember: true })).status, 202);
+  for (const body of [
+    { level: "bus", as: "speech", text: "hello", user: "al", remember: true },
+    { level: "bus", as: "speech", text: "anon" },
+    { level: "bus", as: "vision", text: "a boss fight", remember: true },
+  ]) {
+    const r = await t.text(body);
+    assert.equal(r.status, 202);
+    assert.equal(((await r.json()) as { id: string }).id, t.ids.at(-1), "the answer carries the published event's bus id");
+  }
   assert.deepEqual(t.bus.of("speech.heard"), [
     { speaker: "al", text: "hello", durationMs: 0, injected: true, remember: true },
     { speaker: "injected", text: "anon", durationMs: 0, injected: true, remember: false },

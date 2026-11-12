@@ -119,9 +119,10 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   const remember = b.remember === true;
   const user = b.user as string | undefined;
   const platform = b.platform as Platform | undefined;
-  const id = randomUUID();
   const text = b.text.replace(/\s+/g, " ").trim();
 
+  // service level answers with the request id chat replies to; bus level with the published event's own bus id
+  let id: string = randomUUID();
   if (level === "service") {
     await d.bus.publish("inject.request", {
       id, target: "chat", kind: "text", text: b.text,
@@ -132,15 +133,15 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
       remember,
     });
   } else if (as === "chat") {
-    await d.bus.publish("chat.message", {
+    id = await d.bus.publish("chat.message", {
       platform: platform ?? "twitch", user: user || "injected_viewer", text,
       isMod: b.isMod === true, isSub: b.isSub === true,
       injected: true, remember,
     });
   } else if (as === "speech") {
-    await d.bus.publish("speech.heard", { speaker: user || "injected", text, durationMs: 0, injected: true, remember });
+    id = await d.bus.publish("speech.heard", { speaker: user || "injected", text, durationMs: 0, injected: true, remember });
   } else {
-    await d.bus.publish("vision.summary", { text, changed: true, injected: true, remember });
+    id = await d.bus.publish("vision.summary", { text, changed: true, injected: true, remember });
   }
   send(res, 202, { id });
 }

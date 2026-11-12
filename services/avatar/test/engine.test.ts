@@ -52,7 +52,19 @@ test("runs at cfg.fps and pushes params to the driver every frame", () => { // @
   assert.equal(driver.params.length, 5);
 });
 
-test("lip-sync follows the envelope from when the sink starts playing, then closes", () => { // @spec AVATAR-ENG-005
+test("the frame timer is unref'd so it cannot hold the process open, and stop clears it", () => { // @spec AVATAR-ENG-018
+  mock.timers.reset(); // a real timer: the mocked one does not track references
+  const real = new Engine(avatarCfg(), driver);
+  try {
+    real.start();
+    const timer = (real as unknown as { timer: { hasRef(): boolean } }).timer;
+    assert.equal(timer.hasRef(), false);
+  } finally {
+    real.stop();
+  }
+});
+
+test("lip-sync follows the envelope from when the sink starts playing, then closes", () => { // @spec AVATAR-ENG-005 // @spec AVATAR-ENG-005
   make();
   engine.prepare(utterance());
   frames(1);

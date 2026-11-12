@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
@@ -33,7 +33,8 @@ class BootBus extends FakeBus {
   stop(): void { this.stopped = true; }
 }
 
-function boot(over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number; lines?: string[]; clipDir?: string } = {}) {
+/** Builds a run; its shutdown steps run when the test ends, pass or fail, so no listener or timer outlives it. */
+function boot(ctx: TestContext, over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number; lines?: string[]; clipDir?: string } = {}) {
   const bus = over.bus ?? new BootBus();
   const rec = recordingLog();
   const exits: number[] = [];
@@ -46,14 +47,17 @@ function boot(over: { bus?: BootBus; engine?: "kokoro" | "stub"; port?: number; 
     onShutdown: (fn) => { shutdown.push(fn); },
     exit: (code) => { exits.push(code); },
   };
-  return { b, bus, rec, exits, shutdown, close: async () => { for (const fn of shutdown) await fn(); } };
+  let closed: Promise<void> | undefined;
+  const close = () => (closed ??= (async () => { for (const fn of shutdown) await fn(); })());
+  ctx.after(close);
+  return { b, bus, rec, exits, shutdown, close };
 }
 
 const states = (bus: FakeBus) => bus.health.map((h) => h.state);
 
 // @spec VOICE-SYN-001, VOICE-SINK-010
-test("subscribes in group voice with start mode latest to brain.say, voice.playing and voice.failed, and handles them one at a time", async () => {
-  const t = boot();
+test("subscribes in group voice with start mode latest to brain.say, voice.playing and voice.failed, and handles them one at a time", async (ctx) => {
+  const t = boot(ctx);
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   assert.deepEqual(t.bus.calls, ["resetGroup:voice", "subscribe"]); // the group is at the newest entry before the loop reads
@@ -66,11 +70,11 @@ test("subscribes in group voice with start mode latest to brain.say, voice.playi
 });
 
 // @spec VOICE-HLTH-001, VOICE-HTTP-005
-test("ready only once the HTTP server listens and the consumer group is positioned", async () => {
+test("ready only once the HTTP server listens and the consumer group is positioned", async (ctx) => {
   const bus = new BootBus();
   let release!: () => void;
   bus.resetGate = new Promise<void>((r) => { release = r; });
-  const t = boot({ bus });
+  const t = boot(ctx, { bus });
   void runVoice(t.b);
   await waitFor(() => bus.calls.includes("resetGroup:voice"), "group positioning started");
   await new Promise((r) => setTimeout(r, 30));
@@ -85,12 +89,12 @@ test("ready only once the HTTP server listens and the consumer group is position
 });
 
 // @spec VOICE-HTTP-005
-test("listens on the configured port and answers /health", async () => {
+test("listens on the configured port and answers /health", async (ctx) => {
   const probe = net.createServer();
   await new Promise<void>((r) => probe.listen(0, r));
   const port = (probe.address() as AddressInfo).port;
   await new Promise((r) => probe.close(r));
-  const t = boot({ port });
+  const t = boot(ctx, { port });
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   assert.equal(await (await fetch(`http://127.0.0.1:${port}/health`)).text(), "ok");
@@ -98,10 +102,10 @@ test("listens on the configured port and answers /health", async () => {
 });
 
 // @spec VOICE-SYN-006
-test("a rejecting subscription logs fatal and exits 1", async () => {
+test("a rejecting subscription logs fatal and exits 1", async (ctx) => {
   const bus = new BootBus();
   bus.subscribeError = new Error("NOGROUP consumer group deleted");
-  const t = boot({ bus });
+  const t = boot(ctx, { bus });
   await runVoice(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.ok(t.rec.msgs("error").includes("fatal"));
@@ -109,8 +113,8 @@ test("a rejecting subscription logs fatal and exits 1", async () => {
 });
 
 // @spec VOICE-SYN-006
-test("a startup failure (config load, group positioning) exits 1; past config it logs fatal", async () => {
-  const bad = boot();
+test("a startup failure (config load, group positioning) exits 1; past config it logs fatal", async (ctx) => {
+  const bad = boot(ctx);
   bad.b.loadConfig = () => { throw new Error("config invalid"); };
   await runVoice(bad.b);
   assert.deepEqual(bad.exits, [1]);
@@ -119,7 +123,7 @@ test("a startup failure (config load, group positioning) exits 1; past config it
 
   const bus = new BootBus();
   bus.resetError = new Error("redis down");
-  const t = boot({ bus });
+  const t = boot(ctx, { bus });
   await runVoice(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.deepEqual(states(bus), ["starting"]); // never reported ready
@@ -127,8 +131,8 @@ test("a startup failure (config load, group positioning) exits 1; past config it
 });
 
 // @spec VOICE-HLTH-004
-test("shutdown closes the HTTP server and stops the bus", async () => {
-  const t = boot();
+test("shutdown closes the HTTP server and stops the bus", async (ctx) => {
+  const t = boot(ctx);
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   await t.close();
@@ -136,8 +140,8 @@ test("shutdown closes the HTTP server and stops the bus", async () => {
 });
 
 // @spec VOICE-STUB-003
-test("the stub engine logs a startup warning that utterances are silent", async () => {
-  const t = boot({ engine: "stub" });
+test("the stub engine logs a startup warning that utterances are silent", async (ctx) => {
+  const t = boot(ctx, { engine: "stub" });
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
   assert.ok(t.rec.msgs("warn").some((m) => /stub/.test(String(m))));
@@ -153,11 +157,11 @@ const freePort = async () => {
 };
 
 // @spec VOICE-CLIP-008
-test("the stub engine never touches the clip store and answers 404 on the fallback routes", async () => {
+test("the stub engine never touches the clip store and answers 404 on the fallback routes", async (ctx) => {
   const root = mkdtempSync(join(tmpdir(), "voice-boot-"));
   const clipDir = join(root, "voice", "fallback-clips");
   const port = await freePort();
-  const t = boot({ engine: "stub", lines: ["Should never be spoken."], clipDir, port });
+  const t = boot(ctx, { engine: "stub", lines: ["Should never be spoken."], clipDir, port });
   try {
     void runVoice(t.b);
     await waitFor(() => t.bus.subscribed.length === 1, "subscription");
@@ -171,7 +175,7 @@ test("the stub engine never touches the clip store and answers 404 on the fallba
 });
 
 // @spec VOICE-CLIP-003
-test("with the kokoro engine, clip generation starts after ready and does not hold up the bus loop", async () => {
+test("with the kokoro engine, clip generation starts after ready and does not hold up the bus loop", async (ctx) => {
   const root = mkdtempSync(join(tmpdir(), "voice-boot-"));
   const clipDir = join(root, "fallback-clips");
   const requests: string[] = [];
@@ -191,7 +195,7 @@ test("with the kokoro engine, clip generation starts after ready and does not ho
   const savedTts = process.env.TTS_URL;
   process.env.TTS_URL = `http://127.0.0.1:${(tts.address() as AddressInfo).port}`;
   const port = await freePort();
-  const t = boot({ engine: "kokoro", lines: ["Error: unable to play line."], clipDir, port });
+  const t = boot(ctx, { engine: "kokoro", lines: ["Error: unable to play line."], clipDir, port });
   try {
     void runVoice(t.b);
     await waitFor(() => states(t.bus).includes("ready") && t.bus.subscribed.length === 1, "ready and subscribed");

@@ -240,7 +240,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "all 61 specs [x]; gap closure built (C10). No open gaps. Manual verification: VTube Studio against the real app."
+    next: "all 62 specs [x]; gap closure built (C10), the engine timer unref'd (AVATAR-ENG-018). No open gaps. Manual verification: VTube Studio against the real app."
     drift: null
 
   dashboard:
@@ -252,7 +252,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "all 114 specs [x]; uploads stored in Redis, no /uploads route (DASH-INJ-005, DASH-UPL-*); host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
+    next: "all 115 specs [x]; the entry on runService (DASH-HTTP-016); uploads stored in Redis, no /uploads route (DASH-INJ-005, DASH-UPL-*); host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:

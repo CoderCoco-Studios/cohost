@@ -28,8 +28,8 @@ test("every x-ts-service application service runs the heartbeat healthcheck on t
     interval: "10s", timeout: "5s", retries: 3, start_period: "30s",
   });
   for (const [name, s] of appServices) {
-    // consolidate is a one-shot that never joins the bus; it disables the inherited check
-    if (name === "consolidate") continue;
+    // consolidate and reembed are one-shots that never join the bus; they disable the inherited check
+    if (name === "consolidate" || name === "reembed") continue;
     assert.deepEqual(s.healthcheck, anchor.healthcheck, `${name} inherits the healthcheck`);
   }
   assert.ok(appServices.length >= 10);

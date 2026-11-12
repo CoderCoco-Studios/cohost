@@ -402,6 +402,17 @@ pnpm --filter @cohost/control exec cohostctl consolidate     # the same through 
 `consolidate` is in the `tools` profile, so a plain `docker compose up -d` never
 starts it. It starts `postgres` and `ollama` if they are down and leaves them running.
 
+Changing the embedder to one with another vector size (for example `nomic-embed-text` to
+`mxbai-embed-large`) makes the memory service refuse to start, because the stored vectors no longer
+fit. Stop memory, then re-embed every stored row (memories, viewer notes and deletion records) in place:
+
+```bash
+docker compose run --rm reembed                              # the one-shot (profile tools)
+pnpm --filter @cohost/control exec cohostctl reembed         # the same through cohostctl (exit 0 ok, 1 failed)
+```
+
+An interrupted run changes nothing and a rerun resumes where it stopped.
+
 The dashboard runs on the host so it needs no privilege beyond your own `docker` access;
 no container gets the Docker socket. Compose is the only
 runtime; the control plane never starts host processes (run services directly with `pnpm dev`).

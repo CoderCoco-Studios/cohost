@@ -94,6 +94,20 @@ test("compose: consolidate runs the fixed one-shot argv with a long timeout and 
 });
 
 // @spec CTRL-RUNTIME-010
+// @spec CTRL-RUNTIME-011
+test("compose: reembed runs the fixed one-shot argv with a long timeout and reports the last stdout line or the failure", async () => {
+  const seen: { args: string[]; timeoutMs?: number; cwd?: string }[] = [];
+  const exec: ExecFile = async (_file, args, opts) => {
+    seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
+    return { stdout: "x\nreembed completed\n", stderr: "" };
+  };
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {}, cwd: "/stack" });
+  assert.deepEqual(await rt.reembed(), { ok: true, detail: "reembed completed" });
+  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "reembed"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
+  const boom: ExecFile = async () => { throw Object.assign(new Error("exit 1"), { stdout: "", stderr: " boom \n" }); };
+  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: boom }).reembed(), { ok: false, detail: "boom" });
+});
+
 test("compose: a failing consolidate is ok:false with stderr, else stdout tail, else the error message, cut to 500", async () => {
   const fail = (stdout: string, stderr: string, message = "exit 1"): ExecFile => async () => { throw Object.assign(new Error(message), { stdout, stderr }); };
   assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });

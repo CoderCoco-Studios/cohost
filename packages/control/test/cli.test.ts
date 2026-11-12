@@ -14,6 +14,7 @@ test("parseCli: commands, flags, defaults", () => {
   assert.deepEqual(parseCli(["restart", "cortex", "--mode", "fresh", "--isolated"]), { cmd: "restart", id: "cortex", opts: { mode: "fresh", isolated: true } });
   assert.deepEqual(parseCli(["start", "voice", "--mode=resume"]), { cmd: "start", id: "voice", opts: { mode: "resume" } });
   assert.deepEqual(parseCli(["consolidate"]), { cmd: "consolidate" });
+  assert.deepEqual(parseCli(["reembed"]), { cmd: "reembed" });
   assert.deepEqual(parseCli(["launch"]), { cmd: "launch" });
   assert.deepEqual(parseCli(["stop-all"]), { cmd: "stop-all" });
   assert.deepEqual(parseCli(["restart-all"]), { cmd: "restart-all" });
@@ -21,7 +22,7 @@ test("parseCli: commands, flags, defaults", () => {
 
 // @spec CTRL-CLI-001
 test("parseCli: bad input throws UsageError", () => {
-  for (const argv of [[], ["bogus"], ["start"], ["start", "a", "b"], ["start", "a", "--mode", "x"], ["start", "a", "--nope"], ["stop", "a", "--isolated"], ["status", "--isolated"], ["consolidate", "memory"], ["consolidate", "--isolated"], ["consolidate", "--mode", "fresh"], ["launch", "x"], ["launch", "--isolated"], ["launch", "--mode", "fresh"], ["stop-all", "cortex"], ["stop-all", "--isolated"], ["restart-all", "cortex"], ["restart-all", "--mode", "resume"], ["stop", "a", "--mode", "fresh"]]) {
+  for (const argv of [[], ["bogus"], ["start"], ["start", "a", "b"], ["start", "a", "--mode", "x"], ["start", "a", "--nope"], ["stop", "a", "--isolated"], ["status", "--isolated"], ["consolidate", "memory"], ["reembed", "memory"], ["reembed", "--isolated"], ["reembed", "--mode", "fresh"], ["consolidate", "--isolated"], ["consolidate", "--mode", "fresh"], ["launch", "x"], ["launch", "--isolated"], ["launch", "--mode", "fresh"], ["stop-all", "cortex"], ["stop-all", "--isolated"], ["restart-all", "cortex"], ["restart-all", "--mode", "resume"], ["stop", "a", "--mode", "fresh"]]) {
     assert.throws(() => parseCli(argv), UsageError, JSON.stringify(argv));
   }
 });
@@ -41,6 +42,9 @@ function harness() {
   const consolidations: number[] = [];
   let consolidateResult: { ok: boolean; detail?: string } = { ok: true, detail: "consolidate completed" };
   const consolidate = async () => { consolidations.push(1); return consolidateResult; };
+  const reembeds: number[] = [];
+  let reembedResult: { ok: boolean; detail?: string } = { ok: true, detail: "reembed completed" };
+  const reembed = async () => { reembeds.push(1); return reembedResult; };
   const stackCalls: string[] = [];
   let launchResult: StackResult = { ok: true, services: [{ service: "redis", status: "running", health: "healthy" }, { service: "ollama", status: "running" }, { service: "models", status: "exited", exitCode: 0 }] };
   let restartResult: StackResult = { ok: true, restarts: [{ id: "cortex", ok: true }, { id: "voice", ok: true }] };
@@ -52,12 +56,13 @@ function harness() {
     async restartAll() { stackCalls.push("restart-all"); return restartResult; },
   };
   return {
-    log, audits, out, err, consolidations, stackCalls,
+    log, audits, out, err, consolidations, reembeds, stackCalls,
+    setReembed: (r: { ok: boolean; detail?: string }) => { reembedResult = r; },
     setLaunch: (r: StackResult) => { launchResult = r; },
     setRestart: (r: StackResult) => { restartResult = r; },
     setStop: (r: StackResult) => { stopResult = r; },
     setConsolidate: (r: { ok: boolean; detail?: string }) => { consolidateResult = r; },
-    run: (argv: string[]) => runCli(argv, { controller, health, consolidate, stack, out: (l) => out.push(l), err: (l) => err.push(l) }),
+    run: (argv: string[]) => runCli(argv, { controller, health, consolidate, reembed, stack, out: (l) => out.push(l), err: (l) => err.push(l) }),
   };
 }
 
@@ -95,6 +100,20 @@ test("usage errors exit 2; status prints rows", async () => {
   assert.equal(await h.run(["status"]), 0);
   assert.match(h.out[0]!, /cortex\s+up\s+mock\s+2s ago/);
   assert.equal(await h.run(["status", "nope"]), 1);
+});
+
+// @spec CTRL-CLI-016
+test("reembed runs the one-shot, prints the result, exits 1 on failure, and never touches the controller or its audit", async () => {
+  const h = harness();
+  assert.equal(await h.run(["reembed"]), 0);
+  assert.deepEqual(h.out, ["reembed: ok (reembed completed)"]);
+  assert.deepEqual(h.reembeds, [1]);
+  assert.deepEqual(h.consolidations, []);
+  assert.deepEqual(h.log, []);
+  assert.deepEqual(h.audits, []);
+  h.setReembed({ ok: false, detail: "ollama unreachable" });
+  assert.equal(await h.run(["reembed"]), 1);
+  assert.deepEqual(h.err, ["reembed failed: ollama unreachable"]);
 });
 
 // @spec CTRL-CLI-008, CTRL-CLI-009

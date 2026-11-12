@@ -10,7 +10,8 @@
     "build": "tsc -b",
     "start": "node dist/index.js",
     "reflect": "tsx src/reflect.ts",
-    "consolidate": "tsx src/consolidate.ts"
+    "consolidate": "tsx src/consolidate.ts",
+    "reembed": "tsx src/reembed.ts"
   },
   "dependencies": {
     "@cohost/bus": "workspace:*",

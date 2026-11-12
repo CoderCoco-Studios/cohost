@@ -64,15 +64,30 @@ test("consolidate disables the heartbeat healthcheck it can never satisfy", () =
 });
 
 // @spec DEPLOY-COMPOSE-004, DEPLOY-COMPOSE-019
-test("only consolidate is in the tools profile, and eyes, ears and mouth each keep a profile of their own name; no other service has a profile", () => {
+test("only the consolidate and reembed one-shots are in the tools profile, and eyes, ears and mouth each keep a profile of their own name; no other service has a profile", () => {
   assert.deepEqual(svc.profiles, ["tools"]);
   const profiled = Object.entries(compose.services).filter(([, s]) => s.profiles).map(([n, s]) => [n, s.profiles]);
-  assert.deepEqual(profiled.sort(), [["consolidate", ["tools"]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]]]);
+  assert.deepEqual(profiled.sort(), [["consolidate", ["tools"]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]], ["reembed", ["tools"]]]);
 });
 
 // @spec DEPLOY-COMPOSE-015
-test("consolidate and models are the only services without an unless-stopped restart policy", () => {
+test("consolidate, models and reembed are the only services without an unless-stopped restart policy", () => {
   const other = Object.entries(compose.services).filter(([, s]) => s.restart !== "unless-stopped").map(([n]) => n).sort();
-  assert.deepEqual(other, ["consolidate", "models"]);
+  assert.deepEqual(other, ["consolidate", "models", "reembed"]);
   assert.equal(compose.services.models!.restart, undefined);
+});
+
+// @spec DEPLOY-COMPOSE-021
+test("reembed builds the memory image, runs the reembed entry point, needs postgres healthy and ollama started but no redis, and has no healthcheck", () => {
+  const re = compose.services.reembed!;
+  assert.ok(re, "reembed is a service");
+  assert.equal(re.build?.args?.SERVICE, "memory");
+  assert.deepEqual(re.command, ["node", "services/memory/dist/reembed.js"]);
+  assert.ok(existsSync(root("services/memory/src/reembed.ts")), "the command's source exists");
+  assert.equal(re.restart, "no");
+  assert.deepEqual(re.profiles, ["tools"]);
+  assert.deepEqual(re.healthcheck, { disable: true });
+  assert.deepEqual(Object.keys(re.depends_on ?? {}).sort(), ["ollama", "postgres"]);
+  assert.equal(re.depends_on?.postgres?.condition, "service_healthy");
+  assert.equal(re.depends_on?.ollama?.condition, "service_started");
 });

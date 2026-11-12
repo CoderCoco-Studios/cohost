@@ -5,6 +5,7 @@
  *   cohostctl status [service]
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
  *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
+ *   cohostctl reembed         one-shot re-embedding of stored memory vectors after an embedder change (the compose `reembed` job)
  *   cohostctl launch          bring the whole stack up and wait until it is ready (never opens the bus)
  *   cohostctl rebuild         launch, rebuilding the images first (never opens the bus)
  *   cohostctl stop-all        stop every container of the stack, never removing any (never opens the bus)
@@ -27,6 +28,7 @@ export type CliCommand =
   | { cmd: "status"; id?: string }
   | { cmd: "start" | "stop" | "restart"; id: string; opts: ActionOptions }
   | { cmd: "consolidate" }
+  | { cmd: "reembed" }
   | { cmd: "launch" }
   | { cmd: "rebuild" }
   | { cmd: "stop-all" }
@@ -36,6 +38,7 @@ export const USAGE = `usage:
   cohostctl status [service]
   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
   cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)
+  cohostctl reembed            re-embed stored memory vectors after changing the embedder (exit 0 ok, 1 failed)
   cohostctl launch             bring the whole stack up and wait until it is ready
   cohostctl rebuild            launch, rebuilding the images first
   cohostctl stop-all           stop every container of the stack (nothing is removed)
@@ -63,9 +66,9 @@ export function parseCli(argv: readonly string[]): CliCommand {
     if (mode !== undefined || isolated) throw new UsageError("status takes no options");
     return { cmd, ...(id ? { id } : {}) };
   }
-  if (cmd === "consolidate") {
-    if (id) throw new UsageError("consolidate takes no arguments");
-    if (mode !== undefined || isolated) throw new UsageError("consolidate takes no options");
+  if (cmd === "consolidate" || cmd === "reembed") {
+    if (id) throw new UsageError(`${cmd} takes no arguments`);
+    if (mode !== undefined || isolated) throw new UsageError(`${cmd} takes no options`);
     return { cmd };
   }
   if (cmd === "launch" || cmd === "rebuild" || cmd === "stop-all" || cmd === "restart-all") {
@@ -85,6 +88,7 @@ export interface CliDeps {
   controller: Pick<ServiceController, "start" | "stop" | "restart">;
   health: () => Promise<ServiceHealth[]>;
   consolidate: () => Promise<RuntimeResult>;
+  reembed: () => Promise<RuntimeResult>;
   /** The whole-stack actions; `restartAll` runs through `controller`. */
   stack: {
     launch(onPhase: (phase: string) => void): Promise<StackResult>;
@@ -118,6 +122,12 @@ export async function runCli(argv: readonly string[], d: CliDeps): Promise<numbe
     const r = await d.consolidate();
     if (!r.ok) { d.err(`consolidate failed: ${r.detail ?? "unknown error"}`); return 1; }
     d.out(`consolidate: ok${r.detail ? ` (${r.detail})` : ""}`);
+    return 0;
+  }
+  if (c.cmd === "reembed") {
+    const r = await d.reembed();
+    if (!r.ok) { d.err(`reembed failed: ${r.detail ?? "unknown error"}`); return 1; }
+    d.out(`reembed: ok${r.detail ? ` (${r.detail})` : ""}`);
     return 0;
   }
   if (c.cmd === "launch" || c.cmd === "rebuild") {
@@ -169,7 +179,7 @@ export type CliStack = Pick<StackController, "launch" | "rebuild" | "stopAll" | 
 /** What `executeCli` builds things with; every field defaults to the real thing. Tests inject fakes. */
 export interface CliWiring {
   openBus?: () => CliBus;
-  buildRuntime?: () => Pick<ComposeRuntime, "name" | "start" | "stop" | "restart" | "consolidate">;
+  buildRuntime?: () => Pick<ComposeRuntime, "name" | "start" | "stop" | "restart" | "consolidate" | "reembed">;
   buildStack?: (onPhase: (phase: string) => void) => CliStack;
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
@@ -180,7 +190,7 @@ export interface CliWiring {
  * The whole of cohostctl: parse, then build what the command needs. Arguments that do not parse never build a
  * runtime, open the bus or run Docker; the bus is opened on first use and always stopped.
  */
-// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-STACK-001
+// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-STACK-001
 export async function executeCli(argv: readonly string[], w: CliWiring = {}): Promise<number> {
   const out = w.out ?? console.log;
   const err = w.err ?? console.error;
@@ -216,7 +226,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
       stopAll: () => stackFor().stopAll(),
       restartAll: () => stackFor().restartAll(controller),
     };
-    return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), stack, out, err });
+    return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, out, err });
   } catch (e) {
     err(e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;

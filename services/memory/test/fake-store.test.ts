@@ -48,7 +48,7 @@ test("recall returns the most similar memories, skips the last 2 minutes, and ho
 // @spec MEM-BACKEND-004
 test("recall respects k", async () => {
   const { s, advance } = make();
-  for (const t of ["sword one", "sword two", "sword three"]) await s.remember("note", "x", t);
+  for (const t of ["sword one", "sword two", "sword three"]) await s.remember("chat", "x", t);
   advance(3 * 60_000);
   assert.equal((await s.recall("sword", 2)).length, 2);
 });

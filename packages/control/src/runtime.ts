@@ -95,12 +95,18 @@ export class ComposeRuntime implements Runtime {
    * service: the argv is fixed and takes nothing from the caller. `run` starts postgres and ollama if they are down.
    */
   // @spec CTRL-RUNTIME-010, CTRL-STACK-012
-  async consolidate(): Promise<RuntimeResult> {
+  consolidate(): Promise<RuntimeResult> { return this.oneShot("consolidate"); }
+
+  /** Runs the one-shot memory re-embedding (`docker compose run --rm -T reembed`), a fixed job like `consolidate`. */
+  // @spec CTRL-RUNTIME-011
+  reembed(): Promise<RuntimeResult> { return this.oneShot("reembed"); }
+
+  private async oneShot(job: "consolidate" | "reembed"): Promise<RuntimeResult> {
     const base = this.o.env ?? process.env;
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", "consolidate"], { env: base, cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
+      const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", job], { env: base, cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
       const last = lastLine(stdout);
       return last ? { ok: true, detail: last.slice(0, 500) } : { ok: true };
     } catch (err) {

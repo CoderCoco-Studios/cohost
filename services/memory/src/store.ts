@@ -8,7 +8,7 @@ import {
   type Category, type DeletionRow, type Layer, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
-export type MemoryKind = "chat" | "speech" | "self" | "note";
+export type MemoryKind = "chat" | "speech" | "self";
 
 export interface Memory {
   id: number;
@@ -24,6 +24,16 @@ export interface Memory {
 /** What the region needs from a memory store: Postgres-backed (MemoryStore) or in-process (InMemoryStore). */
 export interface MemoryBackend {
   init(): Promise<void>;
+  /**
+   * Open the store for a read-mostly one-shot (`reflect`): no schema work and no embedder call. Rejects when the tables the
+   * service creates are missing; resolves at once for the in-process store (MEM-REFLECT-011).
+   */
+  connect(): Promise<void>;
+  /**
+   * Re-embed every stored vector with the store's embedder and move the vector columns to its dimension (MEM-REEMBED-001).
+   * `tables` has one entry per migrated table with the rows embedded by this call, empty when nothing needed migrating.
+   */
+  reembed(onProgress?: (table: string, done: number) => void): Promise<ReembedResult>;
   remember(kind: MemoryKind, who: string, text: string): Promise<void>;
   recall(query: string, k?: number): Promise<Memory[]>;
   /** Count one chat line for the viewer: upsert by lowercased key, keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
@@ -65,6 +75,12 @@ export interface MemoryBackend {
   getMeta(k: string): Promise<string | undefined>;
   setMeta(k: string, v: string): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface ReembedResult {
+  /** The embedder's vector dimension. */
+  dims: number;
+  tables: Record<string, number>;
 }
 
 export interface ViewerTouch {
@@ -185,6 +201,86 @@ export class MemoryStore implements MemoryBackend {
       "CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)",
     ).catch((e) => this.log.warn({ e: String(e) }, "hnsw index not created (fine on tiny tables)"));
     this.log.info({ dims: this.dims }, "memory ready");
+  }
+
+  // @spec MEM-REFLECT-011
+  async connect(): Promise<void> {
+    const { rows } = await this.query<{ memories: string | null; meta: string | null }>(
+      "SELECT to_regclass('memories') AS memories, to_regclass('meta') AS meta",
+    );
+    if (!rows[0]?.memories || !rows[0]?.meta) {
+      throw new Error("the memory tables do not exist yet: start the memory service once so it creates them");
+    }
+  }
+
+  // @spec MEM-REEMBED-001, MEM-REEMBED-002, MEM-REEMBED-003
+  /**
+   * New vectors go into `embedding_new` first and the swap of every table's column happens in one transaction at the end,
+   * so a failed run leaves the old columns serving and a rerun embeds only the rows without a new vector. Callers hold the
+   * consolidation lock and have the memory service stopped (its startup refuses a mismatching table anyway).
+   */
+  async reembed(onProgress?: (table: string, done: number) => void): Promise<ReembedResult> {
+    const dims = (await this.llm.embed("hello")).length;
+    this.dims = dims;
+    const todo: { name: string; select: string }[] = [];
+    for (const t of REEMBED_TABLES) {
+      const { rows: present } = await this.query<{ present: string | null }>("SELECT to_regclass($1) AS present", [t.name]);
+      if (!present[0]?.present) continue;
+      const have = await this.columnDims(t.name, "embedding");
+      if (have === undefined || have === dims) continue;
+      todo.push({ name: t.name, select: t.select });
+    }
+    const tables: Record<string, number> = {};
+    for (const t of todo) {
+      const staged = await this.columnDims(t.name, "embedding_new");
+      if (staged !== undefined && staged !== dims) await this.query(`ALTER TABLE ${t.name} DROP COLUMN embedding_new`);
+      await this.query(`ALTER TABLE ${t.name} ADD COLUMN IF NOT EXISTS embedding_new vector(${dims})`);
+      let done = 0;
+      for (;;) {
+        const { rows } = await this.query<{ id: string; who?: string; text: string }>(t.select);
+        if (rows.length === 0) break;
+        for (const r of rows) {
+          const emb = await this.llm.embed(t.name === "memories" ? `${r.who}: ${r.text}` : r.text.trim());
+          await this.query(`UPDATE ${t.name} SET embedding_new = $1 WHERE id = $2`, [toVector(emb), r.id]);
+          done++;
+        }
+        onProgress?.(t.name, done);
+      }
+      tables[t.name] = done;
+    }
+    if (todo.length === 0) return { dims, tables };
+    // Every row of every table has a vector of the new size: swap all the columns at once.
+    const client = await this.pool.connect();
+    const q = (sql: string) => this.run(() => client.query(sql));
+    try {
+      await q("BEGIN");
+      for (const t of todo) {
+        await q(`ALTER TABLE ${t.name} DROP COLUMN embedding`);
+        await q(`ALTER TABLE ${t.name} RENAME COLUMN embedding_new TO embedding`);
+      }
+      await q("COMMIT");
+    } catch (err) {
+      await q("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    if (todo.some((t) => t.name === "memories")) {
+      await this.query("CREATE INDEX IF NOT EXISTS memories_embedding_idx ON memories USING hnsw (embedding vector_cosine_ops)")
+        .catch((e) => this.log.warn({ e: String(e) }, "hnsw index not created (fine on tiny tables)"));
+    }
+    this.log.info({ dims, tables }, "re-embedded");
+    return { dims, tables };
+  }
+
+  /** The declared dimension of `table.col` (pgvector keeps it in `atttypmod`), undefined when the column does not exist or is unconstrained. */
+  private async columnDims(table: string, col: string): Promise<number | undefined> {
+    const { rows } = await this.query<{ dims: number }>(
+      "SELECT atttypmod AS dims FROM pg_attribute WHERE attrelid = to_regclass($1) AND attname = $2 AND NOT attisdropped",
+      [table, col],
+    );
+    const d = Number(rows[0]?.dims);
+    return d > 0 ? d : undefined;
   }
 
   // @spec MEM-STORE-002
@@ -572,6 +668,13 @@ function parseVector(text: string | null): number[] {
 }
 
 /** Arbitrary constant naming the consolidation advisory lock. */
+/** Tables with an embedding column and the query for rows still lacking a new vector; the text embedded matches the write path. */
+const REEMBED_TABLES = [
+  { name: "memories", select: "SELECT id, who, text FROM memories WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+  { name: "viewer_notes", select: "SELECT id, text FROM viewer_notes WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+  { name: "viewer_note_deletions", select: "SELECT id, text FROM viewer_note_deletions WHERE embedding_new IS NULL ORDER BY id LIMIT 100" },
+] as const;
+
 const CONSOLIDATION_LOCK = 7_431_900_601;
 
 const VIEWER_COLS = "user_key, display, msg_count, regular_manual, is_sub, placeholder, first_seen, last_seen";

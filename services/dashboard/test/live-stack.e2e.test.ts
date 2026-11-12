@@ -9,7 +9,7 @@ import { resolveDockerBin } from "@cohost/control";
 // in front of it, and each unit's declared input answered by that unit. Heavy (the first run pulls images), so it runs
 // only where COHOST_LIVE_STACK=1, Docker answers, and the environment carries the mock presets (README quickstart:
 // `set -a; . ./.env; set +a`, with COMPOSE_PROFILES=eyes,ears,mouth and the presets of CTRL-MANIFEST-003 in `.env`) and ports
-// 3000 and 3001 are free (a unit checks an upload's URL against the dashboard address in its own environment).
+// 3000 and 3001 are free (the dashboard under test binds them).
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const env: NodeJS.ProcessEnv = { ...process.env, CONTROL_ENABLED: "1" };

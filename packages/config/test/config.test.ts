@@ -767,3 +767,23 @@ test("brain.affect republish, short-line cutoff and nudge sizes default to the f
     assert.equal(withAffect({ [key]: 1 }), true, `${key} at 1`);
   }
 });
+
+// @spec CFG-SCH-029
+test("ears.source accepts http and dir; ears.http and ears.dir default when absent and are validated", async () => {
+  const { ConfigSchema } = await import("../src/schema.js");
+  const base = {
+    cohost: { name: "Coco", streamer: "Chris" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} },
+    chat: { twitch: { channel: "c" } }, brain: {}, voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {},
+  };
+  const ears = (e: Record<string, unknown>) => ConfigSchema.safeParse({ ...base, ears: { discord: {}, ...e } });
+  const dflt = ears({});
+  assert.ok(dflt.success);
+  assert.deepEqual([dflt.data.ears.source, dflt.data.ears.http, dflt.data.ears.dir], ["discord", { host: "127.0.0.1", port: 8765 }, { path: "", poll_ms: 1000 }]);
+  for (const source of ["http", "dir", "off", "discord", ""]) assert.ok(ears({ source }).success, source);
+  const blank = ears({ source: "" });
+  assert.ok(blank.success && blank.data.ears.source === "discord");
+  assert.equal(ears({ source: "mic" }).success, false);
+  assert.equal(ears({ http: { port: 0 } }).success, true);
+  assert.equal(ears({ http: { port: 70000 } }).success, false);
+  assert.equal(ears({ dir: { poll_ms: 0 } }).success, false);
+});

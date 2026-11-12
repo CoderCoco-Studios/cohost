@@ -1,13 +1,18 @@
 import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
-export type EarsSource = "discord" | "off";
-/** `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot. */
-export type EarsPlan = "off" | "no-token" | "discord";
+export type EarsSource = "discord" | "off" | "http" | "dir";
+/**
+ * `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot.
+ * `http` / `dir`: the account-free capture sources; `no-dir`: source=dir without `ears.dir.path` (idle, degraded).
+ */
+export type EarsPlan = "off" | "no-token" | "discord" | "http" | "dir" | "no-dir";
 
-// @spec EARS-START-004
+// @spec EARS-START-004, EARS-CAP-004
 /** Pure decision for what ears does at startup; never exits for a configuration gap. */
-export function earsPlan(source: EarsSource, hasToken: boolean): EarsPlan {
+export function earsPlan(source: EarsSource, hasToken: boolean, hasDirPath = true): EarsPlan {
   if (source === "off") return "off";
+  if (source === "http") return "http";
+  if (source === "dir") return hasDirPath ? "dir" : "no-dir";
   return hasToken ? "discord" : "no-token";
 }
 
@@ -41,21 +46,32 @@ export function idleDetail(t: EarsToken): string {
     : "EARS_DISCORD_TOKEN is not set";
 }
 
-// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003, EARS-STUB-002
+// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003, EARS-STUB-002, EARS-CAP-011
 /**
  * ears: `off` (mode off, deps n/a) for source=off; otherwise mode live (`mock` with the stub engine, whose stt is n/a)
- * with discord following the gateway session (down without a token) and stt the last transcription.
+ * with discord following the gateway session (down without a token) and stt the last transcription. The `http` and
+ * `dir` plans have no Discord (`n/a`) and add a dep named for the source, following `captureStatus` (down for `no-dir`).
  */
 export class EarsHealth {
   private stt: "ok" | "down" = "ok";
-  constructor(private plan: EarsPlan, private discordReady: () => boolean, private stub = false) {}
+  constructor(
+    private plan: EarsPlan,
+    private discordReady: () => boolean,
+    private stub = false,
+    private captureStatus: () => "ok" | "down" = () => "down",
+  ) {}
 
   readonly spec: HeartbeatSpec = {
     service: "ears",
     mode: () => (this.plan === "off" ? "off" : this.stub ? "mock" : "live"),
-    deps: () => (this.plan === "off"
-      ? { discord: "n/a", stt: "n/a" }
-      : { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt: this.stub ? "n/a" : this.stt }),
+    deps: (): Record<string, "ok" | "down" | "n/a"> => {
+      if (this.plan === "off") return { discord: "n/a", stt: "n/a" };
+      const stt = this.stub ? "n/a" : this.stt;
+      if (this.plan === "http") return { discord: "n/a", stt, http: this.captureStatus() };
+      if (this.plan === "dir") return { discord: "n/a", stt, dir: this.captureStatus() };
+      if (this.plan === "no-dir") return { discord: "n/a", stt, dir: "down" };
+      return { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt };
+    },
   };
 
   track<A extends unknown[]>(transcribe: (...a: A) => Promise<string>) {

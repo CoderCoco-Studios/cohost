@@ -77,3 +77,33 @@ test("token set: discord follows the session, stt follows transcriptions", async
   assert.equal(hbs[1]!.mode, "live");
   assert.equal(hbs[1]!.service, "ears");
 });
+
+// @spec EARS-CAP-004
+test("earsPlan: http and dir are plans of their own, token or not; dir without a path is no-dir", () => {
+  assert.equal(earsPlan("http", false), "http");
+  assert.equal(earsPlan("http", true), "http");
+  assert.equal(earsPlan("dir", false), "dir");
+  assert.equal(earsPlan("dir", false, true), "dir");
+  assert.equal(earsPlan("dir", true, false), "no-dir");
+  assert.equal(earsPlan("discord", false, false), "no-token");
+  assert.equal(earsPlan("off", true, false), "off");
+});
+
+// @spec EARS-CAP-011
+test("http and dir heartbeats: discord n/a, stt as usual, and the source's own dep follows the listener", async () => {
+  let status: "ok" | "down" = "ok";
+  for (const plan of ["http", "dir"] as const) {
+    const h = new EarsHealth(plan, () => false, false, () => status);
+    const up = (await runHeartbeat(h.spec))[1]!;
+    assert.deepEqual(up.deps, { discord: "n/a", stt: "ok", [plan]: "ok" });
+    assert.equal(up.mode, "live");
+    status = "down";
+    assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "n/a", stt: "ok", [plan]: "down" });
+    status = "ok";
+  }
+  const stub = (await runHeartbeat(new EarsHealth("http", () => false, true, () => "ok").spec))[1]!;
+  assert.equal(stub.mode, "mock");
+  assert.deepEqual(stub.deps, { discord: "n/a", stt: "n/a", http: "ok" });
+  const noDir = (await runHeartbeat(new EarsHealth("no-dir", () => false).spec))[1]!;
+  assert.deepEqual(noDir.deps, { discord: "n/a", stt: "ok", dir: "down" });
+});

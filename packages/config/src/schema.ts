@@ -289,8 +289,22 @@ export const ConfigSchema = z.object({
     vmc: z.object({ host: z.string(), port: z.number().int().default(39539) }),
   }),
   ears: z.object({
-    /** `off` idles with no Discord client (isolated runs). */
-    source: z.preprocess((v) => v || "discord", z.enum(["discord", "off"])),
+    /**
+     * Where audio comes from: `discord` (a voice channel), `http` (clips POSTed to `ears.http`), `dir` (WAV files
+     * dropped in `ears.dir.path`), or `off` (idle, no capture; isolated runs). Read at start.
+     */
+    // @spec CFG-SCH-029
+    source: z.preprocess((v) => v || "discord", z.enum(["discord", "off", "http", "dir"])),
+    /** The `http` source's listener; port 0 picks a free port. */
+    http: z.object({
+      host: z.preprocess((v) => v || "127.0.0.1", z.string()),
+      port: z.number().int().min(0).max(65535).default(8765),
+    }).default({}),
+    /** The `dir` source: the directory polled for dropped `.wav` files (empty = not configured) and the poll period. */
+    dir: z.object({
+      path: z.string().default(""),
+      poll_ms: z.number().int().positive().default(1000),
+    }).default({}),
     discord: z.object({
       guild_id: z.string().default(""),
       voice_channel_id: z.string().default(""),

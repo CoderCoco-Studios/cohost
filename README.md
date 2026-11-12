@@ -380,6 +380,8 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 | eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`); injected images are still described |
 | eyes | `VISION_ENGINE=stub` | fixed description, no vision model (`mock`); with `VISION_ENABLED=true` it still needs OBS |
 | ears | `EARS_SOURCE=off` | idles, no Discord client (`off`); injected audio is still transcribed |
+| ears | `EARS_SOURCE=http` | listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` WAV or 16-bit PCM clips; no Discord account |
+| ears | `EARS_SOURCE=dir` | hears `.wav` files dropped in `ears.dir.path`, then renames them `.done`; no Discord account |
 | ears | `EARS_STT_ENGINE=stub` | fixed transcript, no `stt` server (`mock`) |
 | mouth | `MOUTH_DISCORD_ENABLED=false` | idles, plays nothing (`off`) |
 | mouth | `MOUTH_DRYRUN_ENABLED=true` | the `dryrun` output accepts every line and plays nothing (`mock`) |

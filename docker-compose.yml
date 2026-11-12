@@ -135,9 +135,13 @@ services:  # @spec DEPLOY-COMPOSE-001
     ports: ["127.0.0.1:8000:8000"]
 
   # ---------- co-host services ----------
-  chat:
+  # chat also mounts ./data/chat: the refreshed Twitch token it persists there must survive the container being recreated.
+  chat:  # @spec DEPLOY-COMPOSE-022
     <<: *ts-service
     build: { context: ., args: { SERVICE: chat } }
+    volumes:
+      - ./config:/app/config
+      - ./data/chat:/app/data/chat
 
   # ---------- the brain: four regions that only talk over the bus ----------
   # salience decides *when* to speak (and fires reflexes), affect keeps the mood,

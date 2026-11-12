@@ -1,5 +1,5 @@
 import type { EventData } from "@cohost/bus";
-import { appServiceIds } from "./manifest.js";
+import { appServiceIds, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import type { StackStatus } from "./stack.js";
 
 export type HeartbeatData = EventData<"service.heartbeat">;
@@ -22,6 +22,31 @@ export interface ServiceHealth {
   restarts: number;
   /** The container's Compose restart count, when a stack status supplied one (`withContainerRestarts`). */
   containerRestarts?: number;
+  /**
+   * Present on a unit that declares `uses`: each used unit whose derived state is `down`, `stale`, `crash-looping` or
+   * `unknown` (empty when every one is fine). An annotation only: the unit's own `state` never changes because of it.
+   */
+  needs?: Need[];
+}
+
+export interface Need { service: string; state: HealthState }
+
+const NEEDY_STATES: ReadonlySet<HealthState> = new Set<HealthState>(["down", "stale", "crash-looping", "unknown"]);
+
+/**
+ * Adds `needs` to each entry of a snapshot from the states in that same snapshot (a used unit absent from it counts as
+ * `unknown`). Pure and idempotent, so a layer that changes states afterwards calls it again.
+ */
+// @spec MOD-LIFE-001
+export function withNeeds(snapshot: ServiceHealth[], manifest: readonly ServiceDef[] = SERVICE_MANIFEST): ServiceHealth[] {
+  const state = new Map(snapshot.map((s) => [s.service, s.state]));
+  return snapshot.map((entry) => {
+    const uses = manifest.find((u) => u.id === entry.service)?.uses ?? [];
+    const { needs: _old, ...rest } = entry;
+    if (uses.length === 0) return rest;
+    const needs = uses.map((service) => ({ service, state: state.get(service) ?? ("unknown" as const) })).filter((n) => NEEDY_STATES.has(n.state));
+    return { ...rest, needs };
+  });
 }
 
 export interface HealthTrackerOptions {
@@ -103,7 +128,7 @@ export class HealthTracker {
   snapshot(): ServiceHealth[] {
     const names = [...this.known];
     for (const s of this.entries.keys()) if (!names.includes(s)) names.push(s);
-    return names.map((s) => this.derive(s));
+    return withNeeds(names.map((s) => this.derive(s)));
   }
 
   // @spec CTRL-HEALTH-001, CTRL-HEALTH-002, CTRL-HEALTH-003, CTRL-HEALTH-004
@@ -147,7 +172,7 @@ export class HealthTracker {
 export function withContainerRestarts(snapshot: ServiceHealth[], status: StackStatus): ServiceHealth[] {
   if (!status.docker.ok) return snapshot;
   const byService = new Map(status.services.map((c) => [c.service, c]));
-  return snapshot.map((entry) => {
+  const overlaid = snapshot.map((entry) => {
     const c = byService.get(entry.service);
     if (!c) return entry;
     const out: ServiceHealth = { ...entry, ...(c.restartCount !== undefined ? { containerRestarts: c.restartCount } : {}) };
@@ -156,4 +181,6 @@ export function withContainerRestarts(snapshot: ServiceHealth[], status: StackSt
     if (unvouched && looping) out.state = "crash-looping";
     return out;
   });
+  // A state the overlay changed can change another unit's needs; recompute only then, so an untouched snapshot stays as it came.
+  return overlaid.some((e, i) => e.state !== snapshot[i]!.state) ? withNeeds(overlaid) : overlaid;
 }

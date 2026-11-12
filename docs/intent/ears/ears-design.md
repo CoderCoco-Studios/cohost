@@ -14,7 +14,7 @@ ears is the co-host's hearing. It is one Node process (`services/ears`) with two
 1. **Listen.** A Discord *bot* sits in a voice channel, captures each human speaker as a separate stream, cuts utterances on silence, sends each to an OpenAI-compatible STT server (speaches / faster-whisper), and publishes `speech.heard` carrying the speaker's name (`services/ears/src/index.ts:3-6`).
 2. **Transcribe injected audio.** It accepts `inject.request` for uploaded audio, transcribes it through the same STT path, and publishes an injected `speech.heard` (`services/ears/src/inject.ts:48-78`; commit 3fae9f7, add-test-injection design D8). This job is independent of the Discord session.
 
-ears does not speak. The co-host's voice reaches Discord through [mouth](../mouth/mouth-design.md), a separate service with a Discord bot of its own; the two bots can sit in the same channel. Why the halves are separate processes with separate bots is argued in [listen-speak-split](decisions/listen-speak-split.md). Discord is today's only listening source; the source setting (`ears.source`) is the seam for more (Deferred decisions).
+ears does not speak. The co-host's voice reaches Discord through [mouth](../mouth/mouth-design.md), a separate service with a Discord bot of its own; the two bots can sit in the same channel. Why the halves are separate processes with separate bots is argued in [listen-speak-split](decisions/listen-speak-split.md). Discord is the default listening source; `ears.source` selects it, or one of the account-free capture sources `http` and `dir` ([Capture sources](#capture-sources)), or `off`.
 
 Design leanings (evidence per bullet):
 
@@ -35,10 +35,13 @@ At boot `index.ts` hands the service body (`service.ts`) to the shared `runServi
 | `discord` | `EARS_DISCORD_TOKEN` unset | `no-token` | none | mode `live`, `discord: down`, state `degraded` with detail `EARS_DISCORD_TOKEN is not set` (EARS-START-002) |
 | `discord` | `EARS_DISCORD_TOKEN` equals `DISCORD_TOKEN` | `no-token` | none | as above, with a detail saying ears needs a bot of its own (EARS-START-007) |
 | `discord` | set and distinct | `discord` | yes | mode `live`; `ready` only after the voice connection is Ready (EARS-SESS-004) |
+| `http` | any | `http` | none | mode `live`; `ready` once the port is listening (EARS-CAP-007) |
+| `dir` | any | `dir` | none | mode `live`; `ready` once the directory is being polled (EARS-CAP-008) |
+| `dir`, `ears.dir.path` empty | any | `no-dir` | none | mode `live`, state `degraded` with detail `ears.dir.path is not set` (EARS-CAP-010) |
 
-`ears.source` is `discord | off` (default `discord`), settable through `EARS_SOURCE` via `config.example.yaml` (`packages/config/src/schema.ts`).
+`ears.source` is `discord | off | http | dir` (default `discord`), settable through `EARS_SOURCE` via `config.example.yaml` (`packages/config/src/schema.ts`, CFG-SCH-029). The `http` and `dir` plans need no token and never load `discord.js` (EARS-CAP-003). The source is read at start; changing it takes effect on restart.
 
-In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`):
+In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`, `no-dir`):
 
 - `ready` (or `degraded` for `no-token`) is signalled after the subscription is established;
 - both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning every 60 s (EARS-START-008);
@@ -57,6 +60,7 @@ Environment and config read by ears:
 | config | `ears.discord.guild_id`, `ears.discord.voice_channel_id` | guild and voice channel to join (EARS-SESS-007), resolved by `voiceTarget` (`session.ts`), which throws `ears.discord.guild_id is not set` / `ears.discord.voice_channel_id is not set` for an empty key; `config.example.yaml` fills them from `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID`. The environment variables are not read by ears |
 | env | `STT_URL` | via `urls.stt()`, default `http://127.0.0.1:8000` (`packages/config/src/index.ts:171`) |
 | env | `DASHBOARD_URL` | via `urls.dashboard()`; the only origin injected uploads may be fetched from (`index.ts:31`) |
+| config | `ears.http.host` (`127.0.0.1`), `ears.http.port` (`8765`), `ears.dir.path` (empty), `ears.dir.poll_ms` (`1000`) | the capture sources below (CFG-SCH-029) |
 | config | `ears.source`, `ears.stt_engine` (`speaches` default, or `stub`), `ears.silence_ms` (700), `ears.min_speech_ms` (400), `ears.stt_model` (`Systran/faster-whisper-small`), `ears.drop_phrases` (default empty) | `packages/config/src/schema.ts` |
 
 The listening bot needs the Connect permission in the channel and the privileged Server Members intent (for display names); it needs no Speak permission.
@@ -75,6 +79,18 @@ Implemented in `discord.ts` (capture) and `hearing.ts` (STT + publish).
 The transcriber handed to `Hearing` (and to the inject handler) is wrapped by `EarsHealth.track`, so each STT call sets `deps.stt` ok/down (`discord.ts:32`, `index.ts:31`, `health.ts:31-33`).
 
 There is no cap on utterance length (a speaker who never pauses for `silence_ms` is buffered in memory until they do), no VAD beyond Discord's speaking events, and no echo suppression of the co-host's voice leaking through a human participant's microphone; bot accounts are ignored as a class (EARS-HEAR-001).
+
+## Capture sources
+
+A capture source is an adapter that hands finished audio clips to the one `Hearing` path (`hearing.ts`); it owns how audio arrives and nothing else. `capture.ts` defines the contract: `CaptureAdapter { name; start(): Promise<void>; stop(): Promise<void> }` and `decodeClip`, which turns uploaded bytes into 16-bit PCM with its rate and channel count. Discord is the adapter that cuts utterances per speaker from a voice channel; `http` and `dir` are the adapters that need no account, so ears can be run, tested and used in mock mode (`ears.stt_engine: stub`) with nothing but a terminal.
+
+`Hearing.heardClip(clip, speaker)` is the shared path. It resamples the clip to 16 kHz mono with the shared `resample`, drops it when shorter than `ears.min_speech_ms`, transcribes it, drops a transcript with no word character or equal to an `ears.drop_phrases` entry, and otherwise publishes `speech.heard { speaker, text, durationMs }` (a live transcript: not `injected`, no `speakerId`). It returns the outcome (`heard`, or the reason nothing was published: `too-short`, `empty`, `drop-phrase`, `stt-error`), which the adapters report back to the caller. `Hearing.heard` (Discord PCM) is the same path after its own 48 kHz stereo conversion.
+
+**`http`.** ears listens on `ears.http.host:ears.http.port` (default `127.0.0.1:8765`; port 0 picks a free one for tests). `POST /audio` carries one clip: a WAV (`audio/wav`, `audio/x-wav`, `audio/wave`, parsed by the shared `parseWav`, 16-bit only) or raw little-endian 16-bit PCM (`audio/L16` or `audio/pcm`, with `rate` and `channels` content-type parameters defaulting to 16000 and 1). The optional `speaker` query parameter names the speaker (default `http`). The reply is JSON `{ heard, text?, reason? }` with status 200 once the clip has been through the path. The listener is bounded with the inject limits (the byte cap and timeout of EARS-INJ-010, the queue length `INJECT_QUEUE_LIMIT` of `@cohost/shared`): a body over `INJECT_MAX_BYTES` (25 MiB) is refused 413 as soon as it is known to exceed the cap, a body that takes longer than `INJECT_FETCH_TIMEOUT_MS` to arrive is cut off, clips are processed one at a time, and more than `INJECT_QUEUE_LIMIT` waiting clips are refused 503. Other statuses: 404 (path), 405 (method), 415 (content type), 400 (audio that does not decode), 502 (speech-to-text failed). A port that cannot be bound leaves the process up with `deps.http` down and a `degraded` heartbeat, the configuration-gap posture.
+
+**`dir`.** ears polls `ears.dir.path` every `ears.dir.poll_ms` (default 1000; the directory is created when missing). A regular file whose name ends in `.wav` (any case) and whose size is the same on two consecutive polls (so a file still being copied in is left alone) is processed once: it goes through `heardClip` with speaker `dir`, then is renamed with a suffix recording the outcome (`.done`, `.rejected` for a file over the byte cap or not decodable, `.failed` when speech-to-text failed). If the rename fails the name is remembered in memory and the file is not read again. At most `INJECT_QUEUE_LIMIT` files are taken per poll, in name order, one at a time. Polling instead of `fs.watch` keeps behaviour identical across WSL, Docker bind mounts and network shares.
+
+Both adapters transcribe through the same `EarsHealth.track`-wrapped transcriber as Discord and injection, so `deps.stt` follows them too, and both share the Discord path's filters, so a stub-engine clip ("stub transcript (n ms)") flows through the same drop-phrase and word checks.
 
 ## Speaking
 
@@ -104,8 +120,8 @@ Injection works in every plan whether or not Discord is connected (add-test-inje
 
 `EarsHealth` (`health.ts:19-34`) is the `HeartbeatSpec` for `service: "ears"`:
 
-- `mode`: `"off"` for the `off` plan, else `"live"`.
-- `deps`: `off` gives `{ discord: "n/a", stt: "n/a" }`; otherwise `discord` is `"ok"` only when the plan is `discord` and `voiceReady()` is true (so `no-token` is always `down`), and `stt` is the outcome of the last transcription (initially `"ok"`).
+- `mode`: `"off"` for the `off` plan, `"mock"` with the stub engine, else `"live"`.
+- `deps`: `off` gives `{ discord: "n/a", stt: "n/a" }`; otherwise `discord` is `"ok"` only when the plan is `discord` and `voiceReady()` is true (so `no-token` is always `down`; `n/a` for the `http` and `dir` plans), and `stt` is the outcome of the last transcription (initially `"ok"`). The `http` plan adds `http` and the `dir` plan adds `dir`, each `ok` while the listener is bound or the directory is being polled and `down` otherwise (EARS-CAP-011).
 - `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) turns any `down` dep on a `ready` service into state `degraded` (`packages/bus/src/heartbeat.ts:71`).
 - `voiceReady` is set true on join Ready and false when a disconnect does not recover (`discord.ts:77,94`). `heartbeat.ready()` is called again on each (re)join (`discord.ts:78`).
 - In the `discord` plan a failed join reports `degraded` with `deps.discord: down` while the join is retried (SHARED-DVS-004); the state is `starting` until the first join attempt resolves. A failed login exits 1.
@@ -143,7 +159,7 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 | Injection URL trust | Same origin as `urls.dashboard()`, under `/uploads/`, no redirects | Fetch any URL | SSRF guard: add-test-injection design D2 ("eyes/ears ... MUST only fetch URLs under `urls.dashboard()` + `/uploads/`"); doc comment on `dashboardUrl` (`inject.ts:11-12`). The origin and path check applies to the requested URL only; `redirect: "error"` (`inject.ts:64`) makes the fetch fail instead of following a redirect, which could lead anywhere the check would have refused. |
 | Stale injected requests | Drop after 60 s | Process all backlog | Consumer groups resume after a restart: `INJECT_STALE_MS` in `@cohost/shared` (shared with eyes and chat, SHARED-INJ-008); add-test-injection design D8 ("Staleness"). |
 | Injected clips skip `min_speech_ms` | No minimum duration | Apply the gate | add-test-injection design D8: "`min_speech_ms` does not apply (that gates Discord PCM)"; doc comment `inject.ts:50`; test `inject.test.ts:36-43`. |
-| More listening sources | Not built; the HLD lists it as a deferred goal. When a second source exists, each source is a capture adapter feeding the same `Hearing` path and `ears.source` (one value) becomes a map `ears.sources.<name>` with a per-source `enabled`, mirroring `mouth.outputs` | Build adapters (a local microphone, an OBS audio source) now | A deferred goal is not a gap in the present design; with one source the single enum keeps today's config valid. |
+| More listening sources | Capture adapters feeding the one `Hearing` path, selected by `ears.source` (`discord`, `off`, `http`, `dir`); `http` takes POSTed 16-bit PCM or WAV on a local port and `dir` takes WAV files dropped in a polled directory, both bounded by the shared inject limits and both working with the stub transcriber and no account (EARS-CAP-*) | Defer all new sources; a per-source map `ears.sources.<name>` with `enabled`, so several run at once; `fs.watch` for `dir`; a local microphone or OBS audio source first | The HLD's deferred goals do not forbid a listening source, and an account-free source is the missing way to run and test ears without Discord. One enum keeps every existing config valid and matches the other services' `source` switches (`chat.source`); one active source at a time is enough because Discord voice and a scripted feed are alternatives, not companions. Polling is the portable choice across WSL, bind mounts and network shares. A microphone or OBS source needs a native capture dependency and its own account-free test story, so it is a later adapter behind the same contract. |
 | Tuning the co-host's voice | Owned by the [voice](../voice/voice-design.md) segment | A listening-side knob | The voice knobs (speed and whatever the TTS engine exposes) act on synthesis, not on hearing. |
 | Inject loop and STT | The `ears` loop hands each `inject.request` to the shared inject handler's queue and returns (EARS-INJ-011) | Await the handler in the loop (the original code) | A slow STT call or upload fetch should not delay reading the next request. |
 | Word characters | A word character is a Unicode letter or number in any script (EARS-HEAR-007) | ASCII `\w` (the original code) | STT is forced to `en` today, but a transcript of non-ASCII letters or digits is still speech, and a language setting would otherwise silently drop it. |

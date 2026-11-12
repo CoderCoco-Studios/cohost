@@ -282,6 +282,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cohost/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@cohost/shared':
         specifier: workspace:*
         version: link:../../packages/shared

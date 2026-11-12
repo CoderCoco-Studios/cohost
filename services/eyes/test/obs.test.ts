@@ -89,19 +89,22 @@ test("stop disconnects and the resulting close does not reconnect", async () => 
   assert.equal(obs.connects, 1);
 });
 
+// @spec EYES-OBS-002
+test("the retry delay caps at 60 s", async () => {
+  const obs = new FakeObs(6);
+  const sleeps: number[] = [];
+  await link(obs, hbSpy(), sleeps).connect();
+  assert.deepEqual(sleeps, [10_000, 20_000, 40_000, 60_000, 60_000, 60_000]);
+});
+
 // @spec EYES-ENAB-005, EYES-OBS-008
-test("one shutdown sequence: idle timer, OBS, then the bus", async () => {
+test("the shutdown sequence stops the idle plan, then closes the OBS link", async () => {
   const order: string[] = [];
-  await stopEyes({
-    idleTimer: setInterval(() => {}, 1000),
-    clear: (t) => { order.push("timer"); clearInterval(t); },
-    link: { stop: async () => { order.push("obs"); } },
-    bus: { stop: () => { order.push("bus"); } },
-  });
-  assert.deepEqual(order, ["timer", "obs", "bus"]);
+  await stopEyes({ idle: { stop: () => { order.push("idle"); } }, link: { stop: async () => { order.push("obs"); } } });
+  assert.deepEqual(order, ["idle", "obs"]);
   order.length = 0;
-  await stopEyes({ link: { stop: async () => { order.push("obs"); } }, bus: { stop: () => { order.push("bus"); } } });
-  assert.deepEqual(order, ["obs", "bus"], "no idle timer when vision is enabled");
+  await stopEyes({ link: { stop: async () => { order.push("obs"); } } });
+  assert.deepEqual(order, ["obs"], "no idle plan when vision is enabled");
 });
 
 // @spec EYES-INJ-014

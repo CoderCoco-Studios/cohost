@@ -11,6 +11,15 @@ function setup(now?: () => number) {
   const handle = createInjectHandler({ bus, log: recordingLog().log, cohostName: cfg.cohost.name, now });
   return { bus, handle };
 }
+// @spec CHAT-INJ-010
+test("chat takes injection through the shared handler: target chat, kind text only", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ text: "hello Coco" }));
+  assert.deepEqual(bus.of("inject.result"), [{ id: "r1", ok: true }]);
+  await run(handle, req({ id: "r2", kind: "image", url: "http://x/uploads/1" }));
+  assert.deepEqual(bus.of("inject.result")[1], { id: "r2", ok: false, detail: "chat cannot handle kind 'image'" });
+});
+
 const req = (over: Record<string, unknown> = {}) =>
   event("inject.request", { id: "r1", target: "chat", kind: "text", text: "hi", remember: false, ...over });
 
@@ -58,7 +67,7 @@ test("blank text: no message, ok:false", async () => {
   assert.equal(bus.of("inject.result")[0]!.ok, false);
 });
 
-// @spec CHAT-INJ-003
+// @spec SHARED-INJ-002
 test("stale request: only ok:false stale", async () => {
   const { bus, handle } = setup(() => Date.now() + 61_000);
   await run(handle, req());
@@ -66,7 +75,7 @@ test("stale request: only ok:false stale", async () => {
   assert.deepEqual(bus.of("inject.result")[0], { id: "r1", ok: false, detail: "stale" });
 });
 
-// @spec CHAT-INJ-002, CHAT-INJ-004
+// @spec SHARED-INJ-001, CHAT-INJ-004
 test("other target publishes nothing; wrong kind for chat is ok:false", async () => {
   const { bus, handle } = setup();
   await run(handle, req({ target: "eyes", kind: "image", url: "http://x/uploads/1" }));

@@ -39,7 +39,12 @@ llm:
 vision:
   enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
   model: "${VISION_MODEL:-qwen2.5vl:3b}"
+  engine: ollama               # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
   interval_ms: 8000            # how often to look at the game
+  temperature: 0.2             # vision model sampling temperature (0 to 2)
+  num_predict: 60              # longest description the model may write, in tokens
+  jpeg_quality: 70             # JPEG quality of the OBS screenshot (1 to 100)
+  # prompt: "..."              # system prompt; blank = built-in default. Keep its "reply exactly: SAME" rule or every reply counts as a change
   timeout_ms: 30000            # give up on a describe call after this long
   upload_timeout_ms: 10000     # injected uploads: timeout fetching the image from the dashboard
   upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)

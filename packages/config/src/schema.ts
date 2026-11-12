@@ -40,6 +40,12 @@ export const ModuleSchema = z.object({
 // @spec CFG-SCH-027
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
 
+/** Default `vision.prompt`: one sentence for a co-host, and the exact `SAME` reply eyes parses as "nothing changed". */
+export const DEFAULT_VISION_PROMPT =
+  "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
+  "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
+  "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME";
+
 // @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
 export const ConfigSchema = z.object({
   cohost: z.object({
@@ -85,10 +91,20 @@ export const ConfigSchema = z.object({
       region: z.string().default(""),
     }).default({}),
   }),
+  // @spec CFG-SCH-021
   vision: z.object({
     enabled: z.boolean().default(false),
     /** Describer model id; required only while `enabled` (checked on the section below). */
     model: z.string().default(""),
+    /** `stub` describes images with fixed text and no model call (isolated runs). */
+    engine: z.preprocess((v) => v || "ollama", z.enum(["ollama", "stub"])),
+    /** System prompt of the describe call. It must keep the instruction to reply exactly SAME when nothing changed. */
+    prompt: z.preprocess((v) => (typeof v === "string" && v.trim() ? v : undefined), z.string().default(DEFAULT_VISION_PROMPT)),
+    temperature: z.number().min(0).max(2).default(0.2),
+    /** Longest reply the vision model may write, in tokens. */
+    num_predict: z.number().int().positive().default(60),
+    /** JPEG quality of the OBS screenshot, 1 to 100. */
+    jpeg_quality: z.number().int().min(1).max(100).default(70),
     interval_ms: z.number().int().positive().default(8000),
     /** Describe-call (VLM request) timeout. */
     timeout_ms: z.number().int().positive().default(30000),

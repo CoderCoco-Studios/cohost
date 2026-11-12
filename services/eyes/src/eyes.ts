@@ -1,5 +1,6 @@
 import type { Publisher } from "@cohost/bus";
-import { urls, type Config, type Logger } from "@cohost/config";
+import type { Config, Logger } from "@cohost/config";
+import { createChatProvider, type ChatProvider } from "@cohost/llm";
 
 export interface EyesDeps {
   bus: Publisher;
@@ -8,6 +9,8 @@ export interface EyesDeps {
   screenshot: () => Promise<string>;
   /** One line about the frame, or "SAME" / "" when nothing changed since `previous`. */
   describe: (b64: string, previous: string) => Promise<string>;
+  /** Monotonic clock, ms (default `performance.now`). */
+  now?: () => number;
 }
 
 // @spec EYES-OBS-007
@@ -16,51 +19,56 @@ export function stripDataUrl(imageData: string): string {
   return imageData.replace(/^data:image\/\w+;base64,/, "");
 }
 
-/** True for the error a fetch rejects with when its `AbortSignal.timeout` fires. */
+/** True for the error a request rejects with when its abort signal fires on a timeout. */
 export const isTimeout = (err: unknown): boolean => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 
+// @spec EYES-LOOK-002, EYES-INJ-008
+/**
+ * A clear `SAME`: empty, or the word `SAME` in any case with nothing after it but punctuation or whitespace.
+ * A description that merely starts with the word ("Same old menu screen") is a description, not a reply of no change.
+ */
+export const isSame = (text: string): boolean => /^(same[\s.!]*)?$/i.test(text.trim());
+
+export type Describe = EyesDeps["describe"];
+
 // @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004, EYES-DESC-005, EYES-DESC-006
-/** Ask the Ollama vision model what changed; a call unanswered after `vision.timeout_ms` is aborted and throws. */
-export function ollamaDescriber(cfg: Config["vision"]): EyesDeps["describe"] {
+/**
+ * Ask the vision model through the `ollama` provider of `@cohost/llm`, with `vision.model` and the `vision.*` options;
+ * a call unanswered after `vision.timeout_ms` is aborted and throws.
+ */
+export function modelDescriber(cfg: Config["vision"], llm: Config["llm"], provider: ChatProvider = createChatProvider({ ...llm, provider: "ollama", model: cfg.model })): Describe {
   return async (b64, previous) => {
+    // A ref'd timer, not `AbortSignal.timeout`: that one is unref'd, so on Node 22 a request that never answers lets
+    // the event loop drain before the abort fires.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(new DOMException("The operation timed out.", "TimeoutError")), cfg.timeout_ms);
     try {
-      return await ask(cfg, b64, previous);
+      const reply = await provider.chat([
+        { role: "system", content: cfg.prompt },
+        { role: "user", content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?", images: [b64] },
+      ], { temperature: cfg.temperature, maxTokens: cfg.num_predict, signal: ctl.signal });
+      return reply.trim().split("\n")[0] ?? "";
     } catch (err) {
       if (isTimeout(err)) throw new Error(`vision model did not answer within ${cfg.timeout_ms} ms`);
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
   };
 }
 
-async function ask(cfg: Config["vision"], b64: string, previous: string): Promise<string> {
-  const res = await fetch(`${urls.ollama()}/api/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    signal: AbortSignal.timeout(cfg.timeout_ms),
-    body: JSON.stringify({
-      model: cfg.model,
-      stream: false,
-      keep_alive: "24h",
-      options: { temperature: 0.2, num_predict: 60 },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You watch a live video game stream through a screenshot. Reply with ONE short sentence describing what is happening " +
-            "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
-            "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME",
-        },
-        {
-          role: "user",
-          content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?",
-          images: [b64],
-        },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`vision model ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as { message?: { content?: string } };
-  return (json.message?.content ?? "").trim().split("\n")[0] ?? "";
+// @spec EYES-STUB-001
+/**
+ * The describer of `vision.engine: stub`: no request. A frame without a previous description is `stub vision: <n> bytes`
+ * (`n` the decoded size), and every later capture is `SAME`, so an isolated eyes with OBS reports one change.
+ */
+export function stubDescriber(): Describe {
+  return async (b64, previous) => (previous ? "SAME" : `stub vision: ${Buffer.from(b64, "base64").length} bytes`);
+}
+
+/** The describer `vision.engine` selects. */
+export function createDescriber(cfg: Config): Describe {
+  return cfg.vision.engine === "stub" ? stubDescriber() : modelDescriber(cfg.vision, cfg.llm);
 }
 
 /** One look at the screen; publishes `vision.summary` only when the model saw a change. */
@@ -72,35 +80,31 @@ export class Eyes {
   // @spec EYES-LOOK-001, EYES-LOOK-002
   /** True when something new was published. */
   async look(): Promise<boolean> {
-    const t0 = Date.now();
+    const now = this.d.now ?? (() => performance.now());
+    const t0 = now();
     const b64 = await this.d.screenshot();
     const text = await this.d.describe(b64, this.previous);
-    const same = !text || /^same\b/i.test(text);
-    if (same) {
-      this.d.log.debug({ ms: Date.now() - t0 }, "no change");
+    if (isSame(text)) {
+      this.d.log.debug({ ms: now() - t0 }, "no change");
       return false;
     }
     this.previous = text;
     await this.d.bus.publish("vision.summary", { text, changed: true });
-    this.d.log.info({ ms: Date.now() - t0, text }, "saw");
+    this.d.log.info({ ms: now() - t0, text }, "saw");
     return true;
   }
 }
 
 export interface StartDeps {
   enabled: boolean;
-  log: Logger;
   connect: () => Promise<void>;
   loop: () => Promise<void>;
 }
 
 // @spec EYES-ENAB-001, EYES-ENAB-003
-/** Connect to OBS and run the look loop — but only when vision is enabled. */
-export async function startEyes({ enabled, log, connect, loop }: StartDeps): Promise<boolean> {
-  if (!enabled) {
-    log.warn("vision.enabled is false in config.yaml — eyes idle. Flip it on and restart.");
-    return false;
-  }
+/** Connect to OBS and run the look loop, but only when vision is enabled; the caller reports the disabled case. */
+export async function startEyes({ enabled, connect, loop }: StartDeps): Promise<boolean> {
+  if (!enabled) return false;
   await connect();
   await loop();
   return true;

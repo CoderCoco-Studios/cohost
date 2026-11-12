@@ -20,7 +20,12 @@ import { MockProvider, HashEmbedder } from "./mock.js";
 export type { Config };
 export { MockProvider, HashEmbedder };
 
-export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+  /** Base64 images for a vision model; the Ollama provider sends them with the message (LLM-VIS-001). */
+  images?: string[];
+}
 export interface ChatOptions {
   maxTokens?: number;
   temperature?: number;
@@ -83,7 +88,7 @@ export class Ollama implements ChatProvider, Embedder {
   readonly model: string;
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001
     const res = await fetch(`${this.base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },

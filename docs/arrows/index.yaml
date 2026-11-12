@@ -132,7 +132,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C9): CHAT-TW-011/012 (refreshed tokens persisted), CHAT-PLAN-003 on the shared idle plan, CHAT-INJ-010 added; CHAT-INJ-002/003 retired (now SHARED-INJ-001/002); CHAT-TW-008/009 tested through runService. No open gaps."
     drift: null
 
   eyes:
@@ -144,7 +144,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: EYES-INJ-002..006, 012, 013, 015 retired (now SHARED-INJ-001..008); new [ ]: EYES-INJ-016, EYES-STUB-001/002. Earlier: Intent pass confirmed; no open gaps."
+    next: "2026-11-11 gap closure (C9): EYES-INJ-016, EYES-STUB-001/002, EYES-DESC-007 built; eyes describes through @cohost/llm (LLM-VIS-001), SAME is a clear match only, durations on a monotonic clock, idle via startIdle, glue tested through runService. EYES-INJ-002..006, 012, 013, 015 retired (now SHARED-INJ-001..008). Earlier: Intent pass confirmed; no open gaps."
     drift: null
 
   ears:

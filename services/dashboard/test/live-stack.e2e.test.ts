@@ -47,6 +47,18 @@ async function observe(since: string, types: string[], pred: (data: string) => b
 }
 const wav = () => { const n = 4800; const b = Buffer.alloc(44 + n * 2); b.write("RIFF", 0); b.writeUInt32LE(36 + n * 2, 4); b.write("WAVEfmt ", 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(16000, 24); b.writeUInt32LE(32000, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write("data", 36); b.writeUInt32LE(n * 2, 40); return b; };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const CASE_DEADLINE_MS = 90_000;
+const ATTEMPT_MS = 8000;
+/** Resolves once cortex's newest brain.status is not "speaking" (its voice-busy gate is open), or at the deadline. */
+async function waitSpeakingGateOpen(deadline: number): Promise<void> {
+  while (Date.now() < deadline) {
+    const lines = (await redis("XREVRANGE", "cohost:events", "+", "-", "COUNT", "200")).split("\n");
+    for (let i = 0; i + 8 < lines.length; i += 9) {
+      if (lines[i + 2] === "brain.status") { if (!lines[i + 8]!.includes('"speaking"')) return; break; }
+    }
+    await sleep(1000);
+  }
+}
 const chat = (text: string) => ({ platform: "twitch", user: "live_verify", text, mentionsCohost: true });
 
 // @spec MOD-TEST-007
@@ -59,10 +71,21 @@ test("every unit of the isolated stack answers its declared input", { skip, time
       if (await fetch(`${BASE}/health`).then((r) => r.ok, () => false)) break;
       await sleep(1000);
     }
+    // /health answers before the controller has its first snapshot: wait until /stack answers too.
+    for (let i = 0; ; i++) {
+      assert.ok(i < 60, "the dashboard's /stack did not answer");
+      if ((await api("GET", "/stack").catch(() => ({ status: 0 }))).status === 200) break;
+      await sleep(1000);
+    }
     const stack0 = (await api("GET", "/stack")).json;
     if (stack0.state !== "up") {
       launchedHere = true;
-      assert.equal((await api("POST", "/stack/launch")).status, 202);
+      let status = 0;
+      for (let i = 0; i < 30 && status !== 202; i++) {
+        status = (await api("POST", "/stack/launch")).status;
+        if (status !== 202) await sleep(2000);
+      }
+      assert.equal(status, 202, "the stack launch was not accepted");
       for (let i = 0; ; i++) {
         assert.ok(i < 120, "the stack did not reach up");
         const s = (await api("GET", "/stack")).json;
@@ -91,17 +114,21 @@ test("every unit of the isolated stack answers its declared input", { skip, time
       { unit: "mouth", send: () => api("POST", "/inject/event", { unit: "mouth", type: "brain.say", data: { id: "lv-mouth", text: "mouth verify", emotion: "happy" } }), types: ["voice.playing", "voice.done"], pred: (d) => d.includes("lv-mouth") },
       { unit: "avatar", send: () => api("POST", "/inject/event", { unit: "avatar", type: "affect.state", data: { valence: -0.8, arousal: 0.9, mood: "angry", cause: "live-verify" } }), types: ["avatar.state"], pred: (d) => d.includes('"emotion":"angry"') },
     ];
+    // Each unit's injection is judged by its own answering event. A unit may legitimately drop one (cortex while its
+    // speaking gate is closed, affect/avatar while a background tick overtakes it), so an injection is re-sent, each
+    // attempt observed on its own for a bounded window, until the case's deadline; the case fails only when no attempt
+    // in the deadline was answered. Cortex's gate is open once its status is not "speaking", so its retries wait for it.
     for (const c of cases) {
-      // affect publishes its own mood every 2 s and the avatar follows the latest, so avatar's injection is retried.
-      const attempts = c.unit === "avatar" ? 5 : 1;
+      const deadline = Date.now() + CASE_DEADLINE_MS;
       let hit: string[] = [];
-      for (let a = 0; a < attempts && hit.length === 0; a++) {
+      for (let a = 0; hit.length === 0 && (a === 0 || Date.now() < deadline); a++) {
+        if (c.unit === "cortex") await waitSpeakingGateOpen(deadline);
         const since = await lastId();
         const r = await c.send();
         assert.equal(r.status, 202, `${c.unit}: injection answered ${r.status} ${JSON.stringify(r.json)}`);
-        hit = await observe(since, c.types, c.pred, attempts > 1 ? 4000 : 30_000);
+        hit = await observe(since, c.types, c.pred, ATTEMPT_MS);
       }
-      assert.ok(hit.length > 0, `${c.unit}: no ${c.types.join("/")} answered its injection`);
+      assert.ok(hit.length > 0, `${c.unit}: no ${c.types.join("/")} answered its injection within ${CASE_DEADLINE_MS / 1000} s`);
     }
   } finally {
     dash.kill();

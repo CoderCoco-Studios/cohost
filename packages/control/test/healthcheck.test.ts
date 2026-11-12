@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { isHealthy, checkHealth } from "../src/healthcheck.js";
 
@@ -27,7 +28,10 @@ test("stopping is unhealthy even when fresh; only the newest heartbeat counts", 
   assert.equal(isHealthy("chat", [rec("chat", 9000, "stopping"), rec("chat", 1000)], 1_000_000), true);
 });
 
-const url = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+// The CLI test never touches the live stack's streams: it runs in Redis database 15 of the same server (a database no
+// service uses), where it publishes its heartbeat and deletes the health stream in `finally`.
+const liveUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+const url = `${liveUrl.replace(/\/\d*$/, "")}/15`;
 async function redisUp(): Promise<boolean> {
   const probe = new Bus("hc-probe", undefined, url);
   try {
@@ -35,17 +39,27 @@ async function redisUp(): Promise<boolean> {
     return true;
   } catch { return false; } finally { probe.stop(); }
 }
+/** Delete the health stream of the test database through the bus package's own ioredis. */
+async function dropHealthStream(): Promise<void> {
+  const { Redis } = createRequire(import.meta.resolve("@cohost/bus"))("ioredis") as typeof import("ioredis");
+  const r = new Redis(url, { maxRetriesPerRequest: 1 });
+  try { await r.del("cohost:health"); } finally { r.disconnect(); }
+}
 
 // @spec CTRL-CHECK-002
 test("CLI exits 0 for a fresh service and 1 for a silent one (needs Redis)", { skip: !(await redisUp()) && `no Redis at ${url}` }, async () => {
   const bus = new Bus("hc-test", undefined, url);
   const name = `hc-${Date.now()}`;
-  await bus.publishHealth({ service: name, instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 5000 });
-  const run = (svc: string) =>
-    spawnSync(process.execPath, [new URL("../dist/healthcheck.js", import.meta.url).pathname, svc], { env: { ...process.env, REDIS_URL: url } }).status;
-  assert.equal(run(name), 0);
-  assert.equal(run(`${name}-silent`), 1);
-  bus.stop();
+  try {
+    await bus.publishHealth({ service: name, instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 5000 });
+    const run = (svc: string) =>
+      spawnSync(process.execPath, [new URL("../dist/healthcheck.js", import.meta.url).pathname, svc], { env: { ...process.env, REDIS_URL: url } }).status;
+    assert.equal(run(name), 0);
+    assert.equal(run(`${name}-silent`), 1);
+  } finally {
+    bus.stop();
+    await dropHealthStream();
+  }
 });
 
 const fakeBus = (recent: HeartbeatEvent[], serverTime: () => Promise<number>) => ({ recentHealth: async () => recent, serverTime });

@@ -336,7 +336,7 @@ function loadShippedBare(env: Record<string, string> = {}) {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "EMBED_MODEL", "VISION_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY", "EMBED_MODEL", "VISION_MODEL", "NOTES_MODEL", "STT_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT", "OBS_HOST", "OBS_PASSWORD", "OBS_SOURCE", "CHAT_SOURCE", "EARS_SOURCE", "EARS_STT_ENGINE", "MEMORY_EMBEDDER", "MEMORY_STORE", "VISION_ENABLED", "VISION_ENGINE", "VOICE_ENGINE", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "TWITCH_CHANNEL", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;

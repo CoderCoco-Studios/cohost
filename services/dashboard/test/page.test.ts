@@ -841,3 +841,65 @@ test("with control disabled there is no Apply; the page names the units and the 
   assert.match(msg, /cohostctl restart mouth/);
   assert.equal(p.calls.filter((c) => /\/restart$/.test(c.path)).length, 0);
 });
+
+// ---------- Voice speakers on the Viewers page
+const VOICE_LIST = {
+  viewers: [
+    { key: "discord:77", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 1, voice: true, discordId: "77" },
+    { key: "1", display: "Alice", regular: false, regularManual: false, msgCount: 3, noteCount: 0 },
+  ],
+};
+const voiceApi = (detail: Record<string, unknown>): Handler => (path, init) => {
+  const m = init.method ?? "GET";
+  if (m === "GET" && (path.startsWith("/viewers?") || path === "/viewers")) return res(200, VOICE_LIST);
+  if (m === "GET" && path === "/viewers/1") return res(200, { viewer: VOICE_LIST.viewers[1], core: [], recent: [], deletions: [], links: detail.links });
+  if (m === "GET" && path.startsWith("/viewers/")) return res(200, detail);
+  return res(200, {});
+};
+const VOICE_DETAIL = { viewer: VOICE_LIST.viewers[0], core: [], recent: [], deletions: [] };
+const LINKED_DETAIL = { viewer: VOICE_LIST.viewers[1], core: [], recent: [], deletions: [], links: [{ discordId: "88", discordDisplay: "Ali <b>" }] };
+
+// @spec DASH-VIEWERS-020
+test("a voice viewer is listed with a VOICE tag and its panel offers Link to a chat viewer", async () => {
+  const p = await boot({ handler: voiceApi(VOICE_DETAIL), viewersToken: "tok" });
+  await p.get("#tabViewers").onclick!();
+  await p.tick();
+  const rows = p.get("#vRows").innerHTML;
+  assert.equal((rows.match(/VOICE/g) ?? []).length, 1, "only the voice viewer is tagged");
+  await p.run('selectViewer("discord:77")');
+  assert.match(p.get("#vDetail").innerHTML, /Link to a chat viewer/);
+  await p.run('selectViewer("1")');
+  assert.doesNotMatch(p.get("#vDetail").innerHTML, /Link to a chat viewer/);
+});
+
+// @spec DASH-VIEWERS-020
+test("Link to a chat viewer asks for a name, posts the discord id and the name, and reloads; cancel or empty posts nothing", async () => {
+  let answer: string | null = null;
+  const p = await boot({ handler: voiceApi(VOICE_DETAIL), viewersToken: "tok", prompt: () => answer });
+  await p.run('selectViewer("discord:77")');
+  p.calls.length = 0;
+  await p.run('linkVoice("discord:77", "77")');
+  answer = "   ";
+  await p.run('linkVoice("discord:77", "77")');
+  assert.deepEqual(vcalls(p), [], "cancelled or empty: nothing sent");
+  answer = " Alice ";
+  await p.run('linkVoice("discord:77", "77")');
+  const [post, ...rest] = vcalls(p);
+  assert.deepEqual([post!.method, post!.path, JSON.parse(post!.body!)], ["POST", "/viewers/links", { discordId: "77", name: "Alice" }]);
+  assert.ok(rest.some((c) => c.method === "GET" && c.path.startsWith("/viewers?")), "the list is reloaded");
+});
+
+// @spec DASH-VIEWERS-021
+test("a chat viewer's panel lists its linked Discord ids (escaped) with an unlink that posts and reloads", async () => {
+  const p = await boot({ handler: voiceApi(LINKED_DETAIL), viewersToken: "tok" });
+  await p.run('selectViewer("1")');
+  const html = p.get("#vDetail").innerHTML;
+  assert.match(html, /88/);
+  assert.match(html, /Ali &lt;b&gt;/);
+  assert.match(html, /data-act="unlink"/);
+  p.calls.length = 0;
+  await p.run('unlinkVoice("1", "88")');
+  const [post, ...rest] = vcalls(p);
+  assert.deepEqual([post!.method, post!.path], ["POST", "/viewers/links/88/delete"]);
+  assert.ok(rest.some((c) => c.method === "GET" && c.path === "/viewers/1"));
+});

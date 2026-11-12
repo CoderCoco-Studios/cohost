@@ -587,7 +587,7 @@ const vPost = async (path, body) => (await vCall(path, { method: "POST", headers
 function renderViewers(list) {
   vList = list;
   $("#vRows").innerHTML = list.length ? list.map((v) =>
-    `<div class="vrow${v.key === vSel ? " sel" : ""}" data-key="${esc(v.key)}"><div><b>${esc(v.display)}</b>${v.regular ? '<span class="badge reg">REGULAR</span>' : ""}${v.regularManual ? ' <span class="hint">set by you</span>' : ""}</div>` +
+    `<div class="vrow${v.key === vSel ? " sel" : ""}" data-key="${esc(v.key)}"><div><b>${esc(v.display)}</b>${v.regular ? '<span class="badge reg">REGULAR</span>' : ""}${v.regularManual ? ' <span class="hint">set by you</span>' : ""}${v.voice ? '<span class="badge">VOICE</span>' : ""}</div>` +
     `<div class="vmeta">${v.msgCount} msgs · ${v.noteCount} notes</div></div>`).join("") : '<div class="hint">no viewers</div>';
 }
 async function loadViewers() {
@@ -595,7 +595,7 @@ async function loadViewers() {
   const d = await vCall("/viewers?q=" + encodeURIComponent($("#vSearch").value.trim()));
   if (d && seq === vSeq) renderViewers(d.viewers || []);
 }
-// @spec DASH-VIEWERS-011, DASH-VIEWERS-013, DASH-VIEWERS-014, DASH-VIEWERS-015
+// @spec DASH-VIEWERS-011, DASH-VIEWERS-013, DASH-VIEWERS-014, DASH-VIEWERS-015, DASH-VIEWERS-020, DASH-VIEWERS-021
 function renderViewer(d) {
   const v = d.viewer, k = esc(v.key);
   const pct = (x) => Math.max(0, Math.min(100, Math.round(x * 100)));
@@ -607,7 +607,11 @@ function renderViewer(d) {
   $("#vDetail").innerHTML =
     `<div class="row"><b style="font-size:16px">${esc(v.display)}</b><span class="hint">${v.msgCount} msgs</span><span style="flex:1"></span>` +
     `<label><input type="checkbox" data-act="regular" data-key="${k}"${v.regularManual ? " checked" : ""} style="width:auto"> Mark as regular</label>` +
-    `<button data-act="clear" data-key="${k}">Clear all notes</button></div>` +
+    `<button data-act="clear" data-key="${k}">Clear all notes</button>` +
+    (v.voice ? `<button data-act="link" data-key="${k}" data-discord="${esc(v.discordId)}">Link to a chat viewer</button>` : "") + `</div>` +
+    (v.voice ? '<div class="hint">heard in the voice channel; not linked to a chat viewer</div>' : "") +
+    (d.links || []).map((l) => `<div class="vnote"><span class="txt">Discord id ${esc(l.discordId)}${l.discordDisplay ? " (" + esc(l.discordDisplay) + ")" : ""} <span class="tag">voice</span></span>` +
+      `<a class="lnk" data-act="unlink" data-key="${k}" data-discord="${esc(l.discordId)}">unlink</a></div>`).join("") +
     (v.regular && !v.regularManual ? '<div class="hint">regular by message count</div>' : "") +
     section("Core", d.core || []) + section("Recent", d.recent || []) +
     "<h3>Deleted notes</h3>" + ((d.deletions || []).length ? d.deletions.map(gone).join("") : '<div class="hint">none</div>');
@@ -645,6 +649,20 @@ async function clearNotes(key) {
   const r = reason.trim();
   if (await vPost(`/viewers/${encodeURIComponent(key)}/clear`, r ? { reason: r } : {})) await vReload(key);
 }
+// @spec DASH-VIEWERS-020
+async function linkVoice(key, discordId) {
+  const name = prompt("Which chat viewer is this? Type their name as it shows in chat. Their voice notes move to that viewer, and later speech from this Discord account goes there. Cancel keeps it as it is.");
+  if (name === null || !name.trim()) return;
+  if (await vPost("/viewers/links", { discordId, name: name.trim() })) {
+    vSel = ""; // the voice viewer is gone; its notes now belong to the chat viewer
+    $("#vDetail").innerHTML = '<span class="hint">linked: the notes moved to the chat viewer</span>';
+    await loadViewers();
+  }
+}
+// @spec DASH-VIEWERS-021
+async function unlinkVoice(key, discordId) {
+  if (await vPost(`/viewers/links/${encodeURIComponent(discordId)}/delete`, {})) await vReload(key);
+}
 // @spec DASH-VIEWERS-015
 async function restoreNote(key, deletionId) {
   if (await vPost(`/viewers/deletions/${encodeURIComponent(deletionId)}/restore`, {})) await vReload(key);
@@ -661,6 +679,8 @@ $("#vDetail").addEventListener("click", (e) => {
   else if (act === "restore") restoreNote(key, a.dataset.del);
   else if (act === "clear") clearNotes(key);
   else if (act === "regular") toggleRegular(key, a.checked);
+  else if (act === "link") linkVoice(key, a.dataset.discord);
+  else if (act === "unlink") unlinkVoice(key, a.dataset.discord);
 });
 
 // ---------- feed + state

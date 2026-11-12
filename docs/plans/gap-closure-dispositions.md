@@ -160,10 +160,10 @@ Specs written for the module contract land as follows: SHARED-* in C1; MOD-MAN-*
 | voice | O3 `parseWav` robustness | Implement: shared `parseWav` checks the format tag and chunk order | C1 |
 | voice | O4 HTTP method and query strings | Implement: GET/HEAD only; match the path, not the raw URL | C5 |
 | voice | O5 Id reuse in `order` | Implement | C5 |
-| voice | O6 `voice.speed` default 1 vs example 1.05 | Drop: the example ships the owner's tuned value over a neutral schema default | — |
+| voice | O6 `voice.speed` default 1 vs example 1.05 | Implement: schema default and example both 1.05 | reopen-voice |
 | voice | O7 Shutdown untested; 1.5 s timer not cleared | Implement via `runService`; clear the timer on stop | C5 |
 | voice | O8 Avatar and fallback clips | Already resolved: accepted (owner decision) | — |
-| voice | D1 Tuning the co-host's voice | Drop: owner-deferred; the settings editor exposes whatever knobs `voice` gains | — |
+| voice | D1 Tuning the co-host's voice | Implement: expose the real Kokoro-FastAPI v0.10.0 request parameters (`lang_code`, `volume_multiplier`, `normalization_options`, voice mixing) as `voice.*` keys | reopen-voice |
 | voice | D2 More outputs | Drop: owned by mouth's deferred decisions | — |
 | working-memory | O1 Truthy, not `true` | Drop: the bus schema already rejects non-boolean flags | — |
 | working-memory | O2 `markSeenEvents` identity semantics | Implement: mark by event id | C10 |

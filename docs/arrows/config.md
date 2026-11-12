@@ -52,7 +52,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (74 specs, prefix `CFG`: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/config/config-specs.md (75 specs, prefix `CFG`: 75 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/config.test.ts (453 lines; 33 `@spec` lines, covering 37 of the 46 implemented specs)
@@ -91,7 +91,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Service URLs and logger | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 | 3 |
 | User-owned files | CFG-USR-001 to CFG-USR-011 | 13 | 0 | 0 | 12 |
 
-**Summary:** 74 of 74 specs implemented; 0 deferred; 0 open. 65 carry a test `@spec` annotation; implemented without one: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-SCH-022, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 75 of 75 specs implemented; 0 deferred; 0 open. 65 carry a test `@spec` annotation; implemented without one: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-SCH-022, CFG-ISO-002, CFG-URL-004, CFG-USR-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

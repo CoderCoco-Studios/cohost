@@ -55,10 +55,24 @@ Voice speaks **everything** on `brain.say` regardless of `injected` / `remember`
 
 | `voice.engine` | Synthesizer | Network | Heartbeat |
 | --- | --- | --- | --- |
-| `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }`; non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
+| `kokoro` (default) | `kokoroSynth`: `POST <TTS_URL>/v1/audio/speech` with JSON `{ model: "kokoro", input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" }` plus each configured tuning knob (§ Kokoro request parameters); non-2xx throws `tts <status>: <body>` (`voice.ts:18-34`) | yes (`urls.tts()`, default `http://127.0.0.1:8880`) | mode `live`, `deps.kokoro` follows the last synthesis (`health.ts:7-19`) |
 | `stub` | `stubSynth`: zero-filled mono PCM16 WAV at `voice.sample_rate`, duration `max(400, 60 * text.length)` ms (`voice.ts:36-48`; the WAV is built by the shared `wavWrap`, SHARED-AUDIO-004) | none | mode `mock`, `deps.kokoro: n/a`; startup logs a warning (`boot.ts:32`) |
 
-`voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (schema default 1, example YAML 1.05), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
+`voice.engine` comes from `VOICE_ENGINE` via `config/config.example.yaml:128` (an empty value falls back to `kokoro`, `packages/config/src/schema.ts:161`); `voice.voice` (default `af_heart`), `voice.speed` (default 1.05 in the schema and the example YAML alike; 0.25 to 4), the optional Kokoro tuning knobs `voice.lang_code`, `voice.volume_multiplier` and `voice.normalization.*` (§ Kokoro request parameters), `voice.sample_rate` (24000, **used only by the stub**; Kokoro's rate comes from the WAV it returns) are in `packages/config/src/schema.ts:159-165`. The stub's shape follows the isolated-backends design: a silent PCM16 mono WAV sized from the text "so `parseWav`/`envelope` and `voice.utterance` fields stay real" (`openspec/changes/archive/2026-11-01-add-isolated-backends/design.md`, D5).
+
+### Kokoro request parameters
+
+The synthesizer's JSON body is `{ model: "kokoro", voice, speed, response_format: "wav" }` plus the knobs below, then `input`. Settings take effect by restart (config is read once per process). The knob set is the verified `v0.10.0` request schema, recorded as a fixture next to the voice tests.
+
+| Config key | Request field | Values | Unset |
+| --- | --- | --- | --- |
+| `voice.voice` | `voice` | a Kokoro voice id or a mix such as `af_bella(2)+af_sky`; letters, digits, `_ + - ( )`, `.` and spaces, starting with a letter, digit or `_` | default `af_heart` |
+| `voice.speed` | `speed` | 0.25 to 4 | default 1.05 |
+| `voice.lang_code` | `lang_code` | one of `a b e f h i j p z` (Kokoro's language set); blank means "derive from the voice name's first letter" | omitted |
+| `voice.volume_multiplier` | `volume_multiplier` | 0 to 10 | omitted |
+| `voice.normalization.<key>` | `normalization_options.<key>` | boolean, for `normalize`, `unit_normalization`, `url_normalization`, `email_normalization`, `optional_pluralization_normalization`, `phone_normalization`, `caps_normalization`, `replace_remaining_symbols`, `remove_emoji` | omitted; `normalization_options` is sent only when at least one key is set, and carries only the keys set |
+
+An out-of-range or unknown-enum value fails the config load naming the key. The stub engine ignores every knob.
 
 ### WAV parsing and the lip-sync envelope
 
@@ -158,7 +172,7 @@ At startup, where `voice.engine` is `kokoro`, voice computes a **fingerprint** (
 - the phrase list, in order, each phrase trimmed;
 - `voice.engine`;
 - the TTS model name;
-- every `voice` setting the synthesizer sends to TTS (today `voice.voice` and `voice.speed`);
+- every `voice` setting the synthesizer sends to TTS (`voice.voice`, `voice.speed` and whichever tuning knobs are set);
 - a clip-format version.
 
 Hashing "every setting the synthesizer sends" rather than a fixed key list means a voice knob added later is covered with no change here.
@@ -242,8 +256,8 @@ voice parses every WAV it synthesizes with the shared `parseWav` (shared-runtime
 | Re-used utterance id | The new WAV replaces the old and the id becomes the newest store entry once | Reject the duplicate; keep two entries | Ids are cortex's; a repeat means the line was said again. One entry per id keeps eviction removing the oldest distinct id (VOICE-HTTP-008). |
 | HTTP method and target | `GET` and `HEAD` only, `405` otherwise; routes match the parsed path | Accept any method; match the raw URL | Browsers and probes append query strings, and a `POST` to an audio URL should not read like a `GET`. |
 | Tests under the type-checker | `tsconfig.test.json` (no emit) covers `src` and `test`, referenced from the root `tsconfig.json`, so `tsc -b` and `pnpm typecheck` check them | Widen `tsconfig.json` to include `test`; leave tests to tsx | Widening the emitting project would move `dist/index.js`, which the image's start command names. |
-| `voice.speed` default | Schema default 1; `config.example.yaml` ships the owner's tuned 1.05 | Make the schema default 1.05 | Owner decision: the example carries the tuned value over a neutral schema default. |
-| Kokoro tuning knobs | None added; `voice` and `speed` stay the only synthesis settings | Expose further Kokoro parameters as config | Owner decision (deferred): the settings editor shows whatever keys `voice` gains, and the clip fingerprint covers every setting the synthesizer sends (VOICE-CLIP-001), so a later knob needs no new mechanism; a knob is added only for a parameter verified against Kokoro-FastAPI's `/v1/audio/speech`. |
+| `voice.speed` default | Schema default 1.05, the value `config.example.yaml` ships | Schema default 1 with the example overriding it; no default at all | The owner's tuned value is the default everywhere, so a config with no `voice.speed` sounds like the shipped example, and one number is documented. Changing the default changes the clip fingerprint (VOICE-CLIP-001), so fallback clips regenerate once. |
+| Kokoro tuning knobs | Expose exactly the `POST /v1/audio/speech` parameters the pinned Kokoro-FastAPI tag (`v0.10.0`) accepts and that change how a line sounds: `speed`, `lang_code`, `volume_multiplier`, `normalization_options` (nine booleans), and the voice-mixing syntax of `voice`. Each unset optional knob is omitted from the request so the server's own default applies | Add none; expose every request field; mirror the server defaults in the schema | Verified against `OpenAISpeechRequest` and `NormalizationOptions` at tag `v0.10.0` (`api/src/structures/schemas.py`) and recorded in `services/voice/test/fixtures/kokoro-speech-fields.json`. Not exposed: `response_format` (voice parses WAV, so it is always `"wav"`), `model` (fixed `kokoro`), `input` (the line), `stream`, `return_download_link`, `return_timing`, `download_format`, `voice_aliases`, `allow_voice_tags` and `ssml` (transport or multi-speaker features voice does not use, and `allow_voice_tags` off keeps bracketed text spoken as written). Omitting unset knobs avoids copying server defaults into the schema, where they would go stale with the image. A knob a Kokoro image does not know cannot be added without re-verifying against that tag. |
 | Avatar and fallback clips | A fallback clip is claimed under the given-up utterance's id, so avatar lip-syncs that utterance's envelope while the clip plays | Carry the clip's envelope in the manifest for avatar | Owner decision: accepted. The manifest carries no envelope, and giving avatar the clip's envelope would change avatar. |
 | More outputs | Outputs beyond Discord (a local audio device, a virtual cable) are adapters inside [mouth](../mouth/mouth-design.md) under `mouth.outputs`; each joins this protocol as a sink under its own name | Voice-side output adapters | Voice needs no change for a new sink; mouth's deferred decisions own them. |
 | Late real sink | A real sink's `voice.playing` after the virtual one cancels the pending virtual `voice.done` (VOICE-SINK-008) | Widen the claim window to cover sink queues; have sinks drop lines voice already timed; a protocol-wide single-lifecycle rule enforced by sinks | Owner decision 2026-11-01: a voice-only change; cortex is released by the sink that is actually playing, and avatar keeps following every `voice.playing`. |

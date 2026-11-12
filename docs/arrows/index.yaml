@@ -72,7 +72,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "all 74 specs [x]; gap closure built (C3, C10, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
+    next: "all 75 specs [x]; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
     drift: null
 
   event-bus:
@@ -216,7 +216,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "all 55 specs [x]; gap closure built (C5). No open gaps. Deferred by the owner: voice tuning knobs."
+    next: "all 56 specs [x]; gap closure built (C5), Kokoro tuning knobs and the 1.05 speed default built (VOICE-SYN-009). No open gaps."
     drift: null
 
   mouth:

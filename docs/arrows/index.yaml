@@ -84,7 +84,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "all 69 specs [x] (BUS-UPL-001 to 003 upload store, BUS-STREAM-009 failFast for cohostctl); gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
+    next: "all 70 specs [x] (BUS-EVT-023 optional per-line `route`, BUS-UPL-001 to 003 upload store, BUS-STREAM-009 failFast for cohostctl); gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
     drift: null
 
   model-backends:
@@ -204,7 +204,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "all 77 specs [x]; gap closure built (C10). No open gaps."
+    next: "all 78 specs [x]; gap closure built (C10); operator `say` passes its `route` on (CTX-CTRL-007). No open gaps."
     drift: null
 
   voice:
@@ -216,7 +216,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "all 56 specs [x]; gap closure built (C5), Kokoro tuning knobs and the 1.05 speed default built (VOICE-SYN-009). No open gaps."
+    next: "all 57 specs [x]; per-line `route` passed through (VOICE-UTT-004); gap closure built (C5), Kokoro tuning knobs and the 1.05 speed default built (VOICE-SYN-009). No open gaps."
     drift: null
 
   mouth:
@@ -228,7 +228,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "all 73 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs and live routing via set_routing). Per-line routing is deliberately not built (LLD Decisions). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "all 76 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs, live routing via set_routing and per-line `route`, MOUTH-ROUTE-006 to 008). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
     drift: null
 
   avatar:
@@ -252,7 +252,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "all 115 specs [x]; the entry on runService (DASH-HTTP-016); uploads stored in Redis, no /uploads route (DASH-INJ-005, DASH-UPL-*); host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
+    next: "all 117 specs [x]; the entry on runService (DASH-HTTP-016); say box route field (DASH-UI-023, DASH-HTTP-017); uploads stored in Redis, no /uploads route (DASH-INJ-005, DASH-UPL-*); host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:

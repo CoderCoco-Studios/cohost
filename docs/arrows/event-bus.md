@@ -57,7 +57,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (64 specs: 64 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (70 specs: 70 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)
@@ -102,7 +102,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Shutdown | BUS-STOP-001 | 1 | 0 | 0 | 1 |
 | Test double (packages/testing) | BUS-TEST-001 to BUS-TEST-011 | 11 | 0 | 0 | 11 |
 
-**Summary:** 64 of 64 specs implemented; 0 deferred; 0 open. 54 carry a test `@spec` annotation; implemented without one: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012, BUS-EVT-013, BUS-EVT-014, BUS-EVT-015, BUS-EVT-016, BUS-EVT-019, BUS-SUB-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 70 of 70 specs implemented; 0 deferred; 0 open. 54 carry a test `@spec` annotation; implemented without one: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012, BUS-EVT-013, BUS-EVT-014, BUS-EVT-015, BUS-EVT-016, BUS-EVT-019, BUS-SUB-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

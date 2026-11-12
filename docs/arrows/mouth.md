@@ -20,7 +20,7 @@ Owner direction: ears may listen to more than Discord and the co-host's voice ma
 | EARS-PLAY-008 (no `control`) | MOUTH-PLAY-008 (speaking half), EARS-HEAR-009 (listening half) |
 | EARS-FALL-001 to 019 | MOUTH-FALL-001 to 019 (same numbers; cache under `mouth/`, storm limit and marks per output, claims by any other real sink name) |
 | EARS-START-*, EARS-SESS-* (the speaking parts) | MOUTH-START-001 to 005, MOUTH-SESS-001 to 008 |
-| — | MOUTH-ROUTE-001 to 005 (routing table, sink names, per-output state, gain), MOUTH-HLTH-001, 002 |
+| — | MOUTH-ROUTE-001 to 008 (routing table, sink names, per-output state, gain, per-line route), MOUTH-HLTH-001, 002 |
 
 ears keeps its prefix and is reworded to listening only (see [ears.md](ears.md)). Cross-segment lines: config CFG-SCH-018, CFG-ISO-001, CFG-ISO-004, CFG-USR-009 (reworded) and CFG-SCH-020, CFG-USR-011 (new); control-plane CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005 (reworded); deployment DEPLOY-COMPOSE-001, 004, 017, DEPLOY-REPO-001 (reworded) and DEPLOY-COMPOSE-020, DEPLOY-README-004, 005 (new). voice, event-bus, avatar, cortex, working-memory and dashboard change no spec line: the protocol, the events and the `discord` sink name are unchanged; their LLD text now names mouth.
 
@@ -72,7 +72,7 @@ Two Discord bots (`DISCORD_TOKEN` speaks, `EARS_DISCORD_TOKEN` listens); the nam
 - docs/intent/ears/decisions/listen-speak-split.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (57 specs: 57 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/mouth/mouth-specs.md (76 specs: 76 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/mouth/test/audio.test.ts (WAV conversion)
@@ -127,4 +127,4 @@ The playback, fallback, audio and Discord code was copied from `services/ears`, 
 | Fallback line | MOUTH-FALL-001 to MOUTH-FALL-019 | 19 | 0 | 0 | 19 |
 | Health | MOUTH-HLTH-001 to MOUTH-HLTH-002 | 2 | 0 | 0 | 2 |
 
-**Summary:** 57 of 57 specs implemented; 0 deferred; 0 open. 57 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 76 of 76 specs implemented; 0 deferred; 0 open. 76 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.

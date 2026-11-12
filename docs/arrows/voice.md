@@ -41,7 +41,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (56 specs: 56 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (57 specs: 57 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
@@ -95,7 +95,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Fallback clips | VOICE-CLIP-001 to VOICE-CLIP-012 | 12 | 0 | 0 | 12 |
 | Health | VOICE-HLTH-001 to VOICE-HLTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 55 of 55 specs implemented; 0 deferred; 0 open. 55 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 57 of 57 specs implemented; 0 deferred; 0 open. 57 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

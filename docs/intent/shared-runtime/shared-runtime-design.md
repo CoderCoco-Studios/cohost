@@ -231,18 +231,13 @@ Each using segment keeps a line that states its own parameters and cites the mod
 | Login failure in the session | `start()` rejects; the service exits 1 | Retry the login with backoff; idle degraded | A rejected login is almost always a wrong token, a configuration error that retrying cannot fix; ears and mouth already exit on it (EARS-SESS-001, MOUTH-SESS-001). |
 | Heartbeat publish warning | At most once per 60 s, with a failure count | One warning per failed publish | The dashboard starts before Redis exists and would otherwise warn every 5 s until Launch. |
 | chat's injection lines | chat keeps CHAT-INJ-002 and 003 until chat moves onto the handler | Retire them now with the eyes and ears lines | The owner's move list names eyes and ears; chat's lines still describe chat's current code, and its adoption (chunk C9) retires them in the same cascade that changes the code. |
+| Per-service installs | The Discord session stays a `discord-voice` subpath of `@cohost/shared` | A package of its own | One image installs every service's dependencies today; split it when the image installs only one service's dependencies. |
+| Retry jitter | None | Randomised delay | One instance per service, so no thundering herd; add it if several instances ever reconnect to one backend at once. |
+| Injection queue bound | 8 | A parameter | A starting value no service has needed to change; make it a parameter when one does. |
 
 ## Open Questions & Future Decisions
 
-### Deferred
-1. **Per-service installs.** When the image installs only one service's dependencies (deployment open question on image size), the Discord session becomes its own package.
-2. **Retry jitter.** No user needs jitter today (one instance per service); add it if several instances ever reconnect to one backend at once.
-3. **Injection queue bound.** 8 is a starting value; make it a parameter if a service needs another.
-
-### Resolved
-1. ✅ Spec moves across segments: approved by the owner; listed under Spec ownership.
-2. ✅ Fake store scores: the fake store uses `HashEmbedder`; its recall tests pick fixtures whose similarity clears `min_similarity` (memory MEM-BACKEND-004).
-3. ✅ Discord session placement: the `discord-voice` subpath (owner decision).
+None.
 
 ## References
 

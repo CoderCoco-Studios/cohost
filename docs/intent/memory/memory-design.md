@@ -665,28 +665,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 
 ## Open Questions & Future Decisions
 
-### Resolved
-1. The owner's decisions of 2026-11-01 (start mode, dimension mismatch, viewer
-   count, Postgres health, startup `degraded`, viewer-upsert failures, reflection
-   cursor and placement) are recorded in the Decisions table and the spec lines
-   they cite.
-2. The viewer notes design (purpose, layers, strength, sensitivity, capture,
-   consolidation triggers, delete semantics, owner control) is recorded in Viewer
-   notes and the Decisions table. MEM-VIEWER-004 (notes text in `memory.viewer`)
-   and MEM-VIEWER-005 (deferred notes writer) are retired by it; their numbers are
-   not reused.
-
-### Open
-
-None. Settled by the owner and recorded above: categories are `general`, `health` and
-`family` plus the politics drop; soft memories are purged after 30 days and
-suppression rules kept until restored; "surfaced rarely" means at most once per
-note per 24 hours, replied-to viewer only; there is no viewer-initiated forget
-command (the owner deletes notes by hand, keeping the "not a command bot"
-non-goal); turning "Mark as regular" off returns the viewer to the message-count
-rule, with no "never regular" option; the shutdown one-shot is best-effort and
-the catch-up pass is the guarantee; Discord voice speakers get no notes (see the
-Decisions table).
+None.
 
 ## References
 

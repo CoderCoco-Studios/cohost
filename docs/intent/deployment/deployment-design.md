@@ -209,7 +209,14 @@ Enforcement is the `cla` workflow (DEPLOY-CI-005):
 
 ## Open Questions & Future Decisions
 
-1. **Unverifiable here.** That `LICENSE` is byte-for-byte the canonical AGPL v3 text (DEPLOY-LIC-001) rests on commit 686cc8f's description; it was not compared against gnu.org. The Compose behaviours in DEPLOY-COMPOSE-003/-006/-010/-015/-016/-017, the installer's Docker-install stop (DEPLOY-INST-010) and the smoke script's health polling (DEPLOY-CI-002) were read from the files, not executed (no Docker in the environment that wrote them); the Compose file was parsed as YAML, the `models` pull loop was run against a stub `curl`, and the installer's `probe`, port parsing and Node-major check were run in isolation. The `cla` workflow runs from the base branch on `pull_request_target`, so it cannot run on the pull request that adds it and has no local harness; its behaviour (DEPLOY-CI-005) is read from the action's source at the pinned tag until a pull request exercises it. `contributor-assistant/github-action@v2.6.1` runs on the `node20` action runtime.
+### Manual verification
+
+Needs a Docker daemon, a real account or a real run; the single-PC checklist in `docs/TESTING.md` is where each is checked and ticked off.
+
+1. **Compose behaviours.** DEPLOY-COMPOSE-003, -006, -010, -015 and -017 and the smoke script's health polling (DEPLOY-CI-002) are read from the files, not executed against a daemon here; the launch end-to-end test (CTRL-STACK-015, DEPLOY-CI-007) skips without one and runs on the CI runner's Docker.
+2. **Installer.** The Docker-install stop (DEPLOY-INST-010) runs only on a machine that lacks Docker; `probe`, port parsing and the Node-major check were run in isolation.
+3. **CLA workflow.** The `cla` workflow runs from the base branch on `pull_request_target`, so it cannot run on the pull request that adds it and has no local harness; its behaviour (DEPLOY-CI-005) is read from the action's source at the pinned tag until a pull request exercises it. `contributor-assistant/github-action@v2.6.1` runs on the `node20` action runtime.
+4. **First real run.** `cohostctl launch` against the real stack (images, model pulls, healthchecks) is the first step of the single-PC checklist (DEPLOY-HOST-004).
 
 ## References
 

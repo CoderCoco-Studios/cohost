@@ -196,21 +196,14 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 
 ## Open Questions & Future Decisions
 
-### Resolved by observation
-
-1. **OpenSpec divergence.** The frozen OpenSpec `bus` baseline (`openspec/specs/bus/spec.md`, 12 requirements) lists all 19 event types and the seven `control` commands and has health-stream, heartbeat-helper and injection requirements. Only the archived `add-service-health` bus delta still lists five `control` commands (`openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md:8`), and the baseline "Shutdown" requirement does not mention `beforeShutdown` or the 2 s hook cap. The LID specs here (BUS-EVT-004, SHARED-LIFE-001) describe the code and supersede it (`CLAUDE.md` § Specs).
-
 ### Observed, unexplained, or debt
 
-1. **The pending drain reads one batch.** Within a process lifetime the drain reads a single `COUNT 50` batch of this consumer's pending entries before switching to `>` (`index.ts:222`), so a larger pending backlog would stay pending until the process ends (and then is abandoned, BUS-SUB-008).
-2. **`stopped` is instance-wide and never reset** (`index.ts:64`, `index.ts:284`). One `Bus` cannot be restarted, and stopping it stops every subscription on that instance. A `stop()` that lands while a handler is running leaves the following `XACK` (`index.ts:217`) to run on a disconnected connection; its outcome is unspecified.
-3. **Process-lifecycle helpers live in the bus package.** `onShutdown` / `beforeShutdown` / `startHeartbeat` are not bus concerns; they sit here because every service already depends on `@cohost/bus`. The `index.ts` <-> `heartbeat.ts` import cycle (`index.ts:358`, `heartbeat.ts:2`) is an artifact of that.
-4. **Consumer-side half of BUS-EVT-004.** "An absent `target` means all services" is implemented by the consumers (`services/cortex/src/cortex.ts:94`, `services/salience/src/salience.ts:76`, `services/affect/src/affect.ts:65`), which belong to other segments; this segment annotates only the schema.
-5. **Test hygiene.** Integration tests write to the real `cohost:events` / `cohost:health` streams and leave groups behind (`bus.test.ts:23-45`, `84-98`); `redisUp()` is evaluated twice (`bus.test.ts:23`, `:42`); the first test (`bus.test.ts:13-20`) checks only six region schemas.
-6. **Schema looseness.** `avatar.state` has no numeric ranges (`events.ts:159-172`); `voice.playing` and `voice.done` duplicate a shape (`events.ts:154-155`).
-7. **`decode` swallows every parse error silently** (`index.ts:305-307`) and `subscribe` acks the entry, so a producer/consumer schema mismatch loses events with no log line.
-8. **Hostname in a comment.** `events.ts:147` embeds `http://voice:8700/audio/<id>.wav`.
-9. **`FakeBus` ids differ from real ones.** `event()` uses a random uuid and `FakeBus.recentHealth` uses slice indices (`packages/testing/src/index.ts:60-64,84-86`), whereas real ids are Redis stream ids; tests that depend on id ordering would not transfer.
+1. **The pending drain reads one batch.** Within a process lifetime the drain reads a single `COUNT 50` batch of this consumer's pending entries before switching to `>`, so a larger pending backlog would stay pending until the process ends (and then is abandoned, BUS-SUB-008). Intent: drain until no pending entries remain.
+2. **`stopped` is instance-wide and never reset.** One `Bus` cannot be restarted (by design), and stopping it stops every subscription on that instance. A `stop()` that lands while a handler is running leaves the following `XACK` to run on a disconnected connection. Intent: no ack after stop.
+3. **Test hygiene.** Integration tests write to the real `cohost:events` / `cohost:health` streams and leave groups behind; they should use their own stream and group names and clean up.
+4. **Schema looseness.** `avatar.state` has no numeric ranges; `voice.playing` and `voice.done` duplicate a shape. Intent: ranges on `avatar.state` and one shared shape.
+5. **Hostname in a comment.** The `voice.utterance` field comment embeds `http://voice:8700/audio/<id>.wav`.
+6. **`FakeBus` ids differ from real ones.** `event()` uses a random uuid and `FakeBus.recentHealth` uses slice indices, whereas real ids are Redis stream ids. Intent: time-ordered ids in the fake.
 
 ## References
 

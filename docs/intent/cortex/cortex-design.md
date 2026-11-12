@@ -338,14 +338,6 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 
 ## Open Questions & Future Decisions
 
-### Resolved
-1. The owner's decisions of 2026-11-01 (start mode, mute ownership, operator
-   override, status-publish failures, speaking-timeout release, raw-reply logging,
-   reply length, viewer-note timing, `forget_context` scope, recall fallback,
-   runtime model health, tag/stop ownership) are recorded in the Decisions table and
-   the spec lines they cite.
-
-### Deferred
 None.
 
 ## References

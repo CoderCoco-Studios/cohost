@@ -182,20 +182,13 @@ An injected `brain.say` is a test input, not an operator `say`: it is published 
 | Apply after a failed restart | Continue with the remaining units and show each result | Stop at the first failure | Matches restart-all (control-plane CTRL-STACK-007); one bad unit should not leave the others on old settings. Chosen by recommendation. |
 | Writing an absent key or section | A key is added under its section; a missing section is appended at the end of the file | Refuse to add keys | `mouth` is optional and most defaults are absent from the example; refusing would make defaulted keys uneditable. Chosen by recommendation. |
 | Array values | The edit replaces the whole array | Per-element edits | The form edits an array as one value; per-element patches would need identity for elements that have none (fallback lines). Chosen by recommendation. |
+| Validation environment | The settings editor validates with the dashboard's environment | Validate inside each container | A container sees Compose's `environment` overrides and, after an isolated start, a preset, so a value valid on the host can differ there; the services' own startup validation reports it. |
+| Editing `expressions.yaml` | Not in the editor | Same editor | Read by avatar only; the editor could serve it later. |
+| Undo | None | A history of saves | A saved section is restored by editing it back. |
 
 ## Open Questions & Future Decisions
 
-### Resolved
-1. ✅ Model-free eyes and ears injection: stub describer and stub transcriber (owner decision).
-2. ✅ Testing mouth without Discord: the `dryrun` output (owner decision).
-3. ✅ Direct `brain.say` as a test input: allowed, flagged `injected`, not an operator `say` (Decisions).
-
-### Open
-1. **Validation environment.** The editor validates with the dashboard's environment. A container sees Compose's `environment` overrides and, after an isolated start, a preset; a value that is valid on the host can differ in a container.
-
-### Deferred
-1. **Editing `expressions.yaml`.** Read by avatar only; the same editor could serve it later.
-2. **Undo.** A saved section can be restored by editing it back; a history of saves is not designed.
+None.
 
 ## References
 

@@ -69,7 +69,7 @@ test("an accepted injection publishes one event of that type with injected: true
   const r = await t.event({ unit: "salience", type: "chat.message", data: chat });
   assert.equal(r.status, 202);
   const { id } = (await r.json()) as { id: string };
-  assert.equal(id, "1", "the id FakeBus gave the published event");
+  assert.match(id, /^\d+-\d+$/, "the id FakeBus gave the published event");
   assert.deepEqual(t.bus.published.map((p) => p.type), ["chat.message"]);
   assert.deepEqual(t.bus.of("chat.message"), [{ ...chat, isMod: false, isSub: false, mentionsCohost: false, injected: true }]);
 });

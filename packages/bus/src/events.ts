@@ -7,6 +7,9 @@ import { Emotion } from "@cohost/config";
  * these events — never directly to each other — so any piece can be swapped.
  */
 // @spec BUS-EVT-001
+/** What `voice.playing` and `voice.done` carry: the utterance and the sink that reports it. */
+const PlaybackReport = z.object({ id: z.string(), sink: z.string() });
+
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
   // @spec BUS-EVT-002, BUS-EVT-005
@@ -202,15 +205,16 @@ export const EventPayloads = {
     durationMs: z.number(),
     envelopeHz: z.number(),
     envelope: z.array(z.number()),
-    /** Path on the voice service: GET http://voice:8700/audio/<id>.wav */
+    /** Path on the voice service, relative to its base URL: `/audio/<id>.wav`. */
     audioUrl: z.string(),
     sampleRate: z.number(),
   }),
 
   /** Playback of an utterance started somewhere (dashboard sink / Discord). Avatar syncs to this. */
   // @spec BUS-EVT-017
-  "voice.playing": z.object({ id: z.string(), sink: z.string() }),
-  "voice.done": z.object({ id: z.string(), sink: z.string() }),
+  "voice.playing": PlaybackReport,
+  /** Playback of an utterance ended (or could not start) on a sink; the same shape as `voice.playing`. */
+  "voice.done": PlaybackReport,
 
   /**
    * A sink gave up on an utterance (it will not play, or a spoken fallback line plays in its place). `fallback` is
@@ -228,15 +232,17 @@ export const EventPayloads = {
   // @spec BUS-EVT-018
   "avatar.state": z.object({
     emotion: Emotion,
-    intensity: z.number(),
-    mouthOpen: z.number(),
-    mouthSmile: z.number(),
-    headX: z.number(),
-    headY: z.number(),
-    headZ: z.number(),
-    eyeX: z.number(),
-    eyeY: z.number(),
-    blink: z.number(),
+    intensity: z.number().min(0).max(1),
+    mouthOpen: z.number().min(0).max(1),
+    mouthSmile: z.number().min(0).max(1),
+    /** Head angles in degrees. */
+    headX: z.number().min(-90).max(90),
+    headY: z.number().min(-90).max(90),
+    headZ: z.number().min(-90).max(90),
+    eyeX: z.number().min(-1).max(1),
+    eyeY: z.number().min(-1).max(1),
+    /** 0 open .. 1 closed. */
+    blink: z.number().min(0).max(1),
     driver: z.string(),
     connected: z.boolean(),
   }),

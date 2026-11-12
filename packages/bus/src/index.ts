@@ -47,6 +47,8 @@ export interface BusOptions {
   retryMaxMs?: number;
   /** Stream key prefix: the instance uses `<prefix>:events` and `<prefix>:health` (default `cohost`). Tests use their own. */
   streamPrefix?: string;
+  /** Do not reconnect: an unreachable Redis rejects the first command at once and prints nothing (BUS-STREAM-009). For short-lived CLIs. */
+  failFast?: boolean;
 }
 
 /** Called after each blocking read of a tail loop: no argument on success (an empty read counts), the error on failure. */
@@ -88,7 +90,9 @@ export class Bus {
     const prefix = options.streamPrefix ?? DEFAULT_PREFIX;
     this.stream = `${prefix}:events`;
     this.healthStream = `${prefix}:health`;
-    this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
+    this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3, ...(options.failFast ? { retryStrategy: () => null } : {}) });
+    // @spec BUS-STREAM-009
+    if (options.failFast) (this.pub as { on?: (ev: string, fn: () => void) => unknown }).on?.("error", () => {});
   }
 
   // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, BUS-STREAM-007

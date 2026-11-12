@@ -84,7 +84,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "all 64 specs [x]; gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
+    next: "all 65 specs [x] (BUS-STREAM-009 failFast for cohostctl); gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps."
     drift: null
 
   model-backends:
@@ -264,7 +264,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "70 of 70 specs [x] (CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
+    next: "72 of 72 specs [x] (CTRL-HEALTH-011: seeded receive times may be negative, fixing `cohostctl status` reporting every service degraded 0s ago; CTRL-CLI-017: one-line unreachable-Redis error via Bus failFast; CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
     drift: null
 
   deployment:

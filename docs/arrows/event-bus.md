@@ -11,6 +11,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 Design: LLD Decisions & Alternatives (pending drain, stop during a handler, streams for tests, avatar.state and playback shapes, fake ids); the LLD's Open Questions is empty.
 
 - `BUS-SUB-003` (drain pending batch by batch until none remain) and `BUS-SUB-013` (no ack, no further handling after `stop()`): `Bus.subscribe`, pinned by `packages/bus/test/resilience.test.ts`.
+- `BUS-STREAM-009`: `BusOptions.failFast` (no reconnect, silent error listener), used by `cohostctl`; `packages/bus/test/failfast.test.ts`.
 - `BUS-STREAM-008`: `BusOptions.streamPrefix`; the Redis integration tests each run on a stream pair of their own and delete it in a `finally`.
 - `BUS-EVT-017` (one `PlaybackReport` shape) and `BUS-EVT-018` (ranges on `avatar.state`).
 - `BUS-TEST-011`, `BUS-TEST-003`, `BUS-TEST-006`: time-ordered ids in `FakeBus` and `event()`, tested in `packages/testing/test/fake-bus.test.ts`.
@@ -89,7 +90,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Publish and envelope | BUS-STREAM-001 to BUS-STREAM-008 | 8 | 0 | 0 | 6 |
+| Publish and envelope | BUS-STREAM-001 to BUS-STREAM-009 | 9 | 0 | 0 | 7 |
 | Event catalogue and schemas | BUS-EVT-001 to BUS-EVT-022 | 21 | 0 | 0 | 14 |
 | Consumer-group subscription | BUS-SUB-001 to BUS-SUB-013 | 13 | 0 | 0 | 12 |
 | Live tail and backfill | BUS-TAIL-001 to BUS-TAIL-005 | 5 | 0 | 0 | 5 |

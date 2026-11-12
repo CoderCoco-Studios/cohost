@@ -21,6 +21,7 @@
     { "path": "services/eyes" },
     { "path": "services/ears" },
     { "path": "services/mouth" },
+    { "path": "services/connector-discord" },
     { "path": "services/dashboard" }
   ]
 }

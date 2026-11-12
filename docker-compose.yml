@@ -8,6 +8,7 @@
 #   docker compose up -d chat salience affect memory cortex voice avatar   # minimal talking path
 #   docker compose --profile ears up -d  # add the Discord listener (its own bot)
 #   docker compose --profile mouth up -d # add the Discord speaker (her own bot)
+#   docker compose --profile discord up -d # add the Discord connector (the one bot login: source and sink `discord`)
 #   docker compose --profile eyes up -d  # add OBS vision
 #   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
 #   docker compose run --rm reembed      # one-shot vector migration after changing the embedder (memory stopped first)
@@ -231,6 +232,13 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: mouth } }
     profiles: [mouth]  # @spec DEPLOY-COMPOSE-004
+
+  # The Discord connector (CONN-*): the one bot login and voice connection, publishing source `discord` and playing sink
+  # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume.
+  connector-discord:
+    <<: *ts-service
+    build: { context: ., args: { SERVICE: connector-discord } }
+    profiles: [discord]  # @spec DEPLOY-COMPOSE-004
 
 volumes:  # @spec DEPLOY-COMPOSE-009
   redis-data:

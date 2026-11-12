@@ -18,14 +18,11 @@ const rootPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, impor
 interface ComposeFile { services: Record<string, { build?: { args?: { SERVICE?: string } } }> }
 const composeServices = (parse(readFileSync(rootPath("docker-compose.yml"), "utf8"), { merge: true }) as ComposeFile).services;
 
-// @spec MOD-MAN-008
-/** Units whose service directory and Compose service are not written yet, with the chunk that adds them. */
-const NOT_YET_BUILT: Record<string, string> = { discord: "the Discord connector service" };
 const composeNames = units.map((u) => u.composeName);
 
 // @spec MOD-MAN-008
 test("every unit has a Compose service named for its composeName, and every Compose service built from the shared Dockerfile belongs to a unit", () => {
-  for (const u of units) if (!NOT_YET_BUILT[u.id]) assert.ok(composeServices[u.composeName], `unit ${u.id} has no Compose service ${u.composeName}`);
+  for (const u of units) assert.ok(composeServices[u.composeName], `unit ${u.id} has no Compose service ${u.composeName}`);
   for (const [name, s] of Object.entries(composeServices)) {
     if (!s.build) continue;
     // a one-shot of a unit (memory's consolidate and reembed) is built with that unit's SERVICE argument
@@ -69,7 +66,7 @@ const NOT_ON_RUN_SERVICE: Record<string, string> = {};
 
 // @spec MOD-MAN-009
 test("each unit's entry file reaches runService and builds no bus or heartbeat of its own", () => {
-  for (const u of units) if (!NOT_ON_RUN_SERVICE[u.id] && !NOT_YET_BUILT[u.id]) assert.equal(entryProblem(u.composeName), undefined, u.id);
+  for (const u of units) if (!NOT_ON_RUN_SERVICE[u.id]) assert.equal(entryProblem(u.composeName), undefined, u.id);
 });
 
 // The dashboard is a host process, not a manifest unit with a pnpm filter, and takes the same entry check (DASH-HTTP-016).

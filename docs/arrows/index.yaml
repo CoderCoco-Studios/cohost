@@ -149,13 +149,13 @@ arrows:
     drift: null
 
   connections:
-    status: MAPPED
+    status: PARTIAL
     parent: null
     sampled: 2026-11-12
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "designed, not built: 0 of 41 specs [x] (40 gaps, 1 deferred). Tests first, then services/connector-discord, the connector client library, ears' connector source and mouth's connector sink (docs/arrows/connections.md, Build order). Open questions listed in the LLD."
+    next: "protocol library and services/connector-discord built: 32 of 41 specs [x] (8 gaps, 1 deferred). Next: ears' connector source (CONN-AUD-004, CONN-ISO-001, 003) and mouth's connector sink (CONN-AUD-005, CONN-BP-004, 005) using writeUtterance, then the desktop helper (docs/arrows/connections.md, Build order)."
     drift: null
 
   ears:

@@ -4,7 +4,7 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
-**MAPPED** (designed 2026-11-12, not built): 41 specs, 0 implemented, 40 gaps (`[ ]`), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Nothing under `services/connector-discord` exists. LID phases done: HLD (Connectors), LLD, EARS specs; next is the edge audit, then failing tests. Design: [LLD](../intent/connections/connections-design.md); decision record [connector-protocol](../intent/connections/decisions/connector-protocol.md), which supersedes [listen-speak-split](../intent/ears/decisions/listen-speak-split.md).
+**PARTIAL** (chunks 1 and 2 of the build order are built; sampled 2026-11-12): 41 specs, 32 implemented, 8 gaps (`[ ]`), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`), the utterance writer (`packages/shared/src/utterance.ts`) and `services/connector-discord`. Open: the consumers' halves, which land with ears (CONN-AUD-004, CONN-ISO-001, CONN-ISO-003) and mouth (CONN-AUD-005, CONN-BP-004, CONN-BP-005), and the desktop helper (CONN-DESK-001, CONN-DESK-003).
 
 ## Cross-segment cascade
 
@@ -44,13 +44,19 @@ To settle before tests, beyond the LLD's open questions: that `voice.done` timed
 - docs/intent/connections/decisions/connector-protocol.md
 
 ### EARS
-- docs/intent/connections/connections-specs.md (40 specs: 0 `[x]`, 38 `[ ]`, 2 `[D]`)
+- docs/intent/connections/connections-specs.md (41 specs: 32 `[x]`, 8 `[ ]`, 1 `[D]`)
 
 ### Tests
-None yet.
+- packages/bus/test/connector.test.ts
+- packages/shared/test/utterance.test.ts
+- services/connector-discord/test/connector.test.ts
 
 ### Code
-None yet. Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
+- packages/bus/src/connector.ts, packages/bus/src/registrar.ts
+- packages/shared/src/utterance.ts
+- services/connector-discord/src/ (service, capture, playout, health)
+
+Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 
 ## Architecture
 
@@ -64,11 +70,11 @@ None yet. Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSess
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Registration and liveness | CONN-REG-001 to 007 | 0 | 0 | 7 |
-| Tags | CONN-TAG-001 to 004 | 0 | 0 | 4 |
-| Audio streams and frames | CONN-AUD-001 to 005 | 0 | 0 | 5 |
-| Back-pressure and loss | CONN-BP-001 to 006 | 0 | 0 | 6 |
-| Discord connector | CONN-DISC-001 to 011 | 0 | 0 | 11 |
-| Failure isolation | CONN-ISO-001 to 003 | 0 | 0 | 3 |
-| Health | CONN-HLTH-001, 002 | 0 | 0 | 2 |
+| Registration and liveness | CONN-REG-001 to 007 | 7 | 0 | 0 |
+| Tags | CONN-TAG-001 to 004 | 4 | 0 | 0 |
+| Audio streams and frames | CONN-AUD-001 to 005 | 3 | 0 | 2 |
+| Back-pressure and loss | CONN-BP-001 to 006 | 4 | 0 | 2 |
+| Discord connector | CONN-DISC-001 to 011 | 11 | 0 | 0 |
+| Failure isolation | CONN-ISO-001 to 003 | 1 | 0 | 2 |
+| Health | CONN-HLTH-001, 002 | 2 | 0 | 0 |
 | Desktop audio helper | CONN-DESK-001 to 003 | 0 | 1 | 2 |

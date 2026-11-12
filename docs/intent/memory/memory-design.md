@@ -229,7 +229,9 @@ Model calls for notes stay on the LAN unless the operator names a hosted provide
 on the notes hook itself: with no provider on the hook, memory builds it on the
 local `ollama` provider instead of inheriting `llm.provider` (which may be a
 hosted chat model), except that `llm.provider: mock` is still inherited so the
-isolation preset keeps working (`MEM-NOTE-011`). This holds even when the cortex
+isolation preset keeps working (`MEM-NOTE-011`). Under `llm.provider: mock` the mock
+provider also wins over a provider the hook names itself, since the shipped example
+names `ollama` on both hooks and an isolated run must reach no model server (`MEM-NOTE-012`). This holds even when the cortex
 uses a hosted model. This keeps viewer
 notes, including health and family notes, under the HLD rule that memories leave
 the LAN only through explicitly configured egress.

@@ -153,6 +153,12 @@ test("the capture hook builds an ollama provider under a hosted cortex, mock is 
   assert.equal(providerOf(cfg("anthropic", { llm: { provider: "openai", model: "gpt-x" } })), "openai");
 });
 
+// @spec MEM-NOTE-012
+test("under llm.provider mock the capture hook is built on mock even when the hook names ollama", () => {
+  const c = testConfig({ llm: { provider: "mock", model: "m" }, brain: { memory: { notes: { capture: { kind: "llm", llm: { provider: "ollama", model: "gemma3:4b" } } } } } });
+  assert.equal((createCaptureHook(c, recordingLog().log) as unknown as { provider: { name: string } }).provider.name, "mock");
+});
+
 // @spec MEM-CAPTURE-005, MEM-CAPTURE-009, MEM-CAPTURE-011, MEM-CONSOL-001
 test("a new note is stored recent at strength 1 with one mention, dirty, on a viewer row created without counting a message, and the scheduler is told", async () => {
   const t = setup();

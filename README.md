@@ -442,8 +442,8 @@ section. Every attempt is published as `service.lifecycle {service, action, by, 
 ```bash
 curl -X POST -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' \
   -d '{"mode":"fresh","isolated":true}' http://127.0.0.1:3000/services/cortex/restart
-pnpm --filter @cohost/control exec cohostctl status
-pnpm --filter @cohost/control exec cohostctl restart cortex --mode fresh
+pnpm cohostctl status
+pnpm cohostctl restart cortex --mode fresh
 ```
 
 Tidy the viewer notes after shutting the AI down (optional; the memory service
@@ -451,7 +451,7 @@ also catches up at its next start, so skipping it loses nothing):
 
 ```bash
 docker compose run --rm consolidate                          # the one-shot, any shutdown route
-pnpm --filter @cohost/control exec cohostctl consolidate     # the same through cohostctl (exit 0 ok, 1 failed)
+pnpm cohostctl consolidate     # the same through cohostctl (exit 0 ok, 1 failed)
 ```
 
 `consolidate` is in the `tools` profile, so a plain `docker compose up -d` never
@@ -463,7 +463,7 @@ fit. Stop memory, then re-embed every stored row (memories, viewer notes and del
 
 ```bash
 docker compose run --rm reembed                              # the one-shot (profile tools)
-pnpm --filter @cohost/control exec cohostctl reembed         # the same through cohostctl (exit 0 ok, 1 failed)
+pnpm cohostctl reembed         # the same through cohostctl (exit 0 ok, 1 failed)
 ```
 
 An interrupted run changes nothing and a rerun resumes where it stopped.

@@ -93,7 +93,13 @@ Windows `docker.exe` splits that list on `;` rather than `:` unless you also set
 [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop)). Isolated starts also reach `docker.exe`:
 the control plane lists the preset variables in `WSLENV`, which WSL interop requires. The `eyes` and `ears` containers
 reach the dashboard's upload listener at `host.docker.internal:3001` only where Docker Desktop forwards it; if the image or
-audio injection answers `fetch failed`, set `DASHBOARD_URL=http://<distro-address>:3001` in `.env`.. The GPU comes from the
+audio injection answers `fetch failed`, set `DASHBOARD_URL=http://<distro-address>:3001` in `.env` (`hostname -I` in the
+distro; the address changes after a WSL restart). In WSL's default NAT networking mode the Hyper-V firewall blocks
+inbound connections from containers, so that address may answer `EHOSTUNREACH` until an administrator PowerShell allows
+the port: `New-NetFirewallHyperVRule -Name cohost3001 -DisplayName cohost3001 -Direction Inbound -VMCreatorId
+'{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 3001 -Action Allow`. Alternatively set
+`networkingMode=mirrored` under `[wsl2]` in `%USERPROFILE%\.wslconfig` and run `wsl --shutdown`. Only image and audio
+injection into `eyes` and `ears` need this path; every other unit works without it. The GPU comes from the
 Windows NVIDIA driver; nothing to install in Linux except the container toolkit.
 
 ## Quick start with real accounts

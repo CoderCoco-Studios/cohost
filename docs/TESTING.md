@@ -463,7 +463,9 @@ Desktop runs the containers, and a Windows browser and OBS are the clients.
    Source on the same PC, and click enable audio. Send a chat line and hear a reply.
 5. Inject an image from the dashboard and see `eyes` answer (`--profile eyes`). The eyes container fetches the upload from
    `host.docker.internal:3001`. If it cannot reach that name, set `DASHBOARD_URL=http://<distro-address>:3001`
-   in `.env` (`hostname -I` inside the distro) and relaunch.
+   in `.env` (`hostname -I` inside the distro; it changes after a WSL restart) and relaunch. If that answers
+   `EHOSTUNREACH`, the Hyper-V firewall is blocking inbound traffic from containers (WSL NAT mode): allow TCP 3001 with
+   the administrator PowerShell rule in the README's WSL2 paragraph, or switch WSL to `networkingMode=mirrored`.
 6. Real Discord and OBS, once the mock path above is healthy: follow [Two-bot Discord setup](#two-bot-discord-setup) and [OBS requirements](#obs-requirements); that is the only place the native voice dependencies and the OBS WebSocket path are verified.
 7. Press **Stop**, then run the consolidation pass (`docker compose run --rm consolidate`).
 

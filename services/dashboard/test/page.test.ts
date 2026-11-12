@@ -1124,3 +1124,17 @@ test("a chat viewer's panel lists its linked Discord ids (escaped) with an unlin
   assert.deepEqual([post!.method, post!.path], ["POST", "/viewers/links/88/delete"]);
   assert.ok(rest.some((c) => c.method === "GET" && c.path === "/viewers/1"));
 });
+
+// @spec DASH-UI-023
+test("the say box sends the trimmed, non-empty route ids when the route field has some, and no route when it is blank", async () => {
+  const p = await boot();
+  const controls = () => p.calls.filter((c) => c.path === "/control").map((c) => JSON.parse(c.body!) as Record<string, unknown>);
+  p.get("#say").value = "to the archive";
+  p.get("#sayRoute").value = " file, http ,, ";
+  p.get("#sayBtn").onclick!();
+  p.get("#say").value = "everywhere";
+  p.get("#sayRoute").value = "  ";
+  p.get("#sayBtn").onclick!();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(controls(), [{ cmd: "say", text: "to the archive", route: ["file", "http"] }, { cmd: "say", text: "everywhere" }]);
+});

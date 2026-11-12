@@ -113,7 +113,10 @@ export function createMouth(opts: MouthOptions = {}) {
       // One loop for the whole `mouth` group, established before any login (MOUTH-PLAY-001, MOUTH-START-005).
       // mouth's only `control` command is `set_routing` (MOUTH-LIVE-001); mute and pause are ignored (MOUTH-PLAY-008).
       const control = controlFor("mouth", { set_routing: setRoutingHandler(routing, { heartbeat, log }) }, { log });
-      await subscribeMouth(bus, createMouthHandler({ outputs, claims, log, enabled: (name) => routing!.isEnabled(name), control }), log);
+      await subscribeMouth(bus, createMouthHandler({
+        outputs, claims, log, bus,
+        onUnknownRoute: (ids) => heartbeat.setDetail(`route ignored unknown output id ${ids.map((i) => JSON.stringify(i)).join(", ")}; ${routing!.detail()}`),
+        enabled: (name) => routing!.isEnabled(name), control }), log);
 
       // @spec MOUTH-FALL-012, MOUTH-FALL-014, MOUTH-FALL-018
       const clipSync = (opts.clipSync ?? startClipSync)({ baseUrl: urls.voice(), cache, mirror: new ClipMirror(clipDir(dataDir())), log });

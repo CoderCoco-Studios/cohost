@@ -129,3 +129,12 @@ test("the cortex window is sized by brain.working_memory_events", async () => { 
   }
   assert.deepEqual(cortex.ctx.all().map((e) => (e as { text: string }).text), ["c", "d", "e"]);
 });
+
+test("an operator say carries its route onto the brain.say unchanged; without one the brain.say has none", async () => { // @spec CTX-CTRL-007
+  const { cortex, bus } = setup();
+  await cortex.onEvent(event("control", { cmd: "say", text: "archive only", route: ["file"] }));
+  await cortex.onEvent(operatorSay("everywhere"));
+  const [routed, plain] = bus.of("brain.say");
+  assert.deepEqual(routed!.route, ["file"]);
+  assert.equal("route" in plain!, false);
+});

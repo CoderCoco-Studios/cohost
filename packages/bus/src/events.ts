@@ -13,6 +13,12 @@ const PlaybackReport = z.object({ id: z.string(), sink: z.string() });
 /** `control.routing` (`set_routing`, read by mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
 export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean().optional(), gain_db: z.number().min(-40).max(12).optional() }).strict());
 
+/**
+ * `route` on `control` (`say`), `brain.say` and `voice.utterance`: the mouth output ids (`discord`, `dryrun`, `file`, `http`)
+ * a line is for. Absent means every enabled output; cortex and voice copy it down unchanged, mouth reads it (BUS-EVT-023).
+ */
+export const LineRoute = z.array(z.string());
+
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
   // @spec BUS-EVT-002, BUS-EVT-005
@@ -54,7 +60,7 @@ export const EventPayloads = {
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
-  // @spec BUS-EVT-014, BUS-EVT-005
+  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023
   "brain.say": z.object({
     id: z.string(),
     text: z.string(),
@@ -62,6 +68,8 @@ export const EventPayloads = {
     gesture: z.string().optional(),
     /** Why it spoke, for the dashboard. */
     reason: z.string().optional(),
+    /** Mouth outputs this line is for; absent = every enabled output. */
+    route: LineRoute.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
@@ -199,12 +207,14 @@ export const EventPayloads = {
   }),
 
   /** Audio for an utterance is ready. envelope = mouth-open level per frame (0..1). */
-  // @spec BUS-EVT-016
+  // @spec BUS-EVT-016, BUS-EVT-023
   "voice.utterance": z.object({
     id: z.string(),
     text: z.string(),
     emotion: Emotion,
     gesture: z.string().optional(),
+    /** Mouth outputs this line is for, copied from the `brain.say`; absent = every enabled output. */
+    route: LineRoute.optional(),
     durationMs: z.number(),
     envelopeHz: z.number(),
     envelope: z.array(z.number()),
@@ -251,7 +261,7 @@ export const EventPayloads = {
   }),
 
   /** Operator controls from the dashboard. */
-  // @spec BUS-EVT-004
+  // @spec BUS-EVT-004, BUS-EVT-023
   control: z.object({
     cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume", "set_routing"]),
     text: z.string().optional(),
@@ -259,6 +269,8 @@ export const EventPayloads = {
     target: z.string().optional(),
     /** `set_routing` (mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
     routing: RoutingPatch.optional(),
+    /** `say`: the mouth outputs the line is for; absent = every enabled output. */
+    route: LineRoute.optional(),
   }),
 
   /**

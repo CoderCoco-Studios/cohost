@@ -418,3 +418,18 @@ test("voice.failed requires string id, sink and reason, and accepts an optional 
     { id: "u1", sink: "discord", reason: "x", fallback: { clip: "a", text: 3 } },
   ]) assert.equal(f.safeParse(bad).success, false, JSON.stringify(bad));
 });
+
+// @spec BUS-EVT-023
+test("control, brain.say and voice.utterance accept an optional route of strings, keep it (empty included) and reject anything else", () => {
+  const say = { id: "s", text: "hi", emotion: "neutral" };
+  const utt = { ...say, durationMs: 1, envelopeHz: 30, envelope: [0], audioUrl: "/audio/s.wav", sampleRate: 24000 };
+  const cases = [["control", { cmd: "say", text: "hi" }], ["brain.say", say], ["voice.utterance", utt]] as const;
+  for (const [type, base] of cases) {
+    const schema = EventPayloads[type] as unknown as { safeParse(v: unknown): { success: boolean; data?: { route?: string[] } } };
+    assert.equal("route" in schema.safeParse(base).data!, false, `${type}: absent stays absent`);
+    assert.deepEqual(schema.safeParse({ ...base, route: ["file", "http"] }).data!.route, ["file", "http"]);
+    assert.deepEqual(schema.safeParse({ ...base, route: [] }).data!.route, [], `${type}: an empty route is kept`);
+    assert.equal(schema.safeParse({ ...base, route: "file" }).success, false);
+    assert.equal(schema.safeParse({ ...base, route: [1] }).success, false);
+  }
+});

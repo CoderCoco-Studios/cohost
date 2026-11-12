@@ -332,6 +332,12 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
   assert.equal(ok({ id: "1", op: "set_regular", regular: true }), false, "a key or a name is needed");
   assert.equal(ok({ id: "1", op: "set_regular", regular: true, name: "" }), false, "the name is non-empty");
   assert.equal(ok({ id: "1", op: "set_regular", name: "Pat" }), false, "regular is a boolean");
+  assert.ok(ok({ id: "1", op: "link_discord", discordId: "9", key: "k" }) && ok({ id: "1", op: "link_discord", discordId: "9", name: "Pat" }));
+  assert.ok(ok({ id: "1", op: "unlink_discord", discordId: "9" }));
+  assert.equal(ok({ id: "1", op: "link_discord", discordId: "9" }), false, "a key or a name is needed");
+  assert.equal(ok({ id: "1", op: "link_discord", discordId: "", key: "k" }), false, "the discord id is non-empty");
+  assert.equal(ok({ id: "1", op: "link_discord", key: "k" }), false);
+  assert.equal(ok({ id: "1", op: "unlink_discord", discordId: "" }), false);
   assert.equal(ok({ id: "1", op: "purge" }), false, "unknown op");
   const rep = EventPayloads["memory.viewers.reply"];
   assert.ok(rep.safeParse({ id: "1", ok: true }).success && rep.safeParse({ id: "1", ok: true, data: { viewers: [] } }).success);

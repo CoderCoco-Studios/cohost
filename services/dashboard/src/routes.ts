@@ -126,7 +126,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         if (!opts) { res.writeHead(400); res.end("bad request body"); return; }
         const action = life[2] as "start" | "stop" | "restart";
         const release = d.stack.tryAcquire(`service-${action}`); // @spec DASH-STACK-003
-        if (!release) { res.writeHead(409, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: `busy: ${d.stack.busyKind()}` })); return; }
+        if (!release) { res.writeHead(409, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: d.stack.busyDetail() })); return; }
         let out;
         try { out = await ctl.controller[action](id, opts); } finally { release(); }
         if (out.refused) {

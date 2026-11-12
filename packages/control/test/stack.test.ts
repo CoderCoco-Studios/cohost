@@ -78,11 +78,11 @@ test("status: a failing command, a timeout or unparsable output is docker unavai
 });
 
 // @spec CTRL-STACK-002
-test("launch: reports compose-up, runs up -d --remove-orphans with a 30 minute timeout, then waits", async () => {
+test("launch: reports compose-build, runs up -d --build --remove-orphans with a 30 minute timeout, then waits", async () => {
   const h = harness({ psAnswers: [ps(ready)] });
   assert.equal((await h.stack.launch()).ok, true);
-  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--remove-orphans"], env: { BASE: "1" }, cwd: "/root", timeoutMs: 30 * 60_000 });
-  assert.deepEqual(h.phases, [["launch", "compose-up"], ["launch", "waiting"]]);
+  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1" }, cwd: "/root", timeoutMs: 30 * 60_000 });
+  assert.deepEqual(h.phases, [["launch", "compose-build"], ["launch", "waiting"]]);
 });
 
 // @spec CTRL-STACK-002
@@ -90,7 +90,7 @@ test("launch: a failing up resolves ok:false with trimmed stderr cut to 500 and 
   const h = harness({ upFail: "pull access denied" });
   assert.deepEqual(await h.stack.launch(), { ok: false, detail: "pull access denied" });
   assert.deepEqual(h.calls.map((c) => c.args[1]), ["up"]);
-  assert.deepEqual(h.phases, [["launch", "compose-up"]]);
+  assert.deepEqual(h.phases, [["launch", "compose-build"]]);
   assert.equal((await harness({ upFail: "z".repeat(900) }).stack.launch()).detail!.length, 500);
 });
 

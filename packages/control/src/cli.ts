@@ -6,14 +6,15 @@
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
  *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
  *   cohostctl reembed         one-shot re-embedding of stored memory vectors after an embedder change (the compose `reembed` job)
- *   cohostctl launch          bring the whole stack up and wait until it is ready (never opens the bus)
- *   cohostctl rebuild         launch, rebuilding the images first (never opens the bus)
+ *   cohostctl launch          build the images, bring the whole stack up and wait until it is ready (never opens the bus)
+ *   cohostctl rebuild         the same as launch (never opens the bus)
  *   cohostctl stop-all        stop every container of the stack, never removing any (never opens the bus)
  *   cohostctl restart-all     restart every running application service
  *
  * Always drives services through the compose runtime. Honours CONTROL_ADVANCED and REDIS_URL.
  * It runs as the invoking user, so CONTROL_ENABLED / CONTROL_TOKEN (the dashboard's HTTP gate) do not apply.
- * Publishes `service.lifecycle` with by:"cohostctl".
+ * Publishes `service.lifecycle` with by:"cohostctl". Every command but `status` holds the lifecycle lock shared
+ * with the dashboard (a held lock is a refusal, exit 1).
  */
 import { parseArgs } from "node:util";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
@@ -21,6 +22,7 @@ import { findWorkspaceRoot } from "@cohost/config";
 import { ComposeRuntime, type RuntimeResult } from "./runtime.js";
 import { ServiceController, type ActionOptions, type GroupResetter, type LifecycleRecord } from "./controller.js";
 import { StackController, ONE_SHOTS, type StackResult } from "./stack.js";
+import { LifecycleLock, type LockResult } from "./lock.js";
 import { HealthTracker, withContainerRestarts, type ServiceHealth } from "./health.js";
 import { appServiceIds } from "./manifest.js";
 
@@ -39,8 +41,8 @@ export const USAGE = `usage:
   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
   cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)
   cohostctl reembed            re-embed stored memory vectors after changing the embedder (exit 0 ok, 1 failed)
-  cohostctl launch             bring the whole stack up and wait until it is ready
-  cohostctl rebuild            launch, rebuilding the images first
+  cohostctl launch             build the images, bring the whole stack up and wait until it is ready
+  cohostctl rebuild            the same as launch
   cohostctl stop-all           stop every container of the stack (nothing is removed)
   cohostctl restart-all        restart every running application service`;
 
@@ -96,18 +98,27 @@ export interface CliDeps {
     stopAll(): Promise<StackResult>;
     restartAll(): Promise<StackResult>;
   };
+  /** The lifecycle lock shared with the dashboard (CTRL-LOCK-004); absent means no locking. */
+  lock?: { tryAcquire(action: string): LockResult };
   out: (line: string) => void;
   err: (line: string) => void;
 }
 
 /** Returns the process exit code: 0 ok, 1 failed or refused, 2 usage. */
-// @spec CTRL-CLI-002, CTRL-CLI-003, CTRL-CLI-008, CTRL-CLI-010, CTRL-CLI-011, CTRL-CLI-012
+// @spec CTRL-CLI-002, CTRL-CLI-003, CTRL-CLI-008, CTRL-CLI-010, CTRL-CLI-011, CTRL-CLI-012, CTRL-LOCK-004
 export async function runCli(argv: readonly string[], d: CliDeps): Promise<number> {
   let c: CliCommand;
   try { c = parseCli(argv); } catch (e) {
     d.err(`${(e as Error).message}\n${USAGE}`);
     return 2;
   }
+  if (c.cmd === "status" || !d.lock) return runCommand(c, d);
+  const held = d.lock.tryAcquire(c.cmd);
+  if (!held.ok) { d.err(`refused: ${held.detail}`); return 1; }
+  try { return await runCommand(c, d); } finally { held.release(); }
+}
+
+async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
   if (c.cmd === "status") {
     const all = await d.health();
     const rows = c.id ? all.filter((s) => s.service === c.id) : all;
@@ -181,6 +192,8 @@ export interface CliWiring {
   openBus?: () => CliBus;
   buildRuntime?: () => Pick<ComposeRuntime, "name" | "start" | "stop" | "restart" | "consolidate" | "reembed">;
   buildStack?: (onPhase: (phase: string) => void) => CliStack;
+  /** The lifecycle lock; the workspace root's `data/control.lock` by default. */
+  lock?: { tryAcquire(action: string): LockResult };
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
   err?: (line: string) => void;
@@ -190,7 +203,7 @@ export interface CliWiring {
  * The whole of cohostctl: parse, then build what the command needs. Arguments that do not parse never build a
  * runtime, open the bus or run Docker; the bus is opened on first use and always stopped.
  */
-// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-STACK-001
+// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-STACK-001, CTRL-LOCK-004
 export async function executeCli(argv: readonly string[], w: CliWiring = {}): Promise<number> {
   const out = w.out ?? console.log;
   const err = w.err ?? console.error;
@@ -226,7 +239,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
       stopAll: () => stackFor().stopAll(),
       restartAll: () => stackFor().restartAll(controller),
     };
-    return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, out, err });
+    return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
   } catch (e) {
     err(e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;

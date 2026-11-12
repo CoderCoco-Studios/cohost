@@ -69,9 +69,9 @@ Specs written for the module contract land as follows: SHARED-* in C1; MOD-MAN-*
 | control-plane | O8 Test coverage gaps | Implement | C2 |
 | control-plane | O9 Tracker's dep-down rule redundant for helper users | Drop: the rule covers hand-published heartbeats and costs nothing | — |
 | control-plane | O10 CTRL-CHECK-003 in Compose, untested | Implement: a Compose-file test for the healthcheck wiring | C2 |
-| control-plane | D1 Docker Engine API instead of the CLI | Drop: module-contract keeps the CLI (Compose's project model lives there) | — |
+| control-plane | D1 Docker Engine API instead of the CLI | Drop (impossible): `compose up`, the project model, profiles, `--project` handling and `build:` exist only in the Compose CLI; the Engine API has no compose-up | — |
 | control-plane | D2 Compose restart counts | Implement: show restart counts from Compose so a service that dies before its first heartbeat still shows crash-looping | C2 |
-| control-plane | D3 Dashboard and concurrent `cohostctl` stack commands | Drop: one operator; Compose tolerates overlap and the page shows the resulting state | — |
+| control-plane | D3 Dashboard and concurrent `cohostctl` stack commands | Implement (reopened): a lock file under the data dir with stale-pid detection refuses a second lifecycle action from either entry point (CTRL-LOCK-*, DASH-STACK-009); Launch also builds (`up -d --build`) | reopen-control |
 | cortex | R1 Owner decisions of 2026-11-01 | Already resolved | — |
 | cortex | D1 Operator `say` overwrites `speakingId` | Implement: an interrupted line's `voice.done` is still reconciled | C10 |
 | cortex | D2 Cast and mutability smells | Implement (the 25-message literal is already replaced by CTX-VIEWER-001) | C10 |

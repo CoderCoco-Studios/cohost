@@ -44,13 +44,13 @@ test("rebuild: reports compose-build, runs up -d --build --remove-orphans with t
 });
 
 // @spec CTRL-STACK-013
-test("rebuild: a failing build resolves ok:false with the trimmed stderr and never polls; launch never passes --build", async () => {
+test("rebuild: a failing build resolves ok:false with the trimmed stderr and never polls; launch passes --build too (it is the same command)", async () => {
   const h = harness({ upFail: " build failed " });
   assert.deepEqual(await h.stack.rebuild(), { ok: false, detail: "build failed" });
   assert.deepEqual(h.calls.map((c) => c.args[1]), ["up"]);
   const l = harness();
   await l.stack.launch();
-  assert.ok(!l.calls[0]!.args.includes("--build"));
+  assert.deepEqual(l.calls[0]!.args, h.calls[0]!.args);
 });
 
 // @spec CTRL-STACK-014

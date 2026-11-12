@@ -264,7 +264,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "66 of 66 specs [x] (CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
+    next: "70 of 70 specs [x] (CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
     drift: null
 
   deployment:

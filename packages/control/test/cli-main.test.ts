@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { HeartbeatEvent } from "@cohost/bus";
-import { executeCli, type CliWiring, type Runtime, type StackResult, type StackStatus } from "../src/index.js";
+import { executeCli, type CliWiring, type LockResult, type Runtime, type StackResult, type StackStatus } from "../src/index.js";
 
 const hbEvent = (service: string, ageMs = 1000): HeartbeatEvent => ({
   id: "1", type: "service.heartbeat", ts: Date.now() - ageMs, source: service,
@@ -9,7 +9,8 @@ const hbEvent = (service: string, ageMs = 1000): HeartbeatEvent => ({
 });
 
 /** Everything `executeCli` can build, each recording that it was built or used. */
-function wiring(o: { recent?: HeartbeatEvent[]; status?: StackStatus; busThrows?: boolean } = {}) {
+function wiring(o: { recent?: HeartbeatEvent[]; status?: StackStatus; busThrows?: boolean; refuse?: string } = {}) {
+  const lockLog: string[] = [];
   const built = { bus: 0, runtime: 0, stack: 0 };
   const published: Array<{ type: string; data: Record<string, unknown> }> = [];
   const stacks: string[] = [];
@@ -20,10 +21,10 @@ function wiring(o: { recent?: HeartbeatEvent[]; status?: StackStatus; busThrows?
     recentHealth: async () => { if (o.busThrows) throw new Error("redis down"); return o.recent ?? []; },
     stop: () => { stopped++; },
   };
-  const runtime: Runtime & { consolidate(): Promise<{ ok: boolean }> } = {
+  const runtime: Runtime & { consolidate(): Promise<{ ok: boolean }>; reembed(): Promise<{ ok: boolean }> } = {
     name: "compose",
     start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }),
-    consolidate: async () => ({ ok: true }),
+    consolidate: async () => ({ ok: true }), reembed: async () => ({ ok: true }),
   };
   const res: StackResult = { ok: true, services: [{ service: "redis", status: "running", health: "healthy" }] };
   const stackFor = (onPhase: (p: string) => void) => ({
@@ -38,9 +39,16 @@ function wiring(o: { recent?: HeartbeatEvent[]; status?: StackStatus; busThrows?
     openBus: () => { built.bus++; return bus as never; },
     buildRuntime: () => { built.runtime++; return runtime as never; },
     buildStack: (onPhase) => { built.stack++; return stackFor(onPhase) as never; },
+    lock: {
+      tryAcquire: (action): LockResult => {
+        if (o.refuse) { lockLog.push(`refused ${action}`); return { ok: false, holder: { pid: 7, by: "dashboard", action: "launch", startedAt: 1 }, detail: o.refuse }; }
+        lockLog.push(`acquired ${action}`);
+        return { ok: true, release: () => { lockLog.push(`released ${action}`); } };
+      },
+    },
     out: (l) => out.push(l), err: (l) => err.push(l), env: {},
   };
-  return { w, built, published, stacks, out, err, stopped: () => stopped };
+  return { w, built, published, stacks, out, err, lockLog, stopped: () => stopped };
 }
 
 // @spec CTRL-CLI-013
@@ -123,4 +131,36 @@ test("status with Docker unavailable prints the heartbeat-derived rows unchanged
   assert.equal(await executeCli(["status"], h.w), 0);
   assert.match(h.out.find((l) => l.startsWith("cortex"))!, /^cortex\s+unknown\s/);
   assert.match(h.out.find((l) => l.startsWith("chat"))!, /^chat\s+up\s/);
+});
+
+// @spec CTRL-LOCK-004
+test("every lifecycle command holds the lifecycle lock for the whole command and releases it afterwards; status takes none", async () => {
+  for (const argv of [["start", "voice"], ["stop", "voice"], ["restart", "voice"], ["consolidate"], ["reembed"], ["launch"], ["rebuild"], ["stop-all"], ["restart-all"]]) {
+    const h = wiring();
+    assert.equal(await executeCli(argv, h.w), 0, argv[0]);
+    assert.deepEqual(h.lockLog, [`acquired ${argv[0]}`, `released ${argv[0]}`], argv[0]);
+  }
+  const s = wiring();
+  assert.equal(await executeCli(["status"], s.w), 0);
+  assert.deepEqual(s.lockLog, []);
+});
+
+// @spec CTRL-LOCK-004
+test("a refused lock runs nothing, prints 'refused: <detail>' and exits 1", async () => {
+  for (const argv of [["launch"], ["stop-all"], ["start", "voice"], ["consolidate"]]) {
+    const h = wiring({ refuse: "busy: launch held by dashboard (pid 7)" });
+    assert.equal(await executeCli(argv, h.w), 1, argv[0]);
+    assert.deepEqual(h.err, ["refused: busy: launch held by dashboard (pid 7)"], argv[0]);
+    assert.deepEqual(h.stacks, []);
+    assert.deepEqual(h.published, []);
+    assert.equal(h.built.bus, 0);
+  }
+});
+
+// @spec CTRL-LOCK-004
+test("the lock is released when the command throws", async () => {
+  const h = wiring();
+  h.w.buildStack = () => ({ launch: async () => { throw new Error("boom"); } }) as never;
+  assert.equal(await executeCli(["launch"], h.w), 1);
+  assert.deepEqual(h.lockLog, ["acquired launch", "released launch"]);
 });

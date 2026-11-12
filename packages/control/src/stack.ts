@@ -181,18 +181,18 @@ export class StackController {
     return { ...st, services: st.services.map((c) => (counts.has(c.service) ? { ...c, restartCount: counts.get(c.service)! } : c)) };
   }
 
-  /** `launch` that also rebuilds the images (`up -d --build`), so changed code reaches the containers. */
+  /** The same as `launch`, reported under kind `rebuild`: both build, so images never lag the code. */
   // @spec CTRL-STACK-013
-  rebuild(): Promise<StackResult> { return this.bringUp(true); }
+  rebuild(): Promise<StackResult> { return this.bringUp("rebuild"); }
 
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005
-  launch(): Promise<StackResult> { return this.bringUp(false); }
+  launch(): Promise<StackResult> { return this.bringUp("launch"); }
 
-  private async bringUp(build: boolean): Promise<StackResult> {
-    this.phase(build ? "rebuild" : "launch", build ? "compose-build" : "compose-up");
-    const up = await this.compose(["up", "-d", ...(build ? ["--build"] : []), "--remove-orphans"], LAUNCH_TIMEOUT_MS);
+  private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
+    this.phase(kind, "compose-build");
+    const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
     if (!up.ok) return { ok: false, detail: up.detail };
-    this.phase(build ? "rebuild" : "launch", "waiting");
+    this.phase(kind, "waiting");
     const started = this.now();
     for (;;) {
       const st = await this.status();

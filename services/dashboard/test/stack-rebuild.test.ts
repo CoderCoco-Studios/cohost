@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
-import { HealthTracker, SERVICE_MANIFEST, withContainerRestarts, type StackResult, type StackStatus } from "@cohost/control";
+import { HealthTracker, SERVICE_MANIFEST, unitDescriptors, withContainerRestarts, type StackResult, type StackStatus } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { createFeed, type FeedSocket } from "../src/feed.js";
@@ -85,7 +85,7 @@ test("the probe reads container restart counts, and the snapshot carries them pe
   assert.deepEqual(svc.snapshot().services.map((c) => [c.service, c.restartCount]), [["cortex", 6], ["redis", 0]]);
 });
 
-// @spec DASH-HTTP-014
+// @spec DASH-HTTP-014, MOD-MAN-007
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
   const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
@@ -101,6 +101,8 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
   assert.deepEqual(body.units.map((u) => u.id), SERVICE_MANIFEST.map((s) => s.id));
   assert.deepEqual(body.units.find((u) => u.id === "cortex")!.requires, ["salience", "affect"]);
   assert.equal(body.units.find((u) => u.id === "redis")!.infra, true);
+  assert.deepEqual(body.units, JSON.parse(JSON.stringify(unitDescriptors())), "each unit carries id, config, uses, requires, pause, test, infra and defaultMode");
+  assert.deepEqual(Object.keys(body.units[0]!).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"]);
   assert.doesNotMatch(JSON.stringify(body), /pnpm|composeName|isolatedEnv/);
 });
 

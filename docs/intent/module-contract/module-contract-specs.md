@@ -1,6 +1,6 @@
 # module-contract specs
 
-Segment `module-contract` (prefix `MOD`). LLD: [module-contract-design.md](module-contract-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. All specs are `[x]`.
+Segment `module-contract` (prefix `MOD`). LLD: [module-contract-design.md](module-contract-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. Specs are `[x]` unless marked.
 
 Terms: a "unit" is an application unit of the control plane's manifest (a unit with a `pnpmFilter`: chat, eyes, ears, salience, affect, memory, cortex, voice, mouth, avatar). A "section" is a dotted path into the config schema declared by some unit (or `dashboard`). The "tracker" is the control plane's `HealthTracker`; a unit's "derived state" is the state it computes (control-plane CTRL-HEALTH-*). "Gated" means guarded by the control token when `CONTROL_ENABLED=1`, like the dashboard's other mutating routes (dashboard DASH-CTRL-*).
 
@@ -17,6 +17,9 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 - [x] **MOD-MAN-007**: When `GET /services/manifest` is requested, the dashboard shall answer `200` with each unit's `id`, `config`, `uses`, `requires`, `pause`, `test`, `infra` and `defaultMode`, ungated, and the page shall take its unit list from that answer and hold no list of unit ids of its own. <!-- test: services/dashboard/test/stack-rebuild.test.ts --> <!-- test: services/dashboard/test/page.test.ts -->
 - [x] **MOD-MAN-008**: A test shall fail when a unit has no Compose service of the same name, when a Compose service built from the shared Dockerfile has no unit, when a declared section is not a path of `ConfigSchema`, when a section of `ConfigSchema` (each top-level key, and each child of `brain`) is declared by no unit and is not `dashboard`, or when a declared bus input or observed type is not in the bus event registry or is `service.heartbeat`, `service.lifecycle` or a viewer-notes event. <!-- test: packages/control/test/derived-lists.test.ts -->
 - [x] **MOD-MAN-009**: Each unit's entry file shall reach `runService` (shared-runtime SHARED-BOOT-001), by calling it or by calling the one boot function of the unit that does, and shall build no bus, heartbeat or shutdown hook of its own; a test shall fail when one does not. <!-- test: packages/control/test/derived-lists.test.ts -->
+
+- [x] **MOD-MAN-010**: A test shall fail when a unit in `SERVICE_MANIFEST` lacks any of the following, each exercised through the dashboard handler with a fake bus and a fake lifecycle controller: for each section the unit declares, `GET /config/<section>` answering an `etag` and a `PUT` with a stale `etag` answering `409`; `POST /services/<unit>/restart` reaching the lifecycle controller for that unit alone; and, for each entry of its `test.inputs`, the input accepted by the injection route for its kind and refused `409 service not running` while the unit is `down` or `unknown`. <!-- test: services/dashboard/test/unit-contract.test.ts -->
+- [x] **MOD-MAN-011**: Each unit's service shall have a test that its entry file reaches `runService` (MOD-MAN-009) and that every section the manifest declares for it is a path of `ConfigSchema` that validates the value `config/config.example.yaml` gives it. <!-- test: services/chat/test/contract.test.ts -->
 
 ## Settings editor (MOD-CFG)
 

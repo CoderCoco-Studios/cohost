@@ -267,6 +267,12 @@ export const ConfigSchema = z.object({
         /** Loudness on this output only, applied to utterances and fallback clips. */
         gain_db: z.number().min(-40).max(12).default(0),
       }).default({}),
+      /** Test-only output: plays nothing, reports as a sink; `fail_every` n > 0 gives up on every n-th line. */
+      // @spec CFG-SCH-023
+      dryrun: z.object({
+        enabled: z.boolean().default(false),
+        fail_every: z.number().int().nonnegative().default(0),
+      }).default({}),
     }).default({}),
     fallback: z.object({
       /** At most one spoken fallback line per this many ms on an output (storm limit). */

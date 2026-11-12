@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { event, recordingLog, testConfig, waitFor } from "@cohost/testing";
-import { MOUTH_LOOP_TYPES, createMouthHandler, outputTarget, startIdle, stopMouth, subscribeMouth } from "../src/session.js";
+import { event, recordingLog, testConfig } from "@cohost/testing";
+import { MOUTH_LOOP_TYPES, createMouthHandler, outputTarget, subscribeMouth } from "../src/session.js";
 import { ClaimMemory } from "../src/fallback.js";
 
 const discordCfg = (over: Record<string, unknown> = {}) => testConfig({ mouth: { outputs: { discord: over } } }).mouth.outputs.discord;
@@ -86,46 +86,4 @@ test("the mouth group is created first, then subscribed with start mode latest, 
   await subscribeMouth(bus, async () => {}, recordingLog().log);
   assert.deepEqual(calls, ["reset:mouth", "subscribe"]);
   assert.deepEqual(opts, { group: "mouth", types: ["voice.utterance", "voice.playing"], start: "latest" });
-});
-
-// @spec MOUTH-SESS-007
-test("one shutdown sequence: clip refresh, voice connection and client, then the bus, even if the teardown throws", async () => {
-  const order: string[] = [];
-  const bus = { stop: () => { order.push("bus"); } };
-  await stopMouth({ clipSync: { stop: () => { order.push("clips"); } }, session: { stop: async () => { order.push("discord"); } }, bus });
-  assert.deepEqual(order, ["clips", "discord", "bus"]);
-  order.length = 0;
-  await stopMouth({ session: { stop: async () => { order.push("discord"); throw new Error("destroy failed"); } }, bus, log: recordingLog().log });
-  assert.deepEqual(order, ["discord", "bus"]);
-});
-
-// @spec MOUTH-START-004
-test("idle shutdown clears the warning timer and stops the bus", async () => {
-  const order: string[] = [];
-  await stopMouth({ idleTimer: setInterval(() => {}, 1000), clear: (t) => { order.push("timer"); clearInterval(t); }, bus: { stop: () => { order.push("bus"); } } });
-  assert.deepEqual(order, ["timer", "bus"]);
-});
-
-// @spec MOUTH-START-001
-test("plan off logs a warning, reports ready, and starts no warning timer", () => {
-  const rec = recordingLog();
-  const calls: string[] = [];
-  const timer = startIdle("off", { log: rec.log, heartbeat: { ready: () => calls.push("ready"), degraded: (d) => calls.push(`degraded:${d}`) } });
-  assert.deepEqual(calls, ["ready"]);
-  assert.equal(timer, undefined);
-});
-
-// @spec MOUTH-START-002
-test("plan no-token logs an error, reports degraded with the detail, and warns again on every interval", async () => {
-  const rec = recordingLog();
-  const calls: string[] = [];
-  const timer = startIdle("no-token", { log: rec.log, warnEveryMs: 10, heartbeat: { ready: () => calls.push("ready"), degraded: (d) => calls.push(`degraded:${d}`) } })!;
-  try {
-    assert.deepEqual(calls, ["degraded:DISCORD_TOKEN is not set"]);
-    assert.equal(rec.msgs("error").length, 1);
-    await waitFor(() => rec.msgs("warn").length >= 2, "two repeated warnings");
-    assert.ok(rec.msgs("warn").every((m) => m === "DISCORD_TOKEN is not set; mouth still idle"));
-  } finally {
-    clearInterval(timer);
-  }
 });

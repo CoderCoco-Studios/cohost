@@ -228,7 +228,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: mouth.md
-    next: "2026-11-11 shared-runtime/module-contract cascade: MOUTH-SESS-005/006 and MOUTH-AUD-001 retired (now SHARED-DVS-003/004, SHARED-AUDIO-006); new [ ]: MOUTH-SESS-009, MOUTH-AUD-002, MOUTH-DRY-001..005; MOUTH-START-002/003/005 reopened [ ] for the local plan. Earlier: All four build chunks built: services/mouth exists, all 49 specs are [x], and it is in the manifest (unit mouth, group mouth), Compose (profile mouth) and the dashboard UNITS list (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, SHARED-AUDIO-006, MOUTH-FALL-001..019, MOUTH-HLTH-001..002); ears is listen-only (chunk 4). No open gaps."
+    next: "C6 built 2026-11-11: all 57 specs [x]: the stuck-playback guard (MOUTH-PLAY-010..012), the dryrun output and local plan (MOUTH-DRY-001..005, MOUTH-START-002/003/005/006), MOUTH-SESS-009 and MOUTH-AUD-002 on the shared modules, glue tests for the Discord layer, clips.ts split from fallback.ts. Dropped (recorded as Decisions): more output kinds, per-line routing, live re-routing. Open: native dependencies unverified against real Discord (C12). Earlier: the listen-speak split, chunks 1 to 4 (MOUTH-START-001..005, MOUTH-SESS-001..008, MOUTH-ROUTE-001..005, MOUTH-PLAY-001..009, MOUTH-FALL-001..019, MOUTH-HLTH-001..002)."
     drift: null
 
   avatar:

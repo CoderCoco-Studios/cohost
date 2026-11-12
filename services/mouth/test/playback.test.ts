@@ -4,7 +4,7 @@ import http from "node:http";
 import { FakeBus, recordingLog, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { applyGain, wavToDiscordPcm } from "../src/audio.js";
-import { ClaimMemory, ClipCache, FallbackLine, type FallbackClip } from "../src/fallback.js";
+import { ClipCache, type FallbackClip } from "../src/clips.js"; import { ClaimMemory, FallbackLine } from "../src/fallback.js";
 import { Playback, httpAudio } from "../src/playback.js";
 
 // ---- playback queue

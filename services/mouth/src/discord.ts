@@ -1,50 +1,59 @@
 import { GatewayIntentBits } from "discord.js";
-import { createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } from "@discordjs/voice";
+import { createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, type AudioPlayer, type AudioResource } from "@discordjs/voice";
 import { Readable } from "node:stream";
-import type { Bus } from "@cohost/bus";
+import type { Publisher } from "@cohost/bus";
 import type { Heartbeat } from "@cohost/shared";
-import { dataDir, urls, type Config, type Logger } from "@cohost/config";
-import { createDiscordVoiceSession } from "@cohost/shared/discord-voice";
-import { ClaimMemory, ClipCache, ClipMirror, FallbackLine, clipDir, startClipSync } from "./fallback.js";
-import { Playback, httpAudio } from "./playback.js";
-import { readToken } from "./health.js";
-import { createMouthHandler, outputTarget, subscribeMouth } from "./session.js";
+import type { Config, Logger } from "@cohost/config";
+import { createDiscordVoiceSession, type DiscordVoiceDeps, type DiscordVoiceSession } from "@cohost/shared/discord-voice";
+import type { FallbackLine } from "./fallback.js";
+import { Playback, httpAudio, type PlaybackDeps } from "./playback.js";
+import { outputTarget, type MouthOutput } from "./session.js";
 
 /** The `discord` output's name, which is also its sink name (MOUTH-ROUTE-001). */
 const OUTPUT = "discord";
 
 export interface DiscordDeps {
   cfg: Config;
-  bus: Bus;
+  bus: Publisher;
   log: Logger;
-  heartbeat: Heartbeat;
+  heartbeat: Pick<Heartbeat, "ready" | "degraded">;
+  /** The co-host's bot token (`DISCORD_TOKEN`, MOUTH-SESS-008). */
+  token: string;
+  /** This output's fallback line over the shared clip cache; without it a give-up is a silent skip. */
+  fallback?: FallbackLine;
   setReady(ready: boolean): void;
   isReady(): boolean;
+  // Replacements for tests: no network, no real audio player.
+  fetchAudio?: (url: string) => Promise<Buffer>;
+  createPlayer?: () => AudioPlayer;
+  createResource?: (pcm: Buffer) => AudioResource;
+  voice?: DiscordVoiceDeps;
+  guard?: Pick<PlaybackDeps, "fetchTimeoutMs" | "watchdogGraceMs" | "maxQueue">;
 }
 
-/** A running Discord output; `stop` tears down the voice connection and the client, `clipSync` the fallback clip refresh. */
-export interface DiscordSession {
-  session: { stop(): Promise<void> };
-  clipSync: { stop(): void };
+/** The Discord output, ready to be started: the output the bus loop feeds and the voice session that connects it. */
+export interface DiscordOutput {
+  output: MouthOutput & { playback: Playback; close(): void };
+  /** `start()` logs in and joins in the background; `stop()` destroys the voice connection and the client. */
+  session: Pick<DiscordVoiceSession, "start" | "stop">;
 }
 
 /**
- * The Discord output: handles the bus first, then logs in as the co-host's bot, joins the voice channel self-deafened
- * (retrying until it succeeds) and plays `voice.utterance` on it. Only loaded in the `discord` plan. The caller owns
- * shutdown: it stops the clip refresh, calls `session.stop()` and then stops the bus.
+ * The Discord output: the co-host's own bot, which joins the voice channel self-deafened (retrying until it succeeds) and plays
+ * `voice.utterance` on it. Only loaded in the `discord` plan. The caller subscribes the bus loop before calling `session.start()`
+ * and owns shutdown: it stops the clip refresh, calls `session.stop()` and then stops the bus.
  */
-export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
+export function createDiscordOutput(deps: DiscordDeps): DiscordOutput {
   const { cfg, bus, log } = deps;
   const out = cfg.mouth.outputs.discord;
-  const player = createAudioPlayer();
+  const player = (deps.createPlayer ?? createAudioPlayer)();
+  const resource = deps.createResource ?? ((pcm: Buffer) => createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw }));
 
-  // The spoken fallback line: mouth's own clip cache (memory + disk mirror), refreshed from voice's HTTP routes.
-  const clipCache = new ClipCache();
-  const claims = new ClaimMemory();
-  const fallback = new FallbackLine({ cache: clipCache, claims, sink: OUTPUT, minIntervalMs: cfg.mouth.fallback.min_interval_ms });
   const playback = new Playback({
-    bus, log, fallback, sink: OUTPUT, gainDb: out.gain_db, fetchAudio: httpAudio,
-    play: (pcm) => player.play(createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })),
+    bus, log, sink: OUTPUT, gainDb: out.gain_db, fallback: deps.fallback, fetchAudio: deps.fetchAudio ?? httpAudio,
+    play: (pcm) => player.play(resource(pcm)),
+    stop: () => { player.stop(true); },
+    ...deps.guard,
   });
 
   // The connection itself (join, retry, rejoin on disconnect) is the shared Discord voice session; mouth only attaches its
@@ -52,13 +61,14 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
   // GuildMembers intent; it is self-deafened (it discards received audio) and not self-muted.
   // @spec MOUTH-SESS-002, MOUTH-SESS-003, MOUTH-SESS-004, MOUTH-SESS-009
   const session = createDiscordVoiceSession({
-    token: readToken(),
+    token: deps.token,
     guildId: () => outputTarget(out).guildId,
     channelId: () => outputTarget(out).channelId,
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
     selfDeaf: true,
     selfMute: false,
     log,
+    deps: deps.voice,
     onConnected(conn) {
       conn.subscribe(player);
       deps.setReady(true);
@@ -71,22 +81,13 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
     },
   });
 
-  // ---- playback
   // @spec MOUTH-PLAY-004
   player.on(AudioPlayerStatus.Idle, () => void playback.onIdle());
   // @spec MOUTH-PLAY-007
   player.on("error", (err) => log.warn({ err: err.message, output: OUTPUT }, "player error"));
 
-  // The bus loop starts before the login and does not depend on the join. One loop for the whole `mouth` group: two loops
-  // with different type filters would drop each other's events.
-  // @spec MOUTH-PLAY-001, MOUTH-START-005, MOUTH-FALL-010, MOUTH-ROUTE-003
-  await subscribeMouth(bus, createMouthHandler({ outputs: [{ name: OUTPUT, isReady: deps.isReady, playback }], claims, log }), log);
-
-  // @spec MOUTH-FALL-012, MOUTH-FALL-014, MOUTH-FALL-018
-  const clipSync = startClipSync({ baseUrl: urls.voice(), cache: clipCache, mirror: new ClipMirror(clipDir(dataDir())), log });
-
-  // @spec MOUTH-SESS-001, MOUTH-SESS-008
-  await session.start().catch((err) => { log.error({ err }, "discord login failed"); process.exit(1); });
-
-  return { clipSync, session };
+  return {
+    output: { name: OUTPUT, isReady: deps.isReady, playback, close: () => playback.close() },
+    session,
+  };
 }

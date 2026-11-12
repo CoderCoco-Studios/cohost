@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/remsky/Kokoro-FastAPI/blob/v0.10.0/api/src/structures/schemas.py",
+  "tag": "v0.10.0",
+  "note": "Fields of OpenAISpeechRequest (with its SpeechOptions base) and NormalizationOptions at the Kokoro-FastAPI tag docker-compose.yml pins. The voice synthesizer may send only these.",
+  "request": [
+    "model", "input", "voice", "response_format", "download_format", "speed", "stream",
+    "return_download_link", "return_timing", "allow_voice_tags", "ssml",
+    "voice_aliases", "lang_code", "volume_multiplier", "normalization_options"
+  ],
+  "normalization_options": [
+    "normalize", "unit_normalization", "url_normalization", "email_normalization",
+    "optional_pluralization_normalization", "phone_normalization", "caps_normalization",
+    "replace_remaining_symbols", "remove_emoji"
+  ],
+  "bounds": { "speed": [0.25, 4], "volume_multiplier": [0, 10] },
+  "lang_codes": ["a", "b", "e", "f", "h", "i", "j", "p", "z"]
+}

@@ -51,10 +51,10 @@ function is shared by both consumer groups (`startup.ts:60-61`).
 | Direction | Event | Group | What happens | Evidence |
 |-----------|-------|-------|--------------|----------|
 | in | `chat.message` | `memory` | `touchViewer(userId ?? user, user)` on every line; if `mentionsCohost`, publish `memory.viewer` then `remember("chat", user, text)` | `region.ts:22-36` |
-| in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance | `region.ts:38-43` |
+| in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance; when it carries a `speakerId`, also `touchSpeaker` so the speaker has a viewer row (Voice speakers, `MEM-VOICE-002`) | `region.ts` |
 | in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts:45-50` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts:52-60` |
-| in | `chat.message` | `memory-notes` | live note capture on every non-skipped line (Viewer notes, `MEM-CAPTURE-*`) | `capture.ts` |
+| in | `chat.message`, `speech.heard` | `memory-notes` | live note capture on every non-skipped chat line and every non-skipped voice line that carries a `speakerId` (Viewer notes, `MEM-CAPTURE-*`, `MEM-VOICE-003`) | `capture.ts` |
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | gap |
 | in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
@@ -210,9 +210,10 @@ it does for everything else (`MEM-BACKEND-005`).
 
 ### Live capture
 
-Capture runs as chat comes in, in the `memory-notes` consumer group, on every
-`chat.message` except injected lines not marked `remember` and lines shorter than
-`capture_min_chars` (default 8) (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`).
+Capture runs as chat and speech come in, in the `memory-notes` consumer group, on
+every `chat.message` and every `speech.heard` that carries a `speakerId`, except
+injected lines not marked `remember` and lines shorter than `capture_min_chars`
+(default 8) (`MEM-CAPTURE-001`, `MEM-CAPTURE-002`, `MEM-VOICE-003`).
 It uses a very small, cheap classifier model through a region hook,
 `memory.capture`, configured by `brain.memory.notes.capture` (a `ModuleSchema`
 block: `kind`, `url`, `timeout_ms`, `llm{provider, model}`), so it has its own
@@ -252,6 +253,61 @@ Every note the writer inserts or reinforces is dirty. If the viewer row does not
 exist yet (the `memory` group has not handled the same line), the writer creates
 it without counting a message (`MEM-CAPTURE-011`). A failing hook, embedding or
 write logs a warning and stores nothing for that line (`MEM-CAPTURE-010`).
+
+### Voice speakers
+
+A person who talks in the Discord voice channel accrues notes exactly as a chat
+viewer does: the same two layers, strength and fade, categories, capture hook,
+consolidation pass, surfacing and owner controls. Nothing about notes is
+voice-specific except how the speaker's identity is found.
+
+**Identity.** [ears](../ears/ears-design.md) publishes each transcript with the
+speaker's Discord display name (`speaker`) and Discord user id (`speakerId`).
+Memory keys viewers by `lower(userId ?? user)`, and a Twitch chat viewer's key is
+a Twitch user id, so a Discord id is a different namespace. A speaker's viewer key
+is therefore one of two things (`MEM-VOICE-001`, `MEM-VOICE-004`):
+
+- **Linked.** The owner has linked the Discord id to a chat viewer: the speaker
+  is that viewer, the notes are shared with their chat lines, and the viewer's
+  `display` stays the chat display name.
+- **Unlinked.** Otherwise the speaker is a **voice viewer** keyed
+  `discord:<speakerId>` whose `display` follows the latest Discord display name.
+  The row is created the first time the speaker is heard (with `msg_count` 0), so
+  nobody has to be configured in advance, and its notes are kept like any other
+  viewer's.
+
+An utterance is never counted as a chat message: `msg_count`, and so the regular
+rule, stays about chat lines; a voice viewer is regular only by the owner's flag
+(`MEM-VOICE-001`). An utterance without a `speakerId` (an injected clip, whose
+speaker is only a label) belongs to no identity, so it is remembered as a memory
+but never creates a viewer row or a note (`MEM-VOICE-002`, `MEM-VOICE-003`).
+
+**Linking.** The owner links a Discord id to a chat viewer from the Viewers page
+(`link_discord`, `MEM-VOICE-005`). The voice viewer's notes and deletion
+records move to the chat viewer, marked dirty so the next consolidation pass
+merges duplicates, and the voice row is removed. Later speech from that id goes to
+the chat viewer. Unlinking (`unlink_discord`, `MEM-VOICE-006`) removes only the
+link: notes already merged stay with the chat viewer, and the next utterance
+starts a fresh voice viewer. Linking replaces an earlier link of the same id. The
+target must be an existing viewer row that is not itself a voice viewer.
+
+**Names.** The cortex asks for notes by the display name it knows, and for a
+voice line that is the Discord display name. A name that matches no viewer's
+`display` also matches the latest Discord display name of a linked id, so a linked
+speaker's notes surface under the name they speak under (`MEM-VOICE-007`).
+
+**Privacy.** Voice lines go through the same capture hook, validation and writer
+as chat lines, so politics is never stored and money never becomes a note
+(`MEM-NOTE-009`); health and family notes carry a handling hint and leave memory
+as the hint only (`MEM-NOTE-010`, `MEM-SURF-004`, `MEM-VOICE-008`). Deleting,
+clearing, restoring and suppression work on a voice viewer by its key like any
+other. The Viewers page lists voice viewers with a `voice` tag
+(`MEM-VOICE-009`). Notes about a voice speaker egress nowhere beyond what
+`MEM-NOTE-011` allows for chat notes.
+
+Storage: a `viewer_links(discord_id, user_key, discord_display, created_at)` table,
+created additively by `init` (`MEM-VOICE-010`). Its `user_key` follows the viewer
+row on a re-key and the link is dropped with its viewer.
 
 ### Consolidation
 
@@ -360,6 +416,8 @@ The dashboard cannot touch Postgres (HLD tenet 1), so it sends
 | `restore` | undo a deletion: the note comes back as it was, at the strength it had when deleted, and its suppression rule (if any) is lifted | `MEM-ADMIN-004` |
 | `clear` | delete every note of one viewer with one optional reason; regular flag and counts unchanged | `MEM-ADMIN-005` |
 | `set_regular` | set or clear the owner's regular flag, by key or by a name with no row yet | `MEM-ADMIN-006` |
+| `link_discord` | link a Discord user id to a chat viewer (by key or name): the voice viewer's notes move over | `MEM-VOICE-005` |
+| `unlink_discord` | remove a Discord id's link | `MEM-VOICE-006` |
 
 **Delete semantics.** A deletion with a reason becomes a suppression rule: capture
 and consolidation discard similar notes for that viewer, and the reason text is
@@ -399,7 +457,9 @@ How the design handles the interactions a cold reader is likely to ask about:
 | Suppression matching | embedding similarity against the same viewer's reason-carrying deletions only; the hash embedder (isolation) matches on shared words | `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Mute, pause, `forget_context` | memory ignores `control`; notes are unaffected | `MEM-EVT-002` |
 | How the stack was stopped | irrelevant: graceful stops set `notes.shutdown_run_owed` and the next start catches up; the one-shot is optional | `MEM-CONSOL-012`, `MEM-CONSOL-013` |
-| Voice speakers | `speech.heard` speakers have no viewer row and get no notes | `MEM-CAPTURE-002` |
+| Voice speaker never seen in chat | a voice viewer keyed `discord:<id>`, notes kept like any viewer's | `MEM-VOICE-001`, `MEM-VOICE-003` |
+| Voice line with no `speakerId` (injected clip) | remembered as a memory; no viewer row, no note | `MEM-VOICE-002`, `MEM-VOICE-003` |
+| Owner links a Discord id after notes accrued | the voice viewer's notes and deletions move to the chat viewer, dirty; the voice row goes | `MEM-VOICE-005` |
 
 ### Build order
 
@@ -626,7 +686,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Reflection's access to the store | `connect()` (tables exist, no DDL, no embedder) and the consolidation lock | `init()` with its embed probe; no lock | Reflection reads rows and a cursor and calls the chat model, so an unreachable embedder must not stop it; the lock keeps it from overlapping a note pass or another reflection. `MEM-REFLECT-011`, `MEM-REFLECT-012` |
 | Unused kind `note` | Removed from `MemoryKind` | keep it declared | Nothing wrote it; the stored kinds are `chat`, `speech` and `self`. |
 | Recall `k` validation | Left to the bus schema, which rejects `k <= 0` (`packages/bus/src/events.ts`); the stores keep their `k <= 0` short-circuit for `recall_k: 0` from config | validate again in the handler | A second check would restate the schema; `recall_k: 0` never reaches the store as a request because the cortex sends none. |
-| Voice speakers and viewer notes | Voice speakers get no notes; no link between a Discord voice speaker and a chat viewer | map a Discord user id to a viewer identity | Owner decision: out of scope. A mapping needs an identity source the system does not have, and notes about people should come from lines they addressed to the co-host in chat. |
+| Voice speakers and viewer notes | A voice speaker accrues notes like a chat viewer: an unlinked Discord id is its own viewer keyed `discord:<speakerId>`; the owner can link an id to a chat viewer from the Viewers page; the name the cortex asks for resolves through a linked id's Discord display name | Voice speakers get no notes (the earlier reading, which treated this as out of scope); require a link before any note is kept; guess a link by matching display names; count utterances as chat messages | Owner decision (final): voice speakers get viewer notes. Ears already carries the Discord user id, which is a stable identity, so no external identity source is needed to keep notes; requiring a link first would silently discard everything a person says until the owner configures them; matching names would merge strangers who share a name, and notes about a person must never land on someone else. Utterances are not chat messages, so counts and the regular rule stay about chat. Merging on link moves the notes and lets the consolidator deduplicate. `MEM-VOICE-*` |
 | Consumer-group readiness | The bus's `onReady` subscription option (event-bus); startup waits for every group's `onReady` before `ready` | wait with a timer; `resetGroup` first | Implemented in the shared foundation; `MEM-START-005`. |
 | Real-Postgres coverage | The store contract and the Postgres-specific checks run against pgvector in CI (`COHOST_TEST_DATABASE_URL`); they skip with a message where no database is configured | recorded SQL only | The `atttypmod` dimension query, the `(ts, id)` row comparison and `listViewers` are SQL the fakes cannot check. |
 | Restart start mode | `resume` for both groups: the backlog published while memory was down is stored | `latest` (reset to `$` each start) like every other subscriber | owner decision 2026-11-01: memory is the durable region and wants the backlog; delivery is still at-most-once across a crash (event-bus); `MEM-EVT-001` |

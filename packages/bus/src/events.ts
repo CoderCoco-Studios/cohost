@@ -176,6 +176,11 @@ export const EventPayloads = {
     z.object({
       id: z.string(), op: z.literal("set_regular"), regular: z.boolean(), key: z.string().optional(), name: z.string().min(1).optional(),
     }).refine((d) => d.key !== undefined || d.name !== undefined, { message: "set_regular needs a key or a name" }),
+    // Voice speakers: link a Discord user id to a chat viewer (by key or name), or remove the link (MEM-VOICE-005, MEM-VOICE-006).
+    z.object({
+      id: z.string(), op: z.literal("link_discord"), discordId: z.string().min(1), key: z.string().optional(), name: z.string().min(1).optional(),
+    }).refine((d) => d.key !== undefined || d.name !== undefined, { message: "link_discord needs a key or a name" }),
+    z.object({ id: z.string(), op: z.literal("unlink_discord"), discordId: z.string().min(1) }),
   ]),
   /** memory → dashboard: the answer, correlated by `id`. `data` is the operation's result. */
   // @spec BUS-EVT-021

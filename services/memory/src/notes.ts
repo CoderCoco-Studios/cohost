@@ -54,6 +54,23 @@ export interface ViewerRow {
   regular: boolean;
 }
 
+/** The viewer key of a Discord voice speaker with no link: `discord:<id>`, the id lower-cased (MEM-VOICE-001). */
+export const VOICE_PREFIX = "discord:";
+export const voiceKey = (discordId: string): string => VOICE_PREFIX + discordId.toLowerCase();
+export const isVoiceKey = (key: string): boolean => key.startsWith(VOICE_PREFIX);
+
+/** A Discord id the owner linked to a chat viewer, with the Discord display name last heard under it (MEM-VOICE-004). */
+export interface LinkRow {
+  discordId: string;
+  discordDisplay: string | null;
+}
+
+/** What `linkDiscord` reports: the chat viewer the id now belongs to and how many notes moved over from the voice viewer. */
+export interface LinkResult {
+  viewer: ViewerRow;
+  moved: number;
+}
+
 /** A viewer row with the number of notes stored for it (Viewers page list). */
 export interface ViewerSummary extends ViewerRow {
   noteCount: number;

@@ -17,7 +17,7 @@ function hearing(transcribe: (wav: Buffer) => Promise<string>) {
   return { h, bus, rec, wavs };
 }
 
-// @spec EARS-HEAR-005, EARS-HEAR-006
+// @spec EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-011
 test("hearing: an utterance is downsampled, transcribed and published with its speaker", async () => {
   const { h, bus, wavs } = hearing(async () => "did you see that");
   await h.heard(pcmMs(1000), "Chris", "u1");

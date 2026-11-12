@@ -120,7 +120,7 @@ Viewer-notes events (the two surfacing events are built; the two owner events ar
 |---|---|---|---|---|
 | 20 | `memory.notes.request` | `id`, `users` (non-empty string array; first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
 | 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
-| 22 | `memory.viewers.request` | `id`, `op` (`list`, `get`, `delete_note`, `restore`, `clear`, `set_regular`) with per-op fields | dashboard -> memory | BUS-EVT-021 |
+| 22 | `memory.viewers.request` | `id`, `op` (`list`, `get`, `delete_note`, `restore`, `clear`, `set_regular`, `link_discord`, `unlink_discord`) with per-op fields | dashboard -> memory | BUS-EVT-021 |
 | 23 | `memory.viewers.reply` | `id`, `ok`, `error?` (`not_found`, `failed`), `detail?`, `data?` | memory -> dashboard | BUS-EVT-021 |
 
 These four carry viewer-note text, including health and family notes. The dashboard never forwards them to `/ws` browsers (dashboard DASH-FEED-007); like every event they sit in the capped Redis stream, inside the LAN trust boundary.

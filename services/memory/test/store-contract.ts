@@ -407,4 +407,87 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.equal(notes.get(a.id)!.version, a.version, "surfacing is not a content change: the version stays");
     assert.equal(notes.get(a.id)!.dirty, a.dirty);
   });
+
+  // @spec MEM-VOICE-001
+  t("an unlinked speaker is a voice viewer keyed discord:<id>: created with no messages, display follows, never counted or placeholder-claimed", async ({ store, advance }) => {
+    const id = uid("d").replace(/-/g, "");
+    const name = `Vox${id}`;
+    await store.setRegular(name, true); // an owner placeholder with the same display name
+    const first = await store.touchSpeaker(id, name);
+    assert.deepEqual([first.key, first.display, first.msgCount, first.regularManual, first.regular], [`discord:${id}`, name, 0, false, false]);
+    assert.equal((await store.getViewer(name.toLowerCase()))!.placeholder, true, "the placeholder is left for chat to claim");
+    advance(1000);
+    const again = await store.touchSpeaker(id, `${name} v2`);
+    assert.deepEqual([again.key, again.display, again.msgCount], [`discord:${id}`, `${name} v2`, 0]);
+    assert.ok(again.lastSeen.getTime() > first.lastSeen.getTime(), "last_seen refreshed");
+  });
+
+  // @spec MEM-VOICE-005, MEM-VOICE-004, MEM-VOICE-001
+  t("linking moves the voice viewer's notes and deletions (dirty) to the chat viewer and later speech follows the link", async ({ store }) => {
+    const id = uid("d").replace(/-/g, "");
+    const chat = uid("chat");
+    await store.touchViewer(chat, "BobChat");
+    await store.touchSpeaker(id, "bob_voice");
+    const voice = `discord:${id}`;
+    const kept = await store.insertNote({ userKey: voice, category: "general", text: "plays celeste", dirty: false });
+    const gone = await store.insertNote({ userKey: voice, category: "general", text: "likes tea" });
+    await store.deleteNote(gone.id, "private");
+    const out = await store.linkDiscord(id, chat);
+    assert.equal(out!.viewer.key, chat);
+    assert.equal(out!.moved, 1);
+    assert.equal(await store.getViewer(voice), undefined, "the voice row is removed");
+    const notes = await store.listNotes(chat);
+    assert.deepEqual(notes.map((n) => [n.id, n.dirty]), [[kept.id, true]]);
+    assert.equal((await store.listDeletions(chat)).length, 1);
+    const after = await store.touchSpeaker(id, "bob_voice_renamed");
+    assert.deepEqual([after.key, after.display, after.msgCount], [chat, "BobChat", 1], "display and count stay the chat viewer's");
+    assert.equal(await store.getViewer(voice), undefined);
+    assert.deepEqual((await store.listLinks(chat)).map((l) => [l.discordId, l.discordDisplay]), [[id, "bob_voice_renamed"]]);
+  });
+
+  // @spec MEM-VOICE-005
+  t("linking resolves the target by key or display name, replaces an earlier link, and refuses a missing or voice target", async ({ store }) => {
+    const id = uid("d").replace(/-/g, "");
+    const a = uid("a"), b = uid("b");
+    await store.touchViewer(a, `Ann${id}`);
+    await store.touchViewer(b, `Ben${id}`);
+    assert.equal((await store.linkDiscord(id, `ann${id}`))!.viewer.key, a, "by display name");
+    assert.equal((await store.linkDiscord(id, b))!.viewer.key, b, "relinking replaces");
+    assert.deepEqual(await store.listLinks(a), []);
+    assert.equal((await store.touchSpeaker(id, "x")).key, b);
+    assert.equal(await store.linkDiscord(id, `nobody-${id}`), undefined);
+    await store.touchSpeaker(`other${id}`, "o");
+    assert.equal(await store.linkDiscord(id, `discord:other${id}`), undefined, "a voice viewer is not a target");
+    assert.equal((await store.touchSpeaker(id, "x")).key, b, "a refused link changes nothing");
+  });
+
+  // @spec MEM-VOICE-006
+  t("unlinking removes only the link: notes stay and the next utterance starts a fresh voice viewer", async ({ store }) => {
+    const id = uid("d").replace(/-/g, "");
+    const chat = uid("chat");
+    await store.touchViewer(chat, "Cy");
+    await store.linkDiscord(id, chat);
+    await store.insertNote({ userKey: chat, category: "general", text: "streams chess" });
+    assert.equal(await store.unlinkDiscord(id), true);
+    assert.equal(await store.unlinkDiscord(id), false);
+    assert.equal((await store.listNotes(chat)).length, 1);
+    const v = await store.touchSpeaker(id, "cy_voice");
+    assert.equal(v.key, `discord:${id}`);
+    assert.deepEqual(await store.listNotes(v.key), []);
+  });
+
+  // @spec MEM-VOICE-007
+  t("a name matching no display resolves through a linked id's Discord display name; a display match wins", async ({ store }) => {
+    const id = uid("d").replace(/-/g, "");
+    const chat = uid("chat");
+    await store.touchViewer(chat, `Dee${id}`);
+    await store.linkDiscord(id, chat);
+    await store.touchSpeaker(id, `DeeVoice${id}`);
+    assert.equal((await store.findViewerByDisplay(`DEEVOICE${id}`))!.key, chat);
+    assert.equal((await store.findViewerByDisplay(`dee${id}`))!.key, chat);
+    assert.equal(await store.findViewerByDisplay(`nobody${id}`), undefined);
+    const other = uid("o");
+    await store.touchViewer(other, `DeeVoice${id}`);
+    assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches wins over a link alias");
+  });
 }

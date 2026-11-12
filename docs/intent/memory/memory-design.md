@@ -506,7 +506,7 @@ structurally.
   `reflect` (with the Postgres store) and the unit tests create one.
 - Every pool query goes through `MemoryStore.query` (`store.ts:62`), which wraps it
   with `tracked()` and reports the outcome to the `onQuery` callback; the service
-  passes `health.setPostgres` (`index.ts:28`), so `deps.postgres` follows the latest
+  passes `health.setPostgres` (`main.ts`), so `deps.postgres` follows the latest
   query (`MEM-HEALTH-005`).
 - `init()` (`store.ts:67-98`): embeds the literal `"hello"` to learn the vector
   dimension, then `CREATE EXTENSION IF NOT EXISTS vector`, `CREATE TABLE IF NOT
@@ -582,10 +582,10 @@ overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` via `config/config.example.yaml:109-
 `HEARTBEAT_INTERVAL_MS` (heartbeat package).
 
 Startup sequence (`startMemory` in `services/memory/src/startup.ts`, called from
-`index.ts:31`; its dependencies are injected so `startup.test.ts` runs it without
+`memoryMain` in `main.ts` (`runMemory`, on the shared `runService` bootstrap); its dependencies are injected so `startup.test.ts` runs it without
 Redis, Ollama or Postgres):
 
-1. `index.ts` starts the heartbeat immediately (`index.ts:26`): state `starting`.
+1. The shared bootstrap (`runService`) starts the heartbeat immediately: state `starting`.
 2. If store or embedder is non-default, warn `mode mock; data is not durable`.
 3. If `store=postgres` and `embedder=ollama`: ping Ollama every 3 s forever; each miss
    sets `deps.ollama=down` and reports heartbeat `degraded` with the detail
@@ -594,7 +594,7 @@ Redis, Ollama or Postgres):
 4. If `store=postgres`: `store.init()` with a retry every 3 s; each failure sets
    `deps.postgres=down` and reports `degraded` with a detail naming Postgres
    (`MEM-HEALTH-007`), success sets `ok`, and the 21st failure rethrows so the
-   process logs `fatal` and exits 1 (`startup.ts:41-54`, `index.ts:45-46`). A
+   process logs `fatal` and exits 1 (`startup.ts:41-54`, `main.ts`). A
    `DimensionMismatchError` is rethrown at once, without a retry
    (`MEM-STORE-002`). Otherwise a single `store.init()` on the fake
    (`startup.ts:56`).
@@ -613,7 +613,7 @@ shows as `degraded` even though `remember`/`recall` swallow the error
 (`MEM-HEALTH-005`). Heartbeat contract and `degraded` derivation are owned by the
 control-plane segment (`packages/bus/src/heartbeat.ts:68-85`).
 
-Shutdown: `onShutdown` stops the bus then closes the store (`index.ts:47`); the
+Shutdown: a teardown step registered with the bootstrap stops the bus then closes the store (`main.ts`); the
 `stopping` heartbeat is sent by the heartbeat package's `beforeShutdown` hook.
 Before closing the store, memory records that a shutdown consolidation run is owed
 (`MEM-CONSOL-013`, Viewer notes).
@@ -722,7 +722,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Cursor timestamp representation | The exact microsecond ISO text Postgres returns (`to_char(ts AT TIME ZONE 'UTC', ...US"Z"')`), compared as `$1::timestamptz` | the JS `Date` of the row's `ts` | A `Date` keeps milliseconds, so the cursor would round down and the newest row read would be read again every pass, inflating the "fewer than 5" count (`MEM-REFLECT-003`) and re-feeding a row to the LLM; `MEM-REFLECT-008` |
 | Learned block placement | End of the `## Learned` section | end of file | owner decision 2026-11-01 (low priority: the shipped template ends with `## Learned`); `MEM-REFLECT-007` |
 | Pure text helpers split out | `learned.ts` holds bullet parsing and heading logic | inline in reflect.ts | Extracted so the reflection logic could be tested (`reflect.ts` runs at import): commit `95afa19` ("reflection merge logic (extracted from reflect.ts into learned.ts, behaviour unchanged)"), `learned.ts:1` |
-| Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `index.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
+| Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `main.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
 | Startup readiness vs group creation | `ready` is reported once every subscription's `onReady` has fired | report ready right after starting the subscriptions; call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the bus's `onReady` hook is the group-exists signal (`MEM-START-005`) |
 
 ## Open Questions & Future Decisions
@@ -731,7 +731,7 @@ None.
 
 ## References
 
-- Code: `services/memory/src/{index,startup,region,store,cursor,backend,fake-store,reflect,reflect-run,learned,health}.ts`,
+- Code: `services/memory/src/{index,main,startup,region,store,cursor,backend,fake-store,reflect,reflect-run,learned,health}.ts`,
   `services/memory/package.json`, `services/memory/tsconfig.json`
 - Tests: `services/memory/test/{backend,fake-store,health,memory,region,reflect,reembed,startup,notes-store,notes-store.pg}.test.ts`
 - Parent: [high-level-design](../../high-level-design.md)

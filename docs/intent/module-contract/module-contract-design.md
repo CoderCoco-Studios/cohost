@@ -5,7 +5,7 @@ prefix: MOD
 
 # module-contract
 
-Status: built: the settings editor (MOD-CFG, MOD-UI), the manifest declarations and derived lists, needs, pause, the test drawer and `POST /inject/event`. Open: the `runService` entry check still lists memory as pending (MOD-MAN-009), and the isolated-stack run (MOD-TEST-007) waits for the first real run ([module-contract-specs.md](module-contract-specs.md)). Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract). Sibling: [shared-runtime](../shared-runtime/shared-runtime-design.md), which fulfils obligation 4. Implemented across [control-plane](../control-plane/control-plane-design.md) (the manifest and controller), [config](../config/config-design.md) (schema export and section editing) and [dashboard](../dashboard/dashboard-design.md) (routes and page); this segment owns the rules those pieces follow together.
+Status: built: the settings editor (MOD-CFG, MOD-UI), the manifest declarations and derived lists, needs, pause, the test drawer and `POST /inject/event`. Open: the isolated-stack run (MOD-TEST-007) waits for the first real run ([module-contract-specs.md](module-contract-specs.md)). Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract). Sibling: [shared-runtime](../shared-runtime/shared-runtime-design.md), which fulfils obligation 4. Implemented across [control-plane](../control-plane/control-plane-design.md) (the manifest and controller), [config](../config/config-design.md) (schema export and section editing) and [dashboard](../dashboard/dashboard-design.md) (routes and page); this segment owns the rules those pieces follow together.
 
 ## Context and Design Philosophy
 

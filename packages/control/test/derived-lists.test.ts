@@ -63,7 +63,7 @@ const hasCall = (code: string, fn: string): boolean => new RegExp(`\\b${fn}\\s*(
  * A unit that has not yet moved onto the shared bootstrap, with the chunk that moves it. Empty when every unit complies;
  * an entry here is the only way a unit may fail the entry check.
  */
-const NOT_ON_RUN_SERVICE: Record<string, string> = { memory: "C8" };
+const NOT_ON_RUN_SERVICE: Record<string, string> = {};
 
 const OWN_BOOTSTRAP = /\bnew Bus\(|\bstartHeartbeat\(|\bonShutdown\(/;
 

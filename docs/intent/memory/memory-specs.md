@@ -68,7 +68,7 @@ Design: [memory-design.md](memory-design.md). Prefix `MEM`. Verified against the
 - [x] **MEM-START-003**: Where the store is `memory`, the memory service shall initialise once with no Ollama ping, no Postgres connection and no retry loop. <!-- openspec: memory § Schema initialization and startup (Redis-only start) --> <!-- test: services/memory/test/startup.test.ts:89 -->
 - [x] **MEM-START-004**: Where either `brain.memory.store` or `brain.memory.embedder` is non-default, the memory service shall log a warning that it runs in mode mock with non-durable data. <!-- openspec: memory § Isolation preset and mode --> <!-- test: services/memory/test/startup.test.ts:89 -->
 - [x] **MEM-START-005**: When the memory service has finished initializing its store, it shall start both consumer-group subscriptions and report `ready` in its heartbeat only once both consumer groups exist; a subscription that fails before its group is ready fails startup. <!-- openspec: memory § Heartbeat --> <!-- test: services/memory/test/startup.test.ts:98, services/memory/test/startup.test.ts:115 -->
-- [x] **MEM-START-006**: If startup throws (including the 21st failed Postgres initialisation), the memory service shall log a fatal error and exit with code 1; on shutdown it shall stop the bus and then close the store. <!-- code: index.ts:45-47 --> <!-- test: none -->
+- [x] **MEM-START-006**: If startup throws (including the 21st failed Postgres initialisation), the memory service shall log a fatal error and exit with code 1; on shutdown it shall stop the bus and then close the store. <!-- test: services/memory/test/main.test.ts -->
 
 ## Health
 

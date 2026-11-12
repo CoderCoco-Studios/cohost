@@ -106,8 +106,8 @@ Environment and config read by mouth:
 | env | `VOICE_URL` | via `urls.voice()`: the base of the fallback clip routes; utterance audio comes from each event's `audioUrl` |
 | config | `mouth.outputs.discord.{enabled, guild_id, voice_channel_id, gain_db}` | the Discord output (CFG-SCH-020) |
 | config | `mouth.outputs.dryrun.{enabled, fail_every}` | the dry-run output (CFG-SCH-023) |
-| config | `mouth.outputs.file.{enabled, dir, max_files}` | the file output (CFG-SCH-029) |
-| config | `mouth.outputs.http.{enabled, url, timeout_ms, retries, max_queue}` | the HTTP output (CFG-SCH-029) |
+| config | `mouth.outputs.file.{enabled, dir, max_files}` | the file output (CFG-SCH-031) |
+| config | `mouth.outputs.http.{enabled, url, timeout_ms, retries, max_queue}` | the HTTP output (CFG-SCH-031) |
 | config | `mouth.fallback.min_interval_ms` (20000) | the storm limit (CFG-SCH-018) |
 | env | `COHOST_DATA_DIR` | via `dataDir()`: the clip cache under `<dataDir()>/mouth/fallback-clips` |
 

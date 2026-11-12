@@ -13,7 +13,7 @@ const baseCfg = () => ({
 const outputs = (o: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: o } });
 const failsOn = (r: ReturnType<typeof outputs>, key: string) => !r.success && r.error.issues.some((i) => i.path.join(".") === key);
 
-// @spec CFG-SCH-029
+// @spec CFG-SCH-031
 test("mouth.outputs.file defaults to disabled, mouth/outputs and 100 files; dir must be relative with no `..`; max_files is an integer of 1 or more", () => {
   assert.deepEqual(outputs({}).data!.mouth.outputs.file, { enabled: false, dir: "mouth/outputs", max_files: 100 });
   assert.deepEqual(outputs({ file: { enabled: true, dir: "archive/lines", max_files: 5 } }).data!.mouth.outputs.file, { enabled: true, dir: "archive/lines", max_files: 5 });
@@ -22,7 +22,7 @@ test("mouth.outputs.file defaults to disabled, mouth/outputs and 100 files; dir 
   assert.equal(outputs({ file: { enabled: "yes" } }).success, false);
 });
 
-// @spec CFG-SCH-029
+// @spec CFG-SCH-031
 test("mouth.outputs.http defaults to disabled with an empty url, 5000 ms, 3 retries and a queue of 20; url must be empty or http(s); numbers are validated by name", () => {
   assert.deepEqual(outputs({}).data!.mouth.outputs.http, { enabled: false, url: "", timeout_ms: 5000, retries: 3, max_queue: 20 });
   assert.equal(outputs({ http: { enabled: true, url: "https://sink.example/in" } }).data!.mouth.outputs.http.url, "https://sink.example/in");

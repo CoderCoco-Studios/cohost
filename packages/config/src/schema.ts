@@ -340,7 +340,7 @@ export const ConfigSchema = z.object({
         fail_every: z.number().int().nonnegative().default(0),
       }).default({}),
       /** Appends each line's WAV to a bounded rotating directory under the data directory. */
-      // @spec CFG-SCH-029
+      // @spec CFG-SCH-031
       file: z.object({
         enabled: z.boolean().default(false),
         /** Relative to the data directory; no absolute path and no `..` segment, so the output cannot write elsewhere. */
@@ -349,7 +349,7 @@ export const ConfigSchema = z.object({
         max_files: z.number().int().min(1).default(100),
       }).default({}),
       /** POSTs each line's WAV to `url`, with a timeout, bounded retries and a bounded queue. */
-      // @spec CFG-SCH-029
+      // @spec CFG-SCH-031
       http: z.object({
         enabled: z.boolean().default(false),
         /** Empty or an http(s) URL; empty while enabled leaves the output down. */

@@ -38,7 +38,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (35 specs: 35 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (37 specs: 37 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)
@@ -76,7 +76,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Transcript | WM-TRANS-001 to WM-TRANS-010 | 10 | 0 | 0 | 10 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 35 of 35 specs implemented; 0 deferred; 0 open. 35 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 37 of 37 specs implemented; 0 deferred; 0 open. 37 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

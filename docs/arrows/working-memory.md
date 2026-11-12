@@ -8,6 +8,8 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 Gap-closure chunk C10 (2026-11-11): WM-PUSH-006/007/009/010, WM-SEEN-002 (mark seen by event id), WM-PKG-001 (type-only dependencies); bus ts on self lines. 35 of 35 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
 
+Reopened O4 (2026-11-11): one window implementation serves salience and cortex. `Context.forBrain` (WM-WIN-008) is the single reader of `brain.working_memory_events` (WM-WIN-005); the arrivals hold (WM-SEEN-004) moved from salience into the package.
+
 ## Spoken fallback line: built (build chunk 3)
 
 Design: LLD § Fallback lines. `self` events keep their `brain.say` id; a fallback marks the line, which renders as the fallback text plus a bracketed note quoting the failed line (no new transcript tag, so the stop list is unchanged).

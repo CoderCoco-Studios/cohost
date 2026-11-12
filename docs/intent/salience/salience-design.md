@@ -110,7 +110,7 @@ The global cooldown is shared with the main path: any `brain.say` (including a r
 
 ## Control, Pause and Injection Flags
 
-`control` events (`salience.ts:74-83`): if `target` is set and is not `salience`, ignore. `pause` / `resume` set `paused` (intake continues; `tick` and `reflex` return early); the window entries taken in while paused are remembered, at most one window's worth, and marked seen on `resume` (SAL-CTRL-007). `mute` / `unmute` set `muted` (decide returns `muted`; reflex returns early). `forget_context` clears the `Context`. `say` and `reload_personality` are ignored. Nothing is published when pausing or muting, and none of this state is persisted: a restarted salience starts unmuted and unpaused (SAL-CTRL-006), even if the dashboard still shows it muted.
+`control` events (`salience.ts:74-83`): if `target` is set and is not `salience`, ignore. `pause` / `resume` set `paused` (intake continues; `tick` and `reflex` return early); the window's arrivals hold (`holdArrivals` on `pause`, `releaseArrivals` on `resume`, working-memory WM-SEEN-004) records the entries taken in while paused, at most one window's worth, and marks them seen on `resume` (SAL-CTRL-007). `mute` / `unmute` set `muted` (decide returns `muted`; reflex returns early). `forget_context` clears the `Context`. `say` and `reload_personality` are ignored. Nothing is published when pausing or muting, and none of this state is persisted: a restarted salience starts unmuted and unpaused (SAL-CTRL-006), even if the dashboard still shows it muted.
 
 Mute and pause are turn-taking controls seen only by the two regions that decide to speak: salience (here) and cortex. voice and ears never subscribe to `control`; an operator `say` goes through cortex and bypasses mute.
 

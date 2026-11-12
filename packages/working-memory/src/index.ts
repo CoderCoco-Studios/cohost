@@ -37,7 +37,27 @@ export class Context {
   private events: ContextEvent[] = [];
   lastVision = "";
 
+  /** Entries `push` returned since `holdArrivals`; `undefined` when not holding. */
+  private held: ContextEvent[] | undefined;
+
   constructor(private max: number) {}
+
+  /** The one place a region sizes its window: `brain.working_memory_events`. */
+  static forBrain(brain: { working_memory_events: number }): Context { // @spec WM-WIN-005, WM-WIN-008
+    return new Context(brain.working_memory_events);
+  }
+
+  /** Start recording what `push` appends (a fresh record), at most one window's worth. */
+  holdArrivals(): void { // @spec WM-SEEN-004
+    this.held = [];
+  }
+
+  /** Stop recording and mark seen every recorded entry; marks nothing when not holding. */
+  releaseArrivals(): void { // @spec WM-SEEN-004
+    const held = this.held;
+    this.held = undefined;
+    if (held) this.markSeenEvents(held);
+  }
 
   /** Append the perception in `bus` to the window and return its context entry; `undefined` for any other event type. */
   push(bus: BusEvent): ContextEvent | undefined {
@@ -67,6 +87,10 @@ export class Context {
     }
     this.events.push(entry); // @spec WM-PUSH-009
     this.trim();
+    if (this.held) {
+      this.held.push(entry);
+      if (this.held.length > this.max) this.held.splice(0, this.held.length - this.max);
+    }
     return entry;
   }
 
@@ -107,6 +131,7 @@ export class Context {
   }
   clear(): void { // @spec WM-WIN-003
     this.events = [];
+    if (this.held) this.held = [];
     this.lastVision = "";
   }
   all(): readonly ContextEvent[] { // @spec WM-WIN-006

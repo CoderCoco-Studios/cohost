@@ -44,7 +44,7 @@ export class Cortex {
   private pendingNotes = new Map<string, (p: People) => void>();
 
   constructor(private d: CortexDeps) {
-    this.ctx = new Context(d.cfg.brain.working_memory_events);
+    this.ctx = Context.forBrain(d.cfg.brain);
     this.personality = d.loadPersonality();
     this.control = controlFor("cortex", {
       // @spec CTX-CTRL-002
@@ -54,7 +54,7 @@ export class Cortex {
       mute: () => this.status("muted"),
       unmute: () => this.status(this.control.paused ? "muted" : "idle"),
       // @spec CTX-CTRL-004
-      forget_context: () => { this.ctx.clear(); this.ctx.lastVision = ""; this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ },
+      forget_context: () => { this.ctx.clear(); this.viewerNotes.clear(); this.glitch = undefined; /* @spec CTX-FALL-005 */ },
       // @spec CTX-CTRL-005
       reload_personality: () => { this.personality = d.loadPersonality(); d.log.info("personality reloaded"); },
       // @spec CTX-CTRL-006, CTX-INJ-002

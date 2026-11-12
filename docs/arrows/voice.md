@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); gap closure (C5) 2026-11-11: 55 specs: 55 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. 
+**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`); gap closure (C5) 2026-11-11: 56 specs: 56 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed. 
 
 ## Listening and speaking split (designed, not built)
 
@@ -16,7 +16,7 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 
 - Built in chunk 1: `VOICE-SINK-010` to `013` (voice reads `voice.failed` and releases cortex early when nothing plays).
 - Built in chunk 2: `VOICE-CLIP-001` to `012`: `clips.ts` (`ClipService`: fingerprint, startup check, background regeneration, atomic set swap, retry, cleanup) and the `/fallback/*` routes in `Voice.handle`. The stub engine builds no clip service, so it never touches the store and answers 404.
-- Deferred decisions recorded in the LLD: owner-facing voice tuning knobs (depend on what Kokoro-FastAPI accepts, unverified); a separate speaking module with tunable routing.
+- Kokoro tuning knobs built (VOICE-SYN-009, CFG-SCH-029): the parameters verified against Kokoro-FastAPI `v0.10.0`. Deferred decisions recorded in the LLD: a separate speaking module with tunable routing.
 
 ## Decisions applied
 
@@ -41,7 +41,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (55 specs: 55 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (56 specs: 56 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)
@@ -122,4 +122,4 @@ None.
 ### Nice to Have
 4. Clear the 1.5 s virtual timer and any pending virtual done on shutdown.
 5. Tighten `parseWav` (format tag, `fmt ` ordering) and handle stereo envelopes by mixing channels.
-6. Align the `voice.speed` default (schema 1 vs example YAML 1.05).
+6. Done: `voice.speed` default aligned to 1.05 in the schema and the example.

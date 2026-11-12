@@ -183,7 +183,14 @@ brain:
 voice:
   engine: "${VOICE_ENGINE:-kokoro}"  # kokoro | stub (silent WAV sized from the text; isolated runs)
   voice: "af_heart"            # kokoro voice id
-  speed: 1.05
+  speed: 1.05                  # 0.25 to 4
+  # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
+  # voice also accepts a mix, e.g. "af_bella(2)+af_sky".
+  # lang_code: "b"             # a b e f h i j p z; blank derives it from the voice name
+  # volume_multiplier: 1.0     # 0 to 10
+  # normalization:             # text clean-up before synthesis; any of: normalize, unit_normalization,
+  #   remove_emoji: true       # url_normalization, email_normalization, optional_pluralization_normalization,
+  #                            # phone_normalization, caps_normalization, replace_remaining_symbols, remove_emoji
   sample_rate: 24000
   fallback:
     # Said aloud when a line fails to play. Edit freely; voice regenerates the clips on its next start.

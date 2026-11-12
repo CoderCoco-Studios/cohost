@@ -1,0 +1,10 @@
+{
+  "model": "kokoro",
+  "input": "hi chat",
+  "voice": "af_bella(2)+af_sky",
+  "speed": 1.1,
+  "response_format": "wav",
+  "lang_code": "b",
+  "volume_multiplier": 1.5,
+  "normalization_options": { "url_normalization": false, "remove_emoji": true }
+}

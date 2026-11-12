@@ -6,6 +6,8 @@ export const Emotion = z.enum([
 ]);
 export type Emotion = z.infer<typeof Emotion>;
 
+/** Kokoro-FastAPI voice-name syntax (its VOICE_NAME_BODY): ids and `+` mixes with optional `(weight)`. */
+const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
 /** A string key with a default: an empty string (an unset `${VAR}` that substituted to nothing) means "use the default". */
 // @spec CFG-SCH-024
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
@@ -243,8 +245,26 @@ export const ConfigSchema = z.object({
   voice: z.object({
     /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
     engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "stub"])),
-    voice: str("af_heart"),
-    speed: z.number().positive().default(1),
+    /** A Kokoro voice id or a mix such as `af_bella(2)+af_sky`. */
+    voice: z.preprocess((v) => (v === "" ? undefined : v), z.string().regex(KOKORO_VOICE, "must be a Kokoro voice name or mix, such as af_heart or af_bella(2)+af_sky").default("af_heart")), // @spec CFG-SCH-029
+    /** Pace multiplier sent to Kokoro-FastAPI (its accepted range is 0.25 to 4). */
+    speed: z.number().min(0.25).max(4).default(1.05), // @spec CFG-SCH-006
+    /** Kokoro language code for text processing; blank leaves it to the first letter of the voice name. */
+    lang_code: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["a", "b", "e", "f", "h", "i", "j", "p", "z"]).optional()), // @spec CFG-SCH-029
+    /** Output gain sent to Kokoro-FastAPI (0 to 10); unset keeps the server's own default. */
+    volume_multiplier: z.number().min(0).max(10).optional(), // @spec CFG-SCH-029
+    /** Kokoro-FastAPI text normalization switches; a key left out keeps the server's own default. */
+    normalization: z.object({
+      normalize: z.boolean().optional(),
+      unit_normalization: z.boolean().optional(),
+      url_normalization: z.boolean().optional(),
+      email_normalization: z.boolean().optional(),
+      optional_pluralization_normalization: z.boolean().optional(),
+      phone_normalization: z.boolean().optional(),
+      caps_normalization: z.boolean().optional(),
+      replace_remaining_symbols: z.boolean().optional(),
+      remove_emoji: z.boolean().optional(),
+    }).default({}), // @spec CFG-SCH-029
     /** Read only by the `stub` engine to size its silence; the Kokoro engine ignores it. */
     sample_rate: z.number().int().positive().default(24000).describe("Sample rate of the silence the stub voice engine returns. Read only by the stub engine; the Kokoro engine ignores it."), // @spec CFG-SCH-026
     fallback: z.object({

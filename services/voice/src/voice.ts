@@ -23,9 +23,17 @@ export class TtsError extends Error {
   constructor(readonly status: number, body: string) { super(`tts ${status}: ${body}`); this.name = "TtsError"; }
 }
 
-/** Everything the Kokoro synthesizer sends to the TTS server except the text; the clip fingerprint hashes it (VOICE-CLIP-001). */
-export function kokoroRequestSettings(cfg: Pick<Config["voice"], "voice" | "speed">): Record<string, unknown> {
-  return { model: "kokoro", voice: cfg.voice, speed: cfg.speed, response_format: "wav" };
+/**
+ * Everything the Kokoro synthesizer sends to the TTS server except the text; the clip fingerprint hashes it (VOICE-CLIP-001).
+ * Tuning knobs that are unset stay out so the server's own defaults apply.
+ */
+export function kokoroRequestSettings(cfg: Pick<Config["voice"], "voice" | "speed" | "lang_code" | "volume_multiplier" | "normalization">): Record<string, unknown> { // @spec VOICE-SYN-009
+  const out: Record<string, unknown> = { model: "kokoro", voice: cfg.voice, speed: cfg.speed, response_format: "wav" };
+  if (cfg.lang_code !== undefined) out.lang_code = cfg.lang_code;
+  if (cfg.volume_multiplier !== undefined) out.volume_multiplier = cfg.volume_multiplier;
+  const norm = Object.fromEntries(Object.entries(cfg.normalization).filter(([, v]) => v !== undefined));
+  if (Object.keys(norm).length > 0) out.normalization_options = norm;
+  return out;
 }
 
 /** Calls the TTS container (Kokoro-FastAPI, OpenAI-compatible). */

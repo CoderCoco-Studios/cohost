@@ -13,6 +13,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit",
     "dashboard": "tsc -b services/dashboard && node services/dashboard/dist/index.js",
+    "cohostctl": "tsc -b packages/control && node packages/control/dist/cli.js",
     "dev": "pnpm -r --parallel --filter './services/*' dev",
     "lint": "tsc -b --noEmit",
     "reflect": "pnpm --filter @cohost/memory reflect",

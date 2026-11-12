@@ -35,20 +35,15 @@ export class Salience {
   private readonly now: () => number;
   private cortexSince: number;
   private deciding = false;
-  /** What the window took in since the last `pause`, to be marked seen on `resume` (SAL-CTRL-007); never longer than the window. */
-  private pausedArrivals: ContextEvent[] = [];
 
   constructor(private d: SalienceDeps) {
-    this.ctx = new Context(d.cfg.brain.working_memory_events);
+    this.ctx = Context.forBrain(d.cfg.brain);
     this.now = d.now ?? (() => performance.now());
     this.cortexSince = this.now();
     this.control = controlFor("salience", {
-      pause: () => { this.pausedArrivals = []; },
-      resume: () => { // @spec SAL-CTRL-007
-        this.ctx.markSeenEvents(this.pausedArrivals);
-        this.pausedArrivals = [];
-      },
-      forget_context: () => { this.ctx.clear(); this.pausedArrivals = []; }, // @spec SAL-CTRL-005
+      pause: () => this.ctx.holdArrivals(),
+      resume: () => this.ctx.releaseArrivals(), // @spec SAL-CTRL-007
+      forget_context: () => this.ctx.clear(), // @spec SAL-CTRL-005
     }, { log: d.log, heartbeat: d.heartbeat });
     this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
@@ -58,21 +53,21 @@ export class Salience {
     switch (ev.type) {
       case "chat.message": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"chat.message">["data"];
-        const entry = this.take(ev);
+        const entry = this.ctx.push(ev);
         this.scheduler.noteActivity();
         await this.reflex("chat", d.text, entry);
         break;
       }
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
-        const entry = this.take(ev);
+        const entry = this.ctx.push(ev);
         this.scheduler.noteActivity();
         await this.reflex("speech", d.text, entry);
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
         const d = ev.data as BusEvent<"vision.summary">["data"];
-        const entry = this.take(ev);
+        const entry = this.ctx.push(ev);
         if (d.changed) await this.reflex("vision", d.text, entry); // @spec SAL-REFLEX-002
         break;
       }
@@ -96,17 +91,6 @@ export class Salience {
         this.control.handle(ev); // a command addressed to another service changes nothing
         break;
     }
-  }
-
-  /** Push a perception into the window; while paused, remember the entry so `resume` can mark it seen (SAL-CTRL-007). */
-  private take(ev: BusEvent): ContextEvent | undefined {
-    const entry = this.ctx.push(ev);
-    if (entry && this.control.paused) {
-      this.pausedArrivals.push(entry);
-      const over = this.pausedArrivals.length - this.d.cfg.brain.working_memory_events;
-      if (over > 0) this.pausedArrivals.splice(0, over);
-    }
-    return entry;
   }
 
   /** Fast path. Fires immediately, bypassing the scheduler and the LLM. `trigger` is the entry the event just became. */

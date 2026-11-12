@@ -168,7 +168,7 @@ Specs written for the module contract land as follows: SHARED-* in C1; MOD-MAN-*
 | working-memory | O1 Truthy, not `true` | Drop: the bus schema already rejects non-boolean flags | — |
 | working-memory | O2 `markSeenEvents` identity semantics | Implement: mark by event id | C10 |
 | working-memory | O3 Over-broad dependencies | Implement: type-only imports, not runtime dependencies | C10 |
-| working-memory | O4 Duplicate windows in salience and cortex | Drop: each region keeps its own window so it restarts independently; `forget_context` handling is made identical by `controlFor` | — |
+| working-memory | O4 Duplicate windows in salience and cortex | Implement (reopened): one window implementation in `@cohost/working-memory` serves both regions (sizing, aging, seen-marking, the hold that salience applies while paused); each region still holds its own instance | C10 |
 | working-memory | O5 Timestamp clocks differ by kind | Implement: `self` entries use the `brain.say` event's bus `ts` | C10 |
 | working-memory | O6 Redundant casts | Implement | C10 |
 | working-memory | O7 Vision entry placed last | Drop: the transcript shows the current screen most recently, which is what the prompt needs | — |

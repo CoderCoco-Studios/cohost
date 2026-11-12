@@ -49,22 +49,22 @@ export class Hearing {
   async heard(pcm: Buffer, speaker: string, speakerId: string): Promise<void> {
     const durationMs = (pcm.length / 4 / 48000) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return;
-    await this.finish(discordPcmToWav16k(pcm), durationMs, speaker, speakerId);
+    await this.finish(discordPcmToWav16k(pcm), durationMs, speaker, speakerId, "discord");
   }
 
-  // @spec EARS-CAP-001
+  // @spec EARS-CAP-001, EARS-SRC-006, EARS-SRC-007
   /**
    * One clip from a capture source (any rate and channel count) -> `speech.heard` without a `speakerId`, through the
    * same gate, STT, word check and drop-phrase filter as a Discord utterance. Says what happened.
    */
-  async heardClip(clip: Clip, speaker: string): Promise<HearOutcome> {
+  async heardClip(clip: Clip, speaker: string, source?: string): Promise<HearOutcome> {
     const durationMs = (clip.pcm.length / (2 * clip.channels) / clip.rate) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return { heard: false, reason: "too-short" };
     const wav = wavWrap(resample(clip.pcm, { from: { rate: clip.rate, channels: clip.channels }, to: { rate: 16000, channels: 1 } }), 16000, 1);
-    return this.finish(wav, durationMs, speaker);
+    return this.finish(wav, durationMs, speaker, undefined, source);
   }
 
-  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string): Promise<HearOutcome> {
+  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string, source?: string): Promise<HearOutcome> {
     try {
       const text = await this.d.transcribe(wav);
       if (!hasWordCharacter(text)) return { heard: false, reason: "empty" };
@@ -74,7 +74,7 @@ export class Hearing {
         return { heard: false, reason: "drop-phrase" };
       }
       this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
-      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs) });
+      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }) });
       return { heard: true, text };
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "transcription failed");

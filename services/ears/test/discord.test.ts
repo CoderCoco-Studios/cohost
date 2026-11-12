@@ -5,7 +5,7 @@ import { PassThrough } from "node:stream";
 import { recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { DiscordVoiceSessionOptions } from "@cohost/shared/discord-voice";
 import { startDiscord } from "../src/discord.js";
-import { EarsHealth } from "../src/health.js";
+import { EarsHealth, earsPlan } from "../src/health.js";
 
 /** startDiscord with a fake shared voice session: nothing touches Discord. */
 function rig(startImpl: () => Promise<void> = async () => {}) {
@@ -19,7 +19,7 @@ function rig(startImpl: () => Promise<void> = async () => {}) {
     resetGroup: async () => { order.push("resetGroup"); },
     subscribe: () => { order.push("subscribe"); return new Promise<void>(() => {}); },
   };
-  const health = new EarsHealth("discord", () => voiceReady);
+  const health = new EarsHealth(earsPlan(["discord"], true), () => voiceReady);
   const createSession = (o: DiscordVoiceSessionOptions) => {
     opts = o;
     return { start: async () => { order.push("session.start"); await startImpl(); }, isReady: () => voiceReady, stop: async () => { order.push("session.stop"); } };

@@ -21,8 +21,8 @@ async function withDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 function rig(dir: string, outcome: HearOutcome | (() => HearOutcome) = { heard: true, text: "ok" }, over: Record<string, unknown> = {}) {
-  const calls: { clip: Clip; speaker: string }[] = [];
-  const hear: HearClip = async (clip, speaker) => { calls.push({ clip, speaker }); return typeof outcome === "function" ? outcome() : outcome; };
+  const calls: { clip: Clip; speaker: string; source?: string }[] = [];
+  const hear: HearClip = async (clip, speaker, source) => { calls.push({ clip, speaker, source }); return typeof outcome === "function" ? outcome() : outcome; };
   const cap = createDirCapture({ path: dir, pollMs: 10, log: silentLog, hear, ...over });
   return { cap, calls };
 }
@@ -36,7 +36,7 @@ test("a dropped WAV is processed once, after two polls see the same size, and re
     await cap.pollOnce();
     assert.equal(calls.length, 0, "first sight only records the size");
     await cap.pollOnce();
-    assert.deepEqual(calls.map((c) => [c.speaker, c.clip.rate, c.clip.channels, c.clip.pcm.length]), [["dir", 16000, 1, 16000]]);
+    assert.deepEqual(calls.map((c) => [c.speaker, c.clip.rate, c.clip.channels, c.clip.pcm.length, c.source]), [["dir", 16000, 1, 16000, "dir"]]);
     assert.deepEqual(await names(dir), ["a.wav.done"]);
     await cap.pollOnce();
     await cap.pollOnce();

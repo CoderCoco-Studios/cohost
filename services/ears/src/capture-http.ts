@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Logger } from "@cohost/config";
@@ -17,6 +18,10 @@ export interface HttpCaptureOptions {
   queueLimit?: number;
   /** Time a body may take to arrive (default `INJECT_READ_TIMEOUT_MS`). */
   bodyTimeoutMs?: number;
+  /** Bearer token `POST /audio` must carry; empty or absent requires none (EARS-SRC-013). */
+  token?: string;
+  /** Source tags, besides `http`, that a `?source=` parameter may name; any other value is refused 400 (EARS-SRC-010). */
+  sources?: readonly string[];
 }
 
 export interface HttpCapture extends CaptureAdapter {
@@ -49,7 +54,16 @@ function readBody(req: IncomingMessage, max: number, timeoutMs: number): Promise
   });
 }
 
-// @spec EARS-CAP-005, EARS-CAP-006, EARS-CAP-007, EARS-CAP-012
+/** True when the `Authorization` header is `Bearer <token>` with exactly this token. */
+function bearerMatches(header: string | undefined, token: string): boolean {
+  const m = /^Bearer (.+)$/.exec(header ?? "");
+  if (!m) return false;
+  const a = Buffer.from(m[1]!);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// @spec EARS-CAP-005, EARS-CAP-006, EARS-CAP-007, EARS-CAP-012, EARS-SRC-006, EARS-SRC-010, EARS-SRC-013
 /**
  * The `http` capture source: `POST /audio` carries one clip (WAV, or raw 16-bit PCM with `rate` and `channels`
  * parameters) and is answered once the clip has been through the `Hearing` path. Clips run one at a time; the body size,
@@ -59,6 +73,8 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
   const maxBytes = o.maxBytes ?? INJECT_MAX_BYTES;
   const queueLimit = o.queueLimit ?? INJECT_QUEUE_LIMIT;
   const bodyTimeoutMs = o.bodyTimeoutMs ?? INJECT_READ_TIMEOUT_MS;
+  const token = o.token ?? "";
+  const accepted = new Set(["http", ...(o.sources ?? [])]);
   let tail: Promise<unknown> = Promise.resolve();
   /** Accepted requests not yet answered: the one being processed plus those waiting (or still sending their body). */
   let inflight = 0;
@@ -78,6 +94,11 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== "/audio") return reply(res, 404, { error: "not found" });
     if (req.method !== "POST") return reply(res, 405, { error: "POST only" }, { allow: "POST" });
+    if (token !== "" && !bearerMatches(req.headers.authorization, token)) {
+      return reply(res, 401, { error: "bearer token required" }, { "www-authenticate": "Bearer" });
+    }
+    const source = url.searchParams.has("source") ? url.searchParams.get("source")! : "http";
+    if (!accepted.has(source)) return reply(res, 400, { error: `unknown source '${source}'` });
     if (inflight > queueLimit) return reply(res, 503, { error: "busy" });
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > maxBytes) return reply(res, 413, { error: `body over ${maxBytes} bytes` });
@@ -96,8 +117,8 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
         if (err instanceof ClipError) return reply(res, err.code === "unsupported-type" ? 415 : 400, { error: err.message });
         throw err;
       }
-      const speaker = url.searchParams.get("speaker")?.trim() || "http";
-      const outcome = await serial(() => o.hear(clip, speaker));
+      const speaker = url.searchParams.get("speaker")?.trim() || source;
+      const outcome = await serial(() => o.hear(clip, speaker, source));
       if (outcome.heard) return reply(res, 200, { heard: true, text: outcome.text });
       return reply(res, outcome.reason === "stt-error" ? 502 : 200, { heard: false, reason: outcome.reason });
     } finally {

@@ -232,6 +232,10 @@ ears:
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
   #   off      idle, nothing heard (isolated runs)
   # http and dir work with stt_engine: stub, so they run with no accounts and no STT server.
+  #
+  # Several sources can run at once: set `sources` to a list (http, dir, or a connector source tag such as desktop) and it
+  # wins over `source` below, which is the legacy single-source form. Each clip carries the name of its source.
+  #   sources: [http, dir]
   source: "${EARS_SOURCE:-discord}"
   discord:
     guild_id: "${DISCORD_GUILD_ID}"
@@ -241,6 +245,9 @@ ears:
   http:
     host: 127.0.0.1
     port: 8765
+    # Bearer token POST /audio must carry (Authorization: Bearer <token>); empty requires none. Set it when the port is reachable by others.
+    # A clip names its source with ?source=<tag> (default http).
+    token: "${EARS_HTTP_TOKEN:-}"
   # The `dir` source: the directory to watch (created if missing) and how often to look. Empty path = not configured (ears idles degraded).
   dir:
     path: ""

@@ -16,8 +16,8 @@ export type HearOutcome =
   | { heard: true; text: string }
   | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "stt-error" };
 
-/** The sink every adapter feeds: one clip, one speaker name. */
-export type HearClip = (clip: Clip, speaker: string) => Promise<HearOutcome>;
+/** The sink every adapter feeds: one clip, one speaker name, and the name of the source it came from. */
+export type HearClip = (clip: Clip, speaker: string, source?: string) => Promise<HearOutcome>;
 
 /** A listening source other than the Discord session. `start` resolves once audio can arrive; `stop` waits for the clip in flight. */
 export interface CaptureAdapter {

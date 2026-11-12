@@ -54,6 +54,8 @@ export const EventPayloads = {
     speakerId: z.string().optional(),
     text: z.string(),
     durationMs: z.number(),
+    /** The listening source the speech came from (a connector tag, `http` or `dir`); absent on injected and older events. */
+    source: z.string().optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),

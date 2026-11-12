@@ -1,19 +1,32 @@
 import { tracked, type HeartbeatSpec } from "@cohost/shared";
 
-export type EarsSource = "discord" | "off" | "http" | "dir";
-/**
- * `off`: source=off. `no-token`: discord without a usable EARS_DISCORD_TOKEN (idle, degraded). `discord`: run the bot.
- * `http` / `dir`: the account-free capture sources; `no-dir`: source=dir without `ears.dir.path` (idle, degraded).
- */
-export type EarsPlan = "off" | "no-token" | "discord" | "http" | "dir" | "no-dir";
+/** One enabled listening source in the plan. `gap` is set when it cannot run for lack of configuration. */
+export interface PlannedSource {
+  name: string;
+  kind: "discord" | "http" | "dir" | "connector";
+  gap?: string;
+}
 
-// @spec EARS-START-004, EARS-CAP-004
-/** Pure decision for what ears does at startup; never exits for a configuration gap. */
-export function earsPlan(source: EarsSource, hasToken: boolean, hasDirPath = true): EarsPlan {
-  if (source === "off") return "off";
-  if (source === "http") return "http";
-  if (source === "dir") return hasDirPath ? "dir" : "no-dir";
-  return hasToken ? "discord" : "no-token";
+/** The set of sources to start (`sources`) and the ones among them that can run (`runnable`); empty `sources` is `off`. */
+export interface EarsPlan {
+  sources: PlannedSource[];
+  runnable: PlannedSource[];
+}
+
+// @spec EARS-SRC-003, EARS-SRC-001, EARS-START-004
+/**
+ * Pure decision for what ears starts: one entry per distinct source name. A `dir` source without a path is a gap, and so
+ * is `discord` (the legacy in-process client) when `discordGap` says why it cannot run; any other name is a connector tag
+ * and always runnable. Never exits for a configuration gap.
+ */
+export function earsPlan(sources: readonly string[], hasDirPath: boolean, discordGap?: string): EarsPlan {
+  const planned = [...new Set(sources)].map((name): PlannedSource => {
+    if (name === "http") return { name, kind: "http" };
+    if (name === "dir") return hasDirPath ? { name, kind: "dir" } : { name, kind: "dir", gap: "ears.dir.path is not set" };
+    if (name === "discord") return discordGap === undefined ? { name, kind: "discord" } : { name, kind: "discord", gap: discordGap };
+    return { name, kind: "connector" };
+  });
+  return { sources: planned, runnable: planned.filter((x) => x.gap === undefined) };
 }
 
 /** What the environment says about ears' bot token. */
@@ -46,11 +59,12 @@ export function idleDetail(t: EarsToken): string {
     : "EARS_DISCORD_TOKEN is not set";
 }
 
-// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003, EARS-STUB-002, EARS-CAP-011
+// @spec EARS-HLTH-001, EARS-HLTH-003, EARS-SRC-005, EARS-STUB-002
 /**
- * ears: `off` (mode off, deps n/a) for source=off; otherwise mode live (`mock` with the stub engine, whose stt is n/a)
- * with discord following the gateway session (down without a token) and stt the last transcription. The `http` and
- * `dir` plans have no Discord (`n/a`) and add a dep named for the source, following `captureStatus` (down for `no-dir`).
+ * ears: mode `off` with every dep n/a when no source is enabled; otherwise mode live (`mock` with the stub engine, whose
+ * stt is n/a). One dep per enabled source named for it (`discord`, `http`, `dir` or the connector tag), `n/a` for the
+ * three fixed names when not enabled; a gap source is `down`, `discord` follows the gateway session, every other source
+ * follows `sourceStatus`. `stt` is the last transcription, shared by all sources.
  */
 export class EarsHealth {
   private stt: "ok" | "down" = "ok";
@@ -58,19 +72,19 @@ export class EarsHealth {
     private plan: EarsPlan,
     private discordReady: () => boolean,
     private stub = false,
-    private captureStatus: () => "ok" | "down" = () => "down",
+    private sourceStatus: (name: string) => "ok" | "down" = () => "down",
   ) {}
 
   readonly spec: HeartbeatSpec = {
     service: "ears",
-    mode: () => (this.plan === "off" ? "off" : this.stub ? "mock" : "live"),
+    mode: () => (this.plan.sources.length === 0 ? "off" : this.stub ? "mock" : "live"),
     deps: (): Record<string, "ok" | "down" | "n/a"> => {
-      if (this.plan === "off") return { discord: "n/a", stt: "n/a" };
-      const stt = this.stub ? "n/a" : this.stt;
-      if (this.plan === "http") return { discord: "n/a", stt, http: this.captureStatus() };
-      if (this.plan === "dir") return { discord: "n/a", stt, dir: this.captureStatus() };
-      if (this.plan === "no-dir") return { discord: "n/a", stt, dir: "down" };
-      return { discord: this.plan === "discord" && this.discordReady() ? "ok" : "down", stt };
+      if (this.plan.sources.length === 0) return { discord: "n/a", stt: "n/a" };
+      const deps: Record<string, "ok" | "down" | "n/a"> = { discord: "n/a", http: "n/a", dir: "n/a", stt: this.stub ? "n/a" : this.stt };
+      for (const src of this.plan.sources) {
+        deps[src.name] = src.gap !== undefined ? "down" : src.kind === "discord" ? (this.discordReady() ? "ok" : "down") : this.sourceStatus(src.name);
+      }
+      return deps;
     },
   };
 

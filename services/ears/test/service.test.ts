@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService, type Heartbeat } from "@cohost/shared";
 import { createEarsService } from "../src/service.js";
+import { stopAll } from "../src/sources.js";
 
 /** runService with no Redis, no signals and no process exit; `main` is the real ears main. */
 async function boot(ears: Record<string, unknown>, env: Record<string, string>, startDiscord?: (d: never) => Promise<{ stop(): Promise<void> }>) {
@@ -94,7 +95,7 @@ test("discord plan: starts the session with EARS_DISCORD_TOKEN; shutdown stops t
   } finally {
     await r.stop();
   }
-  assert.deepEqual(r.order, ["session.stop", "bus.stop"]);
+  assert.deepEqual(r.order, ["resetGroup:ears", "session.stop", "bus.stop"]);
 });
 
 // @spec EARS-SESS-001
@@ -126,7 +127,7 @@ test("http plan: no token, no discord.js, inject.request only, ready with deps.h
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
     assert.equal(r.last().mode, "mock");
-    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok" });
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok", dir: "n/a" });
     assert.equal(r.discordLoads(), 0);
     assert.deepEqual(r.subs.map((s) => ({ g: s.group, t: [...s.types], s: s.start })), [{ g: "ears", t: ["inject.request"], s: "latest" }]);
   } finally {
@@ -159,7 +160,7 @@ test("dir plan: polls the directory, ready with deps.dir ok, no discord.js", asy
   const r = await boot({ source: "dir", stt_engine: "stub", dir: { path: dir, poll_ms: 20 } }, {});
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
-    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", dir: "ok" });
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "n/a", dir: "ok" });
     assert.equal(r.discordLoads(), 0);
     assert.equal(r.subs.length, 1);
   } finally {
@@ -182,4 +183,108 @@ test("dir plan without a path: degraded idle naming ears.dir.path, still subscri
   } finally {
     await r.stop();
   }
+});
+
+const HTTP = { host: "127.0.0.1", port: 0 };
+
+// @spec EARS-SRC-001, EARS-SRC-005, EARS-SRC-008
+test("http and dir together: both start, both ok, one inject.request subscription, one shutdown", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ears-multi-"));
+  const r = await boot({ sources: ["http", "dir"], stt_engine: "stub", http: HTTP, dir: { path: dir, poll_ms: 20 } }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok", dir: "ok" });
+    assert.equal(r.last().mode, "mock");
+    assert.equal(r.subs.length, 1);
+    assert.equal(r.discordLoads(), 0);
+  } finally {
+    await r.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(r.order, ["resetGroup:ears", "bus.stop"]);
+});
+
+// @spec EARS-SRC-002
+test("ears.sources wins over the legacy ears.source, and a name repeated starts one adapter", async () => {
+  const r = await boot({ source: "off", sources: ["http", "http"], stt_engine: "stub", http: HTTP }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
+    assert.equal(r.last().mode, "mock");
+    assert.equal(r.last().deps.http, "ok");
+    assert.equal(r.rec.msgs("info").filter((m) => /http listening/.test(String(m))).length, 1);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec EARS-SRC-003, EARS-SRC-004, EARS-SRC-005
+test("a gap source (dir with no path) is down and logged while http keeps running; the process stays up, degraded", async () => {
+  const r = await boot({ sources: ["http", "dir"], stt_engine: "stub", http: HTTP }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok", dir: "down" });
+    assert.match(r.last().detail ?? "", /ears\.dir\.path is not set/);
+    assert.deepEqual(r.rec.msgs("error"), ["ears.dir.path is not set"]);
+    assert.deepEqual(r.exits, []);
+    assert.equal(r.subs.length, 1);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec EARS-SRC-004
+test("a source that cannot start (port in use) is down while dir keeps running and shutdown still stops everything", async () => {
+  const blocker = createServer();
+  await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
+  const port = (blocker.address() as { port: number }).port;
+  const dir = await mkdtemp(join(tmpdir(), "ears-multi-"));
+  const r = await boot({ sources: ["http", "dir"], stt_engine: "stub", http: { host: "127.0.0.1", port }, dir: { path: dir, poll_ms: 20 } }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "down", dir: "ok" });
+    assert.match(r.last().detail ?? "", /EADDRINUSE/);
+    assert.deepEqual(r.exits, []);
+  } finally {
+    await r.stop();
+    await new Promise((resolve) => blocker.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(r.order, ["resetGroup:ears", "bus.stop"]);
+});
+
+// @spec EARS-SRC-004, EARS-SRC-005
+test("a connector source tag with no connector is down with its own dep and detail; http keeps running", async () => {
+  const r = await boot({ sources: ["http", "desktop"], stt_engine: "stub", http: HTTP }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok", dir: "n/a", desktop: "down" });
+    assert.equal(r.last().detail, "desktop connector not connected");
+    assert.equal(r.discordLoads(), 0);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec EARS-SRC-008
+test("every enabled source a gap: shared idle plan naming each reason, still subscribed to inject.request", async () => {
+  const r = await boot({ sources: ["dir", "discord"], stt_engine: "stub" }, {});
+  try {
+    await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
+    assert.equal(r.last().detail, "ears.dir.path is not set; EARS_DISCORD_TOKEN is not set");
+    assert.deepEqual(r.last().deps, { discord: "down", stt: "n/a", http: "n/a", dir: "down" });
+    assert.equal(r.subs.length, 1);
+    assert.deepEqual(r.rec.msgs("error").slice(0, 2), ["ears.dir.path is not set", "EARS_DISCORD_TOKEN is not set"]);
+  } finally {
+    await r.stop();
+  }
+});
+
+// @spec EARS-SRC-004
+test("stopAll stops every source even when one stop() throws, and says which", async () => {
+  const rec = recordingLog();
+  const stopped: string[] = [];
+  const mk = (name: string, fail = false) => ({ name, start: async () => {}, status: () => "ok" as const, stop: async () => { stopped.push(name); if (fail) throw new Error("boom"); } });
+  await stopAll([mk("a"), mk("b", true), mk("c")], rec.log);
+  assert.deepEqual(stopped.sort(), ["a", "b", "c"]);
+  assert.equal(rec.msgs("error").length, 1);
 });

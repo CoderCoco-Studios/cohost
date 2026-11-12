@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { stubTranscriber } from "../src/hearing.js";
-import { EarsHealth } from "../src/health.js";
+import { EarsHealth, earsPlan } from "../src/health.js";
 
 // @spec EARS-STUB-001
 test("stub transcriber: fixed text with the clip duration, no network", async () => {
@@ -20,12 +20,12 @@ test("stub transcriber: fixed text with the clip duration, no network", async ()
 
 // @spec EARS-STUB-002
 test("stub heartbeat: mode mock and stt n/a; off stays off", async () => {
-  const live = await runHeartbeat(new EarsHealth("discord", () => true, true).spec);
+  const live = await runHeartbeat(new EarsHealth(earsPlan(["discord"], true), () => true, true).spec);
   assert.equal(live[1]!.mode, "mock");
   assert.equal(live[1]!.deps.stt, "n/a");
-  const idle = await runHeartbeat(new EarsHealth("no-token", () => false, true).spec);
+  const idle = await runHeartbeat(new EarsHealth(earsPlan(["discord"], true, "no token"), () => false, true).spec);
   assert.equal(idle[1]!.mode, "mock");
-  const off = await runHeartbeat(new EarsHealth("off", () => false, true).spec);
+  const off = await runHeartbeat(new EarsHealth(earsPlan([], true), () => false, true).spec);
   assert.equal(off[1]!.mode, "off");
   assert.deepEqual(off[1]!.deps, { discord: "n/a", stt: "n/a" });
 });

@@ -49,6 +49,9 @@ export const DEFAULT_VISION_PROMPT =
   "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME";
 
 // @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
+/** A listening source name: `http`, `dir` or a connector source tag (CONN-TAG-001). */
+const EARS_SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
+
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -290,15 +293,20 @@ export const ConfigSchema = z.object({
   }),
   ears: z.object({
     /**
-     * Where audio comes from: `discord` (a voice channel), `http` (clips POSTed to `ears.http`), `dir` (WAV files
-     * dropped in `ears.dir.path`), or `off` (idle, no capture; isolated runs). Read at start.
+     * The enabled listening sources, started together: `http` (clips POSTed to `ears.http`), `dir` (WAV files dropped in
+     * `ears.dir.path`), `discord` or any other connector source tag. Empty is off. Unset reads the legacy `source`, then
+     * `[discord]` (see `earsSources`). Read at start.
      */
     // @spec CFG-SCH-030
-    source: z.preprocess((v) => v || "discord", z.enum(["discord", "off", "http", "dir"])),
+    sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).optional(),
+    /** Legacy single source (`discord`, `off`, `http`, `dir`; blank is `discord`), read only while `sources` is unset. */
+    source: z.preprocess((v) => (v === undefined || v === null ? undefined : v || "discord"), z.enum(["discord", "off", "http", "dir"]).optional()),
     /** The `http` source's listener; port 0 picks a free port. */
     http: z.object({
       host: z.preprocess((v) => v || "127.0.0.1", z.string()),
       port: z.number().int().min(0).max(65535).default(8765),
+      /** Bearer token `POST /audio` must carry; empty requires none (EARS-SRC-013). */
+      token: z.string().default(""),
     }).default({}),
     /** The `dir` source: the directory polled for dropped `.wav` files (empty = not configured) and the poll period. */
     dir: z.object({
@@ -370,6 +378,16 @@ export const ConfigSchema = z.object({
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+// @spec CFG-SCH-030, EARS-SRC-001, EARS-SRC-002
+/**
+ * The enabled listening sources, without repeats: `ears.sources` when set, else the legacy `ears.source` as a one-element
+ * list (`off` as the empty list), else `[discord]`.
+ */
+export function earsSources(ears: Pick<Config["ears"], "source" | "sources">): string[] {
+  const list = ears.sources ?? (ears.source === undefined ? ["discord"] : ears.source === "off" ? [] : [ears.source]);
+  return [...new Set(list)];
+}
 
 /** Per-driver expression map: canonical emotion -> app-specific name, plus gestures. */
 // @spec CFG-SCH-007

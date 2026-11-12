@@ -290,6 +290,7 @@ test("injection flags are optional and absent on real payloads", () => {
   assert.equal("remember" in chat, false);
   const sp = EventPayloads["speech.heard"].parse({ speaker: "s", text: "t", durationMs: 1 });
   assert.equal("injected" in sp, false);
+  assert.equal("source" in sp, false);
   const vis = EventPayloads["vision.summary"].parse({ text: "t" });
   assert.equal("remember" in vis, false);
   const say = EventPayloads["brain.say"].parse({ id: "1", text: "hi", emotion: "neutral" });
@@ -432,4 +433,13 @@ test("control, brain.say and voice.utterance accept an optional route of strings
     assert.equal(schema.safeParse({ ...base, route: "file" }).success, false);
     assert.equal(schema.safeParse({ ...base, route: [1] }).success, false);
   }
+});
+
+// @spec BUS-EVT-013, EARS-SRC-006
+test("speech.heard accepts an optional string source and stays valid without it", () => {
+  const base = { speaker: "s", text: "t", durationMs: 1 };
+  assert.equal(EventPayloads["speech.heard"].parse({ ...base, source: "desktop" }).source, "desktop");
+  assert.equal(EventPayloads["speech.heard"].safeParse(base).success, true);
+  assert.equal(EventPayloads["speech.heard"].safeParse({ ...base, source: 3 }).success, false);
+  assert.equal(EventPayloads["speech.heard"].safeParse({ ...base, speakerId: "u", source: "http" }).success, true);
 });

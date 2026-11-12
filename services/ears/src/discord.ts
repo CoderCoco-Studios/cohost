@@ -20,6 +20,8 @@ export interface DiscordDeps {
   onInject: (ev: BusEvent<"inject.request">) => void | Promise<void>;
   /** The tracked transcriber (real or stub), shared with injection. */
   transcribe: (audio: Buffer, hint?: { contentType: string }) => Promise<string>;
+  /** Subscribe `inject.request` here before the join (default true); false when the caller already did. */
+  subscribe?: boolean;
   /** Replacement for tests: the shared Discord voice session. */
   createSession?: typeof defaultCreateSession;
 }
@@ -93,7 +95,7 @@ export async function startDiscord(deps: DiscordDeps): Promise<DiscordSession> {
 
   // Bus handling starts before the join and does not depend on it (injection works whether or not the join succeeds).
   // @spec EARS-INJ-007, EARS-START-003, EARS-START-006
-  await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: deps.onInject }), log);
+  if (deps.subscribe !== false) await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: deps.onInject }), log);
 
   // @spec EARS-SESS-001, EARS-SESS-009
   // A failed login is fatal: the error propagates to `runService`, which exits with status 1.

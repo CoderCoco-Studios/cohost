@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, cop
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources } from "../src/index.js";
 
 /** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
 const initialEnv = { ...process.env };
@@ -284,7 +284,7 @@ test("isolation presets: unset env equals the live defaults", () => {
   assert.equal(cfg.brain.memory.embedder, "ollama");
   assert.equal(cfg.chat.source, "twitch");
   assert.equal(cfg.chat.fake.interval_ms, 8000);
-  assert.equal(cfg.ears.source, "discord");
+  assert.deepEqual(earsSources(cfg.ears), ["discord"]);
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
   assert.equal(cfg.vision.engine, "ollama");
   assert.equal(cfg.ears.stt_engine, "speaches");
@@ -304,7 +304,7 @@ test("isolation presets: each env var flips its key without editing config.yaml"
   assert.equal(cfg.voice.engine, "stub");
   assert.equal(cfg.chat.source, "fake");
   assert.equal(cfg.vision.enabled, true);
-  assert.equal(cfg.ears.source, "off");
+  assert.deepEqual(earsSources(cfg.ears), []);
   assert.equal(cfg.mouth.outputs.discord.enabled, false);
   assert.equal(cfg.vision.engine, "stub");
   assert.equal(cfg.ears.stt_engine, "stub");
@@ -316,8 +316,8 @@ test("new keys default to live backends when omitted; bad enum values are reject
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: { discord: {} }, dashboard: {}, brain: {} };
   const ok = ConfigSchema.parse(base);
-  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, ok.ears.source, ok.mouth.outputs.discord.enabled],
-    ["kokoro", "postgres", "ollama", "twitch", "discord", true]);
+  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
+    ["kokoro", "postgres", "ollama", "twitch", ["discord"], true]);
   const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
   assert.equal(bad.success, false);
   assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
@@ -772,10 +772,10 @@ test("ears.source accepts http and dir; ears.http and ears.dir default when abse
   const ears = (e: Record<string, unknown>) => ConfigSchema.safeParse({ ...base, ears: { discord: {}, ...e } });
   const dflt = ears({});
   assert.ok(dflt.success);
-  assert.deepEqual([dflt.data.ears.source, dflt.data.ears.http, dflt.data.ears.dir], ["discord", { host: "127.0.0.1", port: 8765 }, { path: "", poll_ms: 1000 }]);
+  assert.deepEqual([earsSources(dflt.data.ears), dflt.data.ears.http, dflt.data.ears.dir], [["discord"], { host: "127.0.0.1", port: 8765, token: "" }, { path: "", poll_ms: 1000 }]);
   for (const source of ["http", "dir", "off", "discord", ""]) assert.ok(ears({ source }).success, source);
   const blank = ears({ source: "" });
-  assert.ok(blank.success && blank.data.ears.source === "discord");
+  assert.ok(blank.success && earsSources(blank.data.ears).join() === "discord");
   assert.equal(ears({ source: "mic" }).success, false);
   assert.equal(ears({ http: { port: 0 } }).success, true);
   assert.equal(ears({ http: { port: 70000 } }).success, false);

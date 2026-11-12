@@ -611,7 +611,7 @@ stops answering. Postgres pool queries are wrapped the same way (`store.ts:54,62
 so `deps.postgres` follows the latest query and a Postgres outage after startup
 shows as `degraded` even though `remember`/`recall` swallow the error
 (`MEM-HEALTH-005`). Heartbeat contract and `degraded` derivation are owned by the
-control-plane segment (`packages/bus/src/heartbeat.ts:68-85`).
+control-plane segment (`packages/shared/src/lifecycle.ts:142`).
 
 Shutdown: a teardown step registered with the bootstrap stops the bus then closes the store (`main.ts`); the
 `stopping` heartbeat is sent by the heartbeat package's `beforeShutdown` hook.

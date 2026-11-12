@@ -9,7 +9,7 @@ Segment `chat` (`services/chat`, package `@cohost/chat`). Mapped 2026-10-31 at g
 
 ## Context and Design Philosophy
 
-`chat` is the text sense. It turns Twitch IRC lines into `chat.message` events on the bus (see [HLD](../../high-level-design.md)). It is one of three senses (`chat`, `eyes`, `ears`) that publish and never consume brain events; it consumes only `inject.request` (test injection). Downstream consumers of `chat.message`: `salience`, `affect`, `memory` (each via `bus.subscribe`, `services/salience/src/index.ts:31`, `services/affect/src/index.ts:26`, `services/memory/src/index.ts:63`) and the `dashboard` feed.
+`chat` is the text sense. It turns Twitch IRC lines into `chat.message` events on the bus (see [HLD](../../high-level-design.md)). It is one of three senses (`chat`, `eyes`, `ears`) that publish and never consume brain events; it consumes only `inject.request` (test injection). Downstream consumers of `chat.message`: `salience`, `affect`, `memory` (each via `bus.subscribe`, `services/salience/src/main.ts:38`, `services/affect/src/main.ts:36`, `services/memory/src/startup.ts:81`) and the `dashboard` feed.
 
 Multi-platform chat is a project goal; Twitch is the only implemented platform. `chat.message.platform` already admits `youtube` and `discord` (`packages/bus/src/events.ts:14`), so another platform arrives as a new chat source that sets its own `platform` value, with no change to the brain.
 
@@ -28,7 +28,7 @@ Design stance (evidence per bullet):
 |---|---|---|---|---|
 | `fake` | any | `fake` | `startFakeSource`, no network | mode `mock`, `twitch: n/a`, `ready()` immediately (`service.ts`) |
 | `twitch` | non-empty | `twitch` | `startTwitch(channel)` | mode `live`, `twitch: ok` while connected else `down`; `ready()` on first connect (`service.ts`) |
-| `twitch` | empty | `idle` | the shared idle plan (`startIdle`, kind `degraded`): one error at start naming `TWITCH_CHANNEL`, then a `still idle` warning at most every 60 s; publishes nothing | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
+| `twitch` | empty | `idle` | the shared idle plan (`startIdle`, kind `degraded`): one error at start naming `TWITCH_CHANNEL`, then a `still idle` warning first after 60 s, then at doubling delays capped at one hour; publishes nothing | mode `live`, `twitch: down`, `degraded("TWITCH_CHANNEL is not set")` |
 
 `channelName` strips one leading `#` and lowercases (`filter.ts:15-17`). `chat.source` blank resolves to `twitch` via `z.preprocess` (`packages/config/src/schema.ts:88`); `chat.fake.interval_ms` defaults 8000 (`schema.ts:89`). Env presets: `CHAT_SOURCE` (`config/config.example.yaml:49`), `TWITCH_CHANNEL` (`:53`). The control plane's isolated start sets `CHAT_SOURCE=fake` (`packages/control/src/manifest.ts:39`, owned by `control-plane`).
 
@@ -45,7 +45,7 @@ In all three plans the `inject.request` subscription is established before the p
 5. `onMessage` runs `createMessageHandler` (`twitch.ts`): `toEvent(user, text, msg.userInfo)` and, if it returns an event, publish `chat.message`. A failed publish is caught, logged at warn level (`chat.message publish failed`) and the next message is handled normally, as on the fake path (CHAT-TW-007).
 6. `client.connect()` is not awaited; the service's `onStop` step calls `client.quit()` and the bootstrap then stops the bus.
 
-The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/bus/src/heartbeat.ts:71`).
+The `connected` flag feeds the heartbeat `twitch` dependency; when the flag goes false after `ready`, the shared heartbeat derives `degraded` automatically (`packages/shared/src/lifecycle.ts:142`).
 
 ### Token persistence (`token-store.ts`)
 
@@ -106,7 +106,7 @@ The `inject.*` schemas belong to `event-bus`; the HTTP side and bus-level (skip-
 | Token registration ordering | Await `addUserForToken` before the `ChatClient` asks for credentials (CHAT-TW-006) | Fire-and-forget (the original code) | Owner decision 2026-11-01: the client must not race the registration, and a failed registration must surface instead of becoming an unhandled rejection. |
 | Twitch publish failure | Log and handle the next message (CHAT-TW-007) | Let the rejection escape the twurple listener; crash and restart | Owner decision 2026-11-01 (project-wide): a failed bus publish is logged and the service continues, as the fake path already does (CHAT-FAKE-006). |
 | Reconnect | Library default: `ircv3` `reconnect: true`, `onConnect` re-signals `ready` (CHAT-TW-009) | Own reconnect loop | Owner decision 2026-11-01: the library already retries an unexpected drop; the spec records it rather than adding code. |
-| Missing channel | Idle plus `degraded` heartbeat through the shared idle plan: one error, then a reminder warning at most every 60 s (CHAT-PLAN-003) | `process.exit(1)` (old behaviour in baseline OpenSpec) | Avoid restart loops under a supervisor: comment at `service.ts`; commit 51d5a9c; add-isolated-backends design D6. |
+| Missing channel | Idle plus `degraded` heartbeat through the shared idle plan: one error, then a reminder warning that backs off from 60 s to a one-hour cap (CHAT-PLAN-003, SHARED-IDLE-003, SHARED-IDLE-006) | `process.exit(1)` (old behaviour in baseline OpenSpec) | Avoid restart loops under a supervisor: comment at `service.ts`; commit 51d5a9c; add-isolated-backends design D6. |
 | Lazy `@twurple` import | Dynamic `import()` inside `startTwitch`/`buildAuth` (`service.ts`) | Static import | The fake and idle plans must not load the IRC library: comment at `service.ts`; add-isolated-backends design D6 ("Does not touch `@twurple`"). |
 | Mention detection | Substring on lowercased cleaned text (`filter.ts:46`) | Word-boundary or `@name` match | Test comment "substring match, by design" (`test/filter.test.ts:36`). Owner decision 2026-11-01: keep substring matching; false positives such as `cocoa` are accepted. |
 | Command prefixes | Matched after trimming (CHAT-FILT-003) | Match the raw text (the original code) | Owner decision 2026-11-01: a leading space must not defeat the command filter. |

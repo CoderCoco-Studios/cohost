@@ -78,3 +78,37 @@ test("the repository itself is coherent", () => {
   const r = run({}, repoRoot);
   assert.equal(r.code, 0, r.err);
 });
+
+const WF = ".github/workflows/w.yml";
+const wf = (...steps: string[]) => `jobs:\n  j:\n    steps:\n${steps.map((s) => `      - ${s}`).join("\n")}\n`;
+
+// @spec DEPLOY-CI-009
+test("a workflow action pinned to a floating major, a branch or nothing fails with its file and line", () => {
+  for (const ref of ["actions/checkout@v4", "actions/checkout@main", "actions/checkout", "actions/checkout@v4.1"]) {
+    const r = run({ [WF]: wf(`uses: ${ref}`) });
+    assert.equal(r.code, 1, ref);
+    assert.match(r.err, /\.github\/workflows\/w\.yml:4: .*not pinned to an exact/, ref);
+  }
+  const ok = run({ [WF]: wf("uses: actions/checkout@v7.0.1", `uses: x/y@${"a".repeat(40)} # v2.6.1`, "uses: ./local-action") });
+  assert.equal(ok.code, 0, ok.err);
+});
+
+// @spec DEPLOY-CI-009
+test("one action pinned to two different refs across workflows fails", () => {
+  const r = run({ [WF]: wf("uses: actions/checkout@v7.0.1"), ".github/workflows/z.yml": wf("uses: actions/checkout@v7.0.2") });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /actions\/checkout is pinned to v7\.0\.2 but .*w\.yml:4 pins v7\.0\.1/);
+});
+
+// @spec DEPLOY-CI-009
+test("a workflow or Compose image tagged latest, untagged or with a floating major fails; a defaulted exact tag passes", () => {
+  for (const image of ["redis:latest", "redis", "redis:7", "pgvector/pgvector:pg16", "${IMG:-ghcr.io/a/b:latest}"]) {
+    const w = run({ [WF]: `services:\n  s:\n    image: ${image}\n` });
+    assert.equal(w.code, 1, image);
+    assert.match(w.err, /not pinned to an exact x\.y\.z tag/, image);
+    const c = run({ "docker-compose.yml": `services:\n  s:\n    image: ${image}\n` });
+    assert.equal(c.code, 1, `compose ${image}`);
+  }
+  const ok = run({ "docker-compose.yml": "services:\n  a:\n    image: redis:7.4.12-alpine   # held\n  b:\n    image: ${IMG:-ghcr.io/a/b:v0.10.0}\n" });
+  assert.equal(ok.code, 0, ok.err);
+});

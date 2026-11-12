@@ -6,7 +6,7 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 
 - [x] **CHAT-PLAN-001**: Where `chat.source` is `fake`, the chat service shall publish scripted or stdin chat and shall not attempt any IRC connection regardless of `chat.twitch.channel`. <!-- test: services/chat/test/fake.test.ts:64 --> <!-- openspec: chat § Fake source -->
 - [x] **CHAT-PLAN-002**: Where `chat.source` is `twitch` and `chat.twitch.channel` is non-empty after normalisation, the chat service shall connect to Twitch IRC and join that channel. <!-- test: services/chat/test/fake.test.ts:64 -->
-- [x] **CHAT-PLAN-003**: If `chat.source` is `twitch` and `chat.twitch.channel` is empty, the chat service shall stay running, publish no `chat.message` from Twitch, not exit, and run the shared idle plan of kind `degraded` (SHARED-IDLE-002, SHARED-IDLE-003): one error at startup naming `TWITCH_CHANNEL`, then a `still idle` warning at most every 60 seconds. <!-- test: services/chat/test/service.test.ts -->
+- [x] **CHAT-PLAN-003**: If `chat.source` is `twitch` and `chat.twitch.channel` is empty, the chat service shall stay running, publish no `chat.message` from Twitch, not exit, and run the shared idle plan of kind `degraded` (SHARED-IDLE-002, SHARED-IDLE-003): one error at startup naming `TWITCH_CHANNEL`, then a `still idle` warning first after 60 seconds and then at doubling delays capped at one hour (SHARED-IDLE-006). <!-- test: services/chat/test/service.test.ts -->
 - [x] **CHAT-PLAN-004**: The chat service shall normalise the configured channel by removing one leading `#` and lowercasing it. <!-- test: services/chat/test/filter.test.ts:12 --> <!-- openspec: chat § Channel configuration -->
 - [x] **CHAT-PLAN-005**: Where the plan is `fake` or `idle`, the chat service shall not load `@twurple/chat` or `@twurple/auth` (both are loaded by dynamic import only on the Twitch path).
 - [x] **CHAT-PLAN-006**: When the process receives a shutdown signal, the chat service shall stop its source (fake source, idle plan or Twitch client) through the bootstrap's `onStop` steps (SHARED-BOOT-005) and stop the bus.
@@ -43,7 +43,7 @@ Segment `chat` (prefix `CHAT`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **CHAT-FAKE-003**: The chat service shall pass every fake-source message through the normal chat filter, so ignored users, ignored prefixes and blank lines are dropped. <!-- test: services/chat/test/fake.test.ts:23,42 --> <!-- openspec: chat § Fake source -->
 - [x] **CHAT-FAKE-004**: Where stdin is a TTY, the fake source shall not run the built-in script and shall publish only typed lines. <!-- test: services/chat/test/fake.test.ts:52 -->
 - [x] **CHAT-FAKE-005**: While at least one stdin line has been received, the fake source shall stop publishing the built-in script. <!-- untested; services/chat/src/fake.ts:57 -->
-- [x] **CHAT-FAKE-006**: If publishing a fake-source message fails, the chat service shall log a warning and continue. <!-- untested; services/chat/src/fake.ts:43, services/chat/src/index.ts:46 -->
+- [x] **CHAT-FAKE-006**: If publishing a fake-source message fails, the chat service shall log a warning and continue. <!-- untested; services/chat/src/fake.ts:43 -->
 
 ## Test injection
 

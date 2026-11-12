@@ -97,9 +97,9 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 |----------|----------|-------------|----------|------|----------------|
 | Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-022 | 21 | 0 | 0 | 16 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 0 | 0 | 0 |
-| Image build | DEPLOY-IMG-001 to DEPLOY-IMG-005 | 6 | 0 | 0 | 1 |
+| Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 0 | 0 | 1 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-013 | 13 | 0 | 0 | 2 |
-| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-008 | 7 | 0 | 1 | 2 |
+| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-009 | 9 | 0 | 0 | 3 |
 | Docs site | DEPLOY-DOCS-001 to DEPLOY-DOCS-006 | 6 | 0 | 0 | 0 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 0 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 0 | 0 | 0 |
@@ -107,7 +107,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-005 | 5 | 0 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 0 | 0 | 0 |
 
-**Summary:** 77 of 78 specs implemented; 0 deferred; 1 open. 22 carry a test `@spec` annotation; 55 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 79 of 79 specs implemented; 0 deferred; 0 open. 23 carry a test `@spec` annotation; 56 implemented specs have none (glue, configuration, or tests that cite a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -117,7 +117,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 4. **Spec lines reworded to match the code:** INST-002 (the `docker compose version` check runs on every run, not only after installing Docker); INST-006 (only an existing `COMPOSE_FILE=` line is rewritten); INST-007 (failing smoke probes are silent and non-fatal); INST-009 (Node 9 skips the install; a three-digit major is truncated); COMPOSE-004 (`models`, `tts`, `stt` are unprofiled); CI-002 (seeds `.env`; the script is the implementation, not a test of itself); REPO-002 (`lint`); REPO-003 (`.DS_Store`); DOCS-005 (rationale instead of commit narration); README-002 (now names the `.env` keys, S6); README-003 (current line numbers and fixing commits); plus detail added to COMPOSE-008/-009, HC-002, CI-001, DEV-001 to -003.
 5. **Installer behaviour.** Lockfile mismatch aborts (`install.sh:108`); a fresh Docker install stops with a re-login message (`:55`); the Node major compares numerically (`:77-78`); smoke probes poll for 60 s and name the failing probe (`:124-145`); the dashboard URL reads `DASHBOARD_PORT` from the shell or `.env` without sourcing it (`:146-155`); the dev hint lists `stt` (`:165`). The `COMPOSE_FILE` rewrite at `:96-101` is intended (S4).
 6. **`.env` reaches every container, including control flags.** `env_file: .env` would pass `CONTROL_ENABLED` / `CONTROL_BIND` to the containerised dashboard; `CONTROL_ENABLED: "0"` in `x-ts-service` pins the monitor-only decision (`docker-compose.yml:22`, DEPLOY-COMPOSE-016, B17). The isolation env set by `ComposeRuntime` reaches containers through `${VAR:-}` entries (`:24-31`, DEPLOY-COMPOSE-017).
-7. **`config/.vts-token` is a credential** — avatar writes `<configDir>/.vts-token` (`services/avatar/src/index.ts:30`, `drivers/vtube-studio.ts:104`); both `.gitignore` (`:11-12`, DEPLOY-REPO-004, B18) and `.dockerignore` (`:9-12`, DEPLOY-IMG-005, B25) exclude it.
+7. **`config/.vts-token` is a credential** — avatar writes `<configDir>/.vts-token` (`services/avatar/src/boot.ts:47`, `drivers/vtube-studio.ts:104`); both `.gitignore` (`:11-12`, DEPLOY-REPO-004, B18) and `.dockerignore` (`:9-12`, DEPLOY-IMG-005, B25) exclude it.
 8. **Policy is enforced in CI** — the `cla` workflow fails a pull request while any contributor outside the allow-list has not signed `CLA.md` (DEPLOY-CI-005), `docs-build` builds the site on pull requests (DEPLOY-CI-004), and `compose-smoke` requires `healthy` with no restarts for 4 of 10 services (DEPLOY-CI-002).
 9. **`models` can fail** — the pull loop uses `curl -fsS`, treats an `"error"` line as a failure and exits non-zero after trying every model, except that a failed `NOTES_MODEL` pull (the fourth model, default `gemma3:4b`) is a logged warning and leaves the exit status alone (`docker-compose.yml:91-115`, DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011); nothing waits on `ollama` health, so `memory` / `cortex` can start before models exist and wait for the backend themselves.
 10. **Annotation placement.** Annotations in `docker-compose.yml`, `Dockerfile` and `.dockerignore` are trailing comments on mapping keys, appended to existing comment lines, or (`.dockerignore`) the last line. The `x-ts-service` environment additions moved every `docker-compose.yml` line after `:20` (healthcheck now `:39-46`); other segments' line cites were updated with them.

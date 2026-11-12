@@ -60,7 +60,7 @@ All routes are handled by one function, `createDashboardHandler` (`routes.ts:36-
 | any method `/health` | `200 ok` | no | `:130` |
 | anything else | `404 not found` | n/a | `:132` |
 
-Gated routes answer `401` with `www-authenticate: Bearer` on a missing or wrong token; `bearerOk` does a constant-time comparison of SHA-256 digests (`routes.ts:143-146`, `packages/control/src/config.ts:40-47`). When control is disabled there is no token check anywhere. The `/ws` feed is never authenticated (the sink page needs it).
+Gated routes answer `401` with `www-authenticate: Bearer` on a missing or wrong token; `bearerOk` does a constant-time comparison of SHA-256 digests (`routes.ts:143-146`, `packages/control/src/config.ts:37-44`). When control is disabled there is no token check anywhere. The `/ws` feed is never authenticated (the sink page needs it).
 
 Request bodies for `/control`, `/personality`, `/sink` and lifecycle posts are capped at 64 KiB (`BODY_LIMIT`, `routes.ts:166`), matching `/inject/text` (DASH-HTTP-011): `body()` stops collecting past the cap, drains the rest and throws `BodyTooLarge`, which the catch-all answers `413` with nothing published, saved or run. `/inject/*` has its own caps (`inject.ts`). A malformed `%` escape in a lifecycle service id is answered `404` like any unknown id, before the body is read (DASH-HTTP-013, `routes.ts:85`).
 

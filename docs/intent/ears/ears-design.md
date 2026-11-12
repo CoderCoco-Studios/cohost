@@ -12,15 +12,15 @@ prefix: EARS
 ears is the co-host's hearing. It is one Node process (`services/ears`) with two jobs:
 
 1. **Listen.** A Discord *bot* sits in a voice channel, captures each human speaker as a separate stream, cuts utterances on silence, sends each to an OpenAI-compatible STT server (speaches / faster-whisper), and publishes `speech.heard` carrying the speaker's name (`services/ears/src/index.ts:3-6`).
-2. **Transcribe injected audio.** It accepts `inject.request` for uploaded audio, transcribes it through the same STT path, and publishes an injected `speech.heard` (`services/ears/src/inject.ts:48-78`; commit 3fae9f7, add-test-injection design D8). This job is independent of the Discord session.
+2. **Transcribe injected audio.** It accepts `inject.request` for uploaded audio, transcribes it through the same STT path, and publishes an injected `speech.heard` (`services/ears/src/inject.ts`; commit 3fae9f7, add-test-injection design D8). This job is independent of the Discord session.
 
 ears does not speak. The co-host's voice reaches Discord through [mouth](../mouth/mouth-design.md), a separate service with a Discord bot of its own; the two bots can sit in the same channel. Why the halves are separate processes with separate bots is argued in [listen-speak-split](decisions/listen-speak-split.md). Discord is the default listening source; `ears.source` selects it, or one of the account-free capture sources `http` and `dir` ([Capture sources](#capture-sources)), or `off`.
 
 Design leanings (evidence per bullet):
 
 - **Pure logic is split from the Discord glue.** `Hearing`, `createInjectHandler`, `EarsHealth`, the session helpers and the audio helpers take their effects as injected functions (`transcribe`, `fetch`, `now`), and the service body (`service.ts`) and the Discord session (`discord.ts`) take their environment, Discord loader and voice session as injected options, so all of it is unit-tested with fakes under `runService` (`services/ears/test/*.test.ts`). `index.ts` is the one line that hands the body to `runService`.
-- **Never exit for a configuration gap.** A missing `EARS_DISCORD_TOKEN` or `ears.source: off` leaves the process up and idle with an honest heartbeat rather than crash-looping (`services/ears/src/health.ts:8-12`, `services/ears/src/index.ts:40-58`). Evidence: `earsPlan` doc comment (`health.ts:8`); commit 51d5a9c; add-isolated-backends design D7.
-- **Discord libraries are only loaded when needed**, via a dynamic `import("./discord.js")` (`services/ears/src/index.ts:35-37`), so idle plans carry no gateway client. Evidence: comment at `index.ts:35`.
+- **Never exit for a configuration gap.** A missing `EARS_DISCORD_TOKEN` or `ears.source: off` leaves the process up and idle with an honest heartbeat rather than crash-looping (`services/ears/src/health.ts:8-12`, `services/ears/src/service.ts:33`, `:95-98`). Evidence: `earsPlan` doc comment (`health.ts:8`); commit 51d5a9c; add-isolated-backends design D7.
+- **Discord libraries are only loaded when needed**, via a dynamic `import("./discord.js")` (`services/ears/src/service.ts:28`), so idle plans carry no gateway client. Evidence: `loadDiscord` at `service.ts:28`.
 - The bot must be a *bot* account, not a user account: header comment `services/ears/src/index.ts:11-13` ("automating a user account gets it banned").
 
 Ownership notes: `src/health.ts` implements the heartbeat contract owned by [control-plane](../control-plane/control-plane-design.md); `src/inject.ts` is ears' half of test injection (the panel, the Redis upload write and bus-level injection belong to [dashboard](../dashboard/dashboard-design.md); the `inject.*` schemas belong to [event-bus](../event-bus/event-bus-design.md)); the "off" mode belongs here; the join retry loop `createJoiner` is shared with mouth through `@cohost/shared`.
@@ -44,7 +44,7 @@ At boot `index.ts` hands the service body (`service.ts`) to the shared `runServi
 In every plan the process reads one event type, `inject.request`, on consumer group `ears` (EARS-START-003). It never reads `voice.utterance` or `voice.playing` and never publishes a `voice.*` event. In the idle plans (`off`, `no-token`, `no-dir`):
 
 - `ready` (or `degraded` for `no-token`) is signalled after the subscription is established;
-- both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning every 60 s (EARS-START-008);
+- both run through the shared idle plan `startIdle`: `off` logs one warning and is `ready` in mode `off`; `no-token` logs an error naming the missing or conflicting token, reports `degraded`, and repeats the warning backing off from 60 s (doubling to one hour, SHARED-IDLE-003, SHARED-IDLE-006) (EARS-START-008);
 - on shutdown the idle timer is cleared and the bus stopped, as one `runService` teardown (EARS-START-005).
 
 The `ears` consumer group uses the bus start mode `latest`: the group is reset to the newest entry on every start, so injection requests published while ears was down are not handled (EARS-START-006). `subscribeEars` creates the group first (`Bus.resetGroup`, so it exists before any `ready` signal) and then starts the read loop with `start: "latest"`.
@@ -121,7 +121,7 @@ Injection works in every plan whether or not Discord is connected (add-test-inje
 
 - `mode`: `"off"` for the `off` plan, `"mock"` with the stub engine, else `"live"`.
 - `deps`: `off` gives `{ discord: "n/a", stt: "n/a" }`; otherwise `discord` is `"ok"` only when the plan is `discord` and `voiceReady()` is true (so `no-token` is always `down`; `n/a` for the `http` and `dir` plans), and `stt` is the outcome of the last transcription (initially `"ok"`). The `http` plan adds `http` and the `dir` plan adds `dir`, each `ok` while the listener is bound or the directory is being polled and `down` otherwise (EARS-CAP-011).
-- `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) turns any `down` dep on a `ready` service into state `degraded` (`packages/bus/src/heartbeat.ts:71`).
+- `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) turns any `down` dep on a `ready` service into state `degraded` (`packages/shared/src/lifecycle.ts:142`).
 - `voiceReady` is set true on join Ready and false when a disconnect does not recover (`discord.ts:77,94`). `heartbeat.ready()` is called again on each (re)join (`discord.ts:78`).
 - In the `discord` plan a failed join reports `degraded` with `deps.discord: down` while the join is retried (SHARED-DVS-004); the state is `starting` until the first join attempt resolves. A failed login exits 1.
 

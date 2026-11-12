@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { startIdle } from "../src/index.js";
 
@@ -54,6 +54,62 @@ test("a degraded plan reminds every warnEveryMs until stop(), and a second stop 
     await sleep(60);
     assert.equal(f.lines.length, n, "no reminder after stop");
   } finally { idle.stop(); }
+});
+
+// @spec SHARED-IDLE-003
+test("reminders come after warnEveryMs and then after a doubling delay: 60 s, 120 s, 240 s", () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const f = fakes();
+  const idle = startIdle({ ...f, kind: "degraded", reason: "r" });
+  try {
+    const warns = () => f.lines.filter((l) => l.level === "warn").length;
+    mock.timers.tick(59_999);
+    assert.equal(warns(), 0, "nothing before 60 s");
+    mock.timers.tick(1);
+    assert.equal(warns(), 1, "first at 60 s");
+    mock.timers.tick(119_999);
+    assert.equal(warns(), 1, "second waits 120 s");
+    mock.timers.tick(1);
+    assert.equal(warns(), 2);
+    mock.timers.tick(239_999);
+    assert.equal(warns(), 2, "third waits 240 s");
+    mock.timers.tick(1);
+    assert.equal(warns(), 3);
+  } finally { idle.stop(); mock.timers.reset(); }
+});
+
+// @spec SHARED-IDLE-006
+test("the delay stops doubling at maxWarnEveryMs (one hour by default), which bounds the rate", () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const f = fakes();
+  const idle = startIdle({ ...f, kind: "degraded", reason: "r" });
+  try {
+    const warns = () => f.lines.filter((l) => l.level === "warn").length;
+    // Waits 60, 120, ..., 1920 s fire six reminders; the next doubled wait (3840 s) is clamped to 3600 s.
+    // A reminder re-arms its timer only after it fires, so each wait is ticked on its own.
+    for (const s of [60, 120, 240, 480, 960, 1920]) mock.timers.tick(s * 1000);
+    assert.equal(warns(), 6);
+    mock.timers.tick(3_599_999);
+    assert.equal(warns(), 6, "clamped to one hour");
+    mock.timers.tick(1);
+    assert.equal(warns(), 7);
+    mock.timers.tick(3_600_000);
+    assert.equal(warns(), 8, "and stays at one hour");
+    idle.stop();
+    mock.timers.tick(10 * 3_600_000);
+    assert.equal(warns(), 8, "stop() cancels the pending reminder");
+  } finally { idle.stop(); mock.timers.reset(); }
+});
+
+// @spec SHARED-IDLE-006
+test("maxWarnEveryMs overrides the cap", () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const f = fakes();
+  const idle = startIdle({ ...f, kind: "degraded", reason: "r", warnEveryMs: 10, maxWarnEveryMs: 25 });
+  try {
+    for (const ms of [10, 20, 25, 25]) mock.timers.tick(ms);
+    assert.equal(f.lines.filter((l) => l.level === "warn").length, 4);
+  } finally { idle.stop(); mock.timers.reset(); }
 });
 
 // @spec SHARED-IDLE-003

@@ -26,7 +26,7 @@ jobs:
           --health-retries 10
       # pgvector lets the memory store's real-Postgres tests run instead of skipping themselves (DEPLOY-CI-008).
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:0.8.7-pg16
         env:
           POSTGRES_USER: cohost
           POSTGRES_PASSWORD: cohost
@@ -41,10 +41,10 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       COHOST_TEST_DATABASE_URL: postgres://cohost:cohost@127.0.0.1:5432/cohost_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       # pnpm version comes from "packageManager" in package.json.
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
           cache: pnpm

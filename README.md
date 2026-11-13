@@ -208,7 +208,9 @@ Upgrading the GPU later is `LLM_MODEL=qwen2.5:14b-instruct-q4_K_M` in `.env` and
 ### Talkativeness
 
 `brain.salience.*` in `config.yaml`. The salience region scores unseen events
-every `tick_ms`: a mention of its name = 1.0, something said in voice = 0.9, a
+the moment a finished line of speech arrives (`trigger_on_speech`, on by default) and
+otherwise at a poll every `tick_ms`, which also covers chat, screen changes and idle
+chatter: a mention of its name = 1.0, something said in voice = 0.9, a
 question = 0.55, a mod/sub = 0.35, screen change = 0.3, plain chat = 0.15. It
 publishes `attention.focus` at ≥ `speak_threshold` (0.6), never within
 `cooldown_ms` of the last line, never while the cortex is thinking or the voice

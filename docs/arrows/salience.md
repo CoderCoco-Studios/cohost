@@ -6,6 +6,8 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 **AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 51 specs: 51 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (cascade-audit PR for brain-front).
 
+Event-driven speech trigger (built): SAL-TRIG-001 to SAL-TRIG-009 are `[x]` and SAL-TRIG-010 is `[D]`; SAL-FOCUS-001 is narrowed to the poll that stays as the fallback; the new key is CFG-SCH-034 (config). 66 `[x]`, 0 `[ ]`, 1 `[D]`.
+
 Gap-closure chunk C10 (2026-11-11): SAL-CTRL-007 (resume skips the paused burst), SAL-REFLEX-008, SAL-HEALTH-004 (pause in the heartbeat), SAL-HEALTH-005 (mock mode); runService; test gaps covered. 55 of 55 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
 
 ## Decisions applied
@@ -34,7 +36,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (57 specs, prefix `SAL`: 57 `[x]`, 0 `[ ]`, 0 `[D]`; SAL-FOCUS-006, `timing` on `attention.focus`, is built; SAL-IN-007, `speech.partial` not subscribed, is built)
+- docs/intent/salience/salience-specs.md (67 specs, prefix `SAL`: 66 `[x]`, 0 `[ ]`, 1 `[D]`; SAL-TRIG-001 to SAL-TRIG-009, the speech trigger, are built; SAL-FOCUS-006, `timing` on `attention.focus`, is built; SAL-IN-007, `speech.partial` not subscribed, is built)
 
 ### Tests (39 annotated tests, 62 spec citations)
 - services/salience/test/salience.region.test.ts (24 annotated: Salience class tick, in-flight decision re-check, busy valves, reflex and its self-gating, tick failure, control, injection)
@@ -79,17 +81,18 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Intake | SAL-IN-001 to SAL-IN-006 | 6 | 0 | 0 | 6 |
+| Intake | SAL-IN-001 to SAL-IN-007 | 7 | 0 | 0 | 6 |
 | Scoring | SAL-SCORE-001 to SAL-SCORE-008 | 8 | 0 | 0 | 8 |
 | Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-008 | 8 | 0 | 0 | 8 |
-| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-005 | 5 | 0 | 0 | 5 |
+| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-006 | 6 | 0 | 0 | 5 |
+| Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 9 | 1 | 0 | 9 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-004 | 4 | 0 | 0 | 4 |
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 | 8 |
 | Control | SAL-CTRL-001 to SAL-CTRL-007 | 7 | 0 | 0 | 7 |
 | Injection Flags | SAL-INJ-001 to SAL-INJ-004 | 4 | 0 | 0 | 4 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 55 of 55 specs implemented; 0 deferred; 0 open. 55 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 66 of 67 specs implemented; 1 deferred (SAL-TRIG-010); 0 open. The 66 implemented specs include SAL-IN-007 and SAL-FOCUS-006, which the counts above had not yet listed, and the earlier `[x]` specs carry test `@spec` annotations except where listed in Key Findings. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

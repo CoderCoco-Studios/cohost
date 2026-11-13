@@ -27,7 +27,7 @@ Code layout: `index.ts` calls `runSalience()` (`main.ts`), which runs `salienceM
 | Event in | Handling (file:line) |
 |---|---|
 | `chat.message` | `ctx.push`, `scheduler.noteActivity()`, then `reflex("chat", text)` (`salience.ts:39-45`) |
-| `speech.heard` | `ctx.push`, `noteActivity()`, `reflex("speech", text)` (`salience.ts:46-52`) |
+| `speech.heard` | `ctx.push`, `noteActivity()`, `reflex("speech", text)`; when no reflex fired and `trigger_on_speech` is true, a speech trigger (Decision and Tick, SAL-TRIG-001) |
 | `vision.summary` | `ctx.push`; `reflex("vision", text)` only if `changed`; does NOT call `noteActivity()` (`salience.ts:53-58`) |
 | `brain.say` (from anyone: cortex, reflex echo, operator) | `scheduler.noteSpoke()` (starts cooldown, resets idle timer), cortex state `speaking` (`salience.ts:59-64`) |
 | `brain.status` | store `state` and timestamp (`salience.ts:65-70`) |
@@ -61,15 +61,27 @@ These match the weights quoted in `README.md` ("Talkativeness") and `config/conf
 
 ## Decision and Tick
 
-`Salience.tick()` runs every `brain.salience.tick_ms` (default 1500; `main.ts`). It never rejects: a failure of the decision or of the `attention.focus` publish is logged (`tick failed`) and the next tick runs (SAL-HEALTH-002). Flow (`salience.ts`, `decideAndPublish`):
+`Salience.tick()` is one scheduling pass. Two things start it: the poll, a timer every `brain.salience.tick_ms` (default 1500; `main.ts`, SAL-FOCUS-001), and the speech trigger described below. It never rejects: a failure of the decision or of the `attention.focus` publish is logged (`tick failed`) and the next tick runs (SAL-HEALTH-002). Flow (`salience.ts`, `decideAndPublish`):
 
 1. Return immediately if paused or a previous decision is still in flight (`deciding` flag; an llm/http scorer can outlast a tick).
 2. `scheduler.decide(ctx, busy(), muted, arousal)`.
 3. If it says speak: mark exactly `decision.scored` seen (events that arrived while an async scorer ran stay unseen), set cortex state to `thinking` optimistically (so the next tick does not double-fire), and publish `attention.focus` with the focus mapped to `{kind:"chat", who, text, mention}`, `{kind:"speech", who, text}`, `{kind:"vision", text}` or undefined, plus `propagatedFlags(focus)`. The bus schema fills a missing focus `mention` with `false` (`packages/bus/src/events.ts:77`).
 
-When the focus is a `speech` event, the published `attention.focus` also carries `timing`: the focused event's `timing.audioEndedAt` and `heardAt`, the `ts` of its `speech.heard` envelope (SAL-FOCUS-006). Salience adds no stamp of its own; the `attention.focus` envelope `ts` is the end of the salience stage, and cortex reads it as `focusedAt`. A focus of any other kind carries no `timing`. When several speech events are unseen at one tick they merge into one decision, and only the focus (the top-scoring unseen event) contributes `timing`; the other merged utterances are not measured. The stage's duration therefore includes the wait for the next tick, up to `tick_ms`.
+When the focus is a `speech` event, the published `attention.focus` also carries `timing`: the focused event's `timing.audioEndedAt` and `heardAt`, the `ts` of its `speech.heard` envelope (SAL-FOCUS-006). Salience adds no stamp of its own; the `attention.focus` envelope `ts` is the end of the salience stage, and cortex reads it as `focusedAt`. A focus of any other kind carries no `timing`. When several speech events are unseen at one tick they merge into one decision, and only the focus (the top-scoring unseen event) contributes `timing`; the other merged utterances are not measured. With the speech trigger on, the stage's duration is the decision itself plus any wait on an earlier decision, cooldown or busy cortex; with it off, or for a line the trigger did not cover, it includes the wait for the next poll, up to `tick_ms`.
 
 When the decision returns, `tick` re-checks `muted`, `paused` and `busy()` and drops the focus if any now holds, so a `mute` or `pause` that arrives while an llm/http scorer is running stops that decision (SAL-FOCUS-005). With the `rules` scorer the await resolves before the next bus event is handled, so the window only opens for llm/http scorers.
+
+### Speech trigger
+
+A person who has finished speaking should not wait for the next poll before the co-host starts to answer. When a final `speech.heard` arrives, is not paused, and no reflex fired for the line, `onEvent` starts one pass of the same `tick()` the poll runs, at once (SAL-TRIG-001). `brain.salience.trigger_on_speech` (default true, CFG-SCH-034) turns this off, leaving the poll as the only starter (SAL-TRIG-007). The trigger adds no decision logic: muted, busy, cooldown, threshold, the post-scorer re-check, mark-seen and the optimistic `thinking` marker all apply unchanged (SAL-TRIG-008), so a trigger can only bring forward a focus the poll would have published at its next tick, never one the poll would withhold, and the seen/`thinking` bookkeeping stops a trigger and a poll from both publishing a focus for the same events.
+
+Only `speech.heard` triggers (SAL-TRIG-002). A `speech.partial` is not subscribed to (SAL-IN-007), chat and vision wait for the poll, and a line a reflex answered has already been marked seen and has produced a `brain.say`, so evaluating it would add nothing (SAL-TRIG-003).
+
+`onEvent` is the bus handler, and an `llm` or `http` scorer can take seconds, so the trigger is not awaited: the handler returns and the next event is read while the decision runs (SAL-TRIG-004). The pass never rejects, so an unawaited call cannot leave an unhandled rejection (SAL-TRIG-009).
+
+A decision in flight makes a new pass a no-op (SAL-FOCUS-002), which would leave a second utterance, one that landed while the scorer was running, waiting for the poll. A trigger that lands while a decision is in flight therefore sets a single pending-rerun flag, and when that decision ends salience clears the flag and runs one more pass (SAL-TRIG-005). Triggers that land during the same decision share the one rerun, and a trigger that lands during the rerun sets the flag again, so the number of passes is bounded by the number of utterances, never by a loop of its own. While paused a trigger does nothing and sets no flag, and a pass run for a stale flag returns at the pause check (SAL-TRIG-006).
+
+A trigger that finds the cooldown running or the cortex busy returns no-speak and nothing re-evaluates at the moment the cooldown or valve ends; the next poll does. Expiry timers are deferred (SAL-TRIG-010). The poll stays for that reason, and because it alone starts decisions for chat, vision and idle chatter (SAL-DECIDE-004).
 
 `Scheduler.decide` (`scheduler.ts:41-77`) evaluates in this order and returns the first that applies:
 
@@ -160,11 +172,16 @@ Every startup step runs under `runService` (`loadConfig`, `new Bus`, `startHeart
 | Vision | Vision never resets the idle timer, and an unchanged summary enters the window already seen, so only changed screens are scored | Score every summary; reset idle on vision | Only a changed screen is worth scoring or a reply; an unchanged one is not new input. |
 | Heartbeat mode | `mock` only where the scorer is an `llm` hook inheriting the mock provider (SAL-HEALTH-005) | Always `live`; `mock` whenever `llm.provider` is `mock` | A rules or http scorer never calls the provider, so `mock` there would mislead; an inheriting llm hook falls back to the rules on every call, which is what `mock` tells the operator. |
 | Bootstrap | `runService` from `@cohost/shared`; `salienceMain` holds the service, `runSalience` wires it with replaceable collaborators | A hand-written `main` per service | One bootstrap gives every service the same logger, config failure, heartbeat, shutdown and `fatal` path (SHARED-BOOT-*). |
+| Speech trigger | A final `speech.heard` that no reflex handled starts one `tick()` at once, unawaited, behind `brain.salience.trigger_on_speech` (default true) | Only shorten `tick_ms`; trigger from `speech.partial`; a bus hop (salience republishes an internal event and handles it) instead of an inline call; score a speech line in the intake handler | A shorter poll still averages half a tick of wait and multiplies idle scoring work; a partial is an unstable transcript (ears Decisions, "Partials never reach the brain"); a bus hop adds a publish and a read for a call that is already in-process; scoring in the handler would put an unbounded scorer call in the intake path. An inline unawaited call reuses `decideAndPublish` and every gate unchanged, so the trigger cannot differ from the poll in what it publishes. |
+| Poll kept beside the trigger | `tick_ms` keeps running whatever `trigger_on_speech` is | Replace the poll with triggers only; poll only while the trigger is off | Chat, vision and idle chatter have no trigger, a trigger that meets a cooldown or busy cortex needs a later pass, and a poll costs one early-returning call per `tick_ms` when nothing is unseen. |
+| Rerun after a decision in flight | One boolean pending-rerun flag, cleared when the rerun starts | Drop a trigger that lands mid-decision and wait for the poll; queue one pass per trigger; abort the in-flight decision | Dropping makes the utterance wait up to `tick_ms` behind a slow scorer, which is the latency the trigger removes; a queue runs passes that find nothing unseen; aborting wastes a scorer call whose scores are cached anyway (SAL-SCORE-006). |
+| No expiry timers (deferred) | Nothing re-evaluates when a cooldown or busy valve ends, except the poll (SAL-TRIG-010) | A timer set at the end of cooldown or valve | A timer per gate is state with its own cancel, pause and mute handling, and the poll already bounds the wait to `tick_ms` after expiry; it is a separate change if the wait proves audible. |
 | Latency stamps on `attention.focus` | Copy the focused `speech.heard`'s `audioEndedAt` and envelope `ts` into `timing` | Carry nothing and let the report join `attention.focus` to the nearest earlier `speech.heard` by text; stamp a salience-side receive time | `attention.focus` has no id of the event it answers, so a text join misattributes repeated phrases; a receive time would add a stamp that differs from the envelope `ts` by queueing the report cannot attribute. Copying costs two numbers and keeps the chain exact. |
 
 ## Open Questions & Future Decisions
 
-None.
+- **Re-evaluation at cooldown or valve expiry.** Deferred (SAL-TRIG-010): a speech line that arrives during the cooldown or while the cortex is busy waits for the next poll after the gate opens.
+- **The co-host hearing itself.** A `speech.heard` produced by ears from the co-host's own voice is an ordinary speech line to salience, and the trigger treats it like any other; the busy and cooldown gates are what hold it back. Echo suppression is not specified in this segment.
 
 ## References
 

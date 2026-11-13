@@ -36,12 +36,25 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 
 ## Focus Publication (FOCUS)
 
-- [x] **SAL-FOCUS-001**: While the salience service is running and not paused, it shall run a decision every `brain.salience.tick_ms` (default 1500). <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/main.test.ts:67 -->
+- [x] **SAL-FOCUS-001**: While the salience service is running and not paused, it shall run a decision every `brain.salience.tick_ms` (default 1500), whether or not `brain.salience.trigger_on_speech` is set; this poll is the fallback for the speech trigger (SAL-TRIG-001) and the only thing that starts a decision for chat, vision or idle chatter. <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/main.test.ts:67 -->
 - [x] **SAL-FOCUS-002**: While a previous scheduler decision is still in flight, salience shall skip the next tick without calling the scorer again. <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts:108 -->
 - [x] **SAL-FOCUS-003**: When a decision is to speak, salience shall publish `attention.focus` with `reason`, `score` and a focus of `{kind:"chat", who, text, mention}`, `{kind:"speech", who, text}`, `{kind:"vision", text}` or none (the bus schema fills a missing `mention` with false). <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts:28 -->
 - [x] **SAL-FOCUS-004**: When salience publishes `attention.focus`, it shall mark only the scored events seen and treat the cortex as `thinking` until a new `brain.status` or valve expiry. <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts:52 -->
 - [x] **SAL-FOCUS-005**: When a scheduler decision to speak returns from the scorer, salience shall re-check muted, paused and cortex busy, and if any of them now holds it shall publish no `attention.focus` for that decision. <!-- test: services/salience/test/salience.region.test.ts:233 --> <!-- test: services/salience/test/salience.region.test.ts:252 -->
 - [x] **SAL-FOCUS-006**: When the focus of a speak decision is a `speech` event that carries `timing.audioEndedAt`, salience shall publish `attention.focus` with `timing` holding that `audioEndedAt` and `heardAt` set to the `ts` of that event's `speech.heard` envelope; for a focus of any other kind, or a speech event without `timing`, it shall publish no `timing`; it shall not alter the `audioEndedAt` it copies.
+
+## Speech Trigger (TRIG)
+
+- [x] **SAL-TRIG-001**: Where `brain.salience.trigger_on_speech` is true, when salience receives a `speech.heard` event and it is not paused and no reflex fired for that line, it shall start one decision pass (the same pass the poll runs) at once, without waiting for the next `tick_ms` poll.
+- [x] **SAL-TRIG-002**: The salience service shall start a trigger decision only for a `speech.heard` event: a `speech.partial`, `chat.message`, `vision.summary`, `brain.say`, `brain.status`, `affect.state` or `control` event shall start none.
+- [x] **SAL-TRIG-003**: When a reflex fired for a `speech.heard` line, salience shall not start a trigger decision for that line.
+- [x] **SAL-TRIG-004**: When salience starts a trigger decision, its event handler shall return without waiting for the decision to finish, so a slow `llm` or `http` scorer never delays the intake of the next event.
+- [x] **SAL-TRIG-005**: While a decision is in flight and a trigger arrives, salience shall record one pending rerun and, when that decision ends, run exactly one further decision pass; any number of triggers that arrive during the same decision shall produce that one rerun.
+- [x] **SAL-TRIG-006**: While salience is paused, a `speech.heard` event shall start no trigger decision and record no pending rerun; a pending rerun recorded before a `pause` shall run no decision while the pause holds.
+- [x] **SAL-TRIG-007**: Where `brain.salience.trigger_on_speech` is false, salience shall start no decision on a `speech.heard` event, and decisions shall start only from the `tick_ms` poll.
+- [x] **SAL-TRIG-008**: A trigger decision and a rerun shall go through the same decision as the poll (SAL-DECIDE-001 to SAL-DECIDE-008, SAL-FOCUS-002 to SAL-FOCUS-005), so a trigger shall publish no `attention.focus` that the poll would not publish for the same state, and no event shall be the focus of two published `attention.focus` events.
+- [x] **SAL-TRIG-009**: If a trigger decision or its `attention.focus` publish fails, then salience shall log the error and keep running without rejecting out of the event handler (SAL-HEALTH-002), and a pending rerun shall still run once.
+- [D] **SAL-TRIG-010**: When a trigger decision returns no-speak because of `cooldown` or `cortex busy`, salience shall evaluate again when the cooldown or the busy valve ends, without waiting for the poll. Deferred: until then the next poll after expiry is the only re-evaluation.
 
 ## Busy Gating (BUSY)
 

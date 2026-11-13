@@ -73,7 +73,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "all 78 specs [x]; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
+    next: "all 80 specs [x]; CFG-SCH-034 (`brain.salience.trigger_on_speech`) built; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps."
     drift: null
 
   event-bus:
@@ -179,7 +179,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "all 55 specs [x]; gap closure built (C10). No open gaps."
+    next: "66 of 67 specs [x]; gap closure built (C10); the event-driven speech trigger is built (SAL-TRIG-001 to SAL-TRIG-009); SAL-TRIG-010 [D] (re-evaluate at cooldown or valve expiry). No open gaps."
     drift: null
 
   affect:

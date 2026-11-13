@@ -12,6 +12,7 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. `[x]` = implemented,
 - [x] **CTX-EVT-006**: When an `attention.focus` arrives, the cortex shall start thinking without awaiting the result, so the subscription loop can still deliver the `memory.recall.reply` it is waiting for. <!-- openspec: cortex § Think gating --> <!-- test: services/cortex/test/cortex.region.test.ts:97 -->
 - [x] **CTX-EVT-007**: When an `affect.state` arrives, the cortex shall keep it as the current mood for later prompts. <!-- openspec: cortex § Viewer notes and mood --> <!-- test: services/cortex/test/cortex.region.test.ts:275 -->
 - [x] **CTX-EVT-008**: The cortex shall also subscribe to `voice.failed` in its `cortex` group subscription (CTX-EVT-001). <!-- test: services/cortex/test/startup.test.ts -->
+- [x] **CTX-EVT-009**: The cortex shall not subscribe to `speech.partial`, and a `speech.partial` shall never be added to its working-memory window or start a think: only `speech.heard` is speech to the cortex.
 
 ## Think gating
 
@@ -89,6 +90,9 @@ Design: LLD § Fallback acknowledgement. "The base chance" is `brain.cortex.fall
 - [x] **CTX-SAY-003**: If a think throws, the cortex shall log `think failed`, publish `brain.status` `idle` and remain able to think again. <!-- openspec: cortex § Saying and control --> <!-- test: services/cortex/test/cortex.region.test.ts:215 -->
 - [x] **CTX-SAY-004**: While waiting for `voice.done` for its own line, the cortex shall not start another think. <!-- openspec: cortex § Think gating --> <!-- test: services/cortex/test/cortex.region.test.ts:172 -->
 - [x] **CTX-SAY-005**: When the cortex says a line while another line is still pending (an operator `say` over a playing line), it shall keep the earlier line pending too, so that its `voice.done` is reconciled (CTX-EVT-005) and the cortex is not reported idle while either line plays. <!-- test: services/cortex/test/cortex.dispositions.test.ts -->
+- [x] **CTX-SAY-006**: When the cortex publishes `brain.say` for an `attention.focus` that carries `timing`, it shall set the line's `timing` to that `timing` copied unchanged plus `focusedAt` set to the `ts` of the `attention.focus` envelope.
+- [x] **CTX-SAY-007**: When the cortex publishes `brain.say` for an `attention.focus`, it shall set `timing.llmStartedAt` to the epoch-millisecond time just before the think's first LLM request and `timing.llmEndedAt` to the time after the reply call returned (the `cortex.critic` hook's call excluded), and an operator `say` or a salience reflex `brain.say` shall carry neither.
+- [x] **CTX-SAY-008**: When the `cortex.critic` hook runs for a think, the cortex shall set `timing.criticEndedAt` to the epoch-millisecond time the hook's call returned, including when the hook falls back, and shall not set it when the hook did not run.
 
 ## Control
 

@@ -119,6 +119,7 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
         if (err instanceof ClipError) return reply(res, err.code === "unsupported-type" ? 415 : 400, { error: err.message });
         throw err;
       }
+      clip.audioEndedAt = Date.now(); // @spec EARS-HEAR-012
       const speaker = url.searchParams.get("speaker")?.trim() || source;
       const outcome = await serial(() => o.hear(clip, speaker, source));
       if (outcome.heard) return reply(res, 200, { heard: true, text: outcome.text });

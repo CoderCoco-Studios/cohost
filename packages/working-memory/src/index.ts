@@ -1,4 +1,4 @@
-import type { BusEvent, EventType } from "@cohost/bus";
+import type { BusEvent, EventType, SpeechTiming } from "@cohost/bus";
 import type { Emotion } from "@cohost/config";
 
 /** Set on events that came from test injection; absent on real ones. */
@@ -29,7 +29,7 @@ type TaggedEvent = { [K in EventType]: BusEvent<K> }[EventType];
 export type ContextEvent =
   | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)
-  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; seen: boolean } & InjectionFlags)
+  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: SpeechTiming; seen: boolean } & InjectionFlags)
   | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string };
 
 /** Rolling window of what's happened recently — the brain's working memory. */
@@ -79,7 +79,7 @@ export class Context {
       }
       case "speech.heard": { // @spec WM-PUSH-002
         const d = ev.data;
-        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: d.speaker, text: d.text, seen: false, ...flagsOf(d) };
+        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: d.speaker, text: d.text, ...(d.timing ? { timing: d.timing } : {}), seen: false, ...flagsOf(d) }; // @spec WM-PUSH-011
         break;
       }
       default: // @spec WM-PUSH-003

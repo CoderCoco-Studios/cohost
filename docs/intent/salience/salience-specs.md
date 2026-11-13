@@ -10,6 +10,7 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-IN-004**: When salience receives an `affect.state` event, it shall store the event's `arousal` for threshold adjustment and for the scorer input. <!-- openspec: salience § Inputs and working memory --> <!-- test: services/salience/test/salience.region.test.ts:98 --> <!-- test: services/salience/test/salience.dispositions.test.ts -->
 - [x] **SAL-IN-005**: When salience receives a `brain.status` event, it shall record the reported state and the time received for busy detection. <!-- openspec: salience § Busy detection --> <!-- test: services/salience/test/salience.region.test.ts:52 -->
 - [x] **SAL-IN-006**: Until salience has received an `affect.state` event it shall use arousal 0, and until it has received a `brain.status` or `brain.say` event it shall treat the cortex as `idle`. <!-- test: services/salience/test/salience.dispositions.test.ts -->
+- [x] **SAL-IN-007**: The salience service shall not subscribe to `speech.partial`, and a `speech.partial` shall never enter its `Context`, reset its idle timer, match a reflex or become the focus of an `attention.focus`: only `speech.heard` is speech to salience.
 
 ## Scoring (SCORE)
 
@@ -40,6 +41,7 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-FOCUS-003**: When a decision is to speak, salience shall publish `attention.focus` with `reason`, `score` and a focus of `{kind:"chat", who, text, mention}`, `{kind:"speech", who, text}`, `{kind:"vision", text}` or none (the bus schema fills a missing `mention` with false). <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts:28 -->
 - [x] **SAL-FOCUS-004**: When salience publishes `attention.focus`, it shall mark only the scored events seen and treat the cortex as `thinking` until a new `brain.status` or valve expiry. <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts:52 -->
 - [x] **SAL-FOCUS-005**: When a scheduler decision to speak returns from the scorer, salience shall re-check muted, paused and cortex busy, and if any of them now holds it shall publish no `attention.focus` for that decision. <!-- test: services/salience/test/salience.region.test.ts:233 --> <!-- test: services/salience/test/salience.region.test.ts:252 -->
+- [x] **SAL-FOCUS-006**: When the focus of a speak decision is a `speech` event that carries `timing.audioEndedAt`, salience shall publish `attention.focus` with `timing` holding that `audioEndedAt` and `heardAt` set to the `ts` of that event's `speech.heard` envelope; for a focus of any other kind, or a speech event without `timing`, it shall publish no `timing`; it shall not alter the `audioEndedAt` it copies.
 
 ## Busy Gating (BUSY)
 

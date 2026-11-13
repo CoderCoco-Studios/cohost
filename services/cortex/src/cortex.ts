@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BusEvent, Publisher } from "@cohost/bus";
+import type { BusEvent, Publisher, SpeechTiming } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
@@ -98,7 +98,7 @@ export class Cortex {
       case "attention.focus":
         // Don't await: the LLM call must not block the subscription loop, or the
         // memory reply we're waiting on could never be delivered.
-        this.think(ev.data as Focus).catch((err) => this.d.log.error({ err }, "think rejected")); // @spec CTX-GATE-008
+        this.think(ev.data as Focus, ev.ts).catch((err) => this.d.log.error({ err }, "think rejected")); // @spec CTX-GATE-008
         break;
       // @spec CTX-RECALL-005
       case "memory.recall.reply": {
@@ -141,7 +141,9 @@ export class Cortex {
   }
 
   // @spec CTX-GATE-007, CTX-SAY-002, CTX-SAY-003
-  async think(focus: Focus): Promise<void> {
+  // @spec CTX-SAY-006, CTX-SAY-007, CTX-SAY-008
+  /** `focusedAt` is the `attention.focus` envelope `ts`; a direct call without one leaves that stamp off. */
+  async think(focus: Focus, focusedAt?: number): Promise<void> {
     const { cfg, llm, critic, log } = this.d;
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
     // @spec CTX-GATE-001
@@ -172,7 +174,9 @@ export class Cortex {
       const glitch: Glitch | undefined = carried && { intended: carried.intended, fallback: carried.fallback, chance };
       const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch });
       const t0 = Date.now();
+      const llmStartedAt = t0;
       const raw = await llm.chat(messages);
+      const llmEndedAt = Date.now();
       const parsed = parseReply(raw);
       let { text, emotion } = parsed;
       const { gesture } = parsed;
@@ -184,6 +188,7 @@ export class Cortex {
       // Inhibition: let the critic veto or touch up the line before it's spoken.
       // @spec CTX-CRITIC-001, CTX-CRITIC-002, CTX-CRITIC-003
       const verdict = await critic.run({ text, emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+      const criticEndedAt = Date.now();
       if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await this.status("idle"); return; }
       if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
       if (verdict.emotion) emotion = verdict.emotion;
@@ -194,7 +199,8 @@ export class Cortex {
       if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
       // @spec CTX-INJ-001
       // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
-      await this.say(text, emotion, gesture, focus.reason, propagatedFlags(focus), () => {
+      const timing = { ...(focusedAt === undefined ? {} : { focusedAt }), llmStartedAt, llmEndedAt, criticEndedAt, ...focus.timing }; // received stamps win (BUS-EVT-025)
+      await this.say(text, emotion, gesture, focus.reason, { ...propagatedFlags(focus), timing }, () => {
         if (who && this.viewerNotes.get(who) === viewerNote) this.viewerNotes.delete(who);
         if (carried && this.glitch === carried) this.glitch = undefined; // a newer glitch stays pending (CTX-FALL-005)
       });
@@ -302,7 +308,7 @@ export class Cortex {
   }
 
   // @spec CTX-SAY-001
-  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags & { route?: string[] } = {}, onPublished?: () => void) {
+  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags & { route?: string[]; timing?: SpeechTiming } = {}, onPublished?: () => void) {
     const id = randomUUID();
     this.startSpeaking(id);
     await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason, ...flags });

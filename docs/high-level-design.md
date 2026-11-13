@@ -295,7 +295,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 22 event types; 23 once `voice.failed` lands) plus a separate `cohost:health` heartbeat stream (23 registered payloads in all; 24 with `voice.failed`). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 23 event types; 24 once `speech.partial` lands) plus a separate `cohost:health` heartbeat stream (24 registered payloads in all; 25 with `speech.partial`). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -337,7 +337,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 22 event types plus 1 health type (23 plus 1 with `voice.failed`); consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 23 event types plus 1 health type (24 plus 1 with `speech.partial`); consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -453,11 +453,53 @@ test-input descriptors all derive from it.
   The stops save tokens rather than guard correctness (cortex keeps only the
   first line of a reply), the co-host's own line is not a stop, and a
   cortex-level test checks the rendered tags against the stop list.
+- **Speech-path latency.** A line spoken in answer to something a person said
+  passes ears (audio end, STT), salience (the next tick), cortex (recall, LLM,
+  critic), voice (TTS) and a sink (playback start). Each stage stamps the event
+  it publishes, so the stages are measurable end to end without a new event
+  type: `speech.heard`, `attention.focus` and `brain.say` carry an optional
+  `timing` object of epoch-millisecond stamps that each stage extends
+  (event-bus BUS-EVT-024), the bus envelope's `ts` supplies the publish time of
+  every other event, and `cohostctl latency` joins them from bus history into
+  per-stage p50 and p95 (control-plane CTRL-LAT-*). Stamps from different
+  services are comparable because every service runs on one host clock; a
+  stage whose measured duration is negative is excluded and counted, not
+  repaired, which also catches a publisher on another host. The latency budget below is the target the stages are held to.
+- **Real-time speech path.** A person's speech is cut into utterances by
+  speech activity, not by a fixed pause, and a long utterance is cut at a
+  maximum length so nothing waits for a speaker who never pauses. Where the
+  operator enables it (an explicit setting; partials cost speech-to-text calls
+  and suit a GPU backend), ears also publishes `speech.partial` events while an utterance is
+  still open, so a viewer of the bus sees words as they firm up. `speech.heard`
+  stays the one final event and the only one the brain regions act on: a
+  partial never enters working memory, never triggers salience and never
+  reaches cortex as speech. Partials cost speech-to-text calls, so they are
+  off unless enabled.
 - **Restart start position.** Every subscription names a start mode:
   `latest` resets the service's consumer group to the newest entry on every
   start, `resume` keeps the group's stored position. memory uses `resume`;
   every other subscriber uses `latest`. Delivery across a restart is
   at-most-once.
+
+### Latency budget (speech path)
+
+The end-to-end budget is the time from the end of a person's speech (the last
+audio ears received) to `voice.playing` for the line that answers it, split
+across the stages `cohostctl latency` reports: `stt` (audio end to
+`speech.heard`), `salience` (`speech.heard` to `attention.focus`), `prep`
+(`attention.focus` to the first LLM request: memory recall and viewer notes),
+`llm` (first LLM request to the reply), `critic` (the critic hook's call, when
+it ran), `say` (the last of those to `brain.say`), `tts` (`brain.say` to `voice.utterance`) and `sink`
+(`voice.utterance` to `voice.playing`).
+
+**Open item: the budget numbers.** No latency has been measured and no live
+baseline run is planned alongside the real-time speech path work, so this
+section sets no per-stage or end-to-end figure; ending an utterance by speech
+activity and publishing partials change the `stt` stage, and the budget stays
+open until someone measures it. The numbers are set after the
+first measurement on the owner's GPU box with the default local models, and
+recorded here in the same change that sets them. Until then the end-to-end
+median is tracked, as Success Metric 2 describes, with no pass/fail threshold.
 
 ## Key Design Decisions
 
@@ -532,11 +574,16 @@ what to measure once it has. All targets are proposals.
 1. **First contact.** One full stream with real Twitch chat, a real Discord
    voice channel and a real avatar app, with every service `up` for the
    whole session and no `crash-looping` or `down` state in the Services tab.
-2. **Latency to speak.** Time from a chat mention landing on the bus to
-   `voice.playing` from a real sink, measured as the median on the owner's GPU
-   box with the default local models. The target is "as fast as possible":
-   there is no pass/fail threshold; the measured median is tracked from stream
-   to stream and should trend down.
+2. **Latency to speak.** Two paths, each the median on the owner's GPU box
+   with the default local models. Chat path: time from a chat mention landing
+   on the bus to `voice.playing` from a real sink. Speech path: time from the
+   end of a person's speech (`timing.audioEndedAt` on `speech.heard`) to
+   `voice.playing` for the line that answers it, with the per-stage p50 and p95
+   from `cohostctl latency` (Latency budget, above). The target is "as fast as
+   possible": there is no pass/fail threshold yet (the budget numbers are an
+   open item); the measured medians are tracked from stream to stream and
+   should trend down. Only the speech path is reported by a tool today; the
+   chat path has no stamps on its events.
 3. **Silence ratio (heuristic).** Fraction of distinct `chat.message` events
    that receive an attributable `brain.say` within 60 s, so the ratio cannot
    exceed 1; reflexes and voice-, vision- or operator-triggered lines are

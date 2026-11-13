@@ -34,7 +34,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (55 specs, prefix `SAL`: 55 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/salience/salience-specs.md (57 specs, prefix `SAL`: 57 `[x]`, 0 `[ ]`, 0 `[D]`; SAL-FOCUS-006, `timing` on `attention.focus`, is built; SAL-IN-007, `speech.partial` not subscribed, is built)
 
 ### Tests (39 annotated tests, 62 spec citations)
 - services/salience/test/salience.region.test.ts (24 annotated: Salience class tick, in-flight decision re-check, busy valves, reflex and its self-gating, tick failure, control, injection)

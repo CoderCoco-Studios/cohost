@@ -312,6 +312,23 @@ export const ConfigSchema = z.object({
       poll_ms: z.number().int().positive().default(1000),
     }).default({}),
     silence_ms: z.number().int().positive().default(700),
+    /**
+     * How a connector source's frames are cut into utterances: `silero` (default) runs a speech-activity detector over each
+     * speaker's frames, `gap` cuts on the frame gap alone. `threshold` is the speech probability a frame needs (EARS-VAD-*).
+     */
+    // @spec CFG-SCH-033
+    vad: z.object({
+      engine: z.preprocess((v) => v || "silero", z.enum(["silero", "gap"])),
+      threshold: z.number().min(0).max(1).default(0.5),
+    }).default({}),
+    /** An utterance whose buffered audio reaches this is closed and the speaker's next speech opens a new one (EARS-VAD-005). */
+    max_utterance_ms: z.number().int().positive().default(15000),
+    /** `on` publishes `speech.partial` while a connector utterance is open (EARS-PART-001); costs speech-to-text calls. */
+    partials: z.preprocess((v) => v || "off", z.enum(["on", "off"])),
+    /** Declares that the speech-to-text backend runs on a GPU; only gates the startup warning of EARS-PART-012. */
+    stt_gpu: z.boolean().default(false),
+    /** How often a growing partial transcription is made, ms. */
+    partial_step_ms: z.number().int().positive().default(1000),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: str("Systran/faster-whisper-small"),
     /** `stub` transcribes every clip to fixed text with no STT server (isolated runs); blank is `speaches`. */

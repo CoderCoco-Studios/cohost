@@ -29,7 +29,10 @@ test("transcribed: bytes unchanged to STT, injected speech.heard with speaker an
   const t = setup();
   await run(t.handle, req({ meta: { user: "alice" } }));
   assert.deepEqual(t.sent, [{ len: t.body.length, type: "audio/wav" }]);
-  assert.deepEqual(t.bus.of("speech.heard"), [{ speaker: "alice", text: "hello there", durationMs: 1000, injected: true, remember: false }]);
+  const [heard] = t.bus.of("speech.heard");
+  const { timing, utteranceId, ...rest } = heard!; assert.equal(typeof utteranceId, "string"); // EARS-PART-003; // the audio-end stamp is EARS-HEAR-012's concern (timing.test.ts)
+  assert.deepEqual(rest, { speaker: "alice", text: "hello there", durationMs: 1000, injected: true, remember: false });
+  assert.ok(timing?.audioEndedAt !== undefined);
   assert.deepEqual(t.bus.of("inject.result"), [{ id: "a1", ok: true, detail: "hello there" }]);
 });
 

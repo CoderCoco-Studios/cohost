@@ -51,7 +51,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (78 specs, prefix `CFG`: 78 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/config/config-specs.md (79 specs, prefix `CFG`: 79 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-SCH-033, the VAD and partial-transcript `ears` keys, is built)
 
 ### Tests
 - packages/config/test/config.test.ts (453 lines; 33 `@spec` lines, covering 37 of the 46 implemented specs)

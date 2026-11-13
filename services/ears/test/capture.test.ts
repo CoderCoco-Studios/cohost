@@ -26,7 +26,9 @@ test("heardClip: a clip is resampled to 16 kHz mono, transcribed and published a
   assert.deepEqual(out, { heard: true, text: "hello world" });
   const info = parseWav(seen[0]!);
   assert.deepEqual([info.sampleRate, info.channels, Math.round(info.durationMs)], [16000, 1, 1000]);
-  assert.deepEqual(bus.published, [{ type: "speech.heard", data: { speaker: "alice", text: "hello world", durationMs: 1000 } }]);
+  const { utteranceId, ...rest } = (bus.published[0] as { data: Record<string, unknown> }).data; // EARS-PART-003: a whole clip gets a minted id
+  assert.equal(typeof utteranceId, "string");
+  assert.deepEqual(rest, { speaker: "alice", text: "hello world", durationMs: 1000 });
 });
 
 // @spec EARS-CAP-001
@@ -78,7 +80,9 @@ test("decodeClip: other types, 8-bit WAV, garbage, empty bodies and bad PCM para
 test("heardClip: the clip's source is published when given, and the same filters apply whatever the source", async () => {
   const t = hearing("hello world");
   assert.deepEqual(await t.h.heardClip({ pcm: silence(1000), rate: 16000, channels: 1 }, "a", "desktop"), { heard: true, text: "hello world" });
-  assert.deepEqual(t.bus.published, [{ type: "speech.heard", data: { speaker: "a", text: "hello world", durationMs: 1000, source: "desktop" } }]);
+  const { utteranceId, ...rest } = (t.bus.published[0] as { data: Record<string, unknown> }).data; // EARS-PART-003
+  assert.equal(typeof utteranceId, "string");
+  assert.deepEqual(rest, { speaker: "a", text: "hello world", durationMs: 1000, source: "desktop" });
   for (const src of ["desktop", "http", "dir"]) {
     assert.deepEqual(await t.h.heardClip({ pcm: silence(100), rate: 16000, channels: 1 }, "a", src), { heard: false, reason: "too-short" });
   }

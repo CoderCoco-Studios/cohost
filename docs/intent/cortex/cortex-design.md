@@ -40,7 +40,7 @@ Observed principles:
 
 Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mode `latest`, types
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
-memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
+memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply` (never `speech.partial`: an interim transcript is not speech to the cortex, CTX-EVT-009)
 once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallback
 line (`CTX-EVT-008`). The service publishes `brain.status`,
 `brain.say`, `memory.recall.request` and `memory.notes.request`.
@@ -299,6 +299,10 @@ Config keys read: `brain.working_memory_events`, `brain.memory.recall_k`,
 streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 (`add-isolated-backends`), `HEARTBEAT_INTERVAL_MS`.
 
+## Latency stamps
+
+A `brain.say` the cortex publishes for an `attention.focus` carries `timing` (CTX-SAY-006, CTX-SAY-007): the focus's own `timing` (`audioEndedAt`, `heardAt`) copied unchanged, `focusedAt` (the `attention.focus` envelope `ts`), `llmStartedAt` (just before the think's first LLM request) and `llmEndedAt` (after the reply call returns), and, when the `cortex.critic` hook ran, `criticEndedAt` when its call returns (CTX-SAY-008). The time between `focusedAt` and `llmStartedAt` is recall and viewer-note lookups; the time after the last of these stamps up to the `brain.say` envelope `ts` is the publish itself. A critic that is off, or not asked because the reply is a single character, leaves `criticEndedAt` absent. A think whose reply is vetoed, empty or failed publishes no `brain.say` and so no sample. An operator `say` and a salience reflex are not thinks and carry no `llm` stamps.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -335,6 +339,7 @@ streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset
 | Critic as a `Module` hook | `rules` / `llm` / `http` with rules fallback | built-in moderation only | Commit `969f6d7`: regions "expose their judgement as a Module"; "cortex.critic: inhibition; can veto or rewrite a reply before it's spoken"; "Any failure falls back to rules". `critic.ts:27-30` |
 | Wait for the LLM before subscribing | infinite `ping()` loop, reported `degraded` | exit and let a supervisor restart | Comment `startup.ts:17-21` ("Never silent and never fatal ... a supervisor sees `degraded` instead of a service that just hangs"); commit `51d5a9c` ("cortex (LLM down) now idle and report `degraded` instead of exiting or blocking silently") |
 | Mock provider path | no special-casing in `Cortex`; the provider replies in tag format | stub inside cortex | Comment `packages/llm/src/mock.ts:7`: "`[happy] mock: <last user message>`, in the tag format the cortex parses"; tested in `mock.test.ts:23` |
+| Critic stamped separately | `llmEndedAt` ends at the reply call; the critic has its own `criticEndedAt` | Fold the critic into `llm`; stamp only the reply call | The critic is an optional hook whose model call can be as long as the reply; its own stage shows what turning it on costs, and a think without a critic simply has no critic sample. |
 
 ## Open Questions & Future Decisions
 

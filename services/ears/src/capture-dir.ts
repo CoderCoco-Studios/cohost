@@ -64,6 +64,7 @@ export function createDirCapture(o: DirCaptureOptions): DirCapture {
       o.log.warn({ file: name, err: err instanceof ClipError ? err.message : String(err) }, "ears dir: file is not readable 16-bit WAV audio");
       return finish(name, "rejected");
     }
+    clip.audioEndedAt = Date.now(); // @spec EARS-HEAR-012
     const outcome = await o.hear(clip, "dir", "dir");
     return finish(name, !outcome.heard && outcome.reason === "stt-error" ? "failed" : "done");
   }

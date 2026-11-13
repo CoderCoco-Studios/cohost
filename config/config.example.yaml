@@ -248,6 +248,13 @@ ears:
     path: ""
     poll_ms: 1000
   silence_ms: 700              # end-of-utterance detection
+  vad:
+    engine: silero             # silero (Silero VAD v5 model run by onnxruntime-node, shipped in services/ears/models; default) | gap (frame gap alone, for connectors that send frames only while speaking)
+    threshold: 0.5             # speech probability a frame needs, 0 to 1
+  max_utterance_ms: 15000      # an utterance is cut at this length; the speaker's next speech opens a new one
+  partials: off                # on | off: publish speech.partial while a connector utterance is open (costs STT calls)
+  stt_gpu: false               # true when the STT backend runs on a GPU (only silences the partials warning)
+  partial_step_ms: 1000
   min_speech_ms: 400
   stt_model: "${STT_MODEL}"
   stt_engine: "${EARS_STT_ENGINE:-speaches}"  # speaches | stub (fixed text, no STT server; isolated runs)

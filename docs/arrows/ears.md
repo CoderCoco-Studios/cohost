@@ -16,6 +16,10 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 - The `desktop` source is a connector whose clips arrive over the `http` listener until the capture helper writes frames (EARS-SRC-009 to 016, CONN-DESK-*).
 - Injection (`inject.request`, kind `audio`) works in every plan (EARS-INJ-*, SHARED-INJ-*).
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. EARS-ECHO-001 to EARS-ECHO-009 are `[x]`: the echo gate for `ears.echo_suppress_sources`, and EARS-INJ-012 (an injected clip stamps `meta.source` on its `speech.heard`); EARS-START-003 and EARS-CAP-003 are reworded for the added subscription. Spec file totals: 93 specs, 89 `[x]`, 2 `[ ]`, 2 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -25,7 +29,7 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (83 specs: 79 `[x]`, 2 `[ ]`, 2 `[D]`; EARS-HEAR-012, the `timing.audioEndedAt` stamp, EARS-VAD-001 to 008 (endpointing) and EARS-PART-001 to 014 (partials) are built; the gaps are the desktop helper (EARS-SRC-014, 015); the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
+- docs/intent/ears/ears-specs.md (93 specs: 79 `[x]`, 12 `[ ]`, 2 `[D]`; EARS-HEAR-012, the `timing.audioEndedAt` stamp, EARS-VAD-001 to 008 (endpointing) and EARS-PART-001 to 014 (partials) are built; the gaps are the desktop helper (EARS-SRC-014, 015); the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Tests
 - services/ears/test/*.test.ts (hearing and the STT client, transcript filter, plans and heartbeat, capture sources, connector source, injection limits, stub engine, `no-discord.test.ts` guarding that no Discord client or token is referenced)
@@ -42,7 +46,7 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 **Key Components:**
 1. `index.ts` / `service.ts`: start through `runService`, choose the startup plan with `earsPlan`, wire the heartbeat and inject handler, register the one shutdown.
 2. `sources.ts`, `capture.ts`: resolve `ears.sources` into adapters; `capture-http.ts`, `capture-dir.ts` and `connector-source.ts` are the adapters.
-3. `session.ts`: the `ears` bus loop (`inject.request` only), group creation with start mode `latest`, the single shutdown sequence.
+3. `session.ts`: the `ears` bus loop (`inject.request`, plus `voice.playing` and `voice.done` for the echo gate), group creation with start mode `latest`, the single shutdown sequence.
 4. `hearing.ts`: min-length gate, 48k-to-16k conversion, STT HTTP client, `speech.heard` publish with the clip's `source`.
 5. `audio.ts`, `inject.ts`, `health.ts`, `transcript.ts`: PCM downsampling over the shared WAV code, the inject handler, the plan and heartbeat, `ears.drop_phrases`.
 

@@ -63,6 +63,20 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-BUSY-003**: When salience receives a `brain.say` event from any source (cortex, reflex echo or operator), it shall start the speaking cooldown and set the cortex state to `speaking`. <!-- openspec: salience § Busy detection --> <!-- test: services/salience/test/salience.region.test.ts:75 -->
 - [x] **SAL-BUSY-004**: While the last observed cortex state is `idle` or `muted`, salience shall not treat the cortex as busy (salience's own mute, SAL-CTRL-004, is what stops it speaking). <!-- test: services/salience/test/salience.region.test.ts:52 --> <!-- test: services/salience/test/salience.dispositions.test.ts -->
 
+## Barge-in (BARGE)
+
+- [x] **SAL-BARGE-001**: Where `brain.salience.barge_in` is true, when salience receives a `speech.heard` and it is not paused or muted, the cortex state is `speaking` and busy (SAL-BUSY-002), the speaking line is not a reflex line (SAL-BARGE-006), the event's `source` is in `brain.salience.barge_in_sources` (SAL-BARGE-004) and its text meets `brain.salience.barge_in_min_words` (SAL-BARGE-005), salience shall publish one `voice.stop` with reason `barge-in` and no `ids`, before it evaluates reflexes for that line.
+- [x] **SAL-BARGE-002**: When salience publishes a `voice.stop` under SAL-BARGE-001, it shall set its cortex state to `idle` and clear its cooldown, so that neither SAL-DECIDE-001's busy and cooldown gates nor SAL-REFLEX-005's hold back the interrupter's line.
+- [x] **SAL-BARGE-003**: After a barge-in, salience shall handle the interrupting `speech.heard` as any other: reflex evaluation (SAL-REFLEX-001), the speech trigger (SAL-TRIG-001) and the decision (SAL-DECIDE-001 to SAL-DECIDE-008) all apply unchanged, and the barge-in itself shall publish no `attention.focus` and no `brain.say`.
+- [x] **SAL-BARGE-004**: If a `speech.heard` carries no `source`, or a `source` that is not in `brain.salience.barge_in_sources`, then salience shall not treat it as a barge-in.
+- [x] **SAL-BARGE-005**: When salience counts the words of a transcript for SAL-BARGE-001, it shall count whitespace-separated tokens that contain at least one letter or number in any script, so that a transcript of fewer than `brain.salience.barge_in_min_words` such tokens is not a barge-in.
+- [x] **SAL-BARGE-006**: While the line that last set the cortex state to `speaking` is a reflex line, salience shall not treat a `speech.heard` as a barge-in; a line is a reflex line from the moment salience publishes the reflex `brain.say` (SAL-REFLEX-007), before its echo arrives, and when a `brain.say` arrives with a `reason` beginning `reflex:`; a later `brain.say` whose `reason` does not begin `reflex:` shall end that exemption.
+- [x] **SAL-BARGE-007**: If the cortex state is not `speaking`, or is `speaking` but older than `brain.cortex.speaking_timeout_ms` (SAL-BUSY-002), then salience shall not treat a `speech.heard` as a barge-in and shall publish no `voice.stop`.
+- [x] **SAL-BARGE-008**: While salience is paused or muted, it shall publish no `voice.stop`.
+- [x] **SAL-BARGE-009**: If publishing the `voice.stop` of SAL-BARGE-001 fails, then salience shall log the error and leave its cortex state and cooldown unchanged, so the line takes the ordinary busy-gated path.
+- [x] **SAL-BARGE-010**: After a barge-in, while no new `brain.say` has arrived, salience shall publish no further `voice.stop` for any later `speech.heard`, whatever its speaker.
+- [x] **SAL-BARGE-011**: Where `brain.salience.barge_in` is false, salience shall publish no `voice.stop` and its handling of `speech.heard` shall be as without barge-in.
+
 ## Reflexes (REFLEX)
 
 - [x] **SAL-REFLEX-001**: When a chat, speech or changed-vision event's text matches a configured reflex rule's case-insensitive regex and the event's sense is listed in the rule's `on`, salience shall publish `brain.say` with a randomly chosen `say` line, the rule's emotion and gesture, and `reason` `reflex: <match>`. <!-- openspec: salience § Reflex fast path --> <!-- test: services/salience/test/salience.region.test.ts:121 -->

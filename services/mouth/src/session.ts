@@ -2,18 +2,20 @@ import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { OUTPUT_KINDS } from "./health.js";
 
-export type MouthEventType = "voice.utterance" | "voice.playing" | "control";
+export type MouthEventType = "voice.utterance" | "voice.playing" | "voice.stop" | "control";
 
 /** The types the one `mouth` loop reads in the `discord` and `local` plans; `control` is acted on only for `set_routing` (MOUTH-PLAY-008). */
-// @spec MOUTH-PLAY-001, MOUTH-PLAY-008
-export const MOUTH_LOOP_TYPES = ["voice.utterance", "voice.playing", "control"] as const satisfies readonly MouthEventType[];
+// @spec MOUTH-PLAY-001, MOUTH-PLAY-008, MOUTH-STOP-001
+export const MOUTH_LOOP_TYPES = ["voice.utterance", "voice.playing", "voice.stop", "control"] as const satisfies readonly MouthEventType[];
 
 /** One enabled output as the loop sees it: a queue that is judged for readiness when an utterance arrives. */
 export interface MouthOutput {
   /** The output's name, which is also its sink name. */
   name: string;
   isReady(): boolean;
-  playback: { enqueue(id: string, url: string): Promise<void> };
+  playback: { enqueue(id: string, url: string, utt?: { text: string; durationMs: number }): Promise<void> };
+  /** Apply a `voice.stop` (MOUTH-STOP-002 to MOUTH-STOP-010). */
+  stop(order: { ids?: string[] }): Promise<void>;
   /** Cancel the output's timers; for shutdown. */
   close?(): void;
 }
@@ -43,6 +45,17 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
   return async (ev: BusEvent): Promise<void> => {
     if (ev.type === "control") {
       await control?.handleAsync(ev);
+      return;
+    }
+    if (ev.type === "voice.stop") { // @spec MOUTH-STOP-001
+      const { ids } = (ev.data as BusEvent<"voice.stop">["data"]);
+      for (const output of outputs) {
+        try {
+          await output.stop({ ...(ids ? { ids } : {}) });
+        } catch (err) {
+          log.warn({ err: String(err), output: output.name }, "voice.stop failed on an output");
+        }
+      }
       return;
     }
     if (ev.type === "voice.playing") {
@@ -78,7 +91,7 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
         log.debug({ id: d.id, output: output.name }, "output not connected: utterance skipped");
         continue;
       }
-      void output.playback.enqueue(d.id, d.audioUrl);
+      void output.playback.enqueue(d.id, d.audioUrl, { text: d.text, durationMs: d.durationMs });
     }
   };
 }

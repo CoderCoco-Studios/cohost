@@ -18,7 +18,7 @@ export interface Clip {
 /** What `Hearing.heardClip` did: published a transcript, or the reason it published nothing. */
 export type HearOutcome =
   | { heard: true; text: string }
-  | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "stt-error" };
+  | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "stt-error" | "echo" };
 
 /** The sink every adapter feeds: one clip, one speaker name, the name of the source it came from and, when the source tells speakers apart, the speaker's id. */
 export type HearClip = (clip: Clip, speaker: string, source?: string, speakerId?: string) => Promise<HearOutcome>;

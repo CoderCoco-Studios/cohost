@@ -34,6 +34,10 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 
 To settle before tests, beyond the LLD's open questions: that `voice.done` timed from the write schedule keeps cortex's `speaking_timeout_ms` and the stuck-playback watchdog (MOUTH-PLAY-011) coherent; that dropping per-service channels loses nothing the owner used (ears and mouth in different channels); that the reserved tags cover every sink name voice's protocol uses; the order of registration and stream creation so a consumer that starts first does not miss early frames (`$` start is live-only by design).
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 are `[x]`: the flush frame, the `flush` capability flag and the Discord connector consuming it. Spec file totals: 48 specs, 46 `[x]`, 1 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -44,7 +48,7 @@ To settle before tests, beyond the LLD's open questions: that `voice.done` timed
 - docs/intent/connections/decisions/connector-protocol.md
 
 ### EARS
-- docs/intent/connections/connections-specs.md (41 specs: 39 `[x]`, 1 `[ ]`, 1 `[D]`)
+- docs/intent/connections/connections-specs.md (48 specs: 39 `[x]`, 8 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/bus/test/connector.test.ts

@@ -36,6 +36,9 @@ export class Scheduler {
     this.lastActivity = this.now();
   }
 
+  /** A barge-in ends the cooldown so the interrupter's line is not held back (SAL-BARGE-002). */
+  clearCooldown(): void { this.lastSpoke = -Infinity; }
+
   noteSpoke(): void {
     this.lastSpoke = this.now();
     this.lastActivity = this.lastSpoke;

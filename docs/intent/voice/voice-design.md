@@ -28,7 +28,7 @@ Ownership notes (from the mapping brief): `src/health.ts` implements the heartbe
 
 Boot (`runVoice` in `boot.ts`; `index.ts` only calls it) runs through the shared `runService` bootstrap (shared-runtime SHARED-BOOT-*), which loads config, creates `Bus("voice")` and starts the heartbeat in `starting` with the `VoiceHealth` spec. Voice's `main` then reads `VOICE_PORT` (default `8700`) and `urls.voice()`, picks the synthesizer, creates `Voice`, registers its teardown, listens on the port, positions the consumer group with `bus.resetGroup("voice")`, calls `heartbeat.ready()`, and starts one bus loop:
 
-`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed"], start: "latest" }, ev => voice.onEvent(ev))`.
+`bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed", "voice.stop"], start: "latest" }, ev => voice.onEvent(ev))`.
 
 Readiness means "can receive `brain.say`": `ready` is reported only once the HTTP server listens **and** the `voice` group exists at the stream's newest entry. The bus has no "subscribed" notification (`subscribe` resolves only when the bus stops), so boot creates and positions the group itself with `resetGroup` before `ready`, and `subscribe` then runs the same positioning (`latest` resets again); a `brain.say` published in the few milliseconds between the two is dropped, which is what `latest` allows. Everything runs inside the `try`, so a config error, a port in use, an unreachable Redis at the group call or a rejecting subscription all log `fatal` and exit 1 (VOICE-SYN-006).
 
@@ -106,7 +106,7 @@ Voice owns this protocol; [mouth](../mouth/mouth-design.md)'s outputs and the [d
 | `voice.playing` | `{ id, sink: string }` | The named sink started playing `id` (`events.ts:140`) |
 | `voice.done` | `{ id, sink: string }` | The named sink finished (or gave up on) `id` (`events.ts:141`) |
 
-`sink` is a free-form string. Values in use: `"discord"` (mouth's Discord output; every mouth output publishes under its own output name), `"dashboard"` (dashboard browser page), `"virtual"` (voice's fallback), `"error"` (voice, synthesis failed). A fourth event, `voice.failed`, lets a sink report that it gave up on an utterance (rule 8).
+`sink` is a free-form string. Values in use: `"discord"` (mouth's Discord output; every mouth output publishes under its own output name), `"dashboard"` (dashboard browser page), `"virtual"` (voice's fallback), `"error"` (voice, synthesis failed). A fourth event, `voice.failed`, lets a sink report that it gave up on an utterance (rule 8). A fifth, `voice.stop`, orders every part of the body to stop speaking (rule 9); the line it ends is reported by `voice.done` flagged `interrupted`.
 
 ### Sequence
 
@@ -146,6 +146,15 @@ sequenceDiagram
    - still inside the 1.5 s claim window: when the window ends with no claim, voice publishes the virtual `voice.done` at once and no virtual `voice.playing` (VOICE-SINK-011). The window still runs in full, because another sink (the dashboard) may yet claim the line; a claim inside it wins as usual (VOICE-SINK-004). Avatar gets no `voice.playing`, so it does not lip-sync a line nobody hears;
    - after the virtual `voice.playing` was published: voice cancels the pending virtual `voice.done` timer and publishes it at once (VOICE-SINK-012).
    A `voice.failed` with `fallback`, for an id a real sink claimed, or for an id voice does not know changes nothing (VOICE-SINK-013). Today mouth's outputs are the only sinks that report a give-up ([mouth](../mouth/mouth-design.md) Fallback Line).
+
+9. **Stop.** voice reads `voice.stop` on its one loop (VOICE-STOP-001; schema: [event-bus](../event-bus/event-bus-design.md) BUS-EVT-030) and ends what it holds for the lines the order names (every line when `ids` is absent, VOICE-STOP-002):
+   - lines on the synthesis queue that have not started are dropped, with no event, so the queue never delivers a line the person already talked over (VOICE-STOP-003);
+   - a line being synthesized runs to the end of its TTS request, which cannot be recalled, and its result is discarded: no store entry, no `voice.utterance`, no timers (VOICE-STOP-004);
+   - a line whose claim window is open loses its timer, so no virtual `voice.playing` follows (VOICE-STOP-005);
+   - a line whose virtual `voice.playing` was published and whose virtual `voice.done` is pending loses the timer and gets `voice.done { id, sink: "virtual", interrupted: true }` at once, without spoken or unsaid text, because a virtual sink plays nothing and has no position to report (VOICE-STOP-006).
+   A line a real sink is playing is stopped by that sink, which publishes its own interrupted `voice.done` ([mouth](../mouth/mouth-design.md) Stopping a line); voice publishes nothing for it. voice's stop changes no claim and evicts no audio, and a `voice.stop` that names nothing voice holds does nothing (VOICE-STOP-007). It is not a mute: a `brain.say` read after the stop is queued and spoken as usual (VOICE-STOP-008), which is how the reply to the interrupter is spoken.
+
+   Ordering is what makes this safe. `voice.utterance` and `voice.stop` travel on one stream, so a sink that reads an utterance published before the stop reads it before the stop and removes it when it handles the stop, and voice never publishes an utterance for a line it discarded after the stop.
 
 ### Known limits of the protocol
 
@@ -263,6 +272,9 @@ voice parses every WAV it synthesizes with the shared `parseWav` (shared-runtime
 | More outputs | Outputs beyond Discord (a local audio device, a virtual cable) are adapters inside [mouth](../mouth/mouth-design.md) under `mouth.outputs`; each joins this protocol as a sink under its own name | Voice-side output adapters | Voice needs no change for a new sink; mouth's deferred decisions own them. |
 | Late real sink | A real sink's `voice.playing` after the virtual one cancels the pending virtual `voice.done` (VOICE-SINK-008) | Widen the claim window to cover sink queues; have sinks drop lines voice already timed; a protocol-wide single-lifecycle rule enforced by sinks | Owner decision 2026-11-01: a voice-only change; cortex is released by the sink that is actually playing, and avatar keeps following every `voice.playing`. |
 | Sink exclusivity | None: two active sinks both play and both report | Exclusive first claim; sink priority | Owner decision 2026-11-01: accepted. Claims only suppress the virtual fallback; running Discord and an OBS dashboard sink together is the operator's choice. |
+| Obeying `voice.stop` | voice drops un-started lines, discards the line being synthesized, cancels virtual-sink timers and publishes an interrupted virtual `voice.done` for a virtual line already playing | Let queued lines synthesize and play after the stop; abort the TTS HTTP request; publish `voice.done` for every dropped line | A stop that leaves the queue running would speak a line the person already talked over. A TTS request has no useful abort and its result is simply unused. A dropped line never started, so no sink or avatar waits on it, and cortex ends its own pending lines on the stop itself (cortex Interruption), so a `voice.done` per dropped line would only add traffic. |
+| `voice.stop` is not mute | voice reads `voice.stop` and still ignores `control`; a `brain.say` after the stop is spoken | voice gates on a stopped flag until cortex speaks again | The stop ends what exists when it is read; the reply to the interrupter follows it on the same stream and must be spoken. Mute and pause stay upstream (Mute awareness). |
+| Clause-chunked synthesis and streaming input (deferred) | Recorded as deferred specs (VOICE-CHUNK-001, VOICE-CHUNK-002); synthesis stays whole-line | Build chunking now | The deferred ideal ([HLD](../../high-level-design.md) Future / ideal state) needs voice to synthesize a line in clause-sized chunks as the chat model streams it, so a boundary re-think can happen between chunks; it depends on a streaming model and a playback position that do not exist yet. |
 | Mute awareness | voice is unaware of mute and pause; it speaks every `brain.say` | voice subscribes to `control` and drops lines while muted | Owner decision 2026-11-01: mute and pause are seen only by cortex and salience, which decide whether to speak; an operator `say` bypasses mute and must still be heard. |
 | Host-side sinks | Not supported except through the dashboard's `/audio/*` proxy; Compose publishes 8700 on `127.0.0.1` only, for the host-run dashboard (DEPLOY-COMPOSE-007) | Publish 8700 to the LAN; CORS-open host access | Owner decision 2026-11-01: the LAN is the trust boundary and browser and OBS sinks go through the dashboard proxy; the loopback port exists because the dashboard runs on the host, outside the Compose network. |
 | Bus failures | Virtual-sink publish failures are logged and voice continues; a subscription rejection that survives the bus's retry is logged `fatal` and exits non-zero | Crash on any failure; ignore silently | Owner decision 2026-11-01 (cross-cutting): a failed publish never ends a service; a dead subscription is a clear, restartable failure. |
@@ -291,7 +303,7 @@ Files in this segment:
 
 Other segments (arrow shows direction):
 
-- voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing`, and (fallback line) `voice.failed` (group `voice`, moved to the newest entry on every start); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
+- voice -> [event-bus](../event-bus/event-bus-design.md): consumes `brain.say`, `voice.playing`, `voice.stop` (barge-in), and (fallback line) `voice.failed` (group `voice`, moved to the newest entry on every start); publishes `voice.utterance`, `voice.playing` (virtual), `voice.done` (virtual / error), heartbeats.
 - voice -> own clip store: writes the fallback clips and `manifest.json` under `<dataDir()>/voice/fallback-clips` ([config](../config/config-design.md) CFG-DIR-006, CFG-DIR-007) and serves them on `/fallback/*`; [mouth](../mouth/mouth-design.md) fetches them over HTTP into its own cache.
 - voice -> [config](../config/config-design.md): `loadConfig` (`voice.*`), `urls.tts()`, `urls.voice()`, `envOr("VOICE_PORT")`.
 - voice <- [cortex](../cortex/cortex-design.md) and [salience](../salience/salience-design.md): publish `brain.say`; cortex consumes `voice.done`.

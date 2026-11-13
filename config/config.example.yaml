@@ -73,6 +73,9 @@ brain:
   salience:
     tick_ms: 1500              # the poll: a decision every this often (fallback for trigger_on_speech; chat, vision, idle chatter)
     trigger_on_speech: true    # decide at once when a final speech line arrives, not at the next poll
+    barge_in: false            # stop the voice when someone speaks over the co-host (off until live-tested)
+    barge_in_sources: [discord] # sources whose speech may interrupt (http, dir or a connector tag); echo from others is not filtered here
+    barge_in_min_words: 2      # words a line needs to interrupt ("mm-hm" does not)
     cooldown_ms: 6000          # min gap between utterances
     thinking_timeout_ms: 60000 # stop treating the cortex as busy after this long without a reply
     idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context
@@ -249,6 +252,8 @@ ears:
     path: ""
     poll_ms: 1000
   silence_ms: 700              # end-of-utterance detection
+  echo_suppress_sources: [desktop] # sources deaf while the co-host's voice plays (a loopback capture hears it); discord already filters its own
+  echo_tail_ms: 1500           # keep them deaf this long after a line ends (room echo)
   vad:
     engine: silero             # silero (Silero VAD v5 model run by onnxruntime-node, shipped in services/ears/models; default) | gap (frame gap alone, for connectors that send frames only while speaking)
     threshold: 0.5             # speech probability a frame needs, 0 to 1

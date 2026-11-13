@@ -40,6 +40,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 12. **R4** Bedrock ping always true → the heartbeat `detail` says `llm` is not probed; `deps.llm` reads `n/a` until the first reply. `CTX-HEALTH-004`.
 13. **R3** Readiness → `ready` once the `cortex` consumer group exists. `CTX-START-003`.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX-GATE-011 (late interrupted `voice.done` ignored) are `[x]`; CTX-REPLAN-001 is `[D]` (dynamic speech); CTX-EVT-001 lists `voice.stop`. Spec file totals: 86 specs, 85 `[x]`, 0 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -49,7 +53,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (82 specs, prefix `CTX`: 82 `[x]`, 0 `[ ]`, 0 `[D]`; CTX-SAY-006 to 008 are built, `timing` on `brain.say`; CTX-EVT-009, `speech.partial` ignored, is built)
+- docs/intent/cortex/cortex-specs.md (86 specs, prefix `CTX`: 85 `[x]`, 0 `[ ]`, 1 `[D]`; CTX-SAY-006 to 008 are built, `timing` on `brain.say`; CTX-EVT-009, `speech.partial` ignored, is built)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)

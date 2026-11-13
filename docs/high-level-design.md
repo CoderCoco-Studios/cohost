@@ -133,7 +133,11 @@ for them to operate.
 2. **Speak when it is worth it.** Mentions, questions, voice, and screen
    changes are scored against a threshold with a cooldown and a busy gate;
    reflexes react instantly to the things that should not wait for a
-   thought. The co-host must never talk over itself or a line still playing.
+   thought. The co-host does not start a line over one still playing, and a
+   person who speaks over it can stop it: when barge-in is enabled, a final
+   transcript of at least a few words from an allowed audio source stops the
+   line mid-sentence and the co-host answers the interrupter. Echo of its own
+   voice never counts as an interruption.
 3. **Remember people and running jokes across streams.** Addressed chat,
    voice and the co-host's own lines are embedded and recalled; regulars are
    recognised by lifetime message count or because the owner marked them; the
@@ -217,9 +221,11 @@ code keeps the seams they need.
 4. **Not a player.** cohost watches the game through screenshots; it never
    sends input to the game or OBS.
 5. **Not a voice pipeline of its own.** Speaker segmentation is Discord's
-   per-user streams plus silence detection; STT and TTS are off-the-shelf
-   local servers. cohost adds no voice-activity detection, diarisation or
-   echo cancellation.
+   per-user streams and voice-activity endpointing of each speaker's audio;
+   STT and TTS are off-the-shelf local servers. cohost adds no diarisation and
+   no acoustic echo cancellation: echo of the co-host's own voice is handled by
+   ears dropping the audio of configured sources while a line plays, not by
+   subtracting the line from the signal.
 6. **Not a rendering engine.** The avatar is drawn by VTube Studio or a VMC
    app; cohost only drives parameters, expressions and gestures. The
    dashboard's SVG face is a preview, not a stream asset.
@@ -411,7 +417,9 @@ test-input descriptors all derive from it.
   ears never read `control`, and mouth reads it only for `set_routing` (which
   outputs are live): none of them acts on `mute` or `pause`, so they speak and
   play every `brain.say` they receive and muting upstream is the only mute. An operator `say` is the one
-  override: cortex speaks it even while muted, paused or busy.
+  override: cortex speaks it even while muted, paused or busy. A line that
+  is stopped by barge-in (below) is released by `voice.stop` and the
+  interrupted `voice.done` instead of by the end of its audio.
 - **Audio sink arbitration.** voice publishes `voice.utterance`; any sink
   (each mouth output under its own name, today "discord"; the dashboard page
   "dashboard") claims it with `voice.playing`; if no
@@ -480,6 +488,30 @@ test-input descriptors all derive from it.
   fallback and as the only starter for chat, vision and idle chatter, and every
   gate (mute, pause, busy cortex, cooldown, threshold) applies to a triggered
   decision as to a polled one. See [salience](intent/salience/salience-design.md).
+- **Barge-in and echo gate.** A line can be stopped while it plays. Where
+  `brain.salience.barge_in` is on and the co-host is speaking, salience
+  treats a final `speech.heard` from an allowed source
+  (`brain.salience.barge_in_sources`) with at least
+  `brain.salience.barge_in_min_words` words as an interruption: it publishes
+  `voice.stop`, frees its own busy state and cooldown, and runs the ordinary
+  decision so the reply goes to the interrupter. A line a reflex said never
+  triggers it. Every part of the body obeys `voice.stop`: voice drops lines it
+  has not synthesized and cancels its virtual-sink timers, mouth empties each
+  output's queue and stops the line in progress, and a connector that declares
+  flush support stops its player and discards the audio it has buffered, so the
+  silence is immediate rather than one buffer later. The interrupted line ends
+  with a `voice.done` flagged `interrupted`, which carries the text spoken so
+  far and the text left unsaid when mouth can compute them. cortex ends every
+  line it was waiting on and starts no think and aborts none: one thought at a
+  time stays. The reverse problem is echo: audio sources that can carry the
+  co-host's own voice back (the desktop capture helper; the Discord source
+  cannot, because bot accounts are never read) are named in
+  `ears.echo_suppress_sources`, and ears drops their utterances while any line
+  plays and for `ears.echo_tail_ms` afterwards, so the co-host neither
+  interrupts nor answers itself. See [salience](intent/salience/salience-design.md),
+  [voice](intent/voice/voice-design.md), [mouth](intent/mouth/mouth-design.md),
+  [connections](intent/connections/connections-design.md) and
+  [ears](intent/ears/ears-design.md).
 - **Restart start position.** Every subscription names a start mode:
   `latest` resets the service's consumer group to the newest entry on every
   start, `resume` keeps the group's stored position. memory uses `resume`;
@@ -506,6 +538,25 @@ first measurement on the owner's GPU box with the default local models, and
 recorded here in the same change that sets them. Until then the end-to-end
 median is tracked, as Success Metric 2 describes, with no pass/fail threshold.
 
+### Future / ideal state: dynamic, interruptible speech
+
+Barge-in stops a line and starts a new thought. The ideal is more fluid: the
+co-host keeps talking while it watches for key events (a person speaking, and
+once live vision exists, something happening on screen) and decides at clause
+boundaries whether to continue, adapt the rest of the line, pivot to the new
+event, or return to the interrupted thought afterwards ("as I was saying").
+This is deferred; the arrow records it as `[D]` specs in
+[cortex](intent/cortex/cortex-specs.md) (CTX-REPLAN), [voice](intent/voice/voice-specs.md)
+(VOICE-CHUNK), [mouth](intent/mouth/mouth-specs.md) (MOUTH-POS) and
+[working-memory](intent/working-memory/working-memory-specs.md) (WM-STACK).
+Prerequisites: speech synthesized and played in clause-sized chunks; the chat
+model's output streamed rather than returned whole; a playback position a
+re-think can read; a boundary re-think call that fits the latency budget; and
+live vision (screen events) as a second source of key events. Building it would
+supersede the decisions that keep one thought at a time and never cancel one in
+flight (cortex and salience Decisions & Alternatives); until then barge-in as
+above is the whole mechanism.
+
 ## Key Design Decisions
 
 Project-level decisions, each with the design doc or file that embodies it.
@@ -520,6 +571,9 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider` | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
+| Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop`; every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
+| Echo of the co-host's own voice | ears drops utterances of the sources named in `ears.echo_suppress_sources` (default `desktop`) while any line plays and for `ears.echo_tail_ms` after it | Acoustic echo cancellation; a transcript-similarity filter; filtering in salience; gating every source | The desktop helper records the host's output device and so can hear the co-host; Discord cannot, because the connector never reads a bot account. Dropping at the source before speech-to-text spends no model call on the echo and keeps the brain unaware of it. The cost is that a person's speech on a gated source is lost while a line plays, which is why barge-in listens to Discord by default. | [ears](intent/ears/ears-design.md); [salience](intent/salience/salience-design.md) |
+| Interruptible, dynamic speech (deferred) | Recorded as deferred specs; not built | Build clause-level re-thinking now | It needs chunked synthesis, a streaming chat model, a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist; stopping and re-answering delivers most of the value for a fraction of the change. | The HLD ideal-state section above; [cortex](intent/cortex/cortex-design.md) |
 | Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control` and mouth reads it only for `set_routing`, so none of them acts on mute or pause; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
 | Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (mouth's outputs such as the co-host's Discord bot, the dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |

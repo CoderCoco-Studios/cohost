@@ -4,7 +4,7 @@ Design: [voice-design.md](voice-design.md). Prefix `VOICE`. Audited against the 
 
 ## Synthesis
 
-- [x] **VOICE-SYN-001**: When the voice service starts, it shall subscribe with consumer group `voice` and the event-bus `latest` start mode (BUS-SUB-010) to `brain.say`, `voice.playing` and `voice.failed`, reading events one at a time in stream order, so that the group is moved to the newest stream entry on every start and no `brain.say` published while voice was down is spoken. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/boot.test.ts:48 -->
+- [x] **VOICE-SYN-001**: When the voice service starts, it shall subscribe with consumer group `voice` and the event-bus `latest` start mode (BUS-SUB-010) to `brain.say`, `voice.playing`, `voice.failed` and `voice.stop`, reading events one at a time in stream order, so that the group is moved to the newest stream entry on every start and no `brain.say` published while voice was down is spoken. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/boot.test.ts:48 -->
 - [x] **VOICE-SYN-002**: When `voice.engine` is `kokoro` and a `brain.say` arrives, the voice service shall POST JSON `{model: "kokoro", input: <text>, voice: voice.voice, speed: voice.speed, response_format: "wav"}` to `<TTS_URL>/v1/audio/speech` and use the response body as the utterance WAV. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/voice.test.ts:105 -->
 - [x] **VOICE-SYN-003**: If the TTS server returns a non-2xx status, then the voice service shall raise the error "tts <status>: <body>", which is handled as a synthesis failure. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/voice.test.ts:105 -->
 - [x] **VOICE-SYN-004**: When a `brain.say` has been synthesized, the voice service shall store the WAV under the event `id` before publishing `voice.utterance`. <!-- test: services/voice/test/voice.test.ts:269 -->
@@ -51,6 +51,26 @@ Retired, numbers not reused: VOICE-ENV-001 and VOICE-ENV-002 (now shared-runtime
 - [x] **VOICE-SINK-011**: When the voice service reads a `voice.failed` without `fallback` for a stored utterance `id` that no real sink has claimed and whose 1500 ms claim window has not ended, and that window then ends with the `id` still unclaimed, the voice service shall, in place of VOICE-SINK-002 and VOICE-SINK-003, publish `voice.done` with that `id` and `sink` `virtual` at once and publish no virtual `voice.playing` for it. <!-- test: services/voice/test/voice.test.ts:294,311 -->
 - [x] **VOICE-SINK-012**: When the voice service reads a `voice.failed` without `fallback` for an utterance `id` whose virtual `voice.playing` has been published and whose virtual `voice.done` is still pending, the voice service shall cancel the pending timer and publish that virtual `voice.done` at once, in place of VOICE-SINK-003's wait for `durationMs`. <!-- test: services/voice/test/voice.test.ts:322,338 -->
 - [x] **VOICE-SINK-013**: When the voice service reads a `voice.failed` that carries `fallback`, or names an `id` already claimed by a real sink, or names an `id` whose audio voice does not hold, the voice service shall change no claim, timer or published event because of it (a fallback's `voice.playing` claim is handled by VOICE-SINK-001 and VOICE-SINK-008). <!-- test: services/voice/test/voice.test.ts:357,386 -->
+
+## Stopping a line (STOP)
+
+Design: LLD Sink Arbitration Protocol, rule 9. `voice.stop` is defined by BUS-EVT-030; a sink's own stop is MOUTH-STOP-*.
+
+- [x] **VOICE-STOP-001**: The voice service shall read `voice.stop` on its one `voice` loop (VOICE-SYN-001), in stream order with `brain.say`, `voice.playing` and `voice.failed`.
+- [x] **VOICE-STOP-002**: When the voice service reads a `voice.stop` without `ids`, it shall apply VOICE-STOP-003 to VOICE-STOP-006 to every line it holds; when it carries `ids`, only to the lines whose `brain.say` id is listed.
+- [x] **VOICE-STOP-003**: When the voice service applies a `voice.stop` to a `brain.say` that is on its synthesis queue and has not started synthesis, it shall remove it from the queue and publish no event for it.
+- [x] **VOICE-STOP-004**: When the voice service applies a `voice.stop` to a line whose synthesis is in progress, it shall discard the result when synthesis ends: it shall store no WAV for it, publish no `voice.utterance` and no `voice.done` for it, and arm no timer for it.
+- [x] **VOICE-STOP-005**: When the voice service applies a `voice.stop` to a line whose claim window is open, it shall clear the window's timer, so that no virtual `voice.playing` or `voice.done` is published for it.
+- [x] **VOICE-STOP-006**: When the voice service applies a `voice.stop` to a line whose virtual `voice.playing` has been published and whose virtual `voice.done` is pending, it shall clear that timer and publish `voice.done` with that `id`, `sink` `virtual` and `interrupted` `true`, without `spokenText` or `unsaidText`.
+- [x] **VOICE-STOP-007**: If a `voice.stop` names no line the voice service holds (every line finished, or an `ids` entry it does not know), then the voice service shall publish nothing and change no claim, timer or stored audio because of it, and a line a real sink has claimed shall be left to that sink.
+- [x] **VOICE-STOP-008**: The voice service shall synthesize every `brain.say` it reads after a `voice.stop` as VOICE-SYN-005 says, and a `voice.stop` shall set no state that affects a later line.
+
+## Deferred: dynamic speech (CHUNK)
+
+Design: [HLD](../../high-level-design.md) Future / ideal state; LLD Decisions & Alternatives, "Clause-chunked synthesis and streaming input (deferred)". Prerequisites: a streaming chat model (model-backends), a playback position (MOUTH-POS-001) and a boundary re-think (CTX-REPLAN-001).
+
+- [D] **VOICE-CHUNK-001**: Where speech is dynamic, the voice service shall synthesize a line in clause-sized chunks and publish each chunk as it is ready, so that a sink can start the first clause before the rest of the line exists and the line can be changed between chunks.
+- [D] **VOICE-CHUNK-002**: Where speech is dynamic, the voice service shall accept a line whose text arrives incrementally from a streaming chat model and begin synthesizing it before the text is complete.
 
 ## Audio store and HTTP
 

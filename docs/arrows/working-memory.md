@@ -29,6 +29,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 7. **S25** affect's unused dependency → affect drops it (affect segment). Specs: none here.
 8. **S29** `forget_context` and `lastVision` (cortex question) → `clear()` also resets `lastVision`. Specs: WM-WIN-003.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. WM-STACK-001 is `[D]`: the interrupted-thought stack of the deferred dynamic-speech ideal. Spec file totals: 40 specs, 39 `[x]`, 0 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -38,7 +42,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (39 specs: 39 `[x]`, 0 `[ ]`, 0 `[D]`; WM-PUSH-011, `timing` on `speech` context events, and WM-PUSH-012, `speech.partial` ignored, are built)
+- docs/intent/working-memory/working-memory-specs.md (40 specs: 39 `[x]`, 0 `[ ]`, 1 `[D]`; WM-PUSH-011, `timing` on `speech` context events, and WM-PUSH-012, `speech.partial` ignored, are built)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)

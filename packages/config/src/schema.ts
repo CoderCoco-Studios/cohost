@@ -150,6 +150,13 @@ export const ConfigSchema = z.object({
       tick_ms: z.number().int().positive().default(1500),
       /** Whether a final `speech.heard` starts a decision at once instead of waiting for the next poll (CFG-SCH-034, SAL-TRIG-001). */
       trigger_on_speech: z.boolean().default(true),
+      /** Stop the voice when someone speaks over the co-host (SAL-BARGE-001); off until live-tested. */
+      // @spec CFG-SCH-035
+      barge_in: z.boolean().default(false),
+      /** Sources whose final speech counts as a barge-in: `http`, `dir` or a connector source tag. */
+      barge_in_sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).default(["discord"]),
+      /** Words a transcript needs to count as a barge-in (a backchannel like "mm-hm" does not). */
+      barge_in_min_words: z.number().int().min(1).default(2),
       cooldown_ms: z.number().int().nonnegative().default(6000),
       /** How long a `thinking` cortex counts as busy before salience stops waiting on it. */
       thinking_timeout_ms: z.number().int().positive().default(60000),
@@ -315,6 +322,10 @@ export const ConfigSchema = z.object({
       poll_ms: z.number().int().positive().default(1000),
     }).default({}),
     silence_ms: z.number().int().positive().default(700),
+    /** Sources deaf to the co-host's own voice while a line plays and for `echo_tail_ms` after (EARS-ECHO-004). */
+    // @spec CFG-SCH-036
+    echo_suppress_sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).default(["desktop"]),
+    echo_tail_ms: z.number().int().min(0).default(1500),
     /**
      * How a connector source's frames are cut into utterances: `silero` (default) runs a speech-activity detector over each
      * speaker's frames, `gap` cuts on the frame gap alone. `threshold` is the speech probability a frame needs (EARS-VAD-*).

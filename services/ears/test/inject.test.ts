@@ -106,3 +106,17 @@ test("wavDurationMs: 0 for non-WAV or garbage", () => {
   assert.equal(wavDurationMs(Buffer.from("nope")), 0);
   assert.equal(wavDurationMs(wavWrap(Buffer.alloc(96000), 48000, 1)), 1000);
 });
+
+// @spec EARS-INJ-012
+test("meta.source is set as source on the injected speech.heard, which stays injected; without it the event carries no source", async () => {
+  const withSource = setup();
+  await run(withSource.handle, req({ meta: { user: "alice", source: "desktop" } }));
+  const [heard] = withSource.bus.of("speech.heard");
+  assert.equal(heard!.source, "desktop");
+  assert.equal(heard!.injected, true);
+  assert.equal(heard!.speaker, "alice");
+  const without = setup();
+  await run(without.handle, req({ meta: { user: "alice" } }));
+  assert.equal("source" in without.bus.of("speech.heard")[0]!, false, "no source member at all");
+  assert.equal(without.bus.of("speech.heard")[0]!.injected, true);
+});

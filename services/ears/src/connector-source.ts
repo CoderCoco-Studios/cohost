@@ -59,6 +59,8 @@ export interface ConnectorSourceDeps {
   /** Partial transcripts; absent means none. */
   partials?: PartialDeps;
   listener?: HttpListener;
+  /** Whether audio that ended at this time (epoch ms) falls inside the echo gate's open window (EARS-ECHO-005); absent means never. */
+  echoBlocked?: (audioEndedAt: number) => boolean;
 }
 
 export interface ConnectorSource extends CaptureAdapter {
@@ -140,6 +142,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const pcm = Buffer.concat(o.chunks.slice(0, end));
     if (pcm.length < pd.minSpeechMs * BYTES_PER_MS) return;
     const audioEndedAt = o.at[end - 1]!;
+    if (d.echoBlocked?.(audioEndedAt)) return; // @spec EARS-ECHO-005
     o.inflight = true;
     void (async () => {
       let text: string;

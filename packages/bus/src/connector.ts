@@ -47,6 +47,8 @@ const KnownCapability = z.object({
   format: Format,
   ready: z.boolean(),
   transport: z.enum(["stream", "http"]).default("stream"),
+  /** `audio-out` only: the connector obeys a flush frame (CONN-FLUSH-001); absent means it does not. */
+  flush: z.boolean().default(false),
 });
 export interface CapabilityEntry extends z.input<typeof KnownCapability> { transport?: Transport }
 
@@ -116,23 +118,27 @@ export interface Frame {
   /** audio.out only */
   utt?: string;
   last?: boolean;
+  /** audio.out only: this frame stops the line `utt`; it carries no audio (`pcm` is empty, CONN-AUD-006). */
+  flush?: boolean;
 }
 
 /** The stream entry fields of a frame (CONN-AUD-002). */
-// @spec CONN-AUD-002
+// @spec CONN-AUD-002, CONN-AUD-006
 export function encodeFrame(f: Frame): (string | Buffer)[] {
-  const out: (string | Buffer)[] = ["v", String(FRAME_VERSION), "epoch", String(f.epoch), "seq", String(f.seq), "rate", String(f.rate), "ch", String(f.ch), "pcm", f.pcm];
+  const out: (string | Buffer)[] = ["v", String(FRAME_VERSION), "epoch", String(f.epoch), "seq", String(f.seq), "rate", String(f.rate), "ch", String(f.ch)];
+  if (!f.flush) out.push("pcm", f.pcm); // a flush frame has no pcm (CONN-AUD-006)
   if (f.spk !== undefined) out.push("spk", f.spk);
   if (f.name !== undefined) out.push("name", f.name);
   if (f.utt !== undefined) out.push("utt", f.utt);
   if (f.last) out.push("last", "1");
+  if (f.flush) out.push("flush", "1");
   return out;
 }
 
 export type DecodedFrame = { ok: true; frame: Frame } | { ok: false; reason: string };
 
 /** Decode one entry's field list; never throws (CONN-BP-006). */
-// @spec CONN-BP-006, CONN-AUD-002
+// @spec CONN-BP-006, CONN-AUD-002, CONN-AUD-006
 export function decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame {
   const m = new Map<string, Buffer>();
   for (let i = 0; i + 1 < fields.length; i += 2) {
@@ -142,7 +148,8 @@ export function decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame 
   }
   const num = (k: string): number => Number(m.get(k)?.toString());
   if (m.get("v")?.toString() !== String(FRAME_VERSION)) return { ok: false, reason: "version" };
-  const pcm = m.get("pcm");
+  const flush = m.get("flush")?.toString() === "1";
+  const pcm = flush ? Buffer.alloc(0) : m.get("pcm");
   if (!pcm) return { ok: false, reason: "no pcm" };
   if (pcm.length > MAX_FRAME_BYTES) return { ok: false, reason: "too large" };
   if (pcm.length % 2 !== 0) return { ok: false, reason: "odd byte count" };
@@ -154,6 +161,7 @@ export function decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame 
   if (m.has("name")) frame.name = s("name");
   if (m.has("utt")) frame.utt = s("utt");
   if (s("last") === "1") frame.last = true;
+  if (flush) frame.flush = true;
   return { ok: true, frame };
 }
 

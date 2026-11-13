@@ -64,7 +64,7 @@ export async function runVoice(boot: VoiceBoot = {}): Promise<void> { // @spec V
       void clips?.start(); // in the background, after ready: a brain.say never waits on clip generation (VOICE-CLIP-003)
       log.info({ port, public: publicUrl, voice: cfg.voice.voice }, "voice online");
 
-      await bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed"], start: START }, (ev) => voice.onEvent(ev)); // @spec VOICE-SYN-001, VOICE-SINK-010
+      await bus.subscribe({ group: "voice", types: ["brain.say", "voice.playing", "voice.failed", "voice.stop"], start: START }, (ev) => voice.onEvent(ev)); // @spec VOICE-SYN-001, VOICE-SINK-010, VOICE-STOP-001
     },
   });
 }

@@ -37,6 +37,10 @@ export class Salience {
   private deciding = false;
   /** A speech trigger landed while a decision was in flight: run one more pass when it ends (SAL-TRIG-005). */
   private rerun = false;
+  /** The line that last set the cortex state to `speaking` is a reflex line, which is never interrupted (SAL-BARGE-006). */
+  private reflexLine = false;
+  /** A barge-in has stopped the voice and no `brain.say` has arrived since (SAL-BARGE-010). */
+  private barged = false;
 
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain);
@@ -64,6 +68,7 @@ export class Salience {
         const d = ev.data as BusEvent<"speech.heard">["data"];
         const entry = this.ctx.push(ev);
         this.scheduler.noteActivity();
+        await this.bargeIn(d); // @spec SAL-BARGE-001, SAL-BARGE-003
         const fired = await this.reflex("speech", d.text, entry);
         if (!fired) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
         break;
@@ -79,6 +84,8 @@ export class Salience {
         this.scheduler.noteSpoke();
         this.cortexState = "speaking";
         this.cortexSince = this.now();
+        this.reflexLine = ((ev.data as BusEvent<"brain.say">["data"]).reason ?? "").startsWith("reflex:"); // @spec SAL-BARGE-006
+        this.barged = false; // @spec SAL-BARGE-010
         break;
       case "brain.status": { // @spec SAL-IN-005
         const d = ev.data as BusEvent<"brain.status">["data"];
@@ -110,8 +117,33 @@ export class Salience {
     this.scheduler.noteSpoke(); // @spec SAL-REFLEX-007
     this.cortexState = "speaking";
     this.cortexSince = this.now();
+    this.reflexLine = true; // from now, before the echo arrives; @spec SAL-BARGE-006
     await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}`, ...propagatedFlags(trigger) }); // @spec SAL-INJ-004
     return true;
+  }
+
+  /**
+   * Someone spoke over the co-host: publish `voice.stop`, then free the cortex state and the cooldown so the interrupter's line
+   * is handled like any other. The barge-in itself publishes no focus and no say (SAL-BARGE-003).
+   * @spec SAL-BARGE-001, SAL-BARGE-002, SAL-BARGE-004, SAL-BARGE-005, SAL-BARGE-007, SAL-BARGE-008, SAL-BARGE-009, SAL-BARGE-010, SAL-BARGE-011
+   */
+  private async bargeIn(d: BusEvent<"speech.heard">["data"]): Promise<void> {
+    const cfg = this.d.cfg.brain.salience;
+    if (!cfg.barge_in || this.control.paused || this.control.muted) return;
+    if (this.cortexState !== "speaking" || !this.busy() || this.reflexLine || this.barged) return;
+    if (!d.source || !cfg.barge_in_sources.includes(d.source)) return;
+    const words = d.text.split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t)).length;
+    if (words < cfg.barge_in_min_words) return;
+    try {
+      await this.d.bus.publish("voice.stop", { reason: "barge-in" });
+    } catch (err) {
+      this.d.log.error({ err }, "voice.stop publish failed");
+      return;
+    }
+    this.barged = true;
+    this.cortexState = "idle";
+    this.cortexSince = this.now();
+    this.scheduler.clearCooldown();
   }
 
   private busy(): boolean {

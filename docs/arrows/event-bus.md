@@ -48,6 +48,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 6. **R2** synchronously throwing `beforeShutdown` hook → treated like a rejection. Specs: SHARED-LIFE-005.
 7. **B2** `avatar.state` lacks `mouthSmile` → add the field to the schema. Specs: BUS-EVT-018.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. BUS-EVT-030 (`voice.stop`) and BUS-EVT-031 (`interrupted`, `spokenText`, `unsaidText` on `voice.done`) are `[x]`, as is BUS-EVT-032 (`meta.source` on `inject.request`, so injected speech can carry a source tag); BUS-EVT-001 (26 types) and BUS-EVT-017 are reworded to match. Spec file totals: 81 specs, 81 `[x]`, 0 `[ ]`, 0 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -57,7 +61,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (78 specs: 78 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-024 and 025, the `timing` schema, and BUS-EVT-026 to 029, `speech.partial`, `utteranceId` and the staleness rule, are built; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (81 specs: 78 `[x]`, 3 `[ ]`, 0 `[D]`; BUS-EVT-024 and 025, the `timing` schema, and BUS-EVT-026 to 029, `speech.partial`, `utteranceId` and the staleness rule, are built; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)

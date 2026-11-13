@@ -51,5 +51,5 @@ export function createFileOutput({ bus, log, dir, maxFiles, fetchAudio }: FileOu
     },
   });
 
-  return { name: FILE, isReady: () => true, playback: timed.playback, close: timed.close };
+  return { name: FILE, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close };
 }

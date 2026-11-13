@@ -80,7 +80,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/dashboard/dashboard-design.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (117 specs: 117 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/dashboard/dashboard-specs.md (118 specs: 117 `[x]`, 1 `[ ]`, 0 `[D]`; the gap is DASH-INJ-009, an optional source tag on injected speech so barge-in can be exercised from the test drawer)
 
 ### Tests
 `@spec` annotations in tests: 62.
@@ -132,7 +132,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-007 | 10 | 0 | 0 | 10 |
 | Control gating | DASH-CTRL-001 to DASH-CTRL-008 | 7 | 0 | 0 | 6 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 | 4 |
-| Test-input injection | DASH-INJ-001 to DASH-INJ-008 | 8 | 0 | 0 | 8 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-009 | 8 | 0 | 1 | 8 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 | 3 |
 | Web page | DASH-UI-001 to DASH-UI-022 | 22 | 0 | 0 | 16 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 | 7 |

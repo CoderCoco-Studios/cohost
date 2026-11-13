@@ -39,7 +39,7 @@ Observed principles:
 ## Event wiring
 
 Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mode `latest`, types
-`chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
+`chat.message, speech.heard, vision.summary, brain.say, voice.done, voice.stop, attention.focus,
 memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply` (never `speech.partial`: an interim transcript is not speech to the cortex, CTX-EVT-009)
 once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallback
 line (`CTX-EVT-008`). The service publishes `brain.status`,
@@ -65,6 +65,7 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `chat.message`, `speech.heard`, `vision.summary` | `ctx.push(ev)` into the `Context` window (`brain.working_memory_events`, default 24) | `cortex.ts:43-47`, `cortex.ts:37` |
 | `brain.say` (any source) | `ctx.pushSelf(text, emotion)`; if `ev.source !== "cortex"` also add `d.id` to the pending lines with the time and arm its speaking-timeout release (`startSpeaking`) | `cortex.ts:49-55`, `cortex.ts:184-197` |
 | `voice.done` | if `d.id` is a pending line: end it; once no line is pending, publish `brain.status` `muted` (muted or paused) else `idle` | `cortex.ts:57-61` |
+| `voice.stop` | end every pending line the order names (all when `ids` is absent); once no line is pending, publish `brain.status` `muted` (muted or paused) else `idle`; an in-flight think is left alone (see Interruption) | `CTX-EVT-010`, `CTX-GATE-010` |
 | `voice.failed` | with `fallback`: mark the line's transcript entry and keep a pending glitch for the next reply (see Fallback acknowledgement); without `fallback`: nothing | `CTX-FALL-002`, `CTX-FALL-003`, `CTX-FALL-007` |
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts:63-68` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts:69-74` |
@@ -238,6 +239,14 @@ example `kind: http` with an empty `url`, `packages/modules/src/index.ts:41-48`)
 throws while `cortexMain` builds the critic, inside the bootstrap's handler, so it
 takes the `fatal` path and exits 1 (`CTX-START-005`).
 
+## Interruption
+
+When salience stops a line it publishes `voice.stop` ([salience](../salience/salience-design.md) Barge-in), and a decision later it publishes `attention.focus` for the person who interrupted. The cortex must be able to think about that focus, and a pending line would make it answer `speaking` and decline (CTX-GATE-003). Two events could release the line, `voice.done` flagged `interrupted` from the sink and the `voice.stop` itself, and they reach cortex in an order nothing fixes: a sink publishes its `voice.done` after it has handled the stop, which can be after the `attention.focus`. So the cortex does not wait for the sink: on `voice.stop` it ends every pending line the order names (all of them when `ids` is absent, which is what salience sends), then publishes `idle` (or `muted`) once none is pending, exactly as for a `voice.done` (CTX-EVT-010). The interrupted `voice.done` that follows names a line that is no longer pending and is ignored (CTX-EVT-005). This is also why lines that voice dropped before they started, which publish no `voice.done`, cannot leave the cortex waiting out `speaking_timeout_ms`.
+
+The cortex neither aborts nor starts a think because of a stop (CTX-GATE-010): the one-thought-at-a-time rule stands, and an interruption is only a release of the lines that were speaking. The reply to the interrupter is an ordinary think on the next focus. The transcript keeps the interrupted line as the co-host meant to say it; the `spokenText` and `unsaidText` that the interrupted `voice.done` can carry are not read here, which is the deferred interrupted-thought work (WM-STACK-001, CTX-REPLAN-001).
+
+A think already in flight when a stop is read is not cancelled and its reply is subject to the usual rechecks (CTX-GATE-005, CTX-GATE-006). That case arises only when a line spoken by someone other than the cortex (an operator `say`) was playing while the cortex thought, and salience stopped it; see Open Questions.
+
 ## Control commands and status machine
 
 `brain.status` states published: `idle`, `thinking`, `speaking`, `muted`
@@ -307,6 +316,10 @@ A `brain.say` the cortex publishes for an `attention.focus` carries `timing` (CT
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
+| Releasing lines on a stop | Cortex ends its pending lines when it reads `voice.stop`; the sink's interrupted `voice.done` is then ignored as a done for a line no longer pending | Wait for `voice.done` flagged `interrupted`; salience delays the `attention.focus` until it sees the done | `voice.stop` and the sink's `voice.done` race the `attention.focus` for the interrupter, and a focus that finds a line pending is answered `speaking` and lost (CTX-GATE-003); salience does not read `voice.done`, so delaying the focus would give it a new subscription and a wait with its own valve. Ending the lines on the stop itself is the only order-independent release, and it also frees lines voice dropped unstarted, which publish no `voice.done`. |
+| No abort on a stop | A stop ends pending lines only; a think in flight finishes and its reply goes through the ordinary rechecks | Abort the in-flight think on a stop; drop its reply on a stop | One thought at a time and no cancellation stand (below): an in-flight chat-model call has no useful abort, and the lines a stop ends are the cortex's own speaking, not a think. Dropping a reply on a stop would lose a thought whose focus salience has already marked seen. |
+| Interrupted line in the transcript | The line stays in working memory as meant; `spokenText` and `unsaidText` are not read | Rewrite the self line to the spoken part | Same stance as for a failed line (mouth Decisions, Long-term memory keeps the intended line). Using the texts needs an interrupted-thought stack (deferred, WM-STACK-001). |
+| Interruptible, dynamic speech (deferred) | Recorded as a deferred spec (CTX-REPLAN-001); not built | Build clause-boundary re-thinking now | The deferred ideal ([HLD](../../high-level-design.md) Future / ideal state) would supersede One thought at a time and the rejection of cancelling an in-flight think: at each clause boundary of a speaking line the cortex would decide to continue, adapt, pivot or resume an interrupted thought. It needs clause-chunked speech and streaming model output, a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist. |
 | Do not await `attention.focus` | `void this.think()` | await inside the handler | Comment `cortex.ts:65-66`: "the LLM call must not block the subscription loop, or the memory reply we're waiting on could never be delivered"; test `cortex.region.test.ts:97` |
 | Pending lines | A map of lines by id, each with its own valve and timer; idle is published when the map empties | A single speaking id that a newer line overwrites | Owner decision 2026-11-11: an operator `say` over a playing line must not make the cortex forget it, so each line's `voice.done` is reconciled and the cortex reports idle only when nothing is playing. Overlap itself is voice's documented non-exclusivity. |
 | Service construction | Provider, critic and `Cortex` are built inside `cortexMain` under `runService` | Build them at module load | A critic configuration the hook rejects must fail through the `fatal` path with the other startup errors, not as an uncaught exception at import (`CTX-START-005`). |
@@ -343,7 +356,7 @@ A `brain.say` the cortex publishes for an `attention.focus` carries `timing` (CT
 
 ## Open Questions & Future Decisions
 
-None.
+- **A stop while a think is in flight.** An operator `say` that plays while the cortex thinks can be interrupted. The stop ends that line; the think continues and speaks its reply to an earlier focus, while the focus for the interrupter was answered `thinking` by CTX-GATE-001 and its events are already marked seen in salience, so the interrupter is not answered. Whether the cortex should drop the in-flight reply, requeue the interrupter's focus, or leave the case as it is is undecided.
 
 ## References
 

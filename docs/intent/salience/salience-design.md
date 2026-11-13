@@ -15,7 +15,7 @@ Design philosophy as the code shows it:
 
 - Cheap and continuous: scoring defaults to hard-coded rule weights (`scoring.ts:24-37`); the region keeps its own small `Context` rather than querying anything (`salience.ts:19,32`).
 - Timing lives in `Scheduler`, judgement lives in a pluggable `salience.scorer` hook (`rules` / `llm` / `http`, owned by region-hooks) that always falls back to rules (`scoring.ts:61`, `packages/modules/src/index.ts:53-63`).
-- Turn-taking is inferred from bus traffic only: `brain.status`, `brain.say` and `affect.state`; salience does not subscribe to `voice.playing` / `voice.done` (`main.ts`).
+- Turn-taking is inferred from bus traffic only: `brain.status`, `brain.say` and `affect.state`; salience does not subscribe to `voice.playing` / `voice.done` (`main.ts`). The one thing it sends the body is `voice.stop`, on a barge-in.
 - Everything is in-process mutable state (muted, paused, arousal, cortex state, cooldown timestamps, score cache); nothing is persisted (`salience.ts:22-29`, `scheduler.ts:23-25`).
 
 Code layout: `index.ts` calls `runSalience()` (`main.ts`), which runs `salienceMain` on the shared bootstrap `runService`; `salienceMain` wires the scorer, a `Salience` instance and a tick timer. `salience.ts` is event intake + reflex + tick. `scheduler.ts` is the speak/no-speak decision. `scoring.ts` is score input/output types, rule weights and the module factory. `reflex.ts` is the regex rule engine. `health.ts` builds the heartbeat spec from the configuration.
@@ -27,7 +27,7 @@ Code layout: `index.ts` calls `runSalience()` (`main.ts`), which runs `salienceM
 | Event in | Handling (file:line) |
 |---|---|
 | `chat.message` | `ctx.push`, `scheduler.noteActivity()`, then `reflex("chat", text)` (`salience.ts:39-45`) |
-| `speech.heard` | `ctx.push`, `noteActivity()`, `reflex("speech", text)`; when no reflex fired and `trigger_on_speech` is true, a speech trigger (Decision and Tick, SAL-TRIG-001) |
+| `speech.heard` | `ctx.push`, `noteActivity()`, the barge-in check (Barge-in, SAL-BARGE-001), `reflex("speech", text)`; when no reflex fired and `trigger_on_speech` is true, a speech trigger (Decision and Tick, SAL-TRIG-001) |
 | `vision.summary` | `ctx.push`; `reflex("vision", text)` only if `changed`; does NOT call `noteActivity()` (`salience.ts:53-58`) |
 | `brain.say` (from anyone: cortex, reflex echo, operator) | `scheduler.noteSpoke()` (starts cooldown, resets idle timer), cortex state `speaking` (`salience.ts:59-64`) |
 | `brain.status` | store `state` and timestamp (`salience.ts:65-70`) |
@@ -38,6 +38,7 @@ Code layout: `index.ts` calls `runSalience()` (`main.ts`), which runs `salienceM
 |---|---|
 | `attention.focus` `{reason, score, focus?, injected?, remember?}` | tick decides to speak (`salience.ts:134-143`) |
 | `brain.say` `{id, text, emotion, gesture?, reason: "reflex: <regex>", injected?, remember?}` | reflex hit (`salience.ts:102`) |
+| `voice.stop` `{reason: "barge-in"}` | a barge-in (Barge-in below) |
 | `service.heartbeat` (via `startHeartbeat`) | boot, ready, periodic, stopping (`main.ts`) |
 
 Working memory: `Context` from the working-memory segment, sized `brain.working_memory_events` (default 24, `packages/config/src/schema.ts:102`). It is private to this process; salience never pushes `self` lines (it does not call `pushSelf`), though the scheduler and `toScoreInput` still defensively skip `self` events (`scheduler.ts:47`, `scoring.ts:15-19`).
@@ -110,6 +111,29 @@ Cortex state is set from `brain.status` (`salience.ts:65-70`), set to `speaking`
 
 Arousal: `affect.state.arousal` is stored raw; it lowers the speak threshold (step 6 above) and is passed to the scorer as `ScoreInput.arousal` (`scheduler.ts:54`). Initial arousal is 0 until the first `affect.state` arrives (`salience.ts:25`).
 
+## Barge-in
+
+While the co-host speaks, a person can stop it by speaking. Salience owns the decision, because it is the region that decides when the co-host may speak, and it owns the busy state that a stop must release. It never stops audio itself: it publishes `voice.stop` and the body obeys ([voice](../voice/voice-design.md) Stopping, [mouth](../mouth/mouth-design.md) Stopping a line, [connections](../connections/connections-design.md) Flush, [cortex](../cortex/cortex-design.md) Interruption).
+
+**Trigger.** The check runs in the `speech.heard` handler, right after the line enters the window and before the reflex test. A line interrupts when every one of these holds (SAL-BARGE-001):
+
+1. `brain.salience.barge_in` is true (default false, CFG-SCH-035);
+2. salience is neither paused nor muted (SAL-BARGE-008);
+3. the cortex is `speaking` and `busy()` still holds, so a speaking valve that has expired is not an interruption (SAL-BARGE-007);
+4. the line that is speaking is not a reflex line (SAL-BARGE-006);
+5. the event's `source` is listed in `brain.salience.barge_in_sources` (default `["discord"]`), so an event with no `source` never interrupts (SAL-BARGE-004);
+6. the transcript has at least `brain.salience.barge_in_min_words` words (default 2), counting whitespace-separated tokens that contain a letter or a number (SAL-BARGE-005), so a one-word backchannel does not stop the co-host.
+
+A `speech.partial` is never an interruption: salience does not subscribe to it (SAL-IN-007). Partials and voice-activity edges are unstable; the final transcript is the one speech event the brain acts on.
+
+**Effect.** Salience publishes `voice.stop` with reason `barge-in` and no `ids` (SAL-BARGE-001), then in the same synchronous step sets its cortex state to `idle` and clears the cooldown (SAL-BARGE-002), so the reply to the interrupter is held back by neither the busy gate nor the cooldown that the interrupted line started. Control then continues through the handler as for any speech line: the reflex test sees the freed state, so a reflex that matches what the interrupter said can answer, and the speech trigger starts a decision that publishes `attention.focus` for the interrupter under every ordinary gate (threshold, mute, pause; SAL-BARGE-003). When the reply's `brain.say` arrives it starts the cooldown and the `speaking` state as for any line. If publishing `voice.stop` fails, salience logs it and changes nothing else: the line is treated as an ordinary line that found the cortex busy (SAL-BARGE-009).
+
+**One stop per speaking episode.** Setting the state to `idle` means a second person who speaks over the same line, or the same person continuing, finds the cortex not `speaking` and publishes no second `voice.stop`; their line takes the ordinary path (SAL-BARGE-010). A new `brain.say` starts a new episode.
+
+**Reflex lines.** Salience remembers whether the `brain.say` that last put the cortex in `speaking` was a reflex line, one whose `reason` starts with `reflex:` (SAL-BARGE-006). A reflex line is a short canned reaction, and cutting it off to answer the interrupter would waste both. A later non-reflex `brain.say` replaces the memory, so a reflex that is followed by a cortex line makes the line interruptible again.
+
+**Echo.** A `speech.heard` that is the co-host's own voice heard back would interrupt itself. The defences are upstream: the Discord connector reads no bot account's audio, and ears drops utterances of sources named in `ears.echo_suppress_sources` while a line plays ([ears](../ears/ears-design.md) Echo gate). `brain.salience.barge_in_sources` defaults to the one source that cannot carry echo.
+
 ## Reflexes
 
 `Reflexes` (`reflex.ts:13-33`) compiles each configured rule's `match` into a case-insensitive `RegExp` at construction. `test(sense, text, now)` walks rules in config order and returns the first that: lists `sense` in `on`, is past its own `cooldown_ms` (default 30000, per rule, tracked in `lastFired`), and matches. A hit stamps `lastFired`, picks a random `say` entry (`Math.random`), and returns `{text, emotion, gesture, rule: rule.match}`. Config validation guarantees a valid regex and non-empty `say` (`schema.ts:110-124`).
@@ -145,7 +169,15 @@ Every startup step runs under `runService` (`loadConfig`, `new Bus`, `startHeart
 | Mark-seen granularity | Mark only `decision.scored` / reflex trigger | `markSeen()` all | `salience.ts:128` comment and `scheduler.ts:12` doc comment; commit `969f6d7` ("a mention that lands mid-await is no longer marked seen unscored"; "Reflexes ... mark only their triggering event"); tests `salience.test.ts:117-137`, `salience.region.test.ts:121-128`. |
 | Re-entrancy | `deciding` flag skips overlapping ticks | queue ticks; abort in-flight | `salience.ts:120` comment: an llm/http scorer can take longer than a tick; test `salience.region.test.ts:108-119`. |
 | Optimistic busy after focus | Set cortex `thinking` locally on publish | wait for cortex `brain.status` | `salience.ts:130` comment: stops double-firing on the next tick; test `salience.region.test.ts:52-62`. |
-| Reflexes gated by busy/cooldown | Gate before `test()` | let reflexes interrupt | `salience.ts:90-91` comment ("A reflex is still a line of speech"; gate before `test()`, which spends the rule's cooldown); commit `969f6d7` ("Reflexes now respect busy and the cooldown"); test `salience.region.test.ts:141-160`. |
+| Reflexes gated by busy/cooldown | Gate before `test()` | let reflexes interrupt | `salience.ts:90-91` comment ("A reflex is still a line of speech"; gate before `test()`, which spends the rule's cooldown); commit `969f6d7` ("Reflexes now respect busy and the cooldown"); test `salience.region.test.ts:141-160`. Barge-in keeps this stance in both directions: a reflex never interrupts a line, and a reflex line is never interrupted (SAL-BARGE-006); a person's speech interrupts the line first, and the reflex test then runs against the freed state. |
+| Who decides to stop a line | salience, on a final `speech.heard`, by publishing `voice.stop` | cortex decides and aborts its think; ears publishes a stop on speech start; voice stops itself when it hears speech | salience already owns when the co-host may speak and the busy state a stop must release (tenet 4, Speaking is gated); cortex has no turn-taking role and abort is rejected (cortex Decisions); ears has no knowledge of the co-host's state and a speech-start edge fires on coughs and backchannel. The final transcript is the one speech event every region already trusts (SAL-IN-007). |
+| Interrupter's reply is not held back | The stop sets the cortex state to `idle` and clears the cooldown at once | Wait for cortex to report `idle`; leave the cooldown running | Waiting makes the reply to the interrupter depend on a round trip through cortex and voice that the person is already waiting through; a cooldown started by the line just cut off would hold back the very reply the stop exists to allow. The `brain.status` that cortex then publishes agrees with the local state. |
+| Interruptible, dynamic speech (deferred) | Salience only stops a whole line and hands the interrupter to the ordinary decision | Re-evaluate at clause boundaries during a line, with continue, adapt, pivot and resume outcomes | The deferred ideal ([HLD](../../high-level-design.md) Future / ideal state, CTX-REPLAN-001) would supersede the rejections of aborting an in-flight decision (Re-entrancy) and of letting reflexes interrupt, because the decision to continue or pivot would move into the speaking line itself. It needs chunked speech, a streaming model, a playback position and live vision, none of which exist, so salience keeps the single stop. |
+| Barge-in off by default | `brain.salience.barge_in` defaults to false | On by default | Owner decision: it is off until verified live; the only live source today is Discord, which needs a bot token. |
+| Barge-in sources default | `["discord"]` | Every source; the desktop source too | Desktop audio can contain the co-host's own voice and the game's, neither of which is a person interrupting; the echo gate drops desktop audio while a line plays anyway. An event with no `source` (injected, older) is not interruptive. |
+| Minimum words | At least `barge_in_min_words` (default 2) whitespace-separated tokens that contain a letter or a number | Any final transcript; a duration threshold; a list of backchannel words | A one-word "mm" or "yeah" is the common listening noise and a word count needs no list or tuning per language. A two-token backchannel such as "uh huh" does interrupt; raising the key is the lever. |
+| Order of the barge-in check | Before the reflex test | After the reflex test | The reflex gate would hold back a reflex on the interrupter's own words while the co-host is still marked speaking; checking first lets a matching reflex answer them. |
+| Barge-in and the speaking valve | No stop once the speaking valve has expired (`busy()` false) | Stop whenever the last state is `speaking` | An expired valve means the cortex is assumed idle already; a stop then has nothing to stop and the line takes the ordinary path. |
 | Cooldown trigger | Any `brain.say` from any source starts it | only salience's own focus | `salience.ts:60` comment ("Whoever spoke (cortex, a reflex, the operator), the cooldown starts now") and `scheduler.ts:33` ("anyone's, including reflexes"); test `salience.region.test.ts:75-82`. |
 | Mood coupling | Arousal lowers threshold, floor 0.1 | ignore mood | Coupling: `scheduler.ts:19-20` ("excited = chattier"), `packages/config/src/schema.ts:110-111`, commit `969f6d7` (salience "gets chattier when affect reports high arousal"); test `salience.region.test.ts:98-106`. The 0.1 floor (`scheduler.ts:66`) keeps a positive bar whatever the mood and the configured threshold, so a total of zero (unchanged vision, or scores that an llm/http scorer set to 0) never makes the co-host speak; it also applies when `speak_threshold` itself is set below 0.1. |
 | Safety valves | `brain.salience.thinking_timeout_ms` (default 60 s) for `thinking`, cortex `speaking_timeout_ms` for `speaking` | rely only on cortex reporting; hard-coded 60 s thinking valve | Valves exist for "a cortex that never reports back, or a voice sink that never says done" (`salience.ts:107` comment). owner decision 2026-11-01: the thinking valve is a `brain.salience` key like every other salience timing knob; the 60 s default matches the default chat-model request timeout (`llm.timeout_ms`, 60000), so a cortex stuck on a hung model call is released at about the time that call would time out; a think also spends up to `recall_timeout_ms` on recall and a critic call, so a slow but healthy think can outlast the valve, which costs at most one extra focus that the cortex answers with `thinking` (`CTX-GATE-001`). |
@@ -181,7 +213,9 @@ Every startup step runs under `runService` (`loadConfig`, `new Bus`, `startHeart
 ## Open Questions & Future Decisions
 
 - **Re-evaluation at cooldown or valve expiry.** Deferred (SAL-TRIG-010): a speech line that arrives during the cooldown or while the cortex is busy waits for the next poll after the gate opens.
-- **The co-host hearing itself.** A `speech.heard` produced by ears from the co-host's own voice is an ordinary speech line to salience, and the trigger treats it like any other; the busy and cooldown gates are what hold it back. Echo suppression is not specified in this segment.
+- **The co-host hearing itself.** Salience does not recognise the co-host's own voice: a `speech.heard` that echoes it is an ordinary speech line. Echo is handled upstream, by the source choice of `brain.salience.barge_in_sources` and by ears' echo gate (EARS-ECHO-001 to EARS-ECHO-009), not here.
+- **Barge-in during a think.** Barge-in applies when the cortex is `speaking`. A line spoken by the operator (`say`) while the cortex is thinking also sets salience's state to `speaking`; interrupting it then leaves the think running (cortex CTX-GATE-010), and salience has no record of the think. Whether that case needs a rule of its own is undecided.
+- **Interrupting an operator line.** An operator `say` line is interruptible like a cortex line; whether it should be exempt as an explicit override is undecided.
 
 ## References
 
@@ -189,8 +223,8 @@ Code (`services/salience/`): `src/index.ts`, `src/main.ts`, `src/salience.ts`, `
 Tests: `test/salience.test.ts`, `test/salience.region.test.ts`, `test/scorer.test.ts`, `test/health.test.ts`, `test/main.test.ts`.
 
 Segments depended on:
-- event-bus (BUS): `Bus`, `Publisher`, `onShutdown`, event schemas for the events above (consumes `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `brain.status`, `affect.state`, `control`; produces `attention.focus`, `brain.say`).
-- config (CFG): `loadConfig`, `brain.salience.*`, `brain.working_memory_events`, `brain.cortex.speaking_timeout_ms`.
+- event-bus (BUS): `Bus`, `Publisher`, `onShutdown`, event schemas for the events above (consumes `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `brain.status`, `affect.state`, `control`; produces `attention.focus`, `brain.say`, `voice.stop`).
+- config (CFG): `loadConfig`, `brain.salience.*` (including `barge_in`, `barge_in_sources`, `barge_in_min_words`, CFG-SCH-035), `brain.working_memory_events`, `brain.cortex.speaking_timeout_ms`.
 - working-memory (WM): `Context`, `propagatedFlags`.
 - region-hooks (HOOK): `Module` / `salience.scorer`.
 - control-plane (CTRL): heartbeat contract (`startHeartbeat`), `control` pause/resume semantics.

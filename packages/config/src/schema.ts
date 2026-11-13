@@ -294,13 +294,11 @@ export const ConfigSchema = z.object({
   ears: z.object({
     /**
      * The enabled listening sources, started together: `http` (clips POSTed to `ears.http`), `dir` (WAV files dropped in
-     * `ears.dir.path`), `discord` or any other connector source tag. Empty is off. Unset reads the legacy `source`, then
-     * `[discord]` (see `earsSources`). Read at start.
+     * `ears.dir.path`), `discord` or any other connector source tag. Empty is off; unset is `[discord]` (see `earsSources`).
+     * Read at start.
      */
     // @spec CFG-SCH-030
     sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).optional(),
-    /** Legacy single source (`discord`, `off`, `http`, `dir`; blank is `discord`), read only while `sources` is unset. */
-    source: z.preprocess((v) => (v === undefined || v === null ? undefined : v || "discord"), z.enum(["discord", "off", "http", "dir"]).optional()),
     /** The `http` source's listener; port 0 picks a free port. */
     http: z.object({
       host: z.preprocess((v) => v || "127.0.0.1", z.string()),
@@ -313,10 +311,6 @@ export const ConfigSchema = z.object({
       path: z.string().default(""),
       poll_ms: z.number().int().positive().default(1000),
     }).default({}),
-    discord: z.object({
-      guild_id: z.string().default(""),
-      voice_channel_id: z.string().default(""),
-    }),
     silence_ms: z.number().int().positive().default(700),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: str("Systran/faster-whisper-small"),
@@ -328,7 +322,7 @@ export const ConfigSchema = z.object({
     drop_phrases: z.array(z.string()).default([]),
   }),
   /**
-   * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.
+   * The co-host's speaking module. The whole section is optional.
    * Each key under `outputs` is one output and its sink name (`discord`, `dryrun`, `file`, `http`).
    */
   // @spec CFG-SCH-020, CFG-SCH-018
@@ -336,8 +330,6 @@ export const ConfigSchema = z.object({
     outputs: z.object({
       discord: z.object({
         enabled: z.boolean().default(true),
-        guild_id: z.string().default(""),
-        voice_channel_id: z.string().default(""),
         /** Loudness on this output only, applied to utterances and fallback clips. */
         gain_db: z.number().min(-40).max(12).default(0),
       }).default({}),
@@ -394,12 +386,10 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 // @spec CFG-SCH-030, EARS-SRC-001, EARS-SRC-002
 /**
- * The enabled listening sources, without repeats: `ears.sources` when set, else the legacy `ears.source` as a one-element
- * list (`off` as the empty list), else `[discord]`.
+ * The enabled listening sources, without repeats: `ears.sources` when set, else `[discord]`.
  */
-export function earsSources(ears: Pick<Config["ears"], "source" | "sources">): string[] {
-  const list = ears.sources ?? (ears.source === undefined ? ["discord"] : ears.source === "off" ? [] : [ears.source]);
-  return [...new Set(list)];
+export function earsSources(ears: Pick<Config["ears"], "sources">): string[] {
+  return [...new Set(ears.sources ?? ["discord"])];
 }
 
 /** Per-driver expression map: canonical emotion -> app-specific name, plus gestures. */

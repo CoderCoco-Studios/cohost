@@ -101,7 +101,7 @@ startIdle({ heartbeat, log, kind: "off" | "degraded", reason, warnEveryMs = 60_0
 - `degraded`: something the service needs is missing (a token, a channel). One error naming the missing variable or key, heartbeat `degraded` with `reason` as its detail, and a reminder warning `<reason>; still idle` first after `warnEveryMs` (60 s), then after a delay that doubles each time (60 s, 2 min, 4 min, ...) and never exceeds `maxWarnEveryMs` (one hour). Reminders are chained timeouts, so the delay is computed per reminder and `stop()` cancels the pending one.
 - `stop()` ends the reminders; `runService` registers it as a teardown step.
 
-The idle plan does not decide what else runs: a service that still takes test injection while idle (tenet 5) subscribes its injection handler itself. The reason text is the service's (chat names `TWITCH_CHANNEL`, mouth `DISCORD_TOKEN`, ears `EARS_DISCORD_TOKEN`, eyes `vision.enabled`).
+The idle plan does not decide what else runs: a service that still takes test injection while idle (tenet 5) subscribes its injection handler itself. The reason text is the service's (chat names `TWITCH_CHANNEL`, ears `ears.dir.path`, eyes `vision.enabled`).
 
 ## Control handling (`controlFor`)
 

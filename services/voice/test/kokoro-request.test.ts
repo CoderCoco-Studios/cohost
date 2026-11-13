@@ -52,7 +52,7 @@ test("every field the synthesizer can send exists in the pinned Kokoro-FastAPI r
 const base = () => ({
   cohost: { name: "Coco", streamer: "Chris" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} },
   chat: { twitch: {} }, brain: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} }, dashboard: {},
+  ears: {}, dashboard: {},
 });
 
 test("voice.* knob bounds match the Kokoro-FastAPI schema", () => { // @spec CFG-SCH-029

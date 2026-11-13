@@ -23,7 +23,7 @@ const cfg = (salience: Record<string, unknown>) => ConfigSchema.parse({
   brain: { salience },
   voice: {},
   avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} },
+  ears: {},
   dashboard: {},
 });
 const ev = (text: string, mention = false) => ({ kind: "chat" as const, who: "bob", text, mention, isMod: false, isSub: false, changed: false });
@@ -69,7 +69,7 @@ test("scorer llm: the prompt names both people, caps tokens, and marks mention, 
     brain: { salience: { module: { kind: "llm" } } },
     voice: {},
     avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-    ears: { discord: {} },
+    ears: {},
     dashboard: {},
   });
   const events = [

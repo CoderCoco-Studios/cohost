@@ -57,7 +57,7 @@ test("flags and defaults match the spec", () => {
   assert.equal(findService("discord")!.infra, false);
   assert.deepEqual(findService("discord")!.isolatedEnv, { CONNECTIONS_DISCORD_ENABLED: "false" });
   assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" });
-  assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" });
+  assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });
   assert.deepEqual(findService("eyes")!.isolatedEnv, { VISION_ENABLED: "false", VISION_ENGINE: "stub" });
 });
 
@@ -85,7 +85,7 @@ test("the isolation presets are exactly the specified ones; every other unit has
     voice: { VOICE_ENGINE: "stub" },
     avatar: { AVATAR_DRIVER: "null" },
     eyes: { VISION_ENABLED: "false", VISION_ENGINE: "stub" },
-    ears: { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" },
+    ears: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
     mouth: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
     discord: { CONNECTIONS_DISCORD_ENABLED: "false" },
   };

@@ -55,7 +55,7 @@ const cfg = (brain: Record<string, unknown>) => ConfigSchema.parse({
   brain,
   voice: {},
   avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} },
+  ears: {},
   dashboard: {},
 });
 const hook = { module: { kind: "http", url, timeout_ms: 5000 } };

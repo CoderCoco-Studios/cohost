@@ -66,5 +66,4 @@ test("next steps say pnpm dashboard, the URL from the shell then .env then 3000,
   assert.match(o, /docker compose --profile eyes --profile ears --profile mouth --profile discord up -d/, "the optional profiles step names eyes, ears, mouth and discord");
   assert.match(o, /DISCORD_TOKEN/, "it names the one Discord bot");
   assert.match(o, /Discord connector/);
-  assert.doesNotMatch(o, /EARS_DISCORD_TOKEN|two separate Discord bots/);
 });

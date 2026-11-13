@@ -11,7 +11,7 @@ secret values in `.env` were never printed.
 ```
 COHOST_DOCKER_BIN=docker.exe
 LLM_PROVIDER=mock  MEMORY_STORE=memory  MEMORY_EMBEDDER=hash  VOICE_ENGINE=stub  CHAT_SOURCE=fake  (AVATAR_DRIVER=null already)
-EARS_SOURCE=off  EARS_STT_ENGINE=stub  MOUTH_DISCORD_ENABLED=false  MOUTH_DRYRUN_ENABLED=true
+EARS_SOURCES=[]  EARS_STT_ENGINE=stub  MOUTH_DISCORD_ENABLED=false  MOUTH_DRYRUN_ENABLED=true
 VISION_ENABLED=false  VISION_ENGINE=stub  COMPOSE_PROFILES=eyes,ears,mouth
 LLM_MODEL=VISION_MODEL=NOTES_MODEL=qwen2.5:0.5b-instruct   # about 0.7 GB pulled by `models` instead of several GB
 ```
@@ -84,12 +84,12 @@ pause affect   -> detail=paused   resume affect   -> detail=None
 ## Findings and fixes
 
 1. **Isolation presets never reached a `docker.exe` start (bug, fixed, CTRL-RUNTIME-012).** After an isolated start of
-   `ears` and `mouth` the containers still had `EARS_SOURCE=`, `MOUTH_DISCORD_ENABLED=` empty and ran `degraded`
+   `ears` and `mouth` the containers still had `EARS_SOURCES=`, `MOUTH_DISCORD_ENABLED=` empty and ran `degraded`
    (`EARS_DISCORD_TOKEN is not set`). WSL interop passes only the variables named in `WSLENV` to a Windows process, so
    the preset set on the `docker compose` environment (CTRL-RUNTIME-009) was dropped. Fix: `dockerEnv` in
    `packages/control/src/docker.ts` appends the preset names to `WSLENV` when the binary ends in `.exe`; spec
    CTRL-RUNTIME-012, test `packages/control/test/runtime.test.ts`. Re-verified: the recreated containers show
-   `EARS_SOURCE=off`, `EARS_STT_ENGINE=stub`, `MOUTH_DRYRUN_ENABLED=true`, `MOUTH_DISCORD_ENABLED=false`, and the
+   `EARS_SOURCES=[]`, `EARS_STT_ENGINE=stub`, `MOUTH_DRYRUN_ENABLED=true`, `MOUTH_DISCORD_ENABLED=false`, and the
    units report `up`.
 2. **A plain restart drops an isolated start (by design, documented).** `POST /services/ears/restart` with no body after an
    *isolated* start recreated the container without the preset (`ears degraded`). The page's Apply sends no body, so

@@ -2,8 +2,6 @@
 
 Segment `mouth` (prefix `MOUTH`). LLD: [mouth-design.md](mouth-design.md). Markers: `[x]` implemented, `[ ]` intended but not yet implemented (gap), `[D]` deferred. The Discord output is a connector sink: the Discord connector ([connections](../connections/connections-specs.md)) holds the bot and the voice connection and mouth writes audio to it.
 
-Retired with the per-service Discord client (the connector holds the one login, CONN-DISC-*), numbers not reused: MOUTH-START-002, MOUTH-SESS-001 to 004 and 007 to 009.
-
 Terms used below: an "output" is one entry under `mouth.outputs` (`discord`, `dryrun`, `file` or `http`), and its "sink name" is the entry's key. An output is "ready" while its connection can play audio (for `discord`, while the Discord connector's `audio-out` capability for the sink `discord` is registered `ready`, CONN-REG-006). "Give up" means MOUTH-PLAY-005. "The clip cache" is the set of fallback clips mouth holds in memory, mirrored under `<dataDir()>/mouth/fallback-clips` (CFG-DIR-006, CFG-DIR-007). "Voice's manifest" and the clip routes are VOICE-CLIP-011 and VOICE-CLIP-012. A "real sink" is any `sink` other than `virtual` and `error`.
 
 ## Startup plans
@@ -16,7 +14,7 @@ Terms used below: an "output" is one entry under `mouth.outputs` (`discord`, `dr
 
 ## Discord output (connector sink)
 
-- [x] **MOUTH-CONN-001**: The mouth service shall create no Discord client, read neither `DISCORD_TOKEN` nor `EARS_DISCORD_TOKEN`, load no `discord.js` or `@discordjs/voice`, and join no voice channel. <!-- test: services/mouth/test/no-discord.test.ts --> <!-- test: services/mouth/test/mouth.test.ts -->
+- [x] **MOUTH-CONN-001**: The mouth service shall create no Discord client, read no `DISCORD_TOKEN`, load no `discord.js` or `@discordjs/voice`, and join no voice channel. <!-- test: services/mouth/test/no-discord.test.ts --> <!-- test: services/mouth/test/mouth.test.ts -->
 - [x] **MOUTH-CONN-002**: Where `mouth.outputs.discord.enabled` is true, the mouth service shall run an output with sink name `discord` that delivers audio by writing frames to the stream `audio.out.discord` (CONN-AUD-001, CONN-AUD-002). <!-- test: services/mouth/test/connector-output.test.ts --> <!-- test: services/mouth/test/mouth.test.ts -->
 - [x] **MOUTH-CONN-003**: While no live registration offers `audio-out` for the sink `discord` with `ready` true (CONN-REG-006), the `discord` output shall be not ready and `deps.discord` `down`; when one appears the output shall become ready and `deps.discord` `ok` without a restart. <!-- test: services/mouth/test/connector-output.test.ts --> <!-- test: services/mouth/test/mouth.test.ts -->
 - [x] **MOUTH-CONN-004**: When the `discord` output plays a queued utterance or fallback clip, it shall fetch the WAV, convert it to the format the sink's registration declares (CONN-AUD-005), apply the output's gain (MOUTH-ROUTE-005), publish `voice.playing` once the first frame is written, write the frames paced at real time with a lead of one second (CONN-BP-004), and publish `voice.done` when the last frame's scheduled play time has passed; a frame write that throws before the first frame is written is a give-up (MOUTH-PLAY-005). <!-- test: services/mouth/test/connector-output.test.ts --> <!-- test: services/mouth/test/playback.test.ts -->
@@ -51,8 +49,6 @@ Terms used below: an "output" is one entry under `mouth.outputs` (`discord`, `dr
 - [x] **MOUTH-PLAY-012**: While a mouth output holds 20 queued utterances besides its current item, when another utterance is queued on it, the output shall drop its oldest queued utterance and log the warning "queue full: dropped oldest queued utterance", publishing no `voice.failed`, no `voice.playing` and no fallback for the dropped utterance. <!-- test: services/mouth/test/guard.test.ts:37 --> <!-- test: services/mouth/test/guard.test.ts:116 -->
 
 ## Audio conversion
-
-Retired, number not reused: MOUTH-AUD-001 (now shared-runtime SHARED-AUDIO-006).
 
 - [x] **MOUTH-AUD-002**: When converting an utterance or a fallback clip for the Discord output, the mouth service shall convert it to the sink's declared format, 48 kHz stereo s16le PCM, with the shared `resample` (SHARED-AUDIO-006, SHARED-AUDIO-007). <!-- test: services/mouth/test/audio.test.ts:17 --> <!-- test: services/mouth/test/audio.test.ts:27 --> <!-- test: services/mouth/test/audio.test.ts:33 --> <!-- test: services/mouth/test/audio.test.ts:40 --> <!-- test: services/mouth/test/audio.test.ts:46 -->
 

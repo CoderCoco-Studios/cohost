@@ -21,7 +21,7 @@ export function testConfig(over: Record<string, unknown> = {}): Config {
     brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 } },
     voice: {},
     avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-    ears: { discord: {} },
+    ears: {},
     dashboard: {},
   };
   return ConfigSchema.parse(merge(base, over));

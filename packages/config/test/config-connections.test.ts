@@ -4,7 +4,7 @@ import { ConfigSchema } from "../src/index.js";
 
 const baseCfg = () => ({
   cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {}, ears: { discord: {} },
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {}, ears: {},
 });
 const DEFAULTS = { discord: { enabled: true, guild_id: "", voice_channel_id: "" } };
 

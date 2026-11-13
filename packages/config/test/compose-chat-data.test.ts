@@ -47,12 +47,11 @@ test("connector-discord waits for redis alone, publishes no port, mounts only th
 });
 
 // @spec DEPLOY-README-004
-test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and channel, and no EARS_DISCORD_TOKEN", () => {
+test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and channel", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   assert.match(env, /^DISCORD_TOKEN=/m);
   assert.match(env, /^DISCORD_GUILD_ID=/m);
   assert.match(env, /^DISCORD_VOICE_CHANNEL_ID=/m);
-  assert.doesNotMatch(env, /EARS_DISCORD_TOKEN/);
   const head = env.slice(env.search(/^# --- Discord/m));
   assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /one Discord bot|one bot/i);
   assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Discord connector/);
@@ -62,12 +61,11 @@ test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and chan
 });
 
 // @spec DEPLOY-README-005
-test("the README describes ears, mouth and the Discord connector as separate optional profiles, the one bot, the routing table and the upgrade note", () => {
+test("the README describes ears, mouth and the Discord connector as separate optional profiles, the one bot, the routing table and the guild and channel keys", () => {
   const md = readFileSync(root("README.md"), "utf8");
   assert.match(md, /`ears`[^\n]*`mouth`[^\n]*`discord`|`discord`[^\n]*`ears`[^\n]*`mouth`/);
   assert.match(md, /mouth\.outputs/);
-  assert.match(md, /Upgrading from two bots/);
-  assert.match(md, /remove `EARS_DISCORD_TOKEN`, keep `DISCORD_TOKEN`, add\s+`discord` to `COMPOSE_PROFILES`/);
+  assert.match(md, /add\s+`discord` to `COMPOSE_PROFILES`/);
   assert.match(md, /connections\.discord\.guild_id/);
   assert.match(md, /connections\.discord\.voice_channel_id/);
   assert.match(md, /Connect/);

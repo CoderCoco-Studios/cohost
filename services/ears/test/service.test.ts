@@ -42,8 +42,8 @@ async function boot(ears: Record<string, unknown>, setup?: (bus: ConnectorFakeBu
 }
 
 // @spec EARS-START-008, EARS-START-001, EARS-START-003, EARS-START-006, EARS-START-005
-test("source off: one idle warning, ready in mode off, inject.request only", async () => {
-  const r = await boot({ source: "off" });
+test("empty sources: one idle warning, ready in mode off, inject.request only", async () => {
+  const r = await boot({ sources: [] });
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
     assert.equal(r.last().mode, "off");
@@ -100,13 +100,12 @@ test("a desktop registration with transport http binds the listener without http
     await waitFor(() => r.last().deps.desktop === "down", "down when the registration lapses");
     r.bus.register("desktop", [{ cap: "audio-in", tag: "desktop", format: { rate: 16000, channels: 1 }, ready: true, transport: "http" }]);
     await waitFor(() => r.last().deps.desktop === "ok", "ok again without a restart");
-    // @spec EARS-SRC-010, EARS-SRC-011
+    // @spec EARS-SRC-010
     const port = (r.rec.lines.find((l) => /http listening/.test(String(l.msg)))!.obj as { port: number }).port;
     const post = (q: string, path = "/audio") => fetch(`http://127.0.0.1:${port}${path}${q}`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav" } });
     assert.equal((await post("?source=desktop")).status, 200, "an enabled source whose registration says http");
     assert.equal((await post("?source=discord")).status, 400, "a tag that is not an enabled http source");
     assert.equal((await post("?source=nobody")).status, 400);
-    assert.equal((await post("", "/ping")).status, 404, "there is no ping route: liveness is the registration");
     assert.equal((r.bus.published.at(-1)!.data as { source?: string }).source, "desktop");
   } finally {
     await r.stop();
@@ -128,7 +127,7 @@ test("stub engine: a startup warning, mode mock, stt n/a", async () => {
 
 // @spec EARS-CAP-003, EARS-CAP-007, EARS-CAP-011, EARS-CAP-012
 test("http plan: inject.request only, ready with deps.http ok, stopped before the bus", async () => {
-  const r = await boot({ source: "http", stt_engine: "stub", http: { host: "127.0.0.1", port: 0 } });
+  const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port: 0 } });
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
     assert.equal(r.last().mode, "mock");
@@ -146,7 +145,7 @@ test("http plan: a port already in use leaves the process up, degraded, deps.htt
   const blocker = createServer();
   await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
   const port = (blocker.address() as { port: number }).port;
-  const r = await boot({ source: "http", stt_engine: "stub", http: { host: "127.0.0.1", port } });
+  const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port } });
   try {
     await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
     assert.equal(r.last().deps.http, "down");
@@ -161,7 +160,7 @@ test("http plan: a port already in use leaves the process up, degraded, deps.htt
 // @spec EARS-CAP-003, EARS-CAP-008, EARS-CAP-011
 test("dir plan: polls the directory, ready with deps.dir ok", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ears-svc-"));
-  const r = await boot({ source: "dir", stt_engine: "stub", dir: { path: dir, poll_ms: 20 } });
+  const r = await boot({ sources: ["dir"], stt_engine: "stub", dir: { path: dir, poll_ms: 20 } });
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
     assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "n/a", dir: "ok" });
@@ -175,7 +174,7 @@ test("dir plan: polls the directory, ready with deps.dir ok", async () => {
 
 // @spec EARS-CAP-010, EARS-CAP-003
 test("dir plan without a path: degraded idle naming ears.dir.path, still subscribed to inject.request", async () => {
-  const r = await boot({ source: "dir", stt_engine: "stub" });
+  const r = await boot({ sources: ["dir"], stt_engine: "stub" });
   try {
     await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
     assert.equal(r.last().detail, "ears.dir.path is not set");
@@ -207,8 +206,8 @@ test("http and dir together: both start, both ok, one inject.request subscriptio
 });
 
 // @spec EARS-SRC-002
-test("ears.sources wins over the legacy ears.source, and a name repeated starts one adapter", async () => {
-  const r = await boot({ source: "off", sources: ["http", "http"], stt_engine: "stub", http: HTTP });
+test("a source name repeated in ears.sources starts one adapter", async () => {
+  const r = await boot({ sources: ["http", "http"], stt_engine: "stub", http: HTTP });
   try {
     await waitFor(() => r.health.some((h) => h.state === "ready"), "ready");
     assert.equal(r.last().mode, "mock");

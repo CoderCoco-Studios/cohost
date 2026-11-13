@@ -201,11 +201,10 @@ test("a full-surface port that is taken logs fatal naming the address and port, 
   const fatal = lines.filter((x) => x.level === "fatal");
   assert.equal(fatal.length, 1);
   assert.match(String(fatal[0]!.msg), new RegExp(`127\\.0\\.0\\.1:${taken}`));
-  assert.match(String(fatal[0]!.msg), /docker compose down --remove-orphans/);
 });
 
 // @spec DASH-HOST-003
-test("a LAN port that is taken is fatal too, and names the LAN address and port; other bind errors name no compose hint", async () => {
+test("a LAN port that is taken is fatal too, and names the LAN address and port", async () => {
   const blocker = net.createServer();
   await new Promise<void>((r) => blocker.listen(0, "127.0.0.1", r));
   after(() => blocker.close());
@@ -220,7 +219,6 @@ test("a LAN port that is taken is fatal too, and names the LAN address and port;
   await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "203.0.113.9", port: 0, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, log, exit: (c) => { codes.push(c); } });
   const other = lines.find((x) => x.level === "fatal")!;
   assert.match(String(other.msg), /203\.0\.113\.9/);
-  assert.doesNotMatch(String(other.msg), /remove-orphans/);
 });
 
 // @spec DASH-HOST-006

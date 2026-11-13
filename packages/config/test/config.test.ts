@@ -90,7 +90,7 @@ chat: { twitch: { channel: "\${T_CHANNEL:-somechan}" } }
 brain: {}
 voice: {}
 avatar: { vtube_studio: { host: h, port: 8001 }, vmc: { host: h, port: 39539 } }
-ears: { discord: {} }
+ears: {}
 dashboard: {}
 `;
 
@@ -263,7 +263,7 @@ function loadShipped(env: Record<string, string> = {}) {
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCES", "MOUTH_DISCORD_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
@@ -295,7 +295,7 @@ test("isolation presets: unset env equals the live defaults", () => {
 test("isolation presets: each env var flips its key without editing config.yaml", () => {
   const cfg = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
-    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCE: "off", MOUTH_DISCORD_ENABLED: "false",
+    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCES: "[]", MOUTH_DISCORD_ENABLED: "false",
     VISION_ENGINE: "stub", EARS_STT_ENGINE: "stub", MOUTH_DRYRUN_ENABLED: "true",
   });
   assert.equal(cfg.llm.provider, "mock");
@@ -314,14 +314,14 @@ test("isolation presets: each env var flips its key without editing config.yaml"
 // @spec CFG-ISO-001, CFG-ISO-003
 test("new keys default to live backends when omitted; bad enum values are rejected", () => {
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-    voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: { discord: {} }, dashboard: {}, brain: {} };
+    voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: {}, dashboard: {}, brain: {} };
   const ok = ConfigSchema.parse(base);
   assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
     ["kokoro", "postgres", "ollama", "twitch", ["discord"], true]);
   const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
   assert.equal(bad.success, false);
   assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
-  assert.equal(ConfigSchema.safeParse({ ...base, ears: { source: "x", discord: {} } }).success, false);
+  assert.equal(ConfigSchema.safeParse({ ...base, ears: { sources: ["X"] } }).success, false);
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
 
@@ -330,7 +330,7 @@ function loadShippedBare(env: Record<string, string> = {}) {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY", "EMBED_MODEL", "VISION_MODEL", "NOTES_MODEL", "STT_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT", "OBS_HOST", "OBS_PASSWORD", "OBS_SOURCE", "CHAT_SOURCE", "EARS_SOURCE", "EARS_STT_ENGINE", "MEMORY_EMBEDDER", "MEMORY_STORE", "VISION_ENABLED", "VISION_ENGINE", "VOICE_ENGINE", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "TWITCH_CHANNEL", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]) delete process.env[k];
+  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY", "EMBED_MODEL", "VISION_MODEL", "NOTES_MODEL", "STT_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT", "OBS_HOST", "OBS_PASSWORD", "OBS_SOURCE", "CHAT_SOURCE", "EARS_SOURCES", "EARS_STT_ENGINE", "MEMORY_EMBEDDER", "MEMORY_STORE", "VISION_ENABLED", "VISION_ENGINE", "VOICE_ENGINE", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "TWITCH_CHANNEL", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]) delete process.env[k];
   Object.assign(process.env, env);
   try {
     let cfg!: ReturnType<typeof loadConfig>;
@@ -415,7 +415,7 @@ test("a hook's explicit llm.provider 'mock' is rejected (it can only be inherite
 });
 
 const baseCfg = () => ({ cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: { discord: {} }, dashboard: {}, brain: {} });
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: {}, dashboard: {}, brain: {} });
 
 // @spec CFG-SCH-011
 test("brain.salience.thinking_timeout_ms and brain.affect.baseline_arousal default and validate", () => {
@@ -601,7 +601,7 @@ test("dataDir honours COHOST_DATA_DIR, else <workspace root>/data, else <cwd>/da
 test("the ears section defines no fallback key: an old ears.fallback is dropped and reported as unknown", () => {
   const base = { cohost: { name: "C", streamer: "S" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: { channel: "c" } },
     voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {} };
-  const raw = { ...base, ears: { discord: {}, fallback: { min_interval_ms: 5000 } } };
+  const raw = { ...base, ears: { fallback: { min_interval_ms: 5000 } } };
   const parsed = ConfigSchema.safeParse(raw);
   assert.equal(parsed.success, true);
   assert.equal("fallback" in parsed.data!.ears, false);
@@ -623,14 +623,14 @@ test("mouth.fallback.min_interval_ms defaults to 20000, accepts 0, and rejects n
 test("the mouth section is optional: absent or partial, it loads with the Discord output on, empty target, gain 0 and interval 20000", () => {
   const absent = ConfigSchema.safeParse(baseCfg());
   assert.ok(absent.success);
-  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, guild_id: "", voice_channel_id: "", gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 }, file: { enabled: false, dir: "mouth/outputs", max_files: 100 }, http: { enabled: false, url: "", timeout_ms: 5000, retries: 3, max_queue: 20 } }, fallback: { min_interval_ms: 20000 } });
+  assert.deepEqual(absent.data!.mouth, { outputs: { discord: { enabled: true, gain_db: 0 }, dryrun: { enabled: false, fail_every: 0 }, file: { enabled: false, dir: "mouth/outputs", max_files: 100 }, http: { enabled: false, url: "", timeout_ms: 5000, retries: 3, max_queue: 20 } }, fallback: { min_interval_ms: 20000 } });
   for (const partial of [{}, { outputs: {} }, { outputs: { discord: {} } }, { fallback: {} }]) {
     const r = ConfigSchema.safeParse({ ...baseCfg(), mouth: partial });
     assert.ok(r.success, JSON.stringify(partial));
     assert.deepEqual(r.data.mouth, absent.data!.mouth, JSON.stringify(partial));
   }
-  const set = ConfigSchema.parse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 } } } });
-  assert.deepEqual(set.mouth.outputs.discord, { enabled: false, guild_id: "g", voice_channel_id: "c", gain_db: -6.5 });
+  const set = ConfigSchema.parse({ ...baseCfg(), mouth: { outputs: { discord: { enabled: false, gain_db: -6.5 } } } });
+  assert.deepEqual(set.mouth.outputs.discord, { enabled: false, gain_db: -6.5 });
 });
 
 // @spec CFG-SCH-023
@@ -687,7 +687,7 @@ test("the shipped config.example.yaml sends the co-host's voice to the Discord c
   assert.match(connBlock, /voice_channel_id:\s*"\$\{DISCORD_VOICE_CHANNEL_ID\}"/);
   const mouthBlock = text.slice(text.indexOf("\nmouth:"));
   assert.doesNotMatch(mouthBlock, /guild_id|voice_channel_id/, "mouth has no channel keys of its own");
-  assert.doesNotMatch(text.slice(text.indexOf("\nears:"), text.indexOf("\nconnections:")), /guild_id|voice_channel_id|EARS_DISCORD_TOKEN/, "ears has no channel keys or token of its own");
+  assert.doesNotMatch(text.slice(text.indexOf("\nears:"), text.indexOf("\nconnections:")), /guild_id|voice_channel_id/, "ears has no channel keys of its own");
   assert.match(mouthBlock, /gain_db:\s*0\b[^\n]*#/, "gain_db carries a comment");
   assert.match(mouthBlock, /enabled:[^\n]*#/, "enabled carries a comment");
   assert.match(connBlock, /enabled:[^\n]*#/, "connections.discord.enabled carries a comment");
@@ -695,6 +695,10 @@ test("the shipped config.example.yaml sends the co-host's voice to the Discord c
   assert.deepEqual(cfg.connections.discord, { enabled: true, guild_id: "g-9", voice_channel_id: "vc-9" });
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
   assert.equal(cfg.mouth.outputs.discord.gain_db, 0);
+  assert.deepEqual(earsSources(cfg.ears), ["discord"], "ears.sources defaults to [discord]");
+  const iso = loadShipped({ EARS_SOURCES: "[]" });
+  assert.deepEqual(earsSources(iso.ears), [], "EARS_SOURCES=[] idles ears");
+  assert.deepEqual(earsSources(loadShipped({ EARS_SOURCES: "[http, dir]" }).ears), ["http", "dir"]);
 });
 
 // @spec CFG-USR-011
@@ -768,20 +772,18 @@ test("brain.affect republish, short-line cutoff and nudge sizes default to the f
 });
 
 // @spec CFG-SCH-030
-test("ears.source accepts http and dir; ears.http and ears.dir default when absent and are validated", async () => {
+test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir default when absent and are validated", async () => {
   const { ConfigSchema } = await import("../src/schema.js");
   const base = {
     cohost: { name: "Coco", streamer: "Chris" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} },
     chat: { twitch: { channel: "c" } }, brain: {}, voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {},
   };
-  const ears = (e: Record<string, unknown>) => ConfigSchema.safeParse({ ...base, ears: { discord: {}, ...e } });
+  const ears = (e: Record<string, unknown>) => ConfigSchema.safeParse({ ...base, ears: { ...e } });
   const dflt = ears({});
   assert.ok(dflt.success);
   assert.deepEqual([earsSources(dflt.data.ears), dflt.data.ears.http, dflt.data.ears.dir], [["discord"], { host: "127.0.0.1", port: 8765, token: "" }, { path: "", poll_ms: 1000 }]);
-  for (const source of ["http", "dir", "off", "discord", ""]) assert.ok(ears({ source }).success, source);
-  const blank = ears({ source: "" });
-  assert.ok(blank.success && earsSources(blank.data.ears).join() === "discord");
-  assert.equal(ears({ source: "mic" }).success, false);
+  for (const sources of [["http"], ["dir"], [], ["discord"], ["http", "desktop"]]) assert.ok(ears({ sources }).success, sources.join());
+  assert.equal(ears({ sources: ["Mic"] }).success, false);
   assert.equal(ears({ http: { port: 0 } }).success, true);
   assert.equal(ears({ http: { port: 70000 } }).success, false);
   assert.equal(ears({ dir: { poll_ms: 0 } }).success, false);

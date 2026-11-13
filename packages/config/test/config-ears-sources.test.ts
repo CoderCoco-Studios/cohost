@@ -6,18 +6,14 @@ const baseCfg = () => ({
   cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
   voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, brain: {},
 });
-const parse = (ears: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), ears: { discord: {}, ...ears } });
+const parse = (ears: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), ears: { ...ears } });
 const sourcesOf = (ears: Record<string, unknown>) => earsSources(parse(ears).data!.ears);
 
 // @spec CFG-SCH-030, EARS-SRC-001, EARS-SRC-002
-test("ears.sources defaults to [discord]; the legacy ears.source is read only when sources is unset; sources wins", () => {
+test("ears.sources defaults to [discord]; an empty list is off and a repeated name is one source", () => {
   assert.deepEqual(sourcesOf({}), ["discord"]);
-  assert.deepEqual(sourcesOf({ source: "" }), ["discord"]);
-  assert.deepEqual(sourcesOf({ source: "off" }), []);
-  assert.deepEqual(sourcesOf({ source: "http" }), ["http"]);
   assert.deepEqual(sourcesOf({ sources: ["http", "dir", "desktop"] }), ["http", "dir", "desktop"]);
   assert.deepEqual(sourcesOf({ sources: [] }), []);
-  assert.deepEqual(sourcesOf({ source: "off", sources: ["dir"] }), ["dir"]);
   assert.deepEqual(sourcesOf({ sources: ["http", "http", "dir"] }), ["http", "dir"], "a repeated name is one source");
 });
 
@@ -28,7 +24,6 @@ test("a source name that is not http, dir or a valid tag fails the load naming e
     assert.ok(!r.success && r.error.issues.some((i) => i.path.slice(0, 2).join(".") === "ears.sources"), JSON.stringify(bad));
   }
   assert.equal(parse({ sources: ["a".repeat(32)] }).success, true);
-  assert.equal(parse({ source: "bogus" }).success, false);
 });
 
 // @spec CFG-SCH-030, EARS-SRC-013

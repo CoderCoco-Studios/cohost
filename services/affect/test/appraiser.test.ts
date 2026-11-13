@@ -23,7 +23,7 @@ const cfg = ConfigSchema.parse({
   brain: { affect: { module: { kind: "http", url } } },
   voice: {},
   avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} },
+  ears: {},
   dashboard: {},
 });
 const input: AppraiseInput = { source: "chat", who: "bob", text: "lol nice", mention: false, valence: 0, arousal: 0 };
@@ -73,7 +73,7 @@ test("appraiser llm: the prompt asks for both deltas within -0.5..0.5 and carrie
     brain: { affect: { module: { kind: "llm" } } },
     voice: {},
     avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-    ears: { discord: {} },
+    ears: {},
     dashboard: {},
   });
   const out = await createAppraiser(c, log).run({ source: "chat", who: "bob", text: "hey Coco", mention: true, valence: 0.25, arousal: 0.5 });

@@ -8,7 +8,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Listening and speaking split (built)
 
-Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no data volume), DEPLOY-README-004 (`.env.example` with two Discord tokens) and DEPLOY-README-005 (README: two bots, routing table, upgrade note) new. All seven are `[x]`, tested in `packages/config/test/compose-mouth.test.ts`. The `mouth` service and the two-bot documentation exist; Chunk 4 (ears listens only) landed: ears reads `EARS_DISCORD_TOKEN`, so the `ears` and `mouth` profiles can be enabled together. The installer's next steps start the `eyes`, `ears` and `mouth` profiles and name the two bot tokens (DEPLOY-INST-008).
+Build chunks 3 and 4 in [mouth.md](mouth.md): DEPLOY-COMPOSE-001 (a `mouth` service), DEPLOY-COMPOSE-004 (its own `mouth` profile,), DEPLOY-COMPOSE-017 (`MOUTH_DISCORD_ENABLED` pass-through) and DEPLOY-REPO-001 (11 services) reworded; DEPLOY-COMPOSE-020 (mouth depends on redis only, no port, no data volume), DEPLOY-README-004 (`.env.example` with the one Discord bot) and DEPLOY-README-005 (README: the one bot, routing table, setup) new. All seven are `[x]`, tested in `packages/config/test/compose-mouth.test.ts`. The installer's next steps start the `eyes`, `ears` and `mouth` profiles and name the one bot token (DEPLOY-INST-008).
 
 ## Standalone dashboard (built)
 
@@ -16,7 +16,6 @@ The spec file holds 72 specs: 72 `[x]`, 0 `[ ]`, 0 `[D]` (DEPLOY-HOST-001 and DE
 
 - New: DEPLOY-HOST-001 (`pnpm dashboard`), DEPLOY-HOST-002 (`.env.example`: `CONTROL_ENABLED=1`, `CONTROL_TOKEN=`, `DASHBOARD_LAN_PORT=3001`, `DASHBOARD_HOST=127.0.0.1`, commented `COHOST_DOCKER_BIN=`), DEPLOY-HOST-003 (README), DEPLOY-HOST-004 (single-PC WSL2 + Docker Desktop checklist in `docs/TESTING.md`), DEPLOY-INST-013 (installer fills `CONTROL_TOKEN`).
 - Reworded: DEPLOY-COMPOSE-001 (no `dashboard` service), 002 (no dashboard address: uploads travel over Redis), 003, 006 (no LAN port; voice on loopback), 007 (voice `127.0.0.1:8700`), DEPLOY-CI-002 (smoke without `dashboard`), DEPLOY-INST-008 (next steps), DEPLOY-REPO-002 (`dashboard` script).
-- Retired: DEPLOY-COMPOSE-016 (the `CONTROL_ENABLED: "0"` pin).
 - Unchanged by design: the `Dockerfile` (no dashboard-specific stage exists; images still compile the whole workspace), `.dockerignore`, the CI workflows other than what `compose-smoke.sh` starts.
 - `docs/TESTING.md` no longer starts a containerised dashboard (DEPLOY-README-003 keeps the guide current).
 - Tests: `packages/config/test/compose-standalone.test.ts` (Compose topology, `.env.example`, smoke script) and `packages/config/test/installer.test.ts` (installer `CONTROL_TOKEN` fill and next steps, run by extracting the marked functions from `scripts/install.sh`). DEPLOY-HOST-003 and 004 are documentation (`README.md`, `docs/TESTING.md`) with no automated test; the single-PC checklist is run by hand.

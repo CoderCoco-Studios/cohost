@@ -11,7 +11,7 @@ test("ears holds no Discord client: no discord.js or @discordjs/voice import, no
   const src = join(root, "src");
   for (const f of readdirSync(src).filter((n) => n.endsWith(".ts"))) {
     const text = readFileSync(join(src, f), "utf8");
-    assert.doesNotMatch(text, /discord\.js|@discordjs|discord-voice|EARS_DISCORD_TOKEN|DISCORD_TOKEN|joinVoiceChannel/, `${f} mentions a Discord client or token`);
+    assert.doesNotMatch(text, /discord\.js|@discordjs|discord-voice|DISCORD_TOKEN|joinVoiceChannel/, `${f} mentions a Discord client or token`);
   }
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { dependencies: Record<string, string> };
   for (const dep of ["discord.js", "@discordjs/voice", "@snazzah/davey", "libsodium-wrappers", "opusscript", "prism-media"]) {

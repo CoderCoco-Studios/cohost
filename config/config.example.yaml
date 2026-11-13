@@ -226,18 +226,15 @@ avatar:
     port: ${VMC_PORT}
 
 ears:
-  # Where audio comes from, read at start:
+  # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
   #   discord  the Discord voice channel, served by the Discord connector (service connector-discord, DISCORD_TOKEN)
   #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
-  #   off      idle, nothing heard (isolated runs)
+  #   <tag>    any other connector's source tag, such as desktop
+  # An empty list idles with nothing heard (isolated runs). EARS_SOURCES overrides the whole list in flow syntax, for
+  # example `EARS_SOURCES=[http, dir]` or `EARS_SOURCES=[]`.
   # http and dir work with stt_engine: stub, so they run with no accounts and no STT server.
-  #
-  # Several sources can run at once: set `sources` to a list (http, dir, or a connector source tag such as desktop) and it
-  # wins over `source` below, which is the legacy single-source form. Each clip carries the name of its source.
-  #   sources: [http, dir]
-  source: "${EARS_SOURCE:-discord}"
-  discord: {}                  # accepted for older files and not read: the channel is connections.discord below
+  sources: ${EARS_SOURCES:-[discord]}
   # The `http` source's listener. Example: curl -X POST -H 'Content-Type: audio/wav' --data-binary @clip.wav 'http://127.0.0.1:8765/audio?speaker=Chris'
   # In Docker, bind 0.0.0.0 and publish the port yourself; the default is local only. Bodies are capped at 25 MiB.
   http:

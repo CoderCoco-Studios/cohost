@@ -10,13 +10,13 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 | Segment | Change | Specs |
 | --- | --- | --- |
-| ears | consumes connector sources; holds no Discord client or token; the two-token guard is retired | new EARS-CON-001 to 005; amended EARS-START-004, 005, 008, EARS-HEAR-001, 002, 011, EARS-CAP-003, EARS-INJ-009, EARS-HLTH-002, EARS-SRC-001 to 006; retired (lines removed): EARS-START-002, 007, EARS-SESS-001 to 004, 007 to 010, EARS-HEAR-003, EARS-AUD-005, EARS-INJ-007 |
-| mouth | the `discord` output is a connector sink writing `audio.out.discord`; no token, no join | new MOUTH-CONN-001 to 005; amended MOUTH-START-003, 004, 006, MOUTH-PLAY-001, MOUTH-AUD-002, MOUTH-DRY-005, MOUTH-HLTH-002; retired (lines removed): MOUTH-START-002, MOUTH-SESS-001 to 004, 007 to 009 |
+| ears | consumes connector sources; holds no Discord client or token | new EARS-CON-001 to 005; amended EARS-START-004, 005, 008, EARS-HEAR-001, 002, 011, EARS-CAP-003, EARS-INJ-009, EARS-HLTH-002, EARS-SRC-001 to 006 |
+| mouth | the `discord` output is a connector sink writing `audio.out.discord`; no token, no join | new MOUTH-CONN-001 to 005; amended MOUTH-START-003, 004, 006, MOUTH-PLAY-001, MOUTH-AUD-002, MOUTH-DRY-005, MOUTH-HLTH-002 |
 | shared-runtime | the Discord voice session's only user is the connector (text only; SHARED-DVS-* unchanged) | SHARED-DVS-001 to 007 |
 | deployment | new Compose service and profile; one bot in `.env.example`, installer and README | DEPLOY-COMPOSE-004, 020 (amended), DEPLOY-COMPOSE-023 (new), DEPLOY-INST-008, DEPLOY-README-004, 005 |
 | event-bus | design pointer only: connector streams and keys share the bus prefix | none yet; BUS spec for the audio stream and registry keys depends on open question 3 (LLD) |
 
-Cascaded (owner defaults accepted 2026-11-12): config (CFG-SCH-020, CFG-SCH-030, CFG-SCH-032, CFG-USR-005, CFG-USR-011), control-plane (manifest unit `discord`, CTRL-MANIFEST-001 to 003, 005, CTRL-HEALTH-005), dashboard (DASH-HTTP-014), event-bus (BUS-EVT-013, BUS-AUD-001, 002), ears (EARS-SRC-*, EARS-CON-*), README, `.env.example` and `docs/TESTING.md`. The `docs/arrows/ears.md` / `mouth.md` historical sections stay as written.
+Cascaded: config (CFG-SCH-020, CFG-SCH-030, CFG-SCH-032, CFG-USR-011), control-plane (manifest unit `discord`, CTRL-MANIFEST-001 to 003, 005, CTRL-HEALTH-005), dashboard (DASH-HTTP-014), event-bus (BUS-EVT-013, BUS-AUD-001, 002), ears (EARS-SRC-*, EARS-CON-*), README, `.env.example` and `docs/TESTING.md`.
 
 ## Build order
 
@@ -27,7 +27,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 | 1. Client library | connections (+ bus pointer) | Registration, tag validation, frame encode and decode, paced writer, live `XREAD` reader, with a fake Redis. No service yet. |
 | 2. Discord connector | connections, config, control-plane, deployment | `services/connector-discord` reusing `createDiscordVoiceSession` undeafened and unmuted, with a fake Discord session; manifest unit, Compose service and profile, config keys. Runnable beside the old per-service path, which stays until live-verified. |
 | 3. ears consumer (built) | ears | Connector source in `earsPlan` and the service, utterance assembler by `spk` gap, per-source health, registry liveness for stream and `http` tags. |
-| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; the per-service Discord clients, `EARS_DISCORD_TOKEN`, the superseded lines and their tests are removed; Compose blanks `DISCORD_TOKEN` for ears and mouth; README, installer and `.env.example` name the one bot. |
+| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; Compose blanks `DISCORD_TOKEN` for ears and mouth; README, installer and `.env.example` name the one bot. |
 | 5. Live verification | ears, mouth, connections | Real guild, one bot, kill and restart the connector. |
 
 ## Edge audit (open)

@@ -78,7 +78,7 @@ take the same path.
   even in mock mode. To skip that, use the Redis-only smoke run under
   [Running one service on its own](#running-one-service-on-its-own-isolated).
 - `eyes`, `ears` and `mouth` are optional profiles and stay off. To exercise them without accounts, set
-  `EARS_SOURCE=off` or `EARS_STT_ENGINE=stub`, `MOUTH_DISCORD_ENABLED=false` (or `MOUTH_DRYRUN_ENABLED=true`),
+  `EARS_SOURCES=[]` or `EARS_STT_ENGINE=stub`, `MOUTH_DISCORD_ENABLED=false` (or `MOUTH_DRYRUN_ENABLED=true`),
   `VISION_ENABLED=false` with `VISION_ENGINE=stub`, and feed them from the dashboard's test inputs.
   `eyes` with `VISION_ENABLED=true` always wants a reachable OBS: its mock covers injected images only.
 - Real backends one at a time: delete the matching line and fill in the account (Twitch, Discord, OBS and
@@ -114,9 +114,6 @@ runs `docker compose up -d --build` (core: chat + brain regions + voice avatar +
 `PORT` overrides `DASHBOARD_PORT` for the dashboard; its startup log prints the URL
 it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to other
 machines (it then refuses to start without `CONTROL_ENABLED=1` and a token).
-
-Upgrading from a containerised dashboard: run `docker compose down --remove-orphans`
-once, or just press Launch, which removes the orphaned `dashboard` container.
 
 Works on **Ubuntu/Debian** natively and inside **WSL2** (Docker Desktop with WSL
 integration, or docker-ce in the distro). On WSL the GPU is provided by the
@@ -175,15 +172,13 @@ The dashboard's browser page (`?sink=1`, often an OBS Browser Source) is a
 separate sink, not an output: open it wherever you want her voice to play. A
 routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
 
-**Upgrading from two bots:** remove `EARS_DISCORD_TOKEN`, keep `DISCORD_TOKEN`, add
-`discord` to `COMPOSE_PROFILES`, and move the guild and channel (`ears.discord.*` and
-`mouth.outputs.discord.guild_id` / `voice_channel_id`) to `connections.discord.guild_id` and
-`connections.discord.voice_channel_id` in `config.yaml`.
+One bot, `DISCORD_TOKEN`, serves both directions: add `discord` to `COMPOSE_PROFILES` and set the guild and
+channel as `connections.discord.guild_id` and `connections.discord.voice_channel_id` in `config.yaml`.
 
 **Listening sources.** `ears.sources` is a list, so several run at once (default `[discord]`):
 `http` and `dir` need no account, and a connector tag such as `desktop` (the host capture
-helper) is an open name that a connector registers. `EARS_SOURCE` still sets the legacy
-single `ears.source`, which `ears.sources` overrides when both are set. A source with no
+helper) is an open name that a connector registers. `EARS_SOURCES` overrides the list in
+flow syntax (`[http, dir]`, `[]` for idle). A source with no
 connector, token or path is `down` while the others keep running.
 
 ## Configuration
@@ -391,9 +386,9 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 | chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
 | eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`); injected images are still described |
 | eyes | `VISION_ENGINE=stub` | fixed description, no vision model (`mock`); with `VISION_ENABLED=true` it still needs OBS |
-| ears | `EARS_SOURCE=off` | idles, no Discord client (`off`); injected audio is still transcribed |
-| ears | `EARS_SOURCE=http` | listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` WAV or 16-bit PCM clips; no Discord account |
-| ears | `EARS_SOURCE=dir` | hears `.wav` files dropped in `ears.dir.path`, then renames them `.done`; no Discord account |
+| ears | `EARS_SOURCES=[]` | idles, no Discord client (empty list); injected audio is still transcribed |
+| ears | `EARS_SOURCES=[http]` | listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` WAV or 16-bit PCM clips; no Discord account |
+| ears | `EARS_SOURCES=[dir]` | hears `.wav` files dropped in `ears.dir.path`, then renames them `.done`; no Discord account |
 | ears | `EARS_STT_ENGINE=stub` | fixed transcript, no `stt` server (`mock`) |
 | mouth | `MOUTH_DISCORD_ENABLED=false` | idles, plays nothing (`off`) |
 | mouth | `MOUTH_DRYRUN_ENABLED=true` | the `dryrun` output accepts every line and plays nothing (`mock`) |

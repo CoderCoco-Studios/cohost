@@ -90,7 +90,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
     config: ["vision"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
-    groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCE: "off", EARS_STT_ENGINE: "stub" },
+    groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
     config: ["ears"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {

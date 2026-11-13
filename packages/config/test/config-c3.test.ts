@@ -26,7 +26,7 @@ function sandbox(files: Record<string, string> = {}): { root: string; dir: strin
 
 const base = () => ({
   cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: { discord: {} }, dashboard: {}, brain: {},
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: {}, dashboard: {}, brain: {},
 });
 const issuesOf = (r: ReturnType<typeof ConfigSchema.safeParse>) => (r.success ? [] : r.error.issues.map((i) => i.path.join(".")));
 
@@ -37,7 +37,7 @@ test("a blank plain string key with a default takes the default; a blank require
   (b.vision as Record<string, unknown>).obs = { host: "", source: "" };
   b.voice = { voice: "" } as never;
   b.avatar = { vtube_studio: { host: "h", plugin_name: "", plugin_developer: "" }, vmc: { host: "h" } } as never;
-  b.ears = { discord: {}, stt_model: "" } as never;
+  b.ears = { stt_model: "" } as never;
   b.llm = { model: "m", embed_model: "e", openai: { base_url: "" }, claude: { effort: "" } } as never;
   const c = ConfigSchema.parse(b);
   assert.deepEqual(
@@ -159,12 +159,11 @@ test("writeFileAtomic replaces through a temp file and a failed write leaves the
 test(".env.example lists the isolation presets, control settings, injection limits, compose profiles and Discord/mouth variables", () => {
   const text = readFileSync(join(repo, ".env.example"), "utf8");
   const names = new Set([...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!));
-  const want = ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCE", "MOUTH_DISCORD_ENABLED",
+  const want = ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCES", "MOUTH_DISCORD_ENABLED",
     "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_BIND", "CONTROL_ADVANCED", "COMPOSE_PROFILES", "INJECT_MAX_IMAGE_BYTES", "INJECT_MAX_AUDIO_BYTES", "INJECT_TTL_MS", "DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "CONNECTIONS_DISCORD_ENABLED"];
   const example = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   for (const m of example.matchAll(/\$\{(MOUTH_[A-Z0-9_]+)/g)) want.push(m[1]!);
   assert.deepEqual(want.filter((n) => !names.has(n)), []);
-  assert.ok(!names.has("EARS_DISCORD_TOKEN"), "the legacy listen-only bot token is gone (DEPLOY-README-004)");
   const lines = text.split("\n");
   const at = lines.findIndex((l) => /^STT_MODEL=/.test(l));
   const heading = lines.slice(0, at).reverse().find((l) => /^# ---/.test(l))!;

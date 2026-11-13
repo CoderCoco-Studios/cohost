@@ -24,7 +24,7 @@ const cfg = (critic: Record<string, unknown>) => ConfigSchema.parse({
   brain: { cortex: { critic } },
   voice: {},
   avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} },
+  ears: {},
   dashboard: {},
 });
 const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/critic`;
@@ -73,7 +73,7 @@ test("critic llm: the system prompt carries the reply prompt's length rule, one 
     brain: { cortex: { critic: { kind: "llm" } } },
     voice: {},
     avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-    ears: { discord: {} },
+    ears: {},
     dashboard: {},
   });
   answer = { choices: [{ message: { content: '{"ok":true}' } }] };

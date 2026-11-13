@@ -299,7 +299,7 @@ backend), `mode` reported in heartbeat.
 | memory | blocked on Ollama/Postgres | `memory.store: memory` + `embedder: hash` (cheap deterministic embedding) | `MEMORY_STORE=memory` (new) |
 | chat | exits without channel | `chat.source: fake`: scripted/stdin messages | `CHAT_SOURCE=fake` (new) |
 | eyes | loops on OBS | respect `vision.enabled=false` (idle, heartbeat `mode: "off"`); optional `fake` source | fix existing |
-| ears | exits without token | `ears.source: off` heartbeat `mode: "off"`, or file-based `speech.heard` injector | `EARS_SOURCE=off` (new) |
+| ears | exits without token | `ears.source: off` heartbeat `mode: "off"`, or file-based `speech.heard` injector | `EARS_SOURCES=[]` (new) |
 
 Design rules:
 

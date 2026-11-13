@@ -16,7 +16,6 @@ Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host pr
 
 - New `[x]`: CTRL-STACK-001 to 012 (`StackController`: workspace-root cwd, launch with readiness wait, stop-all, restart-all, status probe, stack state, `COHOST_DOCKER_BIN` / `docker` / `docker.exe`), CTRL-CLI-010 to 012 (`cohostctl launch`, `stop-all`, `restart-all`).
 - Reworded `[x]`: CTRL-MANIFEST-001, 002, 003 (`dashboard` leaves the manifest, no `self` flag), CTRL-HEALTH-005 (ten known services), CTRL-CLI-001 (parse; `stop` takes no options), CTRL-CLI-009 (bus only for status/start/stop/restart/restart-all).
-- Retired: CTRL-GUARD-002 (`self` conflict); `ServiceDef.self` and the manifest's `dashboard` entry are removed.
 - Built in `packages/control/src/stack.ts` (`StackController`, `stackState`) and `docker.ts` (`resolveDockerBin`, shared by `ComposeRuntime`); `cohostctl launch`, `stop-all` and `restart-all` in `cli.ts`. `restart-all` returns per-unit outcomes in `restarts` beside the `{ok, detail?, services?}` result so the CLI can print one line per unit.
 - Cross-segment test edit: three dashboard-service tests (DASH-SVC-003, DASH-FEED-001, DASH-FEED-006) follow the manifest and known-list change (404 for `dashboard`, nine known services); the dashboard service code is untouched.
 - Cross-segment: the dashboard consumes the controller (DASH-STACK-*); the readiness wait relies on the Compose healthcheck (CTRL-CHECK-003, deployment DEPLOY-HC-001).
@@ -33,13 +32,11 @@ Design: LLD § Stack controller; owner decisions in the dashboard LLD § Host pr
 
 Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
 
-1. **B17** isolation env under compose → pass-through `VAR: ${VAR:-}` entries for every preset variable in the compose `x-ts-service` environment, and compose pins `CONTROL_ENABLED: "0"` for the dashboard container (both deployment changes). Specs: CTRL-RUNTIME-009.
+1. **B17** isolation env under compose → pass-through `VAR: ${VAR:-}` entries for every preset variable in the compose `x-ts-service` environment. Specs: CTRL-RUNTIME-009.
 2. **S52** isolated start closure → manifest `requires`, followed transitively, for isolated starts only. Specs: CTRL-GUARD-008.
-3. **S53** (superseded) restart of a stopped or untracked service → it started the service under the host-process runtime. CTRL-RUNTIME-008 and CTRL-GUARD-009 are retired with that runtime.
 4. **S54** audit `detail` on success → keep. Specs: CTRL-GUARD-007 (unchanged).
-5. **S55** (superseded) invalid `CONTROL_PROCESS_MODE` rejected by `cohostctl`; CTRL-CLI-007 is retired, the setting no longer exists.
-6. **H1** overlap with event-bus → event-bus owns the heartbeat transport and shutdown mechanics; CTRL-HEARTBEAT-007 deleted (number not reused), SHARED-LIFE-010 narrowed to the heartbeat's `beforeShutdown` registration.
-8. **R1** (2026-11-08) remove the host-process runtime: compose is the only runtime ("no service should be handling other services"); `CONTROL_RUNTIME` and `CONTROL_PROCESS_MODE` are gone. Retired specs: CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006, CTRL-CLI-007; amended: CTRL-RUNTIME-004, CTRL-GUARD-005, CTRL-CONFIG-002, CTRL-CLI-004. Retired IDs are not reused.
+6. **H1** overlap with event-bus → event-bus owns the heartbeat transport and shutdown mechanics; SHARED-LIFE-010 narrowed to the heartbeat's `beforeShutdown` registration.
+8. **R1** remove the host-process runtime: compose is the only runtime ("no service should be handling other services"); amended: CTRL-RUNTIME-004, CTRL-GUARD-005, CTRL-CONFIG-002, CTRL-CLI-004.
 7. **P8** (related) where a restarted service starts reading is its bus start mode (memory `resume`, every other `latest`); the controller's `fresh` / `resume` stays as an operator override; the manifest groups and default modes match the subscriptions (CTRL-MANIFEST-002), recorded in the LLD.
 
 ## References
@@ -51,7 +48,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (66 specs: 66 `[x]`, 0 `[ ]`, 0 `[D]`; CTRL-HEARTBEAT-007, CTRL-RUNTIME-005 to 008, CTRL-GUARD-009, CTRL-CLI-006 and CTRL-CLI-007 are retired)
+- docs/intent/control-plane/control-plane-specs.md (66 specs: 66 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (`@spec` lines)
 - packages/control/test/cli.test.ts (16)
@@ -109,7 +106,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line was confirmed in code at `49ba935`; CTRL-CLI-006 and CTRL-CLI-007 are retired with the host-process runtime. The owner decisions narrowed SHARED-LIFE-010 and retired CTRL-HEARTBEAT-007; CTRL-GUARD-008 is implemented and tested, and CTRL-MANIFEST-002 lists the chat and eyes groups and the `fresh` defaults for chat, eyes and ears.
+1. **Markers.** Every `[x]` line was confirmed in code at `49ba935`. The owner decisions narrowed SHARED-LIFE-010; CTRL-GUARD-008 is implemented and tested, and CTRL-MANIFEST-002 lists the chat and eyes groups and the `fresh` defaults for chat, eyes and ears.
 2. **Spec lines corrected to match the code** (IDs kept): CTRL-GUARD-005 (a failed reset during a fresh restart returns without starting), CTRL-GUARD-007 (the audit carries `detail` whenever the runtime returned one, success included; S54), CTRL-CLI-002 (the named-service check runs against the whole snapshot), CTRL-CLI-003 (exact output strings), SHARED-LIFE-011 (the warning needs a supplied logger). CTRL-MANIFEST-005 pins the `KNOWN_SERVICES` ⊆ manifest invariant that `manifest.test.ts:23` tests.
 3. **Compose isolated starts do not reach the container** — the isolation preset is set only on the `docker compose` process env (`packages/control/src/runtime.ts:61`), while `docker-compose.yml:11-20` has a fixed `environment` block and `env_file: .env` with no pass-through. Tests assert only the exec env (`runtime.test.ts:44`). (CTRL-RUNTIME-009, B17)
 4. **Isolated starts start the `requires` closure** — the manifest has an optional `requires` field (cortex: salience, affect) and an isolated start runs the closure first, depth-first, each unit in its own default mode and audited separately (CTRL-GUARD-008, S52).
@@ -126,10 +123,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 ## Work Required
 
 ### Must Fix
-None outstanding: the isolation pass-through entries are in `docker-compose.yml` (CTRL-RUNTIME-009, DEPLOY-COMPOSE-017). The `CONTROL_ENABLED: "0"` pin that accompanied them is retired with the containerised dashboard (DEPLOY-COMPOSE-016).
+None outstanding: the isolation pass-through entries are in `docker-compose.yml` (CTRL-RUNTIME-009, DEPLOY-COMPOSE-017).
 
 ### Should Fix
-- Build the stack controller and the `cohostctl` stack commands (CTRL-STACK-*, CTRL-CLI-010 to 012) and remove `dashboard` from the manifest (CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005; CTRL-GUARD-002 retired).
+- Build the stack controller and the `cohostctl` stack commands (CTRL-STACK-*, CTRL-CLI-010 to 012) and remove `dashboard` from the manifest (CTRL-MANIFEST-001 to 003, CTRL-HEALTH-005).
 
 ### Nice to Have
 2. Drop the unused `@cohost/config` dependency or use it (the stack controller's workspace-root cwd, CTRL-STACK-001, uses it); tighten the `cli.js` entry guard (CTRL-CLI-005).

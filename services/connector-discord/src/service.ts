@@ -32,7 +32,7 @@ export interface ConnectorServiceOptions {
 
 const capabilities = (ready: boolean): CapabilityEntry[] => [
   { cap: "audio-in", tag: TAG, format: IN_FORMAT, ready },
-  { cap: "audio-out", tag: TAG, format: OUT_FORMAT, ready },
+  { cap: "audio-out", tag: TAG, format: OUT_FORMAT, ready, flush: true }, // @spec CONN-DISC-012, CONN-FLUSH-001
 ];
 
 export function createConnectorService(opts: ConnectorServiceOptions = {}): {

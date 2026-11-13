@@ -4,6 +4,7 @@ import { urls, type Config, type Logger } from "@cohost/config";
 import { resample, wavWrap } from "@cohost/shared";
 import { wavDurationMs } from "./audio.js";
 import type { Clip, HearOutcome } from "./capture.js";
+import type { EchoGate } from "./echo.js";
 import { hasWordCharacter, isDropPhrase } from "./transcript.js";
 
 export interface HearingDeps {
@@ -12,6 +13,8 @@ export interface HearingDeps {
   log: Logger;
   /** 16k mono WAV → text. */
   transcribe: (wav: Buffer) => Promise<string>;
+  /** The echo gate and the sources it applies to (EARS-ECHO-008); absent means none. */
+  echo?: { gate: EchoGate; sources: ReadonlySet<string> };
 }
 
 const EXT: Record<string, string> = {
@@ -54,6 +57,8 @@ export class Hearing {
   async heardClip(clip: Clip, speaker: string, source?: string, speakerId?: string): Promise<HearOutcome> {
     const durationMs = (clip.pcm.length / (2 * clip.channels) / clip.rate) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return { heard: false, reason: "too-short" };
+    // @spec EARS-ECHO-004, EARS-ECHO-008
+    if (source !== undefined && this.d.echo?.sources.has(source) && this.d.echo.gate.blocks(clip.audioEndedAt ?? Date.now())) return { heard: false, reason: "echo" };
     const wav = wavWrap(resample(clip.pcm, { from: { rate: clip.rate, channels: clip.channels }, to: { rate: 16000, channels: 1 } }), 16000, 1);
     return this.finish(wav, durationMs, speaker, speakerId, source, clip.audioEndedAt, clip.utteranceId ?? randomUUID()); // @spec EARS-PART-003
   }

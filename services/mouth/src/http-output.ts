@@ -98,6 +98,7 @@ export function createHttpOutput({ bus, log, url, timeoutMs, retries, maxQueue, 
     name: HTTP,
     isReady: () => url !== "",
     playback: timed.playback,
+    stop: (o) => timed.playback.stop(o),
     close() {
       stop.abort();
       queue.length = 0;

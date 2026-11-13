@@ -4,7 +4,7 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. `[x]` = implemented,
 
 ## Event handling
 
-- [x] **CTX-EVT-001**: The cortex shall subscribe to the bus in consumer group `cortex` with start mode `latest` (the group is reset to the stream's newest entry on every start, so events published while the cortex was not subscribed, including stale `attention.focus`, are never delivered) for `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `voice.done`, `attention.focus`, `memory.recall.reply`, `memory.notes.reply`, `memory.viewer`, `affect.state` and `control`. <!-- openspec: cortex § Inputs and context --> <!-- test: services/cortex/test/startup.test.ts:22 -->
+- [x] **CTX-EVT-001**: The cortex shall subscribe to the bus in consumer group `cortex` with start mode `latest` (the group is reset to the stream's newest entry on every start, so events published while the cortex was not subscribed, including stale `attention.focus`, are never delivered) for `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `voice.done`, `voice.stop`, `attention.focus`, `memory.recall.reply`, `memory.notes.reply`, `memory.viewer`, `affect.state` and `control`. <!-- openspec: cortex § Inputs and context --> <!-- test: services/cortex/test/startup.test.ts:22 -->
 - [x] **CTX-EVT-002**: When a `chat.message`, `speech.heard` or `vision.summary` arrives, the cortex shall add it to its working-memory window of `brain.working_memory_events` events. <!-- openspec: cortex § Inputs and context --> <!-- test: services/cortex/test/cortex.region.test.ts:35 -->
 - [x] **CTX-EVT-003**: When a `brain.say` arrives from any source, the cortex shall add it to its working memory as a self line with its text and emotion. <!-- openspec: cortex § Inputs and context --> <!-- test: services/cortex/test/cortex.region.test.ts:152 -->
 - [x] **CTX-EVT-004**: When a `brain.say` arrives whose bus source is not `cortex`, the cortex shall add its `id` to the lines pending on the voice (a line that has begun and not yet ended), so that thinking is deferred while any pending line plays. <!-- openspec: cortex § Inputs and context (Foreign line) --> <!-- test: services/cortex/test/cortex.region.test.ts:137, services/cortex/test/cortex.region.test.ts:152 -->
@@ -13,6 +13,7 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. `[x]` = implemented,
 - [x] **CTX-EVT-007**: When an `affect.state` arrives, the cortex shall keep it as the current mood for later prompts. <!-- openspec: cortex § Viewer notes and mood --> <!-- test: services/cortex/test/cortex.region.test.ts:275 -->
 - [x] **CTX-EVT-008**: The cortex shall also subscribe to `voice.failed` in its `cortex` group subscription (CTX-EVT-001). <!-- test: services/cortex/test/startup.test.ts -->
 - [x] **CTX-EVT-009**: The cortex shall not subscribe to `speech.partial`, and a `speech.partial` shall never be added to its working-memory window or start a think: only `speech.heard` is speech to the cortex.
+- [x] **CTX-EVT-010**: When a `voice.stop` arrives, the cortex shall end every pending line whose `id` it names (every pending line when `ids` is absent) and, once no line is pending, publish `brain.status` `idle`, or `muted` if the cortex is muted or paused; a `voice.stop` that ends no pending line shall publish no `brain.status`.
 
 ## Think gating
 
@@ -25,6 +26,14 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. `[x]` = implemented,
 - [x] **CTX-GATE-007**: The cortex shall clear its thinking flag on every exit from a think, including errors, so a later focus can run. <!-- test: services/cortex/test/cortex.region.test.ts:106, services/cortex/test/cortex.region.test.ts:215 -->
 - [x] **CTX-GATE-008**: If publishing `brain.status` fails on a gated early-return path (muted, paused or speaking), the cortex shall log the failure and return, instead of raising an unhandled promise rejection from the unawaited think. <!-- test: services/cortex/test/cortex.region.test.ts:353 -->
 - [x] **CTX-GATE-009**: When `brain.cortex.speaking_timeout_ms` elapses for a line without a matching `voice.done` and no other line is then pending, the cortex shall publish `brain.status` `idle`, or `muted` if it is muted or paused, at that moment. <!-- test: services/cortex/test/cortex.region.test.ts:377 -->
+- [x] **CTX-GATE-010**: When a `voice.stop` arrives, the cortex shall not cancel, restart or start a think: a think in flight shall complete and its reply shall be subject to CTX-GATE-005 and CTX-GATE-006 as if no stop had been read, and no think shall start for the stop itself.
+- [x] **CTX-GATE-011**: When a `voice.done` flagged `interrupted` arrives for a line that a `voice.stop` has already ended, the cortex shall ignore it (CTX-EVT-005) and shall not publish `brain.status` or change any pending line.
+
+## Deferred: dynamic speech (REPLAN)
+
+Design: LLD Decisions & Alternatives, "Interruptible, dynamic speech (deferred)"; [HLD](../../high-level-design.md) Future / ideal state. Prerequisites: clause-chunked speech and streaming model output (VOICE-CHUNK-001, VOICE-CHUNK-002), a playback position (MOUTH-POS-001), the interrupted-thought stack (WM-STACK-001), a re-think call inside the latency budget and live vision for screen events.
+
+- [D] **CTX-REPLAN-001**: Where speech is dynamic, the cortex shall, at each clause boundary of a line being spoken and when a key event has arrived (a final `speech.heard`, or a screen event once live vision exists), decide whether to continue the line, adapt its remainder, pivot to the event, or resume a thought it interrupted earlier, and shall make that decision within the speech path's latency budget.
 
 ## Memory recall
 

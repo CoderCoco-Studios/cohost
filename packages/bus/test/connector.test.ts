@@ -330,3 +330,62 @@ test("the tracker drops wrong-format and malformed frames, counts gaps, and rese
   assert.equal(t.summary(), `lost 2, dropped ${2 + bad.length}`);
   assert.ok(ok(frame({ epoch: 200, seq: 1 }))); // keeps running
 });
+
+// ---- flush (barge-in): a producer's stop of a line, written as a pcm-less frame
+
+const flushFrame = (over: Partial<Frame> = {}): Frame => ({ epoch: 100, seq: 3, rate: 48000, ch: 2, utt: "u9", flush: true, ...over } as Frame);
+
+// @spec CONN-REG-001, CONN-FLUSH-001
+test("an audio-out capability may carry flush true; an entry without it means the connector does not obey a flush frame", async () => {
+  const fake = new FakeRedis();
+  const bus = busWith(fake);
+  const r = new ConnectorRegistrar(bus, {
+    id: "discord", kind: "discord", version: "1",
+    capabilities: () => [
+      { cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, flush: true },
+      { cap: "audio-in", tag: "discord", format: { rate: 16000, channels: 1 }, ready: true },
+    ] as CapabilityEntry[],
+  });
+  await r.tick();
+  const reg = (await bus.readRegistration("discord"))!;
+  const out = reg.capabilities.find((c) => c.cap === "audio-out") as unknown as { flush?: boolean };
+  const inn = reg.capabilities.find((c) => c.cap === "audio-in") as unknown as { flush?: boolean };
+  assert.equal(out.flush, true, "flush true survives write and parse");
+  assert.ok(!inn.flush, "an entry without flush stays without it");
+  bus.stop();
+});
+
+// @spec CONN-AUD-002, CONN-AUD-006
+test("a flush frame round-trips: flush 1, utt, the producer's seq and epoch, rate and ch, and no pcm", () => {
+  const fields = encodeFrame(flushFrame());
+  assert.equal(fields[fields.indexOf("flush") + 1], "1");
+  assert.equal(fields.includes("pcm"), false, "no pcm field is written");
+  assert.equal(fields[fields.indexOf("utt") + 1], "u9");
+  const d = decodeFrame(fields.map((x) => (Buffer.isBuffer(x) ? x : Buffer.from(x))));
+  assert.ok(d.ok, "a flush frame is not malformed");
+  const f = d.frame as Frame & { flush?: boolean };
+  assert.equal(f.flush, true);
+  assert.deepEqual([f.epoch, f.seq, f.rate, f.ch, f.utt], [100, 3, 48000, 2, "u9"]);
+  assert.ok(f.pcm === undefined || f.pcm.length === 0);
+  const plain = decodeFrame(encodeFrame({ epoch: 1, seq: 0, rate: 48000, ch: 2, pcm: Buffer.alloc(4), utt: "u" }));
+  assert.ok(plain.ok && !(plain.frame as { flush?: boolean }).flush, "an ordinary frame carries no flush");
+});
+
+// @spec CONN-AUD-006, CONN-BP-006
+test("the tracker accepts a flush frame without counting it malformed or lost; a frame with neither pcm nor flush is still malformed", () => {
+  const t = new FrameTracker({ rate: 48000, channels: 2 });
+  const pcmFrame = (seq: number): Frame => ({ epoch: 100, seq, rate: 48000, ch: 2, pcm: Buffer.alloc(3840), utt: "u9" });
+  const accept = (f: Frame) => t.accept(decodeFrame(encodeFrame(f)));
+  assert.ok(accept(pcmFrame(0)));
+  assert.ok(accept(pcmFrame(1)));
+  assert.ok(accept(pcmFrame(2)));
+  const flushed = accept(flushFrame({ seq: 3 }));
+  assert.ok(flushed, "accepted");
+  assert.equal((flushed as { flush?: boolean }).flush, true);
+  assert.ok(accept(pcmFrame(4)), "the next line follows the flush's seq");
+  assert.equal(t.dropped, 0);
+  assert.equal(t.lost, 0, "a flush frame is not a lost frame and leaves no gap");
+  const noPcmNoFlush = encodeFrame(pcmFrame(5)).filter((x, i, a) => x !== "pcm" && !(Buffer.isBuffer(x) && a[i - 1] === "pcm"));
+  assert.equal(t.accept(decodeFrame(noPcmNoFlush)), undefined);
+  assert.equal(t.dropped, 1);
+});

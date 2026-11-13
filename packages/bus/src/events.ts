@@ -10,6 +10,13 @@ import { Emotion } from "@cohost/config";
 /** What `voice.playing` and `voice.done` carry: the utterance and the sink that reports it. */
 const PlaybackReport = z.object({ id: z.string(), sink: z.string() });
 
+/** `voice.done` also reports an interrupted line (BUS-EVT-031): `spokenText` and `unsaidText` only make sense with `interrupted`. */
+const PlaybackDone = PlaybackReport.extend({
+  interrupted: z.literal(true).optional(),
+  spokenText: z.string().optional(),
+  unsaidText: z.string().optional(),
+}).refine((d) => d.interrupted === true || (d.spokenText === undefined && d.unsaidText === undefined), { message: "spokenText and unsaidText need interrupted" });
+
 /** `control.routing` (`set_routing`, read by mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
 export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean().optional(), gain_db: z.number().min(-40).max(12).optional() }).strict());
 
@@ -263,8 +270,13 @@ export const EventPayloads = {
   /** Playback of an utterance started somewhere (dashboard sink / Discord). Avatar syncs to this. */
   // @spec BUS-EVT-017
   "voice.playing": PlaybackReport,
-  /** Playback of an utterance ended (or could not start) on a sink; the same shape as `voice.playing`. */
-  "voice.done": PlaybackReport,
+  /** Playback of an utterance ended (or could not start) on a sink; `interrupted` marks a line a `voice.stop` ended. */
+  // @spec BUS-EVT-017, BUS-EVT-031
+  "voice.done": PlaybackDone,
+
+  /** Order to stop speaking: every line (no `ids`) or the named lines only; salience publishes it, voice, mouth and cortex read it. */
+  // @spec BUS-EVT-030
+  "voice.stop": z.object({ reason: z.string(), ids: z.array(z.string()).optional() }),
 
   /**
    * A sink gave up on an utterance (it will not play, or a spoken fallback line plays in its place). `fallback` is
@@ -329,6 +341,8 @@ export const EventPayloads = {
         platform: z.enum(["twitch", "youtube", "discord"]).optional(),
         isMod: z.boolean().optional(),
         isSub: z.boolean().optional(),
+        /** The listening source an injected audio clip stands in for (BUS-EVT-032). */
+        source: z.string().optional(),
       })
       .optional(),
     remember: z.boolean(),

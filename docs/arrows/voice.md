@@ -32,6 +32,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 8. **P4** Host-side sinks → not supported except through the dashboard `/audio/*` proxy; 8700 stays unpublished; the loopback `urls.voice()` default stays. LLD Decisions row.
 9. **R3** `ready` timing and setup → all setup runs inside `runVoice`, so every startup failure logs `fatal`; `ready` is reported only after the HTTP server listens and the consumer group is positioned. Specs: VOICE-HLTH-001 reworded, VOICE-SYN-006 widened to startup failures.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. VOICE-STOP-001 to VOICE-STOP-008 are `[x]` (obey `voice.stop`); VOICE-CHUNK-001 and VOICE-CHUNK-002 are `[D]` (dynamic speech). Spec file totals: 67 specs, 65 `[x]`, 0 `[ ]`, 2 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -41,7 +45,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (57 specs: 57 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (67 specs: 57 `[x]`, 8 `[ ]`, 2 `[D]`; prefix `VOICE`)
 
 ### Tests
 - services/voice/test/voice.test.ts (pipeline, virtual sink, late claims, claim pruning, publish failures, HTTP, store, Kokoro client)

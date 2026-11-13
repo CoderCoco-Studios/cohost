@@ -78,6 +78,8 @@ export class Voice {
   /** Pending virtual `voice.done` timers, keyed by utterance id; a late real sink cancels its entry. */
   private virtualDone = new Map<string, NodeJS.Timeout>();
   /** Where an utterance is in the virtual sink: waiting out its claim window, or publishing the virtual `voice.playing`. */
+  /** The claim-window timer of each line, by id, so a `voice.stop` can clear it. */
+  private windowTimers = new Map<string, NodeJS.Timeout>();
   private phase = new Map<string, "window" | "publishing">();
   /** Ids a sink gave up on (a `voice.failed` without fallback) before the window ended or the virtual `voice.playing` finished publishing. */
   private givenUp = new Set<string>();
@@ -88,6 +90,10 @@ export class Voice {
   private queue: BusEvent<"brain.say">[] = [];
   private draining: Promise<void> | undefined;
   private stopped = false;
+  /** Ids a `voice.stop` ended while their synthesis was running: the result is discarded (VOICE-STOP-004). */
+  private cancelled = new Set<string>();
+  /** The line being synthesized now. */
+  private synthesizing: string | undefined;
 
   constructor(private d: VoiceDeps) {}
 
@@ -149,9 +155,9 @@ export class Voice {
   get claimCount(): number { return this.claimed.size; }
 
   /** Publish a virtual-sink event; a failure is logged and never escapes the timer callback. */
-  private async publishVirtual(type: "voice.playing" | "voice.done", id: string): Promise<void> { // @spec VOICE-SINK-009
+  private async publishVirtual(type: "voice.playing" | "voice.done", id: string, interrupted = false): Promise<void> { // @spec VOICE-SINK-009
     try {
-      await this.d.bus.publish(type, { id, sink: "virtual" });
+      await this.d.bus.publish(type, { id, sink: "virtual", ...(interrupted ? { interrupted: true as const } : {}) } as never);
     } catch (err) {
       this.d.log.warn({ err, id, type }, "virtual sink publish failed");
     }
@@ -183,6 +189,7 @@ export class Voice {
   async onEvent(ev: BusEvent): Promise<void> {
     if (ev.type === "brain.say") this.enqueue(ev as BusEvent<"brain.say">);
     else if (ev.type === "voice.failed") await this.onFailed(ev as BusEvent<"voice.failed">);
+    else if (ev.type === "voice.stop") await this.onStop(ev as BusEvent<"voice.stop">);
     else if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
       if (d.sink === "virtual") return; // @spec VOICE-SINK-005
@@ -190,6 +197,31 @@ export class Voice {
       // A real sink that starts after voice's virtual pair began takes over: the virtual done must not release the brain early.
       const pending = this.virtualDone.get(d.id);
       if (pending) { clearTimeout(pending); this.virtualDone.delete(d.id); } // @spec VOICE-SINK-008
+    }
+  }
+
+  /**
+   * `voice.stop`: drop the named lines (every line without `ids`) wherever they are: queued, in synthesis, in the claim window
+   * or in the virtual playing. A line a real sink claimed is left to that sink (VOICE-STOP-007); later lines are unaffected (VOICE-STOP-008).
+   */
+  private async onStop(ev: BusEvent<"voice.stop">): Promise<void> { // @spec VOICE-STOP-001, VOICE-STOP-002, VOICE-STOP-003, VOICE-STOP-004, VOICE-STOP-005, VOICE-STOP-006, VOICE-STOP-007, VOICE-STOP-008
+    const ids = ev.data.ids ? new Set(ev.data.ids) : undefined;
+    const named = (id: string): boolean => !ids || ids.has(id);
+    this.queue = this.queue.filter((q) => !named(q.data.id));
+    if (this.synthesizing !== undefined && named(this.synthesizing)) this.cancelled.add(this.synthesizing);
+    for (const [id, timer] of [...this.windowTimers]) {
+      if (!named(id) || this.claimed.has(id)) continue;
+      clearTimeout(timer);
+      this.windows.delete(timer);
+      this.windowTimers.delete(id);
+      this.phase.delete(id);
+      this.givenUp.delete(id);
+    }
+    for (const [id, timer] of [...this.virtualDone]) {
+      if (!named(id)) continue;
+      clearTimeout(timer);
+      this.virtualDone.delete(id);
+      await this.publishVirtual("voice.done", id, true); // @spec VOICE-STOP-006
     }
   }
 
@@ -212,9 +244,12 @@ export class Voice {
     const { bus, log } = this.d;
     const { id, text, emotion, gesture, route } = ev.data;
     const t0 = Date.now();
+    this.synthesizing = id;
     try {
       const wav = await this.d.synth(text);
+      this.synthesizing = undefined;
       if (this.stopped) return;
+      if (this.cancelled.delete(id)) return; // a voice.stop ended this line while it synthesized; @spec VOICE-STOP-004
       const info = parseWav(wav);
       const env = envelope(wav, info, ENVELOPE_HZ);
       this.put(id, wav);
@@ -231,6 +266,7 @@ export class Voice {
       this.phase.set(id, "window");
       const timer = setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004, VOICE-SINK-011
         this.windows.delete(timer);
+        this.windowTimers.delete(id);
         this.phase.delete(id);
         const reported = this.givenUp.delete(id);
         if (this.claimed.has(id)) return;
@@ -239,7 +275,10 @@ export class Voice {
         void this.playVirtual(id, info.durationMs);
       }, 1500);
       this.windows.add(timer);
-    } catch (err) { // @spec VOICE-UTT-003, VOICE-SINK-006
+      this.windowTimers.set(id, timer);
+    } catch (err) {
+      this.synthesizing = undefined;
+      if (this.cancelled.delete(id)) return; // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");
       // Let the brain continue even though nothing was said.
       await bus.publish("voice.done", { id, sink: "error" });

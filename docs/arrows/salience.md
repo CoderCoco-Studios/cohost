@@ -27,6 +27,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 11. **R3** `ready` timing → after consumer-group creation. Specs: SAL-HEALTH-001 reworded.
 12. **P7** Mute ownership (project-level) → only salience and cortex see mute/pause; LLD Decisions row added.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, and reflex lines that never interrupt. Spec file totals: 78 specs, 77 `[x]`, 0 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -36,7 +40,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (67 specs, prefix `SAL`: 66 `[x]`, 0 `[ ]`, 1 `[D]`; SAL-TRIG-001 to SAL-TRIG-009, the speech trigger, are built; SAL-FOCUS-006, `timing` on `attention.focus`, is built; SAL-IN-007, `speech.partial` not subscribed, is built)
+- docs/intent/salience/salience-specs.md (78 specs, prefix `SAL`: 77 `[x]`, 0 `[ ]`, 1 `[D]`; SAL-TRIG-001 to SAL-TRIG-009, the speech trigger, are built; SAL-FOCUS-006, `timing` on `attention.focus`, is built; SAL-IN-007, `speech.partial` not subscribed, is built)
 
 ### Tests (39 annotated tests, 62 spec citations)
 - services/salience/test/salience.region.test.ts (24 annotated: Salience class tick, in-flight decision re-check, busy valves, reflex and its self-gating, tick failure, control, injection)

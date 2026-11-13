@@ -19,6 +19,8 @@ export interface DryrunDeps {
   failEvery: number;
   fallback?: PlaybackDeps["fallback"];
   fetchAudio?: (url: string) => Promise<Buffer>;
+  /** Millisecond clock for the spoken-portion estimate (default `performance.now`). */
+  now?: () => number;
 }
 
 export interface DryrunOutput extends MouthOutput {
@@ -28,11 +30,11 @@ export interface DryrunOutput extends MouthOutput {
 }
 
 // @spec MOUTH-DRY-001, MOUTH-DRY-002, MOUTH-DRY-003
-export function createDryrunOutput({ bus, log, failEvery, fallback, fetchAudio = httpAudio }: DryrunDeps): DryrunOutput {
+export function createDryrunOutput({ bus, log, failEvery, fallback, fetchAudio = httpAudio, now }: DryrunDeps): DryrunOutput {
   let dequeued = 0;
   // The WAV itself is the "audio": checked, read for its duration, and sent nowhere (timed.ts).
   const timed = createTimedPlayback({
-    bus, log, sink: DRYRUN, fallback,
+    bus, log, sink: DRYRUN, fallback, spoken: true, now,
     // One call per dequeued utterance (fallback clips never reach it), so the count is the n-th line.
     fetchAudio: async (url) => {
       dequeued++;
@@ -40,5 +42,5 @@ export function createDryrunOutput({ bus, log, failEvery, fallback, fetchAudio =
       return fetchAudio(url);
     },
   });
-  return { name: DRYRUN, isReady: () => true, playback: timed.playback, close: timed.close };
+  return { name: DRYRUN, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close };
 }

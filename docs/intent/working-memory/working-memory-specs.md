@@ -58,3 +58,9 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 - [x] **WM-FLAG-002**: When `push` is given a bus event whose data carries neither `injected` nor `remember`, the system shall store a context event that has neither key, and `self` context events shall never carry them. <!-- test: packages/working-memory/test/context.test.ts:107 --> <!-- openspec: working-memory § Injection flags retained -->
 - [x] **WM-FLAG-003**: When `propagatedFlags(src)` is called with a source whose `injected` is truthy, the system shall return `{ injected: true }` plus `remember` when the source defines it. <!-- test: packages/working-memory/test/context.test.ts:172; indirect (other segments): services/salience/test/salience.region.test.ts:193, :220, services/cortex/test/cortex.region.test.ts:332 --> <!-- openspec: add-test-injection salience/cortex § Injection flag propagation (not a working-memory requirement) -->
 - [x] **WM-FLAG-004**: If `propagatedFlags(src)` is called with a source that is `undefined` or whose `injected` is falsy or absent (including a real event carrying a stray `remember`), then the system shall return an empty object so real traffic never gains injection flags. <!-- test: packages/working-memory/test/context.test.ts:179 (undefined source, stray remember); indirect (other segments): services/salience/test/salience.region.test.ts:202, :220, services/cortex/test/cortex.region.test.ts:343 --> <!-- openspec: add-test-injection salience/cortex § Injection flag propagation -->
+
+## Deferred: interrupted thoughts (STACK)
+
+Design: LLD Interrupted thoughts (deferred). Prerequisite: CTX-REPLAN-001.
+
+- [D] **WM-STACK-001**: Where speech is dynamic, the window shall keep a bounded stack of interrupted thoughts, each holding the interrupted line's `brain.say` id, its `spokenText` and its `unsaidText` from the interrupted `voice.done`, so that the cortex can resume the unsaid part later or discard it.

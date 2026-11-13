@@ -36,7 +36,7 @@ const FRAME_MS = 20;
  * `voice.playing` follows the first frame written; `voice.done` follows the line's own write schedule (its start plus its
  * length), not anything the connector reports, so a sink that goes away mid-line still finishes the line on schedule.
  */
-// @spec MOUTH-CONN-002, MOUTH-CONN-003, MOUTH-CONN-004, MOUTH-CONN-005, CONN-AUD-005, CONN-BP-004, CONN-BP-005, MOUTH-PLAY-003, MOUTH-PLAY-004
+// @spec MOUTH-CONN-002, MOUTH-CONN-003, MOUTH-CONN-004, MOUTH-CONN-005, MOUTH-STOP-004, CONN-AUD-006, CONN-AUD-007, CONN-AUD-005, CONN-BP-004, CONN-BP-005, MOUTH-PLAY-003, MOUTH-PLAY-004
 export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
   const sequencer = new FrameSequencer();
   const now = d.clock?.now ?? (() => performance.now());
@@ -47,6 +47,7 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
 
   const playback: Playback = new Playback({
     bus: d.bus, log: d.log, sink: d.tag, gainDb: d.gainDb, fallback: d.fallback, fetchAudio: d.fetchAudio ?? httpAudio,
+    spoken: true, now, // elapsed counts from the first frame written (MOUTH-STOP-005)
     // The player is the frame writer: this resolves once the first frame is out and rejects when it cannot go out.
     play: (pcm, id) => {
       const offer = d.registry.offer("audio-out", d.tag);
@@ -78,8 +79,17 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
         }, (err) => { if (!first) { first = true; abandoned = true; reject(err); } else d.log.warn({ err: String(err), output: d.tag }, "audio write failed"); });
       });
     },
-    // The watchdog's way out of a stuck line: abandon what is pending, ending no item itself.
-    stop: () => { line++; },
+    // The watchdog's and a `voice.stop`'s way out of a line: abort the frame writer first, then, where the sink obeys it, write one
+    // flush frame so the connector cuts what it already holds (MOUTH-STOP-004). It ends no item itself.
+    stop: async (id) => {
+      line++;
+      const offer = d.registry.offer("audio-out", d.tag);
+      if (!offer?.cap.flush) return;
+      await d.bus.publishFrame("out", d.tag, {
+        epoch: sequencer.epoch, seq: sequencer.next(), rate: offer.cap.format.rate, ch: offer.cap.format.channels,
+        pcm: Buffer.alloc(0), utt: id, flush: true,
+      });
+    },
     ...d.guard,
   });
 
@@ -87,6 +97,7 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
     name: d.tag,
     isReady: () => d.registry.ready("audio-out", d.tag) !== undefined,
     playback,
+    stop: (o) => playback.stop(o),
     close: () => { closed = true; line++; playback.close(); },
   };
 }

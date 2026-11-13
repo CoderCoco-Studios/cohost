@@ -84,6 +84,16 @@ export class Cortex {
         if (this.endSpeaking(d.id) && this.pending.size === 0) await this.status(this.control.muted || this.control.paused ? "muted" : "idle");
         break;
       }
+      // A stop ends lines, never a think: no cancel, restart or start (CTX-GATE-010). A later `voice.done` flagged interrupted
+      // finds its line gone and is ignored by the case above (CTX-GATE-011).
+      // @spec CTX-EVT-010, CTX-GATE-010, CTX-GATE-011
+      case "voice.stop": {
+        const { ids } = ev.data as BusEvent<"voice.stop">["data"];
+        let ended = false;
+        for (const id of [...this.pending.keys()]) if (!ids || ids.includes(id)) ended = this.endSpeaking(id) || ended;
+        if (ended && this.pending.size === 0) await this.status(this.control.muted || this.control.paused ? "muted" : "idle");
+        break;
+      }
       // @spec CTX-EVT-008, CTX-FALL-002, CTX-FALL-003, CTX-FALL-007
       case "voice.failed": {
         const d = ev.data as BusEvent<"voice.failed">["data"];

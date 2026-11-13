@@ -23,6 +23,10 @@ config CFG-SCH-018, CFG-SCH-020, CFG-SCH-031, CFG-ISO-001, CFG-ISO-004, CFG-USR-
 9. **Injection.** `inject.request` keeps target `ears` (BUS-EVT-006); mouth takes no injection.
 10. **Gain at zero.** MOUTH-ROUTE-005 applies only when `gain_db` is not 0, so the default path is bit-identical to unamplified playback.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. MOUTH-STOP-001 to MOUTH-STOP-010 are `[x]` (flush queues, stop the line, report it interrupted with spoken and unsaid text); MOUTH-POS-001 is `[D]` (playback position). Spec file totals: 84 specs, 83 `[x]`, 0 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -32,7 +36,7 @@ config CFG-SCH-018, CFG-SCH-020, CFG-SCH-031, CFG-ISO-001, CFG-ISO-004, CFG-USR-
 - docs/intent/mouth/mouth-design.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (73 specs: 73 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/mouth/mouth-specs.md (84 specs: 73 `[x]`, 10 `[ ]`, 1 `[D]`)
 
 ### Tests
 - services/mouth/test/*.test.ts (audio, connector output, dryrun, fallback, guard, health, routing, outputs, playback, session, `no-discord.test.ts` guarding that no Discord client or token is referenced)

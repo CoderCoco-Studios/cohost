@@ -49,8 +49,8 @@ test("the loop remembers each utterance id and every voice.playing claim, and ig
 });
 
 // @spec MOUTH-PLAY-001, MOUTH-PLAY-008
-test("the one mouth loop reads voice.utterance, voice.playing and control (set_routing only)", () => {
-  assert.deepEqual([...MOUTH_LOOP_TYPES].sort(), ["control", "voice.playing", "voice.utterance"]);
+test("the one mouth loop reads voice.utterance, voice.playing, voice.stop and control (set_routing only)", () => {
+  assert.deepEqual([...MOUTH_LOOP_TYPES].sort(), ["control", "voice.playing", "voice.stop", "voice.utterance"]);
 });
 
 // @spec MOUTH-START-005, MOUTH-PLAY-001
@@ -63,7 +63,7 @@ test("the mouth group is created first, then subscribed with start mode latest, 
   };
   await subscribeMouth(bus, async () => {}, recordingLog().log);
   assert.deepEqual(calls, ["reset:mouth", "subscribe"]);
-  assert.deepEqual(opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "control"], start: "latest" });
+  assert.deepEqual(opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "voice.stop", "control"], start: "latest" });
 });
 
 // ---- per-line route (MOUTH-ROUTE-006 to MOUTH-ROUTE-008)

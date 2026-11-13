@@ -391,3 +391,76 @@ test("the connector publishes no domain event", async () => {
   assert.deepEqual(r.bus.published, []);
   await r.stop();
 });
+
+// ---- flush (barge-in)
+
+const flushOut = (seq: number, over: Record<string, unknown> = {}): Frame => ({ epoch: 5, seq, rate: 48000, ch: 2, utt: "u1", flush: true, ...over } as unknown as Frame);
+
+// @spec CONN-DISC-012, CONN-FLUSH-001
+test("the audio-out capability is registered with flush true and audio-in without it", async () => {
+  const r = await up();
+  const caps = r.reg()!.capabilities as unknown as { cap: string; flush?: boolean }[];
+  assert.equal(caps.find((c) => c.cap === "audio-out")!.flush, true);
+  assert.ok(!caps.find((c) => c.cap === "audio-in")!.flush);
+  await r.stop();
+});
+
+// @spec CONN-DISC-012, CONN-FLUSH-002
+test("a flush frame while Ready stops the player, ends and discards the stream with its buffered frames, and counts none of them as dropped", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0));
+  r.bus.feed("out", "discord", outFrame(1));
+  r.bus.feed("out", "discord", outFrame(2));
+  assert.equal(r.player.played.length, 1);
+  const first = r.player.played[0]!;
+  const stopsBefore = r.player.stops;
+  r.bus.feed("out", "discord", flushOut(3));
+  assert.equal(r.player.stops, stopsBefore + 1, "the audio player is stopped");
+  assert.ok(first.stream.destroyed || first.stream.writableEnded, "the stream it was feeding is discarded");
+  assert.equal(first.stream.readableLength, 0, "its buffered frames are gone");
+  await waitFor(() => /lost 0, dropped 0/.test(r.bus.lastHealth()?.detail ?? ""), "discarded frames are neither dropped nor lost");
+  await r.stop();
+});
+
+// @spec CONN-DISC-012, CONN-FLUSH-003
+test("after a flush the next line the connector reads starts on a fresh stream, in seq order, from an empty buffer", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0));
+  r.bus.feed("out", "discord", outFrame(1));
+  r.bus.feed("out", "discord", flushOut(2));
+  r.bus.feed("out", "discord", outFrame(3, { utt: "u2" }));
+  r.bus.feed("out", "discord", outFrame(4, { utt: "u2", last: true }));
+  assert.equal(r.player.played.length, 2, "a new resource for the new line");
+  assert.notEqual(r.player.played[1]!.stream, r.player.played[0]!.stream);
+  await waitFor(() => r.player.played[1]!.chunks.length === 2, "chunks of the new line");
+  assert.deepEqual(r.player.played[1]!.chunks.map((c) => c[0]), [4, 5], "only the new line's frames");
+  await r.stop();
+});
+
+// @spec CONN-FLUSH-003
+test("a flush frame read while nothing is playing or buffered changes nothing", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", flushOut(0));
+  assert.equal(r.player.stops, 0);
+  assert.equal(r.player.played.length, 0);
+  r.bus.feed("out", "discord", outFrame(1, { utt: "u2", last: true }));
+  assert.equal(r.player.played.length, 1, "the next line plays normally");
+  await waitFor(() => /dropped 0/.test(r.bus.lastHealth()?.detail ?? ""), "nothing counted as dropped");
+  // A finished line, then a flush for it: also nothing to stop.
+  const stops = r.player.stops;
+  r.bus.feed("out", "discord", flushOut(2, { utt: "u2" }));
+  assert.equal(r.player.stops, stops);
+  await r.stop();
+});
+
+// @spec CONN-FLUSH-004
+test("a connector that never receives a flush frame plays a stopped line's written frames out as written", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0));
+  r.bus.feed("out", "discord", outFrame(1));
+  r.bus.feed("out", "discord", outFrame(2, { utt: "u2", last: true })); // the producer just stopped writing u1: no flush frame
+  await waitFor(() => r.player.played[0]!.chunks.length === 2, "u1's frames");
+  assert.equal(r.player.stops, 0, "nothing is cut");
+  assert.deepEqual(r.player.played[0]!.chunks.map((c) => c[0]), [1, 2]);
+  await r.stop();
+});

@@ -188,3 +188,47 @@ test("control disabled: routes are open", async () => {
   const t = await boot({});
   assert.equal((await t.text({ level: "bus", text: "hi" })).status, 202);
 });
+
+// @spec DASH-INJ-009
+test("bus-level speech with a source sets it on the speech.heard; without it the event carries none", async () => {
+  const t = await boot();
+  assert.equal((await t.text({ level: "bus", as: "speech", text: "hello", user: "al", source: "desktop" })).status, 202);
+  assert.equal((await t.text({ level: "bus", as: "speech", text: "plain" })).status, 202);
+  const [withSource, without] = t.bus.of("speech.heard");
+  assert.deepEqual(withSource, { speaker: "al", text: "hello", durationMs: 0, injected: true, remember: false, source: "desktop" });
+  assert.equal("source" in without!, false);
+});
+
+// @spec DASH-INJ-009
+test("audio upload with ?source= sets meta.source on the inject.request; without it there is none", async () => {
+  const t = await boot();
+  assert.equal((await t.bin("/inject/audio?source=desktop&user=al", Buffer.from("RIFF"), "audio/wav")).status, 202);
+  assert.equal((await t.bin("/inject/audio?user=al", Buffer.from("RIFF"), "audio/wav")).status, 202);
+  const [a, b] = t.bus.of("inject.request");
+  assert.equal(a!.meta?.source, "desktop");
+  assert.equal(a!.meta?.user, "al");
+  assert.equal(b!.meta?.source, undefined);
+});
+
+// @spec DASH-INJ-009
+test("a source that is not a tag is 400 and publishes and stores nothing", async () => {
+  const t = await boot();
+  for (const bad of ["Desktop", "1abc", "has space", "", "a".repeat(33), "x_y"]) {
+    assert.equal((await t.text({ level: "bus", as: "speech", text: "hi", source: bad })).status, 400, `text ${JSON.stringify(bad)}`);
+    assert.equal((await t.bin(`/inject/audio?source=${encodeURIComponent(bad)}`, Buffer.from("RIFF"), "audio/wav")).status, 400, `audio ${JSON.stringify(bad)}`);
+  }
+  assert.equal((await t.text({ level: "bus", as: "speech", text: "hi", source: 3 })).status, 400);
+  assert.equal(t.bus.published.length, 0);
+  assert.equal(t.bus.uploads.size, 0);
+});
+
+// @spec DASH-INJ-009
+test("a source on any other route or kind is 400", async () => {
+  const t = await boot();
+  assert.equal((await t.text({ level: "bus", text: "hi", source: "desktop" })).status, 400, "bus chat");
+  assert.equal((await t.text({ level: "bus", as: "vision", text: "hi", source: "desktop" })).status, 400, "bus vision");
+  assert.equal((await t.text({ level: "service", text: "hi", source: "desktop" })).status, 400, "service chat");
+  assert.equal((await t.bin("/inject/image?source=desktop", Buffer.from("x"), "image/png")).status, 400, "image upload");
+  assert.equal(t.bus.published.length, 0);
+  assert.equal(t.bus.uploads.size, 0);
+});

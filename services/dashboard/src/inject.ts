@@ -93,7 +93,7 @@ async function injectEvent(d: InjectDeps, req: http.IncomingMessage, res: http.S
   send(res, 202, { id });
 }
 
-// @spec DASH-INJ-001, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004
+// @spec DASH-INJ-001, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004, DASH-INJ-009
 async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (!d.authorize(req, res)) return;
   const { data, tooLarge } = await readBody(req, TEXT_LIMIT);
@@ -114,6 +114,11 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   if (b.isMod !== undefined && typeof b.isMod !== "boolean") return send(res, 400, "isMod must be a boolean");
   if (b.isSub !== undefined && typeof b.isSub !== "boolean") return send(res, 400, "isSub must be a boolean");
   if (level === "service" && as !== "chat") return send(res, 400, "service-level text injection supports only as: chat; use level: bus for speech/vision");
+  // @spec DASH-INJ-009
+  if (b.source !== undefined) {
+    if (level !== "bus" || as !== "speech") return send(res, 400, "source is only for level: bus, as: speech");
+    if (typeof b.source !== "string" || !SOURCE_TAG.test(b.source)) return send(res, 400, "source must match [a-z][a-z0-9-]{0,31}");
+  }
 
   if (level === "service" && refuseNotRunning(d, res, "chat")) return;
   const remember = b.remember === true;
@@ -139,19 +144,25 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
       injected: true, remember,
     });
   } else if (as === "speech") {
-    id = await d.bus.publish("speech.heard", { speaker: user || "injected", text, durationMs: 0, injected: true, remember });
+    id = await d.bus.publish("speech.heard", { speaker: user || "injected", text, durationMs: 0, injected: true, remember, ...(typeof b.source === "string" ? { source: b.source } : {}) });
   } else {
     id = await d.bus.publish("vision.summary", { text, changed: true, injected: true, remember });
   }
   send(res, 202, { id });
 }
 
-// @spec DASH-INJ-005, DASH-INJ-006, DASH-UPL-002, DASH-UPL-003
+/** The tag of a listening source (EARS-SRC-001). */
+const SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
+
+// @spec DASH-INJ-005, DASH-INJ-006, DASH-INJ-009, DASH-UPL-002, DASH-UPL-003
 async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL, kind: UploadKind): Promise<void> {
   if (!d.authorize(req, res)) return;
   const level = url.searchParams.get("level") ?? "service";
   if (level === "bus") return send(res, 400, "bus-level injection is text only: use POST /inject/text");
   if (level !== "service") return send(res, 400, "level must be 'service' or 'bus'");
+  // @spec DASH-INJ-009
+  const source = url.searchParams.get("source");
+  if (source !== null && (kind !== "audio" || !SOURCE_TAG.test(source))) return send(res, 400, kind === "audio" ? "source must match [a-z][a-z0-9-]{0,31}" : "source is only for audio");
   const contentType = (req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
   if (!(kind === "image" ? IMAGE_TYPES : AUDIO_TYPES).has(contentType)) {
     req.resume();
@@ -176,7 +187,7 @@ async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.
     kind,
     uploadId,
     contentType,
-    meta: user ? { user } : undefined,
+    meta: user || source ? { ...(user ? { user } : {}), ...(source ? { source } : {}) } : undefined,
     remember: flag(url.searchParams.get("remember")),
   });
   send(res, 202, { id });

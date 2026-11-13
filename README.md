@@ -218,6 +218,15 @@ is still playing, and pipes up on its own after `idle_chatter_ms` of quiet when
 there is something new it has not reacted to yet; a fully silent stream stays
 silent. An excited mood lowers the threshold by up to `arousal_bias`.
 
+**Interrupting.** With `brain.salience.barge_in: true` (off by default until live-tested), a finished
+line of speech from a source in `barge_in_sources` (default `[discord]`) of at least
+`barge_in_min_words` words (default 2; "mm-hm" does not count) while the co-host is speaking
+stops the voice mid-line and the co-host answers the interrupter. Lines a reflex said are never
+interrupted. **Echo.** A source that can hear the co-host's own voice (the `desktop` loopback
+capture) is deaf while a line plays and for `ears.echo_tail_ms` (default 1500) after;
+`ears.echo_suppress_sources` (default `[desktop]`) names those sources. Discord already filters
+the bot's own audio.
+
 ### Reflexes
 
 `brain.salience.reflexes` is a list of `match` regexes with canned `say` lines.

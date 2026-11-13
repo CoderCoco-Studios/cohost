@@ -64,7 +64,7 @@ test("the local plan runs the dryrun output with no Discord: group mouth at late
   try {
     await r.done;
     assert.deepEqual(r.calls, ["reset:mouth", "subscribe", "clips.start"], "no Discord module loaded, subscription before the clip refresh");
-    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "control"], start: "latest" });
+    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "voice.stop", "control"], start: "latest" });
     await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
     assert.equal(r.lastHealth().mode, "mock");
     assert.equal(r.lastHealth().deps.dryrun, "ok");

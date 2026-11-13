@@ -17,6 +17,10 @@ export interface TimedDeps {
   fetchAudio?: (url: string) => Promise<Buffer>;
   /** Take the WAV of utterance `id`; a throw is a failed hand-over (MOUTH-PLAY-005). Absent: the WAV goes nowhere. */
   deliver?: (wav: Buffer, id: string) => void;
+  /** Report `spokenText` / `unsaidText` for an interrupted line (the `dryrun` output only, MOUTH-STOP-005). */
+  spoken?: boolean;
+  /** Millisecond clock for that estimate (default `performance.now`). */
+  now?: () => number;
 }
 
 export interface TimedPlayback {
@@ -26,12 +30,12 @@ export interface TimedPlayback {
 }
 
 // @spec MOUTH-DRY-002, MOUTH-FILE-001, MOUTH-HTTP-001
-export function createTimedPlayback({ bus, log, sink, fallback, fetchAudio = httpAudio, deliver }: TimedDeps): TimedPlayback {
+export function createTimedPlayback({ bus, log, sink, fallback, fetchAudio = httpAudio, deliver, spoken, now }: TimedDeps): TimedPlayback {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const box: { playback?: Playback } = {};
 
   const playback = new Playback({
-    bus, log, sink, gainDb: 0, fallback, fetchAudio,
+    bus, log, sink, gainDb: 0, fallback, fetchAudio, spoken, now,
     // The WAV itself is the "audio": checked by parseWav, read for its duration, delivered as synthesized.
     prepare: (wav) => { parseWav(wav); return wav; },
     durationOf: (wav) => parseWav(wav).durationMs,

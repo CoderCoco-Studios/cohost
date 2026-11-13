@@ -37,15 +37,31 @@ export class Playout {
 
   // @spec CONN-DISC-008
   push(f: Frame): void {
-    if (f.epoch === this.epoch && f.seq <= this.lastSeq) { this.dropped++; return; }
+    if (f.epoch === this.epoch && f.seq <= this.lastSeq) { if (!f.flush) this.dropped++; return; }
     if (f.epoch !== this.epoch) { this.epoch = f.epoch; }
     this.lastSeq = f.seq;
+    if (f.flush) { this.flush(); return; } // @spec CONN-DISC-012, CONN-FLUSH-002, CONN-FLUSH-003
     if (!this.stream || f.utt !== this.utt) this.begin(f.utt);
     const s = this.stream!;
     if (s.readableLength + s.writableLength + f.pcm.length > this.max) this.dropped++;
     else s.write(f.pcm);
     if (f.last) this.finish();
     else this.touch();
+  }
+
+  /**
+   * A flush frame: stop the player and discard the stream with everything buffered for it, uncounted. The next line starts on a
+   * fresh stream. With nothing playing or buffered it changes nothing.
+   */
+  private flush(): void {
+    if (!this.stream) return;
+    if (this.idle) clearTimeout(this.idle);
+    this.idle = undefined;
+    const stream = this.stream;
+    this.stream = undefined;
+    this.utt = undefined;
+    stream.destroy();
+    this.o.player.stop();
   }
 
   /** The connection went away: drop what is playing and what is queued. */

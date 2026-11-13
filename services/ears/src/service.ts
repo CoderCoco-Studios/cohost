@@ -12,7 +12,8 @@ import type { CaptureAdapter, HearClip } from "./capture.js";
 import { createConnectorSource, type ConnectorSource } from "./connector-source.js";
 import { Hearing, sttTranscriber, stubTranscriber } from "./hearing.js";
 import { createInjectHandler } from "./inject.js";
-import { EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "./session.js";
+import { EchoGate } from "./echo.js";
+import { EARS_ECHO_LOOP_TYPES, EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "./session.js";
 import { stopAll } from "./sources.js";
 import { loadSilero, type LoadVad } from "./vad.js";
 
@@ -59,7 +60,16 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
 
       // @spec EARS-START-003, EARS-INJ-009, EARS-START-006
       // inject.request is consumed once, before any source starts, and stays up whatever the sources do.
-      await subscribeEars(bus, EARS_LOOP_TYPES, createEarsHandler({ onInject: (ev: BusEvent<"inject.request">) => onInject(ev) }), log);
+      // Where an enabled source is named in ears.echo_suppress_sources the loop also reads the co-host's own playback (EARS-ECHO-001, EARS-ECHO-009).
+      const gated = new Set(cfg.ears.echo_suppress_sources.filter((n) => plan.runnable.some((s) => s.name === n)));
+      const gate = gated.size > 0 ? new EchoGate(cfg.ears.echo_tail_ms) : undefined;
+      await subscribeEars(bus, gate ? EARS_ECHO_LOOP_TYPES : EARS_LOOP_TYPES, createEarsHandler({
+        onInject: (ev: BusEvent<"inject.request">) => onInject(ev),
+        ...(gate ? { onVoice: (ev: BusEvent<"voice.playing" | "voice.done">) => { // @spec EARS-ECHO-002
+          if (ev.type === "voice.done") gate.done(ev.data.id);
+          else if (ev.data.sink !== "virtual") gate.playing(ev.data.id);
+        } } : {}),
+      }), log);
 
       const gaps = plan.sources.filter((s) => s.gap !== undefined);
 
@@ -77,7 +87,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       for (const g of gaps) log.error(g.gap!);
 
       // @spec EARS-SRC-007
-      const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe });
+      const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe, ...(gate ? { echo: { gate, sources: gated } } : {}) });
       const hear: HearClip = (clip, speaker, source, speakerId) => hearing.heardClip(clip, speaker, source, speakerId);
 
       // The registry is read once before any source starts, so a connector already present is seen at start.
@@ -105,6 +115,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
           // @spec EARS-VAD-001, EARS-VAD-005, EARS-PART-001, EARS-PART-002
           const cs = createConnectorSource({
             name: src.name, bus, registry, hear, log, silenceMs: cfg.ears.silence_ms, listener, maxUtteranceMs: cfg.ears.max_utterance_ms,
+            ...(gate && gated.has(src.name) ? { echoBlocked: (at: number) => gate.blocks(at) } : {}),
             ...(cfg.ears.vad.engine === "silero" ? { vad: { threshold: cfg.ears.vad.threshold, load: opts.loadVad ?? loadSilero } } : {}),
             ...(partialsOn ? { partials: {
               stepMs: cfg.ears.partial_step_ms, minSpeechMs: cfg.ears.min_speech_ms, dropPhrases: cfg.ears.drop_phrases,

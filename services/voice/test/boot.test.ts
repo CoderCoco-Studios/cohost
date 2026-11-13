@@ -56,7 +56,7 @@ function boot(ctx: TestContext, over: { bus?: BootBus; engine?: "kokoro" | "stub
 const states = (bus: FakeBus) => bus.health.map((h) => h.state);
 
 // @spec VOICE-SYN-001, VOICE-SINK-010
-test("subscribes in group voice with start mode latest to brain.say, voice.playing and voice.failed, and handles them one at a time", async (ctx) => {
+test("subscribes in group voice with start mode latest to brain.say, voice.playing, voice.failed and voice.stop, and handles them one at a time", async (ctx) => {
   const t = boot(ctx);
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
@@ -64,7 +64,7 @@ test("subscribes in group voice with start mode latest to brain.say, voice.playi
   const { opts } = t.bus.subscribed[0]!;
   assert.equal(opts.group, "voice");
   assert.equal(opts.start, "latest");
-  assert.deepEqual(opts.types, ["brain.say", "voice.playing", "voice.failed"]);
+  assert.deepEqual(opts.types, ["brain.say", "voice.playing", "voice.failed", "voice.stop"]);
   assert.equal("fromNow" in opts, false);
   await t.close();
 });

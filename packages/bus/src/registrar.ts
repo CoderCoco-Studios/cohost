@@ -67,7 +67,7 @@ export class ConnectorRegistrar {
         pid: process.pid, startedAt: this.startedAt, intervalMs: this.intervalMs,
         state: conflicts.length ? "degraded" : status.state,
         detail: conflicts.length ? conflicts.join("; ") : (status.detail ?? ""),
-        capabilities: capabilities.map((c) => ({ ...c, transport: c.transport ?? "stream" })),
+        capabilities: capabilities.map((c) => ({ ...c, transport: c.transport ?? "stream", flush: c.flush ?? false })),
       };
       this.last = reg;
       this.first = false;

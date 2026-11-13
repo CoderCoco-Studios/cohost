@@ -42,6 +42,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 7. **B20 / S17** stale example comment: `config/config.example.yaml:18` says mock brings hash embeddings; memory's `MEMORY_EMBEDDER` decides. Specs: CFG-USR-006.
 8. New keys requested by other segments' decisions: `brain.salience.thinking_timeout_ms`, `brain.affect.baseline_arousal` (S33, S39) and `vision.timeout_ms`, `vision.upload_timeout_ms`, `vision.upload_max_bytes` (R1 eyes timeouts) and `llm.timeout_ms` (R1 model-backends timeouts). Specs: CFG-SCH-011, CFG-SCH-012, CFG-SCH-013.
 
+## Barge-in and echo gate: built
+
+Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. CFG-SCH-035 (`brain.salience.barge_in`, `barge_in_sources`, `barge_in_min_words`) and CFG-SCH-036 (`ears.echo_suppress_sources`, `ears.echo_tail_ms`) are `[x]`. Spec file totals: 82 specs, 82 `[x]`, 0 `[ ]`, 0 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
 ## References
 
 ### HLD
@@ -51,7 +55,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (80 specs, prefix `CFG`: 80 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-SCH-034, `brain.salience.trigger_on_speech`, is built; CFG-SCH-033, the VAD and partial-transcript `ears` keys, is built)
+- docs/intent/config/config-specs.md (82 specs, prefix `CFG`: 82 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-SCH-034, `brain.salience.trigger_on_speech`, is built; CFG-SCH-033, the VAD and partial-transcript `ears` keys, is built)
 
 ### Tests
 - packages/config/test/config.test.ts (453 lines; 33 `@spec` lines, covering 37 of the 46 implemented specs)

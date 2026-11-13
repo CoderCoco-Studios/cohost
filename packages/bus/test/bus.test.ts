@@ -348,7 +348,7 @@ test("avatar.state accepts each parameter at the ends of its range and rejects a
 });
 
 // @spec BUS-EVT-017
-test("voice.playing and voice.done share one payload shape", () => {
+test("voice.playing and voice.done require id and sink; only voice.done accepts the interrupted members", () => {
   const samples: unknown[] = [{ id: "u1", sink: "discord" }, { id: "u1" }, { sink: "x" }, { id: 1, sink: "x" }, { id: "u1", sink: "x", extra: 1 }, {}];
   for (const sample of samples) {
     const playing = EventPayloads["voice.playing"].safeParse(sample);
@@ -358,7 +358,49 @@ test("voice.playing and voice.done share one payload shape", () => {
   }
   assert.ok(EventPayloads["voice.playing"].safeParse({ id: "u1", sink: "discord" }).success);
   assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1" }).success, false);
-  assert.equal(EventPayloads["voice.playing"], EventPayloads["voice.done"], "one schema serves both events");
+  const withInterrupt = { id: "u1", sink: "discord", interrupted: true };
+  const playing = EventPayloads["voice.playing"].safeParse(withInterrupt);
+  assert.ok(!playing.success || !("interrupted" in playing.data), "voice.playing accepts none of the BUS-EVT-031 members");
+  assert.equal((EventPayloads["voice.done"].safeParse(withInterrupt) as { data?: { interrupted?: boolean } }).data?.interrupted, true);
+});
+
+// @spec BUS-EVT-030
+test("voice.stop requires a string reason and accepts optional string ids (empty allowed)", () => {
+  assert.ok(EVENT_TYPES.includes("voice.stop" as never));
+  const stop = EventPayloads["voice.stop" as keyof typeof EventPayloads];
+  assert.ok(stop, "voice.stop is catalogued");
+  assert.equal(stop.safeParse({ reason: "barge-in" }).success, true);
+  assert.equal((stop.parse({ reason: "barge-in" }) as { ids?: string[] }).ids, undefined, "absent ids stays absent (an order for every line)");
+  assert.deepEqual((stop.parse({ reason: "r", ids: ["a", "b"] }) as { ids?: string[] }).ids, ["a", "b"]);
+  assert.deepEqual((stop.parse({ reason: "r", ids: [] }) as { ids?: string[] }).ids, [], "empty ids names no line, kept distinct from absent");
+  assert.equal(stop.safeParse({}).success, false);
+  assert.equal(stop.safeParse({ reason: 3 }).success, false);
+  assert.equal(stop.safeParse({ reason: "r", ids: "a" }).success, false);
+  assert.equal(stop.safeParse({ reason: "r", ids: [1] }).success, false);
+});
+
+// @spec BUS-EVT-031
+test("voice.done accepts interrupted:true, spokenText and unsaidText; the text members need interrupted", () => {
+  const done = EventPayloads["voice.done"];
+  const base = { id: "u1", sink: "discord" };
+  assert.equal(done.safeParse(base).success, true, "an event written before the members existed stays valid");
+  assert.equal(done.safeParse({ ...base, interrupted: true }).success, true);
+  assert.equal(done.safeParse({ ...base, interrupted: true, spokenText: "hi", unsaidText: "there" }).success, true);
+  assert.equal(done.safeParse({ ...base, interrupted: false }).success, false, "interrupted is the boolean true only");
+  assert.equal(done.safeParse({ ...base, interrupted: "yes" }).success, false);
+  assert.equal(done.safeParse({ ...base, spokenText: "hi" }).success, false, "spokenText without interrupted is rejected");
+  assert.equal(done.safeParse({ ...base, unsaidText: "hi" }).success, false, "unsaidText without interrupted is rejected");
+  assert.equal(done.safeParse({ ...base, interrupted: true, spokenText: 3 }).success, false);
+});
+
+// @spec BUS-EVT-032
+test("inject.request accepts an optional string meta.source and stays valid without it", () => {
+  const req = { id: "a", target: "ears", kind: "audio", uploadId: "0123456789abcdef0123456789abcdef", contentType: "audio/wav", remember: false };
+  const schema = EventPayloads["inject.request"];
+  assert.equal(schema.safeParse(req).success, true);
+  assert.equal(schema.safeParse({ ...req, meta: { source: "desktop" } }).success, true);
+  assert.equal((schema.parse({ ...req, meta: { source: "desktop" } }) as { meta?: { source?: string } }).meta?.source, "desktop");
+  assert.equal(schema.safeParse({ ...req, meta: { source: 3 } }).success, false);
 });
 
 // @spec BUS-EVT-021
@@ -396,14 +438,14 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
 });
 
 // @spec BUS-EVT-001
-test("the catalogue is exactly the 25 documented event types, exported as EVENT_TYPES", () => {
+test("the catalogue is exactly the 26 documented event types, exported as EVENT_TYPES", () => {
   const expected = [
     "chat.message", "vision.summary", "speech.heard", "speech.partial", "brain.say", "brain.status", "attention.focus", "affect.state",
     "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
-    "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "voice.failed", "avatar.state",
+    "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "voice.stop", "voice.failed", "avatar.state",
     "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat",
   ];
-  assert.equal(EVENT_TYPES.length, 25);
+  assert.equal(EVENT_TYPES.length, 26);
   assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
   assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
 });

@@ -365,7 +365,7 @@ salience   attention.focus {"reason":"mentioned","score":1,"focus":{"kind":"chat
 ```
 
 Salience subscribes with start `latest`, so start it **before** publishing, and give it
-a second or two to connect. `salience` also needs a `tick_ms` to pass before it emits.
+a second or two to connect. `salience` decides a `speech.heard` at once (`trigger_on_speech`); chat and vision events need a `tick_ms` poll to pass before it emits.
 
 ### Recipe B: full talking loop, no GPU, no accounts
 

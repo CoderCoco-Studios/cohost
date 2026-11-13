@@ -71,7 +71,8 @@ brain:
   working_memory_events: 24    # recent events each region keeps / the prompt window
 
   salience:
-    tick_ms: 1500
+    tick_ms: 1500              # the poll: a decision every this often (fallback for trigger_on_speech; chat, vision, idle chatter)
+    trigger_on_speech: true    # decide at once when a final speech line arrives, not at the next poll
     cooldown_ms: 6000          # min gap between utterances
     thinking_timeout_ms: 60000 # stop treating the cortex as busy after this long without a reply
     idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context

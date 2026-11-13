@@ -146,7 +146,10 @@ export const ConfigSchema = z.object({
     /** Recent events each region keeps as its working memory / prompt window. */
     working_memory_events: z.number().int().positive().default(24),
     salience: z.object({
+      /** The poll: a decision pass every `tick_ms`, the fallback for the speech trigger and the only starter for chat, vision and idle chatter. */
       tick_ms: z.number().int().positive().default(1500),
+      /** Whether a final `speech.heard` starts a decision at once instead of waiting for the next poll (CFG-SCH-034, SAL-TRIG-001). */
+      trigger_on_speech: z.boolean().default(true),
       cooldown_ms: z.number().int().nonnegative().default(6000),
       /** How long a `thinking` cortex counts as busy before salience stops waiting on it. */
       thinking_timeout_ms: z.number().int().positive().default(60000),

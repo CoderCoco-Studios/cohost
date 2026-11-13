@@ -35,6 +35,8 @@ export class Salience {
   private readonly now: () => number;
   private cortexSince: number;
   private deciding = false;
+  /** A speech trigger landed while a decision was in flight: run one more pass when it ends (SAL-TRIG-005). */
+  private rerun = false;
 
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain);
@@ -62,7 +64,8 @@ export class Salience {
         const d = ev.data as BusEvent<"speech.heard">["data"];
         const entry = this.ctx.push(ev);
         this.scheduler.noteActivity();
-        await this.reflex("speech", d.text, entry);
+        const fired = await this.reflex("speech", d.text, entry);
+        if (!fired) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
@@ -94,13 +97,13 @@ export class Salience {
   }
 
   /** Fast path. Fires immediately, bypassing the scheduler and the LLM. `trigger` is the entry the event just became. */
-  private async reflex(sense: Sense, text: string, trigger: ContextEvent | undefined) { // @spec SAL-REFLEX-001, SAL-REFLEX-008
-    if (this.control.paused || this.control.muted || this.reflexes.size === 0) return; // @spec SAL-REFLEX-006
+  private async reflex(sense: Sense, text: string, trigger: ContextEvent | undefined): Promise<boolean> { // @spec SAL-REFLEX-001, SAL-REFLEX-008
+    if (this.control.paused || this.control.muted || this.reflexes.size === 0) return false; // @spec SAL-REFLEX-006
     // A reflex is still a line of speech: don't talk over the cortex, the voice, or inside the cooldown.
     // Gate before test(), which spends the rule's own cooldown on a hit.
-    if (this.busy() || this.scheduler.cooling()) return; // @spec SAL-REFLEX-005
+    if (this.busy() || this.scheduler.cooling()) return false; // @spec SAL-REFLEX-005
     const hit = this.reflexes.test(sense, text, this.now());
-    if (!hit) return;
+    if (!hit) return false;
     this.d.log.info({ rule: hit.rule, sense }, "reflex");
     if (trigger) this.ctx.markSeenEvents([trigger]); // only the event that fired it; other unseen events still count; @spec SAL-REFLEX-004
     // Own the cooldown and the voice state now; the brain.say echo would only arrive later.
@@ -108,6 +111,7 @@ export class Salience {
     this.cortexState = "speaking";
     this.cortexSince = this.now();
     await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}`, ...propagatedFlags(trigger) }); // @spec SAL-INJ-004
+    return true;
   }
 
   private busy(): boolean {
@@ -118,15 +122,34 @@ export class Salience {
     return false; // @spec SAL-BUSY-004
   }
 
-  /** One scheduling pass. Never rejects: a failed decision or publish is logged and the next tick runs (SAL-HEALTH-002). */
-  async tick(): Promise<void> { // @spec SAL-HEALTH-002
-    try { await this.decideAndPublish(); }
-    catch (err) { this.d.log.error({ err }, "tick failed"); }
+  /**
+   * A final `speech.heard` that no reflex answered starts a decision pass now rather than at the next poll. Not awaited: the
+   * handler must not wait on a slow llm/http scorer (SAL-TRIG-004). While a decision is in flight the trigger only records one
+   * pending rerun (SAL-TRIG-005); while paused it does nothing (SAL-TRIG-006).
+   * @spec SAL-TRIG-001, SAL-TRIG-004, SAL-TRIG-005, SAL-TRIG-006, SAL-TRIG-007
+   */
+  private triggerOnSpeech(): void {
+    if (!this.d.cfg.brain.salience.trigger_on_speech || this.control.paused) return; // @spec SAL-TRIG-007
+    if (this.deciding) { this.rerun = true; return; }
+    void this.tick();
+  }
+
+  /**
+   * One scheduling pass, then one more if a trigger landed during it. Never rejects: a failed decision or publish is logged and
+   * the pending rerun still runs (SAL-HEALTH-002, SAL-TRIG-009). A rerun left over from before a pause waits for the next pass.
+   * @spec SAL-HEALTH-002, SAL-TRIG-008, SAL-TRIG-009
+   */
+  async tick(): Promise<void> {
+    do {
+      try { await this.decideAndPublish(); }
+      catch (err) { this.d.log.error({ err }, "tick failed"); }
+    } while (this.rerun && !this.control.paused && !this.deciding);
   }
 
   private async decideAndPublish(): Promise<void> {
     if (this.control.paused || this.deciding) return; // an llm/http scorer can take longer than a tick; @spec SAL-FOCUS-002, SAL-CTRL-002
     this.deciding = true;
+    this.rerun = false; // this pass sees everything that has arrived so far
     let decision;
     try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal); }
     finally { this.deciding = false; }

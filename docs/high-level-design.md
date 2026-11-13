@@ -454,7 +454,7 @@ test-input descriptors all derive from it.
   first line of a reply), the co-host's own line is not a stop, and a
   cortex-level test checks the rendered tags against the stop list.
 - **Speech-path latency.** A line spoken in answer to something a person said
-  passes ears (audio end, STT), salience (the next tick), cortex (recall, LLM,
+  passes ears (audio end, STT), salience (a decision, started at once by the final transcript or by the next poll), cortex (recall, LLM,
   critic), voice (TTS) and a sink (playback start). Each stage stamps the event
   it publishes, so the stages are measurable end to end without a new event
   type: `speech.heard`, `attention.focus` and `brain.say` carry an optional
@@ -474,7 +474,12 @@ test-input descriptors all derive from it.
   stays the one final event and the only one the brain regions act on: a
   partial never enters working memory, never triggers salience and never
   reaches cortex as speech. Partials cost speech-to-text calls, so they are
-  off unless enabled.
+  off unless enabled. A final `speech.heard` that no reflex answered starts
+  salience's decision at once instead of at its next poll (an explicit setting,
+  `brain.salience.trigger_on_speech`, on by default); the poll stays as the
+  fallback and as the only starter for chat, vision and idle chatter, and every
+  gate (mute, pause, busy cortex, cooldown, threshold) applies to a triggered
+  decision as to a polled one. See [salience](intent/salience/salience-design.md).
 - **Restart start position.** Every subscription names a start mode:
   `latest` resets the service's consumer group to the newest entry on every
   start, `resume` keeps the group's stored position. memory uses `resume`;

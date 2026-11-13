@@ -58,7 +58,7 @@ test("empty sources: one idle warning, ready in mode off, inject.request only", 
 
 // @spec EARS-CON-001, EARS-CON-002, EARS-CON-005, EARS-HLTH-002, CONN-ISO-001
 test("discord is a connector source: no token or Discord client is involved; it is down with no connector, ok once one registers, with no restart", async () => {
-  const r = await boot({ sources: ["discord"], stt_engine: "stub" });
+  const r = await boot({ sources: ["discord"], stt_engine: "stub", vad: { engine: "gap" } });
   try {
     await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
     assert.equal(r.last().deps.discord, "down");
@@ -77,7 +77,7 @@ test("discord is a connector source: no token or Discord client is involved; it 
 
 // @spec EARS-SRC-004, CONN-ISO-003, EARS-CON-005
 test("a connector going away turns only its dependency down: http keeps running and the process stays up", async () => {
-  const r = await boot({ sources: ["http", "discord"], stt_engine: "stub", http: HTTP }, (b) => b.register("discord", [{ cap: "audio-in", tag: "discord", format: { rate: 16000, channels: 1 }, ready: true, transport: "stream" }]));
+  const r = await boot({ sources: ["http", "discord"], stt_engine: "stub", vad: { engine: "gap" }, http: HTTP }, (b) => b.register("discord", [{ cap: "audio-in", tag: "discord", format: { rate: 16000, channels: 1 }, ready: true, transport: "stream" }]));
   try {
     await waitFor(() => r.last().state === "ready", "ready");
     r.bus.regs.delete("discord");
@@ -114,7 +114,7 @@ test("a desktop registration with transport http binds the listener without http
 
 // @spec EARS-STUB-002
 test("stub engine: a startup warning, mode mock, stt n/a", async () => {
-  const r = await boot({ sources: ["discord"], stt_engine: "stub" });
+  const r = await boot({ sources: ["discord"], stt_engine: "stub", vad: { engine: "gap" } });
   try {
     await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
     assert.equal(r.last().mode, "mock");
@@ -255,7 +255,7 @@ test("a source that cannot start (port in use) is down while dir keeps running a
 
 // @spec EARS-SRC-004, EARS-SRC-005
 test("a connector source tag with no connector is down with its own dep and detail; http keeps running", async () => {
-  const r = await boot({ sources: ["http", "desktop"], stt_engine: "stub", http: HTTP });
+  const r = await boot({ sources: ["http", "desktop"], stt_engine: "stub", vad: { engine: "gap" }, http: HTTP });
   try {
     await waitFor(() => r.health.some((h) => h.state === "degraded"), "degraded");
     assert.deepEqual(r.last().deps, { discord: "n/a", stt: "n/a", http: "ok", dir: "n/a", desktop: "down" });

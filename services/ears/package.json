@@ -13,7 +13,8 @@
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
-    "@cohost/shared": "workspace:*"
+    "@cohost/shared": "workspace:*",
+    "onnxruntime-node": "^1.31.1"
   },
   "devDependencies": {
     "@cohost/testing": "workspace:*"

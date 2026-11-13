@@ -48,7 +48,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (75 specs: 74 `[x]`, 0 `[ ]`, 1 `[D]`; CTRL-LAT-001 to 008 are built and CTRL-LAT-009 is deferred, the `cohostctl latency` report)
+- docs/intent/control-plane/control-plane-specs.md (76 specs: 74 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-001 to 008 are built and CTRL-LAT-009 and 010 are deferred, the `cohostctl latency` report)
 
 ### Tests (`@spec` lines)
 - packages/control/test/cli.test.ts (16)

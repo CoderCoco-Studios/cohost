@@ -35,3 +35,12 @@ test("a speech focus with no timing, and a chat or vision focus, publish no timi
   await chat.s.tick();
   assert.equal(chat.bus.of("attention.focus")[0]!.timing, undefined);
 });
+
+// @spec SAL-IN-007
+test("a speech.partial handed to salience becomes no focus (the subscription list itself is asserted exactly in main.test.ts)", async () => {
+  const { s, bus } = setup();
+  const partial = { id: "1-0", type: "speech.partial", ts: Date.now(), source: "ears", data: { speaker: "Chris", source: "discord", text: "hey Coco look at this", utteranceId: "u1", seq: 0 } } as never;
+  await s.onEvent(partial);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "no focus from a partial, though it mentions the co-host");
+});

@@ -44,7 +44,7 @@ const connectorOffer = [{ cap: "audio-in" as const, tag: "discord", format: { ra
 
 // @spec EARS-HEAR-012
 test("connector utterance: audioEndedAt is the last frame's arrival, not the later gap-timer close", async () => {
-  const r = await boot({ sources: ["discord"], stt_engine: "stub", silence_ms: 300, min_speech_ms: 100 }, (b) => b.register("discord", connectorOffer));
+  const r = await boot({ sources: ["discord"], stt_engine: "stub", vad: { engine: "gap" }, silence_ms: 300, min_speech_ms: 100 }, (b) => b.register("discord", connectorOffer));
   try {
     await sleep(80);
     const first = Date.now();

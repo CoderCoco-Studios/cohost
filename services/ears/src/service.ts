@@ -14,12 +14,15 @@ import { Hearing, sttTranscriber, stubTranscriber } from "./hearing.js";
 import { createInjectHandler } from "./inject.js";
 import { EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "./session.js";
 import { stopAll } from "./sources.js";
+import { loadSilero, type LoadVad } from "./vad.js";
 
 export interface EarsServiceOptions {
   /** How often the connector registry is re-read, ms (default 5000, the registration interval). */
   registryIntervalMs?: number;
   /** How often the frame accounting is written into the heartbeat detail, ms (default 1000). */
   refreshMs?: number;
+  /** Loads the speech-activity detector for `ears.vad.engine: silero` (default: `loadSilero`); tests pass a fake. */
+  loadVad?: LoadVad;
 }
 
 export function createEarsService(opts: EarsServiceOptions = {}): {
@@ -44,6 +47,10 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       const plan = planOf(cfg);
       const stub = cfg.ears.stt_engine === "stub";
       const h = health!;
+      // @spec EARS-PART-011, EARS-PART-012
+      const partialsOn = cfg.ears.partials === "on" && !stub;
+      if (cfg.ears.partials === "on" && stub) log.warn("ears.partials is on but ears.stt_engine is stub: no speech.partial is published with the stub engine");
+      if (partialsOn && !cfg.ears.stt_gpu) log.warn("ears.partials is on and ears.stt_gpu is false: partial transcription may not keep up on a speech-to-text backend that is not on a GPU");
       // @spec EARS-STUB-002
       if (stub) log.warn("ears.stt_engine is stub: transcripts are fixed text (stub transcript), nothing is sent to the STT service");
       const transcribe = h.track(stub ? stubTranscriber() : sttTranscriber(cfg.ears));
@@ -95,7 +102,15 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
         } else if (src.kind === "dir") {
           adapters.set("dir", createDirCapture({ path: cfg.ears.dir.path, pollMs: cfg.ears.dir.poll_ms, hear, log }));
         } else {
-          const cs = createConnectorSource({ name: src.name, bus, registry, hear, log, silenceMs: cfg.ears.silence_ms, listener });
+          // @spec EARS-VAD-001, EARS-VAD-005, EARS-PART-001, EARS-PART-002
+          const cs = createConnectorSource({
+            name: src.name, bus, registry, hear, log, silenceMs: cfg.ears.silence_ms, listener, maxUtteranceMs: cfg.ears.max_utterance_ms,
+            ...(cfg.ears.vad.engine === "silero" ? { vad: { threshold: cfg.ears.vad.threshold, load: opts.loadVad ?? loadSilero } } : {}),
+            ...(partialsOn ? { partials: {
+              stepMs: cfg.ears.partial_step_ms, minSpeechMs: cfg.ears.min_speech_ms, dropPhrases: cfg.ears.drop_phrases,
+              transcribe: sttTranscriber(cfg.ears), publish: async (data) => { await bus.publish("speech.partial", data); },
+            } } : {}),
+          });
           sources.set(src.name, cs);
           adapters.set(src.name, cs);
         }

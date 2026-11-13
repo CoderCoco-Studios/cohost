@@ -24,7 +24,9 @@ test("hearing: an utterance is downsampled, transcribed and published with its s
   const { h, bus, wavs } = hearing(async () => "did you see that");
   await heard(h, pcmMs(1000), "Chris", "u1");
   assert.deepEqual(readWavHeader(wavs[0]!), { sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 32000 });
-  assert.deepEqual(bus.of("speech.heard"), [{ speaker: "Chris", speakerId: "u1", text: "did you see that", durationMs: 1000, source: "discord" }]);
+  const [{ utteranceId, ...rest }] = bus.of("speech.heard") as unknown as [Record<string, unknown>]; // EARS-PART-003
+  assert.equal(typeof utteranceId, "string");
+  assert.deepEqual(rest, { speaker: "Chris", speakerId: "u1", text: "did you see that", durationMs: 1000, source: "discord" });
 });
 
 // @spec EARS-HEAR-004, EARS-HEAR-007

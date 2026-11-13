@@ -10,6 +10,7 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-IN-004**: When salience receives an `affect.state` event, it shall store the event's `arousal` for threshold adjustment and for the scorer input. <!-- openspec: salience § Inputs and working memory --> <!-- test: services/salience/test/salience.region.test.ts:98 --> <!-- test: services/salience/test/salience.dispositions.test.ts -->
 - [x] **SAL-IN-005**: When salience receives a `brain.status` event, it shall record the reported state and the time received for busy detection. <!-- openspec: salience § Busy detection --> <!-- test: services/salience/test/salience.region.test.ts:52 -->
 - [x] **SAL-IN-006**: Until salience has received an `affect.state` event it shall use arousal 0, and until it has received a `brain.status` or `brain.say` event it shall treat the cortex as `idle`. <!-- test: services/salience/test/salience.dispositions.test.ts -->
+- [x] **SAL-IN-007**: The salience service shall not subscribe to `speech.partial`, and a `speech.partial` shall never enter its `Context`, reset its idle timer, match a reflex or become the focus of an `attention.focus`: only `speech.heard` is speech to salience.
 
 ## Scoring (SCORE)
 

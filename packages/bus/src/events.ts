@@ -74,9 +74,22 @@ export const EventPayloads = {
     timing: SpeechTiming.optional(),
     /** The listening source the speech came from (a connector tag, `http` or `dir`); absent on injected and older events. */
     source: z.string().optional(),
+    /** Ties the final to the `speech.partial`s of its utterance (BUS-EVT-027); absent on events written before the field and on direct injections. */
+    utteranceId: z.string().optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
+  }),
+  /** Words ears has firmed up so far in an utterance still being spoken; a later partial replaces it, `speech.heard` ends it. */
+  // @spec BUS-EVT-026
+  "speech.partial": z.object({
+    speaker: z.string(),
+    speakerId: z.string().optional(),
+    source: z.string(),
+    text: z.string(),
+    utteranceId: z.string(),
+    seq: z.number().int().nonnegative(),
+    timing: SpeechTiming.optional(),
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
@@ -377,3 +390,24 @@ export interface BusEvent<T extends EventType = EventType> {
 
 // @spec BUS-EVT-001
 export const EVENT_TYPES = Object.keys(EventPayloads) as EventType[];
+
+/** A partial older than this (ms, from its envelope `ts`) is stale (BUS-EVT-028). */
+export const PARTIAL_STALE_MS = 5000;
+
+// @spec BUS-EVT-028, BUS-EVT-029
+/**
+ * Whether the latest `speech.partial` of an utterance is stale: `PARTIAL_STALE_MS` have passed since its `ts`, or `later`
+ * holds the final with its `utteranceId`, or a partial or final of the same speaker and source with a different
+ * `utteranceId`. A `speech.heard` with no `utteranceId` stales nothing.
+ */
+export function isPartialStale(partial: BusEvent<"speech.partial">, later: readonly BusEvent[], now: number): boolean {
+  if (now - partial.ts >= PARTIAL_STALE_MS) return true;
+  const p = partial.data;
+  return later.some((ev) => {
+    if (ev.type !== "speech.heard" && ev.type !== "speech.partial") return false;
+    const d = ev.data as { speaker: string; source?: string; utteranceId?: string };
+    if (d.utteranceId === undefined) return false;
+    if (ev.type === "speech.heard" && d.utteranceId === p.utteranceId) return true;
+    return d.speaker === p.speaker && d.source === p.source && d.utteranceId !== p.utteranceId;
+  });
+}

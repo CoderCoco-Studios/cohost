@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Publisher } from "@cohost/bus";
 import { urls, type Config, type Logger } from "@cohost/config";
 import { resample, wavWrap } from "@cohost/shared";
@@ -54,10 +55,10 @@ export class Hearing {
     const durationMs = (clip.pcm.length / (2 * clip.channels) / clip.rate) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return { heard: false, reason: "too-short" };
     const wav = wavWrap(resample(clip.pcm, { from: { rate: clip.rate, channels: clip.channels }, to: { rate: 16000, channels: 1 } }), 16000, 1);
-    return this.finish(wav, durationMs, speaker, speakerId, source, clip.audioEndedAt);
+    return this.finish(wav, durationMs, speaker, speakerId, source, clip.audioEndedAt, clip.utteranceId ?? randomUUID()); // @spec EARS-PART-003
   }
 
-  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string, source?: string, audioEndedAt?: number): Promise<HearOutcome> {
+  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string, source?: string, audioEndedAt?: number, utteranceId?: string): Promise<HearOutcome> {
     try {
       const text = await this.d.transcribe(wav);
       if (!hasWordCharacter(text)) return { heard: false, reason: "empty" };
@@ -67,7 +68,7 @@ export class Hearing {
         return { heard: false, reason: "drop-phrase" };
       }
       this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
-      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }), ...(audioEndedAt === undefined ? {} : { timing: { audioEndedAt } }) });
+      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }), ...(utteranceId === undefined ? {} : { utteranceId }), ...(audioEndedAt === undefined ? {} : { timing: { audioEndedAt } }) });
       return { heard: true, text };
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "transcription failed");

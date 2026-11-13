@@ -40,7 +40,7 @@ Observed principles:
 
 Subscription (`startup.ts:36-39`, `startup.ts:55-60`): group `cortex`, start mode `latest`, types
 `chat.message, speech.heard, vision.summary, brain.say, voice.done, attention.focus,
-memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply`
+memory.recall.reply, memory.viewer, affect.state, control`, plus `memory.notes.reply` (never `speech.partial`: an interim transcript is not speech to the cortex, CTX-EVT-009)
 once viewer notes land (`CTX-EVT-001`), and `voice.failed` for the spoken fallback
 line (`CTX-EVT-008`). The service publishes `brain.status`,
 `brain.say`, `memory.recall.request` and `memory.notes.request`.

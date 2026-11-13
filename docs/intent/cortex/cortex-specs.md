@@ -12,6 +12,7 @@ Design: [cortex-design.md](cortex-design.md). Prefix `CTX`. `[x]` = implemented,
 - [x] **CTX-EVT-006**: When an `attention.focus` arrives, the cortex shall start thinking without awaiting the result, so the subscription loop can still deliver the `memory.recall.reply` it is waiting for. <!-- openspec: cortex § Think gating --> <!-- test: services/cortex/test/cortex.region.test.ts:97 -->
 - [x] **CTX-EVT-007**: When an `affect.state` arrives, the cortex shall keep it as the current mood for later prompts. <!-- openspec: cortex § Viewer notes and mood --> <!-- test: services/cortex/test/cortex.region.test.ts:275 -->
 - [x] **CTX-EVT-008**: The cortex shall also subscribe to `voice.failed` in its `cortex` group subscription (CTX-EVT-001). <!-- test: services/cortex/test/startup.test.ts -->
+- [x] **CTX-EVT-009**: The cortex shall not subscribe to `speech.partial`, and a `speech.partial` shall never be added to its working-memory window or start a think: only `speech.heard` is speech to the cortex.
 
 ## Think gating
 

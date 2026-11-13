@@ -25,3 +25,14 @@ test("timing is never rendered into the transcript", () => {
   assert.equal(ctx.transcript("Coco"), plain.transcript("Coco"));
   assert.doesNotMatch(ctx.transcript("Coco"), /4000|timing|audioEndedAt/);
 });
+
+// @spec WM-PUSH-012
+test("a speech.partial leaves the window unchanged and push returns undefined", () => {
+  const ctx = new Context(10);
+  ctx.push(heard({}));
+  const before = ctx.all().length;
+  const partial = { id: "e2", type: "speech.partial", ts: 6000, source: "ears", data: { speaker: "Streamer", source: "discord", text: "hel", utteranceId: "u1", seq: 0 } } as unknown as BusEvent;
+  assert.equal(ctx.push(partial), undefined);
+  assert.equal(ctx.all().length, before);
+  assert.equal(ctx.all().some((e) => e.kind === "speech" && e.text === "hel"), false);
+});

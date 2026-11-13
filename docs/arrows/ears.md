@@ -25,7 +25,7 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (60 specs: 57 `[x]`, 2 `[ ]`, 1 `[D]`; EARS-HEAR-012, the `timing.audioEndedAt` stamp, is built)
+- docs/intent/ears/ears-specs.md (83 specs: 79 `[x]`, 2 `[ ]`, 2 `[D]`; EARS-HEAR-012, the `timing.audioEndedAt` stamp, EARS-VAD-001 to 008 (endpointing) and EARS-PART-001 to 014 (partials) are built; the gaps are the desktop helper (EARS-SRC-014, 015); the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Tests
 - services/ears/test/*.test.ts (hearing and the STT client, transcript filter, plans and heartbeat, capture sources, connector source, injection limits, stub engine, `no-discord.test.ts` guarding that no Discord client or token is referenced)

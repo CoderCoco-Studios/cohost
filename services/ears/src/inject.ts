@@ -33,10 +33,11 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
     maxBytes: { audio: INJECT_MAX_BYTES },
     kinds: {
       audio: async (audio, r, { contentType }) => {
+        const audioEndedAt = (d.now ?? Date.now)(); // @spec EARS-HEAR-012
         const text = (await d.transcribe(audio, { contentType: contentType ?? "audio/wav" })).trim();
         if (!hasWordCharacter(text)) return { ok: false, detail: "empty transcript" };
         const speaker = r.meta?.user || "injected";
-        await d.bus.publish("speech.heard", { speaker, text, durationMs: wavDurationMs(audio), injected: true, remember: r.remember });
+        await d.bus.publish("speech.heard", { speaker, text, durationMs: wavDurationMs(audio), timing: { audioEndedAt }, injected: true, remember: r.remember });
         d.log.info({ id: r.id, speaker, text }, "heard (injected)");
         return { detail: text };
       },

@@ -19,6 +19,22 @@ export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean()
  */
 export const LineRoute = z.array(z.string());
 
+/**
+ * Epoch-millisecond stamps along the speech path, each stage adding its own and never changing a received one
+ * (BUS-EVT-024, BUS-EVT-025). Every member is optional; the report that reads them is `cohostctl latency`.
+ */
+const Stamp = z.number().int().nonnegative();
+export const SpeechTiming = z.object({
+  audioEndedAt: Stamp.optional(),
+  heardAt: Stamp.optional(),
+  focusedAt: Stamp.optional(),
+  llmStartedAt: Stamp.optional(),
+  llmEndedAt: Stamp.optional(),
+  criticEndedAt: Stamp.optional(),
+});
+
+export type SpeechTiming = z.infer<typeof SpeechTiming>;
+
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
   // @spec BUS-EVT-002, BUS-EVT-005
@@ -48,12 +64,14 @@ export const EventPayloads = {
   }),
 
   /** Someone spoke in Discord voice and it was transcribed. */
-  // @spec BUS-EVT-013, BUS-EVT-005
+  // @spec BUS-EVT-013, BUS-EVT-005, BUS-EVT-024
   "speech.heard": z.object({
     speaker: z.string(),
     speakerId: z.string().optional(),
     text: z.string(),
     durationMs: z.number(),
+    /** `audioEndedAt` only, from ears. */
+    timing: SpeechTiming.optional(),
     /** The listening source the speech came from (a connector tag, `http` or `dir`); absent on injected and older events. */
     source: z.string().optional(),
     /** Set by test injection; absent on real events. */
@@ -62,7 +80,7 @@ export const EventPayloads = {
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
-  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023
+  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023, BUS-EVT-024
   "brain.say": z.object({
     id: z.string(),
     text: z.string(),
@@ -72,6 +90,8 @@ export const EventPayloads = {
     reason: z.string().optional(),
     /** Mouth outputs this line is for; absent = every enabled output. */
     route: LineRoute.optional(),
+    /** Stamps from the spoken line that caused this one, plus cortex's own (CTX-SAY-006 to 008). */
+    timing: SpeechTiming.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
@@ -87,7 +107,7 @@ export const EventPayloads = {
   // ---- brain regions talk to each other through these ----
 
   /** salience → cortex: something is worth responding to right now. */
-  // @spec BUS-EVT-010, BUS-EVT-005
+  // @spec BUS-EVT-010, BUS-EVT-005, BUS-EVT-024
   "attention.focus": z.object({
     /** "mentioned" | "engaged" | "idle chatter" ... free text for the dashboard. */
     reason: z.string(),
@@ -101,6 +121,8 @@ export const EventPayloads = {
         mention: z.boolean().default(false),
       })
       .optional(),
+    /** `audioEndedAt` and `heardAt` of the focused speech (SAL-FOCUS-006). */
+    timing: SpeechTiming.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),

@@ -4,6 +4,7 @@
  *
  *   cohostctl status [service]
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
+ *   cohostctl latency [--count N]  speech-path latency per stage from bus history (read-only, takes no lock)
  *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
  *   cohostctl reembed         one-shot re-embedding of stored memory vectors after an embedder change (the compose `reembed` job)
  *   cohostctl launch          build the images, bring the whole stack up and wait until it is ready (never opens the bus)
@@ -13,11 +14,11 @@
  *
  * Always drives services through the compose runtime. Honours CONTROL_ADVANCED and REDIS_URL.
  * It runs as the invoking user, so CONTROL_ENABLED / CONTROL_TOKEN (the dashboard's HTTP gate) do not apply.
- * Publishes `service.lifecycle` with by:"cohostctl". Every command but `status` holds the lifecycle lock shared
+ * Publishes `service.lifecycle` with by:"cohostctl". Every command but `status` and `latency` holds the lifecycle lock shared
  * with the dashboard (a held lock is a refusal, exit 1).
  */
 import { parseArgs } from "node:util";
-import { Bus, type HeartbeatEvent } from "@cohost/bus";
+import { Bus, type BusEvent, type HeartbeatEvent } from "@cohost/bus";
 import { findWorkspaceRoot, urls } from "@cohost/config";
 import { ComposeRuntime, type RuntimeResult } from "./runtime.js";
 import { ServiceController, type ActionOptions, type GroupResetter, type LifecycleRecord } from "./controller.js";
@@ -25,10 +26,12 @@ import { StackController, ONE_SHOTS, type StackResult } from "./stack.js";
 import { LifecycleLock, type LockResult } from "./lock.js";
 import { HealthTracker, withContainerRestarts, type ServiceHealth } from "./health.js";
 import { appServiceIds } from "./manifest.js";
+import { latencyReport } from "./latency.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
   | { cmd: "start" | "stop" | "restart"; id: string; opts: ActionOptions }
+  | { cmd: "latency"; count: number }
   | { cmd: "consolidate" }
   | { cmd: "reembed" }
   | { cmd: "launch" }
@@ -39,6 +42,7 @@ export type CliCommand =
 export const USAGE = `usage:
   cohostctl status [service]
   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
+  cohostctl latency [--count N]  per-stage p50 and p95 of the speech path from the last N bus events (default 5000)
   cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)
   cohostctl reembed            re-embed stored memory vectors after changing the embedder (exit 0 ok, 1 failed)
   cohostctl launch             build the images, bring the whole stack up and wait until it is ready
@@ -48,25 +52,32 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
-// @spec CTRL-CLI-001
+// @spec CTRL-CLI-001, CTRL-LAT-001
 export function parseCli(argv: readonly string[]): CliCommand {
   let parsed;
   try {
     parsed = parseArgs({
       args: [...argv],
       allowPositionals: true,
-      options: { mode: { type: "string" }, isolated: { type: "boolean", default: false } },
+      options: { mode: { type: "string" }, isolated: { type: "boolean", default: false }, count: { type: "string" } },
     });
   } catch (err) {
     throw new UsageError(err instanceof Error ? err.message : String(err));
   }
   const [cmd, id, ...rest] = parsed.positionals;
   if (rest.length > 0) throw new UsageError(`unexpected argument: ${rest[0]}`);
-  const { mode, isolated } = parsed.values;
+  const { mode, isolated, count } = parsed.values;
+  if (count !== undefined && cmd !== "latency") throw new UsageError("--count is only for latency");
   if (mode !== undefined && mode !== "resume" && mode !== "fresh") throw new UsageError(`--mode must be resume or fresh, got ${JSON.stringify(mode)}`);
   if (cmd === "status") {
     if (mode !== undefined || isolated) throw new UsageError("status takes no options");
     return { cmd, ...(id ? { id } : {}) };
+  }
+  if (cmd === "latency") {
+    if (id) throw new UsageError("latency takes no arguments");
+    if (mode !== undefined || isolated) throw new UsageError("latency takes only --count");
+    if (count !== undefined && !/^[1-9][0-9]*$/.test(count)) throw new UsageError(`--count must be a positive integer, got ${JSON.stringify(count)}`);
+    return { cmd, count: count === undefined ? 5000 : Number(count) };
   }
   if (cmd === "consolidate" || cmd === "reembed") {
     if (id) throw new UsageError(`${cmd} takes no arguments`);
@@ -89,6 +100,8 @@ export function parseCli(argv: readonly string[]): CliCommand {
 export interface CliDeps {
   controller: Pick<ServiceController, "start" | "stop" | "restart">;
   health: () => Promise<ServiceHealth[]>;
+  /** Bus history, oldest first (`Bus.recent`). */
+  recent: (count: number) => Promise<BusEvent[]>;
   consolidate: () => Promise<RuntimeResult>;
   reembed: () => Promise<RuntimeResult>;
   /** The whole-stack actions; `restartAll` runs through `controller`. */
@@ -105,14 +118,14 @@ export interface CliDeps {
 }
 
 /** Returns the process exit code: 0 ok, 1 failed or refused, 2 usage. */
-// @spec CTRL-CLI-002, CTRL-CLI-003, CTRL-CLI-008, CTRL-CLI-010, CTRL-CLI-011, CTRL-CLI-012, CTRL-LOCK-004
+// @spec CTRL-LAT-002, CTRL-CLI-002, CTRL-CLI-003, CTRL-CLI-008, CTRL-CLI-010, CTRL-CLI-011, CTRL-CLI-012, CTRL-LOCK-004
 export async function runCli(argv: readonly string[], d: CliDeps): Promise<number> {
   let c: CliCommand;
   try { c = parseCli(argv); } catch (e) {
     d.err(`${(e as Error).message}\n${USAGE}`);
     return 2;
   }
-  if (c.cmd === "status" || !d.lock) return runCommand(c, d);
+  if (c.cmd === "status" || c.cmd === "latency" || !d.lock) return runCommand(c, d);
   const held = d.lock.tryAcquire(c.cmd);
   if (!held.ok) { d.err(`refused: ${held.detail}`); return 1; }
   try { return await runCommand(c, d); } finally { held.release(); }
@@ -127,6 +140,10 @@ async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
       const age = s.lastSeenAgeMs == null ? "never" : `${Math.round(s.lastSeenAgeMs / 1000)}s ago`;
       d.out(`${s.service.padEnd(10)} ${s.state.padEnd(13)} ${(s.heartbeat?.mode ?? "-").padEnd(5)} ${age}`);
     }
+    return 0;
+  }
+  if (c.cmd === "latency") {
+    for (const line of latencyReport(await d.recent(c.count), c.count)) d.out(line);
     return 0;
   }
   if (c.cmd === "consolidate") {
@@ -182,7 +199,7 @@ export function buildRuntime(): ComposeRuntime {
 }
 
 /** The part of the bus cohostctl uses. */
-export type CliBus = Pick<Bus, "publish" | "resetGroup" | "recentHealth" | "stop">;
+export type CliBus = Pick<Bus, "publish" | "resetGroup" | "recentHealth" | "recent" | "stop">;
 
 /** The stack controller as the CLI drives it. */
 export type CliStack = Pick<StackController, "launch" | "rebuild" | "stopAll" | "restartAll" | "statusWithRestarts">;
@@ -257,7 +274,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
       stopAll: () => stackFor().stopAll(),
       restartAll: () => stackFor().restartAll(controller),
     };
-    return await runCli(argv, { controller, health, consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
+    return await runCli(argv, { controller, health, recent: (n) => getBus().recent(n), consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
   } catch (e) {
     const refused = connectFailure(e);
     err(refused !== undefined ? `cannot reach Redis at ${redisUrl(w.env)}: ${refused} (is the stack up? run cohostctl launch)` : e instanceof Error ? e.message : String(e));

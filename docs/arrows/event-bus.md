@@ -57,7 +57,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (70 specs: 70 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (72 specs: 72 `[x]`, 0 `[ ]`, 0 `[D]`; BUS-EVT-024 and 025, the `timing` schema, are built; BUS-EVT-011 is retired and its number not reused)
 
 ### Tests
 - packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)

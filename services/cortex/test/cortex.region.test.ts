@@ -62,7 +62,9 @@ test("think: status thinking → LLM → brain.say with the parsed emotion and g
   await cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: "hey Coco", isMod: false, isSub: false, mentionsCohost: true }));
   await cortex.think(mention());
   const [say] = bus.of("brain.say");
-  assert.deepEqual({ ...say, id: "x" }, { id: "x", text: "hi bob!", emotion: "laugh", gesture: "wave", reason: "mentioned" });
+  const { timing, ...rest } = say!; // the stamps are CTX-SAY-007 and 008's concern (timing.test.ts)
+  assert.deepEqual({ ...rest, id: "x" }, { id: "x", text: "hi bob!", emotion: "laugh", gesture: "wave", reason: "mentioned" });
+  assert.ok(timing?.llmEndedAt !== undefined);
   assert.deepEqual(statuses(), ["thinking", "speaking"]);
   assert.match(llm.calls[0]![1]!.content, /\[chat\] bob: hey Coco/);
   assert.equal(bus.of("brain.status").at(-1)!.detail, "hi bob!");

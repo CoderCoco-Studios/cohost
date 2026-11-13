@@ -40,7 +40,7 @@ export function stubTranscriber(): (audio: Buffer, hint?: { contentType: string 
   return async (audio) => `stub transcript (${wavDurationMs(audio)} ms)`;
 }
 
-// @spec EARS-HEAR-004, EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-007, EARS-HEAR-008, EARS-HEAR-011
+// @spec EARS-HEAR-004, EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-007, EARS-HEAR-008, EARS-HEAR-011, EARS-HEAR-012
 /** One clip or utterance → `speech.heard`: duration gate, 16 kHz mono WAV, STT, word check and drop-phrase filter. */
 export class Hearing {
   constructor(private d: HearingDeps) {}
@@ -54,10 +54,10 @@ export class Hearing {
     const durationMs = (clip.pcm.length / (2 * clip.channels) / clip.rate) * 1000;
     if (durationMs < this.d.cfg.min_speech_ms) return { heard: false, reason: "too-short" };
     const wav = wavWrap(resample(clip.pcm, { from: { rate: clip.rate, channels: clip.channels }, to: { rate: 16000, channels: 1 } }), 16000, 1);
-    return this.finish(wav, durationMs, speaker, speakerId, source);
+    return this.finish(wav, durationMs, speaker, speakerId, source, clip.audioEndedAt);
   }
 
-  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string, source?: string): Promise<HearOutcome> {
+  private async finish(wav: Buffer, durationMs: number, speaker: string, speakerId?: string, source?: string, audioEndedAt?: number): Promise<HearOutcome> {
     try {
       const text = await this.d.transcribe(wav);
       if (!hasWordCharacter(text)) return { heard: false, reason: "empty" };
@@ -67,7 +67,7 @@ export class Hearing {
         return { heard: false, reason: "drop-phrase" };
       }
       this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
-      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }) });
+      await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }), ...(audioEndedAt === undefined ? {} : { timing: { audioEndedAt } }) });
       return { heard: true, text };
     } catch (err) {
       this.d.log.warn({ err: String(err) }, "transcription failed");

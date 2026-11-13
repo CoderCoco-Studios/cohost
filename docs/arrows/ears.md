@@ -25,7 +25,7 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (59 specs: 56 `[x]`, 2 `[ ]`, 1 `[D]`)
+- docs/intent/ears/ears-specs.md (60 specs: 57 `[x]`, 2 `[ ]`, 1 `[D]`; EARS-HEAR-012, the `timing.audioEndedAt` stamp, is built)
 
 ### Tests
 - services/ears/test/*.test.ts (hearing and the STT client, transcript filter, plans and heartbeat, capture sources, connector source, injection limits, stub engine, `no-discord.test.ts` guarding that no Discord client or token is referenced)

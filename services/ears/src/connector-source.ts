@@ -36,7 +36,7 @@ export interface ConnectorSource extends CaptureAdapter {
   stats(): string;
 }
 
-interface Open { name: string; chunks: Buffer[]; timer: ReturnType<typeof setTimeout> }
+interface Open { name: string; chunks: Buffer[]; timer: ReturnType<typeof setTimeout>; lastAt: number }
 
 // @spec EARS-CON-001, EARS-CON-003, EARS-CON-004, EARS-CON-005, EARS-HEAR-001, EARS-HEAR-002, EARS-SRC-009, EARS-SRC-012, EARS-SRC-004, CONN-AUD-004, CONN-DESK-003
 export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
@@ -54,7 +54,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     if (!o) return;
     clearTimeout(o.timer);
     open.delete(spk);
-    const p = d.hear({ pcm: Buffer.concat(o.chunks), ...IN_FORMAT }, o.name, d.name, spk)
+    const p = d.hear({ pcm: Buffer.concat(o.chunks), ...IN_FORMAT, audioEndedAt: o.lastAt }, o.name, d.name, spk)
       .catch((err) => d.log.error({ err: String(err), source: d.name }, "ears connector source: hearing failed"));
     inflight.add(p);
     void p.finally(() => inflight.delete(p));
@@ -73,9 +73,10 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       clearTimeout(o.timer);
       o.chunks.push(f.pcm);
       o.name = f.name || o.name;
+      o.lastAt = Date.now();
       o.timer = setTimeout(() => close(spk), d.silenceMs);
     } else {
-      open.set(spk, { name, chunks: [f.pcm], timer: setTimeout(() => close(spk), d.silenceMs) });
+      open.set(spk, { name, chunks: [f.pcm], timer: setTimeout(() => close(spk), d.silenceMs), lastAt: Date.now() });
     }
   };
 

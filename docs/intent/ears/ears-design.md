@@ -70,6 +70,8 @@ Implemented in `connector-source.ts` (consume and assemble) and `hearing.ts` (ST
 
 The transcriber handed to `Hearing` (and to the inject handler) is wrapped by `EarsHealth.track`, so each STT call sets `deps.stt` ok/down .
 
+`speech.heard` also carries `timing.audioEndedAt`, the epoch-millisecond time the last audio of the utterance arrived (EARS-HEAR-012). For a connector utterance that is the arrival of its last frame, not the later moment the gap timer closes it, so the `silence_ms` wait and the STT call both fall inside the first measured stage; for an `http` or `dir` clip and for injected audio it is the time ears received the clip. The stamp is what makes the ears stage of the speech path measurable ([event-bus](../event-bus/event-bus-design.md) `timing`).
+
 There is no cap on utterance length (a speaker who never pauses for `silence_ms` is buffered in memory until they do) and no VAD of ears' own. Echo suppression of the co-host's voice leaking through a human participant's microphone does not exist; the co-host's own audio and every other bot's never reaches ears, because the Discord connector reads no bot account (CONN-DISC-007).
 
 ## Connector sources
@@ -190,6 +192,7 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 | Word characters | A word character is a Unicode letter or number in any script (EARS-HEAR-007) | ASCII `\w` (the original code) | STT is forced to `en` today, but a transcript of non-ASCII letters or digits is still speech, and a language setting would otherwise silently drop it. |
 | `readWavHeader` bit depth | `readWavHeader` is a thin adapter over the shared `parseWav`, which rejects input that is not 16-bit PCM; an unreadable header reads as `bad wav` and as duration 0 | Parse the header locally | One parser for every service; 8- and 24-bit input is refused instead of misread. |
 | Whisper silence hallucinations | An `ears.drop_phrases` list (default empty, whole-transcript match) applied to live captures only (EARS-HEAR-010) | A built-in phrase list; fuzzy or substring matching; filtering injected clips too | Which phrases are hallucinations depends on the model and the room, so the owner lists them and the example config shows Whisper's usual ones. Whole-transcript matching never drops a sentence that merely contains "thank you". An injected clip is chosen by the owner, so it is transcribed as given. |
+| Audio-end stamp | `timing.audioEndedAt` is the arrival time of the utterance's last frame (or of the whole clip), stamped by ears | Stamp the moment the gap timer closes the utterance; stamp when STT returns only | The gap-timer close is `silence_ms` later than the last audio and would hide that wait from the report, yet it is the largest controllable part of ears' latency; the last-frame time is the earliest moment the speech was over as far as ears can know. |
 
 ## Open Questions & Future Decisions
 

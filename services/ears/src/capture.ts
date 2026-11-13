@@ -9,6 +9,8 @@ export interface Clip {
   pcm: Buffer;
   rate: number;
   channels: number;
+  /** Epoch ms the audio ended: a connector's last frame arrival, or when a clip source received the clip (EARS-HEAR-012). */
+  audioEndedAt?: number;
 }
 
 /** What `Hearing.heardClip` did: published a transcript, or the reason it published nothing. */

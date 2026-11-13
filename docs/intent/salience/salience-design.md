@@ -67,6 +67,8 @@ These match the weights quoted in `README.md` ("Talkativeness") and `config/conf
 2. `scheduler.decide(ctx, busy(), muted, arousal)`.
 3. If it says speak: mark exactly `decision.scored` seen (events that arrived while an async scorer ran stay unseen), set cortex state to `thinking` optimistically (so the next tick does not double-fire), and publish `attention.focus` with the focus mapped to `{kind:"chat", who, text, mention}`, `{kind:"speech", who, text}`, `{kind:"vision", text}` or undefined, plus `propagatedFlags(focus)`. The bus schema fills a missing focus `mention` with `false` (`packages/bus/src/events.ts:77`).
 
+When the focus is a `speech` event, the published `attention.focus` also carries `timing`: the focused event's `timing.audioEndedAt` and `heardAt`, the `ts` of its `speech.heard` envelope (SAL-FOCUS-006). Salience adds no stamp of its own; the `attention.focus` envelope `ts` is the end of the salience stage, and cortex reads it as `focusedAt`. A focus of any other kind carries no `timing`. When several speech events are unseen at one tick they merge into one decision, and only the focus (the top-scoring unseen event) contributes `timing`; the other merged utterances are not measured. The stage's duration therefore includes the wait for the next tick, up to `tick_ms`.
+
 When the decision returns, `tick` re-checks `muted`, `paused` and `busy()` and drops the focus if any now holds, so a `mute` or `pause` that arrives while an llm/http scorer is running stops that decision (SAL-FOCUS-005). With the `rules` scorer the await resolves before the next bus event is handled, so the window only opens for llm/http scorers.
 
 `Scheduler.decide` (`scheduler.ts:41-77`) evaluates in this order and returns the first that applies:
@@ -158,6 +160,7 @@ Every startup step runs under `runService` (`loadConfig`, `new Bus`, `startHeart
 | Vision | Vision never resets the idle timer, and an unchanged summary enters the window already seen, so only changed screens are scored | Score every summary; reset idle on vision | Only a changed screen is worth scoring or a reply; an unchanged one is not new input. |
 | Heartbeat mode | `mock` only where the scorer is an `llm` hook inheriting the mock provider (SAL-HEALTH-005) | Always `live`; `mock` whenever `llm.provider` is `mock` | A rules or http scorer never calls the provider, so `mock` there would mislead; an inheriting llm hook falls back to the rules on every call, which is what `mock` tells the operator. |
 | Bootstrap | `runService` from `@cohost/shared`; `salienceMain` holds the service, `runSalience` wires it with replaceable collaborators | A hand-written `main` per service | One bootstrap gives every service the same logger, config failure, heartbeat, shutdown and `fatal` path (SHARED-BOOT-*). |
+| Latency stamps on `attention.focus` | Copy the focused `speech.heard`'s `audioEndedAt` and envelope `ts` into `timing` | Carry nothing and let the report join `attention.focus` to the nearest earlier `speech.heard` by text; stamp a salience-side receive time | `attention.focus` has no id of the event it answers, so a text join misattributes repeated phrases; a receive time would add a stamp that differs from the envelope `ts` by queueing the report cannot attribute. Copying costs two numbers and keeps the chain exact. |
 
 ## Open Questions & Future Decisions
 

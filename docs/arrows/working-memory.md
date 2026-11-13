@@ -38,7 +38,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (37 specs: 37 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (38 specs: 38 `[x]`, 0 `[ ]`, 0 `[D]`; WM-PUSH-011, `timing` on `speech` context events, is built)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)

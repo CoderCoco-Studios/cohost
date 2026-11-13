@@ -49,7 +49,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (78 specs, prefix `CTX`: 78 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/cortex/cortex-specs.md (81 specs, prefix `CTX`: 81 `[x]`, 0 `[ ]`, 0 `[D]`; CTX-SAY-006 to 008 are built, `timing` on `brain.say`)
 
 ### Tests (`@spec` lines per file; 55 lines citing 56 distinct IDs)
 - services/cortex/test/cortex.region.test.ts (31)

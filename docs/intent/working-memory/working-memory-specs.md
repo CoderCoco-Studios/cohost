@@ -24,6 +24,7 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 - [x] **WM-PUSH-007**: When `pushSelf(text, emotion, ts, id)` is called with an `id`, the system shall keep that `id` on the appended `self` context event without rendering it in the transcript. <!-- test: packages/working-memory/test/fallback.test.ts -->
 - [x] **WM-PUSH-008**: When `markFallback(id, fallbackText)` is called and a `self` context event with that `id` is in the window, the system shall record `fallbackText` on that event without moving it or changing its `seen` state and return true; when no such event is in the window it shall change nothing and return false. <!-- test: packages/working-memory/test/fallback.test.ts -->
 - [x] **WM-PUSH-009**: When `push` appends a context event it shall return that event, and when it leaves the window unchanged (WM-PUSH-003) it shall return `undefined`, so a caller that reacts to the event it just pushed holds it without reading the window. <!-- test: packages/working-memory/test/context.test.ts -->
+- [x] **WM-PUSH-011**: When `push` appends a `speech` context event for a `speech.heard` bus event that has `timing`, the system shall keep that `timing` object on the event unchanged, shall leave it off when the bus event has none, and shall not render it in the transcript.
 - [x] **WM-PUSH-010**: Each `chat`, `speech` and `vision` context event shall carry `eventId`, the `id` of the bus event it was built from. <!-- test: packages/working-memory/test/context.test.ts -->
 
 ## Seen tracking

@@ -8,7 +8,7 @@ import { ConfigSchema } from "../src/index.js";
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const baseCfg = () => ({
   cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: { discord: {} }, dashboard: {}, brain: {},
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: {}, dashboard: {}, brain: {},
 });
 const outputs = (o: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), mouth: { outputs: o } });
 const failsOn = (r: ReturnType<typeof outputs>, key: string) => !r.success && r.error.issues.some((i) => i.path.join(".") === key);

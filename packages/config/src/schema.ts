@@ -49,6 +49,9 @@ export const DEFAULT_VISION_PROMPT =
   "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME";
 
 // @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
+/** A listening source name: `http`, `dir` or a connector source tag (CONN-TAG-001). */
+const EARS_SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
+
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -290,25 +293,24 @@ export const ConfigSchema = z.object({
   }),
   ears: z.object({
     /**
-     * Where audio comes from: `discord` (a voice channel), `http` (clips POSTed to `ears.http`), `dir` (WAV files
-     * dropped in `ears.dir.path`), or `off` (idle, no capture; isolated runs). Read at start.
+     * The enabled listening sources, started together: `http` (clips POSTed to `ears.http`), `dir` (WAV files dropped in
+     * `ears.dir.path`), `discord` or any other connector source tag. Empty is off; unset is `[discord]` (see `earsSources`).
+     * Read at start.
      */
     // @spec CFG-SCH-030
-    source: z.preprocess((v) => v || "discord", z.enum(["discord", "off", "http", "dir"])),
+    sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).optional(),
     /** The `http` source's listener; port 0 picks a free port. */
     http: z.object({
       host: z.preprocess((v) => v || "127.0.0.1", z.string()),
       port: z.number().int().min(0).max(65535).default(8765),
+      /** Bearer token `POST /audio` must carry; empty requires none (EARS-SRC-013). */
+      token: z.string().default(""),
     }).default({}),
     /** The `dir` source: the directory polled for dropped `.wav` files (empty = not configured) and the poll period. */
     dir: z.object({
       path: z.string().default(""),
       poll_ms: z.number().int().positive().default(1000),
     }).default({}),
-    discord: z.object({
-      guild_id: z.string().default(""),
-      voice_channel_id: z.string().default(""),
-    }),
     silence_ms: z.number().int().positive().default(700),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: str("Systran/faster-whisper-small"),
@@ -320,7 +322,7 @@ export const ConfigSchema = z.object({
     drop_phrases: z.array(z.string()).default([]),
   }),
   /**
-   * The co-host's speaking module. The whole section is optional so a config.yaml written before mouth existed still loads.
+   * The co-host's speaking module. The whole section is optional.
    * Each key under `outputs` is one output and its sink name (`discord`, `dryrun`, `file`, `http`).
    */
   // @spec CFG-SCH-020, CFG-SCH-018
@@ -328,8 +330,6 @@ export const ConfigSchema = z.object({
     outputs: z.object({
       discord: z.object({
         enabled: z.boolean().default(true),
-        guild_id: z.string().default(""),
-        voice_channel_id: z.string().default(""),
         /** Loudness on this output only, applied to utterances and fallback clips. */
         gain_db: z.number().min(-40).max(12).default(0),
       }).default({}),
@@ -364,12 +364,33 @@ export const ConfigSchema = z.object({
       min_interval_ms: z.number().int().nonnegative().default(20000),
     }).default({}),
   }).default({}),
+  /**
+   * External connectors that attach to the bus (service `connector-discord`, unit `discord`). The whole section is optional so a
+   * config.yaml written before connectors existed still loads. The Discord connector reads the guild and voice channel.
+   */
+  // @spec CFG-SCH-032
+  connections: z.object({
+    discord: z.object({
+      /** false = the connector idles with heartbeat mode `off` and holds no Discord client. */
+      enabled: z.boolean().default(true),
+      guild_id: z.string().default(""),
+      voice_channel_id: z.string().default(""),
+    }).default({}),
+  }).default({}),
   dashboard: z.object({
     port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT environment variable is unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
   }),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+// @spec CFG-SCH-030, EARS-SRC-001, EARS-SRC-002
+/**
+ * The enabled listening sources, without repeats: `ears.sources` when set, else `[discord]`.
+ */
+export function earsSources(ears: Pick<Config["ears"], "sources">): string[] {
+  return [...new Set(ears.sources ?? ["discord"])];
+}
 
 /** Per-driver expression map: canonical emotion -> app-specific name, plus gestures. */
 // @spec CFG-SCH-007

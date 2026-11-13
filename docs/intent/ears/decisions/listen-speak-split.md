@@ -1,8 +1,12 @@
 ---
 node: ears
+status: superseded
+superseded_by: ../../connections/decisions/connector-protocol.md
 ---
 
 # Decision: listening and speaking as separate services, each with its own Discord bot
+
+> **Superseded** by [connector-protocol](../../connections/decisions/connector-protocol.md) in its choice of Discord identity: listening and speaking remain separate services, but neither holds a Discord client; one Discord connector owns the one bot and the one voice connection, and ears and mouth exchange audio with it over the connector protocol. The context, the options and the reasons for separate services below remain the record of that part of the decision; the "Two processes, two bots" selection and the session-broker rejection do not stand.
 
 ## Context
 

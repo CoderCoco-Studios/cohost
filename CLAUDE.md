@@ -10,6 +10,13 @@ the system design.
 - `pnpm test` — build then run all `test/*.test.ts` with node:test + tsx
 - `pnpm test:only` — skip the build
 
+## Pre-alpha: no backward compatibility
+
+cohost is pre-alpha and has never been deployed. Do not keep legacy config keys,
+env vars, deprecated aliases, migration shims, or upgrade notes. When a design
+changes, replace the old shape outright and update specs, tests, config
+examples, compose, and docs to match.
+
 ## Specs
 
 Behavior is specified with linked-intent development (LID, below): the HLD at

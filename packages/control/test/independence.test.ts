@@ -14,7 +14,7 @@ test("no unit reads another unit's health: a unit in uses is an optional collabo
   const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
   assert.ok(units.some((u) => u.uses.length > 0));
   for (const u of units) {
-    for (const file of sources(join(root, "services", u.id, "src"))) {
+    for (const file of sources(join(root, "services", u.composeName, "src"))) {
       const code = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
       assert.doesNotMatch(code, /\bHealthTracker\b|\brecentHealth\b|\btailHealth\b|\bHEALTH_STREAM\b/, `${file} reads the health stream`);
     }

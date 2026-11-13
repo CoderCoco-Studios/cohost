@@ -21,7 +21,7 @@ HLD → LLDs → EARS → Tests → Code
 | Arrow overlay | `docs/arrows/index.yaml` + `docs/arrows/<segment>.md` | Status, dependencies, drift and work required per segment |
 | Code | `@spec PFX-FACET-NNN` comments | Links code and tests back to the spec line |
 
-Segments (20, flat): `config`, `event-bus`, `model-backends`, `region-hooks`,
+Segments (21, flat): `config`, `event-bus`, `model-backends`, `region-hooks`, `connections`,
 `working-memory`, `shared-runtime`, `control-plane`, `chat`, `eyes`, `ears`,
 `salience`, `affect`, `memory`, `cortex`, `voice`, `mouth`, `avatar`,
 `dashboard`, `deployment`, `module-contract`.

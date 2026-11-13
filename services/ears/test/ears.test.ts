@@ -8,7 +8,9 @@ import { Hearing, sttTranscriber } from "../src/hearing.js";
 
 // ---- hearing
 
-const pcmMs = (ms: number) => Buffer.alloc(Math.round((ms / 1000) * 48000) * 4);
+const pcmMs = (ms: number) => Buffer.alloc(Math.round((ms / 1000) * 16000) * 2);
+/** One connector-source utterance: 16 kHz mono PCM from source `discord` with the speaker id the connector gave. */
+const heard = (h: Hearing, pcm: Buffer, speaker: string, id: string) => h.heardClip({ pcm, rate: 16000, channels: 1 }, speaker, "discord", id);
 function hearing(transcribe: (wav: Buffer) => Promise<string>) {
   const bus = new FakeBus();
   const rec = recordingLog();
@@ -20,26 +22,26 @@ function hearing(transcribe: (wav: Buffer) => Promise<string>) {
 // @spec EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-011
 test("hearing: an utterance is downsampled, transcribed and published with its speaker", async () => {
   const { h, bus, wavs } = hearing(async () => "did you see that");
-  await h.heard(pcmMs(1000), "Chris", "u1");
+  await heard(h, pcmMs(1000), "Chris", "u1");
   assert.deepEqual(readWavHeader(wavs[0]!), { sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 32000 });
-  assert.deepEqual(bus.of("speech.heard"), [{ speaker: "Chris", speakerId: "u1", text: "did you see that", durationMs: 1000 }]);
+  assert.deepEqual(bus.of("speech.heard"), [{ speaker: "Chris", speakerId: "u1", text: "did you see that", durationMs: 1000, source: "discord" }]);
 });
 
 // @spec EARS-HEAR-004, EARS-HEAR-007
 test("hearing: too-short clips skip STT; empty or punctuation-only transcripts are dropped", async () => {
   const { h, bus, wavs } = hearing(async () => "");
-  await h.heard(pcmMs(300), "Chris", "u1");
+  await heard(h, pcmMs(300), "Chris", "u1");
   assert.equal(wavs.length, 0);
-  await h.heard(pcmMs(500), "Chris", "u1");
+  await heard(h, pcmMs(500), "Chris", "u1");
   const dots = hearing(async () => "...");
-  await dots.h.heard(pcmMs(500), "Chris", "u1");
+  await heard(dots.h, pcmMs(500), "Chris", "u1");
   assert.equal(bus.published.length + dots.bus.published.length, 0);
 });
 
 // @spec EARS-HEAR-008
 test("hearing: an STT failure is a warning, not a crash", async () => {
   const { h, bus, rec } = hearing(async () => { throw new Error("stt 503"); });
-  await h.heard(pcmMs(500), "Chris", "u1");
+  await heard(h, pcmMs(500), "Chris", "u1");
   assert.equal(bus.published.length, 0);
   assert.deepEqual(rec.msgs("warn"), ["transcription failed"]);
 });

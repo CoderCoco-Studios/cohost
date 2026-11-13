@@ -1,30 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
-import { MOUTH_LOOP_TYPES, createMouthHandler, outputTarget, subscribeMouth } from "../src/session.js";
+import { FakeBus, event, recordingLog } from "@cohost/testing";
+import { MOUTH_LOOP_TYPES, createMouthHandler, subscribeMouth } from "../src/session.js";
 import { ClaimMemory } from "../src/fallback.js";
-
-const discordCfg = (over: Record<string, unknown> = {}) => testConfig({ mouth: { outputs: { discord: over } } }).mouth.outputs.discord;
-
-// @spec MOUTH-SESS-002, MOUTH-SESS-003
-test("the guild and voice channel come from the mouth.outputs.discord config keys, not the environment", () => {
-  const prev = { g: process.env.DISCORD_GUILD_ID, c: process.env.DISCORD_VOICE_CHANNEL_ID };
-  process.env.DISCORD_GUILD_ID = "env-guild";
-  process.env.DISCORD_VOICE_CHANNEL_ID = "env-channel";
-  try {
-    assert.deepEqual(outputTarget(discordCfg({ guild_id: "g-1", voice_channel_id: "vc-2" })), { guildId: "g-1", channelId: "vc-2" });
-  } finally {
-    if (prev.g === undefined) delete process.env.DISCORD_GUILD_ID; else process.env.DISCORD_GUILD_ID = prev.g;
-    if (prev.c === undefined) delete process.env.DISCORD_VOICE_CHANNEL_ID; else process.env.DISCORD_VOICE_CHANNEL_ID = prev.c;
-  }
-});
-
-// @spec MOUTH-SESS-003
-test("an empty guild or channel fails the join with a message naming the key", () => {
-  assert.throws(() => outputTarget(discordCfg({ voice_channel_id: "vc" })), /^Error: mouth\.outputs\.discord\.guild_id is not set$/);
-  assert.throws(() => outputTarget(discordCfg({ guild_id: "g" })), /^Error: mouth\.outputs\.discord\.voice_channel_id is not set$/);
-  assert.throws(() => outputTarget(testConfig().mouth.outputs.discord), /guild_id is not set/, "an old config.yaml with no mouth section: empty defaults");
-});
 
 const utterance = (id = "u1") => event("voice.utterance", { id, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
 const playingEv = (id: string, sink: string) => event("voice.playing", { id, sink });

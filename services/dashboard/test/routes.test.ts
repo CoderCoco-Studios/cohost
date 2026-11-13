@@ -142,9 +142,9 @@ test("GET /services lists every known service; unseen ones are unknown, a heartb
   assert.equal(r.status, 200);
   assert.match(r.headers.get("content-type")!, /application\/json/);
   const { services } = (await r.json()) as { services: { service: string; state: string }[] };
-  assert.equal(services.length, 10);
+  assert.equal(services.length, 11);
   assert.equal(services.find((s) => s.service === "cortex")!.state, "up");
-  assert.equal(services.filter((s) => s.state === "unknown").length, 9);
+  assert.equal(services.filter((s) => s.state === "unknown").length, 10);
 });
 
 // @spec DASH-HTTP-017

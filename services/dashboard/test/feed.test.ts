@@ -70,7 +70,7 @@ test("a new client gets the services snapshot on connect", async () => {
   const ws = new Sock();
   await t.feed.onConnection(ws);
   assert.equal(ws.services().length, 1);
-  assert.equal(ws.services()[0]!.services!.length, 10);
+  assert.equal(ws.services()[0]!.services!.length, 11);
 });
 
 // @spec DASH-FEED-003

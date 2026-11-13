@@ -29,7 +29,7 @@ brain:
   working_memory_events: 30
 voice: {}
 avatar: { vtube_studio: { host: h }, vmc: { host: h } }
-ears: { discord: {} }
+ears: {}
 dashboard: {}
 `;
 const ENV = { EMBED_MODEL: "e" } as NodeJS.ProcessEnv;
@@ -161,8 +161,8 @@ test("a key absent from the file is added under its section (block and flow), a 
   assert.equal(section.text.slice(FIXTURE.length), "mouth:\n  outputs:\n    discord:\n      gain_db: 3\n");
   const deep = ok(applySection(FIXTURE, "vision", { "obs.width": 640 }, ENV));
   assert.equal((parseYaml(deep.text) as any).vision.obs.width, 640);
-  const nested = ok(applySection(FIXTURE, "ears", { "discord.guild_id": "123" }, ENV));
-  assert.equal((parseYaml(nested.text) as any).ears.discord.guild_id, "123");
+  const nested = ok(applySection(FIXTURE, "ears", { "http.port": 9000 }, ENV));
+  assert.equal((parseYaml(nested.text) as any).ears.http.port, 9000);
 });
 
 // @spec MOD-CFG-010

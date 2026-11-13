@@ -226,21 +226,23 @@ avatar:
     port: ${VMC_PORT}
 
 ears:
-  # Where audio comes from, read at start:
-  #   discord  a voice channel (needs EARS_DISCORD_TOKEN)
+  # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
+  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord, DISCORD_TOKEN)
   #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
-  #   off      idle, nothing heard (isolated runs)
+  #   <tag>    any other connector's source tag, such as desktop
+  # An empty list idles with nothing heard (isolated runs). EARS_SOURCES overrides the whole list in flow syntax, for
+  # example `EARS_SOURCES=[http, dir]` or `EARS_SOURCES=[]`.
   # http and dir work with stt_engine: stub, so they run with no accounts and no STT server.
-  source: "${EARS_SOURCE:-discord}"
-  discord:
-    guild_id: "${DISCORD_GUILD_ID}"
-    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+  sources: ${EARS_SOURCES:-[discord]}
   # The `http` source's listener. Example: curl -X POST -H 'Content-Type: audio/wav' --data-binary @clip.wav 'http://127.0.0.1:8765/audio?speaker=Chris'
   # In Docker, bind 0.0.0.0 and publish the port yourself; the default is local only. Bodies are capped at 25 MiB.
   http:
     host: 127.0.0.1
     port: 8765
+    # Bearer token POST /audio must carry (Authorization: Bearer <token>); empty requires none. Set it when the port is reachable by others.
+    # A clip names its source with ?source=<tag> (default http).
+    token: "${EARS_HTTP_TOKEN:-}"
   # The `dir` source: the directory to watch (created if missing) and how often to look. Empty path = not configured (ears idles degraded).
   dir:
     path: ""
@@ -256,13 +258,19 @@ ears:
   #  - "Thanks for watching!"
   #  - "you"
 
+# External connectors that attach to the bus. The Discord connector (service `connector-discord`, DISCORD_TOKEN) holds the
+# bot's one voice connection: it publishes what people say as source `discord` and plays sink `discord` into the channel.
+connections:
+  discord:
+    enabled: ${CONNECTIONS_DISCORD_ENABLED:-true}  # false = the connector idles and holds no connection (isolated runs)
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:
   outputs:
-    discord:                   # her own Discord bot (DISCORD_TOKEN), self-deafened in the channel below
-      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth idles, plays nothing (isolated runs)
-      guild_id: "${DISCORD_GUILD_ID}"          # by default the guild and channel ears listens in; point them elsewhere if you like
-      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+    discord:                   # sink `discord`: her voice goes to the Discord connector, into the channel set under connections.discord
+      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth plays nothing on it (isolated runs)
       gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
     dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
       enabled: ${MOUTH_DRYRUN_ENABLED:-false}

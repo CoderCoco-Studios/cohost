@@ -8,7 +8,7 @@
 
 ## Gap closure C3 (built 2026-11-11)
 
-`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-SCH-030` (`ears.source` http and dir, `ears.http`, `ears.dir`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
+`CFG-SCH-024` (blank plain strings take their default), `CFG-SCH-025` (`vision.model` required only while vision is enabled), `CFG-SCH-026` (schema descriptions for `voice.sample_rate` and `dashboard.port`), `CFG-SCH-027` (one `ModuleConfig`), `CFG-SCH-030` (`ears.sources`, `ears.http`, `ears.dir`), `CFG-ENV-010` (`.env` at the workspace root, `COHOST_ENV_FILE`), `CFG-LOG-001` (loader diagnostics through a pino logger), `CFG-USR-012` (`.env.example` completeness), `CFG-USR-013` (atomic personality and section writes), and the `loadExpressions` error shape under `CFG-USR-002`, all `[x]`. The schema export, secret marks, section reader and in-place writer (`packages/config/src/editor.ts`) realize module-contract MOD-CFG-*. `CFG-SCH-021` to `023` and `CFG-ISO-004` stay `[ ]` until eyes, ears and mouth add their keys.
 
 ## Listening and speaking split (built)
 
@@ -36,7 +36,6 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 1. **B3** config must load with no `.env` → blank `avatar.driver` means `null`, `${AVATAR_DRIVER:-null}` in the example, avatar port defaults 8001 / 39539; an unknown non-blank driver still fails the load. Specs: CFG-ISO-005 (rewritten), CFG-SCH-010 (port moved to ISO-005).
 2. **S48** inline `.env` comments → `loadDotEnv` strips an unquoted ` # ...` suffix like Compose. Specs: CFG-ENV-006.
-3. **B19** `ears.discord.guild_id` / `voice_channel_id` → keep and wire (config keys win over direct env reads). Specs: CFG-USR-005; ears side EARS-SESS-007.
 4. **S49** unknown keys inside arrays → descend into arrays, drop the region-split text. Specs: CFG-LOAD-006.
 5. **R5** explicit `llm.provider: mock` on a hook → keep rejecting it. Specs: CFG-SCH-009 (unchanged, wording clarified).
 6. **S50** CFG-ENV-008 → keep, add a test that `ConfigSchema.shape` has no control key (Work Required).

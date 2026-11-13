@@ -73,3 +73,14 @@ test("decodeClip: other types, 8-bit WAV, garbage, empty bodies and bad PCM para
   assert.equal(code(() => decodeClip(silence(100), "audio/L16; rate=0")), "bad-audio");
   assert.equal(code(() => decodeClip(silence(100), "audio/L16; channels=9")), "bad-audio");
 });
+
+// @spec EARS-SRC-006, EARS-SRC-007
+test("heardClip: the clip's source is published when given, and the same filters apply whatever the source", async () => {
+  const t = hearing("hello world");
+  assert.deepEqual(await t.h.heardClip({ pcm: silence(1000), rate: 16000, channels: 1 }, "a", "desktop"), { heard: true, text: "hello world" });
+  assert.deepEqual(t.bus.published, [{ type: "speech.heard", data: { speaker: "a", text: "hello world", durationMs: 1000, source: "desktop" } }]);
+  for (const src of ["desktop", "http", "dir"]) {
+    assert.deepEqual(await t.h.heardClip({ pcm: silence(100), rate: 16000, channels: 1 }, "a", src), { heard: false, reason: "too-short" });
+  }
+  assert.equal(t.bus.published.length, 1);
+});

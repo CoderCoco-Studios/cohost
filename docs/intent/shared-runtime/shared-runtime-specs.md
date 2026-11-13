@@ -94,6 +94,8 @@ Terms: "the service" is the service that calls the module; "the bootstrap" is `r
 
 ## Discord voice session (SHARED-DVS)
 
+The session's only user is the Discord connector ([connections](../connections/connections-specs.md), CONN-DISC-003); ears and mouth hold no Discord client.
+
 - [x] **SHARED-DVS-001**: The Discord voice session shall be exported only from the `@cohost/shared/discord-voice` entry point, and `@cohost/shared`'s main entry point shall not load `discord.js` or `@discordjs/voice`.
 - [x] **SHARED-DVS-002**: When `start()` is called, the session shall log in with the given token and, once the client is ready, join the given guild and voice channel with the given self-mute and self-deaf flags and wait up to 20 s for the connection to reach Ready; if the login fails, `start()` shall reject with the login error.
 - [x] **SHARED-DVS-003**: When the session's voice connection is Disconnected and does not enter Signalling or Connecting within 5 s, the session shall set `isReady()` false, call `onDisconnected`, destroy the connection and start the join loop of SHARED-DVS-004 with a first delay of 5 s and its attempt count back at 1. Moved from EARS-SESS-005 and MOUTH-SESS-005.

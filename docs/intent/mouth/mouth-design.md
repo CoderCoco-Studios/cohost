@@ -5,22 +5,22 @@ prefix: MOUTH
 
 # mouth
 
-> The speaking half of the co-host, separate from the listening half in [ears](../ears/ears-design.md); its specs are in [mouth-specs.md](./mouth-specs.md). The split itself (two services, two Discord bots) is argued in the decision doc [listen-speak-split](../ears/decisions/listen-speak-split.md). HLD: [high-level-design](../../high-level-design.md).
+> The speaking half of the co-host, separate from the listening half in [ears](../ears/ears-design.md); its specs are in [mouth-specs.md](./mouth-specs.md). The split itself is argued in the decision doc [listen-speak-split](../ears/decisions/listen-speak-split.md); Discord is reached through the Discord connector of [connections](../connections/connections-design.md), argued in [connector-protocol](../connections/decisions/connector-protocol.md). HLD: [high-level-design](../../high-level-design.md).
 
 ## Context and Design Philosophy
 
 mouth is the co-host's speaking module. It is one Node process (`services/mouth`) that plays the co-host's synthesized lines on the **outputs** the owner configures, and says a short pre-generated fallback line when a line cannot play. It does not synthesize ([voice](../voice/voice-design.md) does), does not decide what to say (cortex and salience do) and does not listen ([ears](../ears/ears-design.md) does).
 
-Each output is a **sink** in the audio-sink arbitration protocol owned by voice: it fetches the WAV a `voice.utterance` points at, plays it, and reports `voice.playing` / `voice.done` (and `voice.failed` when it gives up) with `sink` set to the output's name. There are four output kinds: `discord` (a Discord bot that sits in a voice channel and speaks there), `file` (appends each line's WAV to a bounded rotating directory under the data directory), `http` (POSTs each line's WAV to a configured URL) and the test-only `dryrun`. The output table is the seam for more kinds (a local audio device, a virtual cable); adding one is a new output adapter inside mouth and a new key under `mouth.outputs`, with no change to voice, cortex or avatar, because the protocol already admits any sink name.
+Each output is a **sink** in the audio-sink arbitration protocol owned by voice: it fetches the WAV a `voice.utterance` points at, plays it, and reports `voice.playing` / `voice.done` (and `voice.failed` when it gives up) with `sink` set to the output's name. There are four output kinds: `discord` (a connector sink: mouth writes the line's audio to `audio.out.discord` and the Discord connector plays it in the voice channel), `file` (appends each line's WAV to a bounded rotating directory under the data directory), `http` (POSTs each line's WAV to a configured URL) and the test-only `dryrun`. The output table is the seam for more kinds (a local audio device, a virtual cable); adding one is a new output adapter inside mouth and a new key under `mouth.outputs`, with no change to voice, cortex or avatar, because the protocol already admits any sink name.
 
 The owner decides where the co-host's voice goes by editing `mouth.outputs` in `config.yaml`: which outputs are on, where each one connects, and how loud each one plays. A running mouth can also be re-routed without a restart through a bus command (Live routing); that override lasts until the next restart. The dashboard's browser sink is a separate sink, outside mouth (see Outputs and routing).
 
 Design leanings:
 
 - **Outputs are independent.** Each enabled output has its own connection, queue, current item and fallback timer, so a stall or a failure on one never delays another (MOUTH-ROUTE-004).
-- **Pure logic is split from the device glue.** The plan choice (`mouthPlan`), the per-output playback queue, the fallback line, the clip cache and the gain take their effects as injected functions so they are unit-tested with fakes; the discord.js glue is the only untested layer, as in ears today.
-- **Never exit for a configuration gap.** No enabled output, or a missing `DISCORD_TOKEN`, leaves the process up and idle with an honest heartbeat (MOUTH-START-001, MOUTH-START-002). A login failure with a token present still exits 1 (MOUTH-SESS-001).
-- **Device libraries load only when needed.** discord.js and `@discordjs/voice` are imported dynamically only in the `discord` plan (MOUTH-START-003).
+- **Pure logic is split from the device glue.** The plan choice (`mouthPlan`), the per-output playback queue, the fallback line, the clip cache and the gain take their effects as injected functions so they are unit-tested with fakes; the frame writer is the only layer that needs a Redis stream and a fake connector to test.
+- **Never exit for a configuration gap.** No enabled output leaves the process up and idle with an honest heartbeat (MOUTH-START-001). A connector that is not present is an output that is not ready, not an exit (MOUTH-CONN-003).
+- **No Discord library in mouth.** The bot, the voice connection and the Opus encoding belong to the Discord connector, so mouth carries no gateway client, no native voice dependency and no Discord token (MOUTH-CONN-001).
 - **Playback never depends on the path that just failed.** The fallback line plays from mouth's own prefetched clip cache, never from voice at the moment of failure.
 
 Ownership notes: the `voice.*` schemas belong to [event-bus](../event-bus/event-bus-design.md); the arbitration rules, the virtual sink and the clip generation and routes belong to [voice](../voice/voice-design.md); the `mouth` config section's schema belongs to [config](../config/config-design.md) (CFG-SCH-018, CFG-SCH-020, CFG-USR-011); the heartbeat contract belongs to [control-plane](../control-plane/control-plane-design.md); the Compose service and profile belong to [deployment](../deployment/deployment-design.md).
@@ -33,9 +33,7 @@ Ownership notes: the `voice.*` schemas belong to [event-bus](../event-bus/event-
 mouth:
   outputs:
     discord:
-      enabled: ${MOUTH_DISCORD_ENABLED:-true}   # false = mouth idles (mode off); isolated runs
-      guild_id: "${DISCORD_GUILD_ID}"
-      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+      enabled: ${MOUTH_DISCORD_ENABLED:-true}   # a connector sink (the Discord connector plays it); false = no Discord output; isolated runs
       gain_db: 0                                # loudness on this output only; -40..12
     dryrun:
       enabled: ${MOUTH_DRYRUN_ENABLED:-false}   # test-only output: plays nothing, reports as a sink (Dry-run output)
@@ -58,8 +56,8 @@ mouth:
 - The schema knows each output kind's keys. An unknown output name (a typo such as `discrod`) is reported by config's unknown-key warning and ignored, like any unknown key (config Decisions: Unknown keys); the misspelt output is then simply absent.
 - `enabled: false` means mouth opens no connection for that output and never claims, plays or gives up a line on it (MOUTH-ROUTE-002). With every output disabled, mouth idles in the `off` plan.
 - `gain_db` scales the samples mouth hands that output, for utterances and fallback clips alike, clamped to the 16-bit range (MOUTH-ROUTE-005). It is a per-output trim, so the co-host can be quieter in Discord than on stream; the synthesized voice itself (speed, voice id) is tuned in voice.
-- The `mouth` section is optional. A `config.yaml` written before mouth existed loads with the defaults: the Discord output enabled, an empty guild and channel (so the join fails with a message naming the key, MOUTH-SESS-003), gain 0, interval 20000 (CFG-SCH-020).
-- The guild and channel are mouth's own keys. They default, through `config.example.yaml`, to the same `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID` ears uses (CFG-USR-011), so out of the box the co-host speaks in the channel she listens to. The owner may point them at another channel or guild.
+- The `mouth` section is optional. A `config.yaml` written before mouth existed loads with the defaults: the Discord output enabled, gain 0, interval 20000 (CFG-SCH-020).
+- Which guild and voice channel the co-host sits in is the Discord connector's setting (`connections.discord.guild_id` and `voice_channel_id`, defaulting through `config.example.yaml` to `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID`): one bot holds one connection, so listening and speaking share one channel.
 
 ### How routing meets sink arbitration
 
@@ -81,30 +79,26 @@ The dashboard's browser page (`?sink=1`, often an OBS Browser Source) is a sink 
 
 ## Startup Plans
 
-At boot mouth loads config, creates a `Bus("mouth")`, reads `DISCORD_TOKEN`, and derives a plan with the pure function `mouthPlan(outputs, hasToken)` (MOUTH-START-003):
+At boot mouth loads config, creates a `Bus("mouth")` and derives a plan with the pure function `mouthPlan(outputs)` (MOUTH-START-003):
 
-| Outputs enabled | `DISCORD_TOKEN` | Plan | Discord client | Heartbeat |
-| --- | --- | --- | --- | --- |
-| none | any | `off` | none | mode `off`, every dep `n/a`, state `ready` at once (MOUTH-START-001) |
-| `discord` only | unset | `no-token` | none | mode `live`, `deps.discord: down`, state `degraded`, detail `DISCORD_TOKEN is not set` (MOUTH-START-002) |
-| `discord` | set | `discord` | yes | mode `live`; `ready` once the voice connection is Ready (MOUTH-SESS-004) |
-| `dryrun`, `file` or `http` (any of them), `discord` disabled | any | `local` | none | mode `mock`, `deps.dryrun: ok`, state `ready` (MOUTH-START-003, MOUTH-DRY-004, MOUTH-DRY-005) |
-| `dryrun`, `file` or `http`, and `discord` | unset | `local` | none | mode `live`, `deps.discord: down`, state `degraded` with the `no-token` detail and reminder; the dryrun output still runs (MOUTH-START-003) |
-| `dryrun`, `file` or `http`, and `discord` | set | `discord` | yes | as `discord`, with the other outputs beside the Discord one (MOUTH-DRY-001) |
+| Outputs enabled | Plan | Heartbeat |
+| --- | --- | --- |
+| none | `off` | mode `off`, every dep `n/a`, state `ready` at once (MOUTH-START-001) |
+| `discord`, alone or with others | `discord` | mode `live`; `deps.discord` follows the connector sink's readiness (MOUTH-CONN-003); `ready` once the loop is subscribed |
+| only `dryrun`, `file` or `http` | `local` | mode `mock` when `dryrun` is the only output, else `live`; `deps.dryrun: ok`, state `ready` (MOUTH-DRY-004, MOUTH-DRY-005) |
 
-In the idle plans (`off`, `no-token`) mouth subscribes to nothing, fetches no clips, plays nothing and publishes no `voice.*` event; in `no-token`, and in `local` while the Discord output is enabled without a token, it logs the shared idle plan's error now and its warning backing off from 60 s to a one-hour cap (SHARED-IDLE-002, SHARED-IDLE-003, SHARED-IDLE-006). Shutdown clears that timer and stops the bus (MOUTH-START-004). With more output kinds, the plan generalizes to "the set of enabled outputs that can start"; an output kind that needs no secret (`dryrun`, `file`, `http`) never makes the plan `no-token`; the plan is `local` whenever one of them is enabled and the Discord output is off or has no token.
+mouth reads no token and creates no Discord client in any plan. In the `off` plan mouth subscribes to nothing, fetches no clips, plays nothing and publishes no `voice.*` event; shutdown stops the bus (MOUTH-START-004). An output kind that needs no secret (`dryrun`, `file`, `http`) never makes the plan wait on anything. With the Discord output enabled and the connector absent, the output is simply not ready and skips lines (MOUTH-ROUTE-003).
 
-The service starts through the shared `runService` (MOUTH-START-006): the plan, the bus loop, the clip refresh and the outputs are wired in `main`, each teardown is an `onStop` step, and a failed Discord login rejects `main`, which `runService` turns into the fatal exit with code 1.
+The service starts through the shared `runService` (MOUTH-START-006): the plan, the bus loop, the clip refresh and the outputs are wired in `main`, and each teardown is an `onStop` step.
 
-In the `discord` and `local` plans mouth creates its consumer group `mouth` with start mode `latest` and starts one loop for `voice.utterance` and `voice.playing` before the Discord login (MOUTH-PLAY-001, MOUTH-START-005). The group is reset to the newest entry on every start, so lines published while mouth was down are never played late. One loop reads both types, because two loops with different type filters in one group would acknowledge and drop each other's events.
+In the `discord` and `local` plans mouth creates its consumer group `mouth` with start mode `latest` and starts one loop for `voice.utterance` and `voice.playing` before any output starts (MOUTH-PLAY-001, MOUTH-START-005). The group is reset to the newest entry on every start, so lines published while mouth was down are never played late. One loop reads both types, because two loops with different type filters in one group would acknowledge and drop each other's events.
 
 Environment and config read by mouth:
 
 | Source | Key | Use |
 | --- | --- | --- |
-| env | `DISCORD_TOKEN` | plan selection and login of the co-host's Discord bot (MOUTH-SESS-008) |
 | env | `VOICE_URL` | via `urls.voice()`: the base of the fallback clip routes; utterance audio comes from each event's `audioUrl` |
-| config | `mouth.outputs.discord.{enabled, guild_id, voice_channel_id, gain_db}` | the Discord output (CFG-SCH-020) |
+| config | `mouth.outputs.discord.{enabled, gain_db}` | the Discord output (CFG-SCH-020) |
 | config | `mouth.outputs.dryrun.{enabled, fail_every}` | the dry-run output (CFG-SCH-023) |
 | config | `mouth.outputs.file.{enabled, dir, max_files}` | the file output (CFG-SCH-031) |
 | config | `mouth.outputs.http.{enabled, url, timeout_ms, retries, max_queue}` | the HTTP output (CFG-SCH-031) |
@@ -113,14 +107,11 @@ Environment and config read by mouth:
 
 ## Discord Output
 
-The Discord output is the co-host's own Discord bot, the one viewers see speak. It logs in with `DISCORD_TOKEN` (MOUTH-SESS-008). [ears](../ears/ears-design.md) listens through a second bot of its own (`EARS_DISCORD_TOKEN`), because Discord holds one voice connection per bot per guild and the two halves are separate processes ([listen-speak-split](../ears/decisions/listen-speak-split.md)).
+The Discord output is a **connector sink**. The co-host's one Discord bot, the one voice connection, the join and rejoin loop and the player belong to the Discord connector ([connections](../connections/connections-design.md#discord-connector)); mouth holds none of them (MOUTH-CONN-001).
 
-1. **Intents.** `Guilds` and `GuildVoiceStates`. mouth needs no member names, so it does not request the privileged `GuildMembers` intent.
-2. **Join.** On the client's `ready` event mouth fetches the guild and channel named by `mouth.outputs.discord.guild_id` and `voice_channel_id` (MOUTH-SESS-003 for empty or non-voice values), joins with `selfDeaf: true, selfMute: false` (MOUTH-SESS-002), and waits up to 20 s for Ready. Self-deafened, the bot receives no audio it would only discard, and the channel shows that the speaking bot does not listen. On Ready it subscribes its audio player to the connection, marks the output ready, sets `deps.discord: ok` and reports `ready` (MOUTH-SESS-004).
-3. **Retry and rejoin.** A failed join is logged, reported `degraded` with `deps.discord: down`, and retried with a delay that starts at 5 s and doubles to a 60 s cap until it succeeds; the bus loop keeps running (SHARED-DVS-004). A disconnect that does not recover within 5 s marks the output not ready, destroys the connection and rejoins after 5 s (SHARED-DVS-003). The retry loop is the same pure `createJoiner` ears uses, moved to `@cohost/shared`.
-4. **Shutdown.** One sequence: stop the clip refresh, destroy the voice connection and the client, then stop the bus (MOUTH-SESS-007).
-
-The player and resampling are the ones the combined ears used: a WAV of any rate, mono or stereo, 16-bit, becomes 48 kHz stereo s16le PCM by linear interpolation (SHARED-AUDIO-006), and `@discordjs/voice` Opus-encodes it as `StreamType.Raw`.
+1. **Readiness.** The output is ready while a live registration offers `audio-out` for the sink `discord` with `ready` true (MOUTH-CONN-003). mouth reads the connector registry (CONN-REG-006); it never asks the connector to join and notices a rejoin only as the sink becoming ready again. While the connector is absent or still joining, the output skips lines (MOUTH-ROUTE-003) and `deps.discord` is `down`.
+2. **Delivery.** To play a line the output converts the WAV to the sink's declared format (48 kHz stereo s16le by the shared `resample`, SHARED-AUDIO-006), applies its gain, and writes the frames to `audio.out.discord` tagged with the line's id, the last one marked `last`. It writes at real time with a lead of one second, not as a burst, because the stream is capped and a burst would evict the start of a long line (CONN-BP-004). It publishes `voice.playing` once the first frame is written and `voice.done` when the last frame's scheduled play time has passed (MOUTH-CONN-004). The connector plays the frames; mouth has no player and no Opus encoder.
+3. **A sink that goes away mid-line.** The line's schedule finishes and `voice.done` follows; the line is not given up and no fallback plays, because nothing failed on mouth's side (MOUTH-CONN-005). A line written while the sink is not ready never starts: it is skipped at intake.
 
 ## Playback
 
@@ -149,7 +140,7 @@ Both are sinks like `discord`: each has its own `Playback` queue, claims a line 
 
 The owner changes where the co-host's voice goes while mouth runs by sending the bus command `control { cmd: "set_routing", target: "mouth", routing: { <output id>: { enabled?, gain_db? } } }`. The dashboard's `POST /mouth/routing` sends it (DASH-ROUTE-001); any bus client may.
 
-- **Where it is read.** The one `mouth` loop also reads `control` in the `discord` and `local` plans, and hands each event to the shared `controlFor("mouth", { set_routing })`. The idle plans (`off`, `no-token`) subscribe to nothing, so a `set_routing` sent to them has no effect.
+- **Where it is read.** The one `mouth` loop also reads `control` in the `discord` and `local` plans, and hands each event to the shared `controlFor("mouth", { set_routing })`. The `off` plan subscribes to nothing, so a `set_routing` sent to them has no effect.
 - **What it changes.** A `routing` entry sets one output's *live* `enabled` flag and, for `discord` only, its live `gain_db`. An output switched off live skips every later `voice.utterance` exactly as a disabled output does (MOUTH-ROUTE-002: nothing queued, claimed or given up); lines it already queued, and the one it is playing, finish. Switched on again it queues lines as before. A new gain applies to the next audio handed to that output's player.
 - **Only what runs can be routed.** The live flags toggle outputs mouth started. An output that was disabled in `config.yaml` when mouth started was never constructed (no Discord client, no directory, no queue), and a live command cannot build one: naming it is rejected as not running. So a live command can never create a Discord client or log in, in particular in the `local` plan.
 - **Validation.** The command is applied whole or not at all. It is rejected, with a warning, when `routing` is missing or empty, an id is not an output kind (`discord`, `dryrun`, `file`, `http`: "unknown output id"), an id is an output kind that is not running, `gain_db` is given for an output without gain, or `gain_db` is outside -40..12. A malformed event shape never reaches mouth: the bus schema rejects it at publish (BUS-EVT-004).
@@ -248,46 +239,46 @@ Bad-clip marks, the last-started phrase and the storm timer live in memory, per 
 `MouthHealth` is the `HeartbeatSpec` for `service: "mouth"` (MOUTH-HLTH-001):
 
 - `mode`: `off` in the `off` plan, `mock` when the `dryrun` output is the only enabled output (MOUTH-DRY-004), else `live`.
-- `deps`: one key per output kind under `mouth.outputs` (`discord`, `dryrun`): `n/a` for a disabled output, `ok` only while that output's connection is ready (`dryrun` is ready while enabled), `down` otherwise, so `no-token` is always `down` for `discord` (MOUTH-HLTH-002).
+- `deps`: one key per output kind under `mouth.outputs` (`discord`, `dryrun`, `file`, `http`): `n/a` for a disabled output, `ok` only while that output is ready (`discord`: the connector sink is ready, MOUTH-CONN-003; `dryrun` is ready while enabled), `down` otherwise (MOUTH-HLTH-002).
 - State: `starting` until the first join attempt resolves; `ready` on Ready; `degraded` with a detail while a join fails (SHARED-DVS-004); `startHeartbeat` turns any `down` dep on a `ready` service into `degraded`.
 
 mouth has no `voice` dependency in its heartbeat: an unreachable voice shows up as give-ups and an unchanged clip cache, and voice reports its own health.
 
 ## Running Without the Other Half
 
-ears and mouth share no process, connection, consumer group or file, so either runs, restarts or fails without the other.
+ears and mouth share no process, consumer group or file, and reach Discord only through the connector's streams, so either runs, restarts or fails without the other.
 
 | Situation | Listening (ears) | Speaking (mouth) |
 | --- | --- | --- |
-| Both up, same channel | hears every human; ignores both bots' audio (EARS-HEAR-001) | speaks in the channel |
+| Both up, connector up | hears every human (the connector reads no bot account, CONN-DISC-007) | speaks in the channel |
 | mouth down or restarting | unaffected | lines published meanwhile are covered by the virtual sink or the dashboard page and never replayed (`latest`); no `voice.failed`, no fallback; after restart the clip cache comes from the mirror |
 | ears down or restarting | `speech.heard` and audio injection stop; nothing replays | unaffected, including the fallback line |
 | Only mouth deployed (profile `mouth` without `ears`) | — | the co-host speaks in Discord but does not hear it; chat and the dashboard still drive her |
-| Only ears deployed | hears Discord | no Discord output; the dashboard page or the virtual sink times every line |
-| ears and mouth in different channels or guilds | hears its channel | speaks in its own; allowed, the owner's choice |
+| Only ears deployed | hears Discord through the connector | no Discord output; the dashboard page or the virtual sink times every line |
+| Discord connector down | `deps.discord` `down`; other sources keep running | the `discord` output is not ready and skips lines; the dashboard page or the virtual sink covers them; `file`, `http` and `dryrun` outputs are unaffected (CONN-ISO-001) |
 | voice down | unaffected | every line gives up; fallback clips play from the cache, at most one per 20 s |
 
 ## Dry-run output and shared modules
 
 An output named `dryrun` (`mouth.outputs.dryrun`, CFG-SCH-023; enabled by the isolation preset) lets mouth be tested with no Discord. It is ready from startup, fetches each line like any output, reads its duration, claims it with `voice.playing` under sink name `dryrun`, waits that long and publishes `voice.done`, sending audio nowhere. With `fail_every` n > 0 it gives up on every n-th line, so the fallback line path runs end to end (MOUTH-DRY-*). When `dryrun` is enabled and the Discord output is disabled or has no token, mouth runs in the `local` plan: no Discord client, the bus loop, the clip refresh and the `dryrun` output (MOUTH-START-003). It is a real sink in voice's arbitration while enabled, so it is off by default and on only in the isolation preset or when the owner turns it on.
 
-The Discord connection runs through the shared Discord voice session (MOUTH-SESS-009) and conversion through the shared audio module (MOUTH-AUD-002).
+Conversion runs through the shared audio module (MOUTH-AUD-002).
 
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Service name | `mouth` | `voice` (rename); `speaker`; `playback`; `audio-out`; `discord-sink` | `voice` is the TTS and arbitration service, and its name is in every `voice.*` event. `speaker` already means the human who spoke (`speech.heard.speaker`). `playback` and `audio-out` describe one mechanism, not a part of the co-host. `discord-sink` names one output, which the module outgrows. `mouth` fits the senses-and-body model beside `ears` and `eyes`. Its one collision is avatar's lip-sync parameter `mouthOpen`, which lives inside avatar and never appears on the bus. |
-| A process of its own | mouth is a separate service from ears and from voice | One process with listening and speaking modules; speaking folded into voice | Owner direction: listening and speaking are separate modules the owner tunes and routes separately. A separate process restarts, fails and is deployed without touching listening. Folding outputs into voice would put playback on the process whose failure the fallback line exists to survive, and would end voice's rule that it plays nothing. Full comparison: [listen-speak-split](../ears/decisions/listen-speak-split.md). |
-| Discord identity | The co-host's existing bot (`DISCORD_TOKEN`) speaks; ears listens through a second bot (`EARS_DISCORD_TOKEN`) | One bot shared through a session broker; ears keeps `DISCORD_TOKEN` and mouth gets a new bot | Discord holds one voice connection per bot per guild, so two processes need two bots or a broker that streams audio between processes ([listen-speak-split](../ears/decisions/listen-speak-split.md)). The bot viewers see speak should stay the one they know, and losing listening on an upgrade is milder than losing speech. |
+| A process of its own | mouth is a separate service from ears and from voice | One process with listening and speaking modules; speaking folded into voice | Owner direction: listening and speaking are separate modules the owner tunes and routes separately. A separate process restarts, fails and is deployed without touching listening. Folding outputs into voice would put playback on the process whose failure the fallback line exists to survive, and would end voice's rule that it plays nothing. Full comparison: [listen-speak-split](../ears/decisions/listen-speak-split.md) (its Discord-identity choice superseded by [connector-protocol](../connections/decisions/connector-protocol.md). |
+| Discord identity | mouth holds no Discord client; the `discord` output writes audio to the connector's `audio.out.discord` and the Discord connector, which holds the one bot, plays it | Two bots, one per service (the earlier choice); one bot in mouth with ears as a consumer; ears and mouth merged | Owner direction: one bot login. The connector keeps the bot viewers see speak, gives one login and keeps ears and mouth separately restartable. Full comparison: [connector-protocol](../connections/decisions/connector-protocol.md). |
 | Routing table | `mouth.outputs.<name>` map with per-output `enabled`, target and `gain_db` | One `mouth.output` enum; routing by a field on `voice.utterance` set by voice | A map lets several outputs run at once and keeps each output's settings together. Routing on the event would make voice decide where audio goes, which is the speaking module's job, and would change the protocol for every consumer. |
 | Sink name | The output's name; the Discord output keeps `discord` | `mouth`; `mouth:discord` | Every existing consumer (voice, avatar, cortex, the dashboard feed, working-memory) and the fallback claim check already treat `discord` as the Discord sink; one name per output keeps two outputs distinguishable. |
 | Per-output state | Own queue, current item, storm timer and last phrase per output | One queue feeding all outputs in lockstep; one storm timer for mouth | Lockstep would let one slow or broken output stall the others. The storm limit exists to keep one audience from hearing a run of fallback lines, and each output reaches its own audience. |
 | Output loudness | `gain_db` per output, applied by mouth to utterances and clips, clamped | No per-output level; Discord's per-user volume only | The owner tunes where and how loud the co-host is heard. Discord's per-user volume is set by each listener, not by the owner. |
 | Dashboard sink in the routing table | Not listed; the page stays the dashboard's sink, switched by where it is opened and its own toggle | `mouth.outputs.dashboard.enabled` read by the dashboard | The page is opened deliberately in each place it should play, so a config flag would duplicate its toggle, and the host-run dashboard would have to read and obey another service's config section. |
 | Unknown output names | The unknown-key warning, as for every config key | Fail the config load for an unknown output (`.strict()` on `mouth.outputs`) | Config's project-wide rule is to warn and load; failing every service's config load over one mouth typo would stop the whole stack, while the warning names the key. |
-| Self-deafen | The Discord output joins self-deafened | Join undeafened, as the combined ears did | mouth discards received audio; deafened, Discord sends none and the channel shows the bot only speaks. |
-| Missing `mouth` section | Optional with defaults; an empty target fails the join with a message naming the key | Required section; inherit `ears.discord.*` when mouth's keys are empty | A `config.yaml` written before mouth existed still loads, and the heartbeat says exactly what to add. Inheriting another service's keys would couple the two halves the split separates. |
+| Output delivery | mouth writes a line's frames paced at real time with a one-second lead; `voice.done` is timed from that schedule | Burst the whole line; a played-up-to acknowledgement from the connector | The sink stream is capped, and a burst would evict the start of a long line; pacing needs no feedback stream. The cost is a `voice.done` that follows the schedule rather than the player (connections open question 1). |
+| Missing `mouth` section | Optional with defaults | Required section | A `config.yaml` written before mouth existed still loads. |
 | Failed playback | Give up: report `voice.failed` and say a pre-generated fallback line | Skip silently; report `voice.done` with an error sink | Owner decision: dead air after a glitch is worse than owning it; the report lets voice, avatar and cortex stop waiting. |
 | Where fallback audio comes from | Clips voice pre-generates and serves over HTTP, prefetched into mouth's own cache | Synthesize at failure; a canned WAV in the repo; a directory shared with voice | Owner decision: playback must not depend on the path that just failed and must sound like the co-host. A shared directory would break HLD tenet 1. |
 | Fallback text source | The manifest voice serves, cached with the clips | mouth reads `voice.fallback.lines` itself | mouth reports the text of the audio it actually plays, even while a regeneration is pending. |
@@ -295,7 +286,6 @@ The Discord connection runs through the shared Discord voice session (MOUTH-SESS
 | Cache persistence | Memory, mirrored to mouth's data directory; no Compose volume | Memory only; a named volume | The mirror covers a mouth restart while voice is down; voice can always serve the clips again after a recreate. |
 | Clip choice | Uniform random, never the phrase started last on that output when there is a choice | Round-robin; weighted | Random keeps it fresh; avoiding the previous line stops the same joke twice in a row. |
 | A bad clip | Skip this give-up, mark the clip bad until the set changes, no second try | Try the next clip; mark bad forever | One attempt keeps the queue moving; marks reset when voice regenerates, the likely fix. |
-| Failed join | Log, `degraded` with `deps.discord: down`, keep the loop, retry 5 s doubling to 60 s | Exit and let the supervisor restart | Owner decision 2026-11-01 (carried from ears): a wrong channel is an operational fault, not a crash loop. Login failure still exits 1. |
 | Start mode | `latest` on group `mouth` | `resume` | Owner decision 2026-11-01 (project-wide): stale lines are never played late. |
 | Mute and pause | mouth reads `control` only for `set_routing` and ignores `mute` and `pause` | Gate playback on mute | Owner decision 2026-11-01 (project-wide): only cortex and salience see mute and pause; an operator `say` must still be heard. |
 | Publish failures | Logged; the queue continues | Unhandled rejection | Owner decision 2026-11-01 (project-wide). |
@@ -316,15 +306,15 @@ None.
 
 ## Manual verification
 
-1. **Native dependencies.** `@discordjs/voice` loads `libsodium-wrappers` (transport encryption), `@snazzah/davey` (DAVE end-to-end encryption) and `opusscript` (Opus codec) itself; mouth carries them without importing them. Whether this set is sufficient is checked by a first run against a real Discord guild and voice channel (join, play a line and hear it).
+1. **Connector sink.** Checked with the Discord connector against a real guild ([connections](../connections/connections-design.md#manual-verification)): a line is spoken and heard in the channel, the connector is killed and restarted mid-stream and the output skips lines while it is down and speaks again after it returns, without restarting mouth.
 
 ## References
 
 Files in this segment:
 
-- `services/mouth/src/index.ts` (the `runService` call), `mouth.ts` (plan, wiring, shutdown), `discord.ts` (the Discord output), `dryrun.ts` (the dry-run output), `session.ts` (output target, bus loop and handler), `playback.ts` (queue, stuck-playback guard), `clips.ts` (clip cache, mirror, refresh), `fallback.ts` (claim memory, the fallback line), `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts` (plan, token, `MouthHealth`)
+- `services/mouth/src/index.ts` (the `runService` call), `mouth.ts` (plan, wiring, shutdown), `discord.ts` (the connector-sink output: registry check, paced frame writer), `dryrun.ts` (the dry-run output), `session.ts` (output target, bus loop and handler), `playback.ts` (queue, stuck-playback guard), `clips.ts` (clip cache, mirror, refresh), `fallback.ts` (claim memory, the fallback line), `audio.ts` (WAV to 48 kHz PCM, gain), `health.ts` (plan, token, `MouthHealth`)
 - `services/mouth/test/*.test.ts`; `services/voice/test/mouth-sync.test.ts` (voice's clip routes read by mouth's clip sync)
-- `packages/shared`: `runService`, `startIdle`, `createDiscordVoiceSession`, `retryWithBackoff`, `parseWav`, `resample`
+- `packages/shared`: `runService`, `retryWithBackoff`, `parseWav`, `resample`
 
 Other segments (arrow shows direction):
 
@@ -335,9 +325,10 @@ Other segments (arrow shows direction):
 - mouth -> [control-plane](../control-plane/control-plane-design.md): heartbeat contract; manifest unit `mouth` with group `mouth` and isolated preset `MOUTH_DISCORD_ENABLED=false`.
 - mouth -> [deployment](../deployment/deployment-design.md): Compose service `mouth` in profile `mouth`.
 - mouth -> [avatar](../avatar/avatar-design.md), [cortex](../cortex/cortex-design.md), [working-memory](../working-memory/working-memory-design.md): consumers of the `voice.*` events it publishes.
-- mouth <-> [ears](../ears/ears-design.md): no runtime link; a second Discord bot, so both can sit in one channel.
+- mouth -> [connections](../connections/connections-design.md): writes `audio.out.discord` and reads connector registrations; the Discord connector plays it.
+- mouth <-> [ears](../ears/ears-design.md): no runtime link; both reach Discord through the connector.
 - mouth <-> [dashboard](../dashboard/dashboard-design.md): the dashboard page is another sink; the dashboard shows mouth's heartbeat.
 
-External: discord.js 14, `@discordjs/voice`.
+External: Redis Streams (the connector's `audio.out` stream).
 
 EARS specs: [mouth-specs.md](./mouth-specs.md).

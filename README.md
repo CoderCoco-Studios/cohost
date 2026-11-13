@@ -29,8 +29,9 @@ each other over the same bus, the way the rest of the stack does:
 | ----------- | ------------------------------------------------------------ | --------------------------- |
 | `chat`      | Twitch chat → `chat.message`                                 | Twitch IRC                  |
 | `eyes`      | OBS screenshot → vision model → `vision.summary`             | obs-websocket, Ollama       |
-| `ears`      | Discord voice → Whisper → `speech.heard` (listens only)      | Discord, speaches (STT)     |
-| `mouth`     | `voice.utterance` → her Discord bot, plus a fallback line    | Discord, voice (audio)      |
+| `ears`      | connector audio → Whisper → `speech.heard` (listens only)    | the bus, speaches (STT)     |
+| `mouth`     | `voice.utterance` → a connector sink, plus a fallback line   | the bus, voice (audio)      |
+| `connector-discord` | the one Discord bot: channel audio in, her voice out | Discord, the bus            |
 | `salience`  | when to talk; reflexes → `brain.say` directly, no LLM        | bus only                    |
 | `affect`    | mood → `affect.state` (avatar resting face, prompt colour)   | bus only                    |
 | `memory`    | embeds + recalls; viewer table; reflection pass              | Ollama (embed), Postgres    |
@@ -77,7 +78,7 @@ take the same path.
   even in mock mode. To skip that, use the Redis-only smoke run under
   [Running one service on its own](#running-one-service-on-its-own-isolated).
 - `eyes`, `ears` and `mouth` are optional profiles and stay off. To exercise them without accounts, set
-  `EARS_SOURCE=off` or `EARS_STT_ENGINE=stub`, `MOUTH_DISCORD_ENABLED=false` (or `MOUTH_DRYRUN_ENABLED=true`),
+  `EARS_SOURCES=[]` or `EARS_STT_ENGINE=stub`, `MOUTH_DISCORD_ENABLED=false` (or `MOUTH_DRYRUN_ENABLED=true`),
   `VISION_ENABLED=false` with `VISION_ENGINE=stub`, and feed them from the dashboard's test inputs.
   `eyes` with `VISION_ENABLED=true` always wants a reachable OBS: its mock covers injected images only.
 - Real backends one at a time: delete the matching line and fill in the account (Twitch, Discord, OBS and
@@ -114,9 +115,6 @@ runs `docker compose up -d --build` (core: chat + brain regions + voice avatar +
 it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to other
 machines (it then refuses to start without `CONTROL_ENABLED=1` and a token).
 
-Upgrading from a containerised dashboard: run `docker compose down --remove-orphans`
-once, or just press Launch, which removes the orphaned `dashboard` container.
-
 Works on **Ubuntu/Debian** natively and inside **WSL2** (Docker Desktop with WSL
 integration, or docker-ce in the distro). On WSL the GPU is provided by the
 Windows NVIDIA driver — nothing to install in Linux beyond the container toolkit,
@@ -128,37 +126,43 @@ Add the optional pieces when you're ready:
 
 ```bash
 docker compose --profile eyes up -d   # OBS vision (set vision.enabled: true in config.yaml)
-docker compose --profile ears up -d   # Discord listener (hears the voice channel)
-docker compose --profile mouth up -d  # Discord speaker (plays her voice there)
+docker compose --profile ears up -d   # listener (hears what connectors publish)
+docker compose --profile mouth up -d  # speaker (writes her voice to the sinks)
+docker compose --profile discord up -d # the Discord connector (the one bot login, source and sink `discord`)
 ```
 
-### Discord: two bots
+### Discord: one bot
 
-Listening and speaking are separate optional services with a Discord bot each,
-so either can run, restart or be routed without the other. Create two
-applications at <https://discord.com/developers> and invite both to your server:
+Listening (`ears`), speaking (`mouth`) and the Discord connector are separate
+optional services in the `ears`, `mouth` and `discord` profiles, so any of them
+can run, restart or be routed without the others. Create one application at
+<https://discord.com/developers> and invite it to your server:
 
 | service | `.env` key | permissions | profile |
 |---|---|---|---|
-| `mouth` (speaks) | `DISCORD_TOKEN` | Connect, Speak | `mouth` |
-| `ears` (listens) | `EARS_DISCORD_TOKEN` | Connect, plus the Server Members intent | `ears` |
+| Discord connector (hears and speaks) | `DISCORD_TOKEN` | Connect, Speak, plus the Server Members intent | `discord` |
 
-The two tokens must differ: one bot cannot hold a voice connection in two
-processes. ears ignores every bot account, so it never transcribes her own voice.
-Set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`. To keep both
+One bot serves both halves: the Discord connector logs in, holds the one voice
+connection and carries her voice out and the channel's audio in over Redis, so
+`ears` (listens) and `mouth` (speaks) hold no Discord client and need no token.
+The connector ignores every bot account, so it never hears her own voice.
+Set `DISCORD_GUILD_ID` and `DISCORD_VOICE_CHANNEL_ID` in `.env`. To keep the
 profiles on across restarts and Launch, list them in `.env`:
-`COMPOSE_PROFILES=ears,mouth` (add `eyes` for vision).
+`COMPOSE_PROFILES=discord,ears,mouth` (add `eyes` for vision).
 
 **Where her voice goes** is the `mouth.outputs` table in `config/config.yaml`.
 Each key is one output; today there is one, `discord`:
 
 ```yaml
+connections:
+  discord:
+    enabled: true        # false = the connector idles and holds no connection
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
 mouth:
   outputs:
     discord:
       enabled: true      # false = mouth plays nothing
-      guild_id: "${DISCORD_GUILD_ID}"
-      voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
       gain_db: 0         # loudness on this output only, -40..12 dB
   fallback:
     min_interval_ms: 20000   # at most one fallback line per 20 s on an output
@@ -168,10 +172,14 @@ The dashboard's browser page (`?sink=1`, often an OBS Browser Source) is a
 separate sink, not an output: open it wherever you want her voice to play. A
 routing change takes a restart of `mouth` (the dashboard Services tab, Restart).
 
-**Upgrading from the combined ears** (which both listened and spoke): create the
-listening bot and set `EARS_DISCORD_TOKEN`; keep your existing `DISCORD_TOKEN` as
-the speaking bot; add `mouth` to `COMPOSE_PROFILES`; and move
-`ears.fallback.min_interval_ms` to `mouth.fallback.min_interval_ms` in `config.yaml`.
+One bot, `DISCORD_TOKEN`, serves both directions: add `discord` to `COMPOSE_PROFILES` and set the guild and
+channel as `connections.discord.guild_id` and `connections.discord.voice_channel_id` in `config.yaml`.
+
+**Listening sources.** `ears.sources` is a list, so several run at once (default `[discord]`):
+`http` and `dir` need no account, and a connector tag such as `desktop` (the host capture
+helper) is an open name that a connector registers. `EARS_SOURCES` overrides the list in
+flow syntax (`[http, dir]`, `[]` for idle). A source with no
+connector, token or path is `down` while the others keep running.
 
 ## Configuration
 
@@ -368,7 +376,7 @@ has an opt-in preset env var (wired into `config/config.example.yaml` as
 predates them). Defaults are unchanged: with none set you get the live backends.
 A service on a mock/off backend logs a warning at startup and reports heartbeat
 mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
-`EARS_DISCORD_TOKEN` or `DISCORD_TOKEN`) idles as `degraded` instead of exiting.
+`DISCORD_TOKEN`) idles as `degraded` instead of exiting.
 
 | Service | Preset | Result (mode) |
 |---|---|---|
@@ -378,9 +386,9 @@ mode `mock` or `off`; a missing config value (no `TWITCH_CHANNEL`, no
 | chat | `CHAT_SOURCE=fake` | scripted or stdin messages, no Twitch (`mock`) |
 | eyes | `VISION_ENABLED=false` (default) | idles, never touches OBS (`off`); injected images are still described |
 | eyes | `VISION_ENGINE=stub` | fixed description, no vision model (`mock`); with `VISION_ENABLED=true` it still needs OBS |
-| ears | `EARS_SOURCE=off` | idles, no Discord client (`off`); injected audio is still transcribed |
-| ears | `EARS_SOURCE=http` | listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` WAV or 16-bit PCM clips; no Discord account |
-| ears | `EARS_SOURCE=dir` | hears `.wav` files dropped in `ears.dir.path`, then renames them `.done`; no Discord account |
+| ears | `EARS_SOURCES=[]` | idles, no Discord client (empty list); injected audio is still transcribed |
+| ears | `EARS_SOURCES=[http]` | listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` WAV or 16-bit PCM clips; no Discord account |
+| ears | `EARS_SOURCES=[dir]` | hears `.wav` files dropped in `ears.dir.path`, then renames them `.done`; no Discord account |
 | ears | `EARS_STT_ENGINE=stub` | fixed transcript, no `stt` server (`mock`) |
 | mouth | `MOUTH_DISCORD_ENABLED=false` | idles, plays nothing (`off`) |
 | mouth | `MOUTH_DRYRUN_ENABLED=true` | the `dryrun` output accepts every line and plays nothing (`mock`) |
@@ -532,18 +540,19 @@ every service can boot alone with only Redis (each external dependency has a moc
 | piece | state |
 |---|---|
 | brain (salience, affect, memory, cortex), voice, avatar (null driver), dashboard, control plane | built and exercised against the stub voice, mock LLM and in-process memory; the real Ollama, Kokoro and Postgres containers were run on a CPU box |
-| `mouth` (speaks in Discord on her own bot) | built, with a stuck-playback guard, a spoken fallback line and a test-only `dryrun` output; never run against a real Discord server |
-| `ears` (listens in Discord on its own bot) | built; the Discord receive path and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are unverified against real Discord |
+| `mouth` (writes her voice to connector sinks) | built, with a stuck-playback guard, a spoken fallback line and a test-only `dryrun` output; its Discord sink is the connector's and has not been run against a real Discord server |
+| `ears` (listens to connector sources) | built; it holds no Discord client, and the Discord receive path lives in the connector, which is unverified against real Discord |
+| `connector-discord` (the one bot) | built; the join, the receive path and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are unverified against real Discord |
 | `eyes` (OBS vision) | built; the OBS WebSocket path has not been run against a real OBS, and the vision model needs a GPU for good latency |
 | `chat` (Twitch) | built; anonymous read-only chat was run against Twitch, the authenticated path and token refresh persistence were not |
 | avatar drivers | VMC was run against a UDP listener; VTube Studio only against a fake socket, so expect to tune parameter names on first contact |
 | Compose and installer | read and parsed; a Docker-gated end-to-end Launch test runs in CI, the full real stack awaits the single-PC checklist |
 
-What is left is a first run with real accounts and apps: Discord (two bots), Twitch, OBS and VTube Studio.
+What is left is a first run with real accounts and apps: Discord (one bot), Twitch, OBS and VTube Studio.
 The hands-on list, with what to look for at each step, is the
 [single-PC WSL2 checklist](docs/TESTING.md#single-pc-wsl2-with-docker-desktop); the
 [OBS requirements](docs/TESTING.md#obs-requirements) and
-[two-bot Discord setup](docs/TESTING.md#two-bot-discord-setup) are in [`docs/TESTING.md`](docs/TESTING.md).
+[one-bot Discord setup](docs/TESTING.md#5d-one-bot-discord-setup) are in [`docs/TESTING.md`](docs/TESTING.md).
 
 ## License
 

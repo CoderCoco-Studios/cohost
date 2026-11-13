@@ -132,8 +132,7 @@ function listen(server: http.Server, host: string | undefined, port: number, lab
   return new Promise((resolve) => {
     server.once("error", (err: NodeJS.ErrnoException) => {
       const where = `${host ?? "0.0.0.0"}:${port}`;
-      const hint = err.code === "EADDRINUSE" ? "; an old dashboard container may hold it: `docker compose down --remove-orphans` frees it" : "";
-      log.fatal({ err }, `dashboard cannot listen on ${where} (${label}): ${err.message}${hint}`);
+      log.fatal({ err }, `dashboard cannot listen on ${where} (${label}): ${err.message}`);
       resolve(false);
     });
     const onListening = () => { server.removeAllListeners("error"); resolve(true); };

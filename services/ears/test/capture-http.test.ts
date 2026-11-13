@@ -11,10 +11,10 @@ import { Hearing, stubTranscriber } from "../src/hearing.js";
 const wav = (ms: number) => wavWrap(Buffer.alloc((ms / 1000) * 32000), 16000, 1);
 
 /** An http capture on a free port, wired to the real Hearing path with the stub transcriber, unless `hear` is given. */
-async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number } = {}) {
+async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; token?: string; accepts?: (tag: string) => boolean } = {}) {
   const bus = new FakeBus();
   const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: stubTranscriber() });
-  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s) => hearing.heardClip(c, s)), ...over });
+  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src, id) => hearing.heardClip(c, s, src, id)), ...over });
   await cap.start();
   const url = (q = "") => `http://127.0.0.1:${cap.port}/audio${q}`;
   return { bus, cap, url };
@@ -173,5 +173,56 @@ test("stop closes the listener and waits for the clip in flight", async () => {
   } finally {
     release();
     await r.cap.stop();
+  }
+});
+
+// @spec EARS-SRC-006, EARS-SRC-010
+test("POST /audio?source=<tag>: the clip carries the tag as its source and, without speaker, as its speaker; no source means http", async () => {
+  const r = await rig({ accepts: (t) => t === "desktop" });
+  try {
+    assert.equal((await post(r.url(), wav(500))).status, 200);
+    assert.equal((await post(r.url("?source=desktop"), wav(500))).status, 200);
+    assert.equal((await post(r.url("?source=desktop&speaker=Chris"), wav(500))).status, 200);
+    assert.equal((await post(r.url("?source=http"), wav(500))).status, 200);
+    assert.deepEqual(
+      r.bus.published.map((p) => { const d = p.data as { speaker: string; source?: string }; return [d.speaker, d.source]; }),
+      [["http", "http"], ["desktop", "desktop"], ["Chris", "desktop"], ["http", "http"]],
+    );
+  } finally {
+    await r.cap.stop();
+  }
+});
+
+// @spec EARS-SRC-010
+test("an unknown or mistyped source tag is refused 400 and nothing is heard", async () => {
+  const r = await rig({ accepts: (t) => t === "desktop" });
+  try {
+    for (const q of ["?source=desktp", "?source=dir", "?source=Desktop", "?source="]) {
+      assert.equal((await post(r.url(q), wav(500))).status, 400, q);
+    }
+    assert.equal(r.bus.published.length, 0);
+  } finally {
+    await r.cap.stop();
+  }
+});
+
+// @spec EARS-SRC-013
+test("with a token set, POST /audio needs a matching Bearer header (401 otherwise); with none set no header is needed", async () => {
+  const r = await rig({ token: "s3cret" });
+  try {
+    const send = (headers: Record<string, string>) => fetch(r.url(), { method: "POST", body: wav(500), headers: { "content-type": "audio/wav", ...headers } });
+    assert.equal((await send({})).status, 401);
+    assert.equal((await send({ authorization: "Bearer wrong" })).status, 401);
+    assert.equal((await send({ authorization: "Basic s3cret" })).status, 401);
+    assert.equal((await send({ authorization: "Bearer s3cret" })).status, 200);
+    assert.equal(r.bus.published.length, 1);
+  } finally {
+    await r.cap.stop();
+  }
+  const open = await rig({ token: "" });
+  try {
+    assert.equal((await post(open.url(), wav(500))).status, 200);
+  } finally {
+    await open.cap.stop();
   }
 });

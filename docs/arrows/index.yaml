@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -10,6 +10,7 @@ taxonomy:
     - region-hooks
     - working-memory
     - shared-runtime
+    - connections
   senses:
     - chat
     - eyes
@@ -147,6 +148,16 @@ arrows:
     next: "all 41 specs [x]; gap closure built (C9): stub describer, injection through the shared handler, OBS backoff, vision.* keys. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/TESTING.md, OBS requirements)."
     drift: null
 
+  connections:
+    status: PARTIAL
+    parent: null
+    sampled: 2026-11-12
+    blocks: [ears, mouth]
+    blockedBy: [config, event-bus, shared-runtime, control-plane]
+    detail: connections.md
+    next: "protocol library, services/connector-discord, ears' connector source and mouth's connector sink built: 39 of 41 specs [x] (1 gap, 1 deferred). Next: the desktop helper (CONN-DESK-001, EARS-SRC-014, 015), then live verification against a real guild (docs/arrows/connections.md, Build order)."
+    drift: null
+
   ears:
     status: AUDITED
     parent: null
@@ -154,9 +165,9 @@ arrows:
     audited: 2026-11-11
     audited_sha: 458f98f
     blocks: []
-    blockedBy: [config, event-bus]
+    blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "all 52 specs [x]; listen-only on its own bot, gap closure built (C7), speaker ids for voice notes, http and dir capture sources (EARS-CAP-*). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "consumes connector sources and holds no Discord client (EARS-CON-*, connections); the per-service Discord client and its specs are removed. 56 of 59 specs [x]; open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001); 1 deferred (EARS-SRC-016). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   salience:
@@ -226,9 +237,9 @@ arrows:
     audited: 2026-11-11
     audited_sha: 458f98f
     blocks: []
-    blockedBy: [config, event-bus]
+    blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "all 76 specs [x]; built (listen-speak split, C6 guard and dryrun, then file and http outputs, live routing via set_routing and per-line `route`, MOUTH-ROUTE-006 to 008). No open gaps. Manual verification: native voice dependencies against real Discord (docs/TESTING.md, Two-bot Discord setup)."
+    next: "the `discord` output is a connector sink written with the paced frame writer (MOUTH-CONN-*, connections) and mouth holds no Discord client; the per-service Discord specs are removed. All 73 specs [x]. No open gaps. Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   avatar:

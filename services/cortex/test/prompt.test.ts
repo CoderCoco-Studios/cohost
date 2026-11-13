@@ -12,7 +12,7 @@ const cfg = ConfigSchema.parse({
   brain: {},
   voice: {},
   avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } },
-  ears: { discord: {} },
+  ears: {},
   dashboard: {},
 });
 

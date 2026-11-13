@@ -38,8 +38,8 @@ noticing.
 - **Senses** publish what they observe and consume nothing from the brain:
   `chat` turns Twitch IRC into `chat.message`, `eyes` turns an OBS screenshot
   into a one-line `vision.summary` from a local vision model, `ears` turns
-  each human Discord speaker's audio into `speech.heard` through local
-  speech-to-text. Summaries and transcripts go on the bus, never frames or
+  each human speaker's audio (Discord voice, desktop audio) into
+  `speech.heard` through local speech-to-text. Summaries and transcripts go on the bus, never frames or
   audio bytes.
 - **The brain** is four regions, named for the parts of a brain they play.
   `salience` scores every unseen event and decides *when* to speak
@@ -56,11 +56,20 @@ noticing.
   audio, serves it over HTTP, computes a lip-sync envelope, and arbitrates
   which sink plays it. `mouth` plays those lines on the outputs the owner
   routes them to (today a Discord voice channel, through the co-host's own
-  bot) and says a pre-generated fallback line when one cannot play. `avatar`
+  bot, held by the Discord connector) and says a pre-generated fallback line
+  when one cannot play. `avatar`
   turns bus events into a smooth canonical face state and hands it to a thin
   driver for VTube Studio, a VMC app, or nothing. Listening (`ears`) and
-  speaking (`mouth`) are separate services with a Discord bot each, so either
-  restarts, fails or is routed without the other.
+  speaking (`mouth`) are separate services that reach Discord through one
+  connector, so either restarts, fails or is routed without the other.
+- **Connectors** are external processes that attach to the bus dynamically.
+  A connector registers, heartbeats, declares what it offers (audio in,
+  audio out) and names the source and sink tags it serves; live audio rides
+  its own capped Redis streams, `audio.in.<source>` and `audio.out.<sink>`,
+  never `cohost:events`. The Discord connector is the first: it holds the one
+  bot login and the one voice connection, so ears and mouth hold no Discord
+  client. The desktop-audio capture helper is a connector
+  too, its clips riding ears' HTTP endpoint until it writes frames. ([connections](intent/connections/connections-design.md))
 - **The operator** watches and steers through the `dashboard` (live feed,
   mute, say, personality editor, settings editor, test-input injection,
   Services tab) and the
@@ -178,13 +187,15 @@ code keeps the seams they need.
 - **Typing in chat.** The chat sense is read-only today. A future body output
   beside `voice` will post the co-host's lines to chat; the optional Twitch
   user credentials in `services/chat/src/index.ts:4-6` stay for it.
-- **More audio sources and outputs.** ears hears only Discord and mouth
-  speaks only into Discord (the dashboard page is a separate sink). The
-  owner's direction is to listen to more sources (a local microphone, an OBS
-  audio source) and to route the co-host's voice to more outputs (a local
-  audio device, a virtual cable). The seams exist: ears' source setting and
-  mouth's `mouth.outputs` table, where each output is a sink in voice's
-  arbitration ([ears](intent/ears/ears-design.md) and
+- **More audio sources and outputs.** ears listens to several audio sources
+  at once (for example Discord voice together with desktop audio, which a small capture helper on the host serves as a connector, shipping its clips to ears' HTTP capture endpoint until they move onto an audio stream),
+  each clip tagged with the source it came from; a local microphone is a
+  further source behind the same contract. mouth speaks only into Discord
+  (the dashboard page is a separate sink). The owner's direction is to route
+  the co-host's voice to more outputs (a local audio device, a virtual
+  cable). The seams exist: ears' list of enabled sources and mouth's
+  `mouth.outputs` table, where each output is a sink in voice's arbitration
+  ([ears](intent/ears/ears-design.md#multiple-sources) and
   [mouth](intent/mouth/mouth-design.md) Deferred decisions).
 - **Breaking a dead stream's silence.** Idle chatter fires only after
   `idle_chatter_ms` of quiet *and* at least one unseen event
@@ -223,7 +234,9 @@ code keeps the seams they need.
 Each tenet is a test a reviewer can apply to a design or a pull request.
 
 1. **The bus is the only seam.** Services exchange control and events as
-   typed events on `cohost:events`; HTTP is allowed only for binary or object
+   typed events on `cohost:events`; live audio between a connector and its
+   consumers is the one other seam, on its own capped streams (see
+   Connectors); HTTP is allowed only for binary or object
    transfer (such as voice audio), operator APIs, and configured `http` hooks
    that POST JSON to `module.url`. Reject a design in which two services
    call each other over HTTP, share a database, or import each other's
@@ -291,7 +304,7 @@ flowchart LR
   subgraph senses
     chat[chat<br/>Twitch IRC]
     eyes[eyes<br/>OBS + vision model]
-    ears[ears<br/>Discord voice + STT]
+    ears[ears<br/>audio sources + STT]
   end
   subgraph brain
     salience[salience<br/>attention + reflexes]
@@ -305,6 +318,7 @@ flowchart LR
     avatar[avatar<br/>VTS / VMC / null]
   end
   dashboard[dashboard on the host<br/>feed, control, sink, launch]
+  connectors[connectors<br/>Discord, desktop audio]
   bus[(redis bus)]
 
   chat & eyes & ears --> bus
@@ -315,6 +329,8 @@ flowchart LR
   avatar --> bus
   dashboard --> bus
   mouth -. fetches audio .-> voice
+  connectors <-. audio streams .-> ears & mouth
+  connectors --> bus
 ```
 
 ### Segments
@@ -326,10 +342,11 @@ flowchart LR
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
 | platform | working-memory | Rolling window of recent events rendered as a prompt transcript |
+| platform | connections | The connector protocol (registration, heartbeat, source and sink tags, `audio.in` / `audio.out` streams, loss policy) and the Discord connector: the one bot login and voice connection |
 | platform | shared-runtime | `@cohost/shared`: service bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling, WAV and resampling, Discord voice session |
 | senses | chat | Twitch chat → `chat.message` |
 | senses | eyes | OBS screenshot → vision model → `vision.summary` |
-| senses | ears | Discord voice (human speakers) → Whisper → `speech.heard`; uploaded audio → `speech.heard` (test injection) |
+| senses | ears | Audio sources (Discord voice through the connector, desktop audio, `http` and `dir` capture) → Whisper → `speech.heard`; uploaded audio → `speech.heard` (test injection) |
 | brain | salience | Scores events, decides when to speak, fires reflexes |
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
@@ -380,7 +397,7 @@ test-input descriptors all derive from it.
 
 ### Shared runtime
 
-`@cohost/shared` (`packages/shared`) holds the runtime modules more than one service needs: the service bootstrap, the shutdown sequence and heartbeat publisher, retry with backoff, the missing-credentials idle plan, `control` handling for the regions that honour it, `inject.request` handling with its Redis upload read and staleness window, WAV parsing, writing and resampling, and the Discord voice session ears and mouth each run with their own bot (behind the `@cohost/shared/discord-voice` entry point, so no other service loads Discord). The deterministic hash embedder stays in `@cohost/llm`, which memory's in-memory store also uses. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It depends on `@cohost/config` and `@cohost/bus` and on no service; the bus package keeps only the transport. It is the [shared-runtime](intent/shared-runtime/shared-runtime-design.md) segment: each shared behaviour is specified once there, and a segment that uses a module specifies only how it configures it.
+`@cohost/shared` (`packages/shared`) holds the runtime modules more than one service needs: the service bootstrap, the shutdown sequence and heartbeat publisher, retry with backoff, the missing-credentials idle plan, `control` handling for the regions that honour it, `inject.request` handling with its Redis upload read and staleness window, WAV parsing, writing and resampling, and the Discord voice session the Discord connector runs (behind the `@cohost/shared/discord-voice` entry point, so no other service loads Discord). The deterministic hash embedder stays in `@cohost/llm`, which memory's in-memory store also uses. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It depends on `@cohost/config` and `@cohost/bus` and on no service; the bus package keeps only the transport. It is the [shared-runtime](intent/shared-runtime/shared-runtime-design.md) segment: each shared behaviour is specified once there, and a segment that uses a module specifies only how it configures it.
 
 ### Cross-cutting protocols (observed)
 
@@ -411,6 +428,13 @@ test-input descriptors all derive from it.
   address, and every browser or player (on the host or another
   PC) goes through the dashboard's audio proxy, since voice's port is never
   published to the LAN.
+- **Connectors.** A connector writes a lease-expiring registration key and a
+  heartbeat, declares capabilities (`audio-in`, `audio-out`) with source and
+  sink tags (open names, one live owner per tag), and exchanges 16-bit PCM
+  frames with ears and mouth on capped Redis streams beside the event stream.
+  Audio is live only: producers never wait, consumers start at the end of the
+  stream, loss is counted and shown in health. A connector that is down turns
+  the dependencies that use its tags `down` and nothing else.
 - **Region hooks.** salience.scorer, affect.appraiser, cortex.critic each run
   as rules / llm / http per config, falling back to rules on any failure.
 - **Service health and control.** Every service publishes `service.heartbeat`
@@ -452,9 +476,9 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control` and mouth reads it only for `set_routing`, so none of them acts on mute or pause; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
 | Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (mouth's outputs such as the co-host's Discord bot, the dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
-| Listening and speaking | Two services: `ears` listens and `mouth` speaks, each through a Discord bot of its own (the co-host's existing bot speaks; a second, listen-only bot hears); the owner routes the co-host's voice with mouth's `mouth.outputs` table, where each output is a sink | One process with both jobs; two processes sharing one bot through a session broker; speaking folded into voice | Discord holds one voice connection per bot per guild, so independent processes need a bot each; independent processes let either direction restart, fail and be routed without the other; a broker would add a live-audio transport and a shared point of failure, and playback inside voice would die with the service the fallback line exists to survive. Owner decision. | [listen-speak-split](intent/ears/decisions/listen-speak-split.md); [ears](intent/ears/ears-design.md); [mouth](intent/mouth/mouth-design.md) |
+| Listening and speaking | Two services: `ears` listens and `mouth` speaks; neither holds a Discord client. One Discord connector holds the co-host's one bot and the one voice connection, publishes each human speaker's audio on `audio.in.discord` and plays what mouth writes to `audio.out.discord`; the owner routes the co-host's voice with mouth's `mouth.outputs` table, where each output is a sink | Two services each with its own Discord bot (the earlier choice); one process with both jobs; a Discord-only connections service; speaking folded into voice | One bot login is the owner's direction. A connector keeps ears and mouth separately restartable and gives the desktop helper and later sources the same path; a merged process would stop one direction with the other, and playback inside voice would die with the service the fallback line exists to survive. The connector is a single point of failure for Discord audio only, reported as a dependency. Owner decision. | [connector-protocol](intent/connections/decisions/connector-protocol.md) (supersedes [listen-speak-split](intent/ears/decisions/listen-speak-split.md)); [connections](intent/connections/connections-design.md); [ears](intent/ears/ears-design.md); [mouth](intent/mouth/mouth-design.md) |
 | Spoken fallback line | When a mouth output cannot play a line it reports `voice.failed` and says a short funny line instead, picked at random from an owner-edited list; voice pre-generates the lines as clips in the co-host's TTS voice and serves them over its HTTP server, and mouth prefetches them into its own cache, so playback never touches the failing path; clips regenerate when the list or voice settings change; the transcript keeps the fallback as her line with a note that the intended one failed; her next reply gets a hint with a base chance (default 1 in 4) and the model decides in character whether to riff on it | Stay silent and let the virtual sink time the line; synthesize the fallback when the failure happens; a file directory shared by voice and ears; enforce the acknowledgement rate in code | Dead air after a glitch is worse on stream than owning it; playback of the fallback must not depend on the voice HTTP and TTS path that just failed; the character, not a dice roll, decides how she reacts, so the real rate drifts with the personality. The fallback replaces a line that already passed the speaking gates (tenet 4) and is not a new `brain.say`. No file store is shared: the clips travel over HTTP, as tenet 1 allows for binary transfer. Owner decision, including waiting out the claim window when nothing plays, no fallback when another sink already plays the line, a 20 s storm limit, and memory keeping the failed line as said; event shape, clip routes, cache refresh and transcript format are. | [mouth](intent/mouth/mouth-design.md) Fallback Line; [voice](intent/voice/voice-design.md) Fallback Clips and Sink Arbitration Protocol; [working-memory](intent/working-memory/working-memory-design.md); [cortex](intent/cortex/cortex-design.md) Fallback acknowledgement |
-| Binary payloads | Never on the event stream: events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, and injected test uploads sit in a short-lived Redis key the event names by id | Base64 on the stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads |
+| Binary payloads | Never on the event stream: events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, injected test uploads sit in a short-lived Redis key the event names by id, and live connector audio rides its own capped streams (`audio.in.<source>`, `audio.out.<sink>`) outside `cohost:events` | Base64 on the stream; live audio on the event stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. Live audio needs a transport of its own, and a separate capped stream keeps it off the event stream and the dashboard feed. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads; [connections](intent/connections/connections-design.md) Audio streams |
 | Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |
 | Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand. Viewer notes live in Postgres, and the dashboard's Viewers page lists every stored note, and every deletion with its reason, for the owner to delete or restore | Learned facts in the database only; a structured persona schema; viewer notes in the personality file | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. Viewer notes are per-viewer records that change during the stream, so a table fits them, and the Viewers page keeps them as visible and editable as the personality file. | [memory](intent/memory/memory-design.md) Reflection pass and Viewer notes; [dashboard](intent/dashboard/dashboard-design.md) Viewers page; `config/personality.example.md` |

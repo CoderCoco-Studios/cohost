@@ -240,7 +240,8 @@ code keeps the seams they need.
 Each tenet is a test a reviewer can apply to a design or a pull request.
 
 1. **The bus is the only seam.** Services exchange control and events as
-   typed events on `cohost:events`; live audio between a connector and its
+   typed events on `cohost:events`, through one bus client (a native Rust
+   transport behind a TypeScript facade, see Native layer); live audio between a connector and its
    consumers is the one other seam, on its own capped streams (see
    Connectors); HTTP is allowed only for binary or object
    transfer (such as voice audio), operator APIs, and configured `http` hooks
@@ -301,7 +302,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 23 event types; 24 once `speech.partial` lands) plus a separate `cohost:health` heartbeat stream (24 registered payloads in all; 25 with `speech.partial`). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 25 event types) plus a separate `cohost:health` heartbeat stream (26 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
 decide when and what to say; the body speaks and animates; an operator
 dashboard watches and steers.
 
@@ -343,7 +344,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 23 event types plus 1 health type (24 plus 1 with `speech.partial`); consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 25 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -404,6 +405,33 @@ test-input descriptors all derive from it.
 ### Shared runtime
 
 `@cohost/shared` (`packages/shared`) holds the runtime modules more than one service needs: the service bootstrap, the shutdown sequence and heartbeat publisher, retry with backoff, the missing-credentials idle plan, `control` handling for the regions that honour it, `inject.request` handling with its Redis upload read and staleness window, WAV parsing, writing and resampling, and the Discord voice session the Discord connector runs (behind the `@cohost/shared/discord-voice` entry point, so no other service loads Discord). The deterministic hash embedder stays in `@cohost/llm`, which memory's in-memory store also uses. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08). It depends on `@cohost/config` and `@cohost/bus` and on no service; the bus package keeps only the transport. It is the [shared-runtime](intent/shared-runtime/shared-runtime-design.md) segment: each shared behaviour is specified once there, and a segment that uses a module specifies only how it configures it.
+
+### Native layer
+
+The bus client is native code so the central highway has headroom as sources
+and services grow; it is not a response to a measured bottleneck. A Cargo
+workspace at the repository root holds the native crates:
+
+- `crates/cohost-bus`: pure Rust, no Node dependency. Owns transport (XADD,
+  XREADGROUP/XREAD, pipelined acks, the audio frame codec, registrations,
+  health/recent/tail).
+- `crates/cohost-bus-node`: the thin napi-rs wrapper that exposes it to Node.
+- `crates/cohost-audio` (planned): shared audio framing and resampling.
+
+zod validation stays in the TypeScript `Bus` facade. A Rust service uses a
+small hand-written typed codec for the events it touches, verified against
+shared JSON contract fixtures.
+
+Which services may be Rust: audio and frame-rate services and the bus
+hot path, namely shared audio, connector-discord (on songbird, after a live
+Discord run), and ears or mouth glue only where measurement shows a gain.
+Which stay TypeScript: the LLM-, HTTP- and database-bound services (cortex,
+salience, affect, memory, chat, eyes, voice, avatar, dashboard, `cohostctl`).
+
+Port rule: measure before and after; a port that misses its gate is not
+merged. The bus gate, on `scripts/dev/bus-bench.ts` at 8 sources: the native
+bus cuts frames-path CPU by at least 40% with p99 no worse than the
+TypeScript bus.
 
 ### Cross-cutting protocols (observed)
 
@@ -545,14 +573,26 @@ The vision path runs from the moment eyes captured the frame (`capturedAt`) to
 `describedAt`), `salience` (`describedAt` to `attention.focus`) and then the
 same `prep`, `llm`, `critic`, `say`, `tts` and `sink` stages.
 
-**Open item: the budget numbers.** No latency has been measured and no live
-baseline run is planned alongside the real-time speech path work, so this
-section sets no per-stage or end-to-end figure; ending an utterance by speech
-activity and publishing partials change the `stt` stage, and the budget stays
-open until someone measures it. The numbers are set after the
-first measurement on the owner's GPU box with the default local models, and
-recorded here in the same change that sets them. Until then the end-to-end
-median is tracked, as Success Metric 2 describes, with no pass/fail threshold.
+**Measured baseline.** `scripts/dev/perf-baseline.sh` drives one short,
+repeated clip through the warm speech path on the owner's GPU box with the
+default local models. Median total is about 1,080 ms: `stt` 270, `salience` 1,
+`prep` 30, `llm` 203, `tts` 541, `sink` 4. The total excludes the endpointing
+wait (about 700 ms of silence, `silence_ms`, plus 500 ms of connector
+`AfterSilence` on Discord), so a line heard on Discord lands about 2.3 s after
+the person stops. Cold start is about 63 s (LLM load about 42 s, STT about
+18 s). The Kokoro GPU image has no Blackwell (RTX 50xx) kernels, so TTS runs
+on CPU on that hardware, and `tts` is the largest stage. The bus is not a
+bottleneck: on `scripts/dev/bus-bench.ts` the TypeScript bus holds p99 under
+4 ms at 8 sources and uses at most 11% of one core.
+
+**Open item: the budget numbers.** The baseline above is one clip with a short
+prompt, not a budget: this section sets no per-stage or end-to-end figure.
+Ending an utterance by speech activity and publishing partials change the
+`stt` stage, so the budget stays open until it is re-measured with longer
+prompts, and is recorded here in the same change that sets it. Until then the
+end-to-end median is tracked, as Success Metric 2 describes, with no pass/fail
+threshold. Planned latency item: startup warm-up of the LLM, STT and TTS
+models, which removes the cold start.
 
 ### Future / ideal state: dynamic, interruptible speech
 
@@ -581,7 +621,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 
 | Decision | Chosen | Alternatives | Rationale | Embodied in |
 | --- | --- | --- | --- | --- |
-| Inter-service transport | Redis Streams with one or more consumer groups per service and zod validation on both publish and read | HTTP between services; pub/sub; one monolith | A service can restart and pick its start position, a poison event (unknown type, non-JSON data, failed schema) is dropped and acked without logging rather than wedging the stream, and every payload shape lives in one registry. | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:5-8` |
+| Inter-service transport | Redis Streams stays the broker, with one or more consumer groups per service. A Rust crate (`crates/cohost-bus`) owns transport (XADD, XREADGROUP/XREAD, pipelined acks, the audio frame codec, registrations, health/recent/tail) and reaches Node through an napi-rs wrapper; zod validation on publish and read stays in the TypeScript `Bus` facade. Rust services use a small hand-written typed codec for the events they touch, verified by shared JSON contract fixtures; generating schemas for every event from one source is deferred | HTTP between services; pub/sub; one monolith; Go client (cannot load in-process into Node); sidecar bus daemon (adds a hop per event); replacing Redis with a custom broker (loses Streams and consumer groups, and Redis is already native) | A service can restart and pick its start position, a poison event (unknown type, non-JSON data, failed schema) is dropped and acked without logging rather than wedging the stream, and every payload shape lives in one registry. | [event-bus](intent/event-bus/event-bus-design.md); `packages/bus/src/events.ts:5-8` |
 | Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and cortex or an explicitly configured `llm` hook can call a chat model. | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
 | Who decides vs. who speaks | salience decides *when* (`attention.focus`), cortex decides *what* (`brain.say`), reflexes short-circuit both | cortex decides on its own; every event prompts the model | Talkativeness is a cheap, tunable scoring loop with no model in it; the expensive call only happens once something is worth a reply. | [salience](intent/salience/salience-design.md) Scoring and Decision; [cortex](intent/cortex/cortex-design.md) think pipeline |
 | Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider` | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
@@ -596,7 +636,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (mouth's outputs such as the co-host's Discord bot, the dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
 | Listening and speaking | Two services: `ears` listens and `mouth` speaks; neither holds a Discord client. One Discord connector holds the co-host's one bot and the one voice connection, publishes each human speaker's audio on `audio.in.discord` and plays what mouth writes to `audio.out.discord`; the owner routes the co-host's voice with mouth's `mouth.outputs` table, where each output is a sink | Two services each with its own Discord bot (the earlier choice); one process with both jobs; a Discord-only connections service; speaking folded into voice | One bot login is the owner's direction. A connector keeps ears and mouth separately restartable and gives the desktop helper and later sources the same path; a merged process would stop one direction with the other, and playback inside voice would die with the service the fallback line exists to survive. The connector is a single point of failure for Discord audio only, reported as a dependency. Owner decision. | [connector-protocol](intent/connections/decisions/connector-protocol.md) (supersedes [listen-speak-split](intent/ears/decisions/listen-speak-split.md)); [connections](intent/connections/connections-design.md); [ears](intent/ears/ears-design.md); [mouth](intent/mouth/mouth-design.md) |
 | Spoken fallback line | When a mouth output cannot play a line it reports `voice.failed` and says a short funny line instead, picked at random from an owner-edited list; voice pre-generates the lines as clips in the co-host's TTS voice and serves them over its HTTP server, and mouth prefetches them into its own cache, so playback never touches the failing path; clips regenerate when the list or voice settings change; the transcript keeps the fallback as her line with a note that the intended one failed; her next reply gets a hint with a base chance (default 1 in 4) and the model decides in character whether to riff on it | Stay silent and let the virtual sink time the line; synthesize the fallback when the failure happens; a file directory shared by voice and ears; enforce the acknowledgement rate in code | Dead air after a glitch is worse on stream than owning it; playback of the fallback must not depend on the voice HTTP and TTS path that just failed; the character, not a dice roll, decides how she reacts, so the real rate drifts with the personality. The fallback replaces a line that already passed the speaking gates (tenet 4) and is not a new `brain.say`. No file store is shared: the clips travel over HTTP, as tenet 1 allows for binary transfer. Owner decision, including waiting out the claim window when nothing plays, no fallback when another sink already plays the line, a 20 s storm limit, and memory keeping the failed line as said; event shape, clip routes, cache refresh and transcript format are. | [mouth](intent/mouth/mouth-design.md) Fallback Line; [voice](intent/voice/voice-design.md) Fallback Clips and Sink Arbitration Protocol; [working-memory](intent/working-memory/working-memory-design.md); [cortex](intent/cortex/cortex-design.md) Fallback acknowledgement |
-| Binary payloads | Never on the event stream: events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, injected test uploads sit in a short-lived Redis key the event names by id, and live connector audio rides its own capped streams (`audio.in.<source>`, `audio.out.<sink>`) outside `cohost:events` | Base64 on the stream; live audio on the event stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. Live audio needs a transport of its own, and a separate capped stream keeps it off the event stream and the dashboard feed. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads; [connections](intent/connections/connections-design.md) Audio streams |
+| Binary payloads | Never on the event stream (the native bus's audio frame codec carries the audio streams): events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, injected test uploads sit in a short-lived Redis key the event names by id, and live connector audio rides its own capped streams (`audio.in.<source>`, `audio.out.<sink>`) outside `cohost:events` | Base64 on the stream; live audio on the event stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. Live audio needs a transport of its own, and a separate capped stream keeps it off the event stream and the dashboard feed. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads; [connections](intent/connections/connections-design.md) Audio streams |
 | Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
 | Configuration split | Behaviour in `config.yaml` with `${VAR:-default}` placeholders, secrets and per-machine values in `.env`, persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*` | Env only; one JSON; baked config | The three user files are the operator's and git-ignored; a fresh clone runs from the examples; a backend can be flipped from `.env` without editing YAML. | [config](intent/config/config-design.md); commit `969f6d7` ("Move provider and hook choices into config.yaml") |
 | Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand. Viewer notes live in Postgres, and the dashboard's Viewers page lists every stored note, and every deletion with its reason, for the owner to delete or restore | Learned facts in the database only; a structured persona schema; viewer notes in the personality file | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. Viewer notes are per-viewer records that change during the stream, so a table fits them, and the Viewers page keeps them as visible and editable as the personality file. | [memory](intent/memory/memory-design.md) Reflection pass and Viewer notes; [dashboard](intent/dashboard/dashboard-design.md) Viewers page; `config/personality.example.md` |
@@ -657,7 +697,7 @@ what to measure once it has. All targets are proposals.
    `voice.playing` for the line that answers it, with the per-stage p50 and p95
    from `cohostctl latency` (Latency budget, above). The target is "as fast as
    possible": there is no pass/fail threshold yet (the budget numbers are an
-   open item); the measured medians are tracked from stream to stream and
+   open item; the measured baseline is in the Latency budget); the measured medians are tracked from stream to stream and
    should trend down. Vision path: time from a frame's capture
    (`timing.capturedAt` on `vision.summary`) to `voice.playing` for the line
    it prompts, reported the same way. The speech and vision paths are reported

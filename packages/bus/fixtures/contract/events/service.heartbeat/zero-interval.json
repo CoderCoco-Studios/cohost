@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "service": "chat",
+    "instance": "local-1a2b3c4d",
+    "pid": 42,
+    "version": "0.1.0",
+    "startedAt": 1700000000000,
+    "state": "ready",
+    "deps": {
+      "redis": "ok",
+      "llm": "n/a"
+    },
+    "mode": "live",
+    "intervalMs": 0
+  },
+  "valid": false
+}

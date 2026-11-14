@@ -1,0 +1,34 @@
+{
+  "fields": [
+    [
+      "v",
+      "1"
+    ],
+    [
+      "epoch",
+      "1700000000000"
+    ],
+    [
+      "seq",
+      "0"
+    ],
+    [
+      "rate",
+      "16000"
+    ],
+    [
+      "ch",
+      "1"
+    ],
+    [
+      "pcm",
+      {
+        "base64": "AAAA"
+      }
+    ]
+  ],
+  "expected": {
+    "ok": false,
+    "reason": "odd byte count"
+  }
+}

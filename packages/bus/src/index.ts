@@ -1,6 +1,7 @@
 import { Redis, type RedisOptions } from "ioredis";
 import { randomUUID } from "node:crypto";
 import { urls, type Logger } from "@cohost/config";
+import type { TransportFactory } from "./transport.js";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
 
 import {
@@ -11,6 +12,7 @@ import {
 export * from "./events.js";
 export * from "./connector.js";
 export * from "./registrar.js";
+export * from "./transport.js";
 
 export const STREAM = "cohost:events";
 const MAXLEN = 20_000;
@@ -46,6 +48,8 @@ export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
+  /** Builds the `BusTransport` the instance runs on (default: the native transport). Stage 6 wires it; tests pass a fake (BUS-NAT-API-004). */
+  transport?: TransportFactory;
   /** Build a Redis connection (default: `new Redis(url, opts)`). Tests inject fakes here. */
   connect?: (url: string, opts: RedisOptions) => BusRedis;
   /** First retry delay after a failed read, ms (default 250; doubles per consecutive failure). */

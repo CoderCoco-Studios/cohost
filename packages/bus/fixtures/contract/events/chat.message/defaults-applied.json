@@ -1,0 +1,16 @@
+{
+  "payload": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "hi"
+  },
+  "valid": true,
+  "parsed": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "hi",
+    "isMod": false,
+    "isSub": false,
+    "mentionsCohost": false
+  }
+}

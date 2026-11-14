@@ -1,0 +1,20 @@
+[package]
+name = "cohost-bus-node"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cohost-bus = { version = "0.1.0", path = "../cohost-bus" }
+napi = { version = "3.16.2", features = ["tokio_rt", "napi9"] }
+napi-derive = "3.7.1"
+
+[build-dependencies]
+napi-build = "2.6.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# BUS-NAT-ERR-011: test-only; adds a binding call that panics inside its future.
+# No release build, build:native or Docker stage enables it.
+test-panic = []

@@ -1,0 +1,13 @@
+{
+  "payload": {
+    "cmd": "say",
+    "text": "hello",
+    "target": "mouth"
+  },
+  "valid": true,
+  "parsed": {
+    "cmd": "say",
+    "text": "hello",
+    "target": "mouth"
+  }
+}

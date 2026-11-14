@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { isHealthy, checkHealth } from "../src/healthcheck.js";
+import { FakeTransport } from "../../testing/src/fake-transport.js";
 
 const rec = (service: string, ageMs: number, state: HeartbeatEvent["data"]["state"] = "ready", now = 1_000_000): HeartbeatEvent => ({
   id: "1", type: "service.heartbeat", ts: now - ageMs, source: service,
@@ -81,12 +82,15 @@ test("an unreadable server time, or a bus that throws, is unhealthy", async () =
 });
 
 // @spec CTRL-CHECK-004
-test("Bus.serverTime reads Redis TIME and returns milliseconds", async () => {
-  const conn = { time: async () => ["1700000000", "250500"], disconnect: () => {} };
-  const bus = new Bus("t", undefined, "redis://fake", { connect: () => conn as never });
+test("Bus.serverTime reads Redis TIME through the transport and returns milliseconds", async () => {
+  const transport = new FakeTransport();
+  transport.serverNow = 1_700_000_000_250;
+  const bus = new Bus("t", undefined, "redis://127.0.0.1:1", { transport: transport.factory });
   try {
+    assert.equal(transport.factoryCalls.length, 1, "the Bus took its transport from BusOptions.transport");
     assert.equal(await bus.serverTime(), 1_700_000_000_250);
+    assert.equal(transport.of("serverTime").length, 1);
   } finally {
-    bus.stop();
+    await bus.stop();
   }
 });

@@ -20,3 +20,7 @@ docs/examples/
 
 # remember plugin session memory (local only, never commit)
 .remember/
+
+# Rust / native addon build outputs (BUS-NAT-BLD-003)
+target/
+packages/bus/native/*.node

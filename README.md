@@ -443,7 +443,7 @@ pnpm dashboard     # tsc -b services/dashboard, then runs it on the host; it dri
 |---|---|
 | `CONTROL_ENABLED=1` | turns the routes on; otherwise `POST /services/:id/*` is 404 |
 | `CONTROL_TOKEN` | bearer token, required on `POST /services/:id/start\|stop\|restart`, `POST /control` and `PUT /personality` while enabled (the UI prompts once per tab) |
-| `DASHBOARD_HOST` | where the full surface listens; `127.0.0.1` by default (`CONTROL_BIND` is the older name). A non-loopback value needs `CONTROL_ENABLED=1` with a token and logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel |
+| `DASHBOARD_HOST` | where the full surface listens; `127.0.0.1` by default. A non-loopback value needs `CONTROL_ENABLED=1` with a token and logs a warning: the token is sent in cleartext HTTP, front it with a reverse proxy or SSH tunnel |
 | `DASHBOARD_LAN_PORT` | the second listener (default 3001, all interfaces): sink page and audio only |
 | `COHOST_DOCKER_BIN` | the docker executable to run; unset uses `docker`, else `docker.exe` (WSL2 without Docker Desktop's integration) |
 | `CONTROL_ADVANCED=1` | also allow `redis` and `postgres` (otherwise 403). The dashboard can never stop itself (409) |

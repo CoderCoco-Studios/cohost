@@ -186,13 +186,12 @@ CLI (`cli.ts`): `cohostctl status [service]`, `cohostctl start|restart <service>
 - It runs as the invoking user and does not read `CONTROL_ENABLED` or `CONTROL_TOKEN` (those only gate the dashboard's HTTP surface).
 - `executeCli` runs from the entry guard only when `process.argv[1]` ends with `cli.js`. Since `index.ts` re-exports `cli.js`, importing the package from another entry script runs nothing, but the check is a suffix match, so any other entry script named `cli.js` that imports `@cohost/control` would also start the CLI. Running the TypeScript source under tsx does not trigger it either (the suffix would be `cli.ts`), so `cohostctl` only works from the built `dist`; the README invokes it as `pnpm cohostctl`, which builds `packages/control` and runs `dist/cli.js`.
 
-Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. Defaults are `CONTROL_BIND` unset means `127.0.0.1` with `bindExplicit: false`, `CONTROL_ADVANCED` off. The config carries no runtime choice. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual`. `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.`.
+Configuration (`config.ts`): `loadControlConfig(env)` is used by the dashboard. `CONTROL_ENABLED` must be exactly `1`; otherwise `{ enabled: false }`. Enabled requires a non-blank `CONTROL_TOKEN`. `CONTROL_ADVANCED` defaults to off. The config carries no listen address: the dashboard's address is its own `DASHBOARD_HOST`, with `LOOPBACK_BIND` (`127.0.0.1`) as the default it applies. The config carries no runtime choice. `bearerOk(header, token)` compares SHA-256 digests with `timingSafeEqual`. `isLoopback` accepts `localhost`, `::1`, and anything starting with `127.`.
 
 | Env var | Read by | Meaning |
 |---|---|---|
 | `CONTROL_ENABLED` | `loadControlConfig` (dashboard) | `1` turns the lifecycle routes and token gate on |
 | `CONTROL_TOKEN` | `loadControlConfig` | required bearer secret when enabled |
-| `CONTROL_BIND` | `loadControlConfig`, dashboard `index.ts:50` | listen address; loopback default only when enabled |
 | `CONTROL_ADVANCED` | both | `1` allows redis and postgres mutations |
 | `REDIS_URL` | `Bus` (via `@cohost/config` `urls.redis()`), CLI, healthcheck | bus address |
 | `HEARTBEAT_INTERVAL_MS`, `COHOST_VERSION` | `startHeartbeat` (`packages/shared/src/lifecycle.ts`) | beat interval (default 5000) and reported version (default `dev`) |

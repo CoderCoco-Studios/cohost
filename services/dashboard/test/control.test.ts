@@ -1,6 +1,10 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import type { Runtime } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
@@ -67,30 +71,30 @@ test("enabling without a token fails startup naming CONTROL_TOKEN", () => {
 });
 
 // @spec DASH-CTRL-003
-test("bind: loopback by default in both modes; DASHBOARD_HOST wins over CONTROL_BIND; empty values are skipped; a non-loopback address warns", () => {
+test("bind: loopback by default in both modes; an empty DASHBOARD_HOST is skipped; a non-loopback address warns", () => {
   const a = recordingLog();
   assert.equal(setupControl(ON, new CtlBus(), a.log).bind, "127.0.0.1");
   assert.deepEqual(a.msgs("warn"), []);
   const off = recordingLog();
   assert.equal(setupControl({}, new CtlBus(), off.log).bind, "127.0.0.1");
-  assert.equal(setupControl({ DASHBOARD_HOST: "", CONTROL_BIND: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ DASHBOARD_HOST: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ DASHBOARD_HOST: "  " }, new CtlBus(), off.log).bind, "127.0.0.1");
   assert.deepEqual(off.msgs("warn"), []);
   const b = recordingLog();
-  assert.equal(setupControl({ ...ON, CONTROL_BIND: "0.0.0.0" }, new CtlBus(), b.log).bind, "0.0.0.0");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), b.log).bind, "0.0.0.0");
   assert.equal(b.msgs("warn").length, 1);
   const c = recordingLog();
-  assert.equal(setupControl({ ...ON, CONTROL_BIND: "127.0.0.1" }, new CtlBus(), c.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), c.log).bind, "127.0.0.1");
   assert.deepEqual(c.msgs("warn"), []);
   const d = recordingLog();
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5", CONTROL_BIND: "127.0.0.1" }, new CtlBus(), d.log).bind, "192.168.1.5");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5" }, new CtlBus(), d.log).bind, "192.168.1.5");
   assert.equal(d.msgs("warn").length, 1);
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1", CONTROL_BIND: "0.0.0.0" }, new CtlBus(), recordingLog().log).bind, "::1");
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "  ", CONTROL_BIND: "10.0.0.2" }, new CtlBus(), recordingLog().log).bind, "10.0.0.2");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1" }, new CtlBus(), recordingLog().log).bind, "::1");
 });
 
 // @spec DASH-HOST-007
 test("a non-loopback full-surface address without CONTROL_ENABLED=1 fails startup naming DASHBOARD_HOST and CONTROL_ENABLED", () => {
-  for (const env of [{ DASHBOARD_HOST: "0.0.0.0" }, { CONTROL_BIND: "0.0.0.0" }, { DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }]) {
+  for (const env of [{ DASHBOARD_HOST: "0.0.0.0" }, { DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }]) {
     assert.throws(() => setupControl(env, new CtlBus(), recordingLog().log), (e: Error) => /DASHBOARD_HOST/.test(e.message) && /CONTROL_ENABLED/.test(e.message), JSON.stringify(env));
   }
   assert.doesNotThrow(() => setupControl({ DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), recordingLog().log));
@@ -223,4 +227,26 @@ test("a malformed % escape in the service id is a 404 like an unknown service, n
   }
   assert.deepEqual(t.calls, []);
   assert.deepEqual(t.rec.msgs("error"), []);
+});
+
+// @spec CTRL-STACK-001
+test("the dashboard's own ComposeRuntime runs docker compose in the workspace root, whatever directory the process started in", async () => {
+  const root = realpathSync(fileURLToPath(new URL("../../..", import.meta.url)));
+  const dir = mkdtempSync(join(tmpdir(), "cohost-fake-docker-"));
+  const out = join(dir, "cwd.txt");
+  const bin = join(dir, "docker");
+  writeFileSync(bin, `#!/bin/sh\npwd -P > "${out}"\n`);
+  chmodSync(bin, 0o755);
+  const before = { cwd: process.cwd(), bin: process.env.COHOST_DOCKER_BIN };
+  process.env.COHOST_DOCKER_BIN = bin;
+  process.chdir(join(root, "services", "dashboard")); // as `pnpm --filter` starts it
+  try {
+    const setup = setupControl(ON, new CtlBus(), recordingLog().log);
+    const r = await setup.control!.controller.restart("cortex");
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(readFileSync(out, "utf8").trim(), root);
+  } finally {
+    process.chdir(before.cwd);
+    if (before.bin === undefined) delete process.env.COHOST_DOCKER_BIN; else process.env.COHOST_DOCKER_BIN = before.bin;
+  }
 });

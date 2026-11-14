@@ -5,10 +5,6 @@ export type ControlConfig =
   | {
       enabled: true;
       token: string;
-      /** Address the dashboard listens on. */
-      bind: string;
-      /** True when bind was set explicitly (CONTROL_BIND), so the caller can warn if non-loopback. */
-      bindExplicit: boolean;
       advanced: boolean;
     };
 
@@ -25,11 +21,7 @@ export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): Control
   if (env.CONTROL_ENABLED !== "1") return { enabled: false };
   const token = env.CONTROL_TOKEN ?? "";
   if (token.trim() === "") throw new Error("CONTROL_ENABLED=1 requires CONTROL_TOKEN to be set to a non-empty secret");
-  const bind = env.CONTROL_BIND?.trim();
-  return {
-    enabled: true, token, bind: bind || LOOPBACK_BIND, bindExplicit: !!bind,
-    advanced: env.CONTROL_ADVANCED === "1",
-  };
+  return { enabled: true, token, advanced: env.CONTROL_ADVANCED === "1" };
 }
 
 /** Constant-time check of an `Authorization: Bearer <token>` header. */

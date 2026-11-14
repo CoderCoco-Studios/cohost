@@ -116,7 +116,7 @@ function rig(o: RigOpts = {}) {
     },
   });
   const done = runService<Bus>({
-    service: "discord", ...svc,
+    service: "connector-discord", ...svc,
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
     onShutdown: (fn) => { shutdown = fn; }, exit: (c) => { exits.push(c); },
   });
@@ -158,7 +158,7 @@ test("logs in with DISCORD_TOKEN, joins undeafened and unmuted with the three in
   ]);
   await waitFor(() => r.bus.lastHealth()?.state === "ready" && r.bus.lastHealth()?.deps["audio-out"] === "ok", "ready heartbeat");
   const hb = r.bus.lastHealth()!;
-  assert.equal(hb.service, "discord");
+  assert.equal(hb.service, "connector-discord");
   assert.equal(hb.mode, "live");
   assert.deepEqual(hb.deps, { discord: "ok", "audio-in": "ok", "audio-out": "ok" });
   assert.match(hb.detail ?? "", /dropped 0/);

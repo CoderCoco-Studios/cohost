@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { EVENT_TYPES } from "@cohost/bus";
@@ -79,4 +79,25 @@ test("the dashboard's entry file reaches runService and builds no bus or heartbe
 test("the entry check fails for an entry that builds its own bus, heartbeat or shutdown", () => {
   for (const code of ["const bus = new Bus('x');", "startHeartbeat(bus, spec);", "onShutdown(() => {});"]) assert.ok(OWN_BOOTSTRAP.test(code), code);
   assert.ok(!OWN_BOOTSTRAP.test("await runService({ service: 'chat', main });"));
+});
+
+/** Every `service: "<name>"` literal in the unit's `index.ts` and `health.ts` (comments removed). */
+const heartbeatNames = (id: string): string[] =>
+  ["index.ts", "health.ts"].flatMap((f) => {
+    const file = rootPath(`services/${id}/src/${f}`);
+    if (!existsSync(file)) return [];
+    const code = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    return [...code.matchAll(/\bservice:\s*"([^"]+)"/g)].map((m) => m[1]!);
+  });
+
+// @spec MOD-MAN-012
+test("for every unit with a Compose service, the name its healthcheck is given equals the service its heartbeat publishes", () => {
+  assert.ok(readdirSync(rootPath("services")).length > 0);
+  for (const u of units) {
+    const given = composeServices[u.composeName]?.build?.args?.SERVICE;
+    assert.equal(given, u.id, `${u.id}: its Compose service builds with SERVICE=${given}, which the healthcheck checks`);
+    const published = heartbeatNames(u.composeName);
+    assert.ok(published.length > 0, `${u.id}: no heartbeat service name found in its entry or health file`);
+    for (const name of published) assert.equal(name, given, `${u.id}: heartbeat service ${name} is not the name its healthcheck is given (${given})`);
+  }
 });

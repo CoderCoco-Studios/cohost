@@ -15,7 +15,7 @@ test("every unit carries config, uses, pause and test (inputs and observe)", () 
     assert.ok(Array.isArray(s.uses), `${s.id} uses`);
     assert.equal(typeof s.pause, "boolean", `${s.id} pause`);
     // a connector neither takes bus input nor publishes domain events (CONN-DISC-010), so the dashboard has nothing to feed or watch
-    if (s.id === "discord") { assert.deepEqual(s.test, { inputs: [], observe: [] }); continue; }
+    if (s.id === "connector-discord") { assert.deepEqual(s.test, { inputs: [], observe: [] }); continue; }
     assert.ok(Array.isArray(s.test.inputs) && s.test.inputs.length > 0, `${s.id} test.inputs`);
     assert.ok(Array.isArray(s.test.observe) && s.test.observe.length > 0, `${s.id} test.observe`);
   }
@@ -32,7 +32,7 @@ test("config sections are the declared ones and each is a path of ConfigSchema",
     affect: ["brain.affect", "cohost", "llm"],
     memory: ["brain.memory", "cohost", "llm"],
     cortex: ["brain.cortex", "brain.working_memory_events", "cohost", "llm"],
-    voice: ["voice"], mouth: ["mouth"], avatar: ["avatar"], discord: ["connections"],
+    voice: ["voice"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
   };
   for (const [id, config] of Object.entries(want)) assert.deepEqual(findService(id)!.config, config, id);
   for (const s of units) for (const sec of s.config) assert.ok(schemaAt(sec), `${s.id}: ${sec} is not a config path`);
@@ -57,13 +57,13 @@ test("test inputs and observed types are the declared ones and name registered b
     salience: ["chat.message", "speech.heard", "vision.summary"],
     affect: ["chat.message", "speech.heard", "vision.summary", "brain.say"],
     memory: ["chat.message", "memory.recall.request"],
-    cortex: ["attention.focus"], voice: ["brain.say"], mouth: ["brain.say"], avatar: ["brain.say", "affect.state"], discord: [],
+    cortex: ["attention.focus"], voice: ["brain.say"], mouth: ["brain.say"], avatar: ["brain.say", "affect.state"], "connector-discord": [],
   };
   const observe: Record<string, string[]> = {
     chat: ["chat.message", "inject.result"], eyes: ["vision.summary", "inject.result"], ears: ["speech.heard", "inject.result"],
     salience: ["attention.focus", "brain.say"], affect: ["affect.state"], memory: ["memory.recall.reply", "memory.viewer"],
     cortex: ["brain.status", "brain.say"], voice: ["voice.utterance", "voice.playing", "voice.done"],
-    mouth: ["voice.playing", "voice.done", "voice.failed"], avatar: ["avatar.state"], discord: [],
+    mouth: ["voice.playing", "voice.done", "voice.failed"], avatar: ["avatar.state"], "connector-discord": [],
   };
   const registered = new Set<string>(EVENT_TYPES);
   const barred = (t: string) => t === "service.heartbeat" || t === "service.lifecycle" || /^memory\.(notes|viewers)\./.test(t);

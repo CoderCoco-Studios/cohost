@@ -27,14 +27,14 @@ export interface ConnectorStatus {
 
 // @spec CONN-HLTH-001
 /**
- * Service `discord`: mode `live` (`off` when disabled) and deps `discord`, `audio-in`, `audio-out`: `discord` ok only while the
+ * Service `connector-discord`: mode `live` (`off` when disabled) and deps `discord`, `audio-in`, `audio-out`: `discord` ok only while the
  * voice connection is Ready, each audio dep ok while its capability is registered ready, down otherwise (`n/a` when disabled).
  */
 export function connectorHealth(plan: ConnectorPlan, s: ConnectorStatus): HeartbeatSpec {
   const dep = (ok: () => boolean) => (): "ok" | "down" | "n/a" => (plan === "off" ? "n/a" : plan === "run" && ok() ? "ok" : "down");
   const probes = { discord: dep(s.voiceReady), "audio-in": dep(s.audioIn), "audio-out": dep(s.audioOut) };
   return {
-    service: "discord",
+    service: "connector-discord", // the process name; the connector id and tag are `discord`
     mode: plan === "off" ? "off" : "live",
     deps: () => Object.fromEntries(Object.entries(probes).map(([k, f]) => [k, f()])),
   };

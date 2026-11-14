@@ -110,3 +110,11 @@ test("withContainerRestarts: no Docker, or a service with no container row, leav
   assert.deepEqual(withContainerRestarts(snap, status([{ service: "redis", status: "running", restartCount: 3 }])), snap);
   assert.deepEqual(withContainerRestarts(snap, status([{ service: "cortex", status: "restarting" }])).map((e) => e.state), ["crash-looping"]);
 });
+
+// @spec CTRL-HEALTH-010
+test("withContainerRestarts: the connector unit is matched to its Compose service, so a crash-looping connector with no heartbeat shows its count", () => {
+  const snap = new HealthTracker().snapshot().filter((e) => e.service === "connector-discord");
+  assert.equal(snap.length, 1, "the default known list carries the connector under its service name");
+  const out = withContainerRestarts(snap, status([{ service: "connector-discord", status: "restarting", restartCount: 3 }]));
+  assert.deepEqual(out.map((e) => [e.service, e.state, e.containerRestarts]), [["connector-discord", "crash-looping", 3]]);
+});

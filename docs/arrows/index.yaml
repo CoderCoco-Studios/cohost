@@ -60,7 +60,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "47 specs, all [x]. Open question: the `connector-discord` unit declares no test input, which obligation 3 of the module contract requires of every unit."
+    next: "47 specs, all [x]. Open question (LLD Open Questions 1): the `connector-discord` unit declares no test input, which obligation 3 requires of every unit; no existing input kind reaches it, so the choice among a new inject target, a new input kind and an exemption is the owner's."
     drift: null
 
 

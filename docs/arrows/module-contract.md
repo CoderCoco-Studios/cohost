@@ -44,4 +44,4 @@ None outstanding.
 - packages/control/test/manifest.test.ts, manifest-contract.test.ts, derived-lists.test.ts, needs.test.ts, independence.test.ts
 - packages/config/test/editor.test.ts
 - services/dashboard/test/settings.test.ts, page.test.ts, inject-event.test.ts, stack-rebuild.test.ts, unit-contract.test.ts, live-stack.e2e.test.ts
-- services/{affect,avatar,chat,cortex,ears,eyes,memory,mouth,salience,voice}/test/contract.test.ts; services/cortex/test/independence.test.ts; services/salience/test/independence.test.ts; services/memory/test/main.test.ts
+- services/{affect,avatar,chat,connector-discord,cortex,ears,eyes,memory,mouth,salience,voice}/test/contract.test.ts; services/cortex/test/independence.test.ts; services/salience/test/independence.test.ts; services/memory/test/main.test.ts

@@ -9,7 +9,7 @@ Status: built: the settings editor (MOD-CFG, MOD-UI), the manifest declarations 
 
 ## Context and Design Philosophy
 
-cohost has ten application services, and the owner operates each of them in the same few ways: change its settings, start, stop or restart it, see whether it is healthy, and feed it a test input without a live stream. Before this contract each of those was partly there and partly special-cased: settings were edited by hand only, the dashboard and the health tracker each kept a list of services by hand, pause existed on the bus with no button, and only three services took a test input from the page.
+cohost has eleven application services, and the owner operates each of them in the same few ways: change its settings, start, stop or restart it, see whether it is healthy, and feed it a test input without a live stream. Before this contract each of those was partly there and partly special-cased: settings were edited by hand only, the dashboard and the health tracker each kept a list of services by hand, pause existed on the bus with no button, and only three services took a test input from the page.
 
 The contract makes those four abilities obligations of every service, and makes the control plane's manifest the one place a service declares how it meets them. The dashboard and `cohostctl` read the declarations and need no per-service code.
 
@@ -67,6 +67,7 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | voice | `voice` | | no | `brain.say` | `voice.utterance`, `voice.playing`, `voice.done` |
 | mouth | `mouth` | voice | no | `brain.say` (through voice) | `voice.playing`, `voice.done`, `voice.failed` |
 | avatar | `avatar` | voice | no | `brain.say`, `affect.state` | `avatar.state` |
+| connector-discord | `connections` | | no | none declared (Open Questions 1) | none declared |
 
 The `dashboard` section is read by the dashboard itself, which is not a unit: it applies on the dashboard's next start.
 
@@ -195,7 +196,7 @@ An injected `brain.say` is a test input, not an operator `say`: it is published 
 
 ## Open Questions & Future Decisions
 
-None.
+1. **A test input for `connector-discord`.** Obligation 3 asks every unit for a declared test input the dashboard can inject with no platform account, and the connector unit declares none. The connector subscribes to no domain event (CONN-DISC-010), takes no `inject.request` and, under its isolation preset (`CONNECTIONS_DISCORD_ENABLED=false`), idles and registers nothing, so no existing input kind (`text`, `image`, `audio` to chat, eyes and ears; a bus event type through `POST /inject/event`) reaches it or shows its reaction. Options: (a) the connector takes `inject.request` with a new target and a kind that writes an injected clip to its sink path, which adds an `inject.request` target, a `kind` and a dashboard form, and needs a mode in which the isolated connector answers without a Discord session; (b) a new test-input kind that publishes a frame on `audio.in.discord` through the dashboard, which adds a bus write path and page UI and exercises ears' side, not the connector's; (c) amend obligation 3 so a connector unit is exempt. The owner chooses.
 
 ## References
 

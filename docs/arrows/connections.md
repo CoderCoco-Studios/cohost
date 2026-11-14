@@ -54,7 +54,7 @@ CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 a
 - packages/bus/test/{connector,native-api,native-integration,native-loops}.test.ts
 - crates/cohost-bus/tests/connection.rs
 - packages/shared/test/utterance.test.ts
-- services/connector-discord/test/connector.test.ts
+- services/connector-discord/test/connector.test.ts, services/connector-discord/test/contract.test.ts
 - services/ears/test/connector-source.test.ts, services/ears/test/service.test.ts
 - services/mouth/test/{connector-output,mouth,no-discord,playback,stop}.test.ts
 

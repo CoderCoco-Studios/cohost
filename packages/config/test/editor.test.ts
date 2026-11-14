@@ -66,7 +66,8 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 
 // @spec MOD-CFG-002
 test("exactly the marked keys are secret: SECRET_PATHS, each section's secrets and the schema marks agree", () => {
-  assert.ok(["llm.openai.api_key", "llm.claude.api_key"].every((p) => SECRET_PATHS.includes(p)));
+  assert.deepEqual([...SECRET_PATHS].sort(), ["ears.http.token", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password"]);
+  assert.deepEqual(sectionSecrets("ears"), ["http.token"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["claude.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("voice"), []);
   const marked: string[] = [];
@@ -108,6 +109,20 @@ test("a secret key reports only whether it is set, never its value or raw text",
   const literal = readSection(FIXTURE.replace('"${LLM_API_KEY}"', "sk-in-file"), "llm", ENV);
   assert.doesNotMatch(JSON.stringify(literal), /sk-in-file/);
   assert.deepEqual(literal.keys["openai.api_key"], { source: "literal", editable: false, secret: true, set: true });
+});
+
+// @spec MOD-CFG-002, MOD-CFG-005
+test("ears.http.token is reported only as set or not, and editing another ears key keeps its placeholder", () => {
+  const text = FIXTURE.replace("ears: {}", 'ears:\n  http:\n    port: 8765\n    token: "${EARS_HTTP_TOKEN:-}"');
+  const set = readSection(text, "ears", { ...ENV, EARS_HTTP_TOKEN: "tok-very-secret" });
+  assert.doesNotMatch(JSON.stringify(set), /tok-very-secret/);
+  assert.equal((set.keys["http.token"] as any).secret, true);
+  assert.equal((set.keys["http.token"] as any).set, true);
+  assert.equal((set.keys["http.token"] as any).editable, false);
+  const edited = ok(applySection(text, "ears", { "http.port": 9000 }, ENV));
+  assert.ok(edited.text.includes('token: "${EARS_HTTP_TOKEN:-}"'));
+  const refused = applySection(text, "ears", { "http.token": "x" }, ENV);
+  assert.equal(refused.ok, false);
 });
 
 // @spec MOD-CFG-006

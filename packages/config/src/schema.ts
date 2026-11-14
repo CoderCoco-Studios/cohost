@@ -17,7 +17,7 @@ const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.s
  * and a section's `secrets` list is derived from this one list.
  */
 // @spec MOD-CFG-002
-export const SECRET_PATHS: readonly string[] = ["llm.openai.api_key", "llm.claude.api_key", "vision.obs.password"];
+export const SECRET_PATHS: readonly string[] = ["llm.openai.api_key", "llm.claude.api_key", "vision.obs.password", "ears.http.token"];
 export const EMOTIONS = Emotion.options;
 
 /**

@@ -57,6 +57,7 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
   assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
+  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets, ["http.token"]);
   assert.ok(SECRET_PATHS.length >= 2);
 });
 

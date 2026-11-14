@@ -1,10 +1,10 @@
 # Arrow: shared-runtime
 
-The `@cohost/shared` package as a segment: the one implementation of each runtime concern more than one service needs (bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling (uploads read from Redis, SHARED-INJ-004 to SHARED-INJ-013), WAV and resampling, the Discord voice session, hash embedding).
+The `@cohost/shared` package as a segment: the one implementation of each runtime concern more than one service needs (bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling (uploads read from Redis, SHARED-INJ-004 to SHARED-INJ-013), WAV and resampling, the Discord voice session).
 
 ## Status
 
-**BUILT**, 2026-11-11 (gap-closure chunk C1): every spec is `[x]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, and (at the `discord-voice` subpath) `createDiscordVoiceSession`. The lifecycle helpers left the bus package; salience, cortex and affect read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; ears and mouth hold their voice connection through the session. Not yet adopted, left to the service chunks: `runService` and `startIdle` in each service's entry file.
+**AUDITED**. Spec file: 74 specs, 74 `[x]`, 0 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, and (at the `discord-voice` subpath) `createDiscordVoiceSession`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
 
 ## Spec Coverage
 
@@ -20,11 +20,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Discord voice session | SHARED-DVS-001 to SHARED-DVS-007 | 7 | 0 | 0 | 7 |
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |
 
-**Summary:** 74 of 74 specs implemented; 0 deferred; 0 open. 74 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
-
-## Work required
-
-1. Service chunks (C5 to C11) move each service's entry onto `runService` and `startIdle` ([gap-closure dispositions](../plans/gap-closure-dispositions.md)).
+**Summary:** 74 of 74 specs `[x]`; 0 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## References
 
@@ -35,7 +31,11 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (72 specs: 72 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (74 specs: 74 `[x]`, 0 `[ ]`, 0 `[D]`)
 
-### Code
-- packages/shared/src/{index,boot,lifecycle,retry,idle,control,inject,audio,discord-voice}.ts
+### Tests (files carrying `@spec SHARED-` annotations)
+- packages/shared/test/: audio, boot, boundary, control-routing, control, discord-voice, idle, inject-handler, lifecycle, retry, shutdown, wav (`*.test.ts`)
+- services/chat/test/inject.test.ts, services/ears/test/audio.test.ts, services/ears/test/inject.test.ts, services/eyes/test/inject.test.ts
+
+### Code (files carrying `@spec SHARED-` annotations)
+- packages/shared/src/: audio.ts, boot.ts, control.ts, discord-voice.ts, idle.ts, inject.ts, lifecycle.ts, retry.ts

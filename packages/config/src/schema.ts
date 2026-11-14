@@ -113,7 +113,7 @@ export const ConfigSchema = z.object({
     interval_ms: z.number().int().positive().default(8000),
     /** Describe-call (VLM request) timeout. */
     timeout_ms: z.number().int().positive().default(30000),
-    /** Timeout for fetching an injected upload from the dashboard. */
+    /** Timeout for reading an injected upload from Redis. */
     upload_timeout_ms: z.number().int().positive().default(10000),
     /** Largest injected image accepted (the dashboard's default image upload cap, 8 MiB). */
     upload_max_bytes: z.number().int().positive().default(8388608),
@@ -409,7 +409,7 @@ export const ConfigSchema = z.object({
     }).default({}),
   }).default({}),
   dashboard: z.object({
-    port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT environment variable is unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
+    port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT and DASHBOARD_PORT environment variables are both unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
   }),
 });
 

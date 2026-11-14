@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-12
+last_updated: 2026-11-14
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -43,24 +43,24 @@ arrows:
     status: AUDITED
     parent: null
     sampled: 2026-11-11
-    audited: 2026-11-11
-    audited_sha: 458f98f
-    blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract]
+    audited: 2026-11-14
+    audited_sha: cb06bf3
+    blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "native bus transport: SHARED-BOOT-005, 006 and SHARED-LIFE-001, 004 verified [x] at 4319d8d (shutdown awaits the async Bus.stop()); 74 specs, 74 [x]. Gap closure built (C1); all 74 specs were [x] (SHARED-INJ-013, uploads read from Redis). Every service runs on runService and the shared modules. No open gaps."
+    next: "74 specs, all [x]. No open gaps."
     drift: null
 
   module-contract:
     status: AUDITED
     parent: null
     sampled: 2026-11-11
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "46 of 46 specs [x]. Built: the manifest declarations and derived lists, every unit on runService (MOD-MAN-009), the settings editor, needs, pause, the test drawer and POST /inject/event. MOD-TEST-007 passed against the isolated stack under Docker (live-stack.e2e.test.ts)."
+    next: "46 specs, all [x]. Open question: the `discord` unit declares no test input, which obligation 3 of the module contract requires of every unit."
     drift: null
 
 
@@ -68,12 +68,12 @@ arrows:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "all 80 specs [x]; CFG-SCH-034 (`brain.salience.trigger_on_speech`) built; gap closure built (C3, C10, the voice Kokoro knobs CFG-SCH-029, the stub-engine placeholders CFG-SCH-021 to 023, CFG-ISO-004). The shipped example and .env.example agree with README; notes hooks follow llm.provider mock (MEM-NOTE-012, memory). No open gaps. Barge-in: CFG-SCH-035 and 036 (barge-in and echo keys) built."
+    next: "82 specs, all [x]. No open gaps."
     drift: null
 
   event-bus:
@@ -81,213 +81,215 @@ arrows:
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
-    audited_sha: 4319d8d
-    blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
+    audited_sha: cb06bf3
+    blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "native transport closed out at 4319d8d: 165 specs, 150 [x], 15 [ ]. Events path on the Rust addon, frames path TypeScript on ioredis (HLD tenet 12); events-path gate passed (events x8 medians TS 11.26% / 4.53 ms vs native 9.86% / 2.29 ms). Open, each implemented or procedural but without an annotated test: BUS-NAT-TRN-011, ERR-006 (no test calls testPanic), FRM-008 (BUS_REDIS half untested), RS-002, RS-009, BLD-002, BLD-004, BLD-005, BLD-006, CI-002, GATE-001, 004, 005, 006, 007. Cross-segment still [ ]: deployment DEPLOY-CI-001, CI-002, CI-007, INST-007, INST-014 (CI and installer behaviour)."
+    next: "165 specs: 150 [x], 10 [ ], 5 [D]. Open, each built but without an annotated test: BUS-NAT-TRN-011, ERR-006, FRM-008, RS-002, BLD-002, BLD-004, BLD-005, BLD-006, CI-002, GATE-007. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009. To review: BUS-NAT-ACK-003 when the read in the same pipeline also fails."
     drift: null
 
   model-backends:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "all 52 specs [x]; gap closure built (C11). No open gaps. Manual verification: Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
+    next: "52 specs, all [x]. No open gaps. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
     drift: null
 
   region-hooks:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
-    blocks: [salience, affect, cortex]
+    audited: 2026-11-14
+    audited_sha: cb06bf3
+    blocks: [salience, affect, cortex, memory]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "all 51 specs [x]; gap closure built (C11): cool-off after repeated failures, provider ping, hook reply schemas. No open gaps."
+    next: "51 specs, all [x]. No open gaps."
     drift: null
 
   working-memory:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "all 37 specs [x]; gap closure built (C10). No open gaps. Barge-in: WM-STACK-001 deferred (interrupted-thought stack)."
+    next: "41 specs: 40 [x], 1 [D] (WM-STACK-001, the interrupted-thought stack). No open gaps."
     drift: null
 
   chat:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "all 45 specs [x]; gap closure built (C9): refreshed tokens persisted (CHAT-TW-011/012; chat's ./data/chat is a Compose mount, DEPLOY-COMPOSE-022), shared idle plan, runService. No open gaps. Manual verification: the authenticated Twitch path."
+    next: "45 specs, all [x]. No open gaps. Manual verification: the authenticated Twitch path."
     drift: null
 
   eyes:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "all 41 specs [x]; gap closure built (C9): stub describer, injection through the shared handler, OBS backoff, vision.* keys. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/TESTING.md, OBS requirements)."
+    next: "44 specs, all [x]. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/TESTING.md)."
     drift: null
 
   connections:
     status: PARTIAL
     parent: null
     sampled: 2026-11-12
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "native bus transport: CONN-AUD-002 verified [x] at 4319d8d (publishFrame rejects an oversized or odd-length pcm with BUS_INVALID; the TypeScript frame codec of @cohost/bus, no Rust copy in crates/cohost-bus until a Rust connector needs one); 48 specs, 46 [x], 1 [ ] (CONN-DESK-001), 1 [D]. Protocol library, services/connector-discord, ears' connector source and mouth's connector sink built: 39 of 41 specs [x] (1 gap, 1 deferred). Next: the desktop helper (CONN-DESK-001, EARS-SRC-014, 015), then live verification against a real guild (docs/arrows/connections.md, Build order). Barge-in: flush specs CONN-AUD-006 and 007, CONN-FLUSH-001 to 004 and CONN-DISC-012 built."
+    next: "48 specs: 46 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). To review: a flush that arrives after a line's last frame (CONN-FLUSH-002, CONN-DISC-012). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
     drift: null
 
   ears:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "consumes connector sources and holds no Discord client (EARS-CON-*, connections); the per-service Discord client and its specs are removed. 56 of 59 specs [x]; open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001); 1 deferred (EARS-SRC-016). Manual verification: the Discord connector against real Discord (docs/TESTING.md). Barge-in: echo gate specs EARS-ECHO-001 to 009 and EARS-INJ-012 (injected clip source tag) built."
+    next: "93 specs: 89 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   salience:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "66 of 67 specs [x]; gap closure built (C10); the event-driven speech trigger is built (SAL-TRIG-001 to SAL-TRIG-009); SAL-TRIG-010 [D] (re-evaluate at cooldown or valve expiry). No open gaps. Barge-in: barge-in specs SAL-BARGE-001 to 011 built."
+    next: "78 specs: 77 [x], 1 [D] (SAL-TRIG-010, re-evaluate at cooldown or valve expiry). No open gaps."
     drift: null
 
   affect:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "all 39 specs [x]; gap closure built (C10). No open gaps."
+    next: "39 specs, all [x]. No open gaps."
     drift: null
 
   memory:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
-    blockedBy: [config, event-bus, model-backends]
+    blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "all 126 specs [x]; gap closure built (C8), voice speakers get viewer notes (MEM-VOICE), the entry runs on runService (main.ts) and the notes hooks follow llm.provider mock (MEM-NOTE-012, so an isolated run reaches no model server). No open gaps."
+    next: "126 specs, all [x]. No open gaps."
     drift: null
 
   cortex:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "all 78 specs [x]; gap closure built (C10); operator `say` passes its `route` on (CTX-CTRL-007). No open gaps. Barge-in: CTX-EVT-010, CTX-GATE-010 and 011 built; CTX-REPLAN-001 deferred."
+    next: "86 specs: 85 [x], 1 [D] (CTX-REPLAN-001). No open gaps."
     drift: null
 
   voice:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "all 57 specs [x]; per-line `route` passed through (VOICE-UTT-004); gap closure built (C5), Kokoro tuning knobs and the 1.05 speed default built (VOICE-SYN-009). No open gaps. Barge-in: barge-in specs VOICE-STOP-001 to 008 built; VOICE-CHUNK-001 and 002 deferred."
+    next: "67 specs: 65 [x], 2 [D] (VOICE-CHUNK-001, 002). To review: a `voice.stop` that arrives while the `voice.utterance` or virtual `voice.playing` publish is pending (VOICE-STOP-002, 004, 005, 006)."
     drift: null
 
   mouth:
     status: AUDITED
     parent: null
     sampled: 2026-11-10
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "the `discord` output is a connector sink written with the paced frame writer (MOUTH-CONN-*, connections) and mouth holds no Discord client; the per-service Discord specs are removed. All 73 specs [x]. No open gaps. Manual verification: the Discord connector against real Discord (docs/TESTING.md). Barge-in: barge-in specs MOUTH-STOP-001 to 010 built; MOUTH-POS-001 deferred."
+    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). To review: MOUTH-PLAY-007 names a player error mouth cannot observe. Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   avatar:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "62 specs, 62 [x]: AVATAR-BUS-008 and AVATAR-STATE-002 (verified at 4319d8d) reworded to the native bus transport's outage behaviour (publish rejects at once while Redis is down; only group creation rejects the subscription). Gap closure built (C10), the engine timer unref'd (AVATAR-ENG-018). Manual verification: VTube Studio against the real app."
+    next: "62 specs, all [x]. No open gaps. Manual verification: VTube Studio against the real app."
     drift: null
 
   dashboard:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "117 of 118 specs [x] (open: DASH-INJ-009, an optional source tag on injected speech so barge-in can be exercised from the test drawer); the entry on runService (DASH-HTTP-016); say box route field (DASH-UI-023, DASH-HTTP-017); uploads stored in Redis, no /uploads route (DASH-INJ-005, DASH-UPL-*); host-run dashboard with the Settings tab, the test drawer, pause buttons and POST /inject/event; a blocked autoplay posts done and keeps the queue (DASH-UI-022). Owner-deferred: visual redesign."
+    next: "118 specs, all [x]. No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "native bus transport: CTRL-CHECK-004 (serverTime test on a BusTransport fake) and CTRL-CLI-017 (BUS_CONNECTION code and message) verified [x] at 4319d8d; 86 specs, 84 [x], 2 [D]. Earlier: 72 of 72 specs [x] (CTRL-HEALTH-011: seeded receive times may be negative, fixing `cohostctl status` reporting every service degraded 0s ago; CTRL-CLI-017: one-line unreachable-Redis error via Bus failFast; CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
+    next: "86 specs: 84 [x], 2 [D]. To review: the Discord connector's heartbeat name differs from its Compose service name, so its container healthcheck and restart-count overlay find no entry (CTRL-CHECK-003, CTRL-HEALTH-010)."
     drift: null
 
   deployment:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: cb06bf3
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "native bus transport: DEPLOY-IMG-001, DEPLOY-IMG-004 and DEPLOY-CI-006 [x]; DEPLOY-CI-001, 002, 007, DEPLOY-INST-007, 014 stay [ ] until observed in CI and on an installer run (Rust native stage via plain cargo build, .node and target out of the context, Rust toolchain and cargo checks in CI with a 20 min timeout, lid-check reads Rust files, installer installs rustup and builds the addon); 81 specs, 76 [x], 5 [ ]. Earlier: 79 of 79 specs [x]. DEPLOY-CI-007 was [x]: CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "81 specs: 79 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

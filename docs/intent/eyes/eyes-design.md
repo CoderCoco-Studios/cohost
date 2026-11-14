@@ -5,7 +5,7 @@ prefix: EYES
 
 # eyes
 
-Segment `eyes` (`services/eyes`, package `@cohost/eyes`). Mapped 2026-10-31 at git `686cc8f`; audited 2026-11-02 at `1b57790` with the owner's decisions of 2026-11-01 applied. Describes the implemented behaviour.
+Segment `eyes` (`services/eyes`, package `@cohost/eyes`). Describes the implemented behaviour.
 
 ## Context and Design Philosophy
 
@@ -14,9 +14,9 @@ Segment `eyes` (`services/eyes`, package `@cohost/eyes`). Mapped 2026-10-31 at g
 Design stance (evidence per bullet):
 
 - Change detection is delegated to the model. The prompt (`vision.prompt`) tells it to reply exactly `SAME` when nothing meaningful changed; the service parses only a clear `SAME` (`isSame`, `eyes.ts`). There is no pixel or embedding diff. "Meaningful" is a judgement about the game, not about pixels, and the model is already looking at the frame to describe it.
-- Disabled by default and fully inert when disabled: no OBS connection, no model calls from the loop (`startEyes`, `eyes.ts`; `service.ts`). The service still starts, heartbeats `off`, and still handles image injection. Evidence: commit 463b1bb (fixes #11, eyes connected to OBS while disabled); commit 51d5a9c; add-isolated-backends design D7.
-- Logic is separated from I/O by dependency injection: `Eyes` takes `screenshot`, `describe` and a monotonic clock, `startEyes` takes `connect` and `loop`, the inject handler takes `fetch`, `describe`, `now`, and `eyesService(deps)` (`service.ts`) takes the OBS client, so a test runs the whole service through `runService` with a fake OBS and no Redis. `index.ts` only builds the real OBS client and calls `runService`.
-- One shared `describe` function serves both the polling loop and injected images, and it is wrapped by health tracking (`service.ts`). Evidence: add-test-injection design D8 ("call the same `describe(b64, \"\")`") and the `describe` doc comment in `inject.ts` ("Same describer `Eyes.look()` uses").
+- Disabled by default and fully inert when disabled: no OBS connection, no model calls from the loop (`startEyes`, `eyes.ts`; `service.ts`). The service still starts, heartbeats `off`, and still handles image injection. Evidence: commit 463b1bb (fixes #11, eyes connected to OBS while disabled); commit 51d5a9c.
+- Logic is separated from I/O by dependency injection: `Eyes` takes `screenshot`, `describe` and a monotonic clock, `startEyes` takes `connect` and `loop`, the inject handler takes `bus` (for `takeUpload`), `describe`, `now`, and `eyesService(deps)` (`service.ts`) takes the OBS client, so a test runs the whole service through `runService` with a fake OBS and no Redis. `index.ts` only builds the real OBS client and calls `runService`.
+- One shared `describe` function serves both the polling loop and injected images, and it is wrapped by health tracking (`service.ts`). Evidence: the `describe` doc comment in `inject.ts` ("Same describer `Eyes.look()` uses").
 
 ## Startup and Gating
 
@@ -43,7 +43,7 @@ Config read: `vision.enabled` (default false; env `VISION_ENABLED`), `vision.mod
 2. A thrown error is warned as `look failed`; if `!obs.identified` it awaits `link.connect()`.
 3. Sleep `nextDelay(interval_ms, elapsed)` = `max(500, interval_ms - elapsed)`, with `elapsed` on a monotonic clock (`performance.now`, injectable for tests).
 
-Any OBS close, clean or not, re-enters the link's `connect()` and the loop resumes looking (EYES-OBS-004): the link listens for `ConnectionClosed` and starts a connect loop unless one is already running (a failed connect attempt emits `ConnectionClosed` too, and the running loop already owns that case) or the link was stopped (shutdown closes the socket, which must not reconnect). obs-websocket-js 5.0.8 has no reconnect of its own: its close handler emits `ConnectionClosed` and then clears `identified` (`obs-websocket-js/dist/chunk-MVPOL3ZW.js:341-346`, `:186`). The loop also calls `link.connect()` from its `catch` when a look throws while OBS is no longer identified (EYES-OBS-005); the shared loop makes that call harmless beside the close handler.
+Any OBS close, clean or not, re-enters the link's `connect()` and the loop resumes looking (EYES-OBS-004): the link listens for `ConnectionClosed` and starts a connect loop unless one is already running (a failed connect attempt emits `ConnectionClosed` too, and the running loop already owns that case) or the link was stopped (shutdown closes the socket, which must not reconnect). obs-websocket-js 5.0.8 has no reconnect of its own: its close handler emits `ConnectionClosed` and then clears `identified` (`obs-websocket-js/dist/chunk-MVPOL3ZW.js`). The loop also calls `link.connect()` from its `catch` when a look throws while OBS is no longer identified (EYES-OBS-005); the shared loop makes that call harmless beside the close handler.
 
 ### `Eyes.look()` (`eyes.ts`)
 
@@ -66,7 +66,7 @@ Any OBS close, clean or not, re-enters the link's `connect()` and the loop resum
 7. Publishes `vision.summary {text, changed:true, injected:true, remember}` then `inject.result {ok:true, detail:text}`.
 8. Any throw becomes `ok:false` with `String(err)`; a failure to publish that is swallowed.
 
-`INJECT_STALE_MS` and the upload read live in `@cohost/shared` (`packages/shared/src/inject.ts`) and are used by eyes, ears and chat (SHARED-INJ-008). This LLD owns them as inject plumbing: the shared package is a home for small helpers that more than one service needs, not an arrow segment, so a change to either is a change to this section and SHARED-INJ-004 to SHARED-INJ-013, cascading to the ears and chat LLDs, which only cite them. The upload write belongs to `dashboard`; the `inject.*` schemas and the `putUpload`/`takeUpload` Redis calls to `event-bus`.
+`INJECT_STALE_MS` and the upload read live in `@cohost/shared` (`packages/shared/src/inject.ts`) and are applied by the shared inject handler that eyes, ears and chat use (SHARED-INJ-008). This LLD owns them as inject plumbing: the shared package is a home for small helpers that more than one service needs, not an arrow segment, so a change to either is a change to this section and SHARED-INJ-004 to SHARED-INJ-013, cascading to the ears and chat LLDs, which only cite them. The upload write belongs to `dashboard`; the `inject.*` schemas and the `putUpload`/`takeUpload` Redis calls to `event-bus`.
 
 ## Health (`health.ts`)
 
@@ -92,10 +92,10 @@ Where `vision.engine` is `stub` (CFG-SCH-021; the isolation preset sets it; owne
 |----------|--------|------------------------|-----------|
 | Change detection | Ask the model to answer `SAME` (`vision.prompt`; `isSame`, `eyes.ts`) | Pixel/perceptual diff; embedding distance | A game frame changes in pixels almost every interval (animation, HUD, camera), so a pixel or perceptual diff fires on noise, and an embedding distance needs a second model and a tuned threshold. The vision model already sees the frame and the previous description, so it can judge "meaningful" in the same call, and the service stays a few lines of parsing. The cost is one model call every interval even when nothing changed. |
 | Bus payload | One-line text summary, not frames | Publish images | Header comment of `service.ts`: "Summaries, not frames, go on the bus: cheap and what the brain actually wants." |
-| Idle when disabled | `startEyes` gate; service stays up with mode `off` (`startEyes`, `eyes.ts`; the idle plan, `service.ts`) | Exit; connect to OBS anyway (old behaviour) | A disabled service must not touch OBS (commit 463b1bb, fixes #11) and must stay up rather than look like a crash (commit 51d5a9c; add-isolated-backends design D7: "the OBS connect loop never starts; process idles"). |
+| Idle when disabled | `startEyes` gate; service stays up with mode `off` (`startEyes`, `eyes.ts`; the idle plan, `service.ts`) | Exit; connect to OBS anyway (old behaviour) | A disabled service must not touch OBS (commit 463b1bb, fixes #11) and must stay up rather than look like a crash (commit 51d5a9c). |
 | OBS retry | `retryWithBackoff`: 10 s doubling to a 60 s cap in `createObsLink` (EYES-OBS-002) | A fixed 10 s retry (the original); give up after N attempts | Owner disposition 2026-11-11: shared backoff. OBS is often started after the stack or restarted mid-session, so eyes must keep trying and recover on its own; giving up would leave a disabled sense that only a restart fixes, against the degrade-and-report posture (heartbeat `degraded`, `obs: down`, EYES-HEALTH-006). The cap keeps the gap before eyes sees again once OBS is back to a minute at most. |
 | Reconnect trigger | Reconnect on any `ConnectionClosed`, clean or not (EYES-OBS-004) | Reconnect only after a failed look (the original code, which the `obs.identified` guard in the loop never reaches) | Owner decision 2026-11-01: OBS restarts and clean closes must not leave eyes polling forever with `obs: down`; obs-websocket-js 5.0.8 has no reconnect of its own. |
-| Boot health while OBS is unreachable | `degraded` with `obs: down` (EYES-HEALTH-006) | Stay `starting` until the first connect (the original code) | Owner decision 2026-11-01 (project-wide): heartbeat deps reflect runtime state; a sense waiting on its backend is visibly degraded. add-isolated-backends also said SHOULD. |
+| Boot health while OBS is unreachable | `degraded` with `obs: down` (EYES-HEALTH-006) | Stay `starting` until the first connect (the original code) | Owner decision 2026-11-01 (project-wide): heartbeat deps reflect runtime state; a sense waiting on its backend is visibly degraded. |
 | Shared describer health | One tracked describer for the loop and injection; an injected failure marks `ollama` down (EYES-HEALTH-003) | Separate tracking for injection | Owner decision 2026-11-01: both paths use the same backend, so one dependency status is accurate. |
 | `changed` field | Always `true`; eyes publishes only changes (EYES-LOOK-001) | Publish every look with `changed: false`; drop the field | Owner decision 2026-11-01: keep the field and state the always-true contract. |
 | Shutdown | One shutdown sequence in both plans (EYES-ENAB-005, EYES-OBS-008) | One `onShutdown` per plan branch (the original code) | Owner decision 2026-11-01 (project-wide): the bus runs every registered callback and exits once, so a second registration must not cut the first short. |
@@ -108,9 +108,9 @@ Where `vision.engine` is `stub` (CFG-SCH-021; the isolation preset sets it; owne
 | Latency stamps | Epoch-millisecond `capturedAt` and `describedAt` on `vision.summary` (EYES-LOOK-006); durations in logs stay on the monotonic clock | Monotonic stamps; stamp only on publish | Stamps are joined across services by `cohostctl latency`, which needs a clock every service shares (HLD, Vision-path latency); a monotonic reading is private to one process. Looks that end as `SAME` publish nothing and so carry no stamp, which is why their describe time is logged (EYES-LOOK-007). Injected images are not frames from the source and carry no stamps (EYES-INJ-017). |
 | Idle when disabled, reporting | The shared idle plan, kind `off` (SHARED-IDLE-001): one warning, no reminder | A warning on a repeating timer (the original) | Owner disposition 2026-11-11: a configured-off service is not an error; one warning at startup says why, and the heartbeat (mode `off`) says it afterwards. |
 | Stub describer | `vision.engine: stub` selects fixed text, mode `mock` (EYES-STUB-*) | A mock provider behind `@cohost/llm` | Isolated runs must not need a vision model; the stub also keeps the OBS path exercisable. The text is deterministic (`stub vision: <n> bytes`, then `SAME`), so a test can assert it. |
-| Injection reuses `describe` | Same tracked describer, empty previous (`service.ts`, `inject.ts`) | Separate describer; pass `Eyes.previous` | Keeps change tracking untouched and exercises the real model path: doc comment `inject.ts:39-41`; add-test-injection design D8 ("previous = \"\" so injection neither sees SAME nor disturbs the change-tracking `previous`"). |
-| Upload transport | The upload is read from Redis by id (`Bus.takeUpload`); the event carries no URL | Fetch a URL from the dashboard's listener and document the firewall rule; base64 in the event | No URL means no fetch to guard: the bus can no longer make eyes request an arbitrary address, and nothing on the host has to be reachable from the container (dashboard decision on upload transport). |
-| Shared inject helpers | `INJECT_STALE_MS` and the upload read in the `@cohost/shared` workspace package, used by eyes, ears and chat (SHARED-INJ-008) | A copy in each service (the original arrangement); a helper exported from eyes and imported by ears | Owner decision of 2026-11-08: code shared across modules or services belongs in shared packages. One definition means the staleness window and the upload read cannot drift between services. A service importing a sibling service's source would couple deployables; a package keeps the dependency direction service to package. |
+| Injection reuses `describe` | Same tracked describer, empty previous (`service.ts`, `inject.ts`) | Separate describer; pass `Eyes.previous` | Keeps change tracking untouched and exercises the real model path: doc comment in `inject.ts`. |
+| Upload transport | The upload is read from Redis by id (`Bus.takeUpload`); the event carries no URL | Fetch a URL from the dashboard's listener and document the firewall rule; base64 in the event | No URL means no fetch to guard: the bus cannot make eyes request an arbitrary address, and nothing on the host has to be reachable from the container (dashboard decision on upload transport). |
+| Shared inject helpers | `INJECT_STALE_MS` and the upload read in the `@cohost/shared` workspace package, used through the shared inject handler by eyes, ears and chat (SHARED-INJ-008) | A copy in each service (the original arrangement); a helper exported from eyes and imported by ears | Owner decision of 2026-11-08: code shared across modules or services belongs in shared packages. One definition means the staleness window and the upload read cannot drift between services. A service importing a sibling service's source would couple deployables; a package keeps the dependency direction service to package. |
 
 ## Open Questions & Future Decisions
 
@@ -122,7 +122,7 @@ None open.
 - `services/eyes/src/index.ts`, `service.ts`, `eyes.ts`, `health.ts`, `inject.ts`, `obs.ts`
 - `services/eyes/test/eyes.test.ts`, `health.test.ts`, `inject.test.ts`, `obs.test.ts`, `service.test.ts`
 - `services/eyes/package.json`, `services/eyes/tsconfig.json`
-- `packages/shared/src/inject.ts`, `packages/shared/test/inject.test.ts` (shared inject helpers)
+- `packages/shared/src/inject.ts`, `packages/shared/test/inject-handler.test.ts` (shared inject helpers)
 
 ### Other segments
 - `event-bus` (depends on): `Bus`, `vision.summary`, `inject.request`/`inject.result`.
@@ -130,22 +130,14 @@ None open.
 - `shared-runtime` (depends on): `runService`, `startIdle`, `retryWithBackoff`, the inject handler, `tracked`, `HeartbeatSpec`.
 - `model-backends` (depends on): the `ollama` `ChatProvider` of `@cohost/llm`, with `ChatMessage.images` (LLM-VIS-001).
 - `dashboard` (called by): stores the upload in Redis, publishes `inject.request`, shows `inject.result`.
-- `ears` (sibling): imports `INJECT_STALE_MS` and the shared inject handler from `@cohost/shared`; `chat` imports `INJECT_STALE_MS`.
-- `@cohost/shared` (depends on, workspace package): `createInjectHandler`, `INJECT_STALE_MS`; see Test Injection.
-- `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/main.ts:38`, `services/affect/src/main.ts:36`).
-- `deployment`: compose service `eyes`, profile `eyes` (`docker-compose.yml:145-148`).
+- `ears` and `chat` (siblings): use the shared inject handler from `@cohost/shared`.
+- `@cohost/shared` (depends on, workspace package): `createInjectHandler`, `subscribeInject`, `INJECT_STALE_MS`; see Test Injection.
+- `salience`, `affect` (consumed by): subscribe to `vision.summary` (`services/salience/src/main.ts`, `services/affect/src/main.ts`).
+- `deployment`: compose service `eyes`, profile `eyes` (`docker-compose.yml`).
 
 ### External
 - `obs-websocket-js` (`^5.0.6`), OBS 28+ obs-websocket v5 (`GetSourceScreenshot`).
-- Ollama `/api/chat` with a vision model (`VISION_MODEL`, e.g. `qwen2.5vl:3b` in `.env.example:13`).
-
-### OpenSpec
-- `openspec/specs/eyes/spec.md`
-- `openspec/changes/archive/2026-11-01-add-isolated-backends/design.md` ("add-isolated-backends design", D7 cited above)
-- `openspec/changes/archive/2026-11-01-add-test-injection/design.md` ("add-test-injection design", D2 and D8 cited above)
-- `openspec/changes/archive/2026-11-01-add-service-health/specs/eyes/spec.md`
-- `openspec/changes/archive/2026-11-01-add-isolated-backends/specs/eyes/spec.md`
-- `openspec/changes/archive/2026-11-01-add-test-injection/specs/eyes/spec.md`
+- Ollama `/api/chat` with a vision model (`VISION_MODEL`, e.g. `qwen2.5vl:3b` in `.env.example`).
 
 ### Docs
 - [HLD](../../high-level-design.md), [specs](eyes-specs.md), [arrow](../../arrows/eyes.md)

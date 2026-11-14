@@ -190,12 +190,13 @@ code keeps the seams they need.
   one. A future goal is to hold lines while the streamer is mid-clutch.
 - **Typing in chat.** The chat sense is read-only today. A future body output
   beside `voice` will post the co-host's lines to chat; the optional Twitch
-  user credentials in `services/chat/src/index.ts:4-6` stay for it.
+  user credentials read in `services/chat/src/service.ts` stay for it.
 - **More audio sources and outputs.** ears listens to several audio sources
   at once (for example Discord voice together with desktop audio, which a small capture helper on the host serves as a connector, shipping its clips to ears' HTTP capture endpoint until they move onto an audio stream),
   each clip tagged with the source it came from; a local microphone is a
-  further source behind the same contract. mouth speaks only into Discord
-  (the dashboard page is a separate sink). The owner's direction is to route
+  further source behind the same contract. mouth speaks into Discord through
+  the connector and can also write each line to a file or post it to an HTTP
+  endpoint (the dashboard page is a separate sink). The owner's direction is to route
   the co-host's voice to more outputs (a local audio device, a virtual
   cable). The seams exist: ears' list of enabled sources and mouth's
   `mouth.outputs` table, where each output is a sink in voice's arbitration
@@ -357,7 +358,7 @@ flowchart LR
 | --- | --- | --- |
 | platform | event-bus | Typed Redis Streams bus; 25 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML + env config schema and loader; personality / expressions files |
-| platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock |
+| platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock, and a mock |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
 | platform | working-memory | Rolling window of recent events rendered as a prompt transcript |
 | platform | connections | The connector protocol (registration, heartbeat, source and sink tags, `audio.in` / `audio.out` streams, loss policy) and the Discord connector: the one bot login and voice connection |
@@ -506,7 +507,7 @@ direction.
   A sink that cannot play a line reports `voice.failed`; a mouth output then says a
   pre-generated fallback line under the same id (claiming it with
   `voice.playing` and releasing cortex with `voice.done`), and when nothing
-  plays voice releases cortex as soon as the claim window closes (gap).
+  plays voice releases cortex as soon as the claim window closes.
   Sinks inside Compose fetch audio from `http://voice:8700`; the host-run
   dashboard fetches it from voice's port published on the host's loopback
   address, and every browser or player (on the host or another
@@ -519,8 +520,9 @@ direction.
   Audio is live only: producers never wait, consumers start at the end of the
   stream, loss is counted and shown in health. A connector that is down turns
   the dependencies that use its tags `down` and nothing else.
-- **Region hooks.** salience.scorer, affect.appraiser, cortex.critic each run
-  as rules / llm / http per config, falling back to rules on any failure.
+- **Region hooks.** salience.scorer, affect.appraiser, cortex.critic,
+  memory.capture and memory.consolidator each run as rules / llm / http per
+  config, falling back to rules on any failure.
 - **Service health and control.** Every service publishes `service.heartbeat`
   to `cohost:health`; the control plane derives up / degraded / stale / down /
   crash-looping and the dashboard shows it. Start / stop / restart go through
@@ -533,7 +535,7 @@ direction.
   let the dashboard feed synthetic chat, screenshots, or audio into a sense;
   mock / stub / fake / off backends let any service run on Redis alone.
 - **Transcript contract.** working-memory owns the `[chat]` / `[voice]` /
-  `[screen]` transcript tags; model-backends mirrors them as LLM stop strings.
+  `[screen]` transcript tags; model-backends derives its LLM stop strings from them.
   The stops save tokens rather than guard correctness (cortex keeps only the
   first line of a reply), the co-host's own line is not a stop, and a
   cortex-level test checks the rendered tags against the stop list.
@@ -697,7 +699,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Where the dashboard runs | A standalone host process the owner starts first (`pnpm dashboard`); its Launch button runs the Compose stack, which no longer contains a dashboard service; it reaches Redis and voice on the host's loopback ports and drives Compose with the host's `docker` CLI | The dashboard as a Compose service (monitor-only, with control from a separate host-run copy or `cohostctl`); the dashboard as a Compose service with the Docker socket mounted; a desktop wrapper (Electron) around the page | The owner wants one thing to start, which then starts everything else; a containerised dashboard cannot start the stack it is part of, and a mounted Docker socket gives a container root-equivalent control of the host. A host process needs no extra privilege: it uses the owner's own `docker` access. A desktop wrapper adds a toolchain for no capability the browser page lacks, and OBS still needs an HTTP URL. Owner decision. | [dashboard](intent/dashboard/dashboard-design.md) Host process and stack control; [deployment](intent/deployment/deployment-design.md); [dashboard decision: standalone dashboard](intent/dashboard/decisions/standalone-dashboard.md) |
 | Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`, `GET /config/*`) stay open; `POST /sink` stays ungated; LAN players (an OBS Browser Source on another PC) use a second listener that carries only the ungated sink routes (test uploads travel over Redis, so no container needs to reach the host); browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. Fixed Postgres credentials, voice CORS `*` and root containers are accepted inside this boundary. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Licensing | Dual licence: the public gets AGPL-3.0-only; a separate commercial licence, without the AGPL obligations, is reserved to the owner (CoderCoco) and granted case by case (`COMMERCIAL.md`). Every outside contribution is accepted only under an individual Contributor License Agreement (`CLA.md`, adapted from the Apache ICLA) that lets the owner relicense it, enforced in CI | Plain AGPL-3.0 with a DCO sign-off; a permissive licence (MIT/Apache-2.0); a source-available non-commercial licence (PolyForm Noncommercial); the Business Source License | The goal is source that anyone can read, run, modify and contribute to, while a company cannot build a business on cohost for free. AGPL section 13 means anyone who offers a modified cohost to users over a network must offer those users its source, which removes a closed hosted competitor's advantage; it does not forbid commercial use, and running a modified private copy obliges nothing by itself. The commercial licence is what a business buys to be exempt from the AGPL obligations, and the owner can only grant it for code they hold relicensing rights to, which a DCO (a certificate of the right to submit under the project licence) does not give and a CLA does. A permissive licence lets anyone close and sell it; PolyForm Noncommercial and BUSL stop commercial use outright but are not open source licences. | [deployment](intent/deployment/deployment-design.md) Licensing and contribution; `LICENSE`, `CLA.md`, `COMMERCIAL.md` |
-| Deployment shape | Compose runs everything except the dashboard: one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN | Per-service images; everything published; the dashboard in Compose | One build cached across nine images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
+| Deployment shape | Compose runs everything except the dashboard: one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN | Per-service images; everything published; the dashboard in Compose | One build cached across eleven images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
 
 ### Trust boundary
 
@@ -776,7 +778,7 @@ what to measure once it has. All targets are proposals.
    in under 30 minutes excluding model downloads.
 7. **Isolation coverage.** Every one of the ten services starts and reports
    `ready` on Redis alone in CI; the Compose smoke test covers three of the
-   nine containerised services, and the dashboard's start without Redis is
+   eleven containerised services, and the dashboard's start without Redis is
    covered by its unit tests.
 
 ## References

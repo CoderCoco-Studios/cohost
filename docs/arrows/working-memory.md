@@ -4,34 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 28 specs: 28 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and the gap fixes have landed (platform-models cascade fix). With the spoken fallback line built: 32 specs: 32 implemented, 0 gaps, 0 deferred.
-
-Gap-closure chunk C10 (2026-11-11): WM-PUSH-006/007/009/010, WM-SEEN-002 (mark seen by event id), WM-PKG-001 (type-only dependencies); bus ts on self lines. 35 of 35 specs are `[x]`, 0 deferred, 0 gaps; the LLD has no open questions.
-
-Reopened O4 (2026-11-11): one window implementation serves salience and cortex. `Context.forBrain` (WM-WIN-008) is the single reader of `brain.working_memory_events` (WM-WIN-005); the arrivals hold (WM-SEEN-004) moved from salience into the package.
-
-## Spoken fallback line: built (build chunk 3)
-
-Design: LLD § Fallback lines. `self` events keep their `brain.say` id; a fallback marks the line, which renders as the fallback text plus a bracketed note quoting the failed line (no new transcript tag, so the stop list is unchanged).
-
-- Built: `WM-PUSH-007`, `WM-PUSH-008`, `WM-WIN-007`, `WM-TRANS-010` (`pushSelf` id, `markFallback`, `hasSelf`, the note in `transcript`). Tests: `packages/working-memory/test/fallback.test.ts`.
-
-## Decisions applied
-
-Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
-
-1. **S22** newlines in transcript fields → flatten `\r`/`\n` to a space in `transcript`. Specs: WM-TRANS-008.
-2. **P10** tag-list ownership → this segment owns the tags and exports them (`TRANSCRIPT_TAGS`); the LLM stops derive from the export; a cortex-level test checks the pair. Specs: WM-TRANS-006, WM-TRANS-009 (cites LLM-STOP-006, LLM-STOP-007).
-3. **P10** self line as a stop → no; the stops are a token saver and `parseReply` is the guard. Specs: WM-TRANS-006.
-4. **S56** where `propagatedFlags` is tested → unit tests in `packages/working-memory/test/context.test.ts`, including an `undefined` source and a stray `remember`. Specs: none (test work). **H5** adds `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise them.
-5. **S23** `all()` → returns a shallow copy, elements identical. Specs: WM-WIN-006.
-6. **S24** injected events in the prompt → render exactly like real ones. Specs: WM-TRANS-007 (confirmed).
-7. **S25** affect's unused dependency → affect drops it (affect segment). Specs: none here.
-8. **S29** `forget_context` and `lastVision` (cortex question) → `clear()` also resets `lastVision`. Specs: WM-WIN-003.
-
-## Barge-in and echo gate: built
-
-Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ideal stays `[D]`. WM-STACK-001 is `[D]`: the interrupted-thought stack of the deferred dynamic-speech ideal. Spec file totals: 40 specs, 39 `[x]`, 0 `[ ]`, 1 `[D]`. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+**AUDITED** — 41 specs: 40 implemented (`[x]`), 0 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -42,22 +15,23 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (41 specs: 40 `[x]`, 0 `[ ]`, 1 `[D]`; WM-PUSH-011, `timing` on `speech` context events, WM-PUSH-012, `speech.partial` ignored, and WM-PUSH-013, `timing` on `vision` context events, are built)
+- docs/intent/working-memory/working-memory-specs.md (41 specs: 40 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
-- packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)
-- Further coverage of `propagatedFlags` (other segments; the unit tests above are the primary coverage): services/salience/test/salience.region.test.ts:193, :202, :210, :220; services/cortex/test/cortex.region.test.ts:332, :343
+- packages/working-memory/test/context.test.ts (pure, no Redis)
+- packages/working-memory/test/fallback.test.ts
+- packages/working-memory/test/package.test.ts
+- packages/working-memory/test/timing.test.ts
+- packages/working-memory/test/window.test.ts
+- services/salience/test/salience.dispositions.test.ts (WM-WIN-005)
+- services/cortex/test/cortex.dispositions.test.ts (WM-WIN-005)
+- Cross-package stop/tag check (WM-TRANS-006 with LLM-STOP-006/007): services/cortex/test/transcript-stops.test.ts
 
 ### Code
-- packages/working-memory/src/index.ts (21 `@spec` lines)
+- packages/working-memory/src/index.ts
 - packages/working-memory/package.json, packages/working-memory/tsconfig.json
 - Consumers: services/salience/src/salience.ts, services/salience/src/scheduler.ts, services/salience/src/scoring.ts (type only), services/cortex/src/cortex.ts, services/cortex/src/prompt.ts
-- Coupled code: packages/llm/src/index.ts:47-49 (`TRANSCRIPT_STOPS`, `REPLY_STOPS`, derived from `TRANSCRIPT_TAGS` once LLM-STOP-007 lands); services/cortex/src/prompt.ts:75-76 (`parseReply`)
-
-### OpenSpec
-- openspec/specs/working-memory/spec.md
-- openspec/changes/archive/2026-11-01-add-test-injection/specs/working-memory/spec.md
-- (propagation is specified under openspec/changes/archive/2026-11-01-add-test-injection/specs/salience/spec.md and .../cortex/spec.md)
+- Coupled code: packages/llm/src/index.ts (`TRANSCRIPT_STOPS`, `REPLY_STOPS`, derived from `TRANSCRIPT_TAGS`, LLM-STOP-007); services/cortex/src/prompt.ts (`parseReply`)
 
 ## Architecture
 
@@ -73,26 +47,25 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Window | WM-WIN-001 to WM-WIN-007 | 7 | 0 | 0 | 7 |
-| Ingest | WM-PUSH-001 to WM-PUSH-010 | 10 | 0 | 0 | 10 |
-| Seen tracking | WM-SEEN-001 to WM-SEEN-003 | 3 | 0 | 0 | 3 |
+| Window | WM-WIN-001 to WM-WIN-008 | 8 | 0 | 0 | 8 |
+| Ingest | WM-PUSH-001 to WM-PUSH-013 | 13 | 0 | 0 | 13 |
+| Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
 | Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
 | Transcript | WM-TRANS-001 to WM-TRANS-010 | 10 | 0 | 0 | 10 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
+| Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 37 of 37 specs implemented; 0 deferred; 0 open. 37 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 40 of 41 specs implemented; 1 deferred; 0 gaps. 40 carry a test `@spec` annotation.
 
 ## Key Findings
 
-1. **Markers.** The audit found no wrong marker; two lines changed intent by owner decision (WM-WIN-003, WM-WIN-006) and are now implemented. One line was added by the audit: WM-WIN-006 (`all()` returns the window oldest first), a behavior every test relies on. WM-TRANS-009 (the exported tag list) was added with the P10 fix. WM-FLAG-003/004 now say truthy/falsy, matching `if (!e?.injected)` (`index.ts:18`).
-2. **The stop-string contract, documented from code** — this package joins lines with `"\n"`, so every entry after the first begins `"\n[chat]"`, `"\n[voice]"` or `"\n[screen]"`, exactly the `TRANSCRIPT_STOPS` (`packages/llm/src/index.ts:47`); Ollama/OpenAI add `"\n\n"` (`:47`), Claude does not, `json: true` calls send none. The cortex primes the model with a closing `<name>:` (`services/cortex/src/prompt.ts:61-69`) and `parseReply` keeps only the first reply line (`prompt.ts:76`). The self line is not a stop, by decision (P10). This segment owns the tags (WM-TRANS-006) and exports them as `TRANSCRIPT_TAGS` (WM-TRANS-009); LLM-STOP-006 / LLM-STOP-007 derive the stops from the export; the cortex-level check of the pair is still to come. Full write-up: model-backends LLD, "Stop sequences and the transcript coupling".
-3. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` in user, speaker and text to a space (`oneLine`, WM-TRANS-008), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts:17`, `:43`).
-4. **Injected events are indistinguishable from real ones in the prompt** — flags are retained on the entry but never rendered (`index.ts:93-96`; intended, S24).
-5. **Flag propagation lives here and is tested here** — `propagatedFlags` (`index.ts:16-20`) has unit tests in `context.test.ts` (undefined source, stray `remember`; WM-FLAG-003/004) as well as the salience and cortex region tests.
-6. **Two independent windows** — salience (`services/salience/src/salience.ts:32`) and cortex (`services/cortex/src/cortex.ts:35`) each keep their own `Context`; only cortex records own lines via `pushSelf` (`cortex.ts:51`).
-7. **`markSeenEvents` matches by object identity** (`index.ts:70-73`) and `all()` returns a shallow copy whose elements are the window's own objects (WM-WIN-006); salience depends on the identity behavior to leave late arrivals unseen (`salience.ts:97,117`).
-8. **Vision slot semantics** — one vision entry, moved to the end on each update (`index.ts:45-48`); `clear()` resets `lastVision` (WM-WIN-003; test `context.test.ts:60`). A real update replaces an injected one and vice versa.
-9. **Annotation placement** — `@spec` comments in `src/` are trailing comments on the entry-point line, so other segments' citations of `packages/working-memory/src/index.ts:NN` stay valid.
+1. **The stop-string contract** — this package joins lines with `"\n"`, so every entry after the first begins `"\n[chat]"`, `"\n[voice]"` or `"\n[screen]"`, exactly the `TRANSCRIPT_STOPS` in `packages/llm/src/index.ts`; Ollama/OpenAI add `"\n\n"`, Claude does not, `json: true` calls send none. The cortex primes the model with a closing `<name>:` and `parseReply` keeps only the first reply line. The self line is not a stop, by decision. This segment owns the tags (WM-TRANS-006) and exports them as `TRANSCRIPT_TAGS` (WM-TRANS-009); LLM-STOP-006 / LLM-STOP-007 derive the stops from the export; `services/cortex/test/transcript-stops.test.ts` checks the pair. Full write-up: model-backends LLD, "Stop sequences and the transcript coupling".
+2. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` in user, speaker and text of chat, speech and vision lines to a space (`oneLine`, WM-TRANS-008), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts`).
+3. **Injected events are indistinguishable from real ones in the prompt** — flags are retained on the entry but never rendered (intended, WM-TRANS-007).
+4. **Flag propagation lives here and is tested here** — `propagatedFlags` has unit tests in `context.test.ts` (undefined source, stray `remember`; WM-FLAG-003/004).
+5. **Two independent windows** — salience and cortex each keep their own `Context`, built by `Context.forBrain` (WM-WIN-005, WM-WIN-008); only cortex records own lines via `pushSelf`.
+6. **`markSeenEvents` matches by event id** (WM-SEEN-002), and `all()` returns a shallow copy whose elements are the window's own objects (WM-WIN-006); salience depends on id matching to leave late arrivals unseen.
+7. **Vision slot semantics** — one vision entry, moved to the end on each update; `clear()` resets `lastVision` (WM-WIN-003). A real update replaces an injected one and vice versa.
 
 ## Work Required
 
@@ -100,8 +73,7 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 None.
 
 ### Should Fix
-1. Add `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise propagation (`services/salience/test/salience.region.test.ts:193`, `:202`, `:220`; `services/cortex/test/cortex.region.test.ts:332`, `:343`) (H5; other segments' files).
+1. Add `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise propagation (other segments' files).
 
 ### Nice to Have
-1. Move `@cohost/bus` / `@cohost/config` to type-only usage in this package's manifest (LLD Open Question 3).
-2. The cross-package stop/tag test (WM-TRANS-006, LLM-STOP-006) is owned by the cortex segment.
+None.

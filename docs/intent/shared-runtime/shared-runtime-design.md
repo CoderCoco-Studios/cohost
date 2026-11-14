@@ -9,13 +9,13 @@ Status: implemented; every EARS spec in [shared-runtime-specs.md](shared-runtime
 
 ## Context and Design Philosophy
 
-`@cohost/shared` (`packages/shared`) is the one home of runtime behaviour that more than one service needs. Ten services each start, stop, beat, retry, idle when a credential is missing, read `control`, take `inject.request`, handle WAV audio or hold a Discord voice connection, and each of those concerns has been written several times with small differences: five retry loops with five delay rules, three idle-plan reminders, three `control` switch blocks, three injection handlers, three WAV and resampling files, and two Discord session files that share most of their lines. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08); this segment is that package, specified as behaviour.
+`@cohost/shared` (`packages/shared`) is the one home of runtime behaviour that more than one service needs. Each service starts, stops, beats, retries, idle when a credential is missing, read `control`, take `inject.request`, handle WAV audio or hold a Discord voice connection, and each of those concerns has been written several times with small differences: five retry loops with five delay rules, three idle-plan reminders, three `control` switch blocks, three injection handlers, three WAV and resampling files, and two Discord session files that share most of their lines. Code shared across modules or services belongs in a shared package rather than being copied (owner decision of 2026-11-08); this segment is that package, specified as behaviour.
 
 Guiding rules:
 
 - **Two users make a module.** A behaviour moves here when a second service needs it. Behaviour that only one service uses stays in that service, however general it looks (Boundary, below).
 - **Mechanism here, policy in the service.** A shared module takes every service-specific value as a parameter: which variable is missing, which `control` commands matter, which injection kinds are accepted, the delays of a retry. The service's own LLD and specs say which values it passes; this segment says what the module does with them.
-- **Injectable for tests.** Every module takes its clock, sleep, fetch, exit and bus as optional parameters, so a service's tests drive it without timers, network or process exit.
+- **Injectable for tests.** Every module takes its clock, sleep, exit and bus as optional parameters, so a service's tests drive it without timers, network or process exit.
 - **No new behaviour by moving.** Moving code here changes nothing a service, the bus or the dashboard can observe, except where a decision below says otherwise and names the change.
 
 ## Package shape and dependencies
@@ -25,7 +25,7 @@ Guiding rules:
 | `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio | `@cohost/config`, `@cohost/bus` |
 | `@cohost/shared/discord-voice` | the Discord voice session | the above, plus `discord.js`, `@discordjs/voice` and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) |
 
-The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package keeps only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers that sat in it because every service already imported it live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client.
+The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package holds only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client.
 
 ## Service bootstrap (`runService`)
 
@@ -46,21 +46,21 @@ Sequence:
 2. Load the configuration. A config that is present but invalid ends the process with status 1 after logging the loader's message; this is the one startup exit the failure posture allows (HLD Key Design Decisions, Failure posture).
 3. Create the bus under the service name and start the heartbeat in `starting` with the service's spec.
 4. Call `main(ctx)` with `{ cfg, bus, log, heartbeat, onStop }`. `onStop(fn)` registers a teardown step. The service calls `heartbeat.ready()` or an idle plan itself; `runService` never declares readiness.
-5. Any throw or rejection out of `main`, and any subscription that rejects after the bus's own retry, is logged with message `fatal` and ends the process with status 1.
+5. Any throw or rejection out of `main` is logged with message `fatal` and ends the process with status 1. A subscription that rejects after the bus's own retry is handled by the code that made it: the injection subscription (`subscribeInject`) logs `inject.request subscription failed` and ends the process with status 1.
 6. On SIGINT or SIGTERM the lifecycle sequence runs (below): the heartbeat's `stopping`, the service's teardown steps in reverse registration order, then `bus.stop()`, awaited, then exit 0. `Bus.stop()` returns a promise because it first sends the acknowledgements its subscriptions have queued, for at most 2 s (event-bus BUS-NAT-ACK-007). Teardown steps get 5 s in all; past that the bootstrap stops waiting, stops the bus (still awaited) and exits 0, so a hung step cannot keep a container from stopping. A signal that arrives while `main` is still starting runs the steps registered so far; a step registered after shutdown began never runs.
 
 The entry file (`src/index.ts`) only calls `runService`; `main` lives in a module the tests import, with fakes for every injectable. A service that already has a `boot.ts` with an injected `runX` (voice, avatar) keeps its tests and swaps its hand-written sequence for `runService`.
 
 ## Lifecycle: shutdown and heartbeat
 
-`onShutdown(fn)`, `beforeShutdown(fn)` and `startHeartbeat(bus, opts)` move here from the bus package unchanged in behaviour:
+`onShutdown(fn)`, `beforeShutdown(fn)` and `startHeartbeat(bus, opts)` are the process lifecycle:
 
 - **Shutdown.** On SIGINT or SIGTERM, every `beforeShutdown` hook runs and is awaited, all of them capped together at 2 s, then each service callback, its returned promise awaited, then `process.exit(0)`. A second signal during the sequence does not start it again.
 - **Heartbeat publisher.** The payload, cadence, change watcher, dependency-derived `degraded`, standing `detail` precedence, interval from `HEARTBEAT_INTERVAL_MS` and the `stopping` beat registered with `beforeShutdown` are as the control plane's heartbeat contract states them (control-plane, Heartbeat contract). The publisher sends through the bus's `publishHealth`; a rejected publish is logged at warn and swallowed.
 
 The heartbeat also gets `setDetail(detail)`, which replaces the standing detail; the control reader uses it to publish `paused`. A failed publish is logged at most once per 60 s, with the count of failures since the last warning, so a dashboard running while Redis is down does not log every interval.
 
-The heartbeat's meaning (the states, what observers derive from them) stays the control plane's; this module is its one publisher. Moving the helpers out of the bus package removes the import cycle between the bus's entry module and its heartbeat module.
+The heartbeat's meaning (the states, what observers derive from them) stays the control plane's; this module is its one publisher. Keeping the helpers out of the bus package avoids an import cycle between the bus's entry module and a heartbeat module.
 
 ## Retry with backoff (`retryWithBackoff`)
 
@@ -109,8 +109,8 @@ Only the regions that decide to speak read `control`: salience and cortex honour
 
 ```ts
 const control = controlFor("cortex", {
-  pause?, resume?, mute?, unmute?, forget_context?, reload_personality?, say?,
-});
+  pause?, resume?, mute?, unmute?, forget_context?, reload_personality?, say?, set_routing?,
+}, { log?, heartbeat? });
 control.handle(ev)   // true when ev was a control event for this service
 control.paused / control.muted / control.epoch
 ```
@@ -138,12 +138,12 @@ For each `inject.request`:
 1. A request for another `target` is ignored.
 2. A request older than `staleMs` (60 s, publisher `ts` against the local clock, judged when the request leaves the queue) gets `inject.result` with `ok: false` and detail `stale`; nothing is read.
 3. A `kind` the service does not accept gets `inject.result` with `ok: false` and detail `<target> cannot handle kind '<kind>'`.
-4. For `image` and `audio`, the request must carry an `uploadId` (32 hex digits; else `request carries no upload id`). The bytes are taken from Redis with `takeUpload(uploadId)` (`Bus.takeUpload`: `GETDEL` of `cohost:upload:<id>`, so the key is deleted by the read), bounded by `readTimeoutMs` and the kind's byte cap. A missing or expired key gives `upload expired or missing`, a timeout `read upload timed out after <ms> ms`, a body over the cap `upload larger than the <n> byte limit`; each gives `ok: false` with that detail. The kind function receives the bytes and `{ contentType }` from the request.
+4. For `image` and `audio`, the request must carry an `uploadId` (32 lowercase hex digits; else `request carries no upload id`). The bytes are taken from Redis with `takeUpload(uploadId)` (`Bus.takeUpload`: `GETDEL` of `cohost:upload:<id>`, so the key is deleted by the read), bounded by `readTimeoutMs` and the kind's byte cap. A missing or expired key gives `upload expired or missing`, a timeout `read upload timed out after <ms> ms`, a body over the cap `upload larger than the <n> byte limit`; each gives `ok: false` with that detail. The kind function receives the bytes and `{ contentType }` from the request.
 5. The service's kind function runs and its result is published as `inject.result` with the request's `id`. A throw becomes `ok: false` with the error text.
 
 Each service passes its own limits: eyes `vision.upload_max_bytes` and `vision.upload_timeout_ms`; ears 25 MiB (the dashboard's audio upload cap) and 30 s. chat's injection is text only and runs through the same handler with target `chat` and the single kind `text` (CHAT-INJ-010).
 
-Requests are handled one at a time in arrival order, off the bus read loop: the subscription handler queues the request and returns, so a slow transcription or vision call never delays reading the next event. The queue holds at most 8 requests; a request that arrives to a full queue gets `ok: false, error: "busy"`.
+Requests are handled one at a time in arrival order, off the bus read loop: the subscription handler queues the request and returns, so a slow transcription or vision call never delays reading the next event. The queue holds at most 8 requests; a request that arrives to a full queue gets `inject.result` with `ok: false` and detail `busy`.
 
 ## Audio (`parseWav`, `wavWrap`, `resample`)
 
@@ -244,6 +244,6 @@ None.
 
 - HLD: System Design (Module contract, Shared runtime); Key Design Decisions (Failure posture, Listening and speaking, Who honours mute and pause).
 - [module-contract](../module-contract/module-contract-design.md) (obligation 4).
-- [control-plane](../control-plane/control-plane-design.md) Heartbeat contract; [event-bus](../event-bus/event-bus-design.md) Shutdown helpers.
+- [control-plane](../control-plane/control-plane-design.md) Heartbeat contract; [event-bus](../event-bus/event-bus-design.md) (Process shutdown).
 - [ears](../ears/ears-design.md), [mouth](../mouth/mouth-design.md), [eyes](../eyes/eyes-design.md), [chat](../chat/chat-design.md), [voice](../voice/voice-design.md), [memory](../memory/memory-design.md), [model-backends](../model-backends/model-backends-design.md).
-- Code today: `packages/shared/src/{inject,join,wav}.ts`; `packages/bus/src/{index,heartbeat}.ts`; `services/{ears,mouth}/src/{discord,session,audio}.ts`; `services/voice/src/wav.ts`; `services/memory/src/fake-store.ts`; `packages/llm/src/mock.ts`.
+- Code: `packages/shared/src/` (`boot`, `lifecycle`, `retry`, `idle`, `control`, `inject`, `audio`, `utterance`, `discord-voice`).

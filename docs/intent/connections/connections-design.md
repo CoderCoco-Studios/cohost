@@ -46,8 +46,8 @@ A connector owns one Redis string, the **registration**, at `<prefix>:connector:
   "state": "ready",
   "detail": "",
   "capabilities": [
-    { "cap": "audio-in",  "tag": "discord", "format": { "rate": 16000, "channels": 1 }, "ready": true },
-    { "cap": "audio-out", "tag": "discord", "format": { "rate": 48000, "channels": 2 }, "ready": true }
+    { "cap": "audio-in",  "tag": "discord", "format": { "rate": 16000, "channels": 1 }, "ready": true, "transport": "stream", "flush": false },
+    { "cap": "audio-out", "tag": "discord", "format": { "rate": 48000, "channels": 2 }, "ready": true, "transport": "stream", "flush": true }
   ]
 }
 ```
@@ -94,7 +94,7 @@ Each is a Redis Stream, written with `XADD ... MAXLEN ~ <cap>` and given an expi
 
 **Formats.** `audio.in` is what speech-to-text takes without further work: 16 kHz mono. `audio.out.discord` is what Discord's player takes: 48 kHz stereo. A connector declares each stream's format in its registration; a producer writes exactly that format and a consumer that meets another rate or channel count drops the frame and counts it (CONN-AUD-003). Conversion belongs to the side that owns the foreign format: the Discord connector decodes Opus and resamples to 16 kHz mono on the way in; mouth converts a line's WAV to the sink's declared format on the way out, with the shared `resample` (SHARED-AUDIO-005, SHARED-AUDIO-006).
 
-**Speakers and utterances.** `audio.in` has no utterance boundary: frames flow only while somebody is transmitting, tagged with `spk`. The consumer owns where an utterance ends, by silence: ears closes a speaker's utterance when no frame from that `spk` has arrived for `ears.silence_ms`, which keeps that setting and its latency trade-off with ears. A source that cannot tell speakers apart uses one constant `spk` and `name`.
+**Speakers and utterances.** `audio.in` has no utterance boundary: frames flow only while somebody is transmitting, tagged with `spk`. The consumer owns where an utterance ends: ears cuts each speaker's frames with the speech-activity detector of `ears.vad.engine` `silero` (the default), which closes an utterance after `ears.silence_ms` of audio since the last frame classified as speech, or with `ears.vad.engine` `gap`, which closes it when no frame from that `spk` has arrived for `ears.silence_ms`; the frame-gap rule closes an utterance under both ([ears Utterance endpointing](../ears/ears-design.md#utterance-endpointing), EARS-VAD-001 to 008). `ears.silence_ms` and its latency trade-off stay with ears. A source that cannot tell speakers apart uses one constant `spk` and `name`.
 
 ### Flush
 
@@ -112,7 +112,7 @@ Live audio cannot be paused, so the policy is to bound memory and to lose the ol
 
 - **Producers never wait.** A write does not depend on any consumer being present or fast. The cap on the stream (`audio.in`: about 3000 entries, a minute of one speaker; `audio.out`: about 1500 entries, thirty seconds) is the entire buffer: past it Redis evicts the oldest frames.
 - **Consumers read live.** A consumer starts at the stream's end (`$`) when it connects and never replays: a plain blocking `XREAD`, no consumer group, no acknowledgement. Frames written while a consumer was away are not heard late. Several consumers each see every frame.
-- **Gaps are counted.** A consumer compares `seq` within an epoch; each missing frame adds to a loss counter that its heartbeat reports in its detail, and a gap longer than `ears.silence_ms` closes the speaker's utterance like silence does. A new epoch resets the counter's baseline without counting loss.
+- **Gaps are counted.** A consumer compares `seq` within an epoch; each missing frame adds to a loss counter that its heartbeat reports in its detail, and a missing frame neither closes nor resets an open utterance (EARS-VAD-008). A new epoch resets the counter's baseline without counting loss.
 - **Output is paced.** Eviction would cut the start off a long line written all at once, so mouth writes an utterance's frames at real time with a lead of one second, not as a burst. The connector keeps a short jitter buffer and plays frames in `seq` order; a gap is played as the frames that are there (a click, not a stall). A sink whose connector is not registered `ready` is not ready for mouth (the ordinary skip of MOUTH-ROUTE-003), and frames reaching a connector that has no player are discarded.
 - **Malformed frames** (wrong version, rate, channel count, size or no `pcm`) are dropped and counted, never raise.
 
@@ -129,7 +129,7 @@ Live audio cannot be paused, so the policy is to bound memory and to lose the ol
 
 The connector publishes no domain event and subscribes to none. It is not a sense: it holds the connection, and ears and mouth decide what the audio means.
 
-One bot means one guild and one channel for listening and speaking together. The earlier arrangement allowed ears and mouth to sit in different channels; that is no longer expressible, and the keys are the connector's (`connections.discord.guild_id`, `connections.discord.voice_channel_id`).
+One bot means one guild and one channel for listening and speaking together. Ears and mouth cannot sit in different channels, and the keys are the connector's (`connections.discord.guild_id`, `connections.discord.voice_channel_id`).
 
 ## Failure isolation
 
@@ -162,7 +162,7 @@ The desktop capture helper is a connector with the source tag `desktop` ([ears D
 | Audio transport | Dedicated capped Redis streams, one per tag and direction, outside the event stream | Audio on `cohost:events`; HTTP between services; a WebSocket from the connector | Redis is the one infrastructure every service already reaches and the connector can be remote; HTTP or sockets would add ports and direct service-to-service calls (tenet 1). A separate stream keeps the 20 000-entry event stream replayable and the dashboard feed readable. |
 | Delivery semantics | Live only: capped stream, plain `XREAD` from `$`, no group, no acknowledgement | Consumer groups with replay; at-least-once with acknowledgement | Late audio is worse than missing audio, and replaying seconds of old speech after a restart would produce transcripts of a conversation that ended. Plain reads also let several consumers share a stream. |
 | Frame format | 16-bit PCM in a binary field, declared rate and channels, 20 ms nominal, `seq` and `epoch`; 16 kHz mono in, 48 kHz stereo out | Opus packets; base64 text; one fixed format for all streams | PCM needs no codec in ears or mouth and lets the desktop helper and any future connector send what it already has. Declaring the format keeps the protocol open without a negotiation round-trip. 16 kHz mono in is what STT consumes, at about a sixth of Discord's decoded size. |
-| Utterance boundary | The consumer cuts on silence (a gap in frames); the connector sends frames only while someone transmits | The connector sends end-of-utterance markers; the connector runs a VAD | `ears.silence_ms` stays ears' own latency lever, a source with no notion of an utterance (desktop) fits, and a lost end marker cannot hang an utterance open. |
+| Utterance boundary | The consumer cuts: ears runs a Silero voice-activity detector over each speaker's frames by default and offers the frame-gap rule as the alternative mode (`ears.vad.engine`, EARS-VAD-001), with the frame-gap rule in force under both; the connector sends frames only while someone transmits and no end marker | The connector sends end-of-utterance markers; the connector runs a VAD; the consumer cuts on the frame gap alone | A detector in the consumer measures where speech ended and also cuts a source that never stops sending frames (desktop), so a source with no notion of an utterance fits; the gap mode suits a connector that sends frames only while someone transmits. `ears.silence_ms` stays ears' own latency lever, and a lost end marker cannot hang an utterance open. A VAD in each connector would duplicate the detector and its tuning. |
 | Stopping a played line | A flush frame in the audio stream; consumers that declare `flush` stop their player and drop buffered audio | A control key or event the connector watches; an acknowledgement stream in both directions; stop only mouth's writer and let the buffer play out | The frame keeps its order against the frames it cancels, so a consumer cannot flush a later line by reading a side signal late; it needs no new channel, key or subscription for the connector, which publishes and reads no domain event (CONN-DISC-010). Stopping only the writer leaves up to a second and more of speech after the person interrupted, which is the failure barge-in exists to remove. An acknowledgement stream would also fix `voice.done` timing (Open Questions 1) but is a larger protocol change than the stop needs. |
 | Flush declaration | An optional `flush: true` on the `audio-out` capability; absent means unsupported | Always send it; version the frame format | A consumer written before the frame existed need not understand it, and mouth can report an immediate or a late stop. A format version bump would break every consumer for an additive frame. |
 | Output pacing | mouth writes at real time with a one-second lead | Burst the whole line; a feedback channel from the connector | A burst is evicted by the cap on a long line; real-time writing needs no ack channel. The cost is that `voice.done` is timed from the write schedule, not from the player going idle (open question). |
@@ -190,7 +190,7 @@ The desktop capture helper is a connector with the source tag `desktop` ([ears D
 
 ## References
 
-Files in this segment (to be created):
+Files in this segment:
 
 - `services/connector-discord/src/*` (the Discord connector), `services/connector-discord/test/*.test.ts`
 - the connector client library: `@cohost/bus` (`connector.ts`, `registrar.ts`, `frames.ts`, `Bus.publishFrame`, `Bus.tailAudio`, the registration calls), with no Rust copy of the frame codec, tag grammar, constants or audio stream naming in `crates/cohost-bus` until a Rust connector needs one ([event-bus Wire conventions](../event-bus/event-bus-design.md#wire-conventions))

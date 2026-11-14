@@ -48,7 +48,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "native bus transport: SHARED-BOOT-005, 006 and SHARED-LIFE-001, 004 are [ ] (shutdown awaits the async Bus.stop()); 74 specs, 70 [x], 4 [ ]. Gap closure built (C1); all 74 specs were [x] (SHARED-INJ-013, uploads read from Redis). Every service runs on runService and the shared modules. No open gaps."
+    next: "native bus transport: SHARED-BOOT-005, 006 and SHARED-LIFE-001, 004 verified [x] at 4319d8d (shutdown awaits the async Bus.stop()); 74 specs, 74 [x]. Gap closure built (C1); all 74 specs were [x] (SHARED-INJ-013, uploads read from Redis). Every service runs on runService and the shared modules. No open gaps."
     drift: null
 
   module-contract:
@@ -80,12 +80,12 @@ arrows:
     status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-11
-    audited_sha: 458f98f
+    audited: 2026-11-14
+    audited_sha: 4319d8d
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: [config]
     detail: event-bus.md
-    next: "native transport on the events path only, frames path TypeScript on ioredis (HLD tenet 12; frames on the addon measured 1.31x CPU, gate failed; events 0.87x, passed): 164 specs, 76 [x], 88 [ ] (83 BUS-NAT-*; BUS-NAT-FRM-005 to 007 new; API-002/003/004/011, TRN-001/005/009/010/013, CONN-005, ERR-001/005, FRM-001 to 004, RS-001/003 to 006/008, FIX-001 to 004, GATE-001/006, BUS-STOP-001 amended for the split; BUS-NAT-BLD-008, CI-001, CI-003, TRN-006, TRN-012, GATE-002, GATE-003 retired; BUS-STREAM-005, BUS-STREAM-009, BUS-STOP-001, BUS-SUB-008, BUS-SUB-009 amended to the native transport; cross-segment gaps in deployment, control-plane, connections, shared-runtime, avatar). Before: all 70 specs [x] (BUS-EVT-023 optional per-line `route`, BUS-UPL-001 to 003 upload store, BUS-STREAM-009 failFast for cohostctl); gap closure built: the pending drain reads until empty (BUS-SUB-003), no ack after stop (BUS-SUB-013), streamPrefix for scratch streams (BUS-STREAM-008), avatar.state ranges, one playback shape (BUS-EVT-017/018), time-ordered fake ids (BUS-TEST-011). No open gaps. Barge-in: barge-in specs BUS-EVT-030 and 031 built; BUS-EVT-032 (`meta.source` on `inject.request`) built."
+    next: "native transport closed out at 4319d8d: 165 specs, 150 [x], 15 [ ]. Events path on the Rust addon, frames path TypeScript on ioredis (HLD tenet 12); events-path gate passed (events x8 medians TS 11.26% / 4.53 ms vs native 9.86% / 2.29 ms). Open, each implemented or procedural but without an annotated test: BUS-NAT-TRN-011, ERR-006 (no test calls testPanic), FRM-008 (BUS_REDIS half untested), RS-002, RS-009, BLD-002, BLD-004, BLD-005, BLD-006, CI-002, GATE-001, 004, 005, 006, 007. Cross-segment still [ ]: deployment DEPLOY-CI-001, CI-002, CI-007, INST-007, INST-014 (CI and installer behaviour)."
     drift: null
 
   model-backends:
@@ -155,7 +155,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "native bus transport: CONN-AUD-002 is [ ] (publishFrame rejects an oversized or odd-length pcm with BUS_INVALID; the TypeScript frame codec of @cohost/bus, no Rust copy in crates/cohost-bus until a Rust connector needs one); 48 specs, 45 [x], 2 [ ], 1 [D]. Protocol library, services/connector-discord, ears' connector source and mouth's connector sink built: 39 of 41 specs [x] (1 gap, 1 deferred). Next: the desktop helper (CONN-DESK-001, EARS-SRC-014, 015), then live verification against a real guild (docs/arrows/connections.md, Build order). Barge-in: flush specs CONN-AUD-006 and 007, CONN-FLUSH-001 to 004 and CONN-DISC-012 built."
+    next: "native bus transport: CONN-AUD-002 verified [x] at 4319d8d (publishFrame rejects an oversized or odd-length pcm with BUS_INVALID; the TypeScript frame codec of @cohost/bus, no Rust copy in crates/cohost-bus until a Rust connector needs one); 48 specs, 46 [x], 1 [ ] (CONN-DESK-001), 1 [D]. Protocol library, services/connector-discord, ears' connector source and mouth's connector sink built: 39 of 41 specs [x] (1 gap, 1 deferred). Next: the desktop helper (CONN-DESK-001, EARS-SRC-014, 015), then live verification against a real guild (docs/arrows/connections.md, Build order). Barge-in: flush specs CONN-AUD-006 and 007, CONN-FLUSH-001 to 004 and CONN-DISC-012 built."
     drift: null
 
   ears:
@@ -251,7 +251,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "62 specs, 60 [x], 2 [ ]: AVATAR-BUS-008 and AVATAR-STATE-002 reworded to the native bus transport's outage behaviour (publish rejects at once while Redis is down; only group creation rejects the subscription). Gap closure built (C10), the engine timer unref'd (AVATAR-ENG-018). Manual verification: VTube Studio against the real app."
+    next: "62 specs, 62 [x]: AVATAR-BUS-008 and AVATAR-STATE-002 (verified at 4319d8d) reworded to the native bus transport's outage behaviour (publish rejects at once while Redis is down; only group creation rejects the subscription). Gap closure built (C10), the engine timer unref'd (AVATAR-ENG-018). Manual verification: VTube Studio against the real app."
     drift: null
 
   dashboard:
@@ -275,7 +275,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "native bus transport: CTRL-CHECK-004 (serverTime test on a BusTransport fake) and CTRL-CLI-017 (BUS_CONNECTION code and message) are [ ]; 86 specs, 82 [x], 2 [ ], 2 [D]. Earlier: 72 of 72 specs [x] (CTRL-HEALTH-011: seeded receive times may be negative, fixing `cohostctl status` reporting every service degraded 0s ago; CTRL-CLI-017: one-line unreachable-Redis error via Bus failFast; CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
+    next: "native bus transport: CTRL-CHECK-004 (serverTime test on a BusTransport fake) and CTRL-CLI-017 (BUS_CONNECTION code and message) verified [x] at 4319d8d; 86 specs, 84 [x], 2 [D]. Earlier: 72 of 72 specs [x] (CTRL-HEALTH-011: seeded receive times may be negative, fixing `cohostctl status` reporting every service degraded 0s ago; CTRL-CLI-017: one-line unreachable-Redis error via Bus failFast; CTRL-LOCK-001 to 004: cross-process lifecycle lock; Launch builds; CTRL-RUNTIME-012 added: WSLENV forwarding for docker.exe). CTRL-STACK-015 (launch end-to-end) passed against Docker Desktop."
     drift: null
 
   deployment:
@@ -287,7 +287,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "native bus transport: DEPLOY-IMG-001, DEPLOY-IMG-004, DEPLOY-CI-001, 002, 006, 007, DEPLOY-INST-007, 014 are [ ] (Rust native stage via plain cargo build, .node and target out of the context, Rust toolchain and cargo checks in CI with a 20 min timeout, lid-check reads Rust files, installer installs rustup and builds the addon); 81 specs, 73 [x], 8 [ ]. Earlier: 79 of 79 specs [x]. DEPLOY-CI-007 was [x]: CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "native bus transport: DEPLOY-IMG-001, DEPLOY-IMG-004 and DEPLOY-CI-006 [x]; DEPLOY-CI-001, 002, 007, DEPLOY-INST-007, 014 stay [ ] until observed in CI and on an installer run (Rust native stage via plain cargo build, .node and target out of the context, Rust toolchain and cargo checks in CI with a 20 min timeout, lid-check reads Rust files, installer installs rustup and builds the addon); 81 specs, 76 [x], 5 [ ]. Earlier: 79 of 79 specs [x]. DEPLOY-CI-007 was [x]: CTRL-STACK-015 has passed against a daemon. DEPLOY-COMPOSE-022 added (chat's token mount). Commercial licence contact is a GitHub issue per #84 (COMMERCIAL.md); no owner action. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

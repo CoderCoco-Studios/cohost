@@ -56,7 +56,7 @@ function open(url: string, opts: RedisOptions): { redis: Redis; lastError: () =>
  * first connect attempt, and while the connection is down afterwards a call rejects at once (CONN-BP-001: a frame that
  * cannot go out now is stale by the time Redis returns).
  */
-// @spec BUS-NAT-FRM-003, BUS-NAT-FRM-005, BUS-NAT-FRM-006, BUS-NAT-ERR-005
+// @spec BUS-NAT-FRM-003, BUS-NAT-FRM-005, BUS-NAT-FRM-006, BUS-NAT-FRM-008, BUS-NAT-ERR-005
 class IoredisFrameTransport implements FrameTransport {
   private conn?: { redis: Redis; lastError: () => Error | undefined };
   private first?: Promise<unknown>;
@@ -113,7 +113,7 @@ class IoredisFrameTransport implements FrameTransport {
   }
 }
 
-// @spec BUS-NAT-FRM-004, BUS-NAT-FRM-005, CONN-BP-002, CONN-BP-006
+// @spec BUS-NAT-FRM-004, BUS-NAT-FRM-005, BUS-NAT-FRM-008, CONN-BP-002, CONN-BP-006
 class IoredisFrameReader implements FrameReader {
   private conn?: { redis: Redis; lastError: () => Error | undefined };
   private closed = false;

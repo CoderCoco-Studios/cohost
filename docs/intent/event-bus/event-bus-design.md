@@ -105,18 +105,18 @@ services (TS) ──> @cohost/bus  Bus facade (TS: zod, envelope, loops, backoff
                       │                                                   crates/cohost-bus (pure Rust: redis-rs + tokio)
                       ├── test fakes (scripted BusTransport)
                       │  frames path: FrameTransport interface
-                      ├── ioredis frame transport  packages/bus/src/frames.ts (frame codec, tag grammar,
-                      │                                                       audio stream names in connector.ts)
+                      ├── ioredis frame transport  packages/bus/src/frames.ts (audio stream names; frame
+                      │                                                       codec, tag grammar in connector.ts)
                       └── test fakes (scripted FrameTransport)
 Rust services ──────────────────────────────────────────────────────────> crates/cohost-bus directly (events path;
                                                                             frames path deferred)
 ```
 
 - **Cargo workspace** at the repository root (`Cargo.toml` with `members = ["crates/*"]`, one `Cargo.lock`, a `rust-toolchain.toml` pinning an exact stable toolchain version with the `rustfmt` and `clippy` components; the Docker `native` stage uses the same version).
-- **`crates/cohost-bus`**: pure Rust, no Node dependency. For the events path it owns the Redis connections (one shared multiplexed connection plus one dedicated connection per reader), every Redis command the addon issues, ack batching, the names of the keys and streams it uses under the prefix (BUS-STREAM-008) and the events stream caps. For Rust services it also holds the typed codec of the events they touch, held to the contract fixtures ([Rust service codec and contract fixtures](#rust-service-codec-and-contract-fixtures)). It does not carry the audio frame codec, tag grammar, connector protocol constants or audio stream naming; those are TypeScript until a Rust service needs them ([Deferred](#deferred)). A Rust service depends on it directly, with no Node in between. It never logs: every failure is returned to the caller as an error value.
+- **`crates/cohost-bus`**: pure Rust, no Node dependency. For the events path it owns the Redis connections (one shared multiplexed connection plus one dedicated connection per reader), every Redis command the addon issues, ack batching, the names of the keys and streams it uses under the prefix (BUS-STREAM-008) and the events stream caps. For Rust services it also holds the typed codec of the events they touch, held to the contract fixtures ([Rust service codec and contract fixtures](#rust-service-codec-and-contract-fixtures)). It does not carry the audio frame codec, tag grammar or audio stream naming and exports no connector protocol constants; those are TypeScript until a Rust service needs them ([Deferred](#deferred)). The one protocol value it holds is a private registration version (1), which its registration codec checks the value's `v` against (BUS-NAT-RS-004). A Rust service depends on it directly, with no Node in between. It never logs: every failure is returned to the caller as an error value.
 - **`crates/cohost-bus-node`**: the napi-rs wrapper. It converts arguments and results, maps errors to JS errors with a `code`, and holds no logic of its own; anything it does that a Rust service would also need belongs in `cohost-bus`.
 - **`packages/bus/src/native.ts`**: loads the `.node` file and adapts it to `BusTransport`. It is the only TypeScript file that imports the addon.
-- **`packages/bus/src/frames.ts`**: the ioredis `FrameTransport` of the frames path, and the only TypeScript file that imports ioredis. It encodes and decodes with the TypeScript frame codec of `connector.ts`.
+- **`packages/bus/src/frames.ts`**: the ioredis `FrameTransport` of the frames path and the audio stream naming (`audioStreamName`, which `Bus.audioStream` returns), and the only TypeScript file that imports ioredis. It encodes and decodes with the TypeScript frame codec of `connector.ts`.
 - **The `Bus` facade** (`packages/bus/src/index.ts`) keeps every behaviour this document specifies above: what is validated, the envelope fields and their values (`ts` is still the publisher's `Date.now()`), what is delivered, acked, logged and retried. It decides; the transport executes.
 
 ### Facade public API
@@ -199,7 +199,7 @@ Test fakes implement `BusTransport` directly: a resilience test scripts what `re
 
 ### Frames path
 
-The frames path is TypeScript end to end: the facade's `publishFrame` and `tailAudio`, the frame codec, tag grammar, protocol constants and audio stream naming of `connector.ts`, and the ioredis `FrameTransport` of `packages/bus/src/frames.ts`. It implements the connector protocol's audio streams (connections CONN-AUD-*, CONN-BP-*) and never calls the addon.
+The frames path is TypeScript end to end: the facade's `publishFrame` and `tailAudio`, the frame codec, tag grammar and protocol constants of `connector.ts`, and the ioredis `FrameTransport` and audio stream naming of `packages/bus/src/frames.ts`. It implements the connector protocol's audio streams (connections CONN-AUD-*, CONN-BP-*) and never calls the addon.
 
 ```ts
 type AudioDirection = "in" | "out";
@@ -209,7 +209,7 @@ interface FrameTransport {
   /** XADD <prefix>:audio.<dir>.<tag> MAXLEN ~ AUDIO_MAXLEN[dir] * <encodeFrame(frame)> and PEXPIRE <stream> 60000,
    *  in one pipeline on the frames publish connection (CONN-AUD-001). Resolves to the id. */
   appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string>;
-  /** A frame reader with its own connection, for one tailAudio loop. */
+  /** A frame reader with its own connection, opened at its first readFrames, for one tailAudio loop. */
   openReader(): FrameReader;
   /** Disconnect the publish connection, if one was opened, and every reader; a blocked read rejects. */
   close(): Promise<void>;
@@ -227,8 +227,9 @@ type FrameTransportFactory = (url: string, opts: { prefix: string; failFast: boo
 ```
 
 - **Validation before the transport.** `publishFrame` checks the frame with the TypeScript codec first: a `pcm` longer than `MAX_FRAME_BYTES` or with an odd byte count rejects with an `Error` whose `code` is `BUS_INVALID`, and nothing is written (BUS-NAT-FRM-001, BUS-NAT-FRM-002; CONN-AUD-002). Otherwise it calls `appendFrame`.
-- **Connections.** The factory is called once, when the `Bus` is constructed, and opens nothing. The publish connection opens at the first `appendFrame`, so a `Bus` that never publishes a frame (every service except mouth and the connectors) holds no frames connection. Each `tailAudio` opens a reader with its own connection, because a blocking `XREAD` occupies it. Frames from one `Bus` go out on one connection in call order, so a producer's `seq` stays in order in the stream (BUS-NAT-FRM-005).
+- **Connections.** The factory is called once, when the `Bus` is constructed, and opens nothing. The publish connection opens at the first `appendFrame`, so a `Bus` that never publishes a frame (every service except mouth and the connectors) holds no frames connection. Each `tailAudio` opens a reader with its own connection, because a blocking `XREAD` occupies it; `openReader` opens nothing, and the reader connects at its first `readFrames`, so a loop stopped before its first read never opens a socket, matching the publish connection's connect-on-first-use. Frames from one `Bus` go out on one connection in call order, so a producer's `seq` stays in order in the stream (BUS-NAT-FRM-005).
 - **Outage.** The publish connection follows the shared connection's rule ([Errors, reconnect and backoff](#errors-reconnect-and-backoff)): the first `appendFrame` waits for the connection's first connect attempt (at most the 10 s connect timeout) and then writes or rejects; after that, while the connection is down, `appendFrame` rejects at once and nothing is queued (ioredis's offline queue is off), while ioredis reconnects in the background with the same capped delay, 250 ms doubling to 30 s (BUS-NAT-FRM-006). A frame that cannot go out now is stale by the time Redis returns, and a queue would hold audio outside the stream's cap (CONN-BP-001). A reader keeps ioredis's reconnect with `maxRetriesPerRequest: null`: a blocked read waits for the reconnect instead of failing, and resumes from the last id it read. A read that does reject goes through the facade's backoff and `onRead` like every read loop (BUS-NAT-CONN-002). With `failFast` neither connection reconnects and neither prints anything.
+- **Errors.** The frame transport rejects with the codes of the events path, in the same meanings: `BUS_REDIS` when Redis answered with an error (the message is Redis's text), `BUS_CONNECTION` for a connection that could not be opened, failed or was closed by the peer (the message names the cause; ioredis reports a lost connection only as closed, so the last connect error it emitted is used), and `BUS_CLOSED` after `close()` (BUS-NAT-FRM-008, BUS-NAT-ERR-005).
 - **Loop.** `tailAudio` is a loop of `readFrames` from `$` with `COUNT 100 BLOCK 5000`, advancing from the last id read, handing each `DecodedFrame` to the handler under the facade's guard (CONN-BP-002, BUS-NAT-FRM-004). `stop()` closes the frame transport with the events transport; a read that rejects after `stop()` ends its loop quietly (BUS-NAT-ERR-004), and a frame published after it rejects with `BUS_CLOSED` (BUS-NAT-ERR-005).
 - **Buffers.** `pcm` is a Node `Buffer` both ways. ioredis keeps a reference to the caller's `Buffer` until the command is written to the socket, so a producer must not change a frame's `pcm` after passing it to `publishFrame`; every producer builds a fresh `Buffer` per frame (mouth slices a newly converted line, the Discord connector a newly decoded packet). A `Buffer` a read returns belongs to the caller.
 
@@ -244,14 +245,14 @@ type FrameTransportFactory = (url: string, opts: { prefix: string; failFast: boo
 
 ### Errors, reconnect and backoff
 
-The binding rejects with a JS `Error` whose `code` is one of `BUS_CONNECTION`, `BUS_REDIS`, `BUS_CLOSED` and `BUS_INTERNAL`; `BUS_INVALID` is the code the frames path uses for a refused frame:
+The binding rejects with a JS `Error` whose `code` is one of `BUS_CONNECTION`, `BUS_REDIS`, `BUS_CLOSED` and `BUS_INTERNAL`; the frame transport uses `BUS_CONNECTION`, `BUS_REDIS` and `BUS_CLOSED` in the same meanings (BUS-NAT-FRM-008), and `BUS_INVALID` is the code the frames path uses for a refused frame:
 
 | Code | Meaning | Facade response |
 |---|---|---|
 | `BUS_CONNECTION` | could not connect, connection reset or closed by the peer, connect timeout; the message names the cause (the operating system's error text, or `connect timeout`; BUS-NAT-ERR-009) | read loops: warn and back off (BUS-SUB-009, BUS-TAIL-003); publish and other calls: reject to the caller (BUS-STREAM-007) |
 | `BUS_REDIS` | Redis answered with an error; the message is Redis's text (`NOGROUP ...`, `WRONGTYPE ...`) | as `BUS_CONNECTION`; `subscribe` and `resetGroup` rethrow a group-creation error other than BUSYGROUP (BUS-SUB-001, BUS-GROUP-001), which the transport has already turned into `false` |
 | `BUS_CLOSED` | the transport or reader was closed, including a blocked read interrupted by `close()` | after `stop()`: end the loop quietly (BUS-STOP-001) |
-| `BUS_INVALID` | not raised by the binding. The frames path's `publishFrame` rejects with it for a frame whose `pcm` exceeds `MAX_FRAME_BYTES` or has an odd byte count, before anything is written ([Frames path](#frames-path)); the crate's frame encoder returns the same code to a Rust caller | reject to the caller |
+| `BUS_INVALID` | not raised by the binding. The frames path's `publishFrame` rejects with it for a frame whose `pcm` exceeds `MAX_FRAME_BYTES` or has an odd byte count, before anything is written ([Frames path](#frames-path)) | reject to the caller |
 | `BUS_INTERNAL` | a Rust panic caught at the boundary, or a reply of an unexpected shape | as `BUS_CONNECTION` |
 
 Reconnect semantics:
@@ -266,18 +267,18 @@ Reconnect semantics:
 
 A convention lives with the code that issues the command it governs. Each convention has one implementation, in the language of the services that use it; the frame codec, tag grammar, protocol constants and audio stream names are TypeScript, because only TypeScript services read and write frames today (tenet 12 keeps a frame from crossing into Rust to share code). The contract fixtures guard the TypeScript codec now and hold any later Rust copy to the same behaviour.
 
-In TypeScript, in `connector.ts` and exported from `@cohost/bus` (BUS-NAT-RS-003 to BUS-NAT-RS-005, BUS-NAT-RS-007):
+In TypeScript, exported from `@cohost/bus`: in `connector.ts` (BUS-NAT-RS-003 to BUS-NAT-RS-005, BUS-NAT-RS-007), and for the audio stream names in `frames.ts` (BUS-NAT-RS-006):
 
 - The frame codec: `encodeFrame`, `decodeFrame` and their rules (field names, `v` = `FRAME_VERSION`, `MAX_FRAME_BYTES` 64 KiB, even byte count, finite header numbers, flush frames without `pcm`; CONN-AUD-002, CONN-AUD-006, CONN-BP-006).
 - The connector protocol constants `FRAME_VERSION`, `MAX_FRAME_BYTES`, `AUDIO_MAXLEN` (`in` 3000, `out` 1500), `AUDIO_STREAM_TTL_MS` (60000), `LEASE_INTERVALS` (3), `REGISTRATION_VERSION` (1) and `DEFAULT_CONNECTOR_INTERVAL_MS` (5000).
 - The tag grammar and reserved list (`TAG_PATTERN`, `RESERVED_TAGS`, `tagProblem`; CONN-TAG-001, CONN-TAG-002).
-- The audio stream names `<prefix>:audio.<dir>.<tag>`, which `Bus.audioStream` returns and the frames path writes and reads.
+- The audio stream names `<prefix>:audio.<dir>.<tag>`, built by `audioStreamName` in `frames.ts`, which `Bus.audioStream` returns and the frame transport writes and reads.
 - `parseRegistration` and its zod schemas, `findOffer`, `findReady`, `capabilityDirection`, `FrameSequencer`, `FrameTracker`, `ConnectorRegistrar`, `watchConnectors`, `ConnectorRegistry`, and the `Frame`, `DecodedFrame`, `Registration`, `CapabilityEntry`, `ConnectorSpec` types.
 
 In `crates/cohost-bus`:
 
 - For the events path, which the addon runs: the names `<prefix>:events`, `<prefix>:health`, `<prefix>:upload:<id>` and `<prefix>:connector:<id>`, and the stream caps `MAXLEN` 20000 and `HEALTH_MAXLEN` 1000. `Bus.connectorKey` returns the name the crate builds, through the binding's synchronous `connectorKey`, and `HEALTH_MAXLEN` is the binding's value (BUS-NAT-RS-004, BUS-NAT-RS-006).
-- For Rust services, which link the crate directly: the serde codec of the next section. The crate carries no frame codec, tag grammar, connector protocol constants or audio stream names, and the binding exports none of these to Node.
+- For Rust services, which link the crate directly: the serde codec of the next section. The crate carries no frame codec, tag grammar or audio stream names and exports no connector protocol constants (its registration codec keeps the registration version, 1, as a private constant), and the binding exports none of these to Node.
 
 ### Rust service codec and contract fixtures
 
@@ -312,6 +313,15 @@ The native transport merges only if, on `scripts/dev/bus-bench.ts --sources 8 --
 
 Three runs and their medians keep one noisy run from deciding the merge; the 10% bound on p99 allows for the run-to-run noise of a tail percentile measured over a 20 s phase, so "not worse" means not worse beyond that noise. The bench has `--runs N`, which repeats every phase N times and prints the per-row medians, and `--json`, which writes every run's rows and the medians as one JSON document, so the two transports' results can be compared by a script rather than by reading tables (BUS-NAT-GATE-007). The bench's `p99ms` column is the hop latency and its final PASS/FAIL line (p99 under 5 ms) is a separate sanity bound, not the gate. The bench measures both paths in one process with publisher and consumer on one clock; its events path is a `chat.message` carrying base64 PCM at audio rate, a worst case for that path rather than real traffic. Its `frames x8` row runs the TypeScript frames path on both sides and is not part of the gate. Its scratch-stream cleanup uses ioredis, as the frames path does. If the gate is missed, the native transport is not merged: the TypeScript transport stays, the branch is closed with its numbers recorded, and the HLD's Native layer section is revised to match (BUS-NAT-GATE-006).
 
+**Gate result.** The events-path gate passed: `scripts/dev/bus-bench.ts --sources 8 --runs 3` (20 s per phase) on a quiet machine, the native transport built from this branch and the TypeScript baseline built from commit `6adc350` (the merge base plus the benchmark script; `packages/bus/src` unchanged from the merge base), run back to back against the same Redis, gave these medians over three runs:
+
+| Row | TypeScript cpu% / p99 ms | Native build cpu% / p99 ms | Native / TypeScript |
+|---|---|---|---|
+| events x8 (the gate) | 11.26 / 4.53 | 9.86 / 2.29 | 0.88x CPU, 0.51x p99 |
+| frames x8 (context only) | 8.15 / 1.90 | 9.43 / 2.19 | TypeScript frames path on both sides |
+
+Native CPU is below the TypeScript median (BUS-NAT-GATE-004) and native p99 is about half of it, well inside the 1.1x bound (BUS-NAT-GATE-005). Absolute numbers vary from run to run with machine load: the earlier run in the table below measured the same events x8 row at 7.41% / 2.87 ms (TypeScript) and 6.41% / 1.40 ms (native). Only ratios taken within one back-to-back run are comparable, and both runs give the native events path about 0.87x to 0.88x the CPU and half the p99. The frames x8 row runs the same TypeScript frames code in both builds, so its difference (1.16x CPU, 1.15x p99) is run-to-run noise, not a property of either transport.
+
 **The measurement that set the split.** With frames also on the addon, the same bench (8 sources, medians of 3 runs) gave:
 
 | Path | TypeScript cpu% / p99 ms | Native cpu% / p99 ms | Native / TypeScript |
@@ -319,7 +329,7 @@ Three runs and their medians keep one noisy run from deciding the merge; the 10%
 | frames x8 | 6.23 / 1.31 | 8.19 / 1.46 | 1.31x CPU, 1.11x p99 |
 | events x8 | 7.41 / 2.87 | 6.41 / 1.40 | 0.87x CPU, 0.49x p99 |
 
-The events path carries one batch per crossing and gains on both counts. The frames path crosses once per frame of 20 ms audio and spends more on the crossing than native Redis I/O saves, so frames stay TypeScript (HLD tenet 12). These numbers record why the paths are split; they are not a requirement on later runs.
+The events path carries one batch per crossing and gains on both counts. The frames path crosses once per frame of 20 ms audio and spends more on the crossing than native Redis I/O saves, so frames stay TypeScript (HLD tenet 12). These numbers record why the paths are split; they are not a requirement on later runs. Frames stay TypeScript for this reason: the per-frame crossing cost measured here (1.31x CPU, 1.11x p99 with frames on the addon), not the noise of the gate run's frames row.
 
 ### Native design constraints
 
@@ -507,7 +517,7 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 | Redis client crate | `redis` (redis-rs) with tokio multiplexed connections | `fred`; a hand-written RESP client | redis-rs is the most widely used client, supports pipelines, multiplexing and stream commands, and is what a Rust service would pick anyway. A hand-written client would own protocol bugs for no measured benefit. |
 | One transport per path | The events path runs only on the native transport, with no fallback and no flag; the frames path runs only on the ioredis frame transport, which is the one runtime use of ioredis (BUS-NAT-API-003) | Keep ioredis as an events-path fallback or behind a switch | Pre-alpha: nothing is deployed that a second transport would protect, and two transports for one path would double the behaviour this segment must specify and test. The measurement gate decides before merge whether the native transport replaces the TS one on the events path at all. |
 | Frames path transport | TypeScript on ioredis, behind a `FrameTransport` seam, until the frame producers and consumers (connector-discord, ears, mouth) are Rust services on `crates/cohost-bus`; owner decision | Frames through the addon like events; frames through the addon with each batch returned as one `Buffer` plus a flat header array; a native frames path for TS services only after a second gate | Measured at 8 sources, medians of 3 runs: native frames cost 1.31 times the CPU and 1.11 times the p99 of TypeScript, because a 20 ms frame crosses napi once per publish and the crossing costs more than native Redis I/O saves, while batching cannot remove the per-publish crossing. HLD tenet 12 applies its coarse-boundary gate to native code this project writes, which the events path passes (one crossing per batch: 0.87 times the CPU, 0.49 times the p99) and the frames path does not. |
-| Wire conventions | The frame codec, tag grammar, protocol constants and audio stream names are TypeScript in `connector.ts`, guarded by contract fixtures (frames, tags, constants and names); the crate carries no Rust copy until a Rust service needs one; the events-path names and caps are the crate's, which issues those commands | One implementation in Rust called from TS through the binding; a Rust copy kept in the crate now, with no Rust consumer | Calling the Rust codec from TS would put a napi crossing back on every frame, which the frames path exists to avoid. A Rust copy with no Rust service to use it is unused code to maintain; the fixtures are kept so a later copy is held to one behaviour and a change to either side fails a test. A convention lives with the code that issues the command, so the addon builds the names of what it writes. |
+| Wire conventions | The frame codec, tag grammar and protocol constants are TypeScript in `connector.ts` and the audio stream names in `frames.ts`, guarded by contract fixtures (frames, tags, constants and names); the crate carries no Rust copy until a Rust service needs one; the events-path names and caps are the crate's, which issues those commands | One implementation in Rust called from TS through the binding; a Rust copy kept in the crate now, with no Rust consumer | Calling the Rust codec from TS would put a napi crossing back on every frame, which the frames path exists to avoid. A Rust copy with no Rust service to use it is unused code to maintain; the fixtures are kept so a later copy is held to one behaviour and a change to either side fails a test. A convention lives with the code that issues the command, so the addon builds the names of what it writes. |
 | Frames publish connection | Opened at the first `publishFrame`; its first connect is waited for, after that a frame rejects at once while Redis is down, with no offline queue (BUS-NAT-FRM-005, BUS-NAT-FRM-006) | Open it with the `Bus`; ioredis's offline queue with `maxRetriesPerRequest: 3` | Only mouth and the connectors publish frames, so the other services hold no extra connection. A queued frame is stale audio by the time it is written and sits outside the stream's cap (CONN-BP-001), so frames fail at once like heartbeats on the shared connection. |
 | Ack batching | Queue acks and send them in the next read's pipeline | One awaited XACK per entry; a timer-driven flush | Per-entry XACK costs a round-trip per entry; tying the flush to the next read keeps the ack-after-handler order and at-most-once semantics, and needs no timer. |
 | Addon loading | One fixed path beside the package, linux-x64-gnu, no fallback | Prebuilt binaries for many platforms (macOS, arm64, Windows); a search path; an environment override | Every deployment is the Debian Docker image, the ubuntu CI or WSL; one path makes a load failure unambiguous, and each extra platform would add a build target and a CI leg nothing deployed needs. |

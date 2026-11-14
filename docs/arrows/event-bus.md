@@ -4,17 +4,18 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 61 specs: 61 implemented, 0 deferred, 0 gaps. The owner decisions of 2026-11-01 are applied below and implemented. With the spoken fallback line (build chunk 1): 65 specs: 65 implemented, 0 gaps, 0 deferred. The standalone host-run dashboard (chunk 2) adds BUS-TAIL-005, an optional `onRead` callback on `tail` and `tailHealth` that reports every read's outcome, so the dashboard feed can report whether Redis answers (DASH-FEED-009): 66 specs, 66 implemented.
+**AUDITED** — audited 2026-11-14 at git `4319d8d` (native transport closeout); mapped 2026-10-31 (`686cc8f`). Spec file: 165 specs, 150 `[x]`, 15 `[ ]`, 0 `[D]`. Every `[x]` line is observed in code and has a test that carries its `@spec` ID (a `<!-- test: -->` pointer names the file); every `[ ]` line is listed under Work Required with the reason it stays open.
 
-## Native transport: events path native, frames path TypeScript (specified)
+## Native transport: events path native, frames path TypeScript (built)
 
-Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs for the events path, `BusTransport` seam; the frames path TypeScript on ioredis behind a `FrameTransport` seam; measurement gate on the events path; design constraints N1 to N3). Follows HLD tenet 12, one language per service, and the HLD Key Design Decision of the same name: the frames path measured 1.31 times the CPU of TypeScript on the addon (gate failed), the events path 0.87 times (passed). 164 specs: 76 `[x]`, 88 `[ ]`, 0 `[D]`. The 83 `BUS-NAT-*` specs (API, TRN, ACK, CONN, ERR, FRM, RS, FIX, BLD, CI, GATE) are gaps, and `BUS-STREAM-005`, `BUS-STREAM-009`, `BUS-STOP-001`, `BUS-SUB-008` and `BUS-SUB-009` are gaps again because their text names the native transport (shared connection and its first-connect wait, `BUS_CONNECTION`, async `stop()` with a 2 s ack flush that also closes the frame transport, and at-most-once delivery except a refused ack, which a later drain redelivers at most once before dropping it, BUS-NAT-ACK-008).
+Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs for the events path, `BusTransport` seam; the frames path TypeScript on ioredis behind a `FrameTransport` seam; measurement gate on the events path; design constraints N1 to N3). Follows HLD tenet 12, one language per service. Frames stay TypeScript because one napi crossing per frame measured 1.31x the CPU of TypeScript (LLD § Measurement gate, "The measurement that set the split").
 
-The events/frames split amends BUS-STOP-001, BUS-NAT-API-002, 003, 004, 011, BUS-NAT-TRN-001, 005, 009, 010, 013, BUS-NAT-CONN-005, BUS-NAT-ERR-001, 005, BUS-NAT-FRM-001 to 004 (now the TypeScript frames path), BUS-NAT-RS-001, 003 to 006, 008 (TypeScript owns the frame codec, tag grammar, protocol constants and audio stream names; the crate carries no Rust copy of them until a Rust service needs one, deferred in the LLD), BUS-NAT-FIX-001 to 004 (tag and constants fixtures added and kept; frame fixtures checked against the TypeScript decoder; the Rust contract test reads only event and registration fixtures) and BUS-NAT-GATE-001, 006 (events path only), and adds BUS-NAT-FRM-005 to 007 (lazy frames connections, at-once rejection while Redis is down, the `BusOptions.frames` seam). Retired, numbers not reused: BUS-NAT-BLD-008, BUS-NAT-CI-001 and BUS-NAT-CI-003 (superseded by deployment DEPLOY-IMG-001 and DEPLOY-CI-001), BUS-NAT-TRN-006 and BUS-NAT-TRN-012 (moved to LLD constraints N1 and N3), BUS-NAT-GATE-002 and BUS-NAT-GATE-003 (frames-path gate conditions; the frames path is off the addon). Gate: three runs per transport, medians, events-path CPU no greater and p99 within 10% (BUS-NAT-GATE-001, 004, 005), with `--runs` and `--json` on `scripts/dev/bus-bench.ts` (BUS-NAT-GATE-007). `ioredis` is a runtime dependency of `packages/bus` for the frames path only, imported by `packages/bus/src/frames.ts` alone (BUS-NAT-API-003).
-
-Code and tests to change for the split: `packages/bus/src/{index,native,transport,connector}.ts`, new `packages/bus/src/frames.ts`, `packages/bus/package.json` (ioredis to `dependencies`), `crates/cohost-bus-node/src/lib.rs` (drop frame, tag and audio-name exports), `crates/cohost-bus/src/transport.rs` (drop `append_frame` / `read_frames` from the addon path), `packages/testing/src/fake-transport.ts` (fake `FrameTransport`), `packages/bus/test/{connector,contract,native-api,native-binding,native-integration,native-loops}.test.ts`, `crates/cohost-bus/tests/{transport,contract}.rs`, and new `packages/bus/fixtures/contract/tags/` and `constants.json`.
-
-Cross-segment specs this work needs, all `[ ]`: deployment DEPLOY-IMG-001, DEPLOY-IMG-004, DEPLOY-CI-001, DEPLOY-CI-002, DEPLOY-CI-006, DEPLOY-CI-007, DEPLOY-INST-007, DEPLOY-INST-014; control-plane CTRL-CHECK-004, CTRL-CLI-017; connections CONN-AUD-002 (its codec now the TypeScript one; a Rust copy waits for a Rust connector); shared-runtime SHARED-BOOT-005, SHARED-BOOT-006, SHARED-LIFE-001, SHARED-LIFE-004; avatar AVATAR-BUS-008, AVATAR-STATE-002 (outage behaviour on the native transport; the voice LLD's prose is corrected with no spec change). The Windows desktop capture helper is Rust on `crates/cohost-bus`, its build deferred (connections LLD, CONN-DESK-001).
+- **Gate.** Passed on the events path: 8 sources, 3 runs, medians, events x8 TypeScript 11.26% CPU / p99 4.53 ms vs native 9.86% / 2.29 ms (TS baseline built from `6adc350`, quiet machine). Absolute numbers vary between runs; only within-run ratios compare (LLD § Measurement gate, "Gate result").
+- **Verified at closeout** (`4319d8d`): `pnpm test` and `REDIS_URL=… node --import tsx --test packages/bus/test/*.test.ts` (154 pass against Redis 7.4), `cargo test --workspace` against the same Redis (37 pass). 69 of the 84 `BUS-NAT-*` specs are `[x]`, as are the amended BUS-STREAM-005, BUS-STREAM-009, BUS-SUB-008, BUS-SUB-009 and BUS-STOP-001.
+- **Wire conventions.** The frame codec, tag grammar and connector protocol constants are TypeScript in `connector.ts`; the audio stream names are built by `audioStreamName` in `frames.ts` (BUS-NAT-RS-006). The crate exports none of the protocol constants and keeps a private registration version (1) for its registration codec (BUS-NAT-RS-004, BUS-NAT-RS-008).
+- **Frames path.** Lazy connections: the publish connection opens at the first `appendFrame`, each frame reader at its first `readFrames` (BUS-NAT-FRM-005). Failures reject `BUS_REDIS` for a Redis error and `BUS_CONNECTION` for a connection failure (BUS-NAT-FRM-008).
+- **Retired, numbers not reused:** BUS-NAT-BLD-008, BUS-NAT-CI-001, BUS-NAT-CI-003 (superseded by deployment DEPLOY-IMG-001, DEPLOY-CI-001), BUS-NAT-TRN-006, BUS-NAT-TRN-012 (LLD constraints N1, N3), BUS-NAT-GATE-002, BUS-NAT-GATE-003 (frames-path gate conditions).
+- **Cross-segment specs of this change:** `[x]` after verification: control-plane CTRL-CHECK-004, CTRL-CLI-017; connections CONN-AUD-002; shared-runtime SHARED-BOOT-005, SHARED-BOOT-006, SHARED-LIFE-001, SHARED-LIFE-004; avatar AVATAR-BUS-008, AVATAR-STATE-002; deployment DEPLOY-IMG-001, DEPLOY-IMG-004, DEPLOY-CI-006. Still `[ ]` (CI, installer and Docker-in-CI behaviour, not observable from a local run): DEPLOY-CI-001, DEPLOY-CI-002, DEPLOY-CI-007, DEPLOY-INST-007, DEPLOY-INST-014. The voice LLD's prose was corrected with no spec change.
 
 ## Upload store over Redis: built
 
@@ -65,33 +66,28 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 ## References
 
 ### HLD
-- docs/high-level-design.md (System Design: bus of 19 event types plus `cohost:health`)
+- docs/high-level-design.md (System Design; Native layer; tenet 12)
 
 ### LLD
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (81 specs: 78 `[x]`, 3 `[ ]`, 0 `[D]`; BUS-EVT-024 and 025, the `timing` schema, and BUS-EVT-026 to 029, `speech.partial`, `utteranceId` and the staleness rule, are built; BUS-EVT-011 is retired and its number not reused)
+- docs/intent/event-bus/event-bus-specs.md (165 specs: 150 `[x]`, 15 `[ ]`, 0 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
-- packages/bus/test/bus.test.ts (366 lines; schema tests run without Redis, integration tests skip when no Redis at `REDIS_URL`)
-- packages/bus/test/resilience.test.ts (266 lines; `Bus` against scripted fake Redis connections injected through `BusOptions.connect`: start modes, read retry and backoff, `XACK` failure, tail handlers, publish failure; runs without Redis)
-- packages/bus/test/shutdown.test.ts (subprocess tests of the shutdown sequence) with fixtures `shutdown-multi.fixture.ts`, `shutdown-hooks.fixture.ts` and `shutdown.fixture.ts` (no annotations)
-- packages/testing has no tests of its own; it is exercised only indirectly by `services/*/test/*.test.ts`
+- packages/bus/test/bus.test.ts (schemas without Redis; integration tests skip when no Redis at `REDIS_URL`)
+- packages/bus/test/resilience.test.ts (`Bus` loops against a scripted fake `BusTransport` through `BusOptions.transport`; runs without Redis)
+- packages/bus/test/native-api.test.ts, native-loops.test.ts (facade over fake transports), native-binding.test.ts (the addon's exports), native-integration.test.ts (the addon against a real Redis, with `native-failfast.fixture.ts` in a subprocess)
+- packages/bus/test/frames.test.ts (the ioredis frame transport), contract.test.ts (contract fixtures), connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
+- crates/cohost-bus/tests/transport.rs, connection.rs, contract.rs, workspace.rs, and unit tests in crates/cohost-bus/src/{codec,consts,error,keys}.rs
+- packages/testing/test/fake-bus.test.ts
 
 ### Code
-- packages/bus/src/index.ts (12 `@spec` lines)
-- packages/bus/src/events.ts (21 `@spec` lines)
-- packages/bus/src/heartbeat.ts (owned by control-plane; exported through this package; 2 `@spec` lines, `CTRL-*`)
-- packages/bus/package.json, packages/bus/tsconfig.json
-- packages/testing/src/index.ts (10 `@spec` lines), packages/testing/package.json, packages/testing/tsconfig.json
-
-### OpenSpec (frozen)
-- openspec/specs/bus/spec.md
-- openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md
-- openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md
-- openspec/changes/archive/2026-11-01-add-test-injection/specs/bus/spec.md
-- (`add-isolated-backends` has no bus delta)
+- packages/bus/src/index.ts (the `Bus` facade), events.ts (the registry), transport.ts (`BusTransport`, `FrameTransport`), native.ts (the addon adapter), frames.ts (ioredis frame transport, audio stream names), connector.ts, registrar.ts
+- crates/cohost-bus (transport, keys, consts, codec, error), crates/cohost-bus-node (napi-rs binding)
+- Cargo.toml, rust-toolchain.toml, packages/bus/package.json
+- packages/testing/src/index.ts, fake-transport.ts
+- scripts/dev/bus-bench.ts (the measurement gate)
 
 ## Architecture
 
@@ -106,42 +102,49 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
-|----------|----------|-------------|----------|------|----------------|
-| Publish and envelope | BUS-STREAM-001 to BUS-STREAM-009 | 9 | 0 | 0 | 7 |
-| Event catalogue and schemas | BUS-EVT-001 to BUS-EVT-022 | 21 | 0 | 0 | 14 |
-| Consumer-group subscription | BUS-SUB-001 to BUS-SUB-013 | 13 | 0 | 0 | 12 |
-| Live tail and backfill | BUS-TAIL-001 to BUS-TAIL-005 | 5 | 0 | 0 | 5 |
-| Health stream and group reset | BUS-HEALTH-001 to BUS-GROUP-001 | 5 | 0 | 0 | 5 |
-| Shutdown | BUS-STOP-001 | 1 | 0 | 0 | 1 |
-| Test double (packages/testing) | BUS-TEST-001 to BUS-TEST-011 | 11 | 0 | 0 | 11 |
+| Category | Spec IDs | Implemented | Deferred | Gaps |
+|----------|----------|-------------|----------|------|
+| Publish and envelope | BUS-STREAM-001 to 009 | 9 | 0 | 0 |
+| Connector audio, registry, uploads | BUS-AUD-001, 002, BUS-UPL-001 to 003 | 5 | 0 | 0 |
+| Event catalogue and schemas | BUS-EVT-001 to 032 (011 retired) | 31 | 0 | 0 |
+| Consumer-group subscription | BUS-SUB-001 to 013 | 13 | 0 | 0 |
+| Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |
+| Health stream and group reset | BUS-HEALTH-001 to 004, BUS-GROUP-001 | 5 | 0 | 0 |
+| Shutdown | BUS-STOP-001 | 1 | 0 | 0 |
+| Native: facade API | BUS-NAT-API-001 to 011 | 11 | 0 | 0 |
+| Native: transport | BUS-NAT-TRN-* (12) | 11 | 0 | 1 |
+| Native: acks, connections | BUS-NAT-ACK-001 to 008, BUS-NAT-CONN-001 to 007 | 15 | 0 | 0 |
+| Native: errors | BUS-NAT-ERR-001 to 011 | 10 | 0 | 1 |
+| Native: frames | BUS-NAT-FRM-001 to 008 | 7 | 0 | 1 |
+| Native: crate, fixtures | BUS-NAT-RS-001 to 009, BUS-NAT-FIX-001 to 004 | 11 | 0 | 2 |
+| Native: build, CI, gate | BUS-NAT-BLD-* (8), BUS-NAT-CI-002, BUS-NAT-GATE-* (5) | 4 | 0 | 10 |
+| Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 70 of 70 specs implemented; 0 deferred; 0 open. 54 carry a test `@spec` annotation; implemented without one: BUS-STREAM-002, BUS-STREAM-005, BUS-EVT-002, BUS-EVT-012, BUS-EVT-013, BUS-EVT-014, BUS-EVT-015, BUS-EVT-016, BUS-EVT-019, BUS-SUB-006 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 165 specs, 150 implemented, 15 open, 0 deferred. `node scripts/lid-check.mjs`: 0 problems.
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line is observed in code and carries an `@spec` annotation. No `[ ]` lines remain.
+1. **Markers.** Every `[x]` line is observed in code and has a test carrying its `@spec` ID. The open lines are listed under Work Required.
 2. **The event schema specs match `events.ts` field for field.** BUS-EVT-002, 003, 004, 006, 009 and 010 list every field; BUS-EVT-012 (`vision.summary`), 013 (`speech.heard`), 014 (`brain.say`), 015 (`brain.status`), 016 (`voice.utterance`), 017 (`voice.playing` / `voice.done`), 018 (`avatar.state`) and 019 (`Emotion` fields) cover the rest. BUS-EVT-018 requires `mouthSmile` and bounds every `avatar.state` number; BUS-EVT-017 gives `voice.playing` and `voice.done` one shared shape.
 3. **Other spec corrections** (IDs kept): BUS-STREAM-003 (unknown payload keys are stripped), BUS-SUB-003 (the pending drain reads batch by batch until none remain, then new entries), SHARED-LIFE-001 (rejected hooks are ignored; synchronous throws are SHARED-LIFE-005). BUS-TEST-009 (`FakeBus.consumer`) and BUS-TEST-010 (`silentLog`, `recordingLog`) cover the remaining test helpers.
 4. **Restart behaviour.** `subscribe` takes a required `start` (`latest` or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010). `fromNow` is removed; every service caller names `start` (memory `resume`, the rest `latest`) (BUS-SUB-011). Delivery is at most once (BUS-SUB-008).
-5. **Several `onShutdown` registrations share one sequence** (`runShutdown`, `index.ts:320-345`): hooks once, every callback in registration order, failures logged (to the registration's optional logger or `console.error`), one `exit(0)`. Eyes and ears register more than one callback. (SHARED-LIFE-004, 006)
-6. **Handler failures and undecodable entries are silently dropped** — ack-always at `index.ts:166`; `decode` swallows every parse error with no log (`index.ts:226-228`); the ack-on-failure behaviour is pinned by `bus.test.ts:56-81`. A schema mismatch between producer and consumer would lose events invisibly. (BUS-SUB-005, BUS-SUB-007)
-7. **Read failures retry with a capped, growing delay and tail handlers are guarded** (`index.ts:261-281`); a Redis outage at subscribe time before the group exists still rejects `subscribe` (group creation is not retried), and callers use `void bus.subscribe(...)` with no `.catch`. (BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004, BUS-SUB-001)
-8. **Single ownership with control-plane** — the heartbeat transport and shutdown mechanics are event-bus lines only; the code entry points (`index.ts:47,63,241`) and tests (`bus.test.ts:144,154`) cite only `BUS-*` IDs for them, and SHARED-LIFE-010 (the heartbeat's `beforeShutdown` registration) is cited at `heartbeat.ts:60` and on the SIGTERM test (`bus.test.ts:256`). (H1)
-9. **Test coverage is uneven** — no test for MAXLEN trimming, the consumer name, eight event shapes, sequential delivery, decode drops inside `subscribe`, the `beforeShutdown` timeout, or any of `@cohost/testing`. Start modes, read retry, `XACK` failure, tail handlers, publish failure and the shutdown sequence are covered without Redis through injected fake connections and subprocess fixtures. Partial behind annotated tests: BUS-EVT-001 (membership of three types; the count of 19 is not pinned), BUS-EVT-003 (only a high `valence`), BUS-STREAM-006 (`source` and `ts` present, not their defaults), BUS-SUB-007 (`recent` path only). Integration tests write to production stream keys and leave groups behind (`bus.test.ts:23-45,84-98`). `[inferred]` the shared dev Redis is expected to be disposable.
-10. **Process-lifecycle helpers live in the bus package** — `onShutdown`, `beforeShutdown` and `startHeartbeat` import each other in a cycle (`index.ts:259`, `heartbeat.ts:2`); works only because the call is deferred to runtime. `[inferred]` they sit here because every service already imports `@cohost/bus`.
-11. **The frozen OpenSpec `bus` baseline lists all 19 events and seven `control` commands;** only the archived `add-service-health` delta still lists five (`openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md:8`). The LID specs supersede it.
+5. **Delivery stays at most once on the native transport.** Acks are queued and sent ahead of the next `XREADGROUP` (BUS-NAT-ACK-001); a refused ack leaves the entry pending for one redelivery by a later drain, and a second refusal drops it (BUS-SUB-008, BUS-NAT-ACK-003, BUS-NAT-ACK-008). `stop()` flushes queued acks within 2 s (BUS-NAT-ACK-005 to 007).
+6. **Handler failures and undecodable entries are acknowledged and dropped without a log** (BUS-SUB-005, BUS-SUB-007); a schema mismatch between producer and consumer loses events silently.
+7. **Outage behaviour.** The shared connection waits only for its first connect attempt (at most 10 s); afterwards every command rejects `BUS_CONNECTION` at once while it is down, and reconnects in the background (BUS-NAT-CONN-004 to 007). Read loops back off and drain pending entries after a failure (BUS-NAT-CONN-002, 003).
+8. **Process shutdown lives in shared-runtime** (`onShutdown`, `beforeShutdown`, SHARED-LIFE-*); `Bus.stop()` is async and is awaited by that sequence (BUS-STOP-001, SHARED-BOOT-005).
+9. **Tests are isolated from production streams** by `streamPrefix` (BUS-STREAM-008) in TypeScript and by a per-test prefix in the Rust integration tests (BUS-NAT-CI-002).
 
 ## Work Required
 
-### Must Fix
-1. Every `Bus.subscribe` caller names `start` (memory `resume`, every other service `latest`), then `start` becomes required and `fromNow` is removed (BUS-SUB-011). Each service does this in its own segment.
+### Open specs (implemented or procedural, but not closable from a local test)
+1. BUS-NAT-TRN-011 (native layer never writes to stdout/stderr): implemented (no print in either crate; the panic hook is silenced), no test annotated with it; the failfast subprocess test checks empty stdout/stderr but cites other IDs.
+2. BUS-NAT-ERR-006 (a panic rejects `BUS_INTERNAL`): implemented (`catch_unwind` in the binding, `panic = "unwind"`), but no test builds with `test-panic` and calls `testPanic`.
+3. BUS-NAT-FRM-008 (frame transport codes): `toBusError` in `frames.ts` maps `ReplyError` to `BUS_REDIS` and the rest to `BUS_CONNECTION`; only the `BUS_CONNECTION` half is tested.
+4. BUS-NAT-RS-002 (binding holds no logic): structural, no test. BUS-NAT-RS-009 (add a type with its fixtures): a procedure for future work.
+5. BUS-NAT-BLD-002 (`pnpm build`/`test` run `build:native`), BUS-NAT-BLD-004, BUS-NAT-BLD-005 (addon location and load error), BUS-NAT-BLD-006 (linux-x64-gnu only): implemented in `package.json` and `native.ts`, no annotated test.
+6. BUS-NAT-CI-002 (Rust tests use their own prefix): `tests/common/mod.rs` does, with a comment but no `@spec`-annotated test.
+7. BUS-NAT-GATE-001, 004, 005, 006 (merge gate): a procedure, not a test; the measured result satisfies 004 and 005 (LLD § Measurement gate). BUS-NAT-GATE-007 (`--runs`, `--json` on the bench): implemented, no test.
 
 ### Should Fix
-3. Log (at least at debug or warn) when `decode` drops an entry (BUS-SUB-007).
-4. Add schema tests for BUS-EVT-002 and BUS-EVT-012 to 019, and pin the 19-type count (BUS-EVT-001).
-
-### Nice to Have
-5. Add tests for sequential delivery and the `beforeShutdown` timeout, and cover the remaining `@cohost/testing` helpers (BUS-TEST-001 to 010).
-6. Use a test-specific stream key / clean up groups in bus integration tests; probe Redis once.
-7. Add range constraints to `avatar.state`, and move the shutdown/heartbeat helpers out of the bus package if the cycle becomes a problem.
+1. Log (at least at debug) when `decode` drops an entry (BUS-SUB-007).
+2. Add schema tests for BUS-EVT-002 and BUS-EVT-012 to 016.

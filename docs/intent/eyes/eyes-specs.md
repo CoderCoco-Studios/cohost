@@ -38,6 +38,8 @@ Segment `eyes` (prefix `EYES`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **EYES-LOOK-003**: While the loop runs, the eyes service shall wait `vision.interval_ms` minus the time the look took between looks, measured on a monotonic clock, and never less than 500 ms. <!-- test: services/eyes/test/service.test.ts --> <!-- test: services/eyes/test/eyes.test.ts --> <!-- openspec: eyes § Polling cadence -->
 - [x] **EYES-LOOK-004**: While OBS is not identified, the eyes service shall skip looks without error (`services/eyes/src/service.ts:100`); bringing the connection back is EYES-OBS-004's job.
 - [x] **EYES-LOOK-005**: If a look throws, the eyes service shall log a warning and continue the loop. <!-- test: services/eyes/test/service.test.ts -->
+- [x] **EYES-LOOK-006**: When a look publishes `vision.summary`, the eyes service shall set `timing.capturedAt` to the epoch-millisecond time the screenshot call returned and `timing.describedAt` to the epoch-millisecond time the describe call returned, with `capturedAt <= describedAt`. <!-- test: services/eyes/test/eyes.test.ts -->
+- [x] **EYES-LOOK-007**: When a look completes, the eyes service shall log the describe call's duration in milliseconds, whether the look published a summary, ended as a `SAME` reply, or returned an empty description. <!-- test: services/eyes/test/eyes.test.ts -->
 
 ## Test injection
 
@@ -49,6 +51,7 @@ Segment `eyes` (prefix `EYES`). Mapped 2026-10-31 at git `686cc8f`; verified aga
 - [x] **EYES-INJ-011**: The eyes service shall handle image injection without an OBS connection, including while `vision.enabled` is false. <!-- test: services/eyes/test/inject.test.ts:93 --> <!-- openspec: eyes § Injected images -->
 - [x] **EYES-INJ-014**: The eyes service shall subscribe its `inject.request` consumer group `eyes` with start mode `latest`, so the group is reset to the newest entry on every start and no request published while eyes was down is handled. <!-- test: services/eyes/test/obs.test.ts:108 -->
 - [x] **EYES-INJ-016**: The eyes service shall handle `inject.request` through the shared inject handler (shared-runtime SHARED-INJ-*) with target `eyes`, the single kind `image`, the byte cap `vision.upload_max_bytes` and the upload read timeout `vision.upload_timeout_ms`, taking the upload through its bus connection (`Bus.takeUpload`). <!-- test: services/eyes/test/service.test.ts --> (EYES-INJ-002 to 006, 012, 013 and 015 are retired, now SHARED-INJ-001 to 008; numbers not reused.)
+- [x] **EYES-INJ-017**: When the eyes service publishes `vision.summary` for an injected image, it shall omit `timing`, because the image is not a frame captured from the vision source. <!-- test: services/eyes/test/inject.test.ts -->
 
 ## Stub describer
 

@@ -20,7 +20,7 @@ test("a new description is published and becomes the 'previous' for the next loo
   const { eyes, bus, previous } = setup(["The player enters a cave.", "A bat swoops down."]);
   assert.equal(await eyes.look(), true);
   assert.equal(await eyes.look(), true);
-  assert.deepEqual(bus.of("vision.summary"), [
+  assert.deepEqual(bus.of("vision.summary").map(({ timing: _t, ...rest }) => rest), [
     { text: "The player enters a cave.", changed: true },
     { text: "A bat swoops down.", changed: true },
   ]);
@@ -37,16 +37,44 @@ test("a clear SAME (any case, trailing punctuation) or an empty reply publishes 
   assert.deepEqual(["Same as before", "Same old menu", "Samurai", "The same boss"].map(isSame), [false, false, false, false]);
 });
 
-// @spec EYES-LOOK-001, EYES-LOOK-003
-test("a look measures its duration on the injected monotonic clock", async () => {
+// @spec EYES-LOOK-001, EYES-LOOK-003, EYES-LOOK-007
+test("a look measures its duration and its describe duration on the injected monotonic clock, for a change and for SAME", async () => {
   const bus = new FakeBus();
   const lines: { obj: unknown; msg?: string }[] = [];
   const log = { debug: (obj: unknown, msg?: string) => lines.push({ obj, msg }), info: (obj: unknown, msg?: string) => lines.push({ obj, msg }), warn() {}, error() {} } as never;
-  const ticks = [1000, 1250, 5000, 5040];
-  const eyes = new Eyes({ bus, log, screenshot: async () => "B", describe: async (_b, prev) => (prev ? "SAME" : "A cave."), now: () => ticks.shift()! });
+  // per look: start, before describe, after describe, end
+  const ticks = [1000, 1100, 1200, 1250, 5000, 5010, 5030, 5040, 6000, 6001, 6007, 6008];
+  const eyes = new Eyes({ bus, log, screenshot: async () => "B", describe: async (_b, prev) => (prev ? (prev === "A cave." ? "SAME" : "") : "A cave."), now: () => ticks.shift()! });
   await eyes.look();
   await eyes.look();
-  assert.deepEqual(lines.map((l) => (l.obj as { ms: number }).ms), [250, 40]);
+  eyes["previous"] = "x";
+  await eyes.look(); // empty description
+  assert.deepEqual(lines.map((l) => l.obj as { ms: number; describeMs: number }).map((o) => [o.ms, o.describeMs]), [[250, 100], [40, 20], [8, 6]]);
+});
+
+// @spec EYES-LOOK-006, EYES-INJ-017
+test("a published summary carries epoch capturedAt right after the screenshot returns and describedAt right after describe returns", async () => {
+  const bus = new FakeBus();
+  const order: string[] = [];
+  const wall = [1_700_000_000_100, 1_700_000_000_900];
+  const eyes = new Eyes({
+    bus, log: silentLog,
+    screenshot: async () => { order.push("shot"); return "B"; },
+    describe: async () => { order.push("describe"); return "A cave."; },
+    wallNow: () => { order.push("stamp"); return wall.shift()!; },
+  });
+  await eyes.look();
+  assert.deepEqual(order, ["shot", "stamp", "describe", "stamp"]);
+  assert.deepEqual(bus.of("vision.summary"), [{ text: "A cave.", changed: true, timing: { capturedAt: 1_700_000_000_100, describedAt: 1_700_000_000_900 } }]);
+});
+
+// @spec EYES-LOOK-006
+test("with the default epoch clock the stamps are non-negative integers with capturedAt <= describedAt", async () => {
+  const { eyes, bus } = setup(["A cave."]);
+  await eyes.look();
+  const t = bus.of("vision.summary")[0]!.timing!;
+  assert.ok(Number.isInteger(t.capturedAt) && Number.isInteger(t.describedAt) && t.capturedAt! <= t.describedAt!);
+  assert.ok(Math.abs(t.capturedAt! - Date.now()) < 5000);
 });
 
 // @spec EYES-OBS-007
@@ -112,7 +140,7 @@ test("the stub describer makes no request: injected bytes are counted, the look 
     assert.equal(await eyes.look(), true);
     assert.equal(await eyes.look(), false);
     assert.equal(await eyes.look(), false);
-    assert.deepEqual(bus.of("vision.summary"), [{ text: "stub vision: 5 bytes", changed: true }]);
+    assert.deepEqual(bus.of("vision.summary").map(({ timing: _t, ...rest }) => rest), [{ text: "stub vision: 5 bytes", changed: true }]);
   } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
 });
 

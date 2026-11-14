@@ -1,4 +1,4 @@
-import type { BusEvent, EventType, SpeechTiming } from "@cohost/bus";
+import type { BusEvent, EventType, Timing } from "@cohost/bus";
 import type { Emotion } from "@cohost/config";
 
 /** Set on events that came from test injection; absent on real ones. */
@@ -28,8 +28,8 @@ type TaggedEvent = { [K in EventType]: BusEvent<K> }[EventType];
 /** `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). */
 export type ContextEvent =
   | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
-  | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; seen: boolean } & InjectionFlags)
-  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: SpeechTiming; seen: boolean } & InjectionFlags)
+  | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
+  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
   | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string };
 
 /** Rolling window of what's happened recently — the brain's working memory. */
@@ -74,7 +74,7 @@ export class Context {
         this.lastVision = d.text;
         // Keep only the latest vision line in the window; older ones are noise.
         this.events = this.events.filter((e) => e.kind !== "vision");
-        entry = { kind: "vision", eventId: ev.id, ts: ev.ts, text: d.text, changed: d.changed, seen: !d.changed, ...flagsOf(d) };
+        entry = { kind: "vision", eventId: ev.id, ts: ev.ts, text: d.text, changed: d.changed, ...(d.timing ? { timing: d.timing } : {}), seen: !d.changed, ...flagsOf(d) }; // @spec WM-PUSH-013
         break;
       }
       case "speech.heard": { // @spec WM-PUSH-002

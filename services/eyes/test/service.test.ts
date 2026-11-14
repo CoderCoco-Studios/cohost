@@ -87,7 +87,7 @@ test("shutdown with vision disabled stops the idle plan and the bus once; enable
   assert.equal(on.bus.stopped, 1);
 });
 
-// @spec EYES-ENAB-003, EYES-OBS-001, EYES-OBS-006, EYES-LOOK-001, EYES-STUB-001, EYES-STUB-002
+// @spec EYES-ENAB-003, EYES-OBS-001, EYES-OBS-006, EYES-LOOK-001, EYES-LOOK-006, EYES-STUB-001, EYES-STUB-002
 test("enabled with the stub engine: OBS connects, the screenshot uses the configured width and quality, one stub summary is published, mode is mock", async () => {
   const r = rig({ enabled: true, jpeg_quality: 55, obs: { host: "obs.local", port: 4456, source: "Cam", width: 640, password: "pw" } });
   try {
@@ -95,7 +95,9 @@ test("enabled with the stub engine: OBS connects, the screenshot uses the config
     await waitFor(() => r.bus.of("vision.summary").length === 1, "summary");
     assert.equal(r.obs.url, "ws://obs.local:4456");
     assert.deepEqual(r.obs.calls[0], { request: "GetSourceScreenshot", args: { sourceName: "Cam", imageFormat: "jpg", imageWidth: 640, imageCompressionQuality: 55 } });
-    assert.deepEqual(r.bus.of("vision.summary")[0], { text: "stub vision: 5 bytes", changed: true });
+    const { timing, ...summary } = r.bus.of("vision.summary")[0]!;
+    assert.deepEqual(summary, { text: "stub vision: 5 bytes", changed: true });
+    assert.ok(timing && Number.isInteger(timing.capturedAt) && Number.isInteger(timing.describedAt), "EYES-LOOK-006: epoch stamps");
     await waitFor(() => r.obs.calls.length >= 3, "more looks");
     assert.equal(r.bus.of("vision.summary").length, 1, "later captures are SAME");
     assert.ok(r.rec.msgs("warn").some((m) => /stub/.test(String(m))), "startup warning that descriptions are stubbed");

@@ -27,7 +27,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/eyes/eyes-design.md
 
 ### EARS
-- docs/intent/eyes/eyes-specs.md (41 specs: 41 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/eyes/eyes-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`; EYES-LOOK-006 and 007, the `capturedAt` and `describedAt` stamps and the per-look describe log, and EYES-INJ-017, no `timing` on injected summaries, are built)
 
 ### Tests
 - services/eyes/test/eyes.test.ts

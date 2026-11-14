@@ -4,7 +4,7 @@
  *
  *   cohostctl status [service]
  *   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
- *   cohostctl latency [--count N]  speech-path latency per stage from bus history (read-only, takes no lock)
+ *   cohostctl latency [--count N]  speech- and vision-path latency per stage from bus history (read-only, takes no lock)
  *   cohostctl consolidate     one-shot viewer-note pass (the compose `consolidate` job; best-effort, works with the stack down)
  *   cohostctl reembed         one-shot re-embedding of stored memory vectors after an embedder change (the compose `reembed` job)
  *   cohostctl launch          build the images, bring the whole stack up and wait until it is ready (never opens the bus)
@@ -42,7 +42,7 @@ export type CliCommand =
 export const USAGE = `usage:
   cohostctl status [service]
   cohostctl start|stop|restart <service> [--mode resume|fresh] [--isolated]
-  cohostctl latency [--count N]  per-stage p50 and p95 of the speech path from the last N bus events (default 5000)
+  cohostctl latency [--count N]  per-stage p50 and p95 of the speech and vision paths from the last N bus events (default 5000)
   cohostctl consolidate        run the viewer-note consolidation one-shot (exit 0 ok, 1 failed)
   cohostctl reembed            re-embed stored memory vectors after changing the embedder (exit 0 ok, 1 failed)
   cohostctl launch             build the images, bring the whole stack up and wait until it is ready

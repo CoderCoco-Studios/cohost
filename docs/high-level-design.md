@@ -473,6 +473,17 @@ test-input descriptors all derive from it.
   services are comparable because every service runs on one host clock; a
   stage whose measured duration is negative is excluded and counted, not
   repaired, which also catches a publisher on another host. The latency budget below is the target the stages are held to.
+- **Vision-path latency.** A line spoken in answer to something on screen
+  passes eyes (frame capture, vision-model description), salience (a decision
+  at the next poll), cortex, voice and a sink. `vision.summary` carries an
+  optional `timing` object with `capturedAt` and `describedAt`; the same
+  carry-over that extends speech timing through `attention.focus` and
+  `brain.say` (event-bus BUS-EVT-024) carries it onward, and `cohostctl
+  latency` reports the vision path as a second table (control-plane
+  CTRL-LAT-*). Every look is also logged with its describe time, including
+  looks that found nothing changed, so the vision model's cost is measurable
+  without a reaction. The vision model and the frame source are chosen from
+  this measurement, not before it.
 - **Real-time speech path.** A person's speech is cut into utterances by
   speech activity, not by a fixed pause, and a long utterance is cut at a
   maximum length so nothing waits for a speaker who never pauses. Where the
@@ -518,7 +529,7 @@ test-input descriptors all derive from it.
   every other subscriber uses `latest`. Delivery across a restart is
   at-most-once.
 
-### Latency budget (speech path)
+### Latency budget (speech and vision paths)
 
 The end-to-end budget is the time from the end of a person's speech (the last
 audio ears received) to `voice.playing` for the line that answers it, split
@@ -528,6 +539,11 @@ across the stages `cohostctl latency` reports: `stt` (audio end to
 `llm` (first LLM request to the reply), `critic` (the critic hook's call, when
 it ran), `say` (the last of those to `brain.say`), `tts` (`brain.say` to `voice.utterance`) and `sink`
 (`voice.utterance` to `voice.playing`).
+
+The vision path runs from the moment eyes captured the frame (`capturedAt`) to
+`voice.playing`, split into `describe` (`capturedAt` to
+`describedAt`), `salience` (`describedAt` to `attention.focus`) and then the
+same `prep`, `llm`, `critic`, `say`, `tts` and `sink` stages.
 
 **Open item: the budget numbers.** No latency has been measured and no live
 baseline run is planned alongside the real-time speech path work, so this
@@ -569,6 +585,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and cortex or an explicitly configured `llm` hook can call a chat model. | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
 | Who decides vs. who speaks | salience decides *when* (`attention.focus`), cortex decides *what* (`brain.say`), reflexes short-circuit both | cortex decides on its own; every event prompts the model | Talkativeness is a cheap, tunable scoring loop with no model in it; the expensive call only happens once something is worth a reply. | [salience](intent/salience/salience-design.md) Scoring and Decision; [cortex](intent/cortex/cortex-design.md) think pipeline |
 | Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider` | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
+| Vision before model choice | The vision path is stamped and reported (`cohostctl latency`) before the vision model or frame source is chosen | Pick a smaller model or a new frame source first, on expectation | The vision model's share of reaction time is unknown, and a model swap or a new frame source costs far more than a stamp. The measured per-stage p50 and p95 decide whether describe time, the salience tick or the frame source is the bottleneck. | [eyes](intent/eyes/eyes-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
 | Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop`; every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
@@ -641,8 +658,10 @@ what to measure once it has. All targets are proposals.
    from `cohostctl latency` (Latency budget, above). The target is "as fast as
    possible": there is no pass/fail threshold yet (the budget numbers are an
    open item); the measured medians are tracked from stream to stream and
-   should trend down. Only the speech path is reported by a tool today; the
-   chat path has no stamps on its events.
+   should trend down. Vision path: time from a frame's capture
+   (`timing.capturedAt` on `vision.summary`) to `voice.playing` for the line
+   it prompts, reported the same way. The speech and vision paths are reported
+   by a tool; the chat path has no stamps on its events.
 3. **Silence ratio (heuristic).** Fraction of distinct `chat.message` events
    that receive an attributable `brain.say` within 60 s, so the ratio cannot
    exceed 1; reflexes and voice-, vision- or operator-triggered lines are

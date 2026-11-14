@@ -6,8 +6,8 @@ import { FakeBus, event, silentLog, testConfig } from "@cohost/testing";
 import { Salience } from "../src/salience.js";
 import { scoreRules, type ScoreInput, type ScoreOutput } from "../src/scoring.js";
 
-function setup() {
-  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 } } });
+function setup(salience: Record<string, number> = {}) {
+  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0, ...salience } } });
   const bus = new FakeBus();
   const scorer = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), cfg.llm, { rules: (i) => scoreRules(i, true) }, silentLog);
   return { s: new Salience({ cfg, bus, scorer, log: silentLog }), bus };
@@ -43,4 +43,24 @@ test("a speech.partial handed to salience becomes no focus (the subscription lis
   await s.onEvent(partial);
   await s.tick();
   assert.equal(bus.of("attention.focus").length, 0, "no focus from a partial, though it mentions the co-host");
+});
+
+// @spec SAL-FOCUS-006, BUS-EVT-025
+test("a vision focus carries the summary's capturedAt and describedAt unchanged, only when both are present", async () => {
+  const stamped = setup({ speak_threshold: 0.1 });
+  await stamped.s.onEvent(event("vision.summary", { text: "boss fight starts", changed: true, timing: { capturedAt: 111, describedAt: 222 } }));
+  await stamped.s.tick();
+  const [focus] = stamped.bus.of("attention.focus");
+  assert.equal(focus!.focus?.kind, "vision");
+  assert.deepEqual(focus!.timing, { capturedAt: 111, describedAt: 222 });
+
+  const half = setup({ speak_threshold: 0.1 });
+  await half.s.onEvent(event("vision.summary", { text: "boss fight starts", changed: true, timing: { capturedAt: 111 } }));
+  await half.s.tick();
+  assert.equal(half.bus.of("attention.focus")[0]!.timing, undefined);
+
+  const bare = setup({ speak_threshold: 0.1 });
+  await bare.s.onEvent(event("vision.summary", { text: "boss fight starts", changed: true }));
+  await bare.s.tick();
+  assert.equal(bare.bus.of("attention.focus")[0]!.timing, undefined);
 });

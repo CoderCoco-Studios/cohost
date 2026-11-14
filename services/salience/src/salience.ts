@@ -206,6 +206,7 @@ export class Salience {
         : f?.kind === "vision" ? { kind: "vision", text: f.text }
         : undefined,
       ...(f?.kind === "speech" && f.timing?.audioEndedAt !== undefined ? { timing: { audioEndedAt: f.timing.audioEndedAt, heardAt: f.ts } } : {}), // @spec SAL-FOCUS-006
+      ...(f?.kind === "vision" && f.timing?.capturedAt !== undefined && f.timing.describedAt !== undefined ? { timing: { capturedAt: f.timing.capturedAt, describedAt: f.timing.describedAt } } : {}), // @spec SAL-FOCUS-006
       ...propagatedFlags(f), // @spec SAL-INJ-001, SAL-INJ-002, SAL-INJ-003
     });
     } catch (err) {

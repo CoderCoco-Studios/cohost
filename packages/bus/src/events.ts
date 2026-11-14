@@ -27,20 +27,22 @@ export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean()
 export const LineRoute = z.array(z.string());
 
 /**
- * Epoch-millisecond stamps along the speech path, each stage adding its own and never changing a received one
- * (BUS-EVT-024, BUS-EVT-025). Every member is optional; the report that reads them is `cohostctl latency`.
+ * Epoch-millisecond stamps along the speech path and the vision path, each stage adding its own and never changing a
+ * received one (BUS-EVT-024, BUS-EVT-025). Every member is optional; the report that reads them is `cohostctl latency`.
  */
 const Stamp = z.number().int().nonnegative();
-export const SpeechTiming = z.object({
+export const Timing = z.object({
   audioEndedAt: Stamp.optional(),
   heardAt: Stamp.optional(),
+  capturedAt: Stamp.optional(),
+  describedAt: Stamp.optional(),
   focusedAt: Stamp.optional(),
   llmStartedAt: Stamp.optional(),
   llmEndedAt: Stamp.optional(),
   criticEndedAt: Stamp.optional(),
 });
 
-export type SpeechTiming = z.infer<typeof SpeechTiming>;
+export type Timing = z.infer<typeof Timing>;
 
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
@@ -60,11 +62,13 @@ export const EventPayloads = {
   }),
 
   /** The eyes looked at the game and this is what they saw. */
-  // @spec BUS-EVT-012, BUS-EVT-005
+  // @spec BUS-EVT-012, BUS-EVT-005, BUS-EVT-024
   "vision.summary": z.object({
     text: z.string(),
     /** True when materially different from the previous summary. */
     changed: z.boolean().default(true),
+    /** `capturedAt` and `describedAt` of the look; absent on injected images (EYES-LOOK-006, EYES-INJ-017). */
+    timing: Timing.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
@@ -78,7 +82,7 @@ export const EventPayloads = {
     text: z.string(),
     durationMs: z.number(),
     /** `audioEndedAt` only, from ears. */
-    timing: SpeechTiming.optional(),
+    timing: Timing.optional(),
     /** The listening source the speech came from (a connector tag, `http` or `dir`); absent on injected and older events. */
     source: z.string().optional(),
     /** Ties the final to the `speech.partial`s of its utterance (BUS-EVT-027); absent on events written before the field and on direct injections. */
@@ -96,7 +100,7 @@ export const EventPayloads = {
     text: z.string(),
     utteranceId: z.string(),
     seq: z.number().int().nonnegative(),
-    timing: SpeechTiming.optional(),
+    timing: Timing.optional(),
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
@@ -111,7 +115,7 @@ export const EventPayloads = {
     /** Mouth outputs this line is for; absent = every enabled output. */
     route: LineRoute.optional(),
     /** Stamps from the spoken line that caused this one, plus cortex's own (CTX-SAY-006 to 008). */
-    timing: SpeechTiming.optional(),
+    timing: Timing.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
@@ -141,8 +145,8 @@ export const EventPayloads = {
         mention: z.boolean().default(false),
       })
       .optional(),
-    /** `audioEndedAt` and `heardAt` of the focused speech (SAL-FOCUS-006). */
-    timing: SpeechTiming.optional(),
+    /** `audioEndedAt` and `heardAt` of focused speech, or `capturedAt` and `describedAt` of focused vision (SAL-FOCUS-006). */
+    timing: Timing.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),

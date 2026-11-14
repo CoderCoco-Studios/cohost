@@ -42,7 +42,7 @@ Built with tests (barge-in and echo-gate slice); the deferred dynamic-speech ide
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (40 specs: 39 `[x]`, 0 `[ ]`, 1 `[D]`; WM-PUSH-011, `timing` on `speech` context events, and WM-PUSH-012, `speech.partial` ignored, are built)
+- docs/intent/working-memory/working-memory-specs.md (41 specs: 40 `[x]`, 0 `[ ]`, 1 `[D]`; WM-PUSH-011, `timing` on `speech` context events, WM-PUSH-012, `speech.partial` ignored, and WM-PUSH-013, `timing` on `vision` context events, are built)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (14 tests, 14 `@spec` lines citing 26 distinct WM IDs; pure, no Redis)

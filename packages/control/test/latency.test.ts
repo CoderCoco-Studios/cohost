@@ -38,7 +38,7 @@ function rig(history: Ev[], o: { recentThrows?: Error } = {}) {
     lock: { tryAcquire: (a): LockResult => { lockLog.push(a); return { ok: true, release: () => {} }; } },
     out: (l) => out.push(l), err: (l) => err.push(l), env: {},
   };
-  return { w, built, lockLog, published, recentCalls, out, err, stopped: () => stopped, text: () => out.join("\n") };
+  return { w, built, lockLog, published, recentCalls, out, err, stopped: () => stopped, text: () => speechOut(out).join("\n"), vtext: () => visionOut(out).join("\n") };
 }
 /** The row `<stage> <n> <p50> <p95>` of the report. */
 function row(text: string, stage: string): { n: string; p50: string; p95: string } {
@@ -46,6 +46,9 @@ function row(text: string, stage: string): { n: string; p50: string; p95: string
   assert.ok(m, `no row for ${stage} in:\n${text}`);
   return { n: m[1]!, p50: m[2]!, p95: m[3]! };
 }
+/** The speech-path section of the output: after the `speech path` title, up to the blank line. */
+const speechOut = (out: string[]): string[] => { const i = out.indexOf("speech path"); assert.equal(i, 0, "speech section comes first"); const end = out.indexOf(""); return out.slice(1, end); };
+const visionOut = (out: string[]): string[] => { const i = out.indexOf("vision path"); assert.ok(i > 0, "vision section present"); return out.slice(i + 1); };
 const STAGES = ["stt", "salience", "prep", "llm", "critic", "say", "tts", "sink", "total"];
 
 // @spec CTRL-LAT-001
@@ -89,7 +92,8 @@ test("a fully stamped line: nine stages with the right durations, summing to tot
   const want: Record<string, number> = { stt: 400, salience: 600, prep: 100, llm: 1000, critic: 300, say: 50, tts: 500, sink: 50, total: 3000 };
   for (const s of STAGES) assert.deepEqual(row(h.text(), s), { n: "1", p50: String(want[s]), p95: String(want[s]) }, s);
   // @spec CTRL-LAT-005
-  assert.deepEqual(h.out, [
+  assert.deepEqual(h.out.slice(0, 11), [
+    "speech path",
     "stage        n     p50     p95",
     "stt          1     400     400",
     "salience     1     600     600",
@@ -101,6 +105,8 @@ test("a fully stamped line: nine stages with the right durations, summing to tot
     "sink         1      50      50",
     "total        1    3000    3000",
   ]);
+  assert.equal(h.out[11], "", "blank line between the sections");
+  assert.equal(h.out[12], "vision path");
   const sum = STAGES.filter((s) => s !== "total").reduce((a, s) => a + want[s]!, 0);
   assert.equal(sum, want.total, "fixture: stages are contiguous");
 });
@@ -199,22 +205,110 @@ test("a negative duration is left out of the statistics and counted after the st
   const bad = rig([...line("a"), ...line("b", { timing: { heardAt: T - 50 } })]);
   await executeCli(["latency"], bad.w);
   assert.deepEqual(row(bad.text(), "stt"), { n: "1", p50: "400", p95: "400" });
-  assert.equal(bad.out.length, 11, "header, nine stage rows, the omitted line");
-  assert.equal(bad.out[10], "omitted (negative duration): stt 1");
+  assert.equal(speechOut(bad.out).length, 11, "header, nine stage rows, the omitted line");
+  assert.equal(speechOut(bad.out)[10], "omitted (negative duration): stt 1");
   const two = rig([...line("a"), ...line("b", { timing: { heardAt: T - 50, llmStartedAt: T + 3000 } })]);
   await executeCli(["latency"], two.w);
-  assert.equal(two.out[10], "omitted (negative duration): stt 1, llm 1", "stages in report order, separated by comma and space");
+  assert.equal(speechOut(two.out)[10], "omitted (negative duration): stt 1, llm 1", "stages in report order, separated by comma and space");
   const clean = rig(line("a"));
   await executeCli(["latency"], clean.w);
   assert.doesNotMatch(clean.text(), /omitted|negative|skew/i);
 });
 
-// @spec CTRL-LAT-008
-test("no samples, including an empty history, prints the message and exits 0", async () => {
+// @spec CTRL-LAT-008, CTRL-LAT-013, CTRL-LAT-014
+test("no samples, including an empty history, prints a titled no-sample line per section and exits 0", async () => {
   const empty = rig([]);
   assert.equal(await executeCli(["latency", "--count", "7"], empty.w), 0);
-  assert.equal(empty.text().trim(), "latency: no speech-path samples in the last 7 events");
+  assert.deepEqual(empty.out, ["speech path", "latency: no speech-path samples in the last 7 events", "", "vision path", "latency: no vision-path samples in the last 7 events"]);
   const none = rig(line("x", { timing: { audioEndedAt: undefined } }));
   assert.equal(await executeCli(["latency"], none.w), 0);
-  assert.match(none.text(), /no speech-path samples in the last 5000 events/);
+  assert.match(none.out.join("\n"), /no speech-path samples in the last 5000 events/);
+});
+
+// ---- vision path ----
+
+const V = { capturedAt: T, describedAt: T + 800, focusedAt: T + 1000, llmStartedAt: T + 1100, llmEndedAt: T + 2100, criticEndedAt: T + 2400 };
+/** A fully stamped vision line: describe 800, salience 200, prep 100, llm 1000, critic 300, say 50, tts 500, sink 50 = total 3000. */
+const vline = (id: string, over: { timing?: Record<string, unknown>; say?: Record<string, unknown> } = {}): Ev[] => [
+  ev("brain.say", T + 2450, { id, text: "hi", emotion: "happy", timing: { ...V, ...over.timing }, ...over.say }),
+  ev("voice.utterance", T + 2950, { id }),
+  ev("voice.playing", T + 3000, { id, sink: "discord" }),
+];
+
+// @spec CTRL-LAT-011, CTRL-LAT-012, CTRL-LAT-013
+test("a fully stamped vision line: nine stages measured from capturedAt, summing to total; the speech section stays empty", async () => {
+  const h = rig(vline("v"));
+  assert.equal(await executeCli(["latency"], h.w), 0);
+  assert.deepEqual(speechOut(h.out), ["latency: no speech-path samples in the last 5000 events"]);
+  assert.deepEqual(visionOut(h.out), [
+    "stage        n     p50     p95",
+    "describe     1     800     800",
+    "salience     1     200     200",
+    "prep         1     100     100",
+    "llm          1    1000    1000",
+    "critic       1     300     300",
+    "say          1      50      50",
+    "tts          1     500     500",
+    "sink         1      50      50",
+    "total        1    3000    3000",
+  ]);
+});
+
+// @spec CTRL-LAT-011
+test("a brain.say with audioEndedAt is a speech sample only; with capturedAt only a vision sample; injected and stampless are neither", async () => {
+  const h = rig([
+    ...line("speech"),
+    ...vline("vis"),
+    ...vline("both", { timing: { audioEndedAt: T } }),
+    ...vline("inj", { say: { injected: true } }),
+    ...vline("none", { timing: { capturedAt: undefined } }),
+  ]);
+  await executeCli(["latency"], h.w);
+  assert.equal(row(h.text(), "total").n, "2", "speech + both");
+  assert.equal(row(h.vtext(), "total").n, "1", "only vis");
+});
+
+// @spec CTRL-LAT-011
+test("vision duplicates and join rules follow the speech path: first say, earliest utterance, real sink over virtual", async () => {
+  const h = rig([
+    ...vline("a"),
+    ev("voice.playing", T + 2960, { id: "a", sink: "virtual" }),
+    ev("brain.say", T + 8000, { id: "a", text: "hi", emotion: "happy", timing: V }),
+    ev("voice.utterance", T + 8500, { id: "a" }),
+  ]);
+  await executeCli(["latency"], h.w);
+  assert.equal(row(h.vtext(), "total").n, "1");
+  assert.equal(row(h.vtext(), "total").p50, "3000");
+  assert.equal(row(h.vtext(), "tts").p50, "500");
+});
+
+// @spec CTRL-LAT-012
+test("vision stages skip what is missing, no critic stamp leaves critic empty, and a line in flight counts the stages it completed", async () => {
+  const { criticEndedAt: _c, ...noCritic } = V;
+  const h = rig([ev("brain.say", T + 2450, { id: "a", text: "hi", emotion: "happy", timing: noCritic })]);
+  await executeCli(["latency"], h.w);
+  assert.deepEqual(row(h.vtext(), "critic"), { n: "0", p50: "-", p95: "-" });
+  assert.equal(row(h.vtext(), "say").p50, "350");
+  assert.equal(row(h.vtext(), "describe").n, "1");
+  assert.equal(row(h.vtext(), "tts").n, "0");
+  assert.equal(row(h.vtext(), "total").n, "0");
+});
+
+// @spec CTRL-LAT-012
+test("vision: a bad stamp drops only its stages; a negative duration is omitted and counted after the vision stage lines", async () => {
+  const h = rig([...vline("ok"), ...vline("frac", { timing: { describedAt: T + 800.5 } }), ...vline("neg", { timing: { describedAt: T - 50 } })]);
+  await executeCli(["latency"], h.w);
+  const v = visionOut(h.out);
+  assert.deepEqual(row(h.vtext(), "describe"), { n: "1", p50: "800", p95: "800" });
+  assert.equal(row(h.vtext(), "salience").n, "2", "frac drops salience, neg's salience is T-50 to focusedAt");
+  assert.equal(row(h.vtext(), "total").n, "3", "total uses capturedAt and playing only");
+  assert.equal(v.at(-1), "omitted (negative duration): describe 1");
+  assert.doesNotMatch(speechOut(h.out).join("\n"), /omitted/);
+});
+
+// @spec CTRL-LAT-014
+test("no vision samples with speech samples present prints the vision no-sample line and exits 0", async () => {
+  const h = rig(line("a"));
+  assert.equal(await executeCli(["latency", "--count", "9"], h.w), 0);
+  assert.deepEqual(visionOut(h.out), ["latency: no vision-path samples in the last 9 events"]);
 });

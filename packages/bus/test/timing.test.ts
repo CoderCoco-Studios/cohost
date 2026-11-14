@@ -2,16 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventPayloads } from "../src/index.js";
 
-const MEMBERS = ["audioEndedAt", "heardAt", "focusedAt", "llmStartedAt", "llmEndedAt", "criticEndedAt"] as const;
+const MEMBERS = ["audioEndedAt", "heardAt", "capturedAt", "describedAt", "focusedAt", "llmStartedAt", "llmEndedAt", "criticEndedAt"] as const;
 
 const bases = {
+  "vision.summary": { text: "t" },
   "speech.heard": { speaker: "s", text: "t", durationMs: 1 },
   "attention.focus": { reason: "mentioned", score: 1 },
   "brain.say": { id: "x", text: "t", emotion: "happy" },
 } as const;
 
 // @spec BUS-EVT-024
-test("speech.heard, attention.focus and brain.say accept an optional timing object and stay valid without it", () => {
+test("speech.heard, vision.summary, attention.focus and brain.say accept an optional timing object and stay valid without it", () => {
   for (const [type, base] of Object.entries(bases)) {
     const schema = EventPayloads[type as keyof typeof bases];
     assert.equal(schema.safeParse(base).success, true, `${type} without timing`);

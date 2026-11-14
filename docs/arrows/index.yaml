@@ -157,7 +157,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "48 specs: 46 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). To review: a flush that arrives after a line's last frame (CONN-FLUSH-002, CONN-DISC-012). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
+    next: "48 specs: 46 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
     drift: null
 
   ears:

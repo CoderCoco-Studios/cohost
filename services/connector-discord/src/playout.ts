@@ -1,12 +1,13 @@
 import { PassThrough, type Readable } from "node:stream";
-import { createAudioResource, StreamType, type AudioPlayer, type AudioResource } from "@discordjs/voice";
+import { AudioPlayerStatus, createAudioResource, StreamType, type AudioPlayer, type AudioResource } from "@discordjs/voice";
 import type { Frame } from "@cohost/bus";
 
 /** The sink format of `audio.out.discord` (CONN-AUD-003). */
 export const OUT_FORMAT = { rate: 48000, channels: 2 };
 
 export interface PlayoutOptions {
-  player: Pick<AudioPlayer, "play" | "stop">;
+  /** `state` is the source of truth for whether audio is still playing after the stream was finished. */
+  player: Pick<AudioPlayer, "play" | "stop" | "state">;
   /** Most PCM held for the player before frames are dropped, bytes (default 10 s of 48 kHz stereo). */
   maxBufferedBytes?: number;
   /** An utterance whose `last` frame never arrives is ended after this much silence, ms (default 2000). */
@@ -51,10 +52,14 @@ export class Playout {
 
   /**
    * A flush frame: stop the player and discard the stream with everything buffered for it, uncounted. The next line starts on a
-   * fresh stream. With nothing playing or buffered it changes nothing.
+   * fresh stream. A line already finished (its `last` frame read, or ended by idle) is cut too while the player is still
+   * playing what was buffered for it. With nothing playing or buffered it changes nothing.
    */
   private flush(): void {
-    if (!this.stream) return;
+    if (!this.stream) {
+      if (this.o.player.state.status !== AudioPlayerStatus.Idle) this.o.player.stop();
+      return;
+    }
     if (this.idle) clearTimeout(this.idle);
     this.idle = undefined;
     const stream = this.stream;

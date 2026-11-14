@@ -36,3 +36,17 @@ test("a speech.partial leaves the window unchanged and push returns undefined", 
   assert.equal(ctx.all().length, before);
   assert.equal(ctx.all().some((e) => e.kind === "speech" && e.text === "hel"), false);
 });
+
+const seen = (data: Record<string, unknown>) =>
+  ({ id: "v1", type: "vision.summary", ts: 5000, source: "eyes", data: { text: "a cave", changed: true, ...data } }) as unknown as BusEvent;
+
+// @spec WM-PUSH-013
+test("a vision context event keeps the vision.summary timing unchanged, leaves it off when there is none, and never renders it", () => {
+  const ctx = new Context(10);
+  const timing = { capturedAt: 4000, describedAt: 4900 };
+  const kept = ctx.push(seen({ timing })) as unknown as { timing?: unknown };
+  assert.deepEqual(kept.timing, timing);
+  assert.doesNotMatch(ctx.transcript("Coco"), /4000|4900|timing|capturedAt/);
+  const bare = ctx.push(seen({})) as unknown as Record<string, unknown>;
+  assert.equal("timing" in bare, false);
+});

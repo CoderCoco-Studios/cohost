@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BusEvent, Publisher, SpeechTiming } from "@cohost/bus";
+import type { BusEvent, Publisher, Timing } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
@@ -318,7 +318,7 @@ export class Cortex {
   }
 
   // @spec CTX-SAY-001
-  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags & { route?: string[]; timing?: SpeechTiming } = {}, onPublished?: () => void) {
+  private async say(text: string, emotion: Emotion, gesture: string | undefined, reason: string, flags: InjectionFlags & { route?: string[]; timing?: Timing } = {}, onPublished?: () => void) {
     const id = randomUUID();
     this.startSpeaking(id);
     await this.d.bus.publish("brain.say", { id, text, emotion, gesture, reason, ...flags });

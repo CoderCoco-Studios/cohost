@@ -25,6 +25,7 @@ const req = (over: Record<string, unknown> = {}) =>
   event("inject.request", { id: "i1", target: "eyes", kind: "image", uploadId: UP, contentType: "image/png", remember: false, ...over });
 
 // @spec EYES-INJ-007
+// @spec EYES-INJ-017
 test("image described: base64 bytes, empty previous, injected vision.summary then ok result", async () => {
   const t = setup();
   await run(t.handle, req());

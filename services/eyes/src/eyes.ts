@@ -11,6 +11,8 @@ export interface EyesDeps {
   describe: (b64: string, previous: string) => Promise<string>;
   /** Monotonic clock, ms (default `performance.now`). */
   now?: () => number;
+  /** Epoch clock, ms, for the `vision.summary` stamps (default `Date.now`). */
+  wallNow?: () => number;
 }
 
 // @spec EYES-OBS-007
@@ -77,20 +79,25 @@ export class Eyes {
 
   constructor(private d: EyesDeps) {}
 
-  // @spec EYES-LOOK-001, EYES-LOOK-002
+  // @spec EYES-LOOK-001, EYES-LOOK-002, EYES-LOOK-006, EYES-LOOK-007
   /** True when something new was published. */
   async look(): Promise<boolean> {
     const now = this.d.now ?? (() => performance.now());
+    const wall = this.d.wallNow ?? Date.now;
     const t0 = now();
     const b64 = await this.d.screenshot();
+    const capturedAt = wall();
+    const d0 = now();
     const text = await this.d.describe(b64, this.previous);
+    const describedAt = wall();
+    const describeMs = now() - d0;
     if (isSame(text)) {
-      this.d.log.debug({ ms: now() - t0 }, "no change");
+      this.d.log.debug({ ms: now() - t0, describeMs }, "no change");
       return false;
     }
     this.previous = text;
-    await this.d.bus.publish("vision.summary", { text, changed: true });
-    this.d.log.info({ ms: now() - t0, text }, "saw");
+    await this.d.bus.publish("vision.summary", { text, changed: true, timing: { capturedAt, describedAt } });
+    this.d.log.info({ ms: now() - t0, describeMs, text }, "saw");
     return true;
   }
 }

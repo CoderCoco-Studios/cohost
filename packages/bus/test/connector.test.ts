@@ -1,7 +1,7 @@
 // Connector registry and audio streams on an in-memory fake transport: no server and no Redis commands involved.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FakeTransport } from "../../testing/src/fake-transport.js";
+import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transport.js";
 import {
   Bus, ConnectorRegistrar, ConnectorRegistry, FrameSequencer, FrameTracker, watchConnectors, encodeFrame, decodeFrame, parseRegistration, findReady, findOffer,
   tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type AudioDirection, type EntryFields, type EventStream, type Frame, type Registration, type CapabilityEntry,
@@ -13,7 +13,6 @@ class MemTransport extends FakeTransport {
   kv = new Map<string, { json: string; leaseMs: number }>();
   writes = 0;
   heartbeats: EntryFields[] = [];
-  appended: { dir: AudioDirection; tag: string; frame: Frame }[] = [];
   writeRegistration(id: string, json: string, leaseMs: number) {
     return this.run("writeRegistration", [id, json, leaseMs], () => { this.writes++; this.kv.set(id, { json, leaseMs }); });
   }
@@ -23,12 +22,20 @@ class MemTransport extends FakeTransport {
   append(stream: EventStream, fields: EntryFields) {
     return this.run("append", [stream, fields], () => { if (stream === "health") this.heartbeats.push(fields); return "1-0"; });
   }
-  appendFrame(dir: AudioDirection, tag: string, frame: Frame) {
-    return this.run("appendFrame", [dir, tag, frame], () => { this.appended.push({ dir, tag, frame }); return "1-0"; });
+}
+
+/** A `FakeFrameTransport` that keeps the frames written. */
+class MemFrames extends FakeFrameTransport {
+  appended: { dir: AudioDirection; tag: string; frame: Frame }[] = [];
+  async appendFrame(dir: AudioDirection, tag: string, frame: Frame) {
+    this.record("appendFrame", [dir, tag, frame]);
+    this.appended.push({ dir, tag, frame });
+    return "1-0";
   }
 }
 
-const busWith = (fake: MemTransport, prefix = "t") => new Bus("t", undefined, "redis://fake", { transport: fake.factory, streamPrefix: prefix, retryBaseMs: 5, retryMaxMs: 20 });
+const busWith = (fake: MemTransport, prefix = "t", frames: FakeFrameTransport = new MemFrames()) =>
+  new Bus("t", undefined, "redis://fake", { transport: fake.factory, frames: frames.factory, streamPrefix: prefix, retryBaseMs: 5, retryMaxMs: 20 });
 const caps = (ready = true): CapabilityEntry[] => [
   { cap: "audio-in", tag: "discord", format: { rate: 16000, channels: 1 }, ready },
   { cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready },
@@ -242,17 +249,18 @@ test("a frame round-trips through its stream fields", () => {
 });
 
 // @spec CONN-AUD-001, BUS-AUD-001, CONN-BP-001
-test("frames go to the transport's audio stream of their direction and tag; publish never writes them", async () => {
+test("frames go to the frame transport's audio stream of their direction and tag; publish never writes them", async () => {
   const fake = new MemTransport();
-  const bus = busWith(fake, "p");
+  const frames = new MemFrames();
+  const bus = busWith(fake, "p", frames);
   await bus.publishFrame("in", "discord", frame());
   await bus.publishFrame("out", "discord", frame({ rate: 48000, ch: 2, utt: "u" }));
-  assert.deepEqual(fake.of("appendFrame").map((c) => [c.args[0], c.args[1]]), [["in", "discord"], ["out", "discord"]]);
+  assert.deepEqual(frames.of("appendFrame").map((c) => [c.args[0], c.args[1]]), [["in", "discord"], ["out", "discord"]]);
   assert.equal(bus.audioStream("in", "discord"), "p:audio.in.discord");
   assert.equal(bus.audioStream("out", "discord"), "p:audio.out.discord");
   assert.deepEqual(AUDIO_MAXLEN, { in: 3000, out: 1500 });
   await bus.publish("chat.message", { platform: "twitch", user: "a", text: "hi" });
-  assert.equal(fake.of("appendFrame").length, 2, "publish writes no frame");
+  assert.equal(frames.of("appendFrame").length, 2, "publish writes no frame");
   assert.deepEqual(fake.of("append").map((c) => c.args[0]), ["events"]);
   await bus.stop();
 });
@@ -260,10 +268,11 @@ test("frames go to the transport's audio stream of their direction and tag; publ
 // @spec CONN-BP-002
 test("a consumer reads live: its own reader's readFrames from $, no group, no ack", async () => {
   const fake = new MemTransport();
-  const bus = busWith(fake, "p");
+  const frames = new MemFrames();
+  const bus = busWith(fake, "p", frames);
   const done = bus.tailAudio("in", "discord", () => {});
   await tick(10);
-  assert.deepEqual(fake.of("readFrames")[0]!.args, ["in", "discord", "$", 100, 5000]);
+  assert.deepEqual(frames.of("readFrames")[0]!.args, ["in", "discord", "$", 100, 5000]);
   assert.equal(fake.of("createGroup").length + fake.of("readGroup").length + fake.of("ack").length, 0);
   await bus.stop();
   await done;
@@ -272,15 +281,16 @@ test("a consumer reads live: its own reader's readFrames from $, no group, no ac
 // @spec CONN-BP-002
 test("tailAudio hands each entry on decoded, advances from the last id, and survives a handler throw", async () => {
   const fake = new MemTransport();
-  fake.on("readFrames", () => [
+  const frames = new MemFrames();
+  frames.on("readFrames", () => [
     { id: "5-0", decoded: { ok: true, frame: frame({ seq: 0 }) } }, { id: "5-1", decoded: { ok: true, frame: frame({ seq: 1 }) } },
   ]);
-  const bus = busWith(fake, "p");
+  const bus = busWith(fake, "p", frames);
   const got: number[] = [];
   const done = bus.tailAudio("in", "discord", (d) => { if (d.ok) got.push(d.frame.seq); if (got.length === 1) throw new Error("boom"); });
   await tick(20);
   assert.deepEqual(got, [0, 1]);
-  assert.equal(fake.of("readFrames")[1]!.args[2], "5-1");
+  assert.equal(frames.of("readFrames")[1]!.args[2], "5-1");
   await bus.stop();
   await done;
 });

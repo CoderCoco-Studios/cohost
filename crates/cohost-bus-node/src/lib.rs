@@ -8,23 +8,21 @@
 //! JavaScript surface (the `BusTransport` seam of `packages/bus/src/transport.ts`):
 //! - `new Transport(url, prefix, failFast)`: `append`, `recent`, `createGroup`, `moveGroupToLatest`, `putUpload`,
 //!   `takeUpload`, `writeRegistration`, `readRegistration`, `deleteRegistration`, `listRegistrations`,
-//!   `appendFrame`, `serverTime`, `openReader`, `close`.
-//! - `Reader` (from `openReader()`): `readGroup`, `ack`, `read`, `readFrames`, `close`.
-//! - Synchronous helpers: `encodeFrame`, `decodeFrame`, `tagProblem`, `connectorKey`, `audioStream`.
-//! - Constants: `FRAME_VERSION`, `MAX_FRAME_BYTES`, `AUDIO_STREAM_TTL_MS`,
-//!   `LEASE_INTERVALS`, `REGISTRATION_VERSION`, `DEFAULT_CONNECTOR_INTERVAL_MS`, `EVENTS_MAXLEN`, `HEALTH_MAXLEN`,
-//!   `TAG_PATTERN`, `reservedTags()`; `AUDIO_MAXLEN` is the pair `AUDIO_MAXLEN_IN` / `AUDIO_MAXLEN_OUT`.
+//!   `serverTime`, `openReader`, `close`.
+//! - `Reader` (from `openReader()`): `readGroup`, `ack`, `read`, `close`.
+//! - Synchronous helper: `connectorKey`.
+//! - Constants: `EVENTS_MAXLEN`, `HEALTH_MAXLEN`. The addon serves the events path only: no frame codec, tag grammar
+//!   or audio stream naming (BUS-NAT-TRN-013).
 #![deny(clippy::all)]
 
 use cohost_bus::consts;
 use cohost_bus::error::Result as BusResult;
-use cohost_bus::frame::{DecodedFrame, Direction, Frame};
 use cohost_bus::transport::{
     EntryFields, EventStream, GroupRead, RawEntry, Reader as BusReader, Transport as BusTransport,
     TransportOptions,
 };
 use cohost_bus::{BusError, keys::Keys};
-use napi::bindgen_prelude::{Buffer, Either, Object, PromiseRaw, Unknown};
+use napi::bindgen_prelude::{Buffer, Object, PromiseRaw};
 use napi::{Env, JsValue};
 use napi_derive::napi;
 use std::cell::Cell;
@@ -131,14 +129,6 @@ fn stream_of(s: &str) -> BusResult<EventStream> {
     }
 }
 
-fn dir_of(s: &str) -> BusResult<Direction> {
-    match s {
-        "in" => Ok(Direction::In),
-        "out" => Ok(Direction::Out),
-        other => Err(BusError::invalid(format!("unknown direction {other:?}"))),
-    }
-}
-
 fn millis(n: f64) -> BusResult<u64> {
     if n.is_finite() && n >= 0.0 {
         Ok(n as u64)
@@ -155,40 +145,6 @@ pub struct EntryFieldsJs {
     pub ts: String,
     pub source: String,
     pub data: String,
-}
-
-/// The `Frame` of `connector.ts`; optional members are absent when unset.
-#[napi(object)]
-pub struct FrameJs {
-    pub epoch: f64,
-    pub seq: f64,
-    pub rate: f64,
-    pub ch: f64,
-    /// Absent for a flush frame (CONN-AUD-006).
-    pub pcm: Option<Buffer>,
-    pub spk: Option<String>,
-    pub name: Option<String>,
-    pub utt: Option<String>,
-    pub last: Option<bool>,
-    pub flush: Option<bool>,
-}
-
-impl FrameJs {
-    /// Copies the bytes of `pcm` now, inside the call (BUS-NAT-TRN-009).
-    fn to_frame(&self) -> Frame {
-        Frame {
-            epoch: self.epoch,
-            seq: self.seq,
-            rate: self.rate,
-            ch: self.ch,
-            pcm: self.pcm.as_ref().map(|b| b.to_vec()).unwrap_or_default(),
-            spk: self.spk.clone(),
-            name: self.name.clone(),
-            utt: self.utt.clone(),
-            last: self.last.unwrap_or(false),
-            flush: self.flush.unwrap_or(false),
-        }
-    }
 }
 
 fn raw_entry_obj<'env>(env: &'env Env, e: RawEntry) -> napi::Result<Object<'env>> {
@@ -213,44 +169,6 @@ fn raw_entries<'env>(env: &'env Env, list: Vec<RawEntry>) -> napi::Result<Vec<Ob
     list.into_iter().map(|e| raw_entry_obj(env, e)).collect()
 }
 
-/// `{ ok: true, frame }` or `{ ok: false, reason }`, with absent members omitted as `decodeFrame` of `connector.ts`
-/// returns them. `pcm` is a `Buffer` that owns the Rust allocation (constraint N2).
-fn decoded_obj<'env>(env: &'env Env, d: DecodedFrame) -> napi::Result<Object<'env>> {
-    let mut o = Object::new(env)?;
-    match d {
-        DecodedFrame::Ok(f) => {
-            let mut frame = Object::new(env)?;
-            frame.set("epoch", f.epoch)?;
-            frame.set("seq", f.seq)?;
-            frame.set("rate", f.rate)?;
-            frame.set("ch", f.ch)?;
-            frame.set("pcm", Buffer::from(f.pcm))?;
-            if let Some(v) = f.spk {
-                frame.set("spk", v)?;
-            }
-            if let Some(v) = f.name {
-                frame.set("name", v)?;
-            }
-            if let Some(v) = f.utt {
-                frame.set("utt", v)?;
-            }
-            if f.last {
-                frame.set("last", true)?;
-            }
-            if f.flush {
-                frame.set("flush", true)?;
-            }
-            o.set("ok", true)?;
-            o.set("frame", frame)?;
-        }
-        DecodedFrame::Rejected(reason) => {
-            o.set("ok", false)?;
-            o.set("reason", reason)?;
-        }
-    }
-    Ok(o)
-}
-
 fn group_read_obj<'env>(env: &'env Env, g: GroupRead) -> napi::Result<Object<'env>> {
     let mut o = Object::new(env)?;
     match g.entries {
@@ -269,10 +187,6 @@ fn group_read_obj<'env>(env: &'env Env, g: GroupRead) -> napi::Result<Object<'en
     }
     o.set("ackErrors", errs)?;
     Ok(o)
-}
-
-fn unknown<'env>(o: Object<'env>) -> napi::Result<Unknown<'env>> {
-    Ok(o.to_unknown())
 }
 
 // ------------------------------------------------------------------ Transport
@@ -445,25 +359,6 @@ impl JsTransport {
         })
     }
 
-    /// Rejects `BUS_INVALID`, writing nothing, for a `pcm` over `MAX_FRAME_BYTES` or of odd length; copies `pcm`
-    /// before returning (BUS-NAT-TRN-009).
-    #[napi(js_name = "appendFrame")]
-    pub fn append_frame<'env>(
-        &self,
-        env: &'env Env,
-        dir: String,
-        tag: String,
-        frame: FrameJs,
-    ) -> napi::Result<PromiseRaw<'env, String>> {
-        let t = self.inner.clone();
-        let frame = frame.to_frame();
-        run(
-            env,
-            async move { t.append_frame(dir_of(&dir)?, &tag, &frame).await },
-            |_, id| Ok(id),
-        )
-    }
-
     #[napi(js_name = "serverTime")]
     pub fn server_time<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, f64>> {
         let t = self.inner.clone();
@@ -563,46 +458,6 @@ impl JsReader {
         )
     }
 
-    /// Each frame's `pcm` is a `Buffer` that owns the Rust allocation (BUS-NAT-TRN-010).
-    #[napi(js_name = "readFrames")]
-    pub fn read_frames<'env>(
-        &self,
-        env: &'env Env,
-        dir: String,
-        tag: String,
-        from_id: String,
-        count: u32,
-        block_ms: f64,
-    ) -> napi::Result<PromiseRaw<'env, Option<Vec<Object<'env>>>>> {
-        let r = self.inner.clone();
-        run(
-            env,
-            async move {
-                r.read_frames(
-                    dir_of(&dir)?,
-                    &tag,
-                    &from_id,
-                    count as usize,
-                    millis(block_ms)?,
-                )
-                .await
-            },
-            |env, v| {
-                v.map(|list| {
-                    list.into_iter()
-                        .map(|f| {
-                            let mut o = Object::new(env)?;
-                            o.set("id", f.id)?;
-                            o.set("decoded", decoded_obj(env, f.decoded)?)?;
-                            Ok(o)
-                        })
-                        .collect::<napi::Result<Vec<_>>>()
-                })
-                .transpose()
-            },
-        )
-    }
-
     #[napi]
     pub fn close(&self) {
         self.inner.close();
@@ -611,58 +466,10 @@ impl JsReader {
 
 // ------------------------------------------------------------------ synchronous helpers
 
-/// `null` when the tag is acceptable, otherwise the reason it is not (BUS-NAT-RS-005, BUS-NAT-TRN-013).
-#[napi(js_name = "tagProblem")]
-pub fn tag_problem(tag: String) -> Option<String> {
-    cohost_bus::tag::tag_problem(&tag)
-}
-
 /// `<prefix>:connector:<id>` (BUS-NAT-RS-006).
 #[napi(js_name = "connectorKey")]
 pub fn connector_key(prefix: String, id: String) -> String {
     Keys::new(&prefix).connector(&id)
-}
-
-/// `<prefix>:audio.<dir>.<tag>` (BUS-NAT-RS-006).
-#[napi(js_name = "audioStream")]
-pub fn audio_stream(prefix: String, dir: String, tag: String) -> napi::Result<String> {
-    let dir = dir_of(&dir).map_err(|e| napi::Error::from_reason(e.message))?;
-    Ok(Keys::new(&prefix).audio(dir, &tag))
-}
-
-/// The stream entry fields of a frame, flat `[name, value, ...]`; `pcm` is a `Buffer`, the rest strings
-/// (BUS-NAT-RS-003, BUS-NAT-TRN-013).
-#[napi(js_name = "encodeFrame")]
-pub fn encode_frame(frame: FrameJs) -> Vec<Either<String, Buffer>> {
-    let mut out = Vec::new();
-    let encoded = cohost_bus::frame::encode_frame(&frame.to_frame());
-    for [name, value] in encoded.as_chunks::<2>().0 {
-        let name = String::from_utf8_lossy(name).into_owned();
-        let value = if name == "pcm" {
-            Either::B(Buffer::from(value.clone()))
-        } else {
-            Either::A(String::from_utf8_lossy(value).into_owned())
-        };
-        out.push(Either::A(name));
-        out.push(value);
-    }
-    out
-}
-
-/// Never throws (CONN-BP-006); a rejected entry is `{ ok: false, reason }` (BUS-NAT-RS-003, BUS-NAT-TRN-013).
-#[napi(js_name = "decodeFrame")]
-pub fn decode_frame<'env>(
-    env: &'env Env,
-    fields: Vec<Either<String, Buffer>>,
-) -> napi::Result<Unknown<'env>> {
-    let raw: Vec<Vec<u8>> = fields
-        .into_iter()
-        .map(|f| match f {
-            Either::A(s) => s.into_bytes(),
-            Either::B(b) => b.to_vec(),
-        })
-        .collect();
-    unknown(decoded_obj(env, cohost_bus::frame::decode_frame(&raw))?)
 }
 
 /// Panics inside its future so a test can check BUS-NAT-ERR-006 (BUS-NAT-ERR-011). Exported only with the
@@ -685,62 +492,6 @@ pub fn test_panic(env: &Env) -> napi::Result<PromiseRaw<'_, ()>> {
 // ------------------------------------------------------------------ constants
 
 #[napi]
-pub const FRAME_VERSION: u32 = consts::FRAME_VERSION;
-#[napi]
-pub const MAX_FRAME_BYTES: u32 = consts::MAX_FRAME_BYTES as u32;
-/// `AUDIO_MAXLEN.in`.
-#[napi]
-pub const AUDIO_MAXLEN_IN: u32 = consts::AUDIO_MAXLEN_IN as u32;
-/// `AUDIO_MAXLEN.out`.
-#[napi]
-pub const AUDIO_MAXLEN_OUT: u32 = consts::AUDIO_MAXLEN_OUT as u32;
-#[napi]
-pub const AUDIO_STREAM_TTL_MS: u32 = consts::AUDIO_STREAM_TTL_MS as u32;
-#[napi]
-pub const LEASE_INTERVALS: u32 = consts::LEASE_INTERVALS;
-#[napi]
-pub const REGISTRATION_VERSION: u32 = consts::REGISTRATION_VERSION;
-#[napi]
-pub const DEFAULT_CONNECTOR_INTERVAL_MS: u32 = consts::DEFAULT_CONNECTOR_INTERVAL_MS as u32;
-#[napi]
 pub const EVENTS_MAXLEN: u32 = consts::EVENTS_MAXLEN as u32;
 #[napi]
 pub const HEALTH_MAXLEN: u32 = consts::HEALTH_MAXLEN as u32;
-#[napi]
-pub const TAG_PATTERN: &str = cohost_bus::tag::TAG_PATTERN;
-
-/// `RESERVED_TAGS` (CONN-TAG-002); a function because the addon exports values, not arrays, as constants.
-#[napi(js_name = "reservedTags")]
-pub fn reserved_tags() -> Vec<String> {
-    cohost_bus::tag::RESERVED_TAGS
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // @spec BUS-NAT-RS-003, CONN-AUD-006
-    #[test]
-    fn frame_without_pcm_converts_to_an_empty_flush_frame() {
-        let f = FrameJs {
-            epoch: 1.0,
-            seq: 2.0,
-            rate: 16000.0,
-            ch: 1.0,
-            pcm: None,
-            spk: None,
-            name: None,
-            utt: Some("u".into()),
-            last: None,
-            flush: Some(true),
-        }
-        .to_frame();
-        assert!(f.pcm.is_empty() && f.flush);
-        assert!(!cohost_bus::frame::encode_frame(&f)
-            .chunks(2)
-            .any(|p| p[0] == b"pcm"));
-    }
-}

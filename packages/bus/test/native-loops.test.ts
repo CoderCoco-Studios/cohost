@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Bus, BusEvent, EventType } from "../src/index.js";
-import { FakeTransport, rawEntry, groupRead, busError, withBus, busWith, until, within, tick, run } from "./native-helpers.js";
+import { FakeTransport, FakeFrameTransport, rawEntry, groupRead, busError, withBus, withBus2, busWith, until, within, tick, run } from "./native-helpers.js";
 
 const empty = () => groupRead(null);
 const batch = (...ids: string[]) => () => groupRead(ids.map((id) => rawEntry(id)));
@@ -190,11 +190,14 @@ test("a failing read of subscribe, tail, tailHealth or tailAudio logs exactly on
   for (const [name, method, start] of loops) {
     const fake = new FakeTransport();
     const ok = method === "readGroup" ? empty : () => null;
-    fake.on(method, down(), down(), down(), ok, down());
-    await withBus(fake, { retryBaseMs: 20, retryMaxMs: 60 }, async ({ bus, l }) => {
+    // tailAudio's reads run on the frame transport, the other loops' on the events transport
+    const scripted = (m: "readGroup" | "read" | "readFrames", f: { fake: FakeTransport; frames: FakeFrameTransport }) => (m === "readFrames" ? f.frames.of("readFrames") : f.fake.of(m));
+    const frames = new FakeFrameTransport();
+    if (method === "readFrames") frames.on("readFrames", down(), down(), down(), ok, down()); else fake.on(method as "read", down(), down(), down(), ok, down());
+    await withBus2(fake, frames, { retryBaseMs: 20, retryMaxMs: 60 }, async ({ bus, l }) => {
       const reports: unknown[] = [];
       void start(bus, (e) => { reports.push(e); });
-      await until(() => fake.of(method).length >= 6, `${name}: all scripted reads`);
+      await until(() => scripted(method, { fake, frames }).length >= 6, `${name}: all scripted reads`);
       const warns = l.at("warn");
       assert.equal(warns.length, 4, `${name}: one warn per failure`);
       assert.deepEqual(warns.map((w) => w.obj.delayMs), [20, 40, 60, 20], name);
@@ -202,7 +205,7 @@ test("a failing read of subscribe, tail, tailHealth or tailAudio logs exactly on
         assert.equal(reports.filter((r) => r instanceof Error).length, 4, `${name}: one onRead error per failure`);
         assert.equal(reports.filter((r) => r === undefined).length, 1, `${name}: one onRead success`);
       }
-      const reads = fake.of(method);
+      const reads = scripted(method, { fake, frames });
       for (const [i, delay] of [[1, 20], [2, 40], [3, 60]] as const) {
         assert.ok(reads[i]!.at - reads[i - 1]!.at >= delay - 3, `${name}: waited ~${delay} ms before read ${i + 1}`);
       }
@@ -244,12 +247,13 @@ test("BUS_CONNECTION, BUS_REDIS and BUS_INTERNAL rejections of a read are read f
 // @spec BUS-NAT-ERR-004, BUS-STOP-001
 test("after stop(), a read or the group creation that rejects resolves subscribe, tail, tailHealth and tailAudio without a log line or a rethrow", async () => {
   const fake = new FakeTransport();
-  await withBus(fake, {}, async ({ bus, l }) => {
+  await withBus(fake, {}, async ({ bus, l, frames }) => {
     const loops = [
       sub(bus), run(bus.tail(() => {})), run(bus.tailHealth(() => {})), run(bus.tailAudio("in", "discord", () => {})),
     ];
-    await until(() => fake.of("readGroup").length + fake.of("read").length + fake.of("readFrames").length >= 4, "four blocked reads");
+    await until(() => fake.of("readGroup").length + fake.of("read").length + frames.of("readFrames").length >= 4, "four blocked reads");
     await within(bus.stop(), 1000, "stop");
+    assert.equal(frames.closed, true, "stop() closes the frame transport with the events transport");
     await within(Promise.all(loops.map((x) => x.done)), 1000, "loops");
     assert.ok(loops.every((x) => x.settled && x.error === undefined), "all four resolve");
     assert.deepEqual([...l.at("warn"), ...l.at("error")], [], "no log line");
@@ -274,8 +278,10 @@ test("after stop(), a read or the group creation that rejects resolves subscribe
 
 // @spec BUS-NAT-ERR-005
 test("after the transport closed, publish and publishHealth reject BUS_CLOSED, log it at warn and rethrow it", async () => {
-  const { bus, l, fake } = busWith(new FakeTransport());
+  const { bus, l, fake, frames } = busWith(new FakeTransport());
   await bus.stop();
+  await assert.rejects(bus.publishFrame("in", "discord", { epoch: 1, seq: 0, rate: 16000, ch: 1, pcm: Buffer.alloc(2) }), (e: { code?: string }) => e.code === "BUS_CLOSED");
+  assert.equal(frames.closed, true);
   const hb = { service: "s", instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 1 } as const;
   for (const call of [() => bus.publish("control", { cmd: "mute" }), () => bus.publishHealth(hb)]) {
     await assert.rejects(call(), (e: { code?: string }) => e.code === "BUS_CLOSED");

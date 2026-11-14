@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { urls, type Logger } from "@cohost/config";
-import type { BusReader, RawEntry, BusTransport, TransportFactory } from "./transport.js";
+import type { BusReader, RawEntry, BusTransport, TransportFactory, FrameTransport, FrameTransportFactory, FrameReader } from "./transport.js";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
-import { HEALTH_MAXLEN, audioStream, connectorKey, createNativeTransport } from "./native.js";
-
+import { HEALTH_MAXLEN, connectorKey, createNativeTransport } from "./native.js";
+import { audioStreamName, createFrameTransport } from "./frames.js";
 import {
-  LEASE_INTERVALS, parseRegistration,
+  LEASE_INTERVALS, MAX_FRAME_BYTES, parseRegistration,
   type AudioDirection, type DecodedFrame, type Frame, type Registration,
 } from "./connector.js";
 
@@ -45,8 +45,10 @@ export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promis
 
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
-  /** Builds the `BusTransport` the instance runs on (default: the native transport). Tests pass a fake (BUS-NAT-API-004). */
+  /** Builds the `BusTransport` the instance runs its events path on (default: the native transport). Tests pass a fake (BUS-NAT-API-004). */
   transport?: TransportFactory;
+  /** Builds the `FrameTransport` the instance runs `publishFrame` and `tailAudio` on (default: the ioredis transport). Tests pass a fake (BUS-NAT-FRM-007). */
+  frames?: FrameTransportFactory;
   /** First retry delay after a failed read, ms (default 250; doubles per consecutive failure). */
   retryBaseMs?: number;
   /** Cap on the retry delay, ms (default 30000). */
@@ -79,6 +81,7 @@ export type Publisher = Pick<Bus, "publish">;
 // @spec BUS-STREAM-005, BUS-NAT-API-001, BUS-NAT-API-004
 export class Bus {
   private readonly transport: BusTransport;
+  private readonly frames: FrameTransport;
   private stopped = false;
   private closing?: Promise<void>;
   readonly consumer = `${process.env.HOSTNAME ?? "local"}-${randomUUID().slice(0, 8)}`;
@@ -95,6 +98,8 @@ export class Bus {
     this.prefix = options.streamPrefix ?? DEFAULT_PREFIX;
     // @spec BUS-STREAM-009
     this.transport = (options.transport ?? createNativeTransport)(url, { prefix: this.prefix, failFast: options.failFast ?? false });
+    // @spec BUS-NAT-FRM-007
+    this.frames = (options.frames ?? createFrameTransport)(url, { prefix: this.prefix, failFast: options.failFast ?? false });
   }
 
   // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, BUS-STREAM-007, BUS-NAT-API-005, BUS-NAT-ERR-005
@@ -128,7 +133,7 @@ export class Bus {
   connectorKey(id: string): string { return connectorKey(this.prefix, id); }
 
   /** The stream of a source (`in`) or sink (`out`), `<prefix>:audio.<dir>.<tag>` (BUS-AUD-001, BUS-NAT-RS-006). */
-  audioStream(dir: AudioDirection, tag: string): string { return audioStream(this.prefix, dir, tag); }
+  audioStream(dir: AudioDirection, tag: string): string { return audioStreamName(this.prefix, dir, tag); }
 
   /** Write a registration under its key with a lease of three intervals; not a stream entry. */
   // @spec CONN-REG-001, CONN-REG-002, BUS-AUD-002
@@ -158,19 +163,27 @@ export class Bus {
    * `BUS_INVALID` and writes nothing for an oversized or odd-length `pcm`. Never waits for a consumer (CONN-BP-001);
    * `publish` neither writes nor trims these streams (BUS-AUD-001).
    */
-  // @spec CONN-AUD-001, CONN-BP-001, BUS-AUD-001, BUS-NAT-FRM-001, BUS-NAT-FRM-002
-  publishFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
-    return this.transport.appendFrame(dir, tag, frame);
+  // @spec CONN-AUD-001, CONN-AUD-002, CONN-BP-001, BUS-AUD-001, BUS-NAT-FRM-001, BUS-NAT-FRM-002, BUS-NAT-FRM-007
+  async publishFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+    const pcm = frame.pcm as Buffer | undefined;
+    if (!frame.flush && pcm) {
+      if (pcm.length > MAX_FRAME_BYTES) throw Object.assign(new Error(`frame pcm is ${pcm.length} bytes, over ${MAX_FRAME_BYTES}`), { code: "BUS_INVALID" });
+      if (pcm.length % 2 !== 0) throw Object.assign(new Error(`frame pcm has an odd byte count (${pcm.length})`), { code: "BUS_INVALID" });
+    }
+    return this.frames.appendFrame(dir, tag, frame);
   }
 
   /**
    * Live read of `audio.<dir>.<tag>`: plain blocking `XREAD` from the end (`$`), no group, no acknowledgement, no replay
    * (CONN-BP-002). Resolves when `stop()` is called. A handler throw is logged and the loop continues.
    */
-  // @spec CONN-BP-002, BUS-AUD-001, BUS-NAT-CONN-002
+  // @spec CONN-BP-002, BUS-AUD-001, BUS-NAT-CONN-002, BUS-NAT-FRM-004
   async tailAudio(dir: AudioDirection, tag: string, handler: (decoded: DecodedFrame, id: string) => void, onRead?: ReadOutcome): Promise<void> {
-    const reader = this.openReader();
-    if (!reader) return;
+    let reader: FrameReader;
+    try { reader = this.frames.openReader(); } catch (err) {
+      if (this.stopped) return;
+      throw err;
+    }
     let last = "$";
     let failures = 0;
     try {
@@ -379,21 +392,22 @@ export class Bus {
   }
 
   /**
-   * Mark the instance stopped, wake every backoff sleep and close the transport, which sends the queued acks (at most
-   * 2 s) and ends every blocked read. Resolves once the transport has closed; repeated calls share that close.
+   * Mark the instance stopped, wake every backoff sleep and close both transports: the events transport sends the queued
+   * acks (at most 2 s), and both end every blocked read. Resolves once they have closed; repeated calls share that close.
    */
   // @spec BUS-STOP-001, BUS-NAT-ACK-005, BUS-NAT-ACK-006, BUS-NAT-ACK-007, BUS-NAT-ERR-008
   stop(): Promise<void> {
     this.stopped = true;
     for (const w of [...this.wake]) w();
     if (!this.closing) {
-      try { this.closing = this.transport.close().catch(() => {}); } catch { this.closing = Promise.resolve(); }
+      const quiet = (close: () => Promise<void>): Promise<void> => { try { return close().catch(() => {}); } catch { return Promise.resolve(); } };
+      this.closing = Promise.all([quiet(() => this.transport.close()), quiet(() => this.frames.close())]).then(() => undefined);
     }
     return this.closing;
   }
 }
 
-function closeQuietly(reader: BusReader): void {
+function closeQuietly(reader: { close(): void }): void {
   try { reader.close(); } catch { /* already closed */ }
 }
 

@@ -1,6 +1,7 @@
 /**
- * The seam between the `Bus` facade and the native Redis transport (event-bus design, "The BusTransport interface").
- * Types only. Specs: BUS-NAT-TRN-*, BUS-NAT-ACK-*, BUS-NAT-ERR-*.
+ * The seams between the `Bus` facade and its two transports: the native Redis transport of the events path
+ * (`BusTransport`, event-bus design "The BusTransport interface") and the ioredis transport of the frames path
+ * (`FrameTransport`, "Frames path"). Types only. Specs: BUS-NAT-TRN-*, BUS-NAT-ACK-*, BUS-NAT-ERR-*, BUS-NAT-FRM-*.
  */
 import type { AudioDirection, DecodedFrame, Frame } from "./connector.js";
 
@@ -23,8 +24,6 @@ export interface AckError { ids: string[]; err: Error }
 /** `entries` is null when the block timed out with nothing to read. */
 export interface GroupRead { entries: RawEntry[] | null; ackErrors: AckError[] }
 
-export interface FrameEntry { id: string; decoded: DecodedFrame }
-
 export interface BusTransport {
   /** XADD <prefix>:<stream> MAXLEN ~ 20000 (events) | 1000 (health) * type ts source data. Resolves to the id. */
   append(stream: EventStream, fields: EntryFields): Promise<string>;
@@ -46,11 +45,6 @@ export interface BusTransport {
   deleteRegistration(id: string): Promise<void>;
   /** SCAN MATCH <prefix>:connector:* COUNT 100 to cursor 0, de-duplicated, then one MGET; values that exist (CONN-REG-006). */
   listRegistrations(): Promise<string[]>;
-  /**
-   * Encode, then XADD <prefix>:audio.<dir>.<tag> MAXLEN ~ cap(dir) * ... and PEXPIRE 60000 in one pipeline (CONN-AUD-001).
-   * Rejects BUS_INVALID, writing nothing, when pcm exceeds MAX_FRAME_BYTES or has an odd byte count.
-   */
-  appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string>;
   /** TIME, as epoch ms (CTRL-CHECK-004). */
   serverTime(): Promise<number>;
   /** A reader with its own connection, for one blocking loop. */
@@ -74,10 +68,32 @@ export interface BusReader {
   ack(group: string, id: string): void;
   /** XREAD COUNT n BLOCK ms STREAMS <prefix>:<stream> <fromId>. null on timeout. */
   read(stream: EventStream, fromId: string, count: number, blockMs: number): Promise<RawEntry[] | null>;
-  /** XREAD on <prefix>:audio.<dir>.<tag>, each entry decoded by the frame codec (never throws, CONN-BP-006). null on timeout. */
-  readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null>;
   /** Close this reader's connection, dropping its queued acks; a blocked read rejects with BUS_CLOSED. */
   close(): void;
 }
 
 export type TransportFactory = (url: string, opts: { prefix: string; failFast: boolean }) => BusTransport;
+
+export interface FrameEntry { id: string; decoded: DecodedFrame }
+
+/** The frames path's transport (BUS-NAT-FRM-*): `publishFrame` and `tailAudio` run on it, in production over ioredis. */
+export interface FrameTransport {
+  /**
+   * XADD <prefix>:audio.<dir>.<tag> MAXLEN ~ AUDIO_MAXLEN[dir] * <encodeFrame(frame)> and PEXPIRE <stream> 60000 in one
+   * pipeline on the publish connection (CONN-AUD-001). Resolves to the entry's id.
+   */
+  appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string>;
+  /** A frame reader with its own connection, for one `tailAudio` loop. */
+  openReader(): FrameReader;
+  /** Disconnect the publish connection, if one was opened, and every reader; a blocked read rejects. Never rejects. */
+  close(): Promise<void>;
+}
+
+export interface FrameReader {
+  /** XREAD COUNT n BLOCK ms STREAMS <prefix>:audio.<dir>.<tag> <fromId>, each entry decoded by `decodeFrame` (never throws, CONN-BP-006). null on timeout. */
+  readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null>;
+  /** Disconnect this reader; a blocked read rejects with BUS_CLOSED. */
+  close(): void;
+}
+
+export type FrameTransportFactory = (url: string, opts: { prefix: string; failFast: boolean }) => FrameTransport;

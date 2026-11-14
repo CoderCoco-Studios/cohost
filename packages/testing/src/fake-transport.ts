@@ -1,12 +1,12 @@
 /**
  * A scripted `BusTransport` for facade tests: the Bus runs its loops, validation and backoff against it with no Redis
- * server and no native addon (BUS-NAT-API-011). It models the transport rules a facade test depends on: acks queue on
+ * server and no native addon (BUS-NAT-API-011). `FakeFrameTransport` below does the same for the frames path. It models the transport rules a facade test depends on: acks queue on
  * the reader and travel with the next `readGroup`, a failed pipeline keeps them queued, `close()` flushes them, and a
  * call after `close()` rejects `BUS_CLOSED`.
  */
 import type {
-  AckError, AudioDirection, BusErrorCode, BusReader, BusTransport, EntryFields, EventStream, Frame, FrameEntry, GroupRead,
-  RawEntry, TransportFactory,
+  AckError, AudioDirection, BusErrorCode, BusReader, BusTransport, EntryFields, EventStream, Frame, FrameEntry, FrameReader,
+  FrameTransport, FrameTransportFactory, GroupRead, RawEntry, TransportFactory,
 } from "@cohost/bus";
 
 /** An `Error` with the `code` the binding gives its rejections (BUS-NAT-ERR-001). */
@@ -17,8 +17,8 @@ export function busError(code: BusErrorCode, message: string = code): Error & { 
 type Fn = (...args: any[]) => unknown;
 export type TransportMethod =
   | "append" | "recent" | "createGroup" | "moveGroupToLatest" | "putUpload" | "takeUpload" | "writeRegistration"
-  | "readRegistration" | "deleteRegistration" | "listRegistrations" | "appendFrame" | "serverTime" | "openReader" | "close"
-  | "readGroup" | "ack" | "read" | "readFrames" | "readerClose";
+  | "readRegistration" | "deleteRegistration" | "listRegistrations" | "serverTime" | "openReader" | "close"
+  | "readGroup" | "ack" | "read" | "readerClose";
 
 /** One recorded call. `reader` is the 1-based number of the reader it was made on, for reader methods. */
 export interface Call { method: TransportMethod; args: unknown[]; reader?: number; at: number; /** `readGroup` only: the acks queued on the reader when the call was made, which travel with it. */ acks?: string[] }
@@ -99,7 +99,6 @@ export class FakeTransport implements BusTransport {
   readRegistration(id: string) { return this.run("readRegistration", [id], (): string | null => null); }
   deleteRegistration(id: string) { return this.run("deleteRegistration", [id], () => undefined); }
   listRegistrations() { return this.run("listRegistrations", [], (): string[] => []); }
-  appendFrame(dir: AudioDirection, tag: string, frame: Frame) { return this.run("appendFrame", [dir, tag, frame], () => `${Date.now()}-${idSeq++}`); }
   serverTime() { return this.run("serverTime", [], () => this.serverNow); }
 
   openReader(): BusReader {
@@ -167,10 +166,7 @@ export class FakeReader implements BusReader {
   read(stream: EventStream, fromId: string, count: number, blockMs: number): Promise<RawEntry[] | null> {
     return this.blocking("read", [stream, fromId, count, blockMs]);
   }
-  readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null> {
-    return this.blocking("readFrames", [dir, tag, fromId, count, blockMs]);
-  }
-  private async blocking<T>(method: "read" | "readFrames", args: unknown[]): Promise<T> {
+  private async blocking<T>(method: "read", args: unknown[]): Promise<T> {
     this.t.record(method, args, this.n);
     if (this.closed || this.t.closed) throw busError("BUS_CLOSED", "reader closed");
     const fn = this.t.script[method]?.shift();
@@ -182,4 +178,68 @@ export class FakeReader implements BusReader {
     this.closed = true;
     this.queued = [];
   }
+}
+
+export type FrameMethod = "appendFrame" | "openReader" | "close" | "readFrames" | "readerClose";
+export interface FrameCall { method: FrameMethod; args: unknown[]; reader?: number; at: number }
+
+/**
+ * A scripted `FrameTransport` for the frames path (BUS-NAT-API-011, BUS-NAT-FRM-007): records every call, runs scripted
+ * results one per call, and rejects `BUS_CLOSED` once closed. Unscripted `readFrames` wait until `close()`.
+ */
+export class FakeFrameTransport implements FrameTransport {
+  calls: FrameCall[] = [];
+  factoryCalls: { url: string; opts: { prefix: string; failFast: boolean } }[] = [];
+  script: Partial<Record<FrameMethod, Fn[]>> = {};
+  closed = false;
+  readers: FakeFrameReader[] = [];
+  private waiters = new Set<(e: Error) => void>();
+
+  readonly factory: FrameTransportFactory = (url, opts) => { this.factoryCalls.push({ url, opts }); return this; };
+
+  on(method: FrameMethod, ...fns: Fn[]): this { (this.script[method] ??= []).push(...fns); return this; }
+  failOnce(method: FrameMethod, code: BusErrorCode = "BUS_CONNECTION", message?: string): this {
+    return this.on(method, () => { throw busError(code, message); });
+  }
+  of(method: FrameMethod): FrameCall[] { return this.calls.filter((c) => c.method === method); }
+
+  /** @internal */
+  record(method: FrameMethod, args: unknown[], reader?: number): void { this.calls.push({ method, args, reader, at: performance.now() }); }
+  /** @internal */
+  idle<T>(): Promise<T> { return new Promise<T>((_, reject) => { this.waiters.add(reject); }); }
+
+  async appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+    this.record("appendFrame", [dir, tag, frame]);
+    if (this.closed) throw busError("BUS_CLOSED", "transport closed");
+    const fn = this.script.appendFrame?.shift();
+    return (fn ? await fn(dir, tag, frame) : `${Date.now()}-${idSeq++}`) as string;
+  }
+
+  openReader(): FrameReader {
+    this.record("openReader", []);
+    if (this.closed) throw busError("BUS_CLOSED", "transport closed");
+    const r = new FakeFrameReader(this, this.readers.length + 1);
+    this.readers.push(r);
+    return r;
+  }
+
+  async close(): Promise<void> {
+    this.record("close", []);
+    this.closed = true;
+    for (const w of [...this.waiters]) w(busError("BUS_CLOSED", "transport closed"));
+    this.waiters.clear();
+    await tick();
+  }
+}
+
+export class FakeFrameReader implements FrameReader {
+  closed = false;
+  constructor(private t: FakeFrameTransport, readonly n: number) {}
+  async readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null> {
+    this.t.record("readFrames", [dir, tag, fromId, count, blockMs], this.n);
+    if (this.closed || this.t.closed) throw busError("BUS_CLOSED", "reader closed");
+    const fn = this.t.script.readFrames?.shift();
+    return (fn ? await fn(dir, tag, fromId, count, blockMs) : await this.t.idle<FrameEntry[] | null>()) as FrameEntry[] | null;
+  }
+  close(): void { this.t.record("readerClose", [], this.n); this.closed = true; }
 }

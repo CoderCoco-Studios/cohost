@@ -5,20 +5,29 @@
  */
 import { z } from "zod";
 import type { BusEvent } from "./events.js";
-import { TAG_PATTERN, REGISTRATION_VERSION } from "./native.js";
 
 export type AudioDirection = "in" | "out";
 export type Capability = "audio-in" | "audio-out";
 export type Transport = "stream" | "http";
 
-// The tag grammar, the frame codec and the wire constants are owned by the native crate and re-exported from the binding
-// unchanged (BUS-NAT-RS-003 to BUS-NAT-RS-005).
-export {
-  TAG_PATTERN, RESERVED_TAGS, tagProblem, encodeFrame, decodeFrame, FRAME_VERSION, MAX_FRAME_BYTES, AUDIO_MAXLEN,
-  AUDIO_STREAM_TTL_MS, LEASE_INTERVALS, REGISTRATION_VERSION, DEFAULT_CONNECTOR_INTERVAL_MS,
-} from "./native.js";
-
+/** The tag grammar of sources and sinks (CONN-TAG-001). */
+export const TAG_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+/** Tags that already name something else (CONN-TAG-002). */
+export const RESERVED_TAGS: readonly string[] = ["http", "dir", "dashboard", "mouth", "dryrun", "file"];
 export const CONNECTOR_ID_PATTERN = TAG_PATTERN;
+
+// The connector protocol constants (BUS-NAT-RS-004), equal to fixtures/contract/constants.json.
+export const REGISTRATION_VERSION = 1;
+export const FRAME_VERSION = 1;
+/** Largest `pcm` field of one frame (CONN-AUD-002). */
+export const MAX_FRAME_BYTES = 64 * 1024;
+/** `MAXLEN ~` cap per stream direction (CONN-AUD-001). */
+export const AUDIO_MAXLEN: Record<AudioDirection, number> = { in: 3000, out: 1500 };
+/** Expiry refreshed by every write to an audio stream (CONN-AUD-001). */
+export const AUDIO_STREAM_TTL_MS = 60_000;
+export const DEFAULT_CONNECTOR_INTERVAL_MS = 5000;
+/** A registration expires after this many intervals without a rewrite (CONN-REG-002). */
+export const LEASE_INTERVALS = 3;
 
 export const capabilityDirection = (cap: Capability): AudioDirection => (cap === "audio-in" ? "in" : "out");
 
@@ -88,6 +97,14 @@ export function findReady(regs: readonly Registration[], cap: Capability, tag: s
   return o && o.cap.ready ? o : undefined;
 }
 
+/** `null` when the tag is acceptable, otherwise the reason it is not (CONN-TAG-001, CONN-TAG-002). */
+// @spec CONN-TAG-001, CONN-TAG-002, BUS-NAT-RS-005
+export function tagProblem(tag: string): string | null {
+  if (!TAG_PATTERN.test(tag)) return `tag "${tag}" does not match ${TAG_PATTERN}`;
+  if (RESERVED_TAGS.includes(tag)) return `tag "${tag}" is reserved`;
+  return null;
+}
+
 // ---------------------------------------------------------------- frames
 
 export interface Frame {
@@ -106,7 +123,48 @@ export interface Frame {
   flush?: boolean;
 }
 
+/** The stream entry fields of a frame (CONN-AUD-002); a flush frame carries no `pcm` field (CONN-AUD-006). */
+// @spec CONN-AUD-002, CONN-AUD-006, BUS-NAT-RS-003
+export function encodeFrame(f: Omit<Frame, "pcm"> & { pcm?: Buffer }): (string | Buffer)[] {
+  const out: (string | Buffer)[] = ["v", String(FRAME_VERSION), "epoch", String(f.epoch), "seq", String(f.seq), "rate", String(f.rate), "ch", String(f.ch)];
+  if (!f.flush) out.push("pcm", f.pcm ?? Buffer.alloc(0));
+  if (f.spk !== undefined) out.push("spk", f.spk);
+  if (f.name !== undefined) out.push("name", f.name);
+  if (f.utt !== undefined) out.push("utt", f.utt);
+  if (f.last) out.push("last", "1");
+  if (f.flush) out.push("flush", "1");
+  return out;
+}
+
 export type DecodedFrame = { ok: true; frame: Frame } | { ok: false; reason: string };
+
+/** Decode one entry's field list; never throws (CONN-BP-006). */
+// @spec CONN-BP-006, CONN-AUD-002, CONN-AUD-006, BUS-NAT-RS-003
+export function decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame {
+  const m = new Map<string, Buffer>();
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const k = fields[i]!.toString();
+    const v = fields[i + 1]!;
+    m.set(k, Buffer.isBuffer(v) ? v : Buffer.from(v));
+  }
+  const num = (k: string): number => Number(m.get(k)?.toString());
+  if (m.get("v")?.toString() !== String(FRAME_VERSION)) return { ok: false, reason: "version" };
+  const flush = m.get("flush")?.toString() === "1";
+  const pcm = flush ? Buffer.alloc(0) : m.get("pcm");
+  if (!pcm) return { ok: false, reason: "no pcm" };
+  if (pcm.length > MAX_FRAME_BYTES) return { ok: false, reason: "too large" };
+  if (pcm.length % 2 !== 0) return { ok: false, reason: "odd byte count" };
+  const epoch = num("epoch"), seq = num("seq"), rate = num("rate"), ch = num("ch");
+  if (![epoch, seq, rate, ch].every((n) => Number.isFinite(n)) || seq < 0 || rate <= 0 || ch <= 0) return { ok: false, reason: "bad header" };
+  const frame: Frame = { epoch, seq, rate, ch, pcm };
+  const s = (k: string) => m.get(k)?.toString();
+  if (m.has("spk")) frame.spk = s("spk");
+  if (m.has("name")) frame.name = s("name");
+  if (m.has("utt")) frame.utt = s("utt");
+  if (s("last") === "1") frame.last = true;
+  if (flush) frame.flush = true;
+  return { ok: true, frame };
+}
 
 /** Numbers frames of one producer: `seq` from 0 within an `epoch` (the producer's start time). */
 export class FrameSequencer {

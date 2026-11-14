@@ -1,5 +1,5 @@
-// Facade API on a scripted BusTransport (BUS-NAT-API-*, BUS-NAT-TRN-*, amended BUS-STREAM-005/009, BUS-UPL-001).
-// Until the facade runs on `BusOptions.transport` (Phase 6) every test here fails at the first assertion.
+// Facade API on a scripted BusTransport (events path) and a scripted FrameTransport (frames path): BUS-NAT-API-*,
+// BUS-NAT-TRN-*, BUS-NAT-FRM-*, amended BUS-STREAM-005/009, BUS-UPL-001.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -9,17 +9,26 @@ import {
   Bus, STREAM, HEALTH_STREAM, HEALTH_MAXLEN, EventPayloads, tagProblem, ConnectorRegistrar, parseRegistration,
   type BusEvent, type BusOptions, type BusReader, type BusTransport, type HeartbeatEvent, type Handler, type Publisher,
   type ReadOutcome, type SubscribeOptions, type SubscribeStart, type TransportFactory,
+  type FrameTransport, type FrameReader, type FrameTransportFactory,
 } from "../src/index.js";
-import { FakeTransport, rawEntry, groupRead, busError, busWith, withBus, until, within, tick } from "./native-helpers.js";
+import { FakeTransport, FakeFrameTransport, rawEntry, groupRead, busError, busWith, withBus, until, within, tick } from "./native-helpers.js";
 
 const repo = new URL("../../../", import.meta.url).pathname;
 const chat = { platform: "twitch", user: "ann", text: "hi" } as const;
 const hb = { service: "chat", instance: "i", pid: 1, version: "0", startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 5000 } as const;
 
 // Compile-time: the names BUS-NAT-API-002 lists exist as types (tsx erases this; `tsc` over the tests checks it).
-export type _ApiTypes = [SubscribeStart, SubscribeOptions<"control">, Handler<"control">, Publisher, ReadOutcome, HeartbeatEvent, BusOptions, BusTransport, BusReader, TransportFactory];
+export type _ApiTypes = [SubscribeStart, SubscribeOptions<"control">, Handler<"control">, Publisher, ReadOutcome, HeartbeatEvent, BusOptions, BusTransport, BusReader, TransportFactory, FrameTransport, FrameReader, FrameTransportFactory];
 const _fakeIsATransport: BusTransport = new FakeTransport();
-void _fakeIsATransport;
+const _fakeIsAFrameTransport: FrameTransport = new FakeFrameTransport();
+void _fakeIsATransport; void _fakeIsAFrameTransport;
+// @ts-expect-error BUS-NAT-TRN-001: the events transport carries no audio frame
+void new FakeTransport().appendFrame;
+// @ts-expect-error BUS-NAT-TRN-001: the events reader carries no audio frame
+void new FakeTransport().openReader().readFrames;
+// @ts-expect-error BUS-NAT-API-004: BusOptions has no connection-level option
+const _noConnect: BusOptions = { connect: () => ({}) };
+void _noConnect;
 
 /** Every `.ts` file under `dir`, skipping build output and dependencies. */
 function sources(dir: string): string[] {
@@ -65,11 +74,12 @@ test("@cohost/bus exports the constants and everything events.ts, connector.ts a
 });
 
 // @spec BUS-NAT-API-003
-test("no src file of any package or service imports a Redis client, and none lists one as a runtime dependency", () => {
+test("ioredis is imported by packages/bus/src/frames.ts alone and is a runtime dependency of packages/bus alone; no other Redis client anywhere", () => {
   const offenders: string[] = [];
   const client = /(?:from\s+|require\(\s*|import\(\s*)["'](?:ioredis|redis|@redis\/[^"']+|ioredis-mock|redis-mock)["']/;
   for (const f of srcFiles()) if (client.test(readFileSync(f, "utf8"))) offenders.push(relative(repo, f));
-  assert.deepEqual(offenders, [], "Redis client imported outside the native transport");
+  assert.deepEqual(offenders, ["packages/bus/src/frames.ts"], "ioredis is imported by frames.ts and nothing else");
+  assert.match(readFileSync(join(repo, "packages/bus/src/frames.ts"), "utf8"), /from\s+["']ioredis["']/);
   const manifests: string[] = [];
   for (const top of ["packages", "services"]) for (const pkg of readdirSync(join(repo, top))) {
     try {
@@ -77,8 +87,11 @@ test("no src file of any package or service imports a Redis client, and none lis
       for (const dep of ["ioredis", "redis", "@redis/client"]) if (j.dependencies?.[dep]) manifests.push(`${top}/${pkg}:${dep}`);
     } catch { /* not a package */ }
   }
-  assert.deepEqual(manifests, [], "a Redis client is only a devDependency");
-  assert.match(readFileSync(join(repo, "packages/bus/src/index.ts"), "utf8"), /["']\.\/native\.js["']/, "the default transport is the native one");
+  assert.deepEqual(manifests, ["packages/bus:ioredis"], "only packages/bus lists a Redis client, as a runtime dependency");
+  const bus = JSON.parse(readFileSync(join(repo, "packages/bus/package.json"), "utf8"));
+  assert.equal(bus.devDependencies?.ioredis, undefined, "not also a devDependency");
+  assert.match(readFileSync(join(repo, "packages/bus/src/index.ts"), "utf8"), /["']\.\/native\.js["']/, "the default events transport is the native one");
+  assert.match(readFileSync(join(repo, "packages/bus/src/index.ts"), "utf8"), /["']\.\/frames\.js["']/, "the default frame transport is the ioredis one");
 });
 
 // @spec BUS-NAT-API-004
@@ -86,9 +99,11 @@ test("BusOptions.transport is called once with the URL and { prefix, failFast },
   const f1 = new FakeTransport();
   const l = busWith(f1, {}, "redis://h:1");
   assert.deepEqual(f1.factoryCalls, [{ url: "redis://h:1", opts: { prefix: "cohost", failFast: false } }]);
+  assert.deepEqual(l.frames.factoryCalls, [{ url: "redis://h:1", opts: { prefix: "cohost", failFast: false } }], "BUS-NAT-FRM-007: the frames factory gets the same arguments");
   const f2 = new FakeTransport();
-  busWith(f2, { streamPrefix: "p1", failFast: true }, "redis://h:2");
+  const l2 = busWith(f2, { streamPrefix: "p1", failFast: true }, "redis://h:2");
   assert.deepEqual(f2.factoryCalls, [{ url: "redis://h:2", opts: { prefix: "p1", failFast: true } }]);
+  assert.deepEqual(l2.frames.factoryCalls, [{ url: "redis://h:2", opts: { prefix: "p1", failFast: true } }]);
 
   // a connection-level option is gone: a stray `connect` is never called
   let connects = 0;
@@ -109,7 +124,9 @@ test("BusOptions.transport is called once with the URL and { prefix, failFast },
   await bus.publishFrame("in", "discord", { epoch: 1, seq: 0, rate: 16000, ch: 1, pcm: Buffer.alloc(4) });
   await bus.serverTime(); await bus.resetGroup("g");
   const seen = new Set(f1.names());
-  for (const m of ["append", "recent", "putUpload", "takeUpload", "writeRegistration", "readRegistration", "deleteRegistration", "listRegistrations", "appendFrame", "serverTime", "createGroup"]) assert.ok(seen.has(m as never), m);
+  for (const m of ["append", "recent", "putUpload", "takeUpload", "writeRegistration", "readRegistration", "deleteRegistration", "listRegistrations", "serverTime", "createGroup"]) assert.ok(seen.has(m as never), m);
+  assert.ok(!seen.has("appendFrame" as never), "publishFrame does not run on the events transport");
+  assert.equal(l.frames.of("appendFrame").length, 1, "publishFrame runs on the frame transport");
   assert.deepEqual(f1.of("append").map((c) => c.args[0]), ["events", "health"]);
   assert.deepEqual(f1.of("recent").map((c) => c.args), [["events", 2], ["health", 2]]);
   await bus.stop(); await b3.bus.stop();
@@ -298,18 +315,19 @@ test("putUpload hands the transport the id, bytes and ttl, and rejects when the 
 // @spec BUS-NAT-TRN-005
 test("each loop reads on a reader of its own and every non-blocking command uses the shared transport", async () => {
   const fake = new FakeTransport();
-  await withBus(fake, {}, async ({ bus }) => {
+  await withBus(fake, {}, async ({ bus, frames }) => {
     void bus.subscribe({ group: "g", start: "latest", blockMs: 10 }, () => {});
     void bus.tail(() => {});
     void bus.tailHealth(() => {});
     void bus.tailAudio("in", "discord", () => {});
-    await until(() => fake.of("readGroup").length + fake.of("read").length + fake.of("readFrames").length >= 4, "four loops reading");
-    assert.equal(fake.readers.length, 4);
-    assert.equal(fake.of("openReader").length, 4);
-    const kinds = fake.readers.map((r) => new Set(fake.calls.filter((c) => c.reader === r.n && ["readGroup", "read", "readFrames"].includes(c.method)).map((c) => c.method)));
+    await until(() => fake.of("readGroup").length + fake.of("read").length + frames.of("readFrames").length >= 4, "four loops reading");
+    assert.equal(fake.readers.length, 3, "the events transport: one reader per events loop");
+    assert.equal(fake.of("openReader").length, 3);
+    assert.equal(frames.readers.length, 1, "the frame transport: one reader for tailAudio");
+    const kinds = fake.readers.map((r) => new Set(fake.calls.filter((c) => c.reader === r.n && ["readGroup", "read"].includes(c.method)).map((c) => c.method)));
     assert.ok(kinds.every((k) => k.size === 1), "one kind of blocking read per reader");
     await bus.publish("chat.message", chat); await bus.recent(1); await bus.serverTime(); await bus.putUpload("u", Buffer.alloc(1), 1);
-    assert.equal(fake.of("openReader").length, 4, "non-blocking commands open no reader");
+    assert.equal(fake.of("openReader").length, 3, "non-blocking commands open no reader");
     assert.ok(fake.calls.filter((c) => ["append", "recent", "serverTime", "putUpload"].includes(c.method)).every((c) => c.reader === undefined));
   });
 });
@@ -335,24 +353,26 @@ test("subscribe does not issue the next readGroup until the handler of every ent
 
 // @spec BUS-NAT-TRN-008
 test("commands issued without awaiting reach the transport in call order", async () => {
-  await withBus(new FakeTransport(), {}, async ({ bus, fake }) => {
+  await withBus(new FakeTransport(), {}, async ({ bus, fake, frames }) => {
     const pubs = Array.from({ length: 20 }, (_, i) => bus.publish("chat.message", { ...chat, text: String(i) }));
-    const frames = Array.from({ length: 10 }, (_, i) => bus.publishFrame("in", "discord", { epoch: 1, seq: i, rate: 16000, ch: 1, pcm: Buffer.alloc(2) }));
-    await Promise.all([...pubs, ...frames]);
+    const sent = Array.from({ length: 10 }, (_, i) => bus.publishFrame("in", "discord", { epoch: 1, seq: i, rate: 16000, ch: 1, pcm: Buffer.alloc(2) }));
+    await Promise.all([...pubs, ...sent]);
     assert.deepEqual(fake.of("append").map((c) => JSON.parse((c.args[1] as { data: string }).data).text), Array.from({ length: 20 }, (_, i) => String(i)));
-    assert.deepEqual(fake.of("appendFrame").map((c) => (c.args[2] as { seq: number }).seq), Array.from({ length: 10 }, (_, i) => i));
+    assert.deepEqual(frames.of("appendFrame").map((c) => (c.args[2] as { seq: number }).seq), Array.from({ length: 10 }, (_, i) => i));
   });
 });
 
 // @spec BUS-NAT-CONN-005
 test("a command rejected BUS_CONNECTION by the down shared connection reaches its caller unchanged, with nothing queued by the facade", async () => {
   const fake = new FakeTransport();
-  const { bus, l } = busWith(fake);
+  const { bus, l, frames } = busWith(fake);
   const err = busError("BUS_CONNECTION", "connection closed");
   const fail = () => { throw err; };
+  frames.on("appendFrame", fail);
+  await assert.rejects(bus.publishFrame("in", "discord", { epoch: 1, seq: 0, rate: 1, ch: 1, pcm: Buffer.alloc(2) }), (e) => e === err, "appendFrame");
+  assert.equal(frames.of("appendFrame").length, 1, "publishFrame made exactly one frame-transport call: no queueing or retry");
   const calls: [string, () => Promise<unknown>][] = [
     ["append", () => bus.publish("chat.message", chat)], ["append", () => bus.publishHealth(hb)],
-    ["appendFrame", () => bus.publishFrame("in", "discord", { epoch: 1, seq: 0, rate: 1, ch: 1, pcm: Buffer.alloc(2) })],
     ["putUpload", () => bus.putUpload("u", Buffer.alloc(1), 1)], ["takeUpload", () => bus.takeUpload("u")],
     ["writeRegistration", () => bus.writeRegistration({ v: 1, id: "d", kind: "k", version: "1", instance: "i", pid: 1, startedAt: 1, intervalMs: 1, state: "s", detail: "", capabilities: [] })],
     ["readRegistration", () => bus.readRegistration("d")], ["deleteRegistration", () => bus.deleteRegistration("d")],

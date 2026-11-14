@@ -1,14 +1,13 @@
 //! The native `BusTransport` (event-bus LLD, "The `BusTransport` interface"). One shared multiplexed connection plus
 //! one dedicated connection per `Reader`. No retries of its own on commands or reads (BUS-NAT-TRN-003).
 use crate::consts::{
-    AUDIO_STREAM_TTL_MS, CLOSE_FLUSH_TIMEOUT_MS, CONNECT_TIMEOUT_MS, EVENTS_MAXLEN, HEALTH_MAXLEN,
-    MAX_FRAME_BYTES, RECONNECT_BASE_MS, RECONNECT_CAP_MS,
+    CLOSE_FLUSH_TIMEOUT_MS, CONNECT_TIMEOUT_MS, EVENTS_MAXLEN, HEALTH_MAXLEN, RECONNECT_BASE_MS,
+    RECONNECT_CAP_MS,
 };
 use crate::error::{BusError, ErrorCode, Result};
-use crate::frame::{DecodedFrame, Direction, Frame, decode_frame, encode_frame};
 use crate::keys::Keys;
 use redis::aio::MultiplexedConnection;
-use redis::{AsyncConnectionConfig, Cmd, Pipeline, Value};
+use redis::{AsyncConnectionConfig, Cmd, Value};
 use std::collections::HashSet;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -55,12 +54,6 @@ pub struct AckError {
 pub struct GroupRead {
     pub entries: Option<Vec<RawEntry>>,
     pub ack_errors: Vec<AckError>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FrameEntry {
-    pub id: String,
-    pub decoded: DecodedFrame,
 }
 
 #[derive(Debug, Clone)]
@@ -217,13 +210,6 @@ impl Inner {
 
     async fn cmd(self: &Arc<Self>, cmd: Cmd) -> Result<Value> {
         self.issue(move |mut c| Box::pin(async move { cmd.query_async::<Value>(&mut c).await }))
-            .await
-    }
-
-    /// Runs a pipeline; a refused command comes back as a `Value::ServerError` in its slot.
-    async fn pipe(self: &Arc<Self>, mut p: Pipeline) -> Result<Vec<Value>> {
-        p.ignore_errors();
-        self.issue(move |mut c| Box::pin(async move { p.query_async::<Vec<Value>>(&mut c).await }))
             .await
     }
 }
@@ -628,36 +614,6 @@ impl Transport {
             .collect())
     }
 
-    // @spec BUS-NAT-FRM-001, BUS-NAT-FRM-002, BUS-NAT-FRM-003
-    pub async fn append_frame(&self, dir: Direction, tag: &str, frame: &Frame) -> Result<String> {
-        if !frame.flush {
-            if frame.pcm.len() > MAX_FRAME_BYTES {
-                return Err(BusError::invalid(format!(
-                    "pcm of {} bytes exceeds MAX_FRAME_BYTES ({MAX_FRAME_BYTES})",
-                    frame.pcm.len()
-                )));
-            }
-            if !frame.pcm.len().is_multiple_of(2) {
-                return Err(BusError::invalid("pcm has an odd byte count"));
-            }
-        }
-        let key = self.inner.keys.audio(dir, tag);
-        let mut add = xadd(&key, dir.maxlen());
-        for f in encode_frame(frame) {
-            add.arg(f);
-        }
-        let mut pipe = redis::pipe();
-        pipe.add_command(add);
-        pipe.cmd("PEXPIRE").arg(&key).arg(AUDIO_STREAM_TTL_MS);
-        let vals = self.inner.pipe(pipe).await?;
-        for v in &vals {
-            if let Some(e) = server_error_of(v) {
-                return Err(e);
-            }
-        }
-        id_reply(vals.first().ok_or_else(|| unexpected("pipeline"))?)
-    }
-
     /// Redis `TIME` as epoch milliseconds.
     // @spec BUS-NAT-TRN-001, CTRL-CHECK-004
     pub async fn server_time(&self) -> Result<u64> {
@@ -918,30 +874,6 @@ impl Reader {
             Ok(s.xread(&key, from_id, count, block_ms)
                 .await?
                 .map(|list| list.into_iter().map(|(id, f)| raw_entry(id, &f)).collect()))
-        })
-        .await
-    }
-
-    // @spec BUS-NAT-FRM-004
-    pub async fn read_frames(
-        &self,
-        dir: Direction,
-        tag: &str,
-        from_id: &str,
-        count: usize,
-        block_ms: u64,
-    ) -> Result<Option<Vec<FrameEntry>>> {
-        let s = &self.shared;
-        let key = s.inner.keys.audio(dir, tag);
-        s.guarded(async {
-            Ok(s.xread(&key, from_id, count, block_ms).await?.map(|list| {
-                list.into_iter()
-                    .map(|(id, f)| FrameEntry {
-                        id,
-                        decoded: decode_frame(&f),
-                    })
-                    .collect()
-            }))
         })
         .await
     }

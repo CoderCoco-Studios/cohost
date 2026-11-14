@@ -3,10 +3,7 @@
 mod common;
 
 use cohost_bus::ErrorCode;
-use cohost_bus::frame::{DecodedFrame, Direction, Frame};
-use cohost_bus::transport::{
-    EntryFields, EventStream, FrameEntry, Reader, Transport, TransportOptions,
-};
+use cohost_bus::transport::{EntryFields, EventStream, Transport, TransportOptions};
 use redis::Value;
 
 fn open(fx: &common::Fixture) -> Transport {
@@ -25,21 +22,6 @@ fn fields(n: usize) -> EntryFields {
         ts: n.to_string(),
         source: "s".into(),
         data: format!("{{\"n\":{n}}}"),
-    }
-}
-
-fn frame(seq: f64, pcm: Vec<u8>) -> Frame {
-    Frame {
-        epoch: 1.0,
-        seq,
-        rate: 16000.0,
-        ch: 1.0,
-        pcm,
-        spk: None,
-        name: None,
-        utt: None,
-        last: false,
-        flush: false,
     }
 }
 
@@ -65,13 +47,6 @@ async fn pending(fx: &common::Fixture, group: &str) -> i64 {
         },
         _ => 0,
     }
-}
-
-async fn frame_entries(r: &Reader, dir: Direction, tag: &str) -> Vec<FrameEntry> {
-    r.read_frames(dir, tag, "0", 100, 200)
-        .await
-        .expect("read_frames")
-        .unwrap_or_default()
 }
 
 // @spec BUS-NAT-TRN-001
@@ -151,12 +126,6 @@ async fn trn_001_every_method_issues_its_commands_under_the_prefix() {
         .unwrap()
         .as_millis() as i64;
     assert!((t.server_time().await.unwrap() as i64 - now).abs() < 60_000);
-
-    // appendFrame lands in audio.<dir>.<tag> (FRM-003 checks caps and expiry).
-    t.append_frame(Direction::In, "mic", &frame(0.0, vec![0, 0]))
-        .await
-        .unwrap();
-    assert_eq!(xlen(&fx, &format!("{}:audio.in.mic", fx.prefix)).await, 1);
 
     t.close().await;
     fx.cleanup().await;
@@ -479,19 +448,9 @@ async fn err_005_every_method_rejects_closed_after_close() {
     closed(t.read_registration("c").await.unwrap_err());
     closed(t.delete_registration("c").await.unwrap_err());
     closed(t.list_registrations().await.unwrap_err());
-    closed(
-        t.append_frame(Direction::In, "mic", &frame(0.0, vec![]))
-            .await
-            .unwrap_err(),
-    );
     closed(t.server_time().await.unwrap_err());
     closed(r.read_group("g", "c", ">", 1, 10).await.unwrap_err());
     closed(r.read(EventStream::Events, "0", 1, 10).await.unwrap_err());
-    closed(
-        r.read_frames(Direction::In, "mic", "0", 1, 10)
-            .await
-            .unwrap_err(),
-    );
     fx.cleanup().await;
 }
 
@@ -507,105 +466,5 @@ async fn err_008_repeated_close_resolves() {
         common::within(3000, t.close()).await.is_some(),
         "a later close() resolves"
     );
-    fx.cleanup().await;
-}
-
-// @spec BUS-NAT-FRM-001, BUS-NAT-FRM-002
-#[tokio::test(flavor = "multi_thread")]
-async fn frm_001_002_invalid_frame_rejects_bus_invalid_and_writes_nothing() {
-    let mut fx = fixture_or_skip!("frm001");
-    let t = open(&fx);
-    let key = format!("{}:audio.in.mic", fx.prefix);
-    let too_big = t
-        .append_frame(Direction::In, "mic", &frame(0.0, vec![0; 65536 + 2]))
-        .await
-        .unwrap_err();
-    assert_eq!(too_big.code, ErrorCode::Invalid);
-    let odd = t
-        .append_frame(Direction::In, "mic", &frame(1.0, vec![0; 3]))
-        .await
-        .unwrap_err();
-    assert_eq!(odd.code, ErrorCode::Invalid);
-    let exists: i64 = q(&fx, &["EXISTS", &key]).await;
-    assert_eq!(exists, 0, "nothing written");
-    // Exactly MAX_FRAME_BYTES is accepted.
-    t.append_frame(Direction::In, "mic", &frame(2.0, vec![0; 65536]))
-        .await
-        .unwrap();
-    t.close().await;
-    fx.cleanup().await;
-}
-
-// @spec BUS-NAT-FRM-003
-#[tokio::test(flavor = "multi_thread")]
-async fn frm_003_append_frame_caps_the_stream_and_refreshes_expiry() {
-    let mut fx = fixture_or_skip!("frm003");
-    let t = open(&fx);
-    let key = format!("{}:audio.out.spk", fx.prefix);
-    t.append_frame(Direction::Out, "spk", &frame(0.0, vec![0, 0]))
-        .await
-        .unwrap();
-    let pttl: i64 = q(&fx, &["PTTL", &key]).await;
-    assert!(pttl > 50_000 && pttl <= 60_000, "PEXPIRE 60000, got {pttl}");
-    for n in 1..2500 {
-        t.append_frame(Direction::Out, "spk", &frame(n as f64, vec![0, 0]))
-            .await
-            .unwrap();
-    }
-    let len = xlen(&fx, &key).await;
-    assert!(
-        (1500..=1700).contains(&len),
-        "MAXLEN ~ 1500 for audio.out, got {len}"
-    );
-    t.close().await;
-    fx.cleanup().await;
-}
-
-// @spec BUS-NAT-FRM-004
-#[tokio::test(flavor = "multi_thread")]
-async fn frm_004_read_frames_returns_rejections_instead_of_failing() {
-    let mut fx = fixture_or_skip!("frm004");
-    let t = open(&fx);
-    let key = format!("{}:audio.in.mic", fx.prefix);
-    let pcm_ok: &[u8] = &[1, 2, 3, 4];
-    let odd: &[u8] = &[1, 2, 3];
-    for (v, pcm) in [("1", pcm_ok), ("2", pcm_ok), ("1", odd)] {
-        let _: String = redis::cmd("XADD")
-            .arg(&key)
-            .arg("*")
-            .arg("v")
-            .arg(v)
-            .arg("epoch")
-            .arg("1")
-            .arg("seq")
-            .arg("0")
-            .arg("rate")
-            .arg("16000")
-            .arg("ch")
-            .arg("1")
-            .arg("pcm")
-            .arg(pcm)
-            .query_async(&mut fx.raw)
-            .await
-            .unwrap();
-    }
-    let r = t.open_reader();
-    let got = frame_entries(&r, Direction::In, "mic").await;
-    assert_eq!(got.len(), 3);
-    assert!(matches!(&got[0].decoded, DecodedFrame::Ok(f) if f.pcm == pcm_ok));
-    assert_eq!(got[1].decoded, DecodedFrame::Rejected("version".into()));
-    assert_eq!(
-        got[2].decoded,
-        DecodedFrame::Rejected("odd byte count".into())
-    );
-    // A read that times out with nothing new is `None`, not an error.
-    let last = got[2].id.clone();
-    assert!(
-        r.read_frames(Direction::In, "mic", &last, 10, 50)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    t.close().await;
     fx.cleanup().await;
 }

@@ -3,8 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { EventPayloads, parseRegistration } from "../src/index.js";
-import * as native from "../src/native.js";
+import {
+  EventPayloads, parseRegistration, decodeFrame, tagProblem, Bus, FRAME_VERSION, MAX_FRAME_BYTES, AUDIO_MAXLEN, AUDIO_STREAM_TTL_MS,
+  LEASE_INTERVALS, REGISTRATION_VERSION, DEFAULT_CONNECTOR_INTERVAL_MS,
+} from "../src/index.js";
+import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transport.js";
 
 const root = new URL("../fixtures/contract/", import.meta.url).pathname;
 const json = (p: string): any => JSON.parse(readFileSync(p, "utf8"));
@@ -19,7 +22,7 @@ const wireFields = (fields: [string, string | { base64: string }][]): (string | 
 const expectedFrame = (e: any): unknown => (e.ok ? { ok: true, frame: { ...e.frame, pcm: Buffer.from(e.frame.pcm.base64, "base64") } } : e);
 
 // @spec BUS-NAT-FIX-001
-test("the fixture directory holds events/<type>/<case>.json, registration/<case>.json and frames/<case>.json of the specified shapes", () => {
+test("the fixture directory holds events/<type>/<case>.json, registration/<case>.json, frames/<case>.json, tags/<case>.json and constants.json of the specified shapes", () => {
   assert.ok(statSync(root).isDirectory(), "packages/bus/fixtures/contract/ exists");
   const types = eventTypes();
   assert.ok(types.includes("service.heartbeat"), "the first Rust codec set: service.heartbeat");
@@ -45,6 +48,19 @@ test("the fixture directory holds events/<type>/<case>.json, registration/<case>
     assert.equal(typeof f.expected?.ok, "boolean", `${c}: expected.ok`);
   }
   assert.ok(frames.some((c) => json(c).expected.ok === false), "frame poison cases");
+  const tags = files("tags");
+  assert.ok(tags.length > 0);
+  for (const c of tags) {
+    const f = json(c);
+    assert.equal(typeof f.tag, "string", `${c}: tag`);
+    assert.equal(typeof f.valid, "boolean", `${c}: valid`);
+  }
+  assert.ok(tags.some((c) => json(c).valid) && tags.some((c) => !json(c).valid), "valid and invalid tags");
+  for (const r of ["http", "dir", "dashboard", "mouth", "dryrun", "file"]) assert.ok(tags.some((c) => json(c).tag === r && !json(c).valid), `reserved tag ${r}`);
+  assert.ok(tags.some((c) => json(c).tag.length === 32 && json(c).valid) && tags.some((c) => json(c).tag.length === 33 && !json(c).valid), "length edges");
+  const k = json(join(root, "constants.json"));
+  for (const name of ["FRAME_VERSION", "MAX_FRAME_BYTES", "AUDIO_MAXLEN", "AUDIO_STREAM_TTL_MS", "LEASE_INTERVALS", "REGISTRATION_VERSION", "DEFAULT_CONNECTOR_INTERVAL_MS"]) assert.ok(name in k, `constants.json: ${name}`);
+  for (const name of ["prefix", "dir", "tag", "id", "audioStream", "connectorKey"]) assert.equal(typeof k.names?.[name], "string", `constants.json: names.${name}`);
 });
 
 // @spec BUS-NAT-FIX-002
@@ -70,12 +86,39 @@ test("every event and registration fixture: zod safeParse succeeds exactly for v
   assert.ok(n >= 20, `checked ${n} cases`);
 });
 
+// @spec BUS-NAT-FIX-002
+test("every tag fixture: the TypeScript tagProblem returns null exactly for valid cases", () => {
+  const cases = files("tags");
+  assert.ok(cases.length > 0);
+  for (const c of cases) {
+    const f = json(c);
+    assert.equal(tagProblem(f.tag) === null, f.valid, c);
+  }
+});
+
+// @spec BUS-NAT-FIX-002
+test("constants.json equals the constants @cohost/bus exports and the names Bus.audioStream and Bus.connectorKey return", async () => {
+  const k = json(join(root, "constants.json"));
+  assert.equal(FRAME_VERSION, k.FRAME_VERSION);
+  assert.equal(MAX_FRAME_BYTES, k.MAX_FRAME_BYTES);
+  assert.deepEqual(AUDIO_MAXLEN, k.AUDIO_MAXLEN);
+  assert.equal(AUDIO_STREAM_TTL_MS, k.AUDIO_STREAM_TTL_MS);
+  assert.equal(LEASE_INTERVALS, k.LEASE_INTERVALS);
+  assert.equal(REGISTRATION_VERSION, k.REGISTRATION_VERSION);
+  assert.equal(DEFAULT_CONNECTOR_INTERVAL_MS, k.DEFAULT_CONNECTOR_INTERVAL_MS);
+  const bus = new Bus("t", undefined, "redis://127.0.0.1:1", { transport: new FakeTransport().factory, frames: new FakeFrameTransport().factory, streamPrefix: k.names.prefix });
+  try {
+    assert.equal(bus.audioStream(k.names.dir, k.names.tag), k.names.audioStream);
+    assert.equal(bus.connectorKey(k.names.id), k.names.connectorKey);
+  } finally { await bus.stop(); }
+});
+
 // @spec BUS-NAT-FIX-003
-test("every frame fixture decodes through the native decodeFrame to the fixture's DecodedFrame", () => {
+test("every frame fixture decodes through the TypeScript decodeFrame to the fixture's DecodedFrame", () => {
   const cases = files("frames");
   assert.ok(cases.length > 0);
   for (const c of cases) {
     const f = json(c);
-    assert.deepEqual(native.decodeFrame(wireFields(f.fields)), expectedFrame(f.expected), c);
+    assert.deepEqual(decodeFrame(wireFields(f.fields)), expectedFrame(f.expected), c);
   }
 });

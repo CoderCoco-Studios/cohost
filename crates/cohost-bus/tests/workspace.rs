@@ -77,3 +77,64 @@ fn rs_001_cohost_bus_has_no_node_dependency() {
     let m = read("crates/cohost-bus/Cargo.toml");
     assert!(!m.contains("napi"), "cohost-bus must not depend on napi");
 }
+
+// @spec BUS-NAT-RS-001, BUS-NAT-RS-003, BUS-NAT-RS-004, BUS-NAT-RS-005, BUS-NAT-RS-006, BUS-NAT-TRN-013
+#[test]
+fn rs_001_crates_carry_no_frame_tag_audio_or_constants_code() {
+    for m in ["frame", "tag"] {
+        assert!(
+            !root()
+                .join(format!("crates/cohost-bus/src/{m}.rs"))
+                .exists(),
+            "{m}.rs must not exist"
+        );
+    }
+    let lib = read("crates/cohost-bus/src/lib.rs");
+    let consts = read("crates/cohost-bus/src/consts.rs");
+    let keys = read("crates/cohost-bus/src/keys.rs");
+    let transport = read("crates/cohost-bus/src/transport.rs");
+    let node = read("crates/cohost-bus-node/src/lib.rs");
+    let banned = [
+        "encodeFrame",
+        "decodeFrame",
+        "tagProblem",
+        "TAG_PATTERN",
+        "RESERVED_TAGS",
+        "reservedTags",
+        "audioStream",
+        "appendFrame",
+        "readFrames",
+        "append_frame",
+        "read_frames",
+        "encode_frame",
+        "decode_frame",
+        "tag_problem",
+        "audio_stream",
+        "FRAME_VERSION",
+        "MAX_FRAME_BYTES",
+        "AUDIO_MAXLEN",
+        "AUDIO_STREAM_TTL_MS",
+        "LEASE_INTERVALS",
+        "REGISTRATION_VERSION",
+        "DEFAULT_CONNECTOR_INTERVAL_MS",
+    ];
+    for (name, src) in [
+        ("lib", &lib),
+        ("consts", &consts),
+        ("keys", &keys),
+        ("transport", &transport),
+        ("node", &node),
+    ] {
+        for b in banned {
+            assert!(!src.contains(b), "{name}.rs must not mention {b}");
+        }
+    }
+    assert!(
+        !keys.contains("audio."),
+        "keys.rs must not build audio stream names"
+    );
+    assert!(
+        node.contains("connectorKey"),
+        "connectorKey stays (BUS-NAT-TRN-013)"
+    );
+}

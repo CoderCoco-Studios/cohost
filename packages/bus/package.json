@@ -15,9 +15,7 @@
   },
   "dependencies": {
     "@cohost/config": "workspace:*",
+    "ioredis": "^5.4.0",
     "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "ioredis": "^5.4.0"
   }
 }

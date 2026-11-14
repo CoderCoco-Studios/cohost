@@ -1,8 +1,8 @@
 // Shared helpers of the native-transport facade tests (not a test file).
 import assert from "node:assert/strict";
 import { Bus, type BusOptions } from "../src/index.js";
-export { FakeTransport, FakeReader, rawEntry, groupRead, busError } from "../../testing/src/fake-transport.js";
-import { FakeTransport } from "../../testing/src/fake-transport.js";
+export { FakeTransport, FakeReader, FakeFrameTransport, FakeFrameReader, rawEntry, groupRead, busError } from "../../testing/src/fake-transport.js";
+import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transport.js";
 
 export const URL_UNUSED = "redis://127.0.0.1:1";
 
@@ -25,24 +25,31 @@ export const within = <T>(p: Promise<T>, ms = 1000, what = "promise"): Promise<T
 };
 
 /**
- * A Bus on a scripted transport. Asserts first that the facade took the transport from `BusOptions.transport`, so a
- * facade that still builds its own Redis connection fails every test here at once, for that reason.
+ * A Bus on a scripted events transport and a scripted frame transport. Asserts first that the facade took each from
+ * `BusOptions.transport` / `BusOptions.frames` (BUS-NAT-API-004, BUS-NAT-FRM-007), so a facade that builds its own Redis
+ * connection fails every test here at once, for that reason.
  */
-export function busWith(fake: FakeTransport, opts: BusOptions = {}, url = URL_UNUSED) {
+export function busWith(fake: FakeTransport, opts: BusOptions = {}, url = URL_UNUSED, frames = new FakeFrameTransport()) {
   const l = logger();
-  const bus = new Bus("t", l.log, url, { transport: fake.factory, retryBaseMs: 5, retryMaxMs: 30, ...opts });
+  const bus = new Bus("t", l.log, url, { transport: fake.factory, frames: frames.factory, retryBaseMs: 5, retryMaxMs: 30, ...opts });
   if (fake.factoryCalls.length !== 1) {
     try { void bus.stop(); } catch { /* old facade */ }
     assert.fail("the Bus did not call BusOptions.transport to get its transport");
   }
-  return { bus, l, fake };
+  if (frames.factoryCalls.length !== 1) {
+    try { void bus.stop(); } catch { /* old facade */ }
+    assert.fail("the Bus did not call BusOptions.frames to get its frame transport");
+  }
+  return { bus, l, fake, frames };
 }
 
 /** Run `body` and always stop the bus (and swallow the loop promises it leaves). */
-export async function withBus(fake: FakeTransport, opts: BusOptions, body: (b: ReturnType<typeof busWith>) => Promise<void>): Promise<void> {
-  const b = busWith(fake, opts);
+export async function withBus2(fake: FakeTransport, frames: FakeFrameTransport, opts: BusOptions, body: (b: ReturnType<typeof busWith>) => Promise<void>): Promise<void> {
+  const b = busWith(fake, opts, URL_UNUSED, frames);
   try { await body(b); } finally { await Promise.race([b.bus.stop(), tick(1500)]); }
 }
+export const withBus = (fake: FakeTransport, opts: BusOptions, body: (b: ReturnType<typeof busWith>) => Promise<void>): Promise<void> =>
+  withBus2(fake, new FakeFrameTransport(), opts, body);
 
 /** Unhandled loop promise guard: start a loop and keep its outcome observable. */
 export function run<T>(p: Promise<T>): { settled: boolean; error?: unknown; value?: T; done: Promise<void> } {

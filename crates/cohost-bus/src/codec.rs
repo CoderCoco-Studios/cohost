@@ -1,8 +1,10 @@
 //! Typed serde codec: accepts exactly the payloads the matching zod schema accepts and applies zod's defaults
 //! (BUS-NAT-RS-008). Types are added with their fixtures when a Rust service first touches them (BUS-NAT-RS-009).
-use crate::consts::REGISTRATION_VERSION;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// The registration schema version this codec accepts (the zod schema's `v`).
+const REGISTRATION_V: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Heartbeat {
@@ -183,7 +185,7 @@ fn known_capability(c: &Obj) -> Option<Capability> {
 // @spec BUS-NAT-RS-008, CONN-REG-005
 pub fn parse_registration(payload: &serde_json::Value) -> Result<Registration, String> {
     let o = object(payload, "registration")?;
-    if number(o, "v")? != f64::from(REGISTRATION_VERSION) {
+    if number(o, "v")? != f64::from(REGISTRATION_V) {
         return Err("v: expected the literal 1".into());
     }
     let id = string(o, "id")?;
@@ -207,7 +209,7 @@ pub fn parse_registration(payload: &serde_json::Value) -> Result<Registration, S
         }
     }
     Ok(Registration {
-        v: REGISTRATION_VERSION,
+        v: REGISTRATION_V,
         id,
         kind: string(o, "kind")?,
         version: string(o, "version")?,

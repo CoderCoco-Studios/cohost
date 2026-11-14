@@ -4,6 +4,7 @@ use crate::consts::{
     CLOSE_FLUSH_TIMEOUT_MS, CONNECT_TIMEOUT_MS, EVENTS_MAXLEN, HEALTH_MAXLEN, RECONNECT_BASE_MS,
     RECONNECT_CAP_MS,
 };
+pub use crate::error::AckError;
 use crate::error::{BusError, ErrorCode, Result};
 use crate::keys::Keys;
 use redis::aio::MultiplexedConnection;
@@ -41,12 +42,6 @@ pub struct RawEntry {
     pub ts: Option<String>,
     pub source: Option<String>,
     pub data: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AckError {
-    pub ids: Vec<String>,
-    pub err: BusError,
 }
 
 /// `entries` is `None` when the block timed out with nothing to read.
@@ -788,7 +783,7 @@ pub struct Reader {
 impl Reader {
     /// Sends the queued acks, then `XREADGROUP`, in one pipeline (BUS-NAT-ACK-001, BUS-NAT-ACK-003,
     /// BUS-NAT-ACK-004).
-    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-CONN-001, BUS-NAT-TRN-003
+    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-ACK-009, BUS-NAT-CONN-001, BUS-NAT-TRN-003
     pub async fn read_group(
         &self,
         group: &str,
@@ -825,9 +820,6 @@ impl Reader {
             // The pipeline reached Redis: those acks are settled, refused or not.
             lock(&s.acks).drain(..acks.len());
             let read = vals.pop().ok_or_else(|| unexpected("pipeline"))?;
-            if let Some(e) = server_error_of(&read) {
-                return Err(e);
-            }
             let mut ack_errors: Vec<AckError> = Vec::new();
             for ((_, id), v) in acks.iter().zip(&vals) {
                 if let Some(err) = server_error_of(v) {
@@ -839,6 +831,10 @@ impl Reader {
                         }),
                     }
                 }
+            }
+            if let Some(mut e) = server_error_of(&read) {
+                e.ack_errors = ack_errors;
+                return Err(e);
             }
             let entries = stream_reply(&read)?.map(|list| {
                 list.into_iter()

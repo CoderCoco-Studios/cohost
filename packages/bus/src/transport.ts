@@ -61,7 +61,7 @@ export interface BusTransport {
 export interface BusReader {
   /**
    * Sends the queued acks of this reader, then XREADGROUP GROUP <group> <consumer> COUNT n BLOCK ms STREAMS <prefix>:events
-   * <cursor>, in one pipeline. `ackErrors` reports queued acks that Redis refused.
+   * <cursor>, in one pipeline. `ackErrors` reports queued acks that Redis refused; a rejection caused by the read itself carries the refused acks of its pipeline as `ackErrors` on the error (BUS-NAT-ACK-009).
    */
   readGroup(group: string, consumer: string, cursor: string, count: number, blockMs: number): Promise<GroupRead>;
   /** Queue XACK <prefix>:events <group> <id>; synchronous, sent with the next readGroup or by the transport's close(). */

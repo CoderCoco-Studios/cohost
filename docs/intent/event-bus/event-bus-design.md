@@ -175,7 +175,7 @@ interface BusTransport {
 
 interface BusReader {
   /** Sends the queued acks of this reader, then XREADGROUP GROUP <group> <consumer> COUNT n BLOCK ms STREAMS <prefix>:events <cursor>,
-   *  in one pipeline. `ackErrors` reports queued acks that Redis refused. */
+   *  in one pipeline. `ackErrors` reports queued acks that Redis refused; when the read of the same pipeline is itself refused, the rejection's error carries them as its own `ackErrors` (BUS-NAT-ACK-009). */
   readGroup(group: string, consumer: string, cursor: string, count: number, blockMs: number): Promise<GroupRead>;
   /** Queue XACK <prefix>:events <group> <id>; synchronous, sent with the next readGroup or by the transport's close(). */
   ack(group: string, id: string): void;
@@ -374,7 +374,7 @@ What the native transport does in situations the sections above do not make obvi
 | 22 | A `Buffer` returned by `takeUpload` or a frame read is kept long after the read | Safe: an upload's `Buffer` owns its Rust allocation until V8 collects it; a frame's `pcm` is an ordinary Node `Buffer` from ioredis's reply. |
 | 23 | A Rust panic inside a transport call | Caught at the boundary; the call rejects `BUS_INTERNAL` and the loop backs off like any read failure. The process does not abort. |
 | 24 | A call after `stop()` | Rejects `BUS_CLOSED`, on either path (BUS-NAT-ERR-005); `publish` logs it at warn and rethrows as any failed write (BUS-STREAM-007). A second `stop()` resolves once the first close has completed (BUS-NAT-ERR-008). |
-| 25 | An ack refused by Redis (for example `NOGROUP` after the group was destroyed) | Reported in the next `readGroup`'s `ackErrors`, logged at warn `ack failed`, not retried; the entry stays pending. The same read most likely fails with `NOGROUP` too and backs off; the drain after that failure delivers the entry once more (BUS-SUB-008). If the ack of that redelivery is refused too, the facade logs `ack failed, entry dropped` and no later drain delivers it again (BUS-NAT-ACK-008). |
+| 25 | An ack refused by Redis (for example `NOGROUP` after the group was destroyed) | Reported in the next `readGroup`'s `ackErrors`, logged at warn `ack failed`, not retried; the entry stays pending. The same read most likely fails with `NOGROUP` too: its rejection carries the refused acks as `ackErrors` (BUS-NAT-ACK-009), so the facade logs them before it backs off; the drain after that failure delivers the entry once more (BUS-SUB-008). If the ack of that redelivery is refused too, the facade logs `ack failed, entry dropped` and no later drain delivers it again (BUS-NAT-ACK-008). |
 | 27 | `stop()` while the first connect attempt is still in flight | `close()` abandons the attempt and the commands waiting on it reject `BUS_CLOSED` (BUS-NAT-ERR-010); `close()` has nothing to flush or abandons the flush at 2000 ms, so `stop()` resolves without waiting out the 10 s connect timeout. |
 | 26 | Events path latency or CPU worse than TypeScript | The gate is missed and the native transport is not merged (Measurement gate). |
 | 28 | Redis goes away while a producer publishes frames | After the publish connection's first connect, `publishFrame` rejects at once while it is down and nothing is queued; ioredis reconnects in the background. The producer logs the failure as any failed write; the frames lost are counted by consumers as `seq` gaps (CONN-BP-003, BUS-NAT-FRM-006). A `tailAudio` read waits for its reader's reconnect and resumes from the last id it read. |

@@ -76,6 +76,21 @@ test("a refused ack is logged `ack failed` at warn, not retried, and the entry i
   });
 });
 
+// @spec BUS-NAT-ACK-009
+test("a refused ack carried by a failed read's error is logged `ack failed`, and a second refusal drops the entry", async () => {
+  const refusal = (id: string) => ({ ids: [id], err: busError("BUS_REDIS", "NOPERM no permissions to run the 'xack' command") });
+  const failing = (id: string) => () => { throw Object.assign(busError("BUS_REDIS", "NOGROUP No such consumer group"), { ackErrors: [refusal(id)] }); };
+  const fake = new FakeTransport().on("readGroup", empty, batch("1-0"), failing("1-0"), batch("1-0"), failing("1-0"), empty);
+  await withBus(fake, {}, async ({ bus, l }) => {
+    void sub(bus);
+    await until(() => l.at("warn").some((x) => x.msg === "ack failed, entry dropped"), "the second refusal");
+    const first = l.at("warn").filter((x) => x.msg === "ack failed");
+    assert.equal(first.length, 1);
+    assert.deepEqual(first[0]!.obj.ids, ["1-0"]);
+    assert.ok(l.at("warn").some((x) => x.msg === "subscribe read failed"), "the read failure is still reported and backed off");
+  });
+});
+
 // @spec BUS-NAT-ACK-004
 test("acks queued before a failed read are not queued again by the facade; the transport sends them with the next pipeline", async () => {
   const fake = new FakeTransport().on("readGroup", empty, batch("1-0"), down(), empty, empty);

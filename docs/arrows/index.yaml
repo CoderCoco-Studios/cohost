@@ -85,7 +85,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "165 specs: 160 [x], 0 [ ], 5 [D]. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009. To review: BUS-NAT-ACK-003 when the read in the same pipeline also fails."
+    next: "166 specs: 161 [x], 0 [ ], 5 [D]. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009."
     drift: null
 
   model-backends:

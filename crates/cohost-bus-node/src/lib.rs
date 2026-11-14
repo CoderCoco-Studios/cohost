@@ -18,8 +18,8 @@
 use cohost_bus::consts;
 use cohost_bus::error::Result as BusResult;
 use cohost_bus::transport::{
-    EntryFields, EventStream, GroupRead, RawEntry, Reader as BusReader, Transport as BusTransport,
-    TransportOptions,
+    AckError, EntryFields, EventStream, GroupRead, RawEntry, Reader as BusReader,
+    Transport as BusTransport, TransportOptions,
 };
 use cohost_bus::{BusError, keys::Keys};
 use napi::bindgen_prelude::{Buffer, Object, PromiseRaw};
@@ -85,7 +85,8 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     format!("panic in the native bus: {text}")
 }
 
-/// A JS `Error` with `message` and the `code` of `e` (BUS-NAT-ERR-001).
+/// A JS `Error` with `message` and the `code` of `e` (BUS-NAT-ERR-001); an error that carries refused acks also
+/// carries them as `ackErrors` (BUS-NAT-ACK-009).
 fn coded_error(env: &Env, e: &BusError) -> napi::Error {
     let build = || -> napi::Result<napi::Error> {
         let mut obj = env.create_error(napi::Error::new(
@@ -93,6 +94,9 @@ fn coded_error(env: &Env, e: &BusError) -> napi::Error {
             e.message.clone(),
         ))?;
         obj.set("code", e.code.as_str())?;
+        if !e.ack_errors.is_empty() {
+            obj.set("ackErrors", ack_error_objs(env, &e.ack_errors)?)?;
+        }
         Ok(napi::Error::from(obj.to_unknown()))
     };
     build().unwrap_or_else(|_| napi::Error::new(napi::Status::GenericFailure, e.to_string()))
@@ -175,18 +179,22 @@ fn group_read_obj<'env>(env: &'env Env, g: GroupRead) -> napi::Result<Object<'en
         Some(list) => o.set("entries", raw_entries(env, list)?)?,
         None => o.set("entries", napi::bindgen_prelude::Null)?,
     }
-    let mut errs = Vec::with_capacity(g.ack_errors.len());
-    for a in g.ack_errors {
+    o.set("ackErrors", ack_error_objs(env, &g.ack_errors)?)?;
+    Ok(o)
+}
+
+fn ack_error_objs<'env>(env: &'env Env, list: &[AckError]) -> napi::Result<Vec<Object<'env>>> {
+    let mut errs = Vec::with_capacity(list.len());
+    for a in list {
         let mut e = Object::new(env)?;
-        e.set("ids", a.ids)?;
+        e.set("ids", a.ids.clone())?;
         let err = coded_error(env, &a.err);
         let mut v = env.create_error(err)?;
         v.set("code", a.err.code.as_str())?;
         e.set("err", v)?;
         errs.push(e);
     }
-    o.set("ackErrors", errs)?;
-    Ok(o)
+    Ok(errs)
 }
 
 // ------------------------------------------------------------------ Transport

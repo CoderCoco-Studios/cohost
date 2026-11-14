@@ -27,6 +27,16 @@ pub struct BusError {
     pub code: ErrorCode,
     /// Redis's text for `Redis`; the underlying cause for `Connection` (BUS-NAT-ERR-002, BUS-NAT-ERR-009).
     pub message: String,
+    /// Queued acks Redis refused in the pipeline whose `XREADGROUP` also failed; empty on every other error
+    /// (BUS-NAT-ACK-009).
+    pub ack_errors: Vec<AckError>,
+}
+
+/// The ids of queued acks that Redis refused with the same error (BUS-NAT-ACK-003).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AckError {
+    pub ids: Vec<String>,
+    pub err: BusError,
 }
 
 impl std::fmt::Display for BusError {
@@ -42,6 +52,7 @@ impl BusError {
         BusError {
             code,
             message: message.into(),
+            ack_errors: Vec::new(),
         }
     }
     pub fn connection(message: impl Into<String>) -> Self {

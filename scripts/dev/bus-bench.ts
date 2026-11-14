@@ -1,5 +1,6 @@
+// @spec BUS-NAT-GATE-007
 /**
- * Bus throughput/latency micro-benchmark at audio-stream rate (dev-only measurement, no spec).
+ * Bus throughput/latency micro-benchmark at audio-stream rate (dev-only measurement).
  *
  *   node --import tsx scripts/dev/bus-bench.ts [--sources N] [--seconds S] [--runs R] [--json] [--redis URL]
  *

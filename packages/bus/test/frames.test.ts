@@ -104,7 +104,7 @@ test("the frame transport opens no connection until the first appendFrame or ope
   }
 });
 
-// @spec BUS-NAT-FRM-006
+// @spec BUS-NAT-FRM-006, BUS-NAT-FRM-008
 test("with Redis down: the first appendFrame rejects BUS_CONNECTION once the first attempt failed, and every later one rejects at once, nothing queued", async () => {
   const t = createFrameTransport("redis://127.0.0.1:1", { prefix: "p", failFast: false });
   try {
@@ -115,6 +115,14 @@ test("with Redis down: the first appendFrame rejects BUS_CONNECTION once the fir
     for (let i = 0; i < 5; i++) await assert.rejects(t.appendFrame("in", "t", frame(Buffer.alloc(4), { seq: i })), rejectsWith("BUS_CONNECTION"));
     assert.ok(performance.now() - t1 < 100, `five rejections took ${performance.now() - t1} ms`);
   } finally { await t.close(); }
+});
+
+// @spec BUS-NAT-FRM-008
+test("appendFrame rejects BUS_REDIS with Redis's text when the stream key holds another type", needsRedis, async () => {
+  await scratch(async ({ t, raw, prefix }) => {
+    await raw.set(`${prefix}:audio.in.wrong`, "foo");
+    await assert.rejects(t.appendFrame("in", "wrong", frame(Buffer.alloc(4))), (e: { code?: string; message: string }) => e.code === "BUS_REDIS" && /WRONGTYPE/.test(e.message));
+  });
 });
 
 // @spec BUS-NAT-FRM-006

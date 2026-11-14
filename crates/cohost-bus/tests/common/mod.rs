@@ -11,6 +11,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
+/// BUS-NAT-CI-002: a stream prefix of its own per call, never `cohost`.
+pub fn unique_prefix(name: &str) -> String {
+    format!("natbus-{name}-{}", uuid::Uuid::new_v4().simple())
+}
+
 pub fn redis_url() -> String {
     std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
 }
@@ -57,7 +62,7 @@ impl Fixture {
             }
         };
         // BUS-NAT-CI-002: a prefix of its own, never `cohost`.
-        let prefix = format!("natbus-{name}-{}", uuid::Uuid::new_v4().simple());
+        let prefix = unique_prefix(name);
         Some(Fixture { prefix, url, raw })
     }
 

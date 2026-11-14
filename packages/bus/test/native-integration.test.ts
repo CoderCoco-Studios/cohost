@@ -100,7 +100,7 @@ test("an entry with an envelope field that is not valid UTF-8 comes back as an i
 });
 
 // Unreachable Redis: needs no server. Runs in a subprocess so that its stdout and stderr can be checked.
-// @spec BUS-STREAM-009, BUS-NAT-CONN-005, BUS-NAT-CONN-006, BUS-NAT-ERR-009, BUS-NAT-FRM-006
+// @spec BUS-STREAM-009, BUS-NAT-CONN-005, BUS-NAT-CONN-006, BUS-NAT-ERR-009, BUS-NAT-FRM-006, BUS-NAT-TRN-011, BUS-NAT-FRM-008
 test("failFast against a closed port: the first command rejects BUS_CONNECTION naming the cause, the next at once, and nothing is printed", () => {
   const out = join(mkdtempSync(join(tmpdir(), "failfast-")), "result.json");
   const r = spawnSync(process.execPath, ["--import", "tsx", fileURLToPath(new URL("./native-failfast.fixture.ts", import.meta.url)), out], { encoding: "utf8", timeout: 20_000 });

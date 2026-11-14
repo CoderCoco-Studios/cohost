@@ -112,3 +112,26 @@ test("a workflow or Compose image tagged latest, untagged or with a floating maj
   const ok = run({ "docker-compose.yml": "services:\n  a:\n    image: redis:7.4.12-alpine   # held\n  b:\n    image: ${IMG:-ghcr.io/a/b:v0.10.0}\n" });
   assert.equal(ok.code, 0, ok.err);
 });
+
+// @spec DEPLOY-CI-006
+test("Rust and Cargo.toml @spec citations are read and target/ is skipped", () => {
+  const specs = spec("- [x] **X-ONE-001**: a.");
+  const ok = run({ [SPECS]: specs, "crates/a/src/lib.rs": `// ${AT} X-ONE-001\n`, "crates/a/Cargo.toml": `# ${AT} X-ONE-001\n` });
+  assert.equal(ok.code, 0, ok.err);
+  const bad = run({ [SPECS]: specs, "crates/a/src/lib.rs": `// ${AT} X-NO` + `PE-009\n`, "crates/a/Cargo.toml": `# ${AT} X-NO` + `PE-008\n` });
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /lib\.rs:1: @.pec X-NOPE-009/);
+  assert.match(bad.err, /Cargo\.toml:1: @.pec X-NOPE-008/);
+  const skipped = run({ [SPECS]: specs, "target/debug/build/x.rs": `// ${AT} X-NO` + `PE-009\n` });
+  assert.equal(skipped.code, 0, skipped.err);
+});
+
+// @spec DEPLOY-IMG-001
+test("a Dockerfile rust: tag that differs from rust-toolchain.toml fails; a match passes", () => {
+  const toolchain = '[toolchain]\nchannel = "1.99.1"\n';
+  const ok = run({ "rust-toolchain.toml": toolchain, Dockerfile: "FROM rust:1.99.1-slim-bookworm AS native\n" });
+  assert.equal(ok.code, 0, ok.err);
+  const bad = run({ "rust-toolchain.toml": toolchain, Dockerfile: "FROM rust:1.98.0-slim-bookworm AS native\n" });
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /Dockerfile:1: rust:1\.98\.0 does not match the 1\.99\.1 channel/);
+});

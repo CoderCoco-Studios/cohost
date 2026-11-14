@@ -5,6 +5,7 @@
  *   - a `@spec` ID cited outside the spec files that no `*-specs.md` file defines;
  *   - an ID defined twice;
  *   - an ID a spec file mentions that no spec file defines, unless the mentioning line says it is retired, moved or superseded;
+ *   - a `Dockerfile` `FROM rust:<version>-...` that differs from the channel `rust-toolchain.toml` pins (DEPLOY-IMG-001);
  *   - a workflow `uses:` ref that is not an exact `vX.Y.Z` tag or a full commit SHA, one action pinned to two different refs
  *     across workflows, or a workflow or Compose `image:` whose tag is missing, `latest` or not an exact `x.y.z` version (DEPLOY-CI-009);
  * Exits 1 when there is any offence, 0 otherwise. Needs only Node.
@@ -14,8 +15,8 @@ import { join, relative, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ID = /\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)+-\d{3}\b/g;
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", "graphify-out", ".vitepress"]);
-const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html)$|(?:^|\/)Dockerfile$/;
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", "graphify-out", ".vitepress", "target"]);
+const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html|rs)$|(?:^|\/)(?:Dockerfile|Cargo\.toml)$/;
 
 /** Every file under `root`, as repo-relative POSIX paths, in sorted order. */
 function walk(root, dir = root, out = []) {
@@ -79,6 +80,20 @@ export function checkPins(root, files) {
   return problems;
 }
 
+// @spec DEPLOY-IMG-001
+export function checkToolchain(root, files) {
+  if (!files.includes("rust-toolchain.toml") || !files.includes("Dockerfile")) return [];
+  const pinned = /^\s*channel\s*=\s*"([^"]+)"/m.exec(readFileSync(join(root, "rust-toolchain.toml"), "utf8"))?.[1];
+  const problems = [];
+  readFileSync(join(root, "Dockerfile"), "utf8").split("\n").forEach((text, i) => {
+    const from = /^\s*FROM\s+rust:([^\s-]+)/i.exec(text);
+    if (from && from[1] !== pinned) {
+      problems.push(`Dockerfile:${i + 1}: rust:${from[1]} does not match the ${pinned ?? "missing"} channel pinned in rust-toolchain.toml`);
+    }
+  });
+  return problems;
+}
+
 // @spec DEPLOY-CI-006
 export function check(root) {
   const files = walk(root);
@@ -119,7 +134,7 @@ export function check(root) {
       }
     });
   }
-  problems.push(...checkPins(root, files));
+  problems.push(...checkPins(root, files), ...checkToolchain(root, files));
   return { problems, defined: defined.size };
 }
 

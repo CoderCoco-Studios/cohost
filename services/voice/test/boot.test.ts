@@ -30,7 +30,7 @@ class BootBus extends FakeBus {
     if (this.subscribeError) throw this.subscribeError;
     await new Promise(() => {}); // like the real loop: runs until stop()
   }) as unknown as VoiceBus["subscribe"];
-  stop(): void { this.stopped = true; }
+  async stop(): Promise<void> { this.stopped = true; }
 }
 
 /** Builds a run; its shutdown steps run when the test ends, pass or fail, so no listener or timer outlives it. */

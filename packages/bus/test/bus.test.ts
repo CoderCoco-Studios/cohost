@@ -44,7 +44,7 @@ async function scratch(body: (s: Scratch) => Promise<void>): Promise<void> {
       raw,
     });
   } finally {
-    for (const b of buses) b.stop();
+    await Promise.all(buses.map((b) => b.stop()));
     await raw.del(`${prefix}:events`, `${prefix}:health`).catch(() => {});
     raw.disconnect();
   }
@@ -193,7 +193,7 @@ test("subscribe() and tail() resolve when stop() interrupts a blocking read (nee
   const tail = b.tail(() => {});
   await within(groupReady);
   await new Promise((r) => setTimeout(r, 100)); // both are now parked in BLOCK
-  b.stop();
+  await b.stop();
   await within(Promise.all([sub, tail]), 2000);
 }));
 

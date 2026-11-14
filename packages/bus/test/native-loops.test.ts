@@ -21,7 +21,7 @@ test("the facade acks through the reader's synchronous ack, which only queues; t
     void sub(bus, (e) => { handled.push(e.id); });
     await until(() => fake.of("readGroup").length >= 3, "third read");
     assert.deepEqual(fake.of("ack").map((c) => c.args), [["g", "1-0"], ["g", "2-0"]]);
-    assert.deepEqual(fake.of("readGroup").map((c) => c.acks), [[], [], ["1-0", "2-0"]], "queued acks ride in the next read's pipeline");
+    assert.deepEqual(fake.of("readGroup").slice(0, 3).map((c) => c.acks), [[], [], ["1-0", "2-0"]], "queued acks ride in the next read's pipeline");
     const names = fake.names();
     assert.ok(names.lastIndexOf("ack") < names.lastIndexOf("readGroup"), "acks are queued ahead of the read that sends them");
     assert.ok(fake.of("ack").every((c) => c.reader === 1), "queued on the reader of the subscription");

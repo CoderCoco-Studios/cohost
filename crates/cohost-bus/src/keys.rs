@@ -1,6 +1,8 @@
 //! Key and stream names under a prefix (BUS-NAT-RS-006).
 use crate::frame::Direction;
 
+// @spec BUS-NAT-RS-006
+
 #[derive(Debug, Clone)]
 pub struct Keys {
     prefix: String,
@@ -8,27 +10,29 @@ pub struct Keys {
 
 impl Keys {
     pub fn new(prefix: &str) -> Self {
-        todo!("BUS-NAT-RS-006")
+        Keys {
+            prefix: prefix.to_string(),
+        }
     }
     /// `<prefix>:events`
     pub fn events(&self) -> String {
-        todo!()
+        format!("{}:events", self.prefix)
     }
     /// `<prefix>:health`
     pub fn health(&self) -> String {
-        todo!()
+        format!("{}:health", self.prefix)
     }
     /// `<prefix>:upload:<id>`
     pub fn upload(&self, id: &str) -> String {
-        todo!()
+        format!("{}:upload:{id}", self.prefix)
     }
     /// `<prefix>:connector:<id>`
     pub fn connector(&self, id: &str) -> String {
-        todo!()
+        format!("{}:connector:{id}", self.prefix)
     }
     /// `<prefix>:audio.<dir>.<tag>`
     pub fn audio(&self, dir: Direction, tag: &str) -> String {
-        todo!()
+        format!("{}:audio.{}.{tag}", self.prefix, dir.as_str())
     }
 }
 

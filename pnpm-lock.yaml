@@ -26,12 +26,13 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
-      ioredis:
-        specifier: ^5.4.0
-        version: 5.11.1
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+    devDependencies:
+      ioredis:
+        specifier: ^5.4.0
+        version: 5.11.1
 
   packages/config:
     dependencies:

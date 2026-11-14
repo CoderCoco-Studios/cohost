@@ -1,8 +1,9 @@
-// Upload store behaviour against a fake Redis connection: no Redis server required.
+// Upload store behaviour on a fake transport: no Redis server required.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Redis } from "ioredis";
 import { Bus, EventPayloads } from "../src/index.js";
+import { FakeTransport, busError } from "../../testing/src/fake-transport.js";
 
 const url = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 async function redisUp(): Promise<boolean> {
@@ -11,67 +12,57 @@ async function redisUp(): Promise<boolean> {
 }
 const needsRedis = { skip: !(await redisUp()) && `no Redis at ${url}` };
 
-/** A string-keyed stand-in for the SET / GETDEL slice of an ioredis connection. */
-class FakeRedis {
+/** A `FakeTransport` with a byte store behind `putUpload` / `takeUpload`. */
+class UploadTransport extends FakeTransport {
   kv = new Map<string, Buffer>();
-  calls: unknown[][] = [];
-  failSet = false;
-  async set(key: string, value: Buffer, ...opts: unknown[]) {
-    this.calls.push(["set", key, value, ...opts]);
-    if (this.failSet) throw new Error("redis down");
-    this.kv.set(key, value);
-    return "OK";
-  }
-  async getdelBuffer(key: string) {
-    this.calls.push(["getdelBuffer", key]);
-    const v = this.kv.get(key) ?? null;
-    this.kv.delete(key);
-    return v;
-  }
-  async xadd() { return "1-0"; }
-  disconnect() {}
+  putUpload(id: string, bytes: Buffer, ttlMs: number) { return this.run("putUpload", [id, bytes, ttlMs], () => { this.kv.set(id, bytes); }); }
+  takeUpload(id: string) { return this.run("takeUpload", [id], () => { const v = this.kv.get(id) ?? null; this.kv.delete(id); return v; }); }
 }
 
-const busWith = (fake: FakeRedis, opts: Record<string, unknown> = {}) =>
-  new Bus("t", undefined, "redis://fake", { connect: () => fake as never, ...opts });
+const busWith = (fake: UploadTransport, opts: Record<string, unknown> = {}) =>
+  new Bus("t", undefined, "redis://fake", { transport: fake.factory, ...opts });
 
 // @spec BUS-UPL-001
-test("putUpload SETs <prefix>:upload:<id> to the bytes with a millisecond expiry, and rejects when the write fails", async () => {
-  const fake = new FakeRedis();
+test("putUpload hands the transport the id, bytes and millisecond expiry, and rejects when the write fails", async () => {
+  const fake = new UploadTransport();
   const bus = busWith(fake);
   await bus.putUpload("abc", Buffer.from("hi"), 5000);
-  assert.deepEqual(fake.calls[0], ["set", "cohost:upload:abc", Buffer.from("hi"), "PX", 5000]);
-  fake.failSet = true;
+  assert.deepEqual(fake.of("putUpload")[0]!.args, ["abc", Buffer.from("hi"), 5000]);
+  fake.on("putUpload", () => { throw busError("BUS_CONNECTION", "redis down"); });
   await assert.rejects(bus.putUpload("abd", Buffer.from("x"), 1), /redis down/);
+  await bus.stop();
 });
 
 // @spec BUS-UPL-001, BUS-UPL-002
-test("the upload key follows the stream prefix option", async () => {
-  const fake = new FakeRedis();
+test("the transport is built for the stream prefix option, which names the upload key", async () => {
+  const fake = new UploadTransport();
   const bus = busWith(fake, { streamPrefix: "t1" });
+  assert.equal(fake.factoryCalls[0]!.opts.prefix, "t1");
   await bus.putUpload("abc", Buffer.from("x"), 1000);
-  assert.equal(fake.calls[0]![1], "t1:upload:abc");
   assert.deepEqual((await bus.takeUpload("abc"))!, Buffer.from("x"));
-  assert.equal(fake.calls[1]![1], "t1:upload:abc");
+  assert.deepEqual(fake.of("takeUpload")[0]!.args, ["abc"]);
+  await bus.stop();
 });
 
 // @spec BUS-UPL-002
 test("takeUpload returns the bytes once and deletes the key; a missing or taken key is null", async () => {
-  const fake = new FakeRedis();
+  const fake = new UploadTransport();
   const bus = busWith(fake);
   await bus.putUpload("k", Buffer.from("payload"), 1000);
   assert.deepEqual(await bus.takeUpload("k"), Buffer.from("payload"));
   assert.equal(await bus.takeUpload("k"), null);
   assert.equal(await bus.takeUpload("never"), null);
   assert.equal(fake.kv.size, 0);
+  await bus.stop();
 });
 
 // @spec BUS-UPL-003
-test("an upload is not a stream entry: the upload key never goes through XADD", async () => {
-  const fake = new FakeRedis();
+test("an upload is not a stream entry: the upload key never goes through append", async () => {
+  const fake = new UploadTransport();
   const bus = busWith(fake);
   await bus.putUpload("k", Buffer.from("x"), 1000);
-  assert.equal(fake.calls.filter((c) => c[0] === "xadd").length, 0);
+  assert.equal(fake.of("append").length, 0);
+  await bus.stop();
 });
 
 // @spec BUS-EVT-006
@@ -93,5 +84,5 @@ test("against a real Redis: bytes round-trip binary-safe once, and an expired ke
     await bus.putUpload("short", Buffer.from("x"), 50);
     await new Promise((r) => setTimeout(r, 120));
     assert.equal(await bus.takeUpload("short"), null);
-  } finally { bus.stop(); }
+  } finally { await bus.stop(); }
 });

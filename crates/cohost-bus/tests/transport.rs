@@ -90,7 +90,12 @@ async fn trn_001_every_method_issues_its_commands_under_the_prefix() {
     let names: Vec<&str> = got[0].1.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(names, ["type", "ts", "source", "data"]);
     assert_eq!(xlen(&fx, &fx.health()).await, 1);
-    assert_ne!(id, hid);
+    let health: Vec<(String, Vec<(String, String)>)> =
+        q(&fx, &["XRANGE", &fx.health(), "-", "+"]).await;
+    assert_eq!(
+        health[0].0, hid,
+        "append returns the id of the stream's own entry"
+    );
 
     // recent: XREVRANGE ... COUNT n, returned oldest first.
     t.append(EventStream::Events, fields(3)).await.unwrap();

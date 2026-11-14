@@ -42,7 +42,7 @@ test("createGroup resolves true when created, false on BUSYGROUP, and rejects BU
   await scratch(async ({ t, raw, prefix }) => {
     assert.equal(await t.createGroup("g"), true);
     assert.equal(await t.createGroup("g"), false);
-    await raw.set(`${prefix}:wrongtype`, "x");
+    await raw.set(`${prefix}:wrongtype:events`, "x"); // the events key of the transport built below
     const bad = createNativeTransport(url, { prefix: `${prefix}:wrongtype`, failFast: false });
     try {
       await assert.rejects(bad.createGroup("g"), (e: { code?: string; message: string }) => e.code === "BUS_REDIS" && /WRONGTYPE/.test(e.message));

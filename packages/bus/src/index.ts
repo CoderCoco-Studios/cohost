@@ -1,11 +1,11 @@
-import { Redis, type RedisOptions } from "ioredis";
 import { randomUUID } from "node:crypto";
 import { urls, type Logger } from "@cohost/config";
-import type { TransportFactory } from "./transport.js";
+import type { BusReader, RawEntry, BusTransport, TransportFactory } from "./transport.js";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
+import { HEALTH_MAXLEN, audioStream, connectorKey, createNativeTransport } from "./native.js";
 
 import {
-  AUDIO_MAXLEN, AUDIO_STREAM_TTL_MS, LEASE_INTERVALS, encodeFrame, decodeFrame, parseRegistration,
+  LEASE_INTERVALS, parseRegistration,
   type AudioDirection, type DecodedFrame, type Frame, type Registration,
 } from "./connector.js";
 
@@ -15,10 +15,10 @@ export * from "./registrar.js";
 export * from "./transport.js";
 
 export const STREAM = "cohost:events";
-const MAXLEN = 20_000;
 /** Heartbeats live on their own capped stream so they never evict domain events. */
 export const HEALTH_STREAM = "cohost:health";
-export const HEALTH_MAXLEN = 1000;
+/** The heartbeat stream's cap; the native crate defines it (BUS-NAT-RS-004). */
+export { HEALTH_MAXLEN };
 
 export type HeartbeatEvent = BusEvent<"service.heartbeat">;
 
@@ -43,22 +43,17 @@ export interface SubscribeOptions<T extends EventType> {
 
 export type Handler<T extends EventType> = (event: BusEvent<T>) => void | Promise<void>;
 
-/** The slice of an ioredis connection that `Bus` uses; `BusOptions.connect` may return a fake. */
-export type BusRedis = Pick<Redis, "xadd" | "xgroup" | "xreadgroup" | "xack" | "xread" | "xrevrange" | "time" | "set" | "getdelBuffer" | "get" | "del" | "mget" | "scan" | "pexpire" | "xreadBuffer" | "disconnect">;
-
 /** Optional construction hooks, additive to `(source, log?, url?)`. Production defaults need none of them. */
 export interface BusOptions {
-  /** Builds the `BusTransport` the instance runs on (default: the native transport). Stage 6 wires it; tests pass a fake (BUS-NAT-API-004). */
+  /** Builds the `BusTransport` the instance runs on (default: the native transport). Tests pass a fake (BUS-NAT-API-004). */
   transport?: TransportFactory;
-  /** Build a Redis connection (default: `new Redis(url, opts)`). Tests inject fakes here. */
-  connect?: (url: string, opts: RedisOptions) => BusRedis;
   /** First retry delay after a failed read, ms (default 250; doubles per consecutive failure). */
   retryBaseMs?: number;
   /** Cap on the retry delay, ms (default 30000). */
   retryMaxMs?: number;
   /** Stream key prefix: the instance uses `<prefix>:events` and `<prefix>:health` (default `cohost`). Tests use their own. */
   streamPrefix?: string;
-  /** Do not reconnect: an unreachable Redis rejects the first command at once and prints nothing (BUS-STREAM-009). For short-lived CLIs. */
+  /** Do not reconnect: an unreachable Redis rejects the first command with `BUS_CONNECTION` and prints nothing (BUS-STREAM-009). For short-lived CLIs. */
   failFast?: boolean;
 }
 
@@ -75,172 +70,137 @@ const RETRY_MAX_MS = 30_000;
 /** The publishing half of a Bus: what region logic depends on, so tests can pass a recorder. */
 export type Publisher = Pick<Bus, "publish">;
 
+
 /**
- * Thin typed wrapper over one Redis Stream. Publish is fire-and-forget;
- * subscribe runs a consumer-group loop until stop().
+ * Typed facade over the bus's Redis Streams. The transport (native by default) executes every Redis command; this class
+ * owns validation, envelopes, every read loop, backoff and the start modes (event-bus design, "Native transport").
+ * Publish is fire-and-forget; subscribe runs a consumer-group loop until stop().
  */
-// @spec BUS-STREAM-005
+// @spec BUS-STREAM-005, BUS-NAT-API-001, BUS-NAT-API-004
 export class Bus {
-  private pub: BusRedis;
-  private subs: BusRedis[] = [];
+  private readonly transport: BusTransport;
   private stopped = false;
+  private closing?: Promise<void>;
   readonly consumer = `${process.env.HOSTNAME ?? "local"}-${randomUUID().slice(0, 8)}`;
 
-  private connect: (url: string, opts: RedisOptions) => BusRedis;
   private retryBaseMs: number;
   private retryMaxMs: number;
   private wake = new Set<() => void>();
-  /** The domain-event stream and the heartbeat stream of this instance (BUS-STREAM-008). */
-  private readonly stream: string;
-  private readonly healthStream: string;
-  /** Prefix of the upload keys, `<prefix>:upload:<id>` (BUS-UPL-001). */
-  private readonly uploadPrefix: string;
-  /** Prefix of the connector keys and audio streams (BUS-AUD-001, BUS-AUD-002). */
+  /** Stream key prefix of this instance (BUS-STREAM-008). */
   private readonly prefix: string;
 
-  constructor(private source: string, private log?: Logger, private url = urls.redis(), options: BusOptions = {}) {
-    this.connect = options.connect ?? ((u, o) => new Redis(u, o));
+  constructor(private source: string, private log?: Logger, url = urls.redis(), options: BusOptions = {}) {
     this.retryBaseMs = options.retryBaseMs ?? RETRY_BASE_MS;
     this.retryMaxMs = options.retryMaxMs ?? RETRY_MAX_MS;
-    const prefix = options.streamPrefix ?? DEFAULT_PREFIX;
-    this.stream = `${prefix}:events`;
-    this.healthStream = `${prefix}:health`;
-    this.uploadPrefix = `${prefix}:upload:`;
-    this.prefix = prefix;
-    this.pub = this.connect(url, { lazyConnect: false, maxRetriesPerRequest: 3, ...(options.failFast ? { retryStrategy: () => null } : {}) });
+    this.prefix = options.streamPrefix ?? DEFAULT_PREFIX;
     // @spec BUS-STREAM-009
-    if (options.failFast) (this.pub as { on?: (ev: string, fn: () => void) => unknown }).on?.("error", () => {});
+    this.transport = (options.transport ?? createNativeTransport)(url, { prefix: this.prefix, failFast: options.failFast ?? false });
   }
 
-  // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, BUS-STREAM-007
+  // @spec BUS-STREAM-001, BUS-STREAM-002, BUS-STREAM-003, BUS-STREAM-004, BUS-STREAM-007, BUS-NAT-API-005, BUS-NAT-ERR-005
   async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
     if (type === "service.heartbeat") throw new Error("service.heartbeat goes on the health stream: use publishHealth()");
     const parsed = EventPayloads[type].parse(data);
-    let id: string | null;
+    let id: string;
     try {
-      id = await this.pub.xadd(
-        this.stream, "MAXLEN", "~", MAXLEN, "*",
-        "type", type,
-        "ts", String(Date.now()),
-        "source", this.source,
-        "data", JSON.stringify(parsed),
-      );
+      id = await this.transport.append("events", { type, ts: String(Date.now()), source: this.source, data: JSON.stringify(parsed) });
     } catch (err) {
       this.log?.warn({ err, type }, "publish failed");
       throw err;
     }
     this.log?.debug({ type, id }, "published");
-    return id as string;
+    return id;
   }
 
   /** Store an injected test upload under `<prefix>:upload:<id>`, expiring after `ttlMs`. Not a stream entry. */
   // @spec BUS-UPL-001, BUS-UPL-003
-  async putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void> {
-    await this.pub.set(this.uploadPrefix + id, bytes, "PX", ttlMs);
+  putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void> {
+    return this.transport.putUpload(id, bytes, ttlMs);
   }
 
   /** Read and delete an upload in one step; `null` when it does not exist or has expired. */
   // @spec BUS-UPL-002
-  async takeUpload(id: string): Promise<Buffer | null> {
-    return await this.pub.getdelBuffer(this.uploadPrefix + id);
+  takeUpload(id: string): Promise<Buffer | null> {
+    return this.transport.takeUpload(id);
   }
 
-  /** The key of a connector's registration, `<prefix>:connector:<id>` (BUS-AUD-002). */
-  connectorKey(id: string): string { return `${this.prefix}:connector:${id}`; }
+  /** The key of a connector's registration, `<prefix>:connector:<id>` (BUS-AUD-002, BUS-NAT-RS-006). */
+  connectorKey(id: string): string { return connectorKey(this.prefix, id); }
 
-  /** The stream of a source (`in`) or sink (`out`), `<prefix>:audio.<dir>.<tag>` (BUS-AUD-001). */
-  audioStream(dir: AudioDirection, tag: string): string { return `${this.prefix}:audio.${dir}.${tag}`; }
+  /** The stream of a source (`in`) or sink (`out`), `<prefix>:audio.<dir>.<tag>` (BUS-AUD-001, BUS-NAT-RS-006). */
+  audioStream(dir: AudioDirection, tag: string): string { return audioStream(this.prefix, dir, tag); }
 
   /** Write a registration under its key with a lease of three intervals; not a stream entry. */
   // @spec CONN-REG-001, CONN-REG-002, BUS-AUD-002
-  async writeRegistration(reg: Registration): Promise<void> {
-    await this.pub.set(this.connectorKey(reg.id), JSON.stringify(reg), "PX", reg.intervalMs * LEASE_INTERVALS);
+  writeRegistration(reg: Registration): Promise<void> {
+    return this.transport.writeRegistration(reg.id, JSON.stringify(reg), reg.intervalMs * LEASE_INTERVALS);
   }
 
   /** The live registration of `id`, or `undefined`. */
   async readRegistration(id: string): Promise<Registration | undefined> {
-    return parseRegistration(await this.pub.get(this.connectorKey(id)));
+    return parseRegistration(await this.transport.readRegistration(id));
   }
 
   /** Delete the registration of `id` (orderly shutdown). */
   // @spec CONN-REG-003
-  async deleteRegistration(id: string): Promise<void> {
-    await this.pub.del(this.connectorKey(id));
+  deleteRegistration(id: string): Promise<void> {
+    return this.transport.deleteRegistration(id);
   }
 
-  /** Every live registration: `SCAN <prefix>:connector:*` then one read. Invalid values are skipped. */
+  /** Every live registration (one scan, one read). Invalid values are skipped. */
   // @spec CONN-REG-006, BUS-AUD-002
   async listConnectors(): Promise<Registration[]> {
-    const keys: string[] = [];
-    let cursor = "0";
-    do {
-      const [next, batch] = (await this.pub.scan(cursor, "MATCH", `${this.prefix}:connector:*`, "COUNT", 100)) as [string, string[]];
-      keys.push(...batch);
-      cursor = next;
-    } while (cursor !== "0");
-    if (keys.length === 0) return [];
-    const uniq = [...new Set(keys)];
-    const values = (await this.pub.mget(...uniq)) as (string | null)[];
-    return values.flatMap((v) => { const r = parseRegistration(v); return r ? [r] : []; });
+    return (await this.transport.listRegistrations()).flatMap((v) => { const r = parseRegistration(v); return r ? [r] : []; });
   }
 
   /**
-   * Append one audio frame to `audio.<dir>.<tag>` with `MAXLEN ~` of the direction's cap and refresh the stream's 60 s
-   * expiry. Never waits for a consumer (CONN-BP-001); `publish` neither writes nor trims these streams (BUS-AUD-001).
+   * Append one audio frame to `audio.<dir>.<tag>` (capped, 60 s expiry, one pipeline in the transport). Rejects
+   * `BUS_INVALID` and writes nothing for an oversized or odd-length `pcm`. Never waits for a consumer (CONN-BP-001);
+   * `publish` neither writes nor trims these streams (BUS-AUD-001).
    */
-  // @spec CONN-AUD-001, CONN-BP-001, BUS-AUD-001
-  async publishFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
-    const key = this.audioStream(dir, tag);
-    const id = (await this.pub.xadd(key, "MAXLEN", "~", AUDIO_MAXLEN[dir], "*", ...encodeFrame(frame))) as string;
-    await this.pub.pexpire(key, AUDIO_STREAM_TTL_MS);
-    return id;
+  // @spec CONN-AUD-001, CONN-BP-001, BUS-AUD-001, BUS-NAT-FRM-001, BUS-NAT-FRM-002
+  publishFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+    return this.transport.appendFrame(dir, tag, frame);
   }
 
   /**
    * Live read of `audio.<dir>.<tag>`: plain blocking `XREAD` from the end (`$`), no group, no acknowledgement, no replay
    * (CONN-BP-002). Resolves when `stop()` is called. A handler throw is logged and the loop continues.
    */
-  // @spec CONN-BP-002, BUS-AUD-001
+  // @spec CONN-BP-002, BUS-AUD-001, BUS-NAT-CONN-002
   async tailAudio(dir: AudioDirection, tag: string, handler: (decoded: DecodedFrame, id: string) => void, onRead?: ReadOutcome): Promise<void> {
-    const conn = this.connect(this.url, { maxRetriesPerRequest: null });
-    this.subs.push(conn);
-    const key = this.audioStream(dir, tag);
+    const reader = this.openReader();
+    if (!reader) return;
     let last = "$";
     let failures = 0;
-    while (!this.stopped) {
-      let res: [Buffer | string, [Buffer | string, (Buffer | string)[]][]][] | null;
-      try {
-        res = (await conn.xreadBuffer("COUNT", 100, "BLOCK", 5000, "STREAMS", key, last)) as typeof res;
-      } catch (err) {
-        if (this.stopped) break;
-        report(onRead, err ?? new Error("read failed"));
-        await this.backoff(err, ++failures, "tailAudio read failed");
-        continue;
+    try {
+      while (!this.stopped) {
+        let rows;
+        try {
+          rows = await reader.readFrames(dir, tag, last, 100, 5000);
+        } catch (err) {
+          if (this.stopped) break;
+          report(onRead, err ?? new Error("read failed"));
+          await this.backoff(err, ++failures, "tailAudio read failed");
+          continue;
+        }
+        failures = 0;
+        report(onRead);
+        if (!rows) continue;
+        for (const row of rows) {
+          last = row.id;
+          this.guard(() => handler(row.decoded, row.id), `audio.${dir}.${tag}`, row.id);
+        }
       }
-      failures = 0;
-      report(onRead);
-      if (!res) continue;
-      for (const [rawId, fields] of res[0]?.[1] ?? []) {
-        const id = rawId.toString();
-        last = id;
-        this.guard(() => handler(decodeFrame(fields), id), `audio.${dir}.${tag}`, id);
-      }
-    }
-    conn.disconnect();
+    } finally { closeQuietly(reader); }
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */
-  // @spec BUS-HEALTH-001, BUS-HEALTH-002, BUS-STREAM-007
+  // @spec BUS-HEALTH-001, BUS-HEALTH-002, BUS-STREAM-007, BUS-NAT-API-005
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
     try {
-      return (await this.pub.xadd(
-        this.healthStream, "MAXLEN", "~", HEALTH_MAXLEN, "*",
-        "type", "service.heartbeat",
-        "ts", String(Date.now()),
-        "source", this.source,
-        "data", JSON.stringify(parsed),
-      )) as string;
+      return await this.transport.append("health", { type: "service.heartbeat", ts: String(Date.now()), source: this.source, data: JSON.stringify(parsed) });
     } catch (err) {
       this.log?.warn({ err, type: "service.heartbeat" }, "publish failed");
       throw err;
@@ -249,165 +209,152 @@ export class Bus {
 
   /** Non-group live tail of the health stream. Does not ack. `onRead` hears each read's outcome (BUS-TAIL-005). */
   // @spec BUS-HEALTH-003, BUS-TAIL-003, BUS-TAIL-004, BUS-TAIL-005
-  async tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
-    const conn = this.connect(this.url, { maxRetriesPerRequest: null });
-    this.subs.push(conn);
-    let last = fromId;
-    let failures = 0;
-    while (!this.stopped) {
-      let res: [string, [string, string[]][]][] | null;
-      try {
-        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", this.healthStream, last)) as typeof res;
-      } catch (err) {
-        if (this.stopped) break;
-        report(onRead, err ?? new Error("read failed"));
-        await this.backoff(err, ++failures, "tailHealth read failed");
-        continue;
-      }
-      failures = 0;
-      report(onRead);
-      if (!res) continue;
-      for (const [id, fields] of res[0]?.[1] ?? []) {
-        last = id;
-        const ev = decode(id, fields);
-        if (ev?.type === "service.heartbeat") this.guard(() => handler(ev as HeartbeatEvent), ev.type, id);
-      }
-    }
-    conn.disconnect();
+  tailHealth(handler: (hb: HeartbeatEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
+    return this.tailStream("health", fromId, onRead, "tailHealth read failed", (ev) => {
+      if (ev.type === "service.heartbeat") this.guard(() => handler(ev as HeartbeatEvent), ev.type, ev.id);
+    });
   }
 
   /** The Redis server's clock in ms (`TIME`): one reference for every observer, whatever its own clock says. */
-  // @spec CTRL-CHECK-004
-  async serverTime(): Promise<number> {
-    const [secs, micros] = await this.pub.time();
-    return Number(secs) * 1000 + Math.floor(Number(micros) / 1000);
+  // @spec CTRL-CHECK-004, BUS-NAT-API-009
+  serverTime(): Promise<number> {
+    return this.transport.serverTime();
   }
 
   /** Newest N heartbeats, oldest first. */
   // @spec BUS-HEALTH-004
   async recentHealth(count = 100): Promise<HeartbeatEvent[]> {
-    const rows = (await this.pub.xrevrange(this.healthStream, "+", "-", "COUNT", count)) as [string, string[]][];
-    return rows
-      .map(([id, f]) => decode(id, f))
-      .filter((e): e is HeartbeatEvent => e?.type === "service.heartbeat")
-      .reverse();
+    return (await this.transport.recent("health", count))
+      .map(decode)
+      .filter((e): e is HeartbeatEvent => e?.type === "service.heartbeat");
   }
 
   /**
-   * Point a consumer group at the stream's newest entry (`XGROUP SETID <group> $`), creating the
-   * group (and stream) at `$` if it does not exist. Used for "fresh" service starts.
-   *
-   * Creates first (`XGROUP CREATE ... $ MKSTREAM`) and only falls back to `SETID` on `BUSYGROUP`:
-   * on a fresh Redis 7+ the stream key does not exist and `SETID` answers "ERR The XGROUP
-   * subcommand requires the key to exist", an error that is not `NOGROUP`, so SETID-first would
-   * have to match Redis-version-specific error text. A `BUSYGROUP` from a concurrent creator is
-   * the same "group exists" case and also ends in `SETID`.
+   * Point a consumer group at the stream's newest entry, creating the group (and stream) at `$` if it does not exist.
+   * Used for "fresh" service starts: `createGroup` first, `moveGroupToLatest` only when the group already existed.
    */
-  // @spec BUS-GROUP-001
+  // @spec BUS-GROUP-001, BUS-NAT-API-008
   async resetGroup(group: string): Promise<void> {
-    try {
-      await this.pub.xgroup("CREATE", this.stream, group, "$", "MKSTREAM");
-    } catch (e) {
-      if (!String(e).includes("BUSYGROUP")) throw e;
-      await this.pub.xgroup("SETID", this.stream, group, "$");
-    }
+    if (!(await this.transport.createGroup(group))) await this.transport.moveGroupToLatest(group);
   }
 
   /** Consumer-group subscription. Resolves when stop() is called. */
-  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012, BUS-SUB-013
+  // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-008, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012, BUS-SUB-013
+  // @spec BUS-NAT-API-007, BUS-NAT-ACK-001, BUS-NAT-ACK-002, BUS-NAT-ACK-003, BUS-NAT-ACK-008, BUS-NAT-CONN-002, BUS-NAT-CONN-003, BUS-NAT-ERR-003, BUS-NAT-ERR-004, BUS-NAT-TRN-007
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const mode = opts.start as unknown;
     if (mode !== "latest" && mode !== "resume") {
       throw new Error(`Bus.subscribe: start must be "latest" or "resume", got ${JSON.stringify(mode)}`);
     }
-    const conn = this.connect(this.url, { maxRetriesPerRequest: null });
-    this.subs.push(conn);
+    const group = opts.group;
+    let reader: BusReader | undefined;
     try {
-      await conn.xgroup("CREATE", this.stream, opts.group, "$", "MKSTREAM");
-    } catch (e) {
-      if (!String(e).includes("BUSYGROUP")) throw e;
-      if (mode === "latest") await conn.xgroup("SETID", this.stream, opts.group, "$");
+      if (!(await this.transport.createGroup(group)) && mode === "latest") await this.transport.moveGroupToLatest(group);
+      reader = this.transport.openReader();
+    } catch (err) {
+      if (this.stopped) return; // stop() closed the transport under the group creation
+      throw err;
     }
-    opts.onReady?.();
-    const wanted = opts.types ? new Set<string>(opts.types) : undefined;
-    const block = opts.blockMs ?? 5000;
+    try {
+      opts.onReady?.();
+      const wanted = opts.types ? new Set<string>(opts.types) : undefined;
+      const block = opts.blockMs ?? 5000;
+      /** Ids whose ack Redis refused once (redelivered once) and twice (dropped for good). */
+      const refused = new Set<string>();
+      const dropped = new Set<string>();
 
-    // First drain this consumer's own pending entries, a batch at a time from the last id seen (so an entry that
-    // stays pending, for instance after a failed XACK, cannot hold the drain), then read new ones. A restarted
-    // process has a new consumer name, so entries its predecessor left pending are not redelivered.
-    let cursor: string = "0";
-    let failures = 0;
-    while (!this.stopped) {
-      let res: [string, [string, string[]][]][] | null;
-      try {
-        res = (await conn.xreadgroup(
-          "GROUP", opts.group, this.consumer, "COUNT", 50, "BLOCK", block, "STREAMS", this.stream, cursor,
-        )) as typeof res;
-      } catch (err) {
-        if (this.stopped) break; // stop() closed the connection under a blocking read
-        await this.backoff(err, ++failures, "subscribe read failed");
-        continue;
-      }
-      failures = 0;
-      if (!res) { cursor = ">"; continue; }
-      const entries = res[0]?.[1] ?? [];
-      if (cursor !== ">" && entries.length === 0) { cursor = ">"; continue; }
-      for (const [id, fields] of entries) {
-        if (this.stopped) break; // stop() landed during the previous handler: nothing further is handled or acked
-        const ev = decode(id, fields);
-        if (ev && (!wanted || wanted.has(ev.type))) {
-          try {
-            await handler(ev as BusEvent<T>);
-          } catch (err) {
-            this.log?.error({ err, type: ev.type, id }, "handler failed");
-          }
-        }
-        if (this.stopped) break; // the connection is closed: no XACK after stop
+      // First drain this consumer's own pending entries, a batch at a time from the last id seen (so an entry that
+      // stays pending, for instance after a refused XACK, cannot hold the drain), then read new ones. A restarted
+      // process has a new consumer name, so entries its predecessor left pending are not redelivered. After a failed
+      // read the loop drains again from cursor 0.
+      let cursor = "0";
+      let failures = 0;
+      while (!this.stopped) {
+        let res;
         try {
-          await conn.xack(this.stream, opts.group, id);
+          res = await reader.readGroup(group, this.consumer, cursor, 50, block);
         } catch (err) {
-          this.log?.warn({ err, id }, "ack failed"); // at-most-once: the handled entry is not redelivered
+          if (this.stopped) break; // stop() closed the reader under a blocking read
+          await this.backoff(err, ++failures, "subscribe read failed");
+          cursor = "0";
+          continue;
         }
-        if (cursor !== ">") cursor = id;
+        failures = 0;
+        for (const { ids, err } of res.ackErrors) {
+          const again = ids.filter((id) => refused.has(id));
+          const first = ids.filter((id) => !refused.has(id));
+          if (first.length) { this.log?.warn({ err, ids: first }, "ack failed"); for (const id of first) refused.add(id); }
+          if (again.length) { this.log?.warn({ err, ids: again }, "ack failed, entry dropped"); for (const id of again) dropped.add(id); }
+        }
+        const entries = res.entries;
+        if (!entries || (cursor !== ">" && entries.length === 0)) { cursor = ">"; continue; }
+        for (const raw of entries) {
+          if (this.stopped) break; // stop() landed during the previous handler: nothing further is handled or acked
+          const id = raw.id;
+          if (dropped.has(id)) { if (cursor !== ">") cursor = id; continue; }
+          const ev = decode(raw);
+          if (ev && (!wanted || wanted.has(ev.type))) {
+            try {
+              await handler(ev as BusEvent<T>);
+            } catch (err) {
+              this.log?.error({ err, type: ev.type, id }, "handler failed");
+            }
+          }
+          if (this.stopped) break; // the transport is closing: no ack after stop
+          try { reader.ack(group, id); } catch { /* the reader closed under us: at-most-once */ }
+          if (cursor !== ">") cursor = id;
+        }
       }
-    }
-    conn.disconnect();
+    } finally { closeQuietly(reader); }
   }
 
   /** Non-group live tail (dashboard). Does not ack, does not replay. `onRead` hears each read's outcome (BUS-TAIL-005). */
   // @spec BUS-TAIL-001, BUS-TAIL-003, BUS-TAIL-004, BUS-TAIL-005
-  async tail(handler: (ev: BusEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
-    const conn = this.connect(this.url, { maxRetriesPerRequest: null });
-    this.subs.push(conn);
-    let last = fromId;
-    let failures = 0;
-    while (!this.stopped) {
-      let res: [string, [string, string[]][]][] | null;
-      try {
-        res = (await conn.xread("COUNT", 100, "BLOCK", 5000, "STREAMS", this.stream, last)) as typeof res;
-      } catch (err) {
-        if (this.stopped) break;
-        report(onRead, err ?? new Error("read failed"));
-        await this.backoff(err, ++failures, "tail read failed");
-        continue;
-      }
-      failures = 0;
-      report(onRead);
-      if (!res) continue;
-      for (const [id, fields] of res[0]?.[1] ?? []) {
-        last = id;
-        const ev = decode(id, fields);
-        if (ev) this.guard(() => handler(ev), ev.type, id);
-      }
-    }
-    conn.disconnect();
+  tail(handler: (ev: BusEvent) => void, fromId = "$", onRead?: ReadOutcome): Promise<void> {
+    return this.tailStream("events", fromId, onRead, "tail read failed", (ev) => this.guard(() => handler(ev), ev.type, ev.id));
   }
 
   /** Most recent N events (dashboard backfill). */
   // @spec BUS-TAIL-002
   async recent(count = 100): Promise<BusEvent[]> {
-    const rows = (await this.pub.xrevrange(this.stream, "+", "-", "COUNT", count)) as [string, string[]][];
-    return rows.map(([id, f]) => decode(id, f)).filter((e): e is BusEvent => !!e).reverse();
+    return (await this.transport.recent("events", count)).map(decode).filter((e): e is BusEvent => !!e);
+  }
+
+  /** The loop of `tail` and `tailHealth`: `XREAD` batches from the last id delivered, until stop(). */
+  private async tailStream(stream: "events" | "health", fromId: string, onRead: ReadOutcome | undefined, msg: string, deliver: (ev: BusEvent) => void): Promise<void> {
+    const reader = this.openReader();
+    if (!reader) return;
+    let last = fromId;
+    let failures = 0;
+    try {
+      while (!this.stopped) {
+        let rows: RawEntry[] | null;
+        try {
+          rows = await reader.read(stream, last, 100, 5000);
+        } catch (err) {
+          if (this.stopped) break;
+          report(onRead, err ?? new Error("read failed"));
+          await this.backoff(err, ++failures, msg);
+          continue;
+        }
+        failures = 0;
+        report(onRead);
+        if (!rows) continue;
+        for (const raw of rows) {
+          last = raw.id;
+          const ev = decode(raw);
+          if (ev) deliver(ev);
+        }
+      }
+    } finally { closeQuietly(reader); }
+  }
+
+  /** A reader for one loop; `undefined` when `stop()` closed the transport first, anything else is rethrown. */
+  private openReader(): BusReader | undefined {
+    try { return this.transport.openReader(); } catch (err) {
+      if (this.stopped) return undefined;
+      throw err;
+    }
   }
 
   /** Log a failed read and sleep for the capped exponential delay; `stop()` ends the sleep early. */
@@ -431,28 +378,37 @@ export class Bus {
     } catch (err) { fail(err); }
   }
 
-  // @spec BUS-STOP-001
-  stop(): void {
+  /**
+   * Mark the instance stopped, wake every backoff sleep and close the transport, which sends the queued acks (at most
+   * 2 s) and ends every blocked read. Resolves once the transport has closed; repeated calls share that close.
+   */
+  // @spec BUS-STOP-001, BUS-NAT-ACK-005, BUS-NAT-ACK-006, BUS-NAT-ACK-007, BUS-NAT-ERR-008
+  stop(): Promise<void> {
     this.stopped = true;
     for (const w of [...this.wake]) w();
-    for (const c of this.subs) c.disconnect();
-    this.pub.disconnect();
+    if (!this.closing) {
+      try { this.closing = this.transport.close().catch(() => {}); } catch { this.closing = Promise.resolve(); }
+    }
+    return this.closing;
   }
 }
 
-// @spec BUS-STREAM-006, BUS-SUB-007
-function decode(id: string, fields: string[]): BusEvent | undefined {
-  const m: Record<string, string> = {};
-  for (let i = 0; i < fields.length; i += 2) m[fields[i]!] = fields[i + 1]!;
-  const type = m.type as EventType | undefined;
-  if (!type || !(type in EventPayloads)) return undefined;
+function closeQuietly(reader: BusReader): void {
+  try { reader.close(); } catch { /* already closed */ }
+}
+
+/** Rebuild a `BusEvent` from a transport entry; `undefined` for an unknown type, non-JSON `data`, a schema failure or an entry with no fields. */
+// @spec BUS-STREAM-006, BUS-SUB-007, BUS-NAT-API-006, BUS-NAT-ERR-007
+function decode(raw: RawEntry): BusEvent | undefined {
+  const type = raw.type as EventType | undefined;
+  if (!type || !Object.hasOwn(EventPayloads, type)) return undefined;
   try {
     return {
-      id,
+      id: raw.id,
       type,
-      ts: Number(m.ts ?? 0),
-      source: m.source ?? "?",
-      data: EventPayloads[type].parse(JSON.parse(m.data ?? "{}")) as never,
+      ts: Number(raw.ts ?? 0),
+      source: raw.source ?? "?",
+      data: EventPayloads[type].parse(JSON.parse(raw.data ?? "{}")) as never,
     };
   } catch {
     return undefined;

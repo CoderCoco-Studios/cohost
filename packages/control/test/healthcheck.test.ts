@@ -38,7 +38,7 @@ async function redisUp(): Promise<boolean> {
   try {
     await Promise.race([probe.recentHealth(1), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 800))]);
     return true;
-  } catch { return false; } finally { probe.stop(); }
+  } catch { return false; } finally { await probe.stop(); }
 }
 /** Delete the health stream of the test database through the bus package's own ioredis. */
 async function dropHealthStream(): Promise<void> {
@@ -58,7 +58,7 @@ test("CLI exits 0 for a fresh service and 1 for a silent one (needs Redis)", { s
     assert.equal(run(name), 0);
     assert.equal(run(`${name}-silent`), 1);
   } finally {
-    bus.stop();
+    await bus.stop();
     await dropHealthStream();
   }
 });

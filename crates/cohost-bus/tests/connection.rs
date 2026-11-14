@@ -85,6 +85,8 @@ async fn trn_003_conn_001_reader_failure_rejects_at_once_without_retry_then_reco
     });
     let t = Transport::new(&format!("redis://{addr}"), opts(&fx.prefix, true));
     let r = t.open_reader();
+    // The shared connection's own first attempt starts at construction (BUS-NAT-TRN-004); let it land before counting.
+    sleep(Duration::from_millis(300)).await;
     let before = count.load(std::sync::atomic::Ordering::SeqCst);
     let started = Instant::now();
     let err = r

@@ -4,9 +4,22 @@
 pub const TAG_PATTERN: &str = "^[a-z][a-z0-9-]{0,31}$";
 pub const RESERVED_TAGS: [&str; 6] = ["http", "dir", "dashboard", "mouth", "dryrun", "file"];
 
+// @spec BUS-NAT-RS-005, CONN-TAG-001, CONN-TAG-002
 /// `None` when the tag is acceptable, otherwise the reason it is not.
 pub fn tag_problem(tag: &str) -> Option<String> {
-    todo!("CONN-TAG-001, CONN-TAG-002")
+    let b = tag.as_bytes();
+    let ok = (1..=32).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b[1..]
+            .iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-');
+    if !ok {
+        return Some(format!("tag \"{tag}\" does not match {TAG_PATTERN}"));
+    }
+    if RESERVED_TAGS.contains(&tag) {
+        return Some(format!("tag \"{tag}\" is reserved"));
+    }
+    None
 }
 
 #[cfg(test)]

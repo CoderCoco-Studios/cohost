@@ -3,7 +3,7 @@ import { createLogger, loadConfig as defaultLoadConfig, type Config, type Logger
 import { onShutdown as defaultOnShutdown, startHeartbeat, type Heartbeat, type HealthPublisher, type HeartbeatSpec } from "./lifecycle.js";
 
 /** What the bootstrap needs from a bus: it publishes heartbeats and can be stopped. */
-export type BootBus = HealthPublisher & { stop(): void };
+export type BootBus = HealthPublisher & { stop(): void | Promise<void> };
 
 /** What `main` receives. */
 export interface ServiceContext<B extends BootBus = Bus> {
@@ -74,7 +74,7 @@ export async function runService<B extends BootBus = Bus>(opts: RunServiceOption
       await Promise.race([teardown, new Promise<void>((r) => { timer = setTimeout(r, stopTimeoutMs); })]);
     } finally {
       clearTimeout(timer);
-      bus.stop();
+      await bus.stop(); // closes the transport after flushing queued acks, at most 2 s (BUS-NAT-ACK-007)
     }
   }, log);
 

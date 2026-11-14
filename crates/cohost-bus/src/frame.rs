@@ -1,4 +1,5 @@
 //! The audio frame codec (BUS-NAT-RS-003; CONN-AUD-002, CONN-AUD-006, CONN-BP-006).
+use crate::consts::{AUDIO_MAXLEN_IN, AUDIO_MAXLEN_OUT, FRAME_VERSION, MAX_FRAME_BYTES};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -9,11 +10,17 @@ pub enum Direction {
 impl Direction {
     /// `in` or `out`.
     pub fn as_str(self) -> &'static str {
-        todo!()
+        match self {
+            Direction::In => "in",
+            Direction::Out => "out",
+        }
     }
     /// `MAXLEN ~` cap of the direction.
     pub fn maxlen(self) -> usize {
-        todo!()
+        match self {
+            Direction::In => AUDIO_MAXLEN_IN,
+            Direction::Out => AUDIO_MAXLEN_OUT,
+        }
     }
 }
 
@@ -40,13 +47,128 @@ pub enum DecodedFrame {
 }
 
 /// The stream entry fields of a frame, flat `[name, value, ...]`.
+// @spec BUS-NAT-RS-003, CONN-AUD-002, CONN-AUD-006
 pub fn encode_frame(f: &Frame) -> Vec<Vec<u8>> {
-    todo!("CONN-AUD-002, CONN-AUD-006")
+    let mut out: Vec<Vec<u8>> = Vec::with_capacity(20);
+    let mut push = |k: &str, v: Vec<u8>| {
+        out.push(k.as_bytes().to_vec());
+        out.push(v);
+    };
+    push("v", FRAME_VERSION.to_string().into_bytes());
+    push("epoch", f.epoch.to_string().into_bytes());
+    push("seq", f.seq.to_string().into_bytes());
+    push("rate", f.rate.to_string().into_bytes());
+    push("ch", f.ch.to_string().into_bytes());
+    if !f.flush {
+        // A flush frame has no pcm (CONN-AUD-006).
+        push("pcm", f.pcm.clone());
+    }
+    if let Some(s) = &f.spk {
+        push("spk", s.clone().into_bytes());
+    }
+    if let Some(s) = &f.name {
+        push("name", s.clone().into_bytes());
+    }
+    if let Some(s) = &f.utt {
+        push("utt", s.clone().into_bytes());
+    }
+    if f.last {
+        push("last", b"1".to_vec());
+    }
+    if f.flush {
+        push("flush", b"1".to_vec());
+    }
+    out
+}
+
+/// `Number(text)` of JavaScript for the text of a header field: surrounding whitespace is ignored, the empty string
+/// is 0, `0x`/`0o`/`0b` integers are accepted, everything unparseable is NaN.
+fn js_number(raw: Option<&[u8]>) -> f64 {
+    let Some(raw) = raw else { return f64::NAN };
+    let text = String::from_utf8_lossy(raw);
+    let t = text.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if t.is_empty() {
+        return 0.0;
+    }
+    for (prefix, radix) in [
+        ("0x", 16),
+        ("0X", 16),
+        ("0o", 8),
+        ("0O", 8),
+        ("0b", 2),
+        ("0B", 2),
+    ] {
+        if let Some(digits) = t.strip_prefix(prefix) {
+            return u64::from_str_radix(digits, radix).map_or(f64::NAN, |n| n as f64);
+        }
+    }
+    match t {
+        "Infinity" | "+Infinity" => return f64::INFINITY,
+        "-Infinity" => return f64::NEG_INFINITY,
+        _ => {}
+    }
+    // Rust also accepts `inf`, `nan` and `infinity`; JavaScript does not, and none of them is finite anyway.
+    if t.bytes()
+        .any(|c| c.is_ascii_alphabetic() && c != b'e' && c != b'E')
+    {
+        return f64::NAN;
+    }
+    t.parse::<f64>().unwrap_or(f64::NAN)
 }
 
 /// Decode one entry's flat field list; never panics (CONN-BP-006).
+// @spec BUS-NAT-RS-003, CONN-BP-006, CONN-AUD-002, CONN-AUD-006
 pub fn decode_frame(fields: &[Vec<u8>]) -> DecodedFrame {
-    todo!("CONN-BP-006")
+    use std::collections::HashMap;
+    let mut m: HashMap<&[u8], &[u8]> = HashMap::new();
+    for [k, v] in fields.as_chunks::<2>().0 {
+        m.insert(k.as_slice(), v.as_slice());
+    }
+    let get = |k: &str| m.get(k.as_bytes()).copied();
+    let text = |k: &str| get(k).map(|v| String::from_utf8_lossy(v).into_owned());
+    if get("v") != Some(FRAME_VERSION.to_string().as_bytes()) {
+        return DecodedFrame::Rejected("version".into());
+    }
+    let flush = get("flush") == Some(b"1");
+    let pcm: &[u8] = if flush {
+        &[]
+    } else {
+        match get("pcm") {
+            Some(p) => p,
+            None => return DecodedFrame::Rejected("no pcm".into()),
+        }
+    };
+    if pcm.len() > MAX_FRAME_BYTES {
+        return DecodedFrame::Rejected("too large".into());
+    }
+    if !pcm.len().is_multiple_of(2) {
+        return DecodedFrame::Rejected("odd byte count".into());
+    }
+    let (epoch, seq, rate, ch) = (
+        js_number(get("epoch")),
+        js_number(get("seq")),
+        js_number(get("rate")),
+        js_number(get("ch")),
+    );
+    if ![epoch, seq, rate, ch].iter().all(|n| n.is_finite())
+        || seq < 0.0
+        || rate <= 0.0
+        || ch <= 0.0
+    {
+        return DecodedFrame::Rejected("bad header".into());
+    }
+    DecodedFrame::Ok(Frame {
+        epoch,
+        seq,
+        rate,
+        ch,
+        pcm: pcm.to_vec(),
+        spk: text("spk"),
+        name: text("name"),
+        utt: text("utt"),
+        last: get("last") == Some(b"1"),
+        flush,
+    })
 }
 
 #[cfg(test)]

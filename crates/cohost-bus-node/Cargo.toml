@@ -7,6 +7,7 @@ edition = "2024"
 cohost-bus = { version = "0.1.0", path = "../cohost-bus" }
 napi = { version = "3.16.2", features = ["tokio_rt", "napi9"] }
 napi-derive = "3.7.1"
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 
 [build-dependencies]
 napi-build = "2.6.0"

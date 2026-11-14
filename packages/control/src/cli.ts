@@ -199,7 +199,7 @@ export function buildRuntime(): ComposeRuntime {
 }
 
 /** The part of the bus cohostctl uses. */
-export type CliBus = Pick<Bus, "publish" | "resetGroup" | "recentHealth" | "recent" | "stop">;
+export type CliBus = Pick<Bus, "publish" | "resetGroup" | "recentHealth" | "recent"> & { stop(): void | Promise<void> };
 
 /** The stack controller as the CLI drives it. */
 export type CliStack = Pick<StackController, "launch" | "rebuild" | "stopAll" | "restartAll" | "statusWithRestarts">;
@@ -216,16 +216,11 @@ export interface CliWiring {
   err?: (line: string) => void;
 }
 
-const CONNECT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "ECONNRESET"]);
-
-/** The reason, when `e` is a failure to reach Redis (a connect error, possibly inside an AggregateError); otherwise undefined. */
+/** The reason, when `e` is a failure to reach Redis (error `code` `BUS_CONNECTION`, its message names the cause); otherwise undefined. */
+// @spec CTRL-CLI-017
 function connectFailure(e: unknown): string | undefined {
-  if (!(e instanceof Error)) return undefined;
-  const code = (e as { code?: unknown }).code;
-  if (typeof code === "string" && CONNECT_CODES.has(code)) return e.message || code;
-  if (e instanceof AggregateError) for (const inner of e.errors) { const r = connectFailure(inner); if (r !== undefined) return r; }
-  if (e.message === "Connection is closed.") return "connection refused";
-  return undefined;
+  if (!(e instanceof Error) || (e as { code?: unknown }).code !== "BUS_CONNECTION") return undefined;
+  return e.message || "connection failed";
 }
 
 /** The Redis URL the bus used, without credentials. */
@@ -280,7 +275,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
     err(refused !== undefined ? `cannot reach Redis at ${redisUrl(w.env)}: ${refused} (is the stack up? run cohostctl launch)` : e instanceof Error ? e.message : String(e));
     return e instanceof UsageError ? 2 : 1;
   } finally {
-    bus?.stop();
+    await bus?.stop();
   }
 }
 

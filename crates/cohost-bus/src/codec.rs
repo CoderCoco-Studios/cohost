@@ -1,5 +1,6 @@
 //! Typed serde codec: accepts exactly the payloads the matching zod schema accepts and applies zod's defaults
 //! (BUS-NAT-RS-008). Types are added with their fixtures when a Rust service first touches them (BUS-NAT-RS-009).
+use crate::consts::REGISTRATION_VERSION;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -59,13 +60,165 @@ pub struct Registration {
     pub capabilities: Vec<Capability>,
 }
 
-/// `Err(reason)` when zod's `safeParse` would fail.
-pub fn parse_heartbeat(payload: &serde_json::Value) -> Result<Heartbeat, String> {
-    todo!("BUS-NAT-RS-008")
+type Obj = serde_json::Map<String, serde_json::Value>;
+
+fn object<'a>(v: &'a serde_json::Value, what: &str) -> Result<&'a Obj, String> {
+    v.as_object()
+        .ok_or_else(|| format!("{what}: expected an object"))
 }
 
+fn string(o: &Obj, k: &str) -> Result<String, String> {
+    match o.get(k) {
+        Some(serde_json::Value::String(s)) => Ok(s.clone()),
+        _ => Err(format!("{k}: expected a string")),
+    }
+}
+
+/// zod's `z.number().int()`: a finite number with no fractional part (`5.0` counts, as in JavaScript).
+fn int(o: &Obj, k: &str) -> Result<i64, String> {
+    let n = o
+        .get(k)
+        .and_then(|v| v.as_f64())
+        .ok_or_else(|| format!("{k}: expected a number"))?;
+    if n.fract() != 0.0 || !n.is_finite() {
+        return Err(format!("{k}: expected an integer"));
+    }
+    Ok(n as i64)
+}
+
+fn positive_int(o: &Obj, k: &str) -> Result<i64, String> {
+    let n = int(o, k)?;
+    if n > 0 {
+        Ok(n)
+    } else {
+        Err(format!("{k}: must be positive"))
+    }
+}
+
+fn number(o: &Obj, k: &str) -> Result<f64, String> {
+    o.get(k)
+        .and_then(|v| v.as_f64())
+        .ok_or_else(|| format!("{k}: expected a number"))
+}
+
+fn tag_shaped(s: &str) -> bool {
+    let b = s.as_bytes();
+    (1..=32).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b[1..]
+            .iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+}
+
+/// `Err(reason)` when zod's `safeParse` would fail.
+// @spec BUS-NAT-RS-008
+pub fn parse_heartbeat(payload: &serde_json::Value) -> Result<Heartbeat, String> {
+    let o = object(payload, "service.heartbeat")?;
+    let state = string(o, "state")?;
+    if !["starting", "ready", "degraded", "stopping"].contains(&state.as_str()) {
+        return Err(format!("state: invalid enum value {state:?}"));
+    }
+    let mut deps = BTreeMap::new();
+    for (k, v) in object(o.get("deps").unwrap_or(&serde_json::Value::Null), "deps")? {
+        match v.as_str() {
+            Some(s) if ["ok", "down", "n/a"].contains(&s) => {
+                deps.insert(k.clone(), s.to_string());
+            }
+            _ => return Err(format!("deps.{k}: invalid enum value")),
+        }
+    }
+    let detail = match o.get("detail") {
+        None => None,
+        Some(serde_json::Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err("detail: expected a string".into()),
+    };
+    Ok(Heartbeat {
+        service: string(o, "service")?,
+        instance: string(o, "instance")?,
+        pid: int(o, "pid")?,
+        version: string(o, "version")?,
+        started_at: number(o, "startedAt")?,
+        state,
+        deps,
+        mode: string(o, "mode")?,
+        detail,
+        interval_ms: positive_int(o, "intervalMs")?,
+    })
+}
+
+fn known_capability(c: &Obj) -> Option<Capability> {
+    let cap = c.get("cap")?.as_str()?;
+    if cap != "audio-in" && cap != "audio-out" {
+        return None;
+    }
+    let tag = c.get("tag")?.as_str()?;
+    if !tag_shaped(tag) {
+        return None;
+    }
+    let format = c.get("format")?.as_object()?;
+    let transport = match c.get("transport") {
+        None => "stream".to_string(),
+        Some(serde_json::Value::String(s)) if s == "stream" || s == "http" => s.clone(),
+        Some(_) => return None,
+    };
+    let flush = match c.get("flush") {
+        None => false,
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(_) => return None,
+    };
+    Some(Capability {
+        cap: cap.to_string(),
+        tag: tag.to_string(),
+        format: AudioFormat {
+            rate: positive_int(format, "rate").ok()?,
+            channels: positive_int(format, "channels").ok()?,
+        },
+        ready: c.get("ready")?.as_bool()?,
+        transport,
+        flush,
+    })
+}
+
+/// The registration value; capabilities this version does not know are dropped (CONN-REG-005).
+// @spec BUS-NAT-RS-008, CONN-REG-005
 pub fn parse_registration(payload: &serde_json::Value) -> Result<Registration, String> {
-    todo!("BUS-NAT-RS-008")
+    let o = object(payload, "registration")?;
+    if number(o, "v")? != f64::from(REGISTRATION_VERSION) {
+        return Err("v: expected the literal 1".into());
+    }
+    let id = string(o, "id")?;
+    if !tag_shaped(&id) {
+        return Err(format!("id: {id:?} does not match the tag pattern"));
+    }
+    let detail = match o.get("detail") {
+        None => String::new(),
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(_) => return Err("detail: expected a string".into()),
+    };
+    let mut capabilities = Vec::new();
+    let Some(serde_json::Value::Array(list)) = o.get("capabilities") else {
+        return Err("capabilities: expected an array".into());
+    };
+    for c in list {
+        let c = object(c, "capabilities[]")?;
+        string(c, "cap")?;
+        if let Some(k) = known_capability(c) {
+            capabilities.push(k);
+        }
+    }
+    Ok(Registration {
+        v: REGISTRATION_VERSION,
+        id,
+        kind: string(o, "kind")?,
+        version: string(o, "version")?,
+        instance: string(o, "instance")?,
+        pid: int(o, "pid")?,
+        started_at: number(o, "startedAt")?,
+        interval_ms: positive_int(o, "intervalMs")?,
+        state: string(o, "state")?,
+        detail,
+        capabilities,
+    })
 }
 
 #[cfg(test)]

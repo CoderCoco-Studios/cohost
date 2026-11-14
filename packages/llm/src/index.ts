@@ -58,15 +58,8 @@ export const TRANSCRIPT_STOPS: string[] = TRANSCRIPT_TAGS.map((tag) => `\n${tag}
 /** Blank line ends a spoken reply. Exactly four entries: OpenAI-style APIs reject more than four stops. */
 const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 
-/** Default request timeout when `llm.timeout_ms` is absent (CFG-SCH-013 default). */
-const DEFAULT_TIMEOUT_MS = 60_000;
-/** `llm.timeout_ms`, read defensively so this package does not depend on the config schema's merge order. */
-function timeoutMs(cfg: Config["llm"]): number { // @spec LLM-CHAT-008
-  const ms = (cfg as { timeout_ms?: unknown }).timeout_ms;
-  return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
-}
-/** The caller's signal when it passed one (it wins), otherwise the default timeout. */
-const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(timeoutMs(cfg)); // @spec LLM-CHAT-008
+/** The caller's signal when it passed one (it wins), otherwise `llm.timeout_ms` (CFG-SCH-013). */
+const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(cfg.timeout_ms); // @spec LLM-CHAT-008
 
 export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
   switch (cfg.provider) {
@@ -230,7 +223,7 @@ abstract class ClaudeBase implements ChatProvider {
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
       // in the same call. Not offered on Bedrock, where a refusal just means "say nothing".
       ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007
-    }, opts.signal ? { signal: opts.signal } : { timeout: timeoutMs(this.cfg) }); // @spec LLM-CLAUDE-010, LLM-CHAT-006, LLM-CHAT-008
+    }, opts.signal ? { signal: opts.signal } : { timeout: this.cfg.timeout_ms }); // @spec LLM-CLAUDE-010, LLM-CHAT-006, LLM-CHAT-008
     if (res.stop_reason === "refusal") return ""; // @spec LLM-CLAUDE-006
     return res.content // @spec LLM-CLAUDE-005, LLM-IF-004
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -254,7 +247,7 @@ export class AnthropicProvider extends ClaudeBase {
   }
   async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
     try {
-      await this.client.models.retrieve(this.cfg.model, undefined, { timeout: timeoutMs(this.cfg) }); // @spec LLM-CHAT-008
+      await this.client.models.retrieve(this.cfg.model, undefined, { timeout: this.cfg.timeout_ms }); // @spec LLM-CHAT-008
       this.lastError = undefined;
       return true;
     } catch (err) {

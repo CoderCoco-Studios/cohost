@@ -293,7 +293,7 @@ const hole = http.createServer(() => {});
 await new Promise<void>((r) => hole.listen(0, r));
 after(() => { hole.closeAllConnections(); hole.close(); });
 const holeUrl = `http://127.0.0.1:${(hole.address() as { port: number }).port}`;
-/** `llm.timeout_ms` is added by the config task; the providers read it defensively, so tests set it on the object. */
+/** A schema-parsed llm config with `llm.timeout_ms` set. */
 const withTimeout = (ms: number, over: Record<string, unknown> = {}) => ({ ...llmCfg(over), timeout_ms: ms }) as ReturnType<typeof llmCfg>;
 const user = [{ role: "user" as const, content: "x" }];
 
@@ -313,7 +313,7 @@ test("timeout: a black-holed Ollama and OpenAI-compatible backend fails chat, em
 });
 
 // @spec LLM-CHAT-008
-test("timeout: llm.timeout_ms defaults to 60000 when the config object has none", async () => {
+test("timeout: the request timeout is the schema default of 60000 unless llm.timeout_ms is configured", async () => {
   const spy = mock.method(AbortSignal, "timeout", (ms: number) => { void ms; return new AbortController().signal; });
   after(() => spy.mock.restore());
   const s = http.createServer(async (req, res) => { for await (const _ of req); res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }], message: { content: "ok" }, embeddings: [[1]], models: [] })); });

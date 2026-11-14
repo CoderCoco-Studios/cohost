@@ -12,7 +12,7 @@ import type { BusTransport, TransportFactory } from "./transport.js";
 interface Binding {
   /** Begins opening the shared connection without blocking or throwing, even when Redis is unreachable (BUS-NAT-TRN-004). */
   Transport: new (url: string, prefix: string, failFast: boolean) => BusTransport;
-  encodeFrame(frame: Frame): (string | Buffer)[];
+  encodeFrame(frame: Omit<Frame, "pcm"> & { pcm?: Buffer }): (string | Buffer)[];
   decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame;
   tagProblem(tag: string): string | null;
   connectorKey(prefix: string, id: string): string;
@@ -56,8 +56,8 @@ const binding = load();
 export const createNativeTransport: TransportFactory = (url, opts) => new binding.Transport(url, opts.prefix, opts.failFast);
 
 // @spec BUS-NAT-RS-003, BUS-NAT-TRN-013
-/** A flush frame carries no audio (CONN-AUD-006): its absent `pcm` is passed to the binding as an empty one, which it does not write. */
-export const encodeFrame = (frame: Frame): (string | Buffer)[] => binding.encodeFrame(frame.pcm ? frame : { ...frame, pcm: Buffer.alloc(0) });
+/** A flush frame carries no audio (CONN-AUD-006): its `pcm` may be absent, and the binding does not write one. */
+export const encodeFrame = binding.encodeFrame;
 export const decodeFrame = binding.decodeFrame;
 // @spec BUS-NAT-RS-005
 export const tagProblem = binding.tagProblem;

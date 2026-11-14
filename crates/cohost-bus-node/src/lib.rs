@@ -164,7 +164,8 @@ pub struct FrameJs {
     pub seq: f64,
     pub rate: f64,
     pub ch: f64,
-    pub pcm: Buffer,
+    /// Absent for a flush frame (CONN-AUD-006).
+    pub pcm: Option<Buffer>,
     pub spk: Option<String>,
     pub name: Option<String>,
     pub utt: Option<String>,
@@ -180,7 +181,7 @@ impl FrameJs {
             seq: self.seq,
             rate: self.rate,
             ch: self.ch,
-            pcm: self.pcm.to_vec(),
+            pcm: self.pcm.as_ref().map(|b| b.to_vec()).unwrap_or_default(),
             spk: self.spk.clone(),
             name: self.name.clone(),
             utt: self.utt.clone(),
@@ -715,4 +716,31 @@ pub fn reserved_tags() -> Vec<String> {
         .iter()
         .map(|s| s.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @spec BUS-NAT-RS-003, CONN-AUD-006
+    #[test]
+    fn frame_without_pcm_converts_to_an_empty_flush_frame() {
+        let f = FrameJs {
+            epoch: 1.0,
+            seq: 2.0,
+            rate: 16000.0,
+            ch: 1.0,
+            pcm: None,
+            spk: None,
+            name: None,
+            utt: Some("u".into()),
+            last: None,
+            flush: Some(true),
+        }
+        .to_frame();
+        assert!(f.pcm.is_empty() && f.flush);
+        assert!(!cohost_bus::frame::encode_frame(&f)
+            .chunks(2)
+            .any(|p| p[0] == b"pcm"));
+    }
 }

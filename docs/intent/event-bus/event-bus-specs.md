@@ -202,7 +202,7 @@ BUS-NAT-TRN-006 (no calls into JavaScript) and BUS-NAT-TRN-012 (one tokio runtim
 The Docker `native` stage and the `test` workflow's Rust steps are specified once, in deployment: DEPLOY-IMG-001 and DEPLOY-CI-001. BUS-NAT-BLD-008, BUS-NAT-CI-001 and BUS-NAT-CI-003 are retired, superseded by those two; the numbers are not reused.
 
 - [ ] **BUS-NAT-BLD-001**: The repository root shall hold a Cargo workspace (`Cargo.toml` with `members = ["crates/*"]`, one `Cargo.lock`) and a `rust-toolchain.toml` pinning an exact stable Rust toolchain version with the `rustfmt` and `clippy` components.
-- [ ] **BUS-NAT-BLD-002**: When `pnpm build` or `pnpm test` runs, it shall run `build:native` (`napi build --release` in `crates/cohost-bus-node`, writing `packages/bus/native/cohost-bus.linux-x64-gnu.node`) before `tsc -b`.
+- [ ] **BUS-NAT-BLD-002**: When `pnpm build` or `pnpm test` runs, it shall run `build:native` (`cargo build --release -p cohost-bus-node`, then copying `target/release/libcohost_bus_node.so` to `packages/bus/native/cohost-bus.linux-x64-gnu.node`) before `tsc -b`.
 - [ ] **BUS-NAT-BLD-003**: The built `.node` file and the Cargo `target` directory shall be ignored by git.
 - [ ] **BUS-NAT-BLD-004**: When `@cohost/bus` is imported, `native.ts` shall load the addon only from `../native/cohost-bus.<platform>-<arch>-gnu.node` relative to its own file through `createRequire(import.meta.url)`, with no search path, environment override or fallback transport.
 - [ ] **BUS-NAT-BLD-005**: If the host is not linux-x64 or the addon file is missing or fails to load, then importing `@cohost/bus` shall throw an error naming the platform and arch it looked for, the path, and `pnpm build:native`.

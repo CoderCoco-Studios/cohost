@@ -6,6 +6,8 @@ data
 .env
 **/*.tsbuildinfo
 **/*.log
+**/*.node
+target
 config/.vts-token
 config/config.yaml
 config/personality.md

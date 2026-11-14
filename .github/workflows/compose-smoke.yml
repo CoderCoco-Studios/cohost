@@ -25,6 +25,19 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # pnpm build runs build:native (BUS-NAT-BLD-002), which needs the toolchain.
+      - name: Install the pinned Rust toolchain
+        # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: node --import tsx --test packages/control/test/launch.e2e.test.ts

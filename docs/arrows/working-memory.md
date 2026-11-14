@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**AUDITED** — 41 specs: 40 implemented (`[x]`), 0 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**AUDITED** — 42 specs: 41 implemented (`[x]`), 0 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (41 specs: 40 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (42 specs: 41 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -51,16 +51,16 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Ingest | WM-PUSH-001 to WM-PUSH-013 | 13 | 0 | 0 | 13 |
 | Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
 | Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
-| Transcript | WM-TRANS-001 to WM-TRANS-010 | 10 | 0 | 0 | 10 |
+| Transcript | WM-TRANS-001 to WM-TRANS-011 | 11 | 0 | 0 | 11 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 40 of 41 specs implemented; 1 deferred; 0 gaps. 40 carry a test `@spec` annotation.
+**Summary:** 41 of 42 specs implemented; 1 deferred; 0 gaps. 41 carry a test `@spec` annotation.
 
 ## Key Findings
 
 1. **The stop-string contract** — this package joins lines with `"\n"`, so every entry after the first begins `"\n[chat]"`, `"\n[voice]"` or `"\n[screen]"`, exactly the `TRANSCRIPT_STOPS` in `packages/llm/src/index.ts`; Ollama/OpenAI add `"\n\n"`, Claude does not, `json: true` calls send none. The cortex primes the model with a closing `<name>:` and `parseReply` keeps only the first reply line. The self line is not a stop, by decision. This segment owns the tags (WM-TRANS-006) and exports them as `TRANSCRIPT_TAGS` (WM-TRANS-009); LLM-STOP-006 / LLM-STOP-007 derive the stops from the export; `services/cortex/test/transcript-stops.test.ts` checks the pair. Full write-up: model-backends LLD, "Stop sequences and the transcript coupling".
-2. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` in user, speaker and text of chat, speech and vision lines to a space (`oneLine`, WM-TRANS-008), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts`).
+2. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` in user, speaker and text of chat, speech and vision lines, and in the text of self lines, to a space (`oneLine`, WM-TRANS-008, WM-TRANS-011), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts`).
 3. **Injected events are indistinguishable from real ones in the prompt** — flags are retained on the entry but never rendered (intended, WM-TRANS-007).
 4. **Flag propagation lives here and is tested here** — `propagatedFlags` has unit tests in `context.test.ts` (undefined source, stray `remember`; WM-FLAG-003/004).
 5. **Two independent windows** — salience and cortex each keep their own `Context`, built by `Context.forBrain` (WM-WIN-005, WM-WIN-008); only cortex records own lines via `pushSelf`.

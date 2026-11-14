@@ -5,7 +5,7 @@ prefix: BUS
 
 # event-bus
 
-Status: AUDITED 2026-11-02 at git `1b57790`. Mapped 2026-10-31 at git `686cc8f` (reverse-engineered from code); specs verified against the code and `@spec` annotations added at git `49ba935`; owner decisions of 2026-11-01 applied. Where the code does not yet do what this document intends (BUS-STREAM-007), the text names the `[ ]` spec line. Parent: [high-level-design](../../high-level-design.md). Specs: [event-bus-specs.md](event-bus-specs.md). Arrow: [docs/arrows/event-bus.md](../../arrows/event-bus.md).
+Status: AUDITED 2026-11-02 at git `1b57790`. Mapped 2026-10-31 at git `686cc8f` (reverse-engineered from code); specs verified against the code and `@spec` annotations added at git `49ba935`; owner decisions of 2026-11-01 applied. The [Native transport](#native-transport) section is design that the code does not have yet: today `packages/bus/src/index.ts` drives Redis through ioredis, and the line references to `index.ts` elsewhere in this document describe that code. Parent: [high-level-design](../../high-level-design.md). Specs: [event-bus-specs.md](event-bus-specs.md). Arrow: [docs/arrows/event-bus.md](../../arrows/event-bus.md).
 
 ## Context and Design Philosophy
 
@@ -22,7 +22,7 @@ Guiding principles visible in the code:
 - Heartbeats must not evict domain events, so they have their own capped stream (`index.ts:10-12`, comment at line 10).
 - Binary payloads never ride the stream. Live connector audio rides its own capped streams, `<prefix>:audio.in.<source>` and `<prefix>:audio.out.<sink>`, with registrations in keys `<prefix>:connector:<id>`; both are specified by [connections](../connections/connections-design.md) and use the prefix of BUS-STREAM-008. `inject.request` carries an `uploadId`; the bytes sit in the Redis key `cohost:upload:<id>` (`Bus.putUpload` / `Bus.takeUpload`, BUS-UPL-001 to BUS-UPL-003), outside the stream.
 
-Scope of this segment: `packages/bus/src/index.ts`, `packages/bus/src/events.ts`, `packages/bus/test/bus.test.ts`, `packages/bus/test/resilience.test.ts`, `packages/bus/test/shutdown.test.ts`, `packages/bus/test/shutdown.fixture.ts`, `packages/bus/test/shutdown-multi.fixture.ts`, `packages/bus/test/shutdown-hooks.fixture.ts`, `packages/bus/package.json`, `packages/bus/tsconfig.json`, and (documented here because it is the test double for `Bus`) `packages/testing/src/index.ts`. `packages/bus/src/heartbeat.ts` and the `service.heartbeat` / `service.lifecycle` semantics belong to [control-plane](../control-plane/control-plane-design.md); this document records only their schemas and the `Bus` methods that carry them.
+Scope of this segment: the Cargo workspace at the repository root (`Cargo.toml`, `crates/cohost-bus`, `crates/cohost-bus-node`), the contract fixtures under `packages/bus/fixtures/contract/`, `packages/bus/src/index.ts`, `packages/bus/src/native.ts`, `packages/bus/src/events.ts`, `packages/bus/test/bus.test.ts`, `packages/bus/test/resilience.test.ts`, `packages/bus/test/shutdown.test.ts`, `packages/bus/test/shutdown.fixture.ts`, `packages/bus/test/shutdown-multi.fixture.ts`, `packages/bus/test/shutdown-hooks.fixture.ts`, `packages/bus/package.json`, `packages/bus/tsconfig.json`, and (documented here because it is the test double for `Bus`) `packages/testing/src/index.ts`. `packages/bus/src/heartbeat.ts` and the `service.heartbeat` / `service.lifecycle` semantics belong to [control-plane](../control-plane/control-plane-design.md); this document records only their schemas and the `Bus` methods that carry them.
 
 ## Stream layout and envelope
 
@@ -37,7 +37,7 @@ Typing detail: `publish` accepts `EventInput<T>` (`z.input`, defaults optional),
 
 ## Bus API
 
-Constructor: `new Bus(source, log?, url = urls.redis(), options?)` (`index.ts:72`). The optional `BusOptions` object injects a connection factory (`connect`, default `new Redis(url, opts)`) the retry delay base and cap (`retryBaseMs` 250, `retryMaxMs` 30000) and `streamPrefix` (default `cohost`: the instance uses `<prefix>:events` and `<prefix>:health`, BUS-STREAM-008, so a test works on streams of its own); tests pass fake connections through it so the subscribe, tail and publish paths run without a Redis server. `urls.redis()` is `REDIS_URL` or `redis://127.0.0.1:6379` (`packages/config/src/index.ts:167`). The publish connection is opened eagerly (`lazyConnect: false`, `maxRetriesPerRequest: 3`, `index.ts:76`). Each `subscribe`, `tail` and `tailHealth` opens its own extra connection with `maxRetriesPerRequest: null` (infinite ioredis reconnect, `index.ts:121`, `index.ts:176`, `index.ts:230`). `consumer` is `${HOSTNAME ?? "local"}-<8 hex of a random uuid>` (`index.ts:65`), fixed for the life of the `Bus` instance.
+Constructor: `new Bus(source, log?, url = urls.redis(), options?)`. The optional `BusOptions` object supplies a transport factory (`transport`, default the native transport of [Native transport](#native-transport)), the retry delay base and cap (`retryBaseMs` 250, `retryMaxMs` 30000), `streamPrefix` (default `cohost`: the instance uses `<prefix>:events` and `<prefix>:health`, BUS-STREAM-008, so a test works on streams of its own) and `failFast` (BUS-STREAM-009); tests pass a fake `BusTransport` through `transport` so the subscribe, tail and publish paths run without a Redis server. `urls.redis()` is `REDIS_URL` or `redis://127.0.0.1:6379` (`packages/config/src/index.ts:167`). The transport opens its shared connection when the `Bus` is constructed; each `subscribe`, `tail`, `tailHealth` and `tailAudio` opens a reader with a connection of its own, because a blocking read occupies its connection. `consumer` is `${HOSTNAME ?? "local"}-<8 hex of a random uuid>`, fixed for the life of the `Bus` instance.
 
 | Method | Behavior | Lines |
 |---|---|---|
@@ -87,6 +87,223 @@ The process shutdown sequence is specified by shared-runtime (SHARED-LIFE-001 to
 - Several registrations in one process are normal: eyes, ears and chat each register more than one stop step through `onStop` (`runService`, `packages/shared/src/lifecycle.ts:54`), and all of their callbacks run.
 - `index.ts` re-exports `./heartbeat.js` at its last line (`index.ts:358`) and `heartbeat.ts` imports `beforeShutdown` from `./index.js`; the cycle works because `beforeShutdown` is only called at runtime.
 - The subprocess fixture `packages/bus/test/shutdown.fixture.ts` proves the ordering `hb:starting`, `hb:ready`, `hb:stopping`, `bus.stop` (asserted at `bus.test.ts:257-261`). `shutdown-multi.fixture.ts` and `shutdown-hooks.fixture.ts` prove the composition: all callbacks in order with failures logged and one `exit(0)`, and a synchronously throwing hook that skips neither the other hooks nor the callbacks (`shutdown.test.ts`).
+
+## Native transport
+
+The bus client's transport is native code, so the central highway has headroom as sources and services grow (HLD, Native layer). Rust owns the Redis I/O and the wire conventions; the TypeScript `Bus` facade keeps the public API, the zod registry, validation on publish and on read, and every loop's control flow (start modes, drain, backoff, stop). There is one path: the facade always runs on a `BusTransport`, which in production is the native binding.
+
+### Architecture
+
+```
+services (TS) ──> @cohost/bus  Bus facade (TS: zod, envelope, loops, backoff, logging)
+                      │  BusTransport interface
+                      ├── native binding  packages/bus/src/native.ts ──> cohost-bus.linux-x64-gnu.node
+                      │                                                   crates/cohost-bus-node (napi-rs, thin)
+                      │                                                   crates/cohost-bus (pure Rust: redis-rs + tokio)
+                      └── test fakes (scripted BusTransport)
+Rust services ──────────────────────────────────────────────────────────> crates/cohost-bus directly
+```
+
+- **Cargo workspace** at the repository root (`Cargo.toml` with `members = ["crates/*"]`, one `Cargo.lock`, a `rust-toolchain.toml` pinning the stable toolchain).
+- **`crates/cohost-bus`**: pure Rust, no Node dependency. Owns the Redis connections (one shared multiplexed connection plus one dedicated connection per reader), every Redis command the bus issues, ack batching, the key and stream naming under the prefix (BUS-STREAM-008), the stream caps and expiries, the audio frame codec, the tag grammar, and the typed codec of the events Rust services touch. A Rust service depends on it directly, with no Node in between. It never logs: every failure is returned to the caller as an error value.
+- **`crates/cohost-bus-node`**: the napi-rs wrapper. It converts arguments and results, maps errors to JS errors with a `code`, and holds no logic of its own; anything it does that a Rust service would also need belongs in `cohost-bus`.
+- **`packages/bus/src/native.ts`**: loads the `.node` file and adapts it to `BusTransport`. It is the only TypeScript file that imports the addon.
+- **The `Bus` facade** (`packages/bus/src/index.ts`) keeps every behaviour this document specifies above: what is validated, the envelope fields and their values (`ts` is still the publisher's `Date.now()`), what is delivered, acked, logged and retried. It decides; the transport executes.
+
+### Facade public API
+
+The transport is invisible to callers. `@cohost/bus` exports, with the behaviour this document specifies:
+
+- `class Bus`: `constructor(source, log?, url?, options?)`, `consumer`, `publish`, `publishHealth`, `subscribe`, `tail`, `tailHealth`, `recent`, `recentHealth`, `resetGroup`, `serverTime`, `putUpload`, `takeUpload`, `connectorKey`, `audioStream`, `writeRegistration`, `readRegistration`, `deleteRegistration`, `listConnectors`, `publishFrame`, `tailAudio`, `stop`.
+- Types and constants of `index.ts`: `STREAM`, `HEALTH_STREAM`, `HEALTH_MAXLEN`, `SubscribeStart`, `SubscribeOptions`, `Handler`, `Publisher`, `ReadOutcome`, `HeartbeatEvent`, `BusOptions`.
+- Everything re-exported from `events.ts` (the registry), `connector.ts` and `registrar.ts` (see [What moves to Rust](#what-moves-to-rust-from-connectorts)).
+
+The test seam is `BusOptions.transport` with the `BusTransport` type; there is no connection-level seam. The `publish` and `subscribe` call sites, `FakeBus`, `ConnectorFakeBus` and every `Pick<Bus, ...>` consumer depend only on this API, not on the transport.
+
+### The `BusTransport` interface
+
+The seam between facade and native code. It is named `BusTransport` because `connector.ts` already exports `Transport` (a capability's `stream` / `http` transport, CONN-DESK-003). Every method maps to a fixed set of Redis commands; the transport adds no retries of its own, so the facade's backoff is the only retry policy.
+
+```ts
+type EventStream = "events" | "health";
+/** The four envelope fields as stored (BUS-STREAM-001). */
+interface EntryFields { type: string; ts: string; source: string; data: string }
+/** One entry as read. Only the four envelope fields are returned; a missing field is undefined.
+ *  A pending entry whose stream entry was trimmed, and an entry with an envelope field that is
+ *  not valid UTF-8, come back with no fields. */
+interface RawEntry { id: string; type?: string; ts?: string; source?: string; data?: string }
+interface AckError { ids: string[]; err: Error }
+/** `entries` is null when the block timed out with nothing to read. */
+interface GroupRead { entries: RawEntry[] | null; ackErrors: AckError[] }
+interface FrameEntry { id: string; decoded: DecodedFrame }
+
+interface BusTransport {
+  /** XADD <prefix>:<stream> MAXLEN ~ 20000 (events) | 1000 (health) * type ts source data. Resolves to the id. */
+  append(stream: EventStream, fields: EntryFields): Promise<string>;
+  /** XREVRANGE <prefix>:<stream> + - COUNT n, returned oldest first. */
+  recent(stream: EventStream, count: number): Promise<RawEntry[]>;
+  /** XGROUP CREATE <prefix>:events <group> $ MKSTREAM. true: created; false: BUSYGROUP; any other error rejects. */
+  createGroup(group: string): Promise<boolean>;
+  /** XGROUP SETID <prefix>:events <group> $. */
+  moveGroupToLatest(group: string): Promise<void>;
+  /** SET <prefix>:upload:<id> <bytes> PX ttlMs (BUS-UPL-001). */
+  putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void>;
+  /** GETDEL <prefix>:upload:<id> (BUS-UPL-002). */
+  takeUpload(id: string): Promise<Buffer | null>;
+  /** SET <prefix>:connector:<id> <json> PX leaseMs (CONN-REG-001). */
+  writeRegistration(id: string, json: string, leaseMs: number): Promise<void>;
+  /** GET <prefix>:connector:<id>. */
+  readRegistration(id: string): Promise<string | null>;
+  /** DEL <prefix>:connector:<id> (CONN-REG-003). */
+  deleteRegistration(id: string): Promise<void>;
+  /** SCAN MATCH <prefix>:connector:* COUNT 100 to cursor 0, de-duplicated, then one MGET; values that exist (CONN-REG-006). */
+  listRegistrations(): Promise<string[]>;
+  /** Encode, then XADD <prefix>:audio.<dir>.<tag> MAXLEN ~ cap(dir) * ... and PEXPIRE 60000 in one pipeline (CONN-AUD-001).
+   *  Rejects BUS_INVALID, writing nothing, when pcm exceeds MAX_FRAME_BYTES or has an odd byte count. */
+  appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string>;
+  /** TIME, as epoch ms (CTRL-CHECK-004). */
+  serverTime(): Promise<number>;
+  /** A reader with its own connection, for one blocking loop. */
+  openReader(): BusReader;
+  /** Send every reader's queued acks on the shared connection in one pipeline, then close the shared connection
+   *  and every reader; blocked reads reject with BUS_CLOSED. Never rejects: a failed flush is not retried.
+   *  Further calls reject with BUS_CLOSED. */
+  close(): Promise<void>;
+}
+
+interface BusReader {
+  /** Sends the queued acks of this reader, then XREADGROUP GROUP <group> <consumer> COUNT n BLOCK ms STREAMS <prefix>:events <cursor>,
+   *  in one pipeline. `ackErrors` reports queued acks that Redis refused. */
+  readGroup(group: string, consumer: string, cursor: string, count: number, blockMs: number): Promise<GroupRead>;
+  /** Queue XACK <prefix>:events <group> <id>; synchronous, sent with the next readGroup or by the transport's close(). */
+  ack(group: string, id: string): void;
+  /** XREAD COUNT n BLOCK ms STREAMS <prefix>:<stream> <fromId>. null on timeout. */
+  read(stream: EventStream, fromId: string, count: number, blockMs: number): Promise<RawEntry[] | null>;
+  /** XREAD on <prefix>:audio.<dir>.<tag>, each entry decoded by the frame codec (never throws, CONN-BP-006). null on timeout. */
+  readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null>;
+  /** Close this reader's connection, dropping its queued acks; a blocked read rejects with BUS_CLOSED. */
+  close(): void;
+}
+
+type TransportFactory = (url: string, opts: { prefix: string; failFast: boolean }) => BusTransport;
+```
+
+The facade maps onto it one to one: `publish` and `publishHealth` are `append`; `subscribe` is `createGroup` (then `moveGroupToLatest` for `latest` on `false`), `onReady`, and a loop of `readGroup` / handler / `ack`; `resetGroup` is `createGroup` then `moveGroupToLatest` on `false`; `tail` and `tailHealth` are loops of `read`; `tailAudio` is a loop of `readFrames`; `recent` and `recentHealth` are `recent` plus `decode`; `stop()` sets `stopped`, wakes the backoff sleeps and awaits `close()`, so it returns `Promise<void>`, which the process shutdown sequence awaits. `decode` (BUS-STREAM-006, BUS-SUB-007) stays in the facade and works on `RawEntry`.
+
+Test fakes implement `BusTransport` directly: a resilience test scripts what `readGroup` resolves or rejects with, at the level the facade decides on.
+
+### Crossing the napi boundary
+
+- **Async methods.** Every I/O method of the binding returns a Promise, resolved from a Rust future on the addon's tokio runtime. One runtime per process, created when the addon is first loaded, with a small fixed worker count (one worker unless the measurement gate shows that more helps); the bus is I/O-bound. The codec helpers exported for tests and fakes (`encodeFrame`, `decodeFrame`, `tagProblem`) are synchronous.
+- **TypeScript owns every read loop.** Rust never calls into JavaScript: there are no threadsafe functions and no callbacks from the runtime. A loop iteration is one awaited `readGroup` / `read` / `readFrames` call that returns a whole batch, so the boundary is crossed once per batch, not once per entry.
+- **Handlers run serially, as today.** The facade awaits each `subscribe` handler before the next entry and before the next read (BUS-SUB-006); tail handlers run under the facade's guard (BUS-TAIL-004). The next read is not issued until the batch is done, so backpressure is natural: a slow handler leaves the backlog in Redis, bounded by the stream cap, and never in process memory.
+- **Acks are pipelined, delivery stays at most once.** After a handler finishes (or fails, or the entry is filtered or undecodable), the facade calls `ack`, which only queues the id. The queued XACKs travel in the same pipeline as the next `XREADGROUP`, so a batch of 50 costs one round-trip instead of 51. Order and outcome are unchanged: an entry is acked only after its handler returned (BUS-SUB-005), a handler failure is still acked, and an entry never acked is not redelivered (BUS-SUB-008). A refused XACK comes back in `ackErrors` of that `readGroup` and the facade logs it at warn as `ack failed` with the ids, then carries on (BUS-SUB-009). During the pending drain the cursor still follows the last id handled (BUS-SUB-003), so within one drain an entry whose ack is queued or refused is never read twice. If the pipeline fails on the connection, the queued acks stay queued and are sent with the next pipeline that reaches Redis (XACK is idempotent).
+- **Stop during a handler** keeps BUS-SUB-013: the facade does not queue an ack for that entry or any later entry of the batch.
+- **Acks queued at `stop()`** are sent before the connections close: `close()` flushes every reader's queue on the shared connection, which no blocking read occupies, in one pipeline, and only then closes. Every entry handled before `stop()` is therefore acked, and a shutdown leaves no handled entry pending under a consumer name that is never used again. A flush that fails (the shared connection is down, or Redis refuses an ack) is not retried and is not logged by the transport; `stop()` still resolves.
+- **Buffers.** An audio frame's `pcm` and an upload's bytes cross as Node `Buffer`s. Inbound (`appendFrame`, `putUpload`), the binding copies the bytes into the outgoing command synchronously, inside the call, so the caller may reuse or change its `Buffer` as soon as the call returns, before the Promise settles. Outbound (`readFrames`, `takeUpload`), the bytes parsed from the Redis reply are handed to Node as an external `Buffer` that owns the Rust allocation, with no copy into the JS heap; Rust frees it when V8 collects the `Buffer`. Event `data` crosses as a JS string (one UTF-8 to UTF-16 conversion by V8), which `decode` then parses.
+- **Per-frame objects.** `readFrames` returns one small object per frame. If the measurement gate shows that building these objects dominates the frames path, the first lever is to return a batch as one `Buffer` of all `pcm` plus a flat header array, sliced in the facade, without changing `tailAudio`'s handler signature.
+
+### Errors, reconnect and backoff
+
+The binding rejects with a JS `Error` whose `code` is one of:
+
+| Code | Meaning | Facade response |
+|---|---|---|
+| `BUS_CONNECTION` | could not connect, connection reset or closed by the peer, connect timeout | read loops: warn and back off (BUS-SUB-009, BUS-TAIL-003); publish and other calls: reject to the caller (BUS-STREAM-007) |
+| `BUS_REDIS` | Redis answered with an error; the message is Redis's text (`NOGROUP ...`, `WRONGTYPE ...`) | as `BUS_CONNECTION`; `subscribe` and `resetGroup` rethrow a group-creation error other than BUSYGROUP (BUS-SUB-001, BUS-GROUP-001), which the transport has already turned into `false` |
+| `BUS_CLOSED` | the transport or reader was closed, including a blocked read interrupted by `close()` | after `stop()`: end the loop quietly (BUS-STOP-001) |
+| `BUS_INVALID` | an argument the codec refuses: a tag outside the grammar, a frame whose `pcm` exceeds `MAX_FRAME_BYTES` or has an odd byte count, a frame the encoder cannot otherwise write. Nothing is written | reject to the caller |
+| `BUS_INTERNAL` | a Rust panic caught at the boundary, or a reply of an unexpected shape | as `BUS_CONNECTION` |
+
+Reconnect semantics:
+
+- **Readers** do not retry. A reader whose connection fails rejects the read at once; the facade logs and sleeps for its capped backoff (base 250 ms doubling to 30 s, reset on a successful read) and calls the reader again, which reconnects on that call. So the facade's backoff is the only retry clock, every failed attempt produces exactly one warn line and one `onRead` report (BUS-TAIL-005), and the subscribe and tail promises never reject on a read failure (BUS-SUB-009, BUS-TAIL-003). Tail loops resume from the last id they delivered.
+- **The shared connection** reconnects in the background after a failure, with its own capped delay (the same 250 ms base doubling to a 30 s cap). Every command on it (`publish`, `publishHealth`, `publishFrame`, `putUpload`, `takeUpload`, the registration calls, `recent`, `recentHealth`, `resetGroup`, `createGroup` for `subscribe`, `serverTime`) rejects with `BUS_CONNECTION` at once while it is down, from the failure until a reconnect succeeds; nothing is queued for later. A command issued while the first connect attempt after construction is still in flight waits for that attempt (at most the connect timeout), so a service's first heartbeat does not fail merely because it was published before the socket opened. Rejecting at once keeps heartbeats and frames from piling up behind a dead connection: a heartbeat or frame that cannot go out now is worthless later, and each failure reaches the caller's warn log (BUS-STREAM-007) at the moment it happens.
+- **Drain after a read failure.** After any read failure in `subscribe` (once its backoff sleep ends), the loop goes back to cursor `0` and drains this consumer's pending entries again before returning to `>`, with the same drain rules as at the start (BUS-SUB-003). Entries Redis handed to this consumer in a reply that never arrived are therefore delivered late rather than lost. The acks still queued from before the failure travel in the pipeline of that first cursor-`0` read, ahead of the `XREADGROUP`, so every entry whose handler had already run is acked before the drain reads the pending list and is not delivered again. An entry whose ack Redis refused (reported in `ackErrors`) is still pending, so a drain after a later read failure delivers it again.
+- **`failFast`** (BUS-STREAM-009): the shared connection is never re-established; an unreachable Redis makes the first command reject with `BUS_CONNECTION` at once, and nothing is printed, because the native layer never writes to stdout or stderr.
+- Connect timeout per attempt is 10 s.
+
+### What moves to Rust from `connector.ts`
+
+Into `crates/cohost-bus`, re-exported unchanged from `@cohost/bus` through the binding:
+
+- The frame codec: `encodeFrame`, `decodeFrame` and their rules (field names, `v` = `FRAME_VERSION`, `MAX_FRAME_BYTES` 64 KiB, even byte count, finite header numbers, flush frames without `pcm`; CONN-AUD-002, CONN-AUD-006, CONN-BP-006).
+- The constants `FRAME_VERSION`, `MAX_FRAME_BYTES`, `AUDIO_MAXLEN` (`in` 3000, `out` 1500), `AUDIO_STREAM_TTL_MS` (60000), `LEASE_INTERVALS` (3), `REGISTRATION_VERSION` (1), `DEFAULT_CONNECTOR_INTERVAL_MS` (5000), and the stream caps `MAXLEN` 20000 and `HEALTH_MAXLEN` 1000.
+- The tag grammar and reserved list (`TAG_PATTERN`, `RESERVED_TAGS`, `tagProblem`; CONN-TAG-001, CONN-TAG-002), because a Rust connector must refuse the same tags.
+- Key and stream naming: `<prefix>:events`, `<prefix>:health`, `<prefix>:upload:<id>`, `<prefix>:connector:<id>`, `<prefix>:audio.<dir>.<tag>`. `Bus.connectorKey` and `Bus.audioStream` return the names the crate builds.
+
+Stays TypeScript: `parseRegistration` and its zod schemas (the registration contract for TS consumers; the Rust side has its own serde codec checked against the same fixtures), `findOffer`, `findReady`, `capabilityDirection`, `FrameSequencer`, `FrameTracker` (consumer accounting, cheap and callback-shaped), `ConnectorRegistrar`, `watchConnectors` and `ConnectorRegistry` (timers and listeners), and the `Frame`, `DecodedFrame`, `Registration`, `CapabilityEntry`, `ConnectorSpec` types.
+
+### Rust service codec and contract fixtures
+
+A Rust service does not run zod. `crates/cohost-bus` carries a hand-written, typed serde codec for exactly the event types a Rust service publishes or reads, plus the registration value and the frame. The first set is `service.heartbeat`, the registration and the frame, which is what a Rust connector needs; a type is added to the codec, with its fixtures, when a Rust service first touches it. The codec mirrors the zod schema's rules for that type: required and optional members, enums, ranges, and the defaults zod applies on parse.
+
+The contract between the two codecs is a set of shared JSON fixtures in `packages/bus/fixtures/contract/`:
+
+- `events/<type>/<case>.json`: `{ "payload": ..., "valid": true|false, "parsed": ... }`, where `parsed` (valid cases only) is the payload as zod returns it (defaults applied, unknown keys removed).
+- `registration/<case>.json`: the same shape for a registration value.
+- `frames/<case>.json`: an entry's field list (binary values base64-encoded) and the expected `DecodedFrame` (`ok` with the frame, or the `reason`).
+
+Both sides consume every fixture of the types they implement. `packages/bus/test/contract.test.ts` checks each event and registration case against the zod schema (`safeParse` success equals `valid`; the parse result deep-equals `parsed`) and each frame case against the native `decodeFrame`. `crates/cohost-bus/tests/contract.rs` reads the same directory (resolved from `CARGO_MANIFEST_DIR`), checks that its codec accepts exactly the valid cases, that serialising what it parsed gives JSON equal to `parsed`, and that its frame decoder gives the expected result. A schema change in `events.ts` for a type in the Rust codec therefore fails a test until fixtures and Rust codec agree. Fixtures for types outside the Rust codec are read by the TS test only.
+
+### Build, CI and Docker
+
+- **Local build.** `pnpm build` and `pnpm test` both run `build:native` before `tsc -b`: `napi build --release` in `crates/cohost-bus-node`, which writes `packages/bus/native/cohost-bus.linux-x64-gnu.node`, so the addon exists before any test. The `.node` is a build output, ignored by git. A developer needs the Rust toolchain of `rust-toolchain.toml`.
+- **Target.** linux-x64-gnu only: Docker images are `node:22-slim` (Debian, glibc), CI is ubuntu, and every Node process that uses the bus runs in one of them or in WSL on the same target. The bus does not load on macOS, arm64 or a Node process on the Windows host; a tool there that needs the bus runs inside WSL.
+- **Locating the addon.** `native.ts` loads `../native/cohost-bus.<platform>-<arch>-gnu.node` relative to its own file with `createRequire(import.meta.url)`, and nothing else: no search path, no environment override, no fallback transport. On any other platform, or when the file is missing or fails to load, importing `@cohost/bus` throws an error naming the platform and arch it looked for, the path, and `pnpm build:native`.
+- **Docker.** The Dockerfile gains a `native` stage `FROM rust:<toolchain>-slim-bookworm` (the Debian release `node:22-slim` is built on, so the addon links against the same glibc) that builds the workspace in release mode; the `build` stage copies the `.node` into `packages/bus/native/` before `tsc -b`. Every service image carries the addon, since every service uses the bus. The runtime stage needs no Rust.
+- **CI.** The test workflow installs the pinned toolchain and, with the job's Redis service and `REDIS_URL`, runs `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (Rust integration tests use their own stream prefix, as the TS tests do, BUS-STREAM-008), then `pnpm test`. Cargo's registry and target directory are cached.
+- **Release profile.** `panic = "unwind"`, so a panic inside a Rust future is caught at the boundary and becomes a `BUS_INTERNAL` rejection rather than aborting the process.
+
+### Measurement gate
+
+The native transport merges only if, on `scripts/dev/bus-bench.ts --sources 8` against the same Redis and machine, run back to back with the TypeScript transport, all of these hold:
+
+- the **frames path** (`publishFrame` / `tailAudio`) uses at least 40% less process CPU than the TypeScript transport (measured by `process.cpuUsage`, which counts the addon's runtime threads too);
+- the frames path's **p99 hop latency is no worse** than the TypeScript transport's;
+- the **events path** (`publish` / `subscribe`) uses no more process CPU than the TypeScript transport; and
+- the events path's **p99 hop latency is no worse** than the TypeScript transport's.
+
+The events-path conditions exist because every domain event rides that path: a transport that sped up audio while slowing the speech and chat chain would trade one latency budget for another. The reference run recorded with the HLD is 7.7% of a core and 1.75 ms p99 for the TypeScript frames path at 8 sources; the gate compares against a fresh TypeScript run on the same machine, not against that number. If the gate is missed after the per-frame-object lever above, the native transport is not merged: the TypeScript transport stays, the branch is closed with its numbers recorded, and the HLD's Native layer section is revised to match.
+
+### Deferred
+
+- **`crates/cohost-audio`**: shared audio framing and resampling (the resample loop of `packages/shared/src/audio.ts`), its own plan and gate.
+- **connector-discord on songbird**: a Rust Discord connector on `cohost-bus`, after a live Discord run of the TypeScript connector.
+- **Schema generation for every event**: one source generating zod and Rust types for the whole catalogue, replacing the hand-written codec and its per-type fixtures.
+
+### Edge-case probe
+
+What the native transport does in situations the sections above do not make obvious.
+
+| # | Situation | Expected behaviour |
+|---|---|---|
+| 1 | Connection drops while `XREADGROUP` is blocked | The read rejects `BUS_CONNECTION`; the facade logs warn and backs off; the next `readGroup` reconnects. Entries Redis delivered to this consumer whose reply never arrived stay in its pending list; after the backoff the loop returns to cursor `0` and drains them, so they are delivered late, not lost. Queued acks are kept and sent ahead of that first drain read, in its pipeline. |
+| 2 | Pending-entry drain on process restart | The new process has a new consumer name, so its cursor-`0` read returns nothing and the loop moves to `>` at once; the predecessor's pending entries are not claimed (BUS-SUB-003, BUS-SUB-008). |
+| 3 | A pending entry was trimmed from the stream before the drain read it | Redis returns the id with no fields; the transport returns a `RawEntry` without fields; `decode` treats it as undecodable, the facade acks it without logging, and the drain moves on (BUS-SUB-007). |
+| 4 | An entry with unknown `type`, non-JSON `data` or a failed schema | Unchanged: not delivered, acked in `subscribe`, skipped in tails and `recent`, no log line (BUS-SUB-007, BUS-TAIL-002). |
+| 5 | An envelope field (`type`, `ts`, `source`, `data`) that is not valid UTF-8 | The entry is poison: the transport returns it with no fields, `decode` treats it as undecodable, and it is dropped (acked in `subscribe`, skipped in tails and `recent`) without a log line, as BUS-SUB-007. No lossy decode: an entry is never delivered with text the publisher did not write. |
+| 6 | A frame read with `pcm` over `MAX_FRAME_BYTES`, odd length, wrong version, or no `pcm` | `readFrames` returns `{ ok: false, reason }` for it; the consumer drops and counts it (CONN-BP-006, CONN-AUD-002). |
+| 7 | `publishFrame` called with `pcm` over `MAX_FRAME_BYTES` or with an odd byte count | Rejects with `BUS_INVALID` before writing anything; the producer learns of the bad frame at its source instead of every consumer dropping it. Consumers still drop such a frame if one reaches the stream by another writer (row 6). |
+| 8 | A `subscribe` handler throws or rejects | The facade catches it, logs `handler failed` at error, queues the ack, continues (BUS-SUB-005). Rust is not involved: it never calls a handler. |
+| 9 | A handler is slower than the producer | The next read waits for the batch; the backlog stays in Redis. If the group falls more than the stream cap behind, `MAXLEN ~` trims entries it never read and `>` resumes at the oldest entry left; those entries are lost, consistent with at-most-once. Process memory holds at most one batch (50 entries; for frames 100 entries of at most 64 KiB). |
+| 10 | Tail handler returns a slow Promise | As today: tail handlers are guarded, not awaited, so the read loop does not wait for them (BUS-TAIL-004); bounding their concurrency is the handler owner's concern. |
+| 11 | `stop()` with acks queued but not yet sent | `close()` sends them on the shared connection before closing; `stop()` resolves after that flush whether or not it succeeded. |
+| 12 | `stop()` while a read is blocked, or while `createGroup` is in flight | `close()` interrupts the read, which rejects `BUS_CLOSED`; the facade sees `stopped` and resolves the promise without logging (BUS-STOP-001). A `createGroup` that rejects after `stop()` also resolves `subscribe` quietly instead of rethrowing. |
+| 13 | Redis down at boot | Constructing the `Bus` does not throw. Without `failFast`, a command issued while the first connect attempt is in flight waits for that attempt, and once it has failed every command rejects with `BUS_CONNECTION` at once until a background reconnect succeeds; `subscribe` rejects from `createGroup` (BUS-SUB-001). With `failFast` the first command rejects at once and nothing is printed (BUS-STREAM-009). |
+| 14 | Redis goes away while services publish | `append` rejects with `BUS_CONNECTION` at once while the shared connection is down; the facade logs it at warn and rethrows (BUS-STREAM-007). Publishing works again as soon as the background reconnect succeeds. |
+| 15 | Two `Bus` instances with the same consumer name | The name is still `HOSTNAME-<8 hex>` built in the facade (BUS-STREAM-005); a collision would make two instances share one pending list. Accepted as negligible (32 random bits); no detection. |
+| 16 | Several subscribers and tails in one process | Each loop has its own reader and connection, as today; blocking reads never share a connection. Non-blocking commands of every loop and every publish share the one multiplexed connection. Connections per process: 1 + loops. |
+| 17 | Many concurrent `publish` or `publishFrame` calls without awaiting | Commands enter the shared connection in call order and Redis applies them in that order, so stream order equals call order for one `Bus` (frames' `seq` stays monotonic in the stream). |
+| 18 | The `.node` is missing, built for another platform, or the host is not linux-x64-gnu (Windows, macOS, arm64) | Importing `@cohost/bus` throws the load error described in Build; there is no fallback. linux-x64-gnu is the only supported platform. |
+| 19 | A large JSON payload or a large `recent(count)` | Parsing and zod validation stay on the Node event loop exactly as today; the native layer neither adds nor removes that cost. Batch sizes (50 group, 100 tail) bound the work per loop turn. |
+| 20 | Clocks: envelope `ts`, `timing` stamps, `serverTime` | `ts` is stamped by the facade with `Date.now()` before `append`, so `timing` stamps that copy an envelope `ts` (`heardAt`, `focusedAt`) mean what they mean today. A Rust service stamps `ts` from its system clock in epoch ms. `serverTime` is Redis `TIME` on the shared connection (CTRL-CHECK-004); the transport never substitutes it for `ts`. |
+| 21 | The caller reuses or mutates a `Buffer` it passed to `publishFrame` or `putUpload` | Safe once the call has returned: the bytes were copied synchronously. |
+| 22 | A `Buffer` returned by `readFrames` or `takeUpload` is kept long after the read | Safe: it owns its memory until V8 collects it; a held frame keeps only its own allocation alive. |
+| 23 | A Rust panic inside a transport call | Caught at the boundary; the call rejects `BUS_INTERNAL` and the loop backs off like any read failure. The process does not abort. |
+| 24 | A call after `stop()` | Rejects `BUS_CLOSED`; `publish` logs it at warn and rethrows as any failed write (BUS-STREAM-007). |
+| 25 | An ack refused by Redis (for example `NOGROUP` after the group was destroyed) | Reported in the next `readGroup`'s `ackErrors`, logged at warn `ack failed`, not retried; the same read most likely fails with `NOGROUP` too and backs off. |
+| 26 | Events path latency or CPU worse than TypeScript while the frames path passes the gate | The gate is missed and the native transport is not merged (Measurement gate). |
 
 ## Event catalogue (25 types; 26 with `speech.partial`)
 
@@ -177,7 +394,7 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 - Pure schema tests (run without Redis): catalogue and shape checks for the region events, `service.heartbeat`, `service.lifecycle`, `control` (target, pause, resume), the injection flags, `inject.request`, `inject.result`, plus the `startHeartbeat`/`tracked` tests that use an in-memory recorder (control-plane behavior).
 - Redis integration tests (auto-skip when no Redis at `REDIS_URL`, probed by top-level `await redisUp()` at `bus.test.ts:7-10,42`): round trip, validate-before-write, handler-throw-is-acked, `recent` ordering and undecodable-skip, `tail`, `stop()` interrupting blocked reads, heartbeat routing, `recentHealth` / `tailHealth`, `resetGroup`.
 - Each integration test runs inside `scratch()`, which gives it its own stream pair through `streamPrefix` (BUS-STREAM-008): the test never reads or writes `cohost:events` or `cohost:health`, and the `finally` stops every bus and deletes the streams and their groups whether the body passed, failed or timed out. Waits are on `onReady`, on tails started from id `0`, or on `within`, which fails the test after a timeout, so a failure cannot hang the run.
-- `packages/bus/test/resilience.test.ts` runs `Bus` against scripted fake Redis connections injected through `BusOptions.connect` (start modes, read retry and backoff, `XACK` failure, tail handlers, publish failure), and `packages/bus/test/shutdown.test.ts` spawns the shutdown fixtures; neither needs a Redis server.
+- `packages/bus/test/resilience.test.ts` runs `Bus` against scripted fake `BusTransport`s injected through `BusOptions.transport` (start modes, read retry and backoff, `XACK` failure, tail handlers, publish failure), and `packages/bus/test/shutdown.test.ts` spawns the shutdown fixtures; neither needs a Redis server.
 - Every test carries an `@spec` annotation; the arrow doc's Spec Coverage table is generated from them.
 - Not covered by any test: MAXLEN trimming (BUS-STREAM-002), the consumer name format (BUS-STREAM-005), the full `chat.message` shape (BUS-EVT-002) and the shapes of `vision.summary`, `speech.heard`, `brain.say`, `brain.status`, `voice.utterance`, `avatar.state` (apart from BUS-EVT-018) and the `Emotion` fields (BUS-EVT-012 to 019; `bus.test.ts:321-333` parses some of them only to check the injection flags), sequential delivery (BUS-SUB-006), decode drops inside `subscribe` (only `recent` covers BUS-SUB-007), the `beforeShutdown` timeout, and the rest of `packages/testing` beyond the ids (BUS-TEST-001 to 010 are exercised only indirectly by service tests).
 
@@ -186,7 +403,7 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
 | Upload bytes | A plain Redis string `cohost:upload:<id>` with a TTL, written by `putUpload` and read-and-deleted by `takeUpload` (`GETDEL`), on the bus's publish connection; the event carries only the id | Base64 in the event; an HTTP fetch from the dashboard | The stream is capped at 20000 entries and replayed to every group and `/ws` backfill, so megabytes do not belong on it; containers cannot always reach the host, but all of them reach Redis. A TTL means a key nobody reads (service down) expires by itself. |
-| Pending drain | Read this consumer's pending entries batch by batch, the cursor following the last id seen, until a read returns none | One batch only; always re-read from `0` | A cursor that follows the ids ends even when an entry cannot be acked and so stays pending; re-reading from `0` would loop on it (BUS-SUB-003). |
+| Pending drain | Read this consumer's pending entries batch by batch, the cursor following the last id seen, until a read returns none; on the native transport a drain runs at the start of `subscribe` and again after every read failure | One batch only; always re-read from `0` | A cursor that follows the ids ends even when an entry cannot be acked and so stays pending; re-reading from `0` within a drain would loop on it (BUS-SUB-003). |
 | Stop during a handler | The running handler finishes; its entry is not acked and the rest of the batch is neither handled nor acked | Ack on the closed connection; cut the handler short | `stop()` closes the connections, so an ack would fail on a dead socket; an unacked entry is at most once in effect because the next process has a new consumer name (BUS-SUB-013, BUS-SUB-008). |
 | A `Bus` is single-use | `stop()` is instance-wide and final; one instance is never restarted | Reset `stopped` on a new `subscribe` | Every service builds one bus for its life and stops it once at shutdown; restart support would add states nothing uses. |
 | Streams for tests | `BusOptions.streamPrefix` names an instance's stream pair; integration tests each use their own and delete it | Production keys with unique group names and best-effort cleanup | Tail and `recent` read the whole stream, so group names alone cannot keep a test off other traffic in a shared dev Redis (BUS-STREAM-008). |
@@ -201,7 +418,7 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 | Handler failure | Log, ack, continue | Leave pending and retry; dead-letter stream | Owner decision 2026-11-01: delivery is at most once, and a poison event must not wedge a live co-host. Pinned by the XPENDING assertion at `bus.test.ts:56-81`. |
 | Delivery across restarts | At most once: a dead process's unacknowledged entries are not redelivered (BUS-SUB-008) | At least once via stable consumer names plus `XAUTOCLAIM` of dead consumers' pending entries | Owner decision 2026-11-01: nearly every subscriber wants only fresh input and handlers already ack on failure, so redelivery would only replay a line the co-host has moved past; the in-process pending drain stays. |
 | Start position after a restart | Explicit per-subscription start mode: `latest` resets the group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber `latest` (BUS-SUB-002, BUS-SUB-010, BUS-SUB-011) | `fromNow` that only positions a new group (an existing group always resumes); leave the reset to control-plane `fresh` starts | Owner decision 2026-11-01: a compose or crash restart must not make the co-host speak, react to or animate stale events, while memory still stores what it missed. Putting the choice in the subscription makes it hold for every restart path, not only control-plane starts. |
-| Subscribe and tail read failures | Log and retry with a capped, growing delay; guard tail handlers (BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004) | Reject the promise and let the process crash for compose to restart; leave reconnection to ioredis alone | Owner decision 2026-11-01: an unhandled rejection ends a Node 22 process, and a crash-restart loop hides the cause behind a container restart instead of a log line. |
+| Subscribe and tail read failures | Log and retry with a capped, growing delay; guard tail handlers (BUS-SUB-009, BUS-TAIL-003, BUS-TAIL-004) | Reject the promise and let the process crash for compose to restart; leave reconnection to the Redis client alone | Owner decision 2026-11-01: an unhandled rejection ends a Node 22 process, and a crash-restart loop hides the cause behind a container restart instead of a log line. |
 | `onShutdown` with several registrations | One sequence: hooks once, every callback to completion with errors logged, exit 0 once; synchronous hook throws treated like rejections (SHARED-LIFE-004, SHARED-LIFE-005) | Each registration exits on its own; exit non-zero when a callback fails | Owner decision 2026-11-01: services such as eyes and ears register more than one cleanup, and a failing cleanup must not skip the others; exit 0 keeps compose from treating a deliberate stop as a crash. |
 | Per-kind `inject.request` completeness | Checked by each target service's `inject.ts`, which answers `inject.result` | Enforce `url` / `text` per `kind` in the bus schema | Owner decision 2026-11-01: the target service already validates and reports a readable failure to the dashboard; a schema rejection would only surface as a publish error. (Former BUS-EVT-011 is retired; the number is not reused.) |
 | Ownership of heartbeat transport and shutdown mechanics | event-bus owns `publishHealth` / the `cohost:health` stream (BUS-STREAM-004, BUS-HEALTH-001 to 004) and the `onShutdown` / `beforeShutdown` sequence (BUS-STOP-001 to 006); control-plane owns heartbeat meaning and the heartbeat's `beforeShutdown` registration (SHARED-LIFE-010) | Restate the same statements in both segments | Owner decision 2026-11-01: one spec line per behaviour; the code entry points carry one segment's IDs. |
@@ -212,7 +429,33 @@ Added by the `add-test-injection` change. `injected` marks an event that came fr
 | Test double | `FakeBus` implements only the publish and health halves, with real zod validation | Mock Redis; full in-memory bus | Comment `packages/testing/src/index.ts:42`: it "validates like the real Bus, records instead of talking to Redis". Only those halves are needed: region classes take `Publisher` (`Pick<Bus, "publish">`) the heartbeat helper needs only `publishHealth`, and `recentHealth` lets a test read back what was published as a reader would, so a test drives a region by calling it directly with `event(...)` and asserts on what it published. Code that reads the bus (dashboard feed, controller) takes a narrower `Pick<Bus, ...>` and its tests supply their own fakes. |
 | Path timing | An optional `timing` object of epoch-ms stamps on `speech.heard`, `vision.summary`, `attention.focus` and `brain.say`, one schema for the speech and vision paths, extended stage by stage; publish times of every other event come from the envelope `ts` (BUS-STREAM-001) | A separate vision timing schema (twice the carry-over rules for the same chain); a new `latency.sample` event published by the last stage; a top-level timing field on every event type; a trace id with a separate timing store; monotonic clock stamps | Additive fields leave every old publisher and reader valid and add no event type (the catalogue stays 24). A separate event or store needs a join key the chain does not have: `attention.focus` carries no id of the `speech.heard` it answers, so the stamps travel with the events themselves. Epoch ms, not a monotonic clock, because a monotonic reading is meaningful only inside one process and the stages run in different ones; the services share one host clock (HLD, Speech-path latency and Vision-path latency), so a stamp difference is a duration up to that clock's own steps. A publisher on another host (a Windows helper against WSL services, say) can disagree with that clock; the reader excludes any resulting negative duration (CTRL-LAT-007) and a skewed but positive one is not detectable. |
 | Where the stale rule lives | In the event bus package, with the partial's own contract, as a constant and a pure function | In ears (it cannot know what consumers hold); in the dashboard, the only UI | Staleness is a property of the event contract that every consumer, today none, would share; the dashboard has no row for partials yet and would only copy it. 5000 ms is several partial steps (default 1000 ms) so a slow backend's gap between partials is not mistaken for an ended utterance. |
+| Split between Rust and TypeScript | Rust owns transport (connections, commands, ack batching, key and stream naming, caps, frame codec, tag grammar); the TS facade owns validation, decode, the envelope and every loop's control flow | Rust validates too, from generated schemas; Rust owns the read loops and calls handlers through threadsafe functions | zod is the one registry and `FakeBus` plus the service tests depend on it; generating Rust schemas for the whole catalogue is a project of its own (Deferred). Keeping loop control in TS keeps BUS-SUB-* and BUS-TAIL-* where they are implemented and tested today, and Rust never re-enters JavaScript, so there is no callback lifetime, re-entrancy or handler-await protocol across the boundary. The cost is one boundary crossing per batch, which batching makes small. |
+| Facade kept | `Bus` keeps its public API; only the test seam changes | A new native-shaped API that services adopt | 49 publish and 13 subscribe call sites, `FakeBus` and every `Pick<Bus, ...>` type stay untouched, so the change is confined to this segment and its benchmark compares like with like. |
+| Test seam | A `BusTransport` interface at batch and command granularity, implemented by the binding and by test fakes | Keep faking ioredis connections; fake the napi module's raw exports; test the facade only against a real Redis | The facade's decisions (start mode, drain cursor, backoff, ack after handler, stop) are made on transport results, so a fake at that level scripts exactly the cases the resilience tests need without imitating a Redis client. Named `BusTransport` because `Transport` already names a connector capability's transport. |
+| Node binding | napi-rs | neon; a C ABI with `ffi-napi` or `koffi`; a sidecar process over a socket | napi-rs uses Node-API, which is ABI-stable across Node versions, maps Rust futures to Promises on its tokio integration and builds with `@napi-rs/cli`. neon covers the same ground with a smaller async story; an FFI library adds a per-call marshalling cost and an unmaintained-native-dependency risk; a sidecar adds a hop per event. |
+| Native language | Rust | Go; C++; Zig | A Go shared library cannot load into Node in-process without cgo and a second runtime and garbage collector in the process; Rust has no runtime to host, mature async Redis and Node-API crates, and the crate is reused unchanged by Rust services. C++ and Zig would give up memory safety at the boundary for no gain here. |
+| Redis client crate | `redis` (redis-rs) with tokio multiplexed connections | `fred`; a hand-written RESP client | redis-rs is the most widely used client, supports pipelines, multiplexing and stream commands, and is what a Rust service would pick anyway. A hand-written client would own protocol bugs for no measured benefit. |
+| One path | The TS Redis client is removed when the native transport merges; no fallback, no flag | Keep ioredis as a fallback or behind a switch | Pre-alpha: nothing is deployed that a second path would protect, and two transports would double the behaviour this segment must specify and test. The measurement gate decides before merge whether the native transport replaces the TS one at all. |
+| Ack batching | Queue acks and send them in the next read's pipeline | One awaited XACK per entry; a timer-driven flush | Per-entry XACK costs a round-trip per entry; tying the flush to the next read keeps the ack-after-handler order and at-most-once semantics, and needs no timer. |
+| Addon loading | One fixed path beside the package, linux-x64-gnu, no fallback | Prebuilt binaries for many platforms (macOS, arm64, Windows); a search path; an environment override | Every deployment is the Debian Docker image, the ubuntu CI or WSL; one path makes a load failure unambiguous, and each extra platform would add a build target and a CI leg nothing deployed needs. |
+| Shared-connection commands while Redis is down | Reject with `BUS_CONNECTION` at once from a failure until a reconnect succeeds; only the first connect after construction is waited for | Queue and wait a bounded time for the reconnect (the ioredis behaviour: queue, give up after three reconnect attempts) | A heartbeat or frame that cannot go out now is stale by the time Redis returns, and a queue only delays the failure the caller must log anyway; rejecting at once puts each failure in the log when it happens. |
+| Pending entries after a read failure | Return to cursor `0` and drain this consumer's pending entries after every read failure | Drain only at the start of `subscribe`, losing entries whose reply was lost | Late delivery over loss: an entry Redis already assigned to this consumer is one the co-host would otherwise silently miss within one process lifetime; queued acks precede the drain read, so handled entries are not repeated. |
+| Acks queued at `stop()` | `close()` flushes them on the shared connection, so `stop()` is `Promise<void>` and the shutdown sequence awaits it | Keep `stop()` synchronous and leave up to one batch of handled entries pending | Pending lists would grow by a batch on every shutdown under consumer names never used again; one extra round-trip at shutdown avoids that. |
+| Non-UTF-8 envelope fields | The entry is poison: dropped and acked without a log line | Decode lossily, replacing invalid bytes with U+FFFD (the ioredis behaviour) | A lossy decode can deliver text the publisher never wrote; no cohost publisher writes non-UTF-8, so such an entry comes from a foreign writer and is treated like any other undecodable entry (BUS-SUB-007). |
+| Frame size and alignment on publish | `publishFrame` rejects a `pcm` over `MAX_FRAME_BYTES` or with an odd byte count with `BUS_INVALID`, writing nothing | Write it and let every consumer drop it | The producer is the one place that can fix a bad frame; writing it would only spend stream space and make every consumer count a drop. |
+| Gate scope | The gate covers the frames path and the events path (CPU and p99 on both) | Frames path only, events path reported | Every domain event rides the events path; a transport that slows it would move latency from audio onto the speech and chat chain. |
 | Partials as a separate event | `speech.partial` is its own type; `speech.heard` stays the sole final event | A `final: boolean` flag on `speech.heard`; `partial` events reusing `speech.heard` with `utteranceId`; no partials on the bus | Every consumer of `speech.heard` (salience, affect, memory, cortex, the dashboard) treats each one as a finished utterance, so a flagged partial would need all of them to filter it, and one that forgot would answer half a sentence. A separate type is ignored by default because consumer groups name the types they read; the cost is one more catalogue entry. |
+
+## Cross-segment impacts
+
+Work the native transport requires in other segments, each to be specified there before it is built:
+
+- [deployment](../deployment/deployment-design.md): the Dockerfile gains a Rust `native` stage and stops being TypeScript-only (DEPLOY-IMG-001); the test workflow installs a pinned Rust toolchain action and runs `cargo fmt`, `clippy` and `test` (DEPLOY-CI-*, action pinning DEPLOY-CI-009); compose-smoke builds the new image; the `.node` build output joins `.gitignore` and `.dockerignore`.
+- [control-plane](../control-plane/control-plane-design.md): `packages/control/test/healthcheck.test.ts` moves from faking the Redis connection through `BusOptions.connect` to a `BusTransport` fake for `serverTime`; `cohostctl`'s `failFast` behaviour holds on the native transport (BUS-STREAM-009, CTRL-CHECK-004).
+- [connections](../connections/connections-design.md): its Open Question 3 (where the connector client library lives) is answered by this design (codec, tag grammar and key naming in `crates/cohost-bus`, re-exported by `@cohost/bus`); CONN-AUD-002 gains producer-side validation: `publishFrame` rejects a frame whose `pcm` exceeds `MAX_FRAME_BYTES` or has an odd byte count with `BUS_INVALID`, writing nothing, and every frame producer handles that rejection.
+- [shared-runtime](../shared-runtime/shared-runtime-design.md): `Bus.stop()` returns `Promise<void>` (it flushes queued acks), and every shutdown callback that stops a bus awaits it (SHARED-LIFE-*).
+- [ears](../ears/ears-design.md) and the [dashboard](../dashboard/dashboard-design.md) feed: a read during a Redis outage rejects at once instead of waiting inside the client, so `onRead` reports a failure each backoff interval and the dependency turns `down` sooner; their dependency-state tests are checked against that timing.
+- [mouth](../mouth/mouth-design.md): its frame producer handles a `BUS_INVALID` rejection from `publishFrame`; it may reuse a frame `Buffer` once `publishFrame` returns.
 
 ## Open Questions & Future Decisions
 
@@ -224,5 +467,7 @@ None.
 - Owned elsewhere but exported from this package: `packages/bus/src/heartbeat.ts` (see [control-plane](../control-plane/control-plane-design.md)).
 - Segments depended on: [config](../config/config-design.md) (`urls.redis`, `Logger`, `Emotion`; bus -> config).
 - Segments that depend on this one: every service segment ([chat](../chat/chat-design.md), [eyes](../eyes/eyes-design.md), [ears](../ears/ears-design.md), [mouth](../mouth/mouth-design.md), [salience](../salience/salience-design.md), [affect](../affect/affect-design.md), [memory](../memory/memory-design.md), [cortex](../cortex/cortex-design.md), [voice](../voice/voice-design.md), [avatar](../avatar/avatar-design.md), [dashboard](../dashboard/dashboard-design.md)), [control-plane](../control-plane/control-plane-design.md), and [working-memory](../working-memory/working-memory-design.md) (type import). Services take `Publisher` (`Pick<Bus, "publish">`) in their region classes, e.g. `services/affect/src/affect.ts:9`, `services/eyes/src/eyes.ts:1`.
-- External: `ioredis` ^5.4.0 (Redis Streams commands), `zod` ^3.24.0 (`packages/bus/package.json`), Redis server.
+- External: the Rust `redis` crate (redis-rs) on `tokio` in `crates/cohost-bus`, `napi` / `napi-derive` and `@napi-rs/cli` in `crates/cohost-bus-node`, `zod` ^3.24.0 (`packages/bus/package.json`), Redis server. Crate and package versions are taken from their registries when the crates are created.
+- HLD: [Native layer](../../high-level-design.md#native-layer) and the Inter-service transport row of Key Design Decisions.
+- Benchmark: `scripts/dev/bus-bench.ts` (the measurement gate).
 - OpenSpec (frozen, historical): `openspec/specs/bus/spec.md` (baseline, 12 requirements, includes the archived deltas); deltas `openspec/changes/archive/2026-11-01-add-service-health/specs/bus/spec.md`, `openspec/changes/archive/2026-11-01-add-service-control/specs/bus/spec.md`, `openspec/changes/archive/2026-11-01-add-test-injection/specs/bus/spec.md` (no bus delta in `add-isolated-backends`). `packages/testing` has no OpenSpec capability.

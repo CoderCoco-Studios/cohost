@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 86 specs: 85 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The LLD has one open question (a stop while a think is in flight).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 88 specs: 87 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The LLD has one open question (a stop while a think is in flight).
 
 ## Spoken fallback line
 
@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (86 specs, prefix `CTX`: 85 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (88 specs, prefix `CTX`: 87 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -82,7 +82,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 2. `prompt.ts` — `buildMessages` (system + user prompt) and `parseReply` (emotion/gesture tags).
 3. `critic.ts` — `cortex.critic` `Module` hook (rules pass-through, llm or http veto/rewrite).
 4. `startup.ts` — `waitForLlm` ping loop (infinite, reports degraded), `startCortex` (idle, group reset, subscribe at `latest`, then `ready`), `trackLlm` (every `chat` outcome feeds `deps.llm`).
-5. `health.ts` — heartbeat spec (`mode`, `deps.llm`).
+5. `health.ts` — heartbeat spec (`mode`, `deps.llm`); `main.ts` adds the critic hook's `hook.cortex.critic` dependency and pings it (`CTX-HEALTH-006`, `CTX-HEALTH-007`).
 6. `main.ts` — `cortexMain` on the shared `runService` bootstrap: provider, critic, `Cortex`, `waitForLlm`, `startCortex`; `index.ts` only calls `runCortex()`.
 
 ## Spec Coverage
@@ -102,9 +102,9 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Interruptible speech | CTX-REPLAN-001 | 0 | 1 | 0 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 |
 | Startup and shutdown | CTX-START-001 to CTX-START-005 | 5 | 0 | 0 |
-| Health | CTX-HEALTH-001 to CTX-HEALTH-005 | 5 | 0 | 0 |
+| Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
 
-**Summary:** 86 specs: 85 implemented, 1 deferred, 0 gaps.
+**Summary:** 88 specs: 87 implemented, 1 deferred, 0 gaps.
 
 ## Key Findings
 

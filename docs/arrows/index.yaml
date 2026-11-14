@@ -205,7 +205,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "126 specs, all [x]. No open gaps."
+    next: "128 specs, all [x]. No open gaps."
     drift: null
 
   cortex:
@@ -217,7 +217,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "86 specs: 85 [x], 1 [D] (CTX-REPLAN-001). No open gaps."
+    next: "88 specs: 87 [x], 1 [D] (CTX-REPLAN-001). No open gaps."
     drift: null
 
   voice:

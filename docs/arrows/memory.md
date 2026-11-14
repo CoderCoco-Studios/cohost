@@ -4,7 +4,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — 126 specs: 126 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). Retired: `MEM-VIEWER-004` and `MEM-VIEWER-005`; numbers are not reused. Design: the LLD, including its Viewer notes sections and edge cases.
+**AUDITED** — 128 specs: 128 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). Retired: `MEM-VIEWER-004` and `MEM-VIEWER-005`; numbers are not reused. Design: the LLD, including its Viewer notes sections and edge cases.
 
 ## References
 
@@ -15,7 +15,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (126 specs, prefix `MEM`: 126 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/memory/memory-specs.md (128 specs, prefix `MEM`: 128 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/memory/test/admin.test.ts
@@ -72,7 +72,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 1. `region.ts` — event handler shared by the `memory` (writes) and `memory-recall` (reads) consumer groups; injection filtering via `skipInjected`. The third group, `memory-notes`, has its own handler in `capture.ts`.
 2. `store.ts` — Postgres/pgvector `MemoryStore` (tables `memories`, `viewers`, `viewer_notes`, `viewer_note_deletions`, `viewer_links`, `meta`; 2-minute recency exclusion; `min_similarity` filter; per-viewer note commits guarded by note versions; an advisory lock for consolidation) and the `MemoryBackend` interface.
 3. `fake-store.ts` + `backend.ts` — in-process `InMemoryStore` (it keeps viewer notes, deletion records and the regular and subscriber flags too, and embeds with `@cohost/llm`'s `HashEmbedder`); config-driven store and embedder factories.
-4. `health.ts` — dependency tracker (`postgres`, `ollama`, `n/a` when unused) and mode (`live` only for postgres + ollama).
+4. `health.ts` — dependency tracker (`postgres`, `ollama`, `n/a` when unused), the notes hooks' `hook.memory.*` dependencies (`attachHooks`) and mode (`live` only for postgres + ollama and no hook on the mock provider).
 5. `index.ts` + `startup.ts` — wiring, and the injectable startup sequence (Ollama ping, Postgres init retry with no retry on a dimension mismatch, fatal after the 21st failure, `degraded` while waiting, subscriptions with start mode `resume`, heartbeat).
 6. `reflect.ts` + `reflect-run.ts` + `cursor.ts` + `learned.ts` — offline reflection CLI (wiring), the injectable reflection pass, the `(ts, id)` cursor, and the pure text helpers.
 7. `notes.ts` — viewer-note types and the shared arithmetic (effective strength, reinforcement, default hints, cosine).
@@ -93,7 +93,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 | Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
 | Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
 | Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 6 |
-| Health | MEM-HEALTH-001 to MEM-HEALTH-007 | 7 | 0 | 0 | 7 |
+| Health | MEM-HEALTH-001 to MEM-HEALTH-009 | 9 | 0 | 0 | 9 |
 | Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
 | Viewer notes: notes and strength | MEM-NOTE-001 to MEM-NOTE-012 | 12 | 0 | 0 | 12 |
 | Viewer notes: regular status and viewer row | MEM-REG-001 to MEM-REG-005 | 5 | 0 | 0 | 5 |
@@ -103,7 +103,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 | Viewer notes: owner operations | MEM-ADMIN-001 to MEM-ADMIN-007 | 7 | 0 | 0 | 7 |
 | Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 9 |
 
-**Summary:** 126 of 126 specs implemented; 0 deferred; 0 gaps. 123 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-REFLECT-009, MEM-VOICE-010 (verified by glue, configuration or a test that cites a neighbouring ID).
+**Summary:** 128 of 128 specs implemented; 0 deferred; 0 gaps. 125 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-REFLECT-009, MEM-VOICE-010 (verified by glue, configuration or a test that cites a neighbouring ID).
 
 ## Key Findings
 

@@ -296,6 +296,8 @@ with that provider `llm` reads `n/a` (not probed) until the first reply outcome.
 marker is a standing heartbeat `detail` (`CTX-HEALTH-004`) that `HeartbeatSpec`
 (`packages/shared/src/lifecycle.ts`) carries and `cortexHealth` sets for a nominal-ping provider.
 
+The critic hook reports through the same `hookHealth` and `pingHooks` as the other region hooks (region-hooks, HOOK-HEALTH-004, HOOK-HEALTH-005). `cortexMain` builds the critic, publishes `hookHealth([critic])` to a sink the bootstrap's `health` reads, and starts `pingHooks([critic], log)` without waiting. The heartbeat adds `hook.cortex.critic` to `deps` for an llm or http critic (nothing for a rules critic) and is `mock` when the provider is `mock` or the critic hook sits on the mock provider (`CTX-HEALTH-006`, `CTX-HEALTH-007`). The hook is a soft dependency: a down critic leaves the cortex speaking, since its fallback passes the line.
+
 Shutdown: the bootstrap runs the teardown steps (`Cortex.stop` releases the line timers),
 then stops the bus; the `stopping` heartbeat is the heartbeat module's job. A pause also
 shows as the heartbeat `detail` `paused` (`CTX-HEALTH-005`). Errors thrown inside

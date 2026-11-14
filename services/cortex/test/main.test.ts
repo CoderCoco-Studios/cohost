@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { EventType, Handler, SubscribeOptions } from "@cohost/bus";
+import { createChatProvider } from "@cohost/llm";
 import { runCortex, type CortexBus } from "../src/main.js";
 
 /** A FakeBus that records the consumer-group calls the cortex makes. */
@@ -91,4 +92,37 @@ test("main: an attention.focus delivered through the subscription gets an answer
   await waitFor(() => bus.of("brain.say").length === 1, "brain.say");
   assert.ok(bus.of("brain.say")[0]!.text.length > 0);
   for (const fn of shutdown) await fn();
+});
+
+test("main: the heartbeat carries a hook dependency for an llm critic and none for a rules critic", async () => { // @spec CTX-HEALTH-006, CTX-HEALTH-007
+  const llmBus = new GroupBus();
+  const llm = env(llmBus, { brain: { cortex: { critic: { kind: "llm" } } } });
+  await runCortex({ ...llm.env, log: recordingLog().log });
+  await waitFor(() => states(llmBus).includes("ready"), "ready heartbeat");
+  const ready = llmBus.health.find((h) => h.state === "ready")!;
+  assert.equal(ready.mode, "mock");
+  assert.ok("hook.cortex.critic" in (ready.deps ?? {}), "the critic hook is a dependency");
+  assert.ok("llm" in (ready.deps ?? {}), "the model dependency stays");
+  for (const fn of llm.shutdown) await fn();
+
+  const rulesBus = new GroupBus();
+  const rules = env(rulesBus, { brain: { cortex: { critic: { kind: "rules" } } } });
+  await runCortex({ ...rules.env, log: recordingLog().log });
+  await waitFor(() => states(rulesBus).includes("ready"), "ready heartbeat");
+  assert.ok(!("hook.cortex.critic" in (rulesBus.health.find((h) => h.state === "ready")!.deps ?? {})));
+  for (const fn of rules.shutdown) await fn();
+});
+
+test("main: the critic hook is pinged once at startup and an unreachable provider is warned about", async () => { // @spec CTX-HEALTH-007
+  const saved = process.env.OLLAMA_URL;
+  process.env.OLLAMA_URL = "http://127.0.0.1:1"; // nothing listens: the critic hook runs on ollama
+  try {
+    const bus = new GroupBus();
+    const { env: e, shutdown } = env(bus, { llm: { provider: "ollama" }, brain: { cortex: { critic: { kind: "llm" } } } });
+    const { log, lines } = recordingLog();
+    await runCortex({ ...e, createChatProvider: () => createChatProvider(mockCfg().llm), log }); // the cortex's own model answers; only the critic hook's ollama does not
+    await waitFor(() => lines.some((l) => l.level === "warn" && /hook provider unreachable/.test(l.msg ?? "")), "critic ping warning");
+    assert.equal(lines.filter((l) => /hook provider unreachable/.test(l.msg ?? "")).length, 1);
+    for (const fn of shutdown) await fn();
+  } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
 });

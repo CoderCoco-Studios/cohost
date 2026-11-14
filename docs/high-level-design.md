@@ -522,7 +522,9 @@ direction.
   the dependencies that use its tags `down` and nothing else.
 - **Region hooks.** salience.scorer, affect.appraiser, cortex.critic,
   memory.capture and memory.consolidator each run as rules / llm / http per
-  config, falling back to rules on any failure.
+  config, falling back to rules on any failure. Each of the five reports its
+  health the same way: a `hook.<name>` dependency and its mode in the heartbeat
+  of the service that runs it, and a startup ping of its backend.
 - **Service health and control.** Every service publishes `service.heartbeat`
   to `cohost:health`; the control plane derives up / degraded / stale / down /
   crash-looping and the dashboard shows it. Start / stop / restart go through
@@ -768,8 +770,9 @@ what to measure once it has. All targets are proposals.
    mentions; a rising ratio over time means it is getting noisy.
 4. **Hook health.** Fallback rate (fallbacks per hook call, counted per
    occurrence rather than from the logger, which throttles to one warning per
-   30 s) for `salience.scorer`, `affect.appraiser` and `cortex.critic` is
-   under 5% of that hook's calls in any hour of steady-state streaming.
+   30 s) for `salience.scorer`, `affect.appraiser`, `cortex.critic`,
+   `memory.capture` and `memory.consolidator` is under 5% of that hook's calls
+   in any hour of steady-state streaming.
 5. **Memory that sticks.** After the reflection pass, the share of
    `## Learned` bullets the owner keeps rather than deletes; recalled
    memories appear in the prompt for at least half of replies to regulars.

@@ -47,3 +47,17 @@ test("either non-default backend makes the mode mock; the other dep is still tra
   assert.equal(hbs[1]!.mode, "mock");
   assert.deepEqual(hbs[1]!.deps, { postgres: "ok", ollama: "n/a" });
 });
+
+// @spec MEM-HEALTH-008
+test("attached hooks add their dependencies and make the mode mock while one runs on the mock provider", async () => {
+  const h = new MemoryHealth();
+  h.setPostgres(true); h.setOllama(true);
+  let mode: "live" | "mock" = "live";
+  h.attachHooks({ mode: () => mode, deps: () => ({ "hook.memory.capture": "ok", "hook.memory.consolidator": "down" }) });
+  let hbs = await runHeartbeat(h.spec);
+  assert.deepEqual(hbs[1]!.deps, { postgres: "ok", ollama: "ok", "hook.memory.capture": "ok", "hook.memory.consolidator": "down" });
+  assert.equal(hbs[1]!.mode, "live");
+  mode = "mock";
+  hbs = await runHeartbeat(h.spec);
+  assert.equal(hbs[1]!.mode, "mock");
+});

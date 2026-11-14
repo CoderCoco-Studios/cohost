@@ -603,6 +603,8 @@ shows as `degraded` even though `remember`/`recall` swallow the error
 (`MEM-HEALTH-005`). Heartbeat contract and `degraded` derivation are owned by the
 control-plane segment (`packages/shared/src/lifecycle.ts`).
 
+The two hooks the service runs, `memory.capture` and `memory.consolidator`, report through the same `hookHealth` and `pingHooks` as the other region hooks (region-hooks, HOOK-HEALTH-004, HOOK-HEALTH-005). `memoryMain` builds both, hands `hookHealth([capture, consolidator])` to `MemoryHealth` (`attachHooks`), which merges `hook.memory.capture` and `hook.memory.consolidator` into `deps` (nothing for a rules hook) and makes the mode `mock` also while either hook sits on the mock provider, and starts `pingHooks` without waiting (`MEM-HEALTH-008`, `MEM-HEALTH-009`). Only the long-running service has a heartbeat: the one-shot `consolidate` run builds the consolidator hook and the `reflect` run builds none, and neither publishes health.
+
 Shutdown: a teardown step registered with the bootstrap stops the bus then closes the store (`main.ts`); the
 `stopping` heartbeat is sent by the heartbeat package's `beforeShutdown` hook.
 Before closing the store, memory records that a shutdown consolidation run is owed

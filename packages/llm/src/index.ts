@@ -9,8 +9,9 @@
  *   bedrock    Claude via Amazon Bedrock (AWS credentials from the environment)
  *   mock       deterministic offline replies, for isolated runs (never a default)
  *
- * Embeddings always come from Ollama: they're cheap, and switching the chat
- * model must not change the vector size of the memory table.
+ * Embedders (`Ollama`, `HashEmbedder`) are exported here but never follow the chat
+ * provider: memory picks its own with `brain.memory.embedder`, so switching the
+ * chat model never changes the vector size of the memory table.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
@@ -71,15 +72,9 @@ export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec 
   }
 }
 
-/** Embeddings are local Ollama (see header), except the offline hash embedder under the mock provider. */
-export function createEmbedder(cfg: Config["llm"]): Embedder { // @spec LLM-EMBED-003
-  if (cfg.provider === "mock") return new HashEmbedder();
-  return new Ollama(cfg);
-}
-
 // ---------------------------------------------------------------------------
 
-/** Minimal Ollama client. Also the embedder for every configuration. */
+/** Minimal Ollama client. Also the embedder memory uses unless `brain.memory.embedder` is `hash`. */
 export class Ollama implements ChatProvider, Embedder {
   readonly name = "ollama";
   readonly model: string;

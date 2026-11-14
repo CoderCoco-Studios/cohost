@@ -467,10 +467,7 @@ Factories in `services/memory/src/backend.ts`:
 
 - `createMemoryEmbedder(cfg)`: `brain.memory.embedder === "hash"` gives `HashEmbedder`
   from `@cohost/llm` (no network); anything else gives `new Ollama(cfg.llm)`
-  regardless of `llm.provider` (`backend.ts`). This differs from
-  `@cohost/llm`'s own `createEmbedder`, which switches to hash when
-  `llm.provider === "mock"` (`packages/llm/src/index.ts:60-62`); memory does not
-  call `createEmbedder`.
+  regardless of `llm.provider` (`backend.ts`, LLM-EMBED-004).
 - `createStore(cfg, embedder, log)`: `brain.memory.store === "memory"` gives
   `InMemoryStore`, which ignores the supplied embedder; anything else gives the
   Postgres `MemoryStore` (`backend.ts`).

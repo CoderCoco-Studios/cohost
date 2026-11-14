@@ -56,8 +56,8 @@ test("recall respects k", async () => {
 // @spec MEM-BACKEND-005
 test("touchViewer counts per case-insensitive key; first sight is new", async () => {
   const { s } = make();
-  assert.deepEqual(await s.touchViewer("ABC", "Bob"), { msgCount: 1, notes: "", isNew: true, regular: false });
-  assert.deepEqual(await s.touchViewer("abc", "Bobby"), { msgCount: 2, notes: "", isNew: false, regular: false });
+  assert.deepEqual(await s.touchViewer("ABC", "Bob"), { msgCount: 1, isNew: true, regular: false });
+  assert.deepEqual(await s.touchViewer("abc", "Bobby"), { msgCount: 2, isNew: false, regular: false });
 });
 
 // @spec MEM-BACKEND-006

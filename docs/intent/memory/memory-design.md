@@ -122,8 +122,8 @@ co-host frames a viewer ("a regular"); it does not decide whether notes are
 captured or shown: notes are kept for every viewer from their first message
 (see Viewer notes below). `memory.viewer` carries `{user, isNew, msgCount,
 regular}` (`MEM-VIEWER-002`); the threshold is a config value rather than a
-literal in the cortex. The legacy `viewers.notes` text column is no longer read or
-published; it stays in the table so no migration drops data.
+literal in the cortex. Viewer notes live only in `viewer_notes`; the `viewers`
+table has no notes column.
 
 ## Viewer notes
 
@@ -703,7 +703,6 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
 | Sensitive-cooldown concurrency | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a courtesy, not a safety property, and a race costs at most one repeated hint. `MEM-SURF-004` |
-| Legacy `viewers.notes` column | Left in place, unread | drop it in `init` |. Dropping a column is irreversible and the column is empty in practice (nothing ever wrote it). |
 | Postgres health | Every pool query feeds `deps.postgres` through `tracked()`; `degraded` with a detail while waiting for Ollama or Postgres at startup | startup-only flag; stay `starting` while waiting | owner decision 2026-11-01: the heartbeat reflects runtime dependency state, as the cortex does; `MEM-HEALTH-005`, `MEM-HEALTH-007` |
 | Recall k=0 | Short-circuit with no embed or query | query anyway | `config/config.example.yaml` documents `recall_k: 0` as "disables recall"; `store.ts`, `fake-store.ts` |
 | Isolated backend | Separate in-process store that embeds with `@cohost/llm`'s `HashEmbedder` | Its own unsigned hash embedder | One embedder means fake-store tests exercise the vectors hash mode really stores; a second hasher with different tokens, signs and empty-text output made the two disagree. The fake still ignores `brain.memory.embedder` and needs no network. Owner decision (shared-runtime, Hash embedding). |

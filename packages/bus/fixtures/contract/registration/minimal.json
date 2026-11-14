@@ -1,0 +1,50 @@
+{
+  "payload": {
+    "v": 1,
+    "id": "discord",
+    "kind": "discord",
+    "version": "0.1.0",
+    "instance": "i1",
+    "pid": 7,
+    "startedAt": 1700000000000,
+    "intervalMs": 5000,
+    "state": "ready",
+    "capabilities": [
+      {
+        "cap": "audio-in",
+        "tag": "discord",
+        "format": {
+          "rate": 16000,
+          "channels": 1
+        },
+        "ready": true
+      }
+    ]
+  },
+  "valid": true,
+  "parsed": {
+    "v": 1,
+    "id": "discord",
+    "kind": "discord",
+    "version": "0.1.0",
+    "instance": "i1",
+    "pid": 7,
+    "startedAt": 1700000000000,
+    "intervalMs": 5000,
+    "state": "ready",
+    "capabilities": [
+      {
+        "cap": "audio-in",
+        "tag": "discord",
+        "format": {
+          "rate": 16000,
+          "channels": 1
+        },
+        "ready": true,
+        "transport": "stream",
+        "flush": false
+      }
+    ],
+    "detail": ""
+  }
+}

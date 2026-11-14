@@ -36,7 +36,7 @@ async function main(): Promise<number> {
   try {
     return await checkHealth(service, bus);
   } finally {
-    bus.stop();
+    await bus.stop();
   }
 }
 

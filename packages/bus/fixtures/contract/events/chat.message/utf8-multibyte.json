@@ -1,0 +1,16 @@
+{
+  "payload": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "héllo wörld 日本語 🎤"
+  },
+  "valid": true,
+  "parsed": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "héllo wörld 日本語 🎤",
+    "isMod": false,
+    "isSub": false,
+    "mentionsCohost": false
+  }
+}

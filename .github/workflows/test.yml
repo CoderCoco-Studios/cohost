@@ -13,7 +13,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     # Redis lets the bus round-trip test run instead of skipping itself.
     services:
       redis:
@@ -48,5 +48,20 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Install the pinned Rust toolchain
+        # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
       - run: pnpm test

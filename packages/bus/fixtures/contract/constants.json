@@ -1,0 +1,20 @@
+{
+  "FRAME_VERSION": 1,
+  "MAX_FRAME_BYTES": 65536,
+  "AUDIO_MAXLEN": {
+    "in": 3000,
+    "out": 1500
+  },
+  "AUDIO_STREAM_TTL_MS": 60000,
+  "LEASE_INTERVALS": 3,
+  "REGISTRATION_VERSION": 1,
+  "DEFAULT_CONNECTOR_INTERVAL_MS": 5000,
+  "names": {
+    "prefix": "p1",
+    "dir": "in",
+    "tag": "discord",
+    "id": "disc",
+    "audioStream": "p1:audio.in.discord",
+    "connectorKey": "p1:connector:disc"
+  }
+}

@@ -1,46 +1,41 @@
-// Connector registry and audio streams against an in-memory fake Redis: no server required.
+// Connector registry and audio streams on an in-memory fake transport: no server and no Redis commands involved.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transport.js";
 import {
   Bus, ConnectorRegistrar, ConnectorRegistry, FrameSequencer, FrameTracker, watchConnectors, encodeFrame, decodeFrame, parseRegistration, findReady, findOffer,
-  tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type Frame, type Registration, type CapabilityEntry,
+  tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type AudioDirection, type EntryFields, type EventStream, type Frame, type Registration, type CapabilityEntry,
 } from "../src/index.js";
 
-type Entry = [string, (string | Buffer)[]];
-/** Just enough of ioredis for the registry and audio streams. */
-class FakeRedis {
-  kv = new Map<string, { v: string; px?: number }>();
-  streams = new Map<string, Entry[]>();
-  calls: unknown[][] = [];
-  private n = 0;
-  private waiters: ((e: Error) => void)[] = [];
-  async set(k: string, v: string | Buffer, _px: string, ms: number) { this.calls.push(["set", k, v, _px, ms]); this.kv.set(k, { v: String(v), px: ms }); return "OK"; }
-  async get(k: string) { return this.kv.get(k)?.v ?? null; }
-  async del(k: string) { this.calls.push(["del", k]); return this.kv.delete(k) ? 1 : 0; }
-  async mget(...ks: string[]) { return ks.map((k) => this.kv.get(k)?.v ?? null); }
-  async scan(_c: string, _m: string, pattern: string) {
-    const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace("*", ".*") + "$");
-    return ["0", [...this.kv.keys()].filter((k) => re.test(k))] as [string, string[]];
+/** A `FakeTransport` whose registry and audio streams keep state, so the registrar, registry and tails run end to end. */
+class MemTransport extends FakeTransport {
+  /** Registrations by connector id: the JSON written and the lease. */
+  kv = new Map<string, { json: string; leaseMs: number }>();
+  writes = 0;
+  heartbeats: EntryFields[] = [];
+  writeRegistration(id: string, json: string, leaseMs: number) {
+    return this.run("writeRegistration", [id, json, leaseMs], () => { this.writes++; this.kv.set(id, { json, leaseMs }); });
   }
-  async xadd(key: string, ...a: (string | number | Buffer)[]) {
-    this.calls.push(["xadd", key, ...a]);
-    const star = a.indexOf("*");
-    const id = `1-${this.n++}`;
-    const list = this.streams.get(key) ?? [];
-    list.push([id, a.slice(star + 1) as (string | Buffer)[]]);
-    this.streams.set(key, list);
-    return id;
+  readRegistration(id: string) { return this.run("readRegistration", [id], () => this.kv.get(id)?.json ?? null); }
+  deleteRegistration(id: string) { return this.run("deleteRegistration", [id], () => { this.kv.delete(id); }); }
+  listRegistrations() { return this.run("listRegistrations", [], () => [...this.kv.values()].map((v) => v.json)); }
+  append(stream: EventStream, fields: EntryFields) {
+    return this.run("append", [stream, fields], () => { if (stream === "health") this.heartbeats.push(fields); return "1-0"; });
   }
-  async pexpire(k: string, ms: number) { this.calls.push(["pexpire", k, ms]); return 1; }
-  xreadBuffer(...a: unknown[]) {
-    this.calls.push(["xreadBuffer", ...a]);
-    return new Promise((_, rej) => this.waiters.push(rej));
-  }
-  disconnect() { for (const w of this.waiters.splice(0)) w(new Error("Connection is closed.")); }
-  of(m: string) { return this.calls.filter((c) => c[0] === m); }
 }
 
-const busWith = (fake: FakeRedis, prefix = "t") => new Bus("t", undefined, "redis://fake", { connect: () => fake as never, streamPrefix: prefix, retryBaseMs: 5, retryMaxMs: 20 });
+/** A `FakeFrameTransport` that keeps the frames written. */
+class MemFrames extends FakeFrameTransport {
+  appended: { dir: AudioDirection; tag: string; frame: Frame }[] = [];
+  async appendFrame(dir: AudioDirection, tag: string, frame: Frame) {
+    this.record("appendFrame", [dir, tag, frame]);
+    this.appended.push({ dir, tag, frame });
+    return "1-0";
+  }
+}
+
+const busWith = (fake: MemTransport, prefix = "t", frames: FakeFrameTransport = new MemFrames()) =>
+  new Bus("t", undefined, "redis://fake", { transport: fake.factory, frames: frames.factory, streamPrefix: prefix, retryBaseMs: 5, retryMaxMs: 20 });
 const caps = (ready = true): CapabilityEntry[] => [
   { cap: "audio-in", tag: "discord", format: { rate: 16000, channels: 1 }, ready },
   { cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready },
@@ -50,60 +45,60 @@ const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
 // @spec CONN-REG-001, CONN-REG-002, BUS-AUD-002
 test("a registration is JSON under <prefix>:connector:<id> with a lease of three intervals, not a stream entry", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake, "p");
   const r = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "0.1.0", intervalMs: 5000, capabilities: () => caps() });
   await r.tick();
-  const set = fake.of("set")[0]!;
-  assert.equal(set[1], "p:connector:discord");
-  assert.equal(set[3], "PX");
-  assert.equal(set[4], 15000);
-  const reg = JSON.parse(set[2] as string);
+  const set = fake.of("writeRegistration")[0]!;
+  assert.equal(bus.connectorKey("discord"), "p:connector:discord");
+  assert.equal(set.args[0], "discord");
+  assert.equal(set.args[2], 15000);
+  const reg = JSON.parse(set.args[1] as string);
   assert.equal(reg.v, 1);
   assert.equal(reg.id, "discord");
   assert.equal(reg.capabilities[0].transport, "stream");
   assert.deepEqual(Object.keys(reg).sort(), ["capabilities", "detail", "id", "instance", "intervalMs", "kind", "pid", "startedAt", "state", "v", "version"]);
-  assert.equal(fake.streams.size, 0);
-  bus.stop();
+  assert.equal(fake.of("append").length, 0, "not a stream entry");
+  await bus.stop();
 });
 
 // @spec CONN-REG-001
 test("transport http is carried through for audio-in", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const r = new ConnectorRegistrar(bus, { id: "desktop", kind: "desktop", version: "1", capabilities: () => [{ cap: "audio-in", tag: "desktop", format: { rate: 16000, channels: 1 }, ready: true, transport: "http" }] });
   await r.tick();
   assert.equal((await bus.readRegistration("desktop"))!.capabilities[0]!.transport, "http");
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-002
 test("start rewrites the registration every interval", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const r = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", intervalMs: 10, capabilities: () => caps() });
   await r.start();
   await tick(60);
   await r.stop();
-  assert.ok(fake.of("set").length >= 3, `wrote ${fake.of("set").length}`);
-  bus.stop();
+  assert.ok(fake.writes >= 3, `wrote ${fake.writes}`);
+  await bus.stop();
 });
 
 // @spec CONN-REG-003
 test("an orderly stop deletes the registration", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const r = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", capabilities: () => caps() });
   await r.tick();
   assert.equal(fake.kv.size, 1);
   await r.stop();
   assert.equal(fake.kv.size, 0);
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-004
 test("a second instance replaces the registration at once and the first stops registering and does not delete it", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   let displaced = 0;
   const a = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", capabilities: () => caps() }, () => displaced++);
@@ -111,13 +106,13 @@ test("a second instance replaces the registration at once and the first stops re
   await a.tick();
   await b.tick();
   assert.equal((await bus.readRegistration("discord"))!.instance, b.instance);
-  const writes = fake.of("set").length;
+  const writes = fake.writes;
   await a.tick();
   assert.equal(displaced, 1);
-  assert.equal(fake.of("set").length, writes);
+  assert.equal(fake.writes, writes);
   await a.stop();
   assert.equal((await bus.readRegistration("discord"))!.instance, b.instance);
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-005
@@ -134,11 +129,10 @@ test("an unknown capability is ignored and the rest of the registration is used"
 
 // @spec CONN-REG-006
 test("a tag is available only while a live registration offers it ready; the registry is read by key listing", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const a = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", capabilities: () => caps(false) });
   await a.tick();
-  fake.kv.set("t:unrelated", { v: "x" });
   const regs = await bus.listConnectors();
   assert.equal(regs.length, 1);
   assert.ok(findOffer(regs, "audio-in", "discord"));
@@ -147,12 +141,12 @@ test("a tag is available only while a live registration offers it ready; the reg
   await b.tick();
   assert.equal(findReady(await bus.listConnectors(), "audio-in", "mic")!.reg.id, "other");
   assert.equal(findReady(await bus.listConnectors(), "audio-out", "mic"), undefined);
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-006
 test("watchConnectors reports a connector appearing and disappearing without a restart", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const seen: string[][] = [];
   const w = watchConnectors(bus, (regs) => seen.push(regs.map((r) => r.id)), 5);
@@ -164,12 +158,12 @@ test("watchConnectors reports a connector appearing and disappearing without a r
   await tick(30);
   w.stop();
   assert.deepEqual(seen, [[], ["discord"], []]);
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-006
 test("ConnectorRegistry: start awaits the first read, answers offer and ready, and calls listeners on a change", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const reg = new ConnectorRegistry(bus, 5);
   await reg.start();
@@ -190,39 +184,38 @@ test("ConnectorRegistry: start awaits the first read, answers offer and ready, a
   assert.equal(changes, before, "an unsubscribed listener is not called");
   assert.equal(reg.offer("audio-in", "discord"), undefined, "a removed registration is gone from the view");
   reg.stop();
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-REG-007
 test("the heartbeat is published on the health stream by the same tick", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake, "p");
   const r = new ConnectorRegistrar(bus, {
     id: "discord", kind: "discord", version: "1", capabilities: () => caps(),
     heartbeat: (reg) => ({ service: reg.id, instance: reg.instance, pid: reg.pid, version: reg.version, startedAt: reg.startedAt, state: "ready", deps: {}, mode: "live", intervalMs: reg.intervalMs }),
   });
   await r.tick();
-  const hb = fake.streams.get("p:health")!;
-  assert.equal(hb.length, 1);
-  assert.equal(fake.of("set").length, 1);
-  bus.stop();
+  assert.equal(fake.heartbeats.length, 1);
+  assert.equal(fake.writes, 1);
+  await bus.stop();
 });
 
 // @spec CONN-TAG-001, CONN-TAG-002
-test("tags follow the grammar and the reserved ones are refused", () => {
+test("tags follow the grammar and the reserved ones are refused", async () => {
   assert.equal(tagProblem("discord"), null);
   assert.equal(tagProblem("mic-2"), null);
   for (const bad of ["", "Discord", "1mic", "a_b", "x".repeat(33)]) assert.ok(tagProblem(bad), bad);
   for (const r of ["http", "dir", "dashboard", "mouth", "dryrun", "file"]) assert.match(tagProblem(r)!, /reserved/);
-  const bus = busWith(new FakeRedis());
+  const bus = busWith(new MemTransport());
   assert.throws(() => new ConnectorRegistrar(bus, { id: "x", kind: "x", version: "1", capabilities: () => [{ cap: "audio-in", tag: "http", format: { rate: 1, channels: 1 }, ready: true }] }), /reserved/);
   assert.throws(() => new ConnectorRegistrar(bus, { id: "Bad", kind: "x", version: "1", capabilities: () => [] }));
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-TAG-003, CONN-TAG-004
 test("a tag another live connector serves in the same direction is refused and reported degraded; the other direction is independent", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const first = new ConnectorRegistrar(bus, { id: "discord", kind: "discord", version: "1", capabilities: () => [caps()[0]!] });
   await first.tick();
@@ -238,7 +231,7 @@ test("a tag another live connector serves in the same direction is refused and r
   const again = (await bus.readRegistration("rival"))!;
   assert.equal(again.state, "ready");
   assert.equal(again.capabilities.length, 2);
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-AUD-002
@@ -256,52 +249,49 @@ test("a frame round-trips through its stream fields", () => {
 });
 
 // @spec CONN-AUD-001, BUS-AUD-001, CONN-BP-001
-test("frames go to <prefix>:audio.<dir>.<tag> with MAXLEN ~ cap and a refreshed 60 s expiry; publish never touches them", async () => {
-  const fake = new FakeRedis();
-  const bus = busWith(fake, "p");
+test("frames go to the frame transport's audio stream of their direction and tag; publish never writes them", async () => {
+  const fake = new MemTransport();
+  const frames = new MemFrames();
+  const bus = busWith(fake, "p", frames);
   await bus.publishFrame("in", "discord", frame());
   await bus.publishFrame("out", "discord", frame({ rate: 48000, ch: 2, utt: "u" }));
-  const [inn, out] = fake.of("xadd");
-  assert.deepEqual(inn!.slice(0, 5), ["xadd", "p:audio.in.discord", "MAXLEN", "~", AUDIO_MAXLEN.in]);
-  assert.equal(AUDIO_MAXLEN.in, 3000);
-  assert.deepEqual(out!.slice(0, 5), ["xadd", "p:audio.out.discord", "MAXLEN", "~", 1500]);
-  assert.deepEqual(fake.of("pexpire").map((c) => [c[1], c[2]]), [["p:audio.in.discord", 60000], ["p:audio.out.discord", 60000]]);
-  await bus.publish("chat.message", { id: "1", author: "a", text: "hi", platform: "test" } as never).catch(() => {});
-  assert.ok(![...fake.streams.keys()].some((k) => k === "p:events" && fake.streams.get(k)!.some((e) => e[1].includes("pcm"))));
-  bus.stop();
+  assert.deepEqual(frames.of("appendFrame").map((c) => [c.args[0], c.args[1]]), [["in", "discord"], ["out", "discord"]]);
+  assert.equal(bus.audioStream("in", "discord"), "p:audio.in.discord");
+  assert.equal(bus.audioStream("out", "discord"), "p:audio.out.discord");
+  assert.deepEqual(AUDIO_MAXLEN, { in: 3000, out: 1500 });
+  await bus.publish("chat.message", { platform: "twitch", user: "a", text: "hi" });
+  assert.equal(frames.of("appendFrame").length, 2, "publish writes no frame");
+  assert.deepEqual(fake.of("append").map((c) => c.args[0]), ["events"]);
+  await bus.stop();
 });
 
 // @spec CONN-BP-002
-test("a consumer reads live: plain XREAD from $, no group, no ack", async () => {
-  const fake = new FakeRedis();
-  const bus = busWith(fake, "p");
+test("a consumer reads live: its own reader's readFrames from $, no group, no ack", async () => {
+  const fake = new MemTransport();
+  const frames = new MemFrames();
+  const bus = busWith(fake, "p", frames);
   const done = bus.tailAudio("in", "discord", () => {});
   await tick(10);
-  const call = fake.of("xreadBuffer")[0]!;
-  assert.deepEqual(call.slice(1), ["COUNT", 100, "BLOCK", 5000, "STREAMS", "p:audio.in.discord", "$"]);
-  assert.equal(fake.of("xgroup").length + fake.of("xack").length, 0);
-  bus.stop();
+  assert.deepEqual(frames.of("readFrames")[0]!.args, ["in", "discord", "$", 100, 5000]);
+  assert.equal(fake.of("createGroup").length + fake.of("readGroup").length + fake.of("ack").length, 0);
+  await bus.stop();
   await done;
 });
 
 // @spec CONN-BP-002
 test("tailAudio hands each entry on decoded, advances from the last id, and survives a handler throw", async () => {
-  const fake = new FakeRedis();
-  const scripted: unknown[] = [
-    [["p:audio.in.discord", [[Buffer.from("5-0"), encodeFrame(frame({ seq: 0 }))], [Buffer.from("5-1"), encodeFrame(frame({ seq: 1 }))]]]],
-  ];
-  fake.xreadBuffer = ((...a: unknown[]) => {
-    fake.calls.push(["xreadBuffer", ...a]);
-    const next = scripted.shift();
-    return next ? Promise.resolve(next) : new Promise((_, rej) => (fake as unknown as { waiters: ((e: Error) => void)[] }).waiters.push(rej));
-  }) as never;
-  const bus = busWith(fake, "p");
+  const fake = new MemTransport();
+  const frames = new MemFrames();
+  frames.on("readFrames", () => [
+    { id: "5-0", decoded: { ok: true, frame: frame({ seq: 0 }) } }, { id: "5-1", decoded: { ok: true, frame: frame({ seq: 1 }) } },
+  ]);
+  const bus = busWith(fake, "p", frames);
   const got: number[] = [];
   const done = bus.tailAudio("in", "discord", (d) => { if (d.ok) got.push(d.frame.seq); if (got.length === 1) throw new Error("boom"); });
   await tick(20);
   assert.deepEqual(got, [0, 1]);
-  assert.equal(fake.of("xreadBuffer")[1]![7], "5-1");
-  bus.stop();
+  assert.equal(frames.of("readFrames")[1]!.args[2], "5-1");
+  await bus.stop();
   await done;
 });
 
@@ -337,7 +327,7 @@ const flushFrame = (over: Partial<Frame> = {}): Frame => ({ epoch: 100, seq: 3, 
 
 // @spec CONN-REG-001, CONN-FLUSH-001
 test("an audio-out capability may carry flush true; an entry without it means the connector does not obey a flush frame", async () => {
-  const fake = new FakeRedis();
+  const fake = new MemTransport();
   const bus = busWith(fake);
   const r = new ConnectorRegistrar(bus, {
     id: "discord", kind: "discord", version: "1",
@@ -352,7 +342,7 @@ test("an audio-out capability may carry flush true; an entry without it means th
   const inn = reg.capabilities.find((c) => c.cap === "audio-in") as unknown as { flush?: boolean };
   assert.equal(out.flush, true, "flush true survives write and parse");
   assert.ok(!inn.flush, "an entry without flush stays without it");
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec CONN-AUD-002, CONN-AUD-006

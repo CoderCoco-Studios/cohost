@@ -1,0 +1,8 @@
+{
+  "payload": {
+    "platform": "irc",
+    "user": "ann",
+    "text": "hi"
+  },
+  "valid": false
+}

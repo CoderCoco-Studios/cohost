@@ -119,11 +119,29 @@ fill_control_token() {
 # end control-token
 fill_control_token
 
-# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-012
+# ---------------------------------------------------------------- rust toolchain  @spec DEPLOY-INST-014
+# The bus addon is built on the host. The version is whatever rust-toolchain.toml pins; none is named here.
+if ! command -v cc >/dev/null 2>&1; then
+  log "Installing build-essential (C compiler for the Rust linker)"
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq build-essential
+fi
+if ! command -v rustup >/dev/null 2>&1 && [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+  log "Installing rustup (no default toolchain)"
+  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none --profile minimal
+fi
+[[ -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
+command -v rustup >/dev/null 2>&1 || die "rustup is not on PATH after install"
+log "Installing the Rust toolchain pinned by rust-toolchain.toml"
+rustup toolchain install   # reads rust-toolchain.toml: version, rustfmt, clippy
+
+# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-012, DEPLOY-INST-007
 log "Installing workspace dependencies"
 # Frozen only, like CI and the Dockerfile: a lockfile mismatch stops here with pnpm's own error
 # instead of silently rewriting pnpm-lock.yaml.
 pnpm install --frozen-lockfile || die "pnpm install --frozen-lockfile failed (see the error above); fix pnpm-lock.yaml and re-run."
+log "Building the bus addon"
+pnpm build:native || die "pnpm build:native failed (see the error above)."
 log "Typechecking"
 pnpm typecheck
 

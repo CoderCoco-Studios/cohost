@@ -1,7 +1,10 @@
 /**
  * Bus throughput/latency micro-benchmark at audio-stream rate (dev-only measurement, no spec).
  *
- *   node --import tsx scripts/dev/bus-bench.ts [--sources N] [--seconds S] [--redis URL]
+ *   node --import tsx scripts/dev/bus-bench.ts [--sources N] [--seconds S] [--runs R] [--json] [--redis URL]
+ *
+ * --runs R repeats the whole measurement R times (default 1) and prints each run's table plus per-row medians of
+ * cpu% and p99ms; --json writes one JSON document (every run's rows and the medians) to stdout instead of tables.
  *
  * Drives the real `Bus` from packages/bus on a private stream prefix (`bench<pid>`, deleted afterwards; running
  * services are untouched): N sources x 50 msg/s of 640-byte (20 ms, 16 kHz mono s16) PCM frames, one consumer,
@@ -17,7 +20,8 @@ import { createRequire } from "node:module";
 import { Bus, type EventInput } from "../../packages/bus/src/index.js";
 
 const arg = (k: string, d: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
-const N = Number(arg("sources", "3")), SECONDS = Number(arg("seconds", "20"));
+const N = Number(arg("sources", "3")), SECONDS = Number(arg("seconds", "20")), RUNS = Math.max(1, Number(arg("runs", "1")));
+const JSON_OUT = process.argv.includes("--json");
 const URL_ = arg("redis", process.env.REDIS_URL ?? "redis://127.0.0.1:6379");
 const RATE = 50, FRAME_BYTES = 640, THRESH_MS = 5;
 const pcm = Buffer.alloc(FRAME_BYTES, 1);
@@ -26,7 +30,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pct = (a: number[], p: number) => a[Math.min(a.length - 1, Math.floor((p / 100) * a.length))] ?? NaN;
 
 interface Row { phase: string; target: number; got: number; p50: number; p95: number; p99: number; max: number; cpu: number; eld99: number }
-const rows: Row[] = [];
+let rows: Row[] = [];
 
 async function phase(path: "events" | "frames", sources: number, prefix: string): Promise<void> {
   const bus = new Bus(`bench-${path}`, undefined, URL_, { streamPrefix: prefix });
@@ -72,13 +76,18 @@ async function phase(path: "events" | "frames", sources: number, prefix: string)
     phase: `${path} x${sources}`, target: sources * RATE, got: got / (SECONDS + 0.5), p50: pct(lat, 50), p95: pct(lat, 95),
     p99: pct(lat, 99), max: lat[got - 1] ?? NaN, cpu: ((cu.user + cu.system) / 1000 / wall) * 100, eld99: eld.percentile(99) / 1e6,
   });
-  if (sent !== got) console.log(`  ${path} x${sources}: sent ${sent}, received ${got}`);
+  if (sent !== got) (JSON_OUT ? console.error : console.log)(`  ${path} x${sources}: sent ${sent}, received ${got}`);
   bus.stop(); await Promise.race([Promise.allSettled(readers), sleep(1000)]);
 }
 
 const prefix = `bench${process.pid}`;
+const runs: Row[][] = [];
 try {
-  for (const path of ["events", "frames"] as const) for (const s of [...new Set([1, N])]) await phase(path, s, prefix);
+  for (let r = 0; r < RUNS; r++) {
+    rows = [];
+    for (const path of ["events", "frames"] as const) for (const s of [...new Set([1, N])]) await phase(path, s, prefix);
+    runs.push(rows);
+  }
 } finally {
   const { Redis } = createRequire(new URL("../../packages/bus/package.json", import.meta.url))("ioredis");
   const r = new Redis(URL_);
@@ -87,10 +96,29 @@ try {
   r.disconnect();
 }
 const f = (n: number) => n.toFixed(2);
-console.log("phase          target/s  got/s    p50ms  p95ms  p99ms  maxms   cpu%   eld99ms");
-for (const x of rows) {
-  console.log(`${x.phase.padEnd(14)} ${String(x.target).padStart(8)} ${f(x.got).padStart(7)} ${f(x.p50).padStart(7)} ${f(x.p95).padStart(6)} ${f(x.p99).padStart(6)} ${f(x.max).padStart(7)} ${f(x.cpu).padStart(6)} ${f(x.eld99).padStart(8)}`);
+const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+const medians = runs[0]!.map((_, i) => ({
+  path: runs[0]![i]!.phase.split(" ")[0]!, sources: runs[0]![i]!.target / RATE, "cpu%": median(runs.map((x) => x[i]!.cpu)), p99ms: median(runs.map((x) => x[i]!.p99)),
+}));
+const ok = runs.every((rs) => rs.every((x) => x.p99 < THRESH_MS));
+if (JSON_OUT) {
+  console.log(JSON.stringify({
+    runs: runs.map((rs) => rs.map((x) => ({ path: x.phase.split(" ")[0], sources: x.target / RATE, "cpu%": x.cpu, p99ms: x.p99, p50ms: x.p50, p95ms: x.p95, maxms: x.max, gotPerS: x.got, eld99ms: x.eld99 }))),
+    medians, pass: ok,
+  }, null, 2));
+} else {
+  runs.forEach((rs, r) => {
+    if (RUNS > 1) console.log(`run ${r + 1}/${RUNS}`);
+    console.log("phase          target/s  got/s    p50ms  p95ms  p99ms  maxms   cpu%   eld99ms");
+    for (const x of rs) {
+      console.log(`${x.phase.padEnd(14)} ${String(x.target).padStart(8)} ${f(x.got).padStart(7)} ${f(x.p50).padStart(7)} ${f(x.p95).padStart(6)} ${f(x.p99).padStart(6)} ${f(x.max).padStart(7)} ${f(x.cpu).padStart(6)} ${f(x.eld99).padStart(8)}`);
+    }
+  });
+  if (RUNS > 1) {
+    console.log(`median over ${RUNS} runs`);
+    console.log("phase          cpu%   p99ms");
+    for (const m of medians) console.log(`${`${m.path} x${m.sources}`.padEnd(14)} ${f(m["cpu%"]).padStart(6)} ${f(m.p99ms).padStart(7)}`);
+  }
+  console.log(`${ok ? "PASS" : "FAIL"}: p99 hop latency < ${THRESH_MS} ms (worst p99 ${f(Math.max(...runs.flat().map((x) => x.p99)))} ms)`);
 }
-const ok = rows.every((x) => x.p99 < THRESH_MS);
-console.log(`${ok ? "PASS" : "FAIL"}: p99 hop latency < ${THRESH_MS} ms (worst p99 ${f(Math.max(...rows.map((x) => x.p99)))} ms)`);
 process.exit(0);

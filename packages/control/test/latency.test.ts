@@ -77,9 +77,9 @@ test("latency reads history through the bus, takes no lock, publishes nothing, a
   assert.equal(h.stopped(), 1);
 });
 
-// @spec CTRL-LAT-002
+// @spec CTRL-LAT-002, CTRL-CLI-017
 test("latency with Redis unreachable reports the CTRL-CLI-017 line and exits 1", async () => {
-  const e = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:6379"), { code: "ECONNREFUSED" });
+  const e = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:6379"), { code: "BUS_CONNECTION" });
   const h = rig([], { recentThrows: e });
   assert.equal(await executeCli(["latency"], h.w), 1);
   assert.match(h.err.join("\n"), /cannot reach Redis at .*: .*\(is the stack up\? run cohostctl launch\)/);

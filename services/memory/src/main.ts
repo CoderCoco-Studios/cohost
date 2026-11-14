@@ -45,7 +45,7 @@ export async function memoryMain(ctx: ServiceContext<MemoryBus>, health: MemoryH
   });
   // @spec MEM-CONSOL-013, MEM-START-006
   // The bus stops first so no handler runs against a closing store, then the shutdown run is owed and the store closes.
-  onStop(async () => { bus.stop(); await scheduler.shutdown(); await store.close(); });
+  onStop(async () => { await bus.stop(); await scheduler.shutdown(); await store.close(); });
   await startMemory({
     cfg: cfg.brain.memory,
     log,

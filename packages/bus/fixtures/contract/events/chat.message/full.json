@@ -1,0 +1,25 @@
+{
+  "payload": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "hi",
+    "userId": "u1",
+    "isMod": true,
+    "isSub": true,
+    "mentionsCohost": true,
+    "injected": true,
+    "remember": false
+  },
+  "valid": true,
+  "parsed": {
+    "platform": "twitch",
+    "user": "ann",
+    "text": "hi",
+    "userId": "u1",
+    "isMod": true,
+    "isSub": true,
+    "mentionsCohost": true,
+    "injected": true,
+    "remember": false
+  }
+}

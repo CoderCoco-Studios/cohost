@@ -63,7 +63,7 @@ export class ConnectorRegistrar {
       });
       const status = this.spec.status?.() ?? { state: "ready" };
       const reg: Registration = {
-        v: REGISTRATION_VERSION, id: this.spec.id, kind: this.spec.kind, version: this.spec.version, instance: this.instance,
+        v: 1, id: this.spec.id, kind: this.spec.kind, version: this.spec.version, instance: this.instance,
         pid: process.pid, startedAt: this.startedAt, intervalMs: this.intervalMs,
         state: conflicts.length ? "degraded" : status.state,
         detail: conflicts.length ? conflicts.join("; ") : (status.detail ?? ""),

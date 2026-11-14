@@ -1,0 +1,52 @@
+{
+  "fields": [
+    [
+      "v",
+      "1"
+    ],
+    [
+      "epoch",
+      "1700000000000"
+    ],
+    [
+      "seq",
+      "0"
+    ],
+    [
+      "rate",
+      "16000"
+    ],
+    [
+      "ch",
+      "1"
+    ],
+    [
+      "pcm",
+      {
+        "base64": "AQACAAMABAA="
+      }
+    ],
+    [
+      "utt",
+      "utt-1"
+    ],
+    [
+      "last",
+      "1"
+    ]
+  ],
+  "expected": {
+    "ok": true,
+    "frame": {
+      "epoch": 1700000000000,
+      "seq": 0,
+      "rate": 16000,
+      "ch": 1,
+      "pcm": {
+        "base64": "AQACAAMABAA="
+      },
+      "utt": "utt-1",
+      "last": true
+    }
+  }
+}

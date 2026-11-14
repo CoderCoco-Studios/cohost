@@ -10,7 +10,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build:native": "cargo build --release -p cohost-bus-node && mkdir -p packages/bus/native && cp target/release/libcohost_bus_node.so packages/bus/native/cohost-bus.linux-x64-gnu.node",
+    "build": "pnpm build:native && tsc -b",
     "typecheck": "tsc -b --noEmit",
     "dashboard": "tsc -b services/dashboard && node services/dashboard/dist/index.js",
     "cohostctl": "tsc -b packages/control && node packages/control/dist/cli.js",
@@ -20,7 +21,7 @@
     "consolidate": "pnpm --filter @cohost/memory consolidate",
     "reembed": "pnpm --filter @cohost/memory reembed",
     "clean": "rm -rf packages/*/dist services/*/dist",
-    "test": "tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
+    "test": "pnpm build:native && tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
     "docs:prepare": "node scripts/docs-prepare.mjs",
     "docs:dev": "pnpm docs:prepare && vitepress dev docs",
     "docs:build": "pnpm docs:prepare && vitepress build docs",

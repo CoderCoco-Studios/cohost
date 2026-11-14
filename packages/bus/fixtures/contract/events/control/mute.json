@@ -1,0 +1,9 @@
+{
+  "payload": {
+    "cmd": "mute"
+  },
+  "valid": true,
+  "parsed": {
+    "cmd": "mute"
+  }
+}

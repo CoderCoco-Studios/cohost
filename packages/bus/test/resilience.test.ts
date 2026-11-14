@@ -1,460 +1,274 @@
-// Bus behaviour against fake Redis connections: no Redis server required.
+// Bus behaviour (start modes, drain, filtering, tails, publish failures, prefix) on a scripted BusTransport: no Redis
+// server and no native addon calls. The ack, backoff, error-code and stop rules are in native-loops.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Bus, STREAM, HEALTH_STREAM, type BusEvent } from "../src/index.js";
+import type { BusEvent } from "../src/index.js";
+import { FakeTransport, rawEntry, groupRead, busError, busWith, withBus, until, tick, within, run } from "./native-helpers.js";
 
-type Call = [method: string, ...args: unknown[]];
-type Fn = (...args: any[]) => Promise<unknown>;
-
-/** Scripted stand-in for an ioredis connection. Unscripted blocking reads hang until disconnect(). */
-class FakeRedis {
-  calls: Call[] = [];
-  script: Partial<Record<"xadd" | "xgroup" | "xreadgroup" | "xack" | "xread", Fn[]>> = {};
-  private waiters: ((e: Error) => void)[] = [];
-  private next(method: keyof FakeRedis["script"], args: unknown[]): Promise<unknown> {
-    this.calls.push([method, ...args]);
-    const fn = this.script[method]?.shift();
-    if (fn) return fn(...args);
-    if (method === "xreadgroup" || method === "xread") {
-      return new Promise((_, reject) => this.waiters.push(reject));
-    }
-    return Promise.resolve(method === "xadd" ? "1-0" : "OK");
-  }
-  xadd(...a: unknown[]) { return this.next("xadd", a); }
-  xgroup(...a: unknown[]) { return this.next("xgroup", a); }
-  xreadgroup(...a: unknown[]) { return this.next("xreadgroup", a); }
-  xack(...a: unknown[]) { return this.next("xack", a); }
-  xread(...a: unknown[]) { return this.next("xread", a); }
-  async xrevrange(...a: unknown[]) { this.calls.push(["xrevrange", ...a]); return []; }
-  disconnect() { for (const w of this.waiters.splice(0)) w(new Error("Connection is closed.")); }
-  of(method: string) { return this.calls.filter((c) => c[0] === method); }
-}
-
-function logger() {
-  const lines: { level: string; obj: any; msg?: string }[] = [];
-  const mk = (level: string) => (obj: any, msg?: string) => { lines.push({ level, obj, msg }); };
-  const log = { warn: mk("warn"), error: mk("error"), info: mk("info"), debug: mk("debug"), fatal: mk("fatal"), trace: mk("trace") };
-  return { log: log as never, lines, at: (level: string) => lines.filter((l) => l.level === level) };
-}
-
-function busWith(fake: FakeRedis, opts: Record<string, unknown> = {}) {
-  const l = logger();
-  const bus = new Bus("t", l.log, "redis://fake", { connect: () => fake as never, retryBaseMs: 5, retryMaxMs: 30, ...opts });
-  return { bus, l };
-}
-const busyGroup = async () => { throw new Error("BUSYGROUP Consumer Group name already exists"); };
-
-const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-async function until(cond: () => boolean, ms = 1000) {
-  const end = performance.now() + ms;
-  while (!cond()) { if (performance.now() > end) throw new Error("timed out"); await tick(2); }
-}
-const entry = (id: string, type = "control", data: object = { cmd: "mute" }): [string, [string, string[]][]][] =>
-  [[STREAM, [[id, ["type", type, "ts", "1", "source", "t", "data", JSON.stringify(data)]]]]];
+const empty = () => groupRead(null);
+const batch = (...entries: ReturnType<typeof rawEntry>[]) => () => groupRead(entries);
+const hbData = { service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 1000 } as const;
+const hbEntry = (id: string) => rawEntry(id, "service.heartbeat", hbData, { source: "s" });
+const cursors = (f: FakeTransport) => f.of("readGroup").map((c) => c.args[2]);
 
 // @spec BUS-SUB-001, BUS-SUB-010
-test("latest: a missing group is created at $ with MKSTREAM before the first read", async () => {
-  const fake = new FakeRedis();
-  const { bus } = busWith(fake);
-  const done = bus.subscribe({ group: "g", start: "latest", blockMs: 10 }, () => {});
-  await until(() => fake.of("xreadgroup").length > 0);
-  assert.deepEqual(fake.calls[0], ["xgroup", "CREATE", STREAM, "g", "$", "MKSTREAM"]);
-  assert.equal(fake.of("xgroup").length, 1);
-  bus.stop(); await done;
+test("latest: a missing group is created before the first read and not moved", async () => {
+  const fake = new FakeTransport();
+  await withBus(fake, {}, async ({ bus }) => {
+    void bus.subscribe({ group: "g", start: "latest", blockMs: 10 }, () => {});
+    await until(() => fake.of("readGroup").length > 0, "first read");
+    assert.deepEqual(fake.names().filter((n) => n !== "openReader").slice(0, 2), ["createGroup", "readGroup"]);
+    assert.equal(fake.of("moveGroupToLatest").length, 0);
+  });
 });
 
 // @spec BUS-SUB-010
-test("latest: an existing group (BUSYGROUP) is moved to $ before the first read", async () => {
-  const fake = new FakeRedis();
-  fake.script.xgroup = [busyGroup];
-  const { bus } = busWith(fake);
-  const done = bus.subscribe({ group: "g", start: "latest", blockMs: 10 }, () => {});
-  await until(() => fake.of("xreadgroup").length > 0);
-  assert.deepEqual(fake.calls.slice(0, 2), [
-    ["xgroup", "CREATE", STREAM, "g", "$", "MKSTREAM"],
-    ["xgroup", "SETID", STREAM, "g", "$"],
-  ]);
-  bus.stop(); await done;
+test("latest: an existing group (createGroup false) is moved to $ before the first read", async () => {
+  const fake = new FakeTransport().resolveOnce("createGroup", false);
+  await withBus(fake, {}, async ({ bus }) => {
+    void bus.subscribe({ group: "g", start: "latest", blockMs: 10 }, () => {});
+    await until(() => fake.of("readGroup").length > 0, "first read");
+    assert.deepEqual(fake.names().filter((n) => n !== "openReader").slice(0, 3), ["createGroup", "moveGroupToLatest", "readGroup"]);
+    assert.deepEqual(fake.of("moveGroupToLatest")[0]!.args, ["g"]);
+  });
 });
 
 // @spec BUS-SUB-002
-test("resume: an existing group keeps its stored position (no SETID)", async () => {
-  const fake = new FakeRedis();
-  fake.script.xgroup = [busyGroup];
-  const { bus } = busWith(fake);
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
-  await until(() => fake.of("xreadgroup").length > 0);
-  assert.deepEqual(fake.of("xgroup"), [["xgroup", "CREATE", STREAM, "g", "$", "MKSTREAM"]]);
-  bus.stop(); await done;
+test("resume: an existing group keeps its stored position (no move)", async () => {
+  const fake = new FakeTransport().resolveOnce("createGroup", false);
+  await withBus(fake, {}, async ({ bus }) => {
+    void bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
+    await until(() => fake.of("readGroup").length > 0, "first read");
+    assert.equal(fake.of("moveGroupToLatest").length, 0);
+  });
 });
 
 // @spec BUS-SUB-001
-test("any group-creation error other than BUSYGROUP rejects subscribe", async () => {
-  const fake = new FakeRedis();
-  fake.script.xgroup = [async () => { throw new Error("READONLY You can't write against a read only replica."); }];
+test("any group-creation error rejects subscribe", async () => {
+  const fake = new FakeTransport().failOnce("createGroup", "BUS_REDIS", "READONLY You can't write against a read only replica.");
   const { bus } = busWith(fake);
   await assert.rejects(bus.subscribe({ group: "g", start: "resume" }, () => {}), /READONLY/);
-  assert.equal(fake.of("xreadgroup").length, 0);
+  assert.equal(fake.of("readGroup").length, 0);
+  await bus.stop();
 });
 
 // @spec BUS-SUB-011
 test("subscribe requires an explicit start mode and ignores the removed fromNow", async () => {
   for (const extra of [{}, { fromNow: true }, { start: "bogus" }]) {
-    const fake = new FakeRedis();
+    const fake = new FakeTransport();
     const { bus } = busWith(fake);
     await assert.rejects(bus.subscribe({ group: "g", blockMs: 10, ...extra } as never, () => {}), /start/);
-    assert.equal(fake.of("xgroup").length, 0);
-    assert.equal(fake.of("xreadgroup").length, 0);
+    assert.equal(fake.of("createGroup").length, 0);
+    assert.equal(fake.of("readGroup").length, 0);
+    await bus.stop();
   }
 });
 
 // @spec BUS-SUB-008
-test("subscribe only reads its own consumer's pending list and never claims", async () => {
-  const fake = new FakeRedis();
-  const { bus } = busWith(fake);
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
-  await until(() => fake.of("xreadgroup").length > 0);
-  const [, ...args] = fake.of("xreadgroup")[0]!;
-  assert.equal(args[0], "GROUP"); assert.equal(args[2], bus.consumer);
-  assert.equal(args.at(-1), "0");
-  assert.ok(fake.calls.every((c) => ["xgroup", "xreadgroup", "xack"].includes(c[0])));
-  bus.stop(); await done;
+test("subscribe reads only its own consumer's pending list first and never claims", async () => {
+  const fake = new FakeTransport();
+  await withBus(fake, {}, async ({ bus }) => {
+    void bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
+    await until(() => fake.of("readGroup").length > 0, "first read");
+    const [group, consumer, cursor] = fake.of("readGroup")[0]!.args;
+    assert.deepEqual([group, consumer, cursor], ["g", bus.consumer, "0"]);
+    assert.ok(fake.names().every((n) => ["createGroup", "openReader", "readGroup", "ack", "close", "readerClose", "moveGroupToLatest"].includes(n)));
+  });
 });
 
-// @spec BUS-SUB-009
-test("a failed blocking read is logged and retried with a growing, capped delay that resets after a success", async () => {
-  const fake = new FakeRedis();
-  const boom = async () => { throw new Error("ECONNRESET"); };
-  fake.script.xreadgroup = [boom, boom, boom, boom, async () => null, boom, async () => entry("5-0")];
-  const { bus, l } = busWith(fake, { retryBaseMs: 2, retryMaxMs: 7 });
-  const got: BusEvent[] = [];
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev); });
-  await until(() => got.length === 1);
-  assert.deepEqual(l.at("warn").map((w) => w.obj.delayMs), [2, 4, 7, 7, 2]);
-  assert.match(String(l.at("warn")[0]!.obj.err), /ECONNRESET/);
-  bus.stop(); await done; // resolves, never rejected
+// @spec BUS-SUB-012, MEM-START-005
+test("onReady fires after the group is created and positioned, before the first read", async () => {
+  const fake = new FakeTransport().resolveOnce("createGroup", false);
+  await withBus(fake, {}, async ({ bus }) => {
+    let atReady: string[] = [];
+    void bus.subscribe({ group: "g", start: "latest", blockMs: 10, onReady: () => { atReady = fake.names(); } }, () => {});
+    await until(() => fake.of("readGroup").length > 0, "first read");
+    assert.deepEqual(atReady.filter((n) => n !== "openReader"), ["createGroup", "moveGroupToLatest"]);
+  });
 });
 
-// @spec BUS-SUB-009
-test("a failed XACK is logged, the next entry is handled, and the handled entry is not redelivered", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [
-    async () => null, // pending drain: nothing
-    async () => [[STREAM, [
-      ["1-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "mute" })]],
-      ["2-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "pause" })]],
-    ]]],
-  ];
-  fake.script.xack = [async () => { throw new Error("ACK down"); }];
-  const { bus, l } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
-  await until(() => got.length === 2);
-  await until(() => fake.of("xack").length === 2);
-  assert.deepEqual(got, ["1-0", "2-0"]);
-  assert.equal(l.at("warn").length, 1);
-  assert.match(String(l.at("warn")[0]!.obj.err), /ACK down/);
-  await tick(30);
-  assert.deepEqual(got, ["1-0", "2-0"]);
-  bus.stop(); await done;
+// @spec BUS-SUB-003
+test("the pending drain reads batch after batch until none remain, then switches to new entries", async () => {
+  const fake = new FakeTransport().on("readGroup", batch(rawEntry("1-0")), batch(rawEntry("2-0")), empty);
+  await withBus(fake, {}, async ({ bus }) => {
+    const got: string[] = [];
+    void bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
+    await until(() => fake.of("readGroup").length >= 4, "four reads");
+    assert.deepEqual(got, ["1-0", "2-0"]);
+    assert.deepEqual(cursors(fake).slice(0, 4), ["0", "1-0", "2-0", ">"]);
+  });
+});
+
+// @spec BUS-SUB-004, BUS-SUB-005
+test("types filters client-side: other types are acked without a handler call; a handler failure is logged and acked", async () => {
+  const fake = new FakeTransport().on("readGroup", empty, batch(rawEntry("1-0"), rawEntry("2-0", "chat.message", { platform: "twitch", user: "a", text: "x" }), rawEntry("3-0")));
+  await withBus(fake, {}, async ({ bus, l }) => {
+    const got: string[] = [];
+    void bus.subscribe({ group: "g", start: "resume", types: ["control"], blockMs: 10 }, (ev) => { got.push(ev.id); if (ev.id === "1-0") throw new Error("boom"); });
+    await until(() => fake.of("ack").length === 3, "three acks");
+    assert.deepEqual(got, ["1-0", "3-0"]);
+    assert.equal(l.at("error").length, 1);
+    assert.match(String(l.at("error")[0]!.obj.err), /boom/);
+  });
 });
 
 // @spec BUS-SUB-009, BUS-STOP-001
 test("stop() ends a retry backoff promptly", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [async () => { throw new Error("down"); }];
+  const fake = new FakeTransport().failOnce("readGroup");
   const { bus, l } = busWith(fake, { retryBaseMs: 60_000, retryMaxMs: 60_000 });
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
-  await until(() => l.at("warn").length === 1);
+  const done = run(bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {}));
+  await until(() => l.at("warn").length === 1, "the failure logged");
   const t0 = performance.now();
-  bus.stop();
-  await done;
+  await bus.stop();
+  await within(done.done, 500, "subscribe");
   assert.ok(performance.now() - t0 < 500);
 });
 
 // @spec BUS-TAIL-003
 test("tail retries a failed read from the last delivered id and never rejects", async () => {
-  const fake = new FakeRedis();
-  fake.script.xread = [async () => entry("7-0"), async () => { throw new Error("ECONNRESET"); }];
-  const { bus, l } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.tail((ev) => { got.push(ev.id); });
-  await until(() => fake.of("xread").length >= 3);
-  assert.deepEqual(got, ["7-0"]);
-  assert.equal(fake.of("xread")[2]!.at(-1), "7-0");
-  assert.equal(l.at("warn").length, 1);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => [rawEntry("7-0")], () => { throw busError("BUS_CONNECTION"); });
+  await withBus(fake, {}, async ({ bus, l }) => {
+    const got: string[] = [];
+    const t = run(bus.tail((ev) => { got.push(ev.id); }));
+    await until(() => fake.of("read").length >= 3, "three reads");
+    assert.deepEqual(got, ["7-0"]);
+    assert.deepEqual(fake.of("read")[0]!.args, ["events", "$", 100, 5000]);
+    assert.equal(fake.of("read")[2]!.args[1], "7-0");
+    assert.equal(l.at("warn").length, 1);
+    assert.equal(t.settled, false);
+  });
 });
 
 // @spec BUS-TAIL-003
 test("tailHealth retries a failed read from the last delivered id and never rejects", async () => {
-  const fake = new FakeRedis();
-  const hb = { service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 1000 };
-  fake.script.xread = [
-    async () => [[HEALTH_STREAM, [["9-0", ["type", "service.heartbeat", "ts", "1", "source", "s", "data", JSON.stringify(hb)]]]]],
-    async () => { throw new Error("ECONNRESET"); },
-  ];
-  const { bus, l } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.tailHealth((ev) => { got.push(ev.id); });
-  await until(() => fake.of("xread").length >= 3);
-  assert.deepEqual(got, ["9-0"]);
-  assert.equal(fake.of("xread")[2]!.at(-1), "9-0");
-  assert.equal(l.at("warn").length, 1);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => [hbEntry("9-0")], () => { throw busError("BUS_CONNECTION"); });
+  await withBus(fake, {}, async ({ bus, l }) => {
+    const got: string[] = [];
+    const t = run(bus.tailHealth((ev) => { got.push(ev.id); }));
+    await until(() => fake.of("read").length >= 3, "three reads");
+    assert.deepEqual(got, ["9-0"]);
+    assert.equal(fake.of("read")[0]!.args[0], "health");
+    assert.equal(fake.of("read")[2]!.args[1], "9-0");
+    assert.equal(l.at("warn").length, 1);
+    assert.equal(t.settled, false);
+  });
 });
 
 // @spec BUS-TAIL-004
 test("a throwing tail handler is logged at error level and the loop continues", async () => {
-  const fake = new FakeRedis();
-  fake.script.xread = [async () => [[STREAM, [
-    ["1-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "mute" })]],
-    ["2-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "pause" })]],
-  ]]]];
-  const { bus, l } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.tail((ev) => { got.push(ev.id); if (ev.id === "1-0") throw new Error("handler boom"); });
-  await until(() => got.length === 2);
-  assert.equal(l.at("error").length, 1);
-  assert.match(String(l.at("error")[0]!.obj.err), /handler boom/);
-  assert.ok(fake.of("xread").length >= 2);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => [rawEntry("1-0"), rawEntry("2-0")]);
+  await withBus(fake, {}, async ({ bus, l }) => {
+    const got: string[] = [];
+    void bus.tail((ev) => { got.push(ev.id); if (ev.id === "1-0") throw new Error("handler boom"); });
+    await until(() => got.length === 2, "both entries");
+    assert.equal(l.at("error").length, 1);
+    assert.match(String(l.at("error")[0]!.obj.err), /handler boom/);
+    await until(() => fake.of("read").length >= 2, "the loop read again");
+  });
 });
 
 // @spec BUS-TAIL-004
 test("a throwing tailHealth handler is logged and the loop continues", async () => {
-  const fake = new FakeRedis();
-  const hb = { service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 1000 };
-  const row = (id: string): [string, string[]] => [id, ["type", "service.heartbeat", "ts", "1", "source", "s", "data", JSON.stringify(hb)]];
-  fake.script.xread = [async () => [[HEALTH_STREAM, [row("1-0"), row("2-0")]]]];
-  const { bus, l } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.tailHealth((ev) => { got.push(ev.id); throw new Error("hb boom"); });
-  await until(() => got.length === 2);
-  assert.equal(l.at("error").length, 2);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => [hbEntry("1-0"), hbEntry("2-0")]);
+  await withBus(fake, {}, async ({ bus, l }) => {
+    const got: string[] = [];
+    void bus.tailHealth((ev) => { got.push(ev.id); throw new Error("hb boom"); });
+    await until(() => got.length === 2, "both entries");
+    assert.equal(l.at("error").length, 2);
+  });
 });
 
 // @spec BUS-TAIL-005
 test("tail reports each blocking read to onRead: an empty read and a delivering read as success, a failed one with its error", async () => {
-  const fake = new FakeRedis();
-  fake.script.xread = [async () => null, async () => { throw new Error("ECONNRESET"); }, async () => entry("3-0")];
-  const { bus } = busWith(fake);
-  const seen: (string | undefined)[] = [];
-  const done = bus.tail(() => {}, "$", (err) => { seen.push(err === undefined ? undefined : (err as Error).message); });
-  await until(() => seen.length >= 3);
-  assert.deepEqual(seen.slice(0, 3), [undefined, "ECONNRESET", undefined]);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => null, () => { throw busError("BUS_CONNECTION", "ECONNRESET"); }, () => [rawEntry("3-0")]);
+  await withBus(fake, {}, async ({ bus }) => {
+    const seen: (string | undefined)[] = [];
+    void bus.tail(() => {}, "$", (err) => { seen.push(err === undefined ? undefined : (err as Error).message); });
+    await until(() => seen.length >= 3, "three reports");
+    assert.deepEqual(seen.slice(0, 3), [undefined, "ECONNRESET", undefined]);
+  });
 });
 
 // @spec BUS-TAIL-005
 test("tailHealth reports each blocking read to onRead the same way", async () => {
-  const fake = new FakeRedis();
-  fake.script.xread = [async () => { throw new Error("ECONNRESET"); }, async () => null];
-  const { bus } = busWith(fake);
-  const seen: boolean[] = [];
-  const done = bus.tailHealth(() => {}, "$", (err) => { seen.push(err === undefined); });
-  await until(() => seen.length >= 2);
-  assert.deepEqual(seen.slice(0, 2), [false, true]);
-  bus.stop(); await done;
+  const fake = new FakeTransport().on("read", () => { throw busError("BUS_CONNECTION"); }, () => null);
+  await withBus(fake, {}, async ({ bus }) => {
+    const seen: boolean[] = [];
+    void bus.tailHealth(() => {}, "$", (err) => { seen.push(err === undefined); });
+    await until(() => seen.length >= 2, "two reports");
+    assert.deepEqual(seen.slice(0, 2), [false, true]);
+  });
 });
 
 // @spec BUS-STREAM-007
-test("a rejected XADD is logged at warn with the type and the original error is propagated", async () => {
-  const fake = new FakeRedis();
-  const err = new Error("Stream isn't writeable");
-  fake.script.xadd = [async () => { throw err; }, async () => { throw err; }];
+test("a rejected append is logged at warn with the type and the original error is propagated", async () => {
+  const err = busError("BUS_REDIS", "Stream isn't writeable");
+  const fake = new FakeTransport().on("append", () => { throw err; }, () => { throw err; });
   const { bus, l } = busWith(fake);
   await assert.rejects(bus.publish("control", { cmd: "mute" }), (e) => e === err);
-  await assert.rejects(bus.publishHealth({ service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready", deps: {}, mode: "live", intervalMs: 1000 }), (e) => e === err);
+  await assert.rejects(bus.publishHealth(hbData), (e) => e === err);
   const w = l.at("warn");
   assert.equal(w.length, 2);
   assert.equal(w[0]!.obj.err, err); assert.equal(w[0]!.obj.type, "control");
   assert.equal(w[0]!.msg, "publish failed");
   assert.equal(w[1]!.obj.type, "service.heartbeat");
-  bus.stop();
+  await bus.stop();
 });
 
 // @spec BUS-STREAM-003
-test("a schema failure throws before XADD and is not logged as a publish failure", async () => {
-  const fake = new FakeRedis();
+test("a schema failure throws before append and is not logged as a publish failure", async () => {
+  const fake = new FakeTransport();
   const { bus, l } = busWith(fake);
   await assert.rejects(bus.publish("control", { cmd: "nope" } as never));
-  assert.equal(fake.of("xadd").length, 0);
+  assert.equal(fake.of("append").length, 0);
   assert.equal(l.at("warn").length, 0);
-  bus.stop();
+  await bus.stop();
 });
 
-// ---- resetGroup on a fresh Redis ----
-
-/** Real text Redis 7+ returns for XGROUP SETID/DESTROY/... on a key that does not exist. */
-const NO_KEY =
-  "ERR The XGROUP subcommand requires the key to exist. Note that for CREATE you may want to use the MKSTREAM option to create an empty stream automatically.";
-
-/** Minimal stateful XGROUP matching Redis 7: only CREATE ... MKSTREAM may touch a missing stream. */
-function redis7Xgroup(fake: FakeRedis, state: { stream: boolean; groups: Set<string> }) {
-  fake.xgroup = (...a: unknown[]) => {
-    fake.calls.push(["xgroup", ...a]);
-    const [sub, , group, , mk] = a as string[];
-    if (sub === "CREATE") {
-      if (!state.stream && mk !== "MKSTREAM") return Promise.reject(new Error(NO_KEY));
-      state.stream = true;
-      if (state.groups.has(group!)) return Promise.reject(new Error("BUSYGROUP Consumer Group name already exists"));
-      state.groups.add(group!);
-      return Promise.resolve("OK");
-    }
-    if (!state.stream) return Promise.reject(new Error(NO_KEY));
-    if (!state.groups.has(group!)) return Promise.reject(new Error("NOGROUP No such consumer group for key name"));
-    return Promise.resolve("OK");
-  };
-}
-
 // @spec BUS-GROUP-001
-test("resetGroup on a fresh Redis (no stream key) creates the stream and group instead of failing", async () => {
-  const fake = new FakeRedis();
-  const state = { stream: false, groups: new Set<string>() };
-  redis7Xgroup(fake, state);
+test("resetGroup on a fresh Redis creates the group and does not move it; on an existing group it moves it to $; errors are rethrown", async () => {
+  const fake = new FakeTransport();
   const { bus } = busWith(fake);
   await bus.resetGroup("g");
-  assert.equal(state.stream, true);
-  assert.ok(state.groups.has("g"));
-  assert.ok(fake.of("xgroup").some((c) => c[1] === "CREATE" && c.includes("MKSTREAM")));
-  bus.stop();
-});
-
-// @spec BUS-GROUP-001
-test("resetGroup on an existing group moves it to $ with SETID", async () => {
-  const fake = new FakeRedis();
-  redis7Xgroup(fake, { stream: true, groups: new Set(["g"]) });
-  const { bus } = busWith(fake);
+  assert.deepEqual(fake.names(), ["createGroup"]);
+  fake.resolveOnce("createGroup", false);
   await bus.resetGroup("g");
-  assert.deepEqual(fake.of("xgroup").at(-1), ["xgroup", "SETID", STREAM, "g", "$"]);
-  bus.stop();
-});
-
-// @spec BUS-GROUP-001
-test("resetGroup tolerates a concurrent create (BUSYGROUP) and still ends at $", async () => {
-  const fake = new FakeRedis();
-  const state = { stream: false, groups: new Set<string>() };
-  redis7Xgroup(fake, state);
-  const inner = fake.xgroup.bind(fake);
-  let raced = false;
-  // A competing process creates the group between our calls.
-  fake.xgroup = (...a: unknown[]) => {
-    if (!raced) { raced = true; state.stream = true; state.groups.add("g"); }
-    return inner(...a);
-  };
-  const { bus } = busWith(fake);
-  await bus.resetGroup("g");
-  assert.deepEqual(fake.of("xgroup").at(-1), ["xgroup", "SETID", STREAM, "g", "$"]);
-  bus.stop();
-});
-
-// @spec BUS-GROUP-001
-test("resetGroup rethrows an error that is not a missing stream or group", async () => {
-  const fake = new FakeRedis();
-  fake.xgroup = (...a: unknown[]) => {
-    fake.calls.push(["xgroup", ...a]);
-    return Promise.reject(new Error("READONLY You can't write against a read only replica."));
-  };
-  const { bus } = busWith(fake);
+  assert.deepEqual(fake.of("moveGroupToLatest")[0]!.args, ["g"]);
+  fake.failOnce("createGroup", "BUS_REDIS", "READONLY You can't write against a read only replica.");
   await assert.rejects(bus.resetGroup("g"), /READONLY/);
-  bus.stop();
-});
-
-// @spec BUS-SUB-012, MEM-START-005
-test("onReady fires after the group is created and positioned, before the first read", async () => {
-  const fake = new FakeRedis();
-  fake.script.xgroup = [busyGroup];
-  const { bus } = busWith(fake);
-  let callsAtReady: string[] = [];
-  const done = bus.subscribe({ group: "g", start: "latest", blockMs: 10, onReady: () => { callsAtReady = fake.calls.map((c) => c[0] as string); } }, () => {});
-  await until(() => fake.of("xreadgroup").length > 0);
-  assert.deepEqual(callsAtReady, ["xgroup", "xgroup"]);
-  bus.stop(); await done;
-});
-
-const emptyRead = async () => [[STREAM, []]];
-const readCursors = (fake: FakeRedis) => fake.of("xreadgroup").map((c) => c.at(-1));
-
-// @spec BUS-SUB-003
-test("the pending drain reads batch after batch until none remain, then switches to new entries", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [async () => entry("1-0"), async () => entry("2-0"), emptyRead];
-  const { bus } = busWith(fake);
-  const got: string[] = [];
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
-  await until(() => fake.of("xreadgroup").length >= 4);
-  assert.deepEqual(got, ["1-0", "2-0"]);
-  assert.deepEqual(readCursors(fake), ["0", "1-0", "2-0", ">"]);
-  bus.stop(); await done;
-});
-
-// @spec BUS-SUB-003
-test("an entry whose XACK failed does not keep the drain reading: it continues after the last id", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [async () => entry("1-0"), emptyRead];
-  fake.script.xack = [async () => { throw new Error("ACK down"); }];
-  const { bus } = busWith(fake);
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, () => {});
-  await until(() => fake.of("xreadgroup").length >= 3);
-  assert.deepEqual(readCursors(fake), ["0", "1-0", ">"]);
-  bus.stop(); await done;
-});
-
-// @spec BUS-SUB-013
-test("stop() during a handler lets it finish, then acks nothing and handles no later entry of the batch", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [
-    async () => null, // pending drain: nothing
-    async () => [[STREAM, [
-      ["1-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "mute" })]],
-      ["2-0", ["type", "control", "ts", "1", "source", "t", "data", JSON.stringify({ cmd: "pause" })]],
-    ]]],
-  ];
-  const { bus } = busWith(fake);
-  const got: string[] = [];
-  let finished = false;
-  const done = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, async (ev) => {
-    got.push(ev.id);
-    bus.stop();
-    await tick(5);
-    finished = true;
-  });
-  await done;
-  assert.equal(finished, true, "the running handler was not cut short");
-  assert.deepEqual(got, ["1-0"]);
-  assert.equal(fake.of("xack").length, 0);
+  await bus.stop();
 });
 
 // @spec BUS-STREAM-008
-test("streamPrefix moves every stream command of the instance onto its own pair of streams", async () => {
-  const fake = new FakeRedis();
-  fake.script.xreadgroup = [async () => null, async () => entry("1-0")];
-  const { bus } = busWith(fake, { streamPrefix: "scratch:a" });
-  const hb = { service: "s", instance: "i", version: "1", pid: 1, startedAt: 1, state: "ready" as const, deps: {}, mode: "live", intervalMs: 1000 };
-  await bus.publish("control", { cmd: "mute" });
-  await bus.publishHealth(hb);
-  await bus.resetGroup("g");
-  await bus.recent(1);
-  await bus.recentHealth(1);
-  const got: string[] = [];
-  const sub = bus.subscribe({ group: "g", start: "resume", blockMs: 10 }, (ev) => { got.push(ev.id); });
-  const tail = bus.tail(() => {});
-  const tailHealth = bus.tailHealth(() => {});
-  await until(() => got.length === 1 && fake.of("xack").length === 1 && fake.of("xread").length >= 2);
-  const streams = (method: string): unknown[] => fake.of(method).map((c) => (method === "xadd" ? c[1] : method === "xgroup" ? c[2] : method === "xack" ? c[1] : method === "xrevrange" ? c[1] : c[c.indexOf("STREAMS") + 1]));
-  assert.deepEqual(streams("xadd"), ["scratch:a:events", "scratch:a:health"]);
-  assert.ok(streams("xgroup").every((x) => x === "scratch:a:events"));
-  assert.deepEqual(streams("xrevrange"), ["scratch:a:events", "scratch:a:health"]);
-  assert.ok(streams("xreadgroup").every((x) => x === "scratch:a:events"));
-  assert.deepEqual(streams("xack"), ["scratch:a:events"]);
-  assert.deepEqual([...new Set(streams("xread"))].sort(), ["scratch:a:events", "scratch:a:health"]);
-  bus.stop(); await Promise.all([sub, tail, tailHealth]);
-  // and the default stays the production pair
-  const plain = new FakeRedis();
+test("streamPrefix is handed to the transport, which names every stream under it; the default is cohost", async () => {
+  const scratch = new FakeTransport();
+  const { bus } = busWith(scratch, { streamPrefix: "scratch:a" });
+  assert.deepEqual(scratch.factoryCalls[0]!.opts, { prefix: "scratch:a", failFast: false });
+  assert.equal(bus.connectorKey("c"), "scratch:a:connector:c");
+  assert.equal(bus.audioStream("out", "x"), "scratch:a:audio.out.x");
+  await bus.stop();
+  const plain = new FakeTransport();
   const { bus: b2 } = busWith(plain);
-  await b2.publish("control", { cmd: "mute" });
-  assert.equal(plain.of("xadd")[0]![1], STREAM);
-  b2.stop();
+  assert.equal(plain.factoryCalls[0]!.opts.prefix, "cohost");
+  await b2.stop();
+});
+
+// @spec BUS-SUB-007
+test("recent and recentHealth decode oldest first and skip undecodable entries", async () => {
+  const fake = new FakeTransport()
+    .on("recent", () => [rawEntry("1-0"), rawEntry("2-0", "nope", {}), rawEntry("3-0")], () => [hbEntry("4-0"), rawEntry("5-0", "chat.message", "{}")]);
+  const { bus } = busWith(fake);
+  assert.deepEqual((await bus.recent(5)).map((e: BusEvent) => e.id), ["1-0", "3-0"]);
+  assert.deepEqual((await bus.recentHealth(5)).map((e) => e.id), ["4-0"]);
+  await bus.stop();
+  await tick(1);
+});
+
+// @spec BUS-NAT-API-004, BUS-NAT-API-011
+test("a Bus built with BusOptions.transport runs on that transport and needs no Redis server", async () => {
+  const fake = new FakeTransport();
+  const bus = new (await import("../src/index.js")).Bus("t", undefined, "redis://127.0.0.1:1", { transport: fake.factory });
+  await bus.publish("control", { cmd: "mute" });
+  assert.equal(fake.of("append").length, 1);
+  await bus.stop();
 });

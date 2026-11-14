@@ -1,0 +1,34 @@
+{
+  "fields": [
+    [
+      "v",
+      "1"
+    ],
+    [
+      "epoch",
+      "1"
+    ],
+    [
+      "seq",
+      "0"
+    ],
+    [
+      "rate",
+      "0"
+    ],
+    [
+      "ch",
+      "1"
+    ],
+    [
+      "pcm",
+      {
+        "base64": "AQACAAMABAA="
+      }
+    ]
+  ],
+  "expected": {
+    "ok": false,
+    "reason": "bad header"
+  }
+}

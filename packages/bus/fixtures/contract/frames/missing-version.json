@@ -1,0 +1,30 @@
+{
+  "fields": [
+    [
+      "epoch",
+      "1700000000000"
+    ],
+    [
+      "seq",
+      "0"
+    ],
+    [
+      "rate",
+      "16000"
+    ],
+    [
+      "ch",
+      "1"
+    ],
+    [
+      "pcm",
+      {
+        "base64": "AQACAAMABAA="
+      }
+    ]
+  ],
+  "expected": {
+    "ok": false,
+    "reason": "version"
+  }
+}

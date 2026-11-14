@@ -6,8 +6,13 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
-  "scripts": { "build": "tsc -b" },
+  "files": [
+    "dist",
+    "native"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
   "dependencies": {
     "@cohost/config": "workspace:*",
     "ioredis": "^5.4.0",

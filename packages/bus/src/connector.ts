@@ -16,6 +16,7 @@ export const TAG_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 export const RESERVED_TAGS: readonly string[] = ["http", "dir", "dashboard", "mouth", "dryrun", "file"];
 export const CONNECTOR_ID_PATTERN = TAG_PATTERN;
 
+// The connector protocol constants (BUS-NAT-RS-004), equal to fixtures/contract/constants.json.
 export const REGISTRATION_VERSION = 1;
 export const FRAME_VERSION = 1;
 /** Largest `pcm` field of one frame (CONN-AUD-002). */
@@ -29,14 +30,6 @@ export const DEFAULT_CONNECTOR_INTERVAL_MS = 5000;
 export const LEASE_INTERVALS = 3;
 
 export const capabilityDirection = (cap: Capability): AudioDirection => (cap === "audio-in" ? "in" : "out");
-
-/** `null` when the tag is acceptable, otherwise the reason it is not (CONN-TAG-001, CONN-TAG-002). */
-// @spec CONN-TAG-001, CONN-TAG-002
-export function tagProblem(tag: string): string | null {
-  if (!TAG_PATTERN.test(tag)) return `tag "${tag}" does not match ${TAG_PATTERN}`;
-  if (RESERVED_TAGS.includes(tag)) return `tag "${tag}" is reserved`;
-  return null;
-}
 
 const Format = z.object({ rate: z.number().int().positive(), channels: z.number().int().positive() });
 export type AudioFormat = z.infer<typeof Format>;
@@ -104,6 +97,14 @@ export function findReady(regs: readonly Registration[], cap: Capability, tag: s
   return o && o.cap.ready ? o : undefined;
 }
 
+/** `null` when the tag is acceptable, otherwise the reason it is not (CONN-TAG-001, CONN-TAG-002). */
+// @spec CONN-TAG-001, CONN-TAG-002, BUS-NAT-RS-005
+export function tagProblem(tag: string): string | null {
+  if (!TAG_PATTERN.test(tag)) return `tag "${tag}" does not match ${TAG_PATTERN}`;
+  if (RESERVED_TAGS.includes(tag)) return `tag "${tag}" is reserved`;
+  return null;
+}
+
 // ---------------------------------------------------------------- frames
 
 export interface Frame {
@@ -122,11 +123,11 @@ export interface Frame {
   flush?: boolean;
 }
 
-/** The stream entry fields of a frame (CONN-AUD-002). */
-// @spec CONN-AUD-002, CONN-AUD-006
-export function encodeFrame(f: Frame): (string | Buffer)[] {
+/** The stream entry fields of a frame (CONN-AUD-002); a flush frame carries no `pcm` field (CONN-AUD-006). */
+// @spec CONN-AUD-002, CONN-AUD-006, BUS-NAT-RS-003
+export function encodeFrame(f: Omit<Frame, "pcm"> & { pcm?: Buffer }): (string | Buffer)[] {
   const out: (string | Buffer)[] = ["v", String(FRAME_VERSION), "epoch", String(f.epoch), "seq", String(f.seq), "rate", String(f.rate), "ch", String(f.ch)];
-  if (!f.flush) out.push("pcm", f.pcm); // a flush frame has no pcm (CONN-AUD-006)
+  if (!f.flush) out.push("pcm", f.pcm ?? Buffer.alloc(0));
   if (f.spk !== undefined) out.push("spk", f.spk);
   if (f.name !== undefined) out.push("name", f.name);
   if (f.utt !== undefined) out.push("utt", f.utt);
@@ -138,7 +139,7 @@ export function encodeFrame(f: Frame): (string | Buffer)[] {
 export type DecodedFrame = { ok: true; frame: Frame } | { ok: false; reason: string };
 
 /** Decode one entry's field list; never throws (CONN-BP-006). */
-// @spec CONN-BP-006, CONN-AUD-002, CONN-AUD-006
+// @spec CONN-BP-006, CONN-AUD-002, CONN-AUD-006, BUS-NAT-RS-003
 export function decodeFrame(fields: readonly (string | Buffer)[]): DecodedFrame {
   const m = new Map<string, Buffer>();
   for (let i = 0; i + 1 < fields.length; i += 2) {

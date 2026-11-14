@@ -433,6 +433,14 @@ merged. The bus gate, on `scripts/dev/bus-bench.ts` at 8 sources: the native
 bus cuts frames-path CPU by at least 40% with p99 no worse than the
 TypeScript bus.
 
+**Deferred: native tooling.** The direction is to move the operator and
+developer tooling to Rust over time: `cohostctl` and the dev scripts under
+`scripts/dev/` (latency report, bus benchmark, bus publish and tail, the
+baseline driver). Nothing in this design requires it, no spec covers it yet,
+and each tool moves only in its own change, once `crates/cohost-bus` is in
+place for it to share. The services listed above as staying TypeScript are not part of this
+direction.
+
 ### Cross-cutting protocols (observed)
 
 - **Turn-taking.** salience publishes `attention.focus`; cortex publishes

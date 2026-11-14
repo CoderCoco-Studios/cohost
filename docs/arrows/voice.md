@@ -4,7 +4,7 @@
 
 ## Status
 
-**AUDITED**: 67 specs: 65 implemented, 0 gaps, 2 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002`, dynamic speech).
+**AUDITED**: 69 specs: 67 implemented, 0 gaps, 2 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002`, dynamic speech).
 
 ## Listening and speaking split
 
@@ -20,7 +20,7 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 
 ## Barge-in and echo gate
 
-`VOICE-STOP-001` to `VOICE-STOP-008` obey `voice.stop`; `VOICE-CHUNK-001` and `VOICE-CHUNK-002` are `[D]` (dynamic speech). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+`VOICE-STOP-001` to `VOICE-STOP-010` obey `voice.stop`; `VOICE-CHUNK-001` and `VOICE-CHUNK-002` are `[D]` (dynamic speech). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
 
 ## References
 
@@ -31,7 +31,7 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (67 specs: 65 `[x]`, 0 `[ ]`, 2 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (69 specs: 67 `[x]`, 0 `[ ]`, 2 `[D]`; prefix `VOICE`)
 
 ### Tests
 Files with `@spec VOICE-` annotations:

@@ -229,7 +229,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "67 specs: 65 [x], 2 [D] (VOICE-CHUNK-001, 002). To review: a `voice.stop` that arrives while the `voice.utterance` or virtual `voice.playing` publish is pending (VOICE-STOP-002, 004, 005, 006)."
+    next: "69 specs: 67 [x], 2 [D] (VOICE-CHUNK-001, 002)."
     drift: null
 
   mouth:

@@ -66,6 +66,27 @@ test("frames are paced at real time with a lead of one second, and the output's 
   } finally { r.stop(); }
 });
 
+// @spec MOUTH-PLAY-007, MOUTH-CONN-004
+test("frame writes that fail after the first frame are skipped and logged: a warning naming output and line, throttled with a suppressed count, and the line still ends on schedule", async () => {
+  let t = 0;
+  const holder: { bus?: { failFrames: boolean } } = {};
+  const clock = { now: () => t, sleep: async (ms: number) => { holder.bus!.failFrames = true; t += ms; } };
+  const r = await rig({ ms: 8000, clock });
+  holder.bus = r.bus;
+  try {
+    await r.out.playback.enqueue("u1", "http://voice/u1.wav");
+    await waitFor(() => r.at("voice.done").length === 1, "voice.done");
+    assert.deepEqual(r.at("voice.done"), [{ id: "u1", sink: "discord" }], "the line ends normally, not as a give-up");
+    assert.equal(r.at("voice.failed").length, 0);
+    assert.ok(t >= 7999 && t <= 8001, `the schedule still covers the line: ${t}`);
+    const warns = r.rec.lines.filter((l) => l.level === "warn" && l.msg === "audio write failed").map((l) => l.obj as Record<string, unknown>);
+    assert.equal(warns.length, 2, "one warning per 5 s window, not one per frame");
+    assert.equal(warns[0]!.output, "discord");
+    assert.equal(warns[0]!.id, "u1");
+    assert.ok(Number(warns[1]!.suppressed) > 100, "the second warning counts the failures suppressed since the first");
+  } finally { r.stop(); }
+});
+
 // @spec MOUTH-CONN-003, MOUTH-ROUTE-003, CONN-BP-005, CONN-ISO-001
 test("the output is ready only while a live registration offers the sink with ready true, and follows it without a restart", async () => {
   const r = await rig({ registered: false });

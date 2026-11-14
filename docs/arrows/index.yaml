@@ -157,7 +157,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "48 specs: 46 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
+    next: "49 specs: 47 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
     drift: null
 
   ears:
@@ -241,7 +241,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). To review: MOUTH-PLAY-007 names a player error mouth cannot observe. Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
+    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   avatar:

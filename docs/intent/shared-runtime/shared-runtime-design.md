@@ -22,7 +22,7 @@ Guiding rules:
 
 | Entry point | Holds | Workspace dependencies |
 |---|---|---|
-| `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio | `@cohost/config`, `@cohost/bus` |
+| `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio, utterance writer (`writeUtterance`: paces an utterance's frames onto a sink stream; specified by CONN-AUD-005 and CONN-BP-004) | `@cohost/config`, `@cohost/bus` |
 | `@cohost/shared/discord-voice` | the Discord voice session | the above, plus `discord.js`, `@discordjs/voice` and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) |
 
 The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package holds only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client.

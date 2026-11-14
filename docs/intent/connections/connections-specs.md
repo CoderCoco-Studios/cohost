@@ -52,6 +52,7 @@ Segment `connections` (prefix `CONN`). LLD: [connections-design.md](connections-
 - [x] **CONN-DISC-010**: The Discord connector shall publish no domain event on `<prefix>:events` and shall subscribe to none. <!-- test: services/connector-discord/test/connector.test.ts -->
 - [x] **CONN-DISC-011**: Where `connections.discord.enabled` is false, the Discord connector shall create no Discord client, register nothing and stay running idle with heartbeat mode `off` and state `ready`. <!-- test: services/connector-discord/test/connector.test.ts -->
 - [x] **CONN-DISC-012**: When the Discord connector reads a flush frame on `audio.out.discord` while its voice connection is Ready, it shall stop the audio player, including when the line's `last` frame was already read and the player is still playing what was buffered for it, and discard the stream it was feeding and every frame buffered for it, without adding them to its dropped-frame count, and shall start the next line it reads on a fresh stream; it shall register the `audio-out` capability for `discord` with `flush` `true`.
+- [x] **CONN-DISC-013**: If the Discord connector's audio player emits an error, then the connector shall log the warning "player error" with the error's message. <!-- test: services/connector-discord/test/connector.test.ts -->
 
 ## Flush (FLUSH)
 

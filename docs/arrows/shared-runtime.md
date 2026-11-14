@@ -39,3 +39,4 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ### Code (files carrying `@spec SHARED-` annotations)
 - packages/shared/src/: audio.ts, boot.ts, control.ts, discord-voice.ts, idle.ts, inject.ts, lifecycle.ts, retry.ts
+- packages/shared/src/utterance.ts (`writeUtterance`, owned by shared-runtime and specified by the connections specs CONN-AUD-005 and CONN-BP-004; tested in packages/shared/test/utterance.test.ts)

@@ -485,3 +485,13 @@ test("a connector that never receives a flush frame plays a stopped line's writt
   assert.deepEqual(r.player.played[0]!.chunks.map((c) => c[0]), [1, 2]);
   await r.stop();
 });
+
+// @spec CONN-DISC-013
+test("an audio player error is logged as the warning 'player error' with the error's message", async () => {
+  const r = await up();
+  r.player.emit("error", new Error("opus exploded"));
+  const warn = r.rec.lines.find((l) => l.level === "warn" && l.msg === "player error");
+  assert.ok(warn, "warning logged");
+  assert.deepEqual(warn!.obj, { err: "opus exploded" });
+  await r.stop();
+});

@@ -30,13 +30,16 @@ export type ConnectorOutput = MouthOutput & { playback: Playback; close(): void 
 /** Length of one frame the writer cuts, ms (CONN-AUD-002). */
 const FRAME_MS = 20;
 
+/** At most one "audio write failed" warning per this long, so a dead Redis does not log once per frame (MOUTH-PLAY-007). */
+const WRITE_WARN_WINDOW_MS = 5000;
+
 /**
  * A sink served by a connector (the `discord` output): it delivers each line by writing paced frames to `audio.out.<tag>`
  * in the format the sink's registration declares, and is ready only while a live registration offers the sink ready.
  * `voice.playing` follows the first frame written; `voice.done` follows the line's own write schedule (its start plus its
  * length), not anything the connector reports, so a sink that goes away mid-line still finishes the line on schedule.
  */
-// @spec MOUTH-CONN-002, MOUTH-CONN-003, MOUTH-CONN-004, MOUTH-CONN-005, MOUTH-STOP-004, CONN-AUD-006, CONN-AUD-007, CONN-AUD-005, CONN-BP-004, CONN-BP-005, MOUTH-PLAY-003, MOUTH-PLAY-004
+// @spec MOUTH-CONN-002, MOUTH-CONN-003, MOUTH-CONN-004, MOUTH-CONN-005, MOUTH-STOP-004, CONN-AUD-006, CONN-AUD-007, CONN-AUD-005, CONN-BP-004, CONN-BP-005, MOUTH-PLAY-003, MOUTH-PLAY-004, MOUTH-PLAY-007
 export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
   const sequencer = new FrameSequencer();
   const now = d.clock?.now ?? (() => performance.now());
@@ -44,6 +47,16 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
   /** Bumped when a line ends or is abandoned, so a pending completion of an earlier line does nothing. */
   let line = 0;
   let closed = false;
+  let lastWriteWarn = -Infinity;
+  let suppressedWrites = 0;
+  /** Log a failed frame write, at most once per window, carrying the failures suppressed since the previous warning. */
+  const warnWriteFailed = (err: unknown, id: string): void => {
+    if (now() - lastWriteWarn < WRITE_WARN_WINDOW_MS) { suppressedWrites++; return; }
+    lastWriteWarn = now();
+    const suppressed = suppressedWrites;
+    suppressedWrites = 0;
+    d.log.warn({ err: String(err), output: d.tag, id, ...(suppressed ? { suppressed } : {}) }, "audio write failed");
+  };
 
   const playback: Playback = new Playback({
     bus: d.bus, log: d.log, sink: d.tag, gainDb: d.gainDb, fallback: d.fallback, fetchAudio: d.fetchAudio ?? httpAudio,
@@ -68,7 +81,10 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
           if (!first) { first = true; resolve(); }
         };
         writeUtterance(
-          { write, sequencer, format: offer.cap.format, now, sleep, abort: () => abandoned || mine !== line || closed },
+          {
+            write, sequencer, format: offer.cap.format, now, sleep, abort: () => abandoned || mine !== line || closed,
+            onWriteError: (err, f) => { if (!abandoned) warnWriteFailed(err, f.utt); },
+          },
           { utt: id, pcm, from: { rate: 48_000, channels: 2 } },
         ).then(async () => {
           if (abandoned) return;

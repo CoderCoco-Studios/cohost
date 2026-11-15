@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 166 specs, 161 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 166 specs, 161 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. New gaps from the docs site's extension guides: BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); the spec file now holds 171 specs (161 `[x]`, 5 `[ ]`, 5 `[D]`).
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -34,7 +34,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (166 specs: 161 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (171 specs: 161 `[x]`, 5 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -88,6 +88,9 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 **Summary:** 166 specs, 161 `[x]`, 0 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## Work Required
+
+### Should Fix
+- Build and test the Rust example client (BUS-NAT-EX-001..005), cited by the docs site's Extend pages (docs-site Extension guides).
 
 ### Deferred (`[D]`)
 - BUS-NAT-GATE-001, 004, 005, 006 (merge gate): a one-time procedure; the measured events-path result is recorded in LLD § Measurement gate. BUS-NAT-RS-009 (add a Rust codec type with its fixtures): a procedure for future work, with no Rust service yet.

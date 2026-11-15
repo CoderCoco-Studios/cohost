@@ -289,6 +289,18 @@ The contract for the codecs is a set of shared JSON fixtures in `packages/bus/fi
 
 `packages/bus/test/contract.test.ts` checks each event and registration case against the zod schema (`safeParse` success equals `valid`; the parse result deep-equals `parsed`), each frame case against the TypeScript `decodeFrame`, each tag case against the TypeScript `tagProblem` (`null` exactly when `valid`), and `constants.json` against the TypeScript constants and names. `crates/cohost-bus/tests/contract.rs` reads the event and registration fixtures from the same directory (resolved from `CARGO_MANIFEST_DIR`) and checks that the Rust codec accepts exactly the valid cases and that serialising what it parsed gives JSON equal to `parsed`. The frame, tag and constants fixtures guard the TypeScript codec now and are the contract a future Rust copy is held to ([Deferred](#deferred)). A schema change in `events.ts` for a type in the Rust codec therefore fails a test until fixtures and Rust codec agree. Fixtures for types outside the Rust codec are read by the TS test only.
 
+### Rust example client
+
+The docs site's Rust bus client page shows a Rust program on the bus with `examples/rust-bus/`, the package `cohost-example-bus`, a member of the examples Cargo workspace (`examples/Cargo.toml`), which stays outside the root workspace so the image build never needs it (BUS-NAT-EX-001 to BUS-NAT-EX-005). It does the two things a Rust service does first, using only what the crate provides:
+
+- **Publish.** A `service.heartbeat` for `rust-example`, built as `codec::Heartbeat`, checked with `parse_heartbeat` and appended to the health stream every 5000 ms, so the program appears on the dashboard's Services tab beside the services the manifest lists. It publishes no event on `<prefix>:events`: every type there other than the codec's needs a Rust codec and fixtures first (BUS-NAT-RS-009), and the page says so.
+- **Read.** A consumer group `rust-example`, read with `Reader::read_group`, printing each entry's `type` and `source` and acknowledging it, without decoding `data`.
+- **Stop.** On Ctrl-C a `stopping` heartbeat, then `close`.
+
+The logic is a library function `run(url, prefix, stop, out)`, so `examples/rust-bus/tests/round_trip.rs` runs it with its own prefix, appends an event, reads the line it prints and parses the heartbeat it published (BUS-NAT-CI-002 applies). It depends on nothing the crate does not already use, at the versions the root lockfile holds (docs-site DOCS-GUIDE-026). `packages/bus/test/example-rust-bus.test.ts` runs that test with `cargo test --manifest-path examples/Cargo.toml` during `pnpm test`, skipping when `cargo` is missing; CI's root `cargo test --workspace` does not reach it.
+
+The example is not a service in the module contract's sense: it has no manifest entry, answers no `control` command and no `inject.request`, and its heartbeat comes from its own loop, because the crate has no shared runtime. Those are what a Rust service writes for itself today; a Rust shared runtime is not designed.
+
 ### Build, CI and Docker
 
 - **Local build.** `pnpm build` and `pnpm test` both run `build:native` before `tsc -b`: `cargo build --release -p cohost-bus-node` followed by a copy of `target/release/libcohost_bus_node.so` to `packages/bus/native/cohost-bus.linux-x64-gnu.node`, so the addon exists before any test (BUS-NAT-BLD-002). The `.node` and Cargo's `target` directory are build outputs, ignored by git (BUS-NAT-BLD-003) and excluded from the Docker build context (deployment DEPLOY-IMG-004). A developer needs the Rust toolchain of `rust-toolchain.toml`; `scripts/install.sh` installs it through rustup and builds the addon on the host (deployment DEPLOY-INST-014).
@@ -477,6 +489,7 @@ Tests run from the repo root with `pnpm test` (`node:test`; the root script buil
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
+| Rust example client | `examples/rust-bus/`, a package of the examples Cargo workspace that publishes a codec-checked heartbeat and reads events by envelope, tested against Redis | No example (the crate's tests only); an example that publishes a domain event; a Rust shared runtime first | The crate's tests exercise the transport, not what a service author writes. Publishing a domain event would need that type's Rust codec and fixtures (BUS-NAT-RS-009), a bus change for an example. A shared runtime for Rust is design work no Rust service has asked for yet; the example shows what the crate gives today and the docs page lists what it does not. |
 | Upload bytes | A plain Redis string `cohost:upload:<id>` with a TTL, written by `putUpload` and read-and-deleted by `takeUpload` (`GETDEL`), on the native shared connection; the event carries only the id | Base64 in the event; an HTTP fetch from the dashboard | The stream is capped at 20000 entries and replayed to every group and `/ws` backfill, so megabytes do not belong on it; containers cannot always reach the host, but all of them reach Redis. A TTL means a key nobody reads (service down) expires by itself. |
 | Pending drain | Read this consumer's pending entries batch by batch, the cursor following the last id seen, until a read returns none; on the native transport a drain runs at the start of `subscribe` and again after every read failure | One batch only; always re-read from `0` | A cursor that follows the ids ends even when an entry cannot be acked and so stays pending; re-reading from `0` within a drain would loop on it (BUS-SUB-003). |
 | Stop during a handler | The running handler finishes; its entry is not acked and the rest of the batch is neither handled nor acked | Ack on the closed connection; cut the handler short | `stop()` closes the connections, so an ack would fail on a dead socket; an unacked entry is at most once in effect because the next process has a new consumer name (BUS-SUB-013, BUS-SUB-008). |
@@ -550,6 +563,7 @@ None.
 
 ## References
 
+- Example: `examples/rust-bus/` (package `cohost-example-bus`, `README.md`, `tests/round_trip.rs`); the docs site's Rust bus client page (`docs/advanced/extend/rust-bus.md`) imports it, and its Connector protocol page checks its constants against `packages/bus/fixtures/contract/constants.json` (docs-site DOCS-GUIDE-022, DOCS-GUIDE-023).
 - Segment files: `packages/bus/src/index.ts`, `packages/bus/src/events.ts`, `packages/bus/test/`, `packages/bus/package.json`, `packages/bus/tsconfig.json`, `packages/testing/src/index.ts`, `packages/testing/test/fake-bus.test.ts`, `packages/testing/package.json`, `packages/testing/tsconfig.json`.
 - Owned elsewhere: `packages/shared/src/lifecycle.ts` (shutdown sequence and `startHeartbeat`; see [shared-runtime](../shared-runtime/shared-runtime-design.md)).
 - Segments depended on: [config](../config/config-design.md) (`urls.redis`, `Logger`, `Emotion`; bus -> config).

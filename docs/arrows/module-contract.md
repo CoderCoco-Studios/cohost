@@ -4,7 +4,7 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
-**COMPLETE**: 47 of 47 specs implemented. Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its page (MOD-CFG, MOD-UI), dependents shown `needs` in the Services tab (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test drawer and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`).
+**COMPLETE** for the contract itself: 47 of 52 specs implemented; the 5 gaps are the example service (below). Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its page (MOD-CFG, MOD-UI), dependents shown `needs` in the Services tab (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test drawer and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). New gaps from the docs site's extension guides: MOD-EX-001 to MOD-EX-005 (the `now-playing` example service); the spec file now holds 52 specs (47 `[x]`, 5 `[ ]`, 0 `[D]`).
 
 ## Spec Coverage
 
@@ -32,7 +32,7 @@ None outstanding.
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (47 specs: 47 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/module-contract/module-contract-specs.md (52 specs: 47 `[x]`, 5 `[ ]`, 0 `[D]`)
 
 ### Code
 - packages/control/src/manifest.ts, health.ts
@@ -45,3 +45,8 @@ None outstanding.
 - packages/config/test/editor.test.ts
 - services/dashboard/test/settings.test.ts, page.test.ts, inject-event.test.ts, stack-rebuild.test.ts, unit-contract.test.ts, live-stack.e2e.test.ts
 - services/{affect,avatar,chat,connector-discord,cortex,ears,eyes,memory,mouth,salience,voice}/test/contract.test.ts; services/cortex/test/independence.test.ts; services/salience/test/independence.test.ts; services/memory/test/main.test.ts
+
+## Work Required
+
+### Should Fix
+- Build and test the example service (MOD-EX-001..005), cited by the docs site's Extend pages (docs-site Extension guides).

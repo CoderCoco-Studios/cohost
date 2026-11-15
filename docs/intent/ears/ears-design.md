@@ -126,6 +126,12 @@ A capture source is an adapter that hands finished audio clips to the one `Heari
 
 Both adapters transcribe through the same `EarsHealth.track`-wrapped transcriber as connector sources and injection, so `deps.stt` follows them too, and every source shares the same filters, so a stub-engine clip ("stub transcript (n ms)") flows through the same drop-phrase and word checks.
 
+### Example clients
+
+The docs site's Send audio to ears page shows how to feed the `http` source from a program. `examples/audio-in/` holds a client in Python (`send_clip.py`, standard library) and one in TypeScript (`send-clip.ts`, Node built-ins, run with `node` on Node 22.18 or later), both with the same arguments (a file, `--url`, `--speaker`, `--source`), a `curl` script (`send.sh`) sending the same request, and two one-line conversion scripts that turn any recording into the 16 kHz mono 16-bit WAV ears transcribes without resampling (`to-wav-sox.sh`, `to-wav-ffmpeg.sh`). ears resamples any rate and channel count itself, so conversion is for formats ears does not read (MP3, M4A, Ogg), not a requirement of the route. Every client sends the bearer token from `EARS_HTTP_TOKEN` when it is set (EARS-SRC-013), prints ears' JSON reply and exits non-zero when the clip was not accepted (EARS-EX-001 to EARS-EX-004).
+
+`services/ears/test/example-clients.test.ts` runs each client against a real `http` capture with the stub transcriber, so the clients are held to the listener they talk to (EARS-EX-005); a client or converter whose program is not installed is skipped, as the reference hook server test skips `server.py` without `python3` (EARS-EX-006, EARS-EX-007).
+
 ## Echo gate
 
 The desktop capture helper records the host's output device, so when the co-host's voice plays on that device (a local audio output, or the dashboard page opened on the host) the helper hears it and ears would transcribe the co-host as if it were a person, answer it, and, for salience, treat it as an interruption. The Discord source cannot do this, because the connector reads no bot account. The echo gate drops utterances from the sources that can.
@@ -209,6 +215,7 @@ Where `ears.stt_engine` is `stub` (CFG-SCH-022; the isolation preset sets it), t
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
+| Example clients for the `http` source | A Python and a TypeScript client, a `curl` script and `sox` and `ffmpeg` conversion scripts, all run by a test against the real listener, the converters skipped where their program is missing | Prose and a `curl` line only; a client library package; a microphone recorder | A program that posts a clip is what a developer copies; testing it against `createHttpCapture` keeps the clients true to the status codes and token rule the listener enforces. A library would be a package to version for a single request. Recording from a microphone depends on the reader's audio stack, which no test can reach, so the page converts a file the reader already has. |
 | Listening and speaking | ears only listens; speaking (the Discord playback sink and the spoken fallback line) is the separate service [mouth](../mouth/mouth-design.md) | One process with both jobs (the original ears); one process holding a shared Discord session for two modules; speaking folded into voice | Owner direction: listening and speaking are separate modules, so audio sources and outputs can be tuned and routed separately and either half restarts without the other. Full comparison: [listen-speak-split](decisions/listen-speak-split.md) (the Discord-identity part superseded by [connector-protocol](../connections/decisions/connector-protocol.md)).
 | Service name | Keep `ears` for the listening half | `hearing`; `listen`; `stt` | Once speaking leaves, `ears` names exactly what the service does, and keeping it leaves the `EARS` spec prefix, the heartbeat name, the consumer group, the Compose profile, the manifest id and the `inject.request` target `ears` unchanged. |
 | Speaker identity | `speakerId` is the Discord user id, published unmodified; ears keeps no identity mapping (EARS-HEAR-011) | Map Discord ids to chat viewers in ears; publish only the display name | The id is stable and unique, and the display name is neither; the viewer-identity mapping belongs to memory, which owns viewers and notes, so voice speakers accrue notes there ([Voice speakers](../memory/memory-design.md#voice-speakers)). |
@@ -266,6 +273,7 @@ Files in this segment:
 - `services/ears/src/index.ts`, `service.ts`, `connector-source.ts` (consume and assemble `audio.in`), `sources.ts`, `capture.ts`, `capture-http.ts`, `capture-dir.ts`, `vad.ts`, `echo.ts`, `session.ts`, `hearing.ts`, `transcript.ts`, `audio.ts`, `inject.ts`, `health.ts`
 - `services/ears/test/audio.test.ts`, `ears.test.ts`, `filter.test.ts`, `transcript.test.ts`, `stub.test.ts`, `loop.test.ts`, `service.test.ts`, `connector-source.test.ts`, `health.test.ts`, `inject.test.ts`, `inject-limits.test.ts`, `session.test.ts`, `capture.test.ts`, `capture-http.test.ts`, `capture-dir.test.ts`, `endpointing.test.ts`, `partials.test.ts`, `echo.test.ts`, `timing.test.ts`, `silero.test.ts`, `no-discord.test.ts`
 - `services/ears/package.json`, `services/ears/tsconfig.json`
+- `examples/audio-in/` (`send_clip.py`, `send-clip.ts`, `send.sh`, `to-wav-sox.sh`, `to-wav-ffmpeg.sh`, `README.md`) and `services/ears/test/example-clients.test.ts`; the docs site's Send audio to ears page (`docs/advanced/extend/audio-in.md`) imports them
 
 Other segments (arrow shows direction):
 

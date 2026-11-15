@@ -4,7 +4,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 ## Status
 
-**AUDITED**: 62 specs: 62 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
+**AUDITED**: 62 specs: 62 implemented, 0 deferred, 0 gaps. The LLD has no open questions. New gaps from the docs site's extension guides: AVATAR-EX-001 to AVATAR-EX-004 (the UDP JSON example driver); the spec file now holds 66 specs (62 `[x]`, 4 `[ ]`, 0 `[D]`).
 
 ## References
 
@@ -15,7 +15,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (62 specs: 62 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `AVATAR`)
+- docs/intent/avatar/avatar-specs.md (66 specs: 62 `[x]`, 4 `[ ]`, 0 `[D]`; prefix `AVATAR`)
 
 ### Tests
 Files with `@spec AVATAR-` annotations:
@@ -88,6 +88,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 None.
 
 ### Should Fix
+- Build and test the example driver (AVATAR-EX-001..004), cited by the docs site's Extend pages (docs-site Extension guides).
 1. Add an event-bus "subscribed" hook so boot does not need the duplicate `resetGroup` call (event-bus segment).
 2. Re-apply the current expression after a VTS reconnect (the driver forgets its record; the engine does not re-send).
 

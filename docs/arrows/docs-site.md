@@ -4,12 +4,12 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 ## Status
 
-**MAPPED** — 129 specs: 128 implemented, 0 deferred, 1 gap. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). A separate audit has not been run.
+**MAPPED** — 156 specs: 126 implemented, 0 deferred, 30 gaps. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are designed and specified, not built: DOCS-GUIDE-001 to 026, DOCS-EX-005, and the reworded DOCS-PAGE-006 and DOCS-EX-002 are gaps, as are the example specs in the owning segments. A separate audit has not been run.
 
 ## Orientation
 
-- Design: LLD § Reader and tracks, § Page tree (every page's path and track), § Page authoring (frontmatter, `verified:`, glossary links), § Voice, § README and examples, § Architecture section (dynamic-route excerpts), § Publishing boundary, § Build and checks, § Theme and personality (Palette and Contrast pairs tables the docs check reads), § Served by the dashboard (the live health component).
-- Cross-segment edges: deployment runs the build (`docs-build`, `pages`; DEPLOY-CI-003, DEPLOY-CI-004), owns the licence footer (DEPLOY-LIC-004) and the content specs that name site pages (DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006, DEPLOY-INST-011). Every leaf LLD is excerpted, so each must keep a `## Context and Design Philosophy` section, and the HLD Segments table must list exactly the leaf LLDs (DOCS-ARCH-004). The dashboard serves the build at `/cohost/` (DASH-DOCS-*), answers the live health component's `GET /services` (DASH-FEED-006) and links the Service health page's `#the-states` anchor (DASH-UI-025, kept by DOCS-LIVE-012); `pnpm dashboard` builds the site at each start (DEPLOY-HOST-001).
+- Design: LLD § Reader and tracks, § Page tree (every page's path and track), § Page authoring (frontmatter, `verified:`, glossary links), § Voice, § README and examples, § Extension guides (the guide set, the Extension guides, Tested examples and Example layout tables the docs check reads, snippet imports and the Extend page checks), § Architecture section (dynamic-route excerpts), § Publishing boundary, § Build and checks, § Theme and personality (Palette and Contrast pairs tables the docs check reads), § Served by the dashboard (the live health component).
+- Cross-segment edges: deployment runs the build (`docs-build`, `pages`; DEPLOY-CI-003, DEPLOY-CI-004), owns the licence footer (DEPLOY-LIC-004) and the content specs that name site pages (DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006, DEPLOY-INST-011). Every leaf LLD is excerpted, so each must keep a `## Context and Design Philosophy` section, and the HLD Segments table must list exactly the leaf LLDs (DOCS-ARCH-004). The dashboard serves the build at `/cohost/` (DASH-DOCS-*), answers the live health component's `GET /services` (DASH-FEED-006) and links the Service health page's `#the-states` anchor (DASH-UI-025, kept by DOCS-LIVE-012); `pnpm dashboard` builds the site at each start (DEPLOY-HOST-001). The Extend pages import examples owned by region-hooks (HOOK-EX-*), model-backends (LLM-EX-*), ears (EARS-EX-*), avatar (AVATAR-EX-*), module-contract (MOD-EX-*) and event-bus (BUS-NAT-EX-*); the Connector protocol page is checked against event-bus's `constants.json` (BUS-NAT-FIX-001). `examples/` has its own TypeScript project and Cargo workspace, named by no root manifest, so deployment's image build is unaffected.
 
 ## References
 
@@ -20,11 +20,12 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 - docs/intent/docs-site/docs-site-design.md
 
 ### EARS
-- docs/intent/docs-site/docs-site-specs.md (129 specs, prefix `DOCS`: 128 `[x]`, 1 `[ ]`, 0 `[D]`)
+- docs/intent/docs-site/docs-site-specs.md (156 specs, prefix `DOCS`: 126 `[x]`, 30 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/docs-check.test.ts (the docs check, sidebar, loaders and README/examples shape)
-- packages/config/test/live-health.test.ts (planned: the live health module, DOCS-LIVE-004 to 010)
+- packages/config/test/live-health.test.ts (the live health module, DOCS-LIVE-004 to 010)
+- packages/config/test/docs-guides.test.ts (planned: config fragments on Extend pages through `ConfigSchema`, type-checking `examples/tsconfig.json`, building the examples Cargo workspace and comparing its lockfile, DOCS-GUIDE-010, 025, 026)
 - packages/config/test/helpers/ (fixtures it builds)
 
 ### Code
@@ -41,7 +42,8 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 3. Architecture excerpts: dynamic routes over the HLD, each leaf LLD's Context and Design Philosophy, and the current decision documents.
 4. `scripts/docs-check.mjs`: frontmatter, sidebar, glossary, facts against `package.json`, `.env.example`, `config.example.yaml` and the bus event registry, GitHub links, narration phrases, README and examples shape; a built-site pass for the publishing boundary and anchors.
 5. Theme (`docs/.vitepress/theme/`): extends VitePress's default theme with a token palette, the cohost mark, track badges, aside and callout styling, the home flow and the 404 page; Mermaid fences rendered to SVG at build time; theme checks for contrast, network origins, motion, focus, print and narrow screens, plus a manual review on the Verification log.
-6. Live health (planned): `LiveHealth.vue` over `live-health.mjs`, on the Service health page; reads the dashboard's `GET /services` when the dashboard serves the site and shows a note anywhere else.
+6. Live health: `LiveHealth.vue` over `live-health.mjs`, on the Service health page; reads the dashboard's `GET /services` when the dashboard serves the site and shows a note anywhere else.
+7. Extension guides (planned): twelve Extend pages, examples under `examples/` shown by VitePress code imports, and the Extend page checks (snippet imports, fence languages, command words, paths, config fragments, tested examples, the Tested examples table, the connector constants).
 
 ## Spec Coverage
 
@@ -50,17 +52,18 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 | Build | DOCS-BUILD-001 to DOCS-BUILD-009 | 9 | 9 | 0 | 0 |
 | Publishing boundary | DOCS-PUB-001 to DOCS-PUB-004 | 4 | 4 | 0 | 0 |
 | Information architecture | DOCS-IA-001 to DOCS-IA-009 | 9 | 9 | 0 | 0 |
-| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 7 | 0 | 0 |
+| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 6 | 0 | 1 |
 | Glossary | DOCS-GLOSS-001 to DOCS-GLOSS-004 | 4 | 4 | 0 | 0 |
 | Links | DOCS-LINK-001 to DOCS-LINK-003 | 3 | 3 | 0 | 0 |
 | Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 6 | 0 | 0 |
 | Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 10 | 0 | 0 |
 | README | DOCS-README-001 to DOCS-README-004 | 4 | 4 | 0 | 0 |
-| Examples | DOCS-EX-001 to DOCS-EX-004 | 4 | 4 | 0 | 0 |
+| Examples | DOCS-EX-001 to DOCS-EX-005 | 5 | 3 | 0 | 2 |
 | Theme and personality | DOCS-THEME-001 to DOCS-THEME-056 | 56 | 55 | 0 | 1 |
-| Served by the dashboard | DOCS-LIVE-001 to DOCS-LIVE-013 | 13 | 0 | 0 | 13 |
+| Served by the dashboard | DOCS-LIVE-001 to DOCS-LIVE-013 | 13 | 13 | 0 | 0 |
+| Extension guides | DOCS-GUIDE-001 to DOCS-GUIDE-026 | 26 | 0 | 0 | 26 |
 
-**Summary:** 128 of 129 specs implemented; the gap is DOCS-THEME-017 (the favicon's drawing, checked by eye).
+**Summary:** 126 of 156 specs implemented; the gaps are DOCS-THEME-017 (the favicon's drawing, checked by eye) and the extension guides (DOCS-PAGE-006, DOCS-EX-002, DOCS-EX-005, DOCS-GUIDE-001 to 026).
 
 ## Work Required
 
@@ -68,8 +71,8 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 None.
 
 ### Should Fix
-1. Build the live health component, its docs-check rules and its module tests (DOCS-LIVE-001 to 013), with the Service health page's `<LiveHealth />` section.
+1. Build the extension guides: the examples and their tests in the owning segments (HOOK-EX-011..019, LLM-EX-001..006, EARS-EX-001..007, AVATAR-EX-001..004, MOD-EX-001..005, BUS-NAT-EX-001..005), the Extend page checks and `docs-guides.test.ts` (DOCS-GUIDE-001..026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), then the twelve Extend pages (DOCS-PAGE-006).
 2. Open the favicon (`docs/public/favicon.svg`) in a browser tab and confirm it draws the `idle` expression, then mark DOCS-THEME-017 `[x]`. Repeat the DOCS-THEME-049 review whenever the theme changes.
 
 ### Nice to Have
-1. Extension guides (LLD § Open Questions, Deferred).
+1. More extension guides (LLD § Open Questions, Deferred): a TypeScript connector, a receiver for `mouth`'s `http` output, other languages.

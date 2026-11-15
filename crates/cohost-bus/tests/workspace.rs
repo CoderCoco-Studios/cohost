@@ -1,6 +1,8 @@
 //! Structural checks of the Cargo workspace (BUS-NAT-BLD-*, BUS-NAT-RS-001). They read the repository files.
 use std::path::PathBuf;
 
+mod common;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -69,6 +71,81 @@ fn bld_009_node_crate_is_a_cdylib_with_test_panic_feature_off_by_default() {
         !m.contains("default = ["),
         "no default features, so test-panic is never on by default"
     );
+    // BUS-NAT-ERR-011: the export exists only with the feature, and no shipped build turns it on
+    let lib = read("crates/cohost-bus-node/src/lib.rs");
+    let at = lib
+        .find("js_name = \"testPanic\"")
+        .expect("testPanic export");
+    let attrs = &lib[..at];
+    let gate = attrs
+        .rfind("#[cfg(feature = \"test-panic\")]")
+        .expect("cfg gate");
+    assert!(
+        !attrs[gate..].contains("\n}\n")
+            && !attrs[gate..].contains("\nfn ")
+            && !attrs[gate..].contains("\npub fn "),
+        "the cfg attribute belongs to the testPanic item"
+    );
+    let pkg = read("package.json");
+    let script = pkg
+        .lines()
+        .find(|l| l.contains("\"build:native\""))
+        .expect("build:native script");
+    assert!(
+        !script.contains("test-panic"),
+        "build:native must not enable test-panic"
+    );
+    assert!(
+        !read("Dockerfile").contains("test-panic"),
+        "the Dockerfile must not enable test-panic"
+    );
+    // BUS-NAT-BLD-009: native.ts declares its own binding types and imports no napi-generated file
+    let native = read("packages/bus/src/native.ts");
+    assert!(
+        native.contains("interface Binding"),
+        "native.ts declares the binding's types"
+    );
+    for line in native
+        .lines()
+        .filter(|l| l.trim_start().starts_with("import "))
+    {
+        assert!(
+            line.contains("\"node:module\"") || line.contains("\"./transport.js\""),
+            "native.ts imports a napi-generated file: {line}"
+        );
+    }
+    assert!(!native.contains("index.d.ts") && !native.contains("index.js"));
+}
+
+// @spec BUS-NAT-RS-002
+#[test]
+fn rs_002_node_crate_only_converts_and_maps_errors() {
+    let m = read("crates/cohost-bus-node/Cargo.toml");
+    assert!(
+        !m.lines().any(|l| l.trim_start().starts_with("redis")),
+        "cohost-bus-node must not depend on redis"
+    );
+    let node = read("crates/cohost-bus-node/src/lib.rs");
+    assert!(
+        !node.contains("redis::"),
+        "cohost-bus-node must not use the redis crate"
+    );
+    assert!(
+        !node.contains("cmd("),
+        "cohost-bus-node must issue no Redis command"
+    );
+}
+
+// @spec BUS-NAT-CI-002
+#[test]
+fn ci_002_integration_tests_use_a_stream_prefix_of_their_own() {
+    let a = common::unique_prefix("x");
+    let b = common::unique_prefix("x");
+    assert_ne!(a, b, "a different prefix per call");
+    for p in [&a, &b] {
+        assert_ne!(p, "cohost");
+        assert!(!p.starts_with("cohost"), "never the cohost prefix: {p}");
+    }
 }
 
 // @spec BUS-NAT-RS-001

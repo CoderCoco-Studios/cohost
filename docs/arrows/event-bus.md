@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 165 specs, 150 `[x]`, 10 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 134 of the 150 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. Every `[ ]` line is listed under Work Required; the `[D]` lines are listed there too.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 165 specs, 160 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 144 of the 160 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -34,10 +34,10 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (165 specs: 150 `[x]`, 10 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (165 specs: 160 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
-- packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
+- packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
 - crates/cohost-bus/tests/: transport.rs, connection.rs, contract.rs, workspace.rs
 - packages/testing/test/fake-bus.test.ts
 - services/salience/test/timing.test.ts, services/cortex/test/timing.test.ts (BUS-EVT-025)
@@ -47,7 +47,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - crates/cohost-bus/src/: codec.rs, consts.rs, error.rs, keys.rs, transport.rs
 - crates/cohost-bus-node/src/lib.rs
 - packages/testing/src/index.ts
-- Also part of the segment: packages/bus/src/transport.ts (`BusTransport`, `FrameTransport`), registrar.ts, Cargo.toml, rust-toolchain.toml, packages/bus/package.json, scripts/dev/bus-bench.ts (the measurement gate)
+- Also part of the segment: packages/bus/src/transport.ts (`BusTransport`, `FrameTransport`), registrar.ts, Cargo.toml, rust-toolchain.toml, packages/bus/package.json, scripts/dev/bus-bench.ts (the measurement gate; carries `@spec BUS-NAT-GATE-007`)
 
 ## Architecture
 
@@ -73,30 +73,21 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Group reset | BUS-GROUP-001 | 1 | 0 | 0 |
 | Shutdown | BUS-STOP-001 | 1 | 0 | 0 |
 | Native: facade API | BUS-NAT-API-001 to 011 | 11 | 0 | 0 |
-| Native: transport | BUS-NAT-TRN-001 to 014 (006, 012 retired) | 11 | 1 | 0 |
+| Native: transport | BUS-NAT-TRN-001 to 014 (006, 012 retired) | 12 | 0 | 0 |
 | Native: acks | BUS-NAT-ACK-001 to 008 | 8 | 0 | 0 |
 | Native: connections | BUS-NAT-CONN-001 to 007 | 7 | 0 | 0 |
-| Native: errors | BUS-NAT-ERR-001 to 011 | 10 | 1 | 0 |
-| Native: frames | BUS-NAT-FRM-001 to 008 | 7 | 1 | 0 |
-| Native: crate | BUS-NAT-RS-001 to 009 | 7 | 1 | 1 |
+| Native: errors | BUS-NAT-ERR-001 to 011 | 11 | 0 | 0 |
+| Native: frames | BUS-NAT-FRM-001 to 008 | 8 | 0 | 0 |
+| Native: crate | BUS-NAT-RS-001 to 009 | 8 | 0 | 1 |
 | Native: contract fixtures | BUS-NAT-FIX-001 to 004 | 4 | 0 | 0 |
-| Native: build | BUS-NAT-BLD-001 to 009 (008 retired) | 4 | 4 | 0 |
-| Native: CI | BUS-NAT-CI-002 (001, 003 retired) | 0 | 1 | 0 |
-| Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 0 | 1 | 4 |
+| Native: build | BUS-NAT-BLD-001 to 009 (008 retired) | 8 | 0 | 0 |
+| Native: CI | BUS-NAT-CI-002 (001, 003 retired) | 1 | 0 | 0 |
+| Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 165 specs, 150 `[x]`, 10 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 165 specs, 160 `[x]`, 0 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## Work Required
-
-### Open specs (`[ ]`; the behaviour is built, no annotated test yet)
-1. BUS-NAT-TRN-011 (native layer never writes to stdout/stderr): no print in either crate and the panic hook is silenced; the failfast subprocess test checks empty stdout/stderr but cites other IDs.
-2. BUS-NAT-ERR-006 (a panic rejects `BUS_INTERNAL`): `catch_unwind` in the binding, `panic = "unwind"`; no test builds with `test-panic` and calls `testPanic`.
-3. BUS-NAT-FRM-008 (frame transport codes): `toBusError` in `frames.ts` maps `ReplyError` to `BUS_REDIS` and the rest to `BUS_CONNECTION`; only the `BUS_CONNECTION` half is tested.
-4. BUS-NAT-RS-002 (binding holds no logic): structural, no test.
-5. BUS-NAT-BLD-002 (`pnpm build`/`test` run `build:native`), BUS-NAT-BLD-004, BUS-NAT-BLD-005 (addon location and load error), BUS-NAT-BLD-006 (linux-x64-gnu only): implemented in `package.json` and `native.ts`, no annotated test.
-6. BUS-NAT-CI-002 (Rust tests use their own prefix): `tests/common/mod.rs` does, with a comment but no `@spec`-annotated test.
-7. BUS-NAT-GATE-007 (`--runs`, `--json` on the bench): implemented, no test.
 
 ### Deferred (`[D]`)
 - BUS-NAT-GATE-001, 004, 005, 006 (merge gate): a one-time procedure; the measured events-path result is recorded in LLD § Measurement gate. BUS-NAT-RS-009 (add a Rust codec type with its fixtures): a procedure for future work, with no Rust service yet.

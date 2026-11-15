@@ -14,7 +14,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 2. **S19** throwing `impl.rules` → a documented precondition on regions; the gap is retired. Specs: HOOK-FALLBACK-005 (the precondition is written on `ModuleImpl.rules` and pinned by a test).
 3. **S20** `examples/modules/server.py` → stays in this segment: add `# @spec` annotations, a smoke test against the region validators, and fix the empty-body default. Specs: HOOK-EX-006.
 4. **S21** visibility of fallbacks → the next warning carries the suppressed count. Specs: HOOK-WARN-003.
-5. **B20** `examples/modules/README.md` → say 8000 is the default for every hook and mention the example config's 2500 for the critic. Specs: none (docs fix).
+5. **B20** the docs site's Brain hooks page (`docs/advanced/extend/hooks.md`) → say 8000 is the default for every hook and mention the example config's 2500 for the critic. Specs: none (docs fix).
 6. **R5** mock-backed hooks → never succeed (unchanged); a hook built on mock warns once; explicit `mock` on a hook stays rejected by config. Specs: HOOK-WARN-004, HOOK-FALLBACK-006; CFG-SCH-009 (config).
 
 ## References
@@ -44,7 +44,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - packages/llm/src/mock.ts (cites HOOK-FALLBACK-006 alongside LLM-MOCK-002)
 - packages/modules/package.json, packages/modules/tsconfig.json
 - examples/modules/server.py (reference HTTP hook server, Python 3 stdlib)
-- examples/modules/README.md (operator docs and contracts)
+- docs/advanced/extend/hooks.md (operator docs and contracts; examples/modules/README.md is the directory guide)
 - services/affect/src/{affect,appraise,main}.ts, services/salience/src/main.ts (consumer wiring that carries `@spec HOOK-`)
 
 ## Architecture
@@ -87,7 +87,7 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 4. **Fallbacks are visible as throttled warnings**: one per 30 s per instance, error truncated to 120 chars, carrying the suppressed count (HOOK-WARN-003, S21).
 5. **`impl.rules` is unguarded**, so "the show goes on" depends on region rules never throwing (HOOK-FALLBACK-005, S19: regions guarantee it); the precondition is written on `ModuleImpl.rules` and pinned by `module.test.ts`.
 6. **`ModuleConfig` has one definition** in `@cohost/config`, re-exported by `@cohost/modules` (HOOK-CFG-001).
-7. **Contracts are hand-duplicated** across `validate` functions in three services, `examples/modules/README.md`, `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures when `python3` is installed. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
+7. **Contracts are hand-duplicated** across `validate` functions in three services, the docs site's Brain hooks page (`docs/advanced/extend/hooks.md`), `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures when `python3` is installed. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
 8. **Annotation placement** - `@spec` comments in `src/` are trailing comments on the entry-point line.
 
 ## Work Required

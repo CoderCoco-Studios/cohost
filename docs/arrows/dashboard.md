@@ -100,4 +100,4 @@ Orientation:
 
 ## Coverage notes
 
-Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`). Manual checks for what a stub DOM cannot cover are in `docs/TESTING.md`.
+Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`). Manual checks for what a stub DOM cannot cover are on the docs site's Single-PC checklist (`docs/advanced/testing/single-pc.md`).

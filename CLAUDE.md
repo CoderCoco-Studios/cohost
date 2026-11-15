@@ -1,8 +1,9 @@
 # cohost
 
 Locally hosted AI VTuber co-host: pnpm TypeScript monorepo, services on a Redis
-Streams bus. See `README.md` for architecture and `docs/high-level-design.md` for
-the system design.
+Streams bus. See `docs/high-level-design.md` for the system design and the docs
+site under `docs/` (published at https://codercoco-studios.github.io/cohost/) for
+operator and developer documentation.
 
 ## Commands
 
@@ -22,7 +23,7 @@ examples, compose, and docs to match.
 Behavior is specified with linked-intent development (LID, below): the HLD at
 `docs/high-level-design.md`, per-segment LLDs and EARS specs under
 `docs/intent/<segment>/`, and the arrow overlay under `docs/arrows/`. Guide:
-`docs/SPEC-DRIVEN.md`.
+`docs/project/spec-driven.md`.
 
 The OpenSpec baseline (`openspec/`) was removed; its history is in git, last
 present at the commit before the one that removed it. Do not recreate it and do

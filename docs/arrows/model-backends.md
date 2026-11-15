@@ -28,7 +28,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 - packages/llm/src/mock.ts
 - packages/llm/package.json, packages/llm/tsconfig.json
 - Other files citing LLM IDs: packages/modules/src/index.ts, services/memory/src/reflect-run.ts, services/memory/src/backend.ts
-- examples/providers/README.md (operator recipes)
+- docs/guide/tune/model.md (operator recipes, docs-site)
 - scripts/dev/stub-llm.ts (fake Ollama server, reference only)
 
 ## Architecture
@@ -77,7 +77,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 None.
 
 ### Should Fix
-1. Fix `examples/providers/README.md`: its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
+1. Fix the docs site's Choose a model page (`docs/guide/tune/model.md`): its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
 
 ### Nice to Have
 None.

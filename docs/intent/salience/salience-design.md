@@ -56,7 +56,7 @@ Working memory: `Context` from the working-memory segment, sized `brain.working_
 | other chat | 0.15 |
 | vision, `changed` | 0.3 (unchanged vision: 0) |
 
-These match the weights quoted in `README.md` ("Talkativeness") and `config/config.example.yaml` and are asserted in `test/salience.test.ts`. `toScoreInput` flattens unseen context events into `ScoreInput.events` (kind, who, text, mention, isMod, isSub, changed) plus the current arousal (`scoring.ts`).
+These match the weights quoted on the docs site's When it talks page (`docs/guide/tune/talkativeness.md`) and `config/config.example.yaml` and are asserted in `test/salience.test.ts`. `toScoreInput` flattens unseen context events into `ScoreInput.events` (kind, who, text, mention, isMod, isSub, changed) plus the current arousal (`scoring.ts`).
 
 `createScorer` builds `new Module("salience.scorer", cfg.brain.salience.module, cfg.llm, impl, log)` (`scoring.ts`). `rules` uses `reply_on_mention`; `llm` has a JSON-only system prompt naming the co-host and streamer, a user prompt listing arousal and numbered events marked with kind, mention, mod and sub, `maxTokens: 120` (SAL-SCORE-008); `http` and `llm` share `validate`, which accepts only an object with a `scores` array of the same length as the input whose members are all finite numbers, clamping each to 0..1, and otherwise returns undefined so `Module.run` falls back to rules (`scoring.ts`, `packages/modules/src/index.ts`). Module default `timeout_ms` is 8000 (HOOK-CFG-002, `packages/config/src/schema.ts`). Module construction and fallback semantics are owned by region-hooks; salience owns the input/output shapes and weights.
 

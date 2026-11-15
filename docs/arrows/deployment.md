@@ -1,14 +1,15 @@
 # Arrow: deployment
 
-Compose topology, the single parameterised Dockerfile, the Linux installer, CI workflows, the VitePress docs site, workspace/TypeScript build setup, and the licensing and contribution rules (AGPL-3.0-only plus an owner-reserved commercial licence, an individual CLA).
+Compose topology, the single parameterised Dockerfile, the Linux installer, CI workflows (including the docs site's build and Pages deploy; the site itself is [docs-site](docs-site.md)), workspace/TypeScript build setup, and the licensing and contribution rules (AGPL-3.0-only plus an owner-reserved commercial licence, an individual CLA).
 
 ## Status
 
-**AUDITED** — 82 specs: 80 implemented, 0 deferred, 2 gaps (DEPLOY-INST-007 and DEPLOY-INST-014: the installer's host Rust build and toolchain steps match `scripts/install.sh`, but no run of the installer has exercised them).
+**AUDITED** — 77 specs: 77 implemented, 0 deferred, 0 gaps (audit last run before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
 
 ## Orientation
 
-- Design: LLD § Compose topology (services, profiles, isolation pass-through, healthcheck, `models`, `consolidate`, `reembed`), § Host-run dashboard, § Image build, § Installer, § Build, test and CI, § Docs site, § Licensing and contribution.
+- Design: LLD § Compose topology (services, profiles, isolation pass-through, healthcheck, `models`, `consolidate`, `reembed`), § Host-run dashboard, § Image build, § Installer, § Build, test and CI, § Docs site (the CI side only), § Licensing and contribution.
+- The docs site's pages, checks and README shape are [docs-site](docs-site.md) (`DOCS-*`). The deployment specs that name a site page (DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006, DEPLOY-INST-011) carry what the page must say about this segment's files.
 - The dashboard is not a Compose service; its start script and `.env` needs are DEPLOY-HOST-001 to -004. Dashboard owner decisions: dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md).
 - The listening/speaking split (`ears`, `mouth`, `connector-discord`) is in [mouth.md](mouth.md) and [connections.md](connections.md): DEPLOY-COMPOSE-001, -004, -017, -020, -023, DEPLOY-REPO-001 and DEPLOY-README-004, -005 carry it into this segment. The Compose Discord connector service is `connector-discord`.
 - The control plane's stack controller runs `docker compose up -d --build --remove-orphans` and `docker compose stop` against this Compose file, and the container healthcheck binary is `packages/control/dist/healthcheck.js` (see [control-plane.md](control-plane.md)).
@@ -23,7 +24,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (82 specs, prefix `DEPLOY`: 80 `[x]`, 2 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (77 specs, prefix `DEPLOY`: 68 `[x]`, 9 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -41,12 +42,12 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 ### Code
 Files carrying `@spec DEPLOY-` annotations (trailing comments on mapping keys in the Compose files, appended to existing comment lines in `Dockerfile` and `scripts/install.sh`, full comment lines elsewhere):
 - docker-compose.yml, docker-compose.gpu.yml, Dockerfile, .dockerignore
-- scripts/install.sh, scripts/compose-smoke.sh, scripts/docs-prepare.mjs, scripts/lid-check.mjs, scripts/dev/bus-pub.ts, scripts/dev/bus-tail.ts, scripts/dev/stub-llm.ts, scripts/dev/stub-tts.ts
+- scripts/install.sh, scripts/compose-smoke.sh, scripts/lid-check.mjs, scripts/dev/bus-pub.ts, scripts/dev/bus-tail.ts, scripts/dev/stub-llm.ts, scripts/dev/stub-tts.ts
 - .github/workflows/test.yml, .github/workflows/compose-smoke.yml, .github/workflows/lid-check.yml, .github/workflows/pages.yml, .github/workflows/cla.yml, .github/workflows/docs-build.yml
 
-Cited from the specs with `<!-- impl: -->` (files owned elsewhere or plain data): package.json, pnpm-workspace.yaml, tsconfig.json, tsconfig.base.json, services/dashboard/tsconfig.json, .gitignore, LICENSE, CONTRIBUTING.md, CLA.md, COMMERCIAL.md, README.md, .github/workflows/cla.yml, docs/.vitepress/config.ts, packages/control/src/healthcheck.ts
+Cited from the specs with `<!-- impl: -->` (files owned elsewhere or plain data): package.json, pnpm-workspace.yaml, tsconfig.json, tsconfig.base.json, services/dashboard/tsconfig.json, .gitignore, LICENSE, CONTRIBUTING.md, CLA.md, COMMERCIAL.md, README.md, .github/workflows/cla.yml, docs/.vitepress/config.ts (DEPLOY-LIC-004's footer), packages/control/src/healthcheck.ts
 
-Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), examples/providers/README.md (DEPLOY-README-002), docs/TESTING.md (DEPLOY-README-003).
+Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), docs/guide/tune/model.md (DEPLOY-README-002, a docs-site page). The test of DEPLOY-README-005 in `packages/config/test/compose-chat-data.test.ts` reads `docs/guide/connect/discord.md`.
 
 ## Architecture
 
@@ -59,7 +60,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), exa
 4. `docker-compose.gpu.yml` — NVIDIA overlay for ollama, tts, stt, selected via `COMPOSE_FILE`.
 5. `scripts/install.sh` — Ubuntu/Debian/WSL2 bootstrap (docker, nvidia toolkit, node, pnpm, .env, config seeding, Rust toolchain, host build, pulls, smoke).
 6. CI — `test.yml` (Rust and pnpm tests with Redis and Postgres), `compose-smoke.yml` (build and `healthy`-with-no-restarts check of the smoke services, plus the launch end-to-end test), `lid-check.yml`, `cla.yml` (CLA Assistant Lite), `docs-build.yml` (build-only docs check on PRs), `pages.yml` (VitePress to GitHub Pages).
-7. Docs site — VitePress fed by `scripts/docs-prepare.mjs` (README and examples copied and link-rewritten).
+7. Docs site build — `docs-build.yml` and `pages.yml` run `pnpm docs:build`; the site is [docs-site](docs-site.md).
 8. Governance — AGPL-3.0-only (`LICENSE`, every `package.json`), commercial licence (`COMMERCIAL.md`), individual CLA (`CLA.md`, required by `CONTRIBUTING.md`, signatures in `.github/cla/signatures.json` on the `cla-signatures` branch).
 
 ## Spec Coverage
@@ -69,16 +70,15 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), exa
 | Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-024 (no 016) | 23 | 23 | 0 | 0 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
-| Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 12 | 0 | 2 |
+| Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 14 | 0 | 0 |
 | Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-009 | 9 | 9 | 0 | 0 |
-| Docs site | DEPLOY-DOCS-001 to DEPLOY-DOCS-006 | 6 | 6 | 0 | 0 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 4 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
 | Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-004 | 4 | 4 | 0 | 0 |
-| Documentation consistency | DEPLOY-README-001 to DEPLOY-README-005 | 5 | 5 | 0 | 0 |
+| Documentation consistency | DEPLOY-README-001 to DEPLOY-README-006 | 6 | 6 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 80 of 82 specs implemented; 0 deferred; 2 open (DEPLOY-INST-007, DEPLOY-INST-014). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 77 of 77 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
@@ -86,7 +86,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), exa
 None.
 
 ### Should Fix
-- Run `scripts/install.sh` once on a clean machine to close DEPLOY-INST-007 and DEPLOY-INST-014.
+- Run `scripts/install.sh` once on a clean machine to observe DEPLOY-INST-007 and DEPLOY-INST-014 end to end (their tests check the script's source, not a run).
 
 ### Nice to Have
 1. Slim the runtime image or run as non-root once a safe prune/deploy path exists (DEPLOY-IMG-001, DEPLOY-IMG-002).

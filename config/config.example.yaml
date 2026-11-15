@@ -14,7 +14,7 @@ llm:
   #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
   #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
   #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
-  # Recipes for each: examples/providers/README.md
+  # Recipes for each: the "Choose a model" page of the docs site (docs/guide/tune/model.md)
   #   mock       deterministic offline replies only; for isolated runs (LLM_PROVIDER=mock), never a default.
   #              Memory's embedder is chosen separately by brain.memory.embedder (MEMORY_EMBEDDER), not by this provider.
   provider: "${LLM_PROVIDER:-ollama}"

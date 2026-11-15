@@ -1,0 +1,96 @@
+---
+title: Avatar
+description: Connect a 2D avatar in VTube Studio or a 3D VRM avatar through a VMC app, and map the co-host's emotions to your model's expressions.
+track: simple
+verified: f126b94
+---
+
+# Avatar
+
+By the end of this page the co-host will have a face on your stream: its mouth moves with its voice and its expression follows its mood. You choose between a 2D avatar and a 3D one.
+
+The brain never knows which app you picked. It publishes one canonical picture of the avatar's state (mouth open, current emotion), and a small driver translates that for your app.
+
+| `AVATAR_DRIVER` | App | How it connects |
+| --- | --- | --- |
+| `vtube-studio` | [VTube Studio](../../start/glossary.md#vtube-studio) with a [Live2D](../../start/glossary.md#live2d) model (2D) | Through VTube Studio's own plugin connection |
+| `vmc` | A 3D [VRM](../../start/glossary.md#vrm) avatar app that accepts the [VMC](../../start/glossary.md#vmc) protocol, such as VSeeFace, Warudo, VNyan or VMagicMirror | Through VMC, which carries the pose and expressions as small network messages |
+| `null` | Nothing | No avatar app: the dashboard preview face is all there is. This is the default. |
+
+::: aside
+A face is optional. A voice with no face is a podcast. A face with no voice is a mime. I recommend both.
+:::
+
+## What you need
+
+- A [real install](../install/real-install.md) with the dashboard running.
+- An avatar app with a model loaded: VTube Studio for 2D, or a VRM app for 3D.
+- The avatar app's computer and the AI PC on the same network, if they are different machines.
+
+## Steps: 2D with VTube Studio
+
+1. In VTube Studio, open Settings, General, and turn on **Start API (allow plugins)**.
+
+2. In `.env`, choose the driver. `VTS_HOST` and `VTS_PORT` are where VTube Studio listens; the defaults already work for VTube Studio on the same machine as [Docker](../../start/glossary.md#docker), and `8001` is its default port:
+
+   ```dotenv
+   AVATAR_DRIVER=vtube-studio
+   VTS_HOST=host.docker.internal
+   VTS_PORT=8001
+   ```
+
+3. Restart the `avatar` service from the Services tab, or from a terminal:
+
+   ```bash
+   pnpm cohostctl restart avatar
+   ```
+
+4. VTube Studio pops up an **Allow plugin** request. Click **Allow**. cohost saves the answer in `config/.vts-token`, so you will only be asked once.
+
+5. Tell the co-host what your model's expressions are called. Open `config/expressions.yaml` and, under `vtube-studio`, set each emotion to the name of the hotkey that triggers it in VTube Studio (Settings, Hotkey Settings). Leave an emotion out to skip it. The emotions are `neutral`, `happy`, `laugh`, `surprised`, `smug`, `sad`, `angry`, `confused` and `think`. You can also name hotkeys for gestures, such as `wave`, under `gestures`.
+
+## Steps: 3D with a VRM and VMC
+
+1. In your VRM app, turn on a VMC receiver and note its port. cohost's default is `39539`.
+
+2. In `.env`:
+
+   ```dotenv
+   AVATAR_DRIVER=vmc
+   VMC_HOST=host.docker.internal
+   VMC_PORT=39539
+   ```
+
+   If the app runs on another machine, put its address in `VMC_HOST`.
+
+3. Restart the `avatar` service from the Services tab, or:
+
+   ```bash
+   pnpm cohostctl restart avatar
+   ```
+
+4. Open `config/expressions.yaml` and, under `vmc`, set each emotion to the name of the VRM expression (blendshape) it should use. The defaults use the standard VRM presets, such as `Joy`, `Angry`, `Sorrow` and `Surprised`.
+
+## Getting the avatar into OBS
+
+The avatar app shows the model in its own window. To put it on stream, capture that window in [OBS](../../start/glossary.md#obs) as you would any other, if OBS runs on the same PC. If the avatar app runs on the AI PC and OBS runs on a second PC, send the avatar to OBS over NDI instead. [OBS and the voice on stream](obs.md) covers the other half, the voice.
+
+## How you know it worked
+
+- With VTube Studio: the **Allow plugin** request appeared once, you clicked Allow, and after the next reply the model's mouth moves in time with the voice.
+- With VMC: the model's mouth and expression move after a reply. VMC is one-way fire-and-forget over the network, so cohost cannot tell you it is "connected". The movement is the proof.
+- The Services tab shows `avatar` as `up`.
+- Between lines, the avatar wears the co-host's current mood as its resting face.
+
+## If it didn't
+
+- **VTube Studio never asks you to Allow.** The API is not on, or `VTS_HOST` or `VTS_PORT` is wrong. Check Start API, then restart `avatar`.
+- **The mouth moves but expressions do not.** The names in `config/expressions.yaml` do not match your model. VTube Studio matches hotkey names exactly.
+- **Nothing moves with VMC.** Check the receiver is on, that the port matches `VMC_PORT`, and that no firewall blocks UDP between the machines.
+- **VTube Studio is untested against a real app.** The VMC driver has been run against a network listener and VTube Studio only against a stand-in, so expect to adjust names on first contact.
+
+More cases are on the [troubleshooting page](../troubleshooting.md).
+
+## Next
+
+Tune who the co-host is: [Personality](../tune/personality.md).

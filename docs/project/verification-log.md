@@ -1,12 +1,20 @@
-# Live verification: README quickstart and the module contract
+---
+title: Verification log
+description: Dated records of live runs of cohost, with the commands and what they showed.
+track: project
+glossary-skip: [container, salience, stt, tts, affect, cortex, sink]
+verified: f126b949cf41b503f28c7935d3c8522bb7b659d6
+---
 
-Run 2026-11-11 on WSL2 (Ubuntu) with Docker Desktop 29.9.2 driven through `docker.exe` (`COHOST_DOCKER_BIN=docker.exe`),
-mock mode, no Twitch, Discord, OBS, avatar app, GPU or API key. Evidence is the output of the commands below; the
+# Verification log: quickstart and the module contract
+
+Run 2026-11-11 on [WSL2](../start/glossary.md#wsl2) (Ubuntu) with [Docker](../start/glossary.md#docker) Desktop 29.9.2 driven through `docker.exe` (`COHOST_DOCKER_BIN=docker.exe`),
+[mock mode](../start/glossary.md#mock-mode), no Twitch, Discord, [OBS](../start/glossary.md#obs), avatar app, [GPU](../start/glossary.md#gpu) or API key. Evidence is the output of the commands below; the
 secret values in `.env` were never printed.
 
 ## Setup
 
-`.env` copied from the owner's local `.env`, then appended with the README quickstart mock block and the WSL2 notes:
+`.env` copied from the owner's local `.env`, then appended with the quickstart mock block and the WSL2 notes:
 
 ```
 COHOST_DOCKER_BIN=docker.exe
@@ -17,13 +25,13 @@ LLM_MODEL=VISION_MODEL=NOTES_MODEL=qwen2.5:0.5b-instruct   # about 0.7 GB pulled
 ```
 
 - `docker.exe info` shows an `nvidia` runtime; the GPU overlay was not used (mock needs none).
-- Pulls that were unavoidable: the pinned infra images (ollama 0.40.16, kokoro-fastapi-cpu v0.10.0, speaches 0.8.3-cpu,
-  redis, postgres, curl) through `docker compose pull`, and the three small Ollama models above through the `models` service.
+- Pulls that were unavoidable: the pinned infra images ([Ollama](../start/glossary.md#ollama) 0.40.16, [Kokoro](../start/glossary.md#kokoro) (kokoro-fastapi-cpu v0.10.0), [speaches](../start/glossary.md#speaches) 0.8.3-cpu,
+  [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), curl) through `docker compose pull`, and the three small Ollama models above through the `models` service.
 - Bind mount: `docker inspect` shows `bind \\wsl.localhost\Ubuntu\home\chris\...\config -> /app/config`, and
   `docker.exe exec c1-shared-salience-1 ls -la /app/config` lists `config.yaml`, `personality.md`, `expressions.yaml`.
   The `\\wsl.localhost` path that CTRL-STACK-012 describes works as written; no workaround was needed.
 
-## Launch (README quickstart)
+## Launch (quickstart)
 
 ```
 pnpm install --frozen-lockfile && pnpm build      # clean
@@ -49,7 +57,7 @@ Final `GET /stack` and `GET /services` (13 s from `launch` to `up`, images alrea
 ## Module contract, per unit
 
 Harness: a script driving only the dashboard HTTP API (`GET/PUT /config/:section` with etag, `POST /services/:id/restart`
-with an empty body as the page's Apply sends, `POST /inject/*`), observing events with `redis-cli XRANGE cohost:events`.
+with an empty body as the page's Apply sends, `POST /inject/*`), observing [events](../start/glossary.md#event) with `redis-cli XRANGE cohost:events`.
 Each unit: PUT one literal key, GET back the new value, repeat the old etag (409), restart only that unit, compare
 every other unit's `state/instance` before and after, inject, and read the answering event. Every unit showed
 `other units changed (state/instance): none`.
@@ -70,7 +78,7 @@ every other unit's `state/instance` before and after, inject, and read the answe
 All 10 units: config pass, restart pass, inject pass. The table is the final complete run, made after the fixes
 below; earlier partial runs hit findings 1 and 3.
 
-Pause and resume (`POST /control`, 204 each; heartbeat `detail` read from `GET /services` 8 s later):
+Pause and resume (`POST /control`, 204 each; [heartbeat](../start/glossary.md#heartbeat) `detail` read from `GET /services` 8 s later):
 
 ```
 pause salience -> detail=paused   resume salience -> detail=None
@@ -93,7 +101,7 @@ pause affect   -> detail=paused   resume affect   -> detail=None
    units report `up`.
 2. **A plain restart drops an isolated start (by design, documented).** `POST /services/ears/restart` with no body after an
    *isolated* start recreated the container without the preset (`ears degraded`). The page's Apply sends no body, so
-   the mock-mode eyes/ears/mouth must have their presets in `.env`, as the README says; with them in `.env` all
+   the mock-mode eyes/ears/mouth must have their presets in `.env`, as the Install pages say; with them in `.env` all
    three passed restart. No change.
 3. **Upload fetch from eyes/ears (resolved).** With the default `host.docker.internal:3001` the injected image and audio failed
    (`inject.result ok:false "TypeError: fetch failed"`, ECONNREFUSED 192.168.65.254:3001), and on WSL NAT the Hyper-V firewall

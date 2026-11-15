@@ -36,6 +36,6 @@ license the whole codebase on terms other than the AGPL.
 ## How to ask
 
 Open an issue on the
-[cohost repository](https://github.com/CoderCoco/cohost/issues) titled
+[cohost repository](https://github.com/CoderCoco-Studios/cohost/issues) titled
 "Commercial licence enquiry". Say who you are and how you intend to use
 cohost; leave out anything confidential, since issues are public.

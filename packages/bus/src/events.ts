@@ -318,7 +318,7 @@ export const EventPayloads = {
   control: z.object({
     cmd: z.enum(["mute", "unmute", "say", "forget_context", "reload_personality", "pause", "resume", "set_routing"]),
     text: z.string().optional(),
-    /** Service the command is addressed to; absent = all services (back-compat). */
+    /** Service the command is addressed to; absent = every service. */
     target: z.string().optional(),
     /** `set_routing` (mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
     routing: RoutingPatch.optional(),

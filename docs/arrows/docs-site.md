@@ -4,7 +4,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 ## Status
 
-**MAPPED** — 156 specs: 126 implemented, 0 deferred, 30 gaps. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are designed and specified, not built: DOCS-GUIDE-001 to 026, DOCS-EX-005, and the reworded DOCS-PAGE-006 and DOCS-EX-002 are gaps, as are the example specs in the owning segments. A separate audit has not been run.
+**MAPPED** — 156 specs: 155 implemented, 0 deferred, 1 gap. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are built and tested: the docs check's Extend rules and `docs-guides.test.ts` (DOCS-GUIDE-001 to 026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), the twelve Extend pages and the reworded DOCS-PAGE-006. The example specs in the owning segments are implemented too, except BUS-NAT-EX-002 to 005 (the Rust bus example's round trip needs Redis and has not run; Verification log). A separate audit has not been run.
 
 ## Orientation
 
@@ -20,7 +20,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 - docs/intent/docs-site/docs-site-design.md
 
 ### EARS
-- docs/intent/docs-site/docs-site-specs.md (156 specs, prefix `DOCS`: 126 `[x]`, 30 `[ ]`, 0 `[D]`)
+- docs/intent/docs-site/docs-site-specs.md (156 specs, prefix `DOCS`: 155 `[x]`, 1 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/docs-check.test.ts (the docs check, sidebar, loaders and README/examples shape)
@@ -43,7 +43,7 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 4. `scripts/docs-check.mjs`: frontmatter, sidebar, glossary, facts against `package.json`, `.env.example`, `config.example.yaml` and the bus event registry, GitHub links, narration phrases, README and examples shape; a built-site pass for the publishing boundary and anchors.
 5. Theme (`docs/.vitepress/theme/`): extends VitePress's default theme with a token palette, the cohost mark, track badges, aside and callout styling, the home flow and the 404 page; Mermaid fences rendered to SVG at build time; theme checks for contrast, network origins, motion, focus, print and narrow screens, plus a manual review on the Verification log.
 6. Live health: `LiveHealth.vue` over `live-health.mjs`, on the Service health page; reads the dashboard's `GET /services` when the dashboard serves the site and shows a note anywhere else.
-7. Extension guides (planned): twelve Extend pages, examples under `examples/` shown by VitePress code imports, and the Extend page checks (snippet imports, fence languages, command words, paths, config fragments, tested examples, the Tested examples table, the connector constants).
+7. Extension guides: twelve Extend pages, examples under `examples/` shown by VitePress code imports, and the Extend page checks (snippet imports, fence languages, command words, paths, config fragments, tested examples, the Tested examples table, the connector constants).
 
 ## Spec Coverage
 
@@ -52,18 +52,18 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 | Build | DOCS-BUILD-001 to DOCS-BUILD-009 | 9 | 9 | 0 | 0 |
 | Publishing boundary | DOCS-PUB-001 to DOCS-PUB-004 | 4 | 4 | 0 | 0 |
 | Information architecture | DOCS-IA-001 to DOCS-IA-009 | 9 | 9 | 0 | 0 |
-| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 6 | 0 | 1 |
+| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 7 | 0 | 0 |
 | Glossary | DOCS-GLOSS-001 to DOCS-GLOSS-004 | 4 | 4 | 0 | 0 |
 | Links | DOCS-LINK-001 to DOCS-LINK-003 | 3 | 3 | 0 | 0 |
 | Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 6 | 0 | 0 |
 | Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 10 | 0 | 0 |
 | README | DOCS-README-001 to DOCS-README-004 | 4 | 4 | 0 | 0 |
-| Examples | DOCS-EX-001 to DOCS-EX-005 | 5 | 3 | 0 | 2 |
+| Examples | DOCS-EX-001 to DOCS-EX-005 | 5 | 5 | 0 | 0 |
 | Theme and personality | DOCS-THEME-001 to DOCS-THEME-056 | 56 | 55 | 0 | 1 |
 | Served by the dashboard | DOCS-LIVE-001 to DOCS-LIVE-013 | 13 | 13 | 0 | 0 |
-| Extension guides | DOCS-GUIDE-001 to DOCS-GUIDE-026 | 26 | 0 | 0 | 26 |
+| Extension guides | DOCS-GUIDE-001 to DOCS-GUIDE-026 | 26 | 26 | 0 | 0 |
 
-**Summary:** 126 of 156 specs implemented; the gaps are DOCS-THEME-017 (the favicon's drawing, checked by eye) and the extension guides (DOCS-PAGE-006, DOCS-EX-002, DOCS-EX-005, DOCS-GUIDE-001 to 026).
+**Summary:** 155 of 156 specs implemented; the gap is DOCS-THEME-017 (the favicon's drawing, checked by eye).
 
 ## Work Required
 
@@ -71,7 +71,7 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 None.
 
 ### Should Fix
-1. Build the extension guides: the examples and their tests in the owning segments (HOOK-EX-011..019, LLM-EX-001..006, EARS-EX-001..007, AVATAR-EX-001..004, MOD-EX-001..005, BUS-NAT-EX-001..005), the Extend page checks and `docs-guides.test.ts` (DOCS-GUIDE-001..026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), then the twelve Extend pages (DOCS-PAGE-006).
+1. Run the Rust bus example's round trip against Redis (BUS-NAT-EX-002..005, event-bus), then audit the extension guides and their example specs.
 2. Open the favicon (`docs/public/favicon.svg`) in a browser tab and confirm it draws the `idle` expression, then mark DOCS-THEME-017 `[x]`. Repeat the DOCS-THEME-049 review whenever the theme changes.
 
 ### Nice to Have

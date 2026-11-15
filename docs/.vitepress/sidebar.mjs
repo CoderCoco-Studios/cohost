@@ -88,6 +88,16 @@ export const sidebar = [
         items: [
           { text: 'Ways to extend cohost', link: '/advanced/extend/' },
           { text: 'Brain hooks', link: '/advanced/extend/hooks' },
+          { text: 'Hook server in Python', link: '/advanced/extend/hook-server-python' },
+          { text: 'Hook server in TypeScript', link: '/advanced/extend/hook-server-typescript' },
+          { text: 'Hook server in Rust', link: '/advanced/extend/hook-server-rust' },
+          { text: 'Your own model server', link: '/advanced/extend/model-server' },
+          { text: 'Send audio to ears', link: '/advanced/extend/audio-in' },
+          { text: 'Add an avatar driver', link: '/advanced/extend/avatar-driver' },
+          { text: 'Add a brain hook', link: '/advanced/extend/new-hook' },
+          { text: 'Add a TypeScript service', link: '/advanced/extend/typescript-service' },
+          { text: 'Rust bus client', link: '/advanced/extend/rust-bus' },
+          { text: 'Connector protocol', link: '/advanced/extend/connector-protocol' },
         ],
       },
       {

@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 cohost-bus = { path = "../../crates/cohost-bus" }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "signal", "sync"] }
 serde_json = "1.0.154"

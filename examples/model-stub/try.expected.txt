@@ -1,0 +1,2 @@
+{"object":"list","data":[{"id":"stub","object":"model","owned_by":"cohost"}]}
+{"id":"chatcmpl-stub","object":"chat.completion","created":1700000000,"model":"stub","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"[happy] Hello from the stub model server."}}]}

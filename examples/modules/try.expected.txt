@@ -1,0 +1,3 @@
+{"scores":[1.0]}
+{"valence_delta":0.2,"arousal_delta":0.05}
+{"ok":true,"text":"Nice one.","emotion":"happy"}

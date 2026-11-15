@@ -61,7 +61,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "52 specs: 47 [x], 5 [ ], 0 [D]. Open: the example service (MOD-EX-001..005), for the docs site's extension guides. Every unit, the Discord connector included, declares a test input."
+    next: "52 specs, all [x]; the example service (MOD-EX-001..005) is new since the last audit. Every unit, the Discord connector included, declares a test input."
     drift: null
 
 
@@ -86,7 +86,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "171 specs: 161 [x], 5 [ ], 5 [D]. Open: the Rust example client (BUS-NAT-EX-001..005), for the docs site's extension guides. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009."
+    next: "171 specs: 162 [x], 4 [ ], 5 [D]. Open: BUS-NAT-EX-002..005, the Rust example client's round trip, which needs Redis and has not run. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009."
     drift: null
 
   model-backends:
@@ -98,7 +98,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "60 specs: 54 [x], 6 [ ], 0 [D]. Open: the stub model servers (LLM-EX-001..006), for the docs site's extension guides. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
+    next: "60 specs, all [x]; the stub model servers (LLM-EX-001..006) are new since the last audit. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
     drift: null
 
   region-hooks:
@@ -110,7 +110,7 @@ arrows:
     blocks: [salience, affect, cortex, memory]
     blockedBy: [config, model-backends]
     detail: region-hooks.md
-    next: "60 specs: 51 [x], 9 [ ], 0 [D]. Open: the TypeScript and Rust reference servers, `try.sh` and the example hook (HOOK-EX-011..019), for the docs site's extension guides."
+    next: "60 specs, all [x]; HOOK-EX-011..019 (the TypeScript and Rust reference servers, `try.sh`, the example hook) are new since the last audit."
     drift: null
 
   working-memory:
@@ -170,7 +170,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "100 specs: 89 [x], 9 [ ], 2 [D]. Open: the example audio clients (EARS-EX-001..007), for the docs site's extension guides; the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
+    next: "100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
     drift: null
 
   salience:
@@ -254,7 +254,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "66 specs: 62 [x], 4 [ ], 0 [D]. Open: the example driver (AVATAR-EX-001..004), for the docs site's extension guides. Manual verification: VTube Studio against the real app."
+    next: "66 specs, all [x]; the example driver (AVATAR-EX-001..004) is new since the last audit. Manual verification: VTube Studio against the real app."
     drift: null
 
   dashboard:
@@ -302,7 +302,7 @@ arrows:
     blocks: [deployment]
     blockedBy: [region-hooks, model-backends, ears, avatar, module-contract, event-bus]
     detail: docs-site.md
-    next: "156 specs: 126 [x], 30 [ ]. Extension guides designed and specified (LLD § Extension guides), not built: examples and tests in region-hooks, model-backends, ears, avatar, module-contract and event-bus first, then the Extend page checks (DOCS-GUIDE-001..026), the examples READMEs (DOCS-EX-002, 005) and the pages (DOCS-PAGE-006). examples/ stays outside the root manifests, so the image build is unaffected. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "156 specs: 155 [x], 1 [ ]. Extension guides built and tested (DOCS-GUIDE-001..026, DOCS-EX-002, 005, DOCS-PAGE-006); examples/ stays outside the root manifests, so the image build is unaffected. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

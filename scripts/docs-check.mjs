@@ -33,6 +33,8 @@ const PNPM_BUILTINS = new Set(['install', 'i', 'add', 'remove', 'update', 'exec'
 const PNPM_SKIP_FLAGS = new Set(['--filter', '-F', '-r', '--recursive', '-C', '--dir']);
 const NARRATION = /\b(previously|formerly|deprecated|legacy)\b/gi;
 const ALLOW = '<!-- docs-check: allow -->';
+// Build output and installed packages under examples/ (cargo's target/, node_modules/) are no example directory or README.
+const EXAMPLES_SKIP = new Set(['node_modules', 'target']);
 const GLOSSARY = 'start/glossary.md';
 const ENV_PAGE = 'advanced/reference/env.md';
 const CONFIG_PAGE = 'advanced/reference/config.md';
@@ -77,7 +79,7 @@ function globToRegExp(glob) {
 
 /**
  * Splits a markdown file into what the checks need. Line numbers are 1-based over the whole file.
- * `fences` {lang, line, lines:[{n,text}]}, `plain` the non-fence body lines {n,text}, `headings`, `prose` (code spans, link text,
+ * `fences` {lang, line, lines:[{n,text}]}, `snippets` {n, path, region} (VitePress code imports, DOCS-GUIDE-003: not in `plain`), `plain` the non-fence body lines {n,text}, `headings`, `prose` (code spans, link text,
  * headings, comments and tags removed; table cells and ::: container text kept), `spans` inline code span texts, `links` hrefs.
  */
 function analyze(text) {
@@ -89,6 +91,7 @@ function analyze(text) {
   }
   const fences = [];
   const plain = [];
+  const snippets = [];
   let fence = null;
   for (let i = first; i < all.length; i++) {
     const line = all[i];
@@ -99,9 +102,13 @@ function analyze(text) {
         fence = null;
       } else fence.lines.push({ n: i + 1, text: line });
     } else if (m) {
-      fence = { ch: m[1][0], len: m[1].length, lang: m[2].toLowerCase(), line: i + 1, lines: [], end: null };
+      fence = { ch: m[1][0], len: m[1].length, lang: m[2].split(/[{:[]/)[0].toLowerCase(), line: i + 1, lines: [], end: null };
       fences.push(fence);
-    } else plain.push({ n: i + 1, text: line });
+    } else {
+      const sn = /^ {0,3}<<< ([^#{\s]*)(?:#([^{\s]*))?/.exec(line);
+      if (sn) snippets.push({ n: i + 1, path: sn[1], region: sn[2] ?? null });
+      else plain.push({ n: i + 1, text: line });
+    }
   }
   const headings = [];
   const prose = [];
@@ -131,7 +138,7 @@ function analyze(text) {
       .replace(/^\s*:::.*$/, ' ');
     prose.push({ n, text: text2, raw });
   }
-  return { all, first, fences, plain, headings, prose, spans, links };
+  return { all, first, fences, snippets, plain, headings, prose, spans, links };
 }
 
 /** Resolves a link href found in the page at docs-relative `pageRel` to a docs-relative target, or null for external links. */
@@ -295,6 +302,565 @@ function commandLines(fence) {
   return out;
 }
 
+// ---------------------------------------------------------------------------------------------------- Extend pages
+
+const EXTEND_DIR = 'advanced/extend/';
+const EXTEND_REFERENCES = new Set(['index.md', 'hooks.md', 'connector-protocol.md']);
+const FENCE_LANGS = new Set([...SHELL_LANGS, 'yaml', 'yml', 'env', 'dotenv', 'text', 'txt']);
+const ALLOWED_COMMANDS = new Set(['pnpm', 'node', 'python3', 'cargo', 'sh', 'cd', 'export']);
+const GUIDE_HEADINGS = ['What you need', 'How you know it worked', "If it didn't"];
+const TESTED_HEADER = ['Task', 'Python', 'TypeScript', 'Rust', 'Any language with curl'];
+const LANG_EXT = { Python: '.py', TypeScript: '.ts', Rust: '.rs', 'Any language with curl': '.sh' };
+const NODE_22_18_FILES = new Set(['examples/modules/server.ts', 'examples/model-stub/stub.ts', 'examples/audio-in/send-clip.ts']);
+const DASH = '—';
+const FIXTURES_TREE = `${GH}/tree/main/packages/bus/fixtures/contract`;
+/** The region-marker patterns of VitePress 1.6.4's code import (`findRegion` in its markdown-it snippet plugin). */
+const REGION_RES = [
+  /^\/\/ ?#?((?:end)?region) ([\w*-]+)$/,
+  /^\/\* ?#((?:end)?region) ([\w*-]+) ?\*\/$/,
+  /^#pragma ((?:end)?region) ([\w*-]+)$/,
+  /^<!-- #?((?:end)?region) ([\w*-]+) -->$/,
+  /^#((?:End )Region) ([\w*-]+)$/,
+  /^::#((?:end)region) ([\w*-]+)$/,
+  /^# ?((?:end)?region) ([\w*-]+)$/,
+];
+
+/** Splits a Markdown table row into trimmed cells; `|` inside a code span or after a backslash does not split. */
+function splitRow(line) {
+  const t = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+  const cells = [];
+  let cur = '';
+  let tick = 0;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === '\\' && t[i + 1] === '|') {
+      cur += '|';
+      i++;
+    } else if (ch === '`') {
+      let k = i;
+      while (t[k] === '`') k++;
+      const run = k - i;
+      cur += t.slice(i, k);
+      tick = tick === 0 ? run : tick === run ? 0 : tick;
+      i = k - 1;
+    } else if (ch === '|' && tick === 0) {
+      cells.push(cur.trim());
+      cur = '';
+    } else cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+/** The tables of a list of consecutive-numbered lines `{n, text}`: `{ header: cells, line, rows: [{ n, cells }] }`. */
+function tablesOf(lines) {
+  const out = [];
+  let cur = null;
+  let last = -2;
+  for (const { n, text } of lines) {
+    const isRow = text.trim().startsWith('|');
+    if (isRow && n === last + 1 && cur) {
+      const cells = splitRow(text);
+      if (cur.rows.length === 0 && cells.every((c) => /^:?-+:?$/.test(c))) cur.sep = true;
+      else if (cur.sep) cur.rows.push({ n, cells });
+      else cur = null;
+    } else if (isRow) {
+      cur = { header: splitRow(text), line: n, rows: [], sep: false };
+      out.push(cur);
+    } else cur = null;
+    last = n;
+  }
+  return out.filter((t) => t.sep);
+}
+
+/** The code span texts of a table cell. */
+const cellSpans = (cell) => [...cell.matchAll(/(`+)([\s\S]*?[^`])\1(?!`)/g)].map((m) => m[2].trim());
+
+/** Words of every command a command line holds, split as a POSIX shell splits them (quotes respected); `&&`, `||`, `|` and `;` separate commands. */
+function shellCommands(text) {
+  const commands = [];
+  let words = [];
+  let cur = '';
+  let has = false;
+  const endWord = () => {
+    if (has) words.push(cur);
+    cur = '';
+    has = false;
+  };
+  const endCommand = () => {
+    endWord();
+    if (words.length) commands.push(words);
+    words = [];
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'") {
+      const close = text.indexOf("'", i + 1);
+      const end = close === -1 ? text.length : close;
+      cur += text.slice(i + 1, end);
+      has = true;
+      i = end;
+    } else if (ch === '"') {
+      has = true;
+      for (i++; i < text.length && text[i] !== '"'; i++) {
+        if (text[i] === '\\' && '"\\$`'.includes(text[i + 1] ?? '')) i++;
+        cur += text[i];
+      }
+    } else if (ch === '\\') {
+      if (i + 1 < text.length) {
+        cur += text[++i];
+        has = true;
+      }
+    } else if (/\s/.test(ch)) endWord();
+    else if (ch === '#' && !has) break;
+    else if (ch === ';') endCommand();
+    else if ((ch === '&' && text[i + 1] === '&') || (ch === '|' && text[i + 1] === '|')) {
+      endCommand();
+      i++;
+    } else if (ch === '|') endCommand();
+    else {
+      cur += ch;
+      has = true;
+    }
+  }
+  endCommand();
+  return commands;
+}
+
+/** The command lines of a shell fence with `\` continuations joined: `{ n, text }`; console fences keep only `$ ` lines and their continuations. */
+function logicalLines(fence) {
+  const out = [];
+  let open = null;
+  for (const { n, text } of fence.lines) {
+    if (open) {
+      open.text = `${open.text.replace(/\\\s*$/, ' ')}${text}`;
+      if (!/\\\s*$/.test(text)) open = null;
+      continue;
+    }
+    if (!text.trim()) continue;
+    let body = text;
+    if (fence.lang === 'console') {
+      if (!text.startsWith('$ ')) continue;
+      body = text.slice(2);
+    } else if (text.trim().startsWith('#')) continue;
+    const entry = { n, text: body };
+    out.push(entry);
+    if (/\\\s*$/.test(body)) open = entry;
+  }
+  return out;
+}
+
+const commandStart = (words) => {
+  let i = 0;
+  while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
+  return i;
+};
+
+/** The body of the `[name]` table of a TOML text, or null. */
+function tomlSection(text, name) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const at = lines.findIndex((l) => new RegExp(`^\\[${esc(name)}\\]\\s*(#.*)?$`).test(l.trim()));
+  if (at === -1) return null;
+  const out = [];
+  for (let i = at + 1; i < lines.length && !/^\s*\[[A-Za-z]/.test(lines[i]); i++) out.push(lines[i]);
+  return out.join('\n');
+}
+
+/** `package.name` of a Cargo.toml text, or null. */
+function cargoPackageName(text) {
+  const body = tomlSection(text, 'package');
+  const m = body === null ? null : /^\s*name\s*=\s*"([^"]+)"/m.exec(body);
+  return m ? m[1] : null;
+}
+
+/** `workspace.members` strings of a Cargo.toml text. */
+function cargoMembers(text) {
+  const body = tomlSection(text.replace(/#.*$/gm, ''), 'workspace');
+  const m = body === null ? null : /members\s*=\s*\[([\s\S]*?)\]/.exec(body);
+  return m ? [...m[1].matchAll(/"([^"]*)"|'([^']*)'/g)].map((x) => x[1] ?? x[2]) : [];
+}
+
+/** Directories (repo-relative) a workspace member pattern names; a segment may hold `*`. */
+function expandMember(root, base, pattern) {
+  let dirs = [''];
+  for (const seg of pattern.split('/').filter((x) => x && x !== '.')) {
+    const next = [];
+    for (const d of dirs) {
+      if (/[*?]/.test(seg)) {
+        const re = new RegExp(`^${seg.split('*').map((x) => x.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\?/g, '.')).join('[^/]*')}$`);
+        const at = join(root, base, d);
+        if (existsSync(at)) for (const e of readdirSync(at, { withFileTypes: true })) if (e.isDirectory() && re.test(e.name)) next.push(posix.join(d, e.name));
+      } else next.push(posix.join(d, seg));
+    }
+    dirs = next;
+  }
+  return dirs.map((d) => posix.normalize(posix.join(base, d)));
+}
+
+/** Workspace Rust packages of the root and examples Cargo workspaces: `{ name, dir, example }`. */
+function rustPackages(root) {
+  const out = [];
+  for (const [manifest, base, example] of [['Cargo.toml', '', false], ['examples/Cargo.toml', 'examples', true]]) {
+    const text = readIf(join(root, manifest));
+    if (text === null) continue;
+    for (const member of cargoMembers(text)) {
+      for (const dir of expandMember(root, base, member)) {
+        const name = cargoPackageName(readIf(join(root, dir, 'Cargo.toml')) ?? '');
+        if (name) out.push({ name, dir, example });
+      }
+    }
+  }
+  return out;
+}
+
+/** `# region`-style lookup: line indexes (0-based) opening and closing `region` in `text`. */
+function regionMarks(text, region) {
+  const opens = [];
+  const closes = [];
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    for (const re of REGION_RES) {
+      const m = re.exec(line);
+      if (!m || m[2] !== region) continue;
+      if (/^[rR]egion$/.test(m[1])) opens.push(i);
+      else if (/^[Ee]nd ?[rR]egion$/.test(m[1])) closes.push(i);
+      else continue;
+      break;
+    }
+  });
+  return { opens, closes };
+}
+
+/** The Extension guides section's tables of the docs-site LLD: `{ guides, tested, layout }` (each a table or null). */
+function lldExtensionTables(lldText) {
+  const lines = lldText.split('\n');
+  const start = lines.findIndex((l) => /^## Extension guides\s*$/.test(l));
+  const section = [];
+  if (start !== -1) {
+    for (let i = start + 1; i < lines.length && !/^## /.test(lines[i]); i++) section.push({ n: i + 1, text: lines[i] });
+  }
+  const tables = tablesOf(section);
+  const is = (t, want) => want.every((w, i) => t.header[i] === w);
+  return {
+    guides: tables.find((t) => is(t, ['Page', 'Task', 'Examples'])) ?? null,
+    tested: tables.find((t) => is(t, TESTED_HEADER) && t.header.length === 5) ?? null,
+    layout: tables.find((t) => is(t, ['Directory', 'Holds'])) ?? null,
+  };
+}
+
+/**
+ * The Extend group's checks (Extension guides): snippet imports on every page, then the Extend pages' fences, commands,
+ * paths, config fragments, tested examples, tables and statements, and the example directories' READMEs.
+ * @spec DOCS-GUIDE-001, DOCS-GUIDE-002, DOCS-GUIDE-003, DOCS-GUIDE-004, DOCS-GUIDE-005, DOCS-GUIDE-006, DOCS-GUIDE-007, DOCS-GUIDE-008, DOCS-GUIDE-009,
+ * DOCS-GUIDE-011, DOCS-GUIDE-012, DOCS-GUIDE-013, DOCS-GUIDE-014, DOCS-GUIDE-015, DOCS-GUIDE-016, DOCS-GUIDE-017, DOCS-GUIDE-018, DOCS-GUIDE-019,
+ * DOCS-GUIDE-020, DOCS-GUIDE-021, DOCS-GUIDE-022, DOCS-GUIDE-023, DOCS-GUIDE-024, DOCS-EX-005
+ */
+function extendChecks(root, pages, lldText, add) {
+  const isExtend = (p) => p.rel.startsWith(EXTEND_DIR);
+  const extendPages = [...pages.values()].filter(isExtend);
+  const stripExt = (target) => target.replace(/\.(md|html)$/, '').replace(/\/+$/, '');
+  const plainText = (p) => p.a.plain.map((l) => l.text).join(' ');
+  const says = (p, re) => re.test(plainText(p));
+
+  // ---- snippet imports on every hand-written page (DOCS-GUIDE-001, DOCS-GUIDE-002)
+  const rootReal = existsSync(root) ? realpathSync(root) : root;
+  for (const p of pages.values()) {
+    p.imports = [];
+    for (const sn of p.a.snippets) {
+      let file = null;
+      if (sn.path.startsWith('@/')) {
+        const rel = posix.normalize(`docs/${sn.path.slice(2)}`);
+        if (!rel.startsWith('../') && rel !== '..' && !posix.isAbsolute(rel)) {
+          const abs = join(root, rel);
+          try {
+            if (statSync(abs).isFile() && (realpathSync(abs) + sep).startsWith(rootReal + sep)) file = rel;
+          } catch {
+            file = null;
+          }
+        }
+      }
+      if (file === null) {
+        add(p.file, sn.n, 'DOCS-GUIDE-001', `snippet import ${JSON.stringify(sn.path)} does not name an existing file inside the repository (it must start with @/, which stands for docs/)`);
+        continue;
+      }
+      p.imports.push({ ...sn, file });
+      if (sn.region !== null) {
+        const { opens, closes } = regionMarks(readFileSync(join(root, file), 'utf8'), sn.region);
+        if (opens.length !== 1 || closes.length !== 1 || closes[0] < opens[0]) add(p.file, sn.n, 'DOCS-GUIDE-002', `snippet import region "${sn.region}" is not opened exactly once and closed exactly once after it in ${file}`);
+      }
+    }
+    p.importedFiles = new Set(p.imports.map((i) => i.file));
+  }
+
+  // ---- Extend pages' fences (DOCS-GUIDE-004 to DOCS-GUIDE-009)
+  const packages = rustPackages(root);
+  const packageNames = new Set(packages.map((x) => x.name));
+  const cfgText = readIf(join(root, 'config/config.example.yaml'));
+  let cfgPaths = null;
+  let cfgProblem = null;
+  if (cfgText === null) cfgProblem = 'config/config.example.yaml does not exist';
+  else {
+    try {
+      cfgPaths = keyPaths(parseYaml(cfgText));
+    } catch (e) {
+      cfgProblem = `config/config.example.yaml does not parse: ${String(e.message).split('\n')[0]}`;
+    }
+  }
+  const existsRel = (rel) => existsSync(join(root, posix.normalize(rel)));
+  for (const p of extendPages) {
+    for (const fence of p.a.fences) {
+      if (!FENCE_LANGS.has(fence.lang)) {
+        add(p.file, fence.line, 'DOCS-GUIDE-004', `fenced block has ${fence.lang ? `language "${fence.lang}"` : 'no language'}; program code reaches an Extend page only through snippet imports (allowed: sh, bash, shell, zsh, console, yaml, yml, env, dotenv, text, txt)`);
+        continue;
+      }
+      if (SHELL_LANGS.has(fence.lang)) {
+        for (const { n, text } of logicalLines(fence)) {
+          for (const words of shellCommands(text)) {
+            const at = commandStart(words);
+            const first = words[at];
+            if (first !== undefined && !ALLOWED_COMMANDS.has(first)) add(p.file, n, 'DOCS-GUIDE-005', `command starts with "${first}"; a shell fence runs only ${[...ALLOWED_COMMANDS].join(', ')}`);
+            for (const w of words) {
+              const cand = w.startsWith('-') && w.includes('=') ? w.slice(w.indexOf('=') + 1) : w;
+              if (cand.startsWith('examples/') || cand.startsWith('./examples/')) {
+                const rel = cand.replace(/^\.\//, '').replace(/\/+$/, '');
+                if (!existsRel(rel)) add(p.file, n, 'DOCS-GUIDE-006', `path ${cand} names no file or directory`);
+              }
+            }
+            if (first === 'cargo') {
+              for (let i = at + 1; i < words.length; i++) {
+                const w = words[i];
+                let name = null;
+                if (w === '--') break;
+                if (w === '-p' || w === '--package') name = words[++i];
+                else if (w.startsWith('--package=')) name = w.slice('--package='.length);
+                else if (w.startsWith('-p=')) name = w.slice(3);
+                else if (/^-p[^-]/.test(w)) name = w.slice(2);
+                if (name !== null && name !== undefined && !packageNames.has(name)) add(p.file, n, 'DOCS-GUIDE-007', `cargo names package "${name}", which is no workspace Rust package`);
+              }
+            }
+          }
+        }
+      } else if (fence.lang === 'yaml' || fence.lang === 'yml') {
+        let value;
+        let err = null;
+        try {
+          value = parseYaml(fence.lines.map((l) => l.text).join('\n'));
+        } catch (e) {
+          err = `does not parse as YAML: ${String(e.message).split('\n')[0]}`;
+        }
+        if (err === null && !(value && typeof value === 'object' && !Array.isArray(value))) err = 'is not a YAML mapping';
+        if (err !== null) add(p.file, fence.line, 'DOCS-GUIDE-009', `yaml fence ${err}`);
+        else if (cfgPaths === null) add(p.file, fence.line, 'DOCS-GUIDE-009', cfgProblem);
+        else for (const kp of keyPaths(value)) if (!cfgPaths.has(kp)) add(p.file, fence.line, 'DOCS-GUIDE-009', `key path ${kp} is not a key path of config/config.example.yaml`);
+      }
+    }
+    for (const span of p.a.spans) {
+      if (!/^(packages|services|crates|examples|config|scripts)\//.test(span) || /[<>*{\s]/.test(span)) continue;
+      const rel = span.replace(/#.*$/, '').replace(/:\d+(?:-\d+)?$/, '').replace(/\/+$/, '');
+      let ok = existsRel(rel);
+      const cm = /^(config\/.+)\.([^./]+)$/.exec(rel);
+      if (!ok && cm) ok = existsRel(`${cm[1]}.example.${cm[2]}`);
+      if (!ok) add(p.file, p.a.plain.find((l) => l.text.includes(span))?.n ?? 0, 'DOCS-GUIDE-008', `code span ${span} names no file or directory`);
+    }
+  }
+
+  // ---- tested examples (DOCS-GUIDE-011)
+  const testTexts = [];
+  for (const base of ['packages', 'services']) {
+    const dir = join(root, base);
+    if (!existsSync(dir)) continue;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const td = join(dir, e.name, 'test');
+      if (!existsSync(td)) continue;
+      for (const f of readdirSync(td, { withFileTypes: true })) if (f.isFile() && f.name.endsWith('.test.ts')) testTexts.push(readFileSync(join(td, f.name), 'utf8'));
+    }
+  }
+  const named = (path) => testTexts.some((t) => new RegExp(`${esc(path)}(?=["'\`\\s]|$)`).test(t));
+  const rustTested = (file) => {
+    const pkg = packages.find((x) => x.example && (file === x.dir || file.startsWith(`${x.dir}/`)));
+    if (!pkg || !walk(join(root, pkg.dir, 'tests')).some((f) => f.endsWith('.rs'))) return false;
+    const re = new RegExp(`(?<![\\w-])${esc(pkg.name)}(?![\\w-])`);
+    return testTexts.some((t) => re.test(t));
+  };
+  for (const p of pages.values()) {
+    for (const file of p.importedFiles) {
+      if (!file.startsWith('examples/')) continue;
+      if (named(file) || named(posix.dirname(file)) || rustTested(file)) continue;
+      add(p.file, 0, 'DOCS-GUIDE-011', `imports ${file}, which no test file (packages/*/test/*.test.ts, services/*/test/*.test.ts) names, as itself or by its directory, and which lies in no example Rust package whose tests a test runs`);
+    }
+  }
+
+  // ---- the Extension guides table (DOCS-GUIDE-012)
+  const lld = lldText === null ? { guides: null, tested: null, layout: null } : lldExtensionTables(lldText);
+  if (lldText !== null) {
+    if (!lld.guides) add(LLD_REL, 0, 'DOCS-GUIDE-012', "cannot find the Extension guides table (Page, Task, Examples, Verified by) in the LLD's Extension guides section");
+    else {
+      for (const row of lld.guides.rows) {
+        const pageRel = /`([^`]+)`/.exec(row.cells[0] ?? '')?.[1]?.replace(/^\/+/, '');
+        const target = pageRel ? pages.get(pageRel.replace(/^advanced\//, 'advanced/')) : null;
+        if (!target) continue;
+        for (const entry of cellSpans(row.cells[2] ?? '')) {
+          const met = entry.endsWith('/') ? [...target.importedFiles].some((f) => f.startsWith(entry)) : target.importedFiles.has(entry);
+          if (!met) add(target.file, 0, 'DOCS-GUIDE-012', `must import ${entry} (the Extension guides table lists it)`);
+        }
+      }
+    }
+  }
+
+  // ---- Extend guides' headings (DOCS-GUIDE-013)
+  for (const p of extendPages) {
+    const name = p.rel.slice(EXTEND_DIR.length);
+    if (EXTEND_REFERENCES.has(name)) continue;
+    const h2 = p.a.headings.filter((h) => h.level === 2).map((h) => h.text.replace(/\s*\{#[^}]*\}\s*$/, '').replace(/[‘’]/g, "'").trim());
+    for (const want of GUIDE_HEADINGS) if (!h2.includes(want)) add(p.file, 0, 'DOCS-GUIDE-013', `needs a "## ${want}" heading`);
+  }
+
+  // ---- the Ways to extend cohost page (DOCS-GUIDE-014 to DOCS-GUIDE-017)
+  const byTitle = new Map(extendPages.map((p) => [p.fm.title, p]));
+  /** The Extend page a link href of `fromRel` names, or null. */
+  const extendTarget = (fromRel, href) => {
+    const r = resolveDocLink(fromRel, href);
+    if (!r) return null;
+    const t = stripExt(r.target);
+    return pages.get(`${t}.md`) && isExtend(pages.get(`${t}.md`)) ? pages.get(`${t}.md`) : pages.get(`${t}/index.md`) && isExtend(pages.get(`${t}/index.md`)) ? pages.get(`${t}/index.md`) : null;
+  };
+  const index = pages.get(`${EXTEND_DIR}index.md`);
+  if (index) {
+    const tables = tablesOf(index.a.plain).filter((t) => JSON.stringify(t.header) === JSON.stringify(TESTED_HEADER));
+    if (tables.length !== 1) add(index.file, 0, 'DOCS-GUIDE-014', `must hold exactly one table whose header row is ${TESTED_HEADER.join(', ')}; found ${tables.length}`);
+    else {
+      const table = tables[0];
+      const linkOf = (cell) => {
+        const m = /^\[[^\]]*\]\(\s*<?([^)\s>]+)>?\s*\)$/.exec(cell);
+        return m ? extendTarget(index.rel, m[1]) : null;
+      };
+      for (const row of table.rows) {
+        TESTED_HEADER.slice(1).forEach((col, k) => {
+          const cell = row.cells[k + 1] ?? '';
+          const target = cell === DASH ? null : linkOf(cell);
+          if (cell !== DASH && !target) add(index.file, row.n, 'DOCS-GUIDE-014', `cell "${row.cells[0]}" / ${col} is ${JSON.stringify(cell)}; it must be ${DASH} or exactly one link to an Extend page`);
+          else if (target && !(target.imports ?? []).some((i) => i.file.endsWith(LANG_EXT[col]))) add(index.file, row.n, 'DOCS-GUIDE-015', `row "${row.cells[0]}", column ${col}: ${target.file} imports no example file ending ${LANG_EXT[col]}`);
+        });
+      }
+      if (lld.tested) {
+        const want = lld.tested.rows;
+        const n = Math.max(want.length, table.rows.length);
+        for (let i = 0; i < n; i++) {
+          const w = want[i];
+          const got = table.rows[i];
+          if (!w) {
+            add(index.file, got.n, 'DOCS-GUIDE-016', `row ${i + 1} ("${got.cells[0]}") is not a row of the LLD's Tested examples table`);
+            continue;
+          }
+          if (!got) {
+            add(index.file, table.line, 'DOCS-GUIDE-016', `row ${i + 1} ("${w.cells[0]}") of the LLD's Tested examples table is missing`);
+            continue;
+          }
+          if (got.cells[0] !== w.cells[0]) add(index.file, got.n, 'DOCS-GUIDE-016', `row ${i + 1}: expected Task "${w.cells[0]}", found "${got.cells[0]}"`);
+          TESTED_HEADER.slice(1).forEach((col, k) => {
+            const lc = w.cells[k + 1] ?? '';
+            const pc = got.cells[k + 1] ?? '';
+            if (lc === DASH) {
+              if (pc !== DASH) add(index.file, got.n, 'DOCS-GUIDE-016', `row "${w.cells[0]}", column ${col}: expected ${DASH}, found ${JSON.stringify(pc)}`);
+              return;
+            }
+            const want2 = byTitle.get(lc);
+            if (!want2) add(index.file, got.n, 'DOCS-GUIDE-016', `row "${w.cells[0]}", column ${col}: no Extend page has the title "${lc}"`);
+            else if (linkOf(pc) !== want2) add(index.file, got.n, 'DOCS-GUIDE-016', `row "${w.cells[0]}", column ${col}: expected a link to "${lc}" (${want2.rel}), found ${JSON.stringify(pc)}`);
+          });
+        }
+      } else if (lldText !== null) add(LLD_REL, 0, 'DOCS-GUIDE-016', "cannot find the Tested examples table (Task, Python, TypeScript, Rust, Any language with curl) in the LLD's Extension guides section");
+    }
+    const linked = new Set(index.a.links.map((l) => extendTarget(index.rel, l.href)?.rel).filter(Boolean));
+    for (const p of extendPages) if (p !== index && !linked.has(p.rel)) add(index.file, 0, 'DOCS-GUIDE-017', `must link the Extend page ${p.rel.slice(EXTEND_DIR.length)}`);
+    if (!says(index, /no\s+tested\s+example/i)) add(index.file, 0, 'DOCS-GUIDE-017', 'must say, with the words "no tested example", that a language other than Python, TypeScript and Rust has no tested example and uses the contracts and their curl scripts');
+  }
+
+  // ---- statements each guide makes (DOCS-GUIDE-018 to DOCS-GUIDE-024)
+  for (const name of ['hook-server-python.md', 'hook-server-typescript.md', 'hook-server-rust.md']) {
+    const p = pages.get(`${EXTEND_DIR}${name}`);
+    if (!p) continue;
+    if (!says(p, /no\s+heartbeat/i)) add(p.file, 0, 'DOCS-GUIDE-018', 'must say, with the words "no heartbeat", that a hook server sends no heartbeat of its own');
+    if (!spanNames(p.a.spans, 'hook.<name>')) add(p.file, 0, 'DOCS-GUIDE-018', 'must contain the code span `hook.<name>`');
+  }
+  for (const p of extendPages) {
+    if ([...p.importedFiles].some((f) => NODE_22_18_FILES.has(f)) && !p.text.includes('22.18')) add(p.file, 0, 'DOCS-GUIDE-019', `imports ${[...p.importedFiles].filter((f) => NODE_22_18_FILES.has(f)).join(', ')} and must state that it runs with node on Node 22.18 or later (the text 22.18)`);
+  }
+  const model = pages.get(`${EXTEND_DIR}model-server.md`);
+  if (model) {
+    for (const tok of ['/chat/completions', '/models', 'brain.memory.embedder']) if (!spanNames(model.a.spans, tok)) add(model.file, 0, 'DOCS-GUIDE-020', `must name the code span \`${tok}\``);
+  }
+  const rustBus = pages.get(`${EXTEND_DIR}rust-bus.md`);
+  if (rustBus) {
+    if (!says(rustBus, /no\s+shared\s+runtime/i)) add(rustBus.file, 0, 'DOCS-GUIDE-021', 'must say, with the words "no shared runtime", that crates/cohost-bus has no shared runtime');
+    for (const tok of ['service.heartbeat', 'control', 'inject.request']) if (!spanNames(rustBus.a.spans, tok)) add(rustBus.file, 0, 'DOCS-GUIDE-021', `must name the code span \`${tok}\``);
+  }
+  const proto = pages.get(`${EXTEND_DIR}connector-protocol.md`);
+  if (proto) {
+    const constRel = 'packages/bus/fixtures/contract/constants.json';
+    let constants = null;
+    try {
+      constants = JSON.parse(readIf(join(root, constRel)) ?? 'null');
+    } catch (e) {
+      add(constRel, 0, 'DOCS-GUIDE-022', `cannot parse: ${e.message}`);
+    }
+    if (constants === null || typeof constants !== 'object') add(constRel, 0, 'DOCS-GUIDE-022', 'cannot read the contract constants');
+    else {
+      const rows = tablesOf(proto.a.plain).flatMap((t) => t.rows).map((r) => r.cells.slice(0, 2).map((c) => /^`([^`]+)`$/.exec(c)?.[1]?.trim() ?? null));
+      const expected = [];
+      for (const [key, value] of Object.entries(constants)) {
+        if (key === 'names') continue;
+        if (value && typeof value === 'object' && !Array.isArray(value)) for (const [m, v] of Object.entries(value)) expected.push([`${key}.${m}`, JSON.stringify(v)]);
+        else expected.push([key, JSON.stringify(value)]);
+      }
+      for (const [key, text] of expected) {
+        if (!rows.some(([a, b]) => a === key && b === text)) add(proto.file, 0, 'DOCS-GUIDE-022', `needs a table row whose first cell is the code span \`${key}\` and whose second cell is exactly the code span \`${text}\``);
+      }
+      const names = constants.names ?? {};
+      const shorten = (s, pairs) => pairs.reduce((acc, [value, tag]) => (typeof value === 'string' && value ? acc.replace(value, tag) : acc), String(s ?? ''));
+      const connectorKey = shorten(names.connectorKey, [[names.prefix, '<prefix>'], [names.id, '<id>']]);
+      const audioIn = shorten(names.audioStream, [[names.prefix, '<prefix>'], [names.tag, '<tag>']]);
+      for (const form of [connectorKey, audioIn, audioIn.replace('.in.', '.out.')]) if (!proto.a.spans.includes(form)) add(proto.file, 0, 'DOCS-GUIDE-023', `must name the code span \`${form}\``);
+    }
+    if (!proto.a.links.some((l) => l.href.replace(/[#?].*$/, '').replace(/\/+$/, '') === FIXTURES_TREE)) add(proto.file, 0, 'DOCS-GUIDE-023', `must link the contract fixtures directory ${FIXTURES_TREE}`);
+    if (!says(proto, /no\s+SDK/i)) add(proto.file, 0, 'DOCS-GUIDE-024', 'must say, with the words "no SDK", that there is no connector SDK outside TypeScript');
+    if (!says(proto, /not\s+a\s+supported\s+route/i)) add(proto.file, 0, 'DOCS-GUIDE-024', 'must say, with the words "not a supported route", that a connector in another language is not a supported route');
+    if (!spanNames(proto.a.spans, '@cohost/bus')) add(proto.file, 0, 'DOCS-GUIDE-024', 'must name `@cohost/bus` as a code span');
+  }
+
+  // ---- example directories (DOCS-EX-005)
+  if (lldText !== null) {
+    if (!lld.layout) add(LLD_REL, 0, 'DOCS-EX-005', "cannot find the Example layout table (Directory, Holds, Owning segment) in the LLD's Extension guides section");
+    else {
+      const siteRoute = (href) => {
+        if (!href.startsWith(SITE)) return null;
+        return href.slice(SITE.length).replace(/[#?].*$/, '').replace(/\.html$/, '').replace(/\/+$/, '').replace(/(^|\/)index$/, '');
+      };
+      for (const row of lld.layout.rows) {
+        const dir = (/`([^`]+)`/.exec(row.cells[0] ?? '')?.[1] ?? '').replace(/\/+$/, '');
+        if (!dir || dir === 'examples/modules') continue;
+        const readmeRel = `${dir}/README.md`;
+        const text = readIf(join(root, readmeRel));
+        if (text === null) {
+          add(readmeRel, 0, 'DOCS-EX-005', 'does not exist');
+          continue;
+        }
+        const ra = analyze(text);
+        for (const span of cellSpans(row.cells[1] ?? '')) {
+          const base = posix.basename(span);
+          if (!base.includes('.')) continue;
+          if (!ra.spans.includes(base)) add(readmeRel, 0, 'DOCS-EX-005', `must name the file ${span} as the code span \`${base}\``);
+        }
+        const guides = lld.guides ? lld.guides.rows.filter((r) => cellSpans(r.cells[2] ?? '').some((e) => e.startsWith(`${dir}/`))) : [];
+        const routes = guides.map((r) => (/`([^`]+)`/.exec(r.cells[0] ?? '')?.[1] ?? '').replace(/\.md$/, '').replace(/(^|\/)index$/, ''));
+        const linkedRoutes = ra.links.map((l) => siteRoute(l.href)).filter((x) => x !== null);
+        if (!routes.some((r) => linkedRoutes.includes(r))) add(readmeRel, 0, 'DOCS-EX-005', `must link, at its ${SITE} URL, an Extend page whose Extension guides row lists a path under ${dir}/ (${routes.map((r) => `${SITE}${r}`).join(' or ') || 'none lists one'})`);
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------- source pass
 
 /**
@@ -302,7 +868,8 @@ function commandLines(fence) {
  * @spec DOCS-BUILD-005, DOCS-PUB-001, DOCS-PUB-002, DOCS-PUB-004, DOCS-IA-001, DOCS-IA-002, DOCS-IA-003, DOCS-IA-004, DOCS-IA-005, DOCS-IA-006, DOCS-IA-007, DOCS-IA-008, DOCS-IA-009,
  * DOCS-PAGE-001, DOCS-PAGE-002, DOCS-PAGE-003, DOCS-PAGE-004, DOCS-PAGE-005, DOCS-PAGE-006, DOCS-PAGE-007, DOCS-GLOSS-001, DOCS-GLOSS-002, DOCS-GLOSS-003, DOCS-GLOSS-004,
  * DOCS-LINK-002, DOCS-FACT-001, DOCS-FACT-002, DOCS-FACT-003, DOCS-FACT-004, DOCS-FACT-005, DOCS-FACT-006, DOCS-ARCH-004, DOCS-ARCH-009,
- * DOCS-README-001, DOCS-README-002, DOCS-README-003, DOCS-README-004, DOCS-EX-001, DOCS-EX-002, DOCS-EX-003, DOCS-EX-004
+ * DOCS-README-001, DOCS-README-002, DOCS-README-003, DOCS-README-004, DOCS-EX-001, DOCS-EX-002, DOCS-EX-003, DOCS-EX-004, DOCS-EX-005, DOCS-PAGE-006
+ * (the Extend group's DOCS-GUIDE-* rules are in extendChecks)
  */
 export async function runSource(root) {
   const problems = [];
@@ -385,9 +952,9 @@ export async function runSource(root) {
     if (!fm.description || typeof fm.description !== 'string') add(file, 0, 'DOCS-PAGE-001', 'frontmatter needs a non-empty description');
     if (!TRACKS.includes(fm.track)) add(file, 0, 'DOCS-PAGE-001', `frontmatter track must be one of ${TRACKS.join(', ')}; found ${JSON.stringify(fm.track ?? null)}`);
     if (isHome(p) && fm.track !== 'start') add(file, 0, 'DOCS-PAGE-001', 'the home page carries track: start');
-    if (a.fences.length) {
+    if (a.fences.length || a.snippets.length) {
       const v = /^verified:[ \t]*["']?([^\s"'#]*)["']?[ \t]*(?:#.*)?$/m.exec(p.fmRaw);
-      if (!v || !/^[0-9a-f]{7,40}$/.test(v[1])) add(file, 0, 'DOCS-PAGE-002', `has a fenced code block, so frontmatter needs verified: <7 to 40 lowercase hex characters>; found ${v ? JSON.stringify(v[1]) : 'none'}`);
+      if (!v || !/^[0-9a-f]{7,40}$/.test(v[1])) add(file, 0, 'DOCS-PAGE-002', `has a fenced code block or snippet import, so frontmatter needs verified: <7 to 40 lowercase hex characters>; found ${v ? JSON.stringify(v[1]) : 'none'}`);
     }
     for (const { n, text } of a.plain) {
       const bare = text.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, ' ');
@@ -429,16 +996,20 @@ export async function runSource(root) {
     const need = [
       [/@cohost\/bus/, 'name `@cohost/bus` as a supported route'],
       [/crates\/cohost-bus/, 'name `crates/cohost-bus` as a supported route'],
-      [/no\s+example\s+yet/i, 'say the Rust route has "no example yet"'],
       [/no\s+event\s+validation/i, 'say a process on neither client gets "no event validation"'],
       [/no\s+dashboard\s+control/i, 'say a process on neither client gets "no dashboard control"'],
       [/no\s+health\s+reporting/i, 'say a process on neither client gets "no health reporting"'],
     ];
     for (const [re, what] of need) if (!re.test(t)) add(extend.file, 0, 'DOCS-PAGE-006', `must ${what}`);
+    for (const want of ['typescript-service', 'rust-bus']) {
+      if (!extend.a.links.some((l) => resolveDocLink(extend.rel, l.href)?.target.replace(/\.html$/, '') === `advanced/extend/${want}`)) add(extend.file, 0, 'DOCS-PAGE-006', `must link the ${want === 'rust-bus' ? 'Rust bus client' : 'Add a TypeScript service'} page (${want}.md)`);
+    }
     for (const { n, raw } of extend.a.prose) {
       if (/\bpython\b/i.test(raw) && /\bsupported\b/i.test(raw) && !/\b(not|isn't|never|no|unsupported)\b/i.test(raw)) add(extend.file, n, 'DOCS-PAGE-006', 'presents a process on neither bus client (Python) as a supported way to extend cohost');
     }
   }
+
+  extendChecks(root, pages, lldText, add);
 
   // ---- architecture index page (DOCS-ARCH-009)
   const arch = pages.get('advanced/architecture/index.md');
@@ -666,7 +1237,7 @@ export async function runSource(root) {
   };
   for (const p of pages.values()) checkGithub(p.file, p.a.plain);
   if (readme !== null) checkGithub('README.md', analyze(readme).plain);
-  const exampleReadmes = walk(join(root, 'examples')).filter((f) => posix.basename(f) === 'README.md').map((f) => `examples/${f}`);
+  const exampleReadmes = walk(join(root, 'examples'), EXAMPLES_SKIP).filter((f) => posix.basename(f) === 'README.md').map((f) => `examples/${f}`);
   for (const f of exampleReadmes) checkGithub(f, analyze(readFileSync(join(root, f), 'utf8')).plain);
   for (const e of excerpts) {
     const lines = e.content.split('\n').map((text) => ({ n: 0, text }));
@@ -733,13 +1304,16 @@ export async function runSource(root) {
     if (!analyze(t).links.some((l) => l.href.startsWith(SITE)) && !t.includes(SITE)) add(f, 0, 'DOCS-EX-001', `must link a page of the docs site at ${SITE}...`);
   }
   const exDir = join(root, 'examples');
-  const exDirs = existsSync(exDir) ? readdirSync(exDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort() : [];
+  const exDirs = existsSync(exDir) ? readdirSync(exDir, { withFileTypes: true }).filter((d) => d.isDirectory() && !EXAMPLES_SKIP.has(d.name)).map((d) => d.name).sort() : [];
   const modules = readIf(join(exDir, 'modules/README.md'));
   if (modules === null) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'does not exist');
   else {
     const ma = analyze(modules);
-    for (const name of ['server.py', 'fixtures/', 'schemas/']) if (!modules.includes(name)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must name ${name}`);
-    if (!ma.fences.some((f) => f.lines.some((l) => l.text.includes('server.py')))) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must say how to run server.py (a command in a fenced block)');
+    for (const name of ['server.py', 'server.ts', 'rust/', 'try.sh', 'try.expected.txt', 'fixtures/', 'schemas/']) if (!ma.spans.includes(name)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must name ${name} as a code span`);
+    const cmds = ma.fences.filter((f) => SHELL_LANGS.has(f.lang)).flatMap((f) => logicalLines(f).flatMap((l) => shellCommands(l.text).map((w) => w.slice(commandStart(w)))));
+    if (!cmds.some((w) => w[0] === 'python3')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Python server: a python3 command in a shell fence');
+    if (!cmds.some((w) => w[0] === 'node')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the TypeScript server: a node command in a shell fence');
+    if (!cmds.some((w) => w[0] === 'cargo' && w.includes('run') && w.some((x) => x === '-p' || x === '--package' || x.startsWith('--package=') || /^-p./.test(x)))) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Rust server: a cargo run -p command in a shell fence');
     if (!ma.links.some((l) => l.href.replace(/[#?].*$/, '').replace(/\/$/, '') === `${SITE}advanced/extend/hooks`)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must link the Brain hooks page ${SITE}advanced/extend/hooks`);
   }
   const exReadme = readIf(join(exDir, 'README.md'));
@@ -824,7 +1398,7 @@ export function runDist(root) {
       if (!idsOf(target).has(frag)) add(`docs/.vitepress/dist/${page}`, 0, 'DOCS-LINK-001', `link ${href} targets #${frag}, which is no element id on ${target}`);
     }
   }
-  const readmes = ['README.md', ...walk(join(root, 'examples')).filter((f) => posix.basename(f) === 'README.md').map((f) => `examples/${f}`)];
+  const readmes = ['README.md', ...walk(join(root, 'examples'), EXAMPLES_SKIP).filter((f) => posix.basename(f) === 'README.md').map((f) => `examples/${f}`)];
   for (const rel of readmes) {
     const text = readIf(join(root, rel));
     if (text === null) continue;

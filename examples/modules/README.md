@@ -1,23 +1,24 @@
-# Brain hooks example
+# Brain hooks examples
 
-A runnable stand-in for the three brain hooks (salience scoring, affect
-appraisal, the cortex critic) when you serve them over HTTP.
+Three servers that answer the three brain hooks (salience, affect, the cortex
+critic) over HTTP, all with the same toy judgements on port 8900.
 
 | Path | What it is |
 | --- | --- |
-| `server.py` | Standard-library Python server with the three endpoints `/salience`, `/affect` and `/critic` |
+| `server.py` | Python, standard library only |
+| `server.ts` | TypeScript on Node 22.18 or later, built-in modules only |
+| `rust/` | Rust package `cohost-example-hook-server` (`serde_json` only) |
+| `try.sh` | `curl` script that asks a server the three questions; `try.expected.txt` holds the replies |
 | `fixtures/` | `contracts.json`, sample requests and replies for the three endpoints |
-| `schemas/` | JSON Schema for each reply: `schemas/salience.json`, `schemas/affect.json`, `schemas/critic.json` |
+| `schemas/` | JSON Schema of each reply: `schemas/salience.json`, `schemas/affect.json`, `schemas/critic.json` |
 
-Run it from the repository root:
+Run one from the repository root, then `sh examples/modules/try.sh` in another terminal:
 
-```bash
-python3 examples/modules/server.py        # listens on :8900
+```shell
+python3 examples/modules/server.py
+node examples/modules/server.ts
+cargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server
 ```
 
-Then set a hook to `kind: http` with `url: "http://host.docker.internal:8900/salience"`
-(or `/affect`, `/critic`) in `config/config.yaml`. The schemas are generated
-with `node scripts/gen-hook-schemas.mjs`.
-
-The full contract, every hook kind and a guide to training your own are on the
+The contracts, every hook kind and a guide for each language are on the
 [Brain hooks page](https://codercoco-studios.github.io/cohost/advanced/extend/hooks).

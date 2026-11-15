@@ -22,9 +22,10 @@
   .ev .t { color:var(--dim); flex:0 0 58px }
   .ev .k { flex:0 0 110px; color:var(--acc) }
   .ev.say .k{color:var(--ok)} .ev.chat .k{color:#c7a5ff} .ev.vision .k{color:#7fd6e0} .ev.speech .k{color:var(--warn)} .ev.status{opacity:.55}
-  button { background:#232838; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:6px 10px; cursor:pointer }
+  button, .docs-tab { background:#232838; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:6px 10px; cursor:pointer }
   .docs-link { color:var(--acc); font-size:13px; text-decoration:none; padding:6px 4px } .docs-link:hover { text-decoration:underline }
-  button:hover{border-color:var(--acc)} button.on{background:var(--acc); color:#0b0d12; border-color:var(--acc)}
+  .docs-tab { display:inline-block; font:13.3333px Arial,sans-serif; line-height:normal; text-decoration:none; box-sizing:border-box }  /* a link drawn as a tab button; not a tab */
+  button:hover, .docs-tab:hover {border-color:var(--acc)} button.on{background:var(--acc); color:#0b0d12; border-color:var(--acc)}
   input, textarea { width:100%; background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit }
   textarea { font-family:ui-monospace,Menlo,monospace; font-size:12px; min-height:260px; resize:vertical }
   .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap }
@@ -39,7 +40,7 @@
   .badge.up{color:var(--ok); border-color:var(--ok)} .badge.degraded{color:var(--warn); border-color:var(--warn)} .badge.stale{color:var(--warn)}
   .badge.down,.badge.crash-looping{color:var(--bad); border-color:var(--bad)} .badge.unknown{color:var(--dim)}
   .dep.ok{color:var(--ok)} .dep.down{color:var(--bad)} .dep.na{color:var(--dim)}
-  .sink main, .sink #services, .sink .tab, .sink .docs-link { display:none }  /* ?sink=1 : audio only, for OBS browser source */
+  .sink main, .sink #services, .sink .tab, .sink .docs-tab, .sink .docs-link { display:none }  /* ?sink=1 : audio only, for OBS browser source */
   .badge.paused { color:var(--warn); border-color:var(--warn); margin-left:6px }
   .needs { display:block; color:var(--warn); font-size:12px }
   #testDrawer { margin-top:12px } #testDrawer h3 { margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
@@ -89,7 +90,7 @@
   <button id="tabServices" class="tab">services</button>
   <button id="tabViewers" class="tab">viewers</button>
   <button id="tabSettings" class="tab">settings</button>
-  <a class="docs-link" href="/cohost/" target="_blank" rel="noopener">docs</a>
+  <a class="docs-tab" href="/cohost/" target="_blank" rel="noopener">docs</a>
   <span style="flex:1"></span>
   <button id="audio">🔇 enable audio</button>
   <button id="mute">mute</button><span id="muteMsg" class="hint"></span>

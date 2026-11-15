@@ -71,3 +71,21 @@ async function reflectOnce({ cfg, llm, memory, log, loadPersonality, savePersona
   log.info({ bullets: bullets.length, read: rows.length }, "personality updated");
   print(addition);
 }
+
+export interface ReflectCommandDeps extends ReflectDeps {
+  /** Sets the process exit code; replaceable so a test does not touch `process.exitCode`. */
+  setExitCode?: (code: number) => void;
+}
+
+// @spec MEM-REFLECT-009
+/** The `reflect` command: one pass; any failure is logged as `reflect failed` with exit code 1, and the store is closed either way. */
+export async function runReflectCommand({ setExitCode = (code) => { process.exitCode = code; }, ...deps }: ReflectCommandDeps): Promise<void> {
+  try {
+    await runReflect(deps);
+  } catch (err) {
+    deps.log.error({ err }, "reflect failed");
+    setExitCode(1);
+  } finally {
+    await deps.memory.close();
+  }
+}

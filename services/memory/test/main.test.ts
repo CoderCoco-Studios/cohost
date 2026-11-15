@@ -1,8 +1,9 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { Handler, SubscribeOptions, EventType } from "@cohost/bus";
 import { runMemory, type MemoryBus } from "../src/main.js";
+import { InMemoryStore } from "../src/fake-store.js";
 
 /** A FakeBus whose subscriptions report their group ready and stay open until stop(). */
 class GroupBus extends FakeBus {
@@ -47,13 +48,21 @@ test("runMemory starts the heartbeat, subscribes its three groups and reports re
 });
 
 // @spec MEM-START-006, MEM-CONSOL-013
-test("shutdown stops the bus and closes the store", async () => {
+test("shutdown stops the bus and then closes the store", async () => {
   const bus = new GroupBus();
-  const { env: e, shutdown } = env(bus);
-  await runMemory({ ...e, log: recordingLog().log });
-  assert.equal(bus.stopped, false);
-  for (const fn of shutdown) await fn();
-  assert.equal(bus.stopped, true);
+  const order: string[] = [];
+  bus.stop = () => { bus.stopped = true; order.push("bus.stop"); };
+  const closeStore = mock.method(InMemoryStore.prototype, "close", async () => { order.push("store.close"); });
+  try {
+    const { env: e, shutdown } = env(bus);
+    await runMemory({ ...e, log: recordingLog().log });
+    assert.equal(bus.stopped, false);
+    assert.equal(closeStore.mock.callCount(), 0);
+    for (const fn of shutdown) await fn();
+    assert.equal(bus.stopped, true);
+    assert.equal(order.filter((x) => x === "store.close").length, 1);
+    assert.ok(order.indexOf("bus.stop") < order.indexOf("store.close"), `the bus stops before the store closes: ${order.join(", ")}`);
+  } finally { closeStore.mock.restore(); }
 });
 
 // @spec MEM-START-006

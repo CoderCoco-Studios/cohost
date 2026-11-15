@@ -4,7 +4,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 
 ## Status
 
-**AUDITED** — 128 specs: 128 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). Retired: `MEM-VIEWER-004` and `MEM-VIEWER-005`; numbers are not reused. Design: the LLD, including its Viewer notes sections and edge cases.
+**AUDITED** — 129 specs: 129 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). Retired: `MEM-VIEWER-004` and `MEM-VIEWER-005`; numbers are not reused. Design: the LLD, including its Viewer notes sections and edge cases.
 
 ## References
 
@@ -15,7 +15,7 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (128 specs, prefix `MEM`: 128 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/memory/memory-specs.md (129 specs, prefix `MEM`: 129 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - services/memory/test/admin.test.ts
@@ -91,19 +91,19 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
-| Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
+| Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 6 |
 | Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 6 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-009 | 9 | 0 | 0 | 9 |
-| Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
+| Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 12 |
 | Viewer notes: notes and strength | MEM-NOTE-001 to MEM-NOTE-012 | 12 | 0 | 0 | 12 |
 | Viewer notes: regular status and viewer row | MEM-REG-001 to MEM-REG-005 | 5 | 0 | 0 | 5 |
 | Viewer notes: live capture | MEM-CAPTURE-001 to MEM-CAPTURE-011 | 11 | 0 | 0 | 11 |
-| Viewer notes: consolidation | MEM-CONSOL-001 to MEM-CONSOL-016 | 16 | 0 | 0 | 16 |
+| Viewer notes: consolidation | MEM-CONSOL-001 to MEM-CONSOL-017 | 17 | 0 | 0 | 17 |
 | Viewer notes: surfacing to the cortex | MEM-SURF-001 to MEM-SURF-005 | 5 | 0 | 0 | 5 |
 | Viewer notes: owner operations | MEM-ADMIN-001 to MEM-ADMIN-007 | 7 | 0 | 0 | 7 |
-| Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 9 |
+| Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 10 |
 
-**Summary:** 128 of 128 specs implemented; 0 deferred; 0 gaps. 125 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-REFLECT-009, MEM-VOICE-010 (verified by glue, configuration or a test that cites a neighbouring ID).
+**Summary:** 129 of 129 specs implemented; 0 deferred; 0 gaps. 129 carry a test `@spec` annotation.
 
 ## Key Findings
 

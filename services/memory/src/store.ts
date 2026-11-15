@@ -166,12 +166,11 @@ export class MemoryStore implements MemoryBackend {
         display TEXT NOT NULL,
         first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
         last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
-        msg_count INT NOT NULL DEFAULT 0
+        msg_count INT NOT NULL DEFAULT 0,
+        regular_manual BOOLEAN NOT NULL DEFAULT false,
+        is_sub BOOLEAN NOT NULL DEFAULT false,
+        placeholder BOOLEAN NOT NULL DEFAULT false
       )`);
-    // Additive only: an existing viewers table keeps every row and column.
-    await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS regular_manual BOOLEAN NOT NULL DEFAULT false");
-    await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS is_sub BOOLEAN NOT NULL DEFAULT false");
-    await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS placeholder BOOLEAN NOT NULL DEFAULT false");
     await this.query("CREATE INDEX IF NOT EXISTS viewers_placeholder_idx ON viewers (lower(display)) WHERE placeholder");
     await this.query(`
       CREATE TABLE IF NOT EXISTS viewer_notes (

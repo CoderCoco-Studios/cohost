@@ -33,7 +33,7 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 // @spec MEM-CAPTURE-004, MEM-NOTE-009
 /**
  * `{note: null}` or `{note: {category, text, hint?}}` with a category that exists, a non-empty text of at most 120 characters
- * and a hint of at most 80, neither about politics, money or subscriber status; anything else is undefined, so the hook falls
+ * and a hint of at most 80 (`null` counts as no hint), neither about politics, money or subscriber status; anything else is undefined, so the hook falls
  * back to rules and no note is stored.
  */
 export function validateCapture(raw: unknown): CaptureOutput | undefined {
@@ -44,7 +44,7 @@ export function validateCapture(raw: unknown): CaptureOutput | undefined {
   const text = n.text.trim();
   if (text.length === 0 || text.length > MAX_NOTE_TEXT) return undefined;
   let hint: string | undefined;
-  if (n.hint !== undefined) {
+  if (n.hint !== undefined && n.hint !== null) {
     if (typeof n.hint !== "string" || n.hint.trim().length > MAX_NOTE_HINT) return undefined;
     hint = n.hint.trim() || undefined;
   }

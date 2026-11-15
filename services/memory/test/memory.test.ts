@@ -78,7 +78,7 @@ test("init sizes the vector column from a probe embedding and survives a missing
 });
 
 // @spec MEM-STORE-001
-test("init creates the notes tables with embeddings and adds the viewer columns without dropping anything", async () => {
+test("init creates the notes tables with embeddings and the viewer flag columns in the viewers table itself", async () => {
   const { s, queries } = store();
   await s.init();
   const sql = queries.map((q) => q.sql);
@@ -89,10 +89,16 @@ test("init creates the notes tables with embeddings and adds the viewer columns 
   const deletions = sql.find((q) => q.includes("CREATE TABLE IF NOT EXISTS viewer_note_deletions"))!;
   for (const col of ["reason TEXT", "deleted_at TIMESTAMPTZ", "embedding vector(3)", "strength DOUBLE PRECISION"]) assert.ok(deletions.includes(col), `viewer_note_deletions has ${col}`);
   const viewersTable = sql.findIndex((q) => q.includes("CREATE TABLE IF NOT EXISTS viewers ("));
-  for (const col of ["regular_manual", "is_sub", "placeholder"]) {
-    const at = sql.findIndex((q) => q.startsWith(`ALTER TABLE viewers ADD COLUMN IF NOT EXISTS ${col} `));
-    assert.ok(at > viewersTable, `viewers gains ${col} after the table is ensured`);
+  for (const col of ["regular_manual BOOLEAN NOT NULL DEFAULT false", "is_sub BOOLEAN NOT NULL DEFAULT false", "placeholder BOOLEAN NOT NULL DEFAULT false"]) {
+    assert.ok(sql[viewersTable]!.includes(col), `the viewers table is created with ${col}`);
   }
+  assert.ok(!sql.some((q) => q.startsWith("ALTER TABLE")), "init alters no table");
+  // @spec MEM-VOICE-010
+  const links = sql.find((q) => q.includes("CREATE TABLE IF NOT EXISTS viewer_links"))!;
+  for (const col of ["discord_id TEXT PRIMARY KEY", "user_key TEXT NOT NULL REFERENCES viewers (user_key) ON UPDATE CASCADE ON DELETE CASCADE", "discord_display TEXT", "created_at TIMESTAMPTZ", "updated_at TIMESTAMPTZ"]) {
+    assert.ok(links.includes(col), `viewer_links has ${col}`);
+  }
+  assert.ok(sql.indexOf(links) > viewersTable, "viewer_links is created after the viewers table it references");
   assert.ok(!sql.some((q) => /DROP |TRUNCATE|DELETE FROM viewers/i.test(q)), "no destructive statement");
   assert.ok(!sql[viewersTable]!.includes("notes"), "the viewers table has no notes column");
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
 import { formatCursor, parseCursor } from "../src/cursor.js";
-import { runReflect } from "../src/reflect-run.js";
+import { runReflect, runReflectCommand } from "../src/reflect-run.js";
 
 const T0 = Date.parse("2026-01-01T00:00:00Z");
 
@@ -35,12 +35,14 @@ function setup(over: Record<string, unknown> = {}, provider = "ollama") {
 }
 
 // @spec MEM-REFLECT-008
-test("cursor helpers round-trip (ts, id) and read a legacy plain-timestamp value as that ts with the lowest id", () => {
+test("cursor helpers round-trip (ts, id); an absent or malformed value reads from before the first row", () => {
   const c = { ts: "2026-01-01T00:00:01.123456Z", id: 5 }; // Postgres microsecond text survives unchanged
   assert.equal(formatCursor(c), "2026-01-01T00:00:01.123456Z#5");
   assert.deepEqual(parseCursor(formatCursor(c)), c);
-  assert.deepEqual(parseCursor("2026-01-01T00:00:01.500Z"), { ts: "2026-01-01T00:00:01.500Z", id: 0 });
-  assert.deepEqual(parseCursor(undefined), { ts: "1970-01-01T00:00:00.000Z", id: 0 });
+  const start = { ts: "1970-01-01T00:00:00.000Z", id: 0 };
+  assert.deepEqual(parseCursor(undefined), start);
+  assert.deepEqual(parseCursor("2026-01-01T00:00:01.500Z"), start, "no `#<id>`: not the stored format");
+  assert.deepEqual(parseCursor("garbage#3"), start);
 });
 
 // @spec MEM-REFLECT-002, MEM-REFLECT-008
@@ -68,16 +70,6 @@ test("rows sharing the last row's timestamp are not skipped between passes", asy
   assert.equal(t.transcriptLines(1), 100);
   assert.match(t.prompts[1]!, /^[\s\S]*line 600\n/);
   assert.doesNotMatch(t.prompts[1]!, /line 599\n/);
-});
-
-// @spec MEM-REFLECT-008
-test("a legacy plain-timestamp last_reflection is accepted", async () => {
-  const t = setup();
-  await t.seed(10);
-  await t.memory.setMeta("last_reflection", new Date(T0 + 4_000).toISOString()); // rows 0..3 are older
-  await t.run();
-  assert.equal(t.transcriptLines(0), 6);
-  assert.doesNotMatch(t.prompts[0]!, /line 3\n/);
 });
 
 // @spec MEM-REFLECT-003
@@ -185,4 +177,25 @@ test("the reflect lock is released after a pass, even when it throws", async () 
     loadPersonality: () => "", savePersonality: () => {}, now: () => new Date(),
   }), /llm down/);
   assert.deepEqual(await t.memory.withConsolidationLock(async () => 1), { ran: true, value: 1 });
+});
+
+// @spec MEM-REFLECT-009
+test("a failing reflect logs `reflect failed`, sets exit code 1 and still closes the store; a clean run sets no code", async () => {
+  const run = async (fail: boolean) => {
+    const cfg = testConfig();
+    const memory = new InMemoryStore(cfg.brain.memory);
+    const errors: string[] = [];
+    const codes: number[] = [];
+    let closed = 0;
+    memory.close = async () => { closed++; };
+    if (fail) memory.connect = async () => { throw new Error("the memory tables do not exist yet"); };
+    const log = { warn() {}, info() {}, debug() {}, error: (_o: unknown, m?: string) => errors.push(m ?? "") } as never;
+    await runReflectCommand({
+      cfg, llm: { name: "ollama", chat: async () => "- a" }, memory, log,
+      loadPersonality: () => "", savePersonality: () => {}, now: () => new Date(), print: () => {}, setExitCode: (c) => codes.push(c),
+    });
+    return { errors, codes, closed };
+  };
+  assert.deepEqual(await run(true), { errors: ["reflect failed"], codes: [1], closed: 1 });
+  assert.deepEqual(await run(false), { errors: [], codes: [], closed: 1 });
 });

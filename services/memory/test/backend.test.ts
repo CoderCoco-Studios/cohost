@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
+import { MemoryStore } from "../src/store.js";
 import { createMemoryEmbedder, createStore } from "../src/backend.js";
 import { createMemoryHandler } from "../src/region.js";
 import { MemoryHealth } from "../src/health.js";
@@ -15,10 +16,27 @@ test("createStore picks the fake for store=memory without touching the embedder"
   assert.ok(createStore(cfg, createMemoryEmbedder(cfg), log) instanceof InMemoryStore);
 });
 
+// @spec MEM-BACKEND-002
+test("createStore picks the Postgres store for store=postgres, opening no connection", async () => {
+  const cfg = testConfig({ brain: { memory: { store: "postgres", embedder: "hash" } } } as never);
+  const store = createStore(cfg, createMemoryEmbedder(cfg), log);
+  assert.ok(store instanceof MemoryStore);
+  assert.equal(createStore(testConfig(), createMemoryEmbedder(testConfig()), log) instanceof MemoryStore, true, "postgres is the default");
+  await store.close();
+});
+
 // @spec LLM-EMBED-004
 test("llm.provider mock with brain.memory.embedder ollama still yields the Ollama embedder", () => {
   const cfg = testConfig({ llm: { provider: "mock" }, brain: { memory: { embedder: "ollama" } } } as never);
   assert.ok(createMemoryEmbedder(cfg) instanceof Ollama);
+});
+
+// @spec MEM-BACKEND-003
+test("embedder ollama is the Ollama client whatever llm.provider is", () => {
+  for (const provider of ["ollama", "openai", "anthropic", "bedrock", "mock"]) {
+    const cfg = testConfig({ llm: { provider }, brain: { memory: { embedder: "ollama" } } } as never);
+    assert.ok(createMemoryEmbedder(cfg) instanceof Ollama, provider);
+  }
 });
 
 // @spec MEM-BACKEND-004, MEM-RECALL-001

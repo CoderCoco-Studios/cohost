@@ -10,16 +10,11 @@
 import { createLogger, loadConfig, loadPersonality, savePersonality } from "@cohost/config";
 import { createChatProvider } from "@cohost/llm";
 import { createMemoryEmbedder, createStore } from "./backend.js";
-import { runReflect } from "./reflect-run.js";
+import { runReflectCommand } from "./reflect-run.js";
 
 const log = createLogger("reflect");
 const cfg = loadConfig();
 const llm = createChatProvider(cfg.llm);
 const memory = createStore(cfg, createMemoryEmbedder(cfg), log);
 
-const main = () => runReflect({ cfg, llm, memory, log, loadPersonality, savePersonality, now: () => new Date() });
-
-// @spec MEM-REFLECT-009
-main()
-  .catch((err) => { log.error({ err }, "reflect failed"); process.exitCode = 1; })
-  .finally(() => memory.close());
+await runReflectCommand({ cfg, llm, memory, log, loadPersonality, savePersonality, now: () => new Date() });

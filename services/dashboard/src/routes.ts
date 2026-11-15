@@ -3,6 +3,7 @@ import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import { ensureFromExample, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
+import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
 import { handleMouthRouting } from "./routing.js";
 import { defaultWrite, handleConfig } from "./settings.js";
@@ -42,6 +43,8 @@ export interface DashboardDeps {
   configWrite?: (file: string, text: string) => void;
   /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
   stack: StackService;
+  /** The built docs site (`docs/.vitepress/dist`). Defaults to the one under the workspace root; tests pin it. */
+  docsDir?: string;
 }
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
@@ -72,6 +75,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
+  const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
@@ -81,6 +85,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(page);
         return;
       }
+      // @spec DASH-DOCS-001, DASH-DOCS-011
+      if (handleDocs(docsDir, req, res, url)) return;
       // @spec DASH-SINK-001
       if (req.method === "GET" && url.pathname.startsWith("/audio/")) {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);

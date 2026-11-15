@@ -27,7 +27,7 @@ function fakeRuntime() {
   return { rt, calls };
 }
 
-async function boot(env: NodeJS.ProcessEnv) {
+async function boot(env: NodeJS.ProcessEnv, docsDir?: string) {
   const bus = new CtlBus();
   const rec = recordingLog();
   const { rt, calls } = fakeRuntime();
@@ -36,7 +36,7 @@ async function boot(env: NodeJS.ProcessEnv) {
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => personality, savePersonality: (t) => { personality = t; },
-    services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    services: () => [], control: setup.control, ...(docsDir ? { docsDir } : {}), stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -152,6 +152,17 @@ test("enabled + token: POST /control (incl. targeted pause) and PUT /personality
 test("GET /services/control reports enabled without needing a token", async () => {
   const t = await boot(ON);
   assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "compose", advanced: false });
+});
+
+// @spec DASH-CTRL-005, DASH-DOCS-001
+test("control mode leaves docs requests unauthenticated, built or not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctl-docs-"));
+  const t = await boot(ON, dir);
+  assert.equal((await t.send("/cohost/", { method: "GET" })).status, 503);
+  writeFileSync(join(dir, "index.html"), "<h1>docs</h1>");
+  for (const m of ["GET", "HEAD"]) assert.equal((await t.send("/cohost/", { method: m })).status, 200, m);
+  assert.equal(await (await t.send("/cohost/", { method: "GET" })).text(), "<h1>docs</h1>");
+  assert.equal((await t.send("/cohost/missing", { method: "GET" })).status, 404);
 });
 
 // @spec DASH-CTRL-007

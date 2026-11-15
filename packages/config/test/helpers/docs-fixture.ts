@@ -53,6 +53,7 @@ Why the docs site exists.
 | Install | What you need | \`guide/install/prerequisites.md\` | x |
 | Install | Try it | \`guide/install/first-run.md\` | x |
 | Connect | Twitch chat | \`guide/connect/twitch.md\` | x |
+| Operate | Service health | \`guide/operate/health.md\` | x |
 | | Troubleshooting | \`guide/troubleshooting.md\` | x |
 
 **Build on it** (\`track: advanced\`)
@@ -96,6 +97,7 @@ export const sidebar = [
       { text: 'Try it', link: '/guide/install/first-run' },
     ] },
     { text: 'Connect', collapsed: false, items: [{ text: 'Twitch chat', link: '/guide/connect/twitch' }] },
+    { text: 'Operate', collapsed: false, items: [{ text: 'Service health', link: '/guide/operate/health' }] },
     { text: 'Troubleshooting', link: '/guide/troubleshooting' },
   ] },
   { text: 'Build on it', items: [
@@ -163,6 +165,7 @@ export function baseFiles(): Record<string, string> {
     "docs/guide/install/prerequisites.md": page(fmOf("What you need", "simple"), "# What you need\n\nA PC."),
     "docs/guide/install/first-run.md": stepPage("Try it"),
     "docs/guide/connect/twitch.md": stepPage("Twitch chat"),
+    "docs/guide/operate/health.md": page(fmOf("Service health", "simple"), "# Service health\n\nThe services report in.\n\n## The states\n\nA table.\n\n## Your services right now\n\n<LiveHealth />"),
     "docs/guide/troubleshooting.md": page(fmOf("Troubleshooting", "simple"), "# Troubleshooting\n\nFix it."),
     "docs/advanced/dev-setup.md": page(fmOf("Developer setup", "advanced"), "# Developer setup\n\nBuild it."),
     "docs/advanced/extend/index.md": page(

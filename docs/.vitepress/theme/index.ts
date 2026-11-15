@@ -1,8 +1,9 @@
-// @spec DOCS-THEME-001, DOCS-THEME-016, DOCS-THEME-018, DOCS-THEME-035, DOCS-THEME-038
+// @spec DOCS-LIVE-001, DOCS-THEME-001, DOCS-THEME-016, DOCS-THEME-018, DOCS-THEME-035, DOCS-THEME-038
 import { h } from 'vue';
 import DefaultTheme from 'vitepress/theme';
 import type { Theme } from 'vitepress';
 import CohostMark from './components/CohostMark.vue';
+import LiveHealth from './components/LiveHealth.vue';
 import NotFound from './components/NotFound.vue';
 import TrackBadge from './components/TrackBadge.vue';
 import './tokens.css';
@@ -12,6 +13,9 @@ import './style.css';
 // cohost palette in tokens.css and style.css and these slots filled.
 export default {
   extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component('LiveHealth', LiveHealth);
+  },
   Layout() {
     return h(DefaultTheme.Layout, null, {
       'nav-bar-title-before': () => h(CohostMark, { expression: 'idle' }),

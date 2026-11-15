@@ -1,15 +1,15 @@
 # Arrow: dashboard
 
-The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personality editor, services tab with gated start/stop/restart, stack panel, test-input injection, mouth routing, the Viewers page, and the browser audio sink. It runs as a standalone host process, outside Docker Compose, on two listeners.
+The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personality editor, services tab with gated start/stop/restart, stack panel, test-input injection, mouth routing, the Viewers page, the browser audio sink, and the built docs site served at `/cohost/`. It runs as a standalone host process, outside Docker Compose, on two listeners.
 
 ## Status
 
-**AUDITED.** 119 specs: 119 implemented, 0 deferred, 0 gaps. The server side and the page script (run under a stub DOM in `services/dashboard/test/page.test.ts`) are covered by tests; the specs with no test annotation are listed under Coverage notes.
+**AUDITED** (audit of 2026-11-14; the docs-site serving specs DASH-DOCS-001 to 014, DASH-UI-024, DASH-UI-025 and DASH-CTRL-005's docs entry were added after it and are not covered by it). 135 specs: 135 implemented, 0 deferred, 0 gaps. The docs route is implemented in `services/dashboard/src/docs.ts` and tested in `services/dashboard/test/docs.test.ts`, `host-docs.test.ts` and `page-docs.test.ts`, and was observed end to end on 2026-11-15 (Verification log). DASH-DOCS-013 and 014 are docs-page content with no test; they were verified by reading the pages. The specs with no test annotation are listed under Coverage notes.
 
 Orientation:
 
-- Design: LLD § Host process and stack control (starting it, listeners, stack routes), Feed and health, Test-input injection and uploads, Viewers page; [decision doc](../intent/dashboard/decisions/standalone-dashboard.md).
-- Cross-segment edges: stack and lifecycle actions are control-plane's (CTRL-STACK-*, CTRL-LOCK-*), uploads are read by eyes and ears (SHARED-INJ-005), the settings editor and test drawer are module-contract's (MOD-CFG-*, MOD-TEST-*), and `POST /mouth/routing` feeds mouth (MOUTH-LIVE-*).
+- Design: LLD § Host process and stack control (starting it, listeners, stack routes), Docs site, Feed and health, Test-input injection and uploads, Viewers page; [decision doc](../intent/dashboard/decisions/standalone-dashboard.md).
+- Cross-segment edges: stack and lifecycle actions are control-plane's (CTRL-STACK-*, CTRL-LOCK-*), uploads are read by eyes and ears (SHARED-INJ-005), the settings editor and test drawer are module-contract's (MOD-CFG-*, MOD-TEST-*), and `POST /mouth/routing` feeds mouth (MOUTH-LIVE-*). The served docs are docs-site's build (DOCS-*), built at each start by deployment's `pnpm dashboard` (DEPLOY-HOST-001); docs-site's live health component reads `GET /services` and keeps the `#the-states` anchor the Services tab links (DOCS-LIVE-*).
 
 ## References
 
@@ -21,7 +21,7 @@ Orientation:
 - docs/intent/dashboard/decisions/standalone-dashboard.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (119 specs, prefix `DASH`: 119 `[x]`, 0 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired and DASH-INJ-007 is a retired placeholder, neither number is reused)
+- docs/intent/dashboard/dashboard-specs.md (135 specs, prefix `DASH`: 135 `[x]`, 0 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired and DASH-INJ-007 is a retired placeholder, neither number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -76,7 +76,8 @@ Orientation:
 7. `inject.ts` + `uploads.ts` — `/inject/*`; the upload size caps and TTL, with the bytes written to Redis through `Bus.putUpload`.
 8. `routing.ts`, `settings.ts`, `viewers.ts` — `POST /mouth/routing`, the settings editor routes, the `/viewers` routes.
 9. `health.ts` — constant heartbeat spec (live, no deps).
-10. `public/index.html` — single-file UI: feed, avatar preview, operator controls, personality editor, Services tab with stack panel, test-inputs panel, Viewers tab, audio sink.
+10. `public/index.html` — single-file UI: feed, avatar preview, operator controls, personality editor, Services tab with stack panel, test-inputs panel, Viewers tab, audio sink, links into the docs.
+11. `docs.ts` (planned) — `handleDocs`: serves `docs/.vitepress/dist` under `/cohost/` on the full surface (resolution, path guard, MIME types, caching, not-built page); tests in `test/docs.test.ts`.
 
 ## Spec Coverage
 
@@ -85,18 +86,19 @@ Orientation:
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-004 | 4 | 0 | 0 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-010 | 10 | 0 | 0 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-008 (006 retired) | 7 | 0 | 0 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-008 (006 retired) | 6 | 0 | 1 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
 | Test-input injection | DASH-INJ-001 to DASH-INJ-010 | 10 | 0 | 0 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
-| Web page | DASH-UI-001 to DASH-UI-023 | 23 | 0 | 0 |
+| Web page | DASH-UI-001 to DASH-UI-025 | 23 | 0 | 2 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 |
 | Stack control | DASH-STACK-001 to DASH-STACK-009 | 9 | 0 | 0 |
+| Docs site | DASH-DOCS-001 to DASH-DOCS-014 | 0 | 0 | 14 |
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-021 | 21 | 0 | 0 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 
-**Summary:** 119 of 119 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 135 of 135 specs implemented; 0 deferred; 0 open (the docs-serving specs added after the audit, DASH-DOCS-001 to 014, DASH-UI-024, 025 and DASH-CTRL-005's docs entry, are implemented and not covered by it). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

@@ -27,6 +27,7 @@ The full dashboard listens on `DASHBOARD_PORT` (3000). A second listener on `DAS
 | `GET /audio/<id>.wav` | none | The audio of one utterance, fetched from `voice` and sent without caching |
 | `POST /sink` | none | A sink page reports playback: body `{"event": "playing" or "done", "id": "..."}`. Publishes `voice.playing` or `voice.done` with sink `dashboard`. Answers `204`, or `400` for any other `event` |
 | `GET /health` | none | `ok` |
+| `GET /cohost/…`, `HEAD /cohost/…` | none | The built documentation site, served on the full-surface listener only (not on the second listener). It answers with the pages built by `pnpm docs:build`, or, while the site is not built, with a page that says so and names `pnpm docs:build`. See [Service health](../../guide/operate/health.md) for the one page that reads `GET /services` live |
 | `GET /personality` | none | The text of `personality.md` |
 | `PUT /personality` | token | Replaces `personality.md` with the request body and publishes `control` with `reload_personality`. Answers `204` |
 

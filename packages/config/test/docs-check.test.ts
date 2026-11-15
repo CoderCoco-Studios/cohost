@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.ts";
-import { shell, badge, themeDist, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
+import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HEALTH_BUILT, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 const load = (p: string): Promise<any> => import(pathToFileURL(join(repoRoot, p)).href);
@@ -1477,6 +1477,91 @@ test("404.html has its heading, links, the lost mark outside the nav bar and the
 });
 
 const HLDWithDiagram = () => HLD().replace("## System Design\n", "## System Design\n\n```mermaid\nflowchart LR\n  A --> B\n```\n");
+
+// ---------------------------------------------------------------- Served by the dashboard (DOCS-LIVE-*)
+
+const LIVE_VUE = `${T}components/LiveHealth.vue`;
+const LIVE_MJS = `${T}live-health.mjs`;
+const HEALTH_MD = "docs/guide/operate/health.md";
+const healthMd = (body: string) => ({ [HEALTH_MD]: page({ title: "Service health", description: "About Service health.", track: "simple", verified: "f126b94" }, `# Service health\n\n${body}`) });
+
+// @spec DOCS-LIVE-001
+test("the theme entry registers LiveHealth globally in enhanceApp from ./components/LiveHealth.vue", () => {
+  const idx = (t: string) => ({ [`${T}index.ts`]: t });
+  fails(check(idx(mut(THEME_INDEX_TS, /  enhanceApp[\s\S]*?\n  \},\n/, ""))), /index\.ts.*DOCS-LIVE-001.*enhanceApp/);
+  fails(check(idx(mut(THEME_INDEX_TS, "app.component('LiveHealth'", "app.component('Livehealth'"))), /DOCS-LIVE-001.*LiveHealth/);
+  fails(check(idx(mut(THEME_INDEX_TS, "./components/LiveHealth.vue", "./components/Other.vue"))), /DOCS-LIVE-001.*\.\/components\/LiveHealth\.vue/);
+  fails(check(idx(mut(THEME_INDEX_TS, "enhanceApp({ app }) {\n    app.component('LiveHealth', LiveHealth);\n  },", "enhanceApp({ app }) {},\n  setup() { app.component('LiveHealth', LiveHealth); },"))), /DOCS-LIVE-001/);
+  fails(check({ [LIVE_VUE]: null }), /LiveHealth\.vue.*DOCS-LIVE-001.*does not exist/);
+  passes(check(idx(mut(THEME_INDEX_TS, /app\.component\('LiveHealth', LiveHealth\);/, 'app.component("LiveHealth", LiveHealth);'))));
+});
+
+// @spec DOCS-LIVE-002
+test("the Service health page holds exactly one LiveHealth element outside fenced code, in any spelling", () => {
+  fails(check(healthMd("No component.")), /health\.md.*DOCS-LIVE-002.*0/);
+  fails(check(healthMd("<LiveHealth />\n\n<LiveHealth/>")), /DOCS-LIVE-002.*2/);
+  fails(check(healthMd("<LiveHealth />\n\n<LiveHealth></LiveHealth>")), /DOCS-LIVE-002.*2/);
+  fails(check(healthMd("```html\n<LiveHealth />\n```")), /DOCS-LIVE-002.*0/);
+  fails(check({ [HEALTH_MD]: null }), /health\.md.*DOCS-LIVE-002/);
+  passes(check(healthMd("<LiveHealth/>")));
+  passes(check(healthMd("<LiveHealth></LiveHealth>")));
+  passes(check(healthMd("```html\n<LiveHealth />\n```\n\n<LiveHealth />")));
+});
+
+// @spec DOCS-LIVE-003
+test("the built Service health page holds exactly one cohost-live-health element with the note inside it", () => {
+  const dist = (body: string) => ({ "guide/operate/health.html": shell(`<div class="vp-doc">${badge("simple")}<h1>Service health</h1>${body}</div>`) });
+  const anchor = '<h2 id="the-states">The states</h2>';
+  sitePasses();
+  siteFails({ "guide/operate/health.html": null }, /health\.html.*DOCS-LIVE-003/);
+  siteFails(dist(anchor), /health\.html.*DOCS-LIVE-003.*0/);
+  siteFails(dist(HEALTH_BODY + HEALTH_BODY.replace('id="the-states"', "")), /DOCS-LIVE-003.*2/);
+  siteFails(dist(`${anchor}<div class="cohost-live-health"><p>Something else.</p></div>`), /DOCS-LIVE-003.*note/);
+  siteFails(dist(`${anchor}<p>${LIVE_NOTE}</p><div class="cohost-live-health"><p></p></div>`), /DOCS-LIVE-003.*note/);
+  siteFails(dist(`${anchor}<div class="cohost-live-health"><p>${LIVE_NOTE}</p><table><caption>x</caption></table></div>`), /DOCS-LIVE-003.*table/);
+  sitePasses(dist(`${anchor}<div class="cohost-live-health extra"><p>${LIVE_NOTE}</p></div>`));
+  sitePasses(dist(`${anchor}<div class="cohost-live-health"><div><p>Live data shows here when you open these docs from your <!-- -->dashboard.</p></div></div>`));
+});
+
+// @spec DOCS-LIVE-011
+test("LiveHealth.vue has no style block and the theme CSS gives .cohost-live-health no animation or transition", () => {
+  fails(check({ [LIVE_VUE]: LIVE_HEALTH_VUE + "<style>.x { color: red; }</style>\n" }), /LiveHealth\.vue.*DOCS-LIVE-011.*style/);
+  fails(check({ [LIVE_VUE]: LIVE_HEALTH_VUE + '<style scoped lang="css">.x {}</style>\n' }), /DOCS-LIVE-011/);
+  const css = (rule: string) => ({ [`${T}style.css`]: STYLE_CSS + `\n${rule}\n` });
+  fails(check(css(".cohost-live-health td { transition: color 1s; }")), /style\.css.*DOCS-LIVE-011.*transition/);
+  fails(check(css(".cohost-live-health { animation-name: x; }")), /DOCS-LIVE-011.*animation-name/);
+  fails(check(css(".vp-doc .cohost-live-health table tr:hover { animation: x 1s; }")), /DOCS-LIVE-011.*animation/);
+  fails(check(css("@media (prefers-reduced-motion: no-preference) { .cohost-live-health td { transition-duration: 1s; } }")), /DOCS-LIVE-011/);
+  passes(check(css(".cohost-live-health-status { color: var(--cohost-text-2); }")));
+  passes(check(css("@media (prefers-reduced-motion: no-preference) { .cohost-other { transition: color 1s; } }")));
+});
+
+// @spec DOCS-LIVE-012
+test("the built Service health page has the the-states anchor", () => {
+  siteFails({ "guide/operate/health.html": docPage("simple", "Service health", HEALTH_BODY.replace('id="the-states"', 'id="states"')) }, /health\.html.*DOCS-LIVE-012.*the-states/);
+  siteFails({ "guide/operate/health.html": null }, /DOCS-LIVE-012/);
+  sitePasses({ "guide/operate/health.html": docPage("simple", "Service health", HEALTH_BODY.replace('<h2 id="the-states">', '<h3 id="the-states">').replace("</h2>", "</h3>")) });
+});
+
+// @spec DOCS-LIVE-013
+test("the component's files hold no absolute URL literal, no WebSocket or EventSource, and name /services", () => {
+  const mjs = (t: string) => ({ [LIVE_MJS]: LIVE_HEALTH_MJS + t });
+  const vue = (t: string) => ({ [LIVE_VUE]: LIVE_HEALTH_VUE.replace("<script setup>", `<script setup>\n${t}`) });
+  fails(check(mjs("const a = 'https://example.com/x';\n")), /live-health\.mjs.*DOCS-LIVE-013.*https:/);
+  fails(check(mjs('const a = "HTTP://example.com";\n')), /DOCS-LIVE-013.*http:/i);
+  fails(check(mjs("const a = `//cdn.example.com/x`;\n")), /DOCS-LIVE-013.*\/\//);
+  fails(check(mjs("const a = '//cdn.example.com/x';\n")), /DOCS-LIVE-013/);
+  fails(check(vue("const a = 'https://example.com/x';")), /LiveHealth\.vue.*DOCS-LIVE-013/);
+  fails(check({ [LIVE_VUE]: LIVE_HEALTH_VUE.replace('class="cohost-live-health"', 'class="cohost-live-health" data-src="https://example.com"') }), /LiveHealth\.vue.*DOCS-LIVE-013/);
+  fails(check({ [LIVE_VUE]: LIVE_HEALTH_VUE.replace('<p class', '<img src="//x.example/a.png" /><p class') }), /DOCS-LIVE-013/);
+  fails(check(mjs("const s = new WebSocket('/ws');\n")), /live-health\.mjs.*DOCS-LIVE-013.*WebSocket/);
+  fails(check(vue("const s = new EventSource('/e');")), /LiveHealth\.vue.*DOCS-LIVE-013.*EventSource/);
+  fails(check({ [LIVE_MJS]: LIVE_HEALTH_MJS.replace("'/services'", "'/service'") }), /DOCS-LIVE-013.*\/services/);
+  fails(check({ [LIVE_MJS]: null }), /live-health\.mjs.*DOCS-LIVE-013.*does not exist/);
+  // comments and relative or non-URL strings are fine; so is a /services literal in either file
+  passes(check(mjs("// see https://example.com and //x\n/* http://y */\nconst ok = 'a//b' + '/services/x' + 'httpx';\n")));
+  passes(check({ [LIVE_MJS]: LIVE_HEALTH_MJS.replace("'/services'", "'/svc'"), ...vue("const u = '/services';") }));
+});
 
 // ---------------------------------------------------------------- the real repository
 

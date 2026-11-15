@@ -33,6 +33,7 @@ The strip across the top is the same on every tab.
 | `avatar:` pill | Which avatar driver is in use, or none. |
 | `stack:` pill | The state of the whole system: `up`, `starting`, `stopping`, `degraded`, `down` or `docker unavailable`. |
 | Tabs | **live**, **services**, **viewers** and **settings**. The services tab shows a count, such as `services (2)`, when something needs attention. |
+| `docs` link | Right after the tabs. It opens, in a new tab, the documentation your dashboard serves at `/cohost/`: the same pages you are reading now, built from the copy of cohost on your PC, so they match the version you run and work offline. It is hidden on the [sink](../../start/glossary.md#sink) page. |
 | **enable audio** | The dashboard page can play the co-host's voice. Browsers insist you press this once. |
 | **mute** | Silences the co-host. Press again to unmute. |
 
@@ -65,7 +66,7 @@ The control room. The top panel, **stack**, appears when the dashboard's control
 
 Each asks you to confirm. While one runs, the others are greyed out, and the panel shows the phase and elapsed time and, afterwards, how it ended.
 
-Below it, a table lists every service with its state, mode, dependencies, when it was last heard from, restart count and a detail note. [Service health](health.md) explains how to read every column. When the controls are on, each row also has Start, Stop and Restart buttons, a **test** button that opens a panel for feeding just that service, and, for the three brain parts that can be paused, **pause** and **resume**. Two options above the table affect starts: **start mode** (resume keeps the backlog of events; fresh skips it) and **isolated**, which starts only that service with pretend backends. [Starting and stopping](start-stop.md) goes into detail.
+Below it, a table lists every service with its state, mode, dependencies, when it was last heard from, restart count and a detail note. [Service health](health.md) explains how to read every column, and the **how to read this** link beside the **services** heading opens that page in a new tab, at the table of states. When you open Service health from the dashboard's own `docs` link, it also shows a small live table of your services. When the controls are on, each row also has Start, Stop and Restart buttons, a **test** button that opens a panel for feeding just that service, and, for the three brain parts that can be paused, **pause** and **resume**. Two options above the table affect starts: **start mode** (resume keeps the backlog of events; fresh skips it) and **isolated**, which starts only that service with pretend backends. [Starting and stopping](start-stop.md) goes into detail.
 
 ## The viewers tab
 

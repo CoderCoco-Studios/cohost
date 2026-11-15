@@ -757,6 +757,7 @@ export async function runSource(root) {
   }
 
   await themeSourceChecks(root, add, configText);
+  liveHealthSourceChecks(root, add);
 
   return problems;
 }
@@ -838,6 +839,7 @@ export function runDist(root) {
     }
   }
   themeDistChecks(root, dist, files, htmlFiles, add);
+  liveHealthDistChecks(dist, add);
   return problems;
 }
 
@@ -2096,6 +2098,168 @@ function themeDistChecks(root, dist, files, htmlFiles, add) {
     if (!lost.length) add(rel('404.html'), 0, 'DOCS-THEME-039', 'has no <svg class="cohost-mark" data-expression="lost" role="img"> outside the nav bar');
     else if (!lost.some((e) => e.attrs.role === 'img')) add(rel('404.html'), 0, 'DOCS-THEME-039', 'the lost mark must carry role="img"');
   }
+}
+
+// ---------------------------------------------------------------------------------------------------- served by the dashboard
+
+const LIVE_VUE_REL = `${THEME_DIR}components/LiveHealth.vue`;
+const LIVE_MJS_REL = `${THEME_DIR}live-health.mjs`;
+const HEALTH_REL = 'docs/guide/operate/health.md';
+const HEALTH_DIST = 'guide/operate/health.html';
+const LIVE_NOTE = 'Live data shows here when you open these docs from your dashboard.';
+
+/** The string literals of JavaScript source, comments skipped: [{text, line}]. Regular-expression literals are not recognised. */
+function stringLiterals(code) {
+  const out = [];
+  let i = 0;
+  let line = 1;
+  while (i < code.length) {
+    const c = code[i];
+    if (c === '\n') {
+      line++;
+      i++;
+    } else if (c === '/' && code[i + 1] === '/') {
+      while (i < code.length && code[i] !== '\n') i++;
+    } else if (c === '/' && code[i + 1] === '*') {
+      const end = code.indexOf('*/', i + 2);
+      const stop = end === -1 ? code.length : end + 2;
+      for (; i < stop; i++) if (code[i] === '\n') line++;
+    } else if (c === "'" || c === '"' || c === '`') {
+      const start = line;
+      let text = '';
+      i++;
+      while (i < code.length && code[i] !== c) {
+        if (code[i] === '\\') {
+          text += code[i + 1] ?? '';
+          if (code[i + 1] === '\n') line++;
+          i += 2;
+          continue;
+        }
+        if (code[i] === '\n') {
+          line++;
+          if (c !== '`') break;
+        }
+        text += code[i++];
+      }
+      i++;
+      out.push({ text, line: start });
+    } else i++;
+  }
+  return out;
+}
+
+/** The text between the `{` that opens the body of the function `name` and its closing `}`, or null. */
+function functionBody(text, name) {
+  const at = text.search(new RegExp(`\\b${name}\\b`));
+  if (at === -1) return null;
+  const skip = (from, open, close) => {
+    let depth = 0;
+    for (let k = from; k < text.length; k++) {
+      if (text[k] === open) depth++;
+      else if (text[k] === close && --depth === 0) return k;
+    }
+    return -1;
+  };
+  const p = text.indexOf('(', at);
+  if (p === -1) return null;
+  const pe = skip(p, '(', ')');
+  if (pe === -1) return null;
+  const b = /^\s*(?:=>\s*)?\{/.exec(text.slice(pe + 1));
+  if (!b) return null;
+  const open = pe + 1 + b[0].length - 1;
+  const close = skip(open, '{', '}');
+  return close === -1 ? null : text.slice(open + 1, close);
+}
+
+/**
+ * The live health component's source checks.
+ * @spec DOCS-LIVE-001, DOCS-LIVE-002, DOCS-LIVE-011, DOCS-LIVE-013
+ */
+function liveHealthSourceChecks(root, add) {
+  // ---- registration
+  const entry = readIf(join(root, `${THEME_DIR}index.ts`));
+  const vue = readIf(join(root, LIVE_VUE_REL));
+  if (vue === null) add(LIVE_VUE_REL, 0, 'DOCS-LIVE-001', 'does not exist; the theme registers the component LiveHealth from ./components/LiveHealth.vue');
+  if (entry !== null) {
+    const F = `${THEME_DIR}index.ts`;
+    const imp = /\bimport\s+([A-Za-z_$][\w$]*)\s+from\s+(['"])\.\/components\/LiveHealth\.vue\2/.exec(entry);
+    if (!imp) add(F, 0, 'DOCS-LIVE-001', "must import the component from './components/LiveHealth.vue'");
+    const body = functionBody(entry, 'enhanceApp');
+    if (body === null) add(F, 0, 'DOCS-LIVE-001', 'must define enhanceApp and register the component LiveHealth in it');
+    else {
+      const reg = /\.component\(\s*(['"])LiveHealth\1\s*,\s*([A-Za-z_$][\w$]*)\s*\)/.exec(body);
+      if (!reg) add(F, 0, 'DOCS-LIVE-001', "enhanceApp must register the component globally under the name LiveHealth (app.component('LiveHealth', ...))");
+      else if (imp && reg[2] !== imp[1]) add(F, 0, 'DOCS-LIVE-001', `enhanceApp registers ${reg[2]} as LiveHealth, not the component imported from ./components/LiveHealth.vue (${imp[1]})`);
+    }
+  }
+
+  // ---- one element on the Service health page
+  const md = readIf(join(root, HEALTH_REL));
+  if (md === null) add(HEALTH_REL, 0, 'DOCS-LIVE-002', 'does not exist; it holds the one <LiveHealth /> element');
+  else {
+    const prose = analyze(md).plain.map((l) => l.text).join('\n').replace(/(`+)[\s\S]*?[^`]\1(?!`)/g, ' ');
+    const n = [...prose.matchAll(/<LiveHealth(?=[\s/>])[^>]*>/g)].length;
+    if (n !== 1) add(HEALTH_REL, 0, 'DOCS-LIVE-002', `holds ${n} LiveHealth elements outside fenced code; it needs exactly one`);
+  }
+
+  // ---- no style block, no animation or transition
+  if (vue !== null && /<style\b/i.test(vue)) add(LIVE_VUE_REL, 0, 'DOCS-LIVE-011', 'has a <style> block; the component is styled in style.css');
+  const css = indexCss([[TOKENS_REL, readIf(join(root, TOKENS_REL))], [STYLE_REL, readIf(join(root, STYLE_REL))]]);
+  for (const r of css) {
+    if (r.block.prelude.startsWith('@') || !r.block.prelude.includes('.cohost-live-health')) continue;
+    for (const d of r.block.decls) if (/^(?:animation|transition)/.test(d.prop)) add(r.file, d.line, 'DOCS-LIVE-011', `${ws(r.block.prelude)} declares ${d.prop}; .cohost-live-health rules have no animation or transition`);
+  }
+
+  // ---- no absolute URL, no socket, the URL /services
+  const mjs = readIf(join(root, LIVE_MJS_REL));
+  if (mjs === null) add(LIVE_MJS_REL, 0, 'DOCS-LIVE-013', 'does not exist; the component logic is live-health.mjs');
+  let named = false;
+  const ABS = /^(?:https?:|\/\/)/i;
+  for (const [rel, text] of [[LIVE_VUE_REL, vue], [LIVE_MJS_REL, mjs]]) {
+    if (text === null) continue;
+    const scripts = rel.endsWith('.vue') ? [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]) : [text];
+    for (const code of scripts) {
+      for (const lit of stringLiterals(code)) {
+        if (ABS.test(lit.text)) add(rel, lit.line, 'DOCS-LIVE-013', `holds the string literal "${lit.text.slice(0, 40)}", which begins with http:, https: or //; the component loads nothing absolute`);
+        if (lit.text === '/services') named = true;
+      }
+    }
+    const sock = /\b(WebSocket|EventSource)\b/.exec(text);
+    if (sock) add(rel, 0, 'DOCS-LIVE-013', `refers to ${sock[1]}; the component only polls /services`);
+    if (rel.endsWith('.vue')) {
+      for (const e of tagEvents(text)) {
+        if (e.close) continue;
+        for (const [k, v] of Object.entries(e.attrs)) {
+          if (ABS.test(v) || stringLiterals(v).some((l) => ABS.test(l.text))) add(rel, 0, 'DOCS-LIVE-013', `the <${e.name}> attribute ${k}="${v.slice(0, 40)}" begins with http:, https: or //`);
+        }
+      }
+    }
+  }
+  if (!named && (vue !== null || mjs !== null)) add(mjs !== null ? LIVE_MJS_REL : LIVE_VUE_REL, 0, 'DOCS-LIVE-013', "no string literal '/services' in the component's files; the component names the URL /services");
+}
+
+/**
+ * The built-site checks for the Service health page.
+ * @spec DOCS-LIVE-003, DOCS-LIVE-012
+ */
+function liveHealthDistChecks(dist, add) {
+  const rel = `docs/.vitepress/dist/${HEALTH_DIST}`;
+  const html = readIf(join(dist, HEALTH_DIST));
+  if (html === null) {
+    add(rel, 0, 'DOCS-LIVE-003', 'does not exist; the built Service health page holds the cohost-live-health element');
+    add(rel, 0, 'DOCS-LIVE-012', 'does not exist; the built Service health page holds the element with id the-states');
+    return;
+  }
+  const ev = tagEvents(html);
+  const regions = regionsOf(ev, (e) => hasTok(e, 'cohost-live-health'));
+  if (regions.length !== 1) add(rel, 0, 'DOCS-LIVE-003', `holds ${regions.length} elements with the class cohost-live-health; it needs exactly one`);
+  else {
+    const r = regions[0];
+    const text = textOf(html.slice(r.innerStart, r.innerEnd)).replace(/[\s​]+/g, ' ');
+    if (!text.includes(LIVE_NOTE)) add(rel, 0, 'DOCS-LIVE-003', `the cohost-live-health element does not contain the note "${LIVE_NOTE}"`);
+    if (ev.some((e) => !e.close && e.name === 'table' && e.index >= r.innerStart && e.index < r.innerEnd)) add(rel, 0, 'DOCS-LIVE-003', 'the built cohost-live-health element holds a <table>; it renders only the note until the browser has live data');
+  }
+  if (!ev.some((e) => !e.close && e.attrs.id === 'the-states')) add(rel, 0, 'DOCS-LIVE-012', 'has no element with id the-states; the dashboard links guide/operate/health#the-states');
 }
 
 // ---------------------------------------------------------------------------------------------------- main

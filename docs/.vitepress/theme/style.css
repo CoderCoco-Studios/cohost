@@ -411,6 +411,14 @@
   color: var(--cohost-brand-2);
 }
 
+/* Live health table (the Service health page): the note or the live table, in palette tokens, no motion */
+/* @spec DOCS-LIVE-011 */
+.cohost-live-health { margin: 16px 0; }
+.cohost-live-health-status { margin: 0 0 8px; color: var(--cohost-text-2); font-size: 14px; }
+.cohost-live-health table { margin: 8px 0 0; }
+.cohost-live-health caption { padding: 0 0 8px; color: var(--cohost-text-2); font-size: 14px; text-align: left; caption-side: top; }
+.cohost-live-health-needs { display: block; color: var(--cohost-text-2); font-size: 13px; }
+
 /* Keyboard focus */
 a:focus-visible,
 button:focus-visible,

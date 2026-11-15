@@ -59,6 +59,12 @@ A `—` in the column means no heartbeat has been seen.
 - **detail** is the service's own note. `paused` also appears as a badge beside the state, when you have paused a brain part.
 - A line under the state such as `needs cortex (down)` says that a service this one relies on is in trouble. It is a hint about where to look; the service's own state is unchanged.
 
+## Live, from your dashboard
+
+When you open these docs from your own dashboard (the `docs` link in its header), this page shows your services as they are right now, refreshed every few seconds. The columns are the ones described on this page. Anywhere else, such as the public copy of the docs, you will see a short note instead, because only your dashboard knows how your services are doing.
+
+<LiveHealth />
+
 ## Hooks in the deps column
 
 Three brain parts, and memory, let you swap their judgement for a model through a [hook](../../start/glossary.md#hook). When a hook is set to ask a model (`llm`) or your own server (`http`), the service reports it as a dependency named `hook.<name>`: `hook.salience.scorer`, `hook.affect.appraiser`, `hook.cortex.critic`, `hook.memory.capture` and `hook.memory.consolidator`. A built-in rules hook is not listed.

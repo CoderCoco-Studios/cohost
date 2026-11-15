@@ -18,7 +18,7 @@ Three families of commands: the `pnpm` scripts in the root `package.json`, `coho
 | `pnpm typecheck` | `tsc -b --noEmit`. `pnpm lint` runs the same check |
 | `pnpm test` | `pnpm build:native`, `tsc -b`, then every `test/*.test.ts` under `packages/*` and `services/*` with Node's runner through `tsx` |
 | `pnpm test:only` | The same tests without the build |
-| `pnpm dashboard` | Builds `services/dashboard`, then runs it on the host. It is the one thing you start by hand |
+| `pnpm dashboard` | Builds the documentation site first (`pnpm docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It is the one thing you start by hand |
 | `pnpm cohostctl <command>` | Builds `packages/control`, then runs `cohostctl` with your arguments (see below) |
 | `pnpm dev` | Every service with `tsx watch`, against infrastructure from [Compose](../../start/glossary.md#docker-compose) |
 | `pnpm reflect` | The reflection pass of `memory`: appends a dated block of bullets to `## Learned` in `personality.md` |

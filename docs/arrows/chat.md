@@ -61,14 +61,14 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Source selection | CHAT-PLAN-001 to CHAT-PLAN-006 | 6 | 0 | 0 | 5 |
-| Twitch connection | CHAT-TW-001 to CHAT-TW-012 | 12 | 0 | 0 | 9 |
+| Source selection | CHAT-PLAN-001 to CHAT-PLAN-006 | 6 | 0 | 0 | 6 |
+| Twitch connection | CHAT-TW-001 to CHAT-TW-012 | 12 | 0 | 0 | 12 |
 | Filtering and payload | CHAT-FILT-001 to CHAT-FILT-007 | 7 | 0 | 0 | 7 |
-| Fake source | CHAT-FAKE-001 to CHAT-FAKE-006 | 6 | 0 | 0 | 4 |
-| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-010 | 8 | 0 | 0 | 7 |
+| Fake source | CHAT-FAKE-001 to CHAT-FAKE-006 | 6 | 0 | 0 | 6 |
+| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-010 | 8 | 0 | 0 | 8 |
 | Health | CHAT-HEALTH-001 to CHAT-HEALTH-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 45 of 45 specs implemented; 0 deferred; 0 open. 38 carry a test `@spec` annotation; implemented without one: CHAT-PLAN-005, CHAT-TW-001, CHAT-TW-002, CHAT-TW-005, CHAT-FAKE-005, CHAT-FAKE-006, CHAT-INJ-001 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 45 of 45 specs implemented; 0 deferred; 0 open. 45 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -86,4 +86,4 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 None.
 
 ### Nice to Have
-1. Tests for the seven implemented specs without a test annotation (CHAT-PLAN-005, CHAT-TW-001, CHAT-TW-002, CHAT-TW-005, CHAT-FAKE-005, CHAT-FAKE-006, CHAT-INJ-001).
+None.

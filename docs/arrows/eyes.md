@@ -59,12 +59,12 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` 
 | Enablement | EYES-ENAB-001 to EYES-ENAB-005 | 5 | 0 | 0 | 5 |
 | OBS connection and capture | EYES-OBS-001 to EYES-OBS-008 | 8 | 0 | 0 | 8 |
 | Vision description | EYES-DESC-001 to EYES-DESC-007 | 7 | 0 | 0 | 7 |
-| Look loop and publication | EYES-LOOK-001 to EYES-LOOK-007 | 7 | 0 | 0 | 6 |
+| Look loop and publication | EYES-LOOK-001 to EYES-LOOK-007 | 7 | 0 | 0 | 7 |
 | Test injection | EYES-INJ-001, EYES-INJ-007 to EYES-INJ-011, EYES-INJ-014, EYES-INJ-016, EYES-INJ-017 | 9 | 0 | 0 | 9 |
 | Stub describer | EYES-STUB-001 to EYES-STUB-002 | 2 | 0 | 0 | 2 |
-| Health | EYES-HEALTH-001 to EYES-HEALTH-006 | 6 | 0 | 0 | 5 |
+| Health | EYES-HEALTH-001 to EYES-HEALTH-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 44 of 44 specs implemented; 0 deferred; 0 open. 42 carry a test `@spec` annotation; implemented without one: EYES-LOOK-004, EYES-HEALTH-005 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 44 of 44 specs implemented; 0 deferred; 0 open. 44 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -86,5 +86,4 @@ None.
 None.
 
 ### Nice to Have
-1. Add a test for the `if (obs.identified)` skip in the look loop (EYES-LOOK-004).
-2. Annotate the tests that cover EYES-HEALTH-005 (`services/eyes/test/obs.test.ts`, `services/eyes/test/service.test.ts`).
+None.

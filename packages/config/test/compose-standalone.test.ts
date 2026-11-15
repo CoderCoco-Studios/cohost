@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -15,7 +15,11 @@ interface Svc {
   environment?: Record<string, string>;
   extra_hosts?: string[];
   profiles?: string[];
-  build?: { args: { SERVICE: string } };
+  build?: { context?: string; dockerfile?: string; args: { SERVICE: string } };
+  restart?: string;
+  volumes?: string[];
+  depends_on?: Record<string, { condition?: string }>;
+  healthcheck?: { test?: string[]; interval?: string };
 }
 const compose = parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as { services: Record<string, Svc> };
 const names = Object.keys(compose.services).sort();
@@ -35,6 +39,55 @@ test("app services get no DASHBOARD_URL (uploads reach eyes and ears over Redis)
     const svc = compose.services[s]!;
     assert.equal(svc.environment?.DASHBOARD_URL, undefined, s);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${s} has the host-gateway extra host`);
+  }
+});
+
+/** The application services: one per `services/` directory except the host-run dashboard. */
+const appServices = readdirSync(root("services"), { withFileTypes: true })
+  .filter((d) => d.isDirectory() && d.name !== "dashboard")
+  .map((d) => d.name)
+  .sort();
+const IN_NETWORK = {
+  REDIS_URL: "redis://redis:6379",
+  DATABASE_URL: "postgres://cohost:cohost@postgres:5432/cohost",
+  OLLAMA_URL: "http://ollama:11434",
+  TTS_URL: "http://tts:8880",
+  STT_URL: "http://stt:8000",
+  VOICE_URL: "http://voice:8700",
+  CONFIG_DIR: "/app/config",
+};
+
+// @spec DEPLOY-COMPOSE-002
+test("every application service builds the root Dockerfile with SERVICE set to its directory name and inherits the shared x-ts-service settings", () => {
+  assert.ok(appServices.length >= 10, `found the services/ directories: ${appServices.join(",")}`);
+  for (const name of appServices) {
+    const svc = compose.services[name];
+    assert.ok(svc, `${name} is a compose service`);
+    assert.equal(svc.build?.context, ".", `${name}: the repository root is the build context`);
+    assert.equal(svc.build?.dockerfile, undefined, `${name}: the single root Dockerfile`);
+    assert.equal(svc.build?.args.SERVICE, name, `${name}: SERVICE is its directory name`);
+    assert.equal(svc.restart, "unless-stopped", `${name}: restart`);
+    assert.equal(svc.env_file, ".env", `${name}: env_file`);
+    for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
+    assert.ok(svc.volumes?.includes("./config:/app/config"), `${name}: the config bind mount`);
+    assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
+    assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
+    assert.ok(svc.healthcheck?.test?.join(" ").includes("healthcheck.js $$SERVICE"), `${name}: the container healthcheck`);
+    assert.equal(svc.environment?.DASHBOARD_URL, undefined, `${name}: no dashboard address`);
+  }
+  // the memory image's one-shots build the memory directory's image too
+  for (const name of ["consolidate", "reembed"]) assert.equal(compose.services[name]!.build?.args.SERVICE, "memory", name);
+});
+
+// @spec DEPLOY-COMPOSE-003
+test("the in-network addresses are literals in each application service's environment block, so .env (env_file) cannot change them", () => {
+  for (const name of appServices) {
+    const env = compose.services[name]!.environment ?? {};
+    assert.equal(compose.services[name]!.env_file, ".env", `${name}: .env is still loaded`);
+    for (const [k, v] of Object.entries(IN_NETWORK)) {
+      assert.equal(env[k], v, `${name}: ${k} is set in environment`);
+      assert.ok(!String(env[k]).includes("${"), `${name}: ${k} is not read from .env through substitution`);
+    }
   }
 });
 

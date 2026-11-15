@@ -43,7 +43,7 @@ test("config: ears.drop_phrases defaults to an empty list", () => {
   assert.deepEqual(testConfig({ ears: { drop_phrases: ["a"] } }).ears.drop_phrases, ["a"]);
 });
 
-// @spec EARS-STUB-001, EARS-STUB-002
+// @spec EARS-STUB-001, EARS-STUB-002, CFG-SCH-022
 test("config: ears.stt_engine is blank-to-speaches and accepts stub", () => {
   assert.equal(testConfig().ears.stt_engine, "speaches");
   assert.equal(testConfig({ ears: { stt_engine: "" } }).ears.stt_engine, "speaches");

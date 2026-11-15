@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { themeFiles, themeSection, FLOW_BODY, THEME_CONFIG_EXTRA } from "./docs-theme-fixture.ts";
 
 export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 export const script = join(repoRoot, "scripts/docs-check.mjs");
@@ -73,6 +74,7 @@ Why the docs site exists.
 | How specs work | \`project/spec-driven.md\` | x |
 | Verification log | \`project/verification-log.md\` | x |
 
+${themeSection()}
 ## Decisions & Alternatives
 `;
 
@@ -113,11 +115,11 @@ export const sidebar = [
 ];
 `;
 
-const CONFIG_TS = `import { defineConfig } from 'vitepress';
+export const CONFIG_TS = `import { defineConfig } from 'vitepress';
 export default defineConfig({
   base: '/cohost/',
   srcExclude: ['high-level-design.md', 'intent/**', 'decisions/**', 'arrows/**', 'lid/**', 'plans/**'],
-});
+${THEME_CONFIG_EXTRA}});
 `;
 
 const stepPage = (title: string) =>
@@ -136,7 +138,7 @@ export function baseFiles(): Record<string, string> {
     "CHAT_SOURCE", "6379", "11434", "3000", "3001",
   ];
   return {
-    "package.json": JSON.stringify({ scripts: { dashboard: "x", build: "x", test: "x" } }),
+    "package.json": JSON.stringify({ scripts: { dashboard: "x", build: "x", test: "x" }, devDependencies: { "beautiful-mermaid": "1.1.3", vitepress: "1.6.4" } }),
     ".env.example": [
       "DASHBOARD_PORT=3000", "DASHBOARD_LAN_PORT=3001", "# COMPOSE_PROFILES=discord", "LLM_PROVIDER=ollama", "MEMORY_STORE=postgres",
       "MEMORY_EMBEDDER=ollama", "VOICE_ENGINE=kokoro", "CHAT_SOURCE=twitch", "# a prose comment, not a variable", "",
@@ -153,7 +155,7 @@ export function baseFiles(): Record<string, string> {
     "docs/.vitepress/config.ts": CONFIG_TS,
     "docs/index.md": page(
       { layout: "home", title: "cohost", description: "Home.", track: "start", hero: "\n  actions:\n    - { text: A, link: /start/what-is-cohost }\n    - { text: B, link: /guide/install/prerequisites }\n    - { text: C, link: /advanced/dev-setup }" },
-      "",
+      FLOW_BODY,
     ),
     "docs/start/what-is-cohost.md": page(fmOf("What is cohost?", "start"), "# What is cohost?\n\nIt talks."),
     "docs/start/how-it-works.md": page(fmOf("How it works", "start", { next: "{ text: What you need, link: /guide/install/prerequisites }" }), "# How it works\n\nIt listens."),
@@ -209,6 +211,7 @@ AGPL-3.0-only.
     "examples/README.md": "# Examples\n\n- `modules/`: a runnable brain-hook server.\n\n[Docs](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n",
     "examples/modules/README.md": "# Modules\n\nFiles: `server.py`, `fixtures/`, `schemas/`.\n\n```sh\npython3 server.py\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n",
     "examples/modules/server.py": "print('hi')\n",
+    ...themeFiles(),
   };
 }
 

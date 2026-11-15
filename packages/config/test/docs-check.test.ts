@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.ts";
+import { shell, badge, themeDist, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 const load = (p: string): Promise<any> => import(pathToFileURL(join(repoRoot, p)).href);
@@ -21,9 +22,27 @@ function passes(r: { code: number | null; err: string; out: string }) {
 }
 
 
-// A built site holding the pages the README and examples READMEs link; `files` adds to or replaces them.
+// A built site holding the pages the README and examples READMEs link; `files` adds to or replaces them. The legacy
+// helpers wrap each page's markup in a valid theme shell (favicon, nav mark, track badge, home and 404 pages) so the
+// older tests keep exercising one concern each; `distExact` writes files verbatim for the theme tests.
+const trackOf = (path: string): string | null => {
+  if (/^advanced\/architecture\/(design|segments|decisions)\//.test(path)) return "advanced";
+  if (path === "index.html") return null;
+  const src = baseFiles()[`docs/${path.replace(/\.html$/, ".md")}`] ?? baseFiles()[`docs/${path.replace(/\.html$/, "/index.md")}`];
+  return src ? (/^track: (\w+)$/m.exec(src)?.[1] ?? null) : null;
+};
+const wrapPage = (path: string, content: string): string => {
+  if (/<!DOCTYPE/i.test(content)) return content;
+  if (path === "index.html") return shell(HOME_BODY + content);
+  const t = trackOf(path);
+  return shell(t ? `<div class="vp-doc">${badge(t)}${content}</div>` : content);
+};
 const BUILT: Record<string, string> = { "guide/install/real-install.html": "", "advanced/extend/hooks.html": "" };
-const distRaw = (files: Record<string, string>) => (dir: string) => writeTree(join(dir, "docs/.vitepress/dist"), files);
+const distExact = (files: Record<string, string>) => (dir: string) => writeTree(join(dir, "docs/.vitepress/dist"), files);
+const distRaw = (files: Record<string, string>) => {
+  const all: Record<string, string> = { ...themeDist(), ...files };
+  return distExact(Object.fromEntries(Object.entries(all).map(([p, c]) => [p, p.endsWith(".html") ? wrapPage(p, c) : c])));
+};
 const dist = (files: Record<string, string>) => distRaw({ ...BUILT, ...files });
 
 // ---------------------------------------------------------------- Build
@@ -887,6 +906,577 @@ test("every examples directory holds a file other than its README", () => {
   fails(check(files), /examples\/prose.*DOCS-EX-004/);
   passes(check({ ...files, "examples/prose/run.sh": "echo\n" }));
 });
+
+// ---------------------------------------------------------------- Theme (DOCS-THEME-*)
+
+const T = "docs/.vitepress/theme/";
+const CFG = "docs/.vitepress/config.ts";
+const mut = (text: string, from: string | RegExp, to: string): string => {
+  const r = text.replace(from, to);
+  assert.notEqual(r, text, `the fixture does not contain ${from}`);
+  return r;
+};
+const style = (fn: (css: string) => string) => ({ [`${T}style.css`]: fn(STYLE_CSS) });
+const styleMut = (from: string | RegExp, to: string) => style((css) => mut(css, from, to));
+const setToken = (css: string, block: ":root" | ".dark", token: string, value: string) => {
+  const i = css.indexOf(`${block} {`);
+  const j = css.indexOf("}", i);
+  const seg = mut(css.slice(i, j), new RegExp(`(--cohost-${token}:) [^;]+;`), `$1 ${value};`);
+  return css.slice(0, i) + seg + css.slice(j);
+};
+const tokens = (fn: (css: string) => string) => ({ [`${T}tokens.css`]: fn(TOKENS_CSS) });
+const cfgMut = (from: string | RegExp, to: string) => ({ [CFG]: mut(baseFiles()[CFG], from, to) });
+const pkgMut = (fn: (o: any) => void) => {
+  const o = JSON.parse(baseFiles()["package.json"]);
+  fn(o);
+  return { "package.json": JSON.stringify(o) };
+};
+const markMut = (from: string | RegExp, to: string) => ({ [`${T}components/CohostMark.vue`]: mut(MARK_VUE, from, to) });
+const indexMd = (fn: (body: string) => string) => {
+  const t = baseFiles()["docs/index.md"];
+  return { "docs/index.md": mut(t, FLOW_BODY, fn(FLOW_BODY)) };
+};
+
+test("the theme fixture passes the docs check's source pass", () => {
+  passes(check());
+});
+
+// @spec DOCS-THEME-001
+test("the theme entry exists and extends VitePress's default theme", () => {
+  fails(check({ [`${T}index.ts`]: null }), /theme\/index\.ts.*DOCS-THEME-001/);
+  fails(check({ [`${T}index.ts`]: "export default {};\n" }), /DOCS-THEME-001.*vitepress\/theme/);
+  fails(check({ [`${T}index.ts`]: "import DefaultTheme from 'vitepress/theme';\nexport default DefaultTheme;\n" }), /DOCS-THEME-001.*extends/);
+});
+
+// @spec DOCS-THEME-002
+test("tokens.css has exactly a :root and a .dark block of six-digit hex --cohost- tokens, the same in both", () => {
+  fails(check(tokens((c) => setToken(c, ".dark", "bg", "red"))), /tokens\.css.*DOCS-THEME-002.*--cohost-bg.*\.dark/);
+  fails(check(tokens((c) => setToken(c, ":root", "bg", "#FFF"))), /DOCS-THEME-002.*--cohost-bg.*:root/);
+  fails(check(tokens((c) => setToken(c, ":root", "bg", "rgb(1, 2, 3)"))), /DOCS-THEME-002.*--cohost-bg/);
+  fails(check(tokens((c) => mut(c, "  --cohost-bg: #1A1420;\n", ""))), /DOCS-THEME-002.*--cohost-bg.*\.dark/);
+  fails(check(tokens((c) => c + "body { color: red; }\n")), /DOCS-THEME-002/);
+  fails(check(tokens((c) => c + "@media print { .dark { --cohost-bg: #FFFFFF; } }\n")), /DOCS-THEME-002/);
+  fails(check(tokens((c) => c.replace(".dark {", "html.dark {"))), /DOCS-THEME-002/);
+  fails(check({ [`${T}tokens.css`]: null }), /tokens\.css.*DOCS-THEME-002/);
+});
+
+// @spec DOCS-THEME-003
+test("tokens.css declares exactly the Palette table's tokens with its light and dark values", () => {
+  fails(check(tokens((c) => setToken(c, ":root", "accent", "#E0583E"))), /DOCS-THEME-003.*accent.*#E0583E/);
+  fails(check(tokens((c) => setToken(c, ".dark", "accent", "#FF8A71"))), /DOCS-THEME-003.*accent.*#FF8A71/);
+  fails(check(tokens((c) => c.replace(/\n\}\n/g, "\n  --cohost-extra: #000000;\n}\n"))), /DOCS-THEME-003.*extra/);
+  fails(check(tokens((c) => c.replace(/  --cohost-focus: [^;]+;\n/g, ""))), /DOCS-THEME-003.*focus/);
+  passes(check(tokens((c) => setToken(c, ":root", "accent", "#e0583f"))));
+});
+
+// @spec DOCS-THEME-004
+test("every Contrast pairs row reaches its minimum in the light and the dark block", () => {
+  fails(check(tokens((c) => setToken(c, ":root", "text-3", "#BBBBBB"))), /DOCS-THEME-004.*text-3.*bg.*light.*\d\.\d+/);
+  fails(check(tokens((c) => setToken(c, ".dark", "mascot-body", "#221B28"))), /DOCS-THEME-004.*mascot-body.*bg.*dark/);
+  // a ratio just below the minimum fails: ratios are compared unrounded
+  fails(check(tokens((c) => setToken(c, ":root", "accent", "#EE6E55"))), /DOCS-THEME-004.*accent/);
+});
+
+// @spec DOCS-THEME-005
+test("style.css maps each VitePress colour variable to a palette token in a top-level :root rule", () => {
+  fails(check(styleMut("  --vp-c-bg-alt: var(--cohost-bg-alt);\n", "")), /style\.css.*DOCS-THEME-005.*--vp-c-bg-alt/);
+  fails(check(styleMut("--vp-c-text-2: var(--cohost-text-2);", "--vp-c-text-2: #574B63;")), /DOCS-THEME-005.*--vp-c-text-2/);
+  fails(check(styleMut("--vp-code-bg: var(--cohost-code-inline-bg);", "--vp-code-bg: var(--cohost-nope);")), /DOCS-THEME-005.*--vp-code-bg/);
+  fails(check(styleMut("--vp-custom-block-danger-text: var(--cohost-text-1);", "--vp-custom-block-danger-text: var(--cohost-text-1) !important;")), /DOCS-THEME-005.*danger-text/);
+  fails(check(style((c) => mut(mut(c, /^:root \{\n/, "@media (min-width: 1px) {\n:root {\n"), /\n\}\n\nh1/, "\n}\n}\n\nh1"))), /DOCS-THEME-005/);
+});
+
+// @spec DOCS-THEME-006
+test("the config sets markdown.theme to the two GitHub high-contrast themes", () => {
+  fails(check(cfgMut("'github-dark-default'", "'github-dark'")), /config\.ts.*DOCS-THEME-006/);
+  fails(check(cfgMut("light: 'github-light-high-contrast'", "light: 'github-light'")), /DOCS-THEME-006/);
+  fails(check(cfgMut(/  markdown:.*\n/, "")), /DOCS-THEME-006/);
+});
+
+// @spec DOCS-THEME-007
+test("every colour of the configured Shiki themes reaches 4.5:1 against code-bg in its mode", () => {
+  fails(check(cfgMut("'github-light-high-contrast'", "'solarized-light'")), /DOCS-THEME-007.*solarized-light.*#[0-9a-fA-F]{6}.*\d\.\d+/);
+  fails(check(cfgMut("'github-dark-default'", "'solarized-dark'")), /DOCS-THEME-007.*solarized-dark/);
+  // the dark theme is held to the dark code-bg, so a light-on-light-bg value fails there
+  fails(check(tokens((c) => setToken(c, ".dark", "code-bg", "#FFFFFF"))), /DOCS-THEME-007.*github-dark-default/);
+});
+
+// @spec DOCS-THEME-008
+test("the theme CSS declares no @font-face", () => {
+  fails(check(style((c) => c + "@font-face { font-family: X; src: url(x.woff2); }\n")), /style\.css.*DOCS-THEME-008/);
+  fails(check(tokens((c) => c + "@font-face { font-family: X; }\n")), /DOCS-THEME-008/);
+});
+
+// @spec DOCS-THEME-055
+test("the root package.json lists no font package", () => {
+  fails(check(pkgMut((o) => (o.devDependencies["@fontsource/inter"] = "1.0.0"))), /package\.json.*DOCS-THEME-055.*@fontsource\/inter/);
+  fails(check(pkgMut((o) => (o.dependencies = { "typeface-font-x": "1.0.0" }))), /DOCS-THEME-055.*typeface-font-x/);
+});
+
+// @spec DOCS-THEME-009
+test("the config leaves appearance unset or true", () => {
+  passes(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: true, base:") }));
+  fails(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: false, base:") }), /config\.ts.*DOCS-THEME-009/);
+  fails(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: 'dark', base:") }), /DOCS-THEME-009/);
+});
+
+// @spec DOCS-THEME-011
+test("the config's head holds no script element", () => {
+  fails(check(cfgMut(/head: \[\[.*\n/, "head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/cohost/favicon.svg' }], ['script', { src: 'https://x/a.js' }]],\n")), /config\.ts.*DOCS-THEME-011/);
+  fails(check(cfgMut(/head: \[\[.*\n/, "head: [['script', {}, 'track()']],\n")), /DOCS-THEME-011/);
+});
+
+// @spec DOCS-THEME-012
+test("the mark component keeps its limits: class, viewBox, at most 12 shapes per expression, no forbidden elements", () => {
+  fails(check(markMut('class="cohost-mark" ', "")), /CohostMark\.vue.*DOCS-THEME-012.*cohost-mark/);
+  fails(check(markMut('viewBox="0 0 64 64"', 'viewBox="0 0 32 32"')), /DOCS-THEME-012.*viewBox/);
+  fails(check(markMut(/(<g v-if="expression === 'lost'">)/, '<text x="1" y="1">hi</text>\n    $1')), /DOCS-THEME-012.*text/);
+  for (const el of ["image", "use", "style", "linearGradient", "radialGradient", "filter", "mask"]) {
+    fails(check(markMut(/(<g v-if="expression === 'lost'">)/, `<${el}></${el}>\n    $1`)), new RegExp(`DOCS-THEME-012.*${el}`, "i"));
+  }
+  const extra = (n: number, cond: string) => Array.from({ length: n }, () => `<circle ${cond} cx="1" cy="1" r="3" fill="var(--cohost-mascot-face)" />`).join("\n    ");
+  fails(check(markMut(/(<g v-if="expression === 'lost'">)/, `${extra(3, "")}\n    $1`)), /DOCS-THEME-012.*13.*idle/);
+  // only the lost expression exceeds the limit: 8 shapes plus 5
+  const lost = check(markMut(/(<g v-if="expression === 'lost'">)/, `${extra(5, 'v-if="expression === \'lost\'"')}\n    $1`));
+  fails(lost, /DOCS-THEME-012.*lost/);
+  assert.doesNotMatch(lost.err, /DOCS-THEME-012.*idle/);
+  assert.doesNotMatch(lost.err, /DOCS-THEME-012.*talking/);
+  passes(check(markMut(/(<g v-if="expression === 'lost'">)/, `${extra(2, "")}\n    $1`)));
+});
+
+// @spec DOCS-THEME-013
+test("every fill and stroke in the mark component is none or a mascot token", () => {
+  fails(check(markMut('fill="var(--cohost-mascot-face)"', 'fill="#FFFFFF"')), /CohostMark\.vue.*DOCS-THEME-013.*fill/);
+  fails(check(markMut('stroke="var(--cohost-mascot-headset)"', 'stroke="currentColor"')), /DOCS-THEME-013.*stroke/);
+  fails(check(markMut('fill="var(--cohost-mascot-body)" />\n    <path', 'fill="var(--cohost-bg)" />\n    <path')), /DOCS-THEME-013/);
+  fails(check(markMut('<path d="M10 28', '<path style="fill: red" d="M10 28')), /DOCS-THEME-013/);
+});
+
+// @spec DOCS-THEME-014
+test("the mark component takes an expression prop (idle, talking, lost; default idle) shown as data-expression", () => {
+  fails(check(markMut("'idle' | 'talking' | 'lost'", "'idle' | 'lost'")), /CohostMark\.vue.*DOCS-THEME-014.*talking/);
+  fails(check(markMut("{ expression: 'idle' }", "{ expression: 'lost' }")), /DOCS-THEME-014.*idle/);
+  fails(check(markMut(':data-expression="expression"', 'data-expression="idle"')), /DOCS-THEME-014.*data-expression/);
+});
+
+// @spec DOCS-THEME-017
+test("favicon.svg exists, has the 64 viewBox and uses only the light mascot colours as hex literals", () => {
+  fails(check({ "docs/public/favicon.svg": null }), /favicon\.svg.*DOCS-THEME-017/);
+  fails(check({ "docs/public/favicon.svg": mut(FAVICON_SVG, 'viewBox="0 0 64 64"', 'viewBox="0 0 16 16"') }), /DOCS-THEME-017.*viewBox/);
+  fails(check({ "docs/public/favicon.svg": mut(FAVICON_SVG, "#6B3FBF", "#8F6BEA") }), /DOCS-THEME-017.*#8F6BEA/i);
+  fails(check({ "docs/public/favicon.svg": mut(FAVICON_SVG, 'fill="#ffffff"', 'fill="white"') }), /DOCS-THEME-017.*white/);
+  fails(check({ "docs/public/favicon.svg": mut(FAVICON_SVG, 'fill="#ffffff"', 'style="fill:var(--cohost-mascot-face)"') }), /DOCS-THEME-017/);
+  passes(check({ "docs/public/favicon.svg": mut(FAVICON_SVG, "#6B3FBF", "#6b3fbf") }));
+});
+
+// @spec DOCS-THEME-021
+test("each track badge takes its track's text token on its bg token, selected by data-track", () => {
+  fails(check(styleMut("color: var(--cohost-badge-simple-text); background-color: var(--cohost-badge-simple-bg);", "color: var(--cohost-badge-simple-text);")), /style\.css.*DOCS-THEME-021.*simple/);
+  fails(check(styleMut("color: var(--cohost-badge-project-text);", "color: var(--cohost-badge-start-text);")), /DOCS-THEME-021.*project/);
+  fails(check(styleMut(".cohost-track-badge[data-track='start']", ".cohost-track-badge")), /DOCS-THEME-021.*start/);
+});
+
+// @spec DOCS-THEME-022
+test("the aside has the aside-bg background, a 4px solid accent left border, an aside-title title and no italics", () => {
+  fails(check(styleMut("background: var(--cohost-aside-bg); border-left", "background: var(--cohost-bg-soft); border-left")), /DOCS-THEME-022.*aside-bg/);
+  fails(check(styleMut("border-left: 4px solid var(--cohost-accent); border-radius", "border-left: 3px solid var(--cohost-accent); border-radius")), /DOCS-THEME-022.*border/);
+  fails(check(styleMut("border-left: 4px solid var(--cohost-accent); border-radius", "border-left: 4px solid var(--cohost-text-3); border-radius")), /DOCS-THEME-022.*accent/);
+  fails(check(styleMut("color: var(--cohost-aside-title);", "color: var(--cohost-text-1);")), /DOCS-THEME-022.*aside-title/);
+  fails(check(style((c) => c + ".cohost-aside p { font-style: italic; }\n")), /DOCS-THEME-022.*italic/);
+});
+
+// @spec DOCS-THEME-023
+test("the aside title is preceded by the mark drawn as a mask-image with a data: URL", () => {
+  fails(check(style((c) => c.replace(/  mask-image: url\("data[^\n]*\n/, "").replace(/  -webkit-mask-image: url\("data[^\n]*\n/, ""))), /DOCS-THEME-023/);
+  fails(check(styleMut(/  mask-image: url\("data[^\n]*\n/, '  mask-image: url("https://x.example/m.svg");\n')), /DOCS-THEME-023.*data:/);
+  fails(check(styleMut(".cohost-aside-title::before", ".cohost-aside-title::after")), /DOCS-THEME-023/);
+});
+
+// @spec DOCS-THEME-024
+test("tip, info, warning, danger and details blocks get a 4px left border and a title colour in their title token", () => {
+  fails(check(styleMut(".vp-doc .custom-block.tip { border-left: 4px solid var(--cohost-tip-title); }", ".vp-doc .custom-block.tip { border-left: 2px solid var(--cohost-tip-title); }")), /DOCS-THEME-024.*tip/);
+  fails(check(styleMut("custom-block.warning .custom-block-title { color: var(--cohost-warning-title)", "custom-block.warning .custom-block-title { color: var(--cohost-danger-title)")), /DOCS-THEME-024.*warning/);
+  fails(check(styleMut(".vp-doc .custom-block.details { border-left: 4px solid var(--cohost-info-title); }", ".vp-doc .custom-block.details { border-left: 4px solid var(--cohost-tip-title); }")), /DOCS-THEME-024.*details/);
+  fails(check(styleMut(".vp-doc .custom-block.details summary { color: var(--cohost-info-title); }", "")), /DOCS-THEME-024.*details/);
+});
+
+// @spec DOCS-THEME-028
+test("the Mermaid renderer module calls beautiful-mermaid with exactly the palette options", () => {
+  const f = "docs/.vitepress/mermaid-fence.mjs";
+  fails(check({ [f]: mut(MERMAID_FENCE_MJS, "transparent: true", "transparent: false") }), /mermaid-fence\.mjs.*DOCS-THEME-028.*transparent/);
+  fails(check({ [f]: mut(MERMAID_FENCE_MJS, "font: 'Inter',", "font: 'Inter', theme: 'x',") }), /DOCS-THEME-028.*theme/);
+  fails(check({ [f]: mut(MERMAID_FENCE_MJS, "  border: 'var(--cohost-text-3)',\n", "") }), /DOCS-THEME-028.*border/);
+  fails(check({ [f]: null }), /DOCS-THEME-028.*beautiful-mermaid/);
+  passes(check({ [f]: mut(MERMAID_FENCE_MJS, /'var\(--cohost-bg\)'/, '"var(--cohost-bg)"') }));
+});
+
+// @spec DOCS-THEME-031
+test(".cohost-diagram scrolls horizontally and its svg keeps its natural width", () => {
+  fails(check(styleMut(".cohost-diagram { overflow-x: auto; }", ".cohost-diagram { overflow-x: hidden; }")), /DOCS-THEME-031.*overflow-x/);
+  fails(check(styleMut("max-width: none;", "max-width: 100%;")), /DOCS-THEME-031.*max-width/);
+  fails(check(styleMut("width: auto;", "width: 100%;")), /DOCS-THEME-031.*width/);
+  fails(check(styleMut("max-width: none;", "max-width: none; min-width: 640px;")), /DOCS-THEME-031.*min-width/);
+});
+
+// @spec DOCS-THEME-027
+test("the fence renderer throws an Error naming the source file and the fence's 1-based opening line", async () => {
+  const { createMarkdownRenderer } = await import("vitepress");
+  const { mermaidFence } = await import(pathToFileURL(join(repoRoot, "docs/.vitepress/mermaid-fence.mjs")).href);
+  const dir = mkdtempSync(join(tmpdir(), "mermaid-fence-"));
+  try {
+    const md = await createMarkdownRenderer(dir, {}, "/cohost/");
+    md.use(mermaidFence);
+    const src = "# Title\n\nSome text.\n\n```mermaid\nthis is not a diagram ???\n```\n";
+    const file = join(dir, "page.md");
+    writeTree(dir, { "page.md": src });
+    assert.throws(
+      () => md.render(src, { path: file, relativePath: "page.md" }),
+      (e: unknown) => e instanceof Error && e.message.includes("page.md:5") && /cannot render the mermaid diagram/.test(e.message),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// @spec DOCS-THEME-032, DOCS-THEME-052
+test("beautiful-mermaid is a devDependency at an exact version and no Mermaid package is listed", () => {
+  fails(check(pkgMut((o) => (o.devDependencies["beautiful-mermaid"] = "^1.1.3"))), /package\.json.*DOCS-THEME-032.*\^1\.1\.3/);
+  fails(check(pkgMut((o) => (o.devDependencies["beautiful-mermaid"] = "~1.1.3"))), /DOCS-THEME-032/);
+  fails(check(pkgMut((o) => delete o.devDependencies["beautiful-mermaid"])), /DOCS-THEME-032/);
+  fails(check(pkgMut((o) => (o.dependencies = { "beautiful-mermaid": "1.1.3" }))), /DOCS-THEME-032.*dependencies/);
+  fails(check(pkgMut((o) => (o.devDependencies.mermaid = "11.0.0"))), /DOCS-THEME-052.*mermaid/);
+  fails(check(pkgMut((o) => (o.devDependencies["vitepress-plugin-mermaid"] = "2.0.0"))), /DOCS-THEME-052.*vitepress-plugin-mermaid/);
+  fails(check(pkgMut((o) => (o.optionalDependencies = { mermaid: "11.0.0" }))), /DOCS-THEME-052/);
+});
+
+// @spec DOCS-THEME-034
+test("the home page holds one flow container with an ordered list of six steps in order and a How it works link", () => {
+  fails(check(indexMd((b) => b + "\n" + b.slice(b.indexOf("::: flow")))), /index\.md.*DOCS-THEME-034.*one/);
+  fails(check(indexMd((b) => b.replace("::: flow", ":::"))), /DOCS-THEME-034.*flow/);
+  fails(check(indexMd((b) => b.replace("6. **The avatar** moves its mouth.\n", ""))), /DOCS-THEME-034.*six/);
+  fails(check(indexMd((b) => b.replace("1. **Chat** hears the line.", "1. **Hearing** the line.").replace("4. **Voice**", "4. **Chat**"))), /DOCS-THEME-034.*item 1.*chat/i);
+  fails(check(indexMd((b) => b.replace("**Voice** turns", "**Speaker** turns"))), /DOCS-THEME-034.*item 4.*voice/i);
+  fails(check(indexMd((b) => b.replace("**The avatar** moves", "**The puppet** moves"))), /DOCS-THEME-034.*item 6.*avatar/i);
+  fails(check(indexMd((b) => b.replace("See [How it works](start/how-it-works.md) for the whole journey.", "See the journey."))), /DOCS-THEME-034.*how-it-works/);
+  fails(check(indexMd((b) => b.replace("See [How it works](start/how-it-works.md) for the whole journey.\n:::", ":::\n\nSee [How it works](start/how-it-works.md)."))), /DOCS-THEME-034.*how-it-works/);
+  fails(check(indexMd((b) => b.replace("3. **[Cortex]", "- **[Cortex]").replace("4. **Voice**", "- **Voice**").replace("5. **The", "- **The").replace("6. **The", "- **The"))), /DOCS-THEME-034/);
+  fails(check(indexMd((b) => b.replace("2. **[Salience]", "1. **[Salience]").replace("1. **Chat**", "1. **Chat**\n\nA paragraph.\n"))), /DOCS-THEME-034/);
+  passes(check(indexMd((b) => b.replace("(start/how-it-works.md)", "(/start/how-it-works)"))));
+  passes(check(indexMd((b) => b.replace("(start/how-it-works.md)", "(start/how-it-works)"))));
+  passes(check(indexMd((b) => b.replace("**The [sink](start/glossary.md#sink) or Discord** plays", "**The [sink](start/glossary.md#sink)** plays").replace("**Chat** hears", "**CHAT** hears"))));
+  passes(check(indexMd((b) => b.replace("**The [sink](start/glossary.md#sink) or Discord**", "**Discord, or the [sink](start/glossary.md#sink)**"))));
+});
+
+// @spec DOCS-THEME-036
+test("the home page's three feature cards get a 4px top border in accent, badge-simple-text, badge-advanced-text", () => {
+  fails(check(styleMut(".VPFeatures .item:nth-child(2) .VPFeature { border-top: 4px solid var(--cohost-badge-simple-text); }", ".VPFeatures .item:nth-child(2) .VPFeature { border-top: 4px solid var(--cohost-accent); }")), /DOCS-THEME-036.*2/);
+  fails(check(styleMut(".VPFeatures .item:nth-child(3) .VPFeature { border-top: 4px solid var(--cohost-badge-advanced-text); }", ".VPFeatures .item:nth-child(3) .VPFeature { border-top: 2px solid var(--cohost-badge-advanced-text); }")), /DOCS-THEME-036.*3/);
+  fails(check(styleMut(/\.VPFeatures \.item:nth-child\(1\)[^\n]*\n/, "")), /DOCS-THEME-036.*1/);
+});
+
+// @spec DOCS-THEME-037
+test("the flow list is a column by default and a wrapping row only from min-width 640px", () => {
+  fails(check(styleMut(".cohost-flow ol { display: flex; flex-direction: column; }", ".cohost-flow ol { display: flex; flex-direction: row; }")), /DOCS-THEME-037.*column/);
+  fails(check(styleMut(".cohost-flow ol { display: flex; flex-direction: column; }", ".cohost-flow ol { flex-direction: column; }")), /DOCS-THEME-037.*flex/);
+  fails(check(styleMut("@media (min-width: 640px) {\n  .cohost-flow ol { flex-direction: row; flex-wrap: wrap; }", "@media (min-width: 700px) {\n  .cohost-flow ol { flex-direction: row; flex-wrap: wrap; }")), /DOCS-THEME-037.*640px/);
+  fails(check(styleMut("flex-direction: row; flex-wrap: wrap;", "flex-direction: row;")), /DOCS-THEME-037.*wrap/);
+  fails(check(style((c) => c + ".cohost-flow ol { flex-direction: row; }\n")), /DOCS-THEME-037/);
+});
+
+// @spec DOCS-THEME-040
+test("every animation, animation-name and transition declaration sits inside prefers-reduced-motion: no-preference", () => {
+  const r = check(style((c) => c + ".x { transition: color 1s; }\n"));
+  fails(r, /style\.css:\d+: \[DOCS-THEME-040\]/);
+  fails(check(style((c) => c + ".x { animation: a 1s; }\n")), /DOCS-THEME-040/);
+  fails(check(style((c) => c + "@media (prefers-reduced-motion: reduce) { .x { animation-name: a; } }\n")), /DOCS-THEME-040/);
+  fails(check(style((c) => c + "@media print { .x { transition: none; } }\n")), /DOCS-THEME-040/);
+  passes(check(style((c) => c + "@media (prefers-reduced-motion: no-preference) { @media (min-width: 1px) { .x { transition: color 1s; } } }\n")));
+});
+
+// @spec DOCS-THEME-041
+test("a prefers-reduced-motion: reduce block cuts animation and transition and turns smooth scrolling off", () => {
+  fails(check(styleMut(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}\n\n/, "")), /DOCS-THEME-041/);
+  fails(check(styleMut("  scroll-behavior: auto !important;\n", "")), /DOCS-THEME-041.*scroll-behavior/);
+  fails(check(styleMut("animation-duration: 0.01ms !important;", "animation-duration: 1ms !important;")), /DOCS-THEME-041.*animation-duration/);
+  fails(check(styleMut("transition-duration: 0.01ms !important;", "transition-duration: 0.01ms;")), /DOCS-THEME-041.*transition-duration/);
+  fails(check(styleMut("animation-iteration-count: 1 !important;", "animation-iteration-count: 2 !important;")), /DOCS-THEME-041.*animation-iteration-count/);
+  fails(check(styleMut("*, *::before, *::after {\n    animation-duration", "*, *::before {\n    animation-duration")), /DOCS-THEME-041/);
+  passes(check(styleMut("animation-duration: 0.01ms !important;", "animation-duration: 0s !important;")));
+});
+
+// @spec DOCS-THEME-042
+test("an animation-name rule sets a single name and a bounded duration and iteration count", () => {
+  fails(check(styleMut("animation-iteration-count: 3;", "animation-iteration-count: infinite;")), /DOCS-THEME-042.*infinite/);
+  fails(check(styleMut("animation-iteration-count: 3;", "animation-iteration-count: 20;")), /DOCS-THEME-042.*5/);
+  fails(check(styleMut("animation-name: cohost-talk;", "animation-name: cohost-talk, other;")), /DOCS-THEME-042.*single/);
+  fails(check(styleMut(" animation-duration: 0.5s;", "")), /DOCS-THEME-042.*animation-duration/);
+  fails(check(styleMut("animation-iteration-count: 3; }", "animation-iteration-count: 3; animation: cohost-talk 1s; }")), /DOCS-THEME-042.*animation/);
+  passes(check(styleMut("animation-duration: 0.5s;", "animation-duration: 500ms;")));
+  passes(check(styleMut("animation-iteration-count: 3;", "animation-iteration-count: 10;")));
+});
+
+// @spec DOCS-THEME-043
+test("focus-visible on links, buttons, summary, form fields and [tabindex] is a 2px solid focus outline offset 2px", () => {
+  fails(check(styleMut(" summary:focus-visible,", "")), /DOCS-THEME-043.*summary/);
+  fails(check(styleMut(" [tabindex]:focus-visible", " [tabindex]:focus-within")), /DOCS-THEME-043.*tabindex/);
+  fails(check(styleMut("outline: 2px solid var(--cohost-focus);", "outline: 1px solid var(--cohost-focus);")), /DOCS-THEME-043.*2px/);
+  fails(check(styleMut("outline: 2px solid var(--cohost-focus);", "outline: 2px dashed var(--cohost-focus);")), /DOCS-THEME-043.*solid/);
+  fails(check(styleMut("outline: 2px solid var(--cohost-focus);", "outline: 2px solid var(--cohost-accent);")), /DOCS-THEME-043.*focus/);
+  fails(check(styleMut("outline-offset: 2px;", "outline-offset: 0;")), /DOCS-THEME-043.*offset/);
+  passes(check(styleMut(/a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, \[tabindex\]:focus-visible \{\n  outline: 2px solid var\(--cohost-focus\);/, ":is(a, button, summary, input, select, textarea, [tabindex]):focus-visible {\n  outline-width: 2px; outline-style: solid; outline-color: var(--cohost-focus);")));
+});
+
+// @spec DOCS-THEME-044
+test("the theme CSS removes no outline", () => {
+  for (const d of ["outline: none", "outline: 0", "outline-style: none", "outline-width: 0", "outline: 0 !important"]) {
+    fails(check(style((c) => c + `.x:focus { ${d}; }\n`)), /style\.css:\d+: \[DOCS-THEME-044\]/);
+  }
+  passes(check(style((c) => c + ".x { outline: 1px solid red; }\n")));
+});
+
+// @spec DOCS-THEME-045
+test("outside min-width media no theme rule sets a width, min-width or flex-basis above 328px", () => {
+  fails(check(style((c) => c + ".x { width: 400px; }\n")), /style\.css:\d+: \[DOCS-THEME-045\].*400px/);
+  fails(check(style((c) => c + ".x { min-width: 20.6rem; }\n")), /DOCS-THEME-045.*20\.6rem/);
+  fails(check(style((c) => c + ".x { flex-basis: 30em; }\n")), /DOCS-THEME-045/);
+  fails(check(style((c) => c + "@media print { .x { width: 600px; } }\n")), /DOCS-THEME-045/);
+  fails(check(style((c) => c + ".x svg { min-width: 640px; }\n")), /DOCS-THEME-045/);
+  fails(check(style((c) => c + ".cohost-diagram svg { min-width: 640px; }\n")), /DOCS-THEME-045/);
+  passes(check(style((c) => c + ".x { width: 328px; min-width: 20.5rem; max-width: 900px; flex-basis: 50%; }\n@media (min-width: 960px) { .x { width: 600px; } }\n")));
+});
+
+// @spec DOCS-THEME-046
+test("the print block hides the nav, local nav, sidebar, outline and pager but not the track badge", () => {
+  const all = [".VPNav", ".VPLocalNav", ".VPSidebar", ".VPDocAside", ".VPDoc .aside", ".VPDocFooter .prev-next"];
+  for (const sel of all) {
+    const line = (l: string[]) => `${l.join(", ")} { display: none !important; }`;
+    fails(check(styleMut(line(all), line(all.filter((x) => x !== sel)))), new RegExp(`DOCS-THEME-046.*${sel.replace(/[.]/g, "\\.")}`));
+  }
+  fails(check(style((c) => c.replace("@media print {", "@media print {\n  .cohost-track-badge { display: none; }"))), /DOCS-THEME-046.*cohost-track-badge/);
+  fails(check(styleMut("@media print {\n  .VPNav", "@media screen {\n  .VPNav")), /DOCS-THEME-046/);
+});
+
+// @spec DOCS-THEME-047
+test("the print block gives .dark every token's light value", () => {
+  const light = PALETTE.find((p) => p[0] === "info-bg")![1];
+  fails(check(styleMut(`    --cohost-info-bg: ${light};\n`, "")), /DOCS-THEME-047.*info-bg/);
+  fails(check(styleMut(`    --cohost-info-bg: ${light};`, "    --cohost-info-bg: #000000;")), /DOCS-THEME-047.*info-bg/);
+  fails(check(style((c) => c.replace(/  \.dark \{\n(    --cohost[^\n]*\n)+  \}\n/, ""))), /DOCS-THEME-047/);
+  passes(check(styleMut(`    --cohost-info-bg: ${light};`, `    --cohost-info-bg: ${light.toLowerCase()};`)));
+});
+
+// @spec DOCS-THEME-048
+test("the print block wraps code with white-space: pre-wrap", () => {
+  fails(check(styleMut("white-space: pre-wrap;", "white-space: pre;")), /DOCS-THEME-048/);
+  fails(check(styleMut(".vp-doc div[class*='language-'] pre {", ".vp-doc pre {")), /DOCS-THEME-048/);
+  passes(check(styleMut(".vp-doc div[class*='language-'] pre {", '.vp-doc div[class*="language-"] pre {')));
+});
+
+// @spec DOCS-THEME-050
+test("the print block colours dark-mode code with Shiki's light colours and the light code-bg", () => {
+  fails(check(styleMut("color: var(--shiki-light) !important;", "color: var(--shiki-dark) !important;")), /DOCS-THEME-050.*shiki-light/);
+  fails(check(styleMut(/background-color: #F6F2F9 !important;/, "background-color: #211A29 !important;")), /DOCS-THEME-050.*F6F2F9/i);
+  fails(check(styleMut(/  \.dark \.shiki, \.dark \.shiki span[^\n]*\n/, "")), /DOCS-THEME-050/);
+});
+
+// @spec DOCS-THEME-053
+test("the print block keeps diagrams, asides and custom blocks whole", () => {
+  fails(check(styleMut(".cohost-diagram, .cohost-aside, .custom-block { break-inside: avoid; }", ".cohost-aside, .custom-block { break-inside: avoid; }")), /DOCS-THEME-053.*cohost-diagram/);
+  fails(check(styleMut(".cohost-diagram, .cohost-aside, .custom-block { break-inside: avoid; }", ".cohost-diagram, .cohost-aside { break-inside: avoid; }")), /DOCS-THEME-053.*custom-block/);
+  fails(check(styleMut("break-inside: avoid;", "break-inside: auto;")), /DOCS-THEME-053/);
+});
+
+// @spec DOCS-THEME-054
+test("the print block appends the URL after external links in page content", () => {
+  fails(check(styleMut(/content: " \(" attr\(href\) "\)";/, 'content: attr(href);')), /DOCS-THEME-054/);
+  fails(check(styleMut(", .vp-doc a[href^='//']::after", "")), /DOCS-THEME-054.*\/\//);
+  fails(check(styleMut(".vp-doc a[href^='http']::after,", ".vp-doc a[href^='ftp']::after,")), /DOCS-THEME-054.*http/);
+  passes(check(styleMut(/content: " \(" attr\(href\) "\)";/, "content: ' (' attr(href) ')';")));
+});
+
+// ---------------------------------------------------------------- Theme, built site
+
+const site = (over: Record<string, string | null> = {}) => {
+  const base: Record<string, string> = { ...themeDist() };
+  for (const [p, c] of Object.entries(BUILT)) base[p] = wrapPage(p, c);
+  const all: Record<string, string | null> = { ...base, ...over };
+  return distExact(Object.fromEntries(Object.entries(all).filter((e): e is [string, string] => e[1] !== null)));
+};
+const sitePasses = (over: Record<string, string | null> = {}) => passes(check({}, ["--dist"], site(over)));
+const siteFails = (over: Record<string, string | null>, re: RegExp, overrides: Record<string, string | null> = {}) => fails(check(overrides, ["--dist"], site(over)), re);
+
+test("the built-site fixture passes the built-site pass", () => {
+  sitePasses();
+  sitePasses({ "guide/install/first-run.html": docPage("simple", "Try it") });
+});
+
+// @spec DOCS-THEME-010
+test("a resource reference to an external URL in built HTML or CSS fails, naming the file and URL; links do not", () => {
+  const ext = "https://cdn.example.com/x";
+  const page = (body: string, head = "") => shell(body, { head: `<link rel="icon" type="image/svg+xml" href="/cohost/favicon.svg">${head}` });
+  const bad = (name: string, html: string, url = ext) =>
+    siteFails({ "extra/page.html": html }, new RegExp(`extra/page\\.html.*DOCS-THEME-010.*${url.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}`), {});
+  bad("script src", page("", `<script src="${ext}"></script>`));
+  bad("img src", page(`<img src="${ext}">`));
+  bad("srcset", page(`<img srcset="/a.png 1x, ${ext} 2x">`));
+  bad("poster", page(`<video poster="${ext}"></video>`));
+  bad("object data", page(`<object data="${ext}"></object>`));
+  bad("link stylesheet", page("", `<link rel="stylesheet" href="${ext}">`));
+  bad("link preload", page("", `<link rel="preload" as="font" href="${ext}">`));
+  bad("protocol-relative", page(`<img src="//cdn.example.com/x">`), "//cdn.example.com/x");
+  bad("svg image", page(`<svg><image href="${ext}"/></svg>`));
+  bad("svg use xlink", page(`<svg><use xlink:href="${ext}#a"/></svg>`), ext);
+  bad("style element url", page("", `<style>.a{background:url(${ext})}</style>`));
+  bad("style element import", page("", `<style>@import url("${ext}");</style>`));
+  bad("inline svg style import", page(`<svg><style>@import url('${ext}');</style></svg>`));
+  bad("style attribute", page(`<p style="background: url('${ext}')"></p>`));
+  siteFails({ "assets/app.css": `@import "${ext}"; a{}` }, /assets\/app\.css.*DOCS-THEME-010.*cdn\.example\.com/);
+  siteFails({ "assets/app.css": `@font-face{src:url(${ext}) format("woff2")}` }, /assets\/app\.css.*DOCS-THEME-010/);
+  sitePasses({
+    "extra/page.html": page(
+      `<a href="${ext}">link</a><img src="/cohost/a.png"><svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AAAA"/></svg><p style="background:url(data:image/png;base64,AAAA)"></p><a href="//x.example/">y</a><p data-src="${ext}"></p>`,
+      `<link rel="canonical" href="${ext}"><link rel="alternate" href="${ext}"><link rel="me" href="${ext}"><style>.a{background:url("/cohost/b.png")}</style>`,
+    ),
+    "assets/app.css": "a{background:url(data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'/>)}",
+  });
+});
+
+// @spec DOCS-THEME-015, DOCS-THEME-016
+test("every built page shows the idle mark, decorative, before the site title in the nav bar", () => {
+  const nav = (inner: string) => `<header class="VPNav"><div class="VPNavBar"><div class="VPNavBarTitle"><a class="title" href="/cohost/">${inner}</a></div></div></header>`;
+  const withNav = (inner: string) => ({ "guide/troubleshooting.html": docPage("simple", "Troubleshooting").replace(NAV, nav(inner)) });
+  siteFails(withNav("<span>cohost</span>"), /guide\/troubleshooting\.html.*DOCS-THEME-016/);
+  siteFails(withNav(`<span>cohost</span>${NAV_MARK}`), /DOCS-THEME-016.*before/);
+  siteFails(withNav(NAV_MARK.replace('data-expression="idle"', 'data-expression="talking"') + "<span>cohost</span>"), /DOCS-THEME-016.*idle/);
+  siteFails(withNav(NAV_MARK.replace(' aria-hidden="true"', "") + "<span>cohost</span>"), /DOCS-THEME-015.*aria-hidden/);
+  siteFails(withNav(NAV_MARK.replace('aria-hidden="true"', 'aria-hidden="true" role="img"') + "<span>cohost</span>"), /DOCS-THEME-015.*role/);
+  siteFails(withNav(NAV_MARK.replace('aria-hidden="true"', 'aria-hidden="true" aria-label="The cohost mascot"') + "<span>cohost</span>"), /DOCS-THEME-015.*aria-label/);
+  siteFails({ "guide/troubleshooting.html": shell("<p>x</p>", { nav: "" }) }, /DOCS-THEME-016/);
+});
+
+// @spec DOCS-THEME-056, DOCS-THEME-035
+test("a mark shown alone is labelled as an image; the home hero shows the talking mark", () => {
+  const body = (svg: string) => docPage("simple", "Troubleshooting", svg);
+  const alone = `<svg class="cohost-mark" data-expression="idle" role="img" aria-label="The cohost mascot" viewBox="0 0 64 64"><rect/></svg>`;
+  sitePasses({ "guide/troubleshooting.html": body(alone) });
+  siteFails({ "guide/troubleshooting.html": body(alone.replace(' role="img"', "")) }, /guide\/troubleshooting\.html.*DOCS-THEME-056.*role/);
+  siteFails({ "guide/troubleshooting.html": body(alone.replace('aria-label="The cohost mascot"', 'aria-label="mascot"')) }, /DOCS-THEME-056.*aria-label/);
+  siteFails({ "guide/troubleshooting.html": body(alone.replace(' role="img"', ' aria-hidden="true"')) }, /DOCS-THEME-056/);
+  siteFails({ "index.html": shell(HOME_BODY.replace('data-expression="talking"', 'data-expression="idle"')) }, /index\.html.*DOCS-THEME-035.*talking/);
+  siteFails({ "index.html": shell(HOME_BODY.replace(/<svg class="cohost-mark"[\s\S]*?<\/svg>/, "")) }, /index\.html.*DOCS-THEME-035/);
+  siteFails({ "index.html": shell(HOME_BODY.replace(' role="img"', "")) }, /index\.html.*DOCS-THEME-(035|056)/);
+});
+
+// @spec DOCS-THEME-051
+test("every built page's head links the SVG favicon", () => {
+  siteFails({ "extra/page.html": shell("<p>x</p>", { head: "" }) }, /extra\/page\.html.*DOCS-THEME-051/);
+  siteFails({ "extra/page.html": shell("<p>x</p>", { head: '<link rel="icon" href="/cohost/favicon.svg">' }) }, /DOCS-THEME-051/);
+  siteFails({ "extra/page.html": shell("<p>x</p>", { head: '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' }) }, /DOCS-THEME-051/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY, { head: "" }) }, /404\.html.*DOCS-THEME-051/);
+  sitePasses({ "extra/page.html": shell("<p>x</p>", { head: '<link href="/cohost/favicon.svg" type="image/svg+xml" rel="icon" />' }) });
+});
+
+// @spec DOCS-THEME-018, DOCS-THEME-019
+test("a track badge reads Track: then its label, hidden text first, and holds no link", () => {
+  const pg = (b: string) => ({ "extra/page.html": shell(`<div class="vp-doc">${b}<h1>T</h1></div>`) });
+  siteFails(pg(badge("simple").replace("Simple</span>", "Easy</span>")), /extra\/page\.html.*DOCS-THEME-018.*Simple/);
+  siteFails(pg(badge("simple").replace("Track: ", "")), /DOCS-THEME-019.*Track:/);
+  siteFails(pg(badge("simple").replace('<span class="visually-hidden">Track: </span>', "Track: ")), /DOCS-THEME-019/);
+  siteFails(pg(badge("simple").replace('class="visually-hidden"', 'class="visually-hidden" aria-hidden="true"')), /DOCS-THEME-019/);
+  siteFails(pg(badge("simple").replace("Simple</span>", '<a href="/cohost/">Simple</a></span>')), /DOCS-THEME-019.*link/);
+  siteFails(pg(badge("simple").replace('<span class="visually-hidden">', '<button>x</button><span class="visually-hidden">')), /DOCS-THEME-019/);
+  siteFails(pg(badge("simple").replace("<span class", '<span tabindex="0" class')), /DOCS-THEME-019/);
+  siteFails(pg(badge("simple").replace('data-track="simple"', 'data-track="simple" tabindex="0"')), /DOCS-THEME-019/);
+  for (const [t, label] of [["start", "Start here"], ["simple", "Simple"], ["advanced", "Advanced"], ["project", "Project"]]) {
+    sitePasses(pg(`<span class="cohost-track-badge" data-track="${t}"><span class="visually-hidden">Track: </span>${label}</span>`));
+  }
+});
+
+// @spec DOCS-THEME-020
+test("each built hand-written page with a track carries exactly one badge of that track; excerpts carry advanced", () => {
+  const f = "guide/install/first-run.html";
+  sitePasses({ [f]: docPage("simple", "Try it") });
+  siteFails({ [f]: docPage("advanced", "Try it") }, /guide\/install\/first-run\.html.*DOCS-THEME-020.*simple/);
+  siteFails({ [f]: shell('<div class="vp-doc"><h1>Try it</h1></div>') }, /first-run\.html.*DOCS-THEME-020/);
+  siteFails({ [f]: shell(`<div class="vp-doc">${badge("simple")}${badge("simple")}<h1>Try it</h1></div>`) }, /first-run\.html.*DOCS-THEME-020.*exactly one/);
+  siteFails({ "start/what-is-cohost.html": docPage("project", "What") }, /what-is-cohost\.html.*DOCS-THEME-020.*start/);
+  // the home page is exempt; an excerpt page needs the advanced badge
+  sitePasses({ "index.html": shell(HOME_BODY) });
+  siteFails({ "advanced/architecture/design/problem.html": shell('<div class="vp-doc"><h1>P</h1></div>') }, /design\/problem\.html.*DOCS-THEME-020.*advanced/);
+  siteFails({ "advanced/architecture/design/problem.html": docPage("simple", "P") }, /design\/problem\.html.*DOCS-THEME-020/);
+  sitePasses({ "advanced/architecture/design/problem.html": docPage("advanced", "P") });
+});
+
+// @spec DOCS-THEME-025, DOCS-THEME-030, DOCS-THEME-026, DOCS-THEME-029
+test("a mermaid fence is rendered to a labelled inline SVG in a focusable figure; none is left as code; no @import survives", () => {
+  const src = (heading: string) => ({ "docs/guide/install/first-run.md": mut(baseFiles()["docs/guide/install/first-run.md"], "## What you need\n", `${heading}\n\n\`\`\`mermaid\nflowchart LR\n  A --> B\n\`\`\`\n\n## What you need\n`) });
+  const f = "guide/install/first-run.html";
+  const pageWith = (fig: string) => ({ [f]: docPage("simple", "Try it", fig) });
+  const run = (heading: string, over: Record<string, string | null>) => check(src(heading), ["--dist"], site(over));
+  fails(run("## The flow", pageWith("")), /first-run\.html.*DOCS-THEME-025/);
+  fails(run("## The flow", pageWith(FIGURE("The flow").replace(' tabindex="0"', ""))), /DOCS-THEME-025.*tabindex/);
+  fails(run("## The flow", pageWith(FIGURE("The flow").replace("<svg", "<p"))), /DOCS-THEME-025/);
+  fails(run("## The flow", pageWith(FIGURE("The flow") + FIGURE("The flow"))), /DOCS-THEME-025.*1/);
+  passes(run("## The flow", pageWith(FIGURE("The flow"))));
+  // 030: the label is the nearest heading's plain text, or the title when none precedes the fence
+  fails(run("## The flow", pageWith(FIGURE("Wrong"))), /first-run\.html.*DOCS-THEME-030.*The flow/);
+  fails(run("## The flow", pageWith(FIGURE("The flow").replace(' role="img"', ""))), /DOCS-THEME-030.*role/);
+  passes(run("## The `bus` and *the* [glossary](start/glossary.md) {#bus-id}", pageWith(FIGURE("The bus and the glossary"))));
+  passes(run("### Deeper &amp; wider", pageWith(FIGURE("Deeper & wider").replace("&", "&amp;"))));
+  passes(check({}, ["--dist"], site(pageWith(""))));
+  const noHeading = page({ title: "Try it", description: "About Try it.", track: "simple" }, "```mermaid\nflowchart LR\n  A --> B\n```\n\n# Try it\n\n## What you need\n\nA PC.\n\n1. Do it.\n\n## How you know it worked\n\nYou see it.\n\n## If it didn't\n\nSee [troubleshooting](../troubleshooting.md).");
+  passes(check({ "docs/guide/install/first-run.md": noHeading }, ["--dist"], site(pageWith(FIGURE("Try it")))));
+  fails(check({ "docs/guide/install/first-run.md": noHeading }, ["--dist"], site(pageWith(FIGURE("Other")))), /DOCS-THEME-030.*Try it/);
+  // 026: a language-mermaid block left in the page
+  fails(run("## The flow", pageWith(FIGURE("The flow") + '<div class="language-mermaid vp-adaptive-theme"><pre>x</pre></div>')), /first-run\.html.*DOCS-THEME-026/);
+  fails(check({}, ["--dist"], site({ [f]: docPage("simple", "Try it", '<div class="language-mermaid"><pre>x</pre></div>') })), /DOCS-THEME-026/);
+  // 029: no @import in a diagram's style
+  fails(run("## The flow", pageWith(FIGURE("The flow").replace(".x{fill:red}", '@import url("fonts.css");.x{fill:red}'))), /first-run\.html.*DOCS-THEME-029/);
+  fails(run("## The flow", pageWith(FIGURE("The flow").replace(".x{fill:red}", "@import 'fonts.css';"))), /DOCS-THEME-029/);
+});
+
+// @spec DOCS-THEME-025, DOCS-THEME-030
+test("a mermaid fence in a design excerpt is rendered and labelled from the excerpt's heading", () => {
+  const hld = HLDWithDiagram();
+  const over = { "docs/high-level-design.md": hld, "docs/advanced/architecture/design/[section].md": "<!-- @content -->\n" };
+  const d = (fig: string) => ({ "advanced/architecture/design/system-design.html": docPage("advanced", "System design", fig) });
+  const run = (extra: Record<string, string | null>) => check({ ...designTree(), ...over, "docs/high-level-design.md": hld.replace("| brain | beta | Beta does another |\n", "| brain | beta | Beta does another |\n| operator | docs-site | The docs |\n") }, ["--dist"], site(extra));
+  fails(run(d("")), /system-design\.html.*DOCS-THEME-025/);
+  fails(run(d(FIGURE("Wrong"))), /system-design\.html.*DOCS-THEME-030.*System Design/);
+  passes(run(d(FIGURE("System Design"))));
+});
+
+// @spec DOCS-THEME-052
+test("a built asset named mermaid*.js fails the built-site pass", () => {
+  siteFails({ "assets/chunks/mermaid.core.abc123.js": "x" }, /assets\/chunks\/mermaid\.core\.abc123\.js.*DOCS-THEME-052/);
+  siteFails({ "assets/mermaid-xyz.js": "x" }, /DOCS-THEME-052/);
+  sitePasses({ "assets/app.js": "x", "assets/chunks/framework.js": "x", "assets/not-mermaid.js": "x" });
+});
+
+// @spec DOCS-THEME-033
+test("the built home page renders the flow container with an ordered list of six steps", () => {
+  siteFails({ "index.html": shell(HOME_BODY.replace('class="cohost-flow"', 'class="flow"')) }, /index\.html.*DOCS-THEME-033/);
+  siteFails({ "index.html": shell(HOME_BODY.replace("<ol>", "<ul>").replace("</ol>", "</ul>")) }, /DOCS-THEME-033.*ol/);
+  siteFails({ "index.html": shell(HOME_BODY.replace("<li>Avatar</li>", "")) }, /DOCS-THEME-033.*six/);
+  siteFails({ "index.html": shell(HOME_BODY.replace('<div class="cohost-flow">', '<div class="cohost-flow"><p>::: flow</p>').replace("<ol>", "<p>1. Chat</p><ol>")) }, /DOCS-THEME-033/);
+});
+
+// @spec DOCS-THEME-038, DOCS-THEME-039
+test("404.html has its heading, links, the lost mark outside the nav bar and the co-host's aside", () => {
+  siteFails({ "404.html": null }, /404\.html.*DOCS-THEME-039/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace("Page not found", "Gone")) }, /404\.html.*DOCS-THEME-039.*Page not found/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace("<h1>", "<h2>").replace("</h1>", "</h2>")) }, /DOCS-THEME-039.*Page not found/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace('<a href="/cohost/">Go', '<a href="/cohost/index">Go')) }, /DOCS-THEME-039.*\/cohost\//);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace('<a href="/cohost/start/what-is-cohost">', '<a href="/cohost/start/what-is-cohost.html">')) }, /DOCS-THEME-039.*what-is-cohost/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace('class="cohost-aside"', 'class="aside"')) }, /DOCS-THEME-039.*cohost-aside/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace('data-expression="lost"', 'data-expression="idle"')) }, /DOCS-THEME-039.*lost/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace(' role="img"', "")) }, /DOCS-THEME-039.*role/);
+  // the nav bar's links and mark do not stand in for the page's own
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace(/<svg class="cohost-mark"[\s\S]*?<\/svg>/, "")) }, /DOCS-THEME-039.*lost/);
+  siteFails({ "404.html": shell(NOT_FOUND_BODY.replace('<a href="/cohost/">Go to the home page</a> ', "")) }, /DOCS-THEME-039.*\/cohost\//);
+});
+
+const HLDWithDiagram = () => HLD().replace("## System Design\n", "## System Design\n\n```mermaid\nflowchart LR\n  A --> B\n```\n");
 
 // ---------------------------------------------------------------- the real repository
 

@@ -60,7 +60,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "46 specs, all [x]. Open question: the `discord` unit declares no test input, which obligation 3 of the module contract requires of every unit."
+    next: "47 specs, all [x]. Open question (LLD Open Questions 1): the `connector-discord` unit declares no test input, which obligation 3 requires of every unit; no existing input kind reaches it, so the choice among a new inject target, a new input kind and an exemption is the owner's."
     drift: null
 
 
@@ -277,7 +277,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "86 specs: 84 [x], 2 [D]. To review: the Discord connector's heartbeat name differs from its Compose service name, so its container healthcheck and restart-count overlay find no entry (CTRL-CHECK-003, CTRL-HEALTH-010)."
+    next: "86 specs: 84 [x], 2 [D]."
     drift: null
 
   deployment:

@@ -9,7 +9,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 ## Orientation
 
 - Design: LLD § Service manifest, Runtime, Controller, Stack controller, Lifecycle lock, Health derivation, Container healthcheck, `cohostctl`, Latency report.
-- The manifest has 16 units: eleven pnpm application services (`discord` among them, composeName `connector-discord`) and five compose-only units. The host-run dashboard is not a unit.
+- The manifest has 16 units: eleven pnpm application services (`connector-discord` among them) and five compose-only units. The host-run dashboard is not a unit.
 - The heartbeat publisher is `startHeartbeat` in `packages/shared/src/lifecycle.ts`, called from `packages/shared/src/boot.ts`; its mechanics are SHARED-LIFE-006 to SHARED-LIFE-014 ([shared-runtime.md](shared-runtime.md)). What a published state means to an observer is CTRL-HEALTH-*.
 - Compose side: the `x-ts-service` anchor in `docker-compose.yml` realizes CTRL-CHECK-003 and passes the isolation preset through (CTRL-RUNTIME-009); the `Dockerfile` bakes `SERVICE` into the image. Both belong to [deployment.md](deployment.md) (DEPLOY-HC-001, DEPLOY-COMPOSE-017).
 - The dashboard consumes the stack controller (DASH-STACK-*, [dashboard.md](dashboard.md)); the readiness wait relies on the Compose healthcheck.
@@ -83,10 +83,10 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Key Findings
 
-1. **Partial test coverage behind annotated tests** — CTRL-MANIFEST-001 (field shapes, not every id), CTRL-RUNTIME-001 (argv, not timeout or `cwd`), CTRL-CONFIG-002 (`isLoopback` untested), CTRL-HEALTH-007 (no-overwrite on replay untested).
+1. **Partial test coverage behind annotated tests** — CTRL-MANIFEST-001 (field shapes, not every id), CTRL-RUNTIME-001 (argv, not timeout or `cwd`), CTRL-HEALTH-007 (no-overwrite on replay untested).
 2. **`stopping` depends on a graceful shutdown** — a crash or SIGKILL publishes nothing and the service only goes stale (3x) then down (10x) (SHARED-LIFE-006 to -014).
 3. **Single ownership with the bus and shared runtime** — the heartbeat transport and shutdown mechanics are BUS-STREAM-004, BUS-HEALTH-001 and SHARED-LIFE-*; this segment owns what the states mean (CTRL-HEALTH-*) and the healthcheck (CTRL-CHECK-*).
-4. **Manifest groups match the subscriptions** — chat and eyes own groups of their own name and chat, eyes and ears default to `fresh`, as every `latest` subscriber does; memory alone is `resume`; `discord` owns none (CTRL-MANIFEST-002).
+4. **Manifest groups match the subscriptions** — chat and eyes own groups of their own name and chat, eyes and ears default to `fresh`, as every `latest` subscriber does; memory alone is `resume`; `connector-discord` owns none (CTRL-MANIFEST-002).
 
 ## Work Required
 

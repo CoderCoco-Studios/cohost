@@ -35,7 +35,7 @@ Annotations: `@spec DEPLOY-…` comments sit in the deployment files themselves.
 
 ## Container health
 
-- [x] **DEPLOY-HC-001**: Every application service container shall run the healthcheck `node packages/control/dist/healthcheck.js $SERVICE` every 10 s with a 5 s timeout, 3 retries and a 30 s start period, with `SERVICE` taken from the image environment (the `Dockerfile` `ENV`).
+- [x] **DEPLOY-HC-001**: Every application service container shall run the healthcheck `node packages/control/dist/healthcheck.js $SERVICE` every 10 s with a 5 s timeout, 3 retries and a 30 s start period, with `SERVICE` taken from the image environment (the `Dockerfile` `ENV`) and equal to the `service` the container's heartbeat publishes (the unit id, MOD-MAN-012).
 - [x] **DEPLOY-HC-002**: When the healthcheck runs, it shall exit 0 only if the newest `service.heartbeat` for that service among the last 200 entries of `cohost:health` is younger than 3 times its declared interval and its state is not `stopping`, and shall exit 1 when no heartbeat is found, the heartbeat is stale, Redis cannot be read, or 4 s elapse. (Semantics owned by control-plane; this spec records the compose wiring.) <!-- impl: packages/control/src/healthcheck.ts --> <!-- test: packages/control/test/healthcheck.test.ts --> <!-- test: packages/control/test/healthcheck.test.ts --> <!-- test: packages/control/test/healthcheck.test.ts --> <!-- test: packages/control/test/healthcheck.test.ts -->
 
 ## Image build

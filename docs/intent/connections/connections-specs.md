@@ -10,7 +10,7 @@ Segment `connections` (prefix `CONN`). LLD: [connections-design.md](connections-
 - [x] **CONN-REG-004**: When a connector registers under an `id` that already has a registration with a different `instance`, it shall replace that registration at once, and the displaced instance shall stop registering when it reads a different `instance` under its key. <!-- test: packages/bus/test/connector.test.ts -->
 - [x] **CONN-REG-005**: Where a registration lists a capability other than `audio-in` or `audio-out`, a consumer shall ignore that capability and use the rest of the registration. <!-- test: packages/bus/test/connector.test.ts -->
 - [x] **CONN-REG-006**: A consumer of a source or sink tag shall find the tag's connector by listing the `<prefix>:connector:*` keys, shall treat the tag as available only while a live registration offers it with `ready` true, shall re-read the registry at least every `intervalMs`, and shall notice a connector appearing or disappearing without restarting. <!-- test: packages/bus/test/connector.test.ts -->
-- [x] **CONN-REG-007**: While a connector runs, it shall publish `service.heartbeat` on `<prefix>:health` with `service` set to its `id`, driven by the same timer as its registration. <!-- test: packages/bus/test/connector.test.ts -->
+- [x] **CONN-REG-007**: While a connector runs, it shall publish `service.heartbeat` on `<prefix>:health` with `service` set to the service name of its process (the manifest unit id, which need not equal the connector `id`), driven by the same timer as its registration. <!-- test: packages/bus/test/connector.test.ts -->
 
 ## Tags
 
@@ -71,7 +71,7 @@ Design: LLD Flush. The producer's side is MOUTH-STOP-004.
 
 ## Health
 
-- [x] **CONN-HLTH-001**: The Discord connector shall publish heartbeats with `service` `discord`, mode `live` (`off` under CONN-DISC-011) and `deps` `discord`, `audio-in` and `audio-out`: `discord` `ok` only while the voice connection is Ready, and each audio dependency `ok` while its capability is registered `ready` (and, for `audio-in`, capture is running), `down` otherwise. <!-- test: services/connector-discord/test/connector.test.ts -->
+- [x] **CONN-HLTH-001**: The Discord connector shall publish heartbeats with `service` `connector-discord` (the process; its connector `id` stays `discord`), mode `live` (`off` under CONN-DISC-011) and `deps` `discord`, `audio-in` and `audio-out`: `discord` `ok` only while the voice connection is Ready, and each audio dependency `ok` while its capability is registered `ready` (and, for `audio-in`, capture is running), `down` otherwise. <!-- test: services/connector-discord/test/connector.test.ts -->
 - [x] **CONN-HLTH-002**: The Discord connector's heartbeat state shall be `starting` until its first join attempt resolves, `ready` when the voice connection is Ready, and `degraded` with a detail while a join fails or a tag conflicts (CONN-TAG-003); its detail shall include the count of frames it dropped. <!-- test: services/connector-discord/test/connector.test.ts -->
 
 ## Desktop audio helper

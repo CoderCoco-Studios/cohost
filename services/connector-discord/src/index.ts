@@ -11,4 +11,4 @@
 import { runService } from "@cohost/shared";
 import { createConnectorService } from "./service.js";
 
-await runService({ service: "discord", ...createConnectorService() });
+await runService({ service: "connector-discord", ...createConnectorService() });

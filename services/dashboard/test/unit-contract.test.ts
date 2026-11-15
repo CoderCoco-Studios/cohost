@@ -65,7 +65,7 @@ async function boot(states: Record<string, HealthState> = {}) {
 test("the table covers every application unit and each declares config and test inputs", () => {
   assert.equal(units.length, 11);
   // the Discord connector takes no bus input (CONN-DISC-010), so it declares none
-  for (const u of units) assert.ok(u.config.length > 0 && (u.test.inputs.length > 0 || u.id === "discord"), u.id);
+  for (const u of units) assert.ok(u.config.length > 0 && (u.test.inputs.length > 0 || u.id === "connector-discord"), u.id);
 });
 
 for (const u of units) {

@@ -346,7 +346,7 @@ whole stack.
 - Monitor-only by default; lifecycle behind `CONTROL_ENABLED=1`.
 - Mutating routes require `Authorization: Bearer $CONTROL_TOKEN`; refuse to
   enable control without a token set.
-- Bind `127.0.0.1` when control is enabled unless `CONTROL_BIND` overrides.
+- Bind `127.0.0.1` when control is enabled unless `DASHBOARD_HOST` overrides.
 - Only manifest-listed service ids are accepted (no arbitrary commands).
   `process` adapter runs fixed argv, never a shell string.
 - Docker socket mount documented as opt-in, with the root-equivalence caveat.

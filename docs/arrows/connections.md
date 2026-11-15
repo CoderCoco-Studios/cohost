@@ -16,7 +16,7 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 | deployment | new Compose service and profile; one bot in `.env.example`, installer and README | DEPLOY-COMPOSE-004, 020 (amended), DEPLOY-COMPOSE-023 (new), DEPLOY-INST-008, DEPLOY-README-004, 005 |
 | event-bus | connector streams and keys share the bus prefix | BUS-EVT-013, BUS-AUD-001, 002 |
 
-Cascaded: config (CFG-SCH-020, CFG-SCH-030, CFG-SCH-032, CFG-USR-011), control-plane (manifest unit `discord`, CTRL-MANIFEST-001 to 003, 005, CTRL-HEALTH-005), dashboard (DASH-HTTP-014), event-bus (BUS-EVT-013, BUS-AUD-001, 002), ears (EARS-SRC-*, EARS-CON-*), README, `.env.example` and `docs/TESTING.md`.
+Cascaded: config (CFG-SCH-020, CFG-SCH-030, CFG-SCH-032, CFG-USR-011), control-plane (manifest unit `connector-discord`, CTRL-MANIFEST-001 to 003, 005, CTRL-HEALTH-005), dashboard (DASH-HTTP-014), event-bus (BUS-EVT-013, BUS-AUD-001, 002), ears (EARS-SRC-*, EARS-CON-*), README, `.env.example` and `docs/TESTING.md`.
 
 ## Build order
 
@@ -54,7 +54,7 @@ CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 a
 - packages/bus/test/{connector,native-api,native-integration,native-loops}.test.ts
 - crates/cohost-bus/tests/connection.rs
 - packages/shared/test/utterance.test.ts
-- services/connector-discord/test/connector.test.ts
+- services/connector-discord/test/connector.test.ts, services/connector-discord/test/contract.test.ts
 - services/ears/test/connector-source.test.ts, services/ears/test/service.test.ts
 - services/mouth/test/{connector-output,mouth,no-discord,playback,stop}.test.ts
 

@@ -46,13 +46,14 @@ await new Promise<void>((r) => server.listen(0, r));
 const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/m`;
 after(() => server.close());
 
-// @spec HOOK-HTTP-002
+// @spec HOOK-HTTP-002, HOOK-KIND-002
 test("kind=http posts the input and uses a valid answer", async () => {
   answers.push({ out: 99 });
   // The deadline is not under test here (the fallback tests below cover it). The first request in the process also
   // loads the fetch stack, which a loaded machine can stretch past a tight deadline and turn this into a fallback.
   const m = new Module("t", ModuleSchema.parse({ kind: "http", url, timeout_ms: 30_000 }), llmCfg, { rules, http: { validate } }, log);
   assert.deepEqual(await m.run({ n: 2 }), { out: 99 });
+  assert.equal(m.kind, "http");
 });
 
 // @spec HOOK-HTTP-003, HOOK-FALLBACK-001, HOOK-FALLBACK-002
@@ -87,7 +88,7 @@ const openaiCfg = {
 } as never;
 const llmImpl = { rules, llm: { system: "score it", user: (i: { n: number }) => `n=${i.n}`, maxTokens: 30, validate } };
 
-// @spec HOOK-LLM-001, HOOK-LLM-003, HOOK-LLM-005
+// @spec HOOK-LLM-001, HOOK-LLM-003, HOOK-LLM-005, HOOK-KIND-002
 test("kind=llm sends system + user prompt as a deterministic json call and parses chatty replies", async () => {
   const m = new Module("t", ModuleSchema.parse({ kind: "llm" }), openaiCfg, llmImpl, log);
   llmReplies.push('Here you go: {"out": 42}');
@@ -97,6 +98,7 @@ test("kind=llm sends system + user prompt as a deterministic json call and parse
   assert.equal(llmBody.max_tokens, 30);
   assert.equal("stop" in llmBody, false);
   assert.equal(llmBody.model, "cortex-model"); // no override: inherits the cortex's model
+  assert.equal(m.kind, "llm");
 });
 
 // @spec HOOK-LLM-002

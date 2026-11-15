@@ -5,7 +5,7 @@ Design: [region-hooks-design.md](region-hooks-design.md). Prefix `HOOK`. Verifie
 ## Kinds and construction
 
 - [x] **HOOK-KIND-001**: When a `Module` has `kind` `rules`, `run(input)` shall return `impl.rules(input)` without performing any I/O. <!-- openspec: modules § Three implementation kinds --> <!-- test: packages/modules/test/module.test.ts -->
-- [x] **HOOK-KIND-002**: The `Module` shall expose the configured kind (`rules`, `llm` or `http`) through its `kind` getter. <!-- test: packages/modules/test/module.test.ts (rules only) -->
+- [x] **HOOK-KIND-002**: The `Module` shall expose the configured kind (`rules`, `llm` or `http`) through its `kind` getter. <!-- test: packages/modules/test/module.test.ts -->
 - [x] **HOOK-KIND-003**: If a `Module` is constructed with `kind` `llm` and the hook supplies no `llm` implementation, then the constructor shall throw an error naming the hook and stating it has no llm implementation. <!-- openspec: modules § Construction-time validation --> <!-- test: packages/modules/test/module.test.ts -->
 - [x] **HOOK-KIND-004**: If a `Module` is constructed with `kind` `http` and the hook supplies no `http` implementation, then the constructor shall throw an error naming the hook and stating it has no http implementation. <!-- openspec: modules § Construction-time validation --> <!-- test: packages/modules/test/module.test.ts -->
 - [x] **HOOK-KIND-005**: If a `Module` is constructed with `kind` `http` and an empty `module.url`, then the constructor shall throw an error naming the hook and stating the url is empty. <!-- openspec: modules § Construction-time validation --> <!-- test: packages/modules/test/module.test.ts -->

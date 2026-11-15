@@ -391,6 +391,51 @@ async fn ack_003_refused_ack_is_reported_in_ack_errors() {
     fx.cleanup().await;
 }
 
+// @spec BUS-NAT-ACK-009
+#[tokio::test(flavor = "multi_thread")]
+async fn ack_009_refused_ack_survives_a_refused_read() {
+    let mut fx = fixture_or_skip!("ack009");
+    // XACK is refused (NOPERM) for this ACL user; destroying the group makes the XREADGROUP of the same pipeline
+    // fail with NOGROUP.
+    let user = format!("natnog{}", &fx.prefix[fx.prefix.len() - 12..]);
+    let _: String = q(
+        &fx,
+        &[
+            "ACL", "SETUSER", &user, "on", "nopass", "~*", "+@all", "-xack",
+        ],
+    )
+    .await;
+    let t = Transport::new(
+        &common::redis_url_as(&user),
+        TransportOptions {
+            prefix: fx.prefix.clone(),
+            fail_fast: false,
+        },
+    );
+    assert!(t.create_group("g").await.unwrap());
+    let id = t.append(EventStream::Events, fields(1)).await.unwrap();
+    let r = t.open_reader();
+    let entries = r
+        .read_group("g", "c1", ">", 10, 200)
+        .await
+        .unwrap()
+        .entries
+        .unwrap();
+    assert_eq!(entries[0].id, id);
+    r.ack("g", &id);
+    let _: i64 = q(&fx, &["XGROUP", "DESTROY", &fx.events(), "g"]).await;
+    let err = r.read_group("g", "c1", ">", 10, 50).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::Redis);
+    assert!(err.message.starts_with("NOGROUP"), "{}", err.message);
+    assert_eq!(err.ack_errors.len(), 1, "the refused ack is reported");
+    assert_eq!(err.ack_errors[0].ids, [id]);
+    assert_eq!(err.ack_errors[0].err.code, ErrorCode::Redis);
+    assert!(err.ack_errors[0].err.message.starts_with("NOPERM"));
+    t.close().await;
+    let _: i64 = q(&fx, &["ACL", "DELUSER", &user]).await;
+    fx.cleanup().await;
+}
+
 // @spec BUS-NAT-ACK-005
 #[tokio::test(flavor = "multi_thread")]
 async fn ack_005_close_flushes_queued_acks_of_every_reader() {

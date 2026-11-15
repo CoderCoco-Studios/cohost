@@ -98,7 +98,7 @@ The `dashboard` section is read by the dashboard itself, which is not a unit: it
 
 A key is a scalar or an array (arrays of objects included) under the section, named by its dotted path relative to the section (`openai.api_key` in `llm`); a section that is itself a scalar (`brain.working_memory_events`) has one key named for its last path segment. `unknown` carries dotted paths from the file's root (`brain.salience.reflexes[0].cooldwn_ms`).
 
-Secrets (the schema marks them; today `llm.openai.api_key`, `llm.claude.api_key` and `vision.obs.password`) are never returned, only whether they are set (`secret: true`, `set`). They live in `.env` (tenet 7) and are not editable here.
+Secrets (the schema marks them; today `llm.openai.api_key`, `llm.claude.api_key`, `vision.obs.password` and `ears.http.token`) are never returned, only whether they are set (`secret: true`, `set`). They live in `.env` (tenet 7) and are not editable here.
 
 ### Writing a section
 

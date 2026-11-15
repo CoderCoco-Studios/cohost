@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { urls, type Logger } from "@cohost/config";
-import type { BusReader, RawEntry, BusTransport, TransportFactory, FrameTransport, FrameTransportFactory, FrameReader } from "./transport.js";
+import type { AckError, BusReader, RawEntry, BusTransport, TransportFactory, FrameTransport, FrameTransportFactory, FrameReader } from "./transport.js";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
 import { HEALTH_MAXLEN, connectorKey, createNativeTransport } from "./native.js";
 import { audioStreamName, createFrameTransport } from "./frames.js";
@@ -253,7 +253,7 @@ export class Bus {
 
   /** Consumer-group subscription. Resolves when stop() is called. */
   // @spec BUS-SUB-001, BUS-SUB-002, BUS-SUB-003, BUS-SUB-004, BUS-SUB-005, BUS-SUB-006, BUS-SUB-008, BUS-SUB-009, BUS-SUB-010, BUS-SUB-011, BUS-SUB-012, BUS-SUB-013
-  // @spec BUS-NAT-API-007, BUS-NAT-ACK-001, BUS-NAT-ACK-002, BUS-NAT-ACK-003, BUS-NAT-ACK-008, BUS-NAT-CONN-002, BUS-NAT-CONN-003, BUS-NAT-ERR-003, BUS-NAT-ERR-004, BUS-NAT-TRN-007
+  // @spec BUS-NAT-API-007, BUS-NAT-ACK-001, BUS-NAT-ACK-002, BUS-NAT-ACK-003, BUS-NAT-ACK-008, BUS-NAT-ACK-009, BUS-NAT-CONN-002, BUS-NAT-CONN-003, BUS-NAT-ERR-003, BUS-NAT-ERR-004, BUS-NAT-TRN-007
   async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     const mode = opts.start as unknown;
     if (mode !== "latest" && mode !== "resume") {
@@ -280,6 +280,14 @@ export class Bus {
       // stays pending, for instance after a refused XACK, cannot hold the drain), then read new ones. A restarted
       // process has a new consumer name, so entries its predecessor left pending are not redelivered. After a failed
       // read the loop drains again from cursor 0.
+      const reportAckErrors = (ackErrors: AckError[]) => {
+        for (const { ids, err } of ackErrors) {
+          const again = ids.filter((id) => refused.has(id));
+          const first = ids.filter((id) => !refused.has(id));
+          if (first.length) { this.log?.warn({ err, ids: first }, "ack failed"); for (const id of first) refused.add(id); }
+          if (again.length) { this.log?.warn({ err, ids: again }, "ack failed, entry dropped"); for (const id of again) dropped.add(id); }
+        }
+      };
       let cursor = "0";
       let failures = 0;
       while (!this.stopped) {
@@ -288,17 +296,13 @@ export class Bus {
           res = await reader.readGroup(group, this.consumer, cursor, 50, block);
         } catch (err) {
           if (this.stopped) break; // stop() closed the reader under a blocking read
+          reportAckErrors((err as { ackErrors?: AckError[] }).ackErrors ?? []); // refused acks that rode in the failed pipeline
           await this.backoff(err, ++failures, "subscribe read failed");
           cursor = "0";
           continue;
         }
         failures = 0;
-        for (const { ids, err } of res.ackErrors) {
-          const again = ids.filter((id) => refused.has(id));
-          const first = ids.filter((id) => !refused.has(id));
-          if (first.length) { this.log?.warn({ err, ids: first }, "ack failed"); for (const id of first) refused.add(id); }
-          if (again.length) { this.log?.warn({ err, ids: again }, "ack failed, entry dropped"); for (const id of again) dropped.add(id); }
-        }
+        reportAckErrors(res.ackErrors);
         const entries = res.entries;
         if (!entries || (cursor !== ">" && entries.length === 0)) { cursor = ">"; continue; }
         for (const raw of entries) {

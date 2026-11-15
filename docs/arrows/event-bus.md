@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 165 specs, 160 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 144 of the 160 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 166 specs, 161 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -21,7 +21,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - **Upload store over Redis.** `Bus.putUpload` / `Bus.takeUpload` (BUS-UPL-001 to BUS-UPL-003); `inject.request` carries `uploadId` and `contentType` (BUS-EVT-006); `FakeBus` mirrors both (BUS-TEST-012).
 - **Transport behaviour.** Pending drain batch by batch (BUS-SUB-003), no ack or further handling after `stop()` (BUS-SUB-013), `failFast` (BUS-STREAM-009), `streamPrefix` (BUS-STREAM-008), one `PlaybackReport` shape and ranges on `avatar.state` (BUS-EVT-017, BUS-EVT-018), time-ordered ids in `FakeBus` and `event()` (BUS-TEST-011, BUS-TEST-003, BUS-TEST-006). Design: LLD Decisions & Alternatives.
 - **Event catalogue.** Exactly 26 types (BUS-EVT-001), including `voice.failed` (BUS-EVT-022), the four viewer-notes events (BUS-EVT-020, BUS-EVT-021), `speech.partial` (BUS-EVT-026 to BUS-EVT-029) and `voice.stop` with the interruption members of `voice.done` (BUS-EVT-030, BUS-EVT-031). Design: LLD § Event catalogue.
-- **Restart and delivery.** `subscribe` takes a required `start` (`latest` or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010, 011). Delivery is at most once; a refused ack leaves the entry pending for one redelivery by a later drain, and a second refusal drops it (BUS-SUB-008, BUS-NAT-ACK-003, BUS-NAT-ACK-008). `stop()` flushes queued acks within 2 s (BUS-NAT-ACK-005 to 007).
+- **Restart and delivery.** `subscribe` takes a required `start` (`latest` or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010, 011). Delivery is at most once; a refused ack leaves the entry pending for one redelivery by a later drain, and a second refusal drops it (BUS-SUB-008, BUS-NAT-ACK-003, BUS-NAT-ACK-008, BUS-NAT-ACK-009). `stop()` flushes queued acks within 2 s (BUS-NAT-ACK-005 to 007).
 - **Outage behaviour.** The shared connection waits only for its first connect attempt (at most 10 s); afterwards every command rejects `BUS_CONNECTION` at once while it is down, and reconnects in the background (BUS-NAT-CONN-004 to 007). Read loops back off and drain pending entries after a failure (BUS-NAT-CONN-002, 003).
 - **Shutdown** lives in shared-runtime (`onShutdown`, `beforeShutdown`, SHARED-LIFE-*); `Bus.stop()` is async and is awaited by that sequence (BUS-STOP-001, SHARED-BOOT-005).
 
@@ -34,7 +34,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (165 specs: 160 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (166 specs: 161 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -74,7 +74,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Shutdown | BUS-STOP-001 | 1 | 0 | 0 |
 | Native: facade API | BUS-NAT-API-001 to 011 | 11 | 0 | 0 |
 | Native: transport | BUS-NAT-TRN-001 to 014 (006, 012 retired) | 12 | 0 | 0 |
-| Native: acks | BUS-NAT-ACK-001 to 008 | 8 | 0 | 0 |
+| Native: acks | BUS-NAT-ACK-001 to 009 | 9 | 0 | 0 |
 | Native: connections | BUS-NAT-CONN-001 to 007 | 7 | 0 | 0 |
 | Native: errors | BUS-NAT-ERR-001 to 011 | 11 | 0 | 0 |
 | Native: frames | BUS-NAT-FRM-001 to 008 | 8 | 0 | 0 |
@@ -85,7 +85,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 165 specs, 160 `[x]`, 0 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 166 specs, 161 `[x]`, 0 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## Work Required
 

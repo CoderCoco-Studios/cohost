@@ -27,7 +27,7 @@ Files with `@spec AVATAR-` annotations:
 - services/avatar/test/health.test.ts
 - services/avatar/test/typecheck.test.ts
 
-Also in the segment: services/avatar/test/contract.test.ts (no `@spec` annotation). AVATAR-DRV-004 is tested in packages/config/test/config.test.ts, which cites it through its neighbouring ID.
+Also in the segment: services/avatar/test/contract.test.ts (no `@spec` annotation).
 
 ### Code
 Files with `@spec AVATAR-` annotations:
@@ -65,14 +65,14 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 |----------|----------|-------------|----------|------|----------------|
 | Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-008 | 8 | 0 | 0 | 8 |
 | Animation engine | AVATAR-ENG-001 to AVATAR-ENG-018 | 18 | 0 | 0 | 18 |
-| Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 7 | 0 | 0 | 5 |
+| Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 7 | 0 | 0 | 7 |
 | VTube Studio driver | AVATAR-VTS-001 to AVATAR-VTS-016 | 16 | 0 | 0 | 16 |
 | VMC driver | AVATAR-VMC-001 to AVATAR-VMC-006 | 6 | 0 | 0 | 6 |
 | State publication | AVATAR-STATE-001 to AVATAR-STATE-002 | 2 | 0 | 0 | 2 |
 | Health | AVATAR-HEALTH-001 to AVATAR-HEALTH-004 | 4 | 0 | 0 | 4 |
 | Development | AVATAR-DEV-001 | 1 | 0 | 0 | 1 |
 
-**Summary:** 62 of 62 specs implemented; 0 deferred; 0 open. 60 carry a test `@spec` annotation; implemented without one: AVATAR-DRV-001 (held by the type checker) and AVATAR-DRV-004 (config-owned, tested in `packages/config/test/config.test.ts`). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 62 of 62 specs implemented; 0 deferred; 0 open. 62 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

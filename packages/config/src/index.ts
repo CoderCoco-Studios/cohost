@@ -163,7 +163,7 @@ export function envOr(name: string, fallback: string): string {
   return process.env[name] || fallback;
 }
 
-// @spec CFG-URL-001, CFG-URL-002, CFG-URL-003
+// @spec CFG-URL-001, CFG-URL-002
 export const urls = {
   redis: () => envOr("REDIS_URL", "redis://127.0.0.1:6379"),
   database: () => envOr("DATABASE_URL", "postgres://cohost:cohost@127.0.0.1:5432/cohost"),

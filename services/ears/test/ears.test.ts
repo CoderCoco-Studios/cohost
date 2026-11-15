@@ -66,6 +66,7 @@ test("sttTranscriber posts the WAV as OpenAI-style multipart form data", async (
   assert.equal(path, "/v1/audio/transcriptions");
   assert.equal(form!.get("model"), "whisper-x");
   assert.equal(form!.get("language"), "en");
+  assert.equal(form!.get("response_format"), "json");
   const file = form!.get("file") as File;
   assert.equal(file.name, "speech.wav");
   assert.deepEqual(Buffer.from(await file.arrayBuffer()), wav);

@@ -64,6 +64,17 @@ test("virtual sink stands down when a real sink claims the line", async () => { 
   assert.deepEqual(bus.types(), ["voice.utterance"]);
 });
 
+test("a failed voice.utterance publish is logged as tts failed and reports voice.done with sink error, with no utterance", async () => { // @spec VOICE-UTT-003
+  const { voice, bus, rec } = setup();
+  bus.fail = (type) => type === "voice.utterance";
+  await sayAndWait(voice, say("u1"));
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", sink: "error" } }]);
+  assert.deepEqual(rec.msgs("error"), ["tts failed"]);
+  mock.timers.tick(5000);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(bus.types(), ["voice.done"], "no virtual claim window follows a failed publish");
+});
+
 test("a TTS failure still reports voice.done so the brain moves on", async () => { // @spec VOICE-UTT-003, VOICE-SINK-006
   const { voice, bus, rec } = setup(async () => { throw new Error("tts 500"); });
   await sayAndWait(voice, say("u1"));

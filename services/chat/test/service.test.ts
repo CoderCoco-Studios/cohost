@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, existsSync,
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
 import { join } from "node:path";
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
 import { chatService, type ChatClientLike, type ChatServiceDeps } from "../src/service.js";
@@ -12,7 +14,8 @@ import { loadStoredToken, saveStoredToken } from "../src/token-store.js";
 /** A bus that also answers the inject subscription calls (FakeBus only records). */
 class SvcBus extends FakeBus {
   async resetGroup(): Promise<void> {}
-  async subscribe(): Promise<void> {}
+  subscriptions: { group: string; types: string[]; start?: string }[] = [];
+  async subscribe(opts: { group: string; types: string[]; start?: string }): Promise<void> { this.subscriptions.push(opts); }
   stopped = 0;
   stop(): void { this.stopped++; }
 }
@@ -59,7 +62,7 @@ function rig(over: Record<string, unknown> = {}, deps: Partial<ChatServiceDeps> 
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
     onShutdown: (fn) => { shutdown = fn; }, exit: (c) => { exits.push(c); },
   });
-  return { bus, rec, clients, auths, exits, start, stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
+  return { bus, rec, clients, auths, exits, start, deps: () => svc.health(cfg).deps(), stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
 }
 
 // @spec CHAT-TW-008
@@ -221,4 +224,105 @@ test("a missing TWITCH_REFRESH_TOKEN with the other credentials set is fatal at 
   await r.start();
   assert.deepEqual(r.exits, [1]);
   assert.ok(r.rec.lines.some((l) => l.msg === "fatal"));
+});
+
+const ANON_CASES: [string, Record<string, string>][] = [
+  ["no credentials", {}],
+  ["client id only", { TWITCH_CLIENT_ID: "id" }],
+  ["no client id", { TWITCH_CLIENT_SECRET: "sec", TWITCH_ACCESS_TOKEN: "envA", TWITCH_REFRESH_TOKEN: "envR" }],
+  ["no client secret", { TWITCH_CLIENT_ID: "id", TWITCH_ACCESS_TOKEN: "envA", TWITCH_REFRESH_TOKEN: "envR" }],
+  ["no access token", { TWITCH_CLIENT_ID: "id", TWITCH_CLIENT_SECRET: "sec", TWITCH_REFRESH_TOKEN: "envR" }],
+];
+
+// @spec CHAT-TW-001
+test("anonymous: with no or partial credentials no auth provider is created and the client has none", async () => {
+  for (const [label, env] of ANON_CASES) {
+    const r = rig({}, { env });
+    try {
+      await r.start();
+      assert.equal(r.auths.length, 0, `${label}: no auth provider is created`);
+      assert.equal(r.clients.length, 1, `${label}: the client is still built`);
+      assert.equal(r.clients[0]!.opts.authProvider, undefined, `${label}: client built without an auth provider`);
+      assert.deepEqual(r.exits, [], `${label}: not fatal`);
+    } finally { await r.stop(); }
+  }
+});
+
+// @spec CHAT-TW-002
+test("with all three credentials the auth provider holds the env tokens for intent chat and is handed to the client", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
+  const r = rig({}, { env: creds, tokenPath: join(dir, "chat", "twitch-token.json") });
+  try {
+    await r.start();
+    assert.equal(r.auths.length, 1);
+    assert.equal(r.clients[0]!.opts.authProvider, r.auths[0], "the provider is passed to the client");
+    const added = r.auths[0]!.added;
+    assert.equal(added.length, 1);
+    assert.equal(added[0]!.token.accessToken, "envA");
+    assert.equal(added[0]!.token.refreshToken, "envR");
+    assert.deepEqual(added[0]!.intents, ["chat"]);
+  } finally { await r.stop(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// @spec CHAT-TW-005
+test("a disconnect logs a warning with manually and reason, and the twitch dependency goes down", async () => {
+  const r = rig();
+  try {
+    await r.start();
+    const client = r.clients[0]!;
+    client.connected[0]!();
+    assert.deepEqual(r.deps(), { twitch: "ok" });
+    const reason = new Error("socket reset");
+    client.disconnected[0]!(true, reason);
+    const line = r.rec.lines.find((l) => l.level === "warn" && l.msg === "twitch chat disconnected");
+    assert.ok(line, "a warning is logged");
+    assert.deepEqual(line.obj, { manually: true, reason });
+    assert.deepEqual(r.deps(), { twitch: "down" });
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-PLAN-005
+test("chat/src has no value import of @twurple/*: type-only imports and dynamic import() only", () => {
+  const dir = fileURLToPath(new URL("../src/", import.meta.url));
+  const offenders: string[] = [];
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
+    const src = readFileSync(join(dir, f), "utf8");
+    const statics = src.match(/^\s*(?:import|export)\b[^;]*?from\s*["']@twurple\/[^"']*["']|^\s*import\s*["']@twurple\/[^"']*["']/gm) ?? [];
+    for (const m of statics) if (!/^\s*(?:import|export)\s+type\b/.test(m)) offenders.push(`${f}: ${m.trim()}`);
+  }
+  assert.deepEqual(offenders, []);
+  const all = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+  assert.match(all, /await import\("@twurple\/chat"\)/, "the guard sees the dynamic imports it allows");
+});
+
+// @spec CHAT-INJ-001
+test("inject.request is subscribed with group chat in the fake, idle and twitch plans", async () => {
+  const plans: [string, Record<string, unknown>, Partial<ChatServiceDeps>][] = [
+    ["fake", { chat: { source: "fake", twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) }],
+    ["idle", { chat: { twitch: { channel: "" } } }, {}],
+    ["twitch", {}, {}],
+  ];
+  for (const [label, over, deps] of plans) {
+    const r = rig(over, deps);
+    try {
+      await r.start();
+      assert.deepEqual(r.bus.subscriptions.map((s) => ({ group: s.group, types: s.types })), [{ group: "chat", types: ["inject.request"] }], label);
+    } finally { await r.stop(); }
+  }
+});
+
+// @spec CHAT-FAKE-006
+test("a rejecting fake publish warns 'fake chat publish failed' and the source keeps running", async () => {
+  const stdin = new PassThrough();
+  const r = rig({ chat: { source: "fake", twitch: { channel: "" } } }, { stdin });
+  try {
+    await r.start();
+    r.bus.fail = (t) => t === "chat.message";
+    stdin.write("first\n");
+    await waitFor(() => r.rec.lines.some((l) => l.level === "warn" && l.msg === "fake chat publish failed"), "publish-failed warning");
+    r.bus.fail = undefined;
+    stdin.write("second\n");
+    await waitFor(() => r.bus.of("chat.message").length === 1, "a later message still publishes");
+    assert.equal(r.bus.of("chat.message")[0]!.text, "second");
+  } finally { await r.stop(); }
 });

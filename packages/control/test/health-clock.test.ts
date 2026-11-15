@@ -70,6 +70,26 @@ test("seed: a replayed older heartbeat still does not overwrite a newer one", ()
   assert.equal(tracker.get("chat").heartbeat?.detail, "new");
 });
 
+// @spec CTRL-HEALTH-011
+test("seed: a record older than the monotonic clock's reading keeps its true age and order, whatever the process uptime", () => {
+  const wall = 1_700_000_000_000;
+  const history = [
+    { ts: wall - 1_000, data: hb({ detail: "new" }) },
+    { ts: wall - 30_000, data: hb({ detail: "old" }) },
+    { ts: wall - 20_000, data: hb({ service: "voice", detail: "tie-a" }) },
+    { ts: wall - 20_000, data: hb({ service: "voice", detail: "tie-b" }) },
+    { ts: wall - 70_000, data: hb({ service: "eyes" }) },
+  ];
+  const view = (mono: number) => {
+    const tracker = new HealthTracker({ now: () => mono, wall: () => wall });
+    tracker.seed(history);
+    return ["chat", "voice", "eyes"].map((s) => { const e = tracker.get(s); return [s, e.state, e.lastSeenAgeMs, e.heartbeat?.detail]; });
+  };
+  const young = view(5_000); // freshly started: every receive time is negative (5000 - 70000 for eyes)
+  assert.deepEqual(young, [["chat", "up", 1_000, "new"], ["voice", "stale", 20_000, "tie-b"], ["eyes", "down", 70_000, undefined]]);
+  assert.deepEqual(view(1_000_000_000), young, "the same states and ages however long the process has run");
+});
+
 const entry = (service: string, state: ServiceHealth["state"]): ServiceHealth => ({ service, state, restarts: 0 });
 const status = (services: StackStatus["services"], ok = true): StackStatus => ({ docker: { ok }, services });
 

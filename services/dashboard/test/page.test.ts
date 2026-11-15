@@ -26,7 +26,8 @@ class El {
   get firstChild() { return this.children[0]; }
   appendChild(c: El) { c.parent = this; this.children.push(c); }
   remove() { this.parent?.children.splice(this.parent.children.indexOf(this), 1); }
-  setAttribute() {}
+  attrs: Record<string, string> = {};
+  setAttribute(k: string, v: unknown) { this.attrs[k] = String(v); }
   listeners: Record<string, ((e: unknown) => unknown)[]> = {};
   addEventListener(type: string, fn: (e: unknown) => unknown) { (this.listeners[type] ??= []).push(fn); }
   closest() { return null; }
@@ -41,7 +42,7 @@ const res = (status: number, body: unknown = ""): FakeRes => ({
 
 type Handler = (path: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => FakeRes | Promise<FakeRes>;
 
-async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string; rejectPlay?: boolean; playRejects?: () => boolean } = {}) {
+async function boot(opts: { manifestFails?: boolean; search?: string; handler?: Handler; control?: boolean; token?: string | null; prompt?: (msg: string) => string | null; confirm?: (msg: string) => boolean; viewersToken?: string; recorder?: boolean; rejectPlay?: boolean; playRejects?: () => boolean } = {}) {
   const prompts: string[] = [], confirms: string[] = [];
   const els = new Map<string, El>();
   const get = (sel: string) => { let e = els.get(sel); if (!e) els.set(sel, (e = new El())); return e; };
@@ -77,7 +78,7 @@ async function boot(opts: { manifestFails?: boolean; search?: string; handler?: 
     setTimeout: (fn: () => void, ms: number) => timers.push({ fn, ms }),
     clearTimeout: () => {},
     setInterval: () => 0,
-    navigator: {}, window: {}, console,
+    navigator: opts.recorder ? { mediaDevices: { getUserMedia: async () => ({}) } } : {}, window: opts.recorder ? { MediaRecorder: class {} } : {}, console,
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(script, ctx);
@@ -1137,4 +1138,139 @@ test("the say box sends the trimmed, non-empty route ids when the route field ha
   p.get("#sayBtn").onclick!();
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(controls(), [{ cmd: "say", text: "to the archive", route: ["file", "http"] }, { cmd: "say", text: "everywhere" }]);
+});
+
+// @spec DASH-UI-004
+test("avatar.state draws the preview from its parameters and names the driver, with (disconnected) when not connected, and adds no feed row", async () => {
+  const p = await boot();
+  const state = { driver: "vmc", connected: false, headX: 5, headY: 10, headZ: 7, blink: 1, eyeX: 0.5, eyeY: -1, mouthOpen: 1, mouthSmile: 0.5, emotion: "happy" };
+  p.deliver({ id: "a-0", type: "avatar.state", ts: 1, source: "avatar", data: state });
+  assert.equal(p.get("#driver").textContent, "avatar: vmc (disconnected)");
+  assert.equal(p.get("#head").attrs.transform, "translate(4 -8) rotate(7 100 100)");
+  assert.equal(p.get("#eyeL").attrs.ry, "0.5", "a closed eye keeps a sliver");
+  assert.equal(p.get("#eyeL").attrs.cx, "77");
+  assert.equal(p.get("#eyeR").attrs.cx, "127");
+  assert.equal(p.get("#eyeL").attrs.cy, "85");
+  assert.equal(p.get("#mouth").attrs.d, "M80 128 Q100 159 120 128 Q100 125.2 80 128");
+  assert.equal(p.get("#emo").textContent, "happy");
+  p.deliver({ id: "a-1", type: "avatar.state", ts: 2, source: "avatar", data: { ...state, connected: true, blink: 0, mouthOpen: 0 } });
+  assert.equal(p.get("#driver").textContent, "avatar: vmc");
+  assert.equal(p.get("#eyeL").attrs.ry, "9");
+  assert.equal(p.get("#feed").children.length, 0, "no feed row for avatar.state");
+});
+
+// @spec DASH-UI-005
+test("the wipe-context control posts forget_context to /control, and the personality editor loads GET /personality", async () => {
+  const p = await boot();
+  assert.equal(p.get("#pers").value, "# Coco\n", "the editor is filled from GET /personality");
+  assert.ok(p.calls.some((c) => c.path === "/personality" && c.method === "GET"));
+  await p.get("#forget").onclick!();
+  await p.tick();
+  const control = p.calls.filter((c) => c.path === "/control");
+  assert.deepEqual(control.map((c) => ({ method: c.method, body: JSON.parse(c.body!) })), [{ method: "POST", body: { cmd: "forget_context" } }]);
+});
+
+// @spec DASH-UI-007
+test("the Services tab lists state, mode, dependencies, last-seen age, restarts and detail, and counts down, crash-looping and stale on the tab label", async () => {
+  const p = await boot();
+  const hb = (over: Record<string, unknown>) => ({ service: "x", state: "ready", mode: "live", deps: {}, ...over });
+  p.deliver({ type: "services", services: [
+    { service: "chat", state: "up", restarts: 0, lastSeenAgeMs: 3000, heartbeat: hb({ mode: "mock", deps: { twitch: "ok", ollama: "n/a" }, detail: "all good" }) },
+    { service: "voice", state: "down", restarts: 2, lastSeenAgeMs: null },
+    { service: "cortex", state: "crash-looping", restarts: 5, lastSeenAgeMs: 61000, heartbeat: hb({ deps: { llm: "down" } }) },
+    { service: "ears", state: "stale", restarts: 1, lastSeenAgeMs: 40000 },
+    { service: "eyes", state: "degraded", restarts: 0, lastSeenAgeMs: 1000, heartbeat: hb({}) },
+  ] });
+  const rows = p.get("#svcRows").innerHTML.split("</tr>");
+  const row = (n: string) => rows.find((r) => r.includes(`<td>${n}</td>`))!;
+  assert.match(row("chat"), /<span class="badge up">up<\/span><\/td><td>mock<\/td>/);
+  assert.match(row("chat"), /<span class="dep ok">twitch: ok<\/span> · <span class="dep na">ollama: n\/a<\/span>/);
+  assert.match(row("chat"), /<td>3s ago<\/td><td>0<\/td><td class="hint">all good<\/td>/);
+  assert.match(row("voice"), /badge down.*<td>never<\/td><td>2<\/td>/);
+  assert.match(row("cortex"), /<span class="dep down">llm: down<\/span>/);
+  assert.match(row("cortex"), /<td>61s ago<\/td><td>5<\/td>/);
+  assert.equal(p.get("#tabServices").textContent, "services (3)", "down + crash-looping + stale; degraded does not count");
+  p.deliver({ type: "services", services: [{ service: "chat", state: "up", restarts: 0, lastSeenAgeMs: 0 }] });
+  assert.equal(p.get("#tabServices").textContent, "services");
+});
+
+// @spec DASH-UI-009
+test("the test-inputs panel has text and viewer fields, a service/bus level toggle, remember off by default, image and audio pickers, and a record button only where recording is supported", async () => {
+  for (const id of ["injText", "injUser", "injLevel", "injAs", "injRemember", "injImage", "injAudio", "injRec"]) assert.match(html, new RegExp(`id="${id}"`), id);
+  assert.match(html, /<select id="injLevel"><option value="service">[^<]*<\/option><option value="bus">/);
+  assert.match(html, /<select id="injAs"><option value="chat">chat<\/option><option value="speech">speech<\/option><option value="vision">vision<\/option>/);
+  assert.doesNotMatch(/<input[^>]*id="injRemember"[^>]*>/.exec(html)![0], /checked/, "remember is off by default");
+  const p = await boot();
+  assert.equal(p.get("#injRemember").checked, false);
+  assert.equal(p.get("#injRec").style.display, undefined, "no MediaRecorder: the record button stays hidden");
+  p.get("#injLevel").value = "bus";
+  p.get("#injLevel").onchange!();
+  assert.equal(p.get("#injAsWrap").style.display, "", "bus level shows the chat/speech/vision selector");
+  for (const id of ["#injImage", "#injImageBtn", "#injAudio", "#injAudioBtn", "#injRec"]) assert.equal(p.get(id).disabled, true, id);
+  p.get("#injLevel").value = "service";
+  p.get("#injLevel").onchange!();
+  assert.equal(p.get("#injAsWrap").style.display, "none");
+  for (const id of ["#injImage", "#injImageBtn", "#injAudio", "#injAudioBtn", "#injRec"]) assert.equal(p.get(id).disabled, false, id);
+  const rec = await boot({ recorder: true });
+  assert.equal(rec.get("#injRec").style.display, "", "MediaRecorder and getUserMedia present: the button is offered");
+});
+
+const injHandler = (id = "r1"): Handler => (path) => (path === "/inject/text" ? res(202, { id }) : res(204));
+const sendText = async (p: Awaited<ReturnType<typeof boot>>, level = "service") => {
+  p.get("#injText").value = "hello";
+  p.get("#injLevel").value = level;
+  await p.get("#injSend").onclick!();
+  await p.tick();
+};
+
+// @spec DASH-UI-010
+test("a service-level injection shows its inject.result status, including one that arrived before the HTTP response", async () => {
+  const p = await boot({ handler: injHandler() });
+  await sendText(p);
+  assert.match(p.get("#injStatus").textContent, /sent to chat, waiting for result/);
+  p.deliver({ id: "e1", type: "inject.result", ts: 1, source: "chat", data: { id: "r1", ok: true, detail: "queued" } });
+  assert.equal(p.get("#injStatus").textContent, "ok: queued");
+  assert.match(p.get("#injStatus").className, /ok/);
+
+  let release!: (r: FakeRes) => void;
+  const early = await boot({ handler: (path) => (path === "/inject/text" ? new Promise<FakeRes>((r) => { release = r; }) : res(204)) });
+  early.get("#injText").value = "hi";
+  const sending = early.get("#injSend").onclick!();
+  await early.tick();
+  early.deliver({ id: "e2", type: "inject.result", ts: 1, source: "chat", data: { id: "r2", ok: false, detail: "refused" } }); // before the response
+  release(res(202, { id: "r2" }));
+  await sending;
+  assert.equal(early.get("#injStatus").textContent, "failed: refused");
+  assert.match(early.get("#injStatus").className, /bad/);
+});
+
+// @spec DASH-UI-010
+test("with no inject.result within 10 s the page reports the target did not respond; a bus-level injection says no service result is expected", async () => {
+  const p = await boot({ handler: injHandler() });
+  await sendText(p);
+  const timer = p.timers.find((t) => t.ms === 10000);
+  assert.ok(timer, "a 10 s timeout is armed");
+  timer.fn();
+  assert.match(p.get("#injStatus").textContent, /no response from chat after 10 s/);
+  assert.match(p.get("#injStatus").className, /bad/);
+
+  const bus = await boot({ handler: injHandler("r3") });
+  await sendText(bus, "bus");
+  assert.equal(bus.get("#injStatus").textContent, "published at bus level (no service result)");
+  assert.equal(bus.timers.filter((t) => t.ms === 10000).length, 0, "no timeout for a bus-level injection");
+});
+
+// @spec DASH-UI-011
+test("sink mode (any ?sink value) enables audio without a click and hides everything but the header; otherwise audio waits for a click", async () => {
+  for (const search of ["?sink=1", "?sink=0", "?sink"]) {
+    const p = await boot({ search });
+    assert.ok(p.get("body").classes.has("sink"), search);
+    assert.equal(p.run("audioOn"), true, search);
+  }
+  const plain = await boot();
+  assert.equal(plain.get("body").classes.has("sink"), false);
+  assert.equal(plain.run("audioOn"), false);
+  const rules = [...html.matchAll(/([^{}]*\.sink[^{}]*)\{([^}]*)\}/g)].filter((m) => /display:\s*none/.test(m[2]!)).flatMap((m) => m[1]!.split(",").map((x) => x.trim()));
+  for (const hidden of [".sink main", ".sink #services", ".sink .tab", ".sink #viewers", ".sink #settings", ".sink #stackBadge"]) assert.ok(rules.includes(hidden), `${hidden} is hidden`);
+  assert.ok(!rules.some((r) => /header|h1/.test(r)), "the header stays");
 });

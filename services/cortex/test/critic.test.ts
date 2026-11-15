@@ -84,4 +84,10 @@ test("critic llm: the system prompt carries the reply prompt's length rule, one 
   assert.match(system, /longer than one short spoken line/);
   assert.doesNotMatch(system, /two sentences/);
   assert.equal(lastBody.max_tokens, 160);
+  // the other clauses of the spec: the inner-editor role, each block reason, the fix-it rule and the JSON-only answer
+  assert.match(system, /inner editor of Coco/);
+  assert.match(system, /about to say out loud/);
+  assert.match(system, /Block it if it is hateful, doxxes anyone, breaks character, narrates instead of speaking, repeats something said moments ago/);
+  assert.match(system, /If a small edit fixes it, return the fixed line/);
+  assert.match(system, /Reply with JSON only: \{"ok":true\} or \{"ok":true,"text":"fixed line"\} or \{"ok":false,"note":"why"\}/);
 });

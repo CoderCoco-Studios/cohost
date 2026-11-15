@@ -4,6 +4,7 @@ import type { Emotion } from "@cohost/config";
 import { Engine } from "../src/engine.js";
 import type { AvatarDriver, AvatarParams } from "../src/types.js";
 
+// @spec AVATAR-DRV-001
 class FakeDriver implements AvatarDriver {
   readonly name = "fake";
   params: AvatarParams[] = [];

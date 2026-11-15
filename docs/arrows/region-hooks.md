@@ -87,9 +87,8 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 4. **Fallbacks are visible as throttled warnings**: one per 30 s per instance, error truncated to 120 chars, carrying the suppressed count (HOOK-WARN-003, S21).
 5. **`impl.rules` is unguarded**, so "the show goes on" depends on region rules never throwing (HOOK-FALLBACK-005, S19: regions guarantee it); the precondition is written on `ModuleImpl.rules` and pinned by `module.test.ts`.
 6. **`ModuleConfig` has one definition** in `@cohost/config`, re-exported by `@cohost/modules` (HOOK-CFG-001).
-7. **Thin test for HOOK-KIND-002**: the cited tests assert the `kind` getter for `rules` only.
-8. **Contracts are hand-duplicated** across `validate` functions in three services, `examples/modules/README.md`, `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures when `python3` is installed. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
-9. **Annotation placement** - `@spec` comments in `src/` are trailing comments on the entry-point line.
+7. **Contracts are hand-duplicated** across `validate` functions in three services, `examples/modules/README.md`, `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures when `python3` is installed. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
+8. **Annotation placement** - `@spec` comments in `src/` are trailing comments on the entry-point line.
 
 ## Work Required
 
@@ -100,4 +99,4 @@ None.
 None.
 
 ### Nice to Have
-1. Assert the `llm` and `http` kinds in a test of the `kind` getter (HOOK-KIND-002).
+None.

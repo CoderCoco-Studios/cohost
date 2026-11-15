@@ -28,6 +28,7 @@ class BootBus extends FakeBus {
   deliver(ev: ReturnType<typeof event>) { return this.subscribed[0]!.handler(ev as never); }
 }
 
+// @spec AVATAR-DRV-001
 class FakeDriver implements AvatarDriver {
   readonly name = "fake";
   params: AvatarParams[] = [];
@@ -73,6 +74,17 @@ function boot(ctx: TestContext, over: { bus?: BootBus; driver?: FakeDriver; env?
 /** The zod type of an expression block cannot express `gestures` next to string-valued emotions, so literals are cast once, here. */
 const blocks = (x: unknown) => x as ExpressionMap;
 
+/**
+ * The engine reads `performance.now` (boot has no clock to inject): skew it so a hold elapses without waiting for it.
+ * Restored when the test ends.
+ */
+function skewClock(ctx: TestContext) {
+  const real = performance.now.bind(performance);
+  let offset = 0;
+  ctx.mock.method(performance, "now", () => real() + offset);
+  return (ms: number) => { offset += ms; };
+}
+
 const states = (bus: FakeBus) => bus.health.map((h) => h.state);
 
 // @spec AVATAR-BUS-001
@@ -91,6 +103,7 @@ test("subscribes in group avatar with start mode latest to the five body events,
 
 // @spec AVATAR-BUS-002, AVATAR-BUS-003, AVATAR-BUS-004, AVATAR-BUS-005, AVATAR-BUS-006
 test("events reach the engine: brain.say shows the emotion, utterance + playing lip-syncs, done ends it, affect.state sets the mood", async (ctx) => {
+  const advance = skewClock(ctx);
   const t = boot(ctx);
   void runAvatar(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription");
@@ -109,6 +122,28 @@ test("events reach the engine: brain.say shows the emotion, utterance + playing 
   await t.bus.deliver(event("voice.done", { id: "u1", sink: "discord" }));
   await waitFor(() => t.driver.params.at(-1)!.mouthOpen < 0.3, "mouth closes");
   await t.bus.deliver(event("affect.state", { mood: "sad", valence: -0.5, arousal: 0.2 } as never));
+  // The playing line still holds the face (durationMs + 4000 ms); the mood is the resting face once that hold expires.
+  assert.deepEqual(t.driver.expressions.at(-1), ["happy", 1], "the held emotion is not replaced by the mood");
+  advance(6000);
+  await waitFor(() => {
+    const last = t.driver.expressions.at(-1);
+    return last?.[0] === "sad" && last[1] === 0.5;
+  }, "the mood shows softly as the resting face");
+});
+
+// @spec AVATAR-BUS-002
+test("brain.say holds the emotion for 6000 ms, then the face returns to the resting mood", async (ctx) => {
+  const advance = skewClock(ctx);
+  const t = boot(ctx);
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  await t.bus.deliver(event("brain.say", { id: "u2", text: "hm", emotion: "angry" }));
+  assert.deepEqual(t.driver.expressions.at(-1), ["angry", 1], "shown at once, before any audio exists");
+  advance(5800); // past the 4000 ms default hold, inside 6000
+  await new Promise((r) => setTimeout(r, 60)); // several frames at 100 fps
+  assert.deepEqual(t.driver.expressions.at(-1), ["angry", 1], "still held at 5800 ms");
+  advance(400); // 6200 ms
+  await waitFor(() => t.driver.expressions.at(-1)?.[0] === "neutral", "released after 6000 ms");
 });
 
 // @spec AVATAR-HEALTH-001, AVATAR-VTS-002

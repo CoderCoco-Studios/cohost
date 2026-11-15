@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, cop
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources } from "../src/index.js";
+import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, createLogger, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
 
 /** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
 const initialEnv = { ...process.env };
@@ -254,6 +254,7 @@ test("brain.memory.store defaults to postgres; 'memory' selects the in-process f
   assert.equal(shape.safeParse({ store: "sqlite" }).success, false);
 });
 
+// @spec CFG-URL-003
 test("urls has no dashboard(): uploads travel over Redis, so no service needs the dashboard's address", () => {
   assert.equal("dashboard" in urls, false);
 });
@@ -341,7 +342,7 @@ function loadShippedBare(env: Record<string, string> = {}) {
   }
 }
 
-// @spec CFG-ISO-005
+// @spec CFG-ISO-005, AVATAR-DRV-004
 test("the shipped example loads with no .env: model defaults, avatar.driver null, default avatar ports", () => {
   const { cfg, warnings } = loadShippedBare();
   assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
@@ -354,7 +355,7 @@ test("the shipped example loads with no .env: model defaults, avatar.driver null
   assert.equal(loadShippedBare({ AVATAR_DRIVER: "", VTS_PORT: "", VMC_PORT: "" }).cfg.avatar.driver, "null");
 });
 
-// @spec CFG-ISO-005
+// @spec CFG-ISO-005, AVATAR-DRV-004
 test("an unknown avatar.driver still fails the load, naming avatar.driver", () => {
   assert.throws(() => loadShippedBare({ AVATAR_DRIVER: "bogus" }), (e: Error) => /avatar\.driver:/.test(e.message));
   assert.equal(loadShippedBare({ AVATAR_DRIVER: "vmc", VMC_PORT: "1234" }).cfg.avatar.driver, "vmc");
@@ -787,4 +788,128 @@ test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir
   assert.equal(ears({ http: { port: 0 } }).success, true);
   assert.equal(ears({ http: { port: 70000 } }).success, false);
   assert.equal(ears({ dir: { poll_ms: 0 } }).success, false);
+});
+
+// @spec CFG-ENV-003
+test("substituteEnv replaces only upper-case placeholders and leaves lower- or mixed-case ones unchanged", () => {
+  process.env.T_UP = "up";
+  process.env.t_low = "low";
+  process.env.Mixed_1 = "mixed";
+  assert.equal(substituteEnv("${t_low}|${Mixed_1}|${t_low:-d}|${A-B}|${T_UP}|${T_UP9:-d9}"), "${t_low}|${Mixed_1}|${t_low:-d}|${A-B}|up|d9");
+  assert.equal(substituteEnv("${T_UP}", { T_UP: "from-arg" }), "from-arg");
+});
+
+// @spec CFG-SCH-010
+test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required, and so is a host in the two avatar blocks", () => {
+  assert.equal(ConfigSchema.safeParse(baseCfg()).success, true);
+  const without = (mutate: (c: ReturnType<typeof baseCfg>) => void) => { const c = baseCfg(); mutate(c); return ConfigSchema.safeParse(c).success; };
+  assert.equal(without((c) => { delete (c.vision as Record<string, unknown>).obs; }), false, "vision.obs");
+  assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), false, "chat.twitch");
+  assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vtube_studio; }), false, "avatar.vtube_studio");
+  assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vmc; }), false, "avatar.vmc");
+  assert.equal(without((c) => { c.avatar.vtube_studio = {} as never; }), false, "vtube_studio.host");
+  assert.equal(without((c) => { c.avatar.vmc = {} as never; }), false, "vmc.host");
+});
+
+// @spec CFG-URL-004
+test("createLogger returns a pino logger named for the service at LOG_LEVEL, info by default and when blank", () => {
+  delete process.env.LOG_LEVEL;
+  const def = createLogger("svc-a");
+  assert.equal(def.bindings().name, "svc-a");
+  assert.equal(def.level, "info");
+  process.env.LOG_LEVEL = "debug";
+  assert.equal(createLogger("svc-b").level, "debug");
+  assert.equal(createLogger("svc-b").bindings().name, "svc-b");
+  process.env.LOG_LEVEL = "";
+  assert.equal(createLogger("svc-c").level, "info");
+});
+
+// @spec CFG-ISO-002
+test("a backend-selection value that is blank after substitution takes the live default", () => {
+  const blanks = (v: unknown) => ConfigSchema.parse({
+    ...baseCfg(),
+    llm: { model: "m", embed_model: "e", provider: v },
+    chat: { source: v, twitch: {} },
+    voice: { engine: v },
+    brain: { memory: { store: v, embedder: v } },
+  });
+  for (const v of ["", null, undefined]) {
+    const c = blanks(v);
+    assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"], String(v));
+  }
+  // a `${VAR}` placeholder with no `:-` default and no value resolves to a blank key, which is the same case
+  delete process.env.T_ISO_UNSET;
+  const text = [
+    "cohost: { name: a, streamer: b }",
+    "llm:", "  provider: ${T_ISO_UNSET}", "  model: m", "  embed_model: e",
+    "vision: { model: v, obs: {} }",
+    "chat:", "  source: ${T_ISO_UNSET}", "  twitch: {}",
+    "voice: { engine: ${T_ISO_UNSET} }",
+    "avatar: { vtube_studio: { host: h }, vmc: { host: h } }",
+    "ears: {}", "dashboard: {}",
+    "brain: { memory: { store: ${T_ISO_UNSET}, embedder: ${T_ISO_UNSET} } }",
+  ].join("\n");
+  const parsed = parseConfigText(text);
+  assert.ok(parsed.ok, JSON.stringify(parsed.ok ? [] : parsed.issues));
+  const c = parsed.config;
+  assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"]);
+  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), chat: { source: "bogus", twitch: {} } }).success, false, "a non-blank unknown value still fails");
+});
+
+// @spec CFG-SCH-002
+test("llm: provider values and a blank provider, and the num_ctx, temperature, max_tokens and claude defaults and limits", () => {
+  const llm = (over: Record<string, unknown> = {}) => ({ ...baseCfg(), llm: { model: "m", embed_model: "e", ...over } });
+  for (const p of ["ollama", "openai", "anthropic", "bedrock", "mock"]) assert.equal(ConfigSchema.parse(llm({ provider: p })).llm.provider, p);
+  assert.equal(ConfigSchema.safeParse(llm({ provider: "gemini" })).success, false);
+  assert.equal(ConfigSchema.parse(llm({ provider: "" })).llm.provider, "ollama");
+  const d = ConfigSchema.parse(llm()).llm;
+  assert.equal(d.provider, "ollama");
+  assert.equal(d.num_ctx, 8192);
+  assert.equal(d.temperature, 0.9);
+  assert.equal(d.max_tokens, 120);
+  assert.deepEqual(d.claude, { api_key: "", effort: "low", max_tokens: 2048, fallbacks: true });
+  assert.equal(d.openai.base_url, "https://api.openai.com/v1");
+  assert.equal(ConfigSchema.parse(llm({ openai: { base_url: "" } })).llm.openai.base_url, "https://api.openai.com/v1");
+  const ok = (over: Record<string, unknown>) => ConfigSchema.safeParse(llm(over)).success;
+  assert.equal(ok({ temperature: 0 }), true);
+  assert.equal(ok({ temperature: 2 }), true);
+  assert.equal(ok({ temperature: -0.1 }), false);
+  assert.equal(ok({ temperature: 2.1 }), false);
+  assert.equal(ok({ num_ctx: 0 }), false);
+  assert.equal(ok({ claude: { max_tokens: 255 } }), false);
+  assert.equal(ok({ claude: { max_tokens: 256 } }), true);
+  for (const e of ["low", "medium", "high", "xhigh", "max"]) assert.equal(ConfigSchema.parse(llm({ claude: { effort: e } })).llm.claude.effort, e);
+  assert.equal(ConfigSchema.parse(llm({ claude: { effort: "" } })).llm.claude.effort, "low");
+  assert.equal(ok({ claude: { effort: "ultra" } }), false);
+  assert.equal(ConfigSchema.parse(llm({ claude: { fallbacks: false } })).llm.claude.fallbacks, false);
+});
+
+// @spec CFG-SCH-007
+test("the nine canonical emotions are the Emotion enum and EMOTIONS; an expression map takes per-driver emotion strings and a gestures map defaulting to empty", () => {
+  assert.deepEqual([...EMOTIONS], ["neutral", "happy", "laugh", "surprised", "smug", "sad", "angry", "confused", "think"]);
+  assert.deepEqual(Emotion.options, EMOTIONS);
+  const m = ExpressionMapSchema.parse({ vmc: { happy: "Joy" }, "vtube-studio": { sad: "Cry", gestures: { wave: "WAVE" } } });
+  assert.deepEqual(m.vmc, { happy: "Joy", gestures: {} });
+  assert.deepEqual(m["vtube-studio"], { sad: "Cry", gestures: { wave: "WAVE" } });
+  assert.equal(ExpressionMapSchema.safeParse({ vmc: { happy: 3 } }).success, false, "entries are strings");
+  assert.equal(ExpressionMapSchema.safeParse({ vmc: { gestures: { wave: 1 } } }).success, false, "gestures is a string map");
+});
+
+// @spec CFG-SCH-008
+test("ConfigSchema defaults: timezone, OBS, twitch channel, ignore_users, idle_motion, VTube Studio plugin identity and the empty API keys and region", () => {
+  const c = ConfigSchema.parse(baseCfg());
+  assert.equal(c.cohost.timezone, "UTC");
+  assert.deepEqual(c.vision.obs, { host: "host.docker.internal", port: 4455, password: "", source: "Game Capture", width: 896 });
+  assert.equal(c.chat.twitch.channel, "");
+  assert.deepEqual(c.chat.ignore_users, []);
+  assert.equal(c.avatar.idle_motion, true);
+  assert.equal(c.avatar.vtube_studio.plugin_name, "cohost");
+  assert.equal(c.avatar.vtube_studio.plugin_developer, "cohost");
+  assert.equal(c.llm.openai.api_key, "");
+  assert.equal(c.llm.claude.api_key, "");
+  assert.equal(c.llm.bedrock.region, "");
+  const blank = ConfigSchema.parse({ ...baseCfg(), cohost: { name: "a", streamer: "b", timezone: "" }, vision: { model: "v", obs: { host: "", source: "" } } });
+  assert.equal(blank.cohost.timezone, "UTC", "a blank timezone takes the default");
+  assert.equal(blank.vision.obs.host, "host.docker.internal");
+  assert.equal(blank.vision.obs.source, "Game Capture");
 });

@@ -25,14 +25,14 @@ Design: [voice-design.md](voice-design.md). Prefix `VOICE`. `[x]` = implemented,
 
 - [x] **VOICE-UTT-001**: When a `brain.say` is synthesized, the voice service shall publish `voice.utterance` carrying `id`, `text`, `emotion`, `gesture`, `durationMs` (rounded from the WAV), `envelopeHz` 30, `envelope`, `audioUrl` and `sampleRate` (from the WAV). <!-- openspec: voice § voice.utterance publication --> <!-- test: services/voice/test/voice.test.ts -->
 - [x] **VOICE-UTT-002**: The voice service shall set `audioUrl` to `<urls.voice()>/audio/<id>.wav`, where `urls.voice()` is `VOICE_URL` or else `http://127.0.0.1:<VOICE_PORT>` (default port 8700). <!-- openspec: voice § voice.utterance publication --> <!-- test: services/voice/test/voice.test.ts --> <!-- note: the loopback default is deliberate (commit e53badc, tested in packages/config/test/config.test.ts); compose sets VOICE_URL=http://voice:8700. -->
-- [x] **VOICE-UTT-003**: If synthesis, WAV parsing, envelope extraction or publishing of `voice.utterance` fails for a `brain.say`, then the voice service shall log the error "tts failed", publish `voice.done` with that `id` and `sink` `error`, and publish no `voice.utterance`. <!-- openspec: voice § Failure handling --> <!-- test: services/voice/test/voice.test.ts (synthesis and parse failures only) -->
+- [x] **VOICE-UTT-003**: If synthesis, WAV parsing, envelope extraction or publishing of `voice.utterance` fails for a `brain.say`, then the voice service shall log the error "tts failed", publish `voice.done` with that `id` and `sink` `error`, and publish no `voice.utterance`. <!-- openspec: voice § Failure handling --> <!-- test: services/voice/test/voice.test.ts -->
 - [x] **VOICE-UTT-004**: Where a `brain.say` carries a `route`, the voice service shall publish its `voice.utterance` with the same `route`, unchanged and uninterpreted; where it carries none, the `voice.utterance` shall carry none. <!-- test: services/voice/test/voice.test.ts -->
 
 ## WAV and lip-sync envelope
 
 Retired, numbers not reused: VOICE-ENV-001 and VOICE-ENV-002 (now shared-runtime SHARED-AUDIO-001 and SHARED-AUDIO-002).
 
-- [x] **VOICE-ENV-005**: The voice service shall parse every WAV it synthesizes with the shared `parseWav` (SHARED-AUDIO-001 to SHARED-AUDIO-003), and a WAV it rejects shall take the `tts failed` path (VOICE-UTT-003). <!-- test: services/voice/test/queue.test.ts (a WAV with no `fmt ` chunk) -->
+- [x] **VOICE-ENV-005**: The voice service shall parse every WAV it synthesizes with the shared `parseWav` (SHARED-AUDIO-001 to SHARED-AUDIO-003), and a WAV it rejects shall take the `tts failed` path (VOICE-UTT-003). <!-- test: services/voice/test/queue.test.ts -->
 - [x] **VOICE-ENV-003**: When computing a lip-sync envelope, the voice service shall emit one value per window of `floor(sampleRate / 30)` frames of the first channel (including a partial last window), each `min(1, (rms / 0.22) ^ 0.8)`, smoothed so each value is at least 0.6 times the previous one, rounded to 2 decimals. <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts --> <!-- test: services/voice/test/wav.test.ts -->
 - [x] **VOICE-ENV-004**: If a WAV is not 16-bit, then envelope extraction shall throw "unsupported bit depth <n>". <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts -->
 

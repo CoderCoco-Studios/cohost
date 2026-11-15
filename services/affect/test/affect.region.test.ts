@@ -2,7 +2,7 @@ import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import { FakeBus, event, recordingLog, silentLog, testConfig } from "@cohost/testing";
+import { FakeBus, event, recordingLog, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { Affect } from "../src/affect.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "../src/appraise.js";
 
@@ -128,7 +128,9 @@ test("llm/http kind: lines queue for the slow appraiser instead of blocking the 
   assert.equal(seen.length, 1, "one at a time");
   assert.equal(affect.mood.valence, 0, "nothing applied yet");
   next();
-  await new Promise((r) => setImmediate(r));
+  // The answer travels through a Response body and the hook's await chain, which a fixed one-tick wait does not cover on a
+  // loaded machine; wait for what the test asserts on (the first line applied and the queued line sent) instead.
+  await waitFor(() => seen.length === 2 && near(affect.mood.valence, 0.1), "the first line applied and the queued line sent");
   assert.ok(near(affect.mood.valence, 0.1));
   assert.equal(seen.length, 2);
   assert.ok(near(seen[1]!.valence, 0.1), "the queued line is appraised against the mood as it is now");

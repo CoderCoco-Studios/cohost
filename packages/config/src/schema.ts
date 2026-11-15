@@ -289,7 +289,7 @@ export const ConfigSchema = z.object({
   }),
   avatar: z.object({
     // A blank value (unset AVATAR_DRIVER) means "no avatar app"; a non-empty unknown value still fails.
-    driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])),
+    driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])), // @spec AVATAR-DRV-004
     fps: z.number().int().positive().default(30),
     smoothing: z.number().min(0).max(1).default(0.25),
     idle_motion: z.boolean().default(true),

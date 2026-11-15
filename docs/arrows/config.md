@@ -72,7 +72,7 @@ Orientation:
 | Service URLs and logger | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-014 (CFG-USR-005 does not exist) | 13 | 0 | 0 |
 
-**Summary:** 82 of 82 specs implemented; 0 deferred; 0 open. 72 carry a test `@spec` annotation; implemented without one: CFG-ENV-003, CFG-SCH-002, CFG-SCH-007, CFG-SCH-008, CFG-SCH-010, CFG-SCH-022, CFG-ISO-002, CFG-URL-003, CFG-URL-004, CFG-USR-006. CFG-SCH-002, CFG-SCH-007 and CFG-SCH-008 are partly exercised by unannotated tests (`config-c3.test.ts`, `editor.test.ts`, `config.test.ts`), CFG-SCH-022 by `services/ears/test/filter.test.ts`, and CFG-USR-006 is carried by example-file comments, which are not annotated by design. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 82 of 82 specs implemented; 0 deferred; 0 open. 81 carry a test `@spec` annotation; implemented without one: CFG-USR-006 (carried by example-file comments, which are not annotated by design). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

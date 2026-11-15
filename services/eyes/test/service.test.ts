@@ -57,7 +57,7 @@ function rig(over: Record<string, unknown>, deps: Record<string, unknown> = {}, 
 }
 const heartbeats = (b: SvcBus) => b.health;
 
-// @spec EYES-ENAB-001, EYES-ENAB-002, EYES-ENAB-004, EYES-HEALTH-001
+// @spec EYES-ENAB-001, EYES-ENAB-002, EYES-ENAB-004, EYES-HEALTH-001, EYES-HEALTH-005
 test("vision disabled: one idle warning, never repeated, ready with mode off, no OBS, and the inject subscription is up", async () => {
   const r = rig({ enabled: false });
   try {
@@ -138,13 +138,17 @@ test("the wait between looks is the interval minus the look's time, never below 
   } finally { await r.stop(); }
 });
 
-// @spec EYES-OBS-002
+// @spec EYES-OBS-002, EYES-HEALTH-005
 test("OBS unreachable at start: retries and reports degraded, then ready once it answers", async () => {
   const r = rig({ enabled: true }, {}, new FakeObs(2));
   try {
     await r.start();
     await waitFor(() => r.obs.identified, "connected after two failures", 5000);
     assert.equal(r.obs.connects, 3);
+    await waitFor(() => heartbeats(r.bus).some((h) => h.state === "ready" && h.mode !== "off" && h.deps?.obs === "ok"), "ready once OBS answers");
+    const states = heartbeats(r.bus).map((h) => h.state);
+    assert.ok(states.includes("degraded"), `degraded while unreachable: ${states}`);
+    assert.ok(states.indexOf("degraded") < states.lastIndexOf("ready"), `degraded before ready: ${states}`);
   } finally { await r.stop(); }
 });
 
@@ -168,5 +172,24 @@ test("the loop and injection share one tracked describer: a failed describe mark
   try {
     await r.start();
     await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.ollama === "down"), "ollama down");
+  } finally { await r.stop(); }
+});
+
+// @spec EYES-LOOK-004
+test("connected to the socket but not identified: no screenshot is requested and no 'look failed' is logged", async () => {
+  class UnidentifiedObs extends FakeObs {
+    override async connect(url: string): Promise<{ obsWebSocketVersion: string }> { this.connects++; this.url = url; return { obsWebSocketVersion: "5.1.0" }; }
+  }
+  const obs = new UnidentifiedObs();
+  let sleeps = 0;
+  const r = rig({ enabled: true }, { sleep: async () => { sleeps++; await new Promise((x) => setTimeout(x, 2)); } }, obs);
+  try {
+    await r.start();
+    await waitFor(() => sleeps >= 5, "several loop passes");
+    assert.equal(obs.connects, 1, "the loop does not reconnect on a skipped look");
+    assert.equal(obs.identified, false);
+    assert.deepEqual(obs.calls, []);
+    assert.equal(r.rec.msgs("warn").filter((m) => m === "look failed").length, 0);
+    assert.equal(r.rec.msgs("error").length, 0);
   } finally { await r.stop(); }
 });

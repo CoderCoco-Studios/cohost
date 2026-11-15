@@ -31,7 +31,7 @@ const hbSpy = () => {
 const link = (obs: FakeObs, hb = hbSpy(), sleeps: number[] = []) =>
   createObsLink({ obs, url: "ws://h:1", log: recordingLog().log, heartbeat: hb, sleep: async (ms) => { sleeps.push(ms); } });
 
-// @spec EYES-OBS-002, EYES-OBS-003
+// @spec EYES-OBS-002, EYES-OBS-003, EYES-HEALTH-005
 test("connect retries with a delay that starts at 10 s and doubles until OBS answers, then signals ready", async () => {
   const obs = new FakeObs(2);
   const hb = hbSpy();
@@ -59,7 +59,7 @@ test("while OBS has not been reachable the heartbeat is degraded with obs down, 
   assert.ok(states.indexOf("degraded") < states.indexOf("ready"), `degraded before ready: ${states}`);
 });
 
-// @spec EYES-OBS-004
+// @spec EYES-OBS-004, EYES-HEALTH-005
 test("a close after connecting, clean or not, reconnects and signals ready again", async () => {
   const obs = new FakeObs();
   const hb = hbSpy();

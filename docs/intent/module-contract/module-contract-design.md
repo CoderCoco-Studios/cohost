@@ -5,7 +5,7 @@ prefix: MOD
 
 # module-contract
 
-Status: built: the settings editor (MOD-CFG, MOD-UI), the manifest declarations and derived lists, needs, pause, the test drawer and `POST /inject/event`. Open: the isolated-stack run (MOD-TEST-007) waits for the first real run ([module-contract-specs.md](module-contract-specs.md)). Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract). Sibling: [shared-runtime](../shared-runtime/shared-runtime-design.md), which fulfils obligation 4. Implemented across [control-plane](../control-plane/control-plane-design.md) (the manifest and controller), [config](../config/config-design.md) (schema export and section editing) and [dashboard](../dashboard/dashboard-design.md) (routes and page); this segment owns the rules those pieces follow together.
+Status: built: the settings editor (MOD-CFG, MOD-UI), the manifest declarations and derived lists, needs, pause, the test drawer, `POST /inject/event` and the isolated-stack run (MOD-TEST-007) ([module-contract-specs.md](module-contract-specs.md)). Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract). Sibling: [shared-runtime](../shared-runtime/shared-runtime-design.md), which fulfils obligation 4. Implemented across [control-plane](../control-plane/control-plane-design.md) (the manifest and controller), [config](../config/config-design.md) (schema export and section editing) and [dashboard](../dashboard/dashboard-design.md) (routes and page); this segment owns the rules those pieces follow together.
 
 ## Context and Design Philosophy
 
@@ -185,7 +185,6 @@ An injected `brain.say` is a test input, not an operator `say`: it is published 
 | Validation environment | The settings editor validates with the dashboard's environment | Validate inside each container | A container sees Compose's `environment` overrides and, after an isolated start, a preset, so a value valid on the host can differ there; the services' own startup validation reports it. |
 | Editing `expressions.yaml` | Not in the editor | Same editor | Read by avatar only; the editor could serve it later. |
 | Undo | None | A history of saves | A saved section is restored by editing it back. |
-
 | Where `needs` is computed | `withNeeds`, applied by the tracker's snapshot and again by the Compose overlay when it changes a state | Only in the tracker | The overlay can turn a silent unit into `crash-looping`, which its dependents must then list; recomputing from the overlaid snapshot keeps `needs` consistent with the states the page shows. |
 | Entry-file check | An entry file passes when it calls `runService` or calls the one boot function of its unit whose module does, and builds no `Bus`, heartbeat or shutdown hook; a unit not yet moved is named in the test with its chunk | Require a literal `runService` call in every `index.ts`; skip units not yet moved | Several units keep a `run<Unit>()` boot function so their `main` is testable; a literal-call rule would force churn with no gain. Naming a pending unit keeps the gap visible until its chunk removes the name. Chosen by recommendation. |
 | One-shots in the Compose check | A Compose service built from the shared Dockerfile belongs to the unit named by its `SERVICE` build argument | Require one unit per Compose service name | `consolidate` and `reembed` are one-shots of memory built with `SERVICE: memory`; they are not units. Chosen by recommendation. |
@@ -205,4 +204,4 @@ None.
 - [control-plane](../control-plane/control-plane-design.md) Service manifest, Runtimes and controller, HealthTracker.
 - [config](../config/config-design.md) Loading pipeline, Schema, Decisions (Unknown keys, Caching).
 - [dashboard](../dashboard/dashboard-design.md) HTTP surface, Test-input injection and uploads, The page.
-- Code today: `packages/control/src/{manifest,health,cli}.ts`; `packages/config/src/{index,schema}.ts`; `services/dashboard/src/{routes,inject}.ts`, `public/index.html`.
+- Code: `packages/control/src/{manifest,health}.ts`; `packages/config/src/{index,schema,editor,pipeline}.ts`; `services/dashboard/src/{routes,inject,settings}.ts`, `public/index.html`.

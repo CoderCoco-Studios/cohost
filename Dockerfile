@@ -10,7 +10,7 @@ COPY package.json ./
 RUN corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
 
 # Rust addon: plain cargo, no Node and no napi CLI. The tag is the toolchain rust-toolchain.toml pins
-# (lid-check does not compare them; keep both in step). bookworm = the Debian release node:22-slim is built on.
+# (lid-check fails when they differ). bookworm = the Debian release node:22-slim is built on.
 # @spec DEPLOY-IMG-001
 FROM rust:1.99.1-slim-bookworm AS native
 WORKDIR /src

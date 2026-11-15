@@ -4,19 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 47 specs: 47 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below; the timeout and Bedrock-ping fixes have landed (platform-models cascade fix).
-
-## Decisions applied
-
-Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
-
-1. **S17** mock provider vs hash embedder → memory keeps its own `MEMORY_EMBEDDER` switch; `config/config.example.yaml:18` gets corrected. Specs: LLM-EMBED-004 rewritten, `[ ]` → `[x]`.
-2. **P10** tag/stop ownership → working-memory owns the tags; the stops are derived from working-memory's exported `TRANSCRIPT_TAGS`; a cortex-level test checks the pair. Specs: LLM-STOP-006 (cites WM-TRANS-006), LLM-STOP-007 (cites WM-TRANS-009; implemented).
-3. **P10** stops: guard or saver → token and latency saver; `parseReply` is the guard; the self line is not a stop. Specs: LLM-STOP-006.
-4. **R5** mock announcement → each consumer that builds a mock provider warns once (cortex, hooks, reflect). Specs: LLM-MOCK-005 (points at CTX-START-002, HOOK-WARN-004; hooks and the reflect job all warn).
-5. **S18** hash-embedder similarity → an expectation, not a guarantee. Specs: LLM-EMBED-005 (confirmed).
-6. **R1** request timeouts → config-driven default timeout when the caller passes no signal. Specs: LLM-CHAT-008.
-7. **R4** Bedrock ping → stays always-true; cortex flags it in its heartbeat `detail`. Specs: LLM-PING-004, LLM-PING-006 (`pingIsNominal`); the heartbeat line is cortex's (CTX-HEALTH-004).
+**AUDITED** — 52 specs: 52 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`).
 
 ## References
 
@@ -30,60 +18,58 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/model-backends/model-backends-specs.md (52 specs, prefix LLM: 52 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
-- packages/llm/test/llm.test.ts (25 tests, 25 `@spec` lines citing 38 distinct LLM IDs; fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client, no external network)
+- packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)
+- packages/llm/test/backends.test.ts (Claude and Bedrock through the real SDK clients against recorded fixtures; an opt-in live smoke test)
+- packages/llm/test/fixtures/ (recorded Claude and Bedrock responses)
+- packages/modules/test/module.test.ts, packages/modules/test/hooks.test.ts, services/memory/test/reflect.test.ts (cite LLM IDs for the mock warning and hook fallbacks)
 
 ### Code
-- packages/llm/src/index.ts (41 `@spec` lines)
-- packages/llm/src/mock.ts (6 `@spec` lines; one also cites HOOK-FALLBACK-006)
+- packages/llm/src/index.ts
+- packages/llm/src/mock.ts
 - packages/llm/package.json, packages/llm/tsconfig.json
+- Other files citing LLM IDs: packages/modules/src/index.ts, services/memory/src/reflect-run.ts, services/memory/src/backend.ts
 - examples/providers/README.md (operator recipes)
 - scripts/dev/stub-llm.ts (fake Ollama server, reference only)
-
-### OpenSpec
-- openspec/specs/llm/spec.md
-- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/llm/spec.md
 
 ## Architecture
 
 **Purpose:** Let regions call a chat model without knowing the vendor, so that a stronger model is a config change. Keep embeddings on Ollama (or the hash stand-in under `mock`) so the memory vector size never depends on the chat model.
 
 **Key Components:**
-1. `ChatProvider` / `Embedder` / `ChatOptions` (`index.ts:22-44`) - the contract; `json: true` means "no stop sequences".
-2. `createChatProvider` / `createEmbedder` (`index.ts:61-75`) - the factory switch over `llm.provider`.
-3. `Ollama` (`index.ts:80`) - chat, embeddings and ping against a local Ollama.
-4. `OpenAICompatible` (`index.ts:138`) - `/chat/completions` and `/models`, optional bearer key.
-5. `ClaudeBase` / `AnthropicProvider` / `BedrockProvider` (`index.ts:190-265`) - shared Claude request building (system join, `(begin)` turn, token floor, effort, refusal, optional server-side fallbacks).
-6. `TRANSCRIPT_STOPS` / `REPLY_STOPS` (`index.ts:47-49`) - truncation lists implicitly coupled to working-memory transcript tags.
+1. `ChatProvider` / `Embedder` / `ChatOptions` (`index.ts`) - the contract; `json: true` means "no stop sequences".
+2. `createChatProvider` / `createEmbedder` (`index.ts`) - the factory switch over `llm.provider`.
+3. `Ollama` (`index.ts`) - chat, embeddings and ping against a local Ollama.
+4. `OpenAICompatible` (`index.ts`) - `/chat/completions` and `/models`, optional bearer key.
+5. `ClaudeBase` / `AnthropicProvider` / `BedrockProvider` (`index.ts`) - shared Claude request building (system join, `(begin)` turn, caller's token budget, effort, refusal, optional server-side fallbacks).
+6. `TRANSCRIPT_STOPS` / `REPLY_STOPS` (`index.ts`) - truncation lists implicitly coupled to working-memory transcript tags.
 7. `MockProvider` / `HashEmbedder` (`mock.ts`) - deterministic offline backends for isolated runs.
 
-Consumers: cortex (`services/cortex/src/main.ts:34`), memory (`services/memory/src/backend.ts`, `reflect.ts`), and the `Module` runner in region-hooks (`packages/modules/src/index.ts:43`).
+Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/backend.ts`, `reflect.ts`), and the `Module` runner in region-hooks (`packages/modules/src/index.ts`).
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
 | Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 2 |
-| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 11 | 0 | 0 | 11 |
+| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 10 | 0 | 0 | 10 |
+| Vision | LLM-VIS-001 | 1 | 0 | 0 | 1 |
 | Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
 | Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-013 | 13 | 0 | 0 | 13 |
 | Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 | 6 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 52 of 52 specs implemented; 0 deferred; 0 open. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003, LLM-EMBED-004 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 52 of 52 specs implemented; 0 deferred; 0 gaps. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003, LLM-EMBED-004 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
 
 ## Key Findings
 
-1. **Markers.** Every `[x]` line matches the code. Four lines were reworded to match code: LLM-EMBED-005 (the similarity ordering is not guaranteed; S18), LLM-PING-002 (now covers non-auth statuses and unreachable hosts, as the code does), LLM-CLAUDE-007 (field names checked against the installed SDK) and LLM-MOCK-005. LLM-EMBED-004 is now `[x]`: memory's own switch is the intended design (S17).
-2. **Claude/Bedrock wire surface is typed by the installed SDK.** `server-side-fallback-2026-07-01`, `fallbacks: "default"`, `output_config` and `AnthropicBedrockMantle` all exist in the lockfile-pinned `@anthropic-ai/sdk` 1.1.0 and `@anthropic-ai/bedrock-sdk` 1.0.0 types, and `tsc -b` compiles the request; no test calls the live API. The registry has 1.3.0 / 1.1.0 inside the declared ranges.
-3. **The stop-string contract has four parts in three segments** — working-memory renders the tags, cortex frames the prompt and parses the reply, this package sends the stops (LLD "Stop sequences and the transcript coupling"). `parseReply`'s first-line rule (`services/cortex/src/prompt.ts:76`) is what makes the spoken line correct; the stops only cut generation early (P10). working-memory owns the tags (WM-TRANS-006); LLM-STOP-007 makes the stops derive from the export (`TRANSCRIPT_TAGS`, WM-TRANS-009), and `@cohost/llm` depends on `@cohost/working-memory`. `llm.test.ts:34` pins the derivation; the cross-package check is a cortex-level test.
-4. **`createEmbedder` is unused by services** — memory picks its embedder from `brain.memory.embedder` (`services/memory/src/backend.ts:9`), which commit `51d5a9c` records as deliberate and LLM-EMBED-004 now states; `config/config.example.yaml:18` still says mock means hash embeddings (S17).
-5. **Mock is reported by cortex and by hooks** — cortex warns and reports `mode: mock`; `llm`-kind hooks warn once at construction (HOOK-WARN-004) and so does the reflect job (MEM-REFLECT-010); salience/affect heartbeats hard-code `live` (LLM-MOCK-005, R5).
-6. **Requests are bounded; there are no retries** — Ollama/OpenAI `fetch` calls and both pings take `AbortSignal.timeout(llm.timeout_ms)` when the caller passes no signal, and the Claude path passes the SDK `timeout` request option (`requestSignal`, `index.ts:59`; LLM-CHAT-008, R1). The package falls back to 60000 when the config object has no `timeout_ms`. The Claude SDK keeps its own retry behaviour.
-7. **Bedrock `ping` is always true** (`index.ts:264`), so a bad credential reads as a healthy `llm` dependency until the first chat fails; the provider now exposes `pingIsNominal = true` (LLM-PING-006) for cortex to say so in its heartbeat `detail` (R4, CTX-HEALTH-004).
-8. **`opts.maxTokens` is a floor on Claude** (`index.ts:205`): hooks asking for 60-160 tokens get 2048, and `temperature` is ignored (`index.ts:211`).
-9. **Weak or missing assertions** — see LLD Open Question 6: `llm.test.ts:33` checks only that the Ollama stop list includes `"\n\n"`; the Claude tests do not assert the absence of `temperature` or of `betas` when fallbacks are off; there is no Ollama ping success case and no Ollama chat body assertion.
-10. **Annotation placement** — `@spec` comments in `src/` are trailing comments on the entry-point line, so most `index.ts:NN` citations in other segments' docs stay valid; the timeout and `pingIsNominal` changes added about 14 lines to `packages/llm/src/index.ts`, so citations to code after line 38 in other segments' docs may be off by up to that much.
+1. **Claude/Bedrock wire surface is typed by the installed SDK.** `server-side-fallback-2026-07-01`, `fallbacks: "default"`, `output_config` and `AnthropicBedrockMantle` exist in the lockfile-pinned `@anthropic-ai/sdk` 1.8.0 and `@anthropic-ai/bedrock-sdk` 1.1.2 types, and `tsc -b` compiles the request. `backends.test.ts` replays recorded responses through the real clients.
+2. **The stop-string contract has four parts in three segments** — working-memory renders the tags, cortex frames the prompt and parses the reply, this package sends the stops (LLD "Stop sequences and the transcript coupling"). `parseReply`'s first-line rule in `services/cortex/src/prompt.ts` is what makes the spoken line correct; the stops only cut generation early. working-memory owns the tags (WM-TRANS-006); LLM-STOP-007 derives the stops from the export (`TRANSCRIPT_TAGS`, WM-TRANS-009), and `@cohost/llm` depends on `@cohost/working-memory`. `services/cortex/test/transcript-stops.test.ts` checks the pair at the cortex level.
+3. **Mock is reported by cortex, hooks and the reflect job** — cortex warns and reports `mode: mock`; `llm`-kind hooks warn once at construction (HOOK-WARN-004) and so does the reflect job (MEM-REFLECT-010); salience/affect heartbeats hard-code `live` (LLM-MOCK-005).
+4. **Requests are bounded; there are no retries in this package** — Ollama/OpenAI `fetch` calls and both pings take `AbortSignal.timeout(llm.timeout_ms)` when the caller passes no signal, and the Claude path passes the SDK `timeout` request option (`requestSignal`; LLM-CHAT-008). The Claude SDK keeps its own default retries.
+5. **Bedrock `ping` is always true**, so a bad credential reads as a healthy `llm` dependency until the first chat fails; the provider exposes `pingIsNominal = true` (LLM-PING-006) and cortex says so in its heartbeat `detail` (CTX-HEALTH-004).
+6. **The caller's `maxTokens` is honoured on Claude** (LLM-CLAUDE-003); `temperature` is never sent.
+7. **Annotation placement** — `@spec` comments in `src/` are trailing comments on the entry-point line.
 
 ## Work Required
 
@@ -91,10 +77,7 @@ Consumers: cortex (`services/cortex/src/main.ts:34`), memory (`services/memory/s
 None.
 
 ### Should Fix
-1. Correct the `mock` comment at `config/config.example.yaml:18` to name the separate `MEMORY_EMBEDDER=hash` switch (LLM-EMBED-004; S17; config segment).
-2. Fix `examples/providers/README.md:86`: Compose mounts no `~/.aws`, so document environment credentials (or an instance role) for Bedrock in Docker (S6, deployment DEPLOY-7); fix `:96`, whose override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
-3. Cortex reads `pingIsNominal` to flag the unprobed Bedrock dependency in its heartbeat `detail` (CTX-HEALTH-004; cortex segment).
+1. Fix `examples/providers/README.md`: its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
 
 ### Nice to Have
-1. Tighten the weak assertions listed in Key Finding 9 and add tests for LLM-CHAT-001, LLM-CHAT-007 and LLM-CLAUDE-009.
-2. The cortex-level stop/tag test (LLM-STOP-006, WM-TRANS-006) is owned by the cortex segment.
+None.

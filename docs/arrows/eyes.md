@@ -4,19 +4,7 @@ Visual sense: OBS screenshot -> Ollama vision model -> change-only `vision.summa
 
 ## Status
 
-**AUDITED** — audited 2026-11-02 (git SHA `1b57790`); mapped 2026-10-31 (`686cc8f`). 44 specs: 44 implemented, 0 deferred, 0 gaps. The owner answered the audit questions on 2026-11-01; the decisions are applied below and every scheduled gap fix has landed.
-
-## Decisions applied
-
-Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robustness, S small choice, H housekeeping).
-
-1. **S13** Reconnect to OBS → after any close, including a clean one. Specs: EYES-OBS-004 (`[x]`, reworded), EYES-LOOK-004 (reworded).
-2. **R4** Boot health while OBS is unreachable → `degraded` with `obs: down`. Specs: EYES-HEALTH-006 (`[x]`).
-3. **R4** Shared tracked describer → keep; an injected failure marks `ollama` down. Specs: EYES-HEALTH-003 (reworded, `[x]`).
-4. **R2** Shutdown with vision disabled → one shutdown sequence that stops the bus and sends `stopping`. Specs: EYES-ENAB-005 (new, `[x]`); EYES-OBS-008 stays `[x]` for the enabled plan.
-5. **R1** Timeouts and upload cap → configured timeouts on the describe call and the upload read, configured maximum upload size. Specs: EYES-DESC-006, SHARED-INJ-006, SHARED-INJ-007 (new, `[x]`).
-6. **S14** `vision.summary.changed` → keep, always `true` because eyes publishes only changes. Specs: EYES-LOOK-001 (reworded).
-7. **P8** Restart replay → `inject.request` subscription uses start mode `latest`. Specs: EYES-INJ-014 (new, `[x]`), EYES-INJ-001 (reworded).
+**AUDITED**: 44 specs: 44 implemented, 0 deferred, 0 gaps.
 
 ## References
 
@@ -27,45 +15,42 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/eyes/eyes-design.md
 
 ### EARS
-- docs/intent/eyes/eyes-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`; EYES-LOOK-006 and 007, the `capturedAt` and `describedAt` stamps and the per-look describe log, and EYES-INJ-017, no `timing` on injected summaries, are built)
+- docs/intent/eyes/eyes-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `EYES`)
 
 ### Tests
+Files with `@spec EYES-` annotations:
 - services/eyes/test/eyes.test.ts
+- services/eyes/test/service.test.ts
 - services/eyes/test/inject.test.ts
 - services/eyes/test/health.test.ts
 - services/eyes/test/obs.test.ts
-- packages/shared/test/inject.test.ts
+- packages/config/test/config.test.ts
 
-29 `@spec` annotations in tests, citing 32 distinct spec IDs.
+The shared inject helpers are tested in packages/shared/test/inject-handler.test.ts (cited through SHARED-INJ IDs).
 
 ### Code
-- services/eyes/src/index.ts
+Files with `@spec EYES-` annotations:
+- services/eyes/src/service.ts
 - services/eyes/src/eyes.ts
 - services/eyes/src/inject.ts
 - services/eyes/src/health.ts
 - services/eyes/src/obs.ts
-- services/eyes/package.json, services/eyes/tsconfig.json
 
-17 `@spec` annotations in code, citing all 44 spec IDs. No annotation cites a missing ID.
-
-### OpenSpec (frozen, historical)
-- openspec/specs/eyes/spec.md
-- openspec/changes/archive/2026-11-01-add-service-health/specs/eyes/spec.md
-- openspec/changes/archive/2026-11-01-add-isolated-backends/specs/eyes/spec.md (rationale: `.../add-isolated-backends/design.md` D7)
-- openspec/changes/archive/2026-11-01-add-test-injection/specs/eyes/spec.md (rationale: `.../add-test-injection/design.md` D2, D8)
+Also: services/eyes/src/index.ts, services/eyes/package.json, services/eyes/tsconfig.json.
 
 ## Architecture
 
 **Purpose:** Every `vision.interval_ms`, capture an OBS source, ask a local vision model for one sentence, and publish it as `vision.summary` only when the model says something changed. Inert (but injectable) when `vision.enabled` is false.
 
 **Key Components:**
-1. `index.ts` — composition root: screenshot call, polling loop, subscription establishment, heartbeat start, the one shutdown registration. Untested.
-2. `eyes.ts` — `Eyes.look()` change-only publisher, `ollamaDescriber` (with the describe timeout), `stripDataUrl`, `startEyes` enablement gate.
-3. `inject.ts` — `createInjectHandler` (upload read timeout and size cap; the upload comes from Redis through `Bus.takeUpload`, SHARED-INJ-004 to SHARED-INJ-013) + `INJECT_STALE_MS` imported from `@cohost/shared` (shared with ears and chat), and `subscribeInject` (group created first, start mode `latest`).
-4. `obs.ts` — `createObsLink` (connect with retry, degraded while unreachable, reconnect on any close) and `stopEyes` (the single shutdown sequence).
-5. `health.ts` — `EyesHealth` (mode off/live, deps `obs`/`ollama`, `track()` wrapper).
+1. `index.ts`: builds the real OBS client and hands `eyesService` to the shared `runService` bootstrap.
+   `service.ts`: `eyesService`: screenshot call, polling loop, subscription establishment, heartbeat start, the one `onStop` shutdown step. Tested by `service.test.ts` with a fake OBS.
+2. `eyes.ts`: `Eyes.look()` change-only publisher, `modelDescriber` (with the describe timeout) and `stubDescriber`, `stripDataUrl`, `startEyes` enablement gate.
+3. `inject.ts`: `createInjectHandler` over the shared inject handler (upload read timeout and size cap; the upload comes from Redis through `Bus.takeUpload`, SHARED-INJ-004 to SHARED-INJ-013) and `subscribeInject` (group created first, start mode `latest`); the staleness window `INJECT_STALE_MS` lives in `@cohost/shared`.
+4. `obs.ts`: `createObsLink` (connect with backoff, degraded while unreachable, reconnect on any close) and `stopEyes` (the single shutdown sequence).
+5. `health.ts`: `EyesHealth` (mode off/live/mock, deps `obs`/`ollama`, `track()` wrapper).
 
-Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/shared` workspace package (inject helpers; owned by this segment, no segment of its own). Calls Ollama and OBS directly. Fetches uploads from `dashboard`. Consumed by `salience`, `affect`.
+Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` (the `ollama` provider) and the `@cohost/shared` workspace package (inject helpers; owned by this segment, no segment of its own). Calls OBS directly. Reads uploads from Redis, which `dashboard` writes. Consumed by `salience`, `affect`.
 
 ## Spec Coverage
 
@@ -73,35 +58,33 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat) and the `@cohost/s
 |----------|----------|-------------|----------|------|----------------|
 | Enablement | EYES-ENAB-001 to EYES-ENAB-005 | 5 | 0 | 0 | 5 |
 | OBS connection and capture | EYES-OBS-001 to EYES-OBS-008 | 8 | 0 | 0 | 8 |
-| Vision description | EYES-DESC-001 to EYES-DESC-006 | 7 | 0 | 0 | 7 |
-| Look loop and publication | EYES-LOOK-001 to EYES-LOOK-005 | 5 | 0 | 0 | 4 |
-| Test injection | EYES-INJ-001 to EYES-INJ-016 | 8 | 0 | 0 | 8 |
+| Vision description | EYES-DESC-001 to EYES-DESC-007 | 7 | 0 | 0 | 7 |
+| Look loop and publication | EYES-LOOK-001 to EYES-LOOK-007 | 7 | 0 | 0 | 6 |
+| Test injection | EYES-INJ-001, EYES-INJ-007 to EYES-INJ-011, EYES-INJ-014, EYES-INJ-016, EYES-INJ-017 | 9 | 0 | 0 | 9 |
 | Stub describer | EYES-STUB-001 to EYES-STUB-002 | 2 | 0 | 0 | 2 |
 | Health | EYES-HEALTH-001 to EYES-HEALTH-006 | 6 | 0 | 0 | 5 |
 
-**Summary:** 41 of 41 specs implemented; 0 deferred; 0 open. 39 carry a test `@spec` annotation; implemented without one: EYES-LOOK-004, EYES-HEALTH-005 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 44 of 44 specs implemented; 0 deferred; 0 open. 42 carry a test `@spec` annotation; implemented without one: EYES-LOOK-004, EYES-HEALTH-005 (verified by glue, configuration or a test that cites a neighbouring ID). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
-1. **OBS reconnects after any close** — `createObsLink` (`services/eyes/src/obs.ts`) starts a connect loop on `ConnectionClosed` unless one is already running or the link was stopped (EYES-OBS-004). obs-websocket-js 5.0.8 clears `identified` on close and has no reconnect of its own, and a failed connect attempt emits `ConnectionClosed` too, hence the running-loop guard.
-2. **The heartbeat is `degraded` (obs down), not `starting`, while OBS is unreachable at boot** — each failed attempt calls `heartbeat.degraded` (EYES-HEALTH-006, R4).
-3. **One shutdown sequence in both plans** — `stopEyes` clears the idle timer, stops the link and the bus; `index.ts` registers a single `onShutdown` (EYES-ENAB-005, R2).
-4. **Disabled gate is correct and tested** — `startEyes` (`eyes.ts:86-94`, test `test/eyes.test.ts:70`) fixed the earlier bug where eyes connected to OBS with `vision.enabled=false` (463b1bb). Injection still works while disabled.
-5. **Change detection is entirely model-driven** — the service trusts the literal word `SAME` (`eyes.ts:65`, prompt at `:35-37`); every interval costs a model call. `changed` is always `true` (`eyes.ts:71`) by contract (S14).
-6. **One tracked `describe` is shared by loop and injection** — a bad injected image marks `ollama` down for the live heartbeat (`index.ts:56`, `:63`; `health.ts:17-19`); kept by decision (R4).
-7. **Outbound calls are bounded** — the Ollama call aborts after `vision.timeout_ms` (EYES-DESC-006); the upload read gives up after `vision.upload_timeout_ms` and an upload past `vision.upload_max_bytes` is refused (SHARED-INJ-006, SHARED-INJ-007; R1). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
-8. **`INJECT_STALE_MS` and the upload read shared** — one definition in `packages/shared/src/inject.ts`, used by eyes, ears and chat (SHARED-INJ-008, owner decision of 2026-11-08); the former copies are deleted. Uploads travel over Redis instead of an HTTP fetch from the dashboard, so `uploadUrl` is gone (owner decision of 2026-11-12: WSL2 NAT blocks container-to-host traffic).
-9. **Decisions evidenced** — LLD Decisions rows cite a comment, commit (463b1bb, 51d5a9c), archived OpenSpec design or the owner decision of 2026-11-01; change detection, OBS retry, prompt options and stay `[inferred]`; the shared-helper row cites the owner decision of 2026-11-08.
+1. **OBS reconnects after any close.** `createObsLink` (`services/eyes/src/obs.ts`) starts a connect loop on `ConnectionClosed` unless one is already running or the link was stopped (EYES-OBS-004). obs-websocket-js has no reconnect of its own, and a failed connect attempt emits `ConnectionClosed` too, hence the running-loop guard.
+2. **The heartbeat is `degraded` (obs down), not `starting`, while OBS is unreachable at boot.** Each failed attempt calls `heartbeat.degraded` (EYES-HEALTH-006).
+3. **One shutdown sequence in both plans.** `stopEyes` clears the idle timer, stops the link and the bus; `service.ts` registers a single `onStop` step (EYES-ENAB-005).
+4. **Disabled gate.** `startEyes` (`services/eyes/src/eyes.ts`, test `services/eyes/test/eyes.test.ts`) keeps eyes from connecting to OBS with `vision.enabled=false`. Injection still works while disabled.
+5. **Change detection is entirely model-driven.** The service trusts a clear `SAME` (`isSame` in `eyes.ts`); every interval costs a model call. `changed` is always `true` by contract (EYES-LOOK-001).
+6. **One tracked `describe` is shared by loop and injection.** A bad injected image marks `ollama` down for the live heartbeat (`service.ts`, `health.ts`; EYES-HEALTH-003).
+7. **Outbound calls are bounded.** The describe call aborts after `vision.timeout_ms` (EYES-DESC-006); the upload read gives up after `vision.upload_timeout_ms` and an upload past `vision.upload_max_bytes` is refused (SHARED-INJ-006, SHARED-INJ-007). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
+8. **Inject helpers are shared.** `INJECT_STALE_MS` and the upload read have one definition in `packages/shared/src/inject.ts`, used through the shared inject handler by eyes, ears and chat (SHARED-INJ-008). Uploads travel over Redis (`Bus.takeUpload`), so a request carries no URL.
 
 ## Work Required
 
 ### Must Fix
-None: all seven gap specs are implemented.
+None.
 
 ### Should Fix
 None.
 
 ### Nice to Have
-1. Add tests for the loop wiring, cadence, wrong-kind injection and redirect refusal (EYES-LOOK-003, SHARED-INJ-003, SHARED-INJ-005).
-2. Make the system prompt, `num_predict`, `keep_alive` and JPEG quality configurable (EYES-DESC-001).
-3. Add backoff to the OBS connect retries (EYES-OBS-002).
+1. Add a test for the `if (obs.identified)` skip in the look loop (EYES-LOOK-004).
+2. Annotate the tests that cover EYES-HEALTH-005 (`services/eyes/test/obs.test.ts`, `services/eyes/test/service.test.ts`).

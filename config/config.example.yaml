@@ -46,7 +46,7 @@ vision:
   jpeg_quality: 70             # JPEG quality of the OBS screenshot (1 to 100)
   # prompt: "..."              # system prompt; blank = built-in default. Keep its "reply exactly: SAME" rule or every reply counts as a change
   timeout_ms: 30000            # give up on a describe call after this long
-  upload_timeout_ms: 10000     # injected uploads: timeout fetching the image from the dashboard
+  upload_timeout_ms: 10000     # injected uploads: timeout reading the image from Redis
   upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)
   obs:
     host: "${OBS_HOST}"

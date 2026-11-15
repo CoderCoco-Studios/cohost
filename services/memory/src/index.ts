@@ -6,8 +6,8 @@
  * get a row so regulars are recognised.
  *
  * Reads: answers `memory.recall.request` with `memory.recall.reply`, and
- * announces `memory.viewer` when someone who addressed the co-host is new
- * or a regular. The cortex is the usual caller, but any region may ask.
+ * announces `memory.viewer` on every mention of a viewer who addressed the
+ * co-host. The cortex is the usual caller, but any region may ask.
  *
  * Consolidation ("sleep") is reflect.ts, run between streams. Viewer notes are
  * tidied by a pass (consolidation.ts) the scheduler starts when enough notes are

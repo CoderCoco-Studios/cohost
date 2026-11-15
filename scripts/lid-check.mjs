@@ -15,7 +15,7 @@ import { join, relative, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ID = /\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)+-\d{3}\b/g;
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", "graphify-out", ".vitepress", "target"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", "worktrees", "graphify-out", ".vitepress", "target"]);
 const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html|rs)$|(?:^|\/)(?:Dockerfile|Cargo\.toml)$/;
 
 /** Every file under `root`, as repo-relative POSIX paths, in sorted order. */

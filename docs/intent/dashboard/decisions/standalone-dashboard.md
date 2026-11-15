@@ -51,7 +51,7 @@ Weighted criteria:
   web port from another machine; whenever that is enabled, the stack,
   lifecycle and viewer-notes routes must still demand their tokens.
 - **The sink keeps working from a second PC** (major; HLD Goal 8 and the
-  two-PC setup in the README): an OBS Browser Source cannot authenticate, so
+  two-PC setup on the docs site's OBS page): an OBS Browser Source cannot authenticate, so
   the sink routes stay ungated and must stay reachable from the LAN.
 - **Containers get test uploads** (moderate; HLD Goal 7, testable one
   piece at a time): eyes and ears receive injected uploads without the host

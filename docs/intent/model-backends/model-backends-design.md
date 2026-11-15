@@ -121,7 +121,7 @@ Who builds embedders: memory, not this package. `services/memory/src/backend.ts`
 
 ## Configuration read
 
-From `cfg.llm` (`packages/config/src/schema.ts`): `provider`, `model`, `num_ctx` (Ollama only, `index.ts`), `temperature` (Ollama/OpenAI only), `max_tokens` (Ollama/OpenAI reply cap; the Claude path uses its own), `embed_model`, `openai.base_url`, `openai.api_key`, `claude.api_key`, `claude.effort`, `claude.max_tokens`, `claude.fallbacks`, `bedrock.region`. Environment: `OLLAMA_URL` via `urls.ollama()`; `ANTHROPIC_API_KEY` and AWS credentials are resolved inside the SDKs, not by this package. Operator-facing recipes are in `examples/providers/README.md`; their keys exist in the schema (`schema.ts`). `scripts/dev/stub-llm.ts` is a separate fake Ollama server (`GET /api/tags`, `POST /api/chat`; `:11434` or `STUB_LLM_PORT`; no `/api/embed`; ignores `stop`, `options` and `json`; always replies `Stub brain here. You said: <tail>`, which carries no emotion tag and is not JSON) used for local runs without a GPU. `docs/TESTING.md` documents the stub and the offline `LLM_PROVIDER=mock` setting.
+From `cfg.llm` (`packages/config/src/schema.ts`): `provider`, `model`, `num_ctx` (Ollama only, `index.ts`), `temperature` (Ollama/OpenAI only), `max_tokens` (Ollama/OpenAI reply cap; the Claude path uses its own), `embed_model`, `openai.base_url`, `openai.api_key`, `claude.api_key`, `claude.effort`, `claude.max_tokens`, `claude.fallbacks`, `bedrock.region`. Environment: `OLLAMA_URL` via `urls.ollama()`; `ANTHROPIC_API_KEY` and AWS credentials are resolved inside the SDKs, not by this package. Operator-facing recipes are on the docs site's Choose a model page (`docs/guide/tune/model.md`); their keys exist in the schema (`schema.ts`). `scripts/dev/stub-llm.ts` is a separate fake Ollama server (`GET /api/tags`, `POST /api/chat`; `:11434` or `STUB_LLM_PORT`; no `/api/embed`; ignores `stop`, `options` and `json`; always replies `Stub brain here. You said: <tail>`, which carries no emotion tag and is not JSON) used for local runs without a GPU. The docs site's One service on its own page (`docs/advanced/testing/isolated.md`) documents the stub and the offline `LLM_PROVIDER=mock` setting.
 
 ## Hash embedder users
 
@@ -163,7 +163,7 @@ Segment files:
 - `packages/llm/src/index.ts`, `packages/llm/src/mock.ts`
 - `packages/llm/test/llm.test.ts`, `packages/llm/test/backends.test.ts`, `packages/llm/test/fixtures/` (recorded Claude and Bedrock responses)
 - `packages/llm/package.json`, `packages/llm/tsconfig.json`
-- `examples/providers/README.md` (operator recipes)
+- The docs site's Choose a model page (`docs/guide/tune/model.md`) (operator recipes)
 - `scripts/dev/stub-llm.ts` (fake Ollama server; reference only)
 
 Other segments:

@@ -110,10 +110,14 @@ cohost is built for one streamer: the owner, on their own stream.
    `examples/modules/server.py` stand-in are for this.
 
 Other streamers are not a target user. The installer, the `*.example.*`
-seeding, the recipes under `examples/`, the Pages docs site and the public
+seeding, the runnable examples under `examples/`, the Pages docs site and the public
 AGPL-3.0-only licence stay, and a defect in any of them is a bug that gets
 fixed with the same weight as a code defect, because the owner reinstalls
-and rereads them too. Hardening for other people's setups (shared networks,
+and rereads them too. The docs site is written for a reader who knows
+nothing about the domain (streaming, VTubers, speech and language models,
+Redis, Docker): a plain-language track for setting cohost up and running
+it, and an advanced track for its architecture, reference and extension
+points ([docs-site](intent/docs-site/docs-site-design.md)). Hardening for other people's setups (shared networks,
 several streamers, untrusted operators) is not a goal. The source is open
 to read, run, modify and contribute to, but the project is not offered as
 free infrastructure for someone else's business: a separate commercial
@@ -376,6 +380,7 @@ flowchart LR
 | operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
+| operator | docs-site | The published documentation site: its page tree and two reading tracks, hand-written pages, voice, glossary, the boundary between published pages and the unpublished design tree, and the link and fact checks its build runs; the README as a short pointer to it |
 | operator | module-contract | The obligations every service meets: dashboard-configurable through one schema-driven settings editor, independently operable with per-service health, test-injectable with no platform account, built on the shared runtime; the manifest as the one list of services |
 
 ### Module contract
@@ -788,6 +793,7 @@ what to measure once it has. All targets are proposals.
 
 - `docs/arrows/index.yaml` — segment index and dependency graph
 - `docs/arrows/README.md` — how to navigate the overlay
-- `README.md` — operator-facing documentation (quick start, configuration)
+- The docs site (`docs/`, published to GitHub Pages under `/cohost/`) — operator
+  and developer documentation; `README.md` is a short pointer to it
 - `config/personality.example.md`, `config/config.example.yaml` — the persona
   and behaviour knobs the goals above refer to

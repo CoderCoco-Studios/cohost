@@ -123,7 +123,7 @@ Reference server behavior (`server.py`):
 - `critic`: `{ok:false, note:"no links on air"}` if the lowercased text contains `http` (so `HTTP://` is blocked too, and so is any word containing it; HOOK-EX-009); otherwise trims to the first sentence and returns `{ok:true, text, emotion}` when that differs from the original, carrying the request's `emotion` (`neutral` when absent; HOOK-EX-010), else `{ok:true}`.
 - Empty bodies: a request with `Content-Length: 0` or no `Content-Length` header is read as `{}` (HOOK-EX-006). The handlers then reject the empty object with their own `KeyError`, a 500 that the TypeScript side treats as a failure.
 - The server is threaded, one thread per request, so a slow or stalled client does not serialize the three regions' calls (HOOK-EX-007); it binds all interfaces with no auth. `GAME_WORDS` and the salience mention/speech precedence are stand-ins, not a spec.
-- The server carries `# @spec HOOK-EX-*` annotations. `packages/modules/test/example-server.test.ts` checks it two ways: every response recorded in `examples/modules/fixtures/contracts.json` must pass the real salience, affect and critic `validate` functions (an `http`-kind `Module` per region, imported from the services' sources; no Python needed), and, when `python3` is installed, the live server must answer the fixture requests with those responses, 404 an unknown path and tolerate an empty body. `docs/TESTING.md` describes running it by hand for the `http` kind.
+- The server carries `# @spec HOOK-EX-*` annotations. `packages/modules/test/example-server.test.ts` checks it two ways: every response recorded in `examples/modules/fixtures/contracts.json` must pass the real salience, affect and critic `validate` functions (an `http`-kind `Module` per region, imported from the services' sources; no Python needed), and, when `python3` is installed, the live server must answer the fixture requests with those responses, 404 an unknown path and tolerate an empty body. The docs site's Brain hooks page (`docs/advanced/extend/hooks.md`) describes running it by hand for the `http` kind.
 
 ## Configuration read
 
@@ -162,12 +162,12 @@ Segment files:
 - `packages/modules/test/module.test.ts`, `packages/modules/test/hooks.test.ts`, `packages/modules/test/schemas.test.ts`, `packages/modules/test/example-server.test.ts`
 - `scripts/gen-hook-schemas.mjs`, `examples/modules/schemas/`
 - `packages/modules/package.json`, `packages/modules/tsconfig.json`
-- `examples/modules/README.md`, `examples/modules/server.py`
+- `examples/modules/README.md` (directory guide), `examples/modules/server.py`; the docs site's Brain hooks page (`docs/advanced/extend/hooks.md`) (operator docs and contracts)
 
 Other segments:
 - model-backends (depends on, outbound): `createChatProvider`, `ChatProvider`, `Config` type from `@cohost/llm`.
 - config (depends on, outbound): `Logger` type; `ModuleSchema` fields (`packages/config/src/schema.ts`) and the five hook config locations.
 - salience, affect, cortex, memory (depended on by): each builds its `Module`s with its own rules/prompt/validate (`services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`, `services/cortex/src/critic.ts`, `services/memory/src/capture.ts`, `services/memory/src/consolidator.ts`).
-- deployment: `docs/TESTING.md` references running `server.py` for the `http` kind.
+- docs-site: the Brain hooks page documents running `server.py` for the `http` kind.
 
 External: global `fetch`, `AbortController`; Python 3 stdlib (`http.server`) for the example server.

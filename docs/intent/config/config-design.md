@@ -207,4 +207,4 @@ None.
 
 **External libraries**: `zod` (schemas), `yaml` (parser), `pino` (logger). Node `fs`, `path`.
 
-**Docs**: README.md "Configuration" section, `docs/TESTING.md` section 1 (known problems 1-3 there are resolved by this package's workspace walk, `.env` hint and `urls.voice`).
+**Docs**: the docs site's Configuration reference (`docs/advanced/reference/config.md`), Environment and ports reference (`docs/advanced/reference/env.md`) and Developer setup page (`docs/advanced/dev-setup.md`).

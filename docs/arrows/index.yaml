@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-14
+last_updated: 2026-11-15
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -28,6 +28,7 @@ taxonomy:
     - dashboard
     - control-plane
     - deployment
+    - docs-site
     - module-contract
 
 # The `@cohost/shared` workspace package is the shared-runtime segment. Its
@@ -145,7 +146,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "44 specs, all [x]. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/TESTING.md)."
+    next: "44 specs, all [x]. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
     drift: null
 
   connections:
@@ -157,7 +158,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
+    next: "55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/advanced/testing/real-backends.md)."
     drift: null
 
   ears:
@@ -169,7 +170,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "93 specs: 89 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
+    next: "93 specs: 89 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
     drift: null
 
   salience:
@@ -241,7 +242,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
+    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
     drift: null
 
   avatar:
@@ -287,9 +288,21 @@ arrows:
     audited: 2026-11-14
     audited_sha: cb06bf3
     blocks: []
-    blockedBy: []
+    blockedBy: [docs-site]
     detail: deployment.md
-    next: "82 specs: 80 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "77 specs: 68 [x], 9 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed; DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006 and DEPLOY-INST-011 until the docs-site pages they name are written. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
+    drift: null
+
+  docs-site:
+    status: MAPPED
+    parent: null
+    sampled: 2026-11-15
+    audited: null
+    audited_sha: null
+    blocks: [deployment]
+    blockedBy: []
+    detail: docs-site.md
+    next: "60 specs, all [ ]. Design and specs written; no page, loader or check built yet."
     drift: null
 
 unmapped:

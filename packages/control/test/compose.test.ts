@@ -49,6 +49,12 @@ test("the isolation preset variables of the manifest all pass through as ${VAR:-
   }
 });
 
+// @spec DEPLOY-COMPOSE-024
+test("EARS_HTTP_TOKEN passes through the shared environment block as ${EARS_HTTP_TOKEN:-} and is no isolation variable", () => {
+  assert.equal(base["x-ts-service"]!.environment!.EARS_HTTP_TOKEN, "${EARS_HTTP_TOKEN:-}");
+  assert.ok(!SERVICE_MANIFEST.some((s) => "EARS_HTTP_TOKEN" in s.isolatedEnv));
+});
+
 const images = (file: ReturnType<typeof load>) => Object.entries(file.services).flatMap(([n, s]) => (s.image ? [[n, s.image] as const] : []));
 /** Strips the `${VAR:-default}` wrapper so the default value is what is judged. */
 const effective = (image: string) => /^\$\{[A-Z_]+:-(.+)\}$/.exec(image)?.[1] ?? image;

@@ -289,7 +289,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "81 specs: 79 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "82 specs: 80 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

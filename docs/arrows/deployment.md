@@ -4,13 +4,13 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-**AUDITED** — 77 specs: 77 implemented, 0 deferred, 0 gaps (audit last run before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
+**AUDITED** — 79 specs: 79 implemented, 0 deferred, 0 gaps (audit last run before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-HOST-001 (the script builds the docs first), DEPLOY-HOST-005 (the Commands page says so) and DEPLOY-HOST-006 (a failed docs build does not stop the start) were added after the audit; they are implemented, DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts`, and the real script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
 
 ## Orientation
 
 - Design: LLD § Compose topology (services, profiles, isolation pass-through, healthcheck, `models`, `consolidate`, `reembed`), § Host-run dashboard, § Image build, § Installer, § Build, test and CI, § Docs site (the CI side only), § Licensing and contribution.
 - The docs site's pages, checks and README shape are [docs-site](docs-site.md) (`DOCS-*`). The deployment specs that name a site page (DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006, DEPLOY-INST-011) carry what the page must say about this segment's files.
-- The dashboard is not a Compose service; its start script and `.env` needs are DEPLOY-HOST-001 to -004. Dashboard owner decisions: dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md).
+- The dashboard is not a Compose service; its start script and `.env` needs are DEPLOY-HOST-001 to -006. The start script builds the docs site first, because the dashboard serves the build at `/cohost/` (dashboard DASH-DOCS-*). Dashboard owner decisions: dashboard LLD § Host process and stack control and its [decision doc](../intent/dashboard/decisions/standalone-dashboard.md).
 - The listening/speaking split (`ears`, `mouth`, `connector-discord`) is in [mouth.md](mouth.md) and [connections.md](connections.md): DEPLOY-COMPOSE-001, -004, -017, -020, -023, DEPLOY-REPO-001 and DEPLOY-README-004, -005 carry it into this segment. The Compose Discord connector service is `connector-discord`.
 - The control plane's stack controller runs `docker compose up -d --build --remove-orphans` and `docker compose stop` against this Compose file, and the container healthcheck binary is `packages/control/dist/healthcheck.js` (see [control-plane.md](control-plane.md)).
 - `.github/cla/signatures.json` (DEPLOY-CI-005, DEPLOY-LIC-003) is not in the `main` tree: the `cla` workflow writes it on the `cla-signatures` branch.
@@ -24,7 +24,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (77 specs, prefix `DEPLOY`: 68 `[x]`, 9 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (79 specs, prefix `DEPLOY`: 79 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -74,11 +74,11 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-009 | 9 | 9 | 0 | 0 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 4 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
-| Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-004 | 4 | 4 | 0 | 0 |
+| Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-006 | 6 | 3 | 0 | 3 |
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-006 | 6 | 6 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 77 of 77 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 79 of 79 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
@@ -86,6 +86,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 None.
 
 ### Should Fix
+- Close DEPLOY-HOST-001, -005 and -006: the `dashboard` script builds the docs first and starts anyway when that build fails, and the Commands page says so.
 - Run `scripts/install.sh` once on a clean machine to observe DEPLOY-INST-007 and DEPLOY-INST-014 end to end (their tests check the script's source, not a run).
 
 ### Nice to Have

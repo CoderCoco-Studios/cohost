@@ -187,10 +187,34 @@ ${lightDark}
 `;
 
 export const THEME_INDEX_TS = `import DefaultTheme from 'vitepress/theme';
+import LiveHealth from './components/LiveHealth.vue';
 import './tokens.css';
 import './style.css';
 
-export default { extends: DefaultTheme };
+export default {
+  extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component('LiveHealth', LiveHealth);
+  },
+};
+`;
+
+export const LIVE_HEALTH_VUE = `<script setup>
+import { ref } from 'vue';
+const status = ref('Live data shows here when you open these docs from your dashboard.');
+</script>
+
+<template>
+  <div class="cohost-live-health">
+    <p class="cohost-live-health-status" aria-live="polite">{{ status }}</p>
+  </div>
+</template>
+`;
+
+export const LIVE_HEALTH_MJS = `export const SERVICES_URL = '/services';
+export function createLiveHealth() {
+  return { start() {}, stop() {} };
+}
 `;
 
 export const MARK_VUE = `<script setup lang="ts">
@@ -269,6 +293,8 @@ export function themeFiles(): Record<string, string> {
     "docs/.vitepress/theme/tokens.css": TOKENS_CSS,
     "docs/.vitepress/theme/style.css": STYLE_CSS,
     "docs/.vitepress/theme/components/CohostMark.vue": MARK_VUE,
+    "docs/.vitepress/theme/components/LiveHealth.vue": LIVE_HEALTH_VUE,
+    "docs/.vitepress/theme/live-health.mjs": LIVE_HEALTH_MJS,
     "docs/.vitepress/mermaid-fence.mjs": MERMAID_FENCE_MJS,
     "docs/public/favicon.svg": FAVICON_SVG,
   };
@@ -298,10 +324,15 @@ export const HOME_BODY = `<div class="VPHero"><div class="image">${HERO_MARK}</d
 
 export const NOT_FOUND_BODY = `<div class="NotFound"><svg class="cohost-mark" data-expression="lost" role="img" aria-label="The cohost mascot" viewBox="0 0 64 64"><rect/></svg><h1>Page not found</h1><p>There is no page at this address.</p><a href="/cohost/">Go to the home page</a> <a href="/cohost/start/what-is-cohost">What is cohost?</a><div class="cohost-aside"><p class="cohost-aside-title">The co-host says</p><p>I looked behind the couch.</p></div></div>`;
 
+export const LIVE_NOTE = "Live data shows here when you open these docs from your dashboard.";
+export const HEALTH_BODY = `<h2 id="the-states">The states</h2><div class="cohost-live-health"><p class="cohost-live-health-status" aria-live="polite">${LIVE_NOTE}</p></div>`;
+export const HEALTH_BUILT = docPage("simple", "Service health", HEALTH_BODY);
+
 /** A valid built site's theme-relevant files (the home page, the 404 page); tests add pages to it. */
 export function themeDist(): Record<string, string> {
   return {
     "index.html": shell(HOME_BODY),
     "404.html": shell(NOT_FOUND_BODY),
+    "guide/operate/health.html": HEALTH_BUILT,
   };
 }

@@ -158,3 +158,24 @@ Read by eye: home at 1280px light and dark and at 360px light; Try it with no ac
 - Tabbing went through nine stops on one page. Focus outlines on every other kind of element (cards, buttons, the diagram figure, the search box) were not walked through.
 - The mark's three expressions were seen at hero size (talking) and 404 size (lost) and in the nav (idle); the favicon file was not opened in a browser tab.
 - Only Chrome was used. No Firefox or Safari, no real phone.
+
+## Dashboard serves the docs, end to end (2026-11-15)
+
+Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main`) plus the uncommitted work of the `docs/dashboard-docs` branch (DASH-DOCS-001 to 014, DASH-UI-024, 025, DEPLOY-HOST-001, 006, DOCS-LIVE-001 to 013). There was no Redis and no Docker on the machine, so the [bus](../start/glossary.md#bus) connection was refused and the stack pill read `docker unavailable`; every service was therefore `unknown`.
+
+| Check | How | Result |
+| --- | --- | --- |
+| The real script | `PORT=47311 DASHBOARD_LAN_PORT=47312 pnpm dashboard` | The script ran `pnpm docs:build` first (docs check source pass, `vitepress build`, `docs-check --dist`, 0 problems), then built and started the dashboard, which listened. |
+| Docs served | `GET /cohost/guide/operate/health` on the full-surface port | 200. |
+| Live table | Headless Chrome at 1280px loaded the Service health page; the page's network log showed one request, to `http://127.0.0.1:47311/services` | The status line read "Live from your dashboard." under the caption "Your services right now, from your dashboard"; the table listed all 11 services, each `unknown`, with `needs <service> (unknown)` lines under the services that have dependencies and "never" and 0 in the heartbeat and restart columns. The screenshot was read by eye. |
+| Dashboard page | `/` at 1280px, then the Services tab | The header holds a `docs` link to `/cohost/` after the `settings` tab; the Services tab shows `how to read this` beside its heading, linking to `/cohost/guide/operate/health#the-states`. Both screenshots were read by eye. |
+| Not built | `docs/.vitepress/dist` was renamed away while the dashboard ran, then restored | `GET /cohost/` answered 503 with the "Docs not built" page naming `pnpm docs:build`; after the restore it answered 200. |
+
+Screenshots are in the session scratchpad and are not committed.
+
+### Not checked
+
+- A live table with real states: with no bus, every service was `unknown`, so the `down` and `stale` rows, the failure-after-success note and the refresh interval were exercised only by the unit tests.
+- The `pnpm dashboard` stderr notice after a failed docs build was not run for real; the script's text and a stubbed run are covered by `services/dashboard/test/docs-script.test.ts`.
+- The LAN listener (port 47312) was not requested for a docs path; it is covered by `services/dashboard/test/host-docs.test.ts`.
+- Only Chrome, only at 1280px, only the dark dashboard page.

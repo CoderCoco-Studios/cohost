@@ -377,7 +377,7 @@ flowchart LR
 | body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration; generates and serves the fallback clips |
 | body | mouth | `voice.utterance` → the owner's routed outputs (today Discord, through the co-host's bot) as sinks; the spoken fallback line when a line cannot play |
 | body | avatar | Canonical avatar state → VTube Studio / VMC driver |
-| operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection |
+| operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection; serves the built docs site |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
 | operator | docs-site | The published documentation site: its page tree and two reading tracks, hand-written pages, voice, glossary, theme and personality, the boundary between published pages and the unpublished design tree, and the link, fact and theme checks its build runs; the README as a short pointer to it |
@@ -793,7 +793,8 @@ what to measure once it has. All targets are proposals.
 
 - `docs/arrows/index.yaml` — segment index and dependency graph
 - `docs/arrows/README.md` — how to navigate the overlay
-- The docs site (`docs/`, published to GitHub Pages under `/cohost/`) — operator
-  and developer documentation; `README.md` is a short pointer to it
+- The docs site (`docs/`, published to GitHub Pages under `/cohost/`, and served
+  by the dashboard at the same path) — operator and developer documentation;
+  `README.md` is a short pointer to it
 - `config/personality.example.md`, `config/config.example.yaml` — the persona
   and behaviour knobs the goals above refer to

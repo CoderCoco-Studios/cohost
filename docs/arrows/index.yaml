@@ -266,7 +266,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "119 specs, all [x]. No open gaps. Owner-deferred: visual redesign."
+    next: "135 specs, all [x]. The docs route at /cohost/ (DASH-DOCS-001..014), the page's docs links (DASH-UI-024, 025) and DASH-CTRL-005's docs entry were added after the 2026-11-14 audit and are not covered by it; run a new audit. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:
@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "77 specs: 77 [x], 0 [ ]. DEPLOY-INST-007 and DEPLOY-INST-014 have source-order tests only; observe one installer run on a clean machine. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
+    next: "79 specs, all [x]. The docs build in pnpm dashboard (DEPLOY-HOST-001, -005, -006) was added after the 2026-11-14 audit and is not covered by it; run a new audit. DEPLOY-INST-007 and DEPLOY-INST-014 have source-order tests only; observe one installer run on a clean machine. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
     drift: null
 
   docs-site:
@@ -302,7 +302,7 @@ arrows:
     blocks: [deployment]
     blockedBy: []
     detail: docs-site.md
-    next: "116 specs: 115 [x], 1 [ ]. Theme built and tested (DOCS-THEME-001..056), reviewed by eye 2026-11-15; DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "129 specs: 128 [x], 1 [ ]. The live health component and its checks (DOCS-LIVE-001..013) are built and tested, and were observed in a browser on 2026-11-15. Theme built and tested (DOCS-THEME-001..056), reviewed by eye 2026-11-15; DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

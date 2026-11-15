@@ -23,6 +23,7 @@
   .ev .k { flex:0 0 110px; color:var(--acc) }
   .ev.say .k{color:var(--ok)} .ev.chat .k{color:#c7a5ff} .ev.vision .k{color:#7fd6e0} .ev.speech .k{color:var(--warn)} .ev.status{opacity:.55}
   button { background:#232838; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:6px 10px; cursor:pointer }
+  .docs-link { color:var(--acc); font-size:13px; text-decoration:none; padding:6px 4px } .docs-link:hover { text-decoration:underline }
   button:hover{border-color:var(--acc)} button.on{background:var(--acc); color:#0b0d12; border-color:var(--acc)}
   input, textarea { width:100%; background:#0f1218; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit }
   textarea { font-family:ui-monospace,Menlo,monospace; font-size:12px; min-height:260px; resize:vertical }
@@ -38,7 +39,7 @@
   .badge.up{color:var(--ok); border-color:var(--ok)} .badge.degraded{color:var(--warn); border-color:var(--warn)} .badge.stale{color:var(--warn)}
   .badge.down,.badge.crash-looping{color:var(--bad); border-color:var(--bad)} .badge.unknown{color:var(--dim)}
   .dep.ok{color:var(--ok)} .dep.down{color:var(--bad)} .dep.na{color:var(--dim)}
-  .sink main, .sink #services, .sink .tab { display:none }  /* ?sink=1 : audio only, for OBS browser source */
+  .sink main, .sink #services, .sink .tab, .sink .docs-link { display:none }  /* ?sink=1 : audio only, for OBS browser source */
   .badge.paused { color:var(--warn); border-color:var(--warn); margin-left:6px }
   .needs { display:block; color:var(--warn); font-size:12px }
   #testDrawer { margin-top:12px } #testDrawer h3 { margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
@@ -88,6 +89,7 @@
   <button id="tabServices" class="tab">services</button>
   <button id="tabViewers" class="tab">viewers</button>
   <button id="tabSettings" class="tab">settings</button>
+  <a class="docs-link" href="/cohost/" target="_blank" rel="noopener">docs</a>
   <span style="flex:1"></span>
   <button id="audio">🔇 enable audio</button>
   <button id="mute">mute</button><span id="muteMsg" class="hint"></span>
@@ -159,7 +161,7 @@
     <div id="stackLast" class="hint"></div>
   </div>
   <div class="panel">
-    <h2>services <span id="svcNote" class="hint"></span></h2>
+    <h2>services <span id="svcNote" class="hint"></span> <a class="docs-link" href="/cohost/guide/operate/health#the-states" target="_blank" rel="noopener" style="font-size:12px;font-weight:normal">how to read this</a></h2>
     <div id="ctlBar" class="row" style="display:none; margin-bottom:8px">
       <label>start mode <select id="ctlMode"><option value="">default (per service)</option><option value="resume">resume (keep backlog)</option><option value="fresh">fresh (skip backlog)</option></select></label>
       <label><input type="checkbox" id="ctlIso" style="width:auto"> isolated (mock/off backends)</label>

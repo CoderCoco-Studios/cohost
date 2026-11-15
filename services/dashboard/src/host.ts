@@ -27,7 +27,7 @@ export function lanAllows(method: string, pathname: string): boolean {
 }
 
 /** Wraps the full handler so the LAN listener has no path to any other route: everything else is a 404 and nothing runs. */
-// @spec DASH-HOST-002
+// @spec DASH-HOST-002, DASH-DOCS-012
 export function lanHandler(full: http.RequestListener): http.RequestListener {
   return (req, res) => {
     let pathname: string;

@@ -64,7 +64,7 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 
 4. Choose the driver and restart the avatar service, so it reads the new setting. The setting is read from the environment:
 
-   ```env
+   ```dotenv
    AVATAR_DRIVER=udp-json
    ```
 

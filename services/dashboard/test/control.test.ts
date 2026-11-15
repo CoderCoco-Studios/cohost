@@ -92,6 +92,19 @@ test("bind: loopback by default in both modes; an empty DASHBOARD_HOST is skippe
   assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1" }, new CtlBus(), recordingLog().log).bind, "::1");
 });
 
+// @spec DASH-CTRL-008
+test("CONTROL_ENABLED=1 with CONTROL_ADVANCED=1 warns at startup that redis and postgres can be stopped; either alone does not", () => {
+  const warned = (env: NodeJS.ProcessEnv) => {
+    const r = recordingLog();
+    setupControl(env, new CtlBus(), r.log, fakeRuntime().rt);
+    return r.msgs("warn").filter((m) => /redis/.test(String(m)) && /postgres/.test(String(m)) && /stopped/.test(String(m)));
+  };
+  assert.equal(warned({ ...ON, CONTROL_ADVANCED: "1" }).length, 1);
+  assert.equal(warned(ON).length, 0);
+  assert.equal(warned({ CONTROL_ADVANCED: "1" }).length, 0, "control disabled: nothing to warn about");
+  assert.equal(warned({ ...ON, CONTROL_ADVANCED: "0" }).length, 0);
+});
+
 // @spec DASH-HOST-007
 test("a non-loopback full-surface address without CONTROL_ENABLED=1 fails startup naming DASHBOARD_HOST and CONTROL_ENABLED", () => {
   for (const env of [{ DASHBOARD_HOST: "0.0.0.0" }, { DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }]) {

@@ -1,14 +1,14 @@
 # Arrow: docs-site
 
-The published documentation site: a VitePress site under `docs/` with a plain-language track and an advanced track for a reader who knows nothing about the domain, hand-written pages in one voice, a glossary, build-time excerpts of the design documents, the boundary between published pages and the unpublished design tree, and the checks `pnpm docs:build` runs. Also the README as a short pointer to the site, and the `examples/` READMEs as directory guides.
+The published documentation site: a VitePress site under `docs/` with a plain-language track and an advanced track for a reader who knows nothing about the domain, hand-written pages in one voice, a glossary, build-time excerpts of the design documents, the boundary between published pages and the unpublished design tree, the site's theme and personality (palette, mascot, track badges, the co-host aside, build-time diagrams, the 404 page), and the checks `pnpm docs:build` runs. Also the README as a short pointer to the site, and the `examples/` READMEs as directory guides.
 
 ## Status
 
-**MAPPED** — 60 specs: 60 implemented, 0 deferred, 0 gaps. The pages, loaders, sidebar data, config and docs check exist and are tested; a separate audit has not been run.
+**MAPPED** — 116 specs: 115 implemented, 0 deferred, 1 gap. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser; a separate audit has not been run.
 
 ## Orientation
 
-- Design: LLD § Reader and tracks, § Page tree (every page's path and track), § Page authoring (frontmatter, `verified:`, glossary links), § Voice, § README and examples, § Architecture section (dynamic-route excerpts), § Publishing boundary, § Build and checks.
+- Design: LLD § Reader and tracks, § Page tree (every page's path and track), § Page authoring (frontmatter, `verified:`, glossary links), § Voice, § README and examples, § Architecture section (dynamic-route excerpts), § Publishing boundary, § Build and checks, § Theme and personality (Palette and Contrast pairs tables the docs check reads).
 - Cross-segment edges: deployment runs the build (`docs-build`, `pages`; DEPLOY-CI-003, DEPLOY-CI-004), owns the licence footer (DEPLOY-LIC-004) and the content specs that name site pages (DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006, DEPLOY-INST-011). Every leaf LLD is excerpted, so each must keep a `## Context and Design Philosophy` section, and the HLD Segments table must list exactly the leaf LLDs (DOCS-ARCH-004).
 
 ## References
@@ -20,7 +20,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 - docs/intent/docs-site/docs-site-design.md
 
 ### EARS
-- docs/intent/docs-site/docs-site-specs.md (60 specs, prefix `DOCS`: 60 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/docs-site/docs-site-specs.md (116 specs, prefix `DOCS`: 115 `[x]`, 1 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/docs-check.test.ts (the docs check, sidebar, loaders and README/examples shape)
@@ -39,6 +39,7 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 2. Glossary with machine-checked links from every page that uses a term.
 3. Architecture excerpts: dynamic routes over the HLD, each leaf LLD's Context and Design Philosophy, and the current decision documents.
 4. `scripts/docs-check.mjs`: frontmatter, sidebar, glossary, facts against `package.json`, `.env.example`, `config.example.yaml` and the bus event registry, GitHub links, narration phrases, README and examples shape; a built-site pass for the publishing boundary and anchors.
+5. Theme (`docs/.vitepress/theme/`): extends VitePress's default theme with a token palette, the cohost mark, track badges, aside and callout styling, the home flow and the 404 page; Mermaid fences rendered to SVG at build time; theme checks for contrast, network origins, motion, focus, print and narrow screens, plus a manual review on the Verification log.
 
 ## Spec Coverage
 
@@ -54,8 +55,9 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 | Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 10 | 0 | 0 |
 | README | DOCS-README-001 to DOCS-README-004 | 4 | 4 | 0 | 0 |
 | Examples | DOCS-EX-001 to DOCS-EX-004 | 4 | 4 | 0 | 0 |
+| Theme and personality | DOCS-THEME-001 to DOCS-THEME-056 | 56 | 55 | 0 | 1 |
 
-**Summary:** 60 of 60 specs implemented.
+**Summary:** 115 of 116 specs implemented; the one gap is DOCS-THEME-017 (the favicon's drawing, checked by eye).
 
 ## Work Required
 
@@ -63,7 +65,7 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 None.
 
 ### Should Fix
-None.
+1. Open the favicon (`docs/public/favicon.svg`) in a browser tab and confirm it draws the `idle` expression, then mark DOCS-THEME-017 `[x]`. Repeat the DOCS-THEME-049 review whenever the theme changes.
 
 ### Nice to Have
-1. Custom theme, dashboard-served docs and extension guides (LLD § Open Questions, Deferred).
+1. Dashboard-served docs and extension guides (LLD § Open Questions, Deferred).

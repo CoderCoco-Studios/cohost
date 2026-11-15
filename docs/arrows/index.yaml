@@ -302,7 +302,7 @@ arrows:
     blocks: [deployment]
     blockedBy: []
     detail: docs-site.md
-    next: "60 specs: 60 [x], 0 [ ]. Pages, loaders, sidebar data, config and docs check built and tested; run a separate audit to move MAPPED to AUDITED."
+    next: "116 specs: 115 [x], 1 [ ]. Theme built and tested (DOCS-THEME-001..056), reviewed by eye 2026-11-15; DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

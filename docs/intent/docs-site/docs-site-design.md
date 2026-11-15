@@ -9,7 +9,7 @@ Parent: [high-level-design](../../high-level-design.md). Specs: [docs-site-specs
 
 ## Context and Design Philosophy
 
-The docs site is how anyone learns cohost: what it is, how to set it up, how to run a stream with it, and how it is built. It is a VitePress site under `docs/`, published to GitHub Pages under the base path `/cohost/` by the deployment segment's `pages` workflow and built on every pull request by its `docs-build` workflow (deployment DEPLOY-CI-003, DEPLOY-CI-004). This segment owns what the site contains and how it hangs together: the page tree and its two reading tracks, the hand-written pages, the voice they are written in, the glossary, which files are published and which are not, the excerpted architecture pages, the checks the build runs, and the README as a short pointer to the site.
+The docs site is how anyone learns cohost: what it is, how to set it up, how to run a stream with it, and how it is built. It is a VitePress site under `docs/`, published to GitHub Pages under the base path `/cohost/` by the deployment segment's `pages` workflow and built on every pull request by its `docs-build` workflow (deployment DEPLOY-CI-003, DEPLOY-CI-004). This segment owns what the site contains and how it hangs together: the page tree and its two reading tracks, the hand-written pages, the voice they are written in, the glossary, which files are published and which are not, the excerpted architecture pages, the site's theme and personality, the checks the build runs, and the README as a short pointer to the site.
 
 The reader the site is written for knows nothing about the domain: not streaming, not VTubers, not speech-to-text, text-to-speech or language models, not Redis, not Docker. That reader is the owner coming back cold after months away, or anyone reading the open source. Everything follows from that reader:
 
@@ -17,6 +17,7 @@ The reader the site is written for knows nothing about the domain: not streaming
 - **Every term is defined where it is used.** A glossary defines each piece of jargon once, and every page links a glossary term the first time its prose uses it.
 - **Hand-written pages are the source of truth.** Each page is written for its place in the site, in the site's voice. Nothing in the user documentation is copied from or generated out of another file, so there is one place to edit and one voice to keep.
 - **The design record is shown, not retold.** The architecture section publishes excerpts of the design documents themselves (the HLD's framing sections, each leaf LLD's Context and Design Philosophy, the current decision documents), extracted at build time, so the site never carries a second, drifting description of the design.
+- **Warm, but never in the way.** The site has a character: a small speech-bubble mascot wearing a headset, a warm palette, the co-host's own asides. Legibility beats cleverness every time: every colour pair meets WCAG AA, motion is optional, and the site loads nothing from any other origin, so it reads the same on GitHub Pages and offline.
 - **What a page states, a machine checks where it can.** Dead links, orphan pages, missing glossary links, commands that name scripts that do not exist, variables the reference does not list, and pages leaking out of the unpublished design tree all fail the build. What no machine can check is pinned to the commit it was last checked against.
 
 The docs site is held to the HLD's bar for documentation: a defect in it is a bug, fixed with the same weight as a code defect.
@@ -42,7 +43,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 
 | Page | Path | Covers |
 | --- | --- | --- |
-| Home | `index.md` | Hero, one-line pitch, three entry cards: Start here, Set it up (simple), Build on it (advanced) |
+| Home | `index.md` | Hero, one-line pitch, three entry cards: Start here, Set it up (simple), Build on it (advanced); how a chat line becomes speech, in six steps |
 | What is cohost? | `start/what-is-cohost.md` | What the co-host does on a stream, what it is not, what you need (a Linux or WSL2 PC, optionally an NVIDIA GPU, the accounts you want it on), which track to read |
 | How it works | `start/how-it-works.md` | One chat line's journey: chat hears it, salience decides it is worth answering, cortex writes a reply, voice speaks it, the dashboard sink or Discord plays it, the avatar moves its mouth; the creature metaphor (senses, brain, body, operator) |
 | Glossary | `start/glossary.md` | Every term the site links, one short plain definition each |
@@ -181,7 +182,7 @@ The site speaks to the reader as "you", warmly and plainly, the way a friend who
 - **Concrete.** Name the button, the file, the line; show what the screen will say.
 - **Honest.** Say what is slow, what downloads several gigabytes, what has not been tried against the real service yet. Never promise more than the code does.
 - **Light humour, sparingly.** At most a line here and there, never in a step the reader must follow exactly, never at the reader's expense.
-- **The co-host peeks through.** Now and then a *co-host aside*, a `::: aside` container in the co-host's own voice: dry, a little smug, fond of the streamer. The VitePress config renders it under the title "The co-host says" in an element with the class `cohost-aside`, which the theme project styles. An aside never carries information the reader needs.
+- **The co-host peeks through.** Now and then a *co-host aside*, a `::: aside` container in the co-host's own voice: dry, a little smug, fond of the streamer. The VitePress config renders it under the title "The co-host says" in an element with the class `cohost-aside`, styled as a speech bubble (see Theme and personality). An aside never carries information the reader needs.
 - **Current, not historical.** Pages describe what is true today: no upgrade notes, no deprecated names, no dates, except on the verification log, which is a dated record. The build rejects the words "previously", "formerly", "deprecated" and "legacy" in prose; a line that needs one in its current-tense sense carries `<!-- docs-check: allow -->`.
 - **Sentence case** for titles and headings.
 
@@ -231,7 +232,192 @@ VitePress's own dead-link check stays on; `ignoreDeadLinks` is unset or `'localh
 
 Built-site checks (over `docs/.vitepress/dist`): no page was built from an excluded file; every internal link with a fragment lands on an element with that id on its target page (VitePress checks pages, not anchors, and glossary links are all anchors); and every link from the README or an examples README to `https://codercoco-studios.github.io/cohost/<path>` maps to a built file (`<path>.html`, or `<path>index.html`) that exists and holds the link's fragment.
 
-The check is a Node script with no dependencies beyond the workspace's, in the pattern of `scripts/lid-check.mjs`; its tests are `packages/config/test/docs-check.test.ts`, beside lid-check's.
+The check is a Node script with no dependencies beyond the workspace's, in the pattern of `scripts/lid-check.mjs`; its tests are `packages/config/test/docs-check.test.ts`, beside lid-check's. It also runs the theme checks listed under Theme and personality.
+
+## Theme and personality
+
+The site looks like VitePress's default theme made warm: the same layout, nav, sidebar, outline, local search and previous/next links, with cohost's own palette, a mascot, track badges, a speech-bubble co-host aside, rendered diagrams and a 404 page with some character. The personality lives in colour, the mascot and the asides; the reading surface stays plain. When a flourish and legibility pull apart, legibility wins.
+
+### Theme files
+
+The theme is `docs/.vitepress/theme/`: `index.ts` extends `vitepress/theme` (the default theme with its bundled fonts) and fills its layout slots; `tokens.css` holds the palette and nothing else; `style.css` maps VitePress's variables onto the palette and holds every other rule; components sit under `theme/components/`. The co-host aside and flow containers and the Mermaid fence renderer are markdown-it plugins under `docs/.vitepress/`, registered in `config.ts` beside the aside container, so the same markdown renders the same way in tests and in the build.
+
+### Palette
+
+The palette is violet for anything you can click, coral for warmth and decoration, on a warm paper background in light mode and a deep plum in dark mode. Every colour is a `--cohost-<token>` custom property in `tokens.css`, declared once under `:root` (light) and once under `.dark` (dark), each value a six-digit hex literal so a script can compute contrast from the file; `tokens.css` holds those two blocks and nothing else, and every other rule, the print overrides included, is in `style.css`. `style.css` points VitePress's own variables (`--vp-c-bg`, `--vp-c-bg-alt`, `--vp-c-bg-soft`, `--vp-c-text-1` to `-3`, `--vp-c-brand-1` to `-3` (`-1` and `-2` take `brand-1` and `brand-2`; `-3`, like `--vp-button-brand-bg`, takes `button-bg`, the one filled-violet colour), `--vp-button-brand-*`, `--vp-code-block-bg`, `--vp-code-bg`, `--vp-code-color`, `--vp-custom-block-{tip,info,warning,danger,details}-bg` and `--vp-custom-block-{tip,info,warning,danger,details}-text`) at these tokens, so VitePress's components follow the palette without overrides of their own.
+
+The values below are the design; the docs check compares `tokens.css` against this table.
+
+| Token | Light | Dark | Used for |
+| --- | --- | --- | --- |
+| `bg` | `#FFFCF8` | `#1A1420` | Page background |
+| `bg-alt` | `#F8F3EE` | `#211A29` | Sidebar, nav |
+| `bg-soft` | `#F7F1EA` | `#2A2133` | Entry cards, search box, flow steps |
+| `text-1` | `#251C2E` | `#F4EEF8` | Body text, headings |
+| `text-2` | `#574B63` | `#C9BDD3` | Secondary text, sidebar items, diagram labels and lines |
+| `text-3` | `#6F637B` | `#A396AE` | Muted text, placeholders |
+| `brand-1` | `#6B3FBF` | `#BFA3FF` | Links, active nav and sidebar items, hero name |
+| `brand-2` | `#5A30A6` | `#D2BFFF` | Link hover |
+| `button-bg` | `#6B3FBF` | `#6A40C4` | Primary button |
+| `button-hover-bg` | `#5A30A6` | `#7A4FD6` | Primary button on hover |
+| `button-text` | `#FFFFFF` | `#FFFFFF` | Primary button label |
+| `accent` | `#E0583F` | `#FF8A70` | Coral decoration: aside border, flow arrows, entry-card strip of Start here |
+| `focus` | `#6B3FBF` | `#BFA3FF` | Keyboard focus outline |
+| `aside-bg` | `#FFF1EA` | `#2C1E22` | Co-host aside background |
+| `aside-title` | `#A63A26` | `#FFB39F` | "The co-host says" |
+| `code-bg` | `#F6F2F9` | `#211A29` | Code block background |
+| `code-inline-bg` | `#F1EBF7` | `#2E2440` | Inline code background |
+| `code-inline-text` | `#5A30A6` | `#D2BFFF` | Inline code text |
+| `badge-start-bg` | `#FFE3D9` | `#3D2420` | Start here badge |
+| `badge-start-text` | `#9A3420` | `#FFB39F` | Start here badge |
+| `badge-simple-bg` | `#DDF3E6` | `#1C3326` | Simple badge |
+| `badge-simple-text` | `#1E6B3F` | `#8FDCAE` | Simple badge, Set it up card strip |
+| `badge-advanced-bg` | `#ECE3FB` | `#2E2448` | Advanced badge |
+| `badge-advanced-text` | `#5A30A6` | `#CDB8FF` | Advanced badge, Build on it card strip |
+| `badge-project-bg` | `#E8E6EC` | `#2C2833` | Project badge |
+| `badge-project-text` | `#45404D` | `#D4CFDA` | Project badge |
+| `tip-bg` | `#E9F6EE` | `#1C3326` | Tip callout |
+| `tip-title` | `#1E6B3F` | `#8FDCAE` | Tip callout title and border |
+| `info-bg` | `#EEF0F4` | `#262330` | Info and details callouts |
+| `info-title` | `#3F4654` | `#C9BDD3` | Info callout title and border |
+| `warning-bg` | `#FFF4D6` | `#3A2E12` | Warning callout |
+| `warning-title` | `#8A5A00` | `#F5C86A` | Warning callout title and border |
+| `danger-bg` | `#FDE7E9` | `#3D1E22` | Danger callout |
+| `danger-title` | `#B4232F` | `#FF9AA4` | Danger callout title and border |
+| `mascot-body` | `#6B3FBF` | `#8F6BEA` | Mascot's bubble |
+| `mascot-face` | `#FFFFFF` | `#FFFFFF` | Mascot's eyes and mouth |
+| `mascot-headset` | `#E0583F` | `#FF8A70` | Mascot's headset |
+
+**Contrast pairs.** Each row pairs one foreground token with each listed background token; the ratio (WCAG 2.x relative luminance) must reach the minimum in both light and dark. 4.5 is WCAG AA for normal text; 3 is AA for non-text contrast (outlines, borders, the mascot's shapes). The docs check reads this table.
+
+| Foreground | Backgrounds | Minimum |
+| --- | --- | --- |
+| `text-1` | `bg`, `bg-alt`, `bg-soft`, `aside-bg`, `code-bg`, `tip-bg`, `info-bg`, `warning-bg`, `danger-bg` | 4.5 |
+| `text-2` | `bg`, `bg-alt`, `bg-soft` | 4.5 |
+| `text-3` | `bg`, `bg-alt`, `bg-soft` | 4.5 |
+| `brand-1` | `bg`, `bg-alt`, `bg-soft`, `aside-bg`, `tip-bg`, `info-bg`, `warning-bg`, `danger-bg` | 4.5 |
+| `brand-2` | `bg`, `bg-alt`, `bg-soft` | 4.5 |
+| `button-text` | `button-bg`, `button-hover-bg` | 4.5 |
+| `aside-title` | `aside-bg` | 4.5 |
+| `code-inline-text` | `code-inline-bg` | 4.5 |
+| `badge-start-text` | `badge-start-bg` | 4.5 |
+| `badge-simple-text` | `badge-simple-bg` | 4.5 |
+| `badge-advanced-text` | `badge-advanced-bg` | 4.5 |
+| `badge-project-text` | `badge-project-bg` | 4.5 |
+| `tip-title` | `tip-bg` | 4.5 |
+| `info-title` | `info-bg` | 4.5 |
+| `warning-title` | `warning-bg` | 4.5 |
+| `danger-title` | `danger-bg` | 4.5 |
+| `focus` | `bg`, `bg-alt`, `bg-soft` | 3 |
+| `accent` | `bg` | 3 |
+| `mascot-body` | `bg` | 3 |
+| `mascot-headset` | `bg` | 3 |
+| `mascot-face` | `mascot-body` | 3 |
+
+The lowest margin in the table is half a point above its minimum, so a small hand-tweak to one value can tip a pair; the check catches it.
+
+**Code highlighting** uses Shiki's `github-light-high-contrast` theme in light mode and `github-dark-default` in dark mode, set as `markdown.theme` in the config. Every colour either theme gives a token that has no background of its own reaches 4.5:1 against `code-bg` in its mode; the check computes this from the installed Shiki themes, so a VitePress upgrade that changes a theme is caught.
+
+### Type
+
+Text uses Inter, which VitePress's default theme ships as self-hosted font files inside the build; code uses VitePress's system monospace stack (`ui-monospace`, then the platform fonts). The theme adds no font file and no font package. Headings are Inter at weight 700 with slightly tightened letter-spacing; body text stays at VitePress's 16px with its line height. No external font service is used: VitePress removes its optional web-font import from the production build, and the origin check below fails the build if any external stylesheet or font reappears.
+
+### The mascot
+
+The *cohost mark* is a small friendly speech bubble wearing a headset: the co-host as a voice in the room, drawn from simple shapes and original to cohost, not modelled on any real VTuber or logo. One Vue component, `CohostMark.vue`, holds it as inline SVG so it takes the palette and switches with dark mode. It is specified here in words; the implementer draws it within these constraints.
+
+- **Canvas.** `viewBox="0 0 64 64"`, square. It must read at 20px (nav) and look good at 200px (home hero).
+- **Bubble (body).** A rounded rectangle about 44 wide and 34 tall, centred a little below the middle, corner radius about 14, with a short rounded tail at its lower left pointing down and left. Fill `--cohost-mascot-body`.
+- **Headset.** A band arcing over the top of the bubble from one side to the other, stroke about 4 units, round caps, with an ear cup (a small rounded rectangle) on each side of the bubble at eye height. Colour `--cohost-mascot-headset`. A short microphone boom may curve from the right ear cup towards the bubble's lower right, ending in a small dot.
+- **Face.** Two eyes as short upright rounded bars, and a mouth as a three-bar waveform (short, tall, short rounded bars) centred below them. Fill `--cohost-mascot-face`.
+- **Limits.** At most 12 shape elements; no `<text>`, gradients, filters, masks, `<image>`, `<use>` of external files or `<style>` element; every colour a `var(--cohost-mascot-*)` reference; strokes and gaps at least 3 units so the 20px rendering does not blur into a blob.
+- **Expressions.** The component takes an `expression` prop: `idle` (above), `talking` (the waveform bars animate, used in the home hero only) and `lost` (the 404 page: the bubble tilted about 8 degrees, one eye a little higher than the other, the mouth a single short flat bar).
+- **Markup.** The `<svg>` carries `class="cohost-mark"` and `data-expression` set to its expression, so a check can tell the 404 mark from the nav mark.
+- **Accessibility.** Beside the site title or other text naming cohost it is decorative (`aria-hidden="true"`); used alone it carries `role="img"` and `aria-label="The cohost mascot"`.
+- **Favicon.** `docs/public/favicon.svg` is the idle mark with the light-mode hex values written in (a favicon cannot read page variables) and the boom omitted, linked from every page's `head`.
+
+The mark is unnamed: the co-host's name belongs to each streamer's `personality.md`, so the site calls it "the co-host".
+
+### Nav, footer and social links
+
+The nav bar shows the mark (idle, 24px, decorative) before the site title "cohost". Nav items, the GitHub social link and the footer text stay as the information architecture and the deployment segment's licence requirement set them; the theme only colours them. GitHub is the only social link: the project has no other public channel.
+
+### Track badges
+
+Every page rendered with VitePress's doc layout whose frontmatter has a `track` shows a badge just above its `#` heading, through the default theme's `doc-before` slot: a small rounded label in the track's badge colours.
+
+| `track` | Label | Colours |
+| --- | --- | --- |
+| `start` | Start here | `badge-start-*` |
+| `simple` | Simple | `badge-simple-*` |
+| `advanced` | Advanced | `badge-advanced-*` |
+| `project` | Project | `badge-project-*` |
+
+The badge is `<span class="cohost-track-badge" data-track="<track>">`, starts with visually hidden text "Track: " so a screen reader announces what it is, and is not a link (one fewer tab stop on every page). Design-excerpt pages carry `track: advanced`, so they show the Advanced badge. The home page uses the home layout and shows none.
+
+### The co-host aside
+
+The aside reads as the co-host leaning in with a comment: a speech bubble in `aside-bg`, corner radius 12px, a 4px coral (`accent`) left border, and a small tail at the top left pointing at its title. The title "The co-host says" is in `aside-title`, bold, preceded by the idle mark at 18px drawn as a CSS mask (a `data:` URL, so nothing is fetched and the markup from the aside container does not change). Body text is `text-1`, upright: never italic, because the aside is read as prose.
+
+### Callouts
+
+VitePress's `tip`, `info`, `warning`, `danger` and `details` containers take the aside's shape without its tail: the type's `-bg` background, a 4px left border and a bold title in the type's `-title` colour (`details` uses the info colours), body text `text-1`. Their default titles stay ("TIP", "WARNING" and so on, in VitePress's wording).
+
+### Diagrams
+
+A fenced code block with language `mermaid`, on a hand-written page or inside a design excerpt (the HLD's System Design section holds one), is rendered at build time to inline SVG by `beautiful-mermaid`, a dependency-light Mermaid renderer that needs no browser. A markdown-it fence rule in the config calls it, so excerpts and hand-written pages render alike and nothing Mermaid-related runs in the reader's browser.
+
+- The renderer is given the palette as CSS variable references (`bg` → `var(--cohost-bg)`, `fg` → `var(--cohost-text-1)`, `muted` and `line` → `var(--cohost-text-2)`, `accent` → `var(--cohost-accent)`, `surface` → `var(--cohost-bg-soft)`, `border` → `var(--cohost-text-3)`), transparent background, font `Inter`, so a diagram follows light and dark mode without being rendered twice.
+- The renderer's output carries `@import` rules for a hosted web font; the fence rule removes every `@import` from the SVG's `<style>`. The origin check guarantees none survives.
+- The SVG is wrapped in `<figure class="cohost-diagram" tabindex="0">`. The figure scrolls horizontally on its own (`overflow-x: auto`), and the SVG is drawn at its natural width, never scaled below it, so the labels of a wide diagram stay legible on a phone and the page itself never scrolls sideways. `tabindex="0"` lets a keyboard user focus the figure and scroll it.
+- The SVG has `role="img"` and `aria-label="Diagram: <heading>"`, where `<heading>` is the text of the nearest heading before the fence on its page; its labels remain real SVG text, so they can be found and copied.
+- A fence the renderer cannot parse fails the build, naming the page or the design document and the fence's line.
+
+### Home page
+
+The home page keeps VitePress's home layout and its frontmatter (hero text, three actions, three feature cards), styled:
+
+1. **Hero.** The name "cohost" in `brand-1` (solid colour, no gradient), the line and tagline from frontmatter, the three actions. Beside it, through the `home-hero-image` slot, the mark at 200px with the `talking` expression over a soft `bg-soft` circle; below 960px VitePress stacks the image above the text, and the mark drops to 120px.
+2. **Entry cards.** The three feature cards (Start here, Set it up, Build on it, in that order, DOCS-IA-008) on `bg-soft`, each with a 4px top strip in its track's colour: `accent` for Start here, `badge-simple-text` for Set it up, `badge-advanced-text` for Build on it. The whole card is the link, as in the default theme.
+3. **How a chat line becomes speech.** A `##` heading of that name, then a `::: flow` container holding an ordered list of six steps, each a short bold name and a few words: **Chat** hears the line; **Salience** decides it is worth answering; **Cortex** remembers and writes a reply; **Voice** turns it into speech; **the sink or Discord** plays it; **the avatar** moves its mouth. Terms link the glossary as on any page. The last line of the container links the How it works page (`start/how-it-works.md`) for the whole journey. The `flow` container renders `<div class="cohost-flow">` around its content. On a narrow screen the steps are a single column joined by a coral line down the left; from 640px they become a wrapping row of `bg-soft` chips joined by coral arrows (CSS-generated, hidden from screen readers), sized so they wrap three and three below 960px and sit as one row of six above it. The ordered list stays an ordered list, so it reads as steps without the styling.
+4. **What to do first**, the glossary pointer and the co-host aside, as written in `index.md`.
+
+### 404 page
+
+The default theme's `not-found` slot holds a page that is plain about what happened and lets the co-host shrug. It shows the mark with the `lost` expression, the `#` heading "Page not found", one plain sentence ("There is no page at this address. It may have moved, or the link may have a typo."), a link "Go to the home page" to `/cohost/`, a link to What is cohost?, a note that the search box at the top finds any page, and one co-host line in a `.cohost-aside`: "I looked behind the couch and under the stream deck. Nothing. Let's go back home." The text lives in `theme/components/NotFound.vue`, the one user-facing text outside a markdown page; it is held to the Voice section by review. The built `404.html` is the server-rendered not-found page: VitePress writes an empty app shell for it, so the config's `transformHtml` hook puts the rendered page into the HTML, which makes the page exist without JavaScript and lets the docs check read it. The browser still hydrates it.
+
+### Motion
+
+Motion is decoration, so it is opt-in to the reader's system setting. Every `animation` and `transition` the theme declares sits inside `@media (prefers-reduced-motion: no-preference)`; and a `@media (prefers-reduced-motion: reduce)` block cuts every element's animation and transition to an instant and turns smooth scrolling off, which also covers VitePress's own transitions. The only animation is the hero mark talking: its waveform bars bob for at most three cycles, five seconds in all, on page load, then stop (WCAG 2.2.2 needs no pause control for motion that stops within five seconds). Entry cards lift 2px on hover with a 150ms transition.
+
+### Light and dark
+
+The site follows the reader's `prefers-color-scheme` and keeps VitePress's appearance toggle: the config's `appearance` is left at its default (`true`). Every token has a dark value, so nothing in the theme is designed for one scheme only. Without JavaScript the site shows the light palette.
+
+### Keyboard focus
+
+Every focusable element (links, buttons, `summary`, form fields, `[tabindex]`) shows a 2px solid `focus` outline offset 2px when focused from the keyboard (`:focus-visible`). The theme never removes an outline (`outline: none` or `0`). VitePress's "Skip to content" link stays first in tab order.
+
+### Small screens
+
+The site works at 360px wide with no horizontal page scroll. VitePress's layout already collapses the sidebar and outline, wraps tables in their own horizontal scroller and lets code blocks scroll; the theme keeps to that. Its own rules are written for the narrow screen first and widen inside `@media (min-width: …)` blocks; no theme rule outside such a block sets a `width`, `min-width` or `flex-basis` above 328px (360px less the 16px page gutters), and the diagram SVG, whose natural width may exceed the column, sets none, its figure scrolling on its own.
+
+### Print
+
+A printed page is the article alone, in the light palette: the nav, local nav, sidebar, outline aside, previous/next pager, search and appearance toggle are hidden; `.dark` takes the light token values and highlighted code takes Shiki's light colours; code blocks wrap instead of overflowing; diagrams, asides and callouts do not break across pages; and each link in page content to another site prints its URL after its text. The track badge prints, so a printed page still says which track it belongs to.
+
+### Network
+
+The built site loads nothing from any other origin: no font service, CDN, analytics or remote script. A built page may *link* elsewhere (GitHub, the services a page explains); it may not *load* from elsewhere. This keeps the site private to read and lets the same build be served offline. Search stays VitePress's local index.
+
+### Theme checks
+
+The docs check enforces what a machine can see:
+
+- Source pass: `tokens.css` matches the Palette table, both modes declare the same tokens as hex literals, every contrast pair reaches its minimum, the configured Shiki themes meet 4.5:1 against `code-bg`, `style.css` maps the listed VitePress variables to tokens, the motion, focus, print and small-screen rules above hold in the theme's CSS, the mark component keeps its limits, the home page holds the flow with its six steps in order, and the Mermaid renderer is pinned in `package.json`.
+- Built-site pass: no resource reference to another origin in any built HTML, CSS or inline SVG; every doc-layout page with a `track` carries exactly one badge with that track; no Mermaid fence is left as a code block; every page links the favicon; `404.html` has its heading, its links, the mark and the co-host's line.
+
+What only eyes can judge (the site at 360px and 1280px wide, in light and dark, with reduced motion on, tabbing through a page, the print preview, and the diagrams' legibility) is a manual review. It is recorded on the Verification log page with the commit it was done against, and repeated when the theme changes.
 
 ## Decisions & Alternatives
 
@@ -247,26 +433,42 @@ The check is a Node script with no dependencies beyond the workspace's, in the p
 | Where checks run | `scripts/docs-check.mjs` inside `pnpm docs:build`, before and after `vitepress build` | Inside `scripts/lid-check.mjs`; inside `pnpm test`; a separate workflow | `docs:build` already runs on every pull request and every deploy, so no workflow changes; lid-check is about the arrow, not the site; `pnpm test` would build the site on every test run. |
 | Dead links | VitePress's check on, skipping only `localhost` links | A pattern list that skips links into the design tree | A skip list hides real breakage; links into the design tree are GitHub URLs, which need no skip. |
 | Content obligations about a feature | Stay in the segment that owns the feature (deployment's install and dashboard-start pages, for example), naming the site page. Exception: what the Ways to extend cohost page says about supported extension routes (DOCS-PAGE-006) is this segment's, because it speaks for the whole system rather than one segment's files | Move every "the docs shall say X" spec into this segment | The owning segment knows when the fact changes and cascades the page with it; this segment owns structure, voice and checks. The extension-route statement draws on the HLD (tenets 1 and 12) and the module contract together, so no single feature segment owns it. |
+| Theme base | Extend VitePress's default theme through its CSS variables and layout slots, in the same leaf LLD | A theme written from scratch; a third-party VitePress theme; a sibling leaf LLD for the theme | The default theme already gives an accessible layout, local search, a responsive sidebar and previous/next links; replacing it means re-proving all of that. A third-party theme adds a dependency and someone else's look. The theme's specs share this segment's docs check, pages and build, and nothing outside the site depends on them, so a separate leaf would split one check script across two segments for no cascade benefit. |
+| Palette | Violet for interactive elements, coral for warmth and decoration, warm paper (light) and deep plum (dark) backgrounds; hex tokens in one file, every text pair AA (4.5:1) and non-text pair 3:1, checked from the LLD's table | VitePress's default indigo; a pastel palette; colours computed with `color-mix()` | Violet and coral give cohost a look of its own that still reads as calm. Pastels fail AA for text. Hex literals let a script compute every ratio; `color-mix()` would need a colour engine in the check. The check reads the LLD's table so the design and the file cannot drift apart. |
+| Code highlighting themes | `github-light-high-contrast` (light) and `github-dark-default` (dark) | VitePress's defaults (`github-light`, `github-dark`); `one-light`/`one-dark-pro`; `vitesse` | Against the palette's `code-bg`, the defaults and the others have token colours below 4.5:1 (comments around 3.5 to 4.4); these two pass for every token colour. |
+| Fonts | Inter as VitePress bundles it (self-hosted in the build) plus the system monospace stack | System UI stack only; a rounded display face from a font package; a font CDN | Inter is already in the build at no new cost and reads well at small sizes. A display face would add a dependency and weight for a little personality the mascot already gives. A CDN breaks offline serving and leaks readers to a third party. |
+| Mascot | An original, unnamed speech bubble with a headset and a waveform mouth, inline SVG with three expressions | A character illustration; an emoji; naming it after the example personality | A few flat shapes read at 20px and in both schemes, and inline SVG takes the palette. An illustration needs an artist and does not scale down. The co-host's name is each streamer's choice in `personality.md`, so the site does not name it. |
+| Track badges | A non-link label above the `#` heading from the `doc-before` slot, with hidden "Track: " text | A link to the track's first page; a coloured sidebar per track; text in the page title | A label tells the reader where they are without adding a tab stop to every page. Per-track sidebars break the one-map decision. Changing titles would change what search and the browser tab show. |
+| Diagram rendering | `beautiful-mermaid` at build time inside a markdown-it fence rule, a build-only dev dependency, its web-font `@import` stripped | Client-side `mermaid` bundled into the site (`vitepress-plugin-mermaid`); `@mermaid-js/mermaid-cli` or `mermaid-isomorphic`, which drive a headless browser; a hand-drawn SVG; leaving the fence as code | Build-time SVG costs the reader no script, works without JavaScript and in print, and is checkable in the built HTML. Client-side Mermaid ships a large bundle and renders after load. A headless browser adds a large download to every docs build in CI. A hand-drawn copy is a second description of the design that drifts. A code block is unreadable to the reader the site is for. |
+| Wide diagrams | Natural width, never scaled below it, inside a figure that scrolls on its own | Scale to fit any width; full content width with a minimum width; let the page scroll | Scaling the 1770px-wide system diagram to a 328px column, or to any width below its natural one, makes its labels a few pixels tall. A minimum width still shrinks wider diagrams. A scrolling page breaks the 360px rule for every other element on it. |
+| Motion | Opt-in through `prefers-reduced-motion: no-preference`, one hero animation that stops within five seconds, a global reduce block | No motion at all; a looping idle animation | A little movement on the home page is part of the character; a loop would distract from reading and need a pause control (WCAG 2.2.2). |
+| Checking the narrow layout | CSS rules checked by the docs check (narrow-first rules, no fixed width above 328px outside a `min-width` query) and a manual review recorded on the Verification log | A headless-browser test (Playwright) measuring `scrollWidth` at 360px in CI | A browser download in every docs build is a large cost for one assertion; the CSS rules prevent the usual causes, and the review catches the rest at each theme change. |
+| Network origins | The built site loads nothing from another origin; search stays local | Algolia DocSearch; a font CDN; analytics | The site is also to be served offline by the dashboard, and a reader should not be tracked for reading docs. |
+| Home page flow | Six steps written in `index.md` inside a `::: flow` container | A Vue component with the steps in it; a Mermaid diagram | Steps in markdown are a hand-written page's prose, so the glossary and wording checks cover them and they read as a list without the styling. A diagram of six boxes is heavier than the list and harder to read on a phone. |
+| Feedback and edit links | None: no "Was this page helpful?" and no "Edit this page" link | A feedback widget; VitePress's `editLink` | Feedback needs a service to receive it, which the network rule forbids. An edit link would point design-excerpt pages at their route template rather than the document they show. |
 | Narration check | Four words ("previously", "formerly", "deprecated", "legacy") fail the build outside the verification log, with a same-line `<!-- docs-check: allow -->` escape | Review only; a longer list including "no longer" and "upgrading" | Upgrade notes and "previously" lines are the commonest way a page stops reading cold. "No longer" and "upgrading" have common current-tense uses (a line no longer playing, upgrading the GPU driver), so they would fail correct pages. |
 
 ## Open Questions & Future Decisions
 
 ### Deferred
 
-1. **Look and personality (next project).** A custom VitePress theme: track badges from `track:`, a styled co-host aside, Mermaid rendering for the HLD's system diagram (until then it shows as a code block). Nothing in this design depends on it.
-2. **Docs served by the dashboard (next project, with the dashboard segment).** The dashboard serves the built site at `/cohost/` with a Docs tab and a published health page, plus an optional live-health component that degrades when the page is not served by the dashboard. This design keeps the site a static build under base `/cohost/` with no runtime call to any cohost service, so the same build serves both.
-3. **Extension guides (next project).** How-to pages under Extend: a hook server in Python or any language, any OpenAI-compatible model server, sending audio into ears over HTTP, a TypeScript avatar driver, hook or service, and a connector protocol reference. Until they exist the sidebar lists only Ways to extend cohost and Brain hooks.
-4. **EARS IDs in excerpts.** Excerpts cite spec IDs that are not published; linking each to its line on GitHub is left for later.
+1. **Docs served by the dashboard (next project, with the dashboard segment).** The dashboard serves the built site at `/cohost/` with a Docs tab and a published health page, plus an optional live-health component that degrades when the page is not served by the dashboard. This design keeps the site a static build under base `/cohost/` with no runtime call to any cohost service, so the same build serves both.
+2. **Extension guides (next project).** How-to pages under Extend: a hook server in Python or any language, any OpenAI-compatible model server, sending audio into ears over HTTP, a TypeScript avatar driver, hook or service, and a connector protocol reference. Until they exist the sidebar lists only Ways to extend cohost and Brain hooks.
+3. **EARS IDs in excerpts.** Excerpts cite spec IDs that are not published; linking each to its line on GitHub is left for later.
 
 ## Non-goals
 
 - Publishing the EARS spec files, the arrows overlay, the LID workflow or working plans.
 - Versioned docs: the site documents `main`.
 - Translations.
+- Page feedback widgets, comments, analytics or any other feature that sends the reader's activity anywhere.
+- "Edit this page" links.
+- A light/dark choice beyond VitePress's toggle (a high-contrast or custom theme picker).
+- Pixel-level visual regression tests and a headless browser in the docs build.
 - Documenting a cohost service that uses neither bus client (`@cohost/bus`, `crates/cohost-bus`) as a supported route. A Rust service on `crates/cohost-bus` is supported (HLD tenet 12) and the extend overview says so, with no example yet.
 
 ## References
 
-- Files: `docs/**/*.md` except the unpublished paths above, `docs/.vitepress/config.ts`, `docs/.vitepress/sidebar.mjs`, the `*.paths.mjs` loaders under `docs/advanced/architecture/`, `scripts/docs-check.mjs`, `README.md`, `examples/README.md`, `examples/modules/README.md`, the `docs:*` scripts in `package.json`, `.gitignore` (VitePress cache and output).
+- Files: `docs/**/*.md` except the unpublished paths above, `docs/.vitepress/config.ts`, `docs/.vitepress/sidebar.mjs`, the `*.paths.mjs` loaders under `docs/advanced/architecture/`, the markdown-it plugins under `docs/.vitepress/` (aside and flow containers, Mermaid fence renderer), `docs/.vitepress/theme/` (`index.ts`, `tokens.css`, `style.css`, `components/CohostMark.vue`, `components/TrackBadge.vue`, `components/NotFound.vue`), `docs/public/favicon.svg`, `scripts/docs-check.mjs`, `README.md`, `examples/README.md`, `examples/modules/README.md`, the `docs:*` scripts in `package.json`, `.gitignore` (VitePress cache and output).
 - Other segments: deployment runs the build in CI and on Pages (DEPLOY-CI-003, DEPLOY-CI-004) and owns the licence text the footer and README name (DEPLOY-LIC-004) and the install, dashboard-start and testing content specs that name site pages; every segment's LLD is excerpted, so a missing Context and Design Philosophy section fails this segment's build.
-- External: VitePress 1.6.4 (dynamic routes, local search, dead-link check), GitHub Pages.
+- External: VitePress 1.6.4 (dynamic routes, local search, dead-link check, default theme slots and CSS variables, bundled Inter, Shiki themes), `beautiful-mermaid` (build-time Mermaid to SVG; MIT; depends on `elkjs` and `entities`; the version is taken from the npm registry when it is added and pinned exactly), GitHub Pages, WCAG 2.2 (contrast 1.4.3 and 1.4.11, pause 2.2.2, focus visible 2.4.7, reflow 1.4.10).

@@ -123,3 +123,38 @@ pause affect   -> detail=paused   resume affect   -> detail=None
 
 `docker.exe compose stop` (the dashboard was already stopped by the final test run); no container or dashboard process remains. Containers, volumes and images remain
 (Docker Desktop) for the next run; `docker.exe compose down -v` removes the volumes.
+
+## Docs site theme review (2026-11-15)
+
+Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main`) plus the uncommitted theme work of the `docs/site-theme` branch (DOCS-THEME-049). The site was built with `npx vitepress build docs` and served with `npx vitepress preview docs --port 4173`. Headless Chrome was driven over its debugging protocol, which set the colour scheme, the reduced-motion setting and print media and took the screenshots; the screenshots were read by eye.
+
+### What was reviewed
+
+| Check | How | Result |
+| --- | --- | --- |
+| Horizontal page scroll at 360px | `scrollWidth` minus `clientWidth` of the page on all seven pages, in light and dark | 0 on every page, after the fixes below |
+| Dark mode | `prefers-color-scheme: dark` emulated; the page's `<html>` carried the `dark` class in every dark shot | Confirmed, and the dark screenshots show the plum palette |
+| Pages, 1280px and 360px, light and dark | Home, Try it with no accounts (a Simple step page), the glossary, the Configuration reference (a wide table), System Design (the diagram), the `affect` segment page, and a missing address (the 404 page) | All 28 shots were taken; the ones read by eye are listed under the table |
+| Diagram legibility | System Design at 1280px, scrolled to the diagram | The diagram is drawn at its natural 1770px width inside a figure that scrolls on its own; labels are readable and the page does not scroll |
+| Wide table | The Configuration reference at 360px (dark) and 1280px (light) | The table scrolls inside its own wrapper at 360px; at 1280px every column is readable |
+| Print | Print media at 800px wide on the Try it with no accounts page | Nav, sidebar, outline and pager are gone; the track badge prints; the light palette is used |
+| Keyboard | Nine Tab presses on the Try it with no accounts page at 1280px | The focused element (a nav link) had a 2px solid outline in the focus colour |
+| Reduced motion | `prefers-reduced-motion: reduce` emulated on the home page; the shot was taken | See "Not reviewed" |
+
+Read by eye: home at 1280px light and dark and at 360px light; Try it with no accounts at 1280px light and in print; System Design's diagram at 1280px light; the Configuration reference table at 360px dark and 1280px light; the `affect` page at 360px light; the 404 page at 360px dark (before and after the fix).
+
+### Defects found and fixed
+
+1. **Wide diagrams were illegible.** The System Design diagram (1770px wide) was drawn at the column width, which made its labels about 5px tall. The theme now draws a diagram at its natural width inside a figure with `overflow-x: auto` (DOCS-THEME-031).
+2. **The 404 page had no side gutter at 360px.** The co-host bubble touched the screen edges and the text ran to them. The page now has a 16px side padding.
+3. **The 404 page's links looked like plain text.** They are now in the link colour and underlined, with the hover colour on hover.
+4. **The outline aside could still show in print.** VitePress's own rule for `.VPDocAside` outranked the print override at some widths, so the printed output depends on its container `.aside` also being hidden. `.VPDoc .aside` is now hidden in print too (DOCS-THEME-046).
+
+### Not reviewed
+
+- Every shot not listed under "Read by eye", among them the glossary at both widths and the System Design page at 360px, was checked for page scroll and the dark class by script only.
+- The reduced-motion home shot was taken but not read, so the talking mark's animation (DOCS-THEME-036) was not watched in a live browser; it rests on the docs check's CSS rules.
+- Print was checked with emulated print media at one width, not in a browser's print preview dialog and not as a PDF. The printed URL after each external link (DOCS-THEME-054) was not looked for.
+- Tabbing went through nine stops on one page. Focus outlines on every other kind of element (cards, buttons, the diagram figure, the search box) were not walked through.
+- The mark's three expressions were seen at hero size (talking) and 404 size (lost) and in the nav (idle); the favicon file was not opened in a browser tab.
+- Only Chrome was used. No Firefox or Safari, no real phone.

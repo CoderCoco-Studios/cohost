@@ -380,7 +380,7 @@ flowchart LR
 | operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, Services tab, stack launch / stop / restart-all, Viewers page, test-input injection |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
-| operator | docs-site | The published documentation site: its page tree and two reading tracks, hand-written pages, voice, glossary, the boundary between published pages and the unpublished design tree, and the link and fact checks its build runs; the README as a short pointer to it |
+| operator | docs-site | The published documentation site: its page tree and two reading tracks, hand-written pages, voice, glossary, theme and personality, the boundary between published pages and the unpublished design tree, and the link, fact and theme checks its build runs; the README as a short pointer to it |
 | operator | module-contract | The obligations every service meets: dashboard-configurable through one schema-driven settings editor, independently operable with per-service health, test-injectable with no platform account, built on the shared runtime; the manifest as the one list of services |
 
 ### Module contract

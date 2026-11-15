@@ -32,6 +32,21 @@ features:
     linkText: Developer setup
 ---
 
+## How a chat line becomes speech
+
+Somebody types a message. A moment later your co-host answers out loud. In between, six small steps happen, one after another.
+
+::: flow
+1. **Chat** hears the line. A viewer types in your Twitch chat, or says something in Discord.
+2. **[Salience](start/glossary.md#salience)** decides it is worth answering. Not every line gets a reply, and that is on purpose.
+3. **[Cortex](start/glossary.md#cortex)** remembers who is talking and writes a reply.
+4. **Voice** turns the reply into speech.
+5. **The [sink](start/glossary.md#sink) or Discord** plays it, on your stream or in your voice channel.
+6. **The avatar** moves its mouth in time with the words.
+
+Want the whole journey, one line at a time? Read [How it works](start/how-it-works.md).
+:::
+
 ## What to do first
 
 1. Read [What is cohost?](start/what-is-cohost.md) for two minutes, so you know what you are about to install.

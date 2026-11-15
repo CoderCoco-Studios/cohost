@@ -10,7 +10,7 @@
  * Prints one line per problem (`file[:line]: [SPEC-ID] message`) to stderr and exits 1; prints a summary and exits 0 when
  * there are none. `root` defaults to the repository root. Needs only Node and the workspace's own `yaml` package.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, posix, relative, sep, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadDesign, parseYaml, splitFrontmatter } from '../docs/.vitepress/design-excerpts.mjs';
@@ -756,6 +756,8 @@ export async function runSource(root) {
     if (!files.length) add(`examples/${d}`, 0, 'DOCS-EX-004', 'holds no file other than README.md that a reader runs or a runnable example reads');
   }
 
+  await themeSourceChecks(root, add, configText);
+
   return problems;
 }
 
@@ -835,7 +837,1265 @@ export function runDist(root) {
       else if (frag && !idsOf(want).has(frag)) add(rel, n, 'DOCS-LINK-003', `link ${href} targets #${frag}, which is no element id in ${want}`);
     }
   }
+  themeDistChecks(root, dist, files, htmlFiles, add);
   return problems;
+}
+
+// ---------------------------------------------------------------------------------------------------- theme checks
+
+// CSS, colour and markup helpers for the DOCS-THEME-* checks. They read text only; nothing here needs a browser.
+
+const THEME_DIR = 'docs/.vitepress/theme/';
+const TOKENS_REL = `${THEME_DIR}tokens.css`;
+const STYLE_REL = `${THEME_DIR}style.css`;
+const MARK_REL = `${THEME_DIR}components/CohostMark.vue`;
+const FAVICON_REL = 'docs/public/favicon.svg';
+const LLD_REL = 'docs/intent/docs-site/docs-site-design.md';
+const MASCOT = ['mascot-body', 'mascot-face', 'mascot-headset'];
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+const decodeEntities = (s) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+      const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return HTML_ENTITIES[e.toLowerCase()] ?? m;
+  });
+
+/** Parses `#RGB`, `#RGBA`, `#RRGGBB` or `#RRGGBBAA` into {r,g,b,a} (0-255, a 0-1), or null. */
+function parseHex(hex) {
+  let h = /^#([0-9a-f]+)$/i.exec(hex.trim())?.[1];
+  if (!h || ![3, 4, 6, 8].includes(h.length)) return null;
+  if (h.length <= 4) h = [...h].map((c) => c + c).join('');
+  const n = (i) => parseInt(h.slice(i, i + 2), 16);
+  return { r: n(0), g: n(2), b: n(4), a: h.length === 8 ? n(6) / 255 : 1 };
+}
+const luminance = ({ r, g, b }) => {
+  const f = (v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+/** WCAG 2.x contrast ratio of two parsed colours, the foreground first composited over the background when it has alpha. */
+function contrast(fg, bg) {
+  const over = fg.a < 1 ? { r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) } : fg;
+  const a = luminance(over);
+  const b = luminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+// ---- CSS
+
+/**
+ * A small CSS reader: returns a tree of blocks {prelude, line, decls:[{prop,value,important,line}], children, stmts}. Understands comments,
+ * strings, parentheses (so a `data:` URL with `;` inside `url()` is safe), nested at-rules and CSS nesting. Top-level statements
+ * such as `@import "x";` are kept in `stmts`.
+ */
+function parseCss(text) {
+  const lineStarts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') lineStarts.push(i + 1);
+  const lineAt = (pos) => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= pos) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  };
+  let i = 0;
+  const skipSpace = () => {
+    for (;;) {
+      while (i < text.length && /\s/.test(text[i])) i++;
+      if (text.startsWith('/*', i)) {
+        const end = text.indexOf('*/', i + 2);
+        i = end === -1 ? text.length : end + 2;
+      } else return;
+    }
+  };
+  /** Reads up to the next `{`, `;` or `}` outside strings and parentheses; returns {text, end, pos}. */
+  const readItem = () => {
+    skipSpace();
+    const pos = i;
+    let out = '';
+    let depth = 0;
+    while (i < text.length) {
+      const c = text[i];
+      if (text.startsWith('/*', i)) {
+        const end = text.indexOf('*/', i + 2);
+        i = end === -1 ? text.length : end + 2;
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        let j = i + 1;
+        while (j < text.length && text[j] !== c) j += text[j] === '\\' ? 2 : 1;
+        out += text.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
+      if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth = Math.max(0, depth - 1);
+      else if (depth === 0 && (c === '{' || c === ';' || c === '}')) return { text: out.trim(), end: c, pos };
+      out += c;
+      i++;
+    }
+    return { text: out.trim(), end: '', pos };
+  };
+  const parseBody = (node) => {
+    for (;;) {
+      const item = readItem();
+      if (item.end === '{') {
+        i++;
+        const child = { prelude: item.text, line: lineAt(item.pos), decls: [], children: [], stmts: [], parent: node };
+        parseBody(child);
+        node.children.push(child);
+      } else if (item.end === ';' || item.end === '' || item.end === '}') {
+        if (item.text) {
+          const colon = item.text.indexOf(':');
+          if (item.text.startsWith('@') || colon === -1) node.stmts.push({ text: item.text, line: lineAt(item.pos) });
+          else {
+            const prop = item.text.slice(0, colon).trim().toLowerCase();
+            let value = item.text.slice(colon + 1).trim();
+            const important = /!\s*important\s*$/i.test(value);
+            if (important) value = value.replace(/!\s*important\s*$/i, '').trim();
+            node.decls.push({ prop: prop.startsWith('--') ? item.text.slice(0, colon).trim() : prop, value, important, line: lineAt(item.pos) });
+          }
+        }
+        if (item.end === '}') {
+          i++;
+          return;
+        }
+        if (item.end === ';') i++;
+        if (item.end === '') return;
+      }
+    }
+  };
+  const root = { prelude: '', line: 1, decls: [], children: [], stmts: [], parent: null };
+  parseBody(root);
+  return root;
+}
+
+/** Every block of a parsed CSS tree with its chain of ancestor blocks (outermost first). */
+function cssBlocks(root, out = [], anc = []) {
+  for (const c of root.children) {
+    out.push({ block: c, anc });
+    cssBlocks(c, out, [...anc, c]);
+  }
+  return out;
+}
+
+const ws = (s) => s.replace(/\s+/g, ' ').trim();
+/** A selector with whitespace collapsed and attribute-selector values single-quoted, so spellings compare equal. */
+function normSel(sel) {
+  return ws(sel)
+    .replace(/\[\s*([^\]=~|^$*\s]+)\s*([~|^$*]?=)\s*(?:"([^"]*)"|'([^']*)'|([^\]\s]+))\s*\]/g, (_m, a, op, d, s, u) => `[${a}${op}'${d ?? s ?? u}']`)
+    .replace(/(?<!:):(before|after)\b/g, '::$1');
+}
+const splitTop = (s, sep) => {
+  const parts = [];
+  let depth = 0;
+  let q = null;
+  let cur = '';
+  for (let k = 0; k < s.length; k++) {
+    const c = s[k];
+    if (q) {
+      if (c === q) q = null;
+    } else if (c === '"' || c === "'") q = c;
+    else if (c === '(' || c === '[') depth++;
+    else if (c === ')' || c === ']') depth--;
+    else if (depth === 0 && c === sep) {
+      parts.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts;
+};
+/** Expands `:is(a, b)` / `:where(a, b)` groups into plain selectors. */
+function expandIs(sel) {
+  const m = /:(?:is|where)\(/.exec(sel);
+  if (!m) return [sel];
+  let depth = 1;
+  let k = m.index + m[0].length;
+  while (k < sel.length && depth > 0) {
+    if (sel[k] === '(') depth++;
+    else if (sel[k] === ')') depth--;
+    k++;
+  }
+  const inner = sel.slice(m.index + m[0].length, k - 1);
+  return splitTop(inner, ',').flatMap((alt) => expandIs(sel.slice(0, m.index) + alt.trim() + sel.slice(k)));
+}
+/** The comma-separated parts of a rule's selector, expanded and normalised. */
+const selectorsOf = (prelude) => splitTop(prelude, ',').flatMap((p) => expandIs(p.trim())).map(normSel).filter(Boolean);
+/** The last compound of a normalised selector (the part after the final combinator). */
+const lastCompound = (sel) => {
+  let depth = 0;
+  let q = null;
+  let start = 0;
+  for (let k = 0; k < sel.length; k++) {
+    const c = sel[k];
+    if (q) {
+      if (c === q) q = null;
+    } else if (c === '"' || c === "'") q = c;
+    else if (c === '(' || c === '[') depth++;
+    else if (c === ')' || c === ']') depth--;
+    else if (depth === 0 && (c === ' ' || c === '>' || c === '+' || c === '~')) start = k + 1;
+  }
+  return sel.slice(start);
+};
+const hasClass = (compound, cls) => new RegExp(`\\.${esc(cls)}(?![\\w-])`).test(compound);
+const isMedia = (b, re) => b.prelude.toLowerCase().startsWith('@media') && re.test(b.prelude);
+const MIN_WIDTH = /\(\s*min-width\s*:/i;
+const inMinWidth = (anc) => anc.some((b) => isMedia(b, MIN_WIDTH));
+
+/** The theme CSS parsed and indexed: [{file, block, anc, sels, decl(prop)}]. */
+function indexCss(files) {
+  const out = [];
+  for (const [file, text] of files) {
+    if (text === null) continue;
+    for (const { block, anc } of cssBlocks(parseCss(text))) {
+      const sels = block.prelude.startsWith('@') ? [] : selectorsOf(block.prelude);
+      out.push({ file, block, anc, sels, line: block.line, decl: (p) => [...block.decls].reverse().find((d) => d.prop === p) });
+    }
+  }
+  return out;
+}
+const lastDecl = (rules, prop) => {
+  let found = null;
+  for (const r of rules) for (const d of r.block.decls) if (d.prop === prop) found = d;
+  return found;
+};
+const norm = (v) => (v === undefined || v === null ? '' : ws(v.replace(/!\s*important\s*$/i, '')).toLowerCase());
+const BORDER_STYLES = new Set(['none', 'hidden', 'dotted', 'dashed', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset']);
+/** Resolves a `border-<side>` or `outline` shorthand and its longhands from the rules into {width, style, color}. */
+function resolveLine(rules, prefix) {
+  const res = { width: null, style: null, color: null };
+  const shorthand = lastDecl(rules, prefix);
+  if (shorthand) {
+    for (const t of splitTop(ws(shorthand.value), ' ')) {
+      if (/^[\d.]/.test(t) || ['thin', 'medium', 'thick'].includes(t)) res.width = t.toLowerCase();
+      else if (BORDER_STYLES.has(t.toLowerCase())) res.style = t.toLowerCase();
+      else if (t) res.color = t;
+    }
+  }
+  for (const k of ['width', 'style', 'color']) {
+    const d = lastDecl(rules, `${prefix}-${k}`);
+    if (d) res[k] = norm(d.value);
+  }
+  return res;
+}
+/** A CSS length as px, or null when it is not a plain px, rem or em length. */
+function lengthPx(v) {
+  const m = /^(-?\d*\.?\d+)\s*(px|rem|em)$/i.exec(norm(v));
+  if (!m) return null;
+  return parseFloat(m[1]) * (m[2].toLowerCase() === 'px' ? 1 : 16);
+}
+/** A CSS time as ms, or null. */
+function timeMs(v) {
+  const m = /^(-?\d*\.?\d+)\s*(ms|s)$/i.exec(norm(v));
+  if (!m) return null;
+  return parseFloat(m[1]) * (m[2].toLowerCase() === 's' ? 1000 : 1);
+}
+
+// ---- markup (Vue templates, built HTML, SVG)
+
+const TAG_RE = /<!--[\s\S]*?-->|<\/([A-Za-z][\w:.-]*)\s*>|<([A-Za-z][\w:.-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+))?)*)\s*(\/?)>/g;
+const ATTR_RE = /([^\s=>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+)))?/g;
+const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+/** Tag events of a markup string: {close, name, attrs, index, end, selfClosing}. Script bodies are blanked first. */
+function tagEvents(src) {
+  const masked = src.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi, (_m, a, b, c) => a + ' '.repeat(b.length) + c);
+  const events = [];
+  for (const m of masked.matchAll(TAG_RE)) {
+    if (m[0].startsWith('<!--')) continue;
+    const index = m.index;
+    const end = index + m[0].length;
+    if (m[1]) {
+      events.push({ close: true, name: m[1].toLowerCase(), raw: m[1], attrs: {}, index, end, selfClosing: false });
+      continue;
+    }
+    const attrs = {};
+    for (const a of (m[3] ?? '').matchAll(ATTR_RE)) attrs[a[1]] = decodeEntities(a[2] ?? a[3] ?? a[4] ?? '');
+    const name = m[2].toLowerCase();
+    events.push({ close: false, name, raw: m[2], attrs, index, end, selfClosing: m[4] === '/' || VOID.has(name) });
+  }
+  return events;
+}
+const classTokens = (e) => (e.attrs.class ?? '').split(/\s+/).filter(Boolean);
+const hasTok = (e, t) => classTokens(e).includes(t);
+/** The region of the first element satisfying `pred` among `events`: {open, start, innerStart, innerEnd, end}. */
+function regionOf(events, pred, from = 0) {
+  for (let i = from; i < events.length; i++) {
+    const o = events[i];
+    if (o.close || !pred(o)) continue;
+    if (o.selfClosing) return { open: o, idx: i, start: o.index, innerStart: o.end, innerEnd: o.end, end: o.end };
+    let depth = 1;
+    for (let j = i + 1; j < events.length; j++) {
+      const e = events[j];
+      if (e.name !== o.name || e.selfClosing) continue;
+      depth += e.close ? -1 : 1;
+      if (depth === 0) return { open: o, idx: i, start: o.index, innerStart: o.end, innerEnd: e.index, end: e.end };
+    }
+    return { open: o, idx: i, start: o.index, innerStart: o.end, innerEnd: events.at(-1).end, end: events.at(-1).end };
+  }
+  return null;
+}
+const regionsOf = (events, pred) => {
+  const out = [];
+  let from = 0;
+  for (;;) {
+    const r = regionOf(events, pred, from);
+    if (!r) return out;
+    out.push(r);
+    from = r.idx + 1;
+  }
+};
+const inside = (e, r) => r && e.index >= r.start && e.index < r.end;
+const textOf = (html) => decodeEntities(html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ''));
+
+/** A Vue template as a tree of elements {name, attrs, children}; text is dropped. */
+function vueTree(template) {
+  const root = { name: '#root', attrs: {}, children: [] };
+  const stack = [root];
+  for (const e of tagEvents(template)) {
+    if (e.close) {
+      for (let k = stack.length - 1; k > 0; k--) {
+        if (stack[k].name === e.name) {
+          stack.length = k;
+          break;
+        }
+      }
+    } else {
+      const el = { name: e.name, attrs: e.attrs, children: [] };
+      stack.at(-1).children.push(el);
+      if (!e.selfClosing) stack.push(el);
+    }
+  }
+  return root;
+}
+const SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon']);
+const MARK_FORBIDDEN = new Set(['text', 'image', 'use', 'style', 'lineargradient', 'radialgradient', 'filter', 'mask']);
+const EXPRESSIONS = ['idle', 'talking', 'lost'];
+
+/** Evaluates a v-if condition of `expression === 'x'` atoms for one expression; an atom it cannot read counts as true. */
+function evalCond(cond, expr) {
+  const atoms = cond.replace(/(?:props\.)?\bexpression\s*(===|==|!==|!=)\s*(['"])(\w+)\2/g, (_m, op, _q, v) => String(op.startsWith('!') ? v !== expr : v === expr));
+  if (!/^[\s!()&|truefals]*$/.test(atoms)) return true;
+  try {
+    return Boolean(new Function(`return (${atoms});`)());
+  } catch {
+    return true;
+  }
+}
+/** The shape elements one expression renders, counting v-if/v-else chains and numeric v-for. */
+function shapesFor(children, expr, mult = 1) {
+  let count = 0;
+  let taken = false;
+  for (const el of children) {
+    let include = true;
+    if ('v-if' in el.attrs) {
+      include = evalCond(el.attrs['v-if'], expr);
+      taken = include;
+    } else if ('v-else-if' in el.attrs) {
+      include = !taken && evalCond(el.attrs['v-else-if'], expr);
+      taken ||= include;
+    } else if ('v-else' in el.attrs) {
+      include = !taken;
+      taken = true;
+    } else taken = false;
+    if (!include) continue;
+    let m = mult;
+    const vf = el.attrs['v-for'];
+    if (vf !== undefined) {
+      const num = /\b(?:in|of)\s+(\d+)\s*$/.exec(vf);
+      const arr = /\b(?:in|of)\s+\[([^\]]*)\]\s*$/.exec(vf);
+      if (num) m *= parseInt(num[1], 10);
+      else if (arr) m *= arr[1].trim() ? splitTop(arr[1], ',').length : 0;
+    }
+    if (SHAPES.has(el.name)) count += m;
+    count += shapesFor(el.children, expr, m);
+  }
+  return count;
+}
+function vueWalk(el, fn) {
+  for (const c of el.children) {
+    fn(c);
+    vueWalk(c, fn);
+  }
+}
+
+// ---- LLD tables
+
+/** The Palette table [{token, light, dark}] and the Contrast pairs table [{fg, bgs, min}] of the docs-site LLD. */
+function lldTables(text) {
+  const palette = [];
+  const pairs = [];
+  let mode = null;
+  for (const line of text.split('\n')) {
+    if (/^\|\s*Token\s*\|\s*Light\s*\|\s*Dark\s*\|/i.test(line)) mode = 'palette';
+    else if (/^\|\s*Foreground\s*\|\s*Backgrounds\s*\|\s*Minimum\s*\|/i.test(line)) mode = 'pairs';
+    else if (!line.startsWith('|')) mode = null;
+    else if (mode === 'palette') {
+      const m = /^\|\s*`([^`]+)`\s*\|\s*`(#[0-9a-fA-F]{6})`\s*\|\s*`(#[0-9a-fA-F]{6})`/.exec(line);
+      if (m) palette.push({ token: m[1], light: m[2], dark: m[3] });
+    } else if (mode === 'pairs') {
+      const m = /^\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|\s*([\d.]+)\s*\|/.exec(line);
+      if (m) pairs.push({ fg: m[1], bgs: [...m[2].matchAll(/`([^`]+)`/g)].map((x) => x[1]), min: parseFloat(m[3]) });
+    }
+  }
+  return { palette, pairs };
+}
+
+/** Finds an installed Shiki theme module and returns its theme object, or null. */
+async function loadShikiTheme(name, roots) {
+  const dirs = [];
+  for (const r of roots) {
+    for (const base of [join(r, 'node_modules')]) {
+      try {
+        const vp = realpathSync(join(base, 'vitepress'));
+        const shiki = realpathSync(join(vp, '..', 'shiki'));
+        dirs.push(join(shiki, '..', '@shikijs', 'themes', 'dist'));
+      } catch {
+        // not installed here
+      }
+      dirs.push(join(base, '@shikijs', 'themes', 'dist'));
+    }
+  }
+  for (const d of dirs) {
+    const f = join(d, `${name}.mjs`);
+    if (/^[\w.-]+$/.test(name) && existsSync(f)) return (await import(pathToFileURL(f).href)).default;
+  }
+  return null;
+}
+
+/** The balanced `{...}` object literal enclosing text index `at`, or null. */
+function enclosingObject(text, at) {
+  let depth = 0;
+  let start = -1;
+  for (let k = at; k >= 0; k--) {
+    if (text[k] === '}') depth++;
+    else if (text[k] === '{') {
+      if (depth === 0) {
+        start = k;
+        break;
+      }
+      depth--;
+    }
+  }
+  if (start === -1) return null;
+  depth = 0;
+  for (let k = start; k < text.length; k++) {
+    if (text[k] === '{') depth++;
+    else if (text[k] === '}' && --depth === 0) return text.slice(start + 1, k);
+  }
+  return null;
+}
+const unquote = (v) => {
+  const t = v.trim();
+  const m = /^(['"`])(.*)\1$/s.exec(t);
+  return m ? `'${m[2]}'` : t;
+};
+
+// ---------------------------------------------------------------------------------------------------- theme: source pass
+
+/**
+ * The source-pass theme checks.
+ * @spec DOCS-THEME-001, DOCS-THEME-002, DOCS-THEME-003, DOCS-THEME-004, DOCS-THEME-005, DOCS-THEME-006, DOCS-THEME-007,
+ * DOCS-THEME-008, DOCS-THEME-009, DOCS-THEME-011, DOCS-THEME-012, DOCS-THEME-013, DOCS-THEME-014, DOCS-THEME-017,
+ * DOCS-THEME-021, DOCS-THEME-022, DOCS-THEME-023, DOCS-THEME-024, DOCS-THEME-028, DOCS-THEME-031, DOCS-THEME-032,
+ * DOCS-THEME-034, DOCS-THEME-036, DOCS-THEME-037, DOCS-THEME-040, DOCS-THEME-041, DOCS-THEME-042, DOCS-THEME-043,
+ * DOCS-THEME-044, DOCS-THEME-045, DOCS-THEME-046, DOCS-THEME-047, DOCS-THEME-048, DOCS-THEME-050, DOCS-THEME-052,
+ * DOCS-THEME-053, DOCS-THEME-054, DOCS-THEME-055
+ */
+async function themeSourceChecks(root, add, configText) {
+  const configRel = 'docs/.vitepress/config.ts';
+  const CODE = ['code-bg'];
+
+  // ---- the theme entry
+  const entry = readIf(join(root, `${THEME_DIR}index.ts`));
+  if (entry === null) add(`${THEME_DIR}index.ts`, 0, 'DOCS-THEME-001', 'does not exist; the theme entry is docs/.vitepress/theme/index.ts');
+  else {
+    if (!/['"]vitepress\/theme['"]/.test(entry)) add(`${THEME_DIR}index.ts`, 0, 'DOCS-THEME-001', "must import VitePress's default theme from 'vitepress/theme'");
+    else if (!/\bextends\b/.test(entry)) add(`${THEME_DIR}index.ts`, 0, 'DOCS-THEME-001', 'must extend the default theme (`extends: DefaultTheme`)');
+  }
+
+  // ---- the palette and the contrast pairs (the LLD tables)
+  const lldText = readIf(join(root, LLD_REL));
+  const { palette, pairs } = lldText === null ? { palette: [], pairs: [] } : lldTables(lldText);
+  if (!palette.length) add(LLD_REL, 0, 'DOCS-THEME-003', 'has no Palette table (| Token | Light | Dark |) to compare tokens.css against');
+  if (!pairs.length) add(LLD_REL, 0, 'DOCS-THEME-004', 'has no Contrast pairs table (| Foreground | Backgrounds | Minimum |)');
+
+  // ---- tokens.css
+  const tokensText = readIf(join(root, TOKENS_REL));
+  const modes = { ':root': new Map(), '.dark': new Map() };
+  let tokensOk = false;
+  if (tokensText === null) add(TOKENS_REL, 0, 'DOCS-THEME-002', 'does not exist');
+  else {
+    tokensOk = true;
+    const tree = parseCss(tokensText);
+    for (const s of tree.stmts) add(TOKENS_REL, s.line, 'DOCS-THEME-002', `holds the statement "${s.text}"; the file holds only the :root and .dark blocks`);
+    const seen = new Set();
+    for (const b of tree.children) {
+      const sel = ws(b.prelude);
+      if (sel !== ':root' && sel !== '.dark') {
+        add(TOKENS_REL, b.line, 'DOCS-THEME-002', `holds the rule "${sel}"; the file holds only the :root and .dark blocks`);
+        continue;
+      }
+      if (seen.has(sel)) add(TOKENS_REL, b.line, 'DOCS-THEME-002', `declares the ${sel} block more than once`);
+      seen.add(sel);
+      for (const c of b.children) add(TOKENS_REL, c.line, 'DOCS-THEME-002', `nests the rule "${ws(c.prelude)}" in ${sel}`);
+      for (const d of b.decls) {
+        const m = /^--cohost-([a-z0-9-]+)$/.exec(d.prop);
+        if (!m) {
+          add(TOKENS_REL, d.line, 'DOCS-THEME-002', `${sel} declares ${d.prop}, which is not a --cohost-<token> custom property`);
+          continue;
+        }
+        if (!HEX6.test(d.value) || d.important) add(TOKENS_REL, d.line, 'DOCS-THEME-002', `--cohost-${m[1]} in ${sel} is "${d.value}${d.important ? ' !important' : ''}", not a six-digit hex literal (#RRGGBB)`);
+        modes[sel].set(m[1], d.value);
+      }
+    }
+    for (const sel of [':root', '.dark']) if (!seen.has(sel)) add(TOKENS_REL, 0, 'DOCS-THEME-002', `has no ${sel} block`);
+    for (const [sel, other] of [[':root', '.dark'], ['.dark', ':root']]) {
+      for (const t of modes[sel].keys()) if (!modes[other].has(t)) add(TOKENS_REL, 0, 'DOCS-THEME-002', `--cohost-${t} is declared in ${sel} but not in ${other}`);
+    }
+  }
+  const light = modes[':root'];
+  const dark = modes['.dark'];
+
+  if (tokensOk && palette.length) {
+    const names = new Set(palette.map((p) => p.token));
+    for (const p of palette) {
+      for (const [sel, key] of [[':root', 'light'], ['.dark', 'dark']]) {
+        const got = modes[sel].get(p.token);
+        if (got === undefined) add(TOKENS_REL, 0, 'DOCS-THEME-003', `--cohost-${p.token} is missing from ${sel}; the Palette table says ${p[key]}`);
+        else if (got.toLowerCase() !== p[key].toLowerCase()) add(TOKENS_REL, 0, 'DOCS-THEME-003', `--cohost-${p.token} in ${sel} is ${got}; the Palette table says ${p[key]}`);
+      }
+    }
+    for (const t of new Set([...light.keys(), ...dark.keys()])) if (!names.has(t)) add(TOKENS_REL, 0, 'DOCS-THEME-003', `--cohost-${t} is not a token of the Palette table`);
+  }
+
+  // ---- contrast pairs
+  if (tokensOk) {
+    for (const { fg, bgs, min } of pairs) {
+      for (const bg of bgs) {
+        for (const [mode, map] of [['light', light], ['dark', dark]]) {
+          const a = map.get(fg) && parseHex(map.get(fg));
+          const b = map.get(bg) && parseHex(map.get(bg));
+          if (!a || !b) {
+            add(TOKENS_REL, 0, 'DOCS-THEME-004', `cannot compute ${fg} on ${bg} (${mode}): ${!a ? fg : bg} has no hex value in the ${mode} block`);
+            continue;
+          }
+          const ratio = contrast(a, b);
+          if (ratio < min) add(TOKENS_REL, 0, 'DOCS-THEME-004', `${fg} on ${bg} (${mode}) has contrast ${ratio.toFixed(2)}; the minimum is ${min}`);
+        }
+      }
+    }
+  }
+
+  // ---- style.css
+  const styleText = readIf(join(root, STYLE_REL));
+  if (styleText === null) add(STYLE_REL, 0, 'DOCS-THEME-005', 'does not exist');
+  const css = indexCss([[TOKENS_REL, tokensText], [STYLE_REL, styleText]]);
+  const styleCss = css.filter((r) => r.file === STYLE_REL);
+  if (styleText !== null) {
+    const tokenNames = new Set(palette.length ? palette.map((p) => p.token) : [...light.keys()]);
+    const roots = styleCss.filter((r) => r.anc.length === 0 && r.sels.length === 1 && r.sels[0] === ':root');
+    const VP = ['--vp-c-bg', '--vp-c-bg-alt', '--vp-c-bg-soft', '--vp-c-text-1', '--vp-c-text-2', '--vp-c-text-3', '--vp-c-brand-1', '--vp-c-brand-2', '--vp-c-brand-3', '--vp-button-brand-bg', '--vp-button-brand-hover-bg', '--vp-button-brand-text', '--vp-button-brand-hover-text', '--vp-code-block-bg', '--vp-code-bg', '--vp-code-color'];
+    for (const t of ['tip', 'info', 'warning', 'danger', 'details']) VP.push(`--vp-custom-block-${t}-bg`, `--vp-custom-block-${t}-text`);
+    for (const v of VP) {
+      const d = lastDecl(roots, v);
+      const m = d && !d.important ? /^var\(--cohost-([a-z0-9-]+)\)$/.exec(d.value.trim()) : null;
+      if (!d) add(STYLE_REL, 0, 'DOCS-THEME-005', `does not set ${v} in a top-level :root rule`);
+      else if (!m || !tokenNames.has(m[1])) add(STYLE_REL, d.line, 'DOCS-THEME-005', `sets ${v} to "${d.value}${d.important ? ' !important' : ''}"; it must be exactly var(--cohost-<token>) with a Palette token`);
+    }
+  }
+
+  // ---- config: markdown.theme, appearance, head
+  const shikiNames = { light: null, dark: null };
+  if (configText !== null) {
+    const obj = /\btheme\s*:\s*\{([^}]*)\}/.exec(configText);
+    const str = /\btheme\s*:\s*(['"])([\w.-]+)\1/.exec(configText);
+    if (obj) {
+      shikiNames.light = /\blight\s*:\s*(['"])([\w.-]+)\1/.exec(obj[1])?.[2] ?? null;
+      shikiNames.dark = /\bdark\s*:\s*(['"])([\w.-]+)\1/.exec(obj[1])?.[2] ?? null;
+    } else if (str) shikiNames.light = shikiNames.dark = str[2];
+    if (shikiNames.light !== 'github-light-high-contrast' || shikiNames.dark !== 'github-dark-default') {
+      add(configRel, 0, 'DOCS-THEME-006', `markdown.theme must be { light: 'github-light-high-contrast', dark: 'github-dark-default' }, found light ${shikiNames.light ?? '(unset)'}, dark ${shikiNames.dark ?? '(unset)'}`);
+    }
+    const ap = /\bappearance\s*:\s*([^,\n}]+)/.exec(configText);
+    if (ap && ap[1].trim() !== 'true') add(configRel, 0, 'DOCS-THEME-009', `appearance must be unset or true, found ${ap[1].trim()}`);
+    const hm = /\bhead\s*:\s*\[/.exec(configText);
+    if (hm) {
+      let depth = 0;
+      let k = hm.index + hm[0].length - 1;
+      const start = k;
+      for (; k < configText.length; k++) {
+        if (configText[k] === '[') depth++;
+        else if (configText[k] === ']' && --depth === 0) break;
+      }
+      if (/\[\s*(['"`])script\1/i.test(configText.slice(start, k + 1))) {
+        add(configRel, 0, 'DOCS-THEME-011', "head holds a script element; the site adds no analytics or tracking code");
+      }
+    }
+  }
+
+  // ---- Shiki themes against code-bg
+  if (tokensOk && configText !== null) {
+    const here = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    for (const [mode, map] of [['light', light], ['dark', dark]]) {
+      const name = shikiNames[mode];
+      const bgHex = map.get('code-bg');
+      const bg = bgHex && parseHex(bgHex);
+      if (!name || !bg) continue;
+      const theme = await loadShikiTheme(name, [root, here]);
+      if (!theme) {
+        add(configRel, 0, 'DOCS-THEME-007', `cannot find the installed Shiki theme ${name} to check against code-bg (${mode}); run pnpm install`);
+        continue;
+      }
+      const colours = new Map();
+      const note = (c, where) => {
+        if (typeof c !== 'string') return;
+        const key = c.toLowerCase();
+        if (!colours.has(key)) colours.set(key, where);
+      };
+      note(theme.colors?.['editor.foreground'] ?? theme.fg, 'the editor foreground');
+      for (const t of theme.tokenColors ?? []) {
+        if (t.settings?.background) continue;
+        note(t.settings?.foreground, `token ${Array.isArray(t.scope) ? t.scope[0] : (t.scope ?? 'default')}`);
+      }
+      for (const [c, where] of colours) {
+        const fg = parseHex(c);
+        if (!fg) continue;
+        const ratio = contrast(fg, bg);
+        if (ratio < 4.5) add(configRel, 0, 'DOCS-THEME-007', `Shiki theme ${name}: colour ${c} (${where}) has contrast ${ratio.toFixed(2)} against code-bg (${mode}); the minimum is 4.5`);
+      }
+    }
+  }
+
+  // ---- @font-face and font packages
+  for (const r of css) if (r.block.prelude.toLowerCase().startsWith('@font-face')) add(r.file, r.line, 'DOCS-THEME-008', 'declares @font-face; the only web font is the Inter that VitePress bundles');
+  const pkgText = readIf(join(root, 'package.json'));
+  let pkg = null;
+  try {
+    pkg = pkgText === null ? null : JSON.parse(pkgText);
+  } catch {
+    add('package.json', 0, 'DOCS-THEME-032', 'is not valid JSON');
+  }
+  if (pkg) {
+    for (const field of ['dependencies', 'devDependencies']) {
+      for (const n of Object.keys(pkg[field] ?? {})) if (n.startsWith('@fontsource') || n.includes('font')) add('package.json', 0, 'DOCS-THEME-055', `${field} lists the font package ${n}; the site uses only the Inter that VitePress bundles`);
+    }
+    const FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+    for (const field of FIELDS) for (const n of ['mermaid', 'vitepress-plugin-mermaid']) if (n in (pkg[field] ?? {})) add('package.json', 0, 'DOCS-THEME-052', `${field} lists ${n}; no Mermaid code runs in the reader's browser`);
+    const bm = pkg.devDependencies?.['beautiful-mermaid'];
+    if (bm === undefined) add('package.json', 0, 'DOCS-THEME-032', 'devDependencies must list beautiful-mermaid');
+    else if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(bm)) add('package.json', 0, 'DOCS-THEME-032', `beautiful-mermaid is "${bm}"; it must be an exact version (no range operator)`);
+    for (const field of FIELDS.filter((f) => f !== 'devDependencies')) if ('beautiful-mermaid' in (pkg[field] ?? {})) add('package.json', 0, 'DOCS-THEME-032', `${field} lists beautiful-mermaid; it belongs in devDependencies only`);
+  }
+
+  // ---- the mark component
+  const vue = readIf(join(root, MARK_REL));
+  if (vue === null) add(MARK_REL, 0, 'DOCS-THEME-012', 'does not exist');
+  else {
+    const t0 = vue.indexOf('<template');
+    const tEnd = vue.lastIndexOf('</template>');
+    const template = t0 === -1 || tEnd === -1 ? '' : vue.slice(vue.indexOf('>', t0) + 1, tEnd);
+    const script = (/<script\b[^>]*>([\s\S]*?)<\/script>/.exec(vue) ?? [])[1] ?? '';
+    const tree = vueTree(template);
+    let svg = null;
+    vueWalk(tree, (el) => {
+      if (!svg && el.name === 'svg') svg = el;
+    });
+    if (!svg) add(MARK_REL, 0, 'DOCS-THEME-012', 'its template has no <svg>');
+    else {
+      if (!(svg.attrs.class ?? '').split(/\s+/).includes('cohost-mark')) add(MARK_REL, 0, 'DOCS-THEME-012', 'the <svg> must carry class="cohost-mark"');
+      if (ws(svg.attrs.viewBox ?? '') !== '0 0 64 64') add(MARK_REL, 0, 'DOCS-THEME-012', `the <svg> viewBox is "${svg.attrs.viewBox ?? ''}"; it must be "0 0 64 64"`);
+      for (const e of EXPRESSIONS) {
+        const n = shapesFor([svg], e);
+        if (n > 12) add(MARK_REL, 0, 'DOCS-THEME-012', `renders ${n} shape elements for the ${e} expression; at most 12`);
+      }
+      const bound = svg.attrs[':data-expression'] ?? svg.attrs['v-bind:data-expression'];
+      if (!bound || !/^(?:props\.)?expression$/.test(bound.trim())) add(MARK_REL, 0, 'DOCS-THEME-014', 'the <svg> must bind data-expression to the expression prop (:data-expression="expression")');
+    }
+    vueWalk(tree, (el) => {
+      if (MARK_FORBIDDEN.has(el.name)) add(MARK_REL, 0, 'DOCS-THEME-012', `uses the <${el.name}> element, which the mark may not use`);
+      for (const [k, v] of Object.entries(el.attrs)) {
+        const name = k.replace(/^(?:v-bind)?:/, '');
+        if (name === 'fill' || name === 'stroke') {
+          const value = k !== name ? v.trim().replace(/^(['"`])(.*)\1$/, '$2') : v.trim();
+          if (value !== 'none' && !/^var\(--cohost-mascot-(?:body|face|headset)\)$/.test(value)) add(MARK_REL, 0, 'DOCS-THEME-013', `${name}="${v}" on <${el.name}> is not none or a var(--cohost-mascot-*) reference`);
+        } else if (name === 'style') {
+          for (const m of v.matchAll(/(?:^|;)\s*(fill|stroke)\s*:\s*([^;]+)/g)) {
+            const value = m[2].trim();
+            if (value !== 'none' && !/^var\(--cohost-mascot-(?:body|face|headset)\)$/.test(value)) add(MARK_REL, 0, 'DOCS-THEME-013', `${m[1]}: ${value} in a style attribute on <${el.name}> is not none or a var(--cohost-mascot-*) reference`);
+          }
+        }
+      }
+    });
+    for (const e of EXPRESSIONS) if (!new RegExp(`(['"])${e}\\1`).test(script)) add(MARK_REL, 0, 'DOCS-THEME-014', `the expression prop does not name the value '${e}'`);
+    if (!/\bexpression\s*:\s*(['"])idle\1/.test(script) && !/\bdefault\s*:\s*(['"])idle\1/.test(script)) add(MARK_REL, 0, 'DOCS-THEME-014', "the expression prop must default to 'idle'");
+  }
+
+  // ---- the favicon
+  const fav = readIf(join(root, FAVICON_REL));
+  if (fav === null) add(FAVICON_REL, 0, 'DOCS-THEME-017', 'does not exist');
+  else {
+    const rootTag = /<svg\b[^>]*>/i.exec(fav)?.[0] ?? '';
+    const vb = /\bviewBox\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(rootTag);
+    if (!vb || ws(vb[1] ?? vb[2]) !== '0 0 64 64') add(FAVICON_REL, 0, 'DOCS-THEME-017', `viewBox is "${vb ? (vb[1] ?? vb[2]) : ''}"; it must be "0 0 64 64"`);
+    const allowed = new Map();
+    for (const t of MASCOT) {
+      const v = light.get(t) ?? palette.find((p) => p.token === t)?.light;
+      if (v) allowed.set(v.toLowerCase(), t);
+    }
+    const bad = (prop, value) => {
+      const v = value.trim();
+      if (v.toLowerCase() === 'none') return;
+      if (!HEX6.test(v) || !allowed.has(v.toLowerCase())) add(FAVICON_REL, 0, 'DOCS-THEME-017', `${prop} is "${v}"; only the light mascot-body, mascot-face and mascot-headset hex literals (${[...allowed.keys()].join(', ')}) are allowed`);
+    };
+    const COLOR_PROPS = /^(fill|stroke|stop-color|flood-color|lighting-color|color)$/;
+    for (const e of tagEvents(fav)) {
+      if (e.close) continue;
+      for (const [k, v] of Object.entries(e.attrs)) if (COLOR_PROPS.test(k)) bad(k, v);
+      if (e.attrs.style) for (const m of e.attrs.style.matchAll(/(?:^|;)\s*(fill|stroke|stop-color|flood-color|lighting-color|color)\s*:\s*([^;]+)/g)) bad(m[1], m[2]);
+    }
+    for (const m of fav.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+      for (const d of m[1].matchAll(/(?:^|[;{\s])(fill|stroke|stop-color|flood-color|lighting-color|color)\s*:\s*([^;}]+)/g)) bad(d[1], d[2]);
+    }
+  }
+
+  // ---- track badges, aside, callouts, diagrams, home, motion, focus, small screens, print
+  const sels = (r, pred) => r.sels.some(pred);
+  const rulesWhere = (pred, filter = () => true) => css.filter((r) => r.file && r.sels.length && filter(r) && sels(r, pred));
+  const tokenVar = (t) => `var(--cohost-${t})`;
+
+  if (styleText !== null) {
+    for (const track of TRACKS) {
+      const rs = rulesWhere((s) => s.includes(`[data-track='${track}']`));
+      const c = lastDecl(rs, 'color');
+      const bg = lastDecl(rs, 'background-color') ?? lastDecl(rs, 'background');
+      if (!c || norm(c.value) !== tokenVar(`badge-${track}-text`)) add(STYLE_REL, c?.line ?? 0, 'DOCS-THEME-021', `the ${track} badge ([data-track='${track}']) must set color to ${tokenVar(`badge-${track}-text`)}${c ? `, found ${c.value}` : ''}`);
+      if (!bg || norm(bg.value) !== tokenVar(`badge-${track}-bg`)) add(STYLE_REL, bg?.line ?? 0, 'DOCS-THEME-021', `the ${track} badge ([data-track='${track}']) must set its background to ${tokenVar(`badge-${track}-bg`)}${bg ? `, found ${bg.value}` : ''}`);
+    }
+
+    // aside
+    const aside = rulesWhere((s) => hasClass(lastCompound(s), 'cohost-aside') && !s.includes('::') && !hasClass(lastCompound(s), 'cohost-aside-title'));
+    const abg = lastDecl(aside, 'background-color') ?? lastDecl(aside, 'background');
+    if (!abg || norm(abg.value) !== tokenVar('aside-bg')) add(STYLE_REL, abg?.line ?? 0, 'DOCS-THEME-022', `.cohost-aside must have the background ${tokenVar('aside-bg')}${abg ? `, found ${abg.value}` : ''}`);
+    const bl = resolveLine(aside, 'border-left');
+    if (bl.width !== '4px') add(STYLE_REL, 0, 'DOCS-THEME-022', `.cohost-aside needs a 4px left border, found a ${bl.width ?? 'missing'} border width`);
+    if (bl.style !== 'solid') add(STYLE_REL, 0, 'DOCS-THEME-022', `.cohost-aside needs a solid left border, found ${bl.style ?? 'no style'}`);
+    if (norm(bl.color ?? '') !== tokenVar('accent')) add(STYLE_REL, 0, 'DOCS-THEME-022', `.cohost-aside's left border must be coloured ${tokenVar('accent')}, found ${bl.color ?? 'no colour'}`);
+    const title = rulesWhere((s) => hasClass(lastCompound(s), 'cohost-aside-title') && !s.includes('::'));
+    const tc = lastDecl(title, 'color');
+    if (!tc || norm(tc.value) !== tokenVar('aside-title')) add(STYLE_REL, tc?.line ?? 0, 'DOCS-THEME-022', `.cohost-aside-title must have the colour ${tokenVar('aside-title')}${tc ? `, found ${tc.value}` : ''}`);
+    for (const r of rulesWhere((s) => hasClass(s, 'cohost-aside'))) {
+      const fs = r.decl('font-style');
+      if (fs && /\bitalic\b/i.test(fs.value)) add(r.file, fs.line, 'DOCS-THEME-022', `sets font-style: italic on ${r.sels.join(', ')}; the aside is upright`);
+    }
+    const before = rulesWhere((s) => (hasClass(s, 'cohost-aside') || hasClass(s, 'cohost-aside-title')) && s.endsWith('::before'));
+    const mask = lastDecl(before, 'mask-image');
+    if (!before.length || !mask) add(STYLE_REL, 0, 'DOCS-THEME-023', "no .cohost-aside ... ::before rule sets mask-image; the aside title is preceded by the mark drawn as a mask");
+    else {
+      const urls = [...mask.value.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gs)].map((m) => m[2]);
+      if (!urls.length || urls.some((u) => !/^data:/i.test(u.trim()))) add(STYLE_REL, mask.line, 'DOCS-THEME-023', `mask-image must use a data: URL so nothing is fetched, found ${urls.find((u) => !/^data:/i.test(u.trim())) ?? mask.value.slice(0, 40)}`);
+    }
+
+    // callouts
+    for (const t of ['tip', 'info', 'warning', 'danger', 'details']) {
+      const tok = tokenVar(`${t === 'details' ? 'info' : t}-title`);
+      const blockRules = rulesWhere((s) => s.includes(`.custom-block.${t}`) && !s.includes('::') && !/\.custom-block-title|summary/.test(s) && lastCompound(s).includes(`.${t}`));
+      const b = resolveLine(blockRules, 'border-left');
+      if (b.width !== '4px' || b.style !== 'solid' || norm(b.color ?? '') !== tok) add(STYLE_REL, 0, 'DOCS-THEME-024', `.custom-block.${t} needs a 4px solid left border in ${tok}, found ${[b.width, b.style, b.color].filter(Boolean).join(' ') || 'none'}`);
+      const titleRules = rulesWhere((s) => s.includes(`.custom-block.${t}`) && (t === 'details' ? /summary|\.custom-block-title/.test(lastCompound(s)) : lastCompound(s).includes('custom-block-title')));
+      const c = lastDecl(titleRules, 'color');
+      if (!c || norm(c.value) !== tok) add(STYLE_REL, c?.line ?? 0, 'DOCS-THEME-024', `the title of .custom-block.${t} needs the colour ${tok}${c ? `, found ${c.value}` : ''}`);
+    }
+
+    // diagrams
+    const fig = rulesWhere((s) => lastCompound(s) === '.cohost-diagram');
+    const ox = lastDecl(fig, 'overflow-x');
+    if (!ox || norm(ox.value) !== 'auto') add(STYLE_REL, ox?.line ?? 0, 'DOCS-THEME-031', `.cohost-diagram needs overflow-x: auto${ox ? `, found ${ox.value}` : ''}`);
+    const dsvg = rulesWhere((s) => /(^|\s)\.cohost-diagram\s+svg$/.test(s) || /\.cohost-diagram\s+svg$/.test(s));
+    const dw = lastDecl(dsvg, 'width');
+    if (!dw || norm(dw.value) !== 'auto') add(STYLE_REL, dw?.line ?? 0, 'DOCS-THEME-031', `.cohost-diagram svg needs width: auto${dw ? `, found ${dw.value}` : ''}`);
+    const dx = lastDecl(dsvg, 'max-width');
+    if (!dx || norm(dx.value) !== 'none') add(STYLE_REL, dx?.line ?? 0, 'DOCS-THEME-031', `.cohost-diagram svg needs max-width: none${dx ? `, found ${dx.value}` : ''}`);
+    const dm = lastDecl(dsvg, 'min-width');
+    if (dm) add(STYLE_REL, dm.line, 'DOCS-THEME-031', `.cohost-diagram svg must not set min-width, found ${dm.value}`);
+
+    // home cards
+    const cards = [['accent', 1], ['badge-simple-text', 2], ['badge-advanced-text', 3]];
+    for (const [tok, n] of cards) {
+      const rs = rulesWhere((s) => /VPFeature/.test(s) && !/:hover|:focus|::/.test(s) && (!/:nth-/.test(s) || new RegExp(`:nth-(?:child|of-type)\\(\\s*${n}\\s*\\)`).test(s)));
+      const bt = resolveLine(rs, 'border-top');
+      if (bt.width !== '4px' || norm(bt.color ?? '') !== tokenVar(tok) || (bt.style && bt.style !== 'solid')) add(STYLE_REL, 0, 'DOCS-THEME-036', `feature card ${n} needs a 4px top border in ${tokenVar(tok)}, found ${[bt.width, bt.style, bt.color].filter(Boolean).join(' ') || 'none'}`);
+    }
+
+    // flow
+    const flow = rulesWhere((s) => /\.cohost-flow\s+ol$/.test(s));
+    const base = flow.filter((r) => !inMinWidth(r.anc));
+    const wide = flow.filter((r) => r.anc.some((b) => isMedia(b, /\(\s*min-width\s*:\s*640px\s*\)/i)));
+    if (norm(lastDecl(base, 'display')?.value) !== 'flex') add(STYLE_REL, 0, 'DOCS-THEME-037', '.cohost-flow ol needs display: flex outside any min-width media query');
+    if (norm(lastDecl(base, 'flex-direction')?.value) !== 'column') add(STYLE_REL, 0, 'DOCS-THEME-037', '.cohost-flow ol needs flex-direction: column outside any min-width media query');
+    if (norm(lastDecl(wide, 'flex-direction')?.value) !== 'row') add(STYLE_REL, 0, 'DOCS-THEME-037', '.cohost-flow ol needs flex-direction: row inside @media (min-width: 640px)');
+    if (norm(lastDecl(wide, 'flex-wrap')?.value) !== 'wrap') add(STYLE_REL, 0, 'DOCS-THEME-037', '.cohost-flow ol needs flex-wrap: wrap inside @media (min-width: 640px)');
+    for (const r of flow) {
+      if (inMinWidth(r.anc)) continue;
+      const fd = r.decl('flex-direction');
+      if (fd && norm(fd.value) !== 'column') add(r.file, fd.line, 'DOCS-THEME-037', `.cohost-flow ol sets flex-direction: ${fd.value} outside a min-width media query`);
+      const fw = r.decl('flex-wrap');
+      if (fw) add(r.file, fw.line, 'DOCS-THEME-037', '.cohost-flow ol sets flex-wrap outside a min-width media query');
+    }
+  }
+
+  // ---- motion, focus, small screens, print (over both theme CSS files)
+  const NOPREF = /\(\s*prefers-reduced-motion\s*:\s*no-preference\s*\)/i;
+  const REDUCE = /\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/i;
+  for (const r of css) {
+    if (r.block.prelude.startsWith('@keyframes') || r.anc.some((b) => /^@(?:-webkit-)?keyframes/i.test(b.prelude))) continue;
+    for (const d of r.block.decls) {
+      if (['animation', 'animation-name', 'transition'].includes(d.prop) && !r.anc.some((b) => isMedia(b, NOPREF))) add(r.file, d.line, 'DOCS-THEME-040', `${d.prop} must sit inside @media (prefers-reduced-motion: no-preference)`);
+    }
+  }
+  const reduceRules = css.filter((r) => r.anc.some((b) => isMedia(b, REDUCE)));
+  const universal = reduceRules.filter((r) => ['*', '*::before', '*::after'].every((s) => r.sels.map((x) => (x.startsWith('::') ? `*${x}` : x)).includes(s)));
+  if (!universal.length) add(STYLE_REL, 0, 'DOCS-THEME-041', 'no @media (prefers-reduced-motion: reduce) rule applies to *, *::before and *::after');
+  else {
+    for (const p of ['animation-duration', 'transition-duration']) {
+      const d = lastDecl(universal, p);
+      const ms = d ? timeMs(d.value) : null;
+      if (!d || ms === null || ms > 0.01 || !d.important) add(STYLE_REL, d?.line ?? 0, 'DOCS-THEME-041', `the reduced-motion rule must set ${p} to at most 0.01ms !important${d ? `, found ${d.value}${d.important ? ' !important' : ''}` : ''}`);
+    }
+    const ic = lastDecl(universal, 'animation-iteration-count');
+    if (!ic || norm(ic.value) !== '1' || !ic.important) add(STYLE_REL, ic?.line ?? 0, 'DOCS-THEME-041', `the reduced-motion rule must set animation-iteration-count: 1 !important${ic ? `, found ${ic.value}${ic.important ? ' !important' : ''}` : ''}`);
+    const sb = lastDecl(universal, 'scroll-behavior');
+    if (!sb || norm(sb.value) !== 'auto' || !sb.important) add(STYLE_REL, sb?.line ?? 0, 'DOCS-THEME-041', `the reduced-motion rule must set scroll-behavior: auto !important${sb ? `, found ${sb.value}${sb.important ? ' !important' : ''}` : ''}`);
+  }
+  for (const r of css) {
+    const an = r.decl('animation-name');
+    if (!an) continue;
+    const name = an.value.trim();
+    if (r.decl('animation')) add(r.file, r.line, 'DOCS-THEME-042', `${r.sels.join(', ')} sets animation-name and the animation shorthand`);
+    if (!/^-?[A-Za-z_][\w-]*$/.test(name)) add(r.file, an.line, 'DOCS-THEME-042', `animation-name is "${name}"; it must be a single name`);
+    const dur = r.decl('animation-duration');
+    const ms = dur ? timeMs(dur.value) : null;
+    if (ms === null) add(r.file, an.line, 'DOCS-THEME-042', `a rule that sets animation-name must set animation-duration in s or ms${dur ? `, found ${dur.value}` : ''}`);
+    const ic = r.decl('animation-iteration-count');
+    const n = ic && /^\d*\.?\d+$/.test(norm(ic.value)) ? parseFloat(ic.value) : null;
+    if (n === null) add(r.file, an.line, 'DOCS-THEME-042', `a rule that sets animation-name must set animation-iteration-count to a number${ic ? `, found ${ic.value}` : ''}`);
+    else if (ms !== null && (ms * n) / 1000 > 5) add(r.file, an.line, 'DOCS-THEME-042', `the animation runs ${((ms * n) / 1000).toFixed(2)}s in all; at most 5 seconds`);
+  }
+
+  // focus
+  const FOCUS_TARGETS = ['a', 'button', 'summary', 'input', 'select', 'textarea', '[tabindex]'];
+  for (const target of FOCUS_TARGETS) {
+    const rs = css.filter((r) => r.sels.some((s) => {
+      const c = lastCompound(s);
+      return c === `${target}:focus-visible` || (c.startsWith(`${target}:focus-visible`) && !c.startsWith(`${target}:focus-visible::`));
+    }));
+    if (!rs.length) {
+      add(STYLE_REL, 0, 'DOCS-THEME-043', `no rule styles ${target}:focus-visible`);
+      continue;
+    }
+    const o = resolveLine(rs, 'outline');
+    if (o.width !== '2px' || o.style !== 'solid' || norm(o.color ?? '') !== tokenVar('focus')) add(STYLE_REL, rs[0].line, 'DOCS-THEME-043', `${target}:focus-visible needs outline: 2px solid ${tokenVar('focus')}, found ${[o.width, o.style, o.color].filter(Boolean).join(' ') || 'none'}`);
+    const off = lastDecl(rs, 'outline-offset');
+    if (!off || norm(off.value) !== '2px') add(STYLE_REL, rs[0].line, 'DOCS-THEME-043', `${target}:focus-visible needs outline-offset: 2px${off ? `, found ${off.value}` : ''}`);
+  }
+  for (const r of css) {
+    for (const d of r.block.decls) {
+      const v = norm(d.value);
+      const zero = /^(0|0px)$/;
+      let bad = false;
+      if (d.prop === 'outline' || d.prop === 'outline-style') bad = splitTop(v, ' ').some((t) => t === 'none' || (d.prop === 'outline' && zero.test(t)));
+      else if (d.prop === 'outline-width') bad = zero.test(v);
+      if (bad) add(r.file, d.line, 'DOCS-THEME-044', `${d.prop}: ${d.value} removes an outline`);
+    }
+  }
+
+  // small screens
+  for (const r of css) {
+    if (inMinWidth(r.anc)) continue;
+    for (const d of r.block.decls) {
+      if (!['width', 'min-width', 'flex-basis'].includes(d.prop)) continue;
+      const px = lengthPx(d.value);
+      if (px === null || px <= 328) continue;
+      add(r.file, d.line, 'DOCS-THEME-045', `${d.prop}: ${d.value} (${px}px) is above 328px outside a min-width media query`);
+    }
+  }
+
+  // print
+  const PRINT = /^@media\s+print\b/i;
+  const printRules = css.filter((r) => r.anc.some((b) => PRINT.test(b.prelude.trim())));
+  const printStyle = printRules.filter((r) => r.file === STYLE_REL);
+  const hidden = (r) => {
+    const d = r.decl('display');
+    return d && norm(d.value) === 'none';
+  };
+  for (const s of ['.VPNav', '.VPLocalNav', '.VPSidebar', '.VPDocAside', '.VPDoc .aside', '.VPDocFooter .prev-next']) {
+    if (!printRules.some((r) => r.sels.includes(s) && hidden(r))) add(STYLE_REL, 0, 'DOCS-THEME-046', `the @media print block must hide ${s} (display: none)`);
+  }
+  for (const r of printRules) {
+    if (r.sels.some((s) => hasClass(s, 'cohost-track-badge')) && (hidden(r) || norm(r.decl('visibility')?.value) === 'hidden')) add(r.file, r.line, 'DOCS-THEME-046', 'the @media print block hides .cohost-track-badge; the badge prints');
+  }
+  const DARK_SELS = new Set(['.dark', ':root.dark', 'html.dark', '.dark:root', 'html.dark:root']);
+  const darkPrint = printStyle.filter((r) => r.sels.some((s) => DARK_SELS.has(s)));
+  for (const [t, v] of light) {
+    const d = lastDecl(darkPrint, `--cohost-${t}`);
+    if (!d || d.value.trim().toLowerCase() !== v.toLowerCase()) add(STYLE_REL, d?.line ?? 0, 'DOCS-THEME-047', `the @media print block must set --cohost-${t} to its light value ${v} under .dark${d ? `, found ${d.value}` : ''}`);
+  }
+  const shikiColor = printStyle.filter((r) => r.sels.some((s) => hasClass(s, 'dark') && /\.shiki|\bspan\b|\bcode\b|\bpre\b/.test(s)));
+  const sc = lastDecl(shikiColor, 'color');
+  if (!sc || norm(sc.value) !== 'var(--shiki-light)') add(STYLE_REL, sc?.line ?? 0, 'DOCS-THEME-050', `the @media print block must colour highlighted code under .dark with var(--shiki-light)${sc ? `, found ${sc.value}` : ''}`);
+  const codeBgLight = light.get('code-bg');
+  const shikiBg = printStyle.filter((r) => r.sels.some((s) => hasClass(s, 'dark') && /language-|\.shiki|\bpre\b/.test(s)));
+  const sbg = lastDecl(shikiBg, 'background-color') ?? lastDecl(shikiBg, 'background');
+  if (!sbg || !(norm(sbg.value) === (codeBgLight ?? '').toLowerCase() || norm(sbg.value) === tokenVar('code-bg'))) add(STYLE_REL, sbg?.line ?? 0, 'DOCS-THEME-050', `the @media print block must give code blocks under .dark the light code-bg ${codeBgLight ?? ''}${sbg ? `, found ${sbg.value}` : ''}`);
+  const wrap = printRules.filter((r) => r.sels.includes(normSel(".vp-doc div[class*='language-'] pre")));
+  if (norm(lastDecl(wrap, 'white-space')?.value) !== 'pre-wrap') add(STYLE_REL, 0, 'DOCS-THEME-048', "the @media print block must set white-space: pre-wrap on .vp-doc div[class*='language-'] pre");
+  for (const t of ['.cohost-diagram', '.cohost-aside', '.custom-block']) {
+    const rs = printRules.filter((r) => r.sels.some((s) => lastCompound(s) === t));
+    if (norm(lastDecl(rs, 'break-inside')?.value) !== 'avoid') add(STYLE_REL, 0, 'DOCS-THEME-053', `the @media print block must set break-inside: avoid on ${t}`);
+  }
+  for (const target of [".vp-doc a[href^='http']::after", ".vp-doc a[href^='//']::after"]) {
+    const rs = printRules.filter((r) => r.sels.includes(normSel(target)));
+    const c = lastDecl(rs, 'content');
+    if (!c || ws(c.value.replace(/'/g, '"')) !== '" (" attr(href) ")"') add(STYLE_REL, c?.line ?? 0, 'DOCS-THEME-054', `the @media print block must set content: " (" attr(href) ")" on ${target}${c ? `, found ${c.value}` : ''}`);
+  }
+
+  // ---- the Mermaid renderer module
+  const vpDir = join(root, 'docs/.vitepress');
+  const modules = walk(vpDir, new Set(['node_modules', 'dist', 'cache'])).filter((f) => /\.(?:mjs|js|ts|mts|cjs)$/.test(f));
+  const users = modules.filter((f) => /(?:from\s*|require\(\s*|import\(\s*)['"]beautiful-mermaid['"]/.test(readFileSync(join(vpDir, f), 'utf8')));
+  if (!users.length) add('docs/.vitepress', 0, 'DOCS-THEME-028', 'no module imports beautiful-mermaid to render the mermaid fences');
+  else {
+    const EXPECT = { bg: "'var(--cohost-bg)'", fg: "'var(--cohost-text-1)'", muted: "'var(--cohost-text-2)'", line: "'var(--cohost-text-2)'", accent: "'var(--cohost-accent)'", surface: "'var(--cohost-bg-soft)'", border: "'var(--cohost-text-3)'", transparent: 'true', font: "'Inter'" };
+    for (const f of users) {
+      const rel = `docs/.vitepress/${f}`;
+      const text = readFileSync(join(vpDir, f), 'utf8');
+      const at = text.search(/\bbg\s*:/);
+      const body = at === -1 ? null : enclosingObject(text, at);
+      if (body === null) {
+        add(rel, 0, 'DOCS-THEME-028', 'cannot find the beautiful-mermaid options object (an object literal with bg: ...)');
+        continue;
+      }
+      const got = new Map();
+      for (const entry of splitTop(body, ',')) {
+        const e = entry.trim();
+        if (!e) continue;
+        const m = /^(['"]?)([\w$-]+)\1\s*:\s*([\s\S]+)$/.exec(e);
+        if (m) got.set(m[2], unquote(m[3]));
+        else got.set(e, '(spread or shorthand)');
+      }
+      for (const [k, v] of Object.entries(EXPECT)) {
+        if (!got.has(k)) add(rel, 0, 'DOCS-THEME-028', `the beautiful-mermaid options lack ${k}: ${v}`);
+        else if (got.get(k) !== v) add(rel, 0, 'DOCS-THEME-028', `the beautiful-mermaid option ${k} is ${got.get(k)}; it must be ${v}`);
+      }
+      for (const k of got.keys()) if (!(k in EXPECT)) add(rel, 0, 'DOCS-THEME-028', `the beautiful-mermaid options carry ${k}, which is not one of the specified options`);
+    }
+  }
+
+  // ---- the home page's flow
+  const idx = readIf(join(root, 'docs/index.md'));
+  if (idx !== null) {
+    const lines = analyze(idx).all;
+    const starts = [];
+    lines.forEach((l, k) => {
+      if (/^\s*:::\s*flow\b/.test(l)) starts.push(k);
+    });
+    const F = 'docs/index.md';
+    if (starts.length !== 1) add(F, 0, 'DOCS-THEME-034', `holds ${starts.length} "::: flow" containers; it needs exactly one`);
+    else {
+      let end = lines.findIndex((l, k) => k > starts[0] && /^\s*:::\s*$/.test(l));
+      if (end === -1) {
+        add(F, starts[0] + 1, 'DOCS-THEME-034', 'the ::: flow container is never closed by :::');
+        end = lines.length;
+      }
+      const inner = lines.slice(starts[0] + 1, end);
+      const items = [];
+      let lists = 0;
+      let lastItemEnd = -1;
+      let inList = false;
+      let blankBefore = false;
+      inner.forEach((l, k) => {
+        const m = /^\s{0,3}(\d+)[.)]\s+(.*)$/.exec(l);
+        if (m) {
+          if (!inList) lists++;
+          inList = true;
+          items.push({ text: m[2], line: starts[0] + 2 + k });
+          lastItemEnd = k;
+        } else if (l.trim() !== '' && inList) {
+          if (/^\s{2,}\S/.test(l) || !blankBefore) {
+            items.at(-1).text += ` ${l.trim()}`;
+            lastItemEnd = k;
+          } else inList = false;
+        }
+        blankBefore = l.trim() === '';
+      });
+      if (lists !== 1) add(F, starts[0] + 1, 'DOCS-THEME-034', `the flow container holds ${lists} ordered lists; it needs exactly one`);
+      if (items.length !== 6) add(F, starts[0] + 1, 'DOCS-THEME-034', `the flow list has ${items.length} items; it needs exactly six`);
+      const WORDS = [['chat'], ['salience'], ['cortex'], ['voice'], ['sink', 'discord'], ['avatar']];
+      const plain = (t) => t.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`]/g, '');
+      WORDS.forEach((alts, k) => {
+        const it = items[k];
+        if (!it) return;
+        if (!alts.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(plain(it.text)))) add(F, it.line, 'DOCS-THEME-034', `flow item ${k + 1} must contain the word ${alts.join(' or ')}; it reads "${plain(it.text).slice(0, 50)}"`);
+      });
+      const after = inner.slice(lastItemEnd + 1).join('\n');
+      const okLink = [...after.matchAll(/\]\(\s*<?([^)\s>]+)>?/g)].some((m) => ['start/how-it-works.md', 'start/how-it-works', '/start/how-it-works'].includes(m[1].replace(/#.*$/, '').replace(/^\.\//, '')));
+      if (!okLink) add(F, starts[0] + 1, 'DOCS-THEME-034', 'the flow container must end with a link to the How it works page (start/how-it-works.md, start/how-it-works or /start/how-it-works) after the list');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------- theme: built-site pass
+
+const TRACK_LABELS = { start: 'Start here', simple: 'Simple', advanced: 'Advanced', project: 'Project' };
+const isExternal = (u) => /^(?:https?:|\/\/)/i.test(u.trim());
+const FOCUSABLE = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'details']);
+
+/** URLs a stylesheet fetches: @import targets and url() values. */
+function cssRefs(css) {
+  const out = [];
+  for (const m of css.matchAll(/@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1/gi)) out.push(m[2]);
+  for (const m of css.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gis)) out.push(m[2]);
+  return out;
+}
+/** Resource references (URLs the browser fetches unprompted) of a built page. */
+function resourceRefs(html, events) {
+  const out = [];
+  for (const e of events) {
+    if (e.close) continue;
+    const a = e.attrs;
+    for (const k of ['src', 'poster', 'data']) if (a[k]) out.push(a[k]);
+    if (a.srcset) for (const part of a.srcset.split(',')) out.push(part.trim().split(/\s+/)[0]);
+    if (e.name === 'link') {
+      const rel = (a.rel ?? '').toLowerCase().split(/\s+/);
+      if (a.href && !rel.some((r) => ['canonical', 'alternate', 'me'].includes(r))) out.push(a.href);
+    }
+    if (e.name === 'image' || e.name === 'use') for (const k of ['href', 'xlink:href']) if (a[k]) out.push(a[k]);
+    if (a.style) out.push(...cssRefs(a.style));
+  }
+  for (const m of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) out.push(...cssRefs(m[1]));
+  return out.filter(Boolean);
+}
+
+/** Plain text of a markdown heading: inline markup and a trailing {#id} removed, entities decoded. */
+function plainHeading(text) {
+  return decodeEntities(
+    text
+      .replace(/\s*\{[^}]*\}\s*$/, '')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/!?\[([^\]]*)\]\[[^\]]*\]/g, '$1')
+      .replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, '$2')
+      .replace(/<[^>]+>/g, '')
+      .replace(/(\*\*|__|\*|_|~~)/g, ''),
+  ).trim();
+}
+/** The diagram labels a source markdown text requires, one per mermaid fence in order. */
+function diagramLabels(markdown, fallbackTitle) {
+  const a = analyze(markdown);
+  return a.fences
+    .filter((f) => f.lang === 'mermaid')
+    .map((f) => {
+      const h = [...a.headings].reverse().find((x) => x.n < f.line);
+      return `Diagram: ${h ? plainHeading(h.text) : fallbackTitle}`;
+    });
+}
+
+/**
+ * The built-site theme checks over the files in dist.
+ * @spec DOCS-THEME-010, DOCS-THEME-015, DOCS-THEME-016, DOCS-THEME-018, DOCS-THEME-019, DOCS-THEME-020, DOCS-THEME-025,
+ * DOCS-THEME-026, DOCS-THEME-029, DOCS-THEME-030, DOCS-THEME-033, DOCS-THEME-035, DOCS-THEME-039, DOCS-THEME-051,
+ * DOCS-THEME-052, DOCS-THEME-056
+ */
+function themeDistChecks(root, dist, files, htmlFiles, add) {
+  const rel = (f) => `docs/.vitepress/dist/${f}`;
+
+  // ---- source pages: track and diagram labels per built file
+  const docs = join(root, 'docs');
+  const sources = new Map();
+  const isTemplate = (f) => /\[[^\]/]+\]\.md$/.test(f);
+  for (const f of walk(docs, new Set(['node_modules', '.vitepress', 'public'])).filter((f) => f.endsWith('.md'))) {
+    if (isTemplate(f) || REQUIRED_EXCLUDES.some((g) => globToRegExp(g).test(f))) continue;
+    let data = {};
+    let body = '';
+    const text = readFileSync(join(docs, f), 'utf8');
+    try {
+      ({ data, body } = splitFrontmatter(text, `docs/${f}`));
+    } catch {
+      continue;
+    }
+    const out = f.endsWith('/index.md') || f === 'index.md' ? f.replace(/index\.md$/, 'index.html') : f.replace(/\.md$/, '.html');
+    sources.set(out, { track: typeof data.track === 'string' ? data.track : null, title: String(data.title ?? ''), markdown: text, home: f === 'index.md', body });
+  }
+  const excerpts = new Map();
+  if (existsSync(join(docs, 'advanced/architecture'))) {
+    try {
+      for (const e of loadDesign(root).pages) excerpts.set(`${e.route}.html`, { track: 'advanced', title: e.title, markdown: e.content });
+    } catch {
+      // the source pass reports a broken design tree
+    }
+  }
+  const isExcerptPath = (f) => /^advanced\/architecture\/(?:design|segments|decisions)\/[^/]+\.html$/.test(f);
+
+  // ---- stylesheets
+  for (const f of files.filter((x) => x.endsWith('.css'))) {
+    const seen = new Set();
+    for (const u of cssRefs(readFileSync(join(dist, f), 'utf8'))) {
+      if (isExternal(u) && !seen.has(u)) {
+        seen.add(u);
+        add(rel(f), 0, 'DOCS-THEME-010', `loads ${u} from another origin`);
+      }
+    }
+  }
+  for (const f of files) if (/^assets\/(?:.*\/)?mermaid[^/]*\.js$/i.test(f)) add(rel(f), 0, 'DOCS-THEME-052', 'is a Mermaid script; no Mermaid code runs in the reader\'s browser');
+
+  const home = htmlFiles.includes('index.html') ? 'index.html' : null;
+  if (home === null) add(rel('index.html'), 0, 'DOCS-THEME-035', 'does not exist');
+
+  for (const page of htmlFiles) {
+    const html = readFileSync(join(dist, page), 'utf8');
+    const events = tagEvents(html);
+    const F = rel(page);
+
+    // 010: no resource reference to another origin
+    const seen = new Set();
+    for (const u of resourceRefs(html, events)) {
+      if (isExternal(decodeEntities(u)) && !seen.has(u)) {
+        seen.add(u);
+        add(F, 0, 'DOCS-THEME-010', `loads ${u} from another origin`);
+      }
+    }
+
+    // 051: favicon link in the head
+    const headEnd = events.find((e) => e.close && e.name === 'head')?.index ?? html.length;
+    const hasIcon = events.some((e) => !e.close && e.name === 'link' && e.index < headEnd && (e.attrs.rel ?? '').trim() === 'icon' && e.attrs.type === 'image/svg+xml' && e.attrs.href === '/cohost/favicon.svg');
+    if (!hasIcon) add(F, 0, 'DOCS-THEME-051', 'its <head> has no <link rel="icon" type="image/svg+xml" href="/cohost/favicon.svg">');
+
+    // 015, 016, 056: the mark
+    const nav = regionOf(events, (e) => hasTok(e, 'VPNav'));
+    const marks = events.filter((e) => !e.close && e.name === 'svg' && hasTok(e, 'cohost-mark'));
+    for (const m of marks) {
+      if (inside(m, nav)) {
+        if (m.attrs['aria-hidden'] !== 'true') add(F, 0, 'DOCS-THEME-015', 'the mark in the nav bar must carry aria-hidden="true"');
+        if ('role' in m.attrs) add(F, 0, 'DOCS-THEME-015', `the mark in the nav bar must carry no role, found role="${m.attrs.role}"`);
+        if ('aria-label' in m.attrs) add(F, 0, 'DOCS-THEME-015', 'the mark in the nav bar must carry no aria-label');
+      } else {
+        if (m.attrs.role !== 'img') add(F, 0, 'DOCS-THEME-056', `a mark shown alone must carry role="img", found ${m.attrs.role === undefined ? 'no role' : `role="${m.attrs.role}"`}`);
+        if (m.attrs['aria-label'] !== 'The cohost mascot') add(F, 0, 'DOCS-THEME-056', `a mark shown alone must carry aria-label="The cohost mascot", found ${m.attrs['aria-label'] === undefined ? 'no aria-label' : `"${m.attrs['aria-label']}"`}`);
+      }
+    }
+    if (!nav) add(F, 0, 'DOCS-THEME-016', 'has no nav bar (.VPNav) to show the mark in');
+    else {
+      const title = regionOf(events, (e) => hasTok(e, 'VPNavBarTitle')) ?? nav;
+      const first = marks.find((m) => inside(m, title));
+      if (!first) add(F, 0, 'DOCS-THEME-016', 'the nav bar shows no cohost mark before the site title');
+      else {
+        if (first.attrs['data-expression'] !== 'idle') add(F, 0, 'DOCS-THEME-016', `the nav bar mark has data-expression="${first.attrs['data-expression'] ?? ''}"; it must be idle`);
+        const endOfMark = events.find((e) => e.close && e.name === 'svg' && e.index > first.index)?.end ?? first.end;
+        const beforeText = textOf(html.slice(title.innerStart, first.index)).trim();
+        const afterText = textOf(html.slice(endOfMark, title.innerEnd));
+        if (beforeText || !/cohost/i.test(afterText)) add(F, 0, 'DOCS-THEME-016', 'the nav bar mark must come before the site title text');
+      }
+    }
+
+    // 035: hero
+    if (page === home) {
+      const hero = regionOf(events, (e) => hasTok(e, 'VPHero'));
+      const talk = hero && marks.find((m) => inside(m, hero) && m.attrs['data-expression'] === 'talking');
+      if (!hero) add(F, 0, 'DOCS-THEME-035', 'has no hero (.VPHero)');
+      else if (!talk) add(F, 0, 'DOCS-THEME-035', 'the hero image slot must hold the cohost mark with data-expression="talking"');
+
+      // 033: the flow container
+      const flows = regionsOf(events, (e) => e.name === 'div' && hasTok(e, 'cohost-flow'));
+      if (flows.length !== 1) add(F, 0, 'DOCS-THEME-033', `has ${flows.length} .cohost-flow containers; it needs exactly one`);
+      else {
+        const fl = flows[0];
+        const inner = html.slice(fl.innerStart, fl.innerEnd);
+        const innerEvents = events.filter((e) => e.index >= fl.innerStart && e.index < fl.innerEnd);
+        const ol = regionOf(innerEvents, (e) => e.name === 'ol');
+        if (!ol) add(F, 0, 'DOCS-THEME-033', 'the .cohost-flow container holds no ordered list (<ol>); its content must be parsed as markdown');
+        else {
+          const lis = innerEvents.filter((e) => !e.close && e.name === 'li' && inside(e, ol)).length;
+          if (lis !== 6) add(F, 0, 'DOCS-THEME-033', `the flow list has ${lis} items; it needs six`);
+        }
+        if (/:::/.test(textOf(inner))) add(F, 0, 'DOCS-THEME-033', 'the .cohost-flow container holds an unparsed ::: line');
+      }
+    }
+
+    // 018, 019, 020: track badges
+    const badges = regionsOf(events, (e) => hasTok(e, 'cohost-track-badge'));
+    for (const b of badges) {
+      const track = b.open.attrs['data-track'];
+      const label = TRACK_LABELS[track];
+      const inner = html.slice(b.innerStart, b.innerEnd);
+      const text = textOf(inner);
+      if (label === undefined) add(F, 0, 'DOCS-THEME-018', `a track badge has data-track="${track ?? ''}"; it must be one of ${TRACKS.join(', ')}`);
+      else if (text !== `Track: ${label}`) add(F, 0, 'DOCS-THEME-018', `the ${track} badge reads "${text}"; it must read "Track: ${label}"`);
+      const lead = /^\s*<([A-Za-z][\w-]*)\b([^>]*)>\s*Track:\s*<\/\1\s*>/.exec(inner);
+      if (!lead || !/\b(?:visually-hidden|sr-only)\b/.test(lead[2]) || /aria-hidden|(?<![\w-])hidden(?![\w-])/.test(lead[2])) add(F, 0, 'DOCS-THEME-019', 'the badge must begin with "Track: " in an element hidden visually (class visually-hidden) but not from screen readers');
+      const kids = events.filter((e) => !e.close && e.index >= b.start && e.index < b.end);
+      for (const k of kids) {
+        if (FOCUSABLE.has(k.name) || 'tabindex' in k.attrs || 'href' in k.attrs || k.attrs.contenteditable !== undefined) add(F, 0, 'DOCS-THEME-019', `the track badge is or contains a link or other focusable element (<${k.name}>)`);
+      }
+    }
+    const src = sources.get(page);
+    const exc = excerpts.get(page) ?? (isExcerptPath(page) && !src ? { track: 'advanced' } : null);
+    const want = src && !src.home && src.track ? src.track : exc ? exc.track : null;
+    if (want) {
+      const matching = badges.filter((b) => b.open.attrs['data-track'] === want).length;
+      if (badges.length !== 1 || matching !== 1) add(F, 0, 'DOCS-THEME-020', `must contain exactly one .cohost-track-badge with data-track="${want}"; it has ${badges.length}${badges.length ? ` (${badges.map((b) => b.open.attrs['data-track'] ?? '').join(', ')})` : ''}`);
+    }
+
+    // 025, 026, 029, 030: diagrams
+    for (const e of events) {
+      if (!e.close && (e.attrs.class ?? '').includes('language-mermaid')) add(F, 0, 'DOCS-THEME-026', 'holds an element with class language-mermaid; a mermaid fence was left as a code block');
+    }
+    const figs = regionsOf(events, (e) => e.name === 'figure' && hasTok(e, 'cohost-diagram'));
+    const expected = src ? diagramLabels(src.markdown, src.title) : exc && exc.markdown ? diagramLabels(exc.markdown, exc.title) : null;
+    if (expected && figs.length !== expected.length) add(F, 0, 'DOCS-THEME-025', `holds ${figs.length} <figure class="cohost-diagram">; its source has ${expected.length} mermaid fence${expected.length === 1 ? '' : 's'}`);
+    figs.forEach((f, k) => {
+      if (f.open.attrs.tabindex !== '0') add(F, 0, 'DOCS-THEME-025', 'a <figure class="cohost-diagram"> must carry tabindex="0"');
+      const fe = events.filter((e) => e.index >= f.innerStart && e.index < f.innerEnd);
+      const svg = fe.find((e) => !e.close && e.name === 'svg');
+      if (!svg) {
+        add(F, 0, 'DOCS-THEME-025', 'a <figure class="cohost-diagram"> must hold the diagram as an inline <svg>');
+        return;
+      }
+      if (/@import/i.test(html.slice(f.innerStart, f.innerEnd))) add(F, 0, 'DOCS-THEME-029', 'a rendered diagram still holds an @import rule');
+      if (svg.attrs.role !== 'img') add(F, 0, 'DOCS-THEME-030', `a diagram's <svg> must carry role="img", found ${svg.attrs.role === undefined ? 'no role' : svg.attrs.role}`);
+      const label = svg.attrs['aria-label'];
+      if (!label || !label.startsWith('Diagram: ')) add(F, 0, 'DOCS-THEME-030', `a diagram's <svg> aria-label must start with "Diagram: ", found ${label === undefined ? 'none' : `"${label}"`}`);
+      else if (expected && expected[k] !== undefined && label !== expected[k]) add(F, 0, 'DOCS-THEME-030', `diagram ${k + 1} is labelled "${label}"; the nearest heading gives "${expected[k]}"`);
+    });
+  }
+
+  // ---- 404
+  const nf = htmlFiles.includes('404.html') ? readFileSync(join(dist, '404.html'), 'utf8') : null;
+  if (nf === null) add(rel('404.html'), 0, 'DOCS-THEME-039', 'does not exist');
+  else {
+    const ev = tagEvents(nf);
+    const nav = regionOf(ev, (e) => hasTok(e, 'VPNav'));
+    const outside = (e) => !inside(e, nav);
+    const h1 = regionsOf(ev, (e) => e.name === 'h1').some((r) => textOf(nf.slice(r.innerStart, r.innerEnd)).replace(/[​\s]+/g, ' ').trim() === 'Page not found');
+    if (!h1) add(rel('404.html'), 0, 'DOCS-THEME-039', 'has no <h1> with the text "Page not found"');
+    for (const href of ['/cohost/', '/cohost/start/what-is-cohost']) {
+      if (!ev.some((e) => !e.close && e.name === 'a' && e.attrs.href === href && outside(e))) add(rel('404.html'), 0, 'DOCS-THEME-039', `has no <a href="${href}"> outside the nav bar`);
+    }
+    if (!ev.some((e) => !e.close && hasTok(e, 'cohost-aside'))) add(rel('404.html'), 0, 'DOCS-THEME-039', 'has no element with the class cohost-aside');
+    const lost = ev.filter((e) => !e.close && e.name === 'svg' && hasTok(e, 'cohost-mark') && e.attrs['data-expression'] === 'lost' && outside(e));
+    if (!lost.length) add(rel('404.html'), 0, 'DOCS-THEME-039', 'has no <svg class="cohost-mark" data-expression="lost" role="img"> outside the nav bar');
+    else if (!lost.some((e) => e.attrs.role === 'img')) add(rel('404.html'), 0, 'DOCS-THEME-039', 'the lost mark must carry role="img"');
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------- main

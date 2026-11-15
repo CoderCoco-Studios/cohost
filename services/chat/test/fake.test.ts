@@ -67,3 +67,40 @@ test("chatPlan: fake needs no channel; twitch without a channel idles (never exi
   assert.equal(plan({ source: "twitch", twitch: { channel: "" } }), "idle");
   assert.equal(plan({ source: "twitch", twitch: { channel: "#Chan" } }), "twitch");
 });
+
+// @spec CHAT-FAKE-005
+test("once a stdin line has arrived the scripted interval does not emit", async () => {
+  mock.timers.enable({ apis: ["setInterval"] });
+  try {
+    const stdin = new PassThrough();
+    const { published, stop } = run({ stdin });
+    mock.timers.tick(8000);
+    assert.equal(published.length, 1, "the script runs until a line arrives");
+    stdin.write("typed line\n");
+    await waitFor(() => published.length >= 2, "the stdin line");
+    mock.timers.tick(8000 * 3);
+    assert.deepEqual(published.map((p) => p.text).slice(1), ["typed line"], "no scripted line after the first stdin line");
+    stop();
+  } finally { mock.timers.reset(); }
+});
+
+// @spec CHAT-FAKE-006
+test("a rejecting publish is handed to onError and later lines still publish", async () => {
+  const stdin = new PassThrough();
+  const errors: unknown[] = [];
+  let fail = true;
+  const published: string[] = [];
+  const stop = startFakeSource({
+    toEvent: createChatFilter(cfg),
+    publish: async (ev) => { if (fail) throw new Error("boom"); published.push(ev.text); },
+    cohostName: cfg.cohost.name, intervalMs: 60_000, stdin,
+    onError: (e) => errors.push(e),
+  });
+  stdin.write("one\n");
+  await waitFor(() => errors.length === 1, "onError");
+  assert.equal((errors[0] as Error).message, "boom");
+  fail = false;
+  stdin.write("two\n");
+  await waitFor(() => published.length === 1, "next publish");
+  stop();
+});

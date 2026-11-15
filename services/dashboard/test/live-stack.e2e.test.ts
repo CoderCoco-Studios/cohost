@@ -8,7 +8,7 @@ import { resolveDockerBin } from "@cohost/control";
 // MOD-TEST-007 end to end: the whole stack under Docker with every unit's isolation preset, a real dashboard process
 // in front of it, and each unit's declared input answered by that unit. Heavy (the first run pulls images), so it runs
 // only where COHOST_LIVE_STACK=1, Docker answers, and the environment carries the mock presets (README quickstart:
-// `set -a; . ./.env; set +a`, with COMPOSE_PROFILES=eyes,ears,mouth and the presets of CTRL-MANIFEST-003 in `.env`) and ports
+// `set -a; . ./.env; set +a`, with COMPOSE_PROFILES=eyes,ears,mouth,discord and the presets (CONNECTIONS_DISCORD_ENABLED=false among them) of CTRL-MANIFEST-003 in `.env`) and ports
 // 3000 and 3001 are free (the dashboard under test binds them).
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -106,6 +106,7 @@ test("every unit of the isolated stack answers its declared input", { skip, time
       { unit: "chat", send: () => api("POST", "/inject/text", { level: "service", text: "live verify chat", user: "live_verify" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
       { unit: "eyes", send: () => api("POST", "/inject/image?level=service", PNG, { "content-type": "image/png" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
       { unit: "ears", send: () => api("POST", "/inject/audio?level=service", wav(), { "content-type": "audio/wav" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
+      { unit: "connector-discord", send: () => api("POST", "/inject/audio?level=service&target=connector-discord", wav(), { "content-type": "audio/wav" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') && d.includes("Discord is off") },
       { unit: "salience", send: () => api("POST", "/inject/event", { unit: "salience", type: "chat.message", data: chat("hey Coco, salience check?") }), types: ["attention.focus"], pred: (d) => d.includes("salience check") },
       { unit: "affect", send: () => api("POST", "/inject/event", { unit: "affect", type: "chat.message", data: chat("this is awesome and amazing!!") }), types: ["affect.state"], pred: (d) => d.includes("live_verify") },
       { unit: "memory", send: () => api("POST", "/inject/event", { unit: "memory", type: "memory.recall.request", data: { id: "lv-recall", query: "live verify" } }), types: ["memory.recall.reply"], pred: (d) => d.includes("lv-recall") },

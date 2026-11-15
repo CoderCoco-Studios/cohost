@@ -97,10 +97,12 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
     config: ["mouth"], uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
   }),
-  // The Discord connector (CONN-*): a connector, not a bus subscriber, so it owns no consumer group and takes no test input.
-  // Its unit id is the process name; the platform name `discord` is its connector id, tags and config section.
+  // The Discord connector (CONN-*): it subscribes to `inject.request` only, for its test input (CONN-INJ-001), so its one
+  // group is that subscription's. Its unit id is the process name; the platform name `discord` is its connector id, tags and
+  // config section. The injected clip is answered with Discord off, so the isolation preset keeps the input working.
   svc("connector-discord", {
-    isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"],
+    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"],
+    test: { inputs: ["audio"], observe: ["inject.result"] },
   }),
   compose("redis", { infra: true }),
   compose("postgres", { infra: true }),

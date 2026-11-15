@@ -477,7 +477,7 @@ async function tdSend(i) {
     } else if (type === "image" || type === "audio") {
       const f = $("#tdIn" + i).files[0];
       if (!f) { tdSet(type === "image" ? "choose an image first" : "choose an audio file first", "bad"); return; }
-      await tdFinish(await authFetch(`/inject/${type}?level=service`, { method: "POST", headers: { "content-type": f.type }, body: f }), type);
+      await tdFinish(await authFetch(`/inject/${type}?level=service${type === "audio" ? "&target=" + encodeURIComponent(def.id) : ""}`, { method: "POST", headers: { "content-type": f.type }, body: f }), type);
     } else {
       let data;
       try { data = JSON.parse($("#tdIn" + i).value); } catch (e) { tdSet("data is not valid JSON: " + e.message, "bad"); return; }

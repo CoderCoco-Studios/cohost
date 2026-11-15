@@ -151,10 +151,13 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   send(res, 202, { id });
 }
 
+/** The units an audio injection can be for (DASH-INJ-010). */
+const AUDIO_TARGETS: readonly string[] = ["ears", "connector-discord"];
+
 /** The tag of a listening source (EARS-SRC-001). */
 const SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
 
-// @spec DASH-INJ-005, DASH-INJ-006, DASH-INJ-009, DASH-UPL-002, DASH-UPL-003
+// @spec DASH-INJ-005, DASH-INJ-006, DASH-INJ-009, DASH-INJ-010, DASH-UPL-002, DASH-UPL-003
 async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL, kind: UploadKind): Promise<void> {
   if (!d.authorize(req, res)) return;
   const level = url.searchParams.get("level") ?? "service";
@@ -163,6 +166,9 @@ async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.
   // @spec DASH-INJ-009
   const source = url.searchParams.get("source");
   if (source !== null && (kind !== "audio" || !SOURCE_TAG.test(source))) return send(res, 400, kind === "audio" ? "source must match [a-z][a-z0-9-]{0,31}" : "source is only for audio");
+  const target = url.searchParams.get("target");
+  if (target !== null && (kind !== "audio" || !AUDIO_TARGETS.includes(target))) return send(res, 400, kind === "audio" ? `target must be ${AUDIO_TARGETS.join(" or ")}` : "target is only for audio");
+  if (target === "connector-discord" && source !== null) return send(res, 400, "source is for ears, not connector-discord");
   const contentType = (req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
   if (!(kind === "image" ? IMAGE_TYPES : AUDIO_TYPES).has(contentType)) {
     req.resume();
@@ -171,7 +177,8 @@ async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.
   const { data, tooLarge } = await readBody(req, uploadMaxBytes(d.uploads, kind));
   if (tooLarge) return send(res, 413, `${kind} exceeds ${uploadMaxBytes(d.uploads, kind)} bytes`);
   if (data.length === 0) return send(res, 400, "empty body");
-  if (refuseNotRunning(d, res, kind === "image" ? "eyes" : "ears")) return;
+  const unit = kind === "image" ? "eyes" : target ?? "ears";
+  if (refuseNotRunning(d, res, unit)) return;
 
   const uploadId = randomBytes(16).toString("hex");
   try {
@@ -183,7 +190,7 @@ async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.
   const id = randomUUID();
   await d.bus.publish("inject.request", {
     id,
-    target: kind === "image" ? "eyes" : "ears",
+    target: unit as "eyes" | "ears" | "connector-discord",
     kind,
     uploadId,
     contentType,

@@ -327,14 +327,14 @@ export const EventPayloads = {
   }),
 
   /**
-   * dashboard → eyes/ears/chat: run this test input through the service's real
+   * dashboard → eyes/ears/chat/connector-discord: run this test input through the service's real
    * code path. Binaries never ride the stream; `uploadId` names the bytes the
    * dashboard stored in Redis (`Bus.putUpload`) and `contentType` their type.
    */
   // @spec BUS-EVT-006
   "inject.request": z.object({
     id: z.string(),
-    target: z.enum(["eyes", "ears", "chat"]),
+    target: z.enum(["eyes", "ears", "chat", "connector-discord"]),
     kind: z.enum(["image", "audio", "text"]),
     uploadId: z.string().optional(),
     contentType: z.string().optional(),
@@ -352,7 +352,7 @@ export const EventPayloads = {
     remember: z.boolean(),
   }),
 
-  /** eyes/ears/chat → dashboard: outcome of an inject.request, correlated by id. */
+  /** eyes/ears/chat/connector-discord → dashboard: outcome of an inject.request, correlated by id. */
   // @spec BUS-EVT-007
   "inject.result": z.object({
     id: z.string(),

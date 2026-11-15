@@ -30,10 +30,10 @@ const SAMPLES: Record<string, unknown> = {
   "attention.focus": { reason: "r", score: 0.5 },
   "affect.state": { valence: 0.2, arousal: 0.3, mood: "neutral" },
 };
-const KIND_ROUTE: Record<string, { path: string; type?: string; body: string }> = {
-  text: { path: "/inject/text", body: JSON.stringify({ level: "service", text: "hi" }) },
-  image: { path: "/inject/image", type: "image/png", body: "PNG" },
-  audio: { path: "/inject/audio", type: "audio/wav", body: "RIFF" },
+const KIND_ROUTE: Record<string, { path: (unit: string) => string; type?: string; body: string }> = {
+  text: { path: () => "/inject/text", body: JSON.stringify({ level: "service", text: "hi" }) },
+  image: { path: () => "/inject/image", type: "image/png", body: "PNG" },
+  audio: { path: (unit) => `/inject/audio?target=${unit}`, type: "audio/wav", body: "RIFF" },
 };
 
 async function boot(states: Record<string, HealthState> = {}) {
@@ -64,8 +64,7 @@ async function boot(states: Record<string, HealthState> = {}) {
 
 test("the table covers every application unit and each declares config and test inputs", () => {
   assert.equal(units.length, 11);
-  // the Discord connector takes no bus input (CONN-DISC-010), so it declares none
-  for (const u of units) assert.ok(u.config.length > 0 && (u.test.inputs.length > 0 || u.id === "connector-discord"), u.id);
+  for (const u of units) assert.ok(u.config.length > 0 && u.test.inputs.length > 0, u.id);
 });
 
 for (const u of units) {
@@ -104,7 +103,7 @@ for (const u of units) {
         const send = async (t: Awaited<ReturnType<typeof boot>>) => {
           if (KIND_ROUTE[input]) {
             const k = KIND_ROUTE[input]!;
-            return fetch(`${t.base}${k.path}`, { method: "POST", body: k.body, headers: { ...t.auth, ...(k.type ? { "content-type": k.type } : {}) } });
+            return fetch(`${t.base}${k.path(u.id)}`, { method: "POST", body: k.body, headers: { ...t.auth, ...(k.type ? { "content-type": k.type } : {}) } });
           }
           assert.ok(input in EventPayloads, `${u.id}: ${input} is neither a service-level kind nor a bus event type`);
           assert.ok(input in SAMPLES, `${u.id}: add a sample payload for ${input}`);
@@ -112,7 +111,7 @@ for (const u of units) {
         };
         const refused = await send(down);
         assert.equal(refused.status, 409, `${u.id}/${input} while ${state}`);
-        assert.deepEqual(await refused.json(), { ok: false, detail: `service not running: ${KIND_ROUTE[input] ? ({ text: "chat", image: "eyes", audio: "ears" } as Record<string, string>)[input] : u.id}` });
+        assert.deepEqual(await refused.json(), { ok: false, detail: `service not running: ${input === "text" ? "chat" : input === "image" ? "eyes" : u.id}` });
         const accepted = await send(up);
         assert.equal(accepted.status, 202, `${u.id}/${input} while up`);
       }

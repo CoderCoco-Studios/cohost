@@ -438,7 +438,7 @@ Spoken fallback line (design in the [voice](../voice/voice-design.md) Sink Arbit
 
 ### Other schema notes
 
-- `control.target` is optional so old publishers stay valid (`events.ts:178` comment).
+- `control.target` is optional: a command without it is addressed to every service.
 - `voice.utterance.audioUrl` is a path on the voice service (`/audio/<id>.wav`); its comment names no host or port.
 - `route` (BUS-EVT-023) is one optional string-array schema shared by `control` (meaningful for `say`), `brain.say` and `voice.utterance`: the list of mouth output ids a line is for. The producers copy it down the chain unchanged (cortex, voice); only mouth reads it. Absent means every enabled output, so old publishers stay valid.
 - `voice.playing` is the schema `PlaybackReport` (`id`, `sink`); `voice.done` extends it with `interrupted?` (the literal `true`), `spokenText?` and `unsaidText?` (BUS-EVT-017, BUS-EVT-031). `interrupted` marks a line that `voice.stop` ended before its audio finished; `spokenText` is the part of the line's text that had been spoken and `unsaidText` the rest, both present only when the publishing sink could compute them from the line's timing (mouth, [mouth](../mouth/mouth-design.md) Stopping a line) and absent otherwise. No consumer reads the two texts in this release: the transcript keeps the line as it was meant to be said.

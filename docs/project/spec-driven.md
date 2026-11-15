@@ -1,3 +1,10 @@
+---
+title: How specs work
+description: Linked-intent development as this project uses it, from design to tests to code.
+track: project
+verified: f126b949cf41b503f28c7935d3c8522bb7b659d6
+---
+
 # Spec-driven development
 
 cohost uses **linked-intent development (LID)**: behavior is agreed on in
@@ -21,10 +28,10 @@ HLD → LLDs → EARS → Tests → Code
 | Arrow overlay | `docs/arrows/index.yaml` + `docs/arrows/<segment>.md` | Status, dependencies, drift and work required per segment |
 | Code | `@spec PFX-FACET-NNN` comments | Links code and tests back to the spec line |
 
-Segments (21, flat): `config`, `event-bus`, `model-backends`, `region-hooks`, `connections`,
+Segments (flat): `config`, `event-bus`, `model-backends`, `region-hooks`, `connections`,
 `working-memory`, `shared-runtime`, `control-plane`, `chat`, `eyes`, `ears`,
 `salience`, `affect`, `memory`, `cortex`, `voice`, `mouth`, `avatar`,
-`dashboard`, `deployment`, `module-contract`.
+`dashboard`, `deployment`, `module-contract`, `docs-site`.
 Start at `docs/arrows/index.yaml`; `blockedBy` gives the dependency order.
 The `@cohost/shared` package is the `shared-runtime` segment.
 
@@ -45,7 +52,7 @@ The `@cohost/shared` package is the `shared-runtime` segment.
 
 | Change | Spec? |
 | --- | --- |
-| New service, event type, config key, or behavior visible on the bus | Yes: LLD + EARS lines first |
+| New service, [event](../start/glossary.md#event) type, config key, or behavior visible on the [bus](../start/glossary.md#bus) | Yes: LLD + EARS lines first |
 | Changing a payload shape in `packages/bus/src/events.ts` | Yes: `event-bus` plus every producer/consumer segment |
 | Bug fix that restores documented behavior | Walk the arrow anyway (find the EARS line, add a test); no new design |
 | Refactor with no observable change, docs, tooling | No |
@@ -59,28 +66,3 @@ The `@cohost/shared` package is the `shared-runtime` segment.
   declared in each design doc's frontmatter.
 - Describe the contract (events in/out, payloads, defaults, edge cases), not
   internals.
-
-## Brownfield state
-
-The mapping was bootstrapped from code on 2026-10-31 (commit `686cc8f`) and
-every segment was audited against the code on 2026-11-01/02, so every segment
-is `AUDITED`: code and tests carry `@spec` annotations, and the owner's
-answers to the audit questions are applied to the HLD, the LLDs and the EARS
-files. Decided behaviour the code does not have yet is a `[ ]` gap. The owner has
-confirmed the HLD and LLD intent of the mapped code. A `[proposed]` marker
-(inline in a design doc or a spec line) flags a design choice in new, not yet
-built work that awaits the owner's confirmation; today these belong to the
-viewer-notes design (memory, cortex, dashboard, config, event-bus). LLD rows
-marked `[inferred]` and `[proposed]` items are the only things still awaiting
-an owner decision.
-
-## OpenSpec (retired)
-
-cohost used [OpenSpec](https://github.com/Fission-AI/OpenSpec) before LID. The
-`openspec/` directory (baseline specs and four archived changes, frozen at the
-2026-11-01 archive) was removed once the LID arrow replaced it. It remains in
-version history, last present at the commit before the one that removed it.
-The `<!-- openspec: ... -->` traceability comments on spec lines, and the
-`openspec/...` paths cited in design docs and arrow docs, refer to that
-removed baseline and can be resolved via git history. Do not propose, apply or
-archive OpenSpec changes; the `/opsx:*` commands were removed.

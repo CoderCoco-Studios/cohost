@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "77 specs: 68 [x], 9 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed; DEPLOY-HOST-003, -004, DEPLOY-README-002, -003, -005, -006 and DEPLOY-INST-011 until the docs-site pages they name are written. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
+    next: "77 specs: 77 [x], 0 [ ]. DEPLOY-INST-007 and DEPLOY-INST-014 have source-order tests only; observe one installer run on a clean machine. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
     drift: null
 
   docs-site:
@@ -302,7 +302,7 @@ arrows:
     blocks: [deployment]
     blockedBy: []
     detail: docs-site.md
-    next: "60 specs, all [ ]. Design and specs written; no page, loader or check built yet."
+    next: "60 specs: 60 [x], 0 [ ]. Pages, loaders, sidebar data, config and docs check built and tested; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

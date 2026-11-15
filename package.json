@@ -22,9 +22,8 @@
     "reembed": "pnpm --filter @cohost/memory reembed",
     "clean": "rm -rf packages/*/dist services/*/dist",
     "test": "pnpm build:native && tsc -b && node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
-    "docs:prepare": "node scripts/docs-prepare.mjs",
-    "docs:dev": "pnpm docs:prepare && vitepress dev docs",
-    "docs:build": "pnpm docs:prepare && vitepress build docs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "node scripts/docs-check.mjs && vitepress build docs && node scripts/docs-check.mjs --dist",
     "docs:preview": "vitepress preview docs",
     "test:only": "node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\""
   },

@@ -4,7 +4,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 ## Status
 
-**MAPPED** — 60 specs: 0 implemented, 0 deferred, 60 gaps. The design and specs are written; no page, loader or check exists yet.
+**MAPPED** — 60 specs: 60 implemented, 0 deferred, 0 gaps. The pages, loaders, sidebar data, config and docs check exist and are tested; a separate audit has not been run.
 
 ## Orientation
 
@@ -20,13 +20,15 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 - docs/intent/docs-site/docs-site-design.md
 
 ### EARS
-- docs/intent/docs-site/docs-site-specs.md (60 specs, prefix `DOCS`: 0 `[x]`, 60 `[ ]`, 0 `[D]`)
+- docs/intent/docs-site/docs-site-specs.md (60 specs, prefix `DOCS`: 60 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
-- None yet. The docs check's tests are `packages/config/test/docs-check.test.ts`.
+- packages/config/test/docs-check.test.ts (the docs check, sidebar, loaders and README/examples shape)
+- packages/config/test/helpers/ (fixtures it builds)
 
 ### Code
-- None yet. Planned: `scripts/docs-check.mjs`, `docs/.vitepress/config.ts`, `docs/.vitepress/sidebar.mjs`, the `*.paths.mjs` loaders under `docs/advanced/architecture/`, the `docs:*` scripts in `package.json`, `.gitignore`.
+Annotated: `scripts/docs-check.mjs`, `docs/.vitepress/config.ts`, `docs/.vitepress/sidebar.mjs`, `docs/.vitepress/design-excerpts.mjs`, `docs/.vitepress/aside-container.mjs`, the `*.paths.mjs` loaders under `docs/advanced/architecture/`.
+Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json`, `.gitignore`, `README.md`, the READMEs and `server.py` under `examples/`.
 
 ## Architecture
 
@@ -42,24 +44,23 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
-| Build | DOCS-BUILD-001 to DOCS-BUILD-009 | 9 | 0 | 0 | 9 |
-| Publishing boundary | DOCS-PUB-001 to DOCS-PUB-004 | 4 | 0 | 0 | 4 |
-| Information architecture | DOCS-IA-001 to DOCS-IA-009 | 9 | 0 | 0 | 9 |
-| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 0 | 0 | 7 |
-| Glossary | DOCS-GLOSS-001 to DOCS-GLOSS-004 | 4 | 0 | 0 | 4 |
-| Links | DOCS-LINK-001 to DOCS-LINK-003 | 3 | 0 | 0 | 3 |
-| Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 0 | 0 | 6 |
-| Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 0 | 0 | 10 |
-| README | DOCS-README-001 to DOCS-README-004 | 4 | 0 | 0 | 4 |
-| Examples | DOCS-EX-001 to DOCS-EX-004 | 4 | 0 | 0 | 4 |
+| Build | DOCS-BUILD-001 to DOCS-BUILD-009 | 9 | 9 | 0 | 0 |
+| Publishing boundary | DOCS-PUB-001 to DOCS-PUB-004 | 4 | 4 | 0 | 0 |
+| Information architecture | DOCS-IA-001 to DOCS-IA-009 | 9 | 9 | 0 | 0 |
+| Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 7 | 0 | 0 |
+| Glossary | DOCS-GLOSS-001 to DOCS-GLOSS-004 | 4 | 4 | 0 | 0 |
+| Links | DOCS-LINK-001 to DOCS-LINK-003 | 3 | 3 | 0 | 0 |
+| Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 6 | 0 | 0 |
+| Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 10 | 0 | 0 |
+| README | DOCS-README-001 to DOCS-README-004 | 4 | 4 | 0 | 0 |
+| Examples | DOCS-EX-001 to DOCS-EX-004 | 4 | 4 | 0 | 0 |
 
-**Summary:** 0 of 60 specs implemented.
+**Summary:** 60 of 60 specs implemented.
 
 ## Work Required
 
 ### Must Fix
-1. Build the docs check and its tests, the sidebar data, the excerpt loaders and the config (DOCS-BUILD-*, DOCS-PUB-*, DOCS-IA-*, DOCS-ARCH-*).
-2. Write the hand-written pages and the glossary; shrink the README and the examples READMEs; remove `scripts/docs-prepare.mjs`, `docs/TESTING.md` (split into the testing pages) and `examples/providers/`; move `docs/SPEC-DRIVEN.md` and `docs/plans/live-verification.md` to their project pages.
+None.
 
 ### Should Fix
 None.

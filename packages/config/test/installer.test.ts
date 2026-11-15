@@ -67,3 +67,47 @@ test("next steps say pnpm dashboard, the URL from the shell then .env then 3000,
   assert.match(o, /DISCORD_TOKEN/, "it names the one Discord bot");
   assert.match(o, /Discord connector/);
 });
+
+// @spec DEPLOY-INST-011
+test("the Docker-free dev loop lists the infrastructure containers the Developer setup page lists", () => {
+  const out = run("next-steps", "print_next_steps", "A=1\n").stdout;
+  const page = readFileSync(fileURLToPath(new URL("../../../docs/advanced/dev-setup.md", import.meta.url)), "utf8");
+  const infra = "redis postgres ollama tts stt";
+  assert.ok(out.includes(`docker compose up -d ${infra}`), "the installer lists the infrastructure containers");
+  assert.ok(page.includes(`docker compose up -d ${infra}`), "the Developer setup page lists the same ones");
+});
+
+// Source checks of the installer's order and wording; the apt, rustup and docker steps themselves are exercised
+// only by running the installer (a manual verification item of the segment).
+// @spec DEPLOY-INST-007
+test("install.sh installs, builds the addon, typechecks, then probes redis and postgres (and ollama when pulling) for 60 s", () => {
+  const at = (s: string) => {
+    const i = src.indexOf(s);
+    assert.ok(i >= 0, `install.sh contains ${s}`);
+    return i;
+  };
+  assert.ok(at("pnpm install --frozen-lockfile") < at("pnpm build:native"));
+  assert.ok(at("pnpm build:native") < at("pnpm typecheck"));
+  assert.ok(at("pnpm typecheck") < at("docker compose pull --ignore-buildable"));
+  assert.ok(at("docker compose pull --ignore-buildable") < at("docker compose up -d ollama models"));
+  assert.ok(at("docker compose wait models") < at("docker compose up -d redis postgres"));
+  for (const probe of ["redis-cli ping", "pg_isready", "/api/tags"]) at(probe);
+  assert.match(src, /probe redis 60 /);
+  assert.match(src, /probe postgres 60 /);
+  assert.match(src, /if \[\[ \$PULL -eq 1 \]\]; then probe ollama 60 /);
+  assert.match(src, /echo "  \$name ok"/);
+  assert.match(src, /die "smoke probe failed: \$name did not pass within/);
+});
+
+// @spec DEPLOY-INST-014
+test("install.sh installs rustup without a default toolchain, then the pinned toolchain, and names no Rust version", () => {
+  const from = src.indexOf("# ---------------------------------------------------------------- rust toolchain");
+  const to = src.indexOf("# ---------------------------------------------------------------- deps + build");
+  const section = src.slice(from, to);
+  assert.match(section, /sh\.rustup\.rs/);
+  assert.match(section, /--default-toolchain none/);
+  assert.match(section, /^rustup toolchain install\b/m, "the pinned toolchain is installed on every run");
+  assert.match(section, /command -v cc /);
+  assert.match(section, /build-essential/);
+  assert.doesNotMatch(section.replace(/^\s*#.*$/gm, ""), /\b\d+\.\d+(\.\d+)?\b|stable|nightly/, "no Rust version or channel of its own");
+});

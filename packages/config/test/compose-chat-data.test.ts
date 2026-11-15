@@ -61,13 +61,13 @@ test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and chan
 });
 
 // @spec DEPLOY-README-005
-test("the README describes ears, mouth and the Discord connector as separate optional profiles, the one bot, the routing table and the guild and channel keys", () => {
-  const md = readFileSync(root("README.md"), "utf8");
-  assert.match(md, /`ears`[^\n]*`mouth`[^\n]*`discord`|`discord`[^\n]*`ears`[^\n]*`mouth`/);
+test("the Discord page describes ears, mouth and the Discord connector as separate optional profiles, the one bot, the routing table and the guild and channel keys", () => {
+  const md = readFileSync(root("docs/guide/connect/discord.md"), "utf8");
+  assert.match(md, /\| `discord` \|[\s\S]*\| `ears` \|[\s\S]*\| `mouth` \|/);
   assert.match(md, /mouth\.outputs/);
-  assert.match(md, /add\s+`discord` to `COMPOSE_PROFILES`/);
-  assert.match(md, /connections\.discord\.guild_id/);
-  assert.match(md, /connections\.discord\.voice_channel_id/);
-  assert.match(md, /Connect/);
+  assert.match(md, /COMPOSE_PROFILES=discord,ears,mouth/);
+  assert.match(md, /DISCORD_TOKEN/);
+  assert.match(md, /connections:\n {2}discord:[\s\S]*?guild_id:[\s\S]*?voice_channel_id:/);
+  assert.match(md, /\*\*Connect\*\*/);
   assert.match(md, /Server Members/);
 });

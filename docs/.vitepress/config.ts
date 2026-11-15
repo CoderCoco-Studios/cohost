@@ -1,39 +1,32 @@
+// @spec DOCS-BUILD-003, DOCS-BUILD-004, DOCS-BUILD-008, DOCS-BUILD-009, DOCS-PUB-001, DOCS-IA-007
 import { defineConfig } from 'vitepress';
+import { asideContainer } from './aside-container.mjs';
+import { nav, sidebar } from './sidebar.mjs';
 
-// docs/guide and docs/examples are generated from README.md and
-// examples/*/README.md by scripts/docs-prepare.mjs (run by the docs:* scripts).
+// The sidebar and nav are data in sidebar.mjs (shared with scripts/docs-check.mjs). The Architecture pages are
+// dynamic routes under advanced/architecture/, built from the design documents by their *.paths.mjs loaders.
 export default defineConfig({
   title: 'cohost',
   description: 'Locally hosted AI VTuber co-host — modular services on a Redis bus',
   base: '/cohost/',
   cleanUrls: true,
   lastUpdated: false,
-  ignoreDeadLinks: [/^https?:\/\/localhost/, /\/intent\//], // the design tree is not published (srcExclude), so links into it from plans are fine
-  srcExclude: ['arrows/**', 'intent/**', 'high-level-design.md'],
+  // Only `localhost` links are skipped: links into the unpublished design tree are GitHub URLs and need no skip.
+  ignoreDeadLinks: 'localhostLinks',
+  // The design tree and working files are not pages; the Architecture section excerpts the design documents instead.
+  srcExclude: ['high-level-design.md', 'intent/**', 'decisions/**', 'arrows/**', 'lid/**', 'plans/**'],
+  markdown: {
+    // ::: aside ... ::: renders the co-host's aside; the theme styles .cohost-aside.
+    config(md) {
+      md.use(asideContainer);
+    },
+  },
   themeConfig: {
-    nav: [
-      { text: 'Guide', link: '/guide/' },
-      { text: 'Testing', link: '/TESTING' },
-      { text: 'Specs', link: '/SPEC-DRIVEN' },
-      { text: 'Plans', link: '/plans/control-plane' },
-    ],
-    sidebar: [
-      { text: 'Guide', items: [{ text: 'Overview and setup (README)', link: '/guide/' }] },
-      { text: 'Testing', items: [{ text: 'Testing piece by piece', link: '/TESTING' }] },
-      { text: 'Specs', items: [{ text: 'Linked-intent development', link: '/SPEC-DRIVEN' }] },
-      { text: 'Plans', items: [{ text: 'Control plane', link: '/plans/control-plane' }] },
-      {
-        text: 'Examples',
-        items: [
-          { text: 'Overview', link: '/examples/' },
-          { text: 'Modules', link: '/examples/modules' },
-          { text: 'Providers', link: '/examples/providers' },
-        ],
-      },
-    ],
+    nav,
+    sidebar,
     outline: { level: [2, 3] },
     search: { provider: 'local' },
-    socialLinks: [{ icon: 'github', link: 'https://github.com/CoderCoco/cohost' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/CoderCoco-Studios/cohost' }],
     footer: { message: 'Released under AGPL-3.0-only; commercial licence available from CoderCoco.', copyright: 'Copyright © CoderCoco' },
   },
 });

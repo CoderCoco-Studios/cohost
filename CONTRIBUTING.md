@@ -43,5 +43,5 @@ The CLA is for individuals. If you are contributing on behalf of an employer
 or another organisation, open an issue first so a suitable agreement can be
 arranged.
 
-See [Testing](docs/TESTING.md) for how to run the suite and
-[Spec-driven development](docs/SPEC-DRIVEN.md) for how changes are proposed.
+See [Testing](docs/advanced/testing/index.md) for how to run the suite and
+[Spec-driven development](docs/project/spec-driven.md) for how changes are proposed.

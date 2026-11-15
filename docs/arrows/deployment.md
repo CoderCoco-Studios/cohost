@@ -4,7 +4,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-**AUDITED** — 77 specs: 68 implemented, 0 deferred, 9 gaps. DEPLOY-INST-007 and DEPLOY-INST-014: the installer's host Rust build and toolchain steps match `scripts/install.sh`, but no run of the installer has exercised them. DEPLOY-HOST-003, DEPLOY-HOST-004, DEPLOY-README-002, DEPLOY-README-003, DEPLOY-README-005, DEPLOY-README-006 and DEPLOY-INST-011: the operator content they require lives on docs-site pages that do not exist yet.
+**AUDITED** — 77 specs: 77 implemented, 0 deferred, 0 gaps (audit last run before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
 
 ## Orientation
 
@@ -47,7 +47,7 @@ Files carrying `@spec DEPLOY-` annotations (trailing comments on mapping keys in
 
 Cited from the specs with `<!-- impl: -->` (files owned elsewhere or plain data): package.json, pnpm-workspace.yaml, tsconfig.json, tsconfig.base.json, services/dashboard/tsconfig.json, .gitignore, LICENSE, CONTRIBUTING.md, CLA.md, COMMERCIAL.md, README.md, .github/workflows/cla.yml, docs/.vitepress/config.ts (DEPLOY-LIC-004's footer), packages/control/src/healthcheck.ts
 
-Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), docs/guide/tune/model.md (DEPLOY-README-002, a docs-site page). The test of DEPLOY-README-005 in `packages/config/test/compose-chat-data.test.ts` reads `README.md`; it is retargeted to `docs/guide/connect/discord.md` when that page is written.
+Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), docs/guide/tune/model.md (DEPLOY-README-002, a docs-site page). The test of DEPLOY-README-005 in `packages/config/test/compose-chat-data.test.ts` reads `docs/guide/connect/discord.md`.
 
 ## Architecture
 
@@ -70,15 +70,15 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-024 (no 016) | 23 | 23 | 0 | 0 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
-| Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 11 | 0 | 3 |
+| Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 14 | 0 | 0 |
 | Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-009 | 9 | 9 | 0 | 0 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 4 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
-| Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-004 | 4 | 2 | 0 | 2 |
-| Documentation consistency | DEPLOY-README-001 to DEPLOY-README-006 | 6 | 2 | 0 | 4 |
+| Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-004 | 4 | 4 | 0 | 0 |
+| Documentation consistency | DEPLOY-README-001 to DEPLOY-README-006 | 6 | 6 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 68 of 77 specs implemented; 0 deferred; 9 open (DEPLOY-INST-007, DEPLOY-INST-014, and the seven docs-page specs above). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 77 of 77 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
@@ -86,8 +86,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 None.
 
 ### Should Fix
-- Run `scripts/install.sh` once on a clean machine to close DEPLOY-INST-007 and DEPLOY-INST-014.
-- Write the docs-site pages the seven docs-page specs name; DEPLOY-README-006 also fixes the mock quickstart, which today starts `pnpm dashboard` without building the bus addon.
+- Run `scripts/install.sh` once on a clean machine to observe DEPLOY-INST-007 and DEPLOY-INST-014 end to end (their tests check the script's source, not a run).
 
 ### Nice to Have
 1. Slim the runtime image or run as non-root once a safe prune/deploy path exists (DEPLOY-IMG-001, DEPLOY-IMG-002).

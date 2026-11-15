@@ -157,7 +157,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "48 specs: 46 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). To review: a flush that arrives after a line's last frame (CONN-FLUSH-002, CONN-DISC-012). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
+    next: "49 specs: 47 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
     drift: null
 
   ears:
@@ -229,7 +229,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "67 specs: 65 [x], 2 [D] (VOICE-CHUNK-001, 002). To review: a `voice.stop` that arrives while the `voice.utterance` or virtual `voice.playing` publish is pending (VOICE-STOP-002, 004, 005, 006)."
+    next: "69 specs: 67 [x], 2 [D] (VOICE-CHUNK-001, 002)."
     drift: null
 
   mouth:
@@ -241,7 +241,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). To review: MOUTH-PLAY-007 names a player error mouth cannot observe. Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
+    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). Manual verification: the Discord connector against real Discord (docs/TESTING.md)."
     drift: null
 
   avatar:

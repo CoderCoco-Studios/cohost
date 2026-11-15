@@ -10,11 +10,21 @@ const say = (id: string, text = "hello chat") => event("brain.say", { id, text, 
 const stop = (ids?: string[]) => event("voice.stop" as never, { reason: "barge-in", ...(ids ? { ids } : {}) } as never);
 const halfSecond = wavWrap(Buffer.alloc(12000 * 2), 24000, 1);
 
-function setup(synth: (t: string) => Promise<Buffer> = async () => halfSecond) {
-  const bus = new FakeBus();
+function setup(synth: (t: string) => Promise<Buffer> = async () => halfSecond, bus: FakeBus = new FakeBus()) {
   const rec = recordingLog();
   const voice = new Voice({ bus, log: rec.log, synth, publicUrl: "http://voice:8700" });
   return { voice, bus, rec };
+}
+/** A bus whose publish of one event type stays open until released, to stop a line while that publish is in flight. */
+class HoldBus extends FakeBus {
+  private gate = deferred();
+  held = 0;
+  constructor(private holdType: string) { super(); }
+  release() { this.gate.release(); }
+  override async publish(type: never, data: never): Promise<string> {
+    if ((type as string) === this.holdType) { this.held++; await this.gate.gate; }
+    return super.publish(type, data);
+  }
 }
 const flush = () => new Promise((r) => setImmediate(r));
 const deferred = () => { let release!: () => void; const gate = new Promise<void>((r) => { release = r; }); return { gate, release }; };
@@ -171,4 +181,37 @@ test("the voice.stop is handled in stream order with brain.say: a say read after
   g.release();
   await voice.whenIdle();
   assert.deepEqual(bus.of("voice.utterance").map((u) => u.id), ["c"]);
+});
+
+// @spec VOICE-STOP-009
+test("a voice.stop while the voice.utterance publish is in flight arms no claim window and publishes no done", async () => {
+  const bus = new HoldBus("voice.utterance");
+  const { voice } = setup(undefined, bus);
+  await voice.onEvent(say("a"));
+  await flush();
+  assert.equal(bus.held, 1, "the utterance publish is open");
+  await voice.onEvent(stop(["a"]));
+  bus.release();
+  await voice.whenIdle();
+  mock.timers.tick(60_000);
+  await flush();
+  assert.deepEqual(bus.of("voice.playing"), [], "no window, so no virtual playing");
+  assert.deepEqual(bus.of("voice.done"), [], "and no done");
+});
+
+// @spec VOICE-STOP-010
+test("a voice.stop while the virtual voice.playing publish is in flight ends the line with an interrupted done, not a timed one", async () => {
+  const bus = new HoldBus("voice.playing");
+  const { voice } = setup(undefined, bus);
+  await sayAndWait(voice, "u1");
+  mock.timers.tick(1500);
+  await flush();
+  assert.equal(bus.held, 1, "the virtual playing publish is open");
+  await voice.onEvent(stop(["u1"]));
+  bus.release();
+  await flush();
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "virtual", interrupted: true }]);
+  mock.timers.tick(60_000);
+  await flush();
+  assert.equal(bus.of("voice.done").length, 1, "no second, timed done");
 });

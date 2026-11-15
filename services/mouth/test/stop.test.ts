@@ -290,6 +290,24 @@ test("discord: elapsed is counted from the first frame written, so spokenText fo
   } finally { r.close(); }
 });
 
+// @spec CONN-AUD-007, MOUTH-STOP-007
+test("discord: after the flush frame no frame of the stopped line follows, and later frames carry the next line's utt", async () => {
+  const r = await discord(true, 3000);
+  try {
+    await enqueue(r.out, "u1", UTT("hello there friend", 3000));
+    void enqueue(r.out, "u2");
+    await stopOf(r.out)({ ids: ["u1"] });
+    for (let i = 0; i < 50; i++) { for (const release of r.pending.splice(0)) release(); await settle(); }
+    await waitFor(() => r.at("voice.playing").some((p) => p.id === "u2"), "u2 plays");
+    const frames = r.bus.frames.map((x) => x.frame as unknown as Record<string, unknown>);
+    const at = frames.findIndex((f) => f.flush === true);
+    assert.ok(at > 0, "a flush frame was written");
+    const after = frames.slice(at + 1);
+    assert.ok(after.length > 0, "the next line wrote frames");
+    assert.ok(after.every((f) => f.utt === "u2"), "no frame of u1 after its flush; later frames belong to u2");
+  } finally { r.close(); }
+});
+
 // @spec MOUTH-STOP-009
 test("discord: a flush frame write that fails is logged and the next queued item still plays", async () => {
   const r = await discord(true, 3000);

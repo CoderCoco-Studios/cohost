@@ -56,8 +56,12 @@ class FakeConnection extends EventEmitter {
 class FakePlayer extends EventEmitter {
   played: { stream: PassThrough; chunks: Buffer[] }[] = [];
   stops = 0;
-  play(resource: { stream: PassThrough; chunks: Buffer[] }) { this.played.push(resource); }
-  stop() { this.stops++; }
+  /** The slice of the real player's `state` the connector reads. */
+  state = { status: "idle" };
+  play(resource: { stream: PassThrough; chunks: Buffer[] }) { this.played.push(resource); this.state.status = "playing"; }
+  stop() { this.stops++; this.state.status = "idle"; }
+  /** The player drained what it was given. */
+  drain() { this.state.status = "idle"; }
 }
 
 const mono = (n = 640) => Buffer.alloc(n, 3);
@@ -446,10 +450,27 @@ test("a flush frame read while nothing is playing or buffered changes nothing", 
   r.bus.feed("out", "discord", outFrame(1, { utt: "u2", last: true }));
   assert.equal(r.player.played.length, 1, "the next line plays normally");
   await waitFor(() => /dropped 0/.test(r.bus.lastHealth()?.detail ?? ""), "nothing counted as dropped");
-  // A finished line, then a flush for it: also nothing to stop.
-  const stops = r.player.stops;
-  r.bus.feed("out", "discord", flushOut(2, { utt: "u2" }));
-  assert.equal(r.player.stops, stops);
+  await r.stop();
+});
+
+// @spec CONN-DISC-012, CONN-FLUSH-002
+test("a flush after the line's last frame stops the player while it still plays the buffered tail", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0));
+  r.bus.feed("out", "discord", outFrame(1, { last: true }));
+  assert.equal(r.player.state.status, "playing", "the player still drains the finished line");
+  r.bus.feed("out", "discord", flushOut(2));
+  assert.equal(r.player.stops, 1, "the flush cuts the tail");
+  await r.stop();
+});
+
+// @spec CONN-FLUSH-003
+test("a flush after the player drained a finished line changes nothing", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0, { last: true }));
+  r.player.drain();
+  r.bus.feed("out", "discord", flushOut(1));
+  assert.equal(r.player.stops, 0);
   await r.stop();
 });
 
@@ -462,5 +483,15 @@ test("a connector that never receives a flush frame plays a stopped line's writt
   await waitFor(() => r.player.played[0]!.chunks.length === 2, "u1's frames");
   assert.equal(r.player.stops, 0, "nothing is cut");
   assert.deepEqual(r.player.played[0]!.chunks.map((c) => c[0]), [1, 2]);
+  await r.stop();
+});
+
+// @spec CONN-DISC-013
+test("an audio player error is logged as the warning 'player error' with the error's message", async () => {
+  const r = await up();
+  r.player.emit("error", new Error("opus exploded"));
+  const warn = r.rec.lines.find((l) => l.level === "warn" && l.msg === "player error");
+  assert.ok(warn, "warning logged");
+  assert.deepEqual(warn!.obj, { err: "opus exploded" });
   await r.stop();
 });

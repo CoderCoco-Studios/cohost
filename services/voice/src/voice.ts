@@ -92,7 +92,9 @@ export class Voice {
   private stopped = false;
   /** Ids a `voice.stop` ended while their synthesis was running: the result is discarded (VOICE-STOP-004). */
   private cancelled = new Set<string>();
-  /** The line being synthesized now. */
+  /** Ids whose virtual `voice.playing` publish was in flight when a `voice.stop` named them (VOICE-STOP-010). */
+  private stoppedPublishing = new Set<string>();
+  /** The line being synthesized, or whose `voice.utterance` publish is in flight, now. */
   private synthesizing: string | undefined;
 
   constructor(private d: VoiceDeps) {}
@@ -172,9 +174,14 @@ export class Voice {
     this.phase.set(id, "publishing");
     await this.publishVirtual("voice.playing", id);
     this.phase.delete(id);
+    const interrupted = this.stoppedPublishing.delete(id);
     if (this.stopped) return;
     const reported = this.givenUp.delete(id);
     if (this.claimed.has(id)) return;
+    if (interrupted) { // a voice.stop arrived during the publish; @spec VOICE-STOP-010
+      await this.publishVirtual("voice.done", id, true);
+      return;
+    }
     if (reported) { // a sink gave up on the line meanwhile: release at once instead of waiting out its duration
       await this.publishVirtual("voice.done", id);
       return;
@@ -204,7 +211,7 @@ export class Voice {
    * `voice.stop`: drop the named lines (every line without `ids`) wherever they are: queued, in synthesis, in the claim window
    * or in the virtual playing. A line a real sink claimed is left to that sink (VOICE-STOP-007); later lines are unaffected (VOICE-STOP-008).
    */
-  private async onStop(ev: BusEvent<"voice.stop">): Promise<void> { // @spec VOICE-STOP-001, VOICE-STOP-002, VOICE-STOP-003, VOICE-STOP-004, VOICE-STOP-005, VOICE-STOP-006, VOICE-STOP-007, VOICE-STOP-008
+  private async onStop(ev: BusEvent<"voice.stop">): Promise<void> { // @spec VOICE-STOP-001, VOICE-STOP-002, VOICE-STOP-003, VOICE-STOP-004, VOICE-STOP-005, VOICE-STOP-006, VOICE-STOP-007, VOICE-STOP-008, VOICE-STOP-009, VOICE-STOP-010
     const ids = ev.data.ids ? new Set(ev.data.ids) : undefined;
     const named = (id: string): boolean => !ids || ids.has(id);
     this.queue = this.queue.filter((q) => !named(q.data.id));
@@ -215,6 +222,11 @@ export class Voice {
       this.windows.delete(timer);
       this.windowTimers.delete(id);
       this.phase.delete(id);
+      this.givenUp.delete(id);
+    }
+    for (const [id, phase] of [...this.phase]) {
+      if (phase !== "publishing" || !named(id) || this.claimed.has(id)) continue;
+      this.stoppedPublishing.add(id); // @spec VOICE-STOP-010
       this.givenUp.delete(id);
     }
     for (const [id, timer] of [...this.virtualDone]) {
@@ -247,9 +259,8 @@ export class Voice {
     this.synthesizing = id;
     try {
       const wav = await this.d.synth(text);
-      this.synthesizing = undefined;
-      if (this.stopped) return;
-      if (this.cancelled.delete(id)) return; // a voice.stop ended this line while it synthesized; @spec VOICE-STOP-004
+      if (this.stopped) { this.synthesizing = undefined; return; }
+      if (this.cancelled.has(id)) { this.synthesizing = undefined; this.cancelled.delete(id); return; } // a voice.stop ended this line while it synthesized; @spec VOICE-STOP-004
       const info = parseWav(wav);
       const env = envelope(wav, info, ENVELOPE_HZ);
       this.put(id, wav);
@@ -262,6 +273,9 @@ export class Voice {
         audioUrl: `${this.d.publicUrl}/audio/${id}.wav`, // @spec VOICE-UTT-002
         sampleRate: info.sampleRate,
       });
+      this.synthesizing = undefined;
+      // A voice.stop during the publish discards the line: no claim window, no done; @spec VOICE-STOP-009
+      if (this.stopped || this.cancelled.delete(id)) return;
       // Virtual sink: if nobody starts playing within 1.5s, time it ourselves.
       this.phase.set(id, "window");
       const timer = setTimeout(() => { // @spec VOICE-SINK-002, VOICE-SINK-004, VOICE-SINK-011

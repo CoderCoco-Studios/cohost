@@ -14,6 +14,8 @@ export interface UtteranceWriterOptions {
   leadMs?: number;
   /** Checked before each frame: when it returns true the rest of the line is not written (an abandoned line). */
   abort?: () => boolean;
+  /** Called for each frame whose write failed (the frame is skipped); keeps the writer free of any logger. */
+  onWriteError?: (err: unknown, frame: { utt: string; seq: number }) => void;
   /** Replacements for tests. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -23,7 +25,7 @@ export interface UtteranceWriterOptions {
  * Write one utterance's audio to a sink stream: convert it to the sink's format with `resample`, cut it into 20 ms
  * frames tagged `utt`, mark the last frame `last`, and write no faster than real time plus a lead of one second, so
  * the sink's stream cap and the connector's player are never fed a burst. A frame whose write fails is skipped and
- * the rest still goes out (a connector tolerates gaps). Resolves with the number of frames written.
+ * the rest still goes out (a connector tolerates gaps) and `onWriteError` hears of it. Resolves with the number of frames written.
  */
 // @spec CONN-AUD-005, CONN-BP-004
 export async function writeUtterance(
@@ -49,7 +51,7 @@ export async function writeUtterance(
       pcm: converted.subarray(i * frameBytes, (i + 1) * frameBytes), utt: line.utt,
     };
     if (i === count - 1) frame.last = true;
-    try { await o.write(frame); written++; } catch { /* skipped: the stream tolerates a gap */ }
+    try { await o.write(frame); written++; } catch (err) { o.onWriteError?.(err, { utt: line.utt, seq: frame.seq }); /* skipped: the stream tolerates a gap */ }
   }
   return written;
 }

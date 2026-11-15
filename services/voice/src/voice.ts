@@ -261,7 +261,7 @@ export class Voice {
       const wav = await this.d.synth(text);
       if (this.stopped) { this.synthesizing = undefined; return; }
       if (this.cancelled.has(id)) { this.synthesizing = undefined; this.cancelled.delete(id); return; } // a voice.stop ended this line while it synthesized; @spec VOICE-STOP-004
-      const info = parseWav(wav);
+      const info = parseWav(wav); // @spec VOICE-ENV-005
       const env = envelope(wav, info, ENVELOPE_HZ);
       this.put(id, wav);
       log.info({ id, ms: Date.now() - t0, durationMs: Math.round(info.durationMs), text }, "synthesized");

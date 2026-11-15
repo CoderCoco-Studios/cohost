@@ -35,8 +35,10 @@ const okHint = (x: unknown): x is string => typeof x === "string" && x.trim().le
 
 // @spec MEM-CONSOL-005
 /** One operation if it is well formed and names only `ids`, with a category that exists and text and hint within bounds; otherwise undefined. */
-export function validateOp(raw: unknown, ids: ReadonlySet<number>): ConsolidatorOp | undefined {
-  if (!isObj(raw)) return undefined;
+export function validateOp(input: unknown, ids: ReadonlySet<number>): ConsolidatorOp | undefined {
+  if (!isObj(input)) return undefined;
+  // A null hint is an absent hint.
+  const raw = input.hint === null ? { ...input, hint: undefined } : input;
   const known = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && ids.has(x);
   if (raw.category !== undefined && !isCategory(raw.category)) return undefined;
   if (raw.hint !== undefined && !okHint(raw.hint)) return undefined;

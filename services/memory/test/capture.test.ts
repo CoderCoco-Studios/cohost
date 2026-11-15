@@ -148,6 +148,7 @@ test("only well-formed notes are accepted: category, text and hint bounds; anyth
   assert.deepEqual(ok({ category: "general", text: " plays Hades " }), { note: { category: "general", text: "plays Hades" } });
   assert.deepEqual(ok({ category: "health", text: "has migraines", hint: " ask gently " }), { note: { category: "health", text: "has migraines", hint: "ask gently" } });
   assert.deepEqual(ok({ category: "family", text: "lost a parent", hint: "" }), { note: { category: "family", text: "lost a parent" } });
+  assert.deepEqual(ok({ category: "general", text: "plays Hades", hint: null }), { note: { category: "general", text: "plays Hades" } }, "a null hint is an absent hint");
   assert.equal(ok({ category: "general", text: "x".repeat(120) })?.note?.text.length, 120);
   assert.equal(ok({ category: "general", text: "fine", hint: "y".repeat(80) })?.note?.hint?.length, 80);
   for (const bad of [

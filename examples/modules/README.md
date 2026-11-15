@@ -7,7 +7,7 @@ appraisal, the cortex critic) when you serve them over HTTP.
 | --- | --- |
 | `server.py` | Standard-library Python server with the three endpoints `/salience`, `/affect` and `/critic` |
 | `fixtures/` | `contracts.json`, sample requests and replies for the three endpoints |
-| `schemas/` | JSON Schema for each reply (`salience.json`, `affect.json`, `critic.json`) |
+| `schemas/` | JSON Schema for each reply: `schemas/salience.json`, `schemas/affect.json`, `schemas/critic.json` |
 
 Run it from the repository root:
 

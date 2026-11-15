@@ -9,12 +9,12 @@ export interface ReflectCursor {
 export const START_CURSOR: ReflectCursor = { ts: "1970-01-01T00:00:00.000Z", id: 0 };
 
 // @spec MEM-REFLECT-008
-/** `meta.last_reflection` is `<ISO ts>#<id>`; a legacy plain ISO timestamp reads as that ts with the lowest id. */
+/** `meta.last_reflection` is `<ISO ts>#<id>`; anything else, including an absent value, reads as before the first row. */
 export function parseCursor(v: string | undefined): ReflectCursor {
   if (!v) return START_CURSOR;
-  const [ts, id] = v.split("#");
-  if (!ts || Number.isNaN(new Date(ts).getTime())) return START_CURSOR;
-  return { ts, id: id === undefined ? 0 : Number(id) || 0 };
+  const [ts, id, ...rest] = v.split("#");
+  if (!ts || id === undefined || rest.length > 0 || Number.isNaN(new Date(ts).getTime())) return START_CURSOR;
+  return { ts, id: Number(id) || 0 };
 }
 
 export function formatCursor(c: ReflectCursor): string {

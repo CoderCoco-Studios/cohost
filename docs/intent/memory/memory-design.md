@@ -192,9 +192,9 @@ before a pass deletes them (`MEM-SURF-003`).
 
 Postgres (created by `init`, `MEM-STORE-001`):
 
-- `viewers` gains `regular_manual boolean` (the owner's flag), `is_sub boolean`
-  and `placeholder boolean` (a row the owner created before the viewer ever
-  chatted).
+- `viewers(user_key, display, first_seen, last_seen, msg_count, regular_manual, is_sub, placeholder)`:
+  `regular_manual boolean` is the owner's flag, `is_sub boolean` the subscriber flag and
+  `placeholder boolean` marks a row the owner created before the viewer ever chatted.
 - `viewer_notes(id, user_key → viewers, layer, category, text, hint, strength,
   strength_at, mentions, dirty, version, created_at, last_surfaced_at, embedding
   vector(dims))`. The embedding uses the memory embedder (`brain.memory.embedder`),
@@ -306,7 +306,7 @@ other. The Viewers page lists voice viewers with a `voice` tag
 `MEM-NOTE-011` allows for chat notes.
 
 Storage: a `viewer_links(discord_id, user_key, discord_display, created_at, updated_at)` table,
-created additively by `init` (`MEM-VOICE-010`). Its `user_key` follows the viewer
+created by `init` (`MEM-VOICE-010`). Its `user_key` follows the viewer
 row on a re-key and the link is dropped with its viewer.
 
 ### Consolidation
@@ -495,8 +495,8 @@ structurally.
 - `init()` (`store.ts`): embeds the literal `"hello"` to learn the vector
   dimension, then `CREATE EXTENSION IF NOT EXISTS vector`, `CREATE TABLE IF NOT
   EXISTS` for `memories(id, ts, kind, who, text, embedding vector(dims))`,
-  `viewers(user_key PK, display, first_seen, last_seen, msg_count, notes)` and
-  `meta(k PK, v)`, additive `viewers` columns, the tables of the Storage section and their
+  `viewers(user_key PK, display, first_seen, last_seen, msg_count, regular_manual, is_sub, placeholder)` and
+  `meta(k PK, v)`, the tables of the Storage section and their
   btree indexes (`viewers_placeholder_idx`, `viewer_links_user_idx`, `viewer_notes_user_idx`,
   `viewer_notes_dirty_idx`, `viewer_note_deletions_user_idx`), then an hnsw cosine index whose
   failure is only a warning.
@@ -654,8 +654,8 @@ exact text Postgres produced (microsecond precision, selected as `"tsText"` by
 pass reads rows strictly after it in `(ts, id)` order, so with more than 600 new
 rows the remainder is reflected on in the next pass, and rows sharing the last
 row's timestamp are not skipped (`MEM-REFLECT-008`). A timestamp-only cursor would
-skip such rows because `ts > $1` excludes them. A plain ISO timestamp in
-`meta.last_reflection` is read as that timestamp with the lowest id.
+skip such rows because `ts > $1` excludes them. A value in
+`meta.last_reflection` that is absent or not in that form reads as before the first row.
 The running cortex does not learn of the change until a `reload_personality` control.
 
 ## Decisions & Alternatives

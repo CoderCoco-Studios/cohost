@@ -50,7 +50,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 2 |
+| Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 3 |
 | Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 10 | 0 | 0 | 10 |
 | Vision | LLM-VIS-001 to LLM-VIS-003 | 3 | 0 | 0 | 3 |
 | Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
@@ -59,7 +59,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 54 of 54 specs implemented; 0 deferred; 0 gaps. 52 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
+**Summary:** 54 of 54 specs implemented; 0 deferred; 0 gaps. 53 carry a test `@spec` annotation; implemented without one: LLM-IF-001 (verified by the type system).
 
 ## Key Findings
 

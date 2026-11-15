@@ -2,7 +2,7 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ConfigSchema } from "@cohost/config";
-import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, createChatProvider, TRANSCRIPT_STOPS } from "../src/index.js";
+import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, MockProvider, createChatProvider, TRANSCRIPT_STOPS } from "../src/index.js";
 import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 
 const llmCfg = (over: Record<string, unknown> = {}) =>
@@ -111,11 +111,28 @@ test("ping failure records why, including the auth hint", async () => {
 });
 
 // @spec LLM-CHAT-006
+test("ollama: an already-aborted signal rejects the request", async () => {
+  const o = new Ollama(llmCfg({ provider: "ollama" }), base);
+  await assert.rejects(o.chat([{ role: "user", content: "hi" }], { signal: AbortSignal.abort() }));
+});
+
+// @spec LLM-CHAT-006
 test("an aborted signal rejects the request", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1` } }));
   await assert.rejects(p.chat([{ role: "user", content: "hi" }], { signal: AbortSignal.abort() }));
 });
 
+
+// @spec LLM-IF-003
+test("no provider value other than mock yields a MockProvider, an unrecognised one included", () => {
+  for (const provider of ["ollama", "openai", "anthropic", "bedrock"]) {
+    const p = createChatProvider(llmCfg({ provider, claude: { api_key: "k" }, bedrock: { region: "us-east-1" } }));
+    assert.equal(p instanceof MockProvider, false, provider);
+  }
+  assert.equal(createChatProvider(llmCfg({ provider: "mock" })) instanceof MockProvider, true);
+  const unknown = createChatProvider({ ...llmCfg(), provider: "gemini" } as never) as unknown;
+  assert.equal(unknown instanceof MockProvider, false, "there is no fallback to mock");
+});
 
 // @spec LLM-IF-002
 test("createChatProvider picks the backend from llm.provider", () => {
@@ -282,7 +299,7 @@ test("bedrock: no server fallbacks, and ping is optimistic", async () => {
   assert.equal(await b.ping(), true);
 });
 
-import { MockProvider, HashEmbedder } from "../src/index.js";
+import { HashEmbedder } from "../src/index.js";
 
 const cosine = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0);
 

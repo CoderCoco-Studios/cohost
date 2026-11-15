@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
 import { formatCursor, parseCursor } from "../src/cursor.js";
-import { runReflect } from "../src/reflect-run.js";
+import { runReflect, runReflectCommand } from "../src/reflect-run.js";
 
 const T0 = Date.parse("2026-01-01T00:00:00Z");
 
@@ -177,4 +177,25 @@ test("the reflect lock is released after a pass, even when it throws", async () 
     loadPersonality: () => "", savePersonality: () => {}, now: () => new Date(),
   }), /llm down/);
   assert.deepEqual(await t.memory.withConsolidationLock(async () => 1), { ran: true, value: 1 });
+});
+
+// @spec MEM-REFLECT-009
+test("a failing reflect logs `reflect failed`, sets exit code 1 and still closes the store; a clean run sets no code", async () => {
+  const run = async (fail: boolean) => {
+    const cfg = testConfig();
+    const memory = new InMemoryStore(cfg.brain.memory);
+    const errors: string[] = [];
+    const codes: number[] = [];
+    let closed = 0;
+    memory.close = async () => { closed++; };
+    if (fail) memory.connect = async () => { throw new Error("the memory tables do not exist yet"); };
+    const log = { warn() {}, info() {}, debug() {}, error: (_o: unknown, m?: string) => errors.push(m ?? "") } as never;
+    await runReflectCommand({
+      cfg, llm: { name: "ollama", chat: async () => "- a" }, memory, log,
+      loadPersonality: () => "", savePersonality: () => {}, now: () => new Date(), print: () => {}, setExitCode: (c) => codes.push(c),
+    });
+    return { errors, codes, closed };
+  };
+  assert.deepEqual(await run(true), { errors: ["reflect failed"], codes: [1], closed: 1 });
+  assert.deepEqual(await run(false), { errors: [], codes: [], closed: 1 });
 });

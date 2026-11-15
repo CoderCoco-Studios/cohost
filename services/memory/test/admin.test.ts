@@ -153,6 +153,23 @@ test("list and get mark a voice viewer with voice and discordId, and get lists t
   assert.equal(((await ask({ op: "get", key: "discord:d9" })).data as Data).viewer.voice, true);
 });
 
+// @spec MEM-VOICE-008
+test("a voice viewer's notes can be deleted with a reason, restored and cleared like a chat viewer's", async () => {
+  const { store, ask } = setup();
+  await store.touchSpeaker("D9", "Vox");
+  const key = "discord:d9";
+  const a = await store.insertNote({ userKey: key, category: "general", text: "plays chess" });
+  await store.insertNote({ userKey: key, category: "general", text: "owns a cat" });
+  assert.deepEqual(await ask({ op: "delete_note", noteId: String(a.id), reason: " not for the stream " }), { ok: true, data: {} });
+  const [rec] = await store.listDeletions(key);
+  assert.deepEqual([rec!.text, rec!.reason], ["plays chess", "not for the stream"], "a reasoned deletion is the suppression rule");
+  const back = await ask({ op: "restore", deletionId: String(rec!.id) });
+  assert.equal((back.data as Data).note.text, "plays chess");
+  assert.deepEqual(await store.listDeletions(key), [], "restoring lifts the suppression");
+  assert.deepEqual(await ask({ op: "clear", key, reason: "reset" }), { ok: true, data: { cleared: 2 } });
+  assert.deepEqual((await store.listDeletions(key)).map((d) => d.reason), ["reset", "reset"]);
+});
+
 // @spec MEM-VOICE-005
 test("link_discord moves the voice viewer's notes to a chat viewer found by key or name, and reports not_found otherwise", async () => {
   const { store, ask } = setup();

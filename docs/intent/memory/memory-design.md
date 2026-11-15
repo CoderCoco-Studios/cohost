@@ -639,7 +639,7 @@ passes and the `consolidate` one-shot share), so it never overlaps them.
    `savePersonality`, `meta.last_reflection` advances (below), and the block is
    printed (`reflect-run.ts`).
 7. Failures (including missing tables at `connect`) log `reflect failed` and
-   set `process.exitCode = 1`; the store is closed in `finally` (`reflect.ts`).
+   set `process.exitCode = 1`; the store is closed in `finally` (`runReflectCommand` in `reflect-run.ts`; `MEM-REFLECT-009`).
 
 The pass itself is `runReflect` in `reflect-run.ts`, with the config, chat provider,
 store, personality load/save and clock injected; `reflect.ts` is the wiring that

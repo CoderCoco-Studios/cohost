@@ -91,19 +91,19 @@ The hippocampus region: the only service that touches Postgres/pgvector. Stores 
 | Recall | MEM-RECALL-001 to MEM-RECALL-006 | 6 | 0 | 0 | 6 |
 | Stores and schema | MEM-STORE-001 to MEM-STORE-003 | 3 | 0 | 0 | 3 |
 | Re-embedding | MEM-REEMBED-001 to MEM-REEMBED-006 | 6 | 0 | 0 | 6 |
-| Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 5 |
+| Backend selection | MEM-BACKEND-001 to MEM-BACKEND-006 | 6 | 0 | 0 | 6 |
 | Startup and shutdown | MEM-START-001 to MEM-START-006 | 6 | 0 | 0 | 6 |
 | Health | MEM-HEALTH-001 to MEM-HEALTH-009 | 9 | 0 | 0 | 9 |
-| Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 11 |
+| Reflection | MEM-REFLECT-001 to MEM-REFLECT-012 | 12 | 0 | 0 | 12 |
 | Viewer notes: notes and strength | MEM-NOTE-001 to MEM-NOTE-012 | 12 | 0 | 0 | 12 |
 | Viewer notes: regular status and viewer row | MEM-REG-001 to MEM-REG-005 | 5 | 0 | 0 | 5 |
 | Viewer notes: live capture | MEM-CAPTURE-001 to MEM-CAPTURE-011 | 11 | 0 | 0 | 11 |
 | Viewer notes: consolidation | MEM-CONSOL-001 to MEM-CONSOL-017 | 17 | 0 | 0 | 17 |
 | Viewer notes: surfacing to the cortex | MEM-SURF-001 to MEM-SURF-005 | 5 | 0 | 0 | 5 |
 | Viewer notes: owner operations | MEM-ADMIN-001 to MEM-ADMIN-007 | 7 | 0 | 0 | 7 |
-| Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 9 |
+| Viewer notes: voice speakers | MEM-VOICE-001 to MEM-VOICE-010 | 10 | 0 | 0 | 10 |
 
-**Summary:** 129 of 129 specs implemented; 0 deferred; 0 gaps. 126 carry a test `@spec` annotation; implemented without one: MEM-BACKEND-002, MEM-REFLECT-009, MEM-VOICE-010 (verified by glue, configuration or a test that cites a neighbouring ID).
+**Summary:** 129 of 129 specs implemented; 0 deferred; 0 gaps. 129 carry a test `@spec` annotation.
 
 ## Key Findings
 

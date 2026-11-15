@@ -2,6 +2,7 @@ import type { Bus } from "@cohost/bus";
 import { runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { createLogger } from "@cohost/config";
 import { Ollama } from "@cohost/llm";
+import { hookHealth, pingHooks } from "@cohost/modules";
 import { MemoryHealth } from "./health.js";
 import { createMemoryEmbedder, createStore } from "./backend.js";
 import { createMemoryHandler } from "./region.js";
@@ -28,6 +29,9 @@ export async function memoryMain(ctx: ServiceContext<MemoryBus>, health: MemoryH
   const store = createStore(cfg, health.embedder(rawEmbedder), log, (ok) => health.setPostgres(ok)); // @spec MEM-HEALTH-005
   // Viewer-note consolidation: the hook is the cortex's model through local ollama; the scheduler decides when it runs.
   const consolidator = createConsolidatorHook(cfg, log);
+  const capture = createCaptureHook(cfg, log);
+  health.attachHooks(hookHealth([capture, consolidator])); // @spec MEM-HEALTH-008
+  void pingHooks([capture, consolidator], log); // @spec MEM-HEALTH-009
   const scheduler = new ConsolidationScheduler({
     store,
     cfg: cfg.brain.memory.notes,
@@ -39,7 +43,7 @@ export async function memoryMain(ctx: ServiceContext<MemoryBus>, health: MemoryH
   const onCaptureEvent = createCaptureHandler({
     cfg: cfg.brain.memory,
     store,
-    hook: createCaptureHook(cfg, log),
+    hook: capture,
     log,
     onNotesWritten: () => scheduler.notifyDirty(), // @spec MEM-CONSOL-001
   });

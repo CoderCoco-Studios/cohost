@@ -66,3 +66,32 @@ test("a startup failure logs fatal and exits 1", async () => {
   assert.deepEqual(exits, [1]);
   assert.ok(msgs("error").includes("fatal"));
 });
+
+// @spec MEM-HEALTH-008
+test("the heartbeat carries a hook dependency per llm hook, and none for a rules hook", async () => {
+  const bus = new GroupBus();
+  const { env: e, shutdown } = env(bus, { brain: { memory: { store: "memory", embedder: "hash", notes: { capture: { kind: "llm" }, consolidator: { kind: "rules" } } } } });
+  await runMemory({ ...e, log: recordingLog().log });
+  await waitFor(() => bus.health.some((h) => h.state === "ready"), "ready heartbeat");
+  const ready = bus.health.find((h) => h.state === "ready")!;
+  assert.ok("hook.memory.capture" in (ready.deps ?? {}));
+  assert.ok(!("hook.memory.consolidator" in (ready.deps ?? {})));
+  assert.equal(ready.mode, "mock");
+  for (const fn of shutdown) await fn();
+});
+
+// @spec MEM-HEALTH-009
+test("both llm hooks are pinged once at startup, and each one that does not answer is warned about", async () => {
+  const saved = process.env.OLLAMA_URL;
+  process.env.OLLAMA_URL = "http://127.0.0.1:1"; // nothing listens: the notes hooks run on local ollama
+  try {
+    const bus = new GroupBus();
+    const { env: e, shutdown } = env(bus, { llm: { provider: "ollama" }, brain: { memory: { store: "memory", embedder: "hash", notes: { capture: { kind: "llm" }, consolidator: { kind: "llm" } } } } });
+    const { log, lines } = recordingLog();
+    await runMemory({ ...e, log });
+    await waitFor(() => lines.filter((l) => l.level === "warn" && /hook provider unreachable/.test(l.msg ?? "")).length === 2, "one warning per hook");
+    const named = lines.filter((l) => /hook provider unreachable/.test(l.msg ?? "")).map((l) => (l.obj as { module: string }).module).sort();
+    assert.deepEqual(named, ["memory.capture", "memory.consolidator"]);
+    for (const fn of shutdown) await fn();
+  } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
+});

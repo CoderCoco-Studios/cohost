@@ -2,6 +2,7 @@ import type { Bus, Publisher } from "@cohost/bus";
 import { runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { createLogger, loadPersonality as loadPersonalityFile, type Config } from "@cohost/config";
 import { createChatProvider as createChatProviderFor } from "@cohost/llm";
+import { hookHealth, pingHooks } from "@cohost/modules";
 import { createCritic as createCriticFor } from "./critic.js";
 import { Cortex } from "./cortex.js";
 import { cortexHealth } from "./health.js";
@@ -24,11 +25,14 @@ interface LlmState {
   probed: boolean;
 }
 
+/** Where `cortexMain` publishes the critic hook's health so the heartbeat, started earlier by the bootstrap, can read it. */
+export interface HookSink { current?: ReturnType<typeof hookHealth> }
+
 /**
  * Builds and starts the service. The provider, the critic and the `Cortex` are built here, inside the bootstrap's
  * handler, so a rejected critic configuration takes the `fatal` path like any startup failure (CTX-START-005).
  */
-export async function cortexMain(ctx: ServiceContext<CortexBus>, llmState: LlmState, env: CortexEnv = {}): Promise<void> {
+export async function cortexMain(ctx: ServiceContext<CortexBus>, llmState: LlmState, env: CortexEnv = {}, hooks: HookSink = {}): Promise<void> {
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const exit = env.exit ?? ((code: number) => process.exit(code));
   const provider = (env.createChatProvider ?? createChatProviderFor)(cfg.llm);
@@ -36,6 +40,8 @@ export async function cortexMain(ctx: ServiceContext<CortexBus>, llmState: LlmSt
   // @spec CTX-HEALTH-003
   const llm = trackLlm(provider, (ok) => { llmState.ok = ok; llmState.probed = true; });
   const critic = (env.createCritic ?? createCriticFor)(cfg, log); // @spec CTX-START-005
+  hooks.current = hookHealth([critic]); // @spec CTX-HEALTH-006: the critic hook's dependency and mode, read by the heartbeat
+  void pingHooks([critic], log); // @spec CTX-HEALTH-007
   const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality: env.loadPersonality ?? loadPersonalityFile, heartbeat });
   onStop(() => cortex.stop());
 
@@ -58,13 +64,20 @@ export function runCortex(env: CortexEnv = {}): Promise<void> { // @spec CTX-STA
   // `health` runs before `main`: it reads the state `cortexMain` keeps current. Bedrock's ping is nominal, so until the
   // first reply `deps.llm` reads `n/a` (CTX-HEALTH-004).
   const llmState: LlmState = { ok: false, probed: true };
+  const hooks: HookSink = {};
   return runService<CortexBus>({
     service: "cortex",
     health: (cfg: Config) => {
       llmState.probed = cfg.llm.provider !== "bedrock";
-      return cortexHealth(() => llmState.ok, cfg.llm.provider, () => llmState.probed, cfg.llm.provider === "bedrock");
+      const base = cortexHealth(() => llmState.ok, cfg.llm.provider, () => llmState.probed, cfg.llm.provider === "bedrock");
+      // Until main has built the critic only the model backend is reported; afterwards the hook adds its dependency and may set mode mock.
+      return {
+        ...base,
+        mode: () => (base.mode === "mock" || hooks.current?.mode() === "mock" ? "mock" : "live"),
+        deps: () => ({ ...(typeof base.deps === "function" ? base.deps() : base.deps), ...hooks.current?.deps() }),
+      };
     },
-    main: (ctx) => cortexMain(ctx, llmState, env),
+    main: (ctx) => cortexMain(ctx, llmState, env, hooks),
     ...boot,
     log,
   }).catch((err) => { log.error({ err }, "fatal"); exit(1); }); // a bus that cannot be built is a startup failure too

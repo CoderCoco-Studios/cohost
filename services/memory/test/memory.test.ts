@@ -94,7 +94,7 @@ test("init creates the notes tables with embeddings and adds the viewer columns 
     assert.ok(at > viewersTable, `viewers gains ${col} after the table is ensured`);
   }
   assert.ok(!sql.some((q) => /DROP |TRUNCATE|DELETE FROM viewers/i.test(q)), "no destructive statement");
-  assert.ok(sql[viewersTable]!.includes("notes TEXT"), "the legacy notes column stays");
+  assert.ok(!sql[viewersTable]!.includes("notes"), "the viewers table has no notes column");
 });
 
 // @spec MEM-WRITE-004
@@ -146,25 +146,25 @@ test("recall: k=0 skips the database, and failures return nothing instead of thr
 
 // @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-REG-001, MEM-REG-005
 test("touchViewer keys viewers case-insensitively, flags first-timers, stores isSub and derives regular", async () => {
-  let row: Record<string, unknown> = { msg_count: 1, notes: "likes cats", regular_manual: false };
+  let row: Record<string, unknown> = { msg_count: 1, regular_manual: false };
   const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [row] : []) });
-  assert.deepEqual(await s.touchViewer("BoB123", "Bob", { isSub: true }), { msgCount: 1, notes: "likes cats", isNew: true, regular: false });
+  assert.deepEqual(await s.touchViewer("BoB123", "Bob", { isSub: true }), { msgCount: 1, isNew: true, regular: false });
   const insert = queries.find((q) => q.sql.startsWith("INSERT INTO viewers"))!;
   assert.deepEqual(insert.params, ["bob123", "Bob", true]);
   assert.match(insert.sql, /ON CONFLICT \(user_key\) DO UPDATE .*msg_count = viewers\.msg_count \+ 1.*is_sub = EXCLUDED\.is_sub/);
-  row = { msg_count: 2, notes: "", regular_manual: false };
+  row = { msg_count: 2, regular_manual: false };
   assert.equal((await s.touchViewer("bob123", "Bob")).isNew, false);
   assert.equal((await s.touchViewer("bob123", "Bob")).regular, false);
-  row = { msg_count: 26, notes: "", regular_manual: false }; // default threshold 25: above it
+  row = { msg_count: 26, regular_manual: false }; // default threshold 25: above it
   assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
-  row = { msg_count: 2, notes: "", regular_manual: true }; // the owner's flag
+  row = { msg_count: 2, regular_manual: true }; // the owner's flag
   assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
 });
 
 // @spec MEM-REG-004
 test("touchViewer first tries to claim a placeholder with the same display for a key that has no row", async () => {
-  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("UPDATE viewers") ? [{ msg_count: 1, notes: "", regular_manual: true }] : []) });
-  assert.deepEqual(await s.touchViewer("Id77", "Pat"), { msgCount: 1, notes: "", isNew: true, regular: true });
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("UPDATE viewers") ? [{ msg_count: 1, regular_manual: true }] : []) });
+  assert.deepEqual(await s.touchViewer("Id77", "Pat"), { msgCount: 1, isNew: true, regular: true });
   assert.equal(queries.length, 1, "a claimed placeholder needs no upsert");
   assert.match(queries[0]!.sql, /SET user_key = \$1, display = \$2, placeholder = false, msg_count = msg_count \+ 1/);
   assert.match(queries[0]!.sql, /p\.placeholder AND lower\(p\.display\) = lower\(\$2\) AND NOT EXISTS \(SELECT 1 FROM viewers e WHERE e\.user_key = \$1\)/);
@@ -193,7 +193,7 @@ test("meta get/set and recentSince", async () => {
 
 // @spec MEM-VIEWER-001
 test("touchViewer inserts a new viewer row with msg_count 1", async () => {
-  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [{ msg_count: 1, notes: "", regular_manual: false }] : []) });
+  const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [{ msg_count: 1, regular_manual: false }] : []) });
   await s.touchViewer("Bob", "Bob");
   assert.match(queries.at(-1)!.sql, /^INSERT INTO viewers \(user_key, display, msg_count, is_sub\) VALUES \(\$1,\$2,1,\$3\) ON CONFLICT/);
 });

@@ -5,6 +5,7 @@ import { InMemoryStore } from "../src/fake-store.js";
 import { createMemoryEmbedder, createStore } from "../src/backend.js";
 import { createMemoryHandler } from "../src/region.js";
 import { MemoryHealth } from "../src/health.js";
+import { Ollama } from "@cohost/llm";
 
 const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
 
@@ -12,6 +13,12 @@ const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
 test("createStore picks the fake for store=memory without touching the embedder", () => {
   const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } } as never);
   assert.ok(createStore(cfg, createMemoryEmbedder(cfg), log) instanceof InMemoryStore);
+});
+
+// @spec LLM-EMBED-004
+test("llm.provider mock with brain.memory.embedder ollama still yields the Ollama embedder", () => {
+  const cfg = testConfig({ llm: { provider: "mock" }, brain: { memory: { embedder: "ollama" } } } as never);
+  assert.ok(createMemoryEmbedder(cfg) instanceof Ollama);
 });
 
 // @spec MEM-BACKEND-004, MEM-RECALL-001
@@ -45,5 +52,5 @@ test("hash embedder makes no network request; memory+hash reports mock with n/a 
     globalThis.fetch = realFetch;
   }
   const h = new MemoryHealth({ store: "memory", embedder: "hash" });
-  assert.equal(h.spec.mode, "mock");
+  assert.equal((h.spec.mode as () => string)(), "mock");
 });

@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-**AUDITED** — 52 specs: 52 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`).
+**AUDITED** — 51 specs: 51 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`).
 
 ## References
 
@@ -15,7 +15,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (52 specs, prefix LLM: 52 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (51 specs, prefix LLM: 51 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)
@@ -37,7 +37,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 **Key Components:**
 1. `ChatProvider` / `Embedder` / `ChatOptions` (`index.ts`) - the contract; `json: true` means "no stop sequences".
-2. `createChatProvider` / `createEmbedder` (`index.ts`) - the factory switch over `llm.provider`.
+2. `createChatProvider` (`index.ts`) - the factory switch over `llm.provider`.
 3. `Ollama` (`index.ts`) - chat, embeddings and ping against a local Ollama.
 4. `OpenAICompatible` (`index.ts`) - `/chat/completions` and `/models`, optional bearer key.
 5. `ClaudeBase` / `AnthropicProvider` / `BedrockProvider` (`index.ts`) - shared Claude request building (system join, `(begin)` turn, caller's token budget, effort, refusal, optional server-side fallbacks).
@@ -56,10 +56,10 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 | Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
 | Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-013 | 13 | 0 | 0 | 13 |
 | Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 |
-| Embeddings | LLM-EMBED-001 to LLM-EMBED-006 | 6 | 0 | 0 | 5 |
+| Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 52 of 52 specs implemented; 0 deferred; 0 gaps. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003, LLM-EMBED-004 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
+**Summary:** 51 of 51 specs implemented; 0 deferred; 0 gaps. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
 
 ## Key Findings
 

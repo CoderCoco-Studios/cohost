@@ -99,8 +99,6 @@ export interface ReembedResult {
 
 export interface ViewerTouch {
   msgCount: number;
-  /** The legacy `viewers.notes` text (not written by anything). */
-  notes: string;
   isNew: boolean;
   /** MEM-REG-001. */
   regular: boolean;
@@ -168,10 +166,9 @@ export class MemoryStore implements MemoryBackend {
         display TEXT NOT NULL,
         first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
         last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
-        msg_count INT NOT NULL DEFAULT 0,
-        notes TEXT NOT NULL DEFAULT ''
+        msg_count INT NOT NULL DEFAULT 0
       )`);
-    // Additive only: an existing viewers table keeps every row and column (including the legacy `notes`).
+    // Additive only: an existing viewers table keeps every row and column.
     await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS regular_manual BOOLEAN NOT NULL DEFAULT false");
     await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS is_sub BOOLEAN NOT NULL DEFAULT false");
     await this.query("ALTER TABLE viewers ADD COLUMN IF NOT EXISTS placeholder BOOLEAN NOT NULL DEFAULT false");
@@ -354,7 +351,7 @@ export class MemoryStore implements MemoryBackend {
   async touchViewer(userKey: string, display: string, opts: { isSub?: boolean } = {}): Promise<ViewerTouch> {
     const key = userKey.toLowerCase();
     const isSub = opts.isSub ?? false;
-    type Counted = { msg_count: number; notes: string; regular_manual: boolean };
+    type Counted = { msg_count: number; regular_manual: boolean };
     // A placeholder the owner created before this viewer chatted is re-keyed to the viewer's key (only when that key has no row yet).
     const claimed = await this.query<Counted>(
       `UPDATE viewers SET user_key = $1, display = $2, placeholder = false, msg_count = msg_count + 1, last_seen = now(), is_sub = $3
@@ -362,17 +359,17 @@ export class MemoryStore implements MemoryBackend {
                            WHERE p.placeholder AND lower(p.display) = lower($2)
                              AND NOT EXISTS (SELECT 1 FROM viewers e WHERE e.user_key = $1)
                            ORDER BY p.last_seen DESC LIMIT 1)
-        RETURNING msg_count, notes, regular_manual`,
+        RETURNING msg_count, regular_manual`,
       [key, display, isSub],
     );
     const { rows } = claimed.rows.length ? claimed : await this.query<Counted>(
       `INSERT INTO viewers (user_key, display, msg_count, is_sub) VALUES ($1,$2,1,$3)
        ON CONFLICT (user_key) DO UPDATE SET display = EXCLUDED.display, last_seen = now(), msg_count = viewers.msg_count + 1, is_sub = EXCLUDED.is_sub, placeholder = false
-       RETURNING msg_count, notes, regular_manual`,
+       RETURNING msg_count, regular_manual`,
       [key, display, isSub],
     );
     const r = rows[0]!;
-    return { msgCount: r.msg_count, notes: r.notes, isNew: r.msg_count <= 1, regular: r.regular_manual || r.msg_count > this.cfg.regular_messages };
+    return { msgCount: r.msg_count, isNew: r.msg_count <= 1, regular: r.regular_manual || r.msg_count > this.cfg.regular_messages };
   }
 
   async getViewer(userKey: string): Promise<ViewerRow | undefined> {

@@ -5,7 +5,7 @@ import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
 import { InMemoryStore } from "../src/fake-store.js";
 
-function setup(viewer = { msgCount: 1, notes: "", isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void } = {}) {
+function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
   const warnings: unknown[] = [];
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
@@ -42,7 +42,7 @@ test("every chat line counts toward the viewer; only lines addressed to the co-h
 
 // @spec MEM-WRITE-001, MEM-VIEWER-002
 test("a mention announces the viewer (with regular, no notes text) before the (slow) embed + store", async () => {
-  const { onEvent, bus, calls } = setup({ msgCount: 30, notes: "legacy text", isNew: false, regular: true });
+  const { onEvent, bus, calls } = setup({ msgCount: 30, isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
   assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, regular: true }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
@@ -169,7 +169,7 @@ test("without an admin store a viewers request is ignored", async () => {
 // @spec MEM-SURF-001, MEM-SURF-005
 test("memory.notes.request is answered with the same id; a store error answers an empty list and logs a warning", async () => {
   const store = {
-    touchViewer: async () => ({ msgCount: 1, notes: "", isNew: true, regular: false }), remember: async () => {}, recall: async () => [],
+    touchViewer: async () => ({ msgCount: 1, isNew: true, regular: false }), remember: async () => {}, recall: async () => [],
     findViewerByDisplay: async (name: string) => {
       if (name === "Boom") throw new Error("db down");
       return { key: "u1", display: "Alice", msgCount: 40, regular: true, regularManual: false, isSub: true, placeholder: false, firstSeen: new Date(), lastSeen: new Date() };

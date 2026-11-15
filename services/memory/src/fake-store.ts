@@ -75,7 +75,7 @@ export class InMemoryStore implements MemoryBackend {
     v.placeholder = false;
     v.isSub = opts.isSub ?? false;
     this.refreshRegular(v);
-    return { msgCount: v.msgCount, notes: "", isNew: v.msgCount <= 1, regular: v.regular };
+    return { msgCount: v.msgCount, isNew: v.msgCount <= 1, regular: v.regular };
   }
 
   /** Move a viewer row, with its notes and deletions, to a new key. */

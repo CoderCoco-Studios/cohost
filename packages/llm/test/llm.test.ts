@@ -2,7 +2,7 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ConfigSchema } from "@cohost/config";
-import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, createChatProvider, createEmbedder, TRANSCRIPT_STOPS } from "../src/index.js";
+import { OpenAICompatible, Ollama, AnthropicProvider, BedrockProvider, createChatProvider, TRANSCRIPT_STOPS } from "../src/index.js";
 import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 
 const llmCfg = (over: Record<string, unknown> = {}) =>
@@ -73,13 +73,12 @@ test("an aborted signal rejects the request", async () => {
 });
 
 
-// @spec LLM-IF-002, LLM-EMBED-003
-test("createChatProvider picks the backend from llm.provider; embeddings are always ollama", () => {
+// @spec LLM-IF-002
+test("createChatProvider picks the backend from llm.provider", () => {
   assert.equal(createChatProvider(llmCfg({ provider: "ollama" })).name, "ollama");
   assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
   assert.equal(createChatProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } })).name, "anthropic");
   assert.equal(createChatProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } })).name, "bedrock");
-  assert.ok(createEmbedder(llmCfg({ provider: "anthropic" })) instanceof Ollama);
 });
 
 // @spec LLM-CHAT-002, LLM-CHAT-003, LLM-CHAT-004, LLM-CHAT-005, LLM-IF-004
@@ -278,14 +277,6 @@ test("hash embedder: 64-dim unit vectors, deterministic, token overlap ranks hig
   assert.ok(empty.every(Number.isFinite));
 });
 
-// @spec LLM-EMBED-003
-test("factory: mock provider needs no network and pairs with the hash embedder; others still use Ollama", () => {
-  const cfg = llmCfg({ provider: "mock" });
-  assert.ok(createEmbedder(cfg) instanceof HashEmbedder);
-  assert.ok(createEmbedder(llmCfg({ provider: "openai" })) instanceof Ollama);
-  assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
-});
-
 // ---- default request timeout (llm.timeout_ms, CFG-SCH-013)
 
 /** A backend that accepts connections and never answers (a black hole). */
@@ -293,7 +284,7 @@ const hole = http.createServer(() => {});
 await new Promise<void>((r) => hole.listen(0, r));
 after(() => { hole.closeAllConnections(); hole.close(); });
 const holeUrl = `http://127.0.0.1:${(hole.address() as { port: number }).port}`;
-/** `llm.timeout_ms` is added by the config task; the providers read it defensively, so tests set it on the object. */
+/** A schema-parsed llm config with `llm.timeout_ms` set. */
 const withTimeout = (ms: number, over: Record<string, unknown> = {}) => ({ ...llmCfg(over), timeout_ms: ms }) as ReturnType<typeof llmCfg>;
 const user = [{ role: "user" as const, content: "x" }];
 
@@ -313,7 +304,7 @@ test("timeout: a black-holed Ollama and OpenAI-compatible backend fails chat, em
 });
 
 // @spec LLM-CHAT-008
-test("timeout: llm.timeout_ms defaults to 60000 when the config object has none", async () => {
+test("timeout: the request timeout is the schema default of 60000 unless llm.timeout_ms is configured", async () => {
   const spy = mock.method(AbortSignal, "timeout", (ms: number) => { void ms; return new AbortController().signal; });
   after(() => spy.mock.restore());
   const s = http.createServer(async (req, res) => { for await (const _ of req); res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ choices: [{ message: { content: "ok" } }], message: { content: "ok" }, embeddings: [[1]], models: [] })); });

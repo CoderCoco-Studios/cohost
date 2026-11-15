@@ -100,4 +100,4 @@ Orientation:
 
 ## Coverage notes
 
-Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`). The page tests cover parts of DASH-UI-005 (mute, personality save, say) and DASH-UI-011 (sink mode plays without a click); the rest is verified by reading the page script. Manual checks for what a stub DOM cannot cover are in `docs/TESTING.md`.
+Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`). Manual checks for what a stub DOM cannot cover are in `docs/TESTING.md`.

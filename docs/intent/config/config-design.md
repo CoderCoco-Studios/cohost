@@ -148,7 +148,7 @@ Three tiers, none of which is validated by `ConfigSchema`.
 
 `packages/config/test/config.test.ts` carries an `@spec` annotation on every test and restores `CONFIG_DIR`, `COHOST_ENV_FILE` and the environment after each one; it points `.env` at its sandbox through `COHOST_ENV_FILE` and captures loader warnings through `setConfigLogger`. `config-c3.test.ts` covers blank-to-default strings, `vision.model`, `ModuleConfig`, `.env` resolution, logger routing, `loadExpressions` errors, atomic writes and `.env.example`; `editor.test.ts` covers the schema export, secrets, section reads and in-place writes. Like the example-file specs, the shipped-example tests read `config/config.example.yaml`, `.env.example` and `config/expressions.example.yaml` from the repository root on purpose: they are the files the specs describe.
 
-Not covered by any test: `urls.database/ollama/tts/stt`. Covered in part only: the `llm` defaults and blank `llm.provider` (CFG-SCH-002), the `Emotion` list and `ExpressionMapSchema` (CFG-SCH-007) and the remaining section defaults (CFG-SCH-008). Several annotated tests cover only part of their spec line; the arrow doc lists them.
+Not covered by any test: `urls.database/ollama/tts/stt`.
 
 ## Decisions & Alternatives
 

@@ -31,6 +31,17 @@ A service meets the contract when all four hold:
 | 3. Test-injectable with no platform account | An isolation preset (tenet 6) and at least one declared test input | A test that every application unit declares a test input whose event type exists in the bus registry |
 | 4. Built on the shared runtime | Its entry point is `runService`; it uses the shared module for every concern the shared runtime covers | Review; a test that each service's entry file calls `runService` |
 
+## Example service
+
+The docs site's Add a TypeScript service page teaches the four obligations with a complete service a reader can run before they change the repository: `examples/service/now-playing.ts`, a small sense that watches a text file (the "now playing" file many streaming setups write) and tells the co-host when the song changes (MOD-EX-001 to MOD-EX-005).
+
+- **Built on the shared runtime from the first line.** Its entry calls `runService`; its logic is `nowPlayingMain(ctx, opts)`, so the test drives it with a fake bus and the runtime's seams, as the services' own tests do.
+- **Uses an existing event type.** It publishes `vision.summary`, which salience and cortex already read as something the co-host noticed, and reads `brain.say`. A new event type is one entry in `packages/bus/src/events.ts`, which the page describes in prose; an example that needed one would have to change the bus to run.
+- **Reports its own dependency.** `deps.file` is `down` while the file cannot be read, so the Services tab shows the service `degraded` with the reason, the way a real service reports a missing account.
+- **Becomes a module in the page's later steps.** As an example it has no manifest entry and no Compose service, so it meets obligation 4 and not 1 to 3. The page walks the rest, naming each file: a folder under `services/`, its `package.json` and `tsconfig.json`, an entry in `packages/control/src/manifest.ts` (config sections, uses, `pause`, a test input), its Compose service, and the root `tsconfig.json` reference. Those edits are prose on the page, because the files they touch belong to control-plane, deployment and the build.
+
+The file is in the examples TypeScript project, which `tsc -p examples/tsconfig.json` checks during `pnpm test` (docs-site DOCS-GUIDE-025); `packages/testing/test/example-service.test.ts` runs it.
+
 ## Service descriptor (manifest)
 
 Each application unit in `SERVICE_MANIFEST` carries, beside its existing fields (`groups`, `defaultMode`, `infra`, `requires`, `isolatedEnv`):
@@ -163,6 +174,7 @@ An injected `brain.say` is a test input, not an operator `say`: it is published 
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
+| Example service | A file-watching sense in `examples/service/` on `runService`, publishing an existing event type, tested with the fake bus; the steps that make it a full module are prose on the docs site | A new service added to `services/` and the manifest as the example; an example with its own event type | A shipped example service would be a unit in every stack, with a Compose service and a manifest entry nobody runs. A new event type would make the example a change to the bus. An out-of-tree file the reader copies keeps the repository's units real and the example compiled and tested. |
 | Node shape | One leaf owning the contract's rules, beside control-plane, config and dashboard, which implement them | A sub-HLD over child leaves (editor, lifecycle, test surface); spreading the rules across the three implementing segments | The contract is a concern that spans components and carries its own decisions (one editor, restart-to-apply, manifest as the one list), so it is its own node. Its parts are facets of one intent, not separate intents: a sub-HLD would be a table of contents. Spread across three segments, no doc would say what a service must do to be finished. |
 | Manifest as the single source of service lists | `SERVICE_MANIFEST` carries every per-service declaration; the tracker's known list, the page's unit list and the CLI derive from it; the page fetches it | Keep `KNOWN_SERVICES` and the page's `UNITS` by hand, tied by tests; generate the Compose file from the manifest | Hand-kept lists drifted once already and each new service touched three files. A served list removes the page's copy entirely. Generating Compose would move deployment detail (images, volumes, profiles) into the manifest; a two-way test is enough. |
 | Settings editor | One generic editor generated from the zod schema | A page per service; editing raw YAML text in a textarea | A generated form cannot drift from the loader's rules and needs no change when a key is added. A raw-text editor loses the per-key source and secret handling and accepts unparsable text. |
@@ -206,4 +218,5 @@ None.
 - [control-plane](../control-plane/control-plane-design.md) Service manifest, Runtimes and controller, HealthTracker.
 - [config](../config/config-design.md) Loading pipeline, Schema, Decisions (Unknown keys, Caching).
 - [dashboard](../dashboard/dashboard-design.md) HTTP surface, Test-input injection and uploads, The page.
+- Example: `examples/service/now-playing.ts`, `examples/service/README.md`, `packages/testing/test/example-service.test.ts`; the docs site's Add a TypeScript service page (`docs/advanced/extend/typescript-service.md`) and Ways to extend cohost import it.
 - Code: `packages/control/src/{manifest,health}.ts`; `packages/config/src/{index,schema,editor,pipeline}.ts`; `services/dashboard/src/{routes,inject,settings}.ts`, `public/index.html`.

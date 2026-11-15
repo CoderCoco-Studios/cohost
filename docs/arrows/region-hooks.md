@@ -4,7 +4,7 @@ The `@cohost/modules` runner (`Module<I, O>`) that lets salience, affect, the co
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 51 specs: 51 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 51 specs: 51 implemented, 0 deferred, 0 gaps. The LLD has no open questions. The docs site's extension guides added HOOK-EX-011 to HOOK-EX-016 (the TypeScript and Rust reference servers, their port argument, the shared try-it script) and HOOK-EX-017 to HOOK-EX-019 (the `shout` example hook), all implemented and tested; the spec file now holds 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`). The new specs have not been audited.
 
 ## Decisions applied
 
@@ -26,7 +26,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/region-hooks/region-hooks-design.md
 
 ### EARS
-- docs/intent/region-hooks/region-hooks-specs.md (51 specs, prefix HOOK: 51 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/region-hooks/region-hooks-specs.md (60 specs, prefix HOOK: 60 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/modules/test/module.test.ts (kinds, fallback, warnings, cool-off, health; fake HTTP servers for the `http` and OpenAI-compatible `llm` paths)
@@ -74,10 +74,10 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 | Health | HOOK-HEALTH-001 to HOOK-HEALTH-005 | 5 | 0 | 0 |
 | Configuration | HOOK-CFG-001 to HOOK-CFG-002 | 2 | 0 | 0 |
 | Helpers | HOOK-HELP-001 to HOOK-HELP-004 | 4 | 0 | 0 |
-| Reference HTTP server | HOOK-EX-001 to HOOK-EX-010 | 10 | 0 | 0 |
+| Reference HTTP servers and example hook | HOOK-EX-001 to HOOK-EX-019 | 19 | 0 | 0 |
 | Reply schemas | HOOK-SCHEMA-001 to HOOK-SCHEMA-003 | 3 | 0 | 0 |
 
-**Summary:** 51 specs: 51 implemented, 0 deferred, 0 gaps.
+**Summary:** 60 specs: 60 implemented, 0 deferred, 0 gaps (HOOK-EX-011 to HOOK-EX-019 added after the audit and not covered by it).
 
 ## Key Findings
 
@@ -96,7 +96,7 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 None.
 
 ### Should Fix
-None.
+- Audit HOOK-EX-011..019 (the TypeScript and Rust reference servers, `try.sh`, the example hook), cited by the docs site's Extend pages.
 
 ### Nice to Have
 None.

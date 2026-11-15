@@ -29,6 +29,22 @@ test("the header has a `docs` link to /cohost/ in a new tab, immediately after t
   assert.ok(cls.split(/\s+/).some((c) => rules.includes(`.sink .${c}`)), `.sink .${cls} is hidden`);
 });
 
+// @spec DASH-UI-024
+test("the header `docs` link is drawn like the tab buttons through its own class and is not a tab", () => {
+  const a = anchor(/href="\/cohost\/"/)!;
+  const classes = a.attrs.class!.split(/\s+/);
+  assert.ok(classes.includes("docs-tab"), "has its own docs-tab class");
+  assert.ok(!classes.includes("tab") && !classes.includes("on"), "is not a tab and never active");
+  // the button rule's selector list includes .docs-tab, so it shares the tab buttons' look and hover
+  const selectorsOf = (decl: RegExp) => [...html.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => decl.test(m[2]!)).flatMap((m) => m[1]!.split(",").map((x) => x.trim()));
+  assert.ok(selectorsOf(/border-radius:\s*7px/).includes(".docs-tab"), "shares the button shape and padding rule");
+  assert.ok(selectorsOf(/border-color:\s*var\(--acc\)/).includes(".docs-tab:hover"), "shares the button hover");
+  // the page script never wires it to showTab
+  assert.ok(!/docs-tab/.test(html.slice(html.indexOf("<script"))), "script does not reference it");
+  // the inline `how to read this` link keeps its small text-link class
+  assert.ok(anchor(/how to read this/)!.attrs.class!.split(/\s+/).includes("docs-link"));
+});
+
 // @spec DASH-UI-025
 test("the Services tab has a `how to read this` link beside its heading, to the health page's states, in a new tab", () => {
   const a = anchor(/how to read this/)!;

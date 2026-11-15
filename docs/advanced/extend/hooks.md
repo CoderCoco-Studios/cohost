@@ -1,18 +1,18 @@
 ---
 title: Brain hooks
-description: How rules, llm and http hooks work, the request and reply of each hook, and a runnable Python server you can start from.
+description: How rules, llm and http hooks work, the request and reply of each hook, and a curl script that checks a hook server written in any language.
 track: advanced
 verified: f126b94
 ---
 
 # Brain hooks: rules, a model call, or your own server
 
-A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../../start/glossary.md#brain-region) where its judgement lives. [Salience](../../start/glossary.md#salience) scores [events](../../start/glossary.md#event), [affect](../../start/glossary.md#affect) works out how a line moves the mood, the [cortex](../../start/glossary.md#cortex)'s critic vets a reply before it is spoken, and memory captures and tidies notes about viewers. Each hook can run one of three kinds, and you pick per hook in `config/config.yaml`. This page is the contract, with a runnable Python example. The contract is plain HTTP and JSON, so a server in any language works.
+A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../../start/glossary.md#brain-region) where its judgement lives. [Salience](../../start/glossary.md#salience) scores [events](../../start/glossary.md#event), [affect](../../start/glossary.md#affect) works out how a line moves the mood, the [cortex](../../start/glossary.md#cortex)'s critic vets a reply before it is spoken, and memory captures and tidies notes about viewers. Each hook can run one of three kinds, and you pick per hook in `config/config.yaml`. This page is the contract. It is plain HTTP and JSON, so a server in any language works, and a short `curl` script checks one. To build a server in Python, TypeScript or Rust, follow the guide for that language: [Python](hook-server-python.md), [TypeScript](hook-server-typescript.md) or [Rust](hook-server-rust.md).
 
 ## What you need
 
 - A working co-host, or at least `cortex`, `salience` and `affect` running. [One service on its own](../testing/isolated.md) shows how to start them with no accounts.
-- For the example: Python 3. It uses only the standard library.
+- For the check at the end: `curl` and a shell, which the script `try.sh` uses. A server to point it at comes from one of the three language guides above, or from your own code.
 - [Docker](../../start/glossary.md#docker) on the same machine, if the services run in [containers](../../start/glossary.md#container). The services reach your server by name, `host.docker.internal`.
 
 ## The five hooks
@@ -28,13 +28,15 @@ A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../.
 Every hook has the same shape in the config:
 
 ```yaml
-module:            # or `critic:` under cortex, `capture:` and `consolidator:` under brain.memory.notes
-  kind: rules      # rules | llm | http
-  url: ""          # http: where to POST
-  timeout_ms: 8000
-  llm:             # llm: override the provider and model; empty = the same as llm.* at the top of the file
-    provider: ""
-    model: ""
+brain:
+  salience:
+    module:          # the same keys sit under `critic:` in cortex, `capture:` and `consolidator:` in brain.memory.notes
+      kind: rules    # rules | llm | http
+      url: ""        # http: where to POST
+      timeout_ms: 8000
+      llm:           # llm: override the provider and model; empty = the same as llm.* at the top of the file
+        provider: ""
+        model: ""
 ```
 
 | Kind | What runs | Latency | Needs |
@@ -156,54 +158,44 @@ The note rules are checked by the memory service whatever your server says, so a
 
 The replies of salience, affect and the critic are published as JSON Schema in [`examples/modules/schemas/`](https://github.com/CoderCoco-Studios/cohost/tree/main/examples/modules/schemas) (`salience.json`, `affect.json` and `critic.json`). They are generated from `packages/modules/src/schemas.ts` with `node scripts/gen-hook-schemas.mjs`, and a test checks them against each region's validator. A schema cannot say "one score per event"; the region enforces that.
 
-## The Python example
+## Check a server with `curl`
 
-[`examples/modules/server.py`](https://github.com/CoderCoco-Studios/cohost/blob/main/examples/modules/server.py) is a complete server for the three main hooks, standard library only, with a toy in each handler where your model goes. [`examples/modules/fixtures/contracts.json`](https://github.com/CoderCoco-Studios/cohost/blob/main/examples/modules/fixtures/contracts.json) holds sample requests and replies for each endpoint, and a test checks every one against the real validators.
+[`examples/modules/try.sh`](https://github.com/CoderCoco-Studios/cohost/blob/main/examples/modules/try.sh) asks a server the three questions cohost asks (one salience request, one affect request and one critic request) and prints each reply on its own line. A server in any language is right when it prints the replies below. This is how the three reference servers are tested, and it is the check for a language that has none.
 
-Run it from the repository root:
+<<< @/../examples/modules/try.sh#requests
 
-```bash
-python3 examples/modules/server.py        # listens on :8900
+Start your server, then run the script from the repository root. It asks `http://127.0.0.1:8900` unless you give another address as its first argument.
+
+```sh
+sh examples/modules/try.sh
 ```
 
-Try the endpoints:
+The replies, one per line:
 
-```bash
-curl -s -XPOST localhost:8900/salience -d '{"events":[{"kind":"chat","text":"hey Coco?","mention":true}],"arousal":0.2}'
-curl -s -XPOST localhost:8900/affect -d '{"source":"chat","who":"a","text":"this is awesome!","mention":false,"valence":0,"arousal":0}'
-curl -s -XPOST localhost:8900/critic -d '{"text":"hello","emotion":"happy","reason":"x","transcript":""}'
-```
+<<< @/../examples/modules/try.expected.txt
 
-They answer `{"scores": [1.0]}`, `{"valence_delta": 0.0, "arousal_delta": 0.05}` and `{"ok": true}`. Then set a hook to `kind: http` as above and restart the service that owns it from the Services tab. The Python is short. Each endpoint is a function from the parsed request to the reply:
+The comparison is by JSON, not by characters: spacing does not matter, and `1.0` and `1` are the same number. The reference servers answer more than these three requests. [`examples/modules/fixtures/contracts.json`](https://github.com/CoderCoco-Studios/cohost/blob/main/examples/modules/fixtures/contracts.json) holds more sample requests and replies, and a test checks every one against the real validators.
 
-```python
-def critic(req):
-    """Should this line be said? Here: block anything with a URL, trim to one sentence."""
-    text = req["text"]
-    if "http" in text.lower():
-        return {"ok": False, "note": "no links on air"}
-    first = re.split(r"(?<=[.!?])\s+", text.strip())[0]
-    if first == text:
-        return {"ok": True}
-    return {"ok": True, "text": first, "emotion": req.get("emotion") or "neutral"}
+To see what a handler looks like, here is the critic of the Python server. The TypeScript and Rust servers do the same thing in their own language. It blocks a line with a link and trims anything longer than one sentence:
 
-ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}
-```
+<<< @/../examples/modules/server.py#critic
 
-and the plumbing serves one request per thread, so a slow call never blocks the others: `ThreadingHTTPServer` with daemon threads, a handler that reads the JSON body, picks the function by path, and answers `200` with the reply, or `500` with an error (which makes the region use its rules).
+Once your server passes, set a hook to `kind: http` as above and restart the service that owns it (the Services tab has a Restart button on its row when the controls are on).
 
 ## How you know it worked
 
 - The region's log has no `module failed` warnings, and your server's log shows a request per decision.
 - The Services tab shows `hook.<name>` as `ok` under the service's dependencies. It shows `down` while the hook is being skipped.
+- `sh examples/modules/try.sh` prints the three replies of `examples/modules/try.expected.txt`.
 - Stop your server: the co-host keeps talking with the rules answers, and the region logs one warning, not one per call.
 
 ## If it didn't
 
-- **`module returned something unusable; using rules`.** The reply failed the checks above: a wrong score count, a missing field, a delta of the wrong type. Compare it with the contract and with `examples/modules/fixtures/contracts.json`.
+- **`module returned something unusable; using rules`.** The reply failed the checks above: a wrong score count, a missing field, a delta of the wrong type. Compare it with the contract and with `examples/modules/fixtures/contracts.json`, and run `sh examples/modules/try.sh` against your server.
 - **Connection refused from a container.** Use `host.docker.internal`, not `localhost`, in `url`, and bind your server to `0.0.0.0` as the example does.
 - **The hook is `down` after a few failures.** Five failures in a row start a one-minute skip. Fix the server; the next try after the minute restores it.
-- **Config refuses to load.** `kind: http` needs a non-empty `url`, and `llm.provider` on a hook needs `llm.model`.
+- **The service stops at start with `module.kind is http but module.url is empty`.** `kind: http` needs a non-empty `url`.
+- **Config refuses to load.** `llm.provider` on a hook needs `llm.model`.
 
 ## Training your own
 
@@ -211,4 +203,4 @@ Everything a hook would learn from is already on the [bus](../../start/glossary.
 
 ## Adding a sixth hook
 
-A hook is a `Module<I, O>` from `packages/modules` with a `rules` function and optional `llm` and `http` specs. Copy `services/affect/src/appraise.ts`, add a `ModuleSchema` field under the region in `packages/config/src/schema.ts`, and call `module.run(input)` where the judgement used to be inline.
+A hook is a `Module<I, O>` from `packages/modules` with a `rules` function and optional `llm` and `http` specs. [Add a brain hook](new-hook.md) builds one from start to finish and names the files to change so a region calls it.

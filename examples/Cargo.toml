@@ -1,0 +1,5 @@
+# The Rust examples are their own workspace so the root workspace (and the
+# Docker build contexts that copy only crates/) never need examples/.
+[workspace]
+resolver = "2"
+members = ["modules/rust", "rust-bus"]

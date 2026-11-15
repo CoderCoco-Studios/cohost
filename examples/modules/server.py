@@ -46,6 +46,7 @@ from urllib.parse import urlsplit
 GAME_WORDS = re.compile(r"\b(boss|died|clutch|raid|gg|clip|pog)\b", re.I)
 
 
+# region salience
 def salience(req):  # @spec HOOK-EX-002
     """Which of these events deserve a reaction? Here: a toy that likes game words."""
     scores = []
@@ -61,6 +62,7 @@ def salience(req):  # @spec HOOK-EX-002
             s = min(1.0, s + 0.25)
         scores.append(s)
     return {"scores": scores}
+# endregion salience
 
 
 def affect(req):  # @spec HOOK-EX-003
@@ -71,6 +73,7 @@ def affect(req):  # @spec HOOK-EX-003
     return {"valence_delta": dv, "arousal_delta": da}
 
 
+# region critic
 def critic(req):  # @spec HOOK-EX-004
     """Should this line be said? Here: block anything with a URL, trim to one sentence."""
     text = req["text"]
@@ -80,6 +83,7 @@ def critic(req):  # @spec HOOK-EX-004
     if first == text:
         return {"ok": True}
     return {"ok": True, "text": first, "emotion": req.get("emotion") or "neutral"}  # @spec HOOK-EX-010
+# endregion critic
 
 
 ROUTES = {"/salience": salience, "/affect": affect, "/critic": critic}  # @spec HOOK-EX-001

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.ts";
+import { extendRepo, guide, INDEX, RUST_BUS, CONNECTOR, GUIDES_TABLE, TESTED_TABLE, LAYOUT_TABLE, SERVICE_README, RUST_README, CONSTANTS, FIXTURES_URL, EXT, SITE } from "./helpers/docs-extend-fixture.ts";
 import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HEALTH_BUILT, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
@@ -354,10 +355,13 @@ test("install and connect step pages carry the three headings and link troublesh
 test("the extend page presents bus-client services as supported and others as unsupported", () => {
   const p = "docs/advanced/extend/index.md";
   const fm = (x = "") => frontmatter("Ways to extend cohost", "advanced", "glossary-skip: [event]\n" + x);
-  fails(check({ [p]: fm() + "# Ways\n\nUse `@cohost/bus`. The Rust route has no example yet. No event validation, no dashboard control, no health reporting for others.\n" }), /DOCS-PAGE-006.*crates\/cohost-bus/);
-  fails(check({ [p]: fm() + "# Ways\n\nUse `@cohost/bus` or `crates/cohost-bus`. Others get no event validation, no dashboard control, no health reporting.\n" }), /DOCS-PAGE-006.*no example/);
-  fails(check({ [p]: fm() + "# Ways\n\nUse `@cohost/bus` or `crates/cohost-bus` (no example yet). Others get no event validation.\n" }), /DOCS-PAGE-006.*dashboard control|DOCS-PAGE-006.*health reporting/);
-  fails(check({ [p]: fm() + "# Ways\n\nUse `@cohost/bus` or `crates/cohost-bus` (no example yet). A Python service is a supported way to extend cohost.\n" }), /DOCS-PAGE-006/);
+  const links = "See [Add a TypeScript service](typescript-service.md) and [Rust bus client](rust-bus.md). ";
+  const gets = "Others get no event validation, no dashboard control, no health reporting.";
+  fails(check({ [p]: fm() + `# Ways\n\nUse \`@cohost/bus\`. ${links}${gets}\n` }), /DOCS-PAGE-006.*crates\/cohost-bus/);
+  fails(check({ [p]: fm() + `# Ways\n\nUse \`@cohost/bus\` or \`crates/cohost-bus\`. ${gets}\n` }), /DOCS-PAGE-006.*typescript-service/);
+  fails(check({ [p]: fm() + `# Ways\n\nUse \`@cohost/bus\` or \`crates/cohost-bus\`. See [Add a TypeScript service](typescript-service.md). ${gets}\n` }), /DOCS-PAGE-006.*rust-bus/);
+  fails(check({ [p]: fm() + `# Ways\n\nUse \`@cohost/bus\` or \`crates/cohost-bus\`. ${links}Others get no event validation.\n` }), /DOCS-PAGE-006.*dashboard control|DOCS-PAGE-006.*health reporting/);
+  fails(check({ [p]: fm() + `# Ways\n\nUse \`@cohost/bus\` or \`crates/cohost-bus\`. ${links}${gets}\n\nA Python service is a supported way to extend cohost.\n` }), /DOCS-PAGE-006/);
 });
 
 // @spec DOCS-PAGE-007
@@ -883,15 +887,6 @@ test("every README under examples/ is at most 30 lines and links the site", () =
   fails(check({ "examples/modules/deep/README.md": "# deep\n" }), /examples\/modules\/deep\/README\.md.*DOCS-EX-001/);
 });
 
-// @spec DOCS-EX-002
-test("the modules README names its files, how to run server.py and links Brain hooks", () => {
-  const p = "examples/modules/README.md";
-  const site = "[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)";
-  fails(check({ [p]: `# M\n\n\`server.py\`, \`fixtures/\`.\n\n\`\`\`sh\npython3 server.py\n\`\`\`\n\n${site}\n` }), /modules\/README\.md.*DOCS-EX-002.*schemas\//);
-  fails(check({ [p]: `# M\n\n\`server.py\`, \`fixtures/\`, \`schemas/\`.\n\n${site}\n` }), /DOCS-EX-002.*run/);
-  fails(check({ [p]: "# M\n\n`server.py`, `fixtures/`, `schemas/`.\n\n```sh\npython3 server.py\n```\n\n[docs](https://codercoco-studios.github.io/cohost/)\n" }), /DOCS-EX-002.*hooks/);
-});
-
 // @spec DOCS-EX-003
 test("the examples README lists each directory with a description", () => {
   const files = { "examples/extra/run.sh": "echo\n" };
@@ -905,6 +900,11 @@ test("every examples directory holds a file other than its README", () => {
   const files = { "examples/prose/README.md": "# p\n\n[docs](https://codercoco-studios.github.io/cohost/)\n", "examples/README.md": baseFiles()["examples/README.md"] + "- `prose/`: only prose here.\n" };
   fails(check(files), /examples\/prose.*DOCS-EX-004/);
   passes(check({ ...files, "examples/prose/run.sh": "echo\n" }));
+});
+
+// @spec DOCS-EX-003, DOCS-EX-004
+test("cargo's target/ and node_modules/ under examples/ are build output, not example directories", () => {
+  passes(check({ "examples/target/debug/build.log": "x\n", "examples/node_modules/p/index.js": "x\n" }));
 });
 
 // ---------------------------------------------------------------- Theme (DOCS-THEME-*)
@@ -1568,4 +1568,445 @@ test("the component's files hold no absolute URL literal, no WebSocket or EventS
 test("the check script has no dependencies beyond the workspace's and the fixture suite is clean", () => {
   assert.equal(existsSync(script), true);
   passes(check());
+});
+
+// ---------------------------------------------------------------- Extension guides (DOCS-GUIDE-*, DOCS-EX-002, DOCS-EX-005)
+
+const TS = `${EXT}typescript-service.md`;
+const IDX = `${EXT}index.md`;
+const lineOf = (text: string, needle: string) => text.split("\n").findIndex((l) => l.includes(needle)) + 1;
+const ext = (over: Record<string, string | null> = {}, tables = {}) => check(extendRepo(over, tables));
+const lacks = (r: { err: string }, re: RegExp) => assert.doesNotMatch(r.err, re);
+const IMPORT_NP = "<<< @/../examples/service/now-playing.ts#main\n";
+/** The TypeScript service guide with `body` in its steps. */
+const withBody = (body: string) => ({ [TS]: guide("Add a TypeScript service", body) });
+const OTHER = { title: "T", description: "d", track: "simple", verified: "1a2b3c4" };
+
+test("the Extend fixture is a clean repository", () => {
+  passes(ext());
+});
+
+// @spec DOCS-GUIDE-001
+test("a snippet import must name an existing file under the repository through @/", () => {
+  const page1 = guide("Add a TypeScript service", "<<< @/../examples/service/missing.ts\n");
+  const line = lineOf(page1, "<<<");
+  fails(ext({ [TS]: page1 }), new RegExp(`typescript-service\\.md:${line}.*DOCS-GUIDE-001.*examples/service/missing\\.ts`));
+  fails(ext(withBody("<<< ../examples/service/now-playing.ts\n")), /DOCS-GUIDE-001.*\.\.\/examples/);
+  fails(ext(withBody("<<< examples/service/now-playing.ts\n")), /DOCS-GUIDE-001/);
+  fails(ext(withBody("<<< @/../../outside.ts\n")), /DOCS-GUIDE-001.*outside\.ts/);
+  fails(ext(withBody("<<< @/../examples/service\n")), /DOCS-GUIDE-001.*examples\/service/);
+  fails(ext({ "docs/guide/troubleshooting.md": page(OTHER, "# T\n\n<<< @/nope.ts\n") }), /troubleshooting\.md.*DOCS-GUIDE-001/);
+  // the path ends at `#`, `{` or whitespace; up to three leading spaces still make an import
+  passes(ext(withBody("   <<< @/../examples/service/now-playing.ts{1,2 ts} [title]\n\n<<< @/../examples/service/now-playing.ts#main {1}\n")));
+  // inside a fenced block (backtick or tilde), or indented four spaces, it is no import
+  lacks(ext(withBody("```text\n<<< @/../examples/missing.ts\n```\n\n~~~text\n<<< @/../examples/missing.ts\n~~~\n")), /DOCS-GUIDE-001/);
+  lacks(ext(withBody("    <<< @/../examples/service/missing.ts\n")), /DOCS-GUIDE-001/);
+});
+
+// @spec DOCS-GUIDE-002
+test("a named region must open once and close once after it", () => {
+  const file = (text: string) => ({ "examples/service/now-playing.ts": text });
+  const imp = withBody("<<< @/../examples/service/now-playing.ts#main\n");
+  const line = lineOf(imp[TS], "<<<");
+  fails(ext({ ...imp, ...file("export const x = 1;\n") }), new RegExp(`typescript-service\\.md:${line}.*DOCS-GUIDE-002.*main`));
+  fails(ext({ ...imp, ...file("// #region main\nx\n") }), /DOCS-GUIDE-002.*main/);
+  fails(ext({ ...imp, ...file("// #endregion main\n// #region main\nx\n") }), /DOCS-GUIDE-002/);
+  fails(ext({ ...imp, ...file("// #region main\n// #region main\n// #endregion main\n") }), /DOCS-GUIDE-002/);
+  fails(ext({ ...imp, ...file("// #region main\n// #endregion main\n// #endregion main\n") }), /DOCS-GUIDE-002/);
+  fails(ext({ ...imp, ...file("// #region main2\n// #endregion main2\n") }), /DOCS-GUIDE-002/);
+  passes(ext({ ...imp, ...file("  // #region main\nx\n  // #endregion main\n") }));
+  passes(ext({ ...imp, ...file("//#region main\n// endregion main\n") }));
+  passes(ext({ ...imp, ...file("/* #region main */\n/* #endregion main */\n") }));
+  passes(ext({ ...imp, ...file("<!-- #region main -->\n<!-- #endregion main -->\n") }));
+  passes(ext({ ...imp, ...file("#pragma region main\n#pragma endregion main\n") }));
+  // VitePress's own patterns: the Visual Basic and Bat forms only close, so these regions never open
+  fails(ext({ ...imp, ...file("#Region main\n#End Region main\n") }), /DOCS-GUIDE-002/);
+  fails(ext({ ...imp, ...file("::#region main\n::#endregion main\n") }), /DOCS-GUIDE-002/);
+  passes(ext({ ...imp, ...file("# region main\n# endregion main\n") }));
+  passes(ext({ ...imp, ...file("#region main\n#endregion main\n") }));
+  // other regions of the file do not matter
+  passes(ext({ ...imp, ...file("// #region other\n// #endregion other\n// #region main\n// #endregion main\n") }));
+  // an import without a region needs no markers
+  lacks(ext({ ...withBody("<<< @/../examples/service/now-playing.ts\n"), ...file("export {};\n") }), /typescript-service\.md.*DOCS-GUIDE-002/);
+});
+
+// @spec DOCS-GUIDE-003
+test("a snippet import counts as a fenced block for verified, glossary and wording, not as prose", () => {
+  const files = { "examples/service/legacy-redis.ts": "export {};\n" };
+  const body = `${IMPORT_NP}\n<<< @/../examples/service/legacy-redis.ts\n`;
+  const noVerified = guide("Add a TypeScript service", body).replace(/verified: .*\n/, "");
+  fails(ext({ ...files, [TS]: noVerified }), /typescript-service\.md.*DOCS-PAGE-002/);
+  passes(ext({ ...files, [TS]: guide("Add a TypeScript service", body, { "glossary-skip": "[]" }) }));
+  // the page's other prose is still read
+  fails(ext({ ...files, [TS]: guide("Add a TypeScript service", `${body}\nIt is legacy.\n`, { "glossary-skip": "[]" }) }), /DOCS-PAGE-004.*legacy/);
+  // a page whose only fence-like content is an import needs verified
+  fails(ext({ [IDX]: INDEX.replace(/verified: .*\n/, "") }), /index\.md.*DOCS-PAGE-002/);
+});
+
+// @spec DOCS-GUIDE-004
+test("fenced blocks on an Extend page are shell, yaml, env or text", () => {
+  const line = (l: string) => withBody(`\`\`\`${l}\nx\n\`\`\`\n`);
+  fails(ext(line("ts")), /typescript-service\.md:\d+.*DOCS-GUIDE-004.*ts/);
+  fails(ext(line("")), /DOCS-GUIDE-004.*no language/);
+  fails(ext(line("python")), /DOCS-GUIDE-004.*python/);
+  fails(ext(line("json")), /DOCS-GUIDE-004.*json/);
+  fails(ext(withBody("~~~rust\nx\n~~~\n")), /DOCS-GUIDE-004.*rust/);
+  fails(ext(line("Python{1}")), /DOCS-GUIDE-004.*python/);
+  for (const ok of ["sh", "bash", "shell", "zsh", "console", "text", "txt", "SH", "sh:line-numbers", "sh{1}", "text [file]", "bash title=x"]) {
+    lacks(ext(withBody(`\`\`\`${ok}\n# a note\n\`\`\`\n`)), /DOCS-GUIDE-004/);
+  }
+  lacks(ext(withBody("```yaml\nllm:\n  provider: mock\n```\n\n```env\nLLM_PROVIDER=mock\n```\n")), /DOCS-GUIDE-004/);
+  // other pages are not held to it
+  lacks(ext({ "docs/guide/troubleshooting.md": page(OTHER, "# T\n\n```ts\nx\n```\n") }), /DOCS-GUIDE-004/);
+});
+
+// @spec DOCS-GUIDE-005
+test("a command line of a shell fence runs only pnpm, node, python3, cargo, sh, cd or export", () => {
+  const sh = (cmds: string, lang = "sh") => withBody(`\`\`\`${lang}\n${cmds}\n\`\`\`\n`);
+  fails(ext(sh("curl http://localhost")), /typescript-service\.md:\d+.*DOCS-GUIDE-005.*curl/);
+  fails(ext(sh("FOO=1 BAR='a b' sox in.wav out.wav")), /DOCS-GUIDE-005.*sox/);
+  fails(ext(sh("pnpm build && ffmpeg -i a b")), /DOCS-GUIDE-005.*ffmpeg/);
+  fails(ext(sh("node a.ts | grep x")), /DOCS-GUIDE-005.*grep/);
+  fails(ext(sh("cd x; ls")), /DOCS-GUIDE-005.*ls/);
+  fails(ext(sh("node a.ts || echo no")), /DOCS-GUIDE-005.*echo/);
+  fails(ext(sh("./examples/modules/try.sh")), /DOCS-GUIDE-005.*try\.sh/);
+  fails(ext(sh("pnpm build \\\n  && curl x")), /DOCS-GUIDE-005.*curl/);
+  fails(ext(sh("$ curl x\noutput", "console")), /DOCS-GUIDE-005.*curl/);
+  fails(ext(sh("docker compose up", "bash")), /DOCS-GUIDE-005.*docker/);
+  fails(ext(sh("export LLM_PROVIDER=mock && curl x")), /DOCS-GUIDE-005.*curl/);
+  const ok = sh("pnpm install\nLLM_PROVIDER=mock node server.ts\nDASHBOARD_PORT=1 LLM_PROVIDER=mock python3 s.py\ncargo build\nsh try.sh\ncd examples\nexport LLM_PROVIDER=mock\n# curl in a comment\n\nLLM_PROVIDER=mock");
+  lacks(ext(ok), /DOCS-GUIDE-005/);
+  lacks(ext(sh("echo_not_run=1 node a.ts \"curl && sox\" 'a | b'\nnode a.ts \\\n  --flag curl\n")), /DOCS-GUIDE-005/);
+  lacks(ext(sh("$ node a.ts\nprints curl and sox here\n$ pnpm build", "console")), /DOCS-GUIDE-005/);
+  lacks(ext(sh("curl is fine in text\n", "text")), /DOCS-GUIDE-005/);
+  lacks(ext({ "docs/guide/troubleshooting.md": page(OTHER, "# T\n\n```sh\ncurl x\n```\n") }), /DOCS-GUIDE-005/);
+});
+
+// @spec DOCS-GUIDE-006
+test("a path under examples/ in a shell command must exist", () => {
+  const sh = (cmds: string) => withBody(`\`\`\`sh\n${cmds}\n\`\`\`\n`);
+  fails(ext(sh("node examples/service/nope.ts")), /typescript-service\.md.*DOCS-GUIDE-006.*examples\/service\/nope\.ts/);
+  fails(ext(sh("node ./examples/service/nope.ts")), /DOCS-GUIDE-006.*nope/);
+  fails(ext(sh("cargo run --manifest-path=examples/nope/Cargo.toml")), /DOCS-GUIDE-006.*examples\/nope\/Cargo\.toml/);
+  fails(ext(sh("sh examples/missing/")), /DOCS-GUIDE-006.*examples\/missing/);
+  lacks(ext(sh("node examples/service/now-playing.ts\nnode ./examples/service/\nnode examples/service/\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-bus\ncargo build --manifest-path=examples/Cargo.toml")), /DOCS-GUIDE-006/);
+  // only words starting with examples/ are checked
+  lacks(ext(sh("node notexamples/x.ts\nnode --out=other/examples/x\nnode 'quoted examples/x'")), /DOCS-GUIDE-006/);
+});
+
+// @spec DOCS-GUIDE-007
+test("cargo -p must name a workspace Rust package", () => {
+  const sh = (cmds: string) => withBody(`\`\`\`sh\n${cmds}\n\`\`\`\n`);
+  fails(ext(sh("cargo run -p nope")), /typescript-service\.md.*DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo run -pnope")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo run -p=nope")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo run --package nope")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo run --package=nope")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo build -p cohost-bus -p nope")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("A=1 cargo run -p nope && node x")), /DOCS-GUIDE-007.*nope/);
+  fails(ext(sh("cargo test -p cohost-example-hook-server -p cohost-bus -p cohost-example-gone")), /DOCS-GUIDE-007.*cohost-example-gone/);
+  lacks(ext(sh("cargo run -p cohost-bus\ncargo run -pcohost-example-bus\ncargo run --package=cohost-example-hook-server\ncargo run --package cohost-example-bus")), /DOCS-GUIDE-007/);
+  // not cargo: the flag belongs to another program
+  lacks(ext(sh("node a.ts -p nope")), /DOCS-GUIDE-007/);
+  // a directory of a workspace glob counts when it holds a package.name
+  fails(ext({ ...sh("cargo run -p ghost"), "crates/ghost/README.md": "x" }), /DOCS-GUIDE-007.*ghost/);
+  lacks(ext({ ...sh("cargo run -p other"), "crates/other/Cargo.toml": '[package]\nname = "other"\n' }), /DOCS-GUIDE-007/);
+});
+
+// @spec DOCS-GUIDE-008
+test("a repository path in a code span of an Extend page must exist", () => {
+  const p = (t: string) => withBody(`See ${t}.\n`);
+  fails(ext(p("`packages/nope/src/x.ts`")), /typescript-service\.md:\d+.*DOCS-GUIDE-008.*packages\/nope\/src\/x\.ts/);
+  fails(ext(p("`services/nope/`")), /DOCS-GUIDE-008.*services\/nope\//);
+  fails(ext(p("`crates/nope`")), /DOCS-GUIDE-008/);
+  fails(ext(p("`examples/nope.ts:12`")), /DOCS-GUIDE-008/);
+  fails(ext(p("`scripts/nope.mjs#top`")), /DOCS-GUIDE-008/);
+  fails(ext(p("`config/nope.yaml`")), /DOCS-GUIDE-008.*config\/nope\.yaml/);
+  fails(ext({ [TS]: guide("Add a TypeScript service", "").replace("## What you need", "## What `packages/nope` needs") }), /DOCS-GUIDE-008/);
+  lacks(ext(p("`examples/service/now-playing.ts` `examples/service/now-playing.ts:3` `examples/service/now-playing.ts#main` `examples/service/` `crates/cohost-bus` `packages/bus/fixtures/contract/constants.json`")), /DOCS-GUIDE-008/);
+  // a placeholder, a wildcard, braces or a space make it no path; other prefixes are not checked
+  lacks(ext(p("`packages/<name>/src` `services/*/test` `config/{a,b}.yaml` `scripts/a b` `docs/nope.md` `a/packages/nope`")), /DOCS-GUIDE-008/);
+  // config/<name>.<ext> exists when its .example. sibling does
+  lacks(ext({ ...p("`config/config.yaml` `config/expressions.yaml`"), "config/expressions.example.yaml": "a: 1\n" }), /DOCS-GUIDE-008/);
+  // a fence is no prose
+  lacks(ext(withBody("```text\npackages/nope\n```\n")), /DOCS-GUIDE-008/);
+});
+
+// @spec DOCS-GUIDE-009
+test("a yaml fence must be a mapping whose key paths are in config.example.yaml", () => {
+  const y = (t: string, lang = "yaml") => withBody(`\`\`\`${lang}\n${t}\n\`\`\`\n`);
+  fails(ext(y("llm:\n  provider: openai\n  nope: 1")), /typescript-service\.md:\d+.*DOCS-GUIDE-009.*llm\.nope/);
+  fails(ext(y("nothing: 1", "yml")), /DOCS-GUIDE-009.*nothing/);
+  fails(ext(y("- a\n- b")), /DOCS-GUIDE-009.*mapping/);
+  fails(ext(y("just a string")), /DOCS-GUIDE-009.*mapping/);
+  fails(ext(y("a: [unclosed")), /DOCS-GUIDE-009.*YAML/);
+  fails(ext(y("mouth:\n  list:\n    - a: 1\n      z: 2")), /DOCS-GUIDE-009.*mouth\.list\[\]\.z/);
+  fails(ext(y("llm:\n  openai:\n    base_url: x\n    gone: 1")), /DOCS-GUIDE-009.*llm\.openai\.gone/);
+  lacks(ext(y("llm:\n  provider: openai\n  openai:\n    base_url: http://x\nmouth:\n  outputs:\n    discord:\n      gain_db: 3\n  list:\n    - a: 1\n      b: 2")), /DOCS-GUIDE-009/);
+  lacks(ext(y("llm:\n  provider: mock", "YAML")), /DOCS-GUIDE-009/);
+  // other languages are not read as YAML
+  lacks(ext(y("nothing: 1", "text")), /DOCS-GUIDE-009/);
+});
+
+// @spec DOCS-GUIDE-011
+test("an imported example file must be named in a test, or lie in a Rust package whose tests a test runs", () => {
+  const noTest = { "packages/bus/test/examples.test.ts": "const x = 1;\n" };
+  fails(ext(noTest), /typescript-service\.md.*DOCS-GUIDE-011.*examples\/service\/now-playing\.ts/);
+  fails(ext(noTest), /index\.md.*DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/test/b.test.ts": 'const p = "examples/service/now-playing.tsx";\n' }), /DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/test/b.test.ts": 'const p = "examples/service/now-playing.ts.bak";\n' }), /DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/test/b.test.ts": 'const p = "examples/services";\n' }), /DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/src/b.ts": 'const p = "examples/service/now-playing.ts";\n' }), /DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/test/helper.ts": 'const p = "examples/service/now-playing.ts";\n' }), /DOCS-GUIDE-011/);
+  fails(ext({ ...noTest, "packages/bus/test/deep/b.test.ts": 'const p = "examples/service/now-playing.ts";\n' }), /DOCS-GUIDE-011/);
+  for (const t of ['"examples/service/now-playing.ts"', "'examples/service/now-playing.ts'", "`examples/service/now-playing.ts`", '"examples/service"', "examples/service/now-playing.ts", "examples/service\nnext", "examples/service"]) {
+    lacks(ext({ ...noTest, "services/chat/test/b.test.ts": `const p = ${t}` }), /typescript-service\.md.*DOCS-GUIDE-011/);
+  }
+  // a Rust example package counts when its tests/ holds a .rs file and a test file runs the package
+  const rust = { "packages/bus/test/examples.test.ts": 'const a = "examples/service/now-playing.ts";\n' };
+  fails(ext(rust), /rust-bus\.md.*DOCS-GUIDE-011.*examples\/rust-bus\/src\/lib\.rs/);
+  fails(ext({ ...rust, "packages/bus/test/r.test.ts": 'spawn("cargo", ["test", "-p", "cohost-example-bus"]);', "examples/rust-bus/tests/it.rs": null }), /rust-bus\.md.*DOCS-GUIDE-011/);
+  fails(ext({ ...rust, "packages/bus/test/r.test.ts": 'run("cohost-example-bus-other");' }), /rust-bus\.md.*DOCS-GUIDE-011/);
+  lacks(ext({ ...rust, "packages/bus/test/r.test.ts": 'spawn("cargo", ["test", "-p", "cohost-example-bus"]);' }), /DOCS-GUIDE-011/);
+});
+
+// @spec DOCS-GUIDE-012
+test("each page of the Extension guides table imports every file its Examples column lists", () => {
+  const g = (row: string) => ({ guides: GUIDES_TABLE + row });
+  fails(ext({}, g("| `advanced/extend/typescript-service.md` | x | `examples/service/other.ts` | x |\n")), /typescript-service\.md.*DOCS-GUIDE-012.*examples\/service\/other\.ts/);
+  fails(ext({}, g("| `advanced/extend/rust-bus.md` | x | `examples/rust-bus/src/main.rs` | x |\n")), /rust-bus\.md.*DOCS-GUIDE-012.*examples\/rust-bus\/src\/main\.rs/);
+  fails(ext({ [`${EXT}rust-bus.md`]: RUST_BUS.replace("<<< @/../examples/rust-bus/src/lib.rs", "") }), /rust-bus\.md.*DOCS-GUIDE-012.*lib\.rs/);
+  fails(ext({ [`${EXT}rust-bus.md`]: RUST_BUS.replace("<<< @/../examples/rust-bus/Cargo.toml", "") }), /DOCS-GUIDE-012.*Cargo\.toml/);
+  // an entry ending in / is met by importing any file under it
+  lacks(ext({}, g("| `advanced/extend/typescript-service.md` | x | `examples/service/` | x |\n")), /DOCS-GUIDE-012/);
+  fails(ext({}, g("| `advanced/extend/typescript-service.md` | x | `examples/rust-bus/` | x |\n")), /DOCS-GUIDE-012.*examples\/rust-bus\//);
+  // the table is read from the LLD: a missing table is a problem
+  const noSection = baseFiles()["docs/intent/docs-site/docs-site-design.md"]!.replace(/## Extension guides[\s\S]*?(?=\n## )/, "");
+  fails(ext({ "docs/intent/docs-site/docs-site-design.md": noSection }), /DOCS-GUIDE-012.*Extension guides/);
+});
+
+// @spec DOCS-GUIDE-013
+test("an Extend guide has the three step headings", () => {
+  const good = guide("Add a TypeScript service", IMPORT_NP);
+  const without = (h: string) => good.replace(`## ${h}`, `## Not ${h}`);
+  fails(ext({ [TS]: without("What you need") }), /typescript-service\.md.*DOCS-GUIDE-013.*What you need/);
+  fails(ext({ [TS]: without("How you know it worked") }), /DOCS-GUIDE-013.*How you know it worked/);
+  fails(ext({ [TS]: without("If it didn't") }), /DOCS-GUIDE-013.*If it didn't/);
+  fails(ext({ [TS]: good.replace(/## If it didn't/, "### If it didn't") }), /DOCS-GUIDE-013/);
+  const two = ext({ [TS]: page({ title: "Add a TypeScript service", description: "d", track: "advanced", verified: "1a2b3c4" }, `# T\n\n## What you need\n\n${IMPORT_NP}`) });
+  fails(two, /DOCS-GUIDE-013.*How you know it worked/);
+  fails(two, /DOCS-GUIDE-013.*If it didn't/);
+  lacks(ext({ [TS]: good.replace("If it didn't", "If it didn’t") }), /DOCS-GUIDE-013/);
+  // the index, hooks and connector-protocol pages are references
+  lacks(ext({ [`${EXT}hooks.md`]: guide("Brain hooks").replace(/## What you need/, "## Needs") }), /DOCS-GUIDE-013/);
+});
+
+const tableOf = (rows: string, header = "| Task | Python | TypeScript | Rust | Any language with curl |") => `${header}\n| --- | --- | --- | --- | --- |\n${rows}`;
+const indexWith = (table: string) => INDEX.replace(/\| Task \|[\s\S]*$/, table);
+const ROW = "| Add a service | — | [Add a TypeScript service](typescript-service.md) | [Rust bus client](rust-bus.md) | — |\n";
+
+// @spec DOCS-GUIDE-014
+test("the Ways to extend page holds exactly one Tested examples table of links and dashes", () => {
+  const withIdx = (t: string) => ext({ [IDX]: indexWith(t) });
+  fails(ext({ [IDX]: INDEX.replace(/## Tested examples[\s\S]*$/, "") }), /index\.md.*DOCS-GUIDE-014.*exactly one/);
+  fails(withIdx(tableOf(ROW) + "\n" + tableOf(ROW)), /DOCS-GUIDE-014.*exactly one/);
+  fails(withIdx(tableOf(ROW, "| Task | Python | TypeScript | Rust | Any language |")), /DOCS-GUIDE-014.*exactly one/);
+  fails(withIdx(tableOf(ROW.replace("| — |", "| - |"))), /DOCS-GUIDE-014.*Add a service.*Python/);
+  fails(withIdx(tableOf(ROW.replace("[Add a TypeScript service](typescript-service.md)", "Add a TypeScript service"))), /DOCS-GUIDE-014.*TypeScript/);
+  fails(withIdx(tableOf(ROW.replace("[Add a TypeScript service](typescript-service.md)", "[A](typescript-service.md) and [B](rust-bus.md)"))), /DOCS-GUIDE-014.*TypeScript/);
+  fails(withIdx(tableOf(ROW.replace(/— \|\n$/, "see [x](https://example.com) |\n"))), /DOCS-GUIDE-014.*Any language/);
+  fails(withIdx(tableOf(ROW.replace(/— \|\n$/, "[x](../dev-setup.md) |\n"))), /DOCS-GUIDE-014.*Any language/);
+  fails(withIdx(tableOf(ROW.replace("rust-bus.md", "nope.md"))), /DOCS-GUIDE-014.*Rust/);
+  fails(withIdx(tableOf(ROW.replace("[Add a TypeScript service](typescript-service.md)", "[A](typescript-service.md) text"))), /DOCS-GUIDE-014.*TypeScript/);
+  fails(withIdx(tableOf(ROW.replace("[Add a TypeScript service](typescript-service.md)", "— —"))), /DOCS-GUIDE-014/);
+  // another table is allowed; a link fragment or the .html form still names the page
+  lacks(withIdx("| a | b |\n| - | - |\n| 1 | 2 |\n\n" + tableOf(ROW.replace("typescript-service.md", "typescript-service#steps").replace("rust-bus.md", "./rust-bus.html"))), /DOCS-GUIDE-014/);
+});
+
+// @spec DOCS-GUIDE-015
+test("a language cell links a page that imports an example file of that language", () => {
+  const row = (py: string, tsc: string, rs: string, sh: string) => `| Add a service | ${py} | ${tsc} | ${rs} | ${sh} |\n`;
+  const L = "[Add a TypeScript service](typescript-service.md)";
+  const R = "[Rust bus client](rust-bus.md)";
+  const t = (r: string) => ext({ [IDX]: indexWith(tableOf(r)) });
+  fails(t(row(L, "—", "—", "—")), /DOCS-GUIDE-015.*Add a service.*Python.*typescript-service/);
+  fails(t(row("—", R, "—", "—")), /DOCS-GUIDE-015.*TypeScript.*rust-bus/);
+  fails(t(row("—", "—", L, "—")), /DOCS-GUIDE-015.*Rust.*typescript-service/);
+  fails(t(row("—", "—", "—", L)), /DOCS-GUIDE-015.*Any language with curl.*typescript-service/);
+  lacks(t(row("—", L, R, "—")), /DOCS-GUIDE-015/);
+  const files = { "examples/service/run.sh": "echo\n", "examples/service/run.py": "print()\n" };
+  const s = guide("Add a TypeScript service", `<<< @/../examples/service/run.sh\n\n<<< @/../examples/service/run.py\n\n${IMPORT_NP}`);
+  const tested = TESTED_TABLE.replace("| — | Add a TypeScript service | Rust bus client | — |", "| Add a TypeScript service | Add a TypeScript service | Rust bus client | Add a TypeScript service |");
+  lacks(ext({ ...files, [TS]: s, [IDX]: indexWith(tableOf(row(L, L, R, L))) }, { tested }), /DOCS-GUIDE-015/);
+});
+
+// @spec DOCS-GUIDE-016
+test("the Ways to extend table repeats the LLD's Tested examples table", () => {
+  const swap = (rows: string) => ext({ [IDX]: indexWith(tableOf(rows)) });
+  fails(swap(ROW + "| Extra | — | — | — | — |\n"), /index\.md.*DOCS-GUIDE-016.*Extra/);
+  fails(swap(""), /DOCS-GUIDE-016.*Add a service/);
+  fails(swap(ROW.replace("Add a service", "Add a thing")), /DOCS-GUIDE-016.*Add a service/);
+  fails(swap(ROW.replace("| — | [Add a TypeScript", "| [Rust bus client](rust-bus.md) | [Add a TypeScript")), /DOCS-GUIDE-016.*Python/);
+  fails(swap(ROW.replace("[Add a TypeScript service](typescript-service.md)", "—")), /DOCS-GUIDE-016.*TypeScript/);
+  fails(swap(ROW.replace("[Rust bus client](rust-bus.md)", "[Add a TypeScript service](typescript-service.md)")), /DOCS-GUIDE-016.*Rust/);
+  fails(ext({}, { tested: TESTED_TABLE + "| Second | — | — | — | — |\n" }), /DOCS-GUIDE-016.*Second/);
+  fails(ext({}, { tested: TESTED_TABLE.replace("Add a service", "Add **a** service") }), /DOCS-GUIDE-016.*Add \*\*a\*\* service/);
+  const two = ROW + "| Second | — | — | — | — |\n";
+  const lld2 = TESTED_TABLE + "| Second | — | — | — | — |\n";
+  lacks(ext({ [IDX]: indexWith(tableOf(two)) }, { tested: lld2 }), /DOCS-GUIDE-016/);
+  fails(ext({ [IDX]: indexWith(tableOf("| Second | — | — | — | — |\n" + ROW)) }, { tested: lld2 }), /DOCS-GUIDE-016/);
+  lacks(ext({ [IDX]: indexWith(tableOf(ROW.replace("| Add a service |", "|   Add a service   |"))) }), /DOCS-GUIDE-016/);
+});
+
+// @spec DOCS-GUIDE-017
+test("the Ways to extend page links every other Extend page and says there is no tested example", () => {
+  const noConnector = INDEX.replace("and [Connector protocol](connector-protocol.md)", "");
+  fails(ext({ [IDX]: noConnector }), /index\.md.*DOCS-GUIDE-017.*connector-protocol/);
+  fails(ext({ [IDX]: INDEX.replace("no tested example", "none") }), /index\.md.*DOCS-GUIDE-017.*no tested example/);
+  lacks(ext({ [IDX]: INDEX.replace("no tested example", "NO  Tested\nExample") }), /DOCS-GUIDE-017/);
+  lacks(ext({ [IDX]: INDEX.replace("(connector-protocol.md)", "(./connector-protocol.html#top)") }), /DOCS-GUIDE-017/);
+  // a page that does not exist needs no link
+  lacks(ext({ [IDX]: noConnector, [`${EXT}connector-protocol.md`]: null }, { guides: GUIDES_TABLE.replace(/.*connector-protocol.*\n/, "") }), /DOCS-GUIDE-017/);
+});
+
+const HOOK_PAGE = (name: string) => guide(`Hook server in ${name}`, "A hook server sends no heartbeat. Its health is the `hook.<name>` dependency.");
+const HOOK_FILES: Record<string, string> = {
+  [`${EXT}hook-server-python.md`]: HOOK_PAGE("Python"),
+  [`${EXT}hook-server-typescript.md`]: HOOK_PAGE("TypeScript"),
+  [`${EXT}hook-server-rust.md`]: HOOK_PAGE("Rust"),
+};
+const LINKED_INDEX = INDEX.replace("and [Connector protocol](connector-protocol.md)", "and [Connector protocol](connector-protocol.md) [a](hook-server-python.md) [b](hook-server-typescript.md) [c](hook-server-rust.md) [m](model-server.md)");
+
+// @spec DOCS-GUIDE-018
+test("each hook server guide says it sends no heartbeat and names hook.<name>", () => {
+  const run = (over: Record<string, string>) => ext({ ...HOOK_FILES, ...over, [IDX]: LINKED_INDEX.replace(" [m](model-server.md)", "") });
+  passes(run({}));
+  for (const f of ["python", "typescript", "rust"]) {
+    const path = `${EXT}hook-server-${f}.md`;
+    fails(run({ [path]: HOOK_FILES[path]!.replace("no heartbeat", "a quiet pulse") }), new RegExp(`hook-server-${f}\\.md.*DOCS-GUIDE-018.*no heartbeat`));
+    fails(run({ [path]: HOOK_FILES[path]!.replace("`hook.<name>`", "`hook.name`") }), new RegExp(`hook-server-${f}\\.md.*DOCS-GUIDE-018.*hook\\.<name>`));
+    fails(run({ [path]: HOOK_FILES[path]!.replace("`hook.<name>`", "hook.<name>") }), /DOCS-GUIDE-018/);
+  }
+  lacks(run({ [`${EXT}hook-server-python.md`]: HOOK_FILES[`${EXT}hook-server-python.md`]!.replace("no heartbeat", "No  Heartbeat") }), /DOCS-GUIDE-018/);
+});
+
+// @spec DOCS-GUIDE-019
+test("a page importing server.ts, stub.ts or send-clip.ts says it runs on Node 22.18 or later", () => {
+  for (const f of ["examples/modules/server.ts", "examples/model-stub/stub.ts", "examples/audio-in/send-clip.ts"]) {
+    const files = { [f]: "export {};\n", "packages/bus/test/e.test.ts": `a("${f}"); b("examples/service"); c("cohost-example-bus");` };
+    const page1 = (note: string) => guide("Add a TypeScript service", `${IMPORT_NP}\n<<< @/../${f}\n\n${note}\n`);
+    fails(ext({ ...files, [TS]: page1("Run it with `node`.") }), new RegExp(`typescript-service\\.md.*DOCS-GUIDE-019.*${f.replace(/[./]/g, "\\$&")}`));
+    fails(ext({ ...files, [TS]: page1("Needs Node 22.1.") }), /DOCS-GUIDE-019/);
+    lacks(ext({ ...files, [TS]: page1("Runs with `node` on Node 22.18 or later.") }), /DOCS-GUIDE-019/);
+  }
+  lacks(ext(), /DOCS-GUIDE-019/);
+});
+
+// @spec DOCS-GUIDE-020
+test("the model server guide names /chat/completions, /models and brain.memory.embedder", () => {
+  const body = "cohost requests `<base_url>/chat/completions` and `<base_url>/models`. Embeddings are not sent here; see `brain.memory.embedder`.";
+  const go = (b: string) => ext({ [`${EXT}model-server.md`]: guide("Your own model server", b), [IDX]: INDEX.replace("and [Connector protocol](connector-protocol.md)", "and [Connector protocol](connector-protocol.md) [m](model-server.md)") });
+  passes(go(body));
+  fails(go(body.replace("/chat/completions", "/chat")), /model-server\.md.*DOCS-GUIDE-020.*\/chat\/completions/);
+  fails(go(body.replace("`<base_url>/models`", "models")), /DOCS-GUIDE-020.*\/models/);
+  fails(go(body.replace("`brain.memory.embedder`", "brain.memory.embedder")), /DOCS-GUIDE-020.*brain\.memory\.embedder/);
+  fails(go(body.replace("brain.memory.embedder", "brain.memory.embedders")), /DOCS-GUIDE-020.*brain\.memory\.embedder/);
+});
+
+// @spec DOCS-GUIDE-021
+test("the Rust bus client guide says no shared runtime and names the three bus names", () => {
+  const rb = (f: (t: string) => string) => ({ [`${EXT}rust-bus.md`]: f(RUST_BUS) });
+  fails(ext(rb((t) => t.replace("no shared runtime", "a thin runtime"))), /rust-bus\.md.*DOCS-GUIDE-021.*no shared runtime/);
+  fails(ext(rb((t) => t.replace("`service.heartbeat`", "service.heartbeat"))), /DOCS-GUIDE-021.*service\.heartbeat/);
+  fails(ext(rb((t) => t.replace("`control`", "control"))), /DOCS-GUIDE-021.*control/);
+  fails(ext(rb((t) => t.replace("`inject.request`", "inject request"))), /DOCS-GUIDE-021.*inject\.request/);
+  lacks(ext(rb((t) => t.replace("no shared runtime", "No Shared\nRuntime"))), /DOCS-GUIDE-021/);
+});
+
+const proto = (f: (t: string) => string) => ({ [`${EXT}connector-protocol.md`]: f(CONNECTOR) });
+
+// @spec DOCS-GUIDE-022
+test("the Connector protocol page holds a row for each constant of constants.json", () => {
+  fails(ext(proto((t) => t.replace("| `MAX_FRAME_BYTES` | `65536` |\n", ""))), /connector-protocol\.md.*DOCS-GUIDE-022.*MAX_FRAME_BYTES.*65536/);
+  fails(ext(proto((t) => t.replace("`65536`", "`65535`"))), /DOCS-GUIDE-022.*MAX_FRAME_BYTES.*65536/);
+  fails(ext(proto((t) => t.replace("`65536`", "65536"))), /DOCS-GUIDE-022.*MAX_FRAME_BYTES/);
+  fails(ext(proto((t) => t.replace("`65536`", "`65536` bytes"))), /DOCS-GUIDE-022.*MAX_FRAME_BYTES/);
+  fails(ext(proto((t) => t.replace("| `FRAME_VERSION` |", "| FRAME_VERSION |"))), /DOCS-GUIDE-022.*FRAME_VERSION/);
+  fails(ext(proto((t) => t.replace("| `AUDIO_MAXLEN.out` | `1500` |\n", ""))), /DOCS-GUIDE-022.*AUDIO_MAXLEN\.out.*1500/);
+  fails(ext(proto((t) => t.replace("`AUDIO_MAXLEN.in`", "`AUDIO_MAXLEN`"))), /DOCS-GUIDE-022.*AUDIO_MAXLEN\.in.*3000/);
+  fails(ext(proto((t) => t.replace("`60000`", '`"60000"`'))), /DOCS-GUIDE-022.*AUDIO_STREAM_TTL_MS.*60000/);
+  // the expected text is the value's JSON text, read from constants.json
+  const withText = { "packages/bus/fixtures/contract/constants.json": JSON.stringify({ ...CONSTANTS, LABEL: "x y", FLAG: true, NOTHING: null, LIST: [1, 2] }) };
+  fails(ext({ ...withText, ...proto((t) => t) }), /DOCS-GUIDE-022.*LABEL.*"x y"/);
+  fails(ext({ ...withText, ...proto((t) => t) }), /DOCS-GUIDE-022.*LIST.*\[1,2\]/);
+  lacks(ext({ ...withText, ...proto((t) => t.replace("| `FRAME_VERSION` | `1` |\n", (m) => m + '| `LABEL` | `"x y"` |\n| `FLAG` | `true` |\n| `NOTHING` | `null` |\n| `LIST` | `[1,2]` |\n')) }), /DOCS-GUIDE-022/);
+  // `names` has no row; extra rows are fine
+  lacks(ext(proto((t) => t.replace("| `FRAME_VERSION` | `1` |\n", (m) => m + "| `EXTRA` | `1` |\n"))), /DOCS-GUIDE-022/);
+});
+
+// @spec DOCS-GUIDE-023
+test("the Connector protocol page names the key forms from constants.json and links the fixtures", () => {
+  fails(ext(proto((t) => t.replace("`<prefix>:connector:<id>`", "`<prefix>:connector:<name>`"))), /connector-protocol\.md.*DOCS-GUIDE-023.*<prefix>:connector:<id>/);
+  fails(ext(proto((t) => t.replace("`<prefix>:audio.in.<tag>`", "<prefix>:audio.in.<tag>"))), /DOCS-GUIDE-023.*<prefix>:audio\.in\.<tag>/);
+  fails(ext(proto((t) => t.replace("`<prefix>:audio.out.<tag>`", "`<prefix>:audio.in.<tag>`"))), /DOCS-GUIDE-023.*<prefix>:audio\.out\.<tag>/);
+  fails(ext(proto((t) => t.replace(`(${FIXTURES_URL})`, "(https://github.com/CoderCoco-Studios/cohost/tree/main/packages/bus)"))), /DOCS-GUIDE-023.*fixtures\/contract/);
+  const other = { ...CONSTANTS, names: { ...CONSTANTS.names, connectorKey: "p1:link:disc", audioStream: "p1:sound.in.discord" } };
+  fails(ext({ "packages/bus/fixtures/contract/constants.json": JSON.stringify(other) }), /DOCS-GUIDE-023.*<prefix>:link:<id>/);
+  fails(ext({ "packages/bus/fixtures/contract/constants.json": JSON.stringify(other) }), /DOCS-GUIDE-023.*<prefix>:sound\.out\.<tag>/);
+  lacks(ext(proto((t) => t.replace(`(${FIXTURES_URL})`, `(${FIXTURES_URL}/)`))), /DOCS-GUIDE-023/);
+});
+
+// @spec DOCS-GUIDE-024
+test("the Connector protocol page says no SDK, not a supported route, and names @cohost/bus", () => {
+  fails(ext(proto((t) => t.replace("no SDK", "no kit"))), /connector-protocol\.md.*DOCS-GUIDE-024.*no SDK/);
+  fails(ext(proto((t) => t.replace("not a supported route", "discouraged"))), /DOCS-GUIDE-024.*not a supported route/);
+  fails(ext(proto((t) => t.replace("`@cohost/bus`", "@cohost/bus"))), /DOCS-GUIDE-024.*@cohost\/bus/);
+  lacks(ext(proto((t) => t.replace("no SDK", "No sdk").replace("not a supported route", "Not  a  Supported route"))), /DOCS-GUIDE-024/);
+});
+
+// @spec DOCS-EX-002
+test("the modules README names its seven files as code spans and the three run commands in a shell fence", () => {
+  const p = "examples/modules/README.md";
+  const site = "[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)";
+  const names = "`server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`";
+  const runs = "```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```";
+  passes(check({ [p]: `# M\n\n${names}.\n\n${runs}\n\n${site}\n` }));
+  for (const n of ["server.py", "server.ts", "rust/", "try.sh", "try.expected.txt", "fixtures/", "schemas/"]) {
+    fails(check({ [p]: `# M\n\n${names.replace(`\`${n}\``, n)}.\n\n${runs}\n\n${site}\n` }), new RegExp(`modules/README\\.md.*DOCS-EX-002.*${n.replace(/[./]/g, "\\$&")}`));
+  }
+  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("python3 examples/modules/server.py\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*python3/);
+  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("node examples/modules/server.ts\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*node/);
+  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace(/cargo run.*\n/, "cargo build\n")}\n\n${site}\n` }), /DOCS-EX-002.*cargo run/);
+  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("```sh", "```text")}\n\n${site}\n` }), /DOCS-EX-002/);
+  fails(check({ [p]: `# M\n\n${names}.\n\n${runs}\n` }), /DOCS-EX-002.*hooks/);
+  passes(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("-p cohost-example-hook-server", "--package cohost-example-hook-server")}\n\n${site}\n` }));
+});
+
+// @spec DOCS-EX-005
+test("each example directory other than modules has a README naming its files and linking its guide", () => {
+  const rd = "examples/service/README.md";
+  const guideUrl = `${SITE}advanced/extend/typescript-service`;
+  fails(ext({ [rd]: null }), /examples\/service\/README\.md.*DOCS-EX-005.*does not exist/);
+  fails(ext({ [rd]: SERVICE_README.replace("`now-playing.ts`", "now-playing.ts") }), /examples\/service\/README\.md.*DOCS-EX-005.*now-playing\.ts/);
+  fails(ext({ [rd]: SERVICE_README.replace("`now-playing.ts`", "`examples/service/now-playing.ts`") }), /DOCS-EX-005.*now-playing\.ts/);
+  fails(ext({ [rd]: SERVICE_README.replace(guideUrl, `${SITE}advanced/extend/hooks`) }), /examples\/service\/README\.md.*DOCS-EX-005.*link/);
+  fails(ext({ [rd]: SERVICE_README.replace(guideUrl, "typescript-service") }), /DOCS-EX-005.*link/);
+  fails(ext({ "examples/rust-bus/README.md": RUST_README.replace("`main.rs`", "main.rs") }), /examples\/rust-bus\/README\.md.*DOCS-EX-005.*main\.rs/);
+  fails(ext({ "examples/rust-bus/README.md": RUST_README.replace("`lib.rs`", "`src/lib.rs`") }), /DOCS-EX-005.*lib\.rs/);
+  passes(ext({ [rd]: SERVICE_README.replace(guideUrl, `${guideUrl}/#steps`) }));
+  passes(ext({ [rd]: SERVICE_README.replace(guideUrl, `${guideUrl}.html`) }));
+  // any Extend page whose Examples column lists a path under the directory will do, the index page included
+  passes(ext({ [rd]: SERVICE_README.replace(guideUrl, `${SITE}advanced/extend/`) }));
+  // the Holds column drives the check, and the package name in it is no file
+  fails(ext({}, { layout: LAYOUT_TABLE.replace("`now-playing.ts` |", "`now-playing.ts`, `extra.ts` |") }), /examples\/service\/README\.md.*DOCS-EX-005.*extra\.ts/);
+  fails(ext({}, { layout: LAYOUT_TABLE + "| `examples/orphan/` | `a.sh` | x |\n" }), /examples\/orphan\/README\.md.*DOCS-EX-005/);
+});
+
+// @spec DOCS-PAGE-006
+test("the Ways to extend page links the TypeScript service and Rust bus client guides", () => {
+  fails(ext({ [IDX]: INDEX.replaceAll("typescript-service.md", "other.md") }), /index\.md.*DOCS-PAGE-006.*typescript-service/);
+  fails(ext({ [IDX]: INDEX.replaceAll("rust-bus.md", "other.md") }), /index\.md.*DOCS-PAGE-006.*rust-bus/);
+  fails(ext({ [IDX]: INDEX.replace("no event validation", "no checking") }), /DOCS-PAGE-006.*event validation/);
+  fails(ext({ [IDX]: INDEX.replace("`@cohost/bus`", "the bus client") }), /DOCS-PAGE-006.*@cohost\/bus/);
+  fails(ext({ [IDX]: INDEX.replace("Build on", "A Python service is a supported way to add a service.\n\nBuild on") }), /DOCS-PAGE-006.*Python/);
 });

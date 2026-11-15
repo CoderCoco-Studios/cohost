@@ -2,7 +2,7 @@
 title: Verification log
 description: Dated records of live runs of cohost, with the commands and what they showed.
 track: project
-glossary-skip: [container, salience, stt, tts, affect, cortex, sink]
+glossary-skip: [container, salience, stt, tts, affect, cortex, sink, consumer-group, docker-compose, hook, llm]
 verified: f126b949cf41b503f28c7935d3c8522bb7b659d6
 ---
 
@@ -179,3 +179,26 @@ Screenshots are in the session scratchpad and are not committed.
 - The `pnpm dashboard` stderr notice after a failed docs build was not run for real; the script's text and a stubbed run are covered by `services/dashboard/test/docs-script.test.ts`.
 - The LAN listener (port 47312) was not requested for a docs path; it is covered by `services/dashboard/test/host-docs.test.ts`.
 - Only Chrome, only at 1280px, only the dark dashboard page.
+
+## Extension guides and their examples (2026-11-15)
+
+Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main`) plus the uncommitted work of the `docs/extension-guides` branch (DOCS-GUIDE-001 to 026, DOCS-EX-002, 005, DOCS-PAGE-006, and the example specs HOOK-EX-011 to 019, LLM-EX-001 to 006, EARS-EX-001 to 007, AVATAR-EX-001 to 004, MOD-EX-001 to 005, BUS-NAT-EX-001). There was no [Redis](../start/glossary.md#redis), no Docker and no `ffmpeg` on the machine.
+
+| Check | How | Result |
+| --- | --- | --- |
+| Docs check | `node scripts/docs-check.mjs`, then `npx vitepress build docs && node scripts/docs-check.mjs --dist` | 0 problems for the source pass and for the built site; the build completed. |
+| Example tests | `node --import tsx --test` over `packages/modules/test`, `packages/llm/test/example-stub.test.ts`, `services/ears/test/example-clients.test.ts`, `services/avatar/test/example-driver.test.ts`, `packages/testing/test/example-service.test.ts`, `packages/bus/test/example-rust-bus.test.ts` and the two docs-check test files | 267 tests, 266 passed, 0 failed, 1 skipped (the `ffmpeg` converter). |
+| Whole suite | `pnpm test:only` after `pnpm build` | 2298 tests, 2267 passed, 0 failed, 31 skipped. |
+| Types | `pnpm build` (`tsc -b`) and `npx tsc -p examples/tsconfig.json --noEmit` | Both clean. |
+| Servers and scripts | The tests start the Python, TypeScript and Rust hook servers, both model stubs and the `ears` listener, and run `try.sh`, `send.sh`, the Python and TypeScript clients and the `sox` converter against them | Passed. |
+| Rust examples build | `cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus` | Compiled; the one round-trip test printed `SKIP` and passed without Redis, so it checked nothing. |
+| Mutation check | A stub's reply text, `send.sh`'s HTTP method and the shout hook's validator were each broken, the matching test file run, then the file restored | Each test file failed (3, 3 and 1 tests); restored, they pass. |
+
+### Not checked
+
+- The Rust bus example at run time: its heartbeat, consumer group, `<type> from <source>` lines and the `stopping` heartbeat (BUS-NAT-EX-002 to 005) need Redis and have not run. Those specs stay open; CI's `test.yml` provides Redis.
+- `to-wav-ffmpeg.sh` (EARS-EX-007's `ffmpeg` half): the test skips where `ffmpeg` is absent.
+- No page was walked end to end on a real stack. The dashboard Services tab was not viewed with the example service, the Rust program, the avatar driver or a hook server running, so what the pages say about the Services tab comes from reading `packages/control/src/health.ts`, `packages/modules/src/index.ts` and `services/dashboard/public/index.html`: a running service shows as `up` or `degraded`, a stopped one as `down`, and a hook shows as `hook.<name>` in the deps column only for the kinds `http` and `llm`.
+- The avatar driver was run against a UDP socket in a test, not against an avatar app. The three registration edits the page describes were not made and run.
+- The service example's three-file module registration (folder, manifest entry, Compose service) was described from the existing services and not built.
+- The model-server page's `llm` settings were checked against the provider code and the stub, not against vLLM, llama.cpp or OpenRouter.

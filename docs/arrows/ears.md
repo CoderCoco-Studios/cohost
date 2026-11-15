@@ -4,7 +4,7 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 ## Status
 
-**AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone.
+**AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone. The docs site's extension guides added EARS-EX-001 to EARS-EX-007 (the example audio clients, the `curl` script and the conversion scripts), implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent), not yet audited; the spec file now holds 100 specs (96 `[x]`, 2 `[ ]`, 2 `[D]`).
 
 ## Design
 
@@ -29,7 +29,7 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (93 specs: 89 `[x]`, 2 `[ ]`, 2 `[D]`; the gaps are the desktop helper, EARS-SRC-014 and 015; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
+- docs/intent/ears/ears-specs.md (100 specs: 96 `[x]`, 2 `[ ]`, 2 `[D]`; the gaps are the desktop helper, EARS-SRC-014 and 015; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Spec Coverage
 
@@ -82,4 +82,5 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 None.
 
 ### Should Fix
+- Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
 The desktop capture helper (EARS-SRC-014, 015, CONN-DESK-001) is not built; EARS-SRC-016 follows when it writes frames.

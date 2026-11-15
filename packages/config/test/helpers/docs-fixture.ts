@@ -24,7 +24,7 @@ const fmOf = (title: string, track: string, extra: Record<string, string> = {}) 
   title, description: `About ${title}.`, track, ...extra,
 });
 
-const LLD = `---
+export const LLD = `---
 parent: high-level-design
 prefix: DOCS
 ---
@@ -75,6 +75,20 @@ Why the docs site exists.
 | How specs work | \`project/spec-driven.md\` | x |
 | Verification log | \`project/verification-log.md\` | x |
 
+## Extension guides
+
+| Page | Task | Examples | Verified by |
+| --- | --- | --- | --- |
+| \`advanced/extend/index.md\` | Choose a route | none | x |
+
+| Task | Python | TypeScript | Rust | Any language with curl |
+| --- | --- | --- | --- | --- |
+| Add a service | — | — | — | — |
+
+| Directory | Holds | Owning segment |
+| --- | --- | --- |
+| \`examples/modules/\` | The reference servers (\`server.py\`) | region-hooks |
+
 ${themeSection()}
 ## Decisions & Alternatives
 `;
@@ -124,6 +138,8 @@ export default defineConfig({
 ${THEME_CONFIG_EXTRA}});
 `;
 
+export const MODULES_README = "# Modules\n\nFiles: `server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`.\n\n```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n";
+
 const stepPage = (title: string) =>
   page(fmOf(title, "simple"), `# ${title}\n\nYou will have it working.\n\n## What you need\n\nA PC.\n\n1. Do it.\n\n## How you know it worked\n\nYou see it.\n\n## If it didn't\n\nSee [troubleshooting](../troubleshooting.md).`);
 
@@ -170,7 +186,7 @@ export function baseFiles(): Record<string, string> {
     "docs/advanced/dev-setup.md": page(fmOf("Developer setup", "advanced"), "# Developer setup\n\nBuild it."),
     "docs/advanced/extend/index.md": page(
       fmOf("Ways to extend cohost", "advanced", { "glossary-skip": "[event]" }),
-      "# Ways to extend cohost\n\nA service built on `@cohost/bus` (TypeScript) or `crates/cohost-bus` (Rust) is the supported way to add a service. The Rust route has no example yet.\n\nA process on neither client, such as one written in Python, is not a supported route: it gets no event validation, no dashboard control and no health reporting.",
+      "# Ways to extend cohost\n\nA service built on `@cohost/bus` (TypeScript) or `crates/cohost-bus` (Rust) is the supported way to add a service. See [Add a TypeScript service](typescript-service.md) and [Rust bus client](rust-bus.md).\n\nA process on neither client, such as one written in Python, is not a supported route: it gets no event validation, no dashboard control and no health reporting.\n\nA language other than Python, TypeScript and Rust has no tested example.\n\n| Task | Python | TypeScript | Rust | Any language with curl |\n| --- | --- | --- | --- | --- |\n| Add a service | — | — | — | — |",
     ),
     "docs/advanced/reference/config.md": page(fmOf("Configuration", "advanced"), "# Configuration\n\n" + cfgNames.map((n) => `- \`${n}\``).join("\n")),
     "docs/advanced/reference/env.md": page(fmOf("Environment and ports", "advanced"), "# Environment and ports\n\n" + envNames.map((n) => `- \`${n}\``).join("\n")),
@@ -211,8 +227,9 @@ Read the [docs](https://codercoco-studios.github.io/cohost/).
 
 AGPL-3.0-only.
 `,
+    "crates/cohost-bus/Cargo.toml": '[package]\nname = "cohost-bus"\nversion = "0.0.0"\n',
     "examples/README.md": "# Examples\n\n- `modules/`: a runnable brain-hook server.\n\n[Docs](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n",
-    "examples/modules/README.md": "# Modules\n\nFiles: `server.py`, `fixtures/`, `schemas/`.\n\n```sh\npython3 server.py\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n",
+    "examples/modules/README.md": MODULES_README,
     "examples/modules/server.py": "print('hi')\n",
     ...themeFiles(),
   };

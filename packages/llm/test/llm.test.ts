@@ -52,6 +52,50 @@ test("ollama: images on a message are sent with it", async () => {
   assert.deepEqual((lastBody.messages as { images?: string[] }[])[0]!.images, ["QUJD"]);
 });
 
+// @spec LLM-VIS-002
+test("openai-compatible: images on a message are not sent; the rest of the message is", async () => {
+  const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1` } }), { warn: () => {} });
+  await p.chat([{ role: "system", content: "persona" }, { role: "user", content: "what is this?", images: ["QUJD"] }]);
+  assert.equal(JSON.stringify(lastBody).includes("images"), false, "no `images` key anywhere in the request body");
+  assert.deepEqual(lastBody.messages, [{ role: "system", content: "persona" }, { role: "user", content: "what is this?" }]);
+});
+
+// @spec LLM-VIS-003
+test("openai-compatible, claude and bedrock: one warning per provider instance when images are dropped, none for messages without images", async () => {
+  const warned = () => { const w: string[] = []; return { w, log: { warn: ((_o: unknown, m?: string) => { w.push(m ?? String(_o)); }) as never } }; };
+  const withImage = [{ role: "user" as const, content: "look", images: ["QUJD"] }];
+  const o = warned();
+  const openai = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1` } }), o.log);
+  await openai.chat([{ role: "user", content: "plain" }]);
+  assert.equal(o.w.length, 0);
+  await openai.chat(withImage);
+  await openai.chat(withImage);
+  assert.equal(o.w.length, 1);
+  const c = warned();
+  const anth = new AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }), c.log);
+  (anth as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }) } } };
+  await anth.chat(withImage);
+  await anth.chat(withImage);
+  assert.equal(c.w.length, 1);
+  const b = warned();
+  const bed = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }), b.log);
+  (bed as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }) } } };
+  await bed.chat(withImage);
+  await bed.chat(withImage);
+  assert.equal(b.w.length, 1);
+  const again = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1` } }), o.log);
+  await again.chat(withImage);
+  assert.equal(o.w.length, 2, "a new provider instance warns again");
+});
+
+// @spec LLM-CLAUDE-014
+test("claude and bedrock: the SDK client is built with maxRetries 2", () => {
+  const a = new AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }));
+  assert.equal((a as unknown as { client: { maxRetries: number } }).client.maxRetries, 2);
+  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
+  assert.equal((b as unknown as { client: { maxRetries: number } }).client.maxRetries, 2);
+});
+
 // @spec LLM-PING-002, LLM-PING-005
 test("ping failure records why, including the auth hint", async () => {
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${base}/v1`, api_key: "bad" } }));

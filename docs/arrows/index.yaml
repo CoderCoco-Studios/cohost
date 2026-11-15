@@ -97,7 +97,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "51 specs, all [x]. No open gaps. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
+    next: "54 specs, all [x]. No open gaps. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
     drift: null
 
   region-hooks:

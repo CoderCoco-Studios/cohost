@@ -15,7 +15,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
-import { urls, type Config } from "@cohost/config";
+import { createLogger, urls, type Config, type Logger } from "@cohost/config";
 import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 import { MockProvider, HashEmbedder } from "./mock.js";
 export type { Config };
@@ -24,7 +24,7 @@ export { MockProvider, HashEmbedder };
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
-  /** Base64 images for a vision model; the Ollama provider sends them with the message (LLM-VIS-001). */
+  /** Base64 images for a vision model; only the Ollama provider sends them with the message (LLM-VIS-001); the others drop them (LLM-VIS-002, LLM-VIS-003). */
   images?: string[];
 }
 export interface ChatOptions {
@@ -62,12 +62,33 @@ const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 /** The caller's signal when it passed one (it wins), otherwise `llm.timeout_ms` (CFG-SCH-013). */
 const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(cfg.timeout_ms); // @spec LLM-CHAT-008
 
-export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
+/** The one logger method a provider uses. */
+export type ProviderLog = Pick<Logger, "warn">;
+
+/**
+ * Removes `images` from messages for a provider that cannot send them, and warns the first time it does so (one warning per
+ * provider instance, not per call).
+ */
+// @spec LLM-VIS-003
+class ImageDropper {
+  private warned = false;
+  constructor(private provider: string, private log?: ProviderLog) {}
+  strip(messages: ChatMessage[]): ChatMessage[] {
+    if (!messages.some((m) => m.images?.length)) return messages;
+    if (!this.warned) {
+      this.warned = true;
+      (this.log ??= createLogger("llm")).warn({ provider: this.provider }, "this provider does not support images; images on messages are dropped");
+    }
+    return messages.map(({ images: _images, ...rest }) => rest);
+  }
+}
+
+export function createChatProvider(cfg: Config["llm"], log?: ProviderLog): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
   switch (cfg.provider) {
     case "ollama": return new Ollama(cfg);
-    case "openai": return new OpenAICompatible(cfg);
-    case "anthropic": return new AnthropicProvider(cfg);
-    case "bedrock": return new BedrockProvider(cfg);
+    case "openai": return new OpenAICompatible(cfg, log);
+    case "anthropic": return new AnthropicProvider(cfg, log);
+    case "bedrock": return new BedrockProvider(cfg, log);
     case "mock": return new MockProvider(cfg);
   }
 }
@@ -139,9 +160,11 @@ export class OpenAICompatible implements ChatProvider {
   readonly model: string;
   lastError?: string;
   private base: string;
-  constructor(private cfg: Config["llm"]) {
+  private images: ImageDropper;
+  constructor(private cfg: Config["llm"], log?: ProviderLog) {
     this.model = cfg.model;
     this.base = cfg.openai.base_url.replace(/\/+$/, "");
+    this.images = new ImageDropper(this.name, log);
   }
 
   private headers(): Record<string, string> { // @spec LLM-CHAT-003
@@ -156,7 +179,7 @@ export class OpenAICompatible implements ChatProvider {
       headers: this.headers(),
       body: JSON.stringify({
         model: this.cfg.model,
-        messages,
+        messages: this.images.strip(messages), // @spec LLM-VIS-002, LLM-VIS-003
         stream: false,
         temperature: opts.temperature ?? this.cfg.temperature,
         max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
@@ -189,6 +212,8 @@ export class OpenAICompatible implements ChatProvider {
  */
 /** The smallest `max_tokens` the Claude API accepts. */
 const CLAUDE_MIN_MAX_TOKENS = 1;
+/** Retries the SDK makes of a failed Claude request (the SDK's own default, stated so the spec pins it). */
+const CLAUDE_MAX_RETRIES = 2;
 
 abstract class ClaudeBase implements ChatProvider {
   abstract readonly name: string;
@@ -197,9 +222,15 @@ abstract class ClaudeBase implements ChatProvider {
   protected abstract client: Anthropic | AnthropicBedrockMantle;
   protected abstract serverFallbacks: boolean;
 
-  constructor(protected cfg: Config["llm"]) { this.model = cfg.model; }
+  private images: ImageDropper;
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  constructor(protected cfg: Config["llm"], provider: string, log?: ProviderLog) {
+    this.model = cfg.model;
+    this.images = new ImageDropper(provider, log);
+  }
+
+  async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+    const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
     const turns: Anthropic.MessageParam[] = messages
       .filter((m): m is ChatMessage & { role: "user" | "assistant" } => m.role !== "system")
@@ -234,10 +265,10 @@ export class AnthropicProvider extends ClaudeBase {
   readonly name = "anthropic";
   protected client: Anthropic;
   protected serverFallbacks: boolean;
-  constructor(cfg: Config["llm"]) {
-    super(cfg);
+  constructor(cfg: Config["llm"], log?: ProviderLog) {
+    super(cfg, "anthropic", log);
     // Falls back to ANTHROPIC_API_KEY / an `ant auth login` profile when no key is configured.
-    this.client = new Anthropic(cfg.claude.api_key ? { apiKey: cfg.claude.api_key } : {}); // @spec LLM-CLAUDE-009
+    this.client = new Anthropic({ ...(cfg.claude.api_key ? { apiKey: cfg.claude.api_key } : {}), maxRetries: CLAUDE_MAX_RETRIES }); // @spec LLM-CLAUDE-009, LLM-CLAUDE-014
     this.serverFallbacks = cfg.claude.fallbacks;
   }
   async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
@@ -259,10 +290,10 @@ export class BedrockProvider extends ClaudeBase {
   readonly name = "bedrock";
   protected client: AnthropicBedrockMantle;
   protected serverFallbacks = false; // @spec LLM-CLAUDE-008
-  constructor(cfg: Config["llm"]) {
-    super(cfg);
+  constructor(cfg: Config["llm"], log?: ProviderLog) {
+    super(cfg, "bedrock", log);
     // AWS credentials come from the usual places: env vars, profile, instance role.
-    this.client = new AnthropicBedrockMantle(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {}); // @spec LLM-CLAUDE-009
+    this.client = new AnthropicBedrockMantle({ ...(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {}), maxRetries: CLAUDE_MAX_RETRIES }); // @spec LLM-CLAUDE-009, LLM-CLAUDE-014
   }
   readonly pingIsNominal = true; // @spec LLM-PING-006
   async ping(): Promise<boolean> { return true; } // @spec LLM-PING-004 (no cheap probe on Bedrock; errors surface on first chat)

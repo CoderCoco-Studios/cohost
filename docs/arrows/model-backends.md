@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-**AUDITED** — 51 specs: 51 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`).
+**AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`).
 
 ## References
 
@@ -15,7 +15,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (51 specs, prefix LLM: 51 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (54 specs, prefix LLM: 54 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)
@@ -52,21 +52,21 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 |----------|----------|-------------|----------|------|----------------|
 | Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 2 |
 | Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 10 | 0 | 0 | 10 |
-| Vision | LLM-VIS-001 | 1 | 0 | 0 | 1 |
+| Vision | LLM-VIS-001 to LLM-VIS-003 | 3 | 0 | 0 | 3 |
 | Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
-| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-013 | 13 | 0 | 0 | 13 |
+| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-014 | 14 | 0 | 0 | 14 |
 | Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
 
-**Summary:** 51 of 51 specs implemented; 0 deferred; 0 gaps. 49 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
+**Summary:** 54 of 54 specs implemented; 0 deferred; 0 gaps. 52 carry a test `@spec` annotation; implemented without one: LLM-IF-001, LLM-IF-003 (verified by the type system, the exhaustive `switch`, or a test that cites a neighbouring ID).
 
 ## Key Findings
 
 1. **Claude/Bedrock wire surface is typed by the installed SDK.** `server-side-fallback-2026-07-01`, `fallbacks: "default"`, `output_config` and `AnthropicBedrockMantle` exist in the lockfile-pinned `@anthropic-ai/sdk` 1.8.0 and `@anthropic-ai/bedrock-sdk` 1.1.2 types, and `tsc -b` compiles the request. `backends.test.ts` replays recorded responses through the real clients.
 2. **The stop-string contract has four parts in three segments** — working-memory renders the tags, cortex frames the prompt and parses the reply, this package sends the stops (LLD "Stop sequences and the transcript coupling"). `parseReply`'s first-line rule in `services/cortex/src/prompt.ts` is what makes the spoken line correct; the stops only cut generation early. working-memory owns the tags (WM-TRANS-006); LLM-STOP-007 derives the stops from the export (`TRANSCRIPT_TAGS`, WM-TRANS-009), and `@cohost/llm` depends on `@cohost/working-memory`. `services/cortex/test/transcript-stops.test.ts` checks the pair at the cortex level.
 3. **Mock is reported by cortex, hooks and the reflect job** — cortex warns and reports `mode: mock`; `llm`-kind hooks warn once at construction (HOOK-WARN-004) and so does the reflect job (MEM-REFLECT-010); salience/affect heartbeats hard-code `live` (LLM-MOCK-005).
-4. **Requests are bounded; there are no retries in this package** — Ollama/OpenAI `fetch` calls and both pings take `AbortSignal.timeout(llm.timeout_ms)` when the caller passes no signal, and the Claude path passes the SDK `timeout` request option (`requestSignal`; LLM-CHAT-008). The Claude SDK keeps its own default retries.
+4. **Requests are bounded; there are no retries in this package** — Ollama/OpenAI `fetch` calls and both pings take `AbortSignal.timeout(llm.timeout_ms)` when the caller passes no signal, and the Claude path passes the SDK `timeout` request option (`requestSignal`; LLM-CHAT-008). The Claude and Bedrock SDK clients retry a failed request at most twice, stated as `maxRetries: 2` (LLM-CLAUDE-014).
 5. **Bedrock `ping` is always true**, so a bad credential reads as a healthy `llm` dependency until the first chat fails; the provider exposes `pingIsNominal = true` (LLM-PING-006) and cortex says so in its heartbeat `detail` (CTX-HEALTH-004).
 6. **The caller's `maxTokens` is honoured on Claude** (LLM-CLAUDE-003); `temperature` is never sent.
 7. **Annotation placement** — `@spec` comments in `src/` are trailing comments on the entry-point line.

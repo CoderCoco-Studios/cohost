@@ -13,6 +13,7 @@ function setup(store: "memory" | "postgres" = "postgres") {
   const hook = { run: async (input: { viewer: string }) => { events.push(`hook:${input.viewer}`); return { ops: [] }; } };
   const store_ = Object.assign(Object.create(mem) as InMemoryStore, {
     init: async () => { events.push("init"); },
+    connect: async () => { events.push("connect"); },
     close: async () => { events.push("close"); },
   });
   return { cfg, mem, store: store_, log, lines, hook, events };
@@ -25,7 +26,7 @@ test("consolidate runs one pass over every viewer with a dirty note regardless o
   await t.mem.setMeta(META_SHUTDOWN_RUN_OWED, "true");
   const res = await runConsolidate({ cfg: t.cfg, store: t.store, hook: t.hook, log: t.log });
   assert.deepEqual(res, { status: "completed", viewers: 2, notes: 2 });
-  assert.deepEqual(t.events, ["init", "hook:amy", "hook:bob", "close"], "no waiting for the cortex");
+  assert.deepEqual(t.events, ["connect", "hook:amy", "hook:bob", "close"], "no waiting for the cortex");
   assert.equal(await t.mem.getMeta(META_SHUTDOWN_RUN_OWED), "false");
   assert.ok(await t.mem.getMeta(META_LAST_CONSOLIDATION));
 });
@@ -62,9 +63,17 @@ test("consolidate propagates a failure (the entry point exits 1) after closing t
 });
 
 // @spec MEM-CONSOL-012
-test("consolidate fails when the store cannot initialise, closing it", async () => {
+test("consolidate fails when the store cannot be reached, closing it", async () => {
   const t = setup();
-  t.store.init = async () => { throw new Error("no postgres"); };
+  t.store.connect = async () => { throw new Error("no postgres"); };
   await assert.rejects(runConsolidate({ cfg: t.cfg, store: t.store, hook: t.hook, log: t.log }), /no postgres/);
   assert.equal(t.events.at(-1), "close");
+});
+
+// @spec MEM-CONSOL-017
+test("consolidate opens the store with connect: no init, so no DDL and no embedding probe", async () => {
+  const t = setup();
+  await runConsolidate({ cfg: t.cfg, store: t.store, hook: t.hook, log: t.log });
+  assert.equal(t.events.includes("init"), false);
+  assert.equal(t.events[0], "connect");
 });

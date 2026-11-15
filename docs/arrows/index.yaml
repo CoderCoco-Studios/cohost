@@ -205,7 +205,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "128 specs, all [x]. No open gaps."
+    next: "129 specs, all [x]. No open gaps."
     drift: null
 
   cortex:

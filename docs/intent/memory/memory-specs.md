@@ -152,6 +152,7 @@ Design: [memory-design.md](memory-design.md). Prefix `MEM`. `[x]` = implemented,
 - [x] **MEM-CONSOL-014**: When a consolidation pass completes, the memory service shall record in `meta` `notes.last_consolidation` the completion time and the numbers of viewers and notes processed. <!-- test: services/memory/test/consolidation.test.ts, services/memory/test/consolidation.test.ts -->
 - [x] **MEM-CONSOL-015**: When the memory service has finished starting, it shall count dirty notes and schedule a consolidation pass when the count is at or above `brain.memory.notes.dirty_threshold`. <!-- test: services/memory/test/scheduler.test.ts, services/memory/test/startup.test.ts -->
 - [x] **MEM-CONSOL-016**: When a consolidation pass completes, it shall delete deletion records without a reason whose deletion time is older than `brain.memory.notes.deleted_retention_days` (default 30), and shall keep deletion records with a reason until the owner restores them. <!-- test: services/memory/test/consolidation.test.ts, services/memory/test/consolidation.test.ts, services/memory/test/memory.test.ts, services/memory/test/store-contract.ts -->
+- [x] **MEM-CONSOL-017**: When the `consolidate` command opens the Postgres store, it shall check that the tables `memories` and `meta` exist and shall run no DDL and make no embedding-size probe, and when the tables are missing it shall fail with a message to start the memory service once. <!-- test: services/memory/test/consolidate-run.test.ts -->
 
 ## Viewer notes: surfacing to the cortex
 

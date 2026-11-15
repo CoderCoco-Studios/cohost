@@ -7,10 +7,11 @@ import { createAudioPlayer, type AudioPlayer, type AudioResource } from "@discor
 import { GatewayIntentBits } from "discord.js";
 import { ConnectorRegistrar, FrameSequencer, FrameTracker, type Bus, type CapabilityEntry } from "@cohost/bus";
 import type { Config } from "@cohost/config";
-import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
+import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { createDiscordVoiceSession, type DiscordVoiceDeps } from "@cohost/shared/discord-voice";
 import { SpeakerCapture, IN_FORMAT } from "./capture.js";
 import { connectorHealth, connectorPlan, readToken } from "./health.js";
+import { createClipHandler, nullPlayout, type ClipTarget } from "./inject.js";
 import { Playout, OUT_FORMAT } from "./playout.js";
 
 /** Source and sink tag of this connector (CONN-DISC-005). */
@@ -54,17 +55,24 @@ export function createConnectorService(opts: ConnectorServiceOptions = {}): {
       audioOut: () => offered("audio-out"),
     }),
 
-    // @spec CONN-DISC-001, CONN-DISC-002, CONN-DISC-003, CONN-DISC-004, CONN-DISC-005, CONN-DISC-009, CONN-DISC-010, CONN-DISC-011, CONN-HLTH-001, CONN-HLTH-002, CONN-BP-003, CONN-BP-005, CONN-ISO-002
+    // @spec CONN-DISC-001, CONN-DISC-002, CONN-DISC-003, CONN-DISC-004, CONN-DISC-005, CONN-DISC-009, CONN-DISC-010, CONN-DISC-011, CONN-HLTH-001, CONN-HLTH-002, CONN-BP-003, CONN-BP-005, CONN-ISO-002, CONN-INJ-001
     async main({ cfg, bus, log, heartbeat, onStop }) {
       const plan = planOf(cfg);
+      // The test input is taken in every plan, before the first heartbeat state past `starting`; what a clip does depends on the plan.
+      let clipTarget: () => ClipTarget = () => ({ blocked: "connector is starting" });
+      const onInject = createClipHandler({ bus, log, target: () => clipTarget() });
+      await subscribeInject({ bus, group: "connector-discord", handler: onInject, log });
       // @spec CONN-DISC-011
       if (plan === "off") {
+        const discordOff = { playout: nullPlayout(), off: true }; // @spec CONN-INJ-004
+        clipTarget = () => discordOff;
         const idle = startIdle({ heartbeat, log, kind: "off", reason: "connections.discord.enabled is false: idle, no Discord client, nothing registered (mode off)" });
         onStop(() => idle.stop());
         return;
       }
       // @spec CONN-DISC-002
       if (plan === "no-token") {
+        clipTarget = () => ({ blocked: "DISCORD_TOKEN is not set" }); // @spec CONN-INJ-006
         const idle = startIdle({ heartbeat, log, kind: "degraded", reason: "DISCORD_TOKEN is not set" });
         onStop(() => idle.stop());
         return;
@@ -80,6 +88,7 @@ export function createConnectorService(opts: ConnectorServiceOptions = {}): {
         write: (frame) => bus.publishFrame("in", TAG, frame), sequencer, log, createDecoder: opts.createDecoder,
       });
       const cap = capture;
+      clipTarget = () => (voiceReady ? { playout, off: false } : { blocked: reason() ?? "voice connection is not ready" }); // @spec CONN-INJ-003, CONN-INJ-006
 
       // ---- state: what the registration and the heartbeat report
       let settled = false; // the first join attempt has resolved

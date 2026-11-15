@@ -4,7 +4,7 @@ The operator's web UI and HTTP/WebSocket API: live bus feed, controls, personali
 
 ## Status
 
-**AUDITED.** 118 specs: 118 implemented, 0 deferred, 0 gaps. The server side and the page script (run under a stub DOM in `services/dashboard/test/page.test.ts`) are covered by tests; the specs with no test annotation are listed under Coverage notes.
+**AUDITED.** 119 specs: 119 implemented, 0 deferred, 0 gaps. The server side and the page script (run under a stub DOM in `services/dashboard/test/page.test.ts`) are covered by tests; the specs with no test annotation are listed under Coverage notes.
 
 Orientation:
 
@@ -21,7 +21,7 @@ Orientation:
 - docs/intent/dashboard/decisions/standalone-dashboard.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (118 specs, prefix `DASH`: 118 `[x]`, 0 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired and DASH-INJ-007 is a retired placeholder, neither number is reused)
+- docs/intent/dashboard/dashboard-specs.md (119 specs, prefix `DASH`: 119 `[x]`, 0 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired and DASH-INJ-007 is a retired placeholder, neither number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -88,7 +88,7 @@ Orientation:
 | Control gating | DASH-CTRL-001 to DASH-CTRL-008 (006 retired) | 7 | 0 | 0 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
-| Test-input injection | DASH-INJ-001 to DASH-INJ-009 | 9 | 0 | 0 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-010 | 10 | 0 | 0 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
 | Web page | DASH-UI-001 to DASH-UI-023 | 23 | 0 | 0 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-007 | 7 | 0 | 0 |
@@ -96,7 +96,7 @@ Orientation:
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-021 | 21 | 0 | 0 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 
-**Summary:** 118 of 118 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 119 of 119 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

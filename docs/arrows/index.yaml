@@ -60,7 +60,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "47 specs, all [x]. Open question (LLD Open Questions 1): the `connector-discord` unit declares no test input, which obligation 3 requires of every unit; no existing input kind reaches it, so the choice among a new inject target, a new input kind and an exemption is the owner's."
+    next: "47 specs, all [x]. No open gaps; every unit, the Discord connector included, declares a test input."
     drift: null
 
 
@@ -157,7 +157,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "49 specs: 47 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
+    next: "55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/TESTING.md)."
     drift: null
 
   ears:
@@ -265,7 +265,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "118 specs, all [x]. No open gaps. Owner-deferred: visual redesign."
+    next: "119 specs, all [x]. No open gaps. Owner-deferred: visual redesign."
     drift: null
 
   control-plane:
@@ -289,7 +289,7 @@ arrows:
     blocks: []
     blockedBy: []
     detail: deployment.md
-    next: "81 specs: 79 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
+    next: "82 specs: 80 [x], 2 [ ]. Open: DEPLOY-INST-007 and DEPLOY-INST-014 until an installer run is observed. Manual verification: the single-PC WSL2 checklist in docs/TESTING.md."
     drift: null
 
 unmapped:

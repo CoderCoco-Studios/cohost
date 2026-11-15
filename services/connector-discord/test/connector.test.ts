@@ -7,8 +7,8 @@ import { PassThrough } from "node:stream";
 import { GatewayIntentBits } from "discord.js";
 import { VoiceConnectionStatus } from "@discordjs/voice";
 import { encodeFrame, decodeFrame, type Frame, type Registration, type Bus } from "@cohost/bus";
-import { runService } from "@cohost/shared";
-import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
+import { runService, wavWrap } from "@cohost/shared";
+import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { createConnectorService } from "../src/service.js";
 
 /** A bus with an in-memory registry, audio streams and a stop log. */
@@ -19,6 +19,10 @@ class ConnBus extends FakeBus {
   frames: { dir: string; tag: string; frame: Frame }[] = [];
   events: string[] = [];
   failFrames = false;
+  groups: string[] = [];
+  subscribeOpts?: unknown;
+  /** The `inject.request` handler the connector subscribed. */
+  handler?: (ev: never) => void;
   private handlers = new Map<string, (d: ReturnType<typeof decodeFrame>, id: string) => void>();
   private ends: (() => void)[] = [];
   async writeRegistration(reg: Registration) { this.history.push(structuredClone(reg)); this.regs.set(reg.id, structuredClone(reg)); }
@@ -38,6 +42,11 @@ class ConnBus extends FakeBus {
   feed(dir: string, tag: string, f: Frame) { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(encodeFrame(f)), "1-0"); }
   feedRaw(dir: string, tag: string, fields: (string | Buffer)[]) { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(fields), "1-0"); }
   hasTail(dir: string, tag: string) { return this.handlers.has(`${dir}.${tag}`); }
+  async resetGroup(g: string): Promise<void> { this.groups.push(g); }
+  subscribe(opts: unknown, handler: (ev: never) => void): Promise<void> {
+    this.subscribeOpts = opts; this.handler = handler;
+    return new Promise<void>((r) => this.ends.push(r));
+  }
   stop() { this.events.push("bus-stop"); for (const e of this.ends) e(); }
   lastHealth() { return this.health[this.health.length - 1]; }
 }
@@ -494,4 +503,113 @@ test("an audio player error is logged as the warning 'player error' with the err
   assert.ok(warn, "warning logged");
   assert.deepEqual(warn!.obj, { err: "opus exploded" });
   await r.stop();
+});
+
+// ---- test injection (CONN-INJ)
+
+const UPLOAD = "0123456789abcdef0123456789abcdef";
+/** A 16 kHz mono WAV of `ms` milliseconds of non-silent samples. */
+const clip = (ms: number): Buffer => wavWrap(Buffer.alloc((16000 * ms) / 1000 * 2, 7), 16000, 1);
+/** Sends one injected clip to the connector and returns its `inject.result`. */
+async function inject(r: { bus: ConnBus }, bytes: Buffer, over: Record<string, unknown> = {}) {
+  const id = `inj-${r.bus.of("inject.result").length}`;
+  r.bus.uploads.set(UPLOAD, { bytes, ttlMs: 1000 });
+  r.bus.handler!(event("inject.request", { id, target: "connector-discord", kind: "audio", uploadId: UPLOAD, contentType: "audio/wav", remember: false, ...over }) as never);
+  await waitFor(() => r.bus.of("inject.result").some((x) => x.id === id), "inject.result");
+  return r.bus.of("inject.result").find((x) => x.id === id)!;
+}
+
+// @spec CONN-INJ-001
+test("every plan subscribes the connector group to inject.request at start mode latest, before it reports ready, and ignores another target", async () => {
+  for (const o of [{}, { enabled: false }, { token: "" }]) {
+    const r = rig(o);
+    await r.done;
+    assert.deepEqual(r.bus.groups, ["connector-discord"], JSON.stringify(o));
+    assert.deepEqual(r.bus.subscribeOpts, { group: "connector-discord", types: ["inject.request"], start: "latest" });
+    r.bus.handler!(event("inject.request", { id: "x", target: "ears", kind: "audio", uploadId: UPLOAD, remember: false }) as never);
+    await new Promise((x) => setTimeout(x, 20));
+    assert.deepEqual(r.bus.of("inject.result"), [], "a request for another target is not answered");
+    await r.stop();
+  }
+});
+
+// @spec CONN-INJ-001, CONN-INJ-002, CONN-INJ-003
+test("while Ready, an injected 16 kHz mono clip is converted to 48 kHz stereo 20 ms frames, played as one stream on the player, and reported", async () => {
+  const r = await up();
+  const out = await inject(r, clip(100));
+  assert.equal(out.ok, true);
+  assert.match(out.detail!, /played 5 frames \(100 ms\)/);
+  assert.equal(r.player.played.length, 1);
+  await waitFor(() => r.player.played[0]!.chunks.length === 5, "chunks");
+  assert.deepEqual(r.player.played[0]!.chunks.map((c) => c.length), [3840, 3840, 3840, 3840, 3840]);
+  assert.ok(r.player.played[0]!.stream.writableEnded, "the last frame ends the stream");
+  assert.deepEqual(r.bus.frames, [], "the clip is played, not written to any audio stream");
+  await r.stop();
+});
+
+// @spec CONN-INJ-002
+test("an injected clip is a line like any other: a flush frame stops it, and a second clip plays after the first", async () => {
+  const r = await up();
+  await inject(r, clip(100));
+  assert.equal(r.player.stops, 0);
+  r.bus.feed("out", "discord", { epoch: 9, seq: 0, rate: 48000, ch: 2, pcm: Buffer.alloc(0), utt: "m", flush: true });
+  assert.equal(r.player.stops, 1, "the flush stops the injected line");
+  const again = await inject(r, clip(100));
+  assert.equal(again.ok, true);
+  assert.equal(r.player.played.length, 2, "the next clip starts a fresh stream");
+  await r.stop();
+});
+
+// @spec CONN-INJ-004, CONN-DISC-011
+test("where Discord is off an injected clip runs through the playout against a player that sends nothing and the answer says what it would have played; nothing is registered", async () => {
+  const r = rig({ enabled: false });
+  await r.done;
+  const out = await inject(r, clip(100));
+  assert.equal(out.ok, true);
+  assert.match(out.detail!, /Discord is off/);
+  assert.match(out.detail!, /would have played 5 frames \(100 ms\)/);
+  assert.equal(r.player.played.length, 0, "no real player is touched");
+  assert.equal(r.reg(), undefined);
+  assert.equal(r.bus.hasTail("out", "discord"), false);
+  await waitFor(() => r.bus.lastHealth()?.state === "ready", "ready heartbeat");
+  assert.equal(r.bus.lastHealth()?.mode, "off");
+  const longer = await inject(r, clip(10_000));
+  assert.equal(longer.ok, true, "a clip of exactly the 10 s cap is played");
+  await r.stop();
+});
+
+// @spec CONN-INJ-005
+test("a clip that is not a 16-bit PCM WAV, holds no samples or is longer than 10 s is answered not ok with the reason and plays nothing", async () => {
+  const r = await up();
+  const not = await inject(r, Buffer.from("this is not a wav file at all"));
+  assert.equal(not.ok, false);
+  assert.match(not.detail!, /RIFF\/WAVE/);
+  const empty = await inject(r, wavWrap(Buffer.alloc(0), 16000, 1));
+  assert.equal(empty.ok, false);
+  assert.match(empty.detail!, /no samples/);
+  const long = await inject(r, clip(10_020));
+  assert.equal(long.ok, false);
+  assert.match(long.detail!, /longer than 10 s/);
+  assert.equal(r.player.played.length, 0);
+  await r.stop();
+});
+
+// @spec CONN-INJ-006, CONN-DISC-002
+test("with DISCORD_TOKEN unset, or while the voice connection is not Ready, an injected clip is answered not ok with the heartbeat's reason", async () => {
+  const noToken = rig({ token: "" });
+  await noToken.done;
+  const a = await inject(noToken, clip(100));
+  assert.equal(a.ok, false);
+  assert.equal(a.detail, "DISCORD_TOKEN is not set");
+  await noToken.stop();
+
+  const joining = rig({ failJoins: 99 });
+  await joining.done;
+  joining.client.emit("ready");
+  await waitFor(() => joining.reg()?.state === "degraded", "degraded");
+  const b = await inject(joining, clip(100));
+  assert.equal(b.ok, false);
+  assert.match(b.detail!, /voice join failed|voice connection is not ready/);
+  assert.equal(joining.player.played.length, 0);
+  await joining.stop();
 });

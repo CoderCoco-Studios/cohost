@@ -123,7 +123,7 @@ control.paused / control.muted / control.epoch
 
 ## Test injection (`createInjectHandler`)
 
-chat, eyes and ears take `inject.request` through one handler:
+chat, eyes, ears and connector-discord take `inject.request` through one handler:
 
 ```ts
 createInjectHandler({

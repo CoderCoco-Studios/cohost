@@ -4,7 +4,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-**AUDITED** — 81 specs: 79 implemented, 0 deferred, 2 gaps (DEPLOY-INST-007 and DEPLOY-INST-014: the installer's host Rust build and toolchain steps match `scripts/install.sh`, but no run of the installer has exercised them).
+**AUDITED** — 82 specs: 80 implemented, 0 deferred, 2 gaps (DEPLOY-INST-007 and DEPLOY-INST-014: the installer's host Rust build and toolchain steps match `scripts/install.sh`, but no run of the installer has exercised them).
 
 ## Orientation
 
@@ -23,7 +23,7 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (81 specs, prefix `DEPLOY`: 79 `[x]`, 2 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (82 specs, prefix `DEPLOY`: 80 `[x]`, 2 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -66,7 +66,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), exa
 
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-023 (no 016) | 22 | 22 | 0 | 0 |
+| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-024 (no 016) | 23 | 23 | 0 | 0 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 12 | 0 | 2 |
@@ -78,7 +78,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), exa
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-005 | 5 | 5 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 79 of 81 specs implemented; 0 deferred; 2 open (DEPLOY-INST-007, DEPLOY-INST-014). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 80 of 82 specs implemented; 0 deferred; 2 open (DEPLOY-INST-007, DEPLOY-INST-014). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

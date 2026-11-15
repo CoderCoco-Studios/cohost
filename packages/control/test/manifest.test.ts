@@ -40,11 +40,11 @@ test("flags and defaults match the spec", () => {
   assert.equal(findService("redis")!.pnpmFilter, undefined);
   assert.equal(findService("redis")!.infra, true);
   assert.equal(findService("postgres")!.infra, true);
-  for (const id of ["salience", "affect", "cortex", "voice", "avatar", "chat", "eyes", "ears", "mouth"]) {
+  for (const id of ["salience", "affect", "cortex", "voice", "avatar", "chat", "eyes", "ears", "mouth", "connector-discord"]) {
     assert.equal(findService(id)!.defaultMode, "fresh", id);
     assert.deepEqual(findService(id)!.groups, [id], id);
   }
-  for (const id of ["memory", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
+  for (const id of ["memory", "redis", "postgres", "ollama", "tts", "stt"]) assert.equal(findService(id)!.defaultMode, "resume", id);
   for (const id of ["redis", "postgres", "ollama", "tts", "stt"]) assert.deepEqual(findService(id)!.groups, [], id);
   assert.deepEqual(findService("memory")!.groups, ["memory", "memory-recall", "memory-notes"]);
   assert.deepEqual(findService("cortex")!.groups, ["cortex"]);
@@ -52,9 +52,7 @@ test("flags and defaults match the spec", () => {
   assert.equal(findService("mouth")!.composeName, "mouth");
   assert.equal(findService("connector-discord")!.composeName, "connector-discord");
   assert.equal(findService("connector-discord")!.pnpmFilter, "@cohost/connector-discord");
-  assert.deepEqual(findService("connector-discord")!.groups, [], "the connector subscribes to no stream");
-  assert.equal(findService("connector-discord")!.defaultMode, "resume");
-  assert.equal(findService("connector-discord")!.infra, false);
+    assert.equal(findService("connector-discord")!.infra, false);
   assert.deepEqual(findService("connector-discord")!.isolatedEnv, { CONNECTIONS_DISCORD_ENABLED: "false" });
   assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" });
   assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });

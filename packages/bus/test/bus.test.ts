@@ -316,6 +316,7 @@ test("inject.request / inject.result are catalogued and validated", () => {
   const req = { id: "a", target: "eyes", kind: "image", uploadId: "0123456789abcdef0123456789abcdef", contentType: "image/png", remember: false };
   assert.ok(EventPayloads["inject.request"].safeParse(req).success);
   assert.ok(EventPayloads["inject.request"].safeParse({ id: "a", target: "chat", kind: "text", text: "x", meta: { user: "u", platform: "youtube", isMod: true }, remember: true }).success);
+  assert.ok(EventPayloads["inject.request"].safeParse({ ...req, target: "connector-discord", kind: "audio" }).success);
   assert.equal(EventPayloads["inject.request"].safeParse({ ...req, target: "voice" }).success, false);
   assert.equal(EventPayloads["inject.request"].safeParse({ ...req, kind: "video" }).success, false);
   const { remember: _r, ...noRemember } = req;

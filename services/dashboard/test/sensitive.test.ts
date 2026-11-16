@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { PRESENTATION } from "@cohost/config";
+import { changedSensitiveKeys, sameEffective } from "../src/sensitive.js";
 import { createDashboardHandler } from "../src/routes.js";
 import { guardFullSurface } from "../src/host.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
@@ -105,9 +106,14 @@ test("only keys whose value differs are named: an unchanged sensitive key resubm
   const r = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "host.docker.internal", "obs.port": 4455, temperature: 0.3 } });
   assert.equal(r.status, 200, await r.clone().text());
   assert.match(t.text(), /temperature: 0\.3/);
+  // a port sent as text is not the number the file holds and the editor does not coerce it (it would answer 400), so it is a
+  // change by type: the token is asked for, and nothing is written
+  const before = t.text();
   const again = await t.put("/config/vision", { etag: t.etag(), values: { "obs.port": "4455", "obs.host": "host.docker.internal", width: 640 } });
-  // the editor may refuse a text port on its own (a 400); what matters here is that the token is not asked for
-  assert.ok(again.status !== 401 && again.status !== 403, `status ${again.status}`);
+  assert.equal(again.status, 403, "no token is configured in this mode");
+  assert.equal(t.text(), before);
+  const noPort = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "host.docker.internal", width: 640 } });
+  assert.ok(noPort.status !== 401 && noPort.status !== 403, `unchanged sensitive keys alone do not ask for the token: ${noPort.status}`);
   const dflt = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://api.openai.com/v1", temperature: 0.5 } });
   assert.equal(dflt.status, 200);
 });
@@ -197,4 +203,37 @@ test("the token is compared as a bearer and the refusal never echoes the submitt
   const t = await boot("token-only");
   const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://SUBMITTED-VALUE.example/v1" } }, "wrong");
   assert.ok(!(await r.text()).includes("SUBMITTED-VALUE"));
+});
+
+// @spec DASH-CTRL-009
+test("sameEffective compares by type and value: the strings \"undefined\" and \"null\" are not undefined and null, a numeric string is not its number, and structures compare deeply", () => {
+  assert.equal(sameEffective(undefined, "undefined"), false);
+  assert.equal(sameEffective(null, "null"), false);
+  assert.equal(sameEffective(undefined, undefined), true);
+  assert.equal(sameEffective(4455, "4455"), false);
+  assert.equal(sameEffective(4455, 4455), true);
+  assert.equal(sameEffective("", 0), false);
+  assert.equal(sameEffective(false, "false"), false);
+  assert.equal(sameEffective(["a", "b"], ["a", "b"]), true);
+  assert.equal(sameEffective(["a", "b"], ["b", "a"]), false);
+  assert.equal(sameEffective({ a: 1, b: [1] }, { b: [1], a: 1 }), true);
+  assert.equal(sameEffective({ a: 1 }, { a: "1" }), false);
+});
+
+// @spec DASH-CTRL-009, MOD-CFG-007
+test("changedSensitiveKeys decides unchanged from what the write would store: the same number or string is unchanged, a numeric string for a numeric key and any other differing value are changes", () => {
+  const key = "vision.obs.port";
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.port": 4455 }), [], "the number already in the file");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.port": 4456 }), [key]);
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.port": "4455" }), [key], "a string is not the number the file holds, and the editor does not coerce it");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.port": "undefined" }), [key]);
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.port": "null" }), [key]);
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.host": "host.docker.internal" }), []);
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.host": "" }), [], "an empty host reads back as the default the file already holds, so the write changes nothing");
+  for (const odd of ["undefined", "null", "NaN", "false", "0"]) assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.host": odd }), ["vision.obs.host"], `host ${JSON.stringify(odd)}`);
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.host": ["host.docker.internal"] }), ["vision.obs.host"], "an array is not the string");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "vision", { "obs.host": { a: 1 } }), ["vision.obs.host"], "an object is not the string");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "mouth", { "outputs.http.url": "" }), [], "the empty string the file holds");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "mouth", { "outputs.http.url": null }), ["mouth.outputs.http.url"], "null is a change against a key that holds a value, the empty string included");
+  assert.deepEqual(changedSensitiveKeys(EXAMPLE, "mouth", { "outputs.http.url": 0 }), ["mouth.outputs.http.url"]);
 });

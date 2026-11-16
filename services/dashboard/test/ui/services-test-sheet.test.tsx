@@ -228,3 +228,19 @@ test("a refused isolated start is shown inside its dialog, which stays open; aft
   await user.click(within(screen.getByRole("dialog", { name: "Start voice isolated?" })).getByRole("button", { name: "Cancel" }));
   assert.match(within(screen.getByRole("dialog", { name: "Test voice" })).getByRole("alert").textContent ?? "", /409 busy: stack/);
 });
+
+// @spec MOD-TEST-001, DASH-INJ-010
+test("the Discord connector's row opens a sheet with an audio form that posts to /inject/audio with its own target, and its inject.result shows in the live list", async () => {
+  const connector = { ...UNITS[0]!, id: "connector-discord", test: { inputs: ["audio"], observe: ["inject.result"] } };
+  const m = await mountServices({ control: { enabled: false }, manifest: [...UNITS, connector], services: [...all(), svc("connector-discord")] });
+  const user = userEvent.setup();
+  await user.click(within(rowOf("connector-discord")).getByRole("button", { name: "Test connector-discord" }));
+  const sheet = screen.getByRole("dialog", { name: "Test connector-discord" });
+  assert.equal(within(sheet).getAllByRole("button", { name: "Send audio" }).length, 1);
+  m.app.fetch.on("POST /inject/audio", { status: 202, json: { id: "req-9" } });
+  await user.upload(within(sheet).getByLabelText("Audio, through the real pipeline"), new File([new Uint8Array([1, 2])], "a.wav", { type: "audio/wav" }));
+  await user.click(within(sheet).getByRole("button", { name: "Send audio" }));
+  await waitFor(() => assert.equal(m.app.fetch.callsTo("POST /inject/audio?level=service&target=connector-discord").length, 1));
+  push(m.app, frame("inject.result", { id: "req-9", ok: true, detail: "played 3 frames" }));
+  assert.match(feed().textContent ?? "", /played 3 frames/);
+});

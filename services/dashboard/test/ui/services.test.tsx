@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { SERVICE_MANIFEST } from "@cohost/control";
 import { act, makeApp, screen, userEvent, waitFor, within } from "./helpers/render";
 import { UNITS, beat, mountServices, push, stackMsg, svc } from "./services-fixtures";
 
@@ -374,4 +376,12 @@ test("when the control read fails the screen shows the same error and Retry", as
   assert.ok(within(alert).getByRole("button", { name: "Retry" }) !== null);
   assert.ok(screen.queryByRole("table") === null);
   assert.ok(screen.getByRole("region", { name: "Stack" }) !== null, "the stack card stays");
+});
+
+// @spec DASH-UI-021
+test("the Services screen's source names no manifest unit as a literal (the dashboard's own row and the bus payload samples aside): the list of units comes from GET /services/manifest", () => {
+  const dir = new URL("../../ui/src/screens/services/", import.meta.url);
+  const source = readdirSync(dir).filter((f) => /\.tsx?$/.test(f) && f !== "samples.ts").map((f) => readFileSync(new URL(f, dir), "utf8")).join("\n");
+  const named = SERVICE_MANIFEST.map((d) => d.id).filter((id) => id !== "dashboard").filter((id) => new RegExp(`["'\`]${id}["'\`]`).test(source));
+  assert.deepEqual(named, [], "no unit id appears as a string literal");
 });

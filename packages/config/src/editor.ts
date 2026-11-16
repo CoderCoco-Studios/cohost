@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { parse as parseYaml, parseDocument, isMap, isScalar, stringify, type Document, type YAMLMap } from "yaml";
 import { z } from "zod";
 import { ConfigSchema, SECRET_PATHS } from "./schema.js";
+import { PRESENTATION, type KeyPresentation, type SectionPresentation } from "./presentation.js";
 import { parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, type ConfigIssue } from "./pipeline.js";
 
 type Json = Record<string, unknown>;
@@ -15,19 +16,17 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 // ---------- schema introspection (the schema is the form)
 
 /**
- * Strips defaults, optionals and preprocess wrappers; returns the inner type and the nearest description.
+ * Strips defaults, optionals and preprocess wrappers; returns the inner type.
  * Wrappers are recognised by class (`instanceof`), and each exposes the type it wraps as `def.innerType` (a preprocess is a
  * pipe whose input is a transform and whose output is the schema it feeds).
  */
-function unwrap(s: z.ZodType): { schema: z.ZodType; description?: string } {
-  let description = s.description;
+function unwrap(s: z.ZodType): { schema: z.ZodType } {
   for (;;) {
     let next: z.ZodType | undefined;
     if (s instanceof z.ZodPipe) next = (s.def.out instanceof z.ZodTransform ? s.def.in : s.def.out) as z.ZodType;
     else if (s instanceof z.ZodDefault || s instanceof z.ZodPrefault || s instanceof z.ZodOptional || s instanceof z.ZodNullable || s instanceof z.ZodReadonly || s instanceof z.ZodCatch) next = s.def.innerType as z.ZodType;
-    if (!next) return { schema: s, description };
+    if (!next) return { schema: s };
     s = next;
-    description ??= s.description;
   }
 }
 
@@ -47,8 +46,19 @@ export function schemaAt(path: string): z.ZodType | undefined {
   return cur;
 }
 
-function jsonSchemaOf(s: z.ZodType, path: string[]): Json {
-  const { schema: u, description } = unwrap(s);
+/**
+ * The help of the key at `path` (dotted from the config root) or of a property of an array-of-objects key's items, which
+ * the walk reaches as `<array key>.<property>` (CFG-PRES-008, CFG-PRES-009).
+ */
+function helpAt(path: string[]): string | undefined {
+  const dotted = path.join(".");
+  const own = PRESENTATION.keys[dotted]?.help;
+  if (own !== undefined) return own;
+  return PRESENTATION.keys[path.slice(0, -1).join(".")]?.items?.[path[path.length - 1]!]?.help;
+}
+
+function jsonSchemaOf(s: z.ZodType, path: string[], element = false): Json {
+  const { schema: u } = unwrap(s);
   const out: Json = {};
   // A check's own definition (`_zod.def`) is zod 4's documented way to read a bound and whether it is inclusive.
   const checks = (u._zod.def.checks ?? []).map((c) => c._zod.def as { check: string; value?: number; inclusive?: boolean; minimum?: number; maximum?: number });
@@ -78,20 +88,26 @@ function jsonSchemaOf(s: z.ZodType, path: string[]): Json {
   else if (u instanceof z.ZodEnum) { out.type = "string"; out.enum = u.options; }
   else if (u instanceof z.ZodArray) {
     out.type = "array";
-    out.items = jsonSchemaOf(u.element as z.ZodType, path);
+    out.items = jsonSchemaOf(u.element as z.ZodType, path, true);
     const min = checks.find((c) => c.check === "min_length")?.minimum;
     if (min) out.minItems = min;
   } else if (u instanceof z.ZodRecord) { out.type = "object"; out.additionalProperties = jsonSchemaOf(u.valueType as z.ZodType, path); }
   // any, unknown: no constraint
   const d = s.safeParse(undefined);
   if (d.success && d.data !== undefined && !isObj(d.data)) out.default = d.data;
+  // A group of keys has no help of its own: only a leaf (a scalar or an array) is described.
+  const description = u instanceof z.ZodObject || element ? undefined : helpAt(path);
   if (description) out.description = description;
-  if (SECRET_PATHS.includes(path.join("."))) out["x-secret"] = true;
+  if (!element && SECRET_PATHS.includes(path.join("."))) out["x-secret"] = true;
+  if (!element && PRESENTATION.keys[path.join(".")]?.sensitive) out["x-sensitive"] = true;
   return out;
 }
 
-/** JSON Schema for the section at `section`, generated from its zod schema; secret keys carry `"x-secret": true`. */
-// @spec MOD-CFG-001, MOD-CFG-002
+/**
+ * JSON Schema for the section at `section`, generated from its zod schema; secret keys carry `"x-secret": true`, sensitive
+ * keys `"x-sensitive": true`, and each key's `description` is its presentation help.
+ */
+// @spec MOD-CFG-001, MOD-CFG-002, CFG-PRES-008, CFG-PRES-009, CFG-PRES-010
 export function sectionJsonSchema(section: string): Json {
   const s = schemaAt(section);
   if (!s) throw new Error(`no such config section: ${section}`);
@@ -114,6 +130,34 @@ function leavesOf(section: string): Leaf[] {
   };
   walk(root, []);
   return out;
+}
+
+/** The keys of a section as dotted paths from the config root (a scalar or an array is one key; an array is not descended into). */
+// @spec CFG-PRES-001, CFG-PRES-004
+export function sectionKeyPaths(section: string): string[] {
+  return leavesOf(section).map((l) => l.path.join("."));
+}
+
+/** What `GET /config/schema` serves for one section besides its schema: the section's own presentation and each key's, by relative name. */
+export interface SectionPresentationJoined extends SectionPresentation {
+  keys: Record<string, KeyPresentation>;
+}
+
+/**
+ * The presentation table joined for one section: `title`, `group`, `about` and, where the table gives one, `page`, plus
+ * `keys`, a map from each key's relative name (the names `readSection` uses) to its `{ help, label?, unit?, widget?, items?,
+ * sensitive? }`. A key without an entry is left out, so the page falls back to deriving a label from the path.
+ */
+// @spec MOD-CFG-019, MOD-CFG-020, MOD-CFG-021, CFG-PRES-010
+export function sectionPresentation(section: string): SectionPresentationJoined {
+  const leaves = leavesOf(section);
+  const head = PRESENTATION.sections[section];
+  const keys: Record<string, KeyPresentation> = {};
+  for (const l of leaves) {
+    const k = PRESENTATION.keys[l.path.join(".")];
+    if (k) keys[l.key] = structuredClone(k);
+  }
+  return { ...(head ? structuredClone(head) : ({} as SectionPresentation)), keys };
 }
 
 /** The secret keys of a section, relative to the section like the keys of `readSection`. */

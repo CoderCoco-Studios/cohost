@@ -16,6 +16,7 @@ export { updateSecrets } from "./secrets.js";
 export { writeFileAtomic } from "./atomic.js";
 export { ollamaModels, type OllamaModels } from "./models.js";
 export * from "./editor.js";
+export * from "./presentation.js";
 
 /**
  * Walk up from `start` to the nearest dir containing pnpm-workspace.yaml.

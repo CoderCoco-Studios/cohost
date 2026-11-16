@@ -309,7 +309,7 @@ export const ConfigSchema = z.object({
       remove_emoji: z.boolean().optional(),
     }).prefault({}), // @spec CFG-SCH-029
     /** Read only by the `stub` engine to size its silence; the Kokoro engine ignores it. */
-    sample_rate: z.number().int().positive().default(24000).describe("Sample rate of the silence the stub voice engine returns. Read only by the stub engine; the Kokoro engine ignores it."), // @spec CFG-SCH-026
+    sample_rate: z.number().int().positive().default(24000), // @spec CFG-SCH-026
     fallback: z.object({
       /** Phrases the co-host says when a line fails to play; voice turns each into a clip. Empty turns the feature off. */
       lines: z.array(
@@ -443,9 +443,9 @@ export const ConfigSchema = z.object({
   // @spec CFG-SCH-038
   dashboard: z.object({
     /** The full surface's port; applies at the dashboard's next start. */
-    port: PORT.default(3000).describe("Port of the dashboard's full surface (page, controls, Launch and Stop). Applies at the dashboard's next start."), // @spec CFG-SCH-026
+    port: PORT.default(3000), // @spec CFG-SCH-026
     /** The LAN listener's port (the sink page and audio only); applies at the dashboard's next start. */
-    lan_port: PORT.default(3001).describe("Port of the dashboard's LAN listener (the sink page and audio for a second PC's OBS Browser Source). Applies at the dashboard's next start."), // @spec CFG-SCH-026
+    lan_port: PORT.default(3001), // @spec CFG-SCH-026
     /** Limits of the dashboard's test uploads. */
     inject: z.object({
       max_image_bytes: z.number().int().positive().default(8388608),

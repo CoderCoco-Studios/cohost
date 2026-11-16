@@ -103,8 +103,8 @@ importers:
         specifier: ^14.28.1
         version: 14.28.1
       libsodium-wrappers:
-        specifier: ^0.7.15
-        version: 0.7.16
+        specifier: ^0.8.4
+        version: 0.8.4
       opusscript:
         specifier: ^0.0.8
         version: 0.0.8
@@ -214,8 +214,8 @@ importers:
         specifier: ^14.28.1
         version: 14.28.1
       libsodium-wrappers:
-        specifier: ^0.7.15
-        version: 0.7.16
+        specifier: ^0.8.4
+        version: 0.8.4
       opusscript:
         specifier: ^0.0.8
         version: 0.0.8
@@ -1910,11 +1910,11 @@ packages:
     resolution: {integrity: sha512-dhG34DXATL5hSxJbIexCft8FChFXtmskoZYnoPWjXQuebWYCNkVeV3KkGegCK9CP1oswI/vQibS2GY7Em/sJJA==}
     engines: {node: '>= 8'}
 
-  libsodium-wrappers@0.7.16:
-    resolution: {integrity: sha512-Gtr/WBx4dKjvRL1pvfwZqu7gO6AfrQ0u9vFL+kXihtHf6NfkROR8pjYWn98MFDI3jN19Ii1ZUfPR9afGiPyfHg==}
+  libsodium-wrappers@0.8.4:
+    resolution: {integrity: sha512-mu8aAWucZjTB5O/BtGXtW4e1agy7uHxNYG7zPthmmD1jU43LCDmSWZLN4JhflbdPXj3yDO4lxM1O9hLDgIOXDw==}
 
-  libsodium@0.7.16:
-    resolution: {integrity: sha512-3HrzSPuzm6Yt9aTYCDxYEG8x8/6C0+ag655Y7rhhWZM9PT4NpdnbqlzXhGZlDnkgR6MeSTnOt/VIyHLs9aSf+Q==}
+  libsodium@0.8.4:
+    resolution: {integrity: sha512-lMcYaRi0zcs7tarATsQUYC7rstliIXZuoq0c6zXSgNtSNtdvBgkSegjWhpMJAXzKX3SUSwIp7+zEsob+j3LuRw==}
 
   lodash.snakecase@4.1.1:
     resolution: {integrity: sha512-QZ1d4xoBHYUeuouhEq3lk3Uq7ldgyFXGBhg04+oRLnIz8o9T65Eh+8YdroUwn846zchkA9yDsDl5CVVaV2nqYw==}
@@ -3976,11 +3976,11 @@ snapshots:
 
   klona@2.0.6: {}
 
-  libsodium-wrappers@0.7.16:
+  libsodium-wrappers@0.8.4:
     dependencies:
-      libsodium: 0.7.16
+      libsodium: 0.8.4
 
-  libsodium@0.7.16: {}
+  libsodium@0.8.4: {}
 
   lodash.snakecase@4.1.1: {}
 

@@ -29,7 +29,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 | 1. Client library | connections (+ bus pointer) | Registration, tag validation, frame encode and decode, paced writer, live `XREAD` reader, with a fake Redis. No service yet. |
 | 2. Discord connector | connections, config, control-plane, deployment | `services/connector-discord` reusing `createDiscordVoiceSession` undeafened and unmuted, with a fake Discord session; manifest unit, Compose service and profile, config keys. |
 | 3. ears consumer (built) | ears | Connector source in `earsPlan` and the service, utterance assembler by `spk` with the endpointing of EARS-VAD-*, per-source health, registry liveness for stream and `http` tags. |
-| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; Compose blanks `DISCORD_TOKEN` for ears and mouth; README, installer and `.env.example` name the one bot. |
+| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; Compose passes no Discord token to ears and mouth; README, installer and `.env.example` name the one bot. |
 | 5. Live verification | ears, mouth, connections | Real guild, one bot, kill and restart the connector. |
 
 ## Edge audit (open)

@@ -57,7 +57,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 3. `AvatarDriver` (`types.ts`): contract: `setParams` per frame, `setExpression` on change, `trigger` for gestures (no capability declaration).
 4. `VTubeStudioDriver`: VTS WebSocket API, plugin token in `<configDir>/.vts-token`, parameter injection, hotkey toggling, 5 s reconnect.
 5. `VmcDriver`: hand-rolled OSC over UDP (head quaternion, `A`/`aa` mouth, `Blink`/`blink`, expression blendshape).
-6. `NullDriver`: does nothing and reports connected; the default (also for an unset or empty `AVATAR_DRIVER`) and the isolated-mode choice.
+6. `NullDriver`: does nothing and reports connected; the default (also for an unset or empty `avatar.driver`) and the isolated-mode choice.
 7. `health.ts`: `off` with the null driver, else `live` with `deps.driver` ok/down.
 8. `config/expressions.example.yaml`: per-driver emotion-to-expression/hotkey map and gesture map.
 
@@ -82,7 +82,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 2. **The first VTS pairing does not hold up startup.** `driver.connect` is started without being awaited, so the engine and subscription run while a token prompt (up to 60 s) or an unreachable host is pending. (AVATAR-VTS-002, AVATAR-VTS-016)
 3. **VTS `activeExpr` is cleared on close and on connect.** Expressions requested while disconnected are dropped, and the engine does not re-send the current expression after a reconnect. (AVATAR-VTS-013)
 4. **Lip-sync follows every sink, including `virtual` and late duplicates** (`boot.ts`, `Engine.play`); voice cancels its pending virtual `voice.done` on a late real claim (VOICE-SINK-008), so the mouth stays open while a real sink plays.
-5. **An unset or empty `AVATAR_DRIVER` loads as `null`** (config: `${AVATAR_DRIVER:-null}`, a blank-safe driver value); the factory has no fallback for other names. (AVATAR-DRV-003, AVATAR-DRV-004)
+5. **An unset or empty `avatar.driver` loads as `null`** (config: the literal `"null"`, a blank-safe driver value); the factory has no fallback for other names. (AVATAR-DRV-003, AVATAR-DRV-004)
 
 ## Work Required
 

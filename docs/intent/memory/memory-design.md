@@ -565,8 +565,8 @@ existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
 
 ## Startup, health and shutdown
 
-Config read: `brain.memory.{store, embedder, recall_k, min_similarity, regular_messages, notes.*}` (env
-overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` via `config/config.example.yaml`),
+Config read: `brain.memory.{store, embedder, recall_k, min_similarity, regular_messages, notes.*}` (the isolation
+overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` replace them by key path, config CFG-ISO-007),
 `cohost.name`, `cohost.streamer` (reflect), `llm.*` (Ollama client), `DATABASE_URL`,
 `HEARTBEAT_INTERVAL_MS` (heartbeat package).
 

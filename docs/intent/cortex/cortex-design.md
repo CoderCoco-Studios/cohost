@@ -306,8 +306,8 @@ loader's message and exits 1 (`CTX-START-004`).
 
 Config keys read: `brain.working_memory_events`, `brain.memory.recall_k`,
 `brain.cortex.{recall_timeout_ms, speaking_timeout_ms, fallback_ack_chance, critic.*}`, `cohost.{name,
-streamer, timezone}`, `llm.*`. Env: `LLM_PROVIDER` selects the mock preset,
-`HEARTBEAT_INTERVAL_MS`.
+streamer, timezone}`, `llm.*`. Env: `HEARTBEAT_INTERVAL_MS`; an isolated start's `LLM_PROVIDER`
+override selects the mock preset through `COHOST_ISOLATION` (config CFG-ISO-007).
 
 ## Latency stamps
 

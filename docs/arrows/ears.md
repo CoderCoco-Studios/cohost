@@ -12,7 +12,7 @@ Open since the one-place configuration design ([decision](../decisions/config-in
 
 LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sources, Multiple sources, Connector sources, Decisions). Decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
 
-- `ears.sources` is a list (default `[discord]`; empty is `off`), every entry started concurrently as its own `CaptureAdapter` with its own `deps.<source>` health (EARS-SRC-001 to 008, CFG-SCH-030). `EARS_SOURCES` overrides it in flow syntax (`[http, dir]`, `[]`).
+- `ears.sources` is a list (default `[discord]`; empty is `off`), every entry started concurrently as its own `CaptureAdapter` with its own `deps.<source>` health (EARS-SRC-001 to 008, CFG-SCH-030). the isolation override `EARS_SOURCES` replaces it by key path (a flow-syntax value such as `[http, dir]` or `[]`, CFG-ISO-007).
 - A connector source consumes `audio.in.<source>` frames and cuts utterances with the endpointing engine `ears.vad.engine` names, `silero` (default) or the `ears.silence_ms` frame gap (EARS-CON-001 to 005, EARS-VAD-001 to 008); ears reads no Discord token and never loads `discord.js` (EARS-CON-002).
 - `http` takes POSTed 16-bit PCM or WAV, `dir` takes WAV files dropped in a polled directory, both bounded by the shared inject limits and both working with `ears.stt_engine: stub` (EARS-CAP-*). A container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator.
 - The `desktop` source is a connector whose clips arrive over the `http` listener until the capture helper writes frames (EARS-SRC-009 to 016, CONN-DESK-*).

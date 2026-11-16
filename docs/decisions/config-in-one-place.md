@@ -59,9 +59,17 @@ The Settings screen writes `.env`; `.env` becomes the one store. Strong on the o
 - Honest effect: **weak**; `${VAR}` placeholders, shell environment and `env_file` precedence all still shadow it.
 - Moving parts: **partial**.
 
+### How an isolated start reaches a unit
+
+An isolated start must flip a backend for one container without editing `config.yaml`. Options for the channel:
+
+- **`${VAR:-default}` placeholders in `config.yaml`, one environment variable per override.** The control plane sets `AVATAR_DRIVER`, `LLM_PROVIDER` and the rest; Compose passes each through. Rejected: the same names are ordinary-looking variables, so a stray `AVATAR_DRIVER=null` line in `.env` silently overrides the saved setting in every container; a placeholder makes the key's file form decide whether it can be edited; and an isolated start silently does nothing when the owner has written that key as a literal.
+- **One `COHOST_ISOLATION` variable carrying every override as a JSON object (chosen).** The control plane sets it on the `docker compose` process, Compose passes the one name to the container, and the loader applies each entry by key path from `ISOLATION_OVERRIDES`. The name is namespaced, so nothing writes it by accident; Compose needs one pass-through entry instead of thirteen; `docker inspect` reads one entry; and `config.yaml` holds literals only.
+- **One variable per override, namespaced (`COHOST_ISOLATED_AVATAR_DRIVER` and so on).** Rejected: it fixes the stray-name problem but keeps thirteen Compose pass-through entries, makes the status probe filter a name pattern, and lets a partial set be written by hand.
+
 ### `config.yaml` for operator settings, `secrets.yaml` for credentials, `.env` for bootstrap and access (chosen)
 
-Every operator setting is a literal key of `config.yaml` with a schema default. Credentials live in a second git-ignored file, `config/secrets.yaml`, in the same bind-mounted directory, merged by the loader at the secret paths. `.env` keeps only what must exist before configuration can be read, and the dashboard's own access controls. The isolation presets stay as start-time overrides the control plane injects for an isolated start.
+Every operator setting is a literal key of `config.yaml` with a schema default. Credentials live in a second git-ignored file, `config/secrets.yaml`, in the same bind-mounted directory, merged by the loader at the secret paths. `.env` keeps only what must exist before configuration can be read, and the dashboard's own access controls. Isolation presets are start-time overrides: the control plane passes them to one container in a single dedicated variable, `COHOST_ISOLATION`, and the loader applies them by key path, so no other environment variable reaches a setting and no setting reads one.
 
 - Settings apply on restart: **passes**; both files are in `./config`, read at process start.
 - No secret returned: **passes**; reads report set or not set, and credentials are written only through a write-only route.
@@ -70,7 +78,7 @@ Every operator setting is a literal key of `config.yaml` with a schema default. 
 - One place for the operator: **strong**; the one exception is credentials, which sit in a sibling file because the page must be able to show `config.yaml` values and must never show these.
 - Hand-editable and diffable: **strong**; the existing seeded, comment-preserving file, plus a small secrets file.
 - Durability: **strong**; atomic temp-file-and-rename writes.
-- Honest effect: **strong**; no placeholder shadows an operator key; the one override left is an isolated start, which the editor reports.
+- Honest effect: **strong**; no environment variable shadows an operator key, whatever `.env` or the shell holds; the one override is an isolated start, delivered only through `COHOST_ISOLATION`, which the editor reports.
 - Moving parts: **strong**; no new service and no new transport; the cost is a loader change, a secrets writer and a presentation table.
 
 ## Selection
@@ -79,10 +87,12 @@ Every operator setting is a literal key of `config.yaml` with a schema default. 
 
 What it obliges downstream:
 
-- The loader merges `secrets.yaml`, rejects placeholders for variables it no longer supports, and the isolation overrides are the only variables a placeholder may name (config).
-- The settings editor reports a key overridden by a running isolated unit instead of presenting a permanent `.env` shadow, and the schema route serves a presentation table so the screen names every setting without hard-coding sections (module-contract).
+- The loader merges `secrets.yaml`, rejects every `${VAR}` placeholder in `config.yaml`, and applies isolation overrides by key path from `COHOST_ISOLATION`, the only environment variable that can change a setting (config). A `config.yaml` that holds a placeholder fails the load of every process, the dashboard included, so the dashboard does not start; the owner fixes the file by hand, and the load error names each key.
+- Credentials reach a client only from `secrets.yaml`: a provider whose secret is not set is not configured, whatever the process environment holds, and no SDK default credential lookup is consulted (model-backends).
+- The settings editor edits every key the same way whatever form it has in the file, reports a key a running isolated unit overrides, and the schema route serves a presentation table, including which keys are sensitive, so the screen names every setting without hard-coding sections (module-contract).
+- A config write that changes where a secret-bearing request goes needs the control token in both control modes, like the secret write (dashboard, config).
 - The `models` puller reads model names from config, not from `.env` (deployment).
-- The dashboard owns the write-only route for secrets and the port and upload-limit keys it now reads from config (dashboard).
+- The dashboard owns the write-only route for secrets and the port and upload-limit keys it reads from config (dashboard).
 
 It forecloses a `.env`-only way to flip a backend: a backend is flipped by an isolated start or by editing a `config.yaml` key.
 
@@ -100,7 +110,8 @@ Fit: the selection would flip toward a store if the stack gained a second host t
 | `COMPOSE_FILE`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR`, `COMPOSE_PROJECT_NAME`, `KOKORO_IMAGE`, `SPEACHES_IMAGE` | `.env` | Read by `docker compose` itself, before any container exists |
 | `HEARTBEAT_INTERVAL_MS` | `.env` | Read by the shared runtime and the container healthchecks, which derive staleness from it, outside the schema |
 | `LOG_LEVEL` | `.env` | The logger exists before configuration is loaded, and reports its failures |
-| `LLM_PROVIDER`, `MEMORY_STORE`, `MEMORY_EMBEDDER`, `VOICE_ENGINE`, `CHAT_SOURCE`, `VISION_ENABLED`, `VISION_ENGINE`, `EARS_SOURCES`, `EARS_STT_ENGINE`, `CONNECTIONS_DISCORD_ENABLED`, `MOUTH_DISCORD_ENABLED`, `MOUTH_DRYRUN_ENABLED`, `AVATAR_DRIVER` | Injected by the control plane for an isolated start; never an operator setting | Make one unit run with no external backend; the editor reports a key a running unit has overridden |
+| `COHOST_ISOLATION` | Set by the control plane on the `docker compose` process for an isolated start of one unit, passed to that container by Compose; never written by the operator | One JSON object of override names (`LLM_PROVIDER`, `AVATAR_DRIVER` and the rest of `ISOLATION_OVERRIDES`) to values, applied by key path; makes one unit run with no external backend; the editor reports a key a running unit has overridden. The override names are labels in that object, not environment variables: a plain `AVATAR_DRIVER` in `.env` or the shell is read by nothing |
+| Provider credentials (`ANTHROPIC_API_KEY`, `AWS_ACCESS_KEY_ID`, `AWS_PROFILE` and the like) | Not read | Clients are given credentials from `secrets.yaml` only, so a key left in `.env` cannot keep a provider working while Settings shows Not set |
 | `COHOST_VERSION`, `HOSTNAME`, `PATH`, `WSLENV` | Process environment, set by the image build, the host or Compose | Build and platform metadata; not settings |
 
-The environment variables cohost source reads are exactly those named in the access, bootstrap, infrastructure, Compose, heartbeat, log, override and platform rows above; a test fails when source reads any other, so a new operator setting cannot arrive as an environment variable.
+The environment variables cohost source reads are exactly those named in the access, bootstrap, infrastructure, Compose, heartbeat, log, `COHOST_ISOLATION` and platform rows above; a test fails when source reads any other, so a new operator setting cannot arrive as an environment variable. That test covers cohost source only. The paths it cannot see are closed by other rules: Compose interpolation by `config.yaml` holding no placeholder and Compose passing the one `COHOST_ISOLATION` entry (deployment), and third-party libraries by constructing every client with credentials taken from `secrets.yaml` alone (model-backends).

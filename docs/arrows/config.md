@@ -42,7 +42,7 @@ Orientation:
 ### Code
 `@spec CFG-` annotations are in:
 - packages/config/src/index.ts (loader, helpers, urls, logger)
-- packages/config/src/pipeline.ts (placeholder substitution, null dropping, `parseConfigText`)
+- packages/config/src/pipeline.ts (placeholder rejection, null dropping, isolation overrides, `parseConfigText`)
 - packages/config/src/schema.ts (zod schemas, `Emotion`)
 - services/dashboard/src/service.ts, services/dashboard/src/viewers.ts (CFG-ENV-009)
 - packages/config/src/editor.ts, packages/config/package.json, packages/config/tsconfig.json (no `CFG-` annotations)
@@ -54,7 +54,7 @@ Orientation:
 
 **Key Components:**
 1. `configDir()` / `dataDir()` / `findWorkspaceRoot()` — `CONFIG_DIR` and `COHOST_DATA_DIR` overrides, else the nearest `pnpm-workspace.yaml` ancestor's `config/` and `data/`, else the current directory (`index.ts`).
-2. `loadConfig()` — `.env` load, seed, `${VAR}` / `${VAR:-default}` substitution, null-dropping, zod validation, unknown-key warning, module cache (`index.ts`, `pipeline.ts`).
+2. `loadConfig()` — `.env` load, seed, placeholder rejection (CFG-ENV-011), null-dropping, secrets merge, isolation overrides by key path from `COHOST_ISOLATION` (CFG-ISO-007), zod validation, unknown-key warning, module cache (`index.ts`, `pipeline.ts`).
 3. `ConfigSchema` / `ModuleSchema` / `ExpressionMapSchema` / `Emotion` — shape, defaults, backend-selection enums with blank-to-default preprocessing (`schema.ts`).
 4. `ensureFromExample`, `loadPersonality`, `savePersonality`, `loadExpressions` — user-owned files seeded from `*.example.*` (`index.ts`).
 5. `env`, `envOr`, `urls.*`, `createLogger`, `setConfigLogger` — runtime helpers used by every service (`index.ts`).

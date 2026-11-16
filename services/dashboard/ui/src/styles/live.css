@@ -40,3 +40,13 @@
 .live-outputs, .live-advanced { margin-top: 10px; }
 .inject-status { color: var(--muted); font-size: 12.5px; }
 .inject-status.action-ok { color: var(--ok); }
+
+/* Mockup layout: Say row, emotion beside the face, Wipe row */
+.live-say-row { flex-wrap: nowrap; align-items: flex-end; }
+.live-avatar .card-b { display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr); align-items: center; gap: 16px; }
+.live-avatar .card-b > .state { grid-column: 1 / -1; }
+.live-emotion { gap: 4px; }
+.live-emotion .label { margin: 0; }
+.live-emotion-word { font-size: 18px; font-weight: 650; }
+.live-wipe-row { justify-content: space-between; }
+.live-wipe-title { font-size: 14px; }

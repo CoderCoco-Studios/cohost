@@ -6,7 +6,7 @@ import { SegmentedGroup } from "../../components/SegmentedGroup";
 import { EmptyState, LoadingState } from "../../components/StateBlocks";
 import { useFeed } from "../../state/hooks";
 import type { FeedEvent } from "../../state/types";
-import { FILTERS, inFilter, kindLabel, rowBadges, rowClass, rowText, rowTime, zoneAbbreviation, type FeedFilter } from "./feedRows";
+import { FILTERS, inFilter, kindLabel, rowBadges, rowClass, rowExtras, rowText, rowTime, zoneAbbreviation, type FeedFilter } from "./feedRows";
 
 /** The log counts as at its end while it is within this many px of it (DASH-UI-026). */
 export const FOLLOW_SLACK_PX = 24;
@@ -16,11 +16,12 @@ const Row = memo(function Row({ ev, today }: { ev: FeedEvent; today: number }) {
   const label = kindLabel(ev.type);
   const t = rowTime(ev.ts, today);
   const badges = rowBadges(ev);
+  const extra = rowExtras(ev);
   return (
     <article className={`ev ${rowClass(ev.type)}`} aria-label={`${label}, ${ev.type}`}>
       <time dateTime={t.iso}>{t.date ? <><span className="ev-date">{t.date}</span>{" "}</> : null}{t.clock}</time>
       <span className="k" title={ev.type}>{label}</span>
-      <p>{rowText(ev)}{badges.map((b) => <span key={b} className={`badge ${b === "injected" ? "badge-inj" : "badge-mem"}`}>{b}</span>)}</p>
+      <p>{rowText(ev)}{extra.tag ? <>{" "}<span className="tag">{extra.tag}</span></> : null}{extra.because ? <>{" "}<span className="small muted">{`because: ${extra.because}`}</span></> : null}{badges.map((b) => <span key={b} className={`badge ${b === "injected" ? "badge-inj" : "badge-mem"}`}>{b}</span>)}</p>
     </article>
   );
 });
@@ -75,13 +76,13 @@ export function ActivityCard() {
     <section className="card live-activity" aria-labelledby="live-activity-h">
       <div className="card-h">
         <h2 id="live-activity-h">Activity</h2>
-        <SegmentedGroup legend="Filter activity" name="live-filter" value={filter} onChange={(v) => { setFilter(v as FeedFilter); setFollowing(true); }}
+        <SegmentedGroup legend="Show" name="live-filter" value={filter} onChange={(v) => { setFilter(v as FeedFilter); setFollowing(true); }}
           options={FILTERS.map((f) => ({ value: f.value, label: f.label }))} />
         <span className="small muted grow">{`Times are local (${zoneAbbreviation(clock)}).`}</span>
         <Button size="sm" aria-pressed={jump ? undefined : following} onClick={toggle}>{jump ? "Jump to latest" : "Following latest"}</Button>
       </div>
       {loading ? <LoadingState label="Connecting to the feed…" /> : (
-        <div ref={logRef} role="log" aria-label="Activity" aria-relevant="additions" tabIndex={0} onScroll={onScroll}
+        <div ref={logRef} role="log" aria-label="Bus activity" aria-relevant="additions" tabIndex={0} onScroll={onScroll}
           className={`feed feed-scroll${stale.className ? ` ${stale.className}` : ""}`} aria-busy={stale["aria-busy"]}>
           {visible.length === 0 ? <EmptyState title={filter === "all" ? "No activity yet" : `No ${filterLabel.toLowerCase()} activity yet`}>Rows appear here as the co-host chats, sees, hears and speaks.</EmptyState> : null}
           {visible.map((ev) => <Row key={ev.id} ev={ev} today={today} />)}

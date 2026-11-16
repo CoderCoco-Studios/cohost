@@ -132,13 +132,13 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
   const { status } = track;
   return (
     <section className="card live-test" aria-labelledby="live-test-h">
-      <div className="card-h"><h2 id="live-test-h">Test inputs</h2></div>
+      <div className="card-h"><h2 id="live-test-h">Test inputs</h2><span className="grow" /><span className="small faint">Pretend to be a viewer</span></div>
       <form className="card-b stack-y" onSubmit={(e) => { e.preventDefault(); void send(); }}>
-        <SegmentedGroup legend="Input kind" name="inject-kind" value={kind} onChange={(v) => pickKind(v as InjectKind)} options={kinds} />
+        <SegmentedGroup legend="Kind of input" name="inject-kind" value={kind} onChange={(v) => pickKind(v as InjectKind)} options={kinds} />
 
         {kind === "text" ? (
           <>
-            <TextAreaField label="Message" value={text} onChange={setText} rows={3} placeholder={bus && as !== "chat" ? "The speech or screen line to publish…" : "Type a fake viewer message…"} />
+            <TextAreaField label="Fake viewer message" value={text} onChange={setText} rows={3} placeholder={bus && as !== "chat" ? "The speech or screen line to publish…" : "Type a fake viewer message…"} />
             {!bus || as !== "vision" ? <TextField label="Viewer name" value={user} onChange={setUser} placeholder="injected_viewer" autoComplete="off" /> : null}
             {!bus || as === "chat" ? (
               <>

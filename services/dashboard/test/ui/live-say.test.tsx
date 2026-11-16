@@ -13,9 +13,9 @@ function boot(opts: { reply?: Parameters<TestApp["fetch"]["on"]>[1]; open?: bool
   return app;
 }
 const controls = (app: TestApp) => app.fetch.callsTo("POST /control").map((c) => JSON.parse(c.body!) as Record<string, unknown>);
-const box = () => screen.getByRole("textbox", { name: "Say a line" }) as HTMLInputElement;
+const box = () => screen.getByRole("textbox", { name: "Line for the co-host to speak" }) as HTMLInputElement;
 const sayBtn = () => screen.getByRole("button", { name: "Say" });
-const region = () => screen.getByRole("region", { name: "Say" });
+const region = () => screen.getByRole("region", { name: "Say a line" });
 
 // @spec DASH-UI-005, DASH-UI-023
 test("Say sends the trimmed text to POST /control and clears the field only after a 2xx, saying Sent beside it", async () => {
@@ -51,7 +51,7 @@ test("the optional outputs field sends the trimmed non-empty ids as route, and n
   assert.equal(details.open, false, "a disclosure, closed by default");
   assert.ok(within(details).getByText("Send to specific outputs").tagName === "SUMMARY");
   await user.click(within(details).getByText("Send to specific outputs"));
-  const outputs = within(details).getByRole("textbox", { name: "Output ids" });
+  const outputs = within(details).getByRole("textbox", { name: "Outputs" });
   await user.type(box(), "to the archive");
   await user.type(outputs, " file, http ,, ");
   await user.click(sayBtn());
@@ -93,8 +93,8 @@ test("a network failure is an alert with the error", async () => {
 test("the field and the outputs field are labelled, the outputs field says what blank means", async () => {
   boot();
   await userEvent.setup().click(screen.getByText("Send to specific outputs"));
-  const outputs = screen.getByRole("textbox", { name: "Output ids" });
-  assert.match(document.getElementById(outputs.getAttribute("aria-describedby")!)!.textContent!, /Blank sends to every enabled output/);
+  const outputs = screen.getByRole("textbox", { name: "Outputs" });
+  assert.match(document.getElementById(outputs.getAttribute("aria-describedby")!)!.textContent!, /Leave blank to use every enabled output/);
 });
 
 // @spec DASH-NAV-003

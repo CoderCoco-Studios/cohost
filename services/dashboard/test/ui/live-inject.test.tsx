@@ -32,9 +32,9 @@ const bodyOf = (app: TestApp, key: string) => JSON.parse(app.fetch.callsTo(key)[
 // @spec DASH-UI-009
 test("the panel starts on Text with the viewer fields, remember off, one Send, one status line and the note that tests are treated as real", async () => {
   boot();
-  assert.deepEqual(within(within(card()).getByRole("group", { name: "Input kind" })).getAllByRole("radio").map((r) => r.closest("label")!.textContent), ["Text", "Image", "Audio"]);
+  assert.deepEqual(within(within(card()).getByRole("group", { name: "Kind of input" })).getAllByRole("radio").map((r) => r.closest("label")!.textContent), ["Text", "Image", "Audio"]);
   assert.equal((within(card()).getByRole("radio", { name: "Text" }) as HTMLInputElement).checked, true);
-  within(card()).getByRole("textbox", { name: "Message" });
+  within(card()).getByRole("textbox", { name: "Fake viewer message" });
   within(card()).getByRole("textbox", { name: "Viewer name" });
   const platform = within(card()).getByRole("combobox", { name: "Platform" }) as HTMLSelectElement;
   assert.deepEqual([...platform.options].map((o) => o.value), ["twitch", "youtube", "discord"]);
@@ -55,7 +55,7 @@ test("Image shows a PNG, JPEG and WebP picker only; Audio shows an audio picker 
   const img = within(card()).getByLabelText("Image file") as HTMLInputElement;
   assert.equal(img.type, "file");
   assert.equal(img.accept, "image/png,image/jpeg,image/webp");
-  assert.ok(within(card()).queryByRole("textbox", { name: "Message" }) === null);
+  assert.ok(within(card()).queryByRole("textbox", { name: "Fake viewer message" }) === null);
   assert.ok(within(card()).queryByRole("textbox", { name: "Viewer name" }) === null);
   assert.ok(within(card()).getByRole("switch", { name: "Store in memory" }), "every kind has remember");
   await kind("Audio");
@@ -87,7 +87,7 @@ test("a microphone record button is offered only where MediaRecorder and getUser
 test("a service-level text injection posts the viewer fields, then waits for the inject.result of its id and shows it", async () => {
   const user = userEvent.setup();
   const { app } = boot();
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "hello cohost");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "hello cohost");
   await user.type(within(card()).getByRole("textbox", { name: "Viewer name" }), "ann");
   await user.selectOptions(within(card()).getByRole("combobox", { name: "Platform" }), "youtube");
   await user.click(within(card()).getByRole("switch", { name: "Moderator" }));
@@ -107,7 +107,7 @@ test("a result that arrives before the HTTP response is shown when the response 
   const user = userEvent.setup();
   let release!: () => void;
   const { app } = boot({ text: () => new Promise((r) => { release = () => r({ status: 202, json: { id: "r2" } }); }) });
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "hi");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "hi");
   await user.click(send());
   await waitFor(() => assert.ok(release));
   result(app, { id: "r2", ok: true, detail: "early" });
@@ -119,7 +119,7 @@ test("a result that arrives before the HTTP response is shown when the response 
 test("a failed inject.result is an alert with the service's detail", async () => {
   const user = userEvent.setup();
   const { app } = boot();
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "hi");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "hi");
   await user.click(send());
   await waitFor(() => assert.match(status().textContent!, /waiting for result/));
   result(app, { id: "r1", ok: false, detail: "refused" });
@@ -134,7 +134,7 @@ function withTimers(clock: FakeClock) { return <TestInputs timers={{ set: clock.
 test("with no inject.result within 10 s the target is reported as not responding, and the timer is cleared on a result and on unmount", async () => {
   const user = userEvent.setup();
   const { app, unmount } = boot({}, withTimers);
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "hi");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "hi");
   await user.click(send());
   await waitFor(() => assert.match(status().textContent!, /waiting for result/));
   assert.equal(app.clock.pending, 1, "one 10 s timer is armed");
@@ -164,11 +164,11 @@ test("Advanced: Bus only limits the kind to Text, offers chat, speech and vision
   await kind("Image");
   await user.click(within(card()).getByRole("radio", { name: "Bus only" }));
   assert.deepEqual(within(card()).getAllByRole("radio", { name: /^(Text|Image|Audio)$/ }).map((r) => r.closest("label")!.textContent), ["Text"]);
-  assert.ok(within(card()).getByRole("textbox", { name: "Message" }), "back on Text");
+  assert.ok(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "back on Text");
   assert.match(card().textContent!, /Image and audio need the real pipeline/);
   assert.deepEqual(within(card()).getAllByRole("radio", { name: /^(Chat|Speech|Vision)$/ }).map((r) => r.closest("label")!.textContent), ["Chat", "Speech", "Vision"]);
   await user.click(within(card()).getByRole("radio", { name: "Speech" }));
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "I heard that");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "I heard that");
   await user.type(within(card()).getByRole("textbox", { name: "Viewer name" }), "ann");
   assert.ok(within(card()).queryByRole("combobox", { name: "Platform" }) === null, "platform is for chat");
   await user.click(send());
@@ -194,7 +194,7 @@ test("sending with no message asks for one and sends nothing", async () => {
 test("a refused text injection is an alert with the status and detail", async () => {
   const user = userEvent.setup();
   boot({ text: { status: 400, json: { detail: "bad <b>level</b>" } } });
-  await user.type(within(card()).getByRole("textbox", { name: "Message" }), "hi");
+  await user.type(within(card()).getByRole("textbox", { name: "Fake viewer message" }), "hi");
   await user.click(send());
   await waitFor(() => assert.match(alertText(), /400 bad <b>level<\/b>/));
   assert.ok(card().querySelector("b") === null, "the detail is text");

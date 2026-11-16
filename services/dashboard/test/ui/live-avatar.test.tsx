@@ -41,7 +41,7 @@ test("avatar.state draws the face from its parameters and names the driver, with
   assert.equal(attr("eye-right", "cx"), "127");
   assert.equal(attr("eye-left", "cy"), "85");
   assert.equal(attr("mouth", "d"), "M80 128 Q100 159 120 128 Q100 125.2 80 128");
-  assert.match(card().textContent!, /Emotion: happy/);
+  assert.match(card().textContent!, /Emotion\s*happy/);
   assert.equal(face().getAttribute("aria-label"), "Avatar preview: happy");
   frame(app, "avatar.state", { ...state, connected: true, blink: 0, mouthOpen: 0 });
   assert.match(card().textContent!, /vmc/);

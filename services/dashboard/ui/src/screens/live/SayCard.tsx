@@ -37,18 +37,20 @@ export function SayCard() {
 
   return (
     <section className="card live-say" aria-labelledby="live-say-h">
-      <div className="card-h"><h2 id="live-say-h">Say</h2></div>
+      <div className="card-h"><h2 id="live-say-h">Say a line</h2><span className="grow" /><span className="small faint"><span className="kbd">/</span> to focus</span></div>
       <form className="card-b stack-y" onSubmit={(e) => void submit(e)}>
-        <TextField label="Say a line" value={text} onChange={setText} data-shortcut="say" placeholder="Type a line for the co-host to speak…" autoComplete="off" />
+        <div className="row live-say-row">
+          <TextField className="grow" label="Line for the co-host to speak" value={text} onChange={setText} data-shortcut="say" placeholder="Type a line for the co-host to speak" autoComplete="off" />
+          <Button variant="primary" type="submit" busy={action.state.kind === "pending"}>Say</Button>
+        </div>
         <details>
           <summary>Send to specific outputs</summary>
           <div className="stack-y live-outputs">
-            <TextField label="Output ids" value={route} onChange={setRoute} placeholder="file, http" autoComplete="off"
-              help="Output ids separated by commas (discord, dryrun, file, http). Blank sends to every enabled output." />
+            <TextField label="Outputs" value={route} onChange={setRoute} placeholder="file, http" autoComplete="off"
+              help="Output ids separated by commas (discord, dryrun, file, http). Leave blank to use every enabled output." />
           </div>
         </details>
         <div className="row">
-          <Button variant="primary" type="submit" busy={action.state.kind === "pending"}>Say</Button>
           <ActionStatus state={action.state} onDismiss={action.dismiss} />
         </div>
         {muted ? <p className="note note-warn">The co-host is muted: the line is not spoken until you unmute (press m).</p> : null}

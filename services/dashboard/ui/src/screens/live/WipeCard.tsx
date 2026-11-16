@@ -16,7 +16,7 @@ export function WipeCard() {
   const [open, setOpen] = useState(false);
   const failure = action.state.kind === "error" ? action.state.message : undefined;
 
-  const confirm = async () => {
+  const wipe = async () => {
     const r = await action.run(() => api.control({ cmd: "forget_context" }, "Wipe context"), "Context wiped");
     if (r.ok) setOpen(false);
   };
@@ -24,16 +24,13 @@ export function WipeCard() {
 
   return (
     <section className="card live-wipe" aria-labelledby="live-wipe-h">
-      <div className="card-h"><h2 id="live-wipe-h">Wipe context</h2></div>
-      <div className="card-b stack-y">
-        <p className="muted">The co-host forgets the current conversation. Viewer notes are kept.</p>
-        <div className="row">
-          <Button variant="danger" onClick={() => { action.dismiss(); setOpen(true); }}>Wipe context</Button>
-          <ActionStatus state={open && failure ? { kind: "idle" } : action.state} onDismiss={action.dismiss} />
-        </div>
+      <div className="card-b row live-wipe-row">
+        <div className="grow"><h2 id="live-wipe-h" className="live-wipe-title">Wipe context</h2><p className="small faint">The co-host forgets the current conversation. Viewer notes are kept.</p></div>
+        <Button variant="danger" onClick={() => { action.dismiss(); setOpen(true); }}>Wipe context</Button>
+        <ActionStatus state={open && failure ? { kind: "idle" } : action.state} onDismiss={action.dismiss} />
       </div>
       <ConfirmDialog open={open} title="Wipe context?" confirmLabel="Wipe context" danger busy={action.state.kind === "pending"} error={failure}
-        onConfirm={() => void confirm()} onCancel={cancel}>
+        onConfirm={() => void wipe()} onCancel={cancel}>
         <p>The co-host forgets the current conversation: what was just said and answered is gone from its short-term context. Viewer notes are kept.</p>
       </ConfirmDialog>
     </section>

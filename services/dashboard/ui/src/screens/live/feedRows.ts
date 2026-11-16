@@ -47,7 +47,7 @@ export function rowText(ev: FeedEvent): string {
   const d = (ev.data ?? {}) as Record<string, unknown>;
   switch (ev.type) {
     case "chat.message": return `${s(d.user)}: ${s(d.text)}`;
-    case "brain.say": return `[${s(d.emotion)}] ${s(d.text)}${s(d.reason) ? `  ← ${s(d.reason)}` : ""}`;
+    case "brain.say": return s(d.text);
     case "vision.summary": return s(d.text);
     case "speech.heard": return `${s(d.speaker)}: ${s(d.text)}`;
     case "brain.status": return s(d.state) + (s(d.detail) ? ` · ${s(d.detail)}` : "");
@@ -59,6 +59,14 @@ export function rowText(ev: FeedEvent): string {
     case "voice.playing": case "voice.done": return s(d.sink);
     default: return "";
   }
+}
+
+/** The small extras a row shows after its text (as the design draws them): a chat line's platform, a co-host line's emotion and the reason it spoke. */
+export function rowExtras(ev: FeedEvent): { tag?: string; because?: string } {
+  const d = (ev.data ?? {}) as Record<string, unknown>;
+  if (ev.type === "chat.message") return s(d.platform) ? { tag: s(d.platform) } : {};
+  if (ev.type === "brain.say") return { ...(s(d.emotion) ? { tag: s(d.emotion) } : {}), ...(s(d.reason) ? { because: s(d.reason) } : {}) };
+  return {};
 }
 
 /** The badges of a row: an injected input, and whether it was stored in memory (DASH-UI-002). */

@@ -16,14 +16,14 @@ function boot(open = true) {
 let seq = 0;
 const frame = (app: TestApp, type: string, data: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
   act(() => { app.socket().message({ id: `${++seq}-0`, type, ts: app.clock.now, source: "t", data, ...extra }); });
-const log = () => screen.getByRole("log", { name: "Activity" });
+const log = () => screen.getByRole("log", { name: "Bus activity" });
 const rows = () => within(log()).queryAllByRole("article");
-const filter = (name: string) => userEvent.setup().click(screen.getByRole("radio", { name }));
+const filter = (name: string) => userEvent.setup().click(within(screen.getByRole("group", { name: "Show" })).getByRole("radio", { name }));
 
 // @spec DASH-UI-001
 test("before the first open the feed shows a loading state, not an empty list", () => {
   boot(false);
-  assert.equal(screen.getByRole("status").getAttribute("aria-busy"), "true");
+  assert.equal(screen.getByText("Connecting to the feed…").getAttribute("aria-busy"), "true");
   assert.match(document.body.textContent!, /Connecting to the feed/);
   assert.ok(screen.queryByRole("log") === null, "no log while loading");
 });
@@ -39,7 +39,7 @@ test("each rendered type gets a row with a plain kind label, the event type as t
   const app = boot();
   const cases: [string, Record<string, unknown>, string, string, RegExp][] = [
     ["chat.message", { user: "ann", text: "hello" }, "Chat", "chat", /^ann: hello/],
-    ["brain.say", { emotion: "happy", text: "hi there", reason: "greet" }, "Co-host", "say", /^\[happy\] hi there/],
+    ["brain.say", { emotion: "happy", text: "hi there", reason: "greet" }, "Co-host", "say", /^hi there/],
     ["vision.summary", { text: "a red car" }, "Vision", "vision", /^a red car/],
     ["speech.heard", { speaker: "bob", text: "hey" }, "Speech", "speech", /^bob: hey/],
     ["brain.status", { state: "thinking", detail: "why" }, "Status", "status", /^thinking · why/],
@@ -65,6 +65,17 @@ test("each rendered type gets a row with a plain kind label, the event type as t
     assert.match(row.querySelector("p")!.textContent!, text);
   });
   assert.ok(screen.getByRole("article", { name: /Co-host.*brain\.say/ }), "found by role and name");
+});
+
+// @spec DASH-UI-027
+test("a chat row tags its platform and a co-host row tags its emotion and says why it spoke", () => {
+  const app = boot();
+  frame(app, "chat.message", { user: "ann", text: "hi", platform: "twitch" });
+  frame(app, "brain.say", { emotion: "excited", text: "yes", reason: "chat mention" });
+  const [chat, say] = rows();
+  assert.equal(within(chat!).getByText("twitch").className, "tag");
+  assert.equal(within(say!).getByText("excited").className, "tag");
+  assert.ok(within(say!).getByText("because: chat mention"));
 });
 
 // @spec DASH-UI-002
@@ -102,7 +113,7 @@ test("the filter offers All, Conversation, Vision and System with the stated mem
   for (const t of ["chat.message", "brain.say", "speech.heard"]) frame(app, t, { text: t, user: "u", speaker: "s" });
   frame(app, "vision.summary", { text: "v" });
   for (const t of ["brain.status", "control", "service.lifecycle", "inject.request", "inject.result", "voice.utterance", "voice.playing", "voice.done"]) frame(app, t, { state: "x" });
-  const labels = screen.getAllByRole("radio").map((r) => r.closest("label")!.textContent);
+  const labels = within(screen.getByRole("group", { name: "Show" })).getAllByRole("radio").map((r) => r.closest("label")!.textContent);
   assert.deepEqual(labels, ["All", "Conversation", "Vision", "System"]);
   assert.equal(rows().length, 12);
   await filter("Conversation");

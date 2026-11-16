@@ -15,7 +15,7 @@
     "@cohost/config": "workspace:*",
     "@cohost/llm": "workspace:*",
     "@cohost/shared": "workspace:*",
-    "obs-websocket-js": "^5.0.6"
+    "obs-websocket-js": "^5.0.8"
   },
   "devDependencies": {
     "@cohost/testing": "workspace:*"

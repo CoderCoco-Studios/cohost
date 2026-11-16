@@ -28,7 +28,7 @@
     "test:only": "node --import tsx --test \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\""
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@types/node": "^22.20.5",
     "beautiful-mermaid": "1.1.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

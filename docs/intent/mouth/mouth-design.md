@@ -33,18 +33,18 @@ Ownership notes: the `voice.*` schemas belong to [event-bus](../event-bus/event-
 mouth:
   outputs:
     discord:
-      enabled: ${MOUTH_DISCORD_ENABLED:-true}   # a connector sink (the Discord connector plays it); false = no Discord output; isolated runs
+      enabled: true                             # a connector sink (the Discord connector plays it); false = no Discord output; isolated runs
       gain_db: 0                                # loudness on this output only; -40..12
     dryrun:
-      enabled: ${MOUTH_DRYRUN_ENABLED:-false}   # test-only output: plays nothing, reports as a sink (Dry-run output)
+      enabled: false                            # test-only output: plays nothing, reports as a sink (Dry-run output)
       fail_every: 0                             # n > 0: give up on every n-th line
     file:
-      enabled: ${MOUTH_FILE_ENABLED:-false}     # appends each line's WAV to a rotating directory (File output)
+      enabled: false                            # appends each line's WAV to a rotating directory (File output)
       dir: mouth/outputs                        # relative to the data directory; no absolute path, no `..`
       max_files: 100                            # the newest this many files are kept
     http:
-      enabled: ${MOUTH_HTTP_ENABLED:-false}     # POSTs each line's WAV to `url` (HTTP output)
-      url: "${MOUTH_HTTP_URL:-}"                # http(s) URL; empty = the output is down
+      enabled: false                            # POSTs each line's WAV to `url` (HTTP output)
+      url: ""                                   # http(s) URL; empty = the output is down
       timeout_ms: 5000                          # per attempt
       retries: 3                                # attempts after the first, with exponential backoff
       max_queue: 20                             # undelivered lines held; the oldest is dropped past it
@@ -56,8 +56,9 @@ mouth:
 - The schema knows each output kind's keys. An unknown output name (a typo such as `discrod`) is reported by config's unknown-key warning and ignored, like any unknown key (config Decisions: Unknown keys); the misspelt output is then simply absent.
 - `enabled: false` means mouth opens no connection for that output and never claims, plays or gives up a line on it (MOUTH-ROUTE-002). With every output disabled, mouth idles in the `off` plan.
 - `gain_db` scales the samples mouth hands that output, for utterances and fallback clips alike, clamped to the 16-bit range (MOUTH-ROUTE-005). It is a per-output trim, so the co-host can be quieter in Discord than on stream; the synthesized voice itself (speed, voice id) is tuned in voice.
+- The `discord` and `dryrun` outputs' `enabled` keys are what the isolation overrides `MOUTH_DISCORD_ENABLED` and `MOUTH_DRYRUN_ENABLED` set for an isolated mouth (config CFG-ISO-006, CFG-ISO-007); like every other key here they are literals in the shipped example (CFG-ISO-004) that the settings editor edits, the `file` and `http` outputs included.
 - The `mouth` section is optional. A `config.yaml` written before mouth existed loads with the defaults: the Discord output enabled, gain 0, interval 20000 (CFG-SCH-020).
-- Which guild and voice channel the co-host sits in is the Discord connector's setting (`connections.discord.guild_id` and `voice_channel_id`, defaulting through `config.example.yaml` to `DISCORD_GUILD_ID` / `DISCORD_VOICE_CHANNEL_ID`): one bot holds one connection, so listening and speaking share one channel.
+- Which guild and voice channel the co-host sits in is the Discord connector's setting (`connections.discord.guild_id` and `voice_channel_id`, literal keys of `config.yaml`): one bot holds one connection, so listening and speaking share one channel.
 
 ### How routing meets sink arbitration
 

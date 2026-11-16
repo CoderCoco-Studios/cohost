@@ -4,6 +4,8 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` (CONN-DISC-001, -002, CONN-INJ-006); not built. Total 55 specs: 50 `[x]`, 4 `[ ]`, 1 `[D]`.
+
 **PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 55 specs, 53 implemented, 1 gap (`[ ]`, the desktop helper's registration, CONN-DESK-001), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001; EARS-SRC-014, 015 in ears) and the live verification of chunk 5.
 
 ## Cross-segment cascade
@@ -27,7 +29,7 @@ Each chunk is one PR, tests first, specs flipped to `[x]` as they land.
 | 1. Client library | connections (+ bus pointer) | Registration, tag validation, frame encode and decode, paced writer, live `XREAD` reader, with a fake Redis. No service yet. |
 | 2. Discord connector | connections, config, control-plane, deployment | `services/connector-discord` reusing `createDiscordVoiceSession` undeafened and unmuted, with a fake Discord session; manifest unit, Compose service and profile, config keys. |
 | 3. ears consumer (built) | ears | Connector source in `earsPlan` and the service, utterance assembler by `spk` with the endpointing of EARS-VAD-*, per-source health, registry liveness for stream and `http` tags. |
-| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; Compose blanks `DISCORD_TOKEN` for ears and mouth; README, installer and `.env.example` name the one bot. |
+| 4. mouth sink (built) | mouth, deployment, config | Connector-sink output with the registry readiness check and paced frame writer; Compose passes no Discord token to ears and mouth; README, installer and `.env.example` name the one bot. |
 | 5. Live verification | ears, mouth, connections | Real guild, one bot, kill and restart the connector. |
 
 ## Edge audit (open)

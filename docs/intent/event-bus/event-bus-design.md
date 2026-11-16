@@ -49,7 +49,7 @@ Constructor: `new Bus(source, log?, url = urls.redis(), options?)`. The optional
 | `tailHealth(handler, fromId="$")` | same loop on `cohost:health`; only `service.heartbeat` entries reach the handler |
 | `recent(count=100)` | `XREVRANGE + - COUNT n`, decoded, undecodable entries filtered, reversed to oldest-first |
 | `recentHealth(count=100)` | same on `cohost:health` |
-| `resetGroup(group)` | `XGROUP CREATE cohost:events group $ MKSTREAM` first (creates a missing stream and group; works on a fresh Redis 7+, where `SETID` on a missing key fails with `requires the key to exist`); on `BUSYGROUP` (group exists, including a concurrent create) `XGROUP SETID cohost:events group $`; rethrow anything else |
+| `resetGroup(group)` | `XGROUP CREATE cohost:events group $ MKSTREAM` first (creates a missing stream and group; works on a fresh Redis 8, where `SETID` on a missing key fails with `requires the key to exist`); on `BUSYGROUP` (group exists, including a concurrent create) `XGROUP SETID cohost:events group $`; rethrow anything else |
 | `stop()` | sets the instance-wide `stopped` flag, wakes any retry backoff sleep, closes the events transport (flushing queued acks for at most 2 s) and the frame transport, and returns a `Promise<void>` that resolves once both have closed (BUS-STOP-001) |
 
 ### Consumer-group subscription loop

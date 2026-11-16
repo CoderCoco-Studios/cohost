@@ -4,6 +4,8 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001); not built. Total 84 specs: 82 `[x]`, 1 `[ ]`, 1 `[D]`.
+
 **AUDITED**, 2026-11-12: 84 specs, 83 implemented (`[x]`), 0 gaps, 1 deferred (`[D]`: MOUTH-POS-001, playback position). The service is wired into the manifest, Compose (profile `mouth`, off by default) and the dashboard's unit list. Design: [LLD](../intent/mouth/mouth-design.md); decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
 
 ## Cross-segment lines
@@ -17,7 +19,7 @@ config CFG-SCH-018, CFG-SCH-020, CFG-SCH-031, CFG-ISO-001, CFG-ISO-004, CFG-USR-
 3. **Two outputs and the early release.** VOICE-SINK-011 releases cortex at the end of the claim window when a `voice.failed` without `fallback` arrives and nothing has claimed. With two outputs, one giving up and the other starting late, cortex can be released while the second still plays, and the next line can overlap on the first output. This is the non-exclusivity between sinks (voice LLD Decisions).
 4. **Per-output state.** MOUTH-ROUTE-004 makes the storm limit, the last phrase and the bad-clip marks per output; MOUTH-FALL-005 to 008 say "for that output".
 5. **Readiness at intake.** MOUTH-ROUTE-003 judges an output's readiness when the `voice.utterance` is read; a line queued on a ready output that then disconnects ends on schedule with `voice.done` (MOUTH-CONN-005) or through the stuck-playback guard (MOUTH-PLAY-011).
-6. **Isolation preset.** CTRL-MANIFEST-003 (`MOUTH_DISCORD_ENABLED=false`), CFG-ISO-004 (the placeholder) and DEPLOY-COMPOSE-017 (the pass-through) name one variable; an isolated mouth is plan `off`, mode `off`, `ready` (MOUTH-START-001).
+6. **Isolation preset.** CTRL-MANIFEST-003 (`MOUTH_DISCORD_ENABLED=false`), CFG-ISO-004 (the literal default), CFG-ISO-007 (the override by key path) and DEPLOY-COMPOSE-017 (the `COHOST_ISOLATION` pass-through) name one override; an isolated mouth is plan `off`, mode `off`, `ready` (MOUTH-START-001).
 7. **Launch and profiles.** CTRL-STACK-002 starts mouth only when `COMPOSE_PROFILES` names it; a mouth with no connector reports a degraded dependency but its heartbeat is fresh, so the container is healthy (DEPLOY-HC-001).
 8. **Restart replay.** The `mouth` group starts at the newest entry (MOUTH-START-005).
 9. **Injection.** `inject.request` keeps target `ears` (BUS-EVT-006); mouth takes no injection.

@@ -53,7 +53,7 @@ arrows:
     drift: null
 
   module-contract:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-11-11
     audited: 2026-11-14
@@ -61,12 +61,12 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "52 specs, all [x]; the example service (MOD-EX-001..005) is new since the last audit. Every unit, the Discord connector included, declares a test input."
+    next: "57 specs: 39 [x], 18 [ ]. Open: MOD-CFG-001, -002, -004, -005, -010, -015 to -021 (secrets as set or not set, override report, presentation served with the schema); MOD-UI-001 to -006 are retired to DASH-SET-* and stay [ ] until the old page is removed."
     drift: null
 
 
   config:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -74,7 +74,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "82 specs, all [x]. No open gaps."
+    next: "112 specs: 68 [x], 44 [ ]. Open: the one-place configuration design (secrets file, presentation table, models list, override map, placeholder rejection; docs/decisions/config-in-one-place.md)."
     drift: null
 
   event-bus:
@@ -90,7 +90,7 @@ arrows:
     drift: null
 
   model-backends:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -98,7 +98,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "60 specs, all [x]; the stub model servers (LLM-EX-001..006) are new since the last audit. Manual verification: the Claude and Bedrock paths against the live APIs are opt-in smoke tests with a key."
+    next: "62 specs: 60 [x], 2 [ ]. Open: Bedrock keys from secrets.yaml (LLM-CLAUDE-015, 016)."
     drift: null
 
   region-hooks:
@@ -126,7 +126,7 @@ arrows:
     drift: null
 
   chat:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -134,7 +134,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "45 specs, all [x]. No open gaps. Manual verification: the authenticated Twitch path."
+    next: "45 specs: 38 [x], 7 [ ]. Open: Twitch channel and credentials from chat.twitch.* keys."
     drift: null
 
   eyes:
@@ -158,11 +158,11 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-014, 015). Manual verification: the Discord connector against a real guild (docs/advanced/testing/real-backends.md)."
+    next: "55 specs: 50 [x], 4 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-015); the Discord token from connections.discord.token (CONN-DISC-001, 002, CONN-INJ-006)."
     drift: null
 
   ears:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -170,7 +170,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, with CONN-DESK-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
+    next: "100 specs: 94 [x], 4 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015); ears.http.token in secrets.yaml (EARS-SRC-013); EARS-CON-002 reworded."
     drift: null
 
   salience:
@@ -234,7 +234,7 @@ arrows:
     drift: null
 
   mouth:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-11-10
     audited: 2026-11-14
@@ -242,11 +242,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "84 specs: 83 [x], 1 [D] (MOUTH-POS-001). Manual verification: the Discord connector against real Discord (docs/advanced/testing/real-backends.md)."
+    next: "84 specs: 82 [x], 1 [ ], 1 [D]. Open: MOUTH-CONN-001 reworded for the secrets file."
     drift: null
 
   avatar:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -254,11 +254,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "66 specs, all [x]; the example driver (AVATAR-EX-001..004) is new since the last audit. Manual verification: VTube Studio against the real app."
+    next: "67 specs: 66 [x], 1 [ ]. Open: AVATAR-VTS-017, the literal plugin developer."
     drift: null
 
   dashboard:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -266,11 +266,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "135 specs, all [x]. The docs route at /cohost/ (DASH-DOCS-001..014), the page's docs links (DASH-UI-024, 025) and DASH-CTRL-005's docs entry were added after the 2026-11-14 audit and are not covered by it; run a new audit. Owner-deferred: visual redesign."
+    next: "227 specs: 101 [x], 126 [ ]. Open: the React UI (DASH-UI, ACC, NAV, THEME, A11Y, SET, BUILD, VIEWERS-010..023), the secret write and pick lists (DASH-SECRET, DASH-OPT), ports and upload limits from config.yaml (DASH-HTTP-009, DASH-HOST-001, DASH-HOST-006, DASH-UPL-001, -002), overrides in the stack snapshot (DASH-STACK-010, DASH-FEED-008). The API, feed, stack, injection and docs-serving specs are audited as implemented; run a new audit for the docs route."
     drift: null
 
   control-plane:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -278,11 +278,11 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "86 specs: 84 [x], 2 [D]."
+    next: "87 specs: 83 [x], 2 [ ], 2 [D]. Open: CTRL-STACK-014 and -016, container isolation overrides in the stack status."
     drift: null
 
   deployment:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "79 specs, all [x]. The docs build in pnpm dashboard (DEPLOY-HOST-001, -005, -006) was added after the 2026-11-14 audit and is not covered by it; run a new audit. DEPLOY-INST-007 and DEPLOY-INST-014 have source-order tests only; observe one installer run on a clean machine. Manual verification: the single-PC WSL2 checklist (docs/advanced/testing/single-pc.md)."
+    next: "81 specs: 62 [x], 19 [ ]. Open: the `models` puller reads config, secrets.yaml in installer/ignore files/compose, dashboard ports in config.yaml, dashboard UI build and the installer's full-version Node check. The earlier audit gaps stand (DEPLOY-INST-007, -011, -014)."
     drift: null
 
   docs-site:
@@ -302,7 +302,7 @@ arrows:
     blocks: [deployment]
     blockedBy: [region-hooks, model-backends, ears, avatar, module-contract, event-bus]
     detail: docs-site.md
-    next: "156 specs: 155 [x], 1 [ ]. Extension guides built and tested (DOCS-GUIDE-001..026, DOCS-EX-002, 005, DOCS-PAGE-006); examples/ stays outside the root manifests, so the image build is unaffected. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "156 specs: 153 [x], 3 [ ]. Extension guides built and tested (DOCS-GUIDE-001..026, DOCS-EX-002, 005, DOCS-PAGE-006); examples/ stays outside the root manifests, so the image build is unaffected. DOCS-README-003 and DOCS-FACT-004 follow the config-owned settings; DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

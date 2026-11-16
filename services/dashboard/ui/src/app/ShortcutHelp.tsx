@@ -1,4 +1,3 @@
-import { Button } from "../components/Button";
 import { Dialog } from "../components/Dialog";
 
 export const SHORTCUTS: readonly { keys: string; does: string }[] = [
@@ -12,7 +11,7 @@ export const SHORTCUTS: readonly { keys: string; does: string }[] = [
 /** The `?` dialog: every keyboard shortcut (DASH-NAV-003). */
 export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} title="Keyboard shortcuts" onClose={onClose} footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
+    <Dialog open={open} title="Keyboard shortcuts" onClose={onClose} backdropClose>
       <dl className="shortcuts">
         {SHORTCUTS.map((s) => (<div key={s.keys} className="row"><dt><kbd className="kbd">{s.keys}</kbd></dt><dd>{s.does}</dd></div>))}
       </dl>

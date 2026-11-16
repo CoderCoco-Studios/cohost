@@ -137,3 +137,81 @@ test("Esc cancels the top-most modal, the one opened last, whatever the order of
   assert.deepEqual(log, ["top", "behind"]);
   assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
 });
+
+// @spec DASH-A11Y-005
+test("focus returns to the opener only after the dialog has closed: a modal dialog makes the page behind it inert, and an inert element refuses focus", async () => {
+  const user = userEvent.setup();
+  render(<Host />);
+  const opener = screen.getByRole("button", { name: "Open" });
+  let dialogOpenWhenFocused: boolean | undefined;
+  const realFocus = opener.focus.bind(opener);
+  opener.focus = (...a: Parameters<HTMLElement["focus"]>) => { dialogOpenWhenFocused = (document.querySelector("dialog") as HTMLDialogElement | null)?.open; realFocus(...a); };
+  await user.click(opener);
+  dialogOpenWhenFocused = undefined;
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  assert.equal(dialogOpenWhenFocused, false, "the opener was focused while the dialog was still open");
+  assert.ok(document.activeElement === opener, "focus is on the opener");
+});
+
+// @spec DASH-A11Y-005
+test("when the opener is gone, focus goes to the screen heading, not to the page body", async () => {
+  const user = userEvent.setup();
+  function H() { const [open, setOpen] = useState(false); const [gone, setGone] = useState(false); return (<>
+    <h1 tabIndex={-1}>Screen</h1>
+    {gone ? null : <button onClick={() => setOpen(true)}>Open</button>}
+    <Dialog open={open} title="T" onClose={() => { setGone(true); setOpen(false); }}><input aria-label="Field" /></Dialog>
+  </>); }
+  render(<H />);
+  await user.click(screen.getByRole("button", { name: "Open" }));
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  assert.ok(document.activeElement === screen.getByRole("heading", { name: "Screen" }), "focus is on the heading");
+});
+
+// @spec DASH-A11Y-005, DASH-UI-033
+test("every dialog and sheet has a visible Close button in its header, which closes it as a cancel", async () => {
+  const user = userEvent.setup();
+  const reasons: string[] = [];
+  function H({ sheet }: { sheet?: boolean }) { const [open, setOpen] = useState(true); const C = sheet ? SideSheet : Dialog; return <C open={open} title="T" onClose={(r) => { reasons.push(r); setOpen(false); }}><p>x</p></C>; }
+  for (const sheet of [false, true]) {
+    const { unmount } = render(<H sheet={sheet} />);
+    const close = within(screen.getByRole("dialog")).getByRole("button", { name: "Close" });
+    assert.ok(close.closest(".dialog-h") !== null, "Close is in the header");
+    assert.match(close.textContent ?? "", /Close/, "the label is visible text");
+    await user.click(close);
+    assert.ok(screen.queryByRole("dialog") === null, "closed");
+    unmount();
+  }
+  assert.deepEqual(reasons, ["cancel", "cancel"]);
+});
+
+// @spec DASH-A11Y-005
+test("a click on the backdrop closes a sheet or an informational dialog, but never a dialog that holds input or asks a question", async () => {
+  const user = userEvent.setup();
+  let closed = 0;
+  const onClose = () => { closed++; };
+  const { rerender } = render(<SideSheet open title="Sheet" onClose={onClose}><p>x</p></SideSheet>);
+  await user.click(screen.getByRole("dialog"));
+  assert.equal(closed, 1, "a sheet closes on a backdrop click");
+  await user.click(within(screen.getByRole("dialog")).getByText("x"));
+  assert.equal(closed, 1, "a click inside the sheet does not");
+  rerender(<Dialog open title="Info" onClose={onClose} backdropClose><p>x</p></Dialog>);
+  await user.click(screen.getByRole("dialog"));
+  assert.equal(closed, 2, "an informational dialog closes");
+  rerender(<Dialog open title="Form" onClose={onClose}><input aria-label="Token" /></Dialog>);
+  await user.click(screen.getByRole("dialog"));
+  assert.equal(closed, 2, "a dialog without backdropClose stays open");
+  rerender(<ConfirmDialog open title="Sure?" confirmLabel="Yes" onConfirm={() => {}} onCancel={onClose}>x</ConfirmDialog>);
+  await user.click(screen.getByRole("dialog"));
+  assert.equal(closed, 2, "a confirmation stays open");
+});
+
+// @spec DASH-A11Y-005
+test("a drag that starts inside the dialog and ends on the backdrop does not close it", () => {
+  let closed = 0;
+  render(<SideSheet open title="Sheet" onClose={() => { closed++; }}><input aria-label="Field" /></SideSheet>);
+  const dlg = screen.getByRole("dialog");
+  fireEvent.mouseDown(screen.getByLabelText("Field"));
+  fireEvent.mouseUp(dlg);
+  fireEvent.click(dlg);
+  assert.equal(closed, 0);
+});

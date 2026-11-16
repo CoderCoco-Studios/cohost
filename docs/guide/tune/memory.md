@@ -83,7 +83,7 @@ I do like knowing my regulars. I do not enjoy being asked to forget them. But ye
   docker volume rm <project>_pg18-data
   ```
 
-  `<project>` is the Compose project name, which is the name of the folder the repository is in (run `docker volume ls` to see the exact name). The next launch creates an empty database. A volume named `<project>_pg-data` belongs to an older Postgres version and is not used; remove it by hand with `docker volume rm <project>_pg-data`.
+  `<project>` is the [Compose](../../start/glossary.md#docker-compose) project name, which is the name of the folder the repository is in (run `docker volume ls` to see the exact name). The next launch creates an empty database. A volume named `<project>_pg-data` belongs to an older Postgres version and is not used; remove it by hand with `docker volume rm <project>_pg-data`.
 
 ## Changing the embedding model
 

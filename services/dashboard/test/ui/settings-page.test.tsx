@@ -459,7 +459,7 @@ test("a save whose answer is lost re-reads the section: done when every edited k
   b.app.fetch.on("GET /config/demo", { json: { ...demo, etag: "e3", keys: { ...demo.keys, name: { source: "literal", editable: true, value: "Cocoz" } } } });
   await user.click(bar("Save"));
   await settle();
-  assert.match(text(screen.getByRole("alert")), /could not be confirmed/);
+  assert.match(text(screen.getByRole("alert")), /outcome of the save is unknown/);
   assert.ok(screen.getByText("1 edit in this section"));
   assert.equal((within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value, "Cocozq");
 });

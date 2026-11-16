@@ -21,8 +21,10 @@ export interface SectionState {
   edits: Record<string, EditedKey>;
   /** The issues the last Check or Save answered with. */
   issues: Issue[];
-  /** A save answered 409: the file changed since the section was loaded. */
+  /** The file changed since `etag` was read: a save answered 409, or the re-read after a lost answer showed another etag. */
   conflict: boolean;
+  /** The file's etag when `conflict` was found; Discard takes it so the next save is not refused again. */
+  currentEtag?: string;
 }
 
 export type BarState =
@@ -133,7 +135,7 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
   async function readSection(path: string, keepEdits = false): Promise<boolean> {
     const r = await api.get<{ etag: string; keys: Record<string, KeyRead>; unknown?: unknown }>(`/config/${encodeURIComponent(path)}`);
     if (r.ok && r.data && typeof r.data === "object" && r.data.keys) {
-      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, unknown: Array.isArray(r.data.unknown) ? r.data.unknown.filter((u): u is string => typeof u === "string") : [], edits: keepEdits ? s.edits : {}, issues: [], conflict: false }));
+      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, unknown: Array.isArray(r.data.unknown) ? r.data.unknown.filter((u): u is string => typeof u === "string") : [], edits: keepEdits ? s.edits : {}, issues: [], conflict: false, currentEtag: undefined }));
       return true;
     }
     const error = r.ok ? "The answer had an unexpected shape." : detailOf(r);
@@ -145,7 +147,8 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
    * The etag belongs to the file, not to a section: a write changes it for every section. After `from` was replaced by `to`, a
    * loaded section that was consistent with `from` (it was read, or last written, at that file state) is consistent with `to` for
    * every key the write did not touch, so it takes `to`. A section whose etag is something else is stale and keeps it, so its own
-   * save still answers 409.
+   * save still answers 409. `to` must come from a write response: the etag of a re-read can include a write by someone else, which
+   * a section holding the older etag has not seen.
    */
   function propagateEtag(from: string | undefined, to: string | undefined): void {
     if (!from || !to) return;
@@ -204,7 +207,13 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
     },
     revert(section, key) { patchSection(section, (s) => { const edits = { ...s.edits }; delete edits[key]; return { ...s, edits }; }); },
     discard(paths) {
-      for (const p of paths) { patchSection(p, (s) => ({ ...s, edits: {}, issues: [] })); setBar(p, { kind: "idle" }); }
+      for (const p of paths) {
+        const conflicted = state.get().sections[p]?.conflict === true;
+        // After a conflict the section's etag is the one the file has moved past: take the current one now, and read the values again.
+        patchSection(p, (s) => ({ ...s, edits: {}, issues: [], ...(conflicted ? { conflict: false, etag: s.currentEtag ?? s.etag, currentEtag: undefined } : {}) }));
+        setBar(p, { kind: "idle" });
+        if (conflicted) void readSection(p);
+      }
     },
     async reload(path) {
       setBar(path, { kind: "idle" });
@@ -248,7 +257,8 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           continue;
         }
         if (r.status === 409) {
-          patchSection(path, (cur) => ({ ...cur, conflict: true }));
+          const current = r.data && typeof r.data === "object" && typeof (r.data as { etag?: unknown }).etag === "string" ? (r.data as { etag: string }).etag : undefined;
+          patchSection(path, (cur) => ({ ...cur, conflict: true, currentEtag: current }));
           stop(path, `config.yaml changed since it was loaded; Reload re-reads it and discards your edits to ${titleOf(path)}`,
             `${titleOf(path)}: config.yaml changed since this section was loaded. Your edits are kept; reload to read the new file (this discards them).`);
           return;
@@ -266,12 +276,18 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           const after = state.get().sections[path]!;
           if (ok && Object.entries(sent).every(([k, e]) => same(after.keys[k]?.value, e.value))) {
             patchSection(path, (cur) => ({ ...cur, edits: Object.fromEntries(Object.entries(cur.edits).filter(([k, e]) => !same(after.keys[k]?.value, e.value))) }));
-            propagateEtag(s.etag, after.etag);
-            saved.push(path);
+            saved.push(path); // the section now holds the file's etag and values; no other section's etag is derived from a read
             continue; // nothing to restart is known; the read shows the saved values
           }
-          stop(path, `the dashboard did not answer: ${r.detail}; whether it was written could not be confirmed`,
-            `The save could not be confirmed: the dashboard did not answer (${r.detail}). Your edits are kept.`);
+          // Not confirmed. The edits were made against the values and etag read before, so that etag stays: if the file has since
+          // been changed by someone else, the next save is refused (409) instead of overwriting that change.
+          const changed = ok && after.etag !== undefined && after.etag !== s.etag;
+          patchSection(path, (cur) => ({ ...cur, etag: s.etag, ...(changed ? { conflict: true, currentEtag: after.etag } : {}) }));
+          const held = ok
+            ? `The file now holds ${Object.keys(sent).map((k) => `${m?.keys.find((x) => x.key === k)?.label ?? k}: ${after.keys[k] && "value" in after.keys[k]! ? JSON.stringify(after.keys[k]!.value) : "not set"}`).join("; ")}${changed ? ", and it changed since this section was loaded, so Save will be refused until you Reload (which discards your edits)" : ""}.`
+            : "The file could not be read again to check.";
+          stop(path, `the dashboard did not answer: ${r.detail}; whether it was written is unknown`,
+            `The outcome of the save is unknown: the dashboard did not answer (${r.detail}). ${held} Your edits are kept.`);
           return;
         }
         if (r.status === 403) access.markNotSetUp("control", true);

@@ -45,7 +45,7 @@ test("every field the synthesizer can send exists in the pinned Kokoro-FastAPI r
   for (const k of [...Object.keys(sent), "input"]) assert.ok(fields.request.includes(k), `${k} is not a Kokoro-FastAPI request field`);
   for (const k of Object.keys(sent.normalization_options as object)) assert.ok(fields.normalization_options.includes(k), k);
   // every normalization key the config accepts is a real one, and the real ones are all accepted
-  const accepted = Object.keys((ConfigSchema.shape.voice.shape.normalization as any).removeDefault().shape);
+  const accepted = Object.keys((ConfigSchema.shape.voice.shape.normalization as any).def.innerType.shape);
   assert.deepEqual(accepted.sort(), [...fields.normalization_options].sort());
 });
 

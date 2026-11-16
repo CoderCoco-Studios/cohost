@@ -26,7 +26,7 @@ The easiest Redis is the [Compose](../../start/glossary.md#docker-compose) one: 
 ```bash
 pnpm test         # build the native addon, tsc -b, then every test
 pnpm test:only    # the same tests without the build step
-pnpm typecheck    # tsc -b --noEmit
+pnpm typecheck    # tsc -b: type-checks every project
 ```
 
 `pnpm test` runs `pnpm build:native` and `tsc -b` first, which is what catches type errors, then runs every `test/*.test.ts` under `packages/*` and `services/*` with Node's `node:test` runner through `tsx`. Run `pnpm test:only` for a quick loop once the workspace is built.
@@ -74,7 +74,7 @@ Four workflows watch every pull request and every push to `main`:
 
 | Workflow | Runs |
 | --- | --- |
-| `test` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, then `pnpm test`, with Redis 7.4 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
+| `test` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, then `pnpm test`, with Redis 8 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
 | `lid-check` | `node scripts/lid-check.mjs`: every `@spec` ID in code and tests exists and is defined once |
 | `compose-smoke` | `scripts/compose-smoke.sh` builds the service images and requires `salience`, `affect` and `avatar` to reach healthy, then runs the launch end-to-end test against a real Compose project |
 | `docs-build` | `pnpm docs:build`, the documentation site and its checks (pull requests only) |

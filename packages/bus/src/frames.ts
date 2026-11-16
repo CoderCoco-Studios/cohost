@@ -37,6 +37,10 @@ function toBusError(err: unknown, lastConnectError?: Error): Error & { code: Bus
 function baseOptions(failFast: boolean): RedisOptions {
   return {
     lazyConnect: true,
+    // RESP2 wire protocol. ioredis 6 defaults to RESP3, where Redis answers XREAD as a map; ioredis's default
+    // `replyMapping: "legacy"` turns that map back into the RESP2 nested arrays the readers index, so RESP3 would
+    // work only through that conversion. Pinning protocol 2 avoids relying on it (and `HELLO 3`) for these readers.
+    protocol: 2,
     connectTimeout: CONNECT_TIMEOUT_MS,
     // failFast: never reconnect; otherwise 250 ms doubling to 30 s (BUS-NAT-FRM-006)
     retryStrategy: failFast ? () => null : (times) => Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.min(times - 1, 30)),

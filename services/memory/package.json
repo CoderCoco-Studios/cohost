@@ -19,10 +19,10 @@
     "@cohost/llm": "workspace:*",
     "@cohost/modules": "workspace:*",
     "@cohost/shared": "workspace:*",
-    "pg": "^8.13.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@cohost/testing": "workspace:*",
-    "@types/pg": "^8.11.0"
+    "@types/pg": "^8.23.1"
   }
 }

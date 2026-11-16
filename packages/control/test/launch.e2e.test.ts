@@ -28,7 +28,7 @@ const unusable = await dockerUsable();
 const COMPOSE = (name: string) => `name: ${name}
 services:
   probe:
-    image: redis:7.4.12-alpine
+    image: redis:8.10.3-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 1s

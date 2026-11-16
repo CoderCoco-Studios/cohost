@@ -17,7 +17,7 @@ jobs:
     # Redis lets the bus round-trip test run instead of skipping itself.
     services:
       redis:
-        image: redis:7.4.12-alpine
+        image: redis:8.10.3-alpine
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -26,7 +26,7 @@ jobs:
           --health-retries 10
       # pgvector lets the memory store's real-Postgres tests run instead of skipping themselves (DEPLOY-CI-008).
       postgres:
-        image: pgvector/pgvector:0.8.7-pg16
+        image: pgvector/pgvector:0.8.7-pg18
         env:
           POSTGRES_USER: cohost
           POSTGRES_PASSWORD: cohost
@@ -46,7 +46,7 @@ jobs:
       - uses: pnpm/action-setup@v6.1.1
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: pnpm
       - name: Install the pinned Rust toolchain
         # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.

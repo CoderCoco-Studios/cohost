@@ -60,7 +60,7 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
 services:  # @spec DEPLOY-COMPOSE-001
   # ---------- infrastructure ----------
   redis:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-013, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
-    image: redis:7.4.12-alpine   # major 7 held: the redis-data volume is not portable across majors
+    image: redis:8.10.3-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes: [redis-data:/data]
@@ -72,13 +72,13 @@ services:  # @spec DEPLOY-COMPOSE-001
       retries: 10
 
   postgres:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
-    image: pgvector/pgvector:0.8.7-pg16   # major 16 held: the pg-data volume is not portable across majors
+    image: pgvector/pgvector:0.8.7-pg18
     restart: unless-stopped
     environment:
       POSTGRES_USER: cohost
       POSTGRES_PASSWORD: cohost
       POSTGRES_DB: cohost
-    volumes: [pg-data:/var/lib/postgresql/data]
+    volumes: [pg18-data:/var/lib/postgresql]   # Postgres 18+ keeps its cluster under /var/lib/postgresql/<major>/docker
     ports: ["127.0.0.1:5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cohost"]
@@ -251,6 +251,6 @@ services:  # @spec DEPLOY-COMPOSE-001
 
 volumes:  # @spec DEPLOY-COMPOSE-009
   redis-data:
-  pg-data:
+  pg18-data:
   ollama-data:
   stt-cache:

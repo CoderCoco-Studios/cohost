@@ -21,6 +21,12 @@ export const SECRET_PATHS: readonly string[] = ["llm.openai.api_key", "llm.claud
 export const EMOTIONS = Emotion.options;
 
 /**
+ * `{}` as the input of an object that holds a `z.preprocess` key: zod 4 types that key's input as `unknown`, so it is
+ * required in the input type, although the preprocess step turns the missing key into the default at run time.
+ */
+const EMPTY_INPUT = {} as never;
+
+/**
  * A region's pluggable judgement: built-in rules, a chat model parsed as JSON,
  * or a URL you serve yourself (a model you trained). See packages/modules.
  */
@@ -34,11 +40,11 @@ export const ModuleSchema = z.object({
   llm: z.object({
     provider: z.preprocess((v) => v || undefined, z.enum(["ollama", "openai", "anthropic", "bedrock"]).optional()),
     model: z.preprocess((v) => v || undefined, z.string().optional()),
-  }).default({}).superRefine((v, ctx) => {
+  }).prefault({}).superRefine((v, ctx) => {
     // A model id only means something to one provider; inheriting the cortex's id across providers 404s every call.
     if (v.provider && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required when llm.provider is set on a hook (model ids are provider-specific)" });
   }),
-}).default({});
+}).prefault(EMPTY_INPUT);
 // @spec CFG-SCH-027
 export type ModuleConfig = z.infer<typeof ModuleSchema>;
 
@@ -79,7 +85,7 @@ export const ConfigSchema = z.object({
     openai: z.object({
       base_url: str("https://api.openai.com/v1"),
       api_key: z.string().default(""),
-    }).default({}),
+    }).prefault({}),
     /** Shared by provider=anthropic and provider=bedrock. */
     claude: z.object({
       /** Claude API key; leave empty to use ANTHROPIC_API_KEY or an `ant auth login` profile. */
@@ -90,11 +96,11 @@ export const ConfigSchema = z.object({
       max_tokens: z.number().int().min(256).default(2048),
       /** Claude API only: re-run on another Claude model if a safety classifier declines. */
       fallbacks: z.boolean().default(true),
-    }).default({}),
+    }).prefault(EMPTY_INPUT),
     bedrock: z.object({
       /** Empty = AWS_REGION / AWS_DEFAULT_REGION from the environment. */
       region: z.string().default(""),
-    }).default({}),
+    }).prefault({}),
   }),
   // @spec CFG-SCH-021
   vision: z.object({
@@ -131,7 +137,7 @@ export const ConfigSchema = z.object({
   chat: z.object({
     /** `fake` publishes scripted/stdin messages with no Twitch connection (isolated runs). */
     source: z.preprocess((v) => v || "twitch", z.enum(["twitch", "fake"])),
-    fake: z.object({ interval_ms: z.number().int().positive().default(8000) }).default({}),
+    fake: z.object({ interval_ms: z.number().int().positive().default(8000) }).prefault({}),
     twitch: z.object({ channel: z.string().default("") }),
     ignore_users: z.array(z.string()).default([]),
     ignore_prefixes: z.array(z.string()).default(["!"]),
@@ -185,7 +191,7 @@ export const ConfigSchema = z.object({
           }),
         )
         .default([]),
-    }).default({}),
+    }).prefault({}),
     affect: z.object({
       /** How often affect.state is published while it's changing. */
       publish_ms: z.number().int().positive().default(2000),
@@ -207,7 +213,7 @@ export const ConfigSchema = z.object({
       nudge_said_arousal: z.number().min(0).max(1).default(0.05),
       /** How a line of chat/speech moves the mood: rules | llm | http. */
       module: ModuleSchema,
-    }).default({}),
+    }).prefault({}),
     memory: z.object({
       /** postgres = pgvector + Ollama embeddings; `memory` = in-process fake (lost on exit; for dev/CI and isolated runs). */
       store: z.preprocess((v) => v || "postgres", z.enum(["postgres", "memory"])),
@@ -242,8 +248,8 @@ export const ConfigSchema = z.object({
         capture: ModuleSchema,
         /** Hook: the after-the-fact quality pass (a stronger model). rules = proposes no change. */
         consolidator: ModuleSchema,
-      }).default({}),
-    }).default({}),
+      }).prefault({}),
+    }).prefault(EMPTY_INPUT),
     cortex: z.object({
       /** How long to wait for the memory region before answering without it. */
       recall_timeout_ms: z.number().int().positive().default(2500),
@@ -253,7 +259,7 @@ export const ConfigSchema = z.object({
       fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
       /** Inhibition: a check on each reply before it's spoken. rules = pass-through. */
       critic: ModuleSchema,
-    }).default({}),
+    }).prefault({}),
   }),
   voice: z.object({
     /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
@@ -277,7 +283,7 @@ export const ConfigSchema = z.object({
       caps_normalization: z.boolean().optional(),
       replace_remaining_symbols: z.boolean().optional(),
       remove_emoji: z.boolean().optional(),
-    }).default({}), // @spec CFG-SCH-029
+    }).prefault({}), // @spec CFG-SCH-029
     /** Read only by the `stub` engine to size its silence; the Kokoro engine ignores it. */
     sample_rate: z.number().int().positive().default(24000).describe("Sample rate of the silence the stub voice engine returns. Read only by the stub engine; the Kokoro engine ignores it."), // @spec CFG-SCH-026
     fallback: z.object({
@@ -285,7 +291,7 @@ export const ConfigSchema = z.object({
       lines: z.array(
         z.string().max(200).refine((s) => s.trim().length > 0, "must not be empty"),
       ).default([]), // @spec CFG-SCH-017
-    }).default({}),
+    }).prefault({}),
   }),
   avatar: z.object({
     // A blank value (unset AVATAR_DRIVER) means "no avatar app"; a non-empty unknown value still fails.
@@ -315,12 +321,12 @@ export const ConfigSchema = z.object({
       port: z.number().int().min(0).max(65535).default(8765),
       /** Bearer token `POST /audio` must carry; empty requires none (EARS-SRC-013). */
       token: z.string().default(""),
-    }).default({}),
+    }).prefault(EMPTY_INPUT),
     /** The `dir` source: the directory polled for dropped `.wav` files (empty = not configured) and the poll period. */
     dir: z.object({
       path: z.string().default(""),
       poll_ms: z.number().int().positive().default(1000),
-    }).default({}),
+    }).prefault({}),
     silence_ms: z.number().int().positive().default(700),
     /** Sources deaf to the co-host's own voice while a line plays and for `echo_tail_ms` after (EARS-ECHO-004). */
     // @spec CFG-SCH-036
@@ -334,7 +340,7 @@ export const ConfigSchema = z.object({
     vad: z.object({
       engine: z.preprocess((v) => v || "silero", z.enum(["silero", "gap"])),
       threshold: z.number().min(0).max(1).default(0.5),
-    }).default({}),
+    }).prefault(EMPTY_INPUT),
     /** An utterance whose buffered audio reaches this is closed and the speaker's next speech opens a new one (EARS-VAD-005). */
     max_utterance_ms: z.number().int().positive().default(15000),
     /** `on` publishes `speech.partial` while a connector utterance is open (EARS-PART-001); costs speech-to-text calls. */
@@ -363,13 +369,13 @@ export const ConfigSchema = z.object({
         enabled: z.boolean().default(true),
         /** Loudness on this output only, applied to utterances and fallback clips. */
         gain_db: z.number().min(-40).max(12).default(0),
-      }).default({}),
+      }).prefault({}),
       /** Test-only output: plays nothing, reports as a sink; `fail_every` n > 0 gives up on every n-th line. */
       // @spec CFG-SCH-023
       dryrun: z.object({
         enabled: z.boolean().default(false),
         fail_every: z.number().int().nonnegative().default(0),
-      }).default({}),
+      }).prefault({}),
       /** Appends each line's WAV to a bounded rotating directory under the data directory. */
       // @spec CFG-SCH-031
       file: z.object({
@@ -378,7 +384,7 @@ export const ConfigSchema = z.object({
         dir: z.string().refine((d) => d !== "" && !d.startsWith("/") && !/^[A-Za-z]:/.test(d) && !d.split(/[\\/]/).includes(".."), "must be a relative path without `..`").default("mouth/outputs"),
         /** The newest this many files are kept. */
         max_files: z.number().int().min(1).default(100),
-      }).default({}),
+      }).prefault({}),
       /** POSTs each line's WAV to `url`, with a timeout, bounded retries and a bounded queue. */
       // @spec CFG-SCH-031
       http: z.object({
@@ -388,13 +394,13 @@ export const ConfigSchema = z.object({
         timeout_ms: z.number().int().positive().default(5000),
         retries: z.number().int().nonnegative().default(3),
         max_queue: z.number().int().positive().default(20),
-      }).default({}),
-    }).default({}),
+      }).prefault({}),
+    }).prefault({}),
     fallback: z.object({
       /** At most one spoken fallback line per this many ms on an output (storm limit). */
       min_interval_ms: z.number().int().nonnegative().default(20000),
-    }).default({}),
-  }).default({}),
+    }).prefault({}),
+  }).prefault({}),
   /**
    * External connectors that attach to the bus (service `connector-discord`, unit `discord`). The whole section is optional so a
    * config.yaml written before connectors existed still loads. The Discord connector reads the guild and voice channel.
@@ -406,8 +412,8 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(true),
       guild_id: z.string().default(""),
       voice_channel_id: z.string().default(""),
-    }).default({}),
-  }).default({}),
+    }).prefault({}),
+  }).prefault({}),
   dashboard: z.object({
     port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT and DASHBOARD_PORT environment variables are both unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
   }),
@@ -428,7 +434,7 @@ export function earsSources(ears: Pick<Config["ears"], "sources">): string[] {
 export const ExpressionMapSchema = z.record(
   z.string(),
   z
-    .object({ gestures: z.record(z.string(), z.string()).default({}) })
+    .object({ gestures: z.record(z.string(), z.string()).prefault({}) })
     .catchall(z.string()),
 );
 export type ExpressionMap = z.infer<typeof ExpressionMapSchema>;

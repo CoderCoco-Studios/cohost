@@ -4,15 +4,16 @@
 # @cohost/* workspace links, so every service dies with ERR_MODULE_NOT_FOUND (#6).
 # (`pnpm deploy --prod` was tried instead; it needs inject-workspace-packages lockfile settings.)  @spec DEPLOY-IMG-003
 # The pnpm version is the root package.json "packageManager" field and nothing else.  @spec DEPLOY-IMG-006
-FROM node:22-slim AS base
+FROM node:26-slim AS base
 WORKDIR /app
 COPY package.json ./
-RUN corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
+# Node 26 does not bundle corepack, so install it first.
+RUN npm install -g corepack@0.36.0 && corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
 
 # Rust addon: plain cargo, no Node and no napi CLI. The tag is the toolchain rust-toolchain.toml pins
-# (lid-check fails when they differ). bookworm = the Debian release node:22-slim is built on.
+# (lid-check fails when they differ). trixie = the Debian release node:26-slim is built on.
 # @spec DEPLOY-IMG-001
-FROM rust:1.99.1-slim-bookworm AS native
+FROM rust:1.100.0-slim-trixie AS native
 WORKDIR /src
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY crates ./crates

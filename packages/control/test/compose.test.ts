@@ -70,6 +70,6 @@ test("every image in both Compose files carries an exact version tag", () => {
     assert.doesNotMatch(tag, /^latest/, `${name} (${image}) is not latest`);
     assert.match(tag, /\d+\.\d+/, `${name} (${image}) names a full or minor version, not a floating major`);
   }
-  assert.equal(effective(base.services.redis!.image!), "redis:7.4.12-alpine");
-  assert.equal(effective(base.services.postgres!.image!), "pgvector/pgvector:0.8.7-pg16");
+  assert.equal(effective(base.services.redis!.image!), "redis:8.10.3-alpine");
+  assert.equal(effective(base.services.postgres!.image!), "pgvector/pgvector:0.8.7-pg18");
 });

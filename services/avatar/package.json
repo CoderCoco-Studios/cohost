@@ -14,10 +14,10 @@
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",
     "@cohost/shared": "workspace:*",
-    "ws": "^8.18.0"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.13",
+    "@types/ws": "^8.18.2",
     "@cohost/testing": "workspace:*"
   }
 }

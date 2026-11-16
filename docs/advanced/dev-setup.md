@@ -15,8 +15,8 @@ If you only want to run the co-host, you do not need this page: the [simple trac
 
 | Need | Version | Why |
 | --- | --- | --- |
-| Node | 22 or newer (`engines` in `package.json`) | Runs every service and the built-in `node:test` runner |
-| pnpm | 10 (`packageManager` in `package.json` pins it; `corepack enable` fetches it) | Installs the workspace |
+| Node | 26 or newer (`engines` in `package.json`) | Runs every service and the built-in `node:test` runner |
+| pnpm | 12 (`packageManager` in `package.json` pins it; Node 26 does not bundle corepack, so `npm install -g corepack@0.36.0 && corepack enable` fetches it) | Installs the workspace |
 | Rust toolchain | The exact version `rust-toolchain.toml` pins, with `rustfmt` and `clippy` | Builds the native [bus](../start/glossary.md#bus) addon |
 | A C compiler | Any (`build-essential` on Debian and Ubuntu) | The Rust linker calls it |
 | [Docker](../start/glossary.md#docker) | Any recent version | Runs [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), [Ollama](../start/glossary.md#ollama) and the speech servers |
@@ -57,7 +57,7 @@ The order matters. `@cohost/bus` loads that `.node` file when it is imported and
 | Command | What it does |
 | --- | --- |
 | `pnpm build` | The native addon, then `tsc -b` |
-| `pnpm typecheck` | `tsc -b --noEmit`; `pnpm lint` runs the same check |
+| `pnpm typecheck` | `tsc -b`, which type-checks every project and writes the build output; `pnpm lint` runs the same check |
 | `pnpm clean` | Removes every `dist/` |
 | `cargo test --workspace` | The Rust tests (CI also runs `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings`) |
 

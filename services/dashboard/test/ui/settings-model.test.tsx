@@ -76,7 +76,7 @@ test("an unknown model kind, a malformed options list or a widget on the wrong t
   const m = parseSchema({ groups: ["Brain"], sections: [{ path: "s", title: "S", group: "Brain", about: "", services: [], secrets: [], keys: {
     a: { help: "h", widget: { type: "model", kind: "huge" } }, b: { help: "h", widget: { type: "options", options: "nope" } }, c: { help: "h", widget: { type: "timezone" } },
     d: { help: "h", widget: { type: "options", options: [{ value: "x", label: "X" }] } },
-  }, schema: { type: "object", properties: { a: { type: "string" }, b: { type: "string", enum: ["p", "q"] }, c: { type: "integer" }, d: { type: "string" } } } }] });
+  }, schema: { type: "object", properties: { a: { type: "string" }, b: { type: "string", enum: ["p", "q"], default: "p" }, c: { type: "integer" }, d: { type: "string" } } } }] });
   const [a, b, c, d] = m.sections[0]!.keys;
   assert.equal(a!.control.kind, "text");
   assert.equal(b!.control.kind, "segmented");

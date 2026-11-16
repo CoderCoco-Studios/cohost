@@ -25,6 +25,7 @@ export function SaveBar({ members }: { members: SectionModel[] }) {
     <div className="savebar" role="group" aria-label="Save settings">
       <div className="grow">
         <output className="small"><b>{`${edits} ${edits === 1 ? "edit" : "edits"} in this section`}</b></output>
+        {edits > 0 && !valid ? <p className="small muted save-hint">A field still needs a value or a fix before this section can be checked or saved.</p> : null}
         {/* The live region stays mounted and receives the text, so a screen reader announces the result (DASH-A11Y-004). */}
         <output className={`save-status small ${bar.kind === "ok" ? "action-ok" : "muted"}`}>
           {bar.kind === "busy" ? (bar.what === "check" ? "Checking…" : "Saving…") : bar.kind === "ok" ? bar.message : ""}

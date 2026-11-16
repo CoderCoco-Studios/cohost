@@ -33,7 +33,7 @@ test("saving a secret sends PUT /secrets/<path> with the control token, never sh
   const user = userEvent.setup();
   await user.type(within(row("api_key")).getByLabelText("Api key"), "sk-SECRET-123");
   b.app.rt.access.setToken("control", "tok", "tab");
-  await user.click(within(row("api_key")).getByRole("button", { name: "Save" }));
+  await user.click(within(row("api_key")).getByRole("button", { name: "Save secret" }));
   await settle();
   const call = b.app.fetch.callsTo("PUT /secrets/demo.api_key")[0]!;
   assert.deepEqual(body(call), { value: "sk-SECRET-123" });
@@ -50,7 +50,7 @@ test("a secret write asks for the control token through the Access dialog when n
   const b = await open("demo", { routes: { "PUT /secrets/demo.api_key": { json: { ok: true, set: true, restart: [] } } } });
   const user = userEvent.setup();
   await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");
-  await user.click(within(row("api_key")).getByRole("button", { name: "Save" }));
+  await user.click(within(row("api_key")).getByRole("button", { name: "Save secret" }));
   await settle();
   assert.ok(b.app.rt.access.state.get().prompt, "the Access dialog is asked for the token");
   assert.match(b.app.rt.access.state.get().prompt!.action, /demo\.api_key/);
@@ -79,7 +79,7 @@ test("a failed secret write is shown beside the field with its status and detail
   const user = userEvent.setup();
   b.app.rt.access.setToken("control", "tok", "tab");
   await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");
-  await user.click(within(row("api_key")).getByRole("button", { name: "Save" }));
+  await user.click(within(row("api_key")).getByRole("button", { name: "Save secret" }));
   await settle();
   assert.match(text(row("api_key")), /500 cannot write secrets\.yaml/);
   assert.equal(document.body.innerHTML.includes("abc") && !(within(row("api_key")).getByLabelText("Api key") as HTMLInputElement).value, false);

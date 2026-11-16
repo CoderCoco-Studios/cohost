@@ -148,31 +148,35 @@ function ObjectsEditor({ props, value, onChange, label, wiring, errors = {} }: {
   // number or line) stay with that card. The ids are not part of the value; a new list of another length (Discard, a reload) gets fresh ones.
   const ids = useRef<number[]>([]);
   const next = useRef(0);
+  /** Cards the operator added with Add: they show no validation message until the operator has edited or left them. */
+  const added = useRef(new Set<number>());
   if (ids.current.length !== items.length) ids.current = items.map((_, i) => ids.current[i] ?? next.current++);
   const setAt = (i: number, patch: Record<string, unknown>) => onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   return (
     <div className="cards" id={wiring.id} aria-describedby={wiring.describedBy}>
       {items.length === 0 ? <p className="muted small">{`No ${lc(label)} yet. Use Add to create the first.`}</p> : null}
       {items.map((it, i) => (
-        <ItemCard key={ids.current[i]} n={i + 1} noun={noun} props={props} item={it} errors={errors} index={i} onPatch={(patch) => setAt(i, patch)} onRemove={() => { ids.current = ids.current.filter((_, j) => j !== i); onChange(items.filter((_, j) => j !== i)); }} />
+        <ItemCard key={ids.current[i]} pristine={added.current.has(ids.current[i]!)} n={i + 1} noun={noun} props={props} item={it} errors={errors} index={i} onPatch={(patch) => setAt(i, patch)} onRemove={() => { ids.current = ids.current.filter((_, j) => j !== i); onChange(items.filter((_, j) => j !== i)); }} />
       ))}
-      <div><Button onClick={() => { ids.current = [...ids.current, next.current++]; onChange([...items, defaultItem(props)]); }}>{`Add a ${lc(noun)}`}</Button></div>
+      <div><Button onClick={() => { const id = next.current++; added.current.add(id); ids.current = [...ids.current, id]; onChange([...items, defaultItem(props)]); }}>{`Add a ${lc(noun)}`}</Button></div>
     </div>
   );
 }
 
-function ItemCard({ n, noun, props, item, errors, index, onPatch, onRemove }: { n: number; noun: string; props: ItemProp[]; item: Record<string, unknown>; errors: Errors; index: number; onPatch: (p: Record<string, unknown>) => void; onRemove: () => void }) {
+function ItemCard({ n, noun, props, item, errors, index, pristine, onPatch, onRemove }: { pristine: boolean; n: number; noun: string; props: ItemProp[]; item: Record<string, unknown>; errors: Errors; index: number; onPatch: (p: Record<string, unknown>) => void; onRemove: () => void }) {
   const headingId = useId();
   const title = `${noun} ${n}`;
+  const [touched, setTouched] = useState(!pristine);
+  const shown: Errors = touched ? errors : {};
   return (
-    <section className="card item-card" role="group" aria-labelledby={headingId}>
+    <section className="card item-card" role="group" aria-labelledby={headingId} onBlur={() => setTouched(true)}>
       <div className="card-h">
         <h3 id={headingId} className="grow">{title}</h3>
         <Button variant="danger" size="sm" aria-label={`Remove ${lc(title)}`} onClick={onRemove}>Remove</Button>
       </div>
       <div className="card-b stack-y">
         {props.map((p) => (
-          <ItemProperty key={p.name} prop={p} value={item[p.name]} error={errors[`${index}.${p.name}`]} sub={prefixed(errors, `${index}.${p.name}.`)} onChange={(v) => onPatch({ [p.name]: v })} />
+          <ItemProperty key={p.name} prop={p} value={item[p.name]} error={shown[`${index}.${p.name}`]} sub={prefixed(shown, `${index}.${p.name}.`)} onChange={(v) => { setTouched(true); onPatch({ [p.name]: v }); }} />
         ))}
       </div>
     </section>

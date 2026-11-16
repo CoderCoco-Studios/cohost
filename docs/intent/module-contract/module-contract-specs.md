@@ -54,7 +54,7 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 
 ## Pause and resume (MOD-PAUSE)
 
-- [x] **MOD-PAUSE-001**: Where control is enabled, the services list shall show Pause and Resume on the row of each unit whose `pause` is true and on no other row. <!-- test: services/dashboard/test/ui/services.test.tsx -->
+- [x] **MOD-PAUSE-001**: Where control is enabled, the services list shall show, on the row of each unit whose `pause` is true and on no other row, the one control that reflects the unit's current state: Pause while its heartbeat `detail` is not `paused`, Resume while it is. <!-- test: services/dashboard/test/ui/services.test.tsx -->
 - [x] **MOD-PAUSE-002**: When the operator presses Pause or Resume on a unit's row, the page shall `POST /control` with `{ cmd: "pause" | "resume", target: <unit id> }`. <!-- test: services/dashboard/test/ui/services.test.tsx -->
 - [x] **MOD-PAUSE-003**: The services list shall show a unit as paused exactly while the unit's latest heartbeat `detail` is `paused` (shared-runtime SHARED-CTRL-007), and shall keep no paused flag of its own; while a higher-precedence detail (an explicit `degraded` detail or `dependency down`) is published, the row shows that detail instead. <!-- test: services/dashboard/test/ui/services.test.tsx -->
 

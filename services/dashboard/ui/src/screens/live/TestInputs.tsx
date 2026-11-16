@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Field, TextAreaField, TextField } from "../../components/Field";
+import { FilePicker } from "../../components/FilePicker";
 import { SegmentedGroup } from "../../components/SegmentedGroup";
 import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
@@ -171,14 +172,14 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
 
         {kind === "image" ? (
           <Field label="Image file" help={`PNG, JPEG or WebP. Limit: ${formatMiB(limits.image)} MiB.`} error={imageError}>
-            {(p) => <input {...p} className="field" type="file" accept={IMAGE_ACCEPT} onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />}
+            {(p) => <FilePicker {...p} accept={IMAGE_ACCEPT} onChange={setImageFile} />}
           </Field>
         ) : null}
 
         {kind === "audio" ? (
           <>
             <Field label="Audio file" help={`Any audio type. Limit: ${formatMiB(limits.audio)} MiB.`} error={audioError}>
-              {(p) => <input {...p} className="field" type="file" accept="audio/*" onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)} />}
+              {(p) => <FilePicker {...p} accept="audio/*" onChange={setAudioFile} />}
             </Field>
             <TextField label="Viewer name" value={user} onChange={setUser} placeholder="injected_viewer" autoComplete="off" />
             {canRecord() ? <div className="row"><Button onClick={() => void toggleRecording()} aria-pressed={recording}>{recording ? "Stop and send" : "Record from microphone"}</Button></div> : null}

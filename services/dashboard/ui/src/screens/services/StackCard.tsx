@@ -75,7 +75,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
               {stack.action ? (
                 <div role="group" aria-label="Running action" className="note note-build">
                   <strong>{KIND_LABEL[stack.action.kind]}</strong>
-                  <span>{" · "}
+                  <span>
                     {phaseWords(stack.action.phase)}
                     {stackStep(stack.action.kind, stack.action.phase) ? ` · step ${stackStep(stack.action.kind, stack.action.phase)} of 2` : ""}
                   </span>

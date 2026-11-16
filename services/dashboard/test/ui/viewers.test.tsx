@@ -572,3 +572,13 @@ test("notes data is never taken from the /ws feed: a viewers reply on the socket
   act(() => app.socket().message({ id: "1-0", type: "memory.viewers.reply", ts: 1, source: "memory", data: { id: "x", ok: true, data: { viewers: [{ key: "z", display: "FromFeed", regular: false, regularManual: false, msgCount: 0, noteCount: 0 }] } } }));
   assert.ok(screen.queryByText("FromFeed") === null);
 });
+
+// @spec DASH-VIEWERS-014
+test("Clear all notes is offered only when the viewer has notes, and the mark-regular name box shows an example", async () => {
+  const user = userEvent.setup();
+  const v = { key: "9", display: "Quiet", regular: false, regularManual: false, msgCount: 0, noteCount: 0 };
+  boot({ list: { viewers: [v] }, details: { "9": { viewer: v, core: [], recent: [], deletions: [] } } });
+  await open(user, /Quiet/);
+  assert.ok(within(panel()).queryByRole("button", { name: "Clear all notes" }) === null, "nothing to clear");
+  assert.ok((screen.getByLabelText("Mark someone as a regular before they chat") as HTMLInputElement).placeholder.length > 0, "a placeholder example");
+});

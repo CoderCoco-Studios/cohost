@@ -39,7 +39,7 @@ export function SecretField({ label, isSet, onSave, onClear, busy, help, error }
         <input id={id} className="field" type={shown ? "text" : "password"} autoComplete="off" spellCheck={false} value={typed} placeholder={isSet ? "Type a new value to replace it" : "Type the value"}
           aria-describedby={describedBy} aria-invalid={error ? true : undefined} onChange={(e) => setTyped(e.target.value)} />
         <Button aria-pressed={shown} onClick={() => setShown((s) => !s)}>{shown ? "Hide" : "Show"}</Button>
-        <Button variant="primary" onClick={save} disabled={typed.trim() === ""} busy={busy}>Save</Button>
+        <Button variant="primary" onClick={save} disabled={typed.trim() === ""} busy={busy}>Save secret</Button>
         {isSet ? <Button variant="danger" onClick={() => setConfirming(true)} disabled={busy}>Clear</Button> : null}
       </div>
       <p className="help"><span className={`tag ${isSet ? "tag-set" : ""}`}>{isSet ? "Set" : "Not set"}</span></p>

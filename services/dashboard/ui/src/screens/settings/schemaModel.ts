@@ -118,7 +118,10 @@ export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?:
   if (t === "boolean") return { kind: "switch" };
   if (t === "string" && Array.isArray(schema.enum) && schema.enum.length > 0) {
     const options = labelled(schema.enum, widget);
-    return { kind: !opts.inItem && options.length <= 4 ? "segmented" : "select", options };
+    const segmented = !opts.inItem && options.length <= 4;
+    // An enum with no default is an optional setting (a module's provider override): it needs a choice that clears it.
+    if (segmented && schema.default === undefined) options.unshift({ value: "", label: "Not set" });
+    return { kind: segmented ? "segmented" : "select", options };
   }
   if (t === "integer" || t === "number") {
     const min = num(schema.minimum), max = num(schema.maximum);

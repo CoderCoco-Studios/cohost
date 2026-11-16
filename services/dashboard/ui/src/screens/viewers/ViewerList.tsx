@@ -73,7 +73,7 @@ export function ViewerList({ load, query, applied, onQuery, selected, onSelect, 
           <>
             <TextField label="Search viewers" type="search" placeholder="Search by name" value={query} onChange={onQuery} autoComplete="off" />
             <form className="stack-y" onSubmit={(e) => void submitMark(e)}>
-              <TextField label="Mark someone as a regular before they chat" value={name} onChange={setName} autoComplete="off" />
+              <TextField label="Mark someone as a regular before they chat" value={name} onChange={setName} placeholder="e.g. pixelwitch" autoComplete="off" />
               <div className="row"><Button type="submit" busy={mark.state.kind === "pending"}>Mark regular</Button><ActionStatus state={mark.state} onDismiss={mark.dismiss} /></div>
             </form>
           </>

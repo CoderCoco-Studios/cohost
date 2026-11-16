@@ -200,14 +200,24 @@ test("Start, Restart, Stop and Test show on manifest unit rows only, named for t
 });
 
 // @spec MOD-PAUSE-001
-test("Pause and Resume show on the rows of units whose manifest pause is true, with control enabled, and on no other row", async () => {
+test("a unit whose manifest pause is true shows the one control for its current state, Pause or Resume, and no other row shows either", async () => {
   await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: UNITS.map((u) => svc(u.id)) });
   for (const u of UNITS) {
     const r = rowOf(u.id);
-    const both = btn(r, `Pause ${u.id}`) !== null && btn(r, `Resume ${u.id}`) !== null;
-    assert.equal(both, u.pause, u.id);
+    assert.equal(btn(r, `Pause ${u.id}`) !== null, u.pause, `${u.id} Pause`);
+    assert.ok(btn(r, `Resume ${u.id}`) === null, `${u.id} shows no Resume while it is not paused`);
     if (!u.pause) assert.equal(within(r).queryAllByRole("button", { name: /^(Pause|Resume)/ }).length, 0, u.id);
   }
+});
+
+// @spec MOD-PAUSE-001
+test("while a unit's heartbeat says paused its row shows Resume and no Pause, and Pause returns when it resumes", async () => {
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
+  assert.ok(btn(rowOf("salience"), "Resume salience") !== null);
+  assert.ok(btn(rowOf("salience"), "Pause salience") === null, "no Pause while paused");
+  push(app, { type: "services", services: [svc("salience")] });
+  assert.ok(btn(rowOf("salience"), "Pause salience") !== null);
+  assert.ok(btn(rowOf("salience"), "Resume salience") === null, "no Resume once running");
 });
 
 // @spec MOD-PAUSE-001
@@ -223,6 +233,7 @@ test("Pause and Resume post /control with the command and the unit as target, an
   const user = userEvent.setup();
   await user.click(btn(rowOf("salience"), "Pause salience")!);
   await waitFor(() => assert.ok(within(rowOf("salience")).queryByText("Pause sent") !== null));
+  push(app, { type: "services", services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
   await user.click(btn(rowOf("salience"), "Resume salience")!);
   await waitFor(() => assert.ok(within(rowOf("salience")).queryByText("Resume sent") !== null));
   assert.deepEqual(app.fetch.callsTo("POST /control").map((c) => JSON.parse(c.body!)), [{ cmd: "pause", target: "salience" }, { cmd: "resume", target: "salience" }]);

@@ -101,12 +101,9 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
                       <Button size="sm" aria-label={`Stop ${id}`} disabled={pending} onClick={() => open("stop")}>Stop</Button>
                     </>
                   ) : <Button size="sm" variant="primary" aria-label={`Start ${id}`} disabled={pending} onClick={() => open("start")}>Start</Button>}
-                  {unit.pause ? (
-                    <>
-                      <Button size="sm" aria-label={`Pause ${id}`} disabled={pending} onClick={() => pause("pause")}>Pause</Button>
-                      <Button size="sm" aria-label={`Resume ${id}`} disabled={pending} onClick={() => pause("resume")}>Resume</Button>
-                    </>
-                  ) : null}
+                  {unit.pause ? (paused
+                    ? <Button size="sm" aria-label={`Resume ${id}`} disabled={pending} onClick={() => pause("resume")}>Resume</Button>
+                    : <Button size="sm" aria-label={`Pause ${id}`} disabled={pending} onClick={() => pause("pause")}>Pause</Button>) : null}
                 </>
               ) : null}
               {test && test.inputs.length > 0 ? <Button size="sm" variant="ghost" aria-label={`Test ${id}`} onClick={() => onTest(id)}>Test</Button> : null}

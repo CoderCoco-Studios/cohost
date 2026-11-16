@@ -15,7 +15,7 @@ export function RowShell({ section, name, path, label, labelFor, hideLabel, sour
         {labelFor ? <label className="label" htmlFor={labelFor}>{label}</label> : <span className="label" aria-hidden={hideLabel || undefined}>{label}</span>}
         <code className="mono wrap">{path}</code>
       </div>
-      <div className="srow-c stack-y">{children}</div>
+      <div className={`srow-c stack-y${hideLabel ? " embedded" : ""}`}>{children}</div>
       <div className="srow-s"><span className="tag">{source}</span></div>
     </div>
   );

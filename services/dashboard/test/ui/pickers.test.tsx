@@ -25,7 +25,7 @@ test("Show and Hide reveal and mask what was typed; Save sends it and empties th
   const saved: string[] = [];
   render(<SecretField label="API key" isSet={false} onSave={(v) => { saved.push(v); }} onClear={() => {}} />);
   const input = screen.getByLabelText("API key") as HTMLInputElement;
-  const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+  const save = screen.getByRole("button", { name: "Save secret" }) as HTMLButtonElement;
   assert.equal(save.disabled, true, "nothing typed");
   await user.type(input, "sk-abc");
   const show = screen.getByRole("button", { name: "Show" });

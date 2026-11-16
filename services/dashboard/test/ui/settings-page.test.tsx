@@ -52,7 +52,7 @@ test("a page shows the title as its heading, the about line, the config path wit
   assert.match(text(line), /23 settings/);
   assert.match(text(line), /read by voice, mouth/);
   assert.match(text(line), /changes apply when they restart/);
-  const groups = [...document.querySelectorAll("details")];
+  const groups = [...document.querySelectorAll("details.sgroup")];
   assert.deepEqual(groups.map((g) => text(g.querySelector("summary"))), ["General", "Nested", "Extra"]);
   assert.ok(groups.every((g) => g.hasAttribute("open")), "open by default");
 });
@@ -296,9 +296,14 @@ test("an array of objects is a card per item with a numbered heading, per-proper
   await user.click(within(r).getByRole("button", { name: "Add a reflex" }));
   const second = within(r).getByRole("group", { name: "Reflex 2" });
   assert.equal(within(second).getByRole("combobox", { name: "Emotion" }).getAttribute("aria-invalid"), null);
-  assert.equal(within(second).getByRole("textbox", { name: "Match" }).getAttribute("aria-invalid"), "true", "a new card has an empty required property");
+  assert.equal(within(second).getByRole("textbox", { name: "Match" }).getAttribute("aria-invalid"), null, "a new card does not flag its empty property before the operator has touched it");
+  assert.ok(within(second).queryByText(/required/i) === null);
+  assert.equal(bar("Save").disabled, true, "Save stays off while a required property is empty");
+  assert.ok(screen.getByText(/fields? still needs? a value/i), "the save bar says why");
+  await user.click(within(second).getByRole("textbox", { name: "Match" }));
+  await user.tab();
+  assert.equal(within(second).getByRole("textbox", { name: "Match" }).getAttribute("aria-invalid"), "true", "once the operator has been in the card, the empty property is flagged");
   assert.ok(within(second).getByText(/required/i));
-  assert.equal(bar("Save").disabled, true);
   await user.click(within(r).getByRole("button", { name: "Remove reflex 2" }));
   assert.equal(within(r).queryByRole("group", { name: "Reflex 2" }), null);
   await user.click(within(r).getByRole("button", { name: "Remove reflex 1" }));
@@ -801,4 +806,13 @@ test("an unknown section path says so and keeps the navigation", async () => {
   await open("nope");
   assert.ok(screen.getByText(/No settings section named nope/));
   assert.ok(screen.getByRole("navigation", { name: "Settings sections" }));
+});
+
+// @spec DASH-SET-002
+test("a row whose control brings its own label (model, voice, secret) shows that label once: the picker's copy is visually hidden", async () => {
+  await open();
+  const embedded = document.querySelectorAll(".srow-c.embedded");
+  assert.ok(embedded.length > 0, "the demo section has pickers");
+  for (const c of embedded) assert.ok(c.closest(".srow")!.querySelector(".srow-l .label[aria-hidden='true']"), "the row label is the one shown");
+  assert.ok(document.querySelector(".srow-c:not(.embedded) input.field, .srow-c:not(.embedded) select.field"), "plain rows are not embedded");
 });

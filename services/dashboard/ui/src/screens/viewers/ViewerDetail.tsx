@@ -129,7 +129,7 @@ export function ViewerDetail({ selected, load, figures, onChanged, onLinked, onR
               <div className="row">
                 <Switch label="Always a regular" checked={v.regularManual} disabled={inline.state.kind === "pending"}
                   onChange={(on) => void inline.run(() => api.post("/viewers/regular", { key: v.key, regular: on }, gate("Change a viewer's regular status")), on ? "Marked as always a regular" : "No longer always a regular").then((r) => { if (r.ok) void onChanged(); })} />
-                <Button onClick={() => open({ kind: "clear" })}>Clear all notes</Button>
+                {notesEmpty ? null : <Button onClick={() => open({ kind: "clear" })}>Clear all notes</Button>}
                 {v.voice ? <Button onClick={() => open({ kind: "link" })}>Link to a chat viewer</Button> : null}
                 <ActionStatus state={inline.state} onDismiss={inline.dismiss} />
               </div>

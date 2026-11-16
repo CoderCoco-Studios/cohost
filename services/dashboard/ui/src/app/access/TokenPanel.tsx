@@ -7,8 +7,9 @@ import { TokenForm } from "./TokenForm";
 import { SETUP_WHY, TOKEN_LABEL, UNLOCKS } from "./text";
 
 function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSetUp?: boolean }): string {
+  if (t.notSetUp) return "Not set up on the server"; // a token kept in this browser means nothing while the server has none
   if (t.present) return `Unlocked · ${t.scope === "browser" ? "this browser" : "this tab"}`;
-  return t.notSetUp ? "Not set up on the server" : "Locked";
+  return "Locked";
 }
 
 function TokenRow({ kind }: { kind: TokenKind }) {
@@ -19,9 +20,9 @@ function TokenRow({ kind }: { kind: TokenKind }) {
   const label = TOKEN_LABEL[kind];
   return (
     <div role="group" aria-label={label} className="token-row">
-      <div className="row"><strong>{label}</strong><span className={`tag ${t.present ? "tag-set" : ""}`}>{stateText(t)}</span></div>
+      <div className="row"><strong>{label}</strong><span className={`tag ${t.present && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
-      {kind === "viewers" && t.notSetUp && !t.present && !changing ? (
+      {kind === "viewers" && t.notSetUp && !changing ? (
         <>
           <p className="help">{SETUP_WHY}</p>
           <SetupSteps>

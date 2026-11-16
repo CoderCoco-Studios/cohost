@@ -4,6 +4,7 @@ import { ActionStatus } from "../../components/ActionStatus";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/Dialog";
 import { Field } from "../../components/Field";
+import { FilePicker } from "../../components/FilePicker";
 import { SideSheet } from "../../components/SideSheet";
 import { useAction, useApi } from "../../state/hooks";
 import type { ApiResult } from "../../state/api";
@@ -120,7 +121,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
           if (type === "image" || type === "audio") return (
             <div className="td-form" key={type}>
               <Field label={type === "image" ? "Image, through the real pipeline" : "Audio, through the real pipeline"}>
-                {(p) => <input {...p} type="file" ref={(el) => { if (el) fileRefs.current.set(type, el); else fileRefs.current.delete(type); }} className="field" accept={type === "image" ? "image/png,image/jpeg,image/webp" : "audio/*"} />}
+                {(p) => <FilePicker {...p} inputRef={(el) => { if (el) fileRefs.current.set(type, el); else fileRefs.current.delete(type); }} accept={type === "image" ? "image/png,image/jpeg,image/webp" : "audio/*"} />}
               </Field>
               <Button size="sm" onClick={() => sendFile(type)}>{type === "image" ? "Send image" : "Send audio"}</Button>
             </div>

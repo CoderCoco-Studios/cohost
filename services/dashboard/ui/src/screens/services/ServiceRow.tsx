@@ -36,7 +36,7 @@ export interface RowProps {
   onTest: (id: string) => void;
 }
 
-/** A 2xx whose body says `ok: false` is a failure (the old page read `r.ok && j.ok`). */
+/** A 2xx whose body says `ok: false` is a failure. */
 function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiResult<{ ok: boolean; detail?: string }> {
   if (r.ok && r.data && r.data.ok === false) return { ok: false, status: r.status, detail: r.data.detail ?? "not done" };
   return r;

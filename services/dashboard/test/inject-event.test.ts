@@ -19,7 +19,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthSt
   const setup = setupControl(env, bus, rec.log);
   const services = () => health("up").map((s) => (states[s.service] ? { ...s, state: states[s.service]! } : s));
   const server = http.createServer(createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
     control: setup.control,
     uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },

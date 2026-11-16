@@ -28,7 +28,7 @@ async function boot(mode: Mode) {
   const writes: string[] = [];
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [] };
   const handler = createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => file,

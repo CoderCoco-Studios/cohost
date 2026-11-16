@@ -45,7 +45,7 @@ async function boot(o: Opts = {}) {
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...o.stack };
   let configReads = 0;
   const handler = createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => { configReads++; if (o.readConfig) return configFile; throw new Error("the secret route must not touch config.yaml"); },

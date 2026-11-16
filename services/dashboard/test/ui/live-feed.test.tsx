@@ -35,7 +35,7 @@ test("once open with nothing yet, the feed says there is no activity", () => {
 });
 
 // @spec DASH-UI-002, DASH-UI-027
-test("each rendered type gets a row with a plain kind label, the event type as tooltip and in its accessible name, and the old page's text", () => {
+test("each rendered type gets a row with a plain kind label, the event type as tooltip and in its accessible name, and the event's own text", () => {
   const app = boot();
   const cases: [string, Record<string, unknown>, string, string, RegExp][] = [
     ["chat.message", { user: "ann", text: "hello" }, "Chat", "chat", /^ann: hello/],

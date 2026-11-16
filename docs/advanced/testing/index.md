@@ -65,7 +65,7 @@ Where the tests live:
 | `services/avatar` | Engine smoothing and idle motion; the drivers against fake sockets |
 | `services/ears`, `mouth`, `eyes`, `chat`, `connector-discord` | Transcription and describer logic with fake backends, the [connector](../../start/glossary.md#connector) source and [sink](../../start/glossary.md#sink) against a fake bus, the chat filter |
 | `packages/shared`, `control` | The shared runtime (bootstrap, lifecycle, idle plan, inject handler, Discord session), the manifest and the stack controller |
-| `services/dashboard` | HTTP routes, the live feed, the page script (a stub DOM in `node:vm`) |
+| `services/dashboard` | HTTP routes, the live feed, the React UI (happy-dom, by role and accessible name) |
 | `crates/*/tests` | The Rust bus client; run with `cargo test --workspace` |
 
 ## What CI runs

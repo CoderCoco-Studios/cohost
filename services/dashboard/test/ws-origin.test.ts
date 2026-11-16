@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import { startListeners, wsOriginAllowed, type Listeners } from "../src/host.js";
+import { startListeners, wsOriginAllowed, wsHostAllowed, type Listeners } from "../src/host.js";
 
 const log = { info: () => {}, warn: () => {}, fatal: () => {} } as never;
 
@@ -37,6 +37,14 @@ test("wsOriginAllowed: absent is accepted; a same host and port (defaults explic
 });
 
 // @spec DASH-HOST-008
+test("wsHostAllowed: no Origin accepts any Host; with an Origin the Host must be an IPv4 or bracketed IPv6 literal or localhost", () => {
+  assert.equal(wsHostAllowed(undefined, "my-pc.lan:3001"), true);
+  assert.equal(wsHostAllowed(undefined, undefined), true);
+  for (const h of ["192.168.1.5:3001", "10.0.0.2", "[fe80::1]:3001", "[::1]", "localhost:3001", "127.0.0.1:3001", "LOCALHOST"]) assert.equal(wsHostAllowed("http://x", h), true, h);
+  for (const h of ["my-pc.lan:3001", "streampc", "evil.example", "1.2.3.4.evil.example", "192.168.1.5.evil.example:3001", "999.1.1.1", "256.0.0.1:3001", "a b", "", undefined, "[not-an-ip]"]) assert.equal(wsHostAllowed("http://x", h), false, String(h));
+});
+
+// @spec DASH-HOST-008
 test("a /ws upgrade with a cross-site, null or unparsable Origin is 403 on both listeners and joins nothing", async () => {
   const t = await boot();
   for (const port of [t.l.fullPort, t.l.lanPort]) {
@@ -65,13 +73,40 @@ test("a /ws upgrade whose Origin equals its Host, or that has no Origin, is acce
 });
 
 // @spec DASH-HOST-008
-test("the Origin is compared with the Host header the request carries, so a LAN name works for the sink page", async () => {
+test("a browser upgrade (one that carries an Origin) on a listener the LAN can reach is accepted only when its Host is an IP literal or a loopback name, so a DNS-rebinding page whose Origin equals its Host is refused", async () => {
   const t = await boot();
-  const r = await upgrade(t.l.lanPort, { host: "my-pc.lan:3001", origin: "http://my-pc.lan:3001" });
+  const opened: WebSocket[] = [];
+  const hosts = [`192.168.1.5:${t.l.lanPort}`, `10.0.0.2`, `[fe80::1]:${t.l.lanPort}`, `[::1]:${t.l.lanPort}`, `localhost:${t.l.lanPort}`, `127.0.0.1:${t.l.lanPort}`];
+  for (const host of hosts) {
+    const r = await upgrade(t.l.lanPort, { host, origin: `http://${host}` });
+    assert.equal(r.result, "open", `IP literal or loopback name ${host}`);
+    if (r.ws) opened.push(r.ws);
+  }
+  for (const host of [`my-pc.lan:${t.l.lanPort}`, `rebind.evil.example:${t.l.lanPort}`, "streampc", `localhost.evil.example:${t.l.lanPort}`, `127.0.0.1.evil.example:${t.l.lanPort}`]) {
+    const r = await upgrade(t.l.lanPort, { host, origin: `http://${host}` });
+    assert.equal(r.result, 403, `a DNS name ${host} with a matching Origin is refused`);
+  }
+  for (const ws of opened) ws.close();
+  assert.equal((await upgrade(t.l.lanPort, { host: "192.168.1.5", origin: "http://evil.example" })).result, 403, "an IP-literal Host still needs a matching Origin");
+});
+
+// @spec DASH-HOST-008
+test("an upgrade with no Origin (a non-browser client) is accepted whatever its Host", async () => {
+  const t = await boot();
+  const r = await upgrade(t.l.lanPort, { host: "my-pc.lan:3001" });
   assert.equal(r.result, "open");
   r.ws?.close();
-  assert.equal((await upgrade(t.l.lanPort, { host: "my-pc.lan:3001", origin: "http://evil.example" })).result, 403);
-  assert.equal((await upgrade(t.l.lanPort, { host: "my-pc.lan:3001", origin: "http://my-pc.lan:3002" })).result, 403);
+});
+
+// @spec DASH-HOST-008, DASH-HOST-004
+test("the loopback-bound full surface refuses an upgrade whose Host is not a loopback name even when its Origin equals it, as it does any other request", async () => {
+  const t = await boot();
+  const port = t.l.fullPort;
+  assert.equal((await upgrade(port, { host: `rebind.evil.example:${port}`, origin: `http://rebind.evil.example:${port}` })).result, 403);
+  assert.equal((await upgrade(port, { host: `rebind.evil.example:${port}` })).result, 403, "no Origin does not help");
+  const ok = await upgrade(port, { host: `localhost:${port}`, origin: `http://localhost:${port}` });
+  assert.equal(ok.result, "open");
+  ok.ws?.close();
 });
 
 // @spec DASH-HOST-008

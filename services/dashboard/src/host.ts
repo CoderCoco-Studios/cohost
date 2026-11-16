@@ -1,5 +1,5 @@
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import { isIP, type AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import type { WebSocketServer } from "ws";
 import type { Logger } from "@cohost/config";
@@ -65,11 +65,25 @@ export function originAllowed(origin: string, host: string | undefined): boolean
 
 /**
  * True when a `/ws` upgrade may proceed on its Origin: none (a non-browser client) is accepted, any other must satisfy
- * the rule of `originAllowed`, so a page from another origin cannot read the feed.
+ * the rule of `originAllowed`, so a page served from another origin cannot read the feed. A page that controls both its
+ * `Origin` and the `Host` it is reached by is stopped by the Host rules (`hostAllowed`, `wsHostAllowed`), not by this.
  */
 // @spec DASH-HOST-008
 export function wsOriginAllowed(origin: string | undefined, host: string | undefined): boolean {
   return origin === undefined || originAllowed(origin, host);
+}
+
+/**
+ * True when a `/ws` upgrade on a listener other machines can reach may proceed on its Host. A request without an `Origin` is not
+ * a browser page and is not checked. A browser page (it always sends an `Origin`) is accepted only when it reached the
+ * listener by an IPv4 or bracketed IPv6 address literal, or by `localhost`: a DNS-rebinding page needs a name it controls, and
+ * since it controls `Origin` too, comparing the two (`originAllowed`) cannot tell it from the sink page.
+ */
+// @spec DASH-HOST-008
+export function wsHostAllowed(origin: string | undefined, host: string | undefined): boolean {
+  if (origin === undefined) return true;
+  const h = hostnameOf(host);
+  return h !== undefined && (isIP(h) !== 0 || h === "localhost");
 }
 
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
@@ -152,9 +166,12 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const loopback = isLoopback(o.bind);
   const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled }));
   const lan = http.createServer(lanHandler(o.handler));
-  const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host); // @spec DASH-HOST-008
-  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : wsOrigin);
-  attachUpgrade(lan, o.wss, wsOrigin);
+  // @spec DASH-HOST-008
+  const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);
+  const wsReachable = (req: http.IncomingMessage): boolean => wsOrigin(req) && wsHostAllowed(req.headers.origin, req.headers.host);
+  // The loopback listener applies the Host rule every HTTP request on it passes (DASH-HOST-004); the others, which other machines reach, the address-literal rule.
+  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : wsReachable);
+  attachUpgrade(lan, o.wss, wsReachable);
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const fullOk = await listen(full, o.bind, o.port, "full surface", o.log);
   const lanOk = fullOk && (await listen(lan, o.lanHost, o.lanPort, "LAN", o.log));

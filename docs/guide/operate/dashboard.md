@@ -97,6 +97,8 @@ Secrets are set here too. A key such as an API key shows **Set** or **Not set** 
 
 The dashboard has a second face for streaming: the same address with `?sink=1` on the end (`http://localhost:3000/?sink=1`) shows only the name, whether audio is on and a one-line status, with no navigation. Audio starts on without a click. That is the page [OBS](../../start/glossary.md#obs) plays on stream. It is covered on [OBS and the voice on stream](../connect/obs.md).
 
+On another PC, load it from the LAN port with the AI PC's **IP address**, `http://192.168.1.20:3001/?sink=1`, and not with the computer's name (`http://streampc:3001/?sink=1`). The page loads under a name but the dashboard refuses its live-feed connection, because a page reached by a name could be a web page you visited acting as the dashboard; an IP address cannot be. On the same PC, `localhost` is fine.
+
 ## Keyboard shortcuts
 
 Press `?` anywhere to see this list.

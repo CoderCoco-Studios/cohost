@@ -3,7 +3,7 @@
  *
  * - Live feed of everything on the bus, brain status, avatar preview
  * - Stack panel: Launch / Stop / Restart-all for the Compose stack (control mode), and per-service control
- * - Audio sink: plays the co-host's voice. Add http://<ai-pc>:3001/?sink=1 as an OBS Browser Source
+ * - Audio sink: plays the co-host's voice. Add http://<ai-pc-ip>:3001/?sink=1 (by IP address, not machine name; DASH-HOST-008) as an OBS Browser Source
  *   (with "control audio via OBS") and the voice lands on stream with no virtual cables.
  * - Mute / unmute / make it say something / wipe context
  * - Edit personality.md live (brain reloads it on save)

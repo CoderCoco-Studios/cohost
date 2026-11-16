@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "81 specs: 62 [x], 19 [ ]. Open: the `models` puller reads config, secrets.yaml in installer/ignore files/compose, dashboard ports in config.yaml, dashboard UI build and Node >=22.12. The earlier audit gaps stand (DEPLOY-INST-007, -011, -014)."
+    next: "81 specs: 62 [x], 19 [ ]. Open: the `models` puller reads config, secrets.yaml in installer/ignore files/compose, dashboard ports in config.yaml, dashboard UI build and the installer's full-version Node check. The earlier audit gaps stand (DEPLOY-INST-007, -011, -014)."
     drift: null
 
   docs-site:

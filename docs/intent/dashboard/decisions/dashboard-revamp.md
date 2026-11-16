@@ -21,7 +21,7 @@ The owner's direction is a full rebuild: a React and TypeScript app, the Aurora 
 
 Bundler: Vite (hot reload, production build and JSX transform in one config) over esbuild by script (no dev server), webpack and Parcel (more configuration for the same output) and no bundler (JSX and TypeScript untranspiled). Built output is git-ignored `services/dashboard/dist-ui/`, produced by the root `pnpm build` and by `pnpm dashboard`, rather than committed (generated hashed files in every review, stale against the source) or built on first request (the dashboard becomes a build runner). Dev mode is the Vite dev server, bound to loopback, proxying to a running dashboard: the proxy rewrites `Host` and forwards a state-changing request or `/ws` upgrade only when its `Origin` is the dev server's own, rewriting it to the target's and refusing any other, so the dashboard's Host and Origin checks stay as strict as in production (dropping `Origin` would let a cross-site simple `POST` through the dev server pass the dashboard's check); `vite build --watch` is the alternative.
 
-TypeScript 7 is the monorepo's root compiler, not a UI-specific one: the UI is transpiled by Vite, and `tsc -p services/dashboard/ui --noEmit` only type-checks it, so the UI uses nothing that needs 7 over 5.7 and does not wait for the repository-wide bump (the root `typescript` is `^5.7.0` today).
+TypeScript 7 is the monorepo's root compiler, not a UI-specific one: the UI is transpiled by Vite, and `tsc -p services/dashboard/ui --noEmit` only type-checks it, so the UI shares the root `typescript` (`^7.0.2`) and its `tsc` rather than carrying a second compiler.
 
 ### Dependencies
 
@@ -30,9 +30,9 @@ Every new dependency is dev-only: it is bundled into the static files or run by 
 | Package | Version | Reason |
 |---|---|---|
 | `react`, `react-dom` | 19.3.1 | The UI framework (owner decision) |
-| `typescript` | 7.0.2 | Type-checking the UI with the rest of the monorepo; replaces the root `^5.7.0` |
+| `typescript` | 7.0.2 | Type-checking the UI with the rest of the monorepo; the root `typescript` dependency |
 | `@types/react`, `@types/react-dom` | 19.3.0 | Types for React |
-| `vite` | 8.3.8 | Bundle, dev server; needs Node `^20.19 \|\| >=22.12`, so the root `engines.node` becomes `>=22.12` |
+| `vite` | 8.3.8 | Bundle, dev server; needs Node `^20.19.0 \|\| >=22.12.0`, which the root `engines.node` of `>=26` satisfies |
 | `@vitejs/plugin-react` | 6.3.0 | JSX transform and hot reload under Vite |
 | `happy-dom`, `@happy-dom/global-registrator` | 21.0.4 | DOM emulation registered as globals for `node:test`; implements `<dialog>.showModal()` |
 | `@testing-library/react` | 16.3.3 | Rendering and role-based queries in tests |

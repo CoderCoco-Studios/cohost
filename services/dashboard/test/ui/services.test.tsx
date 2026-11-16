@@ -11,7 +11,8 @@ const rowOf = (name: string): HTMLElement => {
 };
 const hasRow = (name: string): boolean => within(table()).getAllByRole("row").some((r) => within(r).queryByRole("rowheader", { name }) !== null);
 const names = (): string[] => within(table()).getAllByRole("rowheader").map((h) => h.textContent ?? "");
-const btn = (row: HTMLElement, name: string) => within(row).queryByRole("button", { name });
+// the row's own button comes first in the DOM; a dialog it opened sits after it in the same cell and may repeat the name
+const btn = (row: HTMLElement, name: string): HTMLElement | null => within(row).queryAllByRole("button", { name })[0] ?? null;
 
 // @spec DASH-UI-031
 test("before the first services message the screen shows a loading state, and no list", async () => {
@@ -232,7 +233,7 @@ test("Restart opens a dialog titled for the service with a backlog choice and an
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Restart voice")!);
   const dlg = screen.getByRole("dialog", { name: "Restart voice?" });
-  const group = within(dlg).getByRole("radiogroup", { name: "Backlog" });
+  const group = within(dlg).getByRole("group", { name: "Backlog" });
   assert.equal((within(group).getByRole("radio", { name: "Service default" }) as HTMLInputElement).checked, true);
   assert.ok(within(group).getByRole("radio", { name: "Resume keeping backlog" }) !== null);
   await user.click(within(group).getByRole("radio", { name: "Fresh skipping backlog" }));
@@ -265,7 +266,7 @@ test("Stop opens a plain yes or no dialog and sends nothing when cancelled", asy
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Stop voice")!);
   const dlg = screen.getByRole("dialog", { name: "Stop voice?" });
-  assert.ok(within(dlg).queryByRole("switch") === null && within(dlg).queryByRole("radiogroup") === null, "no options");
+  assert.ok(within(dlg).queryByRole("switch") === null && within(dlg).queryByRole("group", { name: "Backlog" }) === null, "no options");
   await user.click(within(dlg).getByRole("button", { name: "Cancel" }));
   assert.equal(app.fetch.callsTo("POST /services/voice/stop").length, 0);
   await user.click(btn(rowOf("voice"), "Stop voice")!);

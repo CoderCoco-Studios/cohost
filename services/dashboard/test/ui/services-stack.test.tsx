@@ -183,7 +183,7 @@ test("the other kinds show their phase words and no step: stopping, restarting <
   const t = () => within(card()).getByRole("group", { name: "Running action" }).textContent ?? "";
   show("stop", "stopping"); assert.match(t(), /Stop.*stopping/); assert.ok(!/step/.test(t()));
   show("restart", "restarting voice"); assert.match(t(), /Restart.*restarting voice/); assert.ok(!/step/.test(t()));
-  show("consolidate", "running"); assert.match(t(), /Consolidate.*running/); assert.ok(!/step/.test(t()));
+  show("consolidate", "running"); assert.match(t(), /Consolidation.*running/); assert.ok(!/step/.test(t()));
   show("rebuild", "compose-build"); assert.match(t(), /Rebuild.*step 1 of 2/);
   show("launch", "starting"); assert.match(t(), /step 1 of 2/);
 });

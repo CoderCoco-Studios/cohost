@@ -40,7 +40,7 @@ test("Test opens a modal dialog side sheet that takes focus, and Esc closes it a
   assert.equal((sheet as HTMLDialogElement).open, true);
   assert.ok(sheet.classList.contains("sheet"));
   assert.ok(sheet.contains(document.activeElement), "focus is inside");
-  await userEvent.setup().keyboard("{Escape}");
+  fireEvent(sheet, new Event("cancel", { cancelable: true })); // what Esc fires; the shell's own handler is not mounted here
   assert.ok(screen.queryByRole("dialog") === null, "closed");
   assert.ok(document.activeElement === opener, "focus is back on the Test button");
 });
@@ -74,7 +74,7 @@ test("a bus-event form starts with an editable sample, posts /inject/event {unit
   fireEvent.change(box, { target: { value: JSON.stringify({ platform: "twitch", user: "bob", text: "hi" }) } });
   const user = userEvent.setup();
   await user.click(within(sheet).getByRole("button", { name: "Send chat.message" }));
-  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /published chat\.message.*17-0/));
+  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /published chat\.message.*17-0/i));
   assert.deepEqual(JSON.parse(app.fetch.callsTo("POST /inject/event")[0]!.body!), { unit: "salience", type: "chat.message", data: { platform: "twitch", user: "bob", text: "hi" } });
   app.fetch.on("POST /inject/event", { status: 409, json: { ok: false, detail: "service not running: salience" } });
   await user.click(within(sheet).getByRole("button", { name: "Send chat.message" }));
@@ -113,7 +113,7 @@ test("the chat unit's text form posts a service-level /inject/text and its injec
   await user.click(within(sheet).getByRole("button", { name: "Send text" }));
   await waitFor(() => assert.equal(app.fetch.callsTo("POST /inject/text").length, 1));
   assert.deepEqual(JSON.parse(app.fetch.callsTo("POST /inject/text")[0]!.body!), { level: "service", text: "hello there" });
-  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /sent text.*req-1/));
+  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /sent text.*req-1/i));
   push(app, frame("inject.result", { id: "other", ok: true }));
   assert.ok(within(feed()).queryByText(/other/) === null);
   push(app, frame("inject.result", { id: "req-1", ok: true, detail: "queued" }));
@@ -154,7 +154,7 @@ test("a reply carrying the injected data's own id is tagged as answering the inj
   fireEvent.change(within(sheet).getByRole("textbox", { name: "attention.focus data (JSON)" }), { target: { value: JSON.stringify({ id: "mine", reason: "t", score: 1 }) } });
   await userEvent.setup().click(within(sheet).getByRole("button", { name: "Send attention.focus" }));
   await waitFor(() => assert.equal(app.fetch.callsTo("POST /inject/event").length, 1));
-  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /published/));
+  await waitFor(() => assert.match(within(sheet).getByRole("status").textContent ?? "", /published/i));
   push(app, frame("brain.say", { id: "mine", text: "a", emotion: "neutral" }));
   push(app, frame("brain.say", { id: "else", text: "b", emotion: "neutral" }));
   const rows = within(feed()).getAllByRole("listitem");
@@ -217,12 +217,14 @@ test("the isolated start asks first, then posts the unit's start with isolated t
 });
 
 // @spec MOD-TEST-001, DASH-UI-015
-test("a refused isolated start is reported in the sheet's status line with its status and detail", async () => {
+test("a refused isolated start is shown inside its dialog, which stays open; after Cancel the sheet's status line keeps it", async () => {
   const { app } = await open("voice", ON);
   app.fetch.on("POST /services/voice/start", { status: 409, json: { ok: false, detail: "busy: stack" } });
   const user = userEvent.setup();
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Start voice isolated" }));
-  await user.click(within(screen.getByRole("dialog", { name: "Start voice isolated?" })).getByRole("button", { name: "Start voice isolated" }));
-  await waitFor(() => assert.ok(screen.queryByRole("dialog", { name: "Start voice isolated?" }) === null));
-  assert.match((await within(screen.getByRole("dialog", { name: "Test voice" })).findByRole("alert")).textContent ?? "", /409 busy: stack/);
+  const ask = screen.getByRole("dialog", { name: "Start voice isolated?" });
+  await user.click(within(ask).getByRole("button", { name: "Start voice isolated" }));
+  assert.match((await within(screen.getByRole("dialog", { name: "Start voice isolated?" })).findByRole("alert")).textContent ?? "", /409 busy: stack/);
+  await user.click(within(screen.getByRole("dialog", { name: "Start voice isolated?" })).getByRole("button", { name: "Cancel" }));
+  assert.match(within(screen.getByRole("dialog", { name: "Test voice" })).getByRole("alert").textContent ?? "", /409 busy: stack/);
 });

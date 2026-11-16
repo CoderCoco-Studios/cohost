@@ -73,9 +73,8 @@ const ALLOWED = new Set([
 ]);
 
 /**
- * Reads that other work packages of the config-in-one-place change still have to remove (`<file>::<NAME>`). The test fails on
- * a read that is neither allowed nor listed here, and on a listed read that no longer exists, so each owner deletes its lines
- * when its package lands and the list reaches empty. CFG-ENV-012 stays unchecked in the specs until it does.
+ * Reads still tolerated (`<file>::<NAME>`); empty. The test fails on a read that is neither allowed nor listed here, and on a
+ * listed read that no longer exists.
  */
 const PENDING = new Set<string>([
 ]);

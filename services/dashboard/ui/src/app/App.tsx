@@ -52,7 +52,7 @@ function Shell({ name }: { name: string }) {
   return (
     <>
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); mainRef.current?.focus(); }}>Skip to main content</a>
-      <Header name={name} route={route} onNavigate={navigate} />
+      <Header name={name} route={route} onNavigate={navigate} mute={mute} />
       <ConnectionBanner />
       <main id="main" className="page" ref={mainRef} tabIndex={-1}><Screen route={route} /></main>
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />

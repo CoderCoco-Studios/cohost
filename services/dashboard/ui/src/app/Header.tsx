@@ -1,6 +1,7 @@
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { SegmentedGroup } from "../components/SegmentedGroup";
+import { ActionStatus } from "../components/ActionStatus";
 import { Status, stackStatus, type StatusInfo } from "../components/Status";
 import { attentionCount } from "../state/derive";
 import { useAccess, useFeed, useMute } from "../state/hooks";
@@ -26,14 +27,13 @@ function brainStatus(state: unknown): StatusInfo {
  * and the stack state) and the controls (Audio, Mute, Access, theme).
  */
 // @spec DASH-NAV-002, DASH-UI-024, DASH-UI-003, DASH-UI-018, DASH-ACC-001
-export function Header({ name, route, onNavigate }: { name: string; route: Route; onNavigate: (r: Route) => void }) {
+export function Header({ name, route, onNavigate, mute }: { name: string; route: Route; onNavigate: (r: Route) => void; /** The shell owns it so the `m` shortcut and this button share one pending state. */ mute: ReturnType<typeof useMute> }) {
   const { theme, audio } = useRuntime();
   const attention = attentionCount(useFeed((f) => f.services));
   const brain = brainStatus(useFeed((f) => (f.latest["brain.status"]?.data as { state?: unknown } | undefined)?.state));
   const stack = useFeed((f) => f.stack?.state);
   const stackInfo = stack ? stackStatus(stack) : null;
   const audioOn = useStore(audio.state, (s) => s.enabled);
-  const mute = useMute();
   const { state: access, access: accessStore } = useAccess();
   const preference = useStore(theme.state, (s) => s.preference);
   return (
@@ -57,6 +57,7 @@ export function Header({ name, route, onNavigate }: { name: string; route: Route
         <Button aria-pressed={audioOn} onClick={() => (audioOn ? audio.disable() : audio.enable())}><Icon name={audioOn ? "speaker" : "speakerOff"} />{audioOn ? "Audio on" : "Audio off"}</Button>
         <Button aria-pressed={mute.muted} busy={mute.pending} onClick={() => void mute.toggle()}><Icon name="mic" />{mute.label}</Button>
         <Button onClick={() => accessStore.openPanel()}><Icon name={access.control.present ? "unlock" : "lock"} />{access.control.present ? "Unlocked" : "Locked"}</Button>
+        <ActionStatus state={mute.action.state} onDismiss={mute.action.dismiss} />
         <SegmentedGroup legend="Theme" name="theme" value={preference} onChange={(v) => theme.set(v as ThemePreference)}
           options={[{ value: "auto", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
       </div>

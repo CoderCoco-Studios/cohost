@@ -26,10 +26,9 @@ ears:
   http:
     host: 127.0.0.1
     port: 8765
-    token: "${EARS_HTTP_TOKEN:-}"
 ```
 
-With `stt_engine: stub` the clip is "transcribed" by a stand-in, so nothing else needs to be running. Restart `ears` after the change. In [Docker](../../start/glossary.md#docker), bind `host` to `0.0.0.0` and publish the port yourself, since the default is local only. A non-empty `token` makes ears refuse any clip that does not carry it; the line above reads it from `EARS_HTTP_TOKEN`, so put the value in `.env` rather than in the file. Every client below sends it automatically when that variable is set in the shell they run in.
+With `stt_engine: stub` the clip is "transcribed" by a stand-in, so nothing else needs to be running. Restart `ears` after the change. In [Docker](../../start/glossary.md#docker), bind `host` to `0.0.0.0` and publish the port yourself, since the default is local only. A non-empty `ears.http.token` in `config/secrets.yaml` makes ears refuse any clip that does not carry it. Every client below sends it automatically when the `EARS_HTTP_TOKEN` variable is set in the shell they run in.
 
 ## What a request looks like
 

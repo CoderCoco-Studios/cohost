@@ -352,5 +352,10 @@ The host-run dashboard.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `dashboard` | map | The dashboard |
-| `dashboard.port` | `3000` | The port the full dashboard listens on when `PORT` and `DASHBOARD_PORT` are both unset. Read at the dashboard's next start |
+| `dashboard.port` | `3000` | The port of the dashboard's full surface (page, controls, Launch and Stop). Read at the dashboard's next start |
+| `dashboard.lan_port` | `3001` | The port of the LAN listener (the sink page and audio for a second PC's OBS). Must differ from `dashboard.port`. Read at the dashboard's next start |
+| `dashboard.inject` | map | The limits of the test-upload panel |
+| `dashboard.inject.max_image_bytes` | `8388608` | The largest image accepted, in bytes |
+| `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |
+| `dashboard.inject.ttl_ms` | `300000` | How long an upload stays available to the service that asked for it |
 

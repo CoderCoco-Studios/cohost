@@ -9,6 +9,7 @@ import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
 import { ViewersClient, viewersTokenFromEnv } from "./viewers.js";
+import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners } from "./host.js";
 
@@ -56,7 +57,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
 
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
       const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
 
       const wss = new WebSocketServer({ noServer: true });
       const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });

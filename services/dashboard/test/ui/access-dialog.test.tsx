@@ -474,3 +474,19 @@ test("a viewers token that is not set up on the server shows the setup steps in 
   await flush();
   assert.equal(app.rt.access.state.get().viewers.notSetUp, false);
 });
+
+// @spec DASH-A11Y-005
+test("a click on the backdrop closes neither the token prompt nor the Access panel: both hold input", async () => {
+  const app = makeApp();
+  mount(app);
+  const result = ask(app, "control");
+  await flush();
+  await userEvent.setup().click(dlg());
+  assert.ok(dlg(), "the prompt is still open");
+  assert.equal(result(), undefined, "the waiting request was not released");
+  act(() => { app.rt.access.resolvePrompt(false); });
+  act(() => { app.rt.access.openPanel(); });
+  await flush();
+  await userEvent.setup().click(dlg());
+  assert.ok(dlg(), "the panel is still open");
+});

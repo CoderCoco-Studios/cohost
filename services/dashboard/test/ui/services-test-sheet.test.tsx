@@ -244,3 +244,15 @@ test("the Discord connector's row opens a sheet with an audio form that posts to
   push(m.app, frame("inject.result", { id: "req-9", ok: true, detail: "played 3 frames" }));
   assert.match(feed().textContent ?? "", /played 3 frames/);
 });
+
+// @spec DASH-A11Y-005
+test("a click on the backdrop of the test sheet does not close it or discard what was typed", async () => {
+  const { sheet } = await open("voice");
+  const user = userEvent.setup();
+  const field = within(sheet).getAllByRole("textbox")[0] as HTMLTextAreaElement | HTMLInputElement;
+  await user.type(field, "keep this");
+  await user.click(sheet); // the dialog element itself is the backdrop area
+  const still = screen.getByRole("dialog", { name: "Test voice" });
+  assert.ok(still === sheet, "the sheet is still open");
+  assert.match((within(still).getAllByRole("textbox")[0] as HTMLInputElement).value, /keep this$/);
+});

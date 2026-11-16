@@ -13,9 +13,10 @@ export interface DialogProps {
   footer?: ReactNode;
   className?: string;
   /**
-   * Whether a click on the backdrop closes it, as a cancel. One rule for every dialog: a sheet or an informational dialog
-   * closes (SideSheet, the shortcut list, the Access panel); a dialog that holds typed input or asks a question stays open,
-   * so a stray click never discards a token or answers a confirmation. Default false.
+   * Whether a click on the backdrop closes it, as a cancel. One rule for every dialog and sheet: only one that holds no input
+   * the operator could lose closes (an informational dialog such as the shortcut list). A dialog or sheet with fields
+   * (the Access dialog, the test sheet, a reason prompt) or a question (a confirmation) never closes on a backdrop click, so a
+   * stray click cannot discard typed text or answer a confirmation. Default false.
    */
   backdropClose?: boolean;
   /** A CSS selector inside the dialog for the element that takes focus on open (default: `[data-autofocus]`, then the first control of the body or footer, the header's Close last). */
@@ -67,7 +68,11 @@ function ModalDialog({ title, onClose, children, footer, className, initialFocus
   }, [initialFocus]);
   return (
     <dialog ref={ref} className={`dialog${className ? ` ${className}` : ""}`} aria-labelledby={headingId} tabIndex={-1}
-      onCancel={(e) => { e.preventDefault(); closeRef.current("cancel"); }} onClose={() => { if (!unmounting.current) closeRef.current("close"); }}
+      onCancel={(e) => { e.preventDefault(); closeRef.current("cancel"); }} onClose={(e) => {
+        // A browser queues the close event of `close()`: in development the double run of the effect (setup, cleanup, setup)
+        // reopens the dialog before the event of the first cleanup fires. A close event of a dialog that is open is stale.
+        if (!unmounting.current && !e.currentTarget.open) closeRef.current("close");
+      }}
       onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (backdropClose && e.target === e.currentTarget && pressedOnBackdrop.current) closeRef.current("cancel"); pressedOnBackdrop.current = false; }}>
       <div className="dialog-h">
@@ -83,7 +88,7 @@ function ModalDialog({ title, onClose, children, footer, className, initialFocus
 /**
  * A native modal `<dialog>` (`showModal()`): named by its heading, focus moves into it on open and returns to the control
  * that opened it once it has closed (the screen heading when that control is gone), Esc, the header's Close button and,
- * where `backdropClose` is set, a click on the backdrop close it as a cancel, the browser traps focus
+ * where `backdropClose` is set (informational dialogs only), a click on the backdrop close it as a cancel, the browser traps focus
  * (DASH-A11Y-005, DASH-ACC-011). Nothing is rendered while closed, so typed text is gone when it reopens (DASH-ACC-012).
  * The page behind keeps running: dialogs never block the feed or the audio sink.
  */

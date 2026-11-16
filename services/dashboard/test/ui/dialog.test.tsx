@@ -191,7 +191,10 @@ test("a click on the backdrop closes a sheet or an informational dialog, but nev
   const onClose = () => { closed++; };
   const { rerender } = render(<SideSheet open title="Sheet" onClose={onClose}><p>x</p></SideSheet>);
   await user.click(screen.getByRole("dialog"));
-  assert.equal(closed, 1, "a sheet closes on a backdrop click");
+  assert.equal(closed, 0, "a sheet does not close on a backdrop click unless it opts in: it may hold input");
+  rerender(<SideSheet open title="Sheet" onClose={onClose} backdropClose><p>x</p></SideSheet>);
+  await user.click(screen.getByRole("dialog"));
+  assert.equal(closed, 1, "a sheet that opted in closes on a backdrop click");
   await user.click(within(screen.getByRole("dialog")).getByText("x"));
   assert.equal(closed, 1, "a click inside the sheet does not");
   rerender(<Dialog open title="Info" onClose={onClose} backdropClose><p>x</p></Dialog>);
@@ -208,7 +211,7 @@ test("a click on the backdrop closes a sheet or an informational dialog, but nev
 // @spec DASH-A11Y-005
 test("a drag that starts inside the dialog and ends on the backdrop does not close it", () => {
   let closed = 0;
-  render(<SideSheet open title="Sheet" onClose={() => { closed++; }}><input aria-label="Field" /></SideSheet>);
+  render(<SideSheet open title="Sheet" onClose={() => { closed++; }} backdropClose><input aria-label="Field" /></SideSheet>);
   const dlg = screen.getByRole("dialog");
   fireEvent.mouseDown(screen.getByLabelText("Field"));
   fireEvent.mouseUp(dlg);

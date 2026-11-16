@@ -17,13 +17,16 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Steps
 
-1. Open `.env` and set the channel name, without the `#`.
+1. Open `config/config.yaml` and set the channel name, without the `#`.
 
-   ```dotenv
-   TWITCH_CHANNEL=yourchannel
+   ```yaml
+   chat:
+     source: "twitch"
+     twitch:
+       channel: "yourchannel"
    ```
 
-2. If you came from the no-accounts run and still have `CHAT_SOURCE=fake` in `.env`, delete that line. It makes chat a scripted fake instead of Twitch.
+2. Check that `chat.source` is `twitch`. The value `fake` makes chat a scripted fake instead of Twitch.
 
 3. Restart the `chat` service. In the dashboard, open the Services tab and restart `chat`. Or, from a terminal in the cohost folder:
 
@@ -35,16 +38,18 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Logging in (optional)
 
-Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into `.env`:
+Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into `config/secrets.yaml`:
 
-```dotenv
-TWITCH_CLIENT_ID=your-client-id
-TWITCH_CLIENT_SECRET=your-client-secret
-TWITCH_ACCESS_TOKEN=your-access-token
-TWITCH_REFRESH_TOKEN=your-refresh-token
+```yaml
+chat:
+  twitch:
+    client_id: "your-client-id"
+    client_secret: "your-client-secret"
+    access_token: "your-access-token"
+    refresh_token: "your-refresh-token"
 ```
 
-Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.json`, so a restart does not lose it. If you generate a new pair and put it in `.env`, cohost notices and uses the new pair.
+Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.json`, so a restart does not lose it. If you generate a new pair and put it in `secrets.yaml` and restart `chat`, cohost notices and uses the new pair.
 
 The co-host does not write into Twitch chat today. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
 
@@ -60,8 +65,8 @@ If chat is quiet, I will not make things up. Well. Not until the idle chatter ki
 
 ## If it didn't
 
-- **`chat` shows `degraded`.** `TWITCH_CHANNEL` is empty, so the service is waiting for you. Set it and restart `chat`.
-- **Fake messages keep arriving.** `CHAT_SOURCE=fake` is still in `.env`. Delete it and restart `chat`.
+- **`chat` shows `degraded`.** `chat.twitch.channel` is empty, so the service is waiting for you. Set it and restart `chat`.
+- **Fake messages keep arriving.** `chat.source` is still `fake` in `config/config.yaml`. Set it to `twitch` and restart `chat`.
 - **`chat` will not start once the access token is set.** The refresh token is missing. Both are required together.
 - **Nothing appears and the channel is busy.** Check the channel name for a typo, and read the `chat` log with `docker compose logs chat`.
 

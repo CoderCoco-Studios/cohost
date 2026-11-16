@@ -1,6 +1,6 @@
 ---
 title: Install for real
-description: Run the installer, fill in .env and config.yaml, start the dashboard and launch the real stack with real models.
+description: Run the installer, fill in config.yaml, secrets.yaml and .env, start the dashboard and launch the real stack with real models.
 track: simple
 verified: f126b94
 ---
@@ -12,7 +12,7 @@ By the end of this page you will have the real stack running: a language model a
 ## What you need
 
 - A working [mock-mode run](first-run.md), or at least a machine that meets [What you need](prerequisites.md).
-- If you did the mock run, you will undo its lines in `.env` below.
+- If you did the mock run, there is nothing to undo: the real run starts every service without the **isolated** option, so each one uses its real backend.
 - Good internet and patience. The installer downloads [container](../../start/glossary.md#container) images and the default models, several gigabytes in all.
 
 ## Steps
@@ -32,17 +32,18 @@ By the end of this page you will have the real stack running: a language model a
 
    This installs [Docker](../../start/glossary.md#docker), Node, pnpm and the Rust toolchain if they are missing, builds the connection to the [bus](../../start/glossary.md#bus) (`pnpm build:native`), writes `.env` and your `config/` files, and downloads the images and models. If it installs Docker, it stops and asks you to log out and back in; do that and run it again. [What you need](prerequisites.md#what-the-installer-does) lists every step. If you skipped the installer on the previous page, you must run `pnpm build:native` yourself before step 5.
 
-3. Open `.env` in an editor. If you came from the mock run, delete the five lines you added at the end (`LLM_PROVIDER`, `MEMORY_STORE`, `MEMORY_EMBEDDER`, `VOICE_ENGINE` and `CHAT_SOURCE`), so the real backends are used. Then look at the other settings:
+3. Look at the settings you may want to change. Your accounts and models are keys in `config/config.yaml`, your credentials go in `config/secrets.yaml`, and `.env` holds only a few per-machine settings:
 
-   | Setting | What it is | When to change it |
+   | Where | What it is | When to change it |
    | --- | --- | --- |
-   | `CONTROL_TOKEN` | The password the dashboard asks for. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`. |
-   | `LLM_MODEL`, `VISION_MODEL`, `NOTES_MODEL`, `EMBED_MODEL` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
-   | `STT_MODEL` | The speech-to-text model name | Rarely. |
-   | `TWITCH_*`, `DISCORD_*`, `OBS_*`, `AVATAR_DRIVER`, `VTS_*`, `VMC_*` | Your accounts and apps | Fill each in on its own page under Connect. |
-   | `COHOST_DOCKER_BIN` | The Docker program to run | On [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration, set it to `docker.exe`. |
+   | `CONTROL_TOKEN` in `.env` | The password the dashboard asks for. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`. |
+   | `llm.model`, `llm.embed_model`, `vision.model` in `config/config.yaml` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
+   | `ears.stt_model` in `config/config.yaml` | The speech-to-text model name | Rarely. |
+   | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` in `config/config.yaml` | Your accounts and apps | Fill each in on its own page under Connect. |
+   | `config/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages. The Settings screen edits `config.yaml` only, so write secrets in this file. |
+   | `COHOST_DOCKER_BIN` in `.env` | The Docker program to run | On [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration, set it to `docker.exe`. |
 
-   Every variable is listed on the [environment and ports](../../advanced/reference/env.md) page.
+   A restart of the service that reads a key applies an edit to either file. The [environment and ports](../../advanced/reference/env.md) page lists everything `.env` holds.
 
 4. Open `config/config.yaml`. This is the file for behaviour, and it is yours: the repository does not track it. Set your names near the top:
 
@@ -61,7 +62,7 @@ By the end of this page you will have the real stack running: a language model a
    pnpm dashboard
    ```
 
-6. Open `http://localhost:3000`, enter `CONTROL_TOKEN` when asked, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
+6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` when asked, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
 
 7. Click **enable audio** so your browser may play sound.
 
@@ -102,9 +103,9 @@ Real model, real voice, real me. Try not to get attached. I will remember it if 
 
 ## If it didn't
 
-- **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. A failed download of the viewer-notes model (`NOTES_MODEL`) is only a warning.
-- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page, then restart that service from the Services tab.
-- **Replies are very slow.** There is no GPU, or the model is too big for it. Pick a smaller `LLM_MODEL`; see [choose a model](../tune/model.md).
+- **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. The models are the ones `config/config.yaml` names; a failed download of a [hook](../../start/glossary.md#hook) model is only a warning.
+- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (`config/config.yaml` for settings, `config/secrets.yaml` for credentials), then restart that service from the Services tab.
+- **Replies are very slow.** There is no GPU, or the model is too big for it. Pick a smaller `llm.model`; see [choose a model](../tune/model.md).
 - **The dashboard refuses to start.** If you set `DASHBOARD_HOST=0.0.0.0` it also needs `CONTROL_ENABLED=1` and a `CONTROL_TOKEN`.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).

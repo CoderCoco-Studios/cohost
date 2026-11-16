@@ -7,7 +7,7 @@ verified: f126b94
 
 # Configuration reference
 
-`config/config.yaml` holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes. Secrets and per-machine settings live in `.env` instead; see [Environment and ports](env.md). This page lists every key of `config/config.example.yaml`, spelled as the dotted path it has in that file. Keys under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and keys inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
+`config/config.yaml` holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes. Every value is a literal: no environment variable is read for any key. Credentials live in `config/secrets.yaml`, and `.env` holds only what must exist before configuration can be read plus the dashboard's access controls; see [Environment and ports](env.md). This page lists every key of `config/config.example.yaml`, spelled as the dotted path it has in that file. Keys under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and keys inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
 
 Terms used in the tables, defined once in the [glossary](../../start/glossary.md): [Ollama](../../start/glossary.md#ollama), [Postgres](../../start/glossary.md#postgres), [pgvector](../../start/glossary.md#pgvector), [embedding](../../start/glossary.md#embedding), [OBS](../../start/glossary.md#obs), [obs-websocket](../../start/glossary.md#obs-websocket), [Redis](../../start/glossary.md#redis), [bus](../../start/glossary.md#bus), [event](../../start/glossary.md#event), [hook](../../start/glossary.md#hook), [reflex](../../start/glossary.md#reflex), [connector](../../start/glossary.md#connector), [sink](../../start/glossary.md#sink), [Whisper](../../start/glossary.md#whisper), [Kokoro](../../start/glossary.md#kokoro), [VTube Studio](../../start/glossary.md#vtube-studio), [VMC](../../start/glossary.md#vmc), [valence and arousal](../../start/glossary.md#valence-arousal), [cortex](../../start/glossary.md#cortex), [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect), [STT](../../start/glossary.md#stt) and [GPU](../../start/glossary.md#gpu).
 
@@ -16,14 +16,14 @@ Terms used in the tables, defined once in the [glossary](../../start/glossary.md
 | Topic | Rule |
 | --- | --- |
 | The files | `config/config.example.yaml` is committed. `config/config.yaml` is yours and git-ignored: `scripts/install.sh` copies it, and any service that finds it missing copies it on first run. `personality.md` and `expressions.yaml` work the same way |
-| Where it is read from | The `config/` folder at the workspace root (the nearest folder holding `pnpm-workspace.yaml`), whatever directory a service starts in. `CONFIG_DIR` overrides the folder |
-| Placeholders | `${VAR}` is replaced from the environment, and `${VAR:-default}` falls back to `default` when `VAR` is unset or empty. A blank value that results means "use the schema's default" for most keys |
+| Where it is read from | The `config/` folder at the workspace root (the nearest folder holding `pnpm-workspace.yaml`), whatever directory a service starts in. `CONFIG_DIR` overrides the folder, and `secrets.yaml` sits beside `config.yaml` in it |
+| Literal values | Every value is written as a literal. A `${...}` placeholder anywhere in `config.yaml` is refused when the file loads, with a message naming the key, and the service does not start. A blank value means "use the schema's default" for most keys |
 | When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
 | Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
-| Editing | The dashboard's Settings tab edits one section at a time from the same schema, keeps your comments and placeholders, never shows or writes secrets, refuses a save when the file changed under it, and offers to restart the services that read the section |
-| Secrets | `llm.openai.api_key`, `llm.claude.api_key`, `vision.obs.password` and `ears.http.token` are secrets. The editor never shows them; set them through `.env` |
+| Editing | The dashboard's Settings tab edits one section at a time from the same schema, keeps your comments, never shows or writes secrets, refuses a save when the file changed under it, and offers to restart the services that read the section |
+| Secrets | The eleven credential keys listed under [Credentials](#credentials-secretsyaml) live in `config/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
 
-In the tables, "Env" names the environment variable that the example file reads for that key. The defaults shown are the schema's, and where the example file sets a different value that is noted.
+The defaults shown are the schema's, and where the example file sets a different value that is noted.
 
 ## `cohost`
 
@@ -43,24 +43,21 @@ Which model answers for the co-host. Embeddings always use local Ollama whatever
 | Key | Default | What it does |
 | --- | --- | --- |
 | `llm` | map | The chat model |
-| `llm` | map | The chat model |
-| `llm.provider` | `ollama` | `ollama`, `openai`, `anthropic`, `bedrock` or `mock` (deterministic offline replies, for isolated runs only). Env: `LLM_PROVIDER` |
-| `llm.model` | `qwen2.5:7b-instruct-q4_K_M` | The model id as the provider names it: an Ollama tag, an OpenAI-style id, `claude-opus-5-5`, `anthropic.claude-opus-5-5`. Env: `LLM_MODEL` |
+| `llm.provider` | `ollama` | `ollama`, `openai`, `anthropic`, `bedrock` or `mock` (deterministic offline replies, for isolated runs only) |
+| `llm.model` | `qwen2.5:7b-instruct-q4_K_M` | The model id as the provider names it: an Ollama tag, an OpenAI-style id, `claude-opus-5-5`, `anthropic.claude-opus-5-5` |
 | `llm.num_ctx` | `8192` | Ollama: the context window. Raise it with more VRAM |
 | `llm.temperature` | `0.9` | Ollama and OpenAI: sampling temperature, 0 to 2 |
 | `llm.max_tokens` | `120` | Ollama and OpenAI: reply length cap in tokens. Short replies read better as speech |
 | `llm.timeout_ms` | `60000` | Request timeout for chat, embed and ping when the caller sets none |
-| `llm.embed_model` | `nomic-embed-text` | The embedding model, always on Ollama. Env: `EMBED_MODEL` |
-| `llm.openai` | map | Settings for `provider: openai` |
+| `llm.embed_model` | `nomic-embed-text` | The embedding model, always on Ollama |
+| `llm.openai` | map | Settings for `provider: openai` (the API key is in `secrets.yaml`) |
 | `llm.openai.base_url` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint, such as `http://my-gpu-box:8000/v1` |
-| `llm.openai.api_key` | `${LLM_API_KEY}` | The API key. A secret: the settings editor never shows or writes it |
-| `llm.claude` | map | Settings for `provider: anthropic` and `provider: bedrock` |
-| `llm.claude.api_key` | `${ANTHROPIC_API_KEY}` | The Claude API key. A secret. Empty uses `ANTHROPIC_API_KEY` or an `ant auth login` profile |
+| `llm.claude` | map | Settings for `provider: anthropic` and `provider: bedrock` (the Claude API key is in `secrets.yaml`) |
 | `llm.claude.effort` | `low` | Thinking depth: `low`, `medium`, `high`, `xhigh` or `max`. `low` suits one-line replies |
 | `llm.claude.max_tokens` | `2048` | Caps thinking and reply together, so keep it roomier than `llm.max_tokens`. Minimum 256 |
 | `llm.claude.fallbacks` | `true` | Claude API only: retry on another Claude model if a safety classifier declines |
 | `llm.bedrock` | map | Settings for `provider: bedrock` |
-| `llm.bedrock.region` | `""` | The AWS region. Empty uses `AWS_REGION` or `AWS_DEFAULT_REGION` |
+| `llm.bedrock.region` | `""` | The AWS region of the Bedrock endpoint, such as `us-east-1`. Required for `provider: bedrock`, together with the access key id and secret access key in `secrets.yaml`; an empty region leaves Bedrock not configured |
 
 ## `vision`
 
@@ -69,9 +66,9 @@ The `eyes` service: OBS screenshots described by a vision model.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `vision` | map | The eyes service |
-| `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS. Env: `VISION_ENABLED` |
-| `vision.model` | `qwen2.5vl:3b` | The vision model. Required while `enabled` is true. Env: `VISION_MODEL` |
-| `vision.engine` | `ollama` | `ollama` asks the vision model; `stub` answers with fixed text and no model. Env: `VISION_ENGINE` |
+| `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
+| `vision.model` | `qwen2.5vl:3b` | The vision model. Required while `enabled` is true |
+| `vision.engine` | `ollama` | `ollama` asks the vision model; `stub` answers with fixed text and no model |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |
@@ -80,25 +77,24 @@ The `eyes` service: OBS screenshots described by a vision model.
 | `vision.upload_timeout_ms` | `10000` | Injected uploads: timeout for reading the image from Redis |
 | `vision.upload_max_bytes` | `8388608` | Injected uploads: the largest image accepted (8 MiB) |
 | `vision.prompt` | built-in prompt (commented out in the example) | The system prompt of the describe call. Blank uses the built-in one. Keep its rule to reply exactly `SAME` when nothing changed, or every reply counts as a change |
-| `vision.obs` | map | The OBS connection |
-| `vision.obs.host` | `host.docker.internal` | Where obs-websocket listens. Env: `OBS_HOST` |
-| `vision.obs.port` | `4455` | The obs-websocket port. Env: `OBS_PORT` |
-| `vision.obs.password` | empty | The obs-websocket password. A secret. Env: `OBS_PASSWORD` |
-| `vision.obs.source` | `Game Capture` | The OBS source to screenshot. Env: `OBS_SOURCE` |
+| `vision.obs` | map | The OBS connection (the obs-websocket password is `vision.obs.password` in `secrets.yaml`) |
+| `vision.obs.host` | `host.docker.internal` | Where obs-websocket listens |
+| `vision.obs.port` | `4455` | The obs-websocket port |
+| `vision.obs.source` | `Game Capture` | The OBS source to screenshot |
 | `vision.obs.width` | `896` | Downscale the screenshot to this width before sending it to the model |
 
 ## `chat`
 
-The `chat` service: Twitch chat in.
+The `chat` service: Twitch chat in. The channel to read is here; its login credentials are in `secrets.yaml`.
 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `chat` | map | The chat service |
-| `chat.source` | `twitch` | `twitch`, or `fake` for scripted or stdin messages with no channel. Env: `CHAT_SOURCE` |
+| `chat.source` | `twitch` | `twitch`, or `fake` for scripted or stdin messages with no channel |
 | `chat.fake` | map | Settings for `source: fake` |
 | `chat.fake.interval_ms` | `8000` | The gap between scripted messages |
-| `chat.twitch` | map | Settings for `source: twitch` |
-| `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded`. Env: `TWITCH_CHANNEL` |
+| `chat.twitch` | map | Settings for `source: twitch` (the credentials are `chat.twitch.*` keys of `secrets.yaml`) |
+| `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded` |
 | `chat.ignore_users` | `[]` (`nightbot`, `streamelements`, `moobot` in the example) | Usernames whose messages are dropped |
 | `chat.ignore_prefixes` | `["!"]` | Messages starting with any of these are dropped (bot commands) |
 
@@ -177,8 +173,8 @@ The `memory` region: the only one that touches Postgres.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `brain.memory` | map | The [memory region](../../start/glossary.md#memory-region) |
-| `brain.memory.store` | `postgres` | `postgres` (pgvector with Ollama embeddings) or `memory` (an in-process store, lost on exit). Env: `MEMORY_STORE` |
-| `brain.memory.embedder` | `ollama` | `ollama` or `hash` (deterministic and offline). Env: `MEMORY_EMBEDDER` |
+| `brain.memory.store` | `postgres` | `postgres` (pgvector with Ollama embeddings) or `memory` (an in-process store, lost on exit) |
+| `brain.memory.embedder` | `ollama` | `ollama` or `hash` (deterministic and offline) |
 | `brain.memory.recall_k` | `6` | Memories pulled per prompt. 0 turns recall off |
 | `brain.memory.min_similarity` | `0.35` | The lowest similarity a memory may have to be recalled, 0 to 1 |
 | `brain.memory.regular_messages` | `25` | Lifetime messages above which a viewer counts as a regular. The owner can also flag one |
@@ -237,7 +233,7 @@ The `voice` service: text to speech.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `voice` | map | The voice service |
-| `voice.engine` | `kokoro` | `kokoro`, or `stub` for a silent WAV sized from the text. Env: `VOICE_ENGINE` |
+| `voice.engine` | `kokoro` | `kokoro`, or `stub` for a silent WAV sized from the text |
 | `voice.voice` | `af_heart` | A Kokoro voice id, or a mix such as `af_bella(2)+af_sky` |
 | `voice.speed` | `1.05` | The pace multiplier, 0.25 to 4 |
 | `voice.sample_rate` | `24000` | The sample rate of the silence the stub engine returns. The Kokoro engine ignores it |
@@ -263,18 +259,18 @@ The `avatar` service.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `avatar` | map | The avatar service |
-| `avatar.driver` | `null` | `vtube-studio`, `vmc` or `null` (no avatar app). Env: `AVATAR_DRIVER` |
+| `avatar.driver` | `null` | `vtube-studio`, `vmc` or `null` (no avatar app, dashboard only). A blank value means `null` |
 | `avatar.fps` | `30` | Frames per second of the avatar engine |
 | `avatar.smoothing` | `0.25` | 0 to 1; higher is snappier |
 | `avatar.idle_motion` | `true` | Gentle head and eye drift when idle |
 | `avatar.vtube_studio` | map | The VTube Studio driver |
-| `avatar.vtube_studio.host` | required | Where VTube Studio runs. Env: `VTS_HOST` |
-| `avatar.vtube_studio.port` | `8001` | The VTube Studio API port. Env: `VTS_PORT` |
+| `avatar.vtube_studio.host` | `host.docker.internal` | Where VTube Studio runs: `host.docker.internal` on the same machine as Docker, the LAN address on a second PC |
+| `avatar.vtube_studio.port` | `8001` | The VTube Studio API port |
 | `avatar.vtube_studio.plugin_name` | `cohost` | The plugin name VTube Studio shows in its Allow dialog |
-| `avatar.vtube_studio.plugin_developer` | `cohost` | The developer name shown there. The example uses `${TWITCH_CHANNEL}` |
+| `avatar.vtube_studio.plugin_developer` | `cohost` | The developer name shown there. With `plugin_name` it is what VTube Studio ties its saved permission to, so keep it fixed |
 | `avatar.vmc` | map | The VMC driver |
-| `avatar.vmc.host` | required | Where the VMC receiver runs. Env: `VMC_HOST` |
-| `avatar.vmc.port` | `39539` | The VMC receiver's UDP port. Env: `VMC_PORT` |
+| `avatar.vmc.host` | `host.docker.internal` | Where the VMC receiver runs: `host.docker.internal` on the same machine, the LAN address on another PC |
+| `avatar.vmc.port` | `39539` | The VMC receiver's UDP port |
 
 ## `ears`
 
@@ -283,11 +279,10 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `ears` | map | The ears service |
-| `ears.sources` | `[discord]` | The listening sources, all started at once and read at start: `discord`, `http`, `dir`, or another connector's source tag. An empty list idles. Env: `EARS_SOURCES`, in flow syntax such as `[http, dir]` |
-| `ears.http` | map | The `http` source's listener |
+| `ears.sources` | `[discord]` | The listening sources, all started at once and read at start: `discord`, `http`, `dir`, or another connector's source tag. An empty list idles. Written in flow syntax such as `[http, dir]` |
+| `ears.http` | map | The `http` source's listener. Its bearer token is `ears.http.token` in `secrets.yaml`; empty requires none, so set one when others can reach the port |
 | `ears.http.host` | `127.0.0.1` | The address to bind. In [Docker](../../start/glossary.md#docker) bind `0.0.0.0` and publish the port yourself |
 | `ears.http.port` | `8765` | The port. 0 picks a free one |
-| `ears.http.token` | `${EARS_HTTP_TOKEN:-}` | The bearer token `POST /audio` must carry. Empty requires none. A secret. Set it when others can reach the port |
 | `ears.dir` | map | The `dir` source |
 | `ears.dir.path` | empty | The directory to watch, created if missing. Empty means not configured, and `ears` idles as `degraded` |
 | `ears.dir.poll_ms` | `1000` | How often to look for new `.wav` files |
@@ -302,8 +297,8 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.stt_gpu` | `false` | Declare that the STT backend runs on a GPU. It only silences a start-up warning about partials |
 | `ears.partial_step_ms` | `1000` | How often a growing partial transcription is made |
 | `ears.min_speech_ms` | `400` | The shortest speech worth transcribing |
-| `ears.stt_model` | `Systran/faster-whisper-small` | The model name sent to the STT server. Env: `STT_MODEL` |
-| `ears.stt_engine` | `speaches` | `speaches`, or `stub` for a fixed transcript with no STT server. Env: `EARS_STT_ENGINE` |
+| `ears.stt_model` | `Systran/faster-whisper-small` | The model name sent to the STT server |
+| `ears.stt_engine` | `speaches` | `speaches`, or `stub` for a fixed transcript with no STT server |
 | `ears.drop_phrases` | `[]` | Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped. They are Whisper's usual hallucinations on silence, such as `Thank you.` |
 
 ## `connections`
@@ -313,10 +308,10 @@ External connectors that attach to the bus.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `connections` | map | Connectors |
-| `connections.discord` | map | The Discord connector (service `connector-discord`, `DISCORD_TOKEN`) |
-| `connections.discord.enabled` | `true` | `false` makes the connector idle and hold no connection. Env: `CONNECTIONS_DISCORD_ENABLED` |
-| `connections.discord.guild_id` | empty | The Discord server id. Env: `DISCORD_GUILD_ID` |
-| `connections.discord.voice_channel_id` | empty | The voice channel id. Env: `DISCORD_VOICE_CHANNEL_ID` |
+| `connections.discord` | map | The Discord connector (service `connector-discord`); the bot token is `connections.discord.token` in `secrets.yaml` |
+| `connections.discord.enabled` | `true` | `false` makes the connector idle and hold no connection |
+| `connections.discord.guild_id` | empty | The Discord server id |
+| `connections.discord.voice_channel_id` | empty | The voice channel id |
 
 ## `mouth`
 
@@ -327,18 +322,18 @@ The `mouth` service: where her voice goes. Each key under `mouth.outputs` is one
 | `mouth` | map | The speaking module |
 | `mouth.outputs` | map | The outputs |
 | `mouth.outputs.discord` | map | Sink `discord`: the voice goes to the Discord connector and into the channel set under `connections.discord` |
-| `mouth.outputs.discord.enabled` | `true` | `false` makes `mouth` play nothing on it. Env: `MOUTH_DISCORD_ENABLED` |
+| `mouth.outputs.discord.enabled` | `true` | `false` makes `mouth` play nothing on it |
 | `mouth.outputs.discord.gain_db` | `0` | Loudness on this output only, -40 to 12 dB. 0 is unchanged |
 | `mouth.outputs.dryrun` | map | A test output that accepts each line, plays nothing and reports `voice.done` |
-| `mouth.outputs.dryrun.enabled` | `false` | Turn it on. Env: `MOUTH_DRYRUN_ENABLED` |
+| `mouth.outputs.dryrun.enabled` | `false` | Turn it on |
 | `mouth.outputs.dryrun.fail_every` | `0` | 0 never fails; N fails every Nth line, to exercise the fallback path |
 | `mouth.outputs.file` | map | Appends each line's WAV to a folder under the data directory |
-| `mouth.outputs.file.enabled` | `false` | Turn it on. Env: `MOUTH_FILE_ENABLED` |
+| `mouth.outputs.file.enabled` | `false` | Turn it on |
 | `mouth.outputs.file.dir` | `mouth/outputs` | The folder, relative to the data directory. No absolute path and no `..` |
 | `mouth.outputs.file.max_files` | `100` | The newest this many files are kept |
 | `mouth.outputs.http` | map | POSTs each line's WAV (`audio/wav`) to a URL |
-| `mouth.outputs.http.enabled` | `false` | Turn it on. Env: `MOUTH_HTTP_ENABLED` |
-| `mouth.outputs.http.url` | empty | An `http` or `https` URL. Empty while enabled leaves the output down. Env: `MOUTH_HTTP_URL` |
+| `mouth.outputs.http.enabled` | `false` | Turn it on |
+| `mouth.outputs.http.url` | empty | An `http` or `https` URL. Empty while enabled leaves the output down |
 | `mouth.outputs.http.timeout_ms` | `5000` | Timeout per attempt |
 | `mouth.outputs.http.retries` | `3` | Attempts after the first, with backoff |
 | `mouth.outputs.http.max_queue` | `20` | Undelivered lines held; the oldest is dropped past this |
@@ -347,7 +342,7 @@ The `mouth` service: where her voice goes. Each key under `mouth.outputs` is one
 
 ## `dashboard`
 
-The host-run dashboard.
+The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` and the rest) stay in `.env`; see [Environment and ports](env.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -359,3 +354,20 @@ The host-run dashboard.
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |
 | `dashboard.inject.ttl_ms` | `300000` | How long an upload stays available to the service that asked for it |
 
+## Credentials (`secrets.yaml`)
+
+`config/secrets.yaml` holds exactly these eleven keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+
+| Key | Default | What it is |
+| --- | --- | --- |
+| `llm.openai.api_key` | `""` | The API key of the endpoint named by `llm.openai.base_url`, for `provider: openai` |
+| `llm.claude.api_key` | `""` | A Claude API key, for `provider: anthropic` |
+| `llm.bedrock.access_key_id` | `""` | An AWS access key id, for `provider: bedrock`. Needs `llm.bedrock.region` and the secret access key too |
+| `llm.bedrock.secret_access_key` | `""` | The secret access key that goes with the access key id |
+| `vision.obs.password` | `""` | The obs-websocket password. Empty when the server needs none |
+| `ears.http.token` | `""` | The bearer token `POST /audio` must carry. Empty requires none |
+| `chat.twitch.client_id` | `""` | The Twitch application's client id |
+| `chat.twitch.client_secret` | `""` | The Twitch application's client secret |
+| `chat.twitch.access_token` | `""` | A user access token for the bot account. `chat` keeps its refreshed copy under the data directory |
+| `chat.twitch.refresh_token` | `""` | Its refresh token. Required whenever `access_token` is set |
+| `connections.discord.token` | `""` | The co-host's one Discord bot token, used only by the Discord connector. Invite the bot with Connect and Speak and enable the Server Members intent |

@@ -63,12 +63,13 @@ Each reply passes through hearing, deciding, writing and speaking, and the writi
 
 ## Is it safe to open the dashboard to other computers?
 
-Only the sink page (the audio for a second PC's OBS) listens on the network, on `DASHBOARD_LAN_PORT`. The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. If you do, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
+Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. If you do, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
 
 ## Where are my files?
 
 - `config/config.yaml`, `config/personality.md` and `config/expressions.yaml`: your settings, personality and avatar expressions. Git ignores them.
-- `.env`: your secrets and per-machine settings. Never share it.
+- `config/secrets.yaml`: your credentials (tokens, API keys, the OBS password). Git ignores it. Never share it.
+- `.env`: the dashboard's access tokens and a few per-machine settings. Never share it.
 - `data/`: files the co-host must remember between runs, such as refreshed Twitch tokens. `COHOST_DATA_DIR` moves it.
 
 ## What has been tested against the real services?

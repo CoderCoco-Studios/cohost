@@ -36,7 +36,7 @@ Use this when OBS runs on the same computer as the dashboard.
    http://localhost:3000/?sink=1
    ```
 
-   The port is `DASHBOARD_PORT` in `.env`; 3000 is the default.
+   The port is the `dashboard.port` key in `config/config.yaml`; 3000 is the default.
 
 3. Tick **Control audio via OBS**.
 
@@ -54,7 +54,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
    http://<ai-pc>:3001/?sink=1
    ```
 
-   Replace `<ai-pc>` with the AI PC's address. Port 3001 is `DASHBOARD_LAN_PORT`. It serves only the sink page, the audio and test uploads, never the controls, so it is safe to reach from the network.
+   Replace `<ai-pc>` with the AI PC's address. Port 3001 is the `dashboard.lan_port` key in `config/config.yaml`. It serves only the sink page, the audio and test uploads, never the controls, so it is safe to reach from the network.
 
 3. Tick **Control audio via OBS**.
 
@@ -66,21 +66,30 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 2. Check that your scene has a source that can produce a screenshot, and note its exact name. The default the co-host looks for is `Game Capture`.
 
-3. Put OBS's details in `.env`:
+3. Put OBS's details in `config/config.yaml`:
 
-   ```dotenv
-   OBS_HOST=host.docker.internal
-   OBS_PORT=4455
-   OBS_PASSWORD=your-obs-password
-   OBS_SOURCE="Game Capture"
+   ```yaml
+   vision:
+     enabled: true
+     obs:
+       host: "host.docker.internal"
+       port: 4455
+       source: "Game Capture"
    ```
 
-   `host.docker.internal` is how a [container](../../start/glossary.md#container) reaches OBS running on the same machine. If OBS is on a second PC, put that PC's address in `OBS_HOST` instead, and make sure obs-websocket listens on the network and the firewall allows port 4455.
+   `host.docker.internal` is how a [container](../../start/glossary.md#container) reaches OBS running on the same machine. If OBS is on a second PC, put that PC's address in `vision.obs.host` instead, and make sure obs-websocket listens on the network and the firewall allows port 4455.
 
-4. Turn vision on and start the `eyes` service:
+   The OBS WebSocket password is a credential, so it goes in `config/secrets.yaml`:
+
+   ```yaml
+   vision:
+     obs:
+       password: "your-obs-password"
+   ```
+
+4. Start the `eyes` service by listing its profile in `.env`:
 
    ```dotenv
-   VISION_ENABLED=true
    COMPOSE_PROFILES=eyes
    ```
 
@@ -92,7 +101,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
    docker compose --profile eyes up -d
    ```
 
-   The vision model (`VISION_MODEL` in `.env`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers.
+   The vision model (`vision.model` in `config/config.yaml`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers.
 
 ## How you know it worked
 
@@ -103,8 +112,8 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 ## If it didn't
 
 - **No sound on stream.** Check that **Control audio via OBS** is ticked, that the address is the sink page (`?sink=1`), and that the dashboard page is reachable from OBS. Open the same address in a browser and press **enable audio** there.
-- **The second PC cannot load the page.** Use port 3001, not 3000, and check the AI PC's firewall.
-- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check `OBS_HOST`, `OBS_PORT` and `OBS_PASSWORD`, and that the source named in `OBS_SOURCE` exists.
+- **The second PC cannot load the page.** Use the `dashboard.lan_port` port (3001 by default), not `dashboard.port` (3000), and check the AI PC's firewall.
+- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check `vision.obs.host`, `vision.obs.port` and `vision.obs.source` in `config/config.yaml`, `vision.obs.password` in `config/secrets.yaml`, and that the named source exists in OBS. Restart `eyes` after an edit.
 - **The eyes have not been run against a real OBS yet.** The obs-websocket path is covered by tests, not yet by a live run. If it misbehaves, the logs will say where.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).

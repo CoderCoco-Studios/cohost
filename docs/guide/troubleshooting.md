@@ -32,17 +32,17 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### The address is already in use
 
 - **Cause:** something else on your PC uses port 3000 or 3001.
-- **Fix:** set `DASHBOARD_PORT` (and `DASHBOARD_LAN_PORT`) in `.env`, or set `PORT`, which takes priority for the dashboard. The dashboard prints the address it ended up on when it starts.
+- **Fix:** set `dashboard.port` and `dashboard.lan_port` (3000 and 3001 by default, and they must differ) in `config/config.yaml`, then start the dashboard again. The startup log prints the URL it actually uses.
 
 ### The page asks for a token and rejects mine
 
-- **Cause:** the token you typed is not the `CONTROL_TOKEN` in `.env`, or `.env` changed after the dashboard started.
+- **Cause:** the token you typed is not the `CONTROL_TOKEN` in `.env`, or `.env` changed after the dashboard started (it reads `.env` once, at start).
 - **Fix:** copy the value from `.env` exactly and restart the dashboard. The page asks once per browser tab, so close the tab and reopen it.
 
 ### My settings are not being read
 
-- **Cause:** the co-host reads `config/` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml`. A copy in some other folder is ignored.
-- **Fix:** edit `config/config.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
+- **Cause:** the co-host reads `config/` (including `config.yaml` and `secrets.yaml`) and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml`. A copy in some other folder is ignored.
+- **Fix:** edit `config/config.yaml`, `config/secrets.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
 
 ### A program on my PC cannot reach the voice service
 
@@ -63,7 +63,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### A model did not download
 
-- **Cause:** the `models` one-shot exits with an error if the main, vision or [embedding](../start/glossary.md#embedding) model fails to download. A failed download of `NOTES_MODEL` is only a warning.
+- **Cause:** the `models` one-shot exits with an error if the main, vision or [embedding](../start/glossary.md#embedding) model fails to download. The models are the ones `config/config.yaml` names (`llm.model`, `llm.embed_model` and `vision.model`). A failed download of a hook model is only a warning.
 - **Fix:** check disk space and your connection, then press **Launch** again to retry. `docker compose ps` shows whether `models` ended in an error.
 
 ### Launch, Stop or a restart answers `busy`
@@ -90,8 +90,8 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### The `chat` service does nothing
 
-- **Cause:** no `TWITCH_CHANNEL` is set, so the chat service stays idle and logs a warning.
-- **Fix:** set `TWITCH_CHANNEL` in `.env` (see [Twitch chat](connect/twitch.md)), or set `CHAT_SOURCE=fake` to get scripted messages with no channel.
+- **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
+- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **isolated** checkbox beside Start on the services tab, or `pnpm cohostctl start chat --isolated`), or set `chat.source: fake`.
 
 ## The co-host's behaviour
 
@@ -107,13 +107,13 @@ Work down the list:
 
 ### It only says canned lines
 
-- **Cause:** a mock backend is on. `LLM_PROVIDER=mock` gives deterministic offline replies. The mode column says `mock`.
-- **Fix:** remove the mock lines from `.env` (see [Install for real](install/real-install.md)) and Launch again.
+- **Cause:** a mock backend is on. An isolated start of `cortex` (or `llm.provider: mock`) gives deterministic offline replies. The mode column says `mock`.
+- **Fix:** restart the unit without **isolated** (see [Install for real](install/real-install.md)), and check that `llm.provider` in `config/config.yaml` names a real provider.
 
 ### I changed a setting and nothing happened
 
 - **Cause:** services read their settings when they start.
-- **Fix:** restart the services that read them; the settings tab offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. Changes to `.env` need a **Launch**.
+- **Fix:** restart the services that read them; the settings tab offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. Changes to `config/secrets.yaml` apply the same way: restart the service that reads the credential. Changes to `.env` need a **Launch**.
 
 ### A reflex never fires
 
@@ -130,7 +130,7 @@ Work down the list:
 ### The Viewers tab is locked or says 403
 
 - **Cause:** `VIEWERS_TOKEN` is empty or missing, so the tab stays locked on purpose.
-- **Fix:** set it in `.env` and restart the dashboard. See [Memory and viewer notes](tune/memory.md).
+- **Fix:** set `VIEWERS_TOKEN` in `.env` and restart the dashboard. See [Memory and viewer notes](tune/memory.md).
 
 ### The memory service will not start after I changed the embedding model
 
@@ -139,7 +139,7 @@ Work down the list:
 
 ### No notes are being written about viewers
 
-- **Cause:** the small notes model (`NOTES_MODEL`) did not download, or the memory service is in [mock mode](../start/glossary.md#mock-mode) with the in-memory store.
+- **Cause:** the notes models (the `llm.model` entries under `brain.memory.notes.capture` and `brain.memory.notes.consolidator`) did not download, or the memory service is in [mock mode](../start/glossary.md#mock-mode) with the in-memory store.
 - **Fix:** Launch again so `models` retries the download, and check the memory row on the services tab.
 
 ### The reflection pass did nothing

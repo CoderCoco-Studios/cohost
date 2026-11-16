@@ -22,7 +22,7 @@ You start, stop and restart the co-host from the dashboard with a click, or from
    pnpm dashboard
    ```
 
-2. Open `http://localhost:3000`, enter the `CONTROL_TOKEN` from `.env` if it asks, and go to the **services** tab.
+2. Open `http://localhost:<dashboard.port>` (3000 by default), enter the `CONTROL_TOKEN` from `.env` if it asks, and go to the **services** tab.
 3. Press **Launch** and confirm.
 
 Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), starts every [container](../../start/glossary.md#container) of the stack, and waits until they are ready. The stack panel shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.
@@ -42,7 +42,7 @@ On the **services** tab each service row has **start**, **stop** and **restart**
 Two options above the table change how a start behaves:
 
 - **start mode:** `resume` picks up the backlog of unread [events](../../start/glossary.md#event) where the service left off; `fresh` skips the backlog and starts from now. The default is `fresh` for every co-host service except memory, so a restart never makes the co-host answer chat from five minutes ago. Memory resumes, so it does not miss anything it should store.
-- **isolated:** starts only that service, with pretend backends and no accounts. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
+- **isolated:** starts only that service, with its pretend backends (the isolation overrides for that unit) and no accounts. `pnpm cohostctl start <service> --isolated` does the same from a terminal. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
 
 The three brain parts [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect) and [cortex](../../start/glossary.md#cortex) also have **pause** and **resume**. Pausing idles one in place without stopping its container.
 
@@ -91,7 +91,7 @@ Then press **Launch** again.
 
 ## Change the embedding model
 
-If you change `EMBED_MODEL` to one that produces a different vector size (from `nomic-embed-text` to `mxbai-embed-large`, say), the memory service refuses to start, because the stored vectors no longer fit. Stop memory, then re-embed every stored row in place:
+If you change `llm.embed_model` in `config/config.yaml` to one that produces a different vector size (from `nomic-embed-text` to `mxbai-embed-large`, say), the memory service refuses to start, because the stored vectors no longer fit. Stop memory, then re-embed every stored row in place:
 
 ```bash
 pnpm cohostctl reembed

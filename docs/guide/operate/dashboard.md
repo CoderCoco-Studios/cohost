@@ -13,7 +13,7 @@ The dashboard is a web page that runs on your own PC. It is where you watch what
 ## What you need
 
 - A running dashboard. If you followed [Try it with no accounts](../install/first-run.md) or [Install for real](../install/real-install.md), you started it with `pnpm dashboard`.
-- A browser pointed at `http://localhost:3000`. If a page asks for a token, it is the `CONTROL_TOKEN` line in your `.env` file.
+- A browser pointed at `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`). If a page asks for a token, it is the `CONTROL_TOKEN` line in your `.env` file.
 
 ## Open it
 
@@ -21,7 +21,7 @@ The dashboard is a web page that runs on your own PC. It is where you watch what
 pnpm dashboard
 ```
 
-Then visit `http://localhost:3000`. (The number is `DASHBOARD_PORT` in `.env`; the startup log prints the address it actually uses.) The dashboard listens only on your own PC by default. It is separate from the other pieces of cohost, which run in [containers](../../start/glossary.md#container); the dashboard sits outside them and starts them for you.
+Then visit `http://localhost:3000`. (The number is `dashboard.port` in `config/config.yaml`; the startup log prints the address it actually uses.) The dashboard listens only on your own PC by default. It is separate from the other pieces of cohost, which run in [containers](../../start/glossary.md#container); the dashboard sits outside them and starts them for you.
 
 ## The header
 
@@ -74,7 +74,7 @@ Everything the co-host remembers about people, one viewer at a time: their notes
 
 ## The settings tab
 
-A form for `config/config.yaml`. Pick a section from the list, change values, press **Validate** to check them and **Save** to write them. It keeps your comments and unknown keys, never shows secrets (those stay in `.env`), and refuses to save if the file changed since you loaded it (press **Reload section**). Settings apply when the services that read them restart, and after a save the page offers to restart them. Every key is explained on the [configuration reference](../../advanced/reference/config.md).
+A form for `config/config.yaml`. Pick a section from the list, change values, press **Validate** to check them and **Save** to write them. It keeps your comments and unknown keys, never shows secrets (credentials live in `config/secrets.yaml`, which you edit by hand), and refuses to save if the file changed since you loaded it (press **Reload section**). Settings apply when the services that read them restart, and after a save the page offers to restart them. Every key is explained on the [configuration reference](../../advanced/reference/config.md).
 
 ## The sink page
 

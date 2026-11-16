@@ -62,10 +62,11 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 
    cohost copies `config/expressions.example.yaml` to `config/expressions.yaml` the first time it runs and never overwrites it afterwards, so add the same block to your own `config/expressions.yaml` too.
 
-4. Choose the driver and restart the avatar service, so it reads the new setting. The setting is read from the environment:
+4. Choose the driver and restart the avatar service, so it reads the new setting. The setting is the `avatar.driver` key in `config/config.yaml`, which accepts the name once step 2 has added it to the schema:
 
-   ```dotenv
-   AVATAR_DRIVER=udp-json
+   ```text
+   avatar:
+     driver: "udp-json"
    ```
 
 ## How you know it worked
@@ -89,4 +90,4 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 - **The avatar service logs `udp-json send failed`.** The host or port is wrong, or the address does not resolve. The driver logs the reason and keeps going, so the service stays up; fix the address in your config and restart it.
 - **cohost refuses to start with an `avatar.driver` error.** The name is missing from the list in `packages/config/src/schema.ts`. The config schema rejects any value it does not list.
 - **Packets arrive but the model does not change expression.** The map has no entry for that emotion, so the canonical name went out. Add it to `config/expressions.yaml`.
-- **Nothing arrives and nothing is logged.** UDP never says whether anyone is listening. Check that the service picked the driver (`AVATAR_DRIVER` in `.env`) and that your program listens on the port from the config.
+- **Nothing arrives and nothing is logged.** UDP never says whether anyone is listening. Check that the service picked the driver (`avatar.driver` in `config/config.yaml`) and that your program listens on the port from the config.

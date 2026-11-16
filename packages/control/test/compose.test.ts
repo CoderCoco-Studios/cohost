@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { ISOLATION_OVERRIDES } from "@cohost/config";
+import { ISOLATION_OVERRIDES, SECRET_PATHS } from "@cohost/config";
 
 // Structural checks of the Compose files against the control plane: the healthcheck wiring, the isolation
 // pass-through, and image pinning. Docker is not run.
@@ -13,7 +13,8 @@ interface Svc {
   image?: string;
   environment?: Record<string, string>;
   healthcheck?: { test: string[]; interval: string; timeout: string; retries: number; start_period: string };
-  build?: { args: { SERVICE: string } };
+  build?: { args: Record<string, string> };
+  volumes?: string[];
 }
 const load = (f: string) => parse(readFileSync(root(f), "utf8"), { merge: true }) as { services: Record<string, Svc>; "x-ts-service"?: Svc };
 const base = load("docker-compose.yml");
@@ -84,4 +85,29 @@ test("every image in both Compose files carries an exact version tag", () => {
   }
   assert.equal(effective(base.services.redis!.image!), "redis:8.10.3-alpine");
   assert.equal(effective(base.services.postgres!.image!), "pgvector/pgvector:0.8.7-pg18");
+});
+
+// @spec DEPLOY-COMPOSE-025
+test("every application service mounts ./config:/app/config, and no Compose entry carries an operator credential", () => {
+  for (const [name, s] of appServices) assert.ok(s.volumes?.includes("./config:/app/config"), `${name} mounts ./config:/app/config`);
+  assert.ok(base.services.models!.volumes?.includes("./config:/app/config"), "models mounts ./config");
+
+  // The environment names an operator credential (a SECRET_PATHS key) never get: each key's leaf, as an environment name.
+  const leaves = [...new Set(SECRET_PATHS.map((p) => p.split(".").at(-1)!.toUpperCase()))];
+  assert.ok(leaves.includes("API_KEY") && leaves.includes("TOKEN") && leaves.includes("PASSWORD"));
+  const LOCAL_POSTGRES = "postgres://cohost:cohost@postgres:5432/cohost";
+  for (const file of [base, gpu]) {
+    for (const [name, s] of [...Object.entries(file.services), ["x-ts-service", file["x-ts-service"] ?? {}] as const]) {
+      const entries = [...Object.entries(s.environment ?? {}), ...Object.entries(s.build?.args ?? {})];
+      for (const [k, v] of entries) {
+        // The local-only Postgres service's fixed `cohost` credential is inside the trust boundary, not an operator credential.
+        if (name === "postgres" && k === "POSTGRES_PASSWORD") { assert.equal(v, "cohost"); continue; }
+        if (k === "DATABASE_URL") { assert.equal(v, LOCAL_POSTGRES, `${name} DATABASE_URL is the fixed local credential`); continue; }
+        for (const leaf of leaves) assert.ok(!k.toUpperCase().includes(leaf), `${name} passes ${k}, an operator credential`);
+        assert.doesNotMatch(String(v), /\/\/[^/@\s]+:[^/@\s]+@/, `${name} ${k} embeds a credential in a URL`);
+      }
+    }
+  }
+  const ports = base.services.postgres as unknown as { ports?: string[] };
+  assert.deepEqual(ports.ports, ["127.0.0.1:5432:5432"], "the fixed credential is reachable from the host loopback only");
 });

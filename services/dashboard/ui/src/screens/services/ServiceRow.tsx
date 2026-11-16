@@ -46,7 +46,7 @@ function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiRes
  * One service row, keyed by the service name by its parent so it is patched in place (DASH-UI-007): the status, the plain
  * why, the last-seen text, and, for a manifest unit, its actions with per-action feedback (DASH-UI-008, DASH-UI-015).
  */
-// @spec DASH-UI-007, DASH-UI-008, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002, DASH-STACK-010
+// @spec DASH-UI-007, DASH-UI-008, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
 export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked, isolatedBy, onTest }: RowProps) {
   const api = useApi();
   const act = useAction();

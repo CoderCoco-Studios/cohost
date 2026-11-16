@@ -43,7 +43,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
   const offerConsolidate = controlOn && stack !== null && !stack.action && last !== null && last.kind === "stop" && last.ok;
 
   const open = (kind: StackActionKind) => { act.dismiss(); setAsking(kind); };
-  const confirm = async () => {
+  const submit = async () => {
     if (!asking) return;
     const kind = asking;
     const r = await act.run(() => api.stackAction(kind, `${KIND_LABEL[kind]}`), STARTED[kind]);
@@ -118,7 +118,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
       </section>
       <ConfirmDialog open={ask !== null} title={ask?.title ?? ""} confirmLabel={ask?.confirm ?? ""} danger={ask?.danger}
         disabledReason={blocked} busy={act.state.kind === "pending"} error={act.state.kind === "error" ? act.state.message : undefined}
-        onConfirm={() => void confirm()} onCancel={() => setAsking(null)}>
+        onConfirm={() => void submit()} onCancel={() => setAsking(null)}>
         <p>{ask?.body}</p>
       </ConfirmDialog>
     </>

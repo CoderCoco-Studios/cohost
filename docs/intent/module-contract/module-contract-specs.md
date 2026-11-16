@@ -49,18 +49,18 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 ## Lifecycle and health (MOD-LIFE)
 
 - [x] **MOD-LIFE-001**: When the tracker builds a unit's snapshot entry, it shall add `needs`, the list of `{ service, state }` for each unit in that unit's `uses` whose derived state is `down`, `stale`, `crash-looping` or `unknown`, and shall leave the unit's own derived state unchanged. <!-- test: packages/control/test/needs.test.ts -->
-- [x] **MOD-LIFE-002**: When a snapshot entry has a non-empty `needs`, the services list shall show `needs <service> (<state>)` for each entry beside the unit's own state. <!-- test: services/dashboard/test/page.test.ts -->
+- [x] **MOD-LIFE-002**: When a snapshot entry has a non-empty `needs`, the services list shall show `needs <service> (<state>)` for each entry beside the unit's own state. <!-- test: services/dashboard/test/page.test.ts, services/dashboard/test/ui/services.test.tsx -->
 - [x] **MOD-LIFE-003**: Each unit shall keep running and keep publishing its heartbeat while a unit in its `uses` is stopped (HLD tenet 5). <!-- test: packages/control/test/independence.test.ts --> <!-- test: services/salience/test/independence.test.ts --> <!-- test: services/cortex/test/independence.test.ts -->
 
 ## Pause and resume (MOD-PAUSE)
 
-- [x] **MOD-PAUSE-001**: Where control is enabled, the services list shall show Pause and Resume on the row of each unit whose `pause` is true and on no other row. <!-- test: services/dashboard/test/page.test.ts -->
-- [x] **MOD-PAUSE-002**: When the operator presses Pause or Resume on a unit's row, the page shall `POST /control` with `{ cmd: "pause" | "resume", target: <unit id> }`. <!-- test: services/dashboard/test/page.test.ts -->
-- [x] **MOD-PAUSE-003**: The services list shall show a unit as paused exactly while the unit's latest heartbeat `detail` is `paused` (shared-runtime SHARED-CTRL-007), and shall keep no paused flag of its own; while a higher-precedence detail (an explicit `degraded` detail or `dependency down`) is published, the row shows that detail instead. <!-- test: services/dashboard/test/page.test.ts -->
+- [x] **MOD-PAUSE-001**: Where control is enabled, the services list shall show Pause and Resume on the row of each unit whose `pause` is true and on no other row. <!-- test: services/dashboard/test/page.test.ts, services/dashboard/test/ui/services.test.tsx -->
+- [x] **MOD-PAUSE-002**: When the operator presses Pause or Resume on a unit's row, the page shall `POST /control` with `{ cmd: "pause" | "resume", target: <unit id> }`. <!-- test: services/dashboard/test/page.test.ts, services/dashboard/test/ui/services.test.tsx -->
+- [x] **MOD-PAUSE-003**: The services list shall show a unit as paused exactly while the unit's latest heartbeat `detail` is `paused` (shared-runtime SHARED-CTRL-007), and shall keep no paused flag of its own; while a higher-precedence detail (an explicit `degraded` detail or `dependency down`) is published, the row shows that detail instead. <!-- test: services/dashboard/test/page.test.ts, services/dashboard/test/ui/services.test.tsx -->
 
 ## Test side sheet and inputs (MOD-TEST)
 
-- [x] **MOD-TEST-001**: Each unit's row shall open a test panel offering the unit's isolated start (when control is enabled), one input form per entry in `test.inputs`, and the live feed filtered to the unit's `test.observe` types and the `inject.result` events answering its injections. <!-- test: services/dashboard/test/page.test.ts -->
+- [x] **MOD-TEST-001**: Each unit's row shall open a test panel offering the unit's isolated start (when control is enabled), one input form per entry in `test.inputs`, and the live feed filtered to the unit's `test.observe` types and the `inject.result` events answering its injections. <!-- test: services/dashboard/test/page.test.ts, services/dashboard/test/ui/services-test-sheet.test.tsx -->
 - [x] **MOD-TEST-002**: When `POST /inject/event` receives `{ unit, type, data }`, the dashboard shall answer `400` unless `unit` is a unit and `type` is in that unit's `test.inputs`, and `400` with the schema issues unless `data` validates against the bus schema for `type`. <!-- test: services/dashboard/test/inject-event.test.ts -->
 - [x] **MOD-TEST-003**: When `POST /inject/event` is accepted, the dashboard shall publish one event of `type` with `data`, setting `injected: true` where the event schema has an `injected` field, and answer `202 { id }` with the published event's bus id. <!-- test: services/dashboard/test/inject-event.test.ts -->
 - [x] **MOD-TEST-004**: `POST /inject/event` shall be gated like the other inject routes and its body capped at 64 KiB. <!-- test: services/dashboard/test/inject-event.test.ts -->

@@ -331,7 +331,6 @@ test("a 200 whose body says ok false is a failure, not a success", async () => {
   assert.match((await within(screen.getByRole("dialog")).findByRole("alert")).textContent ?? "", /controller refused/);
 });
 
-// @spec DASH-STACK-010
 test("a unit whose container runs with isolation overrides is marked as running isolated", async () => {
   await mountServices({
     services: [svc("voice"), svc("chat")],

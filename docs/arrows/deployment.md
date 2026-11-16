@@ -55,7 +55,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 
 **Key Components:**
 1. `docker-compose.yml` — 5 infra services (redis, postgres, ollama, tts, stt), the one-shot `models`, the `tools`-profile one-shots `consolidate` and `reembed` (memory image), and 11 application services from one `x-ts-service` anchor (which passes the isolation env through); `eyes` / `ears` / `mouth` / `connector-discord` behind profiles (`eyes`, `ears`, `mouth`, `discord`).
-2. `Dockerfile` — a Rust `native` stage plus `base` / `build` / `runtime` on node:22-slim; whole workspace compiled once per image; `SERVICE` selects the entrypoint; no prune.
+2. `Dockerfile` — a Rust `native` stage plus `base` / `build` / `runtime` on node:26-slim; whole workspace compiled once per image; `SERVICE` selects the entrypoint; no prune.
 3. Container healthcheck — `node packages/control/dist/healthcheck.js $SERVICE` from `@cohost/control`.
 4. `docker-compose.gpu.yml` — NVIDIA overlay for ollama, tts, stt, selected via `COMPOSE_FILE`.
 5. `scripts/install.sh` — Ubuntu/Debian/WSL2 bootstrap (docker, nvidia toolkit, node, pnpm, .env, config seeding, Rust toolchain, host build, pulls, smoke).

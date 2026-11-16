@@ -31,8 +31,8 @@ The installer on the next pages can put all of these on an Ubuntu or Debian mach
 | --- | --- |
 | [Docker](../../start/glossary.md#docker) with the Compose plugin | Almost every cohost service runs in a [container](../../start/glossary.md#container). Docker runs them and [Docker Compose](../../start/glossary.md#docker-compose) starts the whole set. On WSL2 you can use Docker Desktop for Windows with its WSL integration turned on for your distribution, or Docker installed inside the distribution. |
 | NVIDIA container toolkit | Only if you have an NVIDIA GPU: it lets containers use the card. |
-| Node 22 or newer | The dashboard and the command line tools run on your machine directly, as Node programs. |
-| pnpm 10 | The package manager the project uses. The installer enables it through corepack, which comes with Node. |
+| Node 26 or newer | The dashboard and the command line tools run on your machine directly, as Node programs. |
+| pnpm 10 | The package manager the project uses. The installer installs corepack with npm and enables pnpm through it. |
 | The Rust toolchain | cohost's connection to the shared message channel (the [bus](../../start/glossary.md#bus)) is a small compiled program. The project pins the exact Rust version in `rust-toolchain.toml` and the installer installs that one through rustup, along with a C compiler (`build-essential`). |
 | Python 3 (optional) | Only for the example server in the brain-hooks guide (a [hook](../../start/glossary.md#hook) is a spot where you can swap in your own server). |
 
@@ -45,7 +45,7 @@ Rust is required before any program that runs on your machine will start, that i
 1. Detects WSL2 and whether you have an NVIDIA GPU.
 2. Installs Docker if it is missing. If it had to install Docker, it stops and asks you to log out and back in, then run it again.
 3. Installs the NVIDIA container toolkit when it finds a GPU.
-4. Installs Node 22 if Node is missing or older, and enables pnpm.
+4. Installs Node 26 if Node is missing or older, and enables pnpm.
 5. Creates `.env` from `.env.example`, creates your three personal files in `config/`, switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
 6. Installs a C compiler if there is none, then rustup and the pinned Rust toolchain.
 7. Runs `pnpm install --frozen-lockfile`, then `pnpm build:native`, then a type check.

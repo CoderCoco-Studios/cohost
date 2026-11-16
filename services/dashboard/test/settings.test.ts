@@ -152,6 +152,25 @@ test("a stale etag is a 409 carrying the current one, and nothing is written", a
   assert.equal(t.text(), EXAMPLE + "\n# hand edit\n");
 });
 
+// @spec MOD-CFG-003, MOD-CFG-008, DASH-SET-031
+test("the etag belongs to the file: every section read answers the same one, a write to any section replaces it for all, and the old one is then a 409", async () => {
+  const t = await boot();
+  const etagOf = async (section: string) => ((await (await t.get(`/config/${section}`)).json()) as { etag: string }).etag;
+  const first = await etagOf("voice");
+  assert.equal(await etagOf("dashboard"), first, "two sections, one file, one etag");
+  const w = await t.put("/config/voice", { etag: first, values: { speed: 1.2 } });
+  assert.equal(w.status, 200);
+  const next = ((await w.json()) as { etag: string }).etag;
+  assert.notEqual(next, first);
+  assert.equal(await etagOf("dashboard"), next, "a read of another section answers the etag the write answered");
+  assert.equal((await t.put("/config/dashboard", { etag: first, values: { port: 3010 } })).status, 409, "the etag from before the write is stale for every section");
+  const second = await t.put("/config/dashboard", { etag: next, values: { port: 3010 } });
+  assert.equal(second.status, 200, "the etag the first write answered is the one the second needs");
+  const reread = await (await t.get("/config/voice")).json() as { etag: string; keys: Record<string, { value: unknown }> };
+  assert.equal(reread.etag, ((await second.json()) as { etag: string }).etag);
+  assert.equal(reread.keys["speed"]!.value, 1.2, "Reload after a 409 reads the current file");
+});
+
 // @spec MOD-CFG-009
 test("a key outside the schema or not editable is a 400 naming each, and nothing is written", async () => {
   const t = await boot();

@@ -554,9 +554,59 @@ test("edits survive moving to another section and back", async () => {
   again.unmount();
 });
 
-// @spec DASH-SET-006
-test("a page that merges a section keeps one save bar that sends each section's edits to its own route", async () => {
-  const b = await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: [], warnings: [] } }, "PUT /config/extra": { json: { ok: true, etag: "x2", restart: ["voice"], warnings: [] } } } });
+// @spec DASH-SET-032
+test("an edit made while a save is in flight stays an unsaved edit and is sent by the next save; the saved values are what was sent", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const b = await open("demo");
+  const real = b.file.put("demo");
+  b.app.fetch.on("PUT /config/demo", async (call) => { await gate; return real(call); });
+  const user = userEvent.setup();
+  const name = () => within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  const port = () => within(row("port")).getByRole("spinbutton", { name: "Port" }) as HTMLInputElement;
+  await user.type(name(), "z");
+  await user.click(bar("Save"));
+  await settle(2);
+  await user.type(name(), "q");      // changed while the request runs
+  await user.clear(port()); await user.type(port(), "8080"); // a key that was not part of the request
+  release();
+  await settle();
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[0]!).values, { name: "Cocoz" }, "the request carried what was edited when Save was pressed");
+  assert.equal(name().value, "Cocozq");
+  assert.equal(port().value, "8080");
+  assert.ok(screen.getByText("2 edits in this section"), "the two later edits are still unsaved");
+  await user.click(bar("Save"));
+  await settle();
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[1]!).values, { name: "Cocozq", port: 8080 });
+  assert.ok(screen.getByText("0 edits in this section"));
+});
+
+// @spec DASH-SET-032
+test("a field put back to its old value while a save is in flight becomes an edit again, because the file now holds the saved value", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const b = await open("demo");
+  const real = b.file.put("demo");
+  b.app.fetch.on("PUT /config/demo", async (call) => { await gate; return real(call); });
+  const user = userEvent.setup();
+  const name = () => within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  await user.type(name(), "z");
+  await user.click(bar("Save"));
+  await settle(2);
+  await user.type(name(), "{Backspace}"); // back to "Coco", the value loaded before the save
+  release();
+  await settle();
+  assert.equal(name().value, "Coco");
+  assert.ok(screen.getByText("1 edit in this section"), "the file holds Cocoz, so Coco is a change to save");
+  await user.click(bar("Save"));
+  await settle();
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[1]!).values, { name: "Coco" });
+});
+
+// @spec DASH-SET-006, DASH-SET-031
+test("a page that merges a section keeps one save bar that sends each section's edits to its own route, each write using the etag the previous write answered", async () => {
+  const b = await open("demo");
+  b.file.restart = { demo: [], extra: ["voice"] };
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
   const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
@@ -564,8 +614,90 @@ test("a page that merges a section keeps one save bar that sends each section's 
   assert.ok(screen.getByText("2 edits in this section"));
   await user.click(bar("Save"));
   await settle();
-  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/extra")[0]!), { etag: "x1", values: { extra: 30 } });
   assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[0]!), { etag: "e1", values: { enabled: false } });
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/extra")[0]!), { etag: "f1", values: { extra: 30 } }, "the second write carries the etag the first answered");
+  assert.ok(screen.getByText("Saved."));
+  assert.equal(screen.queryByRole("alert"), null, "no 409");
+  assert.ok(screen.getByText("0 edits in this section"));
+  assert.match(text(screen.getByRole("region", { name: "Restart needed" })), /voice/);
+  // The next save of either section uses the file's current etag, with no reload in between.
+  await user.click(within(row("enabled")).getByRole("switch"));
+  await user.click(bar("Save"));
+  await settle();
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[1]!), { etag: "f2", values: { enabled: true } });
+  assert.ok(screen.getByText("Saved."));
+});
+
+// @spec DASH-SET-031
+test("saving two sections that hold edits on separate pages' worth of state uses the file etag too: a section saved alone refreshes the etag of the others", async () => {
+  const b = await open("demo");
+  const user = userEvent.setup();
+  await user.click(within(row("enabled")).getByRole("switch"));
+  const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
+  await user.clear(extra); await user.type(extra, "30");
+  // another client writes the file between the loads and the save: every held etag is stale
+  b.file.etag = "other";
+  await user.click(bar("Save"));
+  await settle();
+  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/);
+  assert.ok(screen.getByText("2 edits in this section"), "nothing discarded");
+  assert.equal(b.app.fetch.callsTo("PUT /config/extra").length, 0, "the save stopped at the first 409");
+});
+
+// @spec DASH-SET-031
+test("when a later section of a save fails with issues, the bar names the section saved and the one not, keeps its edits and offers no Reload", async () => {
+  const b = await open("demo", { routes: { "PUT /config/extra": { status: 400, json: { ok: false, issues: [{ path: "extra", message: "too big" }] } } } });
+  const user = userEvent.setup();
+  await user.click(within(row("enabled")).getByRole("switch"));
+  const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
+  await user.clear(extra); await user.type(extra, "30");
+  await user.click(bar("Save"));
+  await settle();
+  const alert = text(screen.getByRole("alert"));
+  assert.match(alert, /Saved: Demo\./);
+  assert.match(alert, /Not saved: Extra/);
+  assert.match(alert, /1 problem/);
+  assert.match(alert, /edits to Extra are kept/);
+  assert.equal(screen.queryByRole("button", { name: "Reload" }), null, "nothing to reload: the unsaved section is not stale");
+  assert.equal(screen.queryByText("Saved."), null);
+  assert.ok(screen.getByText("1 edit in this section"), "only the unsaved section's edit remains");
+  assert.equal((within(row("extra")).getByRole("spinbutton", { name: "Extra events" }) as HTMLInputElement).value, "30");
+  assert.equal((within(row("enabled")).getByRole("switch") as HTMLInputElement).checked, false, "the saved section shows its saved value");
+});
+
+// @spec DASH-SET-031, DASH-SET-011
+test("when a later section of a save answers 409, the bar says which were saved, and Reload says it discards the unsaved section's edits", async () => {
+  const b = await open("demo", { routes: { "PUT /config/extra": { status: 409, json: { ok: false, etag: "zz" } } } });
+  b.file.restart = { demo: ["voice"] };
+  const user = userEvent.setup();
+  await user.click(within(row("enabled")).getByRole("switch"));
+  const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
+  await user.clear(extra); await user.type(extra, "30");
+  await user.click(bar("Save"));
+  await settle();
+  const alert = text(screen.getByRole("alert"));
+  assert.match(alert, /Saved: Demo\./);
+  assert.match(alert, /Not saved: Extra/);
+  assert.match(alert, /Reload .*discards your edits to Extra/);
+  assert.ok(screen.getByRole("button", { name: "Reload" }));
+  assert.ok(screen.getByText("1 edit in this section"));
+  assert.match(text(screen.getByRole("region", { name: "Restart needed" })), /voice/, "the units of the saved section still need a restart");
+});
+
+// @spec DASH-SET-031, DASH-SET-006
+test("when a later section of a save is refused for the token or the network, the bar says what was saved and keeps the rest", async () => {
+  const b = await open("demo", { routes: { "PUT /config/extra": { status: 500, text: "disk full" } } });
+  const user = userEvent.setup();
+  await user.click(within(row("enabled")).getByRole("switch"));
+  const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
+  await user.clear(extra); await user.type(extra, "30");
+  await user.click(bar("Save"));
+  await settle();
+  const alert = text(screen.getByRole("alert"));
+  assert.match(alert, /Saved: Demo\./);
+  assert.match(alert, /Not saved: Extra \(500 disk full\)/);
+  assert.equal(screen.queryByRole("button", { name: "Reload" }), null);
+  assert.ok(b);
 });
 
 // @spec DASH-UI-030

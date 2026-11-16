@@ -98,6 +98,7 @@ export function sectionValid(s: SectionState, model: SectionModel | undefined): 
   });
 }
 
+// @spec DASH-SET-006, DASH-SET-011, DASH-SET-012, DASH-SET-031, DASH-SET-032
 export function createSettings(api: Api, access: Access, win: Pick<Window, "addEventListener" | "removeEventListener"> = window): Settings {
   const state = createStore<SettingsState>({
     schema: { status: "loading" }, sections: {}, bars: {}, restart: { units: [], warnings: [], running: false, results: {} },
@@ -127,15 +128,47 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
   const unsubscribe = state.subscribe(syncGuard);
 
   /** Reads a section into the state; true when it answered. A failed read leaves earlier values on screen. */
-  async function readSection(path: string): Promise<boolean> {
+  async function readSection(path: string, keepEdits = false): Promise<boolean> {
     const r = await api.get<{ etag: string; keys: Record<string, KeyRead> }>(`/config/${encodeURIComponent(path)}`);
     if (r.ok && r.data && typeof r.data === "object" && r.data.keys) {
-      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, edits: {}, issues: [], conflict: false }));
+      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, edits: keepEdits ? s.edits : {}, issues: [], conflict: false }));
       return true;
     }
     const error = r.ok ? "The answer had an unexpected shape." : detailOf(r);
     patchSection(path, (s) => (s.status === "ready" ? s : { ...s, status: "error", error }));
     return false;
+  }
+
+  /**
+   * The etag belongs to the file, not to a section: a write changes it for every section. After `from` was replaced by `to`, a
+   * loaded section that was consistent with `from` (it was read, or last written, at that file state) is consistent with `to` for
+   * every key the write did not touch, so it takes `to`. A section whose etag is something else is stale and keeps it, so its own
+   * save still answers 409.
+   */
+  function propagateEtag(from: string | undefined, to: string | undefined): void {
+    if (!from || !to) return;
+    state.set((st) => ({ ...st, sections: Object.fromEntries(Object.entries(st.sections).map(([p, sec]) => [p, sec.etag === from ? { ...sec, etag: to } : sec])) }));
+  }
+
+  /**
+   * A write of `sent` (the edits the request carried) to `path` succeeded. The saved values come from what was sent. An edit is
+   * cleared only while it still holds what was sent; a field changed while the request ran stays an unsaved edit, and one put back
+   * to the old value (which `edit` had already dropped) becomes an edit again, because the file now holds the sent value.
+   */
+  function applySaved(path: string, sent: Record<string, EditedKey>, from: string | undefined, to: string | undefined): void {
+    patchSection(path, (cur) => {
+      const keys = { ...cur.keys };
+      const edits = { ...cur.edits };
+      for (const [k, e] of Object.entries(sent)) {
+        const old = keys[k];
+        keys[k] = { ...old, source: "literal", value: e.value };
+        const now = edits[k];
+        if (now === undefined) { if (old && "value" in old && !same(old.value, e.value)) edits[k] = { value: old.value }; }
+        else if (!now.error && same(now.value, e.value)) delete edits[k];
+      }
+      return { ...cur, keys, edits, issues: [], conflict: false };
+    });
+    propagateEtag(from, to);
   }
 
   const self: Settings = {
@@ -182,9 +215,19 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
       setBar(primary, { kind: "busy", what: dryRun ? "check" : "save" });
       const warnings: string[] = [];
       const restart: string[] = [];
+      const titleOf = (p: string): string => sectionModel(p)?.title ?? p;
+      const saved: string[] = [];
+      /** Ends the run on a failure: units of the sections already written still need their restart, and the bar names what was and was not saved. */
+      const stop = (at: string, why: string, alone: string): void => {
+        if (!dryRun && restart.length > 0) addRestart(restart, warnings);
+        const unsaved = todo.slice(todo.indexOf(at));
+        const parts = unsaved.map((p) => (p === at ? `${titleOf(p)} (${why})` : `${titleOf(p)} (not attempted)`));
+        setBar(primary, { kind: "error", message: saved.length === 0 ? alone : `Saved: ${saved.map(titleOf).join(", ")}. Not saved: ${parts.join(", ")}. Your edits to ${unsaved.map(titleOf).join(", ")} are kept.` });
+      };
       for (const path of todo) {
         const s = state.get().sections[path]!;
         const m = sectionModel(path);
+        const sent = s.edits; // what this request carries; edits made while it is in flight are not part of it
         const values = changedValues(s, m);
         const sensitive = Object.keys(values).filter((k) => m?.keys.find((x) => x.key === k)?.sensitive).map((k) => `${path}.${k}`);
         const heldToken = access.getToken("control") !== undefined;
@@ -198,38 +241,39 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           warnings.push(...(r.data?.warnings ?? []));
           if (dryRun) continue;
           restart.push(...(r.data?.restart ?? []));
-          patchSection(path, (cur) => {
-            const keys = { ...cur.keys };
-            for (const [k, e] of Object.entries(cur.edits)) keys[k] = { ...keys[k], source: "literal", value: e.value };
-            return { ...cur, keys, edits: {}, issues: [], conflict: false, etag: r.data?.etag ?? cur.etag };
-          });
+          applySaved(path, sent, s.etag, r.data?.etag);
+          saved.push(path);
           continue;
         }
         if (r.status === 409) {
           patchSection(path, (cur) => ({ ...cur, conflict: true }));
-          setBar(primary, { kind: "error", message: `${m?.title ?? path}: config.yaml changed since this section was loaded. Your edits are kept; reload to read the new file (this discards them).` });
+          stop(path, `config.yaml changed since it was loaded; Reload re-reads it and discards your edits to ${titleOf(path)}`,
+            `${titleOf(path)}: config.yaml changed since this section was loaded. Your edits are kept; reload to read the new file (this discards them).`);
           return;
         }
         if (r.status === 400 && r.data && typeof r.data === "object" && Array.isArray((r.data as { issues?: unknown }).issues)) {
           const issues = ((r.data as { issues: Issue[] }).issues).filter((i) => i && typeof i.message === "string").map((i) => ({ path: String(i.path ?? ""), message: i.message }));
           patchSection(path, (cur) => ({ ...cur, issues }));
-          setBar(primary, { kind: "error", message: `${dryRun ? "Check" : "Save"} found ${issues.length} ${issues.length === 1 ? "problem" : "problems"}; ${m?.title ?? path} was not changed.` });
+          const found = `${issues.length} ${issues.length === 1 ? "problem" : "problems"}`;
+          stop(path, `${dryRun ? "check" : "save"} found ${found}`, `${dryRun ? "Check" : "Save"} found ${found}; ${titleOf(path)} was not changed.`);
           return;
         }
         if (r.status === 0 && !dryRun) {
           // The answer was lost: read the section again and see whether the save happened (DASH-SET-012).
-          const edited = state.get().sections[path]!.edits;
-          await readSection(path);
+          const ok = await readSection(path, true);
           const after = state.get().sections[path]!;
-          if (after.status === "ready" && Object.entries(edited).every(([k, e]) => same(after.keys[k]?.value, e.value))) {
+          if (ok && Object.entries(sent).every(([k, e]) => same(after.keys[k]?.value, e.value))) {
+            patchSection(path, (cur) => ({ ...cur, edits: Object.fromEntries(Object.entries(cur.edits).filter(([k, e]) => !same(after.keys[k]?.value, e.value))) }));
+            propagateEtag(s.etag, after.etag);
+            saved.push(path);
             continue; // nothing to restart is known; the read shows the saved values
           }
-          patchSection(path, (cur) => ({ ...cur, edits: edited }));
-          setBar(primary, { kind: "error", message: `The save could not be confirmed: the dashboard did not answer (${r.detail}). Your edits are kept.` });
+          stop(path, `the dashboard did not answer: ${r.detail}; whether it was written could not be confirmed`,
+            `The save could not be confirmed: the dashboard did not answer (${r.detail}). Your edits are kept.`);
           return;
         }
         if (r.status === 403) access.markNotSetUp("control", true);
-        setBar(primary, { kind: "error", message: r.locked ? r.detail : detailOf(r) });
+        stop(path, r.locked ? r.detail : detailOf(r), r.locked ? r.detail : detailOf(r));
         return;
       }
       if (!dryRun && restart.length > 0) addRestart(restart, warnings);

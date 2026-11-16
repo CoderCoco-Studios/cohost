@@ -1,7 +1,7 @@
 import type http from "node:http";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { applySection, etagOf, readSection, sectionJsonSchema, sectionSecrets, setSecretPaths, writeFileAtomic } from "@cohost/config";
+import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic } from "@cohost/config";
 import type { ServiceDef } from "@cohost/control";
 import type { StackSnapshot } from "./stack.js";
 
@@ -39,7 +39,7 @@ const readers = (manifest: readonly ServiceDef[], section: string): string[] => 
  * The settings editor's routes: `GET /config/schema`, `GET /config/:section`, `PUT /config/:section`. They read and write
  * `config.yaml` through `@cohost/config`'s editor, never touch `.env`, and never start, stop or restart a unit.
  */
-// @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
+// @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, MOD-CFG-019, MOD-CFG-020
 export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (!url.pathname.startsWith("/config/")) return false;
   const name = decodeURIComponent(url.pathname.slice("/config/".length));
@@ -47,7 +47,8 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
 
   if (req.method === "GET" && name === "schema") {
     json(res, 200, {
-      sections: sections.map((path) => ({ path, services: readers(d.manifest, path), schema: sectionJsonSchema(path), secrets: sectionSecrets(path) })),
+      groups: GROUPS,
+      sections: sections.map((path) => ({ path, ...sectionPresentation(path), services: readers(d.manifest, path), schema: sectionJsonSchema(path), secrets: sectionSecrets(path) })),
     });
     return true;
   }

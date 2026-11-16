@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { SERVICE_MANIFEST, type ServiceController } from "@cohost/control";
-import { SECRET_PATHS } from "@cohost/config";
+import { SECRET_PATHS, GROUPS } from "@cohost/config";
 import { createDashboardHandler } from "../src/routes.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
 
@@ -60,6 +60,31 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
   assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets, ["http.token"]);
   assert.ok(SECRET_PATHS.length >= 2);
+});
+
+// @spec MOD-CFG-001, MOD-CFG-019, MOD-CFG-020, MOD-CFG-021
+test("GET /config/schema carries the groups and each section's title, group, about, page and per-key presentation, with the help as the schema description", async () => {
+  const t = await boot({ control: true });
+  const body = (await (await t.get("/config/schema")).json()) as { groups: string[]; sections: any[] };
+  assert.deepEqual(body.groups, [...GROUPS]);
+  for (const s of body.sections) {
+    assert.ok(typeof s.title === "string" && s.title && typeof s.about === "string" && s.about, `${s.path}: title and about`);
+    assert.ok(body.groups.includes(s.group), `${s.path}: group`);
+    for (const [k, p] of Object.entries<any>(s.keys)) assert.ok(typeof p.help === "string" && p.help, `${s.path}.${k}: help`);
+  }
+  const by = (path: string) => body.sections.find((s) => s.path === path)!;
+  assert.equal(by("brain.working_memory_events").page, "brain.memory");
+  assert.equal(by("llm").page, undefined);
+  const llm = by("llm");
+  assert.deepEqual(llm.keys["model"].widget, { type: "model", kind: "chat" });
+  assert.equal(llm.keys["openai.base_url"].sensitive, true);
+  assert.equal(llm.schema.properties.model.description, llm.keys["model"].help);
+  assert.equal(llm.schema.properties.openai.properties.base_url["x-sensitive"], true);
+  assert.equal(by("voice").keys["lang_code"].widget.type, "options");
+  assert.deepEqual(by("ears").keys["sources"].widget, { type: "sources" });
+  const reflexes = by("brain.salience").keys["reflexes"];
+  assert.deepEqual(Object.keys(reflexes.items).sort(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
+  assert.equal(by("brain.salience").schema.properties.reflexes.items.properties.match.description, reflexes.items.match.help);
 });
 
 // @spec MOD-CFG-003

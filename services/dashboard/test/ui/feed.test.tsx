@@ -173,3 +173,17 @@ test("an unsubscribed listener hears nothing more", () => {
   sock().message(ev("2-0", "chat.message"));
   assert.equal(n, 1);
 });
+
+// @spec DASH-UI-001
+test("a socket constructor that throws does not spin: the feed is closed and retries once per 2 s", () => {
+  const clock = new FakeClock();
+  let attempts = 0;
+  const feed = createFeed({ url: "ws://x/ws", createSocket: () => { attempts++; throw new Error("blocked"); }, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, now: () => clock.now });
+  feed.start();
+  assert.equal(attempts, 1);
+  assert.equal(feed.state.get().status, "closed");
+  clock.tick(2000); assert.equal(attempts, 2);
+  clock.tick(1999); assert.equal(attempts, 2);
+  feed.stop();
+  clock.tick(10_000); assert.equal(attempts, 2);
+});

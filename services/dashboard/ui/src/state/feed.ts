@@ -109,7 +109,15 @@ export function createFeed(deps: FeedDeps): Feed {
   function connect(): void {
     timer = undefined;
     state.set((s) => ({ ...s, status: "connecting" }));
-    const sock = make(deps.url);
+    let sock: WebSocket;
+    try { sock = make(deps.url); }
+    catch {
+      // The constructor threw (bad URL, blocked by the browser): treat it as a closed attempt and try again after the delay, never in a tight loop.
+      const at = now();
+      state.set((s) => ({ ...s, status: "closed", stoppedAt: s.stoppedAt ?? at, nextAttemptAt: at + RECONNECT_MS }));
+      if (!stopped) timer = setT(connect, RECONNECT_MS);
+      return;
+    }
     socket = sock;
     sock.onopen = () => state.set((s) => { const { stoppedAt: _a, nextAttemptAt: _b, ...rest } = s; return { ...rest, status: "open" }; });
     sock.onmessage = (e) => { if (typeof e.data === "string") onFrame(e.data); };

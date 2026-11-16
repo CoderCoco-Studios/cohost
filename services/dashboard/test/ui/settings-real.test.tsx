@@ -21,7 +21,7 @@ function hasName(el: HTMLElement): boolean {
 
 /** `GET /config/<section>` for a default config file: every key at its schema default. */
 function read(path: string) {
-  return { section: path, etag: "e", unknown: [], ...readSection("", path, ["llm.openai.api_key"]) };
+  return { section: path, etag: "e", ...readSection("", path, ["llm.openai.api_key"]) };
 }
 
 // @spec DASH-SET-004, DASH-SET-003, DASH-A11Y-003

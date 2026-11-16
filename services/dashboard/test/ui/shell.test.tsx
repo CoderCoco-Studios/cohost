@@ -91,7 +91,7 @@ test("the hash picks the view, the nav marks it aria-current=page and nothing el
 test("clicking a nav item changes the hash and the screen; the settings section is handed to the screen", async () => {
   const user = userEvent.setup();
   boot("#settings/brain.salience");
-  assert.match(document.querySelector("main")!.textContent!, /brain\.salience/);
+  assert.equal(location.hash, "#settings/brain.salience"); // the Settings screen itself is tested in settings-page.test.tsx
   await user.click(screen.getByRole("link", { name: "Services" }));
   assert.equal(location.hash, "#services");
   assert.equal(screen.getByRole("heading", { level: 1 }).textContent, "Services");

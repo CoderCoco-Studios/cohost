@@ -112,7 +112,7 @@ test("the two Bedrock keys are saved together with PUT /secrets so a half-set pa
 
 // @spec DASH-SET-009, DASH-SECRET-011
 test("a successful Bedrock pair save clears both fields, shows both as Set and leaves no value in the DOM; Clear both sends two nulls", async () => {
-  const b = await open("llm", { routes: { "PUT /secrets": (c) => ({ json: { ok: true, set: Object.fromEntries(Object.entries(JSON.parse(c.body!).values).map(([k, v]) => [k, v !== null])), restart: ["salience"] } }) } });
+  const b = await open("llm", { routes: { "PUT /secrets": (c: { body?: string }) => ({ json: { ok: true, set: Object.fromEntries(Object.entries(JSON.parse(c.body!).values).map(([k, v]) => [k, v !== null])), restart: ["salience"] } }) } });
   const user = userEvent.setup();
   b.app.rt.access.setToken("control", "tok", "tab");
   await user.type(screen.getByLabelText("Bedrock access key id"), "AKIA-1");

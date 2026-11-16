@@ -62,6 +62,7 @@ test("the LAN allow-list is exactly GET /, GET and HEAD /assets/* and /favicon.s
     ["GET", "/services"], ["GET", "/services/control"], ["POST", "/services/cortex/restart"], ["GET", "/personality"], ["PUT", "/personality"],
     ["POST", "/control"], ["POST", "/inject/text"], ["GET", "/viewers"], ["GET", "/ws"], ["GET", "/index.html"], ["GET", "/healthz"],
     ["POST", "/assets/x.js"], ["PUT", "/favicon.svg"], ["DELETE", "/assets/x.js"], ["GET", "/assets"], ["GET", "/favicon.ico"], ["GET", "/cohost/assets/a.js"],
+    ["PUT", "/secrets/discord.token"], ["PUT", "/secrets"], ["GET", "/options/voices"], ["GET", "/options/models"], ["PUT", "/config/dashboard"],
   ];
   for (const [m, p] of yes) assert.equal(lanAllows(m, p), true, `${m} ${p}`);
   for (const [m, p] of no) assert.equal(lanAllows(m, p), false, `${m} ${p}`);

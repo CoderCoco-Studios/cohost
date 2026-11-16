@@ -26,7 +26,7 @@ async function boot(o: { tts?: string; ollama?: string; control?: boolean; timeo
   const bus = new FakeBus();
   const rec = recordingLog();
   const handler = createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: {} as unknown as StackService,
     options: { urls: { tts: () => o.tts ?? "http://127.0.0.1:1", ollama: () => o.ollama ?? "http://127.0.0.1:1" }, ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) },

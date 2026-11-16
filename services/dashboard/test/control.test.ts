@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,16 +27,16 @@ function fakeRuntime() {
   return { rt, calls };
 }
 
-async function boot(env: NodeJS.ProcessEnv, docsDir?: string) {
+async function boot(env: NodeJS.ProcessEnv, docsDir?: string, extra: Partial<Parameters<typeof createDashboardHandler>[0]> = {}) {
   const bus = new CtlBus();
   const rec = recordingLog();
   const { rt, calls } = fakeRuntime();
   const setup = setupControl(env, bus, rec.log, rt);
   let personality = "p";
   const server = http.createServer(createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => personality, savePersonality: (t) => { personality = t; },
-    services: () => [], control: setup.control, ...(docsDir ? { docsDir } : {}), stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    services: () => [], control: setup.control, ...(docsDir ? { docsDir } : {}), stack: new StackService({ log: rec.log, bus: () => "connected" }), ...extra,
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -163,6 +163,26 @@ test("control mode leaves docs requests unauthenticated, built or not", async ()
   for (const m of ["GET", "HEAD"]) assert.equal((await t.send("/cohost/", { method: m })).status, 200, m);
   assert.equal(await (await t.send("/cohost/", { method: "GET" })).text(), "<h1>docs</h1>");
   assert.equal((await t.send("/cohost/missing", { method: "GET" })).status, 404);
+});
+
+// @spec DASH-CTRL-005
+test("control mode leaves the UI files and the pick-list routes unauthenticated, and still gates the secret write", async () => {
+  const ui = mkdtempSync(join(tmpdir(), "ctl-ui-"));
+  mkdirSync(join(ui, "assets"));
+  writeFileSync(join(ui, "index.html"), "<title>ui</title>");
+  writeFileSync(join(ui, "assets", "app.js"), "export {};");
+  writeFileSync(join(ui, "favicon.svg"), "<svg/>");
+  const backing = http.createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(req.url?.includes("tags") ? { models: [{ name: "m1" }] } : { voices: ["v1"] })); });
+  await new Promise<void>((r) => backing.listen(0, "127.0.0.1", r));
+  after(() => backing.close());
+  const origin = `http://127.0.0.1:${(backing.address() as { port: number }).port}`;
+  const t = await boot(ON, undefined, { uiDir: ui, secretsFile: () => join(ui, "secrets.yaml"), options: { urls: { tts: () => origin, ollama: () => origin } } });
+  for (const path of ["/", "/assets/app.js", "/favicon.svg"]) assert.equal((await t.send(path, { method: "GET" })).status, 200, path);
+  assert.equal((await t.send("/assets/app.js", { method: "HEAD" })).status, 200);
+  for (const path of ["/options/voices", "/options/models"]) assert.equal((await t.send(path, { method: "GET" })).status, 200, path);
+  const body = { value: "x" };
+  assert.equal((await t.send("/secrets/discord.token", { method: "PUT", body })).status, 401);
+  assert.equal(t.calls.length, 0);
 });
 
 // @spec DASH-CTRL-007

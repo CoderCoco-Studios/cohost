@@ -99,7 +99,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
           <Button aria-pressed={shown} onClick={() => setShown((s) => !s)}>{shown ? "Hide" : "Show"}</Button>
           <Button onClick={() => void paste()} disabled={stored}>Paste</Button>
         </div>
-        {pasteNote ? <p className="help" role="status">{pasteNote}</p> : null}
+        <span className="help paste-note" role="status">{pasteNote}</span>
       </div>
 
       <fieldset className="stay">

@@ -6,7 +6,7 @@ import { sectionValid, useSettings, useSettingsState } from "./store";
  * The sticky save bar of a page: the count of edits, Discard, Check (a dry run) and Save, the outcome beside them, and the
  * issues no field claimed in one summary above (DASH-SET-005, DASH-SET-006, DASH-SET-011).
  */
-// @spec DASH-SET-005, DASH-SET-006, DASH-SET-011, DASH-UI-015
+// @spec DASH-SET-005, DASH-SET-006, DASH-SET-011, DASH-UI-015, DASH-A11Y-004
 export function SaveBar({ members }: { members: SectionModel[] }) {
   const settings = useSettings();
   const paths = members.map((m) => m.path);
@@ -25,13 +25,11 @@ export function SaveBar({ members }: { members: SectionModel[] }) {
     <div className="savebar" role="group" aria-label="Save settings">
       <div className="grow">
         <output className="small"><b>{`${edits} ${edits === 1 ? "edit" : "edits"} in this section`}</b></output>
-        {bar.kind === "busy" ? <p className="small muted" role="status">{bar.what === "check" ? "Checking…" : "Saving…"}</p> : null}
-        {bar.kind === "ok" ? (
-          <div>
-            <output className="action-ok small">{bar.message}</output>
-            {bar.warnings.length > 0 ? <ul className="plain small">{bar.warnings.map((w) => <li key={w}>{w}</li>)}</ul> : null}
-          </div>
-        ) : null}
+        {/* The live region stays mounted and receives the text, so a screen reader announces the result (DASH-A11Y-004). */}
+        <output className={`save-status small ${bar.kind === "ok" ? "action-ok" : "muted"}`}>
+          {bar.kind === "busy" ? (bar.what === "check" ? "Checking…" : "Saving…") : bar.kind === "ok" ? bar.message : ""}
+        </output>
+        {bar.kind === "ok" && bar.warnings.length > 0 ? <ul className="plain small">{bar.warnings.map((w) => <li key={w}>{w}</li>)}</ul> : null}
         {bar.kind === "error" || loose.length > 0 ? (
           <div className="action-error" role="alert">
             <div>

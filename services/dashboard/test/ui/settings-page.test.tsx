@@ -359,6 +359,33 @@ test("Check sends only the changed keys with ?dryRun=1 and shows the warnings; S
   assert.ok(screen.getByText("0 edits in this section"));
 });
 
+// @spec DASH-A11Y-004, DASH-SET-006
+test("the save result is announced: the status region is mounted before the result and receives its text, for Saving, Check and Saved alike", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const b = await open("demo");
+  const real = b.file.put("demo");
+  const region = (): HTMLElement | null => document.querySelector<HTMLElement>('[aria-label="Save settings"] output.save-status');
+  const before = region();
+  assert.ok(before, "a status region is mounted with no result yet");
+  assert.equal(before!.textContent, "");
+  const user = userEvent.setup();
+  await user.click(within(row("enabled")).getByRole("switch"));
+  await user.click(bar("Check"));
+  await settle();
+  assert.ok(region() === before, "the same node received the Check result");
+  assert.match(before!.textContent!, /Check passed/);
+  b.app.fetch.on("PUT /config/demo", async (call) => { await gate; return real(call); });
+  await user.click(bar("Save"));
+  await settle(2);
+  assert.ok(region() === before);
+  assert.match(before!.textContent!, /Saving/);
+  release();
+  await settle();
+  assert.ok(region() === before, "the same node received the Saved text");
+  assert.match(before!.textContent!, /Saved\./);
+});
+
 // @spec DASH-SET-005
 test("a 400 attaches each issue to the field with that path and keeps an issue with no field in a summary above the save bar", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { status: 400, json: { ok: false, issues: [{ path: "demo.name", message: "name too odd" }, { path: "demo.reflexes[0].match", message: "bad pattern" }, { path: "", message: "file is not valid" }] } } } });

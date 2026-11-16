@@ -118,6 +118,21 @@ test("Paste fills the field from the clipboard when it can, and says so when it 
   } finally { Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); }
 });
 
+// @spec DASH-A11Y-004, DASH-ACC-003
+test("the paste note is announced: the status region exists before the note and receives its text", async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+  const { app } = mount();
+  ask(app, "control");
+  const region = within(dlg()).getAllByRole("status").find((el) => el.classList.contains("paste-note"));
+  assert.ok(region, "a status region for the paste note is mounted before any note");
+  assert.equal(region!.textContent, "");
+  await user.click(within(dlg()).getByRole("button", { name: "Paste" }));
+  await flush();
+  assert.match(region!.textContent!, /not available/i);
+  assert.ok(region!.isConnected, "the same region received the text");
+});
+
 // @spec DASH-ACC-004, DASH-ACC-002, DASH-ACC-012
 test("a control token is trimmed and checked with PUT /secrets/access-check before it is stored; once accepted it is stored and the waiting request is released", async () => {
   const user = userEvent.setup();

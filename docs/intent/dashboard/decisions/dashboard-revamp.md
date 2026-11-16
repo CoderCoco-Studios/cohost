@@ -150,7 +150,7 @@ Every problem found in `services/dashboard/public/index.html` at commit `72b57b8
 | C17 | rough | The viewer search sends a request on every keystroke. | Fixed by DASH-VIEWERS-010: 200 ms debounce; the stale-answer guard stays. |
 | C18 | rough | No keyboard shortcuts for the frequent actions. | Fixed by DASH-NAV-003: `/` focuses Say, `1` to `4` switch screens, `m` mutes, `Esc` closes dialogs, `?` lists them; inactive while typing. |
 | C19 | rough | Controls use browser-default selects, checkboxes and file inputs beside custom buttons. | Fixed by DASH-SET-016 to 024, DASH-UI-009, DASH-ACC-003: all native elements restyled from one set of tokens; small enums become segmented radio groups, on/off settings become switches, bounded numbers sliders. |
-| C20 | rough | Uploads over the server's size limit fail only after the whole file is sent. | Deferred: the limits are environment values no endpoint reports (control-plane segment, recorded in Open Questions). The 413 message is shown in full by DASH-UI-015. |
+| C20 | rough | Uploads over the server's size limit fail only after the whole file is sent. | Deferred: the limits are `config.yaml` keys (`dashboard.inject.*`) that no endpoint reports to the page (recorded in Open Questions). The 413 message is shown in full by DASH-UI-015. |
 | C21 | bad | The reflexes setting, a list of structured reactions (pattern, senses, lines, emotion, cooldown), is edited as a raw JSON box: a missing comma or a mistyped sense name is found only when Save fails, and nothing says what the fields mean. | Fixed by DASH-SET-020, DASH-SET-026: a card per item with a control for each property and Add and Remove; raw JSON stays only as the labelled fallback for a shape with no renderer. |
 
 ### Information

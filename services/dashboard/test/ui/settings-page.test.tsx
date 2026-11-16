@@ -305,6 +305,23 @@ test("an array of objects is a card per item with a numbered heading, per-proper
   assert.ok(within(r).getByText(/No reflexes yet/));
 });
 
+// @spec DASH-SET-020
+test("a card keeps its own typed draft when another card is removed: cards are keyed by a stable id, not by position", async () => {
+  const demo = (await import("./settings-fixture")).demoRead;
+  const item = (n: string) => ({ match: n, on: ["chat"], say: ["a"], emotion: "happy", gesture: "", cooldown_ms: 1000 });
+  const reflexes = { source: "literal", editable: true, value: [item("first"), item("second")] };
+  await open("demo", { routes: { "GET /config/demo": { json: { ...demo, keys: { ...demo.keys, reflexes } } } } });
+  const user = userEvent.setup();
+  const r = row("reflexes");
+  const lines = (n: number) => within(within(r).getByRole("group", { name: `Reflex ${n}` })).getByRole("textbox", { name: "Lines to say" }) as HTMLTextAreaElement;
+  await user.type(lines(1), "{Enter}");            // a half-typed draft in the first card: "a" plus a new, still empty line
+  assert.equal(lines(1).value, "a\n");
+  await user.click(within(r).getByRole("button", { name: "Remove reflex 1" }));
+  const only = within(r).getByRole("group", { name: "Reflex 1" });
+  assert.equal((within(only).getByRole("textbox", { name: "Match" }) as HTMLInputElement).value, "second", "the second card is now the first");
+  assert.equal(lines(1).value, "a", "the removed card's draft did not carry over to the card that took its place");
+});
+
 // @spec DASH-SET-006
 test("edits are counted in the nav and the save bar; Discard drops them and Check and Save are disabled without edits", async () => {
   await open();

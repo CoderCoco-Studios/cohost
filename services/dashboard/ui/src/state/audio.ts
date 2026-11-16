@@ -43,7 +43,7 @@ export function createAudio(deps: AudioDeps): Audio {
     if (!state.get().enabled || state.get().playing !== null || queue.length === 0) return;
     const id = queue.shift()!;
     state.set((s) => ({ ...s, playing: id, queued: queue.length }));
-    const a = make(`/audio/${id}.wav`);
+    const a = make(`/audio/${encodeURIComponent(id)}.wav`);
     let finished = false; // reported done once, whichever of ended, error or a refused play() comes first
     const finish = (): boolean => { if (finished) return false; finished = true; report("done", id); state.set((s) => ({ ...s, playing: null })); return true; };
     a.onplay = () => report("playing", id);

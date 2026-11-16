@@ -82,3 +82,12 @@ test("a sink page starts with audio on", () => {
   assert.equal(setup({ enabled: true }).audio.state.get().enabled, true);
   assert.equal(setup().audio.state.get().enabled, false);
 });
+
+// @spec DASH-UI-012
+test("the audio URL is built from the id with encodeURIComponent, so an id with a slash, a question mark or a space cannot change the path", async () => {
+  const { push, flush } = setup({ enabled: true });
+  push("1-0", "../x?y=1 z#h");
+  await flush();
+  assert.equal(FakeAudio.instances[0]!.src, `/audio/${encodeURIComponent("../x?y=1 z#h")}.wav`);
+  assert.equal(FakeAudio.instances[0]!.src, "/audio/..%2Fx%3Fy%3D1%20z%23h.wav");
+});

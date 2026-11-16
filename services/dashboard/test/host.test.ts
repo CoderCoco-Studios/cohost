@@ -85,14 +85,34 @@ test("the LAN handler delegates the allowed requests and answers every other req
   assert.deepEqual(seen, ["GET /?sink=1", "GET /audio/a.wav"]);
 });
 
+// @spec DASH-HOST-002
+test("GET / on the LAN listener without the sink parameter is redirected to /?sink=1 and never reaches the handler; with any sink parameter it is served; the other LAN rules are unchanged", async () => {
+  const seen: string[] = [];
+  const h = lanHandler((req, res) => { seen.push(`${req.method} ${req.url}`); res.writeHead(200); res.end("ok"); });
+  const server = http.createServer(h);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  after(() => server.close());
+  const port = (server.address() as net.AddressInfo).port;
+  for (const path of ["/", "/?", "/?x=1", "/#settings"]) {
+    const r = await new Promise<{ status: number; location?: string }>((resolve, reject) => {
+      http.get({ host: "127.0.0.1", port, path }, (res) => { res.resume(); res.on("end", () => resolve({ status: res.statusCode ?? 0, location: res.headers.location })); }).on("error", reject);
+    });
+    assert.deepEqual([r.status, r.location], [302, "/?sink=1"], path);
+  }
+  assert.deepEqual(seen, [], "the redirect runs nothing");
+  for (const path of ["/?sink=1", "/?sink", "/?sink=", "/?x=1&sink=0"]) assert.equal((await raw(port, path)).status, 200, path);
+  assert.equal((await raw(port, "/", { method: "POST" })).status, 404, "POST / is still 404");
+  assert.equal((await raw(port, "/", { method: "HEAD" })).status, 404, "HEAD / is still 404");
+});
+
 // @spec DASH-HOST-001
 test("both listeners share one handler; the LAN listener is separate from the full-surface one", async () => {
   const t = await boot();
   assert.notEqual(t.l.fullPort, t.l.lanPort);
   assert.equal((await raw(t.l.fullPort, "/stack")).body, "full");
-  assert.equal((await raw(t.l.lanPort, "/")).body, "full");
+  assert.equal((await raw(t.l.lanPort, "/?sink=1")).body, "full");
   assert.equal((await raw(t.l.lanPort, "/stack")).status, 404);
-  assert.deepEqual(handled, ["GET /stack", "GET /"]);
+  assert.deepEqual(handled, ["GET /stack", "GET /?sink=1"]);
 });
 
 // @spec DASH-HOST-001

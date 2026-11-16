@@ -27,6 +27,12 @@ export function lanHandler(full: http.RequestListener): http.RequestListener {
     let pathname: string;
     try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { pathname = ""; }
     if (!lanAllows(req.method ?? "GET", pathname)) { res.writeHead(404); res.end("not found"); return; }
+    // The LAN listener has no controls, so the full app shell would load and fail on every call: `/` without `sink` is the sink view.
+    if (req.method === "GET" && pathname === "/" && !new URL(req.url ?? "/", "http://x").searchParams.has("sink")) {
+      res.writeHead(302, { location: "/?sink=1", "cache-control": "no-store" });
+      res.end();
+      return;
+    }
     return full(req, res);
   };
 }

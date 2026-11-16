@@ -1,7 +1,7 @@
 // The field renderers of the Settings screen: one native control per `Control` kind (design: Widgets). Each takes the
 // value in wire form and reports a new one; text typed into a box that does not map one-to-one (a list of lines, a number,
 // JSON) is kept in local draft state so a half-typed value is never rewritten under the cursor.
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "../../components/Button";
 import { Chips } from "../../components/Chips";
 import { ModelPicker } from "../../components/ModelPicker";
@@ -144,14 +144,19 @@ const singular = (label: string): string => {
 function ObjectsEditor({ props, value, onChange, label, wiring, errors = {} }: { props: ItemProp[]; value: unknown; onChange: (v: unknown) => void; label: string; wiring: Wiring; errors?: Errors }) {
   const items = (Array.isArray(value) ? value : []) as Record<string, unknown>[];
   const noun = singular(label);
+  // Each card has a client-side id that follows it when another card is removed, so the typed drafts inside a card (a half-typed
+  // number or line) stay with that card. The ids are not part of the value; a new list of another length (Discard, a reload) gets fresh ones.
+  const ids = useRef<number[]>([]);
+  const next = useRef(0);
+  if (ids.current.length !== items.length) ids.current = items.map((_, i) => ids.current[i] ?? next.current++);
   const setAt = (i: number, patch: Record<string, unknown>) => onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   return (
     <div className="cards" id={wiring.id} aria-describedby={wiring.describedBy}>
       {items.length === 0 ? <p className="muted small">{`No ${lc(label)} yet. Use Add to create the first.`}</p> : null}
       {items.map((it, i) => (
-        <ItemCard key={i} n={i + 1} noun={noun} props={props} item={it} errors={errors} index={i} onPatch={(patch) => setAt(i, patch)} onRemove={() => onChange(items.filter((_, j) => j !== i))} />
+        <ItemCard key={ids.current[i]} n={i + 1} noun={noun} props={props} item={it} errors={errors} index={i} onPatch={(patch) => setAt(i, patch)} onRemove={() => { ids.current = ids.current.filter((_, j) => j !== i); onChange(items.filter((_, j) => j !== i)); }} />
       ))}
-      <div><Button onClick={() => onChange([...items, defaultItem(props)])}>{`Add a ${lc(noun)}`}</Button></div>
+      <div><Button onClick={() => { ids.current = [...ids.current, next.current++]; onChange([...items, defaultItem(props)]); }}>{`Add a ${lc(noun)}`}</Button></div>
     </div>
   );
 }

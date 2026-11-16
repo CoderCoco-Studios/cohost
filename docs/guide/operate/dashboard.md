@@ -22,6 +22,8 @@ The dashboard is a web page that runs on your own PC. It is where you watch what
 pnpm dashboard
 ```
 
+`pnpm dashboard` builds the page before it starts. If the page's build fails, it prints the error and stops without starting the dashboard, so you never get an old or missing page; fix the error it printed and run it again. (A failed build of the documentation alone does not stop it.)
+
 Then visit `http://localhost:3000`. (The number is `dashboard.port` in `config/config.yaml`; the startup log prints the address it actually uses.) The dashboard listens only on your own PC by default. It is separate from the other pieces of cohost, which run in [containers](../../start/glossary.md#container); the dashboard sits outside them and starts them for you.
 
 The address after the `#` picks the screen: `#live`, `#services`, `#viewers`, `#settings` and `#settings/<section>`. The browser's back and forward buttons move between screens, and you can bookmark any of them.
@@ -124,7 +126,7 @@ The dashboard has a lot of buttons. Only one of them says **Mute co-host**. Lear
 
 ## If it didn't
 
-- The page does not load, or a banner says live updates stopped: the dashboard is not running. Start it again with `pnpm dashboard`.
+- The page does not load, or a banner says live updates stopped: the dashboard is not running. Start it again with `pnpm dashboard`. If that command stops with a build error instead of starting, the dashboard is deliberately not started; fix the error and run it again.
 - The Stack card says service control is off: check that `CONTROL_ENABLED=1` is set in `.env`, restart the dashboard, and see [Troubleshooting](../troubleshooting.md).
 - The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`.
 - The Viewers screen says it is not set up: add a `VIEWERS_TOKEN` as above and restart the dashboard.

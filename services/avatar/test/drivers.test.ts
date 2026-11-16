@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
+import { testConfig } from "@cohost/testing";
 import { createDriver } from "../src/drivers/index.js";
 import { NullDriver } from "../src/drivers/null.js";
 import { VmcDriver } from "../src/drivers/vmc.js";
@@ -169,6 +170,23 @@ test("vts: first connect asks for a plugin token and saves it; the next connect 
   await again.connect(c);
   assert.deepEqual(s.types(), ["AuthenticationRequest", "HotkeysInCurrentModelRequest"]);
   await again.disconnect();
+});
+
+// @spec AVATAR-VTS-017
+test("vts: the driver built from config identifies itself with plugin_name and plugin_developer, nothing from chat.twitch.channel", async () => {
+  const s = await vtsServer();
+  const plain = testConfig({ chat: { twitch: { channel: "streamer-one" } }, avatar: { driver: "vtube-studio", vtube_studio: { host: "127.0.0.1", port: s.port } } });
+  const d = createDriver(plain.avatar);
+  await d.connect(ctx());
+  assert.deepEqual(s.reqs[0]!.data, { pluginName: "cohost", pluginDeveloper: "cohost" }, "each default is the literal cohost");
+  await d.disconnect();
+
+  s.reqs.length = 0;
+  const named = testConfig({ chat: { twitch: { channel: "streamer-two" } }, avatar: { driver: "vtube-studio", vtube_studio: { host: "127.0.0.1", port: s.port, plugin_name: "mine", plugin_developer: "me" } } });
+  const e = createDriver(named.avatar);
+  await e.connect(ctx());
+  assert.deepEqual(s.reqs[0]!.data, { pluginName: "mine", pluginDeveloper: "me" });
+  await e.disconnect();
 });
 
 test("vts: a rejected token is wiped so the next run asks again", async () => { // @spec AVATAR-VTS-004

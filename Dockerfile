@@ -12,7 +12,7 @@ RUN corepack enable && corepack prepare "$(node -p "require('./package.json').pa
 # Rust addon: plain cargo, no Node and no napi CLI. The tag is the toolchain rust-toolchain.toml pins
 # (lid-check fails when they differ). bookworm = the Debian release node:22-slim is built on.
 # @spec DEPLOY-IMG-001
-FROM rust:1.99.1-slim-bookworm AS native
+FROM rust:1.100.0-slim-bookworm AS native
 WORKDIR /src
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY crates ./crates

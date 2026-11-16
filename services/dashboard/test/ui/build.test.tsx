@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 const out = mkdtempSync(join(tmpdir(), "dash-build-"));
 const pkg = new URL("../../", import.meta.url).pathname;
-const r = spawnSync("node", ["node_modules/vite/bin/vite.js", "build", "--config", "ui/vite.config.ts", "--outDir", out, "--emptyOutDir"], { cwd: pkg, encoding: "utf8", timeout: 120_000, env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=1024" } });
+const r = spawnSync("node", ["node_modules/vite/bin/vite.js", "build", "--config", "ui/vite.config.ts", "--outDir", out, "--emptyOutDir"], { cwd: pkg, encoding: "utf8", timeout: 120_000, env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", NODE_OPTIONS: "--max-old-space-size=1024" } });
 test.after(() => rmSync(out, { recursive: true, force: true }));
 
 // @spec DASH-BUILD-001

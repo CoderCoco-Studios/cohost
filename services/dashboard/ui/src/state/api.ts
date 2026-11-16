@@ -16,6 +16,11 @@ export interface RequestOptions {
   action?: string;
   /** Ask for the token before sending when none is held (the secret write always needs one). */
   requireToken?: boolean;
+  /**
+   * Send exactly this bearer token, never prompting and never touching the stored one: the Access dialog uses it to check
+   * a token the operator typed before it is stored (DASH-ACC-004). Without `auth` a 401 is returned as it is.
+   */
+  token?: string;
   /** Content type of a raw body (an uploaded image or audio file); a JSON or text body sets its own. */
   contentType?: string;
   signal?: AbortSignal;
@@ -88,6 +93,7 @@ export function createApi(deps: ApiDeps): Api {
   }
 
   async function request<T>(method: string, path: string, body?: unknown, opts: RequestOptions = {}): Promise<ApiResult<T>> {
+    if (opts.token !== undefined) return once<T>(method, path, body, opts, opts.token);
     const kind = opts.auth;
     const action = opts.action ?? `${method} ${path}`;
     let token = kind ? deps.access.getToken(kind) : undefined;

@@ -11,13 +11,15 @@ export interface TilePickerProps {
   /** Label of the add-your-own field; with `onAdd`, shows the add tile. */
   addLabel?: string;
   onAdd?: (tag: string) => void;
+  /** Id of the element holding the picker's help text (`aria-describedby`). */
+  describedBy?: string;
 }
 
 /**
  * Choose several from a small known set: a grid of whole-area checkbox tiles with a name and one line of description,
  * and, when `onAdd` is given, a dashed tile with a text box and Add button for a value not in the list.
  */
-export function TilePicker({ legend, options, values, onChange, addLabel, onAdd }: TilePickerProps) {
+export function TilePicker({ legend, options, values, onChange, addLabel, onAdd, describedBy }: TilePickerProps) {
   const [draft, setDraft] = useState("");
   const addId = useId();
   const known = new Set(options.map((o) => o.value));
@@ -25,7 +27,7 @@ export function TilePicker({ legend, options, values, onChange, addLabel, onAdd 
   const toggle = (v: string, on: boolean) => onChange(on ? [...values, v] : values.filter((x) => x !== v));
   const add = () => { const t = draft.trim(); if (t && onAdd) { onAdd(t); setDraft(""); } };
   return (
-    <fieldset className="tiles">
+    <fieldset className="tiles" aria-describedby={describedBy}>
       <legend className="sr-only">{legend}</legend>
       {[...options, ...extra].map((o) => {
         const on = values.includes(o.value);

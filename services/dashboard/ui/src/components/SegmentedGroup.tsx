@@ -11,12 +11,14 @@ export interface SegmentedGroupProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   showLegend?: boolean;
+  /** Id of the element holding the group's help text (`aria-describedby`). */
+  describedBy?: string;
 }
 
 /** A row of native radio buttons styled as segments: the keyboard (arrow keys) and the group semantics are the browser's. */
-export function SegmentedGroup({ legend, name, options, value, onChange, disabled, showLegend }: SegmentedGroupProps) {
+export function SegmentedGroup({ legend, name, options, value, onChange, disabled, showLegend, describedBy }: SegmentedGroupProps) {
   return (
-    <fieldset className="seg" disabled={disabled}>
+    <fieldset className="seg" disabled={disabled} aria-describedby={describedBy}>
       <legend className={showLegend ? "label" : "sr-only"}>{legend}</legend>
       {options.map((o) => (
         <label key={o.value}>

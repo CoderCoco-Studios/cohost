@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
 import { ComposeRuntime, SERVICE_MANIFEST, type ExecFile } from "../src/index.js";
 
 const hasDocker = (name: string) => name === "docker";
@@ -43,34 +44,46 @@ test("compose: crafted ids are rejected without exec", async () => {
 });
 
 // @spec CTRL-RUNTIME-002
-test("compose: isolated env goes in the child env and restart recreates", async () => {
+test("compose: an isolation preset goes in the child env and restart recreates", async () => {
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { A: "1" } });
   await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
   assert.deepEqual(calls[0]!.args, ["compose", "up", "-d", "--force-recreate", "cortex"]);
-  assert.equal(calls[0]!.env.LLM_PROVIDER, "mock");
+  assert.equal(calls[0]!.env[ISOLATION_ENV], '{"LLM_PROVIDER":"mock"}');
   assert.equal(calls[0]!.env.A, "1");
 });
 
 // @spec CTRL-RUNTIME-009
-test("compose: every isolation preset variable reaches the container through x-ts-service pass-through", async () => {
-  // The preset is set on the docker compose CLI env; it only reaches the container if the
-  // compose file names each variable as `VAR: ${VAR:-}` (docker is not run here).
-  const compose = readFileSync(new URL("../../../docker-compose.yml", import.meta.url), "utf8");
-  const block = compose.slice(compose.indexOf("x-ts-service:"), compose.indexOf("\nservices:"));
-  const presetVars = new Set(SERVICE_MANIFEST.flatMap((d) => Object.keys(d.isolatedEnv)));
-  for (const v of ["CHAT_SOURCE", "MEMORY_STORE", "MEMORY_EMBEDDER", "LLM_PROVIDER", "VOICE_ENGINE", "AVATAR_DRIVER", "VISION_ENABLED", "EARS_SOURCES", "MOUTH_DISCORD_ENABLED"]) {
-    assert.ok(presetVars.has(v), `${v} is a manifest preset variable`);
-  }
-  for (const v of presetVars) {
-    assert.match(block, new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}`, "m"), `${v} passed through as \${${v}:-}`);
-  }
-  // And the runtime does hand the preset to the compose process for start and recreate.
+test("compose: a preset reaches the container as the one COHOST_ISOLATION variable, JSON of override names to values, and no per-name variable is set", async () => {
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
-  await rt.start("cortex", { env: { LLM_PROVIDER: "mock" } });
-  await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
-  assert.deepEqual(calls.map((c) => c.env.LLM_PROVIDER), ["mock", "mock"]);
+  await rt.start("avatar", { env: { AVATAR_DRIVER: "null" } });
+  await rt.restart("eyes", { env: { VISION_ENABLED: "false", VISION_ENGINE: "stub" } });
+  await rt.start("ears", { env: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" } });
+  assert.deepEqual(calls.map((c) => JSON.parse(c.env[ISOLATION_ENV]!)), [
+    { AVATAR_DRIVER: "null" }, { VISION_ENABLED: "false", VISION_ENGINE: "stub" }, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
+  ]);
+  for (const c of calls) for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(c.env[name], undefined, `${name} is set on no process`);
+});
+
+// @spec CTRL-RUNTIME-009
+test("compose: every manifest preset is accepted, and a name that is no isolation override fails the action without running docker", async () => {
+  const { exec, calls } = fakeExec();
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
+  for (const def of SERVICE_MANIFEST) assert.deepEqual(await rt.start(def.id, { env: def.isolatedEnv }), { ok: true }, def.id);
+  const before = calls.length;
+  const bad = await rt.start("cortex", { env: { LLM_PROVIDER_TYPO: "mock" } });
+  assert.equal(bad.ok, false);
+  assert.match(bad.detail!, /LLM_PROVIDER_TYPO/);
+  assert.equal(calls.length, before);
+});
+
+// @spec CTRL-RUNTIME-009
+test("compose: the x-ts-service environment passes through exactly COHOST_ISOLATION and no per-override variable", () => {
+  const compose = readFileSync(new URL("../../../docker-compose.yml", import.meta.url), "utf8");
+  const block = compose.slice(compose.indexOf("x-ts-service:"), compose.indexOf("\nservices:"));
+  assert.match(block, /^\s+COHOST_ISOLATION: \$\{COHOST_ISOLATION:-\}/m);
+  for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.doesNotMatch(block, new RegExp(`^\\s+${name}:`, "m"), name);
 });
 
 // @spec CTRL-RUNTIME-003
@@ -144,16 +157,34 @@ test("compose: with no docker found every action resolves ok:false naming COHOST
 });
 
 // @spec CTRL-RUNTIME-012
-test("compose: a Windows docker.exe gets the preset variables named in WSLENV; another binary gets the env unchanged", async () => {
-  const run = async (bin: string, env: NodeJS.ProcessEnv) => {
+test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV for a preset; another binary gets the env unchanged", async () => {
+  const run = async (bin: string, env: NodeJS.ProcessEnv, preset: Record<string, string> = { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" }) => {
     const { exec, calls } = fakeExec();
-    await new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" } });
+    await new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: preset });
     return calls[0]!.env;
   };
   const exe = await run("docker.exe", {});
-  assert.equal(exe.WSLENV, "MOUTH_DISCORD_ENABLED:MOUTH_DRYRUN_ENABLED");
-  assert.equal(exe.MOUTH_DRYRUN_ENABLED, "true");
-  const merged = await run("docker.exe", { WSLENV: "PATH/l:MOUTH_DRYRUN_ENABLED/u" });
-  assert.equal(merged.WSLENV, "PATH/l:MOUTH_DRYRUN_ENABLED/u:MOUTH_DISCORD_ENABLED");
+  assert.equal(exe.WSLENV, ISOLATION_ENV);
+  assert.equal(exe[ISOLATION_ENV], '{"MOUTH_DISCORD_ENABLED":"false","MOUTH_DRYRUN_ENABLED":"true"}');
+  assert.equal((await run("docker.exe", { WSLENV: "PATH/l" })).WSLENV, `PATH/l:${ISOLATION_ENV}`);
+  assert.equal((await run("docker.exe", { WSLENV: `PATH/l:${ISOLATION_ENV}/u` })).WSLENV, `PATH/l:${ISOLATION_ENV}/u`, "named once");
+  assert.equal((await run("docker.exe", {}, {})).WSLENV, undefined, "no preset, nothing to forward");
   assert.equal((await run("docker", {})).WSLENV, undefined);
+  assert.equal((await run("docker", { WSLENV: "PATH/l" })).WSLENV, "PATH/l");
+});
+
+// @spec CTRL-RUNTIME-013
+test("compose: every action without a preset sets COHOST_ISOLATION to the empty string over an ambient value", async () => {
+  const { exec, calls } = fakeExec();
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { [ISOLATION_ENV]: '{"CHAT_SOURCE":"fake"}' } });
+  await rt.start("chat");
+  await rt.start("chat", { env: {} });
+  await rt.stop("chat");
+  await rt.restart("chat");
+  await rt.consolidate();
+  await rt.reembed();
+  assert.equal(calls.length, 6);
+  for (const c of calls) assert.equal(c.env[ISOLATION_ENV], "", c.args.join(" "));
+  await rt.start("chat", { env: { CHAT_SOURCE: "fake" } });
+  assert.equal(calls[6]!.env[ISOLATION_ENV], '{"CHAT_SOURCE":"fake"}', "a preset replaces the ambient value too");
 });

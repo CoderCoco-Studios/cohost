@@ -6,7 +6,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { ConfigSchema } from "@cohost/config";
@@ -255,6 +255,107 @@ test("bedrock: an empty key pair or region builds no client, whatever the enviro
       }
     });
     assert.equal(srv.seen.length, 0);
+  } finally { srv.close(); }
+});
+
+// ---- No environment variable reaches a client (LLM-CLAUDE-019)
+
+const INJECTED_HEADERS = "Authorization: Bearer sk-FROM-ENV\nanthropic-beta: evil\nx-api-key: key-FROM-ENV";
+
+/** Variables the SDKs read that are not credential, endpoint, header or behaviour switches: the home and platform lookups of the default credential chain and the profile files, which an explicit credential never reaches. */
+const SDK_NON_SETTING_VARS = new Set(["HOME", "USERPROFILE", "APPDATA", "XDG_CONFIG_HOME", "HOSTNAME", "PATH"]);
+
+/** A hostile value for every variable either SDK reads; a scanned name missing from this table turns the guard test red. */
+const HOSTILE_SDK_ENV: Record<string, string> = {
+  ANTHROPIC_API_KEY: "sk-from-env", ANTHROPIC_AUTH_TOKEN: "token-from-env", ANTHROPIC_BASE_URL: "http://127.0.0.1:9/evil",
+  ANTHROPIC_BEDROCK_BASE_URL: "http://127.0.0.1:9/evil", ANTHROPIC_BEDROCK_MANTLE_BASE_URL: "http://127.0.0.1:9/evil",
+  ANTHROPIC_CONFIG_DIR: "/nonexistent-evil", ANTHROPIC_CUSTOM_HEADERS: INJECTED_HEADERS,
+  ANTHROPIC_ENVIRONMENT_ID: "evil", ANTHROPIC_ENVIRONMENT_KEY: "evil", ANTHROPIC_FEDERATION_RULE_ID: "evil",
+  ANTHROPIC_IDENTITY_TOKEN: "evil", ANTHROPIC_IDENTITY_TOKEN_FILE: "/nonexistent-evil", ANTHROPIC_LOG: "debug",
+  ANTHROPIC_OPEN_TELEMETRY: "true", ANTHROPIC_OPEN_TELEMETRY_PROPAGATION: "true",
+  ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE: "content", ANTHROPIC_OPEN_TELEMETRY_TRACES_MAX_CONTENT_BYTES: "1",
+  ANTHROPIC_ORGANIZATION_ID: "evil", ANTHROPIC_PROFILE: "ambient-profile", ANTHROPIC_SCOPE: "evil",
+  ANTHROPIC_SERVICE_ACCOUNT_ID: "evil", ANTHROPIC_SESSION_ID: "evil", ANTHROPIC_WEBHOOK_SIGNING_KEY: "evil",
+  ANTHROPIC_WORKSPACE_ID: "evil", ANTHROPIC_WORK_ID: "evil", ANTHROPIC_WORK_SECRET: "evil",
+  AWS_ACCESS_KEY_ID: "AKIAAMBIENT", AWS_SECRET_ACCESS_KEY: "ambient-secret", AWS_SESSION_TOKEN: "ambient-session",
+  AWS_PROFILE: "ambient-profile", AWS_REGION: "us-east-1", AWS_DEFAULT_REGION: "us-east-2",
+  AWS_BEARER_TOKEN_BEDROCK: "ambient-bearer",
+};
+
+/** Every environment variable name the installed SDK sources read. */
+function scanSdkEnvNames(): string[] {
+  const roots = ["@anthropic-ai/sdk", "@anthropic-ai/bedrock-sdk"].map((n) => realpathSync(path.join(here, "..", "node_modules", n)));
+  const names = new Set<string>();
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== "node_modules" && e.name !== "src") walk(full); continue; }
+      if (!e.name.endsWith(".mjs")) continue;
+      const text = readFileSync(full, "utf8");
+      for (const m of text.matchAll(/readEnv\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]/g)) names.add(m[1]!);
+      for (const m of text.matchAll(/process\.env\??\.\[?['"]?([A-Z][A-Z0-9_]*)['"]?\]?/g)) names.add(m[1]!);
+      for (const m of text.matchAll(/env\??\.?\[['"]([A-Z][A-Z0-9_]*)['"]\]/g)) names.add(m[1]!);
+      for (const m of text.matchAll(/['"]((?:ANTHROPIC|AWS)_[A-Z0-9_]+)['"]/g)) names.add(m[1]!);
+    }
+  };
+  for (const r of roots) walk(r);
+  return [...names].sort();
+}
+
+// @spec LLM-CLAUDE-019
+test("sdk environment guard: every variable the installed SDKs read has a hostile value in the ambient-credential tests", () => {
+  const scanned = scanSdkEnvNames().filter((n) => !SDK_NON_SETTING_VARS.has(n));
+  assert.ok(scanned.includes("ANTHROPIC_CUSTOM_HEADERS") && scanned.includes("AWS_BEARER_TOKEN_BEDROCK"), "the scan finds the known variables");
+  const missing = scanned.filter((n) => !(n in HOSTILE_SDK_ENV));
+  assert.deepEqual(missing, [], `the SDK reads these variables; give each a hostile value in HOSTILE_SDK_ENV and confirm the provider ignores it: ${missing.join(", ")}`);
+});
+
+// @spec LLM-CLAUDE-019
+test("claude api: no environment variable changes the credential, endpoint or any request header (ANTHROPIC_CUSTOM_HEADERS with Authorization and anthropic-beta included)", async () => {
+  const srv = await replay([{ file: "anthropic-message.json" }, { file: "anthropic-model.json" }]);
+  try {
+    await withEnv(HOSTILE_SDK_ENV, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" } }), undefined, { fetch: srv.fetch });
+      assert.match(await p.chat(user("hi")), /Hello chat/);
+      assert.equal(await p.ping(), true);
+    });
+    assert.equal(srv.seen.length, 2);
+    for (const u of srv.urls) assert.equal(new URL(u).origin, "https://api.anthropic.com");
+    for (const r of srv.seen) {
+      assert.equal(r.headers.authorization, "Bearer sk-config");
+      assert.equal(r.headers["x-api-key"], undefined);
+      assert.doesNotMatch(String(r.headers["anthropic-beta"] ?? ""), /evil/);
+    }
+    assert.equal(srv.seen[0]!.headers["anthropic-beta"], "server-side-fallback-2026-07-01", "the betas the call asked for are untouched");
+  } finally { srv.close(); }
+});
+
+// @spec LLM-CLAUDE-019
+test("claude api: a variable set after the client is built changes nothing either", async () => {
+  const srv = await replay([{ file: "anthropic-message.json" }]);
+  try {
+    const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" } }), undefined, { fetch: srv.fetch });
+    await withEnv(HOSTILE_SDK_ENV, async () => { await p.chat(user("hi")); });
+    assert.equal(srv.seen[0]!.headers.authorization, "Bearer sk-config");
+    assert.doesNotMatch(String(srv.seen[0]!.headers["anthropic-beta"] ?? ""), /evil/);
+  } finally { srv.close(); }
+});
+
+// @spec LLM-CLAUDE-019
+test("bedrock: no environment variable changes the signing credential, region, endpoint or any request header (ANTHROPIC_CUSTOM_HEADERS included)", async () => {
+  const srv = await replay([{ file: "bedrock-message.json" }]);
+  try {
+    await withEnv(HOSTILE_SDK_ENV, async () => {
+      const b = new BedrockProvider(bedrockCfg(CONFIGURED), undefined, { fetch: srv.fetch });
+      assert.equal(await b.chat(user("hi")), "[smug] From Bedrock, with love.");
+    });
+    assert.equal(new URL(srv.urls[0]!).origin, "https://bedrock-mantle.eu-west-2.api.aws");
+    const h = srv.seen[0]!.headers;
+    assert.match(String(h.authorization), /^AWS4-HMAC-SHA256 Credential=AKIACONFIG\//);
+    assert.doesNotMatch(String(h.authorization), /FROM-ENV|ambient/);
+    assert.equal(h["anthropic-beta"], undefined, "no injected anthropic-beta");
+    assert.equal(h["x-api-key"], undefined);
+    assert.equal(h["x-amz-security-token"], undefined);
   } finally { srv.close(); }
 });
 

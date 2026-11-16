@@ -269,6 +269,35 @@ abstract class ClaudeBase implements ChatProvider {
   abstract ping(): Promise<boolean>;
 }
 
+/**
+ * Runs `build` (a synchronous client construction) with every `ANTHROPIC_*` and `AWS_*` variable removed from the process
+ * environment, then restores them. Both SDKs read their credential, endpoint, header, region, logging and tracing variables
+ * from the environment, and all of those reads happen while the client is constructed (the default credential chain runs only
+ * when no explicit credential is given, which these constructions always give). Masking by prefix rather than by name keeps a
+ * variable a later SDK version adds under either prefix out of reach too (LLM-CLAUDE-019). No `await` runs while masked.
+ */
+function withoutSdkEnv<T>(build: () => T): T {
+  const held: [string, string][] = [];
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && /^(ANTHROPIC|AWS)_/i.test(k)) { held.push([k, v]); delete process.env[k]; }
+  }
+  try { return build(); } finally { for (const [k, v] of held) process.env[k] = v; }
+}
+
+/**
+ * The `fetch` a Claude client sends through: the last step before the network. The client is constructed with the environment
+ * masked, so no header arrives from it; this wrapper is the second, request-time layer. It forces the credential headers to
+ * what the configuration holds and fails the request when the client produced anything else (LLM-CLAUDE-019).
+ */
+function pinnedFetch(base: typeof fetch | undefined, credential: (headers: Headers) => void): typeof fetch {
+  const send = base ?? globalThis.fetch;
+  return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    credential(headers);
+    return send(input, { ...init, headers });
+  }) as typeof fetch;
+}
+
 /** The Claude API's own endpoint: the SDK would otherwise take `ANTHROPIC_BASE_URL` (LLM-CLAUDE-009). */
 const CLAUDE_API_BASE_URL = "https://api.anthropic.com";
 
@@ -279,15 +308,17 @@ export class AnthropicProvider extends ClaudeBase {
   protected serverFallbacks: boolean;
   constructor(cfg: Config["llm"], log?: ProviderLog, deps: ClaudeDeps = {}) {
     super(cfg, "anthropic", log);
-    // Credential and endpoint come from config alone. An explicit `apiKey` stops the SDK reading ANTHROPIC_API_KEY,
-    // ANTHROPIC_AUTH_TOKEN and ANTHROPIC_PROFILE (and its default credential chain); an explicit `baseURL` stops
-    // ANTHROPIC_BASE_URL; `authToken: null` pins the token slot empty; a null `x-api-key` default header drops any credential
-    // header ANTHROPIC_CUSTOM_HEADERS would add. With no key there is no client, so nothing can be looked up.
-    this.client = cfg.claude.api_key
-      ? new Anthropic({
-          apiKey: cfg.claude.api_key, authToken: null, baseURL: CLAUDE_API_BASE_URL, defaultHeaders: { "x-api-key": null },
-          maxRetries: CLAUDE_MAX_RETRIES, ...(deps.fetch ? { fetch: deps.fetch } : {}),
-        }) // @spec LLM-CLAUDE-014
+    // Credential, endpoint and headers come from config alone (LLM-CLAUDE-019). Construction runs with every ANTHROPIC_* and AWS_*
+    // variable masked, which stops the SDK reading ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_PROFILE,
+    // ANTHROPIC_CUSTOM_HEADERS and the rest; the explicit `apiKey`, `baseURL` and `authToken: null` are then the only sources. The
+    // fetch wrapper pins the credential at request time. With no key there is no client, so nothing can be looked up.
+    const apiKey = cfg.claude.api_key;
+    this.client = apiKey
+      ? withoutSdkEnv(() => new Anthropic({
+          apiKey, authToken: null, baseURL: CLAUDE_API_BASE_URL,
+          maxRetries: CLAUDE_MAX_RETRIES,
+          fetch: pinnedFetch(deps.fetch, (h) => { h.set("authorization", `Bearer ${apiKey}`); h.delete("x-api-key"); h.delete("proxy-authorization"); }),
+        })) // @spec LLM-CLAUDE-014
       : undefined;
     this.serverFallbacks = cfg.claude.fallbacks;
   }
@@ -319,15 +350,23 @@ export class BedrockProvider extends ClaudeBase {
     if (!!accessKey !== !!secretKey) {
       throw new Error("llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set"); // @spec LLM-CLAUDE-016
     }
-    // Region, keys and endpoint are explicit, with no session token, so the SDK reads none of AWS_REGION, AWS_DEFAULT_REGION,
-    // AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_BEDROCK_MANTLE_BASE_URL, AWS_SESSION_TOKEN, AWS_PROFILE and never reaches its default
-    // credential chain (it takes that only when no explicit key pair is given). With anything empty there is no client.
+    // Region, keys and endpoint are explicit, with no session token, and construction runs with every ANTHROPIC_* and AWS_*
+    // variable masked, so the SDK reads none of AWS_REGION, AWS_DEFAULT_REGION, AWS_BEARER_TOKEN_BEDROCK,
+    // ANTHROPIC_BEDROCK_MANTLE_BASE_URL, ANTHROPIC_CUSTOM_HEADERS, AWS_SESSION_TOKEN, AWS_PROFILE and never reaches its default
+    // credential chain (it takes that only when no explicit key pair is given). The fetch wrapper refuses a request that is not
+    // signed with the configured access key. With anything empty there is no client (LLM-CLAUDE-019).
     this.client = region && accessKey && secretKey
-      ? new AnthropicBedrockMantle({
+      ? withoutSdkEnv(() => new AnthropicBedrockMantle({
           awsRegion: region, awsAccessKey: accessKey, awsSecretAccessKey: secretKey, awsSessionToken: null, apiKey: null,
           baseURL: `https://bedrock-mantle.${region}.api.aws/anthropic`,
-          maxRetries: CLAUDE_MAX_RETRIES, ...(deps.fetch ? { fetch: deps.fetch } : {}),
-        }) // @spec LLM-CLAUDE-014
+          maxRetries: CLAUDE_MAX_RETRIES,
+          fetch: pinnedFetch(deps.fetch, (h) => {
+            if (!(h.get("authorization") ?? "").startsWith(`AWS4-HMAC-SHA256 Credential=${accessKey}/`)) {
+              throw new Error("bedrock request is not signed with llm.bedrock.access_key_id; refusing to send it");
+            }
+            h.delete("x-api-key"); h.delete("x-amz-security-token");
+          }),
+        })) // @spec LLM-CLAUDE-014
       : undefined;
   }
   protected notConfigured(): string {

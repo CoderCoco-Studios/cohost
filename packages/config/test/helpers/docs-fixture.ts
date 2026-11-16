@@ -207,17 +207,10 @@ A co-host.
 git clone https://github.com/CoderCoco-Studios/cohost.git
 cd cohost
 scripts/install.sh
-cat >> .env <<'EOF'
-LLM_PROVIDER=mock
-MEMORY_STORE=memory
-MEMORY_EMBEDDER=hash
-VOICE_ENGINE=stub
-CHAT_SOURCE=fake
-EOF
 pnpm dashboard
 \`\`\`
 
-For real accounts see [Install for real](https://codercoco-studios.github.io/cohost/guide/install/real-install).
+Open the dashboard, tick isolated on the Services screen and press Start on chat, memory, cortex and voice; edit no file and append nothing to .env. For real accounts see [Install for real](https://codercoco-studios.github.io/cohost/guide/install/real-install).
 
 ## Documentation
 

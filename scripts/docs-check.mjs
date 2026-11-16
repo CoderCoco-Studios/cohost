@@ -1269,26 +1269,15 @@ export async function runSource(root) {
         if (ci === -1) add('README.md', fence.line, 'DOCS-README-003', 'the quick start fence must run git clone');
         if (di === -1) add('README.md', fence.line, 'DOCS-README-003', 'the quick start fence must cd into the checkout after git clone');
         else {
-          let count = 0;
-          let heredoc = null;
-          for (const c of cmds.slice(di + 1)) {
-            if (heredoc) {
-              if (c.cmd.trim() === heredoc) heredoc = null;
-              continue;
-            }
-            count++;
-            const hd = /<<-?\s*['"]?(\w+)['"]?/.exec(c.cmd);
-            if (hd) heredoc = hd[1];
-          }
+          const count = cmds.slice(di + 1).length;
           if (count > 5) add('README.md', fence.line, 'DOCS-README-003', `has ${count} command lines after the cd; at most five (a heredoc counts as one)`);
         }
         const body = fence.lines.map((l) => l.text).join('\n');
         if (!/scripts\/install\.sh/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must run scripts/install.sh');
         if (!/(^|\n)\s*pnpm dashboard\b/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must start the dashboard with pnpm dashboard');
-        if (!body.includes('.env')) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must append the mock-mode lines to .env');
-        for (const line of ['LLM_PROVIDER=mock', 'MEMORY_STORE=memory', 'MEMORY_EMBEDDER=hash', 'VOICE_ENGINE=stub', 'CHAT_SOURCE=fake']) {
-          if (!body.split('\n').some((l) => l.trim() === line)) add('README.md', fence.line, 'DOCS-README-003', `the quick start must add the mock-mode line ${line}`);
-        }
+        if (/\.env\b/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must write nothing to .env: mock mode is an isolated start from the dashboard');
+        const sectionText = ra.plain.filter((l) => inSec(l.n)).map((l) => l.text).join('\n');
+        if (!/\bisolated\b/i.test(sectionText)) add('README.md', fence.line, 'DOCS-README-003', 'the Quick start prose must reach mock mode by an isolated start from the dashboard');
         const after = ra.links.filter((l) => l.n > (fence.end ?? fence.line) && inSec(l.n));
         if (!after.some((l) => l.href.replace(/[#?].*$/, '').replace(/\/$/, '') === `${SITE}guide/install/real-install`)) add('README.md', fence.end ?? fence.line, 'DOCS-README-003', `the fence must be followed by a link to ${SITE}guide/install/real-install`);
       }

@@ -1,6 +1,7 @@
 import { PageHeading } from "../../components/PageHeading";
 import type { ScreenProps } from "../../app/screens";
 import { ActivityCard } from "./ActivityCard";
+import { AvatarCard } from "./AvatarCard";
 
 /**
  * The Live screen: the Activity feed, the avatar, Say a line, test inputs and Wipe context. Two columns above 1000 px
@@ -13,6 +14,7 @@ export function Screen(_props: ScreenProps) {
       <PageHeading>Live</PageHeading>
       <div className="live-grid">
         <ActivityCard />
+        <AvatarCard />
       </div>
     </>
   );

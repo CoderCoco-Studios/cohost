@@ -29,3 +29,9 @@
 .badge { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 650; border: 1px solid var(--line); }
 .badge-inj { color: var(--warn); background: var(--warn-tint); }
 .badge-mem { color: var(--ok); background: var(--ok-tint); }
+
+/* Avatar */
+.face { width: 100%; max-width: 200px; height: auto; align-self: center; }
+.face-head { fill: var(--surface-2); stroke: var(--ctl); }
+.face-eye { fill: var(--fg); }
+.face-mouth { fill: var(--bg); stroke: var(--fg); }

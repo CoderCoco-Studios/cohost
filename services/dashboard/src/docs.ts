@@ -1,29 +1,14 @@
 import type http from "node:http";
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { findWorkspaceRoot } from "@cohost/config";
+import { inside, isFile, real, send, serveFile } from "./static.js";
 
 /** The docs directory: `docs/.vitepress/dist` under the workspace root, or under the working directory when there is none. */
 // @spec DASH-DOCS-001
 export function locateDocsDir(): string {
   return join(findWorkspaceRoot() ?? process.cwd(), "docs", ".vitepress", "dist");
 }
-
-const TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".ico": "image/x-icon",
-  ".txt": "text/plain; charset=utf-8",
-};
 
 const NOT_BUILT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Docs not built</title>
@@ -32,15 +17,6 @@ const NOT_BUILT = `<!doctype html>
 <p>The docs site has not been built yet. Run <code>pnpm docs:build</code> in the repository, then reload this page.</p>
 <p><code>pnpm dashboard</code> builds the docs each time it starts.</p></body></html>
 `;
-
-const isFile = (p: string): boolean => { try { return statSync(p).isFile(); } catch { return false; } };
-const real = (p: string): string | undefined => { try { return realpathSync(p); } catch { return undefined; } };
-const inside = (root: string, p: string): boolean => p === root || p.startsWith(root + sep);
-
-function send(res: http.ServerResponse, head: boolean, status: number, headers: http.OutgoingHttpHeaders, body?: string | Buffer): void {
-  res.writeHead(status, headers);
-  res.end(head || body === undefined ? undefined : body);
-}
 
 /** Answers `GET`/`HEAD` for `/cohost` and `/cohost/...` from the built docs; false for anything else, which the caller routes on. */
 // @spec DASH-DOCS-001, DASH-DOCS-002, DASH-DOCS-003, DASH-DOCS-004, DASH-DOCS-005, DASH-DOCS-006, DASH-DOCS-007, DASH-DOCS-008, DASH-DOCS-009, DASH-DOCS-010, DASH-DOCS-011
@@ -103,26 +79,4 @@ export function handleDocs(dir: string, req: http.IncomingMessage, res: http.Ser
     }
   }
   return notFound();
-}
-
-function serveFile(res: http.ServerResponse, req: http.IncomingMessage, head: boolean, root: string, file: string): true {
-  const body = readFileSync(file); // whole file first: a failed read is still answerable with a 500
-  const st = statSync(file);
-  const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
-  const parts = relative(root, file).split(sep);
-  const cache = parts[0] === "assets" && parts.length > 1 ? "public, max-age=31536000, immutable" : "no-cache";
-  const inm = req.headers["if-none-match"];
-  const bare = (t: string) => t.trim().replace(/^W\//, "");
-  if (inm !== undefined && (inm.trim() === "*" || inm.split(",").some((t) => bare(t) === bare(etag)))) {
-    send(res, head, 304, { etag, "cache-control": cache });
-    return true;
-  }
-  send(res, head, 200, {
-    "content-type": TYPES[extname(file).toLowerCase()] ?? "application/octet-stream",
-    "content-length": st.size,
-    "x-content-type-options": "nosniff",
-    etag,
-    "cache-control": cache,
-  }, body);
-  return true;
 }

@@ -1,0 +1,23 @@
+{
+  // The UI source and its tests. Not a `tsc -b` project (it emits nothing): the root `typecheck` runs
+  // `tsc -p services/dashboard/ui --noEmit` after `tsc -b` (DASH-BUILD-008).
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src", "index.d.ts", "vite.config.ts", "dev-proxy.ts", "../test/ui"]
+}

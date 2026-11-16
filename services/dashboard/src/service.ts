@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import type { Bus } from "@cohost/bus";
 import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
@@ -26,8 +23,6 @@ export interface DashboardDeps {
   attachStack?: (stack: StackService) => void;
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
-
 /**
  * The dashboard as a service for `runService`: its heartbeat spec and `main`. `main` wires the feed, the stack service,
  * the routes and the two listeners, declares readiness once both listen, and registers one teardown step.
@@ -45,7 +40,6 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const VOICE = urls.voice();
       // @spec DASH-CTRL-003, DASH-HOST-007
       const { control, bind } = setupControl(env, bus, log);
-      const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
@@ -62,7 +56,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
 
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
       const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
-      const handler = createDashboardHandler({ bus, log, html, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
 
       const wss = new WebSocketServer({ noServer: true });
       const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });

@@ -5,6 +5,7 @@ import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, ty
 import { BodyTooLarge, readText } from "./body.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
+import { handleUi, locateUiDir } from "./static.js";
 import { handleMouthRouting } from "./routing.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
@@ -15,8 +16,8 @@ export interface DashboardDeps {
   /** `putUpload` stores injected uploads in Redis. */
   bus: Publisher & Pick<Bus, "putUpload">;
   log: Logger;
-  /** public/index.html, with __COHOST_NAME__ still in it. */
-  html: string;
+  /** The built UI (`dist-ui/`): `index.html` is read per request. Defaults to the one beside the server's `dist/`; tests pin it. */
+  uiDir?: string;
   cohostName: string;
   /** The voice service, which holds the audio. */
   voiceUrl: string;
@@ -71,17 +72,13 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     body: readText,
   };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
-  const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
+  const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
-      // @spec DASH-HTTP-001
-      if (req.method === "GET" && url.pathname === "/") {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(page);
-        return;
-      }
+      // @spec DASH-HTTP-001, DASH-BUILD-003, DASH-BUILD-004, DASH-BUILD-005
+      if (handleUi(uiDir, d.cohostName, req, res, url)) return;
       // @spec DASH-DOCS-001, DASH-DOCS-011
       if (handleDocs(docsDir, req, res, url)) return;
       // @spec DASH-SINK-001

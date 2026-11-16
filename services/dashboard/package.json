@@ -7,12 +7,15 @@
   "main": "dist/index.js",
   "files": [
     "dist",
-    "public"
+    "dist-ui"
   ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
-    "start": "node dist/index.js"
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "dev:ui": "vite --config ui/vite.config.ts",
+    "start": "node dist/index.js",
+    "test:ui": "TSX_TSCONFIG_PATH=../../tsconfig.test.json node --import tsx --test \"test/ui/*.test.tsx\""
   },
   "dependencies": {
     "@cohost/bus": "workspace:*",
@@ -23,6 +26,17 @@
   },
   "devDependencies": {
     "@cohost/testing": "workspace:*",
-    "@types/ws": "^8.18.2"
+    "@happy-dom/global-registrator": "^21.0.4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.10",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "happy-dom": "^21.0.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.8"
   }
 }

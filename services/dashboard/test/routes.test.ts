@@ -1,4 +1,7 @@
 import { test, after } from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
@@ -16,13 +19,20 @@ const voice = http.createServer((req, res) => {
 await new Promise<void>((r) => voice.listen(0, r));
 after(() => voice.close());
 
+// A built UI the handler serves: index.html with the name placeholder, one asset.
+const uiDir = mkdtempSync(join(tmpdir(), "dash-routes-ui-"));
+mkdirSync(join(uiDir, "assets"));
+writeFileSync(join(uiDir, "index.html"), "<title>__COHOST_NAME__ dashboard</title><h1>__COHOST_NAME__</h1>");
+writeFileSync(join(uiDir, "assets", "app-1.js"), "x");
+after(() => rmSync(uiDir, { recursive: true, force: true }));
+
 const bus = new FakeBus();
 const tracker = new HealthTracker();
 const rec = recordingLog();
 let personality = "# Coco\n";
 const server = http.createServer(createDashboardHandler({
   bus, log: rec.log,
-  html: "<title>__COHOST_NAME__ dashboard</title><h1>__COHOST_NAME__</h1>",
+  uiDir,
   cohostName: "Coco",
   voiceUrl: `http://127.0.0.1:${(voice.address() as { port: number }).port}`,
   loadPersonality: () => personality,
@@ -41,6 +51,14 @@ test("GET / serves the page with every occurrence of the co-host's name filled i
   assert.equal(r.status, 200);
   assert.match(r.headers.get("content-type")!, /text\/html/);
   assert.equal(await r.text(), "<title>Coco dashboard</title><h1>Coco</h1>");
+});
+
+// @spec DASH-BUILD-003, DASH-CTRL-005
+test("the UI's files are served by the handler, ungated", async () => {
+  const r = await fetch(`${base}/assets/app-1.js`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal((await fetch(`${base}/assets/missing.js`)).status, 404);
 });
 
 // @spec DASH-SINK-001

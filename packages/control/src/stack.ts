@@ -1,5 +1,5 @@
 import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
-import { resolveDockerBin } from "./docker.js";
+import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { ComposeRuntime, defaultExec, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
@@ -151,12 +151,13 @@ export class StackController {
     try { this.o.onPhase?.(kind, phase); } catch { /* a progress callback must not fail the action */ }
   }
 
-  /** Runs one fixed `docker compose` command. */
+  /** Runs one fixed `docker compose` command with `COHOST_ISOLATION` set to the empty string, so neither this process's environment nor `.env` supplies it (CTRL-STACK-017). */
+  // @spec CTRL-STACK-017
   private async compose(args: string[], timeoutMs: number): Promise<{ ok: true; stdout: string } | { ok: false; detail: string }> {
     const docker = resolveDockerBin(this.env, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: this.env, cwd: this.cwd, timeoutMs });
+      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: dockerEnv(docker.bin, this.env, { [ISOLATION_ENV]: "" }), cwd: this.cwd, timeoutMs });
       return { ok: true, stdout };
     } catch (err) {
       return { ok: false, detail: execDetail(err) };
@@ -223,7 +224,7 @@ export class StackController {
   }
 
   /** The same as `launch`, reported under kind `rebuild`: both build, so images never lag the code. */
-  // @spec CTRL-STACK-013
+  // @spec CTRL-STACK-017
   rebuild(): Promise<StackResult> { return this.bringUp("rebuild"); }
 
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005

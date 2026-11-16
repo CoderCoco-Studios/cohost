@@ -168,7 +168,15 @@ test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV f
   assert.equal(exe[ISOLATION_ENV], '{"MOUTH_DISCORD_ENABLED":"false","MOUTH_DRYRUN_ENABLED":"true"}');
   assert.equal((await run("docker.exe", { WSLENV: "PATH/l" })).WSLENV, `PATH/l:${ISOLATION_ENV}`);
   assert.equal((await run("docker.exe", { WSLENV: `PATH/l:${ISOLATION_ENV}/u` })).WSLENV, `PATH/l:${ISOLATION_ENV}/u`, "named once");
-  assert.equal((await run("docker.exe", {}, {})).WSLENV, undefined, "no preset, nothing to forward");
+  const empty = await run("docker.exe", {}, {});
+  assert.equal(empty[ISOLATION_ENV], "", "an empty preset encodes as the empty string");
+  assert.equal(empty.WSLENV, ISOLATION_ENV);
+  const none = await new Promise<NodeJS.ProcessEnv>((resolve) => {
+    const { exec, calls } = fakeExec();
+    void new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: "docker.exe", [ISOLATION_ENV]: "ambient" } }).stop("mouth").then(() => resolve(calls[0]!.env));
+  });
+  assert.equal(none[ISOLATION_ENV], "", "no preset: empty, replacing the ambient value");
+  assert.equal(none.WSLENV, ISOLATION_ENV, "the empty value is forwarded too, so Windows Compose does not read .env");
   assert.equal((await run("docker", {})).WSLENV, undefined);
   assert.equal((await run("docker", { WSLENV: "PATH/l" })).WSLENV, "PATH/l");
 });

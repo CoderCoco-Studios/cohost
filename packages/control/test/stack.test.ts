@@ -54,7 +54,7 @@ test("status: fixed argv, 10 s timeout, workspace cwd, base env; parses a JSON a
     { service: "redis", status: "running", health: "healthy" },
     { service: "models", status: "exited", exitCode: 3 },
   ] });
-  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "ps", "--all", "--format", "json"], env: { BASE: "1" }, cwd: "/root", timeoutMs: 10_000 }]);
+  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "ps", "--all", "--format", "json"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 10_000 }]);
 });
 
 // @spec CTRL-STACK-008
@@ -81,7 +81,7 @@ test("status: a failing command, a timeout or unparsable output is docker unavai
 test("launch: reports compose-build, runs up -d --build --remove-orphans with a 30 minute timeout, then waits", async () => {
   const h = harness({ psAnswers: [ps(ready)] });
   assert.equal((await h.stack.launch()).ok, true);
-  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1" }, cwd: "/root", timeoutMs: 30 * 60_000 });
+  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 30 * 60_000 });
   assert.deepEqual(h.phases, [["launch", "compose-build"], ["launch", "waiting"]]);
 });
 
@@ -152,7 +152,7 @@ test("launch: a one-shot that exited non-zero is appended to detail, ok unchange
 test("stopAll: reports stopping, runs docker compose stop with 300 s, never down", async () => {
   const h = harness();
   assert.deepEqual(await h.stack.stopAll(), { ok: true });
-  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "stop"], env: { BASE: "1" }, cwd: "/root", timeoutMs: 300_000 }]);
+  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "stop"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 300_000 }]);
   assert.deepEqual(h.phases, [["stop", "stopping"]]);
   assert.deepEqual(await harness({ stopFail: "boom" }).stack.stopAll(), { ok: false, detail: "boom" });
 });
@@ -264,4 +264,26 @@ test("stackState: precedence docker-unavailable, stopping, starting, down, up, s
   assert.equal(stackState(st([run("redis", "healthy"), { service: "tts", status: "restarting" }]), undefined), "degraded");
   assert.equal(stackState(st([run("redis", "unhealthy")]), undefined), "degraded");
   assert.equal(stackState(st([run("cortex", "starting"), exited("tts", 1)]), undefined), "degraded");
+});
+
+// @spec CTRL-STACK-017
+test("every docker compose call sets COHOST_ISOLATION to the empty string, whatever the process environment holds; WSLENV forwards it for docker.exe", async () => {
+  for (const bin of ["docker", "docker.exe"]) {
+    const calls: Call[] = [];
+    const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env }); return { stdout: args[1] === "ps" ? ps([]) : "", stderr: "" }; };
+    const stack = new StackController({
+      exec, cwd: "/root", env: { COHOST_ISOLATION: '{"AVATAR_DRIVER":"null"}', WSLENV: "PATH/l" }, onPath: (n) => n === bin,
+      now: () => 0, sleep: async () => {},
+    });
+    await stack.status();
+    await stack.launch();
+    await stack.stopAll();
+    const compose = calls.filter((c) => c.args[0] === "compose");
+    assert.ok(compose.length >= 3, "ps, up and stop all ran");
+    for (const c of compose) {
+      assert.equal(c.env.COHOST_ISOLATION, "", `${c.args.join(" ")} on ${bin}`);
+      if (bin === "docker.exe") assert.equal(c.env.WSLENV, "PATH/l:COHOST_ISOLATION");
+      else assert.equal(c.env.WSLENV, "PATH/l");
+    }
+  }
 });

@@ -1,8 +1,9 @@
 /*
  * The Settings screen (design: Settings screen), ported from the approved mockups. Tokens only; the narrow-width rules
- * for `.settings-layout` and `.srow` are in base.css.
+ * for `.settings-layout`, `.snav` and `.srow` are in narrow.css.
  */
-.snav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.snav { display: flex; flex-direction: column; gap: 2px; padding: 8px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.snav-toggle { display: none; }
 .snav ul, ul.plain { list-style: none; margin: 0; padding: 0; }
 .snav .tab { justify-content: flex-start; width: 100%; border-radius: 8px; }
 .snav .tab.sub { padding-left: 28px; justify-content: space-between; }
@@ -21,6 +22,9 @@
 .srow-c .num { max-width: 140px; }
 .srow-c textarea.field { max-width: 640px; }
 .srow-c .help { margin: 0; }
+.srow-c .note-inline { margin: 0; }
+.srow-l .mono { overflow-wrap: break-word; word-break: normal; }
+.srow-c .secret-field .tag { margin-top: 2px; }
 .srow-c .note { align-self: stretch; }
 
 /* A shared picker or the secret field brings its own label; the row's visible label is not repeated. */
@@ -33,5 +37,7 @@
 .item-prop { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .item-prop .field { max-width: 100%; }
 
+/* The save bar's reason for a disabled Save sits under the edit count. */
+.save-hint { margin: 2px 0 0; }
 .savebar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 14px 14px; }
 textarea.pers { min-height: 420px; line-height: 1.6; max-width: none; }

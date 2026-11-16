@@ -89,6 +89,15 @@ for (const [name, set] of [["light", light], ["dark", darkAuto]] as const) {
   });
 }
 
+for (const [name, set] of [["light", light], ["dark", darkAuto], ["dark (manual)", darkManual]] as const) {
+  // @spec DASH-THEME-003
+  test(`${name}: --disabled-fg (a disabled control's text) reaches 3:1 on --bg, every --bg-grad stop, --surface and --surface-2`, () => {
+    assert.ok(set["--disabled-fg"], "--disabled-fg is declared");
+    const grounds = [set["--bg"]!, ...hexes(set["--bg-grad"]!), set["--surface"]!, set["--surface-2"]!];
+    for (const g of grounds) assert.ok(ratio(set["--disabled-fg"]!, g) >= 3, `${name} --disabled-fg on ${g}: ${ratio(set["--disabled-fg"]!, g).toFixed(2)}`);
+  });
+}
+
 // @spec DASH-THEME-001
 test("no stylesheet uses a colour literal outside the token definitions in tokens.css", () => {
   const literal = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch)\(/;

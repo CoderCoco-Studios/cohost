@@ -1,5 +1,6 @@
 /*
- * Base: reset, typography, layout primitives, focus, the narrow-width rules and reduced motion. Colours come from
+ * Base: reset, typography, layout primitives, focus and reduced motion. The narrow-width rules are in narrow.css, the last
+ * stylesheet imported, so they come after every rule they override. Colours come from
  * tokens.css only. Component styles are in components.css.
  */
 *, *::before, *::after { box-sizing: border-box; }
@@ -41,8 +42,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 h1[tabindex]:focus-visible, main[tabindex]:focus-visible { outline-offset: 4px; }
 
-/* Touch and click targets (DASH-A11Y-006). */
-button, input, select { min-height: var(--target-dense); }
+/* Click targets (DASH-A11Y-006). A switch, slider, radio, checkbox or file input keeps its own shape; its label or row meets
+   the target. :where() keeps the specificity of a bare element selector, so a component class can still size its control. */
+button, input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])), select { min-height: var(--target-dense); }
 .row-action { min-height: var(--target-dense); }
 
 .skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; padding: 8px 14px; border-radius: 999px; background: var(--accent-fill); color: var(--on-accent); font-weight: 600; text-decoration: none; }
@@ -52,7 +54,7 @@ button, input, select { min-height: var(--target-dense); }
 .page { padding: 20px var(--gutter); display: flex; flex-direction: column; gap: 16px; max-width: 1480px; margin: 0 auto; }
 .page-title { font-size: 20px; }
 
-/* Header (DASH-NAV-002): four groups that wrap; the gradient rule sits under it. */
+/* Header (DASH-NAV-002): four groups that wrap; the gradient rule sits under it. narrow.css compacts it on phones. */
 .top { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px var(--gutter) 13px; background: var(--surface); }
 .top::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--accent-fill), var(--current-fill)); }
 .header-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
@@ -62,24 +64,6 @@ button, input, select { min-height: var(--target-dense); }
 .brand::before { content: ""; width: 22px; height: 22px; border-radius: 7px; background: var(--accent-fill); box-shadow: inset -7px -7px 0 -1px var(--current-fill); flex: none; }
 .brand-name { font-size: 19px; font-weight: 750; letter-spacing: -.02em; }
 .brand-sub { font-size: 12px; color: var(--faint); }
-
-/* Narrow screens (DASH-A11Y-007): 16px gutter, the nav on its own row, rows and panes stacked, touch-size targets.
-   719.98px is --bp-narrow (720px) as a max-width; a media query cannot read a custom property. */
-@media (max-width: 719.98px) {
-  :root { --gutter: 16px; }
-  .nav { flex-basis: 100%; order: 3; }
-  .header-group.cluster { order: 2; }
-  .header-group.controls { margin-left: 0; }
-  button, input, select, .row-action { min-height: var(--target-touch); }
-  .svc { grid-template-columns: minmax(0, 1fr); }
-  .svc-head { display: none; }
-  .viewers-panes, .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .ev { grid-template-columns: 52px minmax(0, 1fr); }
-  .ev .k { grid-column: 2; }
-  .ev p { grid-column: 1 / -1; }
-  .srow { grid-template-columns: minmax(0, 1fr); }
-  .srow-s { text-align: left; }
-}
 
 /* Regions whose data stopped updating (DASH-UI-001). */
 .stale { opacity: .55; }

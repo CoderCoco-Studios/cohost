@@ -5,8 +5,15 @@ import { readFileSync, readdirSync } from "node:fs";
 
 const dir = new URL("../../ui/src/styles/", import.meta.url);
 const strip = (c: string) => c.replace(/\/\*[\s\S]*?\*\//g, "");
-const all = readdirSync(dir).filter((f) => f.endsWith(".css")).map((f) => strip(readFileSync(new URL(f, dir), "utf8"))).join("\n");
+// The stylesheets in the order main.tsx imports them: that order is the cascade, so it is the order the tests read them in.
+const main = readFileSync(new URL("../../ui/src/main.tsx", import.meta.url), "utf8");
+const order = [...main.matchAll(/import "\.\/styles\/([\w-]+\.css)";/g)].map((m) => m[1]!);
+const sheet = (f: string) => strip(readFileSync(new URL(f, dir), "utf8"));
+const all = order.map(sheet).join("\n");
 const index = readFileSync(new URL("../../ui/index.html", import.meta.url), "utf8");
+
+/** The inputs that take the generic minimum height: not a switch, slider, radio, checkbox or file input (they keep their shape). */
+const TEXT_INPUT = 'input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]))';
 
 /** The body of the first `@media (query) { ... }` block, matching braces. */
 function media(css: string, query: string): string {
@@ -37,10 +44,10 @@ test("--target-dense and --target-touch are defined; buttons, inputs, selects an
   assert.match(all, /--target-dense:\s*30px/);
   assert.match(all, /--target-touch:\s*44px/);
   assert.match(rule(all, "button"), /min-height:\s*var\(--target-dense\)/);
-  for (const el of ["input", "select"]) assert.match(rule(all, el), /min-height:\s*var\(--target-dense\)/, el);
+  for (const el of [TEXT_INPUT, "select"]) assert.match(rule(all, el), /min-height:\s*var\(--target-dense\)/, el);
   assert.match(rule(all, ".row-action"), /min-height:\s*var\(--target-dense\)/);
   const narrow = media(all, "(max-width: 719.98px)");
-  for (const el of ["button", "input", "select", ".row-action"]) assert.match(rule(narrow, el), /min-height:\s*var\(--target-touch\)/, el);
+  for (const el of ["button", TEXT_INPUT, "select", ".row-action", ".btn", ".btn-sm", ".field"]) assert.match(rule(narrow, el), /min-height:\s*var\(--target-touch\)/, el);
 });
 
 // @spec DASH-A11Y-007
@@ -113,5 +120,81 @@ test("no source inserts a string as HTML, calls alert/confirm/prompt, or carries
     assert.ok(!/dangerouslySetInnerHTML|\.innerHTML\s*=|insertAdjacentHTML|outerHTML\s*=|document\.write/.test(t), `${f} inserts HTML`);
     assert.ok(!/\b(window\.)?(alert|confirm|prompt)\s*\(/.test(t), `${f} calls alert, confirm or prompt`);
     assert.ok(!/\p{Extended_Pictographic}/u.test(t.replace(/[✓—·…–]/g, "")), `${f} has a pictograph`);
+  }
+});
+
+// @spec DASH-A11Y-007
+test("every stylesheet main.tsx imports exists, and every stylesheet is imported", () => {
+  assert.deepEqual([...order].sort(), readdirSync(dir).filter((f) => f.endsWith(".css")).sort());
+});
+
+// @spec DASH-A11Y-007
+test("the narrow-width rules live in the last stylesheet imported, so they come after every rule they override", () => {
+  const last = order[order.length - 1]!;
+  assert.equal(last, "narrow.css");
+  for (const f of order.slice(0, -1)) assert.ok(!/@media[^{]*max-width/.test(sheet(f)), `${f} has a max-width block; narrow rules belong in narrow.css`);
+  assert.match(sheet(last), /@media \(max-width: 719\.98px\)/);
+});
+
+// @spec DASH-A11Y-007
+test("the narrow block stacks the settings rows and navigation, the feed rows, and sets the 16px gutter", () => {
+  const narrow = media(sheet("narrow.css"), "(max-width: 719.98px)");
+  for (const cls of [".settings-layout", ".srow", ".srow-s", ".viewers-panes", ".svc", ".ev"]) assert.match(narrow, new RegExp(`\\${cls}\\s*[,{]`), `${cls} is in the narrow block`);
+  assert.match(rule(narrow, ".srow"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(rule(narrow, ".settings-layout"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+});
+
+// @spec DASH-A11Y-006
+test("no bare input rule stretches a switch, slider, radio, checkbox or file input: the generic minimum height skips them", () => {
+  for (const m of all.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sels = m[1]!.split(",").map((x) => x.trim());
+    if (/min-height/.test(m[2]!) && sels.includes("input")) assert.fail("a bare `input` selector sets min-height; use input:where(:not([type=...]))");
+  }
+  const generic = [...all.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /min-height:\s*var\(--target-/.test(m[2]!) && m[1]!.includes("input:where"));
+  assert.ok(generic.length >= 2, "dense and touch rules for input exist");
+  for (const g of generic) for (const t of ["checkbox", "radio", "range", "file"]) assert.ok(g[1]!.includes(`[type="${t}"]`), `${g[1]!.trim()} must exclude ${t}`);
+  assert.match(rule(all, ".switch"), /height:\s*26px/);
+});
+
+// @spec DASH-SET-016
+test("on touch widths the switch keeps its pill shape and the 44px target is the row's: .check carries the touch height", () => {
+  const narrow = media(sheet("narrow.css"), "(max-width: 719.98px)");
+  assert.match(rule(narrow, ".check"), /min-height:\s*var\(--target-touch\)/);
+});
+
+// @spec DASH-VIEWERS-011
+test("the memory meter keeps a fixed width and one line, and its fill takes the token colours in WebKit and Firefox", () => {
+  assert.match(rule(all, ".meter"), /flex:\s*none/);
+  assert.match(rule(all, ".meter-text"), /white-space:\s*nowrap/);
+  assert.match(rule(all, ".meter meter"), /width:\s*min\(\d+px/);
+  for (const p of [".meter meter::-webkit-meter-bar", ".meter meter::-webkit-meter-optimum-value", ".meter meter::-webkit-meter-suboptimum-value", ".meter meter::-webkit-meter-even-less-good-value", ".meter meter::-moz-meter-bar"]) assert.match(rule(all, p), /var\(--/, p);
+});
+
+// @spec DASH-SET-018
+test("the slider and its number box stay on one row: the box has a fixed width and the wrapper does not wrap", () => {
+  assert.ok(!/flex-wrap:\s*wrap/.test(rule(all, ".range-wrap")), ".range-wrap wraps");
+  assert.match(rule(all, ".range-wrap .num"), /width:\s*\d/);
+  assert.match(rule(all, ".range-wrap .num"), /flex:\s*none/);
+});
+
+// @spec DASH-SET-001
+test("the settings section list stays in view while a long section scrolls", () => {
+  assert.match(rule(all, ".snav"), /position:\s*sticky/);
+});
+
+// @spec DASH-THEME-003
+test("a disabled button is neutral and uses the --disabled-fg token, not a dimmed live colour", () => {
+  const r = rule(all, ".btn[disabled]");
+  assert.match(r, /color:\s*var\(--disabled-fg\)/);
+  assert.match(r, /background:\s*var\(--surface-2\)/);
+  assert.match(r, /cursor:\s*not-allowed/);
+  assert.ok(!/opacity/.test(r), "opacity dims the text below the token's contrast");
+});
+
+// @spec DASH-THEME-006
+test("no stylesheet uses !important except the reduced-motion block", () => {
+  for (const f of order) {
+    const css = sheet(f).replace(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\}\s*\}/, "");
+    assert.ok(!/!important/.test(css), `${f} uses !important`);
   }
 });

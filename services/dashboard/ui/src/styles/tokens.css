@@ -23,6 +23,7 @@
   --fg: #14162c;
   --muted: #40446b;
   --faint: #5a5e86;
+  --disabled-fg: #767ba3;
   --accent: #0a6690;
   --accent-fill: #4fcbff;
   --on-accent: #04202e;
@@ -66,6 +67,7 @@
     --fg: #f3f5ff;
     --muted: #c5c9ee;
     --faint: #a1a6d3;
+    --disabled-fg: #7075a8;
     --accent: #4fcbff;
     --accent-fill: #4fcbff;
     --on-accent: #04202e;
@@ -99,6 +101,7 @@
   --fg: #f3f5ff;
   --muted: #c5c9ee;
   --faint: #a1a6d3;
+  --disabled-fg: #7075a8;
   --accent: #4fcbff;
   --accent-fill: #4fcbff;
   --on-accent: #04202e;

@@ -1,6 +1,6 @@
 /*
- * Services screen: the stack card, the service table and the test side sheet. Tokens only; below 720px the table
- * stacks to one block per service with each cell's label in front (DASH-A11Y-007).
+ * Services screen: the stack card, the service table and the test side sheet. Tokens only; below 720px (narrow.css) the
+ * table stacks to one block per service with each cell's label in front (DASH-A11Y-007).
  */
 .stack-y { display: flex; flex-direction: column; gap: 12px; }
 .plain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -28,11 +28,3 @@
 .td-h { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
 .td-feed { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
 .td-feed > p { padding: 10px 12px; }
-
-@media (max-width: 719.98px) {
-  .svc-table, .svc-table tbody, .svc-table tr, .svc-table th, .svc-table td { display: block; }
-  .svc-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
-  .svc-table tr { padding: 10px 16px; border-bottom: 1px solid var(--line); }
-  .svc-table th, .svc-table td { padding: 4px 0; border-bottom: 0; }
-  .svc-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
-}

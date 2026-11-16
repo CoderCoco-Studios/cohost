@@ -22,7 +22,8 @@
 .st-plain { background: none; padding-left: 0; }
 .spin { transform-origin: 50% 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.cluster .st { white-space: normal; }
+.cluster .st { min-width: 0; max-width: 100%; display: block; overflow: hidden; text-overflow: ellipsis; }
+.cluster .st svg { display: inline-block; margin-right: 7px; vertical-align: -1px; }
 
 /* Buttons */
 .btn { appearance: none; font: inherit; font-weight: 550; color: var(--fg); background: var(--surface-2); border: 1px solid var(--ctl); border-radius: 999px; padding: 7px 16px; min-height: 36px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 7px; text-decoration: none; }
@@ -33,7 +34,8 @@
 .btn-ghost:hover { background: var(--surface-2); border-color: transparent; color: var(--fg); }
 .btn-sm { min-height: var(--target-dense); padding: 3px 12px; font-size: 12.5px; }
 .btn[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent); border-color: var(--accent); }
-.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn[disabled] { background: var(--surface-2); color: var(--disabled-fg); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
+.btn[disabled]:hover { border-color: var(--line); }
 .btn svg { width: 16px; height: 16px; flex: none; }
 
 /* Fields */
@@ -62,13 +64,14 @@ textarea.field { resize: vertical; min-height: 72px; }
 .on-text { color: var(--accent); }
 
 /* Range */
-.range { -webkit-appearance: none; appearance: none; width: 100%; max-width: 240px; height: 24px; margin: 0; background: transparent; cursor: pointer; flex: 1 1 120px; }
+.range { -webkit-appearance: none; appearance: none; width: 100%; max-width: 240px; min-width: 80px; height: 24px; margin: 0; background: transparent; cursor: pointer; flex: 1 1 120px; }
 .range::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: linear-gradient(to right, var(--accent-fill) var(--p, 50%), var(--ctl) var(--p, 50%)); }
 .range::-moz-range-track { height: 6px; border-radius: 999px; background: var(--ctl); }
 .range::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--accent-fill); }
 .range::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; margin-top: -7px; border-radius: 50%; background: var(--surface); border: 3px solid var(--accent); box-shadow: var(--thumb-shadow); }
 .range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 3px solid var(--accent); box-shadow: var(--thumb-shadow); }
-.range-wrap { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); max-width: 100%; flex-wrap: wrap; }
+.range-wrap { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); max-width: 100%; }
+.range-wrap .num { width: 6em; flex: none; }
 .range-wrap .end { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.5em; text-align: center; }
 
 /* Segmented group */
@@ -78,6 +81,17 @@ textarea.field { resize: vertical; min-height: 72px; }
 .seg span { display: block; padding: 4px 12px; border-radius: 8px; font-size: 13px; font-weight: 550; color: var(--muted); min-height: 28px; line-height: 20px; }
 .seg input:checked + span { background: var(--accent-tint); color: var(--accent); }
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* File picker: a real <input type=file> laid over a button-looking face, so the browser's picker, keyboard and semantics stay
+   and the chosen file's name and size are shown beside it. */
+.filepick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.filepick-btn { position: relative; display: inline-flex; }
+.filepick-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; margin: 0; }
+.filepick-face { pointer-events: none; }
+.filepick-btn:has(.filepick-input:focus-visible) .filepick-face { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filepick-btn:hover .filepick-face { border-color: var(--fg); }
+.filepick-name { font-size: 13px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.filepick-name.chosen { color: var(--fg); }
 
 /* Chips and tiles */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -100,20 +114,30 @@ textarea.field { resize: vertical; min-height: 72px; }
 .card-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .card-h h2 { font-size: 14px; font-weight: 650; }
 .card-b { padding: 16px; }
+.note-actions .btn-ghost { margin-left: -10px; }
 .note { border-radius: 10px; padding: 10px 12px; background: var(--surface-2); color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .note-warn { background: var(--warn-tint); color: var(--fg); }
 .note-bad { background: var(--bad-tint); color: var(--fg); }
 .note-build { background: var(--build-tint); color: var(--fg); }
 .note-ok { background: var(--ok-tint); color: var(--fg); }
-.connection-banner { margin: 0 var(--gutter); }
+.connection-banner { margin: 10px var(--gutter) 0; }
 .state { padding: 16px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .state-title { font-weight: 650; }
 .state-error { background: var(--bad-tint); border-radius: 10px; }
 .action-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 10px; border-radius: 10px; background: var(--bad-tint); color: var(--bad); font-size: 13px; }
 .action-ok { color: var(--ok); }
-.meter { display: inline-flex; align-items: center; gap: 8px; }
-.meter meter { width: min(120px, 100%); height: 10px; }
-.meter-text { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The memory-strength meter: a fixed-width bar and one line of text, the word then the percent. The fill is drawn from the
+   tokens, so it follows the theme; the word carries the meaning, the colour only repeats it (Strong ok, Fading warn, Weak bad). */
+.meter { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.meter meter { -webkit-appearance: none; appearance: none; width: min(120px, 100%); height: 10px; flex: none; border: 0; background: none; }
+.meter meter::-webkit-meter-bar { height: 10px; border: 1px solid var(--ctl); border-radius: 999px; background: var(--surface-2); }
+.meter meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--ok); }
+.meter meter::-webkit-meter-suboptimum-value { border-radius: 999px; background: var(--warn); }
+.meter meter::-webkit-meter-even-less-good-value { border-radius: 999px; background: var(--bad); }
+.meter meter::-moz-meter-bar { border-radius: 999px; background: var(--ok); }
+.meter meter:-moz-meter-sub-optimum::-moz-meter-bar { background: var(--warn); }
+.meter meter:-moz-meter-sub-sub-optimum::-moz-meter-bar { background: var(--bad); }
+.meter-text { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 details > summary { cursor: pointer; font-weight: 600; }
 
 /* Activity feed and service rows, shared by the Live and Services screens */
@@ -136,7 +160,8 @@ details > summary { cursor: pointer; font-weight: 600; }
 .dialog { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); width: calc(100% - 2 * var(--gutter)); max-width: 560px; padding: 0; }
 .dialog::backdrop { background: var(--scrim); }
 .dialog-h { padding: 16px 20px 0; display: flex; align-items: center; gap: 10px; }
-.dialog-h h2 { font-size: 16px; font-weight: 650; }
+.dialog-h h2 { font-size: 16px; font-weight: 650; flex: 1 1 auto; }
+.dialog-close { flex: none; margin-right: -8px; }
 .dialog-b { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 14px; }
 .dialog-f { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .sheet { margin: 0 0 0 auto; height: 100%; max-height: none; max-width: 520px; border-radius: 14px 0 0 14px; overflow: auto; }

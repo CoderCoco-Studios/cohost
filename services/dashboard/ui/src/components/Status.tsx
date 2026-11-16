@@ -18,7 +18,7 @@ const SHAPES: Record<StatusKind, ReactNode> = {
 // @spec DASH-THEME-004
 export function Status({ status, label, plain }: { status: StatusKind; label: string; /** No pill background (inline in a sentence). */ plain?: boolean }) {
   return (
-    <span className={`st st-${status}${plain ? " st-plain" : ""}`}>
+    <span className={`st st-${status}${plain ? " st-plain" : ""}`} title={label}>
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">{SHAPES[status]}</svg>
       {label}
     </span>

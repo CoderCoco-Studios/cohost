@@ -74,7 +74,7 @@ Four workflows watch every pull request and every push to `main`:
 
 | Workflow | Runs |
 | --- | --- |
-| `test` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, then `pnpm test`, with Redis 7.4 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
+| `test` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, then `pnpm test`, with Redis 8 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
 | `lid-check` | `node scripts/lid-check.mjs`: every `@spec` ID in code and tests exists and is defined once |
 | `compose-smoke` | `scripts/compose-smoke.sh` builds the service images and requires `salience`, `affect` and `avatar` to reach healthy, then runs the launch end-to-end test against a real Compose project |
 | `docs-build` | `pnpm docs:build`, the documentation site and its checks (pull requests only) |

@@ -1,6 +1,7 @@
+import type { Config } from "@cohost/config";
 import type { HeartbeatSpec } from "@cohost/shared";
 
-/** `off`: `connections.discord.enabled` is false. `no-token`: `DISCORD_TOKEN` is unset or empty. `run`: log in and hold the voice connection. */
+/** `off`: `connections.discord.enabled` is false. `no-token`: `connections.discord.token` is unset or empty. `run`: log in and hold the voice connection. */
 export type ConnectorPlan = "off" | "no-token" | "run";
 
 // @spec CONN-DISC-002, CONN-DISC-011
@@ -11,9 +12,9 @@ export function connectorPlan(enabled: boolean, hasToken: boolean): ConnectorPla
 }
 
 // @spec CONN-DISC-001
-/** The bot's token: `DISCORD_TOKEN`, and no other Discord token variable. */
-export function readToken(e: Record<string, string | undefined> = process.env): string {
-  return (e.DISCORD_TOKEN ?? "").trim();
+/** The bot's token: `connections.discord.token` of the loaded config, and no other source. */
+export function readToken(cfg: Config): string {
+  return cfg.connections.discord.token.trim();
 }
 
 /** What the heartbeat reads from the running connector. */

@@ -85,8 +85,6 @@ const PENDING = new Set<string>([
   "services/dashboard/src/uploads.ts::INJECT_MAX_IMAGE_BYTES",
   "services/dashboard/src/uploads.ts::INJECT_MAX_AUDIO_BYTES",
   "services/dashboard/src/uploads.ts::INJECT_TTL_MS",
-  // connector-discord WP: the bot token is connections.discord.token from the loaded config
-  "services/connector-discord/src/health.ts::DISCORD_TOKEN",
 ]);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

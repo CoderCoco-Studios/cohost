@@ -30,6 +30,8 @@ test("a section or key with no metadata gets its title, label and group from the
   assert.equal(bare.sections[0]!.title, "New part");
   assert.equal(bare.sections[0]!.group, "Brain", "the group comes from the first path segment");
   assert.deepEqual(navGroups(bare).map((g) => g.group), ["Brain"]);
+  const odd = parseSchema({ groups: ["Brain"], sections: [{ path: "brain.a", schema: { type: "object", properties: {} } }, { path: "extra.thing", schema: { type: "object", properties: {} } }] });
+  assert.deepEqual(navGroups(odd).map((g) => g.group), ["Brain", "Extra"], "a derived group the answer does not list follows the listed groups");
 });
 
 // @spec DASH-SET-004, DASH-SET-013, DASH-SET-016, DASH-SET-017, DASH-SET-018, DASH-SET-019, DASH-SET-020, DASH-SET-021, DASH-SET-022, DASH-SET-023, DASH-SET-024, DASH-SET-026, DASH-SET-029

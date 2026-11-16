@@ -53,7 +53,7 @@ const rowBtn = (name: RegExp | string) => within(listEl()).getByRole("button", {
 const panel = () => screen.getByRole("region", { name: /Viewer details/ });
 const open = async (user: ReturnType<typeof userEvent.setup>, name: RegExp | string = /Alice/) => { await user.click(await within(await screen.findByRole("list", { name: "Viewers" })).findByRole("button", { name })); await within(await screen.findByRole("region", { name: /Viewer details/ })).findByRole("heading", { level: 2 }); };
 
-// @spec DASH-VIEWERS-010
+// @spec DASH-VIEWERS-010, DASH-UI-030
 test("opening the screen loads the list with the viewers token: rows are buttons with name, REGULAR, set by you, VOICE and counts, all as text", async () => {
   const { app } = boot({ list: { viewers: [...LIST.viewers, { key: "discord:7", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 1, voice: true, discordId: "7" }] } });
   assert.equal(screen.getAllByRole("heading", { level: 1 }).length, 1);
@@ -509,7 +509,7 @@ test("a voice viewer is tagged and its panel links it to a chat viewer: a labell
   await waitFor(() => assert.ok(within(panel()).getByRole("heading", { level: 2, name: "Alice" })), { timeout: 2000 });
 });
 
-// @spec DASH-VIEWERS-021
+// @spec DASH-VIEWERS-021, DASH-UI-030
 test("a chat viewer lists its linked Discord ids with their display names; Unlink asks first, saying what is lost, then sends POST /viewers/links/:id/delete and reloads", async () => {
   const user = userEvent.setup();
   const detail = { ...DETAIL, links: [{ discordId: "88", discordDisplay: "Ali <b>" }] };

@@ -157,6 +157,16 @@ test("a shortcut does nothing while typing, with Ctrl, Alt or Meta held, or whil
   box.remove();
 });
 
+// @spec DASH-UI-005
+test("the header's Mute button is on every screen and no screen has a second one", () => {
+  for (const hash of ["#live", "#services", "#viewers", "#settings"]) {
+    const { unmount } = boot(hash);
+    assert.equal(screen.getAllByRole("button", { name: /^(Mute|Unmute) co-host$/ }).length, 1, `one mute control on ${hash}`);
+    assert.ok(screen.getByRole("banner").contains(screen.getByRole("button", { name: "Mute co-host" })), `it is the header's on ${hash}`);
+    unmount();
+  }
+});
+
 // @spec DASH-NAV-003, DASH-UI-005
 test("m toggles mute: it sends mute, the button shows pending until the control event arrives, then reads Unmute co-host", async () => {
   const user = userEvent.setup();
@@ -171,6 +181,15 @@ test("m toggles mute: it sends mute, the button shows pending until the control 
   const btn = screen.getByRole("button", { name: "Unmute co-host" });
   assert.equal(btn.getAttribute("aria-busy"), null);
   assert.equal(btn.getAttribute("aria-pressed"), "true");
+});
+
+// @spec DASH-UI-005, DASH-UI-015
+test("after a 2xx the header says Muted in a status region beside the Mute button", async () => {
+  const user = userEvent.setup();
+  boot("#live");
+  assert.ok(document.querySelector("header output") === null || document.querySelector("header output")!.textContent === "", "nothing is announced before the answer");
+  await user.click(screen.getByRole("button", { name: "Mute co-host" }));
+  assert.match(document.querySelector("header output")!.textContent!, /Muted/);
 });
 
 // @spec DASH-UI-005

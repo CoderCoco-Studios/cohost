@@ -237,3 +237,20 @@ test("changedSensitiveKeys decides unchanged from what the write would store: th
   assert.deepEqual(changedSensitiveKeys(EXAMPLE, "mouth", { "outputs.http.url": null }), ["mouth.outputs.http.url"], "null is a change against a key that holds a value, the empty string included");
   assert.deepEqual(changedSensitiveKeys(EXAMPLE, "mouth", { "outputs.http.url": 0 }), ["mouth.outputs.http.url"]);
 });
+
+// @spec DASH-CTRL-009
+test("a PUT /config/dashboard that changes allowed_hosts is refused without a token with the sensitive body; resubmitting it unchanged is not", async () => {
+  for (const mode of ["control", "token-only"] as const) {
+    const t = await boot(mode);
+    const before = t.text();
+    const r = await t.put("/config/dashboard", { etag: t.etag(), values: { allowed_hosts: ["streampc"] } });
+    assert.equal(r.status, 401, mode);
+    assert.deepEqual(((await r.json()) as Refusal).sensitive, ["dashboard.allowed_hosts"]);
+    assert.equal(t.text(), before);
+    assert.deepEqual(t.writes, []);
+  }
+  // control mode off: an ordinary save is open, so only a changed allowed_hosts asks for the token
+  const open = await boot("no-token");
+  const same = await open.put("/config/dashboard", { etag: open.etag(), values: { allowed_hosts: [], "inject.max_image_bytes": 4096 } });
+  assert.equal(same.status, 200, await same.clone().text());
+});

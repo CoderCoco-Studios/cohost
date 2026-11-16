@@ -16,7 +16,7 @@ function mount(app: TestApp = makeApp()) {
   const r = renderApp(<><button>Opener</button><AccessDialog /></>, app);
   const opener = screen.getByRole("button", { name: "Opener" });
   opener.focus();
-  return { app, opener, ...r };
+  return { ...r, opener };
 }
 
 /** Asks for a token as a waiting request would, and returns what the request will see. */
@@ -241,8 +241,9 @@ test("Stay unlocked is a radio group: This tab (the default) keeps the token in 
   ask(app, "control");
   assert.equal(tab().checked, true);
   assert.equal(browser().checked, false);
-  assert.match(dlg().textContent!, /stays until the page is locked|until you lock/i);
+  assert.match(dlg().textContent!, /forgotten when this tab closes/i);
   await user.click(browser());
+  assert.match(dlg().textContent!, /stays in this browser until the page is locked/i);
   await user.type(field(), "good");
   await user.click(unlock());
   await flush();
@@ -345,7 +346,7 @@ test("the Access panel lists both tokens with their state and what they unlock, 
 });
 
 // @spec DASH-ACC-007, DASH-ACC-008
-test("Lock removes the token from both storages and the panel shows Locked; another tab changing a token updates the panel", async () => {
+test("Lock removes the token from both storages and the panel shows Locked", async () => {
   const user = userEvent.setup();
   const { app } = mount();
   app.rt.access.setToken("control", "c", "tab");
@@ -385,13 +386,12 @@ test("the dialog explains that the .env variables are read once at start and tak
 });
 
 // @spec DASH-ACC-011
-test("the dialog is modal, focuses its field on open, closes as a cancel on Esc, and returns focus to the control that opened it", async () => {
-  const user = userEvent.setup();
+test("the dialog is modal, focuses its field on open, closes as a cancel on the cancel event (Esc), and returns focus to the control that opened it", async () => {
   const { app, opener } = mount();
   const result = ask(app, "control");
   assert.equal((dlg() as HTMLDialogElement).open, true);
   assert.ok(document.activeElement === field(), "focus is on the field");
-  await user.keyboard("{Escape}");
+  fireEvent(dlg(), new Event("cancel", { cancelable: true })); // what Esc fires in a browser
   await flush();
   assert.equal(result(), false);
   assert.ok(screen.queryByRole("dialog") === null, "closed");

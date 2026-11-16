@@ -5,6 +5,7 @@ import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/services.css";
 import "./styles/live.css";
+import "./styles/access.css";
 import { App } from "./app/App";
 import { isSinkLocation } from "./app/SinkView";
 import { AppProviders } from "./app/providers";

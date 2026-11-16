@@ -22,7 +22,7 @@ const canRecord = (): boolean => typeof MediaRecorder !== "undefined" && typeof 
  * `GET /config/dashboard`. The Advanced disclosure switches to Bus only (Text only, chat, speech or vision, no service
  * result). A service-level injection waits for its `inject.result`; a failure is an alert with the HTTP status and detail.
  */
-// @spec DASH-UI-009, DASH-UI-010, DASH-UI-015, DASH-UI-034
+// @spec DASH-UI-009, DASH-UI-010, DASH-UI-015, DASH-UI-034, DASH-UI-036
 export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer functions, for tests. */ timers?: Timers }) {
   const api = useApi();
   const track = useInjectStatus(timers);
@@ -41,6 +41,9 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const recorder = useRef<{ stop: () => void } | null>(null);
+  /** The microphone stream while one is open, and whether a `getUserMedia` request is pending (set before the await). */
+  const micStream = useRef<MediaStream | null>(null);
+  const starting = useRef(false);
   const mounted = useRef(true);
   const latest = useRef({ user, remember, limits });
   latest.current = { user, remember, limits };
@@ -52,8 +55,16 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
     return () => { live = false; };
   }, [api]);
 
-  // Leaving the screen while recording releases the microphone and sends nothing.
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; recorder.current?.stop(); }; }, []);
+  // Leaving the screen in any state (a permission prompt open, recording) releases the microphone and sends nothing.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      recorder.current?.stop();
+      micStream.current?.getTracks().forEach((t) => t.stop());
+      micStream.current = null;
+    };
+  }, []);
 
   const fileError = (f: File | null, limit: number): string | undefined => (f && f.size > limit ? tooLarge(f.name, f.size, limit) : undefined);
   const imageError = fileError(imageFile, limits.image), audioError = fileError(audioFile, limits.audio);
@@ -103,13 +114,18 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
 
   async function toggleRecording() {
     if (recorder.current) { recorder.current.stop(); return; }
+    if (starting.current) return; // a request for the microphone is already pending; a second press would open a second stream
+    starting.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current) { stream.getTracks().forEach((t) => t.stop()); return; } // the screen was left while the prompt was open
+      micStream.current = stream;
       const chunks: Blob[] = [];
       const rec = new MediaRecorder(stream);
       rec.ondataavailable = (e) => chunks.push(e.data);
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (micStream.current === stream) micStream.current = null;
         recorder.current = null;
         if (!mounted.current) return;
         setRecording(false);
@@ -124,7 +140,11 @@ export function TestInputs({ timers = BROWSER_TIMERS }: { /** Replaceable timer 
       setRecording(true);
     } catch (e) {
       recorder.current = null;
-      track.fail(`Microphone unavailable: ${e instanceof Error ? e.message : String(e)}`);
+      micStream.current?.getTracks().forEach((t) => t.stop());
+      micStream.current = null;
+      if (mounted.current) track.fail(`Microphone unavailable: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      starting.current = false;
     }
   }
 

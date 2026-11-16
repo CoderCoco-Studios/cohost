@@ -346,6 +346,72 @@ test("a refused microphone is reported and unmounting while recording releases i
   });
 });
 
+/** A `getUserMedia` the test answers later: counts the requests and the streams, and records which tracks were stopped. */
+function lateMicrophone() {
+  const state = { requests: 0, streams: [] as { stopped: number }[], resolvers: [] as (() => void)[] };
+  const getUserMedia = () => new Promise((resolve) => {
+    state.requests++;
+    state.resolvers.push(() => {
+      const stream = { stopped: 0 };
+      state.streams.push(stream);
+      resolve({ getTracks: () => [{ stop: () => { stream.stopped++; } }, { stop: () => { stream.stopped++; } }] });
+    });
+  });
+  return { state, getUserMedia };
+}
+
+// @spec DASH-UI-036
+test("pressing Record twice before the permission prompt is answered opens one microphone stream", async () => {
+  const late = lateMicrophone();
+  await withMicrophone(async () => {
+    const user = userEvent.setup();
+    boot();
+    await kind("Audio");
+    const record = within(card()).getByRole("button", { name: "Record from microphone" });
+    await user.click(record);
+    await user.click(record);
+    assert.equal(late.state.requests, 1, "the second press is ignored while the first request is pending");
+    await act(async () => { late.state.resolvers[0]!(); });
+    await within(card()).findByRole("button", { name: "Stop and send" });
+    assert.equal(late.state.streams.length, 1);
+    await user.click(within(card()).getByRole("button", { name: "Stop and send" }));
+    await waitFor(() => assert.equal(late.state.streams[0]!.stopped, 2, "every track of the one stream is stopped"));
+  }, late.getUserMedia);
+});
+
+// @spec DASH-UI-036
+test("leaving the screen while the permission prompt is open starts no recording and stops the stream's tracks when it arrives", async () => {
+  const late = lateMicrophone();
+  await withMicrophone(async () => {
+    const user = userEvent.setup();
+    const { app, unmount } = boot();
+    await kind("Audio");
+    await user.click(within(card()).getByRole("button", { name: "Record from microphone" }));
+    unmount();
+    await act(async () => { late.state.resolvers[0]!(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    assert.ok(FakeRecorder.last === undefined, "no recorder was created after the unmount");
+    assert.equal(late.state.streams[0]!.stopped, 2, "the late stream is released at once");
+    assert.equal(app.fetch.calls.filter((c) => c.path.startsWith("/inject/audio")).length, 0);
+  }, late.getUserMedia);
+});
+
+// @spec DASH-UI-036
+test("unmounting while recording stops every track of the stream even when the recorder never reports its stop", async () => {
+  const late = lateMicrophone();
+  await withMicrophone(async () => {
+    const user = userEvent.setup();
+    const { unmount } = boot();
+    await kind("Audio");
+    await user.click(within(card()).getByRole("button", { name: "Record from microphone" }));
+    await act(async () => { late.state.resolvers[0]!(); });
+    await within(card()).findByRole("button", { name: "Stop and send" });
+    FakeRecorder.last!.stop = function () { this.stopped = true; }; // a recorder whose stop event never arrives
+    unmount();
+    assert.equal(late.state.streams[0]!.stopped, 2);
+  }, late.getUserMedia);
+});
+
 // @spec DASH-A11Y-003
 test("every control in the panel has an accessible name", async () => {
   boot();

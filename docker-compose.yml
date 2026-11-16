@@ -13,12 +13,13 @@
 #   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
 #   docker compose run --rm reembed      # one-shot vector migration after changing the embedder (memory stopped first)
 
-x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
+x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLOY-COMPOSE-024
   restart: unless-stopped
   env_file: .env
-  # The environment every application service gets; `ears` and `mouth` extend it (`*ts-env`) to blank the Discord token
-  # that `.env` would otherwise hand them (DEPLOY-COMPOSE-023).
-  environment: &ts-env  # @spec DEPLOY-COMPOSE-003
+  # The environment every application service gets: the in-network addresses, and the one pass-through for an isolated
+  # start. Operator settings live in config/config.yaml and credentials in config/secrets.yaml (the ./config mount below);
+  # nothing else is interpolated here, and .env adds only the bootstrap variables of the HLD's "what lives where" table.
+  environment:  # @spec DEPLOY-COMPOSE-003
     REDIS_URL: redis://redis:6379
     DATABASE_URL: postgres://cohost:cohost@postgres:5432/cohost
     OLLAMA_URL: http://ollama:11434
@@ -26,21 +27,9 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
     CONFIG_DIR: /app/config
-    # Isolation preset the control plane sets on the `docker compose` process; unset falls through to config.yaml.
-    CHAT_SOURCE: ${CHAT_SOURCE:-}  # @spec DEPLOY-COMPOSE-017
-    MEMORY_STORE: ${MEMORY_STORE:-}
-    MEMORY_EMBEDDER: ${MEMORY_EMBEDDER:-}
-    LLM_PROVIDER: ${LLM_PROVIDER:-}
-    VOICE_ENGINE: ${VOICE_ENGINE:-}
-    AVATAR_DRIVER: ${AVATAR_DRIVER:-}
-    VISION_ENABLED: ${VISION_ENABLED:-}
-    VISION_ENGINE: ${VISION_ENGINE:-}
-    EARS_SOURCES: ${EARS_SOURCES:-}
-    EARS_HTTP_TOKEN: ${EARS_HTTP_TOKEN:-}  # @spec DEPLOY-COMPOSE-024
-    EARS_STT_ENGINE: ${EARS_STT_ENGINE:-}
-    MOUTH_DISCORD_ENABLED: ${MOUTH_DISCORD_ENABLED:-}
-    MOUTH_DRYRUN_ENABLED: ${MOUTH_DRYRUN_ENABLED:-}
-    CONNECTIONS_DISCORD_ENABLED: ${CONNECTIONS_DISCORD_ENABLED:-}
+    # The JSON preset the control plane sets on the `docker compose` process for an isolated start; empty leaves the
+    # literal values of config.yaml in charge (CTRL-RUNTIME-009).
+    COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
   volumes:
     - ./config:/app/config
   extra_hosts:
@@ -96,35 +85,20 @@ services:  # @spec DEPLOY-COMPOSE-001
       OLLAMA_FLASH_ATTENTION: "1"
       OLLAMA_KV_CACHE_TYPE: "q8_0"
 
-  # Pulls the models named in .env once ollama is up, then exits; exits non-zero if a pull of the
-  # LLM, vision or embedding model fails (no restart policy: a failed run stays visible in
-  # `docker compose ps`). NOTES_MODEL (viewer-note capture, default gemma3:4b) is pulled last and a
-  # failed pull of it is only a warning: capture then writes no notes.
-  models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011, DEPLOY-COMPOSE-014
-    image: curlimages/curl:8.23.0
-    env_file: .env
-    depends_on: [ollama]
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        until curl -sf http://ollama:11434/api/tags >/dev/null; do sleep 2; done
-        # pull <model>: returns 0 on success. -f: a non-2xx status fails; Ollama also reports a
-        # mid-stream pull error as a 200 {"error":...} line.
-        pull() {
-          echo "pulling $$1"
-          if curl -fsS http://ollama:11434/api/pull -d "{\"name\":\"$$1\"}" -o /tmp/pull.out && ! grep -q '"error"' /tmp/pull.out; then
-            tail -c 200 /tmp/pull.out; echo
-          else
-            echo "pull FAILED: $$1" >&2; tail -c 200 /tmp/pull.out >&2; echo >&2; return 1
-          fi
-        }
-        fail=0
-        for m in "$$LLM_MODEL" "$$VISION_MODEL" "$$EMBED_MODEL"; do
-          pull "$$m" || fail=1
-        done
-        notes="$${NOTES_MODEL:-gemma3:4b}"
-        pull "$$notes" || echo "WARNING: notes model $$notes not pulled; viewer-note capture will write no notes" >&2
-        exit $$fail
+  # Pulls the Ollama models config.yaml names (llm.model, llm.embed_model, vision.model and the hook models) once ollama is
+  # up, then exits (the config package's pull-models entry, built into the memory image). It exits non-zero if a pull of the
+  # LLM, vision or embedding model fails (no restart policy: a failed run stays visible in `docker compose ps`); a hook model
+  # that fails to pull is a warning, that hook then falls back to its rules. The model names come from config.yaml only.
+  models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011
+    build: { context: ., args: { SERVICE: memory } }
+    command: ["node", "packages/config/dist/pull-models.js"]
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      CONFIG_DIR: /app/config
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      ollama: { condition: service_started }
 
   tts:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
     image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0}
@@ -223,9 +197,6 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: ears } }
     profiles: [ears]  # @spec DEPLOY-COMPOSE-004
-    environment:  # @spec DEPLOY-COMPOSE-023
-      <<: *ts-env
-      DISCORD_TOKEN: ""  # ears holds no Discord client; the connector holds the one token
     depends_on:  # @spec DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
       stt: { condition: service_started }
@@ -237,13 +208,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: mouth } }
     profiles: [mouth]  # @spec DEPLOY-COMPOSE-004
-    environment:  # @spec DEPLOY-COMPOSE-023
-      <<: *ts-env
-      DISCORD_TOKEN: ""  # mouth holds no Discord client; the connector holds the one token
 
   # The Discord connector (CONN-*): the one bot login and voice connection, publishing source `discord` and playing sink
-  # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume. It is the one
-  # service that takes DISCORD_TOKEN, from `.env` (DEPLOY-COMPOSE-023).
+  # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume. The bot token is
+  # connections.discord.token in config/secrets.yaml, read through the shared ./config mount like every credential.
   connector-discord:  # @spec DEPLOY-COMPOSE-023
     <<: *ts-service
     build: { context: ., args: { SERVICE: connector-discord } }

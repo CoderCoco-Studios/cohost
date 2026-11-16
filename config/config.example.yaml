@@ -11,7 +11,8 @@ cohost:
 
 llm:
   # Who answers for the co-host. Everything else in the stack stays local whichever you pick.
-  #   ollama     local GPU (default). `docker compose up models` pulls the model named below.
+  #   ollama     local GPU (default). The `models` service (`docker compose up models`) pulls the Ollama models that
+  #              llm.model, llm.embed_model and vision.model name, and optionally the hook models; ears.stt_model is not pulled by it.
   #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
   #              (the API key is llm.openai.api_key in secrets.yaml)
   #   anthropic  Claude via the Claude API           (llm.claude.api_key in secrets.yaml)

@@ -78,13 +78,6 @@ const ALLOWED = new Set([
  * when its package lands and the list reaches empty. CFG-ENV-012 stays unchecked in the specs until it does.
  */
 const PENDING = new Set<string>([
-  // dashboard WP: the ports and upload limits are dashboard.* config keys, the Viewers and host settings stay in .env
-  "services/dashboard/src/host.ts::PORT",
-  "services/dashboard/src/host.ts::DASHBOARD_PORT",
-  "services/dashboard/src/host.ts::DASHBOARD_LAN_PORT",
-  "services/dashboard/src/uploads.ts::INJECT_MAX_IMAGE_BYTES",
-  "services/dashboard/src/uploads.ts::INJECT_MAX_AUDIO_BYTES",
-  "services/dashboard/src/uploads.ts::INJECT_TTL_MS",
 ]);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

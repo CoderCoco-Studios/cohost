@@ -30,20 +30,17 @@ test("mouth mounts only the shared config directory, publishes no port and waits
 });
 
 // @spec DEPLOY-COMPOSE-023
-test("connector-discord waits for redis alone, publishes no port, mounts only the shared config and takes .env (DISCORD_TOKEN); ears and mouth get the token blanked", () => {
+test("connector-discord waits for redis alone, publishes no port, mounts only the shared config, and no service has a Discord token entry (ears and mouth inherit the shared environment)", () => {
   const c = compose.services["connector-discord"]!;
   assert.deepEqual(Object.keys(c.depends_on ?? {}), ["redis"]);
   assert.deepEqual(c.depends_on!.redis, { condition: "service_healthy" });
   assert.equal(c.ports, undefined);
   assert.deepEqual(c.volumes, ["./config:/app/config"]);
   assert.deepEqual(c.profiles, ["discord"]);
-  assert.equal(c.env_file, ".env", "DISCORD_TOKEN reaches it from .env");
-  assert.equal(c.environment!.DISCORD_TOKEN, undefined, "nothing overrides it");
-  for (const name of ["ears", "mouth"]) {
-    const svc = compose.services[name]!;
-    assert.equal(svc.environment!.DISCORD_TOKEN, "", `${name} must not receive DISCORD_TOKEN from .env`);
-    assert.equal(svc.environment!.REDIS_URL, "redis://redis:6379", `${name} keeps the shared environment`);
-  }
+  const shared = (parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as { "x-ts-service": { environment: Record<string, string> } })["x-ts-service"].environment;
+  for (const name of ["ears", "mouth", "connector-discord"]) assert.deepEqual(compose.services[name]!.environment, shared, `${name} inherits the shared environment unchanged`);
+  const code = readFileSync(root("docker-compose.yml"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  assert.doesNotMatch(code, /DISCORD_TOKEN/);
 });
 
 // @spec DEPLOY-README-004

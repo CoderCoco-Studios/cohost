@@ -28,7 +28,7 @@ function ask(app: TestApp, kind: "control" | "viewers", action = "Restart voice"
 
 const dlg = () => screen.getByRole("dialog", { name: "Access" });
 const field = () => within(dlg()).getByLabelText(/token$/i, { selector: "input" }) as HTMLInputElement;
-const unlock = () => within(dlg()).getByRole("button", { name: "Unlock" });
+const unlock = () => within(dlg()).getByRole("button", { name: /^(Unlock|Try again)/ });
 
 const checkRoutes = (app: TestApp, good = "good") => {
   app.fetch.on("PUT /secrets/access-check", (c) => c.headers.authorization === `Bearer ${good}` ? { status: 404, json: { ok: false, detail: "unknown secret" } } : { status: 401, text: "unauthorized" });
@@ -243,7 +243,7 @@ test("Stay unlocked is a radio group: This tab (the default) keeps the token in 
   assert.equal(browser().checked, false);
   assert.match(dlg().textContent!, /forgotten when this tab closes/i);
   await user.click(browser());
-  assert.match(dlg().textContent!, /stays in this browser until the page is locked/i);
+  assert.match(dlg().textContent!, /keeps the token until you lock the page/i);
   await user.type(field(), "good");
   await user.click(unlock());
   await flush();
@@ -340,7 +340,7 @@ test("the Access panel lists both tokens with their state and what they unlock, 
   act(() => app.rt.access.markNotSetUp("viewers", false));
   assert.match(within(dlg()).getByRole("group", { name: "Viewers token" }).textContent!, /Locked/);
   assert.equal((within(viewers).getByRole("button", { name: /Lock/ }) as HTMLButtonElement).disabled, true, "nothing to lock");
-  await user.click(within(dlg()).getByRole("button", { name: "Close" }));
+  await user.click(within(dlg()).getByRole("button", { name: "Done" }));
   assert.ok(screen.queryByRole("dialog") === null, "closed");
   assert.equal(app.rt.access.state.get().panelOpen, false);
 });
@@ -439,4 +439,23 @@ test("an empty field cannot be submitted", async () => {
   await user.type(field(), "   ");
   assert.equal((unlock() as HTMLButtonElement).disabled, true);
   assert.equal(app.fetch.calls.length, 0);
+});
+
+// @spec DASH-ACC-008, DASH-ACC-009
+test("a viewers token that is not set up on the server shows the setup steps in the panel, and Check again clears the state once the server answers other than 403", async () => {
+  const user = userEvent.setup();
+  const { app } = mount();
+  app.rt.access.markNotSetUp("viewers", true);
+  app.fetch.on("GET /viewers", { status: 403, text: "locked: set VIEWERS_TOKEN" });
+  act(() => app.rt.access.openPanel());
+  const viewers = within(dlg()).getByRole("group", { name: "Viewers token" });
+  assert.ok(viewers.textContent!.includes(VIEWERS_CMD));
+  assert.equal(within(viewers).getAllByRole("listitem").length, 3);
+  await user.click(within(viewers).getByRole("button", { name: "Check again" }));
+  await flush();
+  assert.equal(app.rt.access.state.get().viewers.notSetUp, true);
+  app.fetch.on("GET /viewers", { status: 401, text: "unauthorized" });
+  await user.click(within(viewers).getByRole("button", { name: "Check again" }));
+  await flush();
+  assert.equal(app.rt.access.state.get().viewers.notSetUp, false);
 });

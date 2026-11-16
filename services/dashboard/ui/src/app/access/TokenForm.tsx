@@ -88,6 +88,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
         </Banner>
       ) : null}
       <p className="help">{UNLOCKS[kind]}</p>
+      <p className="help">The value of <code>{env}</code> in the <code>.env</code> file on the machine that runs cohost.</p>
 
       <div>
         <label className="label" htmlFor={`${id}-field`}>{label}</label>
@@ -105,7 +106,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
         <legend className="label">Stay unlocked</legend>
         <label className="check"><input type="radio" name={`${id}-scope`} checked={scope === "tab"} onChange={() => setScope("tab")} disabled={stored} />This tab</label>
         <label className="check"><input type="radio" name={`${id}-scope`} checked={scope === "browser"} onChange={() => setScope("browser")} disabled={stored} />This browser</label>
-        <p className="help">{scope === "browser" ? "The token stays in this browser until the page is locked, including after you close it." : "The token is forgotten when this tab closes."}</p>
+        <p className="help">{scope === "browser" ? "This browser keeps the token until you lock the page, so new tabs do not ask again." : "The token is forgotten when this tab closes."}</p>
       </fieldset>
 
       <div id={`${id}-result`}>
@@ -161,7 +162,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
           <Button type="button" variant="primary" onClick={onStored}>Continue</Button>
         ) : (
           <>
-            <Button type="submit" variant="primary" busy={busy} disabled={typed.trim() === ""}>Unlock</Button>
+            <Button type="submit" variant="primary" busy={busy} disabled={typed.trim() === ""}>{result?.kind === "rejected" ? "Try again" : action ? `Unlock and ${action.charAt(0).toLowerCase()}${action.slice(1)}` : "Unlock"}</Button>
             <Button onClick={onCancel}>Cancel</Button>
           </>
         )}

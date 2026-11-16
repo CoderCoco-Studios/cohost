@@ -6,8 +6,7 @@ import { Screen } from "../../ui/src/screens/viewers";
 import { AccessDialog } from "../../ui/src/app/AccessDialog";
 import type { FakeFetch } from "./helpers/fakes";
 
-type Reply = Parameters<FakeFetch["on"]>[1];
-type Plain = Exclude<Reply, (...a: never[]) => unknown>;
+type Plain = { status?: number; json?: unknown; text?: string };
 type Call = FakeFetch["calls"][number];
 
 const LIST = {
@@ -36,7 +35,7 @@ const CONFIG = {
 };
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-const authed = (reply: (c: Call) => Plain | Promise<Plain>, good = "tok"): Reply => (c) => c.headers.authorization === `Bearer ${good}` ? reply(c) : { status: 401, text: "unauthorized" };
+const authed = (reply: (c: Call) => Plain | Promise<Plain>, good = "tok"): ((c: Call) => Plain | Promise<Plain>) => (c) => c.headers.authorization === `Bearer ${good}` ? reply(c) : { status: 401, text: "unauthorized" };
 
 interface Boot { list?: unknown; details?: Record<string, unknown>; config?: unknown | false; token?: string | false; access?: boolean }
 function boot(o: Boot = {}) {
@@ -46,13 +45,13 @@ function boot(o: Boot = {}) {
   for (const [key, d] of Object.entries(o.details ?? { "1": DETAIL })) app.fetch.on(`GET /viewers/${encodeURIComponent(key)}`, authed(() => ({ json: d })));
   if (o.config !== false) app.fetch.on("GET /config/brain.memory", { json: o.config ?? CONFIG });
   const r = renderApp(<>{o.access ? <AccessDialog /> : null}<Screen route={{ view: "viewers" }} /></>, app);
-  return { app, ...r };
+  return r;
 }
 const vcalls = (app: TestApp) => app.fetch.calls.filter((c) => c.path.startsWith("/viewers"));
 const listEl = () => screen.getByRole("list", { name: "Viewers" });
 const rowBtn = (name: RegExp | string) => within(listEl()).getByRole("button", { name });
 const panel = () => screen.getByRole("region", { name: /Viewer details/ });
-const open = async (user: ReturnType<typeof userEvent.setup>, name: RegExp | string = /Alice/) => { await user.click(await within(await screen.findByRole("list", { name: "Viewers" })).findByRole("button", { name })); await screen.findByRole("heading", { name: "Core" }); };
+const open = async (user: ReturnType<typeof userEvent.setup>, name: RegExp | string = /Alice/) => { await user.click(await within(await screen.findByRole("list", { name: "Viewers" })).findByRole("button", { name })); await within(await screen.findByRole("region", { name: /Viewer details/ })).findByRole("heading", { level: 2 }); };
 
 // @spec DASH-VIEWERS-010
 test("opening the screen loads the list with the viewers token: rows are buttons with name, REGULAR, set by you, VOICE and counts, all as text", async () => {
@@ -66,7 +65,7 @@ test("opening the screen loads the list with the viewers token: rows are buttons
   const alice = rowBtn(/Alice/);
   assert.match(alice.textContent!, /REGULAR/);
   assert.match(alice.textContent!, /set by you/);
-  assert.match(alice.textContent!, /12 msgs/);
+  assert.match(alice.textContent!, /12 messages/);
   assert.match(alice.textContent!, /2 notes/);
   assert.ok(alice.querySelector(".wrap")?.textContent === "Alice", "the name is in an element with the class wrap");
   const bob = rowBtn(/Bob/);
@@ -88,7 +87,7 @@ test("search reloads the list 200 ms after typing stops, as one request, and ign
   let release!: () => void;
   const slow = new Promise<void>((r) => { release = r; });
   const answer = (q: string) => ({ json: { viewers: [{ key: q, display: `hit ${q}`, regular: false, regularManual: false, msgCount: 1, noteCount: 0 }] } });
-  app.fetch.on("GET /viewers?q=al", async (c) => { await slow; return authed(() => answer("al"))(c) as Plain; });
+  app.fetch.on("GET /viewers?q=al", async (c) => { await slow; return authed(() => answer("al"))(c); });
   app.fetch.on("GET /viewers?q=ali%20%26%20co", authed(() => answer("ali & co")));
   await user.type(screen.getByRole("searchbox", { name: /Search viewers/ }), "al");
   assert.equal(vcalls(app).length, first, "nothing is sent while typing");
@@ -228,13 +227,13 @@ test("the memory strength explainer sits above the notes and quotes the figures 
   const { app } = boot();
   await open(user);
   assert.equal(app.fetch.callsTo("GET /config/brain.memory").length >= 1, true);
-  const ex = within(panel()).getByRole("region", { name: "Memory strength" });
+  const ex = within(panel()).getByRole("region", { name: /What .memory strength. means/ });
   const t = ex.textContent!;
   assert.match(t, /how firmly the co-host remembers a note/);
   assert.match(t, /from 0 to 100%/);
   assert.match(t, /fades.*every 7 days.*every 60 days/s);
-  assert.match(t, /rises.*topic up again/s);
-  assert.match(t, /after 3 mentions/);
+  assert.match(t, /jumps back up.*topic up again/s);
+  assert.match(t, /After 3 mentions/);
   assert.match(t, /strongest notes first, 5 at most/);
   assert.match(t, /under 10%.*forgotten/s);
   assert.match(t, /under 30%.*recent/s);
@@ -248,12 +247,12 @@ test("when the config read fails the explainer keeps its sentences and leaves th
   const user = userEvent.setup();
   boot({ config: false });
   await open(user);
-  const t = within(panel()).getByRole("region", { name: "Memory strength" }).textContent!;
+  const t = within(panel()).getByRole("region", { name: /What .memory strength. means/ }).textContent!;
   assert.match(t, /how firmly the co-host remembers a note/);
   assert.match(t, /fades/);
-  assert.match(t, /rises/);
-  assert.match(t, /decides which notes are used/);
-  assert.ok(!/\d+ days|5 at most|after \d+ mentions|under \d+%/.test(t), `figures left out: ${t}`);
+  assert.match(t, /jumps back up/);
+  assert.match(t, /decides what gets used/);
+  assert.ok(!/\d+ days|5 at most|after \d+ mentions|under \d+%/i.test(t), `figures left out: ${t}`);
   assert.ok(!/halves every \d+/.test(within(panel()).getByText("has a <i>sister</i>").closest("li")!.textContent!), "a note does not quote a figure either");
 });
 
@@ -267,9 +266,9 @@ test("Delete opens a dialog with an optional reason and what a reason does; Canc
   await user.click(del());
   let dlg = screen.getByRole("dialog");
   assert.ok(within(dlg).getByLabelText(/Reason \(optional\)/));
-  assert.match(dlg.textContent!, /reason stops the co-host re-learning similar notes/i);
-  assert.match(dlg.textContent!, /no reason.*topic.*return.*weakly/is);
-  await user.click(within(dlg).getByRole("button", { name: "Cancel" }));
+  assert.match(dlg.textContent!, /stops re-learning similar notes/i);
+  assert.match(dlg.textContent!, /Without one.*topic.*come back.*weakly/is);
+  await user.click(within(dlg).getByRole("button", { name: "Keep note" }));
   assert.ok(screen.queryByRole("dialog") === null, "closed");
   assert.ok(document.activeElement === del(), "focus returns to the Delete button");
   assert.equal(app.fetch.callsTo("POST /viewers/1/notes/5/delete").length, 0);
@@ -347,7 +346,7 @@ test("the name field and Mark regular mark a name as regular before they have ch
   await screen.findByRole("list", { name: "Viewers" });
   await user.click(screen.getByRole("button", { name: "Mark regular" }));
   assert.equal(app.fetch.callsTo("POST /viewers/regular").length, 0);
-  const field = screen.getByLabelText(/Mark a name as regular/) as HTMLInputElement;
+  const field = screen.getByLabelText(/Mark someone as a regular/) as HTMLInputElement;
   const before = vcalls(app).length;
   await user.type(field, "  Newbie ");
   await user.click(screen.getByRole("button", { name: "Mark regular" }));
@@ -422,7 +421,7 @@ test("a 401 opens the Access dialog for the viewers token naming the action, the
   assert.match(dlg.textContent!, /Load viewers/);
   assert.match(dlg.textContent!, /VIEWERS_TOKEN/);
   await user.type(within(dlg).getByLabelText(/Viewers token/), " vt ");
-  await user.click(within(dlg).getByRole("button", { name: "Unlock" }));
+  await user.click(within(dlg).getByRole("button", { name: /^Unlock/ }));
   await screen.findByRole("list", { name: "Viewers" });
   assert.equal(app.session.getItem("cohost.viewersToken"), "vt");
   assert.equal(app.session.getItem("cohost.controlToken"), null);
@@ -447,7 +446,7 @@ test("cancelling the Access dialog leaves a locked state with a button that asks
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
   await settle();
   // Unlocked elsewhere (the panel): the screen loads. Then Lock empties it without asking.
-  app.rt.access.setToken("viewers", "vt", "tab");
+  act(() => app.rt.access.setToken("viewers", "vt", "tab"));
   await screen.findByRole("list", { name: "Viewers" });
   const asked = app.fetch.callsTo("GET /viewers").length;
   act(() => app.rt.access.lock("viewers"));
@@ -477,7 +476,7 @@ test("a 403 shows the setup steps, the copyable line and Check again in place of
   await settle();
   assert.equal(app.fetch.callsTo("GET /viewers").length, before + 1);
   assert.ok(screen.getByText(/not set up/i), "still set up as not");
-  app.rt.access.setToken("viewers", "tok", "tab");
+  act(() => app.rt.access.setToken("viewers", "tok", "tab"));
   app.fetch.on("GET /viewers", authed(() => ({ json: LIST })));
   await user.click(screen.getByRole("button", { name: "Check again" }));
   await screen.findByRole("list", { name: "Viewers" });

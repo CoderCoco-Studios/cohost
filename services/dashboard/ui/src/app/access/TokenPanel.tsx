@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Button } from "../../components/Button";
-import { useAccess } from "../../state/hooks";
+import { useAccess, useApi } from "../../state/hooks";
+import { SetupSteps } from "./SetupSteps";
 import type { TokenKind } from "../../state/types";
 import { TokenForm } from "./TokenForm";
-import { TOKEN_LABEL, UNLOCKS } from "./text";
+import { SETUP_WHY, TOKEN_LABEL, UNLOCKS } from "./text";
 
 function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSetUp?: boolean }): string {
   if (t.present) return `Unlocked · ${t.scope === "browser" ? "this browser" : "this tab"}`;
@@ -12,6 +13,7 @@ function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSe
 
 function TokenRow({ kind }: { kind: TokenKind }) {
   const { state, access } = useAccess();
+  const api = useApi();
   const [changing, setChanging] = useState(false);
   const t = state[kind];
   const label = TOKEN_LABEL[kind];
@@ -19,6 +21,14 @@ function TokenRow({ kind }: { kind: TokenKind }) {
     <div role="group" aria-label={label} className="token-row">
       <div className="row"><strong>{label}</strong><span className={`tag ${t.present ? "tag-set" : ""}`}>{stateText(t)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
+      {kind === "viewers" && t.notSetUp && !t.present && !changing ? (
+        <>
+          <p className="help">{SETUP_WHY}</p>
+          <SetupSteps>
+            <div><Button onClick={() => void api.get("/viewers").then((r) => { if (r.status !== 403) access.markNotSetUp("viewers", false); })}>Check again</Button></div>
+          </SetupSteps>
+        </>
+      ) : null}
       {changing ? (
         <TokenForm kind={kind} onStored={() => setChanging(false)} onCancel={() => setChanging(false)} />
       ) : (

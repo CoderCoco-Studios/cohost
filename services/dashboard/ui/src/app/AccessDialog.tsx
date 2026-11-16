@@ -25,7 +25,7 @@ export function AccessDialog() {
   }
   if (state.panelOpen) {
     return (
-      <Dialog open title="Access" onClose={() => access.closePanel()} footer={<Button onClick={() => access.closePanel()}>Close</Button>}>
+      <Dialog open title="Access" onClose={() => access.closePanel()} footer={<Button onClick={() => access.closePanel()}>Done</Button>}>
         <TokenPanel />
       </Dialog>
     );

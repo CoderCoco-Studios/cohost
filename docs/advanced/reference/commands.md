@@ -15,7 +15,7 @@ Three families of commands: the `pnpm` scripts in the root `package.json`, `coho
 | --- | --- |
 | `pnpm build` | `pnpm build:native`, then `tsc -b` |
 | `pnpm build:native` | Builds `crates/cohost-bus-node` with `cargo build --release` and copies the library to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. `@cohost/bus` cannot be imported without it |
-| `pnpm typecheck` | `tsc -b --noEmit`. `pnpm lint` runs the same check |
+| `pnpm typecheck` | `tsc -b`, which type-checks every project and writes the build output. `pnpm lint` runs the same check |
 | `pnpm test` | `pnpm build:native`, `tsc -b`, then every `test/*.test.ts` under `packages/*` and `services/*` with Node's runner through `tsx` |
 | `pnpm test:only` | The same tests without the build |
 | `pnpm dashboard` | Builds the documentation site first (`pnpm docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It is the one thing you start by hand |

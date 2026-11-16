@@ -26,7 +26,7 @@ The easiest Redis is the [Compose](../../start/glossary.md#docker-compose) one: 
 ```bash
 pnpm test         # build the native addon, tsc -b, then every test
 pnpm test:only    # the same tests without the build step
-pnpm typecheck    # tsc -b --noEmit
+pnpm typecheck    # tsc -b: type-checks every project
 ```
 
 `pnpm test` runs `pnpm build:native` and `tsc -b` first, which is what catches type errors, then runs every `test/*.test.ts` under `packages/*` and `services/*` with Node's `node:test` runner through `tsx`. Run `pnpm test:only` for a quick loop once the workspace is built.

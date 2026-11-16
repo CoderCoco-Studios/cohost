@@ -12,11 +12,11 @@
   "scripts": {
     "build:native": "cargo build --release -p cohost-bus-node && mkdir -p packages/bus/native && cp target/release/libcohost_bus_node.so packages/bus/native/cohost-bus.linux-x64-gnu.node",
     "build": "pnpm build:native && tsc -b",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc -b",
     "dashboard": "pnpm docs:build || echo 'pnpm dashboard: the docs build failed (see above); starting the dashboard anyway' >&2; tsc -b services/dashboard && node services/dashboard/dist/index.js",
     "cohostctl": "tsc -b packages/control && node packages/control/dist/cli.js",
     "dev": "pnpm -r --parallel --filter './services/*' dev",
-    "lint": "tsc -b --noEmit",
+    "lint": "tsc -b",
     "reflect": "pnpm --filter @cohost/memory reflect",
     "consolidate": "pnpm --filter @cohost/memory consolidate",
     "reembed": "pnpm --filter @cohost/memory reembed",

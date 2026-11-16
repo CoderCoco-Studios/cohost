@@ -57,7 +57,7 @@ The order matters. `@cohost/bus` loads that `.node` file when it is imported and
 | Command | What it does |
 | --- | --- |
 | `pnpm build` | The native addon, then `tsc -b` |
-| `pnpm typecheck` | `tsc -b --noEmit`; `pnpm lint` runs the same check |
+| `pnpm typecheck` | `tsc -b`, which type-checks every project and writes the build output; `pnpm lint` runs the same check |
 | `pnpm clean` | Removes every `dist/` |
 | `cargo test --workspace` | The Rust tests (CI also runs `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings`) |
 

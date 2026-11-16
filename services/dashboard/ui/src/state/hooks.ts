@@ -13,7 +13,7 @@ export function useFeed(): FeedState;
 export function useFeed<S>(select: (f: FeedState) => S): S;
 export function useFeed<S>(select?: (f: FeedState) => S): S | FeedState {
   const { feed } = useRuntime();
-  return useStore(feed.state, select ?? ((f) => f)) as S | FeedState;
+  return useStore(feed.state, (select ?? ((f: FeedState) => f)) as (f: FeedState) => S | FeedState);
 }
 
 /** Token state (never the token itself) and the access actions: `const { state, access } = useAccess()`. */

@@ -1,16 +1,19 @@
-import { EmptyState } from "../../components/StateBlocks";
 import { PageHeading } from "../../components/PageHeading";
 import type { ScreenProps } from "../../app/screens";
+import { ActivityCard } from "./ActivityCard";
 
 /**
- * The Live screen. A placeholder until its package is built: replace the body, keep the exports. Render exactly one
- * `<PageHeading>` (the shell moves focus to it on navigation) and put the screen's own files in this folder.
+ * The Live screen: the Activity feed, the avatar, Say a line, test inputs and Wipe context. Two columns above 1000 px
+ * (the feed, then a 380 px column), one column below with Say a line first (`styles/live.css`).
  */
-export function Screen({ route }: ScreenProps) {
+// @spec DASH-UI-005
+export function Screen(_props: ScreenProps) {
   return (
     <>
       <PageHeading>Live</PageHeading>
-      <EmptyState title="Not built yet">{route.section ? `Section: ${route.section}` : "This screen is built in its own package."}</EmptyState>
+      <div className="live-grid">
+        <ActivityCard />
+      </div>
     </>
   );
 }

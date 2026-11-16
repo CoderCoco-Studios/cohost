@@ -119,8 +119,10 @@ export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?:
   if (t === "string" && Array.isArray(schema.enum) && schema.enum.length > 0) {
     const options = labelled(schema.enum, widget);
     const segmented = !opts.inItem && options.length <= 4;
-    // An enum with no default is an optional setting (a module's provider override): it needs a choice that clears it.
-    if (segmented && schema.default === undefined) options.unshift({ value: "", label: "Not set" });
+    // An enum with no default is an optional setting (a module's provider override, the voice's language code): it needs a choice
+    // that clears it. The server's schema reads an empty string as "not set", so that is what the choice sends. A select shows it
+    // too, or an unset key would display its first choice as if it were chosen.
+    if (!opts.inItem && schema.default === undefined) options.unshift({ value: "", label: "Not set" });
     return { kind: segmented ? "segmented" : "select", options };
   }
   if (t === "integer" || t === "number") {
@@ -227,7 +229,7 @@ export function keyGroups(section: SectionModel): { id: string; title: string; k
 }
 
 /** What `GET /config/:section` says about one key. */
-export interface KeyRead { source?: string; editable?: boolean; value?: unknown; secret?: boolean; set?: boolean; isolation?: { name: string; overriddenBy: string[] } }
+export interface KeyRead { source?: string; editable?: boolean; value?: unknown; /** The key's text in the file. */ raw?: string; secret?: boolean; set?: boolean; isolation?: { name: string; overriddenBy: string[] } }
 
 const fmtDefault = (v: unknown): string | undefined => {
   if (typeof v === "boolean") return v ? "On" : "Off";

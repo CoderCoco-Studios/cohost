@@ -59,6 +59,12 @@ export const PERSONALITY_CAP = 64 * 1024;
 export const personalityBytes = (text: string): number => new TextEncoder().encode(text).length;
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+/**
+ * Whether a key as read holds `value`. "Not set" is written as an empty string, which the file's reader takes for no value at all:
+ * it reads back as a literal with no `value` and a raw text of `""`.
+ */
+const holds = (read: KeyRead | undefined, value: unknown): boolean =>
+  same(read?.value, value) || (value === "" && read?.source === "literal" && read.value === undefined && /^(""|'')$/.test(read.raw ?? ""));
 const blankSection = (): SectionState => ({ status: "loading", keys: {}, unknown: [], edits: {}, issues: [], conflict: false });
 const detailOf = (r: Extract<ApiResult<unknown>, { ok: false }>): string => (r.status === 0 ? r.detail : `${r.status} ${r.detail}`);
 
@@ -274,8 +280,8 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           // The answer was lost: read the section again and see whether the save happened (DASH-SET-012).
           const ok = await readSection(path, true);
           const after = state.get().sections[path]!;
-          if (ok && Object.entries(sent).every(([k, e]) => same(after.keys[k]?.value, e.value))) {
-            patchSection(path, (cur) => ({ ...cur, edits: Object.fromEntries(Object.entries(cur.edits).filter(([k, e]) => !same(after.keys[k]?.value, e.value))) }));
+          if (ok && Object.entries(sent).every(([k, e]) => holds(after.keys[k], e.value))) {
+            patchSection(path, (cur) => ({ ...cur, edits: Object.fromEntries(Object.entries(cur.edits).filter(([k, e]) => !holds(after.keys[k], e.value))) }));
             saved.push(path); // the section now holds the file's etag and values; no other section's etag is derived from a read
             continue; // nothing to restart is known; the read shows the saved values
           }

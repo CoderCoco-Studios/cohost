@@ -41,6 +41,6 @@ export default defineConfig({
     cssCodeSplit: false,
     modulePreload: false as const,
     assetsInlineLimit: 0,
-    rollupOptions: { output: { inlineDynamicImports: true } },
+    rolldownOptions: { output: { codeSplitting: false } },
   },
 });

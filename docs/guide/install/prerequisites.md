@@ -32,7 +32,7 @@ The installer on the next pages can put all of these on an Ubuntu or Debian mach
 | [Docker](../../start/glossary.md#docker) with the Compose plugin | Almost every cohost service runs in a [container](../../start/glossary.md#container). Docker runs them and [Docker Compose](../../start/glossary.md#docker-compose) starts the whole set. On WSL2 you can use Docker Desktop for Windows with its WSL integration turned on for your distribution, or Docker installed inside the distribution. |
 | NVIDIA container toolkit | Only if you have an NVIDIA GPU: it lets containers use the card. |
 | Node 26 or newer | The dashboard and the command line tools run on your machine directly, as Node programs. |
-| pnpm 10 | The package manager the project uses. The installer installs corepack with npm and enables pnpm through it. |
+| pnpm 12 | The package manager the project uses. The installer installs corepack with npm and enables pnpm through it. |
 | The Rust toolchain | cohost's connection to the shared message channel (the [bus](../../start/glossary.md#bus)) is a small compiled program. The project pins the exact Rust version in `rust-toolchain.toml` and the installer installs that one through rustup, along with a C compiler (`build-essential`). |
 | Python 3 (optional) | Only for the example server in the brain-hooks guide (a [hook](../../start/glossary.md#hook) is a spot where you can swap in your own server). |
 

@@ -36,7 +36,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    ```
 
    <details>
-   <summary>Already have Docker, Node 26, pnpm 10 and Rust?</summary>
+   <summary>Already have Docker, Node 26, pnpm 12 and Rust?</summary>
 
    You can skip the installer. Build the bus connection yourself before any program on your machine starts, because those programs cannot run without it:
 

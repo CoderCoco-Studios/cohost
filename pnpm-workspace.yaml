@@ -1,3 +1,12 @@
 packages:
   - packages/*
   - services/*
+
+# Install scripts: pnpm 11+ runs none unless allowed here. onnxruntime-node's script is
+# not run (it was never allowed); every dependency with a script must appear.
+allowBuilds:
+  "@snazzah/davey": true
+  esbuild: true
+  libsodium-wrappers: true
+  onnxruntime-node: false
+  opusscript: true

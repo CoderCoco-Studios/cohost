@@ -16,7 +16,7 @@ If you only want to run the co-host, you do not need this page: the [simple trac
 | Need | Version | Why |
 | --- | --- | --- |
 | Node | 26 or newer (`engines` in `package.json`) | Runs every service and the built-in `node:test` runner |
-| pnpm | 10 (`packageManager` in `package.json` pins it; Node 26 does not bundle corepack, so `npm install -g corepack && corepack enable` fetches it) | Installs the workspace |
+| pnpm | 12 (`packageManager` in `package.json` pins it; Node 26 does not bundle corepack, so `npm install -g corepack && corepack enable` fetches it) | Installs the workspace |
 | Rust toolchain | The exact version `rust-toolchain.toml` pins, with `rustfmt` and `clippy` | Builds the native [bus](../start/glossary.md#bus) addon |
 | A C compiler | Any (`build-essential` on Debian and Ubuntu) | The Rust linker calls it |
 | [Docker](../start/glossary.md#docker) | Any recent version | Runs [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), [Ollama](../start/glossary.md#ollama) and the speech servers |

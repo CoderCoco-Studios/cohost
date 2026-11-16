@@ -7,8 +7,8 @@
 FROM node:26-slim AS base
 WORKDIR /app
 COPY package.json ./
-# Node 26 no longer bundles corepack, so install it first.
-RUN npm install -g corepack && corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
+# Node 26 does not bundle corepack, so install it first.
+RUN npm install -g corepack@0.36.0 && corepack enable && corepack prepare "$(node -p "require('./package.json').packageManager")" --activate
 
 # Rust addon: plain cargo, no Node and no napi CLI. The tag is the toolchain rust-toolchain.toml pins
 # (lid-check fails when they differ). trixie = the Debian release node:26-slim is built on.

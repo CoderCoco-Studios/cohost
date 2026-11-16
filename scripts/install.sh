@@ -84,7 +84,7 @@ fi
 # The pnpm version is the "packageManager" field of package.json (the Dockerfile reads it too).  @spec DEPLOY-IMG-006
 pnpm_spec() { node -p "require('./package.json').packageManager"; }
 # end pnpm-version
-command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo npm install -g corepack; sudo corepack enable; corepack prepare "$(pnpm_spec)" --activate; }
+command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo npm install -g corepack@0.36.0; sudo corepack enable; corepack prepare "$(pnpm_spec)" --activate; }
 
 # ---------------------------------------------------------------- .env  @spec DEPLOY-INST-005, DEPLOY-INST-006
 if [[ ! -f .env ]]; then

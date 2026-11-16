@@ -96,14 +96,14 @@ llm:
 ## How you know it worked
 
 - `sh examples/model-stub/try.sh` prints two lines that match the expected file.
-- The dashboard's services tab shows `cortex` as `up`, and its `llm` dependency as `ok`. The [service health page](../../guide/operate/health.md) explains the columns.
-- A line sent with **test inputs** on the live tab is answered with `Hello from the stub model server.` and the emotion `happy`, as the [bus](../../start/glossary.md#bus) feed on the live tab shows.
+- The dashboard's Services screen shows `cortex` as `up`, and its `llm` dependency as `ok`. The [service health page](../../guide/operate/health.md) explains the columns.
+- A line sent with **Test inputs** on the Live screen is answered with `Hello from the stub model server.` and the emotion `happy`, as the [bus](../../start/glossary.md#bus) feed on the Live screen shows.
 - `pnpm test` runs this example against cohost's own client, so the stub keeps working as the provider changes.
 
 ## If it didn't
 
 - **`curl` prints nothing, or says it cannot connect.** The stub is not running, or the base URL has the wrong host or port. Start the stub again and check that it printed `listening on`.
 - **The first reply is a 404 or an HTML page.** The base URL is missing its `/v1` part, or the server mounts its routes elsewhere. cohost adds only `/models` and `/chat/completions` to the base URL.
-- **The `llm` dependency of `cortex` is `down`.** The `GET /models` check failed, or a reply failed: the server is unreachable, or it answered a status other than 200. A 401 or 403 usually means `llm.openai.api_key` is wrong. The cortex's detail column on the services tab names the address and the status.
+- **The `llm` dependency of `cortex` is `down`.** The `GET /models` check failed, or a reply failed: the server is unreachable, or it answered a status other than 200. A 401 or 403 usually means `llm.openai.api_key` is wrong. The cortex's detail column on the Services screen names the address and the status.
 - **The co-host stays silent after a good check.** Read `choices[0].message.content` in the second reply. An empty string, or a `null`, gives cohost nothing to say. Reasoning models sometimes spend the whole `max_tokens` thinking; raise `llm.max_tokens` or pick a model that does not.
 - **Hooks of kind `llm` fall back to their rules.** The stub's reply is not JSON, so a hook that asks for JSON ignores it. That is expected with the stub. See [Brain hooks](hooks.md) for what a hook does with an unusable reply.

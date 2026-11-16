@@ -1,0 +1,17 @@
+/* The Viewers screen (DASH-VIEWERS-010 to -023). The pane grid `.viewers-panes` is in components.css and the narrow stacking in narrow.css. */
+.vlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.vrow { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; min-width: 0; }
+.vrow:hover { background: var(--surface-2); }
+.vrow.sel { border-color: var(--accent); background: var(--accent-tint); }
+.vname { font-weight: 650; }
+.vtags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tag-regular { color: var(--accent); background: var(--accent-tint); }
+.viewers-detail-pane h2 { font-size: 18px; }
+.notes-group { display: flex; flex-direction: column; gap: 6px; }
+.notes-group h3, .explainer h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.note-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.note-text { flex: 1 1 14em; }
+.explainer { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+.quoted { padding: 8px 12px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 6px; }
+.back-btn { display: none; }

@@ -60,7 +60,7 @@ test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and
   await svc.probe();
   const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({
-    bus: new FakeBus(), log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], ...(control ? { control } : {}), stack: svc,
   }));
   const on = mk(setup.control);
@@ -105,7 +105,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
   assert.deepEqual(of("cortex").overrides, {});
   assert.equal("overrides" in of("redis"), false);
   const server = http.createServer(createDashboardHandler({
-    bus: new FakeBus(), log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc,
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -119,7 +119,7 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
   const rec = recordingLog();
   const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const server = http.createServer(createDashboardHandler({
-    bus: new FakeBus(), log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

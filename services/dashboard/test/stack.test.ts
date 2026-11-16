@@ -262,7 +262,7 @@ async function boot(env: NodeJS.ProcessEnv, statusAtBoot: StackStatus | null = u
   svc.attach(f.ops);
   if (statusAtBoot) await svc.probe();
   const server = http.createServer(createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: svc,
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

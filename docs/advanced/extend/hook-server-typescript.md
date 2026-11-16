@@ -49,9 +49,9 @@ You will have a small TypeScript server, with nothing to install, that answers t
      cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
    ```
 
-4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services tab has a Restart button on its row when the controls are on.
+4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services screen has a Restart button on its row when the controls are on.
 
-A hook server is not a service, so there is no [heartbeat](../../start/glossary.md#heartbeat) of its own to look for: it sends no heartbeat, and nothing on the Services tab lists it. The service that calls it shows its health, as the `hook.<name>` dependency. When your server is down, the region answers with its built-in rules and keeps going.
+A hook server is not a service, so there is no [heartbeat](../../start/glossary.md#heartbeat) of its own to look for: it sends no heartbeat, and nothing on the Services screen lists it. The service that calls it shows its health, as the `hook.<name>` dependency. When your server is down, the region answers with its built-in rules and keeps going.
 
 ## The whole server
 
@@ -74,7 +74,7 @@ A handler that throws does no harm. The server answers 500 with the message, and
 ## How you know it worked
 
 - `sh examples/modules/try.sh` prints the three lines above.
-- The Services tab shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
+- The Services screen shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
 - Stop the server: the co-host keeps talking with the rules answers, and the region logs one warning, not one for each call.
 
 ## If it didn't

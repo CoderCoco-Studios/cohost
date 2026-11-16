@@ -1,11 +1,14 @@
 import type http from "node:http";
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
-import { ConfigSchema, ensureFromExample, type Logger } from "@cohost/config";
+import { ConfigSchema, ensureFromExample, urls, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
+import { handleUi, locateUiDir } from "./static.js";
+import { handleOptions, type OptionsDeps } from "./options.js";
 import { handleMouthRouting } from "./routing.js";
+import { handleSecrets } from "./secrets.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
 import { uploadLimits, type UploadLimits } from "./uploads.js";
@@ -15,8 +18,8 @@ export interface DashboardDeps {
   /** `putUpload` stores injected uploads in Redis. */
   bus: Publisher & Pick<Bus, "putUpload">;
   log: Logger;
-  /** public/index.html, with __COHOST_NAME__ still in it. */
-  html: string;
+  /** The built UI (`dist-ui/`): `index.html` is read per request. Defaults to the one beside the server's `dist/`; tests pin it. */
+  uiDir?: string;
   cohostName: string;
   /** The voice service, which holds the audio. */
   voiceUrl: string;
@@ -35,6 +38,12 @@ export interface DashboardDeps {
    * token requirement on every mutating route (`POST /control`, `PUT /personality`).
    */
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
+  /** The control token whenever one is configured (`CONTROL_TOKEN`), in either control mode: the secret write and a sensitive config change need it even with control off. */
+  controlToken?: string;
+  /** The secrets file for `PUT /secrets`. Defaults to `config/secrets.yaml`; tests pin it. */
+  secretsFile?: () => string;
+  /** The pick-list routes' backing servers. Defaults to `urls.tts()` and `urls.ollama()` and a 3 s timeout; tests pin them. */
+  options?: Partial<OptionsDeps>;
   /** Path of `config.yaml` for the settings routes. Defaults to the loader's file, seeded from the example when missing. */
   configFile?: () => string;
   /** Replaces `config.yaml` atomically. Defaults to `writeFileAtomic`. */
@@ -67,21 +76,20 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     write: d.configWrite ?? defaultWrite,
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),
-    authorize: inject.authorize,
+    controlMode: !!d.control,
+    controlToken: d.control?.token ?? d.controlToken,
     body: readText,
   };
+  const secrets = { token: settings.controlToken, file: d.secretsFile, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
+  const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
-  const page = d.html.split("__COHOST_NAME__").join(d.cohostName); // every occurrence; split/join so `$` in the name is literal
+  const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
   return async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
-      // @spec DASH-HTTP-001
-      if (req.method === "GET" && url.pathname === "/") {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(page);
-        return;
-      }
+      // @spec DASH-HTTP-001, DASH-BUILD-003, DASH-BUILD-004, DASH-BUILD-005
+      if (handleUi(uiDir, d.cohostName, req, res, url)) return;
       // @spec DASH-DOCS-001, DASH-DOCS-011
       if (handleDocs(docsDir, req, res, url)) return;
       // @spec DASH-SINK-001
@@ -98,7 +106,11 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003
       if (await handleMouthRouting({ bus: d.bus, authorize: inject.authorize, body: readText }, req, res, url)) return;
-      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
+      // @spec DASH-SECRET-001, DASH-SECRET-002, DASH-SECRET-003, DASH-SECRET-004, DASH-SECRET-005, DASH-SECRET-006, DASH-SECRET-007, DASH-SECRET-008, DASH-SECRET-009, DASH-SECRET-010, DASH-SECRET-011, DASH-SECRET-012
+      if (await handleSecrets(secrets, req, res, url)) return;
+      // @spec DASH-OPT-001, DASH-OPT-002, DASH-OPT-003, DASH-OPT-004
+      if (await handleOptions(options, req, res, url)) return;
+      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, DASH-CTRL-009, DASH-CTRL-010
       if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {

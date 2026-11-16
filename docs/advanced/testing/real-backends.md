@@ -9,7 +9,7 @@ verified: f126b94
 
 The earlier testing pages run on stand-ins. This page is for the step after: swapping one stand-in at a time for the real thing, so that when something breaks you know which swap did it.
 
-The pattern: run the services from [One service on its own](isolated.md) with every stand-in on, then remove one stand-in (start the unit without **isolated**, or restore the real key), start that backend, and watch the service's mode go from `mock` to `live` on the Services tab.
+The pattern: run the services from [One service on its own](isolated.md) with every stand-in on, then remove one stand-in (start the unit without **Isolated**, or restore the real key), start that backend, and watch the service's mode go from `mock` to `live` on the Services screen.
 
 ## What you need
 
@@ -126,7 +126,7 @@ Needed only by `eyes` with `vision.enabled: true`, and for the stream itself; ev
 - A source named exactly as `vision.obs.source` (default `Game Capture`) that can produce a screenshot.
 - Reachable from the `eyes` container: `vision.obs.host: host.docker.internal` for OBS on the same Windows PC as Docker Desktop, or the gaming PC's LAN address for two PCs, with obs-websocket listening on the LAN and the firewall open on 4455.
 - A vision model pulled into Ollama (`vision.model`); `vision.engine: stub` replaces it with fixed text.
-- For the voice on stream: a [Browser Source](../../start/glossary.md#browser-source) with Control audio via OBS pointing at the dashboard's sink page, `http://localhost:<dashboard.port>/?sink=1` on the same PC or `http://<ai-pc>:<dashboard.lan_port>/?sink=1` from a second PC.
+- For the voice on stream: a [Browser Source](../../start/glossary.md#browser-source) with Control audio via OBS pointing at the dashboard's sink page, `http://localhost:<dashboard.port>/?sink=1` on the same PC or `http://<ai-pc-ip>:<dashboard.lan_port>/?sink=1` from a second PC (by IP address, or by a machine name listed in `dashboard.allowed_hosts`).
 
 Checks:
 
@@ -153,7 +153,7 @@ Also set `connections.discord.guild_id` and `connections.discord.voice_channel_i
 2. With the connector joined, undeafened and unmuted, speak in the channel. `speech.heard` appears on the feed with your display name and `source` `discord`. This is where the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are confirmed or found missing.
 3. Start `mouth`, send a chat line and hear the reply in the channel. Then stop `voice` and send another: `mouth` plays its cached fallback line, at most once per `mouth.fallback.min_interval_ms`.
 4. The co-host's own voice never becomes `speech.heard`; the connector ignores every bot account.
-5. Set `mouth.outputs.discord.enabled: false` in the Settings tab and restart `mouth`: it idles `off` and plays nothing. Kill and restart the connector: it rejoins and both halves resume.
+5. Set `mouth.outputs.discord.enabled: false` in the Settings screen and restart `mouth`: it idles `off` and plays nothing. Kill and restart the connector: it rejoins and both halves resume.
 6. Set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio` and see `speech.heard` with `source` `http`. Stop the connector and see only `deps.discord` go `down`.
 
 ## What has not been run

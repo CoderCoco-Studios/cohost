@@ -29,7 +29,7 @@ async function boot(o: Opts = {}) {
   const controller = new Proxy({}, { get: (_t, name) => () => { calls.push(String(name)); throw new Error("the settings routes must never drive a unit"); } }) as unknown as ServiceController;
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...o.stack };
   const server = http.createServer(createDashboardHandler({
-    bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => file, ...(o.write ? { configWrite: o.write } : {}),
@@ -150,6 +150,25 @@ test("a stale etag is a 409 carrying the current one, and nothing is written", a
   assert.equal(r.status, 409);
   assert.deepEqual(await r.json(), { ok: false, etag: sha(EXAMPLE + "\n# hand edit\n") });
   assert.equal(t.text(), EXAMPLE + "\n# hand edit\n");
+});
+
+// @spec MOD-CFG-003, MOD-CFG-008, DASH-SET-031
+test("the etag belongs to the file: every section read answers the same one, a write to any section replaces it for all, and the old one is then a 409", async () => {
+  const t = await boot();
+  const etagOf = async (section: string) => ((await (await t.get(`/config/${section}`)).json()) as { etag: string }).etag;
+  const first = await etagOf("voice");
+  assert.equal(await etagOf("dashboard"), first, "two sections, one file, one etag");
+  const w = await t.put("/config/voice", { etag: first, values: { speed: 1.2 } });
+  assert.equal(w.status, 200);
+  const next = ((await w.json()) as { etag: string }).etag;
+  assert.notEqual(next, first);
+  assert.equal(await etagOf("dashboard"), next, "a read of another section answers the etag the write answered");
+  assert.equal((await t.put("/config/dashboard", { etag: first, values: { port: 3010 } })).status, 409, "the etag from before the write is stale for every section");
+  const second = await t.put("/config/dashboard", { etag: next, values: { port: 3010 } });
+  assert.equal(second.status, 200, "the etag the first write answered is the one the second needs");
+  const reread = await (await t.get("/config/voice")).json() as { etag: string; keys: Record<string, { value: unknown }> };
+  assert.equal(reread.etag, ((await second.json()) as { etag: string }).etag);
+  assert.equal(reread.keys["speed"]!.value, 1.2, "Reload after a 409 reads the current file");
 });
 
 // @spec MOD-CFG-009

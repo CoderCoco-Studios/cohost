@@ -1,5 +1,6 @@
 node_modules/
 dist/
+services/dashboard/dist-ui/
 *.tsbuildinfo
 .env
 data/

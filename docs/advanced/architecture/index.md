@@ -80,6 +80,6 @@ The Decisions pages hold the design's decision documents in full. Each records a
 If you want to see the architecture working rather than read about it:
 
 - The [Bus events](../reference/events.md) page lists every message the services exchange, which is the first tenet, "the bus is the only seam", made concrete.
-- The Services tab of the [dashboard](../../guide/operate/dashboard.md) shows each service's health, mode and dependencies live.
+- The Services screen of the [dashboard](../../guide/operate/dashboard.md) shows each service's health, mode and dependencies live.
 - [Fake inputs](../testing/inject.md) shows how to feed the system a single [event](../../start/glossary.md#event) and watch it travel through the regions.
 - [Ways to extend cohost](../extend/index.md) lists which parts you can swap or add, and how.

@@ -1,0 +1,125 @@
+/*
+ * Design tokens: the Aurora theme (design: Theme: Aurora). Sky blue marks actions, soft violet marks "you are here",
+ * and the page background is a gradient from navy to violet. This file is the ONLY place a colour literal appears
+ * (DASH-THEME-001); every other stylesheet uses var(--token). The contrast of every pair is checked by
+ * test/ui/tokens.test.tsx (DASH-THEME-003): text 4.5:1, control borders and the focus ring 3:1.
+ *
+ * Light is the default. The dark set is declared twice because CSS cannot share a block between a media query and an
+ * attribute selector: once for the OS preference when the operator has not chosen (no data-theme="light"), once for an
+ * explicit Dark choice. The test asserts the two are identical.
+ *
+ * --accent / --current are the text-safe shades; --accent-fill / --current-fill are the bright fills that carry
+ * --on-accent / --on-current text. A fill never is a control's only boundary (--ctl borders keep that job).
+ */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f5f7ff;
+  --bg-grad: linear-gradient(115deg,#eef6ff 0%,#f5f7ff 50%,#f6effe 100%);
+  --surface: #ffffff;
+  --surface-2: #e9edfb;
+  --line: #d3d9f0;
+  --ctl: #7480a8;
+  --fg: #14162c;
+  --muted: #40446b;
+  --faint: #5a5e86;
+  --disabled-fg: #767ba3;
+  --accent: #0a6690;
+  --accent-fill: #4fcbff;
+  --on-accent: #04202e;
+  --accent-tint: #d9f1ff;
+  --current: #7a2fc4;
+  --current-fill: #c77dff;
+  --on-current: #24063a;
+  --current-tint: #f0e2ff;
+  --ok: #126a52;
+  --ok-tint: #d9e7e3;
+  --warn: #855600;
+  --warn-tint: #ebe4d6;
+  --bad: #b4232f;
+  --bad-tint: #f3dcde;
+  --build: #3650bd;
+  --build-tint: #dfe3f4;
+  --shadow: 0 12px 40px rgba(20,22,44,.16);
+  --lift: 0 1px 2px rgba(20,22,44,.05), 0 4px 14px rgba(20,22,44,.05);
+  --thumb-shadow: 0 1px 3px rgba(20,22,44,.35);
+  --scrim: rgba(20,22,44,.45);
+
+  /* Sizes and breakpoints (DASH-A11Y-006, DASH-A11Y-007). A media query cannot read a custom property, so the
+     narrow block in base.css repeats 719.98px; keep the two in step. */
+  --bp-narrow: 720px;
+  --target-dense: 30px;
+  --target-touch: 44px;
+  --gutter: 20px;
+  --radius: 14px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12142a;
+    --bg-grad: linear-gradient(115deg,#111a31 0%,#131530 50%,#1f1738 100%);
+    --surface: #1a1d39;
+    --surface-2: #24274a;
+    --line: #343868;
+    --ctl: #8a8ec2;
+    --fg: #f3f5ff;
+    --muted: #c5c9ee;
+    --faint: #a1a6d3;
+    --disabled-fg: #7075a8;
+    --accent: #4fcbff;
+    --accent-fill: #4fcbff;
+    --on-accent: #04202e;
+    --accent-tint: #16365a;
+    --current: #cf8cff;
+    --current-fill: #c77dff;
+    --on-current: #24063a;
+    --current-tint: #3a2a62;
+    --ok: #6fe0b0;
+    --ok-tint: #283c4c;
+    --warn: #ffd479;
+    --warn-tint: #3f3a43;
+    --bad: #ff8fa3;
+    --bad-tint: #3f2f4a;
+    --build: #9db8ff;
+    --build-tint: #2f3659;
+    --shadow: 0 12px 40px rgba(4,6,20,.6);
+    --lift: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(4,6,20,.35);
+    --thumb-shadow: 0 1px 3px rgba(4,6,20,.6);
+    --scrim: rgba(4,6,20,.65);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #12142a;
+  --bg-grad: linear-gradient(115deg,#111a31 0%,#131530 50%,#1f1738 100%);
+  --surface: #1a1d39;
+  --surface-2: #24274a;
+  --line: #343868;
+  --ctl: #8a8ec2;
+  --fg: #f3f5ff;
+  --muted: #c5c9ee;
+  --faint: #a1a6d3;
+  --disabled-fg: #7075a8;
+  --accent: #4fcbff;
+  --accent-fill: #4fcbff;
+  --on-accent: #04202e;
+  --accent-tint: #16365a;
+  --current: #cf8cff;
+  --current-fill: #c77dff;
+  --on-current: #24063a;
+  --current-tint: #3a2a62;
+  --ok: #6fe0b0;
+  --ok-tint: #283c4c;
+  --warn: #ffd479;
+  --warn-tint: #3f3a43;
+  --bad: #ff8fa3;
+  --bad-tint: #3f2f4a;
+  --build: #9db8ff;
+  --build-tint: #2f3659;
+  --shadow: 0 12px 40px rgba(4,6,20,.6);
+  --lift: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(4,6,20,.35);
+  --thumb-shadow: 0 1px 3px rgba(4,6,20,.6);
+  --scrim: rgba(4,6,20,.65);
+}

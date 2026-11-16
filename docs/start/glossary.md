@@ -145,7 +145,7 @@ The part of the brain that writes what the co-host says. It is the only [brain r
 
 ### dashboard {#dashboard}
 
-The cohost dashboard is the web page where you watch and control the co-host: a live feed, mute and say buttons, the personality editor, a services tab, and the Launch and Stop buttons. It runs on your machine directly, not in a [container](#container), so it can start everything else. See the [dashboard tour](../guide/operate/dashboard.md).
+The cohost dashboard is the web page where you watch and control the co-host: a live feed, mute and say buttons, the personality editor, a Services screen, and the Launch and Stop buttons. It runs on your machine directly, not in a [container](#container), so it can start everything else. See the [dashboard tour](../guide/operate/dashboard.md).
 
 ### Docker {#docker}
 
@@ -169,7 +169,7 @@ The graphics card. Running language and speech models on one is much faster than
 
 ### heartbeat {#heartbeat}
 
-A small "I am alive, and here is how I am doing" message every service sends every few seconds. The dashboard's Services tab and the container health checks read heartbeats to decide whether a service is up. See [service health](../guide/operate/health.md).
+A small "I am alive, and here is how I am doing" message every service sends every few seconds. The dashboard's Services screen and the container health checks read heartbeats to decide whether a service is up. See [service health](../guide/operate/health.md).
 
 ### hook {#hook}
 

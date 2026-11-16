@@ -1,6 +1,6 @@
 ---
 title: Service health
-description: How to read the Services tab and cohostctl status to tell which parts of the co-host are up, degraded, off or pretending.
+description: How to read the Services screen and cohostctl status to tell which parts of the co-host are up, degraded, off or pretending.
 track: simple
 verified: f126b94
 ---
@@ -26,7 +26,7 @@ The dashboard watches those heartbeats and works out a verdict for each service.
 
 ## The states
 
-Open the dashboard's **services** tab. The **state** column shows one of these:
+Open the dashboard's **Services** screen. The **State** column shows one of these:
 
 | State | What it means | Usual cause |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Open the dashboard's **services** tab. The **state** column shows one of these:
 | `crash-looping` | It started three times within 60 seconds. | It keeps dying at boot; look at its container logs. |
 | `unknown` | The dashboard has never heard from it. | It was never started, or it dies before its first heartbeat. |
 
-When several apply, the worst wins, in the order crash-looping, down, stale, degraded, up. The tab name shows a count such as `services (2)` and the heading says "2 need attention" when any service is `down`, `stale` or `crash-looping`.
+When several apply, the worst wins, in the order crash-looping, down, stale, degraded, up. The **Services** item in the header shows a count such as `2`, and the **Services** heading says "2 need attention", when any service is `down`, `stale` or `crash-looping`; those rows are listed first.
 
 A container that [Docker](../../start/glossary.md#docker) keeps restarting before it ever sends a heartbeat is also reported as `crash-looping`, so a service that dies at once does not hide as `unknown`.
 
@@ -61,7 +61,7 @@ A `—` in the column means no heartbeat has been seen.
 
 ## Live, from your dashboard
 
-When you open these docs from your own dashboard (the `docs` link in its header), this page shows your services as they are right now, refreshed every few seconds. The columns are the ones described on this page. Anywhere else, such as the public copy of the docs, you will see a short note instead, because only your dashboard knows how your services are doing.
+When you open these docs from your own dashboard (the **Docs** link in its header), this page shows your services as they are right now, refreshed every few seconds. The columns are the ones described on this page. Anywhere else, such as the public copy of the docs, you will see a short note instead, because only your dashboard knows how your services are doing.
 
 <LiveHealth />
 
@@ -94,24 +94,24 @@ eyes       down          -     never
 
 To look at one service, add its name, as in `pnpm cohostctl status cortex`. An unknown name is an error. This command only reads, so it is safe to run at any time, including while the dashboard is busy.
 
-## The stack pill
+## The stack status
 
-The `stack:` pill in the dashboard header is the system as a whole:
+The `Stack:` status in the dashboard header is the system as a whole:
 
-| Pill | Meaning |
+| Status | Meaning |
 | --- | --- |
-| `up` | Every long-running container is running and ready. |
-| `degraded` | At least one is not ready. |
-| `starting` | A Launch is in progress, or every container that is not ready is still passing its first health checks. |
-| `stopping` | A Stop is in progress. |
-| `down` | Nothing is running. |
-| `docker unavailable` | The dashboard cannot talk to Docker at all; the stack panel shows what Docker said. |
+| `Up` | Every long-running container is running and ready. |
+| `Degraded` | At least one is not ready. |
+| `Starting` | A Launch is in progress, or every container that is not ready is still passing its first health checks. |
+| `Stopping` | A Stop is in progress. |
+| `Down` | Nothing is running. |
+| `Docker unavailable` | The dashboard cannot talk to Docker at all; the **Stack** card shows what Docker said. |
 
-If [Redis](../../start/glossary.md#redis) is down, the panel also says the [bus](../../start/glossary.md#bus) is unreachable. It comes back when you Launch.
+If [Redis](../../start/glossary.md#redis) is down, the **Stack** card also says the [bus](../../start/glossary.md#bus) is unreachable. It comes back when you Launch.
 
 ## How you know it worked
 
-After **Launch**, the **services** tab fills up: every row turns `up` within a minute or two (the first Launch takes much longer while images build and models download). A row showing `mock` mode, or `off` for a service you did not set up, is expected.
+After **Launch**, the **Services** screen fills up: every row turns `up` within a minute or two (the first Launch takes much longer while images build and models download). A row showing `mock` mode, or `off` for a service you did not set up, is expected.
 
 ## If it didn't
 

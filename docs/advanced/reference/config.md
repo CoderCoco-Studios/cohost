@@ -20,7 +20,7 @@ Terms used in the tables, defined once in the [glossary](../../start/glossary.md
 | Literal values | Every value is written as a literal. A `${...}` placeholder anywhere in `config.yaml` is refused when the file loads, with a message naming the key, and the service does not start. A blank value means "use the schema's default" for most keys |
 | When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
 | Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
-| Editing | The dashboard's Settings tab edits one section at a time from the same schema, keeps your comments, never shows or writes secrets, refuses a save when the file changed under it, and offers to restart the services that read the section |
+| Editing | The dashboard's Settings screen edits one section at a time from the same schema, keeps your comments, shows a secret only as set or not set (and writes it to `secrets.yaml` through its own route, never to `config.yaml`), refuses a save when the file changed under it, and offers to restart the services that read the section |
 | Secrets | The eleven credential keys listed under [Credentials](#credentials-secrets-yaml) live in `config/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
 
 The defaults shown are the schema's, and where the example file sets a different value that is noted.
@@ -349,6 +349,7 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard` | map | The dashboard |
 | `dashboard.port` | `3000` | The port of the dashboard's full surface (page, controls, Launch and Stop). Read at the dashboard's next start |
 | `dashboard.lan_port` | `3001` | The port of the LAN listener (the sink page and audio for a second PC's OBS). Must differ from `dashboard.port`. Read at the dashboard's next start |
+| `dashboard.allowed_hosts` | `[]` | Machine names the dashboard accepts when another PC opens it by name instead of by IP address, such as `streampc` in the address of the second PC's OBS sink page. IP addresses and `localhost` always work. Read at the dashboard's next start. Changing it from the settings screen needs the control token, because it widens who may reach the dashboard |
 | `dashboard.inject` | map | The limits of the test-upload panel |
 | `dashboard.inject.max_image_bytes` | `8388608` | The largest image accepted, in bytes |
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |

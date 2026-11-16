@@ -12,7 +12,7 @@ The co-host does not answer every chat message. A part called [salience](../../s
 ## What you need
 
 - A running co-host. Start with [Try it with no accounts](../install/first-run.md) if you have not yet.
-- A text editor, or the dashboard's **settings** tab. The [dashboard tour](../operate/dashboard.md) shows the tab.
+- A text editor, or the dashboard's **Settings** screen. The [dashboard tour](../operate/dashboard.md) shows the screen.
 
 ## How it decides
 
@@ -40,7 +40,7 @@ Salience decides the moment a finished line of speech arrives (`trigger_on_speec
 
 ## Change the dials
 
-All of these live under `brain.salience` in `config/config.yaml`. The dashboard's **settings** tab edits the same file: pick the section, change a value, press **Validate**, then **Save**. It keeps your comments and never shows secrets. Settings apply when the services that read them restart, and after a save the page offers to restart them.
+All of these live under `brain.salience` in `config/config.yaml`. The dashboard's **Settings** screen edits the same file: pick the section, change a value, press **Check**, then **Save**. It keeps your comments and never shows a saved secret. Settings apply when the services that read them restart, and after a save the page offers to restart them.
 
 | You want | Change |
 | --- | --- |
@@ -95,9 +95,9 @@ The `vision` sense needs the screenshot sense running; the [OBS page](../connect
 
 ## How you know it worked
 
-- Send a chat line that mentions the co-host's name using **test inputs** on the dashboard's live tab. It should answer within a few seconds.
+- Send a chat line that mentions the co-host's name using **Test inputs** on the dashboard's Live screen. It should answer within a few seconds.
 - For a reflex, send a line that matches. The co-host answers with one of your lines at once.
-- The [bus](../../start/glossary.md#bus) feed on the live tab shows an `attention.focus` event each time salience decides to speak.
+- The [bus](../../start/glossary.md#bus) **Activity** feed on the **Live** screen shows an `attention.focus` event each time salience decides to speak.
 
 ## If it didn't
 

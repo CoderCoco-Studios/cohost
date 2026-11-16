@@ -10,6 +10,10 @@ import { guardFullSurface } from "../src/host.js";
 import { StackService } from "../src/stack.js";
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "docs-test-")));
+// The UI the handler serves at `/`: a one-line index, so these tests do not depend on a built bundle.
+const uiDir = join(tmp, "ui");
+mkdirSync(uiDir);
+writeFileSync(join(uiDir, "index.html"), "page");
 const dist = join(tmp, "dist");
 const put = (rel: string, body: string, root = dist) => {
   const f = join(root, rel);
@@ -54,7 +58,7 @@ mkdirSync(unbuilt);
 const rec = recordingLog();
 async function serve(docsDir: string, opts: { control?: boolean; guard?: boolean } = {}) {
   const handler = createDashboardHandler({
-    bus: new FakeBus(), log: rec.log, html: "page", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus: new FakeBus(), log: rec.log, uiDir, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
     docsDir,
@@ -89,7 +93,7 @@ test("the docs directory is found under the workspace root, or the working direc
   process.chdir(proj);
   try {
     const handler = createDashboardHandler({
-      bus: new FakeBus(), log: rec.log, html: "page", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+      bus: new FakeBus(), log: rec.log, uiDir, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
       loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
       stack: new StackService({ log: rec.log, bus: () => "connected" }),
     });

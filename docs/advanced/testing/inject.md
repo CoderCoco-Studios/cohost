@@ -19,12 +19,12 @@ Every service that talks to the outside world is a publisher and subscriber of [
 
 | Surface | Where | What runs | Needs |
 | --- | --- | --- | --- |
-| Service-level text, image or audio | The dashboard test panel, or `POST /inject/text` with `level: service`, `POST /inject/image`, `POST /inject/audio` | The real path through `chat`, `eyes` or `ears`: the dashboard publishes `inject.request`, the service answers with `inject.result`, and the upload travels through Redis | The target service running; a model or [STT](../../start/glossary.md#stt) server unless its stub engine is on |
+| Service-level text, image or audio | The **Test inputs** card on the **Live** screen, or `POST /inject/text` with `level: service`, `POST /inject/image`, `POST /inject/audio` | The real path through `chat`, `eyes` or `ears`: the dashboard publishes `inject.request`, the service answers with `inject.result`, and the upload travels through Redis | The target service running; a model or [STT](../../start/glossary.md#stt) server unless its stub engine is on |
 | Bus-level text | `POST /inject/text` with `level: bus` and `as` set to `chat`, `speech` or `vision` | Publishes `chat.message`, `speech.heard` or `vision.summary` directly with `injected: true`; no `inject.result` | Redis and the dashboard |
 | Any bus event | `node --import tsx scripts/dev/bus-pub.ts <type> '<json>'` | A zod-validated publish with source `dev-pub` | Redis only |
 | Operator controls | `POST /control` with `say`, `mute`, `unmute`, `forget_context`, `reload_personality`, `pause` or `resume`, and an optional `target` | The `control` event | Redis and the dashboard |
-| A unit's declared input | The test drawer on a service's row, or `POST /inject/event` with `{ unit, type, data }` | One bus event the service declares as an input, refused when that service is not running | The service running |
-| Stub backends | An isolated start of the unit (the `isolated` checkbox, or `pnpm cohostctl start <service> --isolated`), or the real keys `vision.engine: stub`, `ears.stt_engine: stub`, `voice.engine: stub`, `llm.provider: mock`, `chat.source: fake`, `mouth.outputs.dryrun.enabled: true` | The service's own code with the outside call replaced | Nothing outside |
+| A unit's declared input | The **Test** side panel on a service's row on the **Services** screen, or `POST /inject/event` with `{ unit, type, data }` | One bus event the service declares as an input, refused when that service is not running | The service running |
+| Stub backends | An isolated start of the unit (the **Isolated** switch in the **Start** dialog, or `pnpm cohostctl start <service> --isolated`), or the real keys `vision.engine: stub`, `ears.stt_engine: stub`, `voice.engine: stub`, `llm.provider: mock`, `chat.source: fake`, `mouth.outputs.dryrun.enabled: true` | The service's own code with the outside call replaced | Nothing outside |
 
 Injected events carry `injected: true`, so they are easy to tell apart on the feed. `remember` (off by default) decides whether `memory` keeps them. An injected `brain.say` is a test input only through `POST /inject/event`; the dashboard's `say` control is the operator's.
 
@@ -101,7 +101,7 @@ Add the dashboard (`pnpm dashboard`, then <http://localhost:3000>, the port bein
 curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'
 ```
 
-This answers 204 and puts a `control` event on the bus. The page plays audio only after you click **enable audio**, because browsers block autoplay.
+This answers 204 and puts a `control` event on the bus. The page plays audio only after you turn it on with the header's **Audio off** button (it then reads **Audio on**), because browsers block autoplay.
 
 ## Recipe C: a hand-made input for a downstream service
 
@@ -129,7 +129,7 @@ To force a line without scoring, add a `brain.salience.reflexes` entry to `confi
 ## How you know it worked
 
 - `bus-tail` prints the events you expect, in order, with the source of each service.
-- The Services tab shows the services you started with the mode `mock` where a stand-in is on.
+- The Services screen shows the services you started with the mode `mock` where a stand-in is on.
 - `inject.result` answers each service-level injection with `ok: true`, or a `detail` that says what was missing.
 
 ## If it didn't

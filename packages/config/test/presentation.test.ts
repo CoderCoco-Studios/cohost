@@ -165,19 +165,20 @@ test("each key's help is its JSON Schema description, and so is each property of
 });
 
 // @spec CFG-PRES-010, CFG-PRES-011
-test("sensitive marks exactly the eleven destination keys, the schema carries x-sensitive, and an unlisted url, host or base_url fails", () => {
-  const ELEVEN = [
+test("sensitive marks exactly the twelve trust-boundary keys, the schema carries x-sensitive, and an unlisted url, host or base_url fails", () => {
+  const TWELVE = [
     "llm.openai.base_url", "vision.obs.host", "vision.obs.port", "avatar.vtube_studio.host", "avatar.vtube_studio.port", "mouth.outputs.http.url",
     "brain.salience.module.url", "brain.affect.module.url", "brain.cortex.critic.url", "brain.memory.notes.capture.url", "brain.memory.notes.consolidator.url",
+    "dashboard.allowed_hosts",
   ];
   const marked = Object.entries(PRESENTATION.keys).filter(([, e]) => e.sensitive !== undefined);
-  assert.deepEqual(marked.map(([k]) => k).sort(), [...ELEVEN].sort());
+  assert.deepEqual(marked.map(([k]) => k).sort(), [...TWELVE].sort());
   for (const [, e] of marked) assert.equal(e.sensitive, true);
-  for (const k of ELEVEN) assert.equal(nodeOf(k)["x-sensitive"], true, `${k}: x-sensitive`);
-  for (const k of ALL_KEYS.filter((x) => !ELEVEN.includes(x))) assert.equal(nodeOf(k)["x-sensitive"], undefined, `${k}: not sensitive`);
+  for (const k of TWELVE) assert.equal(nodeOf(k)["x-sensitive"], true, `${k}: x-sensitive`);
+  for (const k of ALL_KEYS.filter((x) => !TWELVE.includes(x))) assert.equal(nodeOf(k)["x-sensitive"], undefined, `${k}: not sensitive`);
   const NAMES_NO_DESTINATION = ["ears.http.host", "ears.dir.path", "avatar.vmc.host"];
   for (const k of ALL_KEYS.filter((x) => /(^|\.)(url|host|base_url)$/.test(x))) {
-    assert.ok(ELEVEN.includes(k) || NAMES_NO_DESTINATION.includes(k), `${k} names a destination: mark it sensitive or list it as naming none`);
+    assert.ok(TWELVE.includes(k) || NAMES_NO_DESTINATION.includes(k), `${k} names a destination: mark it sensitive or list it as naming none`);
   }
 });
 

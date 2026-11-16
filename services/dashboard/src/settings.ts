@@ -2,7 +2,8 @@ import type http from "node:http";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
-import type { ServiceDef } from "@cohost/control";
+import { bearerOk, type ServiceDef } from "@cohost/control";
+import { changedSensitiveKeys, noTokenDetail } from "./sensitive.js";
 import type { StackSnapshot } from "./stack.js";
 
 export interface SettingsDeps {
@@ -13,8 +14,10 @@ export interface SettingsDeps {
   manifest: readonly ServiceDef[];
   /** The latest stack status. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
-  /** False (and the response sent) when a gated request lacks the control token. */
-  authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
+  /** True when `CONTROL_ENABLED=1`: every `PUT /config/:section` then needs the control token (DASH-CTRL-004). */
+  controlMode?: boolean;
+  /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
+  controlToken?: string;
   /** The request body as text, capped at 64 KiB (throws past the cap). */
   body: (req: http.IncomingMessage) => Promise<string>;
 }
@@ -30,8 +33,10 @@ const json = (res: http.ServerResponse, status: number, value: unknown): void =>
 const secretsSet = (d: SettingsDeps): string[] => setSecretPaths(join(dirname(d.file()), "secrets.yaml"));
 
 /** The declared sections, in manifest order, then `dashboard`. */
-const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new Set(manifest.flatMap((s) => s.config)), "dashboard"];
+export const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new Set(manifest.flatMap((s) => s.config)), "dashboard"];
 const readers = (manifest: readonly ServiceDef[], section: string): string[] => manifest.filter((s) => s.config.includes(section)).map((s) => s.id);
+/** The ids of the units that declare `section`, in manifest order. */
+export const unitsReading = readers;
 
 /**
  * The isolation overrides the running units that declare `section` were started with, from the latest stack status: override
@@ -48,6 +53,36 @@ export function runningOverrides(d: SettingsDeps, section: string): RunningOverr
     for (const name of Object.keys(byUnit.get(id) ?? {})) (out[name] ??= []).push(id);
   }
   return out;
+}
+
+type Body = { etag: string; values: Record<string, unknown> };
+
+/** The `{ etag, values }` body, `"notjson"` when the text is not JSON, undefined when it has another shape. */
+function parseBody(raw: string): Body | "notjson" | undefined {
+  let input: { etag?: unknown; values?: unknown };
+  try { input = JSON.parse(raw) as typeof input; } catch { return "notjson"; }
+  const { etag, values } = input ?? {};
+  if (typeof etag !== "string" || typeof values !== "object" || values === null || Array.isArray(values)) return undefined;
+  return { etag, values: values as Record<string, unknown> };
+}
+
+/** The sensitive keys a gated request's body would change; never throws, so the refusal it informs is always answered. */
+async function sensitiveInBody(d: SettingsDeps, req: http.IncomingMessage, section: string): Promise<string[]> {
+  try {
+    const body = parseBody(await d.body(req));
+    return body && body !== "notjson" ? changedSensitiveKeys(readFileSync(d.file(), "utf8"), section, body.values) : [];
+  } catch { return []; }
+}
+
+/** 401 for a missing or wrong token, 403 when no control token is configured at all; the paths, never the values. */
+function refuseSensitive(res: http.ServerResponse, token: string | undefined, sensitive: string[]): void {
+  const keys = sensitive.join(", ");
+  if (token === undefined) {
+    json(res, 403, { ok: false, detail: noTokenDetail(keys), sensitive });
+    return;
+  }
+  res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": "Bearer" });
+  res.end(JSON.stringify({ ok: false, detail: `changing ${keys} needs the control token (Authorization: Bearer)`, sensitive }));
 }
 
 /**
@@ -76,14 +111,27 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     return true;
   }
 
-  if (!d.authorize(req, res)) return true;
+  // @spec DASH-CTRL-004, DASH-CTRL-009, DASH-CTRL-010
+  const dryRun = url.searchParams.get("dryRun") === "1";
+  const tokenOk = d.controlToken !== undefined && bearerOk(req.headers.authorization, d.controlToken);
+  if (d.controlMode && !tokenOk) {
+    // The ordinary refusal; it names the sensitive keys when the body shows a change to one.
+    const sensitive = dryRun ? [] : await sensitiveInBody(d, req, name);
+    if (sensitive.length) refuseSensitive(res, d.controlToken, sensitive);
+    else { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); }
+    return true;
+  }
   const raw = await d.body(req); // over the cap this throws and nothing has been read or written
-  let input: { etag?: unknown; values?: unknown };
-  try { input = JSON.parse(raw) as typeof input; } catch { json(res, 400, { ok: false, issues: [{ path: "", message: "the body is not JSON" }] }); return true; }
-  const { etag, values } = input ?? {};
-  if (typeof etag !== "string" || typeof values !== "object" || values === null || Array.isArray(values)) {
+  const input = parseBody(raw);
+  if (input === "notjson") { json(res, 400, { ok: false, issues: [{ path: "", message: "the body is not JSON" }] }); return true; }
+  if (!input) {
     json(res, 400, { ok: false, issues: [{ path: "", message: "the body must be { etag: string, values: object }" }] });
     return true;
+  }
+  const { etag, values } = input;
+  if (!dryRun && !tokenOk) {
+    const sensitive = changedSensitiveKeys(readFileSync(d.file(), "utf8"), name, values);
+    if (sensitive.length) { refuseSensitive(res, d.controlToken, sensitive); return true; }
   }
 
   // Everything from here to the write is synchronous, so no other request can change the file in between.
@@ -94,7 +142,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
   const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d), runningOverrides(d, name));
   if (!edit.ok) { json(res, 400, { ok: false, issues: edit.issues }); return true; }
   const warnings = edit.warnings;
-  if (url.searchParams.get("dryRun") === "1") { json(res, 200, { ok: true, dryRun: true, warnings }); return true; }
+  if (dryRun) { json(res, 200, { ok: true, dryRun: true, warnings }); return true; }
   try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(String((e as Error).message ?? e)); return true; }
 
   const stack = d.stack();

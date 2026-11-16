@@ -47,7 +47,7 @@ Yes: `cohost.name` and `cohost.streamer` in `config/config.yaml`.
 
 ## Does it remember viewers between streams?
 
-Yes, with the database running. It remembers who is a regular and keeps short, fading notes, and you can read, correct and delete all of it on the viewers tab. See [Memory and viewer notes](tune/memory.md). In mock mode nothing is kept.
+Yes, with the database running. It remembers who is a regular and keeps short, fading notes, and you can read, correct and delete all of it on the Viewers screen. See [Memory and viewer notes](tune/memory.md). In mock mode nothing is kept.
 
 ## How do I make it talk less, or more?
 
@@ -63,7 +63,7 @@ Each reply passes through hearing, deciding, writing and speaking, and the writi
 
 ## Is it safe to open the dashboard to other computers?
 
-Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. If you do, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
+Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. Either listener answers only requests that address it by IP address, `localhost` or a name you list in `dashboard.allowed_hosts`. If you open the full dashboard to the network, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
 
 ## Where are my files?
 

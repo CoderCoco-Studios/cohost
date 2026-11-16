@@ -55,12 +55,14 @@ test("ports: the full surface listens on dashboard.port and the LAN listener on 
 });
 
 // @spec DASH-HOST-002
-test("the LAN allow-list is exactly GET /, GET /audio/*, POST /sink, any /health", () => {
-  const yes: [string, string][] = [["GET", "/"], ["GET", "/audio/abc.wav"], ["POST", "/sink"], ["GET", "/health"], ["POST", "/health"], ["DELETE", "/health"]];
+test("the LAN allow-list is exactly GET /, GET and HEAD /assets/* and /favicon.svg, GET /audio/*, POST /sink, any /health", () => {
+  const yes: [string, string][] = [["GET", "/"], ["GET", "/audio/abc.wav"], ["GET", "/assets/index-abc.js"], ["HEAD", "/assets/index-abc.css"], ["GET", "/favicon.svg"], ["HEAD", "/favicon.svg"], ["POST", "/sink"], ["GET", "/health"], ["POST", "/health"], ["DELETE", "/health"]];
   const no: [string, string][] = [
     ["POST", "/"], ["GET", "/sink"], ["POST", "/audio/x"], ["GET", "/uploads/ab12"], ["POST", "/uploads/x"], ["GET", "/stack"], ["POST", "/stack/launch"],
     ["GET", "/services"], ["GET", "/services/control"], ["POST", "/services/cortex/restart"], ["GET", "/personality"], ["PUT", "/personality"],
     ["POST", "/control"], ["POST", "/inject/text"], ["GET", "/viewers"], ["GET", "/ws"], ["GET", "/index.html"], ["GET", "/healthz"],
+    ["POST", "/assets/x.js"], ["PUT", "/favicon.svg"], ["DELETE", "/assets/x.js"], ["GET", "/assets"], ["GET", "/favicon.ico"], ["GET", "/cohost/assets/a.js"],
+    ["PUT", "/secrets/discord.token"], ["PUT", "/secrets"], ["GET", "/options/voices"], ["GET", "/options/models"], ["PUT", "/config/dashboard"],
   ];
   for (const [m, p] of yes) assert.equal(lanAllows(m, p), true, `${m} ${p}`);
   for (const [m, p] of no) assert.equal(lanAllows(m, p), false, `${m} ${p}`);
@@ -83,14 +85,34 @@ test("the LAN handler delegates the allowed requests and answers every other req
   assert.deepEqual(seen, ["GET /?sink=1", "GET /audio/a.wav"]);
 });
 
+// @spec DASH-HOST-002
+test("GET / on the LAN listener without the sink parameter is redirected to /?sink=1 and never reaches the handler; with any sink parameter it is served; the other LAN rules are unchanged", async () => {
+  const seen: string[] = [];
+  const h = lanHandler((req, res) => { seen.push(`${req.method} ${req.url}`); res.writeHead(200); res.end("ok"); });
+  const server = http.createServer(h);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  after(() => server.close());
+  const port = (server.address() as net.AddressInfo).port;
+  for (const path of ["/", "/?", "/?x=1", "/#settings"]) {
+    const r = await new Promise<{ status: number; location?: string }>((resolve, reject) => {
+      http.get({ host: "127.0.0.1", port, path }, (res) => { res.resume(); res.on("end", () => resolve({ status: res.statusCode ?? 0, location: res.headers.location })); }).on("error", reject);
+    });
+    assert.deepEqual([r.status, r.location], [302, "/?sink=1"], path);
+  }
+  assert.deepEqual(seen, [], "the redirect runs nothing");
+  for (const path of ["/?sink=1", "/?sink", "/?sink=", "/?x=1&sink=0"]) assert.equal((await raw(port, path)).status, 200, path);
+  assert.equal((await raw(port, "/", { method: "POST" })).status, 404, "POST / is still 404");
+  assert.equal((await raw(port, "/", { method: "HEAD" })).status, 404, "HEAD / is still 404");
+});
+
 // @spec DASH-HOST-001
 test("both listeners share one handler; the LAN listener is separate from the full-surface one", async () => {
   const t = await boot();
   assert.notEqual(t.l.fullPort, t.l.lanPort);
   assert.equal((await raw(t.l.fullPort, "/stack")).body, "full");
-  assert.equal((await raw(t.l.lanPort, "/")).body, "full");
+  assert.equal((await raw(t.l.lanPort, "/?sink=1")).body, "full");
   assert.equal((await raw(t.l.lanPort, "/stack")).status, 404);
-  assert.deepEqual(handled, ["GET /stack", "GET /"]);
+  assert.deepEqual(handled, ["GET /stack", "GET /?sink=1"]);
 });
 
 // @spec DASH-HOST-001
@@ -128,15 +150,18 @@ test("loopback-bound full surface: a foreign Host is 403 on every request and /w
   }), /403/);
 });
 
-// @spec DASH-HOST-004
-test("a full surface bound to a non-loopback address does not check Host", async () => {
+// @spec DASH-HOST-009
+test("a full surface bound to a non-loopback address applies the address-literal Host rule, with dashboard.allowed_hosts", async () => {
   const seen: string[] = [];
-  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true });
+  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
-  assert.equal((await raw((server.address() as net.AddressInfo).port, "/", { headers: { host: "my-pc.lan:3000" } })).status, 200);
-  assert.deepEqual(seen, ["hit"]);
+  const port = (server.address() as net.AddressInfo).port;
+  assert.equal((await raw(port, "/", { headers: { host: "my-pc.lan:3000" } })).status, 200);
+  assert.equal((await raw(port, "/", { headers: { host: "192.168.1.5:3000" } })).status, 200);
+  assert.equal((await raw(port, "/", { headers: { host: "rebind.evil.example:3000" } })).status, 403);
+  assert.deepEqual(seen, ["hit", "hit"]);
 });
 
 // @spec DASH-HOST-005
@@ -144,7 +169,10 @@ test("Origin check: same host and port (defaults explicit) passes; null, unparsa
   assert.equal(originAllowed("http://localhost:3000", "localhost:3000"), true);
   assert.equal(originAllowed("http://127.0.0.1:3000", "127.0.0.1:3000"), true);
   assert.equal(originAllowed("http://example.test", "example.test:80"), true);
-  assert.equal(originAllowed("https://example.test", "example.test:443"), true);
+  // the dashboard serves plain HTTP: an https Origin is never its own
+  assert.equal(originAllowed("https://example.test", "example.test:443"), false);
+  assert.equal(originAllowed("https://1.2.3.4:3001", "1.2.3.4:3001"), false);
+  assert.equal(originAllowed("http://1.2.3.4:3001", "1.2.3.4:3001"), true);
   assert.equal(originAllowed("http://example.test:80", "example.test"), true);
   for (const [o, h] of [["null", "localhost:3000"], ["not a url", "localhost:3000"], ["http://evil.example", "localhost:3000"], ["http://localhost:3001", "localhost:3000"], ["http://localhost", "localhost:3000"], ["http://localhost:3000", undefined]] as const) {
     assert.equal(originAllowed(o, h), false, `${o} vs ${h}`);
@@ -155,7 +183,7 @@ test("Origin check: same host and port (defaults explicit) passes; null, unparsa
 test("a POST, PUT or DELETE with a foreign Origin is 403 and runs nothing; GET, and a request with no Origin, are unaffected", async () => {
   const t = await boot();
   const host = `127.0.0.1:${t.l.fullPort}`;
-  for (const method of ["POST", "PUT", "DELETE"]) {
+  for (const method of ["POST", "PUT", "DELETE", "PATCH", "PROPFIND"]) {
     assert.equal((await raw(t.l.fullPort, "/control", { method, headers: { host, origin: "http://evil.example" } })).status, 403, method);
     assert.equal((await raw(t.l.fullPort, "/control", { method, headers: { host, origin: "null" } })).status, 403, method);
   }
@@ -166,8 +194,8 @@ test("a POST, PUT or DELETE with a foreign Origin is 403 and runs nothing; GET, 
 });
 
 // @spec DASH-HOST-005
-test("Origin applies on a non-loopback full surface too (but Host does not)", async () => {
-  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true });
+test("Origin applies on a non-loopback full surface too", async () => {
+  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

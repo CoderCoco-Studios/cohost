@@ -71,7 +71,7 @@ export function runNowPlaying(
   const state: FileState = {};
   return runService<NowPlayingBus>({
     service: "now-playing",
-    // The Services tab shows `degraded`, with the reason, while the file cannot be read.
+    // The Services screen shows `degraded`, with the reason, while the file cannot be read.
     health: () => ({
       service: "now-playing",
       mode: "live",

@@ -124,7 +124,7 @@ option that keeps the control surface host-local by construction by default
 runs cohost on a dedicated PC and opens the dashboard from another machine,
 with the token requirement holding the stack actions and viewer notes behind
 their secrets. The cost is one port and a second-PC OBS source at
-`http://<ai-pc>:3001/?sink=1`.
+`http://<ai-pc-ip>:3001/?sink=1`, by IP address or by a name listed in `dashboard.allowed_hosts` (DASH-HOST-009).
 
 The selection holds on the owner's first test machine, a single PC running
 WSL2 with Docker Desktop and no second box: the dashboard in the distro is

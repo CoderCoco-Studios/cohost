@@ -9,7 +9,7 @@ verified: f126b94
 
 You will have a small service running on the [bus](../../start/glossary.md#bus): it watches a text file, the "now playing" file many streaming setups write, and tells the co-host when the song changes. It is built the way every cohost service is, so after running it you will know what a service must do, and which files turn it from an example into a module of the repository.
 
-A service built on `@cohost/bus` gets what the bus gives: every [event](../../start/glossary.md#event) it publishes is checked against the event's schema, its [heartbeat](../../start/glossary.md#heartbeat) shows on the dashboard's Services tab, and a manifest entry lets the dashboard start, stop and configure it. A program that talks to [Redis](../../start/glossary.md#redis) some other way gets none of that.
+A service built on `@cohost/bus` gets what the bus gives: every [event](../../start/glossary.md#event) it publishes is checked against the event's schema, its [heartbeat](../../start/glossary.md#heartbeat) shows on the dashboard's Services screen, and a manifest entry lets the dashboard start, stop and configure it. A program that talks to [Redis](../../start/glossary.md#redis) some other way gets none of that.
 
 ## What you need
 
@@ -32,7 +32,7 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 
    <<< @/../examples/service/now-playing.ts#entry
 
-   A few choices are worth noticing. The service publishes `vision.summary`, an event type that already exists, which the brain reads as something the co-host noticed. It reads `brain.say` through a [consumer group](../../start/glossary.md#consumer-group) of its own, started at the newest entry, so it never replays old lines. And the heartbeat's `file` dependency is `down` whenever the file cannot be read, so the Services tab shows the service as `degraded` and names the dependency, the way a real service reports a missing account.
+   A few choices are worth noticing. The service publishes `vision.summary`, an event type that already exists, which the brain reads as something the co-host noticed. It reads `brain.say` through a [consumer group](../../start/glossary.md#consumer-group) of its own, started at the newest entry, so it never replays old lines. And the heartbeat's `file` dependency is `down` whenever the file cannot be read, so the Services screen shows the service as `degraded` and names the dependency, the way a real service reports a missing account.
 
 2. Run it with the path of your file.
 
@@ -71,7 +71,7 @@ A new kind of event is one more entry in `packages/bus/src/events.ts`: a name an
 
 ## How you know it worked
 
-- The Services tab of the [dashboard](../../guide/operate/dashboard.md) lists `now-playing` as `up` while the file exists, with the dependency `file: ok`. Delete the file and the row turns `degraded` within a few seconds, with `file: down`.
+- The Services screen of the [dashboard](../../guide/operate/dashboard.md) lists `now-playing` as `up` while the file exists, with the dependency `file: ok`. Delete the file and the row turns `degraded` within a few seconds, with `file: down`.
 - `bus-tail` prints a `vision.summary` event for the first title and for each change, and none while the title stays the same.
 - This runs the service against a stand-in bus, with no Redis, and every check passes:
 
@@ -91,4 +91,4 @@ A new kind of event is one more entry in `packages/bus/src/events.ts`: a name an
 - **`config` errors on start, or the process exits at once.** `runService` ends the process with status 1 when the config does not load. Run any other service once, or copy `config/config.example.yaml` to `config/config.yaml`, and try again.
 - **`Cannot find module` for a path under `packages/`.** The workspace is not built. Run `pnpm build`; the example imports the built packages.
 - **The service waits and prints nothing.** It cannot reach Redis. Start it, or set `REDIS_URL` to where it runs.
-- **No `vision.summary` appears.** The title must be non-empty and different from the last one it published. A file the service cannot read publishes nothing, and shows as `down` on the Services tab.
+- **No `vision.summary` appears.** The title must be non-empty and different from the last one it published. A file the service cannot read publishes nothing, and shows as `down` on the Services screen.

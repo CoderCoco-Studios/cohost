@@ -42,29 +42,29 @@ Two things it never stores as a note: a viewer's political views and their money
 
 A very small model reads each chat line and decides whether it holds a note worth keeping. By default that is the model named by `brain.memory.notes.capture.llm.model` in `config/config.yaml` (`gemma3:4b`), served by your own Ollama (`brain.memory.notes.capture.llm.provider: ollama`), separate from the model that writes replies, so chat lines and health or family notes stay on your own machine. A second pass, the consolidation, tidies new notes later: merging duplicates, fixing wording and rechecking sensitivity. [After a stream](../operate/after-stream.md) covers it.
 
-## See and edit notes: the Viewers tab
+## See and edit notes: the Viewers screen
 
-Open the dashboard's **viewers** tab. The left side lists every viewer, with a search box. Select one to see their notes, shown in **Core**, **Recent** and **Deleted notes** groups, each note with its category and a strength bar.
+Open the dashboard's **Viewers** screen. The left side lists every viewer, with a search box. Select one to see their notes, shown in **Core**, **Recent** and **Deleted notes** groups, each note with its category and a strength meter.
 
 | You want to | Do this |
 | --- | --- |
-| Remove a note | Press **delete** beside it. You are asked for an optional reason. |
-| Bring a deleted note back | Press **undo** beside it under **Deleted notes**. |
+| Remove a note | Press **Delete** beside it. You are asked for an optional reason. |
+| Bring a deleted note back | Press **Undo** beside it under **Deleted notes**. |
 | Wipe everything about someone | Press **Clear all notes**. |
-| Mark someone as a regular | Tick **Mark as regular**, or type their name into the box above the list and press **mark regular**. |
+| Mark someone as a regular | Switch on **Always a regular**, or type their name into the box above the list and press **Mark regular**. |
 | Join a voice-channel speaker to their chat account | Press **Link to a chat viewer** on a viewer heard in the voice channel. |
 
 **Give a reason when you delete.** A deletion with a reason stops the co-host from learning similar notes about that viewer again. A deletion without one is forgotten after 30 days, and if the viewer keeps raising the topic it can come back, weakly.
 
-### Unlock the tab
+### Unlock the screen
 
-Notes can include health and family details, so the tab is locked until you set a secret. Add a `VIEWERS_TOKEN` line to `.env`:
+Notes can include health and family details, so the screen is locked until you set a secret. Add a `VIEWERS_TOKEN` line to `.env`:
 
 ```bash
 echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env
 ```
 
-Then restart the dashboard. The page asks for the token once per browser tab. Notes never travel on the live feed, and every viewers request needs the token. The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
+Then restart the dashboard and paste the token into the Access dialog when the Viewers screen asks (it stays unlocked for this tab, or for this browser if you choose that). Notes never travel on the live feed, and every viewers request needs the token. The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
 
 ::: aside
 I do like knowing my regulars. I do not enjoy being asked to forget them. But yes, the delete button is there, and it works.
@@ -72,9 +72,9 @@ I do like knowing my regulars. I do not enjoy being asked to forget them. But ye
 
 ## Forgetting
 
-- **A note:** delete it on the Viewers tab, as above.
+- **A note:** delete it on the Viewers screen, as above.
 - **Everything about a viewer:** **Clear all notes**.
-- **The current conversation only:** the **wipe context** button on the live tab clears what the co-host is holding in mind right now. It does not delete stored memories or notes.
+- **The current conversation only:** the **Wipe context** button on the **Live** screen clears what the co-host is holding in mind right now. It does not delete stored memories or notes.
 - **The reflection notes in the personality file:** edit the `## Learned` block of [the personality file](personality.md).
 - **Everything:** stop the stack and remove the database's volume with [Docker](../../start/glossary.md#docker). That is a deliberate, destructive step: it deletes every stored message, memory and note.
 
@@ -91,12 +91,12 @@ If you switch the embedding model to one with a different vector size, the memor
 
 ## How you know it worked
 
-- After a few chat messages, the viewer shows up on the **viewers** tab with a message count.
+- After a few chat messages, the viewer shows up on the **Viewers** screen with a message count.
 - After a note-worthy chat line (for example, "I play the cello") the viewer gains a note, which can take a moment while the notes model works.
-- Once a viewer passes the regular threshold, or you mark them, the viewers tab lists them as a regular and the co-host is told so.
+- Once a viewer passes the regular threshold, or you mark them, the Viewers screen lists them as a regular and the co-host is told so.
 
 ## If it didn't
 
-- The Viewers tab says it is locked or answers 403: set `VIEWERS_TOKEN` and restart the dashboard.
+- The Viewers screen says it is not set up or answers 403: set `VIEWERS_TOKEN` and restart the dashboard.
 - No notes ever appear: the notes model may not have downloaded. A failed download of the model named by `brain.memory.notes.capture.llm.model` is only a warning, and capture then writes no notes. See [Troubleshooting](../troubleshooting.md).
 - The memory service will not start after you changed the embedder: see "Changing the embedding model" above.

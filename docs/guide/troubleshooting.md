@@ -7,7 +7,7 @@ verified: f126b94
 
 # Troubleshooting
 
-Find the step you were on, then the symptom. Each entry gives the likely cause and what to do. When a service misbehaves, two tools help every time: the **services** tab of the [dashboard](operate/dashboard.md) (read it with [Service health](operate/health.md)) and a service's [container](../start/glossary.md#container) log:
+Find the step you were on, then the symptom. Each entry gives the likely cause and what to do. When a service misbehaves, two tools help every time: the **Services** screen of the [dashboard](operate/dashboard.md) (read it with [Service health](operate/health.md)) and a service's [container](../start/glossary.md#container) log:
 
 ```bash
 docker compose logs --tail 50 cortex
@@ -34,10 +34,10 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 - **Cause:** something else on your PC uses port 3000 or 3001.
 - **Fix:** set `dashboard.port` and `dashboard.lan_port` (3000 and 3001 by default, and they must differ) in `config/config.yaml`, then start the dashboard again. The startup log prints the URL it actually uses.
 
-### The page asks for a token and rejects mine
+### The Access dialog rejects my token
 
 - **Cause:** the token you typed is not the `CONTROL_TOKEN` in `.env`, or `.env` changed after the dashboard started (it reads `.env` once, at start).
-- **Fix:** copy the value from `.env` exactly and restart the dashboard. The page asks once per browser tab, so close the tab and reopen it.
+- **Fix:** copy the whole value after `CONTROL_TOKEN=` in `.env`, with no spaces or quotes, and restart the dashboard if `.env` changed after it started. The dialog shows the command that prints the line (`grep ^CONTROL_TOKEN= .env`). A rejected token is never kept, so you can try again in the same dialog.
 
 ### My settings are not being read
 
@@ -47,19 +47,19 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### A program on my PC cannot reach the voice service
 
 - **Cause:** `VOICE_URL` is where programs look for the voice service. On the host it defaults to `http://127.0.0.1:8700`, your own PC, and the stack publishes that port only on your own PC. In the stack, [Compose](../start/glossary.md#docker-compose) sets it to `http://voice:8700` for the containers.
-- **Fix:** if the voice service runs somewhere else, set `VOICE_URL` in `.env`. Otherwise check the voice service is `up` on the services tab.
+- **Fix:** if the voice service runs somewhere else, set `VOICE_URL` in `.env`. Otherwise check the voice service is `up` on the Services screen.
 
 ## Docker and Launch
 
-### The `stack:` pill says `docker unavailable`
+### The stack status says `Docker unavailable`
 
 - **Cause:** the dashboard could not run the `docker` command. On [WSL2](../start/glossary.md#wsl2) without Docker Desktop's WSL integration, there is no `docker` on the path; [Docker](../start/glossary.md#docker) lives in Windows as `docker.exe`.
-- **Fix:** set `COHOST_DOCKER_BIN=docker.exe` in `.env` and restart the dashboard. If a [GPU](../start/glossary.md#gpu) overlay list in `COMPOSE_FILE` then breaks (Windows splits it on `;`), also set `COMPOSE_PATH_SEPARATOR=:`. The panel shows what Docker said, which usually names the real problem (for example, the Docker daemon is not running).
+- **Fix:** set `COHOST_DOCKER_BIN=docker.exe` in `.env` and restart the dashboard. If a [GPU](../start/glossary.md#gpu) overlay list in `COMPOSE_FILE` then breaks (Windows splits it on `;`), also set `COMPOSE_PATH_SEPARATOR=:`. The **Stack** card shows what Docker said, which usually names the real problem (for example, the Docker daemon is not running).
 
 ### Launch takes forever the first time
 
 - **Cause:** the first Launch builds every service image and downloads the models, several gigabytes in all.
-- **Fix:** wait. The stack panel shows the phase and a timer. Later Launches reuse what was built.
+- **Fix:** wait. The **Stack** card shows the phase and a timer. Later Launches reuse what was built.
 
 ### A model did not download
 
@@ -81,7 +81,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### Everything is `unknown`
 
 - **Cause:** nothing has been launched, or the dashboard cannot reach Redis, the system's [message bus](../start/glossary.md#redis).
-- **Fix:** press **Launch**. If the stack panel says the bus is unreachable, that is the same fault.
+- **Fix:** press **Launch**. If the **Stack** card says the bus is unreachable, that is the same fault.
 
 ### A service is `degraded` with a dependency `down`
 
@@ -91,7 +91,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### The `chat` service does nothing
 
 - **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
-- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **isolated** checkbox beside Start on the services tab, or `pnpm cohostctl start chat --isolated`), or set `chat.source: fake`.
+- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `pnpm cohostctl start chat --isolated`), or set `chat.source: fake`.
 
 ## The co-host's behaviour
 
@@ -99,37 +99,37 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 Work down the list:
 
-1. The status pill says `muted`: press **mute** again to unmute.
-2. Audio is off in the browser: press **enable audio** on the dashboard, or on the [sink](../start/glossary.md#sink) page [OBS](../start/glossary.md#obs) plays. Browsers block sound until you press it.
-3. [Salience](../start/glossary.md#salience) has nothing worth answering. Mention its name with **test inputs**. If that works, lower `speak_threshold` or `idle_chatter_ms`; see [When it talks](tune/talkativeness.md).
-4. A brain part is paused: the services tab shows a `paused` badge; press **resume**.
+1. The header status says `Muted`: press **Unmute co-host** (or `m`) to unmute.
+2. Audio is off in the browser: press **Audio off** in the dashboard header so it reads **Audio on** (on the sink page, **Turn audio on**), or on the [sink](../start/glossary.md#sink) page [OBS](../start/glossary.md#obs) plays. Browsers block sound until you press it.
+3. [Salience](../start/glossary.md#salience) has nothing worth answering. Mention its name with **Test inputs**. If that works, lower `speak_threshold` or `idle_chatter_ms`; see [When it talks](tune/talkativeness.md).
+4. A brain part is paused: the Services screen shows a `Paused` badge; press **Resume**.
 5. The voice service is not `up`.
 
 ### It only says canned lines
 
 - **Cause:** a mock backend is on. An isolated start of `cortex` (or `llm.provider: mock`) gives deterministic offline replies. The mode column says `mock`.
-- **Fix:** restart the unit without **isolated** (see [Install for real](install/real-install.md)), and check that `llm.provider` in `config/config.yaml` names a real provider.
+- **Fix:** restart the unit without **Isolated** (see [Install for real](install/real-install.md)), and check that `llm.provider` in `config/config.yaml` names a real provider.
 
 ### I changed a setting and nothing happened
 
 - **Cause:** services read their settings when they start.
-- **Fix:** restart the services that read them; the settings tab offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. Changes to `config/secrets.yaml` apply the same way: restart the service that reads the credential. Changes to `.env` need a **Launch**.
+- **Fix:** restart the services that read them; the **Settings** screen offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. A credential saved on the **Settings** screen or in `config/secrets.yaml` applies the same way: restart the service that reads it. Changes to `.env` need a **Launch**.
 
 ### A reflex never fires
 
 - **Cause:** the pattern does not match the text (check the escaping: backslashes are doubled in YAML), the `on` sense is wrong, or the rule is still in its cooldown.
-- **Fix:** test with **test inputs**, using a line that should match. See [When it talks](tune/talkativeness.md).
+- **Fix:** test with **Test inputs**, using a line that should match. See [When it talks](tune/talkativeness.md).
 
 ### The face never changes
 
 - **Cause:** no avatar driver is configured, or the avatar app is not connected.
-- **Fix:** follow [Avatar](connect/avatar.md). Meanwhile the **avatar preview** on the dashboard's live tab still follows the mood.
+- **Fix:** follow [Avatar](connect/avatar.md). Meanwhile the **Avatar** card on the dashboard's **Live** screen still follows the mood.
 
 ## Memory
 
-### The Viewers tab is locked or says 403
+### The Viewers screen is not set up or says 403
 
-- **Cause:** `VIEWERS_TOKEN` is empty or missing, so the tab stays locked on purpose.
+- **Cause:** `VIEWERS_TOKEN` is empty or missing, so the screen stays locked on purpose.
 - **Fix:** set `VIEWERS_TOKEN` in `.env` and restart the dashboard. See [Memory and viewer notes](tune/memory.md).
 
 ### The memory service will not start after I changed the embedding model
@@ -140,7 +140,7 @@ Work down the list:
 ### No notes are being written about viewers
 
 - **Cause:** the notes models (the `llm.model` entries under `brain.memory.notes.capture` and `brain.memory.notes.consolidator`) did not download, or the memory service is in [mock mode](../start/glossary.md#mock-mode) with the in-memory store.
-- **Fix:** Launch again so `models` retries the download, and check the memory row on the services tab.
+- **Fix:** Launch again so `models` retries the download, and check the memory row on the Services screen.
 
 ### The reflection pass did nothing
 
@@ -153,4 +153,4 @@ Work down the list:
 
 ## Still stuck
 
-Ask in an issue on [the GitHub repository](https://github.com/CoderCoco-Studios/cohost), and include the service's log and its row from the services tab.
+Ask in an issue on [the GitHub repository](https://github.com/CoderCoco-Studios/cohost), and include the service's log and its row from the Services screen.

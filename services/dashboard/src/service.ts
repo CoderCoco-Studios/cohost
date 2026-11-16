@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import type { Bus } from "@cohost/bus";
 import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
@@ -12,6 +9,7 @@ import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
 import { ViewersClient, viewersTokenFromEnv } from "./viewers.js";
+import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners } from "./host.js";
 
@@ -25,8 +23,6 @@ export interface DashboardDeps {
   /** Gives the stack service its controller; default the Compose-backed one. */
   attachStack?: (stack: StackService) => void;
 }
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 /**
  * The dashboard as a service for `runService`: its heartbeat spec and `main`. `main` wires the feed, the stack service,
@@ -45,7 +41,6 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const VOICE = urls.voice();
       // @spec DASH-CTRL-003, DASH-HOST-007
       const { control, bind } = setupControl(env, bus, log);
-      const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
@@ -62,15 +57,15 @@ export function dashboardService(deps: DashboardDeps = {}) {
 
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
       const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
-      const handler = createDashboardHandler({ bus, log, html, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
 
       const wss = new WebSocketServer({ noServer: true });
       const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });
       wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
       void startFeed(feed, log); // @spec DASH-HTTP-012
 
-      // @spec DASH-HOST-001, DASH-HOST-003, DASH-HTTP-009
-      const listeners = await startListeners({ handler, wss, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, controlEnabled: !!control, log, exit: deps.exit });
+      // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-009, DASH-HTTP-009
+      const listeners = await startListeners({ handler, wss, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, controlEnabled: !!control, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit });
       // @spec DASH-HTTP-010
       onStop(() => { feed.stop(); stack.stop(); return listeners?.close(); });
       if (listeners) {

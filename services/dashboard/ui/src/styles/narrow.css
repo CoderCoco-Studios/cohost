@@ -1,0 +1,55 @@
+/*
+ * Narrow screens (DASH-A11Y-007). This is the LAST stylesheet imported (main.tsx), so every rule here comes after the rule it
+ * overrides and wins at equal specificity: one place owns each narrow-width rule, and no stylesheet before it has a
+ * max-width block. 719.98px is --bp-narrow (720px) as a max-width; a media query cannot read a custom property.
+ * Phones get a 16px gutter, a compact header, stacked rows and panes, and touch-size targets (the 44px of a switch, slider,
+ * radio, checkbox or file input is met by its label or row, never by stretching the control).
+ */
+@media (max-width: 719.98px) {
+  :root { --gutter: 16px; }
+
+  /* Touch targets (DASH-A11Y-006). */
+  button, input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])), select, .row-action, .btn, .btn-sm, .field, .tab { min-height: var(--target-touch); }
+  .check, .chip, .seg span { min-height: var(--target-touch); }
+  .seg span { display: flex; align-items: center; }
+
+  /* Header (DASH-NAV-002): brand and status on the first row, the nav on its own full-width row, the controls last, as icons. */
+  .top { gap: 6px 10px; padding-top: 8px; padding-bottom: 11px; }
+  .brand { order: 1; flex: none; }
+  .header-group.cluster { order: 2; flex: 1 1 0; min-width: 0; justify-content: flex-end; flex-wrap: nowrap; }
+  .nav { order: 3; flex-basis: 100%; gap: 0; }
+  .nav .tab { padding: 8px 10px; }
+  .header-group.controls { order: 4; flex-basis: 100%; margin-left: 0; gap: 6px; }
+  .controls .btn { padding: 7px 12px; }
+  .controls .btn-text { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .controls .seg { margin-left: auto; }
+  .controls .seg span { padding: 4px 10px; }
+
+  /* Stacked layouts */
+  .svc { grid-template-columns: minmax(0, 1fr); }
+  .svc-head { display: none; }
+  .viewers-panes, .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .ev { grid-template-columns: 66px minmax(0, 1fr); }
+  .ev .k { grid-column: 2; }
+  .ev p { grid-column: 1 / -1; }
+
+  /* Settings: the section list sits above the page and collapses to its current entry; each row stacks label, control, help. */
+  .snav { position: static; max-height: none; overflow: visible; }
+  .snav-toggle { display: block; padding: 8px 12px; font-weight: 650; }
+  .srow { grid-template-columns: minmax(0, 1fr); }
+  .srow-s { text-align: left; }
+  .range-wrap { flex-wrap: wrap; }
+  /* The save bar's status line takes the full width, so the edit count and messages are not squeezed into what the three buttons leave. */
+  .savebar .grow { flex: 1 1 100%; }
+
+  /* Services: one block per service, each cell's label in front. */
+  .svc-table, .svc-table tbody, .svc-table tr, .svc-table th, .svc-table td { display: block; }
+  .svc-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
+  .svc-table tr { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .svc-table th, .svc-table td { padding: 4px 0; border-bottom: 0; }
+  .svc-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+
+  /* Viewers: the list or the detail, one at a time. */
+  .back-btn { display: inline-flex; }
+  .viewers-panes[data-selected="true"] .viewers-list-pane, .viewers-panes[data-selected="false"] .viewers-detail-pane { display: none; }
+}

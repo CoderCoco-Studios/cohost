@@ -30,9 +30,9 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
 2. In a Windows browser open <http://localhost:3000> (`dashboard.port` in `config/config.yaml`). WSL forwards `localhost` to the distro. Enter the `CONTROL_TOKEN` from `.env` when the page asks.
 
-3. Press **Launch** and wait for the stack to reach `up` on the Services tab.
+3. Press **Launch** and wait for the stack to reach `up` on the Services screen.
 
-4. Load <http://localhost:3001/?sink=1> (`dashboard.lan_port`) in a second browser tab, or add it as an OBS [Browser Source](../../start/glossary.md#browser-source) on the same PC, and click **enable audio**. Send a chat line from the test panel and hear a reply.
+4. Load <http://localhost:3001/?sink=1> (`dashboard.lan_port`) in a second browser tab, or add it as an OBS [Browser Source](../../start/glossary.md#browser-source) on the same PC, and press **Turn audio on** if the page says audio is off. Send a chat line from **Test inputs** on the **Live** screen and hear a reply.
 
 5. Inject an image from the dashboard and see `eyes` answer; it needs the `eyes` [Compose profile](../../start/glossary.md#compose-profile). Then inject an audio clip and see `ears` answer; it needs the `ears` profile. Uploads travel over [Redis](../../start/glossary.md#redis), so nothing on the host has to be reachable from a container.
 
@@ -46,7 +46,7 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
 ## How you know it worked
 
-- Step 3: every service on the Services tab shows `up`, and the stack panel shows the infrastructure containers running.
+- Step 3: every service on the Services screen shows `up`, and the **Stack** card shows the infrastructure containers running.
 - Step 4: the feed shows `brain.say`, `voice.utterance` and `voice.done`, and you hear the reply on the [sink](../../start/glossary.md#sink) page.
 - Step 5: `inject.result` answers with `ok: true` for each upload, and the feed shows `vision.summary` and `speech.heard`.
 - Step 7: the command exits 0. Viewer notes are tidied; skipping it loses nothing, because `memory` catches up at its next start.

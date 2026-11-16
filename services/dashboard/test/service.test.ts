@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import net from "node:net";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
@@ -36,8 +37,8 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-async function rig(env: NodeJS.ProcessEnv, ports?: { port?: number; lan_port?: number }) {
-  const dashboard = { port: ports?.port ?? await freePort(), lan_port: ports?.lan_port ?? await freePort() };
+async function rig(env: NodeJS.ProcessEnv, ports?: { port?: number; lan_port?: number; allowed_hosts?: string[] }) {
+  const dashboard = { port: ports?.port ?? await freePort(), lan_port: ports?.lan_port ?? await freePort(), ...(ports?.allowed_hosts ? { allowed_hosts: ports.allowed_hosts } : {}) };
   const bus = new DashBus();
   const rec = recordingLog();
   const exits: number[] = [];
@@ -100,4 +101,17 @@ test("the listeners bind dashboard.port and dashboard.lan_port of the config; PO
   assert.equal(new URL(online.url).port, String(r.dashboard.port));
   assert.equal(online.lanPort, r.dashboard.lan_port);
   assert.equal((await fetch(`http://127.0.0.1:${r.dashboard.lan_port}/health`)).status, 200);
+});
+
+// @spec DASH-HOST-009, CFG-SCH-041
+test("dashboard.allowed_hosts of the loaded config decides which names the LAN listener accepts in Host", async (t) => {
+  const r = await rig({}, { allowed_hosts: ["streampc"] });
+  t.after(() => r.stop());
+  await r.start();
+  const get = (host: string): Promise<number> => new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port: r.dashboard.lan_port, path: "/health", headers: { host } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); }).on("error", reject);
+  });
+  assert.equal(await get("streampc:3001"), 200, "a listed name");
+  assert.equal(await get("192.168.1.5:3001"), 200, "an address");
+  assert.equal(await get("otherpc:3001"), 403, "a name that is not listed");
 });

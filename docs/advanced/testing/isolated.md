@@ -41,7 +41,7 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 
 ## Three ways to start one service
 
-**From the dashboard.** With stack control on, each service's row on the Services tab has an **isolated** checkbox beside Start and Restart. It sets that service's overrides for you, and it also starts the services it needs (`cortex` brings up `salience` and `affect`). See the [dashboard tour](../../guide/operate/dashboard.md).
+**From the dashboard.** With stack control on, each service's row on the Services screen has **Start** (or **Restart**) with an **Isolated** switch in its dialog. It sets that service's overrides for you, and it also starts the services it needs (`cortex` brings up `salience` and `affect`). See the [dashboard tour](../../guide/operate/dashboard.md).
 
 **From `cohostctl`.** The same control path from a shell. It runs services through [Docker](../../start/glossary.md#docker) [Compose](../../start/glossary.md#docker-compose):
 
@@ -114,4 +114,4 @@ COHOST_ISOLATION='{"CHAT_SOURCE":"fake"}' pnpm --filter @cohost/chat exec tsx sr
 COHOST_ISOLATION='{"VOICE_ENGINE":"stub"}' pnpm --filter @cohost/voice exec tsx src/index.ts &
 ```
 
-Watch the Services tab (or `GET /services`) for `mock` modes, and `brain.say` and `voice.utterance` on the event feed. In-memory data is gone when a process exits. The next page, [Fake inputs](inject.md), shows how to put your own events in.
+Watch the Services screen (or `GET /services`) for `mock` modes, and `brain.say` and `voice.utterance` on the event feed. In-memory data is gone when a process exits. The next page, [Fake inputs](inject.md), shows how to put your own events in.

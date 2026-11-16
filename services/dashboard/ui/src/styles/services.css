@@ -1,0 +1,30 @@
+/*
+ * Services screen: the stack card, the service table and the test side sheet. Tokens only; below 720px (narrow.css) the
+ * table stacks to one block per service with each cell's label in front (DASH-A11Y-007).
+ */
+.stack-y { display: flex; flex-direction: column; gap: 12px; }
+.plain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ok-text { color: var(--ok); }
+.bad-text { color: var(--bad); }
+.stack-card .note-title { font-weight: 650; }
+.stack-last { display: flex; flex-direction: column; gap: 4px; }
+
+.svc-scroll { min-width: 0; }
+.svc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.svc-table th, .svc-table td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.svc-table thead th { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.svc-table tbody th { font-weight: 650; }
+.svc-table tr:last-child > * { border-bottom: 0; }
+.svc-attn { background: var(--bad-tint); }
+.svc-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.svc-state .needs { flex-basis: 100%; }
+.tag-iso { color: var(--build); background: var(--build-tint); border-color: transparent; }
+.svc-age { display: block; }
+.svc-restarts { display: block; }
+.svc-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+
+.td-form { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.td-form .field { width: 100%; }
+.td-h { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.td-feed { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.td-feed > p { padding: 10px 12px; }

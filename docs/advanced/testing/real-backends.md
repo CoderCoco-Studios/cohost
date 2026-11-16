@@ -126,7 +126,7 @@ Needed only by `eyes` with `vision.enabled: true`, and for the stream itself; ev
 - A source named exactly as `vision.obs.source` (default `Game Capture`) that can produce a screenshot.
 - Reachable from the `eyes` container: `vision.obs.host: host.docker.internal` for OBS on the same Windows PC as Docker Desktop, or the gaming PC's LAN address for two PCs, with obs-websocket listening on the LAN and the firewall open on 4455.
 - A vision model pulled into Ollama (`vision.model`); `vision.engine: stub` replaces it with fixed text.
-- For the voice on stream: a [Browser Source](../../start/glossary.md#browser-source) with Control audio via OBS pointing at the dashboard's sink page, `http://localhost:<dashboard.port>/?sink=1` on the same PC or `http://<ai-pc-ip>:<dashboard.lan_port>/?sink=1` from a second PC (by IP address, not a machine name).
+- For the voice on stream: a [Browser Source](../../start/glossary.md#browser-source) with Control audio via OBS pointing at the dashboard's sink page, `http://localhost:<dashboard.port>/?sink=1` on the same PC or `http://<ai-pc-ip>:<dashboard.lan_port>/?sink=1` from a second PC (by IP address, or by a machine name listed in `dashboard.allowed_hosts`).
 
 Checks:
 

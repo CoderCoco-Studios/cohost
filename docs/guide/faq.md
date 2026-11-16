@@ -63,7 +63,7 @@ Each reply passes through hearing, deciding, writing and speaking, and the writi
 
 ## Is it safe to open the dashboard to other computers?
 
-Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. If you do, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
+Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. Either listener answers only requests that address it by IP address, `localhost` or a name you list in `dashboard.allowed_hosts`. If you open the full dashboard to the network, you must keep `CONTROL_TOKEN` set, and the token travels over plain HTTP, so use it only on a network you trust, behind an SSH tunnel or a reverse proxy.
 
 ## Where are my files?
 

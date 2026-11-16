@@ -72,6 +72,9 @@ const DISCORD_ID = z
   .string({ error: (iss) => (typeof iss.input === "number" ? "write the id in quotes: a YAML number cannot hold a 19-digit id without losing digits" : undefined) })
   .default("");
 
+/** A DNS host name as `dashboard.allowed_hosts` lists it: labels of letters, digits and hyphens or underscores, dots between, optionally ending in a dot. */
+const HOST_NAME = /^[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?\.?$/;
+
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -446,6 +449,8 @@ export const ConfigSchema = z.object({
     port: PORT.default(3000), // @spec CFG-SCH-026
     /** The LAN listener's port (the sink page and audio only); applies at the dashboard's next start. */
     lan_port: PORT.default(3001), // @spec CFG-SCH-026
+    /** Host names (besides IP addresses and `localhost`) a request to a listener other machines can reach may use; applies at the dashboard's next start. */
+    allowed_hosts: z.array(z.string().regex(HOST_NAME, "must be a host name only: no scheme, port or path (for example streampc or streampc.local)")).default([]), // @spec CFG-SCH-041
     /** Limits of the dashboard's test uploads. */
     inject: z.object({
       max_image_bytes: z.number().int().positive().default(8388608),

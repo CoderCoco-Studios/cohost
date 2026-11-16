@@ -303,6 +303,7 @@ mouth:
 dashboard:
   port: 3000                   # the full surface's port (page, controls, Launch and Stop); applies at the dashboard's next start
   lan_port: 3001               # the LAN listener's port (sink page and audio for a second PC's OBS Browser Source); must differ from port
+  allowed_hosts: []            # machine names a second PC may use to reach the dashboard instead of an IP address, such as [streampc] for http://streampc:3001/?sink=1; applies at the dashboard's next start
   inject:                      # limits of the test-upload panel
     max_image_bytes: 8388608   # largest image accepted (8 MiB)
     max_audio_bytes: 26214400  # largest audio clip accepted (25 MiB)

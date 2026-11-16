@@ -181,7 +181,7 @@ test("the shipped example writes the former per-machine values as literals, hold
   assert.equal(cfg.avatar.vtube_studio.plugin_developer, "cohost");
   assert.equal(cfg.ears.stt_model, "Systran/faster-whisper-small");
   assert.equal(cfg.llm.bedrock.region, "");
-  assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
   const has = (path: string): boolean => path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), cfg) !== undefined;
   for (const p of SECRET_PATHS) assert.equal(has(p), false, `${p} belongs in secrets.yaml`);
 });

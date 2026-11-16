@@ -126,6 +126,6 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 | `8700` | The `voice` service's HTTP: audio, fallback clips, `/health` | `voice` | The host-run dashboard proxies audio from it |
 | `8765` | `ears`' `http` source | Not published by Compose | `ears.http.port`, local only by default; in Docker bind `0.0.0.0` and publish it yourself |
 
-Both dashboard ports are read when the dashboard starts, so an edit to `dashboard.port` or `dashboard.lan_port` applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, and then it needs `CONTROL_ENABLED=1` and `CONTROL_TOKEN`.
+Both dashboard ports are read when the dashboard starts, so an edit to `dashboard.port` or `dashboard.lan_port` applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, and then it needs `CONTROL_ENABLED=1` and `CONTROL_TOKEN`; the other machine opens it by IP address, or by a name listed in `dashboard.allowed_hosts` (the dashboard answers any other name with `403`).
 
 Ports on the machines cohost connects to, which cohost does not publish, are keys of `config.yaml`: [obs-websocket](../../start/glossary.md#obs-websocket) on `vision.obs.port` (4455), [VTube Studio](../../start/glossary.md#vtube-studio) on `avatar.vtube_studio.port` (8001) and a [VMC](../../start/glossary.md#vmc) receiver on `avatar.vmc.port` (39539).

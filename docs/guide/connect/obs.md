@@ -54,7 +54,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
    http://<ai-pc-ip>:3001/?sink=1
    ```
 
-   Replace `<ai-pc-ip>` with the AI PC's IP address, such as `192.168.1.20`. Use the IP address, not the computer's name: the browser inside OBS sends the page's address along with the live-feed connection, and the dashboard refuses that connection when the address is a name, so the page would load but stay silent and show no activity. Port 3001 is the `dashboard.lan_port` key in `config/config.yaml`. It serves only the sink page and its files, the live feed, the audio and the playback reports, never the controls, so it is safe to reach from the network.
+   Replace `<ai-pc-ip>` with the AI PC's IP address, such as `192.168.1.20`. To use the computer's name instead (`http://streampc:3001/?sink=1`), add the name to the `dashboard.allowed_hosts` list in `config/config.yaml` (`allowed_hosts: [streampc]`, or the Allowed host names setting on the dashboard's Settings screen) and restart the dashboard: it answers every other name with a refusal, because a web page you visit could otherwise pose as the dashboard under a name it controls, and an IP address cannot be posed as. Port 3001 is the `dashboard.lan_port` key in `config/config.yaml`. It serves only the sink page and its files, the live feed, the audio and the playback reports, never the controls, so it is safe to reach from the network.
 
 3. Tick **Control audio via OBS**.
 

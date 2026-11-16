@@ -707,9 +707,9 @@ test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required o
 // @spec CFG-SCH-038
 test("dashboard.port and lan_port are ports 1 to 65535 defaulting to 3000 and 3001, inject limits default, and equal ports fail on dashboard.lan_port", () => {
   const dash = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), dashboard: v });
-  assert.deepEqual(dash({}).data!.dashboard, { port: 3000, lan_port: 3001, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  assert.deepEqual(dash({}).data!.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
   assert.deepEqual(dash({ inject: {} }).data!.dashboard.inject, { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 });
-  assert.deepEqual(dash({ port: 8080, lan_port: 8081, inject: { ttl_ms: 1000 } }).data!.dashboard, { port: 8080, lan_port: 8081, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 1000 } });
+  assert.deepEqual(dash({ port: 8080, lan_port: 8081, inject: { ttl_ms: 1000 } }).data!.dashboard, { port: 8080, lan_port: 8081, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 1000 } });
   for (const [k, v] of [["port", 0], ["port", 65536], ["port", 1.5], ["lan_port", 0], ["lan_port", 70000]] as const) {
     const r = dash({ [k]: v });
     assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === `dashboard.${k}`), `${k}=${v}`);
@@ -828,4 +828,16 @@ test("ConfigSchema defaults: timezone, OBS, twitch channel, ignore_users, idle_m
   assert.equal(blank.cohost.timezone, "UTC", "a blank timezone takes the default");
   assert.equal(blank.vision.obs.host, "host.docker.internal");
   assert.equal(blank.vision.obs.source, "Game Capture");
+});
+
+// @spec CFG-SCH-041
+test("dashboard.allowed_hosts is a list of host names, empty by default; a scheme, port, path, space or empty entry fails the load naming the entry", () => {
+  const dash = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), dashboard: v });
+  assert.deepEqual(dash({}).data!.dashboard.allowed_hosts, []);
+  assert.deepEqual(dash({ allowed_hosts: ["streampc", "Stream-PC.local", "streampc."] }).data!.dashboard.allowed_hosts, ["streampc", "Stream-PC.local", "streampc."]);
+  for (const bad of ["http://streampc", "streampc:3001", "streampc/x", "stream pc", "", "*.lan", "192.168.1.5:3001"]) {
+    const r = dash({ allowed_hosts: [bad] });
+    assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === "dashboard.allowed_hosts.0"), JSON.stringify(bad));
+  }
+  assert.ok(!dash({ allowed_hosts: "streampc" }).success, "a string is not a list");
 });

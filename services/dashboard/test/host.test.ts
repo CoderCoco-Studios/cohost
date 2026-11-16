@@ -150,15 +150,18 @@ test("loopback-bound full surface: a foreign Host is 403 on every request and /w
   }), /403/);
 });
 
-// @spec DASH-HOST-004
-test("a full surface bound to a non-loopback address does not check Host", async () => {
+// @spec DASH-HOST-009
+test("a full surface bound to a non-loopback address applies the address-literal Host rule, with dashboard.allowed_hosts", async () => {
   const seen: string[] = [];
-  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true });
+  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
-  assert.equal((await raw((server.address() as net.AddressInfo).port, "/", { headers: { host: "my-pc.lan:3000" } })).status, 200);
-  assert.deepEqual(seen, ["hit"]);
+  const port = (server.address() as net.AddressInfo).port;
+  assert.equal((await raw(port, "/", { headers: { host: "my-pc.lan:3000" } })).status, 200);
+  assert.equal((await raw(port, "/", { headers: { host: "192.168.1.5:3000" } })).status, 200);
+  assert.equal((await raw(port, "/", { headers: { host: "rebind.evil.example:3000" } })).status, 403);
+  assert.deepEqual(seen, ["hit", "hit"]);
 });
 
 // @spec DASH-HOST-005
@@ -188,8 +191,8 @@ test("a POST, PUT or DELETE with a foreign Origin is 403 and runs nothing; GET, 
 });
 
 // @spec DASH-HOST-005
-test("Origin applies on a non-loopback full surface too (but Host does not)", async () => {
-  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true });
+test("Origin applies on a non-loopback full surface too", async () => {
+  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

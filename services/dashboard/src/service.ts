@@ -64,8 +64,8 @@ export function dashboardService(deps: DashboardDeps = {}) {
       wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
       void startFeed(feed, log); // @spec DASH-HTTP-012
 
-      // @spec DASH-HOST-001, DASH-HOST-003, DASH-HTTP-009
-      const listeners = await startListeners({ handler, wss, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, controlEnabled: !!control, log, exit: deps.exit });
+      // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-009, DASH-HTTP-009
+      const listeners = await startListeners({ handler, wss, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, controlEnabled: !!control, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit });
       // @spec DASH-HTTP-010
       onStop(() => { feed.stop(); stack.stop(); return listeners?.close(); });
       if (listeners) {

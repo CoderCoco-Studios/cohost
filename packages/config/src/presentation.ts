@@ -71,7 +71,7 @@ const sections: Record<string, SectionPresentation> = {
   "mouth": { title: "Speech output", group: "Voice and body", about: "Where the co-host's spoken audio is sent (the Discord voice channel, a folder, a web address), how loud it is, and how often a fallback line may play." },
   "avatar": { title: "Avatar", group: "Voice and body", about: "Which avatar app the co-host drives (VTube Studio or a VMC receiver) and how smoothly and lively it moves." },
   "connections": { title: "Discord", group: "System", about: "The Discord bot's server, voice channel and token, shared by hearing and speaking." },
-  "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports and the size and lifetime limits of its test uploads." },
+  "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, and the size and lifetime limits of its test uploads." },
 };
 
 /** The five keys of a region hook (`ModuleSchema`), under `base` (a dotted path), with help written for what that hook decides. */
@@ -314,6 +314,7 @@ const keys: Record<string, KeyPresentation> = {
   // ---- dashboard
   "dashboard.port": { help: "The port of the dashboard's full surface: the page you are using and its controls, including Launch and Stop. It applies at the dashboard's next start, and the page's address then changes to the new port." },
   "dashboard.lan_port": { help: "The port of the dashboard's LAN listener, which serves only the audio sink page and its audio so a second PC's OBS Browser Source can use it. It applies at the dashboard's next start and must differ from the main port.", label: "LAN port" },
+  "dashboard.allowed_hosts": { help: "Machine names the dashboard accepts when another PC opens it by name instead of by IP address, for example streampc in an OBS Browser Source address such as http://streampc:3001/?sink=1. One per line, name only: no http://, no port. Addresses such as 192.168.1.20 and localhost always work. It applies at the dashboard's next start.", label: "Allowed host names" },
   "dashboard.inject.max_image_bytes": { help: "The largest picture the dashboard's test panel accepts when you send the co-host an image. A bigger upload is refused.", unit: "bytes" },
   "dashboard.inject.max_audio_bytes": { help: "The largest audio clip the dashboard's test panel accepts when you send the co-host something to hear. A bigger upload is refused.", unit: "bytes" },
   "dashboard.inject.ttl_ms": { help: "How long an uploaded test image or clip stays available for the service that asked for it; after that it is discarded. Raise it if a slow service needs longer to fetch it.", unit: "ms", label: "Upload lifetime" },

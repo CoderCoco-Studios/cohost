@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. Total 124 specs: 124 `[x]`, 0 `[ ]`, 0 `[D]`. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 124 specs: 124 implemented, 0 deferred, 0 gaps (the audit covered 82 of them). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 125 specs: 125 implemented, 0 deferred, 0 gaps (the audit covered 82 of them). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (124 specs, prefix `CFG`: 124 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (125 specs, prefix `CFG`: 125 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -71,13 +71,13 @@ Orientation:
 | Secrets file | CFG-SEC-001 to CFG-SEC-015 | 15 | 0 | 0 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-011 | 11 | 0 | 0 |
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 2 | 0 | 0 |
-| Schema | CFG-SCH-001 to CFG-SCH-040 | 40 | 0 | 0 |
+| Schema | CFG-SCH-001 to CFG-SCH-041 | 41 | 0 | 0 |
 | Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-010 | 10 | 0 | 0 |
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-016 (CFG-USR-005 does not exist) | 15 | 0 | 0 |
 
-**Summary:** 124 of 124 specs implemented; 0 deferred; 0 open. 123 carry a test `<!-- test: -->` pointer; implemented without one: CFG-USR-006 (carried by example-file comments, which are not annotated by design). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 125 of 125 specs implemented; 0 deferred; 0 open. 123 carry a test `<!-- test: -->` pointer; implemented without one: CFG-USR-006 (carried by example-file comments, which are not annotated by design). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

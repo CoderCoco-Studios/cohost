@@ -349,6 +349,7 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard` | map | The dashboard |
 | `dashboard.port` | `3000` | The port of the dashboard's full surface (page, controls, Launch and Stop). Read at the dashboard's next start |
 | `dashboard.lan_port` | `3001` | The port of the LAN listener (the sink page and audio for a second PC's OBS). Must differ from `dashboard.port`. Read at the dashboard's next start |
+| `dashboard.allowed_hosts` | `[]` | Machine names the dashboard accepts when another PC opens it by name instead of by IP address, such as `streampc` in the address of the second PC's OBS sink page. IP addresses and `localhost` always work. Read at the dashboard's next start |
 | `dashboard.inject` | map | The limits of the test-upload panel |
 | `dashboard.inject.max_image_bytes` | `8388608` | The largest image accepted, in bytes |
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |

@@ -20,10 +20,16 @@ export function lanAllows(method: string, pathname: string): boolean {
   return method === "POST" && pathname === "/sink";
 }
 
-/** Wraps the full handler so the LAN listener has no path to any other route: everything else is a 404 and nothing runs. */
-// @spec DASH-HOST-002, DASH-DOCS-012
-export function lanHandler(full: http.RequestListener): http.RequestListener {
+/**
+ * Wraps the full handler so the LAN listener has no path to any other route: everything else is a 404 and nothing runs.
+ * Every request first passes the Host rule (`hostPermitted`, DASH-HOST-009), and a state-changing one (`POST /sink`) that
+ * carries an `Origin` must name its own Host's host and port (DASH-HOST-010).
+ */
+// @spec DASH-HOST-002, DASH-HOST-009, DASH-HOST-010, DASH-DOCS-012
+export function lanHandler(full: http.RequestListener, allowedHosts: readonly string[] = []): http.RequestListener {
   return (req, res) => {
+    if (!hostPermitted(req.headers.host, allowedHosts)) { res.writeHead(403); res.end("forbidden"); return; }
+    if (isStateChanging(req.method) && req.headers.origin !== undefined && !originAllowed(req.headers.origin, req.headers.host)) { res.writeHead(403); res.end("forbidden"); return; }
     let pathname: string;
     try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { pathname = ""; }
     if (!lanAllows(req.method ?? "GET", pathname)) { res.writeHead(404); res.end("not found"); return; }
@@ -72,36 +78,51 @@ export function originAllowed(origin: string, host: string | undefined): boolean
 /**
  * True when a `/ws` upgrade may proceed on its Origin: none (a non-browser client) is accepted, any other must satisfy
  * the rule of `originAllowed`, so a page served from another origin cannot read the feed. A page that controls both its
- * `Origin` and the `Host` it is reached by is stopped by the Host rules (`hostAllowed`, `wsHostAllowed`), not by this.
+ * `Origin` and the `Host` it is reached by is stopped by the Host rules (`hostAllowed`, `hostPermitted`), not by this.
  */
 // @spec DASH-HOST-008
 export function wsOriginAllowed(origin: string | undefined, host: string | undefined): boolean {
   return origin === undefined || originAllowed(origin, host);
 }
 
+/** A Host header: a name or a bracketed IPv6 literal, then an optional port. */
+const HOST_HEADER = /^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9._-]+)(?::\d{1,5})?$/;
+/** Dotted-quad IPv4 as a browser sends a typed address: four decimal octets 0 to 255, no leading zeros (`010.1.1.1` is octal to some resolvers). */
+const IPV4_LITERAL = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+/** A host name as compared: lower-cased, one trailing dot removed. */
+const nameKey = (n: string): string => n.toLowerCase().replace(/\.$/, "");
+
 /**
- * True when a `/ws` upgrade on a listener other machines can reach may proceed on its Host. A request without an `Origin` is not
- * a browser page and is not checked. A browser page (it always sends an `Origin`) is accepted only when it reached the
- * listener by an IPv4 or bracketed IPv6 address literal, or by `localhost`: a DNS-rebinding page needs a name it controls, and
- * since it controls `Origin` too, comparing the two (`originAllowed`) cannot tell it from the sink page.
+ * The Host rule of every listener other machines can reach (the LAN listener, and the full surface when it is not bound to
+ * loopback): the Host header's name must be an IPv4 or bracketed IPv6 address literal, `localhost`, or a name in `allowed`
+ * (`dashboard.allowed_hosts`); names are compared case-insensitively with a trailing dot removed, and the port is not checked.
+ * A DNS-rebinding page reaches the dashboard under a name it controls, and an address literal names no domain anyone can
+ * rebind, so every other name, an absent Host and a form a browser does not send for a typed address (`0x7f.1`, `2130706433`,
+ * `010.1.1.1`, `1.2.3`) is refused.
  */
-// @spec DASH-HOST-008
-export function wsHostAllowed(origin: string | undefined, host: string | undefined): boolean {
-  if (origin === undefined) return true;
-  const h = hostnameOf(host);
-  return h !== undefined && (isIP(h) !== 0 || h === "localhost");
+// @spec DASH-HOST-009
+export function hostPermitted(host: string | undefined, allowed: readonly string[] = []): boolean {
+  const m = host === undefined ? null : HOST_HEADER.exec(host);
+  if (!m) return false;
+  const name = m[1]!;
+  if (name.startsWith("[")) return isIP(name.slice(1, -1)) === 6;
+  if (IPV4_LITERAL.test(name)) return true;
+  const key = nameKey(name);
+  return key === "localhost" || allowed.some((a) => nameKey(a) === key);
 }
+
+const isStateChanging = (method: string | undefined): boolean => method === "POST" || method === "PUT" || method === "DELETE";
 
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
 const STACK_POST = /^\/stack\/[^/]+$/; // any /stack/<name>: with control off every one is a 404 (DASH-CTRL-001)
 
 /**
- * The checks in front of the full-surface handler: while bound to loopback, a foreign Host is a 403 (DASH-HOST-004);
- * a POST, PUT or DELETE with a foreign Origin is a 403 (DASH-HOST-005). With control disabled the stack and lifecycle
+ * The checks in front of the full-surface handler: while bound to loopback, a foreign Host is a 403 (DASH-HOST-004), and
+ * when bound beyond it a Host that fails `hostPermitted` is (DASH-HOST-009); a POST, PUT or DELETE with a foreign Origin is a 403 (DASH-HOST-005). With control disabled the stack and lifecycle
  * routes are answered by the handler's 404 first (DASH-STACK-002's refusal order).
  */
-// @spec DASH-HOST-004, DASH-HOST-005
-export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; controlEnabled: boolean }): http.RequestListener {
+// @spec DASH-HOST-004, DASH-HOST-005, DASH-HOST-009
+export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; controlEnabled: boolean; allowedHosts?: readonly string[] }): http.RequestListener {
   return (req, res) => {
     const method = req.method ?? "GET";
     if (!o.controlEnabled && method === "POST") {
@@ -109,8 +130,8 @@ export function guardFullSurface(inner: http.RequestListener, o: { loopback: boo
       try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { /* the handler answers it */ }
       if (STACK_POST.test(pathname) || LIFECYCLE.test(pathname)) return inner(req, res);
     }
-    if (o.loopback && !hostAllowed(req.headers.host)) { res.writeHead(403); res.end("forbidden"); return; }
-    if ((method === "POST" || method === "PUT" || method === "DELETE") && req.headers.origin !== undefined && !originAllowed(req.headers.origin, req.headers.host)) {
+    if (!(o.loopback ? hostAllowed(req.headers.host) : hostPermitted(req.headers.host, o.allowedHosts))) { res.writeHead(403); res.end("forbidden"); return; }
+    if (isStateChanging(method) && req.headers.origin !== undefined && !originAllowed(req.headers.origin, req.headers.host)) {
       res.writeHead(403); res.end("forbidden"); return;
     }
     return inner(req, res);
@@ -128,6 +149,8 @@ export interface ListenerOptions {
   /** The LAN listener's address; default all interfaces (tests pin loopback). */
   lanHost?: string;
   controlEnabled: boolean;
+  /** `dashboard.allowed_hosts`: host names the non-loopback listeners accept in `Host` besides address literals and `localhost` (DASH-HOST-009). */
+  allowedHosts?: readonly string[];
   log: Pick<Logger, "info" | "warn" | "fatal">;
   exit?: (code: number) => void;
 }
@@ -170,14 +193,15 @@ function listen(server: http.Server, host: string | undefined, port: number, lab
 // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-006, DASH-HTTP-009
 export async function startListeners(o: ListenerOptions): Promise<Listeners | undefined> {
   const loopback = isLoopback(o.bind);
-  const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled }));
-  const lan = http.createServer(lanHandler(o.handler));
-  // @spec DASH-HOST-008
+  const allowedHosts = o.allowedHosts ?? [];
+  const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
+  const lan = http.createServer(lanHandler(o.handler, allowedHosts));
+  // @spec DASH-HOST-008, DASH-HOST-009
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);
-  const wsReachable = (req: http.IncomingMessage): boolean => wsOrigin(req) && wsHostAllowed(req.headers.origin, req.headers.host);
-  // The loopback listener applies the Host rule every HTTP request on it passes (DASH-HOST-004); the others, which other machines reach, the address-literal rule.
-  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : wsReachable);
-  attachUpgrade(lan, o.wss, wsReachable);
+  // The loopback listener applies the loopback Host rule of DASH-HOST-004; every listener other machines can reach, the rule of DASH-HOST-009.
+  const reachable = (req: http.IncomingMessage): boolean => hostPermitted(req.headers.host, allowedHosts) && wsOrigin(req);
+  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : reachable);
+  attachUpgrade(lan, o.wss, reachable);
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const fullOk = await listen(full, o.bind, o.port, "full surface", o.log);
   const lanOk = fullOk && (await listen(lan, o.lanHost, o.lanPort, "LAN", o.log));

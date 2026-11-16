@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import { startListeners, wsOriginAllowed, wsHostAllowed, type Listeners } from "../src/host.js";
+import { startListeners, wsOriginAllowed, type Listeners } from "../src/host.js";
 
 const log = { info: () => {}, warn: () => {}, fatal: () => {} } as never;
 
@@ -34,14 +34,6 @@ test("wsOriginAllowed: absent is accepted; a same host and port (defaults explic
   for (const [o, h] of [["null", "localhost:3000"], ["", "localhost:3000"], ["not a url", "localhost:3000"], ["http://evil.example", "localhost:3000"], ["http://localhost:3001", "localhost:3000"], ["http://localhost:3000", undefined], ["http://localhost:3000, http://evil.example", "localhost:3000"]] as const) {
     assert.equal(wsOriginAllowed(o, h), false, `${o} vs ${h}`);
   }
-});
-
-// @spec DASH-HOST-008
-test("wsHostAllowed: no Origin accepts any Host; with an Origin the Host must be an IPv4 or bracketed IPv6 literal or localhost", () => {
-  assert.equal(wsHostAllowed(undefined, "my-pc.lan:3001"), true);
-  assert.equal(wsHostAllowed(undefined, undefined), true);
-  for (const h of ["192.168.1.5:3001", "10.0.0.2", "[fe80::1]:3001", "[::1]", "localhost:3001", "127.0.0.1:3001", "LOCALHOST"]) assert.equal(wsHostAllowed("http://x", h), true, h);
-  for (const h of ["my-pc.lan:3001", "streampc", "evil.example", "1.2.3.4.evil.example", "192.168.1.5.evil.example:3001", "999.1.1.1", "256.0.0.1:3001", "a b", "", undefined, "[not-an-ip]"]) assert.equal(wsHostAllowed("http://x", h), false, String(h));
 });
 
 // @spec DASH-HOST-008
@@ -90,10 +82,11 @@ test("a browser upgrade (one that carries an Origin) on a listener the LAN can r
   assert.equal((await upgrade(t.l.lanPort, { host: "192.168.1.5", origin: "http://evil.example" })).result, 403, "an IP-literal Host still needs a matching Origin");
 });
 
-// @spec DASH-HOST-008
-test("an upgrade with no Origin (a non-browser client) is accepted whatever its Host", async () => {
+// @spec DASH-HOST-008, DASH-HOST-009
+test("an upgrade with no Origin is held to the Host rule too: a name that is not allowed is refused, an address is accepted", async () => {
   const t = await boot();
-  const r = await upgrade(t.l.lanPort, { host: "my-pc.lan:3001" });
+  assert.equal((await upgrade(t.l.lanPort, { host: "my-pc.lan:3001" })).result, 403);
+  const r = await upgrade(t.l.lanPort, { host: "192.168.1.5:3001" });
   assert.equal(r.result, "open");
   r.ws?.close();
 });

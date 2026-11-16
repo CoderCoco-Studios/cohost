@@ -41,7 +41,7 @@ Because only the connector logs in, `ears` and `mouth` need no Discord token, an
 
 4. In Discord's advanced settings, turn on Developer Mode. Then right-click your server and choose to copy its ID, and do the same for the voice channel.
 
-5. Put the bot's token in `config/secrets.yaml` (copy it from `config/secrets.example.yaml` if it is not there yet). Credentials live only in that file:
+5. Put the bot's token in the **Bot token** secret field of **Settings**, **Discord** (it shows **Set** afterwards and never shows the value; saving needs your control token). Or edit `config/secrets.yaml` by hand (copy it from `config/secrets.example.yaml` if it is not there yet). Credentials live only in that file:
 
    ```yaml
    connections:
@@ -102,7 +102,7 @@ Listening is a list of [audio sources](../../start/glossary.md#audio-source) in 
 
 ## How you know it worked
 
-- On the Services tab, `discord`, `ears` and `mouth` all show `up`. `ears` shows its Discord dependency as `ok`.
+- On the Services screen, `discord`, `ears` and `mouth` all show `up`. `ears` shows its Discord dependency as `ok`.
 - When you speak in the channel, a `speech.heard` line with your display name and the source `discord` appears on the dashboard's live feed.
 - When the co-host replies, you hear it in the channel.
 - The co-host never answers its own voice.

@@ -47,7 +47,7 @@ Yes: `cohost.name` and `cohost.streamer` in `config/config.yaml`.
 
 ## Does it remember viewers between streams?
 
-Yes, with the database running. It remembers who is a regular and keeps short, fading notes, and you can read, correct and delete all of it on the viewers tab. See [Memory and viewer notes](tune/memory.md). In mock mode nothing is kept.
+Yes, with the database running. It remembers who is a regular and keeps short, fading notes, and you can read, correct and delete all of it on the Viewers screen. See [Memory and viewer notes](tune/memory.md). In mock mode nothing is kept.
 
 ## How do I make it talk less, or more?
 

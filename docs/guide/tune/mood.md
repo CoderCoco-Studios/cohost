@@ -35,7 +35,7 @@ Mood is not remembered between runs and needs no database. Every start begins at
 
 ## Change the resting mood
 
-The keys live under `brain.affect` in `config/config.yaml`; the dashboard's **settings** tab edits them and keeps your comments.
+The keys live under `brain.affect` in `config/config.yaml`; the dashboard's **Settings** screen edits them and keeps your comments.
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -59,8 +59,8 @@ By default the mood moves by simple rules. You can ask a model instead, which un
 
 ## How you know it worked
 
-- With an avatar connected, the face changes between lines. Without one, the **avatar preview** on the dashboard's live tab shows the current emotion under the face.
-- The [bus](../../start/glossary.md#bus) feed on the live tab shows the mood announcements. The [dashboard tour](../operate/dashboard.md) says where.
+- With an avatar connected, the face changes between lines. Without one, the **Avatar** card on the dashboard's Live screen shows the current emotion under the face.
+- The [bus](../../start/glossary.md#bus) **Activity** feed on the **Live** screen shows the mood announcements. The [dashboard tour](../operate/dashboard.md) says where.
 
 ## If it didn't
 

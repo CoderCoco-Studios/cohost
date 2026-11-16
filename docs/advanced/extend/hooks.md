@@ -180,12 +180,12 @@ To see what a handler looks like, here is the critic of the Python server. The T
 
 <<< @/../examples/modules/server.py#critic
 
-Once your server passes, set a hook to `kind: http` as above and restart the service that owns it (the Services tab has a Restart button on its row when the controls are on).
+Once your server passes, set a hook to `kind: http` as above and restart the service that owns it (the Services screen has a Restart button on its row when the controls are on).
 
 ## How you know it worked
 
 - The region's log has no `module failed` warnings, and your server's log shows a request per decision.
-- The Services tab shows `hook.<name>` as `ok` under the service's dependencies. It shows `down` while the hook is being skipped.
+- The Services screen shows `hook.<name>` as `ok` under the service's dependencies. It shows `down` while the hook is being skipped.
 - `sh examples/modules/try.sh` prints the three replies of `examples/modules/try.expected.txt`.
 - Stop your server: the co-host keeps talking with the rules answers, and the region logs one warning, not one per call.
 

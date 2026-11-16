@@ -22,29 +22,29 @@ You start, stop and restart the co-host from the dashboard with a click, or from
    pnpm dashboard
    ```
 
-2. Open `http://localhost:<dashboard.port>` (3000 by default), enter the `CONTROL_TOKEN` from `.env` if it asks, and go to the **services** tab.
+2. Open `http://localhost:<dashboard.port>` (3000 by default), open the **Services** screen, and enter the `CONTROL_TOKEN` from `.env` in the [Access dialog](dashboard.md#the-access-dialog) when it asks.
 3. Press **Launch** and confirm.
 
-Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), starts every [container](../../start/glossary.md#container) of the stack, and waits until they are ready. The stack panel shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.
+Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), starts every [container](../../start/glossary.md#container) of the stack, and waits until they are ready. The **Stack** card shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.
 
-**Rebuild** does the same thing as Launch. Use whichever label you find clearer.
+**Launch** shows while the stack is down; while it is up, **Rebuild** rebuilds the images from the current code and brings the stack up again.
 
 ## Stop everything
 
-Press **Stop** on the stack panel and confirm. Every container stops, including the database and the [bus](../../start/glossary.md#bus). Nothing is deleted, so Launch brings it all back, memories included.
+Press **Stop stack** on the **Stack** card and confirm. Every container stops, including the database and the [bus](../../start/glossary.md#bus). Nothing is deleted, so Launch brings it all back, memories included.
 
 After a successful Stop, a **Run consolidation pass** button appears. It tidies the co-host's viewer notes and is optional; see [After a stream](after-stream.md).
 
 ## Restart one part, or all of them
 
-On the **services** tab each service row has **start**, **stop** and **restart** buttons, and each asks for confirmation. **Restart all** restarts every running co-host service. Restarting is the way to apply a change you saved on the settings tab, because services read their settings when they start.
+On the **Services** screen each service row has **Start** or **Restart** and **Stop** buttons (**Start** while the service is down, **Restart** and **Stop** otherwise). **Stop** asks you to confirm; **Start** and **Restart** open a dialog. **Restart all** on the **Stack** card restarts every running co-host service. Restarting is the way to apply a change you saved on the **Settings** screen, because services read their settings when they start.
 
-Two options above the table change how a start behaves:
+The **Start** and **Restart** dialog holds two options that change how a start behaves:
 
-- **start mode:** `resume` picks up the backlog of unread [events](../../start/glossary.md#event) where the service left off; `fresh` skips the backlog and starts from now. The default is `fresh` for every co-host service except memory, so a restart never makes the co-host answer chat from five minutes ago. Memory resumes, so it does not miss anything it should store.
-- **isolated:** starts only that service, with its pretend backends (the isolation overrides for that unit) and no accounts. `pnpm cohostctl start <service> --isolated` does the same from a terminal. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
+- **Start mode:** `resume` picks up the backlog of unread [events](../../start/glossary.md#event) where the service left off; `fresh` skips the backlog and starts from now. The default is `fresh` for every co-host service except memory, so a restart never makes the co-host answer chat from five minutes ago. Memory resumes, so it does not miss anything it should store.
+- **Isolated:** starts only that service, with its pretend backends (the isolation overrides for that unit) and no accounts. `pnpm cohostctl start <service> --isolated` does the same from a terminal. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
 
-The three brain parts [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect) and [cortex](../../start/glossary.md#cortex) also have **pause** and **resume**. Pausing idles one in place without stopping its container.
+The three brain parts [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect) and [cortex](../../start/glossary.md#cortex) also have **Pause** and **Resume**. Pausing idles one in place without stopping its container.
 
 The [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.md#postgres) rows are read-only unless you set `CONTROL_ADVANCED=1` in `.env`. The dashboard can never stop itself.
 
@@ -101,12 +101,12 @@ An interrupted run changes nothing, and running it again resumes where it stoppe
 
 ## How you know it worked
 
-- After **Launch**, the `stack:` pill reads `up` and the **services** tab shows each row `up`. See [Service health](health.md).
-- After **Stop**, the pill reads `down`.
-- After **restart**, the row is `up` again within a few seconds.
+- After **Launch**, the header reads `Stack: Up` and the **Services** screen shows each row `up`. See [Service health](health.md).
+- After **Stop stack**, the header reads `Stack: Down`.
+- After **Restart**, the row is `up` again within a few seconds.
 
 ## If it didn't
 
-- **Launch** is greyed out or the pill says `docker unavailable`: the dashboard cannot reach Docker. See [Troubleshooting](../troubleshooting.md).
+- **Launch** is disabled or the header says `Stack: Docker unavailable`: the dashboard cannot reach Docker. See [Troubleshooting](../troubleshooting.md).
 - A button answers `busy`: the other of the dashboard and `cohostctl` is mid-action. Wait for it.
 - A service stays `down` or `crash-looping`: see [Troubleshooting](../troubleshooting.md).

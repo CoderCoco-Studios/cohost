@@ -7,7 +7,7 @@ verified: f126b94
 
 # Rust bus client
 
-You will have a Rust program on the cohost [bus](../../start/glossary.md#bus). It publishes its own [heartbeat](../../start/glossary.md#heartbeat), so it appears on the dashboard's Services tab beside the services cohost ships, and it prints one line for every [event](../../start/glossary.md#event) it sees. It uses only `crates/cohost-bus`, the Rust bus client, which is what a Rust service gets today.
+You will have a Rust program on the cohost [bus](../../start/glossary.md#bus). It publishes its own [heartbeat](../../start/glossary.md#heartbeat), so it appears on the dashboard's Services screen beside the services cohost ships, and it prints one line for every [event](../../start/glossary.md#event) it sees. It uses only `crates/cohost-bus`, the Rust bus client, which is what a Rust service gets today.
 
 ## What the Rust client is
 
@@ -61,7 +61,7 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 
 ## How you know it worked
 
-- The Services tab of the [dashboard](../../guide/operate/dashboard.md) lists `rust-example` as `up`. When you press Ctrl-C its last heartbeat says `stopping`, and the row turns `down`.
+- The Services screen of the [dashboard](../../guide/operate/dashboard.md) lists `rust-example` as `up`. When you press Ctrl-C its last heartbeat says `stopping`, and the row turns `down`.
 - Each event on the bus, including the ones other services publish, becomes one line in the program's terminal.
 - This runs the example's tests. They need Redis, and they choose a stream prefix of their own, so they never touch the `cohost` one. Without Redis they print `SKIP` and pass:
 
@@ -73,5 +73,5 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 
 - **`rust-example: ...` and exit status 1.** The program could not reach Redis, or the connection dropped. The message names the cause. Start Redis, or set `REDIS_URL`, and run it again.
 - **It runs but prints nothing.** The consumer group starts at the end of the stream, so it shows events published after it started. Publish one, as in step 6.
-- **The Services tab does not list it.** The dashboard reads the health stream under the prefix `cohost`, and the program uses that prefix. Check that both use the same Redis.
+- **The Services screen does not list it.** The dashboard reads the health stream under the prefix `cohost`, and the program uses that prefix. Check that both use the same Redis.
 - **The tests print `SKIP`.** Redis is not reachable at `REDIS_URL`, which is how the tests are meant to behave without it. Start Redis to run them for real.

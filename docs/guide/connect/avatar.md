@@ -41,7 +41,7 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
        port: 8001
    ```
 
-3. Restart the `avatar` service from the Services tab, or from a terminal:
+3. Restart the `avatar` service from the Services screen, or from a terminal:
 
    ```bash
    pnpm cohostctl restart avatar
@@ -67,7 +67,7 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
 
    If the app runs on another machine, put its address in `avatar.vmc.host`.
 
-3. Restart the `avatar` service from the Services tab, or:
+3. Restart the `avatar` service from the Services screen, or:
 
    ```bash
    pnpm cohostctl restart avatar
@@ -83,7 +83,7 @@ The avatar app shows the model in its own window. To put it on stream, capture t
 
 - With VTube Studio: the **Allow plugin** request appeared once, you clicked Allow, and after the next reply the model's mouth moves in time with the voice.
 - With VMC: the model's mouth and expression move after a reply. VMC is one-way fire-and-forget over the network, so cohost cannot tell you it is "connected". The movement is the proof.
-- The Services tab shows `avatar` as `up`.
+- The Services screen shows `avatar` as `up`.
 - Between lines, the avatar wears the co-host's current mood as its resting face.
 
 ## If it didn't

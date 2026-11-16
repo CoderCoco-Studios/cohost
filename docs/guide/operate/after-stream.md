@@ -49,7 +49,7 @@ It is optional. The memory service starts one on its own when 20 notes are waiti
 
 Run it after Stop by whichever route you like:
 
-- On the dashboard's **services** tab, press **Run consolidation pass** (it appears after a successful Stop) and confirm.
+- On the dashboard's **Services** screen, press **Run consolidation pass** (it appears after a successful Stop) and confirm.
 - From a terminal:
 
   ```bash
@@ -68,7 +68,7 @@ It starts the database and [Ollama](../../start/glossary.md#ollama) if they are 
 
 Two places show what the co-host kept:
 
-- The **viewers** tab on the dashboard lists each viewer's notes. Delete or correct any you disagree with. See [Memory and viewer notes](../tune/memory.md).
+- The **Viewers** screen on the dashboard lists each viewer's notes. Delete or correct any you disagree with. See [Memory and viewer notes](../tune/memory.md).
 - The `## Learned` section of `config/personality.md` holds the bullets from reflection.
 
 ## How you know it worked

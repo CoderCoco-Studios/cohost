@@ -33,7 +33,7 @@ The voice-out route is set up with `mouth.outputs.http.enabled` and `mouth.outpu
 
 ## What a service gets
 
-A service built on one of the two bus clients, `@cohost/bus` (TypeScript) or `crates/cohost-bus` (Rust), is the supported way to add a service. The TypeScript client comes with the shared runtime, which builds the connection, publishes the heartbeat, handles `control` commands and injection, and stops cleanly. That runtime is how a service meets the module contract: configurable from the dashboard, operable on its own, injectable with no account, and visible on the Services tab. The Rust client gives you the connections and a typed codec, and the rest is yours to write, as the [Rust bus client](rust-bus.md) guide shows.
+A service built on one of the two bus clients, `@cohost/bus` (TypeScript) or `crates/cohost-bus` (Rust), is the supported way to add a service. The TypeScript client comes with the shared runtime, which builds the connection, publishes the heartbeat, handles `control` commands and injection, and stops cleanly. That runtime is how a service meets the module contract: configurable from the dashboard, operable on its own, injectable with no account, and visible on the Services screen. The Rust client gives you the connections and a typed codec, and the rest is yours to write, as the [Rust bus client](rust-bus.md) guide shows.
 
 Here is the whole shape of a TypeScript service, shown from the file the tests run:
 
@@ -59,7 +59,7 @@ A process that talks to [Redis](../../start/glossary.md#redis) on its own, using
 
 - **No validation.** Nothing checks its payloads against the schemas, so a typo is silently ignored by every subscriber instead of failing at the publisher. The bus also reads each event back through the schema, so a malformed one is skipped.
 - **No dashboard control.** It is not in the service manifest, so the dashboard and `cohostctl` cannot start, stop, restart, configure or inject into it, and it is outside the isolation presets.
-- **No health reporting.** It does not publish heartbeats, so the Services tab shows it as `unknown` or not at all, and [Compose](../../start/glossary.md#docker-compose) health checks cannot see it.
+- **No health reporting.** It does not publish heartbeats, so the Services screen shows it as `unknown` or not at all, and [Compose](../../start/glossary.md#docker-compose) health checks cannot see it.
 
 A hook server, an audio client and a model server are not services, so they are the way another language joins in. They keep cohost in charge of validation and health, and your code in charge of the judgement.
 

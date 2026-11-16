@@ -49,9 +49,9 @@ You will have a small Python server that answers the three brain [hooks](../../s
      cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
    ```
 
-4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services tab has a Restart button on its row when the controls are on.
+4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services screen has a Restart button on its row when the controls are on.
 
-A hook server is not a service, so there is no [heartbeat](../../start/glossary.md#heartbeat) of its own to look for: it sends no heartbeat, and nothing on the Services tab lists it. The service that calls it shows its health, as the `hook.<name>` dependency. When your server is down, the region answers with its built-in rules and keeps going.
+A hook server is not a service, so there is no [heartbeat](../../start/glossary.md#heartbeat) of its own to look for: it sends no heartbeat, and nothing on the Services screen lists it. The service that calls it shows its health, as the `hook.<name>` dependency. When your server is down, the region answers with its built-in rules and keeps going.
 
 ## The whole server
 
@@ -75,7 +75,7 @@ A handler that raises an error does no harm. The server answers 500 with the err
 
 - `sh examples/modules/try.sh` prints the three lines above.
 - The server's terminal shows a `/salience`, `/affect` or `/critic` line for each decision once a hook points at it.
-- The Services tab shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
+- The Services screen shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
 
 ## If it didn't
 

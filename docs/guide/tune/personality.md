@@ -43,12 +43,11 @@ The co-host's name and yours come from `cohost.name` and `cohost.streamer` in `c
 
 ## Edit it from the dashboard
 
-1. Open the dashboard and stay on the **live** tab.
-2. Find the **personality.md** panel on the right. It shows the file as it is now.
-3. Change the text.
-4. Press **save & reload**.
+1. Open the dashboard's **Settings** screen and choose **Personality**, the first entry under **Identity**. It shows the file as it is now.
+2. Change the text.
+3. Press **Save** (or Ctrl+S in the editor).
 
-If the dashboard asks for a token, it is the `CONTROL_TOKEN` from your `.env` file. The page asks once per browser tab. Saving writes the file and tells the [cortex](../../start/glossary.md#cortex), the part that writes replies, to read it again before its next reply.
+If the dashboard asks for a token in the Access dialog, it is the `CONTROL_TOKEN` from your `.env` file. Saving writes the file and tells the [cortex](../../start/glossary.md#cortex), the part that writes replies, to read it again before its next reply.
 
 If you edit the file in a text editor instead, restart the cortex so it reads the new text (the [Starting and stopping](../operate/start-stop.md) page shows how).
 
@@ -60,7 +59,7 @@ You are in charge of that section: delete lines you do not like, rewrite the one
 
 ## How you know it worked
 
-- After **save & reload** the co-host's next lines follow the new instructions. Try it with the **say something** and **test inputs** panels on the live tab, described in the [dashboard tour](../operate/dashboard.md).
+- After **Save** the co-host's next lines follow the new instructions. Try it with the **Say a line** and **Test inputs** cards on the **Live** screen, described in the [dashboard tour](../operate/dashboard.md).
 - Opening the file in a text editor shows your change.
 
 ## If it didn't

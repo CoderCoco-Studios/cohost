@@ -48,7 +48,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    cp config/secrets.example.yaml config/secrets.yaml
    ```
 
-   Then add a control token to `.env` (the dashboard asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one.
+   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one.
    </details>
 
 3. Start the dashboard.
@@ -59,20 +59,20 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on.
 
-4. Open `http://localhost:3000` in your browser. When it asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep CONTROL_TOKEN .env`.
+4. Open `http://localhost:3000` in your browser. When the Access dialog asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep ^CONTROL_TOKEN= .env`.
 
 5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
 
-6. Switch the outside dependencies to their stand-ins with an isolated start, which edits no file and writes nothing to `.env`. On the Services tab, tick **isolated** above the table, then press **Restart** on `chat`, `memory`, `cortex` and `voice` (starting `cortex` isolated also starts `salience` and `affect`). In order, they now run on: scripted fake chat, one message every eight seconds; memory kept in the program and lost when it stops, with simple offline [embeddings](../../start/glossary.md#embedding); canned echo replies from the [LLM](../../start/glossary.md#llm); and a voice that returns silent audio. The avatar is off by default.
+6. Switch the outside dependencies to their stand-ins with an isolated start, which edits no file and writes nothing to `.env`. On the Services screen, press **Start** (or **Restart**) on `chat`, `memory`, `cortex` and `voice`, switch on **Isolated** in each dialog and confirm (starting `cortex` isolated also starts `salience` and `affect`). In order, they now run on: scripted fake chat, one message every eight seconds; memory kept in the program and lost when it stops, with simple offline [embeddings](../../start/glossary.md#embedding); canned echo replies from the [LLM](../../start/glossary.md#llm); and a voice that returns silent audio. The avatar is off by default.
 
-7. When the Services tab settles, click **enable audio** so your browser is allowed to play sound.
+7. When the Services screen settles, press **Audio off** in the header (it then reads **Audio on**) so your browser is allowed to play sound.
 
 ## How you know it worked
 
-- The Services tab shows every service as `up`, with the mode `mock` on the ones you started isolated. The infrastructure ([Redis](../../start/glossary.md#redis), [Postgres](../../start/glossary.md#postgres), [Ollama](../../start/glossary.md#ollama), [text-to-speech](../../start/glossary.md#tts) and [speech-to-text](../../start/glossary.md#stt)) shows in the stack panel rather than the table.
+- The Services screen shows every service as `up`, with the mode `mock` on the ones you started isolated. The infrastructure ([Redis](../../start/glossary.md#redis), [Postgres](../../start/glossary.md#postgres), [Ollama](../../start/glossary.md#ollama), [text-to-speech](../../start/glossary.md#tts) and [speech-to-text](../../start/glossary.md#stt)) shows in the **Stack** card rather than the table.
 - The live feed starts filling with fake viewers' messages every few seconds, then with the co-host's replies after them.
 - The preview face on the dashboard moves its mouth in time with each reply. The audio is silent, so the face is all you get.
-- A line you type in the test panel takes the same road and gets an echoed reply.
+- A line you type in **Test inputs** takes the same road and gets an echoed reply.
 
 Optional pieces (`eyes`, `ears`, `mouth` and the Discord [connector](../../start/glossary.md#connector)) are [Compose profiles](../../start/glossary.md#compose-profile), which means they stay off until you ask for them. You do not need them to see a healthy stack.
 
@@ -81,7 +81,7 @@ Optional pieces (`eyes`, `ears`, `mouth` and the Discord [connector](../../start
 - **The installer stopped after installing Docker.** That is expected: it needs you to log out and back in so your user is in the `docker` group. Run it again.
 - **`pnpm dashboard` fails to find the bus addon.** The bus connection was not built. Run `pnpm build:native`, then start the dashboard again.
 - **The dashboard says `docker` is not found on WSL2.** Docker Desktop's WSL integration is probably off for your distribution. Either turn it on in Docker Desktop (Settings, Resources, WSL integration) or put `COHOST_DOCKER_BIN=docker.exe` in `.env` so cohost runs every Docker command through the Windows program.
-- **A service stays `degraded` or `down`.** Open the Services tab, read its note, and see [service health](../operate/health.md).
+- **A service stays `degraded` or `down`.** Open the Services screen, read its note, and see [service health](../operate/health.md).
 - **The first Launch seems stuck.** It is probably downloading models. That can take a long time on a slow connection.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).

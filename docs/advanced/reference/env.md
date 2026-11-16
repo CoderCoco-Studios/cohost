@@ -36,7 +36,7 @@ The dashboard cannot edit these: a page it serves must not be able to remove its
 | `CONTROL_ENABLED` | `1` | Turns the stack and service control routes on. With it off, `POST /services/<id>/start`, `stop` and `restart` and the `/stack` actions answer 404 |
 | `CONTROL_TOKEN` | filled by `install.sh` | The bearer token required on the control routes, `POST /control`, `PUT /personality`, the inject routes and the secrets write while control is on. Make one by hand with `openssl rand -hex 24`. Startup fails when `CONTROL_ENABLED=1` and it is empty |
 | `CONTROL_ADVANCED` | `0` | `1` lets the controls also stop and restart `redis` and `postgres`, which are read-only otherwise. The dashboard can never stop itself |
-| `VIEWERS_TOKEN` | empty | The bearer token for every `/viewers` route, which show what the co-host remembers about each viewer. Empty leaves the Viewers tab locked and every `/viewers` route answering 403 |
+| `VIEWERS_TOKEN` | empty | The bearer token for every `/viewers` route, which show what the co-host remembers about each viewer. Empty leaves the Viewers screen locked and every `/viewers` route answering 403 |
 
 ## Locating files and tools
 
@@ -67,7 +67,7 @@ Where a service finds the other pieces before it can open the bus. Compose pins 
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services tab and the Compose health checks derive staleness from it |
+| `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services screen and the Compose health checks derive staleness from it |
 | `LOG_LEVEL` | `info` | The logger's level for every service. `debug` for more. The logger exists before configuration is loaded |
 
 ## Set by the build

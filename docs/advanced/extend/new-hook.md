@@ -53,7 +53,7 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 
 - The test in step 5 passes: it checks the rules, a good and a bad `http` reply, and a good and a bad `llm` reply.
 - Once wired in, setting the hook's `kind` to `http` and pointing it at a server from [Hook server in Python](hook-server-python.md) (or the TypeScript or Rust guide) changes the answers, and stopping that server brings the rules answers back.
-- With `kind` set to `http` or `llm`, the Services tab lists `hook.<name>` in the deps column of the service that owns the hook, as `ok` while the hook is reachable and `down` while it is unreachable or being skipped.
+- With `kind` set to `http` or `llm`, the Services screen lists `hook.<name>` in the deps column of the service that owns the hook, as `ok` while the hook is reachable and `down` while it is unreachable or being skipped.
 
 ## If it didn't
 

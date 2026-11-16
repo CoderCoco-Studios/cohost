@@ -28,7 +28,7 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 2. Check that `chat.source` is `twitch`. The value `fake` makes chat a scripted fake instead of Twitch.
 
-3. Restart the `chat` service. In the dashboard, open the Services tab and restart `chat`. Or, from a terminal in the cohost folder:
+3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 
    ```bash
    pnpm cohostctl restart chat
@@ -38,7 +38,7 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Logging in (optional)
 
-Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into `config/secrets.yaml`:
+Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into the secret fields of **Settings**, **Twitch chat** (each shows **Set** or **Not set**; saving needs your control token), or into `config/secrets.yaml` by hand:
 
 ```yaml
 chat:
@@ -49,13 +49,13 @@ chat:
     refresh_token: "your-refresh-token"
 ```
 
-Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.json`, so a restart does not lose it. If you generate a new pair and put it in `secrets.yaml` and restart `chat`, cohost notices and uses the new pair.
+Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.json`, so a restart does not lose it. If you generate a new pair and put it in the secret fields (or `secrets.yaml`) and restart `chat`, cohost notices and uses the new pair.
 
 The co-host does not write into Twitch chat today. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
 
 ## How you know it worked
 
-- The Services tab shows `chat` as `up` with mode `live`.
+- The Services screen shows `chat` as `up` with mode `live`.
 - The `chat` log says it connected to Twitch chat (`docker compose logs chat` shows it). The line `authenticated: false` is normal without a login.
 - Lines typed in your channel appear on the dashboard's live feed within a few seconds. A quiet channel stays quiet.
 

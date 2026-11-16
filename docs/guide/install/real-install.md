@@ -12,7 +12,7 @@ By the end of this page you will have the real stack running: a language model a
 ## What you need
 
 - A working [mock-mode run](first-run.md), or at least a machine that meets [What you need](prerequisites.md).
-- If you did the mock run, there is nothing to undo: the real run starts every service without the **isolated** option, so each one uses its real backend.
+- If you did the mock run, there is nothing to undo: the real run starts every service without the **Isolated** option, so each one uses its real backend.
 - Good internet and patience. The installer downloads [container](../../start/glossary.md#container) images and the default models, several gigabytes in all.
 
 ## Steps
@@ -40,7 +40,7 @@ By the end of this page you will have the real stack running: a language model a
    | `llm.model`, `llm.embed_model`, `vision.model` in `config/config.yaml` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
    | `ears.stt_model` in `config/config.yaml` | The speech-to-text model name | Rarely. |
    | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` in `config/config.yaml` | Your accounts and apps | Fill each in on its own page under Connect. |
-   | `config/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages. The Settings screen edits `config.yaml` only, so write secrets in this file. |
+   | `config/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages, or set each credential from the **Settings** screen: its masked field shows **Set** or **Not set**, never the value, and saving needs your control token. |
    | `COHOST_DOCKER_BIN` in `.env` | The Docker program to run | On [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration, set it to `docker.exe`. |
 
    A restart of the service that reads a key applies an edit to either file. The [environment and ports](../../advanced/reference/env.md) page lists everything `.env` holds.
@@ -62,9 +62,9 @@ By the end of this page you will have the real stack running: a language model a
    pnpm dashboard
    ```
 
-6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` when asked, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
+6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
 
-7. Click **enable audio** so your browser may play sound.
+7. Press **Audio off** in the header (it then reads **Audio on**) so your browser may play sound.
 
 ## Optional pieces
 
@@ -93,8 +93,8 @@ If you run a Windows `docker.exe` from WSL2, that program splits the list on `;`
 
 ## How you know it worked
 
-- The Services tab shows each running service as `up`, with mode `live` (or `off` for a feature you have not enabled).
-- Typing a line into the test panel gets a reply from the real model, and the reply is spoken on the dashboard page once you have enabled audio.
+- The Services screen shows each running service as `up`, with mode `live` (or `off` for a feature you have not enabled).
+- Typing a line into **Test inputs** gets a reply from the real model, and the reply is spoken on the dashboard page once audio is on in the header.
 - `docker compose ps` lists `redis`, `postgres`, `ollama`, `tts` and `stt` as running.
 
 ::: aside
@@ -104,7 +104,7 @@ Real model, real voice, real me. Try not to get attached. I will remember it if 
 ## If it didn't
 
 - **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. The models are the ones `config/config.yaml` names; a failed download of a [hook](../../start/glossary.md#hook) model is only a warning.
-- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (`config/config.yaml` for settings, `config/secrets.yaml` for credentials), then restart that service from the Services tab.
+- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (the **Settings** screen, or `config/config.yaml` for settings and `config/secrets.yaml` for credentials), then restart that service from the Services screen.
 - **Replies are very slow.** There is no GPU, or the model is too big for it. Pick a smaller `llm.model`; see [choose a model](../tune/model.md).
 - **The dashboard refuses to start.** If you set `DASHBOARD_HOST=0.0.0.0` it also needs `CONTROL_ENABLED=1` and a `CONTROL_TOKEN`.
 

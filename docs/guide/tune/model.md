@@ -38,7 +38,7 @@ pnpm cohostctl restart salience
 pnpm cohostctl restart affect
 ```
 
-Or press **Save** on the dashboard's **settings** tab and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The settings tab edits `config.yaml`; a key in `secrets.yaml` is edited in the file.
+Or press **Save** on the dashboard's **Settings** screen and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The **Settings** screen edits both: ordinary keys are written to `config.yaml`, and an API key or password has a masked field (marked **Set** or **Not set**) that writes `secrets.yaml` and needs your control token.
 
 ## Local GPU (the default)
 
@@ -155,12 +155,12 @@ A bigger brain will not make me funnier on its own. It will just make me wrong i
 
 ## How you know it worked
 
-- The dashboard's **services** tab shows `cortex` as `up` with mode `live` ([Service health](../operate/health.md) explains the columns).
-- Send a line with **test inputs** on the live tab and the reply reads in the new model's style.
+- The dashboard's **Services** screen shows `cortex` as `up` with mode `live` ([Service health](../operate/health.md) explains the columns).
+- Send a line with **Test inputs** on the **Live** screen and the reply reads in the new model's style.
 - For a local model, `docker compose ps` lists the `models` one-shot as exited after it has downloaded.
 
 ## If it didn't
 
-- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, the key in `secrets.yaml` and the [cortex](../../start/glossary.md#cortex)'s detail column on the services tab. See [Troubleshooting](../troubleshooting.md).
+- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, the key in `secrets.yaml` and the [cortex](../../start/glossary.md#cortex)'s detail in the **Why** column of the Services screen. See [Troubleshooting](../troubleshooting.md).
 - The download is stuck or failed: the `models` one-shot exits with an error if the main, vision or embedding model fails to download. Check your disk space and connection and press **Launch** again.
 - Replies are cut short or empty on Claude: raise `llm.claude.max_tokens`, since thinking and the reply share it.

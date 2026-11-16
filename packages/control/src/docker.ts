@@ -33,9 +33,10 @@ export function resolveDockerBin(env: NodeJS.ProcessEnv, onPath: (name: string, 
 
 /**
  * The environment to hand a Docker process: for a Windows executable seen from WSL2 (`*.exe`) `WSLENV` names every
- * variable in `extra`, since interop forwards nothing else; otherwise `base` and `extra` merged unchanged.
+ * variable in `extra`, empty values included, since interop forwards nothing else and an empty `COHOST_ISOLATION` must reach Windows
+ * Compose so it does not read the project `.env`; otherwise `base` and `extra` merged unchanged.
  */
-// @spec CTRL-RUNTIME-012
+// @spec CTRL-RUNTIME-012, CTRL-STACK-017
 export function dockerEnv(bin: string, base: NodeJS.ProcessEnv, extra?: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
   const merged: NodeJS.ProcessEnv = { ...base, ...extra };
   const names = Object.keys(extra ?? {});

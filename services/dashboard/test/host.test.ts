@@ -1,3 +1,4 @@
+import { testConfig } from "@cohost/testing";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -43,13 +44,14 @@ async function boot(over: { bind?: string; controlEnabled?: boolean; handler?: h
   return { l: l!, wss };
 }
 
-// @spec DASH-HTTP-009
-test("ports: PORT wins over DASHBOARD_PORT wins over the config port; empty values are skipped; the LAN port defaults to 3001", () => {
-  assert.deepEqual(resolvePorts({ PORT: "4000", DASHBOARD_PORT: "5000" }, 3000), { port: 4000, lanPort: 3001 });
-  assert.deepEqual(resolvePorts({ DASHBOARD_PORT: "5000" }, 3000), { port: 5000, lanPort: 3001 });
-  assert.deepEqual(resolvePorts({ PORT: "", DASHBOARD_PORT: "" }, 3000), { port: 3000, lanPort: 3001 });
-  assert.deepEqual(resolvePorts({ DASHBOARD_LAN_PORT: "4001" }, 3000), { port: 3000, lanPort: 4001 });
-  assert.deepEqual(resolvePorts({ DASHBOARD_LAN_PORT: "" }, 3000), { port: 3000, lanPort: 3001 });
+// @spec DASH-HTTP-009, DASH-HOST-001
+test("ports: the full surface listens on dashboard.port and the LAN listener on dashboard.lan_port, and no environment variable changes either", () => {
+  assert.deepEqual(resolvePorts({ port: 4000, lan_port: 4001 }), { port: 4000, lanPort: 4001 });
+  assert.deepEqual(resolvePorts(testConfig().dashboard), { port: 3000, lanPort: 3001 }, "the schema defaults");
+  const saved = { PORT: process.env.PORT, DASHBOARD_PORT: process.env.DASHBOARD_PORT, DASHBOARD_LAN_PORT: process.env.DASHBOARD_LAN_PORT };
+  Object.assign(process.env, { PORT: "9001", DASHBOARD_PORT: "9002", DASHBOARD_LAN_PORT: "9003" });
+  try { assert.deepEqual(resolvePorts({ port: 4000, lan_port: 4001 }), { port: 4000, lanPort: 4001 }); }
+  finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 });
 
 // @spec DASH-HOST-002

@@ -4,7 +4,7 @@ Twitch chat sense: Twitch IRC (or a fake source) in, filtered `chat.message` eve
 
 ## Status
 
-Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Twitch channel and credentials come from `chat.twitch.*` keys (CHAT-PLAN-003, CHAT-TW-001, -002, -010 to -012, CHAT-HEALTH-005); not built. Total 45 specs: 38 `[x]`, 7 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Twitch channel and credentials come from `chat.twitch.*` keys and `secrets.yaml`. Total 45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`.
 
 **AUDITED**: 45 specs: 45 implemented, 0 deferred, 0 gaps.
 

@@ -112,6 +112,30 @@ test("a desktop registration with transport http binds the listener without http
   }
 });
 
+// @spec EARS-SRC-013
+test("the service applies ears.http.token from the loaded config to its listener, and EARS_HTTP_TOKEN in the environment changes nothing", async () => {
+  const old = process.env.EARS_HTTP_TOKEN;
+  process.env.EARS_HTTP_TOKEN = "env-token";
+  try {
+    const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port: 0, token: "cfg-token" } });
+    try {
+      await waitFor(() => r.rec.lines.some((l) => /http listening/.test(String(l.msg))), "http listening");
+      const port = (r.rec.lines.find((l) => /http listening/.test(String(l.msg)))!.obj as { port: number }).port;
+      const send = (token?: string) => fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+      assert.equal((await send()).status, 401);
+      assert.equal((await send("env-token")).status, 401, "the environment token is no credential");
+      assert.equal((await send("cfg-token")).status, 200);
+    } finally { await r.stop(); }
+    const open = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port: 0 } });
+    try {
+      await waitFor(() => open.rec.lines.some((l) => /http listening/.test(String(l.msg))), "http listening");
+      const port = (open.rec.lines.find((l) => /http listening/.test(String(l.msg)))!.obj as { port: number }).port;
+      const res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav" } });
+      assert.equal(res.status, 200, "with no configured token none is required, whatever the environment holds");
+    } finally { await open.stop(); }
+  } finally { if (old === undefined) delete process.env.EARS_HTTP_TOKEN; else process.env.EARS_HTTP_TOKEN = old; }
+});
+
 // @spec EARS-STUB-002
 test("stub engine: a startup warning, mode mock, stt n/a", async () => {
   const r = await boot({ sources: ["discord"], stt_engine: "stub", vad: { engine: "gap" } });

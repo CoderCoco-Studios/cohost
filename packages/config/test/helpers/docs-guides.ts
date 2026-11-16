@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { parseConfigText, substituteEnv } from "../../src/index.js";
+import { parseConfigText } from "../../src/index.js";
 
 /** Helpers of docs-guides.test.ts: the Extend pages' config fragments and the examples' Cargo lock. */
 
@@ -39,17 +39,17 @@ export function layer(base: unknown, over: unknown): unknown {
 }
 
 /**
- * Lays a YAML fragment over `exampleYaml`, resolves each `${NAME}` and `${NAME:-default}` as the config loader does with no
- * variable set, and parses the result with `ConfigSchema`. Returns null when it parses, otherwise the problem text.
+ * Lays a YAML fragment over `exampleYaml` and runs the result through the config loader's pipeline (no secrets, no override), so
+ * a placeholder fails as it does in a real `config.yaml`. Returns null when it parses, otherwise the problem text.
  */
 export function fragmentProblem(exampleYaml: string, fragment: string): string | null {
   let merged: unknown;
   try {
-    merged = layer(parseYaml(substituteEnv(exampleYaml, {})), parseYaml(substituteEnv(fragment, {})));
+    merged = layer(parseYaml(exampleYaml), parseYaml(fragment));
   } catch (e) {
     return `not valid YAML: ${(e as Error).message}`;
   }
-  const r = parseConfigText(stringifyYaml(merged), {});
+  const r = parseConfigText(stringifyYaml(merged));
   return r.ok ? null : r.issues.map((i) => `${i.path || "(root)"}: ${i.message}`).join("; ");
 }
 

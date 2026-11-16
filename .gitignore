@@ -6,6 +6,7 @@ data/
 *.log
 .DS_Store
 config/config.yaml
+config/secrets.yaml
 config/personality.md
 config/expressions.yaml
 # VTube Studio plugin token written by the avatar driver

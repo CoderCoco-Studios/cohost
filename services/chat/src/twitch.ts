@@ -33,7 +33,7 @@ export interface TokenRegistry {
 /**
  * Register the user token and wait for it, so the chat client never asks for credentials first.
  * A missing refresh token is rejected up front: twurple's `addUserForToken` cannot register without one.
- * With `stored` the stored token is registered as it is; otherwise the `.env` pair is, marked as already
+ * With `stored` the stored token is registered as it is; otherwise the `secrets.yaml` pair is, marked as already
  * expired so the first use refreshes it.
  */
 export async function registerUserToken(
@@ -42,7 +42,7 @@ export async function registerUserToken(
 ): Promise<void> {
   const refreshToken = tokens.refreshToken?.trim();
   if (!refreshToken) {
-    throw new Error("TWITCH_REFRESH_TOKEN is required when TWITCH_ACCESS_TOKEN is set (the authenticated Twitch path)");
+    throw new Error("chat.twitch.refresh_token is required when chat.twitch.access_token is set (the authenticated Twitch path)");
   }
   await provider.addUserForToken(
     tokens.stored ?? { accessToken: tokens.accessToken, refreshToken, expiresIn: 0, obtainmentTimestamp: 0 },

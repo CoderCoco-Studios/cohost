@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EVENT_TYPES } from "@cohost/bus";
-import { schemaAt } from "@cohost/config";
+import { ISOLATION_OVERRIDES, schemaAt } from "@cohost/config";
 import { SERVICE_MANIFEST, findService } from "../src/index.js";
 
 const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
@@ -72,4 +72,11 @@ test("test inputs and observed types are the declared ones and name registered b
       assert.ok(registered.has(t) && !barred(t), `${s.id}: ${t} is not an allowed bus event type`);
     }
   }
+});
+
+// @spec CFG-ISO-006
+test("every name in a unit's isolatedEnv is an isolation override of the config package, and every override is used by a unit", () => {
+  const used = new Set(SERVICE_MANIFEST.flatMap((s) => Object.keys(s.isolatedEnv)));
+  for (const name of used) assert.ok(Object.hasOwn(ISOLATION_OVERRIDES, name), `${name} is in ISOLATION_OVERRIDES`);
+  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).sort());
 });

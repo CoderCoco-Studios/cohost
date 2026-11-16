@@ -7,127 +7,51 @@ verified: f126b94
 
 # Environment variables and ports
 
-Secrets and per-machine settings live in `.env`, copied from `.env.example`; everything about behaviour lives in `config/config.yaml` (see [Configuration](config.md)). [Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for substitution and passes it to each application [container](../../start/glossary.md#container), and services run from source read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file.
+`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `config/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
 
-A value in `.env` reaches `config.yaml` through `${VAR}` placeholders. A variable set in your shell wins over `.env`. The sections below follow `.env.example`, then the variables that are not in it.
+[Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run from source read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
+
+Provider credentials such as `ANTHROPIC_API_KEY` or `AWS_ACCESS_KEY_ID` are not read from the environment. They are keys of `secrets.yaml`: `llm.claude.api_key`, `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key`, among others. A key left in `.env` cannot keep a provider working.
 
 ## Compose
+
+Read by `docker compose` itself, before any container exists.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `COMPOSE_FILE` | `docker-compose.yml` | Which Compose files to use. The installer adds the GPU overlay when it finds an NVIDIA [GPU](../../start/glossary.md#gpu): `docker-compose.yml:docker-compose.gpu.yml` |
 | `COMPOSE_PATH_SEPARATOR` | unset | Set to `:` when a Windows `docker.exe` (see `COHOST_DOCKER_BIN`) would otherwise split `COMPOSE_FILE` on `;` |
 | `COMPOSE_PROFILES` | unset | Optional services that stay on across restarts and Launch: `eyes`, `ears`, `mouth` and `discord`, for example `discord,ears,mouth` |
+| `COMPOSE_PROJECT_NAME` | the folder name | The Compose project name. Set it only to run a second stack beside the first |
 | `KOKORO_IMAGE` | CPU image `ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0` | Override the [TTS](../../start/glossary.md#tts) image. The GPU overlay switches the default to the CUDA build |
 | `SPEACHES_IMAGE` | CPU image `ghcr.io/speaches-ai/speaches:0.8.3-cpu` | Override the [STT](../../start/glossary.md#stt) image. The GPU overlay switches the default to the CUDA build |
 
-## The dashboard and stack control
+## The dashboard's access controls
+
+The dashboard cannot edit these: a page it serves must not be able to remove its own lock. They are read once, when the dashboard starts.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `DASHBOARD_PORT` | `3000` | The port of the full dashboard (page, controls, Launch and Stop). `PORT` overrides it, and `dashboard.port` in `config.yaml` is the fallback |
-| `PORT` | unset | Overrides `DASHBOARD_PORT` for the dashboard. Its startup log prints the URL it actually uses |
-| `DASHBOARD_LAN_PORT` | `3001` | The LAN listener: the [sink](../../start/glossary.md#sink) page, its audio and the playback report, and nothing else. Use it for the second-PC [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) |
-| `DASHBOARD_HOST` | `127.0.0.1` | Where the full dashboard listens. `0.0.0.0` opens it to other machines, and then it refuses to start without `CONTROL_ENABLED=1` and a token. The token travels in cleartext over HTTP |
+| `DASHBOARD_HOST` | `127.0.0.1` | Where the full dashboard listens. `0.0.0.0` opens it to other machines, and then it refuses to start without `CONTROL_ENABLED=1` and `CONTROL_TOKEN`. The token travels in cleartext over HTTP |
 | `CONTROL_ENABLED` | `1` | Turns the stack and service control routes on. With it off, `POST /services/<id>/start`, `stop` and `restart` and the `/stack` actions answer 404 |
-| `CONTROL_TOKEN` | filled by `install.sh` | The bearer token required on the control routes, `POST /control`, `PUT /personality` and the inject routes while control is on. Make one by hand with `openssl rand -hex 24`. Startup fails when `CONTROL_ENABLED=1` and it is empty |
+| `CONTROL_TOKEN` | filled by `install.sh` | The bearer token required on the control routes, `POST /control`, `PUT /personality`, the inject routes and the secrets write while control is on. Make one by hand with `openssl rand -hex 24`. Startup fails when `CONTROL_ENABLED=1` and it is empty |
 | `CONTROL_ADVANCED` | `0` | `1` lets the controls also stop and restart `redis` and `postgres`, which are read-only otherwise. The dashboard can never stop itself |
+| `VIEWERS_TOKEN` | empty | The bearer token for every `/viewers` route, which show what the co-host remembers about each viewer. Empty leaves the Viewers tab locked and every `/viewers` route answering 403 |
+
+## Locating files and tools
+
+Needed before configuration can be read.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `secrets.yaml`, `personality.md` and `expressions.yaml`. Compose sets `/app/config` |
+| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run from source |
+| `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache |
 | `COHOST_DOCKER_BIN` | `docker` | The [Docker](../../start/glossary.md#docker) executable the dashboard and `cohostctl` run. Set it to `docker.exe` on [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration |
-| `VIEWERS_TOKEN` | empty | The bearer token for every `/viewers` route, which show what the co-host remembers about each viewer. Empty leaves the Viewers tab locked and every `/viewers` route answering 403. Environment only, never `config.yaml` |
 
-## Test uploads
+## Infrastructure addresses
 
-Limits for the images and audio injected from the dashboard. Unset means the defaults shown.
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `INJECT_MAX_IMAGE_BYTES` | `8388608` | The largest injected image (8 MiB) |
-| `INJECT_MAX_AUDIO_BYTES` | `26214400` | The largest injected audio clip (25 MiB) |
-| `INJECT_TTL_MS` | `300000` | How long an upload waits in Redis for its service to take it |
-
-## Isolation presets
-
-Each one swaps a backend for a stand-in without editing `config.yaml`, because the example config reads it as `${VAR:-default}`. Unset means the live default shown first. See [One service on its own](../testing/isolated.md).
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `LLM_PROVIDER` | `ollama` | `ollama`, `openai`, `anthropic`, `bedrock` or `mock` |
-| `MEMORY_STORE` | `postgres` | `postgres`, or `memory` for an in-process store lost on exit |
-| `MEMORY_EMBEDDER` | `ollama` | `ollama`, or `hash` for offline [embeddings](../../start/glossary.md#embedding) |
-| `VOICE_ENGINE` | `kokoro` | `kokoro`, or `stub` for silence |
-| `CHAT_SOURCE` | `twitch` | `twitch`, or `fake` for scripted messages |
-| `VISION_ENABLED` | `false` | `true` starts the describer, which needs `VISION_MODEL` and OBS |
-| `VISION_ENGINE` | `ollama` | `ollama`, or `stub` for a fixed description |
-| `EARS_SOURCES` | `[discord]` | The listening sources in flow syntax: `[discord, http, dir, <connector tag>]`. `[]` idles |
-| `EARS_HTTP_TOKEN` | empty | The bearer token for `ears` `POST /audio`. Empty requires none |
-| `EARS_STT_ENGINE` | `speaches` | `speaches`, or `stub` for a fixed transcript |
-| `CONNECTIONS_DISCORD_ENABLED` | `true` | `false` makes the Discord [connector](../../start/glossary.md#connector) idle and hold no connection |
-| `MOUTH_DISCORD_ENABLED` | `true` | `false` makes `mouth` idle and play nothing on the `discord` output |
-| `MOUTH_DRYRUN_ENABLED` | `false` | `true` adds the `dryrun` output, which accepts every line and plays nothing |
-| `MOUTH_FILE_ENABLED` | `false` | `true` adds the `file` output, which appends each line's WAV under the data directory |
-| `MOUTH_HTTP_ENABLED` | `false` | `true` adds the `http` output, which POSTs each line's WAV to `MOUTH_HTTP_URL` |
-| `MOUTH_HTTP_URL` | empty | An `http` or `https` URL for the `http` output. Empty leaves the output down |
-
-## Models
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `LLM_MODEL` | `qwen2.5:7b-instruct-q4_K_M` | The chat model: an Ollama tag the `models` service pulls, or the id for another provider. Reaches `llm.model` |
-| `VISION_MODEL` | `qwen2.5vl:3b` | The vision model `eyes` asks. Reaches `vision.model` |
-| `NOTES_MODEL` | `gemma3:4b` | The small model that classifies chat lines into viewer notes, on local Ollama. A failed pull is only a warning |
-| `EMBED_MODEL` | `nomic-embed-text` | The embedding model. Reaches `llm.embed_model` |
-| `STT_MODEL` | `Systran/faster-whisper-small` | The model name `ears` sends to the STT server. The `models` service does not pull it. Reaches `ears.stt_model` |
-| `LLM_API_KEY` | empty | The key for `llm.provider: openai` (a vLLM box, OpenRouter, Groq and others) |
-| `ANTHROPIC_API_KEY` | empty | The key for `llm.provider: anthropic` |
-| `AWS_ACCESS_KEY_ID` | empty | For `llm.provider: bedrock`. Compose mounts no `~/.aws`, so keys go here |
-| `AWS_SECRET_ACCESS_KEY` | empty | For `llm.provider: bedrock` |
-| `AWS_REGION` | empty | For `llm.provider: bedrock`, used when `llm.bedrock.region` is empty |
-
-## Twitch
-
-Scopes `chat:read chat:edit` from the Twitch developer console.
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `TWITCH_CHANNEL` | empty | The channel to read. Without it `chat` idles as `degraded` |
-| `TWITCH_CLIENT_ID` | empty | The application's client id |
-| `TWITCH_CLIENT_SECRET` | empty | The application's client secret |
-| `TWITCH_ACCESS_TOKEN` | empty | The login token. `chat` keeps its refreshed copy under the data directory |
-| `TWITCH_REFRESH_TOKEN` | empty | Required whenever `TWITCH_ACCESS_TOKEN` is set |
-
-## Discord
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `DISCORD_TOKEN` | empty | The co-host's one Discord bot, used only by the Discord connector. Invite it with Connect and Speak and enable the Server Members intent. `ears` and `mouth` hold no token |
-| `DISCORD_GUILD_ID` | empty | The server id. Reaches `connections.discord.guild_id` |
-| `DISCORD_VOICE_CHANNEL_ID` | empty | The voice channel id. Reaches `connections.discord.voice_channel_id` |
-
-## OBS and the avatar app
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `OBS_HOST` | `host.docker.internal` | Where [obs-websocket](../../start/glossary.md#obs-websocket) listens: `host.docker.internal` for OBS on the same machine, the LAN address on a second PC |
-| `OBS_PORT` | `4455` | The obs-websocket port |
-| `OBS_PASSWORD` | empty | The obs-websocket password |
-| `OBS_SOURCE` | `Game Capture` | The OBS source to screenshot |
-| `AVATAR_DRIVER` | `null` | `vtube-studio`, `vmc` or `null` for no avatar app |
-| `VTS_HOST` | `host.docker.internal` | Where [VTube Studio](../../start/glossary.md#vtube-studio) runs |
-| `VTS_PORT` | `8001` | The VTube Studio API port |
-| `VMC_HOST` | `host.docker.internal` | Where the [VMC](../../start/glossary.md#vmc) receiver runs |
-| `VMC_PORT` | `39539` | The VMC receiver's UDP port |
-
-## Health, files and logging
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services tab and the Compose health checks derive staleness from it |
-| `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as refreshed Twitch tokens and the fallback clip cache |
-| `LOG_LEVEL` | `info` | The logger's level for every service. `debug` for more |
-
-## Not in `.env.example`
-
-These are set by Compose, by the loader or by tests. Set them yourself only to point a service somewhere else.
+Where a service finds the other pieces before it can open the bus. Compose pins the first six for containers.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -138,14 +62,53 @@ These are set by Compose, by the loader or by tests. Set them yourself only to p
 | `STT_URL` | `http://127.0.0.1:8000` | The STT server `ears` calls |
 | `VOICE_URL` | `http://127.0.0.1:8700` | The `voice` service's public base URL, which ends up in `voice.utterance`. Compose sets `http://voice:8700` |
 | `VOICE_PORT` | `8700` | The port `voice` listens on |
-| `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `personality.md` and `expressions.yaml`. Compose sets `/app/config` |
-| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run from source |
-| `COHOST_VERSION` | `dev` | The version each service reports in its heartbeat |
+
+## Health and logging
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services tab and the Compose health checks derive staleness from it |
+| `LOG_LEVEL` | `info` | The logger's level for every service. `debug` for more. The logger exists before configuration is loaded |
+
+## Set by the build
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `COHOST_VERSION` | `dev` | The version each service reports in its heartbeat. The image build sets it |
+
+## `COHOST_ISOLATION`
+
+`COHOST_ISOLATION` is the one variable that can change a setting. It holds a single JSON object from override name to value, such as `{"LLM_PROVIDER":"mock","AVATAR_DRIVER":"null"}`. The control plane sets it on the `docker compose` process for an isolated start of one unit, and Compose passes it to that container; you never write it. The name is reserved for the control plane: do not set it in `.env` or in the shell. The dashboard and `cohostctl` set it on every `docker compose` command they run (empty unless it is an isolated start), so a value in `.env` or in the shell that started them is ignored. A `docker compose up` you run by hand is outside the control plane and nothing checks it: a value there reaches every container it starts, and each applies it as an isolation preset, so the whole stack runs with those overrides (a malformed value stops each service). The loader applies each entry to the config key in the table, so the unit runs with no external backend while the rest of the stack uses `config.yaml` as saved. The Settings screen reports a key that a running isolated unit has overridden. See [One service on its own](../testing/isolated.md).
+
+The override names are labels inside that object, not environment variables: a plain `LLM_PROVIDER` in `.env` or the shell is read by nothing. A malformed value, or a name not in the table, stops the service with an error naming `COHOST_ISOLATION`.
+
+| Override name | Config key it selects | Stand-in effect |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `llm.provider` | `mock` answers with deterministic offline replies |
+| `MEMORY_STORE` | `brain.memory.store` | `memory` is an in-process store lost on exit |
+| `MEMORY_EMBEDDER` | `brain.memory.embedder` | `hash` makes deterministic, offline [embeddings](../../start/glossary.md#embedding) |
+| `VOICE_ENGINE` | `voice.engine` | `stub` returns a silent WAV sized from the text |
+| `CHAT_SOURCE` | `chat.source` | `fake` sends scripted or stdin messages with no channel |
+| `VISION_ENABLED` | `vision.enabled` | `false` makes `eyes` idle and never touch OBS |
+| `VISION_ENGINE` | `vision.engine` | `stub` answers with fixed text and no model |
+| `EARS_SOURCES` | `ears.sources` | A list such as `[http, dir]` listens to those sources only; `[]` idles |
+| `EARS_STT_ENGINE` | `ears.stt_engine` | `stub` gives every clip a fixed transcript with no STT server |
+| `CONNECTIONS_DISCORD_ENABLED` | `connections.discord.enabled` | `false` makes the Discord [connector](../../start/glossary.md#connector) idle and hold no connection |
+| `MOUTH_DISCORD_ENABLED` | `mouth.outputs.discord.enabled` | `false` makes `mouth` play nothing on the `discord` output |
+| `MOUTH_DRYRUN_ENABLED` | `mouth.outputs.dryrun.enabled` | `true` adds the `dryrun` output, which accepts every line and plays nothing |
+| `AVATAR_DRIVER` | `avatar.driver` | `null` means no avatar app |
+
+## Development and test variables
+
+Set these yourself only to point a script or a test somewhere else.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
 | `STUB_TTS_PORT` | `8880` | The port of `scripts/dev/stub-tts.ts` |
 | `STUB_LLM_PORT` | `11434` | The port of `scripts/dev/stub-llm.ts` |
 | `COHOST_TEST_DATABASE_URL` | unset | A [pgvector](../../start/glossary.md#pgvector) database for the memory store tests. They skip without it |
 | `COHOST_LIVE_STACK` | unset | `1` runs the live-stack end-to-end test, which needs Docker |
-| `COHOST_LIVE_CLAUDE_MODEL` | unset | A Claude model id that, with `ANTHROPIC_API_KEY`, runs the Claude API smoke test |
+| `COHOST_LIVE_CLAUDE_MODEL` | unset | A Claude model id that, together with the Claude API key the test reads from `ANTHROPIC_API_KEY`, runs the Claude API smoke test. It is the one place that variable is read, and only by that test |
 
 ## Ports
 
@@ -153,14 +116,16 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 
 | Port | What | Published by | Notes |
 | --- | --- | --- | --- |
-| 3000 | The full dashboard | The host process (`pnpm dashboard`) | `DASHBOARD_PORT`, bound to `DASHBOARD_HOST` |
-| 3001 | The LAN listener: sink page, audio and playback report | The host process | `DASHBOARD_LAN_PORT`, all interfaces |
-| 6379 | [Redis](../../start/glossary.md#redis) | `redis` | For `pnpm dev` outside Docker |
-| 5432 | [Postgres](../../start/glossary.md#postgres) | `postgres` | |
-| 11434 | [Ollama](../../start/glossary.md#ollama) | `ollama` | |
-| 8880 | The TTS server | `tts` | |
-| 8000 | The STT server | `stt` | |
-| 8700 | The `voice` service's HTTP: audio, fallback clips, `/health` | `voice` | The host-run dashboard proxies audio from it |
-| 8765 | `ears`' `http` source | Not published by Compose | `ears.http.port`, local only by default; in Docker bind `0.0.0.0` and publish it yourself |
+| `3000` | The full dashboard (page, controls, Launch and Stop) | The host process (`pnpm dashboard`) | The `dashboard.port` key of `config.yaml`, bound to `DASHBOARD_HOST` |
+| `3001` | The LAN listener: the [sink](../../start/glossary.md#sink) page, its audio and the playback report, for a second PC's [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) | The host process | The `dashboard.lan_port` key of `config.yaml`, all interfaces. Must differ from `dashboard.port` |
+| `6379` | [Redis](../../start/glossary.md#redis) | `redis` | For `pnpm dev` outside Docker |
+| `5432` | [Postgres](../../start/glossary.md#postgres) | `postgres` | |
+| `11434` | [Ollama](../../start/glossary.md#ollama) | `ollama` | |
+| `8880` | The TTS server | `tts` | |
+| `8000` | The STT server | `stt` | |
+| `8700` | The `voice` service's HTTP: audio, fallback clips, `/health` | `voice` | The host-run dashboard proxies audio from it |
+| `8765` | `ears`' `http` source | Not published by Compose | `ears.http.port`, local only by default; in Docker bind `0.0.0.0` and publish it yourself |
 
-Ports on the machines cohost connects to, which cohost does not publish: obs-websocket on `OBS_PORT` (4455), VTube Studio on `VTS_PORT` (8001) and a VMC receiver on `VMC_PORT` (39539).
+Both dashboard ports are read when the dashboard starts, so an edit to `dashboard.port` or `dashboard.lan_port` applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, and then it needs `CONTROL_ENABLED=1` and `CONTROL_TOKEN`.
+
+Ports on the machines cohost connects to, which cohost does not publish, are keys of `config.yaml`: [obs-websocket](../../start/glossary.md#obs-websocket) on `vision.obs.port` (4455), [VTube Studio](../../start/glossary.md#vtube-studio) on `avatar.vtube_studio.port` (8001) and a [VMC](../../start/glossary.md#vmc) receiver on `avatar.vmc.port` (39539).

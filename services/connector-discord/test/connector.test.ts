@@ -86,7 +86,7 @@ function rig(o: RigOpts = {}) {
   const bus = new ConnBus();
   for (const r of o.others ?? []) bus.regs.set(r.id, r);
   const rec = recordingLog();
-  const cfg = testConfig({ connections: { discord: { enabled: o.enabled ?? true, guild_id: o.guild ?? "g1", voice_channel_id: o.channel ?? "chan" } } });
+  const cfg = testConfig({ connections: { discord: { enabled: o.enabled ?? true, token: o.token ?? "tok", guild_id: o.guild ?? "g1", voice_channel_id: o.channel ?? "chan" } } });
   const channel = { id: "chan", name: "General", isVoiceBased: () => true, guild: { members: { cache: new Map([["u1", { displayName: "Ann" }]]) } } };
   const guild = { id: "g1", channels: { fetch: async () => channel }, members: { fetch: async () => undefined }, voiceAdapterCreator: {} };
   const users = {
@@ -110,7 +110,7 @@ function rig(o: RigOpts = {}) {
   let shutdown: (() => void | Promise<void>) | undefined;
   const exits: number[] = [];
   const svc = createConnectorService({
-    env: { DISCORD_TOKEN: o.token ?? "tok" }, intervalMs: 60_000, refreshMs: 10,
+    intervalMs: 60_000, refreshMs: 10,
     createPlayer: () => player as never,
     createResource: (stream) => { const r = { stream, chunks: [] as Buffer[] }; stream.on("data", (c: Buffer) => r.chunks.push(c)); return r as never; },
     createDecoder: () => { const d = new PassThrough(); decoders.push(d); return d; },
@@ -143,7 +143,7 @@ async function up(o: RigOpts = {}) {
 }
 
 // @spec CONN-DISC-001, CONN-DISC-003, CONN-DISC-005, CONN-HLTH-001, CONN-HLTH-002
-test("logs in with DISCORD_TOKEN, joins undeafened and unmuted with the three intents, registers both capabilities ready and reports ready", async () => {
+test("logs in with connections.discord.token, joins undeafened and unmuted with the three intents, registers both capabilities ready and reports ready", async () => {
   const r = rig();
   await r.done;
   // registered before the join resolves: not ready, starting
@@ -185,16 +185,16 @@ test("a failed login is logged, withdraws the registration and exits with code 1
 });
 
 // @spec CONN-DISC-002
-test("an unset DISCORD_TOKEN idles degraded: no client, nothing registered, an error logged, detail names the variable", async () => {
+test("an unset connections.discord.token idles degraded: no client, nothing registered, an error logged, detail names the config key", async () => {
   const r = rig({ token: "" });
   await r.done;
   assert.equal(r.client.logins.length, 0);
   assert.equal(r.intents.length, 0, "no Discord client created");
   assert.equal(r.reg(), undefined);
   assert.equal(r.exits.length, 0);
-  assert.ok(r.rec.lines.some((l) => l.level === "error" && String(l.msg).includes("DISCORD_TOKEN is not set")));
+  assert.ok(r.rec.lines.some((l) => l.level === "error" && String(l.msg).includes("connections.discord.token is not set")));
   await waitFor(() => r.bus.lastHealth()?.state === "degraded", "degraded heartbeat");
-  assert.equal(r.bus.lastHealth()?.detail, "DISCORD_TOKEN is not set");
+  assert.equal(r.bus.lastHealth()?.detail, "connections.discord.token is not set");
   assert.equal(r.bus.lastHealth()?.mode, "live");
   await r.stop();
 });
@@ -594,13 +594,31 @@ test("a clip that is not a 16-bit PCM WAV, holds no samples or is longer than 10
   await r.stop();
 });
 
+// @spec CONN-DISC-001, CONN-DISC-002
+test("DISCORD_TOKEN and DISCORD_BOT_TOKEN in the process environment supply no token", async () => {
+  const names = ["DISCORD_TOKEN", "DISCORD_BOT_TOKEN"];
+  const old = names.map((n) => process.env[n]);
+  for (const n of names) process.env[n] = "env-token";
+  try {
+    const r = rig({ token: "" });
+    await r.done;
+    assert.equal(r.client.logins.length, 0, "no login with an environment token");
+    assert.equal(r.intents.length, 0);
+    await r.stop();
+    const configured = rig({ token: "cfg-token" });
+    await configured.done;
+    assert.deepEqual(configured.client.logins, ["cfg-token"], "the configured token alone is used");
+    await configured.stop();
+  } finally { names.forEach((n, i) => { if (old[i] === undefined) delete process.env[n]; else process.env[n] = old[i]; }); }
+});
+
 // @spec CONN-INJ-006, CONN-DISC-002
-test("with DISCORD_TOKEN unset, or while the voice connection is not Ready, an injected clip is answered not ok with the heartbeat's reason", async () => {
+test("with connections.discord.token unset, or while the voice connection is not Ready, an injected clip is answered not ok with the heartbeat's reason", async () => {
   const noToken = rig({ token: "" });
   await noToken.done;
   const a = await inject(noToken, clip(100));
   assert.equal(a.ok, false);
-  assert.equal(a.detail, "DISCORD_TOKEN is not set");
+  assert.equal(a.detail, "connections.discord.token is not set");
   await noToken.stop();
 
   const joining = rig({ failJoins: 99 });

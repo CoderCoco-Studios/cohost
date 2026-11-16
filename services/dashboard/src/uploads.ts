@@ -8,24 +8,14 @@ export interface UploadLimits {
   ttlMs: number;
 }
 
-const MiB = 1024 * 1024;
-
-// @spec DASH-UPL-001, DASH-UPL-002
 /**
- * Defaults per the spec, overridable by INJECT_MAX_IMAGE_BYTES / INJECT_MAX_AUDIO_BYTES / INJECT_TTL_MS
- * (a non-numeric or non-positive value falls back to the default). The 5 minute TTL outlasts the 60 s
- * staleness window of `inject.request`, so a request still answered is never answered with an expired upload.
+ * The limits from `dashboard.inject` of the loaded config, which validated them (positive integers) and holds the defaults: 8 MiB
+ * image, 25 MiB audio, a 5 minute expiry that outlasts the 60 s staleness window of `inject.request`, so a request still answered
+ * is never answered with an expired upload. No environment variable is read.
  */
-export function uploadOptionsFromEnv(env: NodeJS.ProcessEnv): UploadLimits {
-  const num = (k: string, d: number) => {
-    const n = Number(env[k]);
-    return env[k] !== undefined && env[k] !== "" && Number.isFinite(n) && n > 0 ? n : d;
-  };
-  return {
-    maxImageBytes: num("INJECT_MAX_IMAGE_BYTES", 8 * MiB),
-    maxAudioBytes: num("INJECT_MAX_AUDIO_BYTES", 25 * MiB),
-    ttlMs: num("INJECT_TTL_MS", 300_000),
-  };
+// @spec DASH-UPL-001, DASH-UPL-002
+export function uploadLimits(inject: { max_image_bytes: number; max_audio_bytes: number; ttl_ms: number }): UploadLimits {
+  return { maxImageBytes: inject.max_image_bytes, maxAudioBytes: inject.max_audio_bytes, ttlMs: inject.ttl_ms };
 }
 
 export function uploadMaxBytes(limits: UploadLimits, kind: UploadKind): number {

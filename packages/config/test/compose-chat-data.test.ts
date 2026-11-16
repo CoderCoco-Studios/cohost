@@ -30,34 +30,34 @@ test("mouth mounts only the shared config directory, publishes no port and waits
 });
 
 // @spec DEPLOY-COMPOSE-023
-test("connector-discord waits for redis alone, publishes no port, mounts only the shared config and takes .env (DISCORD_TOKEN); ears and mouth get the token blanked", () => {
+test("connector-discord waits for redis alone, publishes no port, mounts only the shared config, and no service has a Discord token entry (ears and mouth inherit the shared environment)", () => {
   const c = compose.services["connector-discord"]!;
   assert.deepEqual(Object.keys(c.depends_on ?? {}), ["redis"]);
   assert.deepEqual(c.depends_on!.redis, { condition: "service_healthy" });
   assert.equal(c.ports, undefined);
   assert.deepEqual(c.volumes, ["./config:/app/config"]);
   assert.deepEqual(c.profiles, ["discord"]);
-  assert.equal(c.env_file, ".env", "DISCORD_TOKEN reaches it from .env");
-  assert.equal(c.environment!.DISCORD_TOKEN, undefined, "nothing overrides it");
-  for (const name of ["ears", "mouth"]) {
-    const svc = compose.services[name]!;
-    assert.equal(svc.environment!.DISCORD_TOKEN, "", `${name} must not receive DISCORD_TOKEN from .env`);
-    assert.equal(svc.environment!.REDIS_URL, "redis://redis:6379", `${name} keeps the shared environment`);
-  }
+  const shared = (parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as { "x-ts-service": { environment: Record<string, string> } })["x-ts-service"].environment;
+  for (const name of ["ears", "mouth", "connector-discord"]) assert.deepEqual(compose.services[name]!.environment, shared, `${name} inherits the shared environment unchanged`);
+  const code = readFileSync(root("docker-compose.yml"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  assert.doesNotMatch(code, /DISCORD_TOKEN/);
 });
 
 // @spec DEPLOY-README-004
-test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and channel", () => {
-  const env = readFileSync(root(".env.example"), "utf8");
-  assert.match(env, /^DISCORD_TOKEN=/m);
-  assert.match(env, /^DISCORD_GUILD_ID=/m);
-  assert.match(env, /^DISCORD_VOICE_CHANNEL_ID=/m);
-  const head = env.slice(env.search(/^# --- Discord/m));
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /one Discord bot|one bot/i);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Discord connector/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Connect/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Speak/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Server Members/);
+test("secrets.example.yaml carries the Discord bot token as the one bot, and config.example.yaml its guild and channel", () => {
+  const secrets = readFileSync(root("config/secrets.example.yaml"), "utf8");
+  const tokenLine = secrets.split("\n").find((l) => /^\s+token: ""/.test(l) && /Discord|bot/i.test(l))!;
+  assert.ok(tokenLine, "connections.discord.token has a comment");
+  assert.match(secrets, /connections:\n {2}discord:\n {4}token: ""/);
+  assert.match(tokenLine, /one Discord bot|one bot/i);
+  assert.match(tokenLine, /Discord connector/);
+  assert.match(tokenLine, /Connect/);
+  assert.match(tokenLine, /Speak/);
+  assert.match(tokenLine, /Server Members/);
+  const config = readFileSync(root("config/config.example.yaml"), "utf8");
+  assert.match(config, /^\s+guild_id: ""/m);
+  assert.match(config, /^\s+voice_channel_id: ""/m);
+  assert.doesNotMatch(readFileSync(root(".env.example"), "utf8"), /DISCORD_/);
 });
 
 // @spec DEPLOY-README-005
@@ -66,8 +66,9 @@ test("the Discord page describes ears, mouth and the Discord connector as separa
   assert.match(md, /\| `discord` \|[\s\S]*\| `ears` \|[\s\S]*\| `mouth` \|/);
   assert.match(md, /mouth\.outputs/);
   assert.match(md, /COMPOSE_PROFILES=discord,ears,mouth/);
-  assert.match(md, /DISCORD_TOKEN/);
-  assert.match(md, /connections:\n {2}discord:[\s\S]*?guild_id:[\s\S]*?voice_channel_id:/);
+  assert.match(md, /`config\/secrets\.yaml`[\s\S]*?connections:\s+discord:\s+token:/);
+  assert.doesNotMatch(md, /DISCORD_TOKEN/);
+  assert.match(md, /connections:\s+discord:[\s\S]*?guild_id:[\s\S]*?voice_channel_id:/);
   assert.match(md, /\*\*Connect\*\*/);
   assert.match(md, /Server Members/);
 });

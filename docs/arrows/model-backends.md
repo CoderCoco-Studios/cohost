@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): Bedrock access keys come from `secrets.yaml` (LLM-CLAUDE-015, -016); not built. Total 62 specs: 60 `[x]`, 2 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Total 64 specs: 64 `[x]`, 0 `[ ]`, 0 `[D]`. Not covered by the last audit.
 
 **AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). The docs site's extension guides added LLM-EX-001 to LLM-EX-006 (the OpenAI-compatible stub servers in Python and TypeScript and their try-it script), implemented and tested, not yet audited; the spec file now holds 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`).
 
@@ -17,7 +17,7 @@ Open since the one-place configuration design ([decision](../decisions/config-in
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (60 specs, prefix LLM: 60 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (64 specs, prefix LLM: 64 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)

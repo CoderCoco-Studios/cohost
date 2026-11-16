@@ -6,7 +6,7 @@
  *   openai     any OpenAI-compatible endpoint: vLLM on a rented GPU box,
  *              OpenRouter, Groq, Together, Fireworks ...
  *   anthropic  Claude via the Claude API
- *   bedrock    Claude via Amazon Bedrock (AWS credentials from the environment)
+ *   bedrock    Claude via Amazon Bedrock (region and AWS keys from config)
  *   mock       deterministic offline replies, for isolated runs (never a default)
  *
  * Embedders (`Ollama`, `HashEmbedder`) are exported here but never follow the chat
@@ -215,11 +215,17 @@ const CLAUDE_MIN_MAX_TOKENS = 1;
 /** Retries the SDK makes of a failed Claude request (the SDK's own default, stated so the spec pins it). */
 const CLAUDE_MAX_RETRIES = 2;
 
+/** What a test may replace in a Claude provider: the SDK's `fetch`, so a request is recorded and served locally instead of leaving the process. */
+export interface ClaudeDeps { fetch?: typeof fetch }
+
 abstract class ClaudeBase implements ChatProvider {
   abstract readonly name: string;
   readonly model: string;
   lastError?: string;
-  protected abstract client: Anthropic | AnthropicBedrockMantle;
+  /** Absent while the provider is not configured (LLM-CLAUDE-017, LLM-CLAUDE-018). */
+  protected abstract client: Anthropic | AnthropicBedrockMantle | undefined;
+  /** The error `chat()` rejects with while there is no client. */
+  protected abstract notConfigured(): string;
   protected abstract serverFallbacks: boolean;
 
   private images: ImageDropper;
@@ -230,6 +236,8 @@ abstract class ClaudeBase implements ChatProvider {
   }
 
   async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+    const client = this.client;
+    if (!client) throw new Error(this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
     const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
     const turns: Anthropic.MessageParam[] = messages
@@ -239,7 +247,7 @@ abstract class ClaudeBase implements ChatProvider {
 
     // The caller's budget is honoured (thinking shares it; hooks run at low effort), down to the API's minimum of 1.
     const maxTokens = opts.maxTokens === undefined ? this.cfg.claude.max_tokens : Math.max(CLAUDE_MIN_MAX_TOKENS, Math.floor(opts.maxTokens)); // @spec LLM-CLAUDE-003
-    const res = await this.client.beta.messages.create({
+    const res = await client.beta.messages.create({
       model: this.cfg.model,
       max_tokens: maxTokens,
       system: system || undefined,
@@ -261,24 +269,69 @@ abstract class ClaudeBase implements ChatProvider {
   abstract ping(): Promise<boolean>;
 }
 
+/**
+ * Runs `build` (a synchronous client construction) with every `ANTHROPIC_*` and `AWS_*` variable removed from the process
+ * environment, then restores them. Both SDKs read their credential, endpoint, header, region, logging and tracing variables
+ * from the environment, and all of those reads happen while the client is constructed (the default credential chain runs only
+ * when no explicit credential is given, which these constructions always give). Masking by prefix rather than by name keeps a
+ * variable a later SDK version adds under either prefix out of reach too (LLM-CLAUDE-019). No `await` runs while masked.
+ */
+function withoutSdkEnv<T>(build: () => T): T {
+  const held: [string, string][] = [];
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && /^(ANTHROPIC|AWS)_/i.test(k)) { held.push([k, v]); delete process.env[k]; }
+  }
+  try { return build(); } finally { for (const [k, v] of held) process.env[k] = v; }
+}
+
+/**
+ * The `fetch` a Claude client sends through: the last step before the network. The client is constructed with the environment
+ * masked, so no header arrives from it; this wrapper is the second, request-time layer. It forces the credential headers to
+ * what the configuration holds and fails the request when the client produced anything else (LLM-CLAUDE-019).
+ */
+function pinnedFetch(base: typeof fetch | undefined, credential: (headers: Headers) => void): typeof fetch {
+  const send = base ?? globalThis.fetch;
+  return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    credential(headers);
+    return send(input, { ...init, headers });
+  }) as typeof fetch;
+}
+
+/** The Claude API's own endpoint: the SDK would otherwise take `ANTHROPIC_BASE_URL` (LLM-CLAUDE-009). */
+const CLAUDE_API_BASE_URL = "https://api.anthropic.com";
+
+// @spec LLM-CLAUDE-009, LLM-CLAUDE-017
 export class AnthropicProvider extends ClaudeBase {
   readonly name = "anthropic";
-  protected client: Anthropic;
+  protected client: Anthropic | undefined;
   protected serverFallbacks: boolean;
-  constructor(cfg: Config["llm"], log?: ProviderLog) {
+  constructor(cfg: Config["llm"], log?: ProviderLog, deps: ClaudeDeps = {}) {
     super(cfg, "anthropic", log);
-    // Falls back to ANTHROPIC_API_KEY / an `ant auth login` profile when no key is configured.
-    this.client = new Anthropic({ ...(cfg.claude.api_key ? { apiKey: cfg.claude.api_key } : {}), maxRetries: CLAUDE_MAX_RETRIES }); // @spec LLM-CLAUDE-009, LLM-CLAUDE-014
+    // Credential, endpoint and headers come from config alone (LLM-CLAUDE-019). Construction runs with every ANTHROPIC_* and AWS_*
+    // variable masked, which stops the SDK reading ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_PROFILE,
+    // ANTHROPIC_CUSTOM_HEADERS and the rest; the explicit `apiKey`, `baseURL` and `authToken: null` are then the only sources. The
+    // fetch wrapper pins the credential at request time. With no key there is no client, so nothing can be looked up.
+    const apiKey = cfg.claude.api_key;
+    this.client = apiKey
+      ? withoutSdkEnv(() => new Anthropic({
+          apiKey, authToken: null, baseURL: CLAUDE_API_BASE_URL,
+          maxRetries: CLAUDE_MAX_RETRIES,
+          fetch: pinnedFetch(deps.fetch, (h) => { h.set("authorization", `Bearer ${apiKey}`); h.delete("x-api-key"); h.delete("proxy-authorization"); }),
+        })) // @spec LLM-CLAUDE-014
+      : undefined;
     this.serverFallbacks = cfg.claude.fallbacks;
   }
+  protected notConfigured(): string { return "the anthropic provider is not configured: llm.claude.api_key is not set"; }
   async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
+    if (!this.client) { this.lastError = this.notConfigured(); return false; } // @spec LLM-CLAUDE-017
     try {
       await this.client.models.retrieve(this.cfg.model, undefined, { timeout: this.cfg.timeout_ms }); // @spec LLM-CHAT-008
       this.lastError = undefined;
       return true;
     } catch (err) {
       const status = (err as { status?: number }).status;
-      this.lastError = status === 401 || status === 403 ? `Claude API rejected the credentials (${status}): check ANTHROPIC_API_KEY`
+      this.lastError = status === 401 || status === 403 ? `Claude API rejected the credentials (${status}): check llm.claude.api_key`
         : status === 404 ? `Claude API has no model "${this.cfg.model}": check llm.model`
         : String(err);
       return false;
@@ -286,14 +339,40 @@ export class AnthropicProvider extends ClaudeBase {
   }
 }
 
+// @spec LLM-CLAUDE-015, LLM-CLAUDE-016, LLM-CLAUDE-018
 export class BedrockProvider extends ClaudeBase {
   readonly name = "bedrock";
-  protected client: AnthropicBedrockMantle;
+  protected client: AnthropicBedrockMantle | undefined;
   protected serverFallbacks = false; // @spec LLM-CLAUDE-008
-  constructor(cfg: Config["llm"], log?: ProviderLog) {
+  constructor(cfg: Config["llm"], log?: ProviderLog, deps: ClaudeDeps = {}) {
     super(cfg, "bedrock", log);
-    // AWS credentials come from the usual places: env vars, profile, instance role.
-    this.client = new AnthropicBedrockMantle({ ...(cfg.bedrock.region ? { awsRegion: cfg.bedrock.region } : {}), maxRetries: CLAUDE_MAX_RETRIES }); // @spec LLM-CLAUDE-009, LLM-CLAUDE-014
+    const { region, access_key_id: accessKey, secret_access_key: secretKey } = cfg.bedrock;
+    if (!!accessKey !== !!secretKey) {
+      throw new Error("llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set"); // @spec LLM-CLAUDE-016
+    }
+    // Region, keys and endpoint are explicit, with no session token, and construction runs with every ANTHROPIC_* and AWS_*
+    // variable masked, so the SDK reads none of AWS_REGION, AWS_DEFAULT_REGION, AWS_BEARER_TOKEN_BEDROCK,
+    // ANTHROPIC_BEDROCK_MANTLE_BASE_URL, ANTHROPIC_CUSTOM_HEADERS, AWS_SESSION_TOKEN, AWS_PROFILE and never reaches its default
+    // credential chain (it takes that only when no explicit key pair is given). The fetch wrapper refuses a request that is not
+    // signed with the configured access key. With anything empty there is no client (LLM-CLAUDE-019).
+    this.client = region && accessKey && secretKey
+      ? withoutSdkEnv(() => new AnthropicBedrockMantle({
+          awsRegion: region, awsAccessKey: accessKey, awsSecretAccessKey: secretKey, awsSessionToken: null, apiKey: null,
+          baseURL: `https://bedrock-mantle.${region}.api.aws/anthropic`,
+          maxRetries: CLAUDE_MAX_RETRIES,
+          fetch: pinnedFetch(deps.fetch, (h) => {
+            if (!(h.get("authorization") ?? "").startsWith(`AWS4-HMAC-SHA256 Credential=${accessKey}/`)) {
+              throw new Error("bedrock request is not signed with llm.bedrock.access_key_id; refusing to send it");
+            }
+            h.delete("x-api-key"); h.delete("x-amz-security-token");
+          }),
+        })) // @spec LLM-CLAUDE-014
+      : undefined;
+  }
+  protected notConfigured(): string {
+    const { region, access_key_id: a, secret_access_key: k } = this.cfg.bedrock;
+    const empty = [["region", region], ["access_key_id", a], ["secret_access_key", k]].filter(([, v]) => !v).map(([n]) => `llm.bedrock.${n}`);
+    return `the bedrock provider is not configured: ${empty.join(", ")} not set`;
   }
   readonly pingIsNominal = true; // @spec LLM-PING-006
   async ping(): Promise<boolean> { return true; } // @spec LLM-PING-004 (no cheap probe on Bedrock; errors surface on first chat)

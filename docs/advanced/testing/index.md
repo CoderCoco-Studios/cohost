@@ -41,7 +41,7 @@ A skipped test is not a failed one, but a run with skips is not a full pass. The
 | --- | --- |
 | Bus round trips in `packages/bus/test/bus.test.ts`, each titled with `(needs Redis)` | A Redis answers at `REDIS_URL` |
 | Memory store against real Postgres, `services/memory/test/notes-store.pg.test.ts` | `COHOST_TEST_DATABASE_URL` names a reachable pgvector database, for example `postgres://cohost:cohost@127.0.0.1:5432/cohost_test`. When `CI` is set and the database is unreachable, the test fails instead of skipping |
-| The live-stack test, `services/dashboard/test/live-stack.e2e.test.ts` | `COHOST_LIVE_STACK=1`, [Docker](../../start/glossary.md#docker) answers, and the environment carries the mock presets |
+| The live-stack test, `services/dashboard/test/live-stack.e2e.test.ts` | `COHOST_LIVE_STACK=1`, [Docker](../../start/glossary.md#docker) answers, `CONTROL_TOKEN` is in the environment, and ports 3000 and 3001 are free |
 | The Claude API smoke test in `packages/llm/test/backends.test.ts` | `ANTHROPIC_API_KEY` and `COHOST_LIVE_CLAUDE_MODEL` are both set |
 
 ## Run one package, one service or one test

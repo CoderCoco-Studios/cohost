@@ -105,13 +105,13 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
 });
 
 // @spec DEPLOY-HOST-002
-test(".env.example turns control on, carries the empty token, the ports, the host and the docker bin hint", () => {
+test(".env.example turns control on, carries the empty token, the host and the docker bin hint, and no port", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   const line = (k: string) => env.split("\n").find((l) => l.startsWith(`${k}=`));
   assert.equal(line("CONTROL_ENABLED"), "CONTROL_ENABLED=1");
   assert.match(line("CONTROL_TOKEN") ?? "", /^CONTROL_TOKEN=\s*(#.*)?$/);
-  assert.equal(line("DASHBOARD_PORT"), "DASHBOARD_PORT=3000");
-  assert.equal(line("DASHBOARD_LAN_PORT"), "DASHBOARD_LAN_PORT=3001");
+  assert.equal(line("DASHBOARD_PORT"), undefined, "the ports are dashboard.port and dashboard.lan_port in config.yaml");
+  assert.equal(line("DASHBOARD_LAN_PORT"), undefined);
   assert.equal(line("DASHBOARD_HOST"), "DASHBOARD_HOST=127.0.0.1");
   assert.match(env, /^# COHOST_DOCKER_BIN=/m);
   assert.match(env, /openssl rand -hex 24/);
@@ -125,4 +125,21 @@ test("compose-smoke.sh no longer expects a compose dashboard", () => {
   assert.match(sh, /SERVICES=\(salience affect avatar\)/);
   const code = sh.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
   assert.doesNotMatch(code, /dashboard/);
+});
+
+// @spec DEPLOY-IMG-004, DEPLOY-IMG-005
+test(".dockerignore keeps the VTube Studio token and the user-owned config files, secrets.yaml included, out of the build context; the examples stay in", () => {
+  const lines = readFileSync(root(".dockerignore"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  for (const f of ["config/.vts-token", "config/config.yaml", "config/secrets.yaml", "config/personality.md", "config/expressions.yaml", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
+  assert.ok(!lines.some((l) => /example/.test(l) || l === "config" || l === "config/*"), "the config/*.example.* files stay in the context");
+});
+
+// @spec DEPLOY-CI-002
+test("compose-smoke.sh starts the services from .env.example alone: it sets no operator setting and needs no secrets.yaml", () => {
+  const sh = readFileSync(root("scripts/compose-smoke.sh"), "utf8");
+  const code = sh.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  assert.match(code, /\[ -f \.env \] \|\| cp \.env\.example \.env/);
+  assert.doesNotMatch(code, /COHOST_ISOLATION|secrets\.yaml|LLM_PROVIDER|CHAT_SOURCE|AVATAR_DRIVER|DISCORD_TOKEN/);
+  // the services it starts need no model, credential or optional profile
+  for (const s of ["salience", "affect", "avatar"]) assert.equal(compose.services[s]!.profiles, undefined, s);
 });

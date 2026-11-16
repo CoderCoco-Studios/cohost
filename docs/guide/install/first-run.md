@@ -29,7 +29,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    cd cohost
    ```
 
-2. Run the installer. It installs what is missing (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the connection to the [bus](../../start/glossary.md#bus) and writes your `.env`. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
+2. Run the installer. It installs what is missing (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the connection to the [bus](../../start/glossary.md#bus) and writes your `.env`, `config/config.yaml` and `config/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
 
    ```bash
    ./scripts/install.sh --no-pull
@@ -44,26 +44,14 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    pnpm install
    pnpm build:native
    cp .env.example .env
+   cp config/config.example.yaml config/config.yaml
+   cp config/secrets.example.yaml config/secrets.yaml
    ```
 
    Then add a control token to `.env` (the dashboard asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one.
    </details>
 
-3. Switch every outside dependency to its stand-in by adding these lines to the end of `.env`:
-
-   ```bash
-   cat >> .env <<'EOF'
-   LLM_PROVIDER=mock
-   MEMORY_STORE=memory
-   MEMORY_EMBEDDER=hash
-   VOICE_ENGINE=stub
-   CHAT_SOURCE=fake
-   EOF
-   ```
-
-   In order, these mean: the [LLM](../../start/glossary.md#llm) answers with canned echoes, memory is kept in the program and lost when it stops, memories use simple offline [embeddings](../../start/glossary.md#embedding), the voice returns silent audio, and chat is a scripted message every eight seconds. The avatar setting is already off in `.env.example`.
-
-4. Start the dashboard.
+3. Start the dashboard.
 
    ```bash
    pnpm dashboard
@@ -71,15 +59,17 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on.
 
-5. Open `http://localhost:3000` in your browser. When it asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep CONTROL_TOKEN .env`.
+4. Open `http://localhost:3000` in your browser. When it asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep CONTROL_TOKEN .env`.
 
-6. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
+5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
+
+6. Switch the outside dependencies to their stand-ins with an isolated start, which edits no file and writes nothing to `.env`. On the Services tab, tick **isolated** above the table, then press **Restart** on `chat`, `memory`, `cortex` and `voice` (starting `cortex` isolated also starts `salience` and `affect`). In order, they now run on: scripted fake chat, one message every eight seconds; memory kept in the program and lost when it stops, with simple offline [embeddings](../../start/glossary.md#embedding); canned echo replies from the [LLM](../../start/glossary.md#llm); and a voice that returns silent audio. The avatar is off by default.
 
 7. When the Services tab settles, click **enable audio** so your browser is allowed to play sound.
 
 ## How you know it worked
 
-- The Services tab shows every service as `up`, with the mode `mock`. The infrastructure ([Redis](../../start/glossary.md#redis), [Postgres](../../start/glossary.md#postgres), [Ollama](../../start/glossary.md#ollama), [text-to-speech](../../start/glossary.md#tts) and [speech-to-text](../../start/glossary.md#stt)) shows in the stack panel rather than the table.
+- The Services tab shows every service as `up`, with the mode `mock` on the ones you started isolated. The infrastructure ([Redis](../../start/glossary.md#redis), [Postgres](../../start/glossary.md#postgres), [Ollama](../../start/glossary.md#ollama), [text-to-speech](../../start/glossary.md#tts) and [speech-to-text](../../start/glossary.md#stt)) shows in the stack panel rather than the table.
 - The live feed starts filling with fake viewers' messages every few seconds, then with the co-host's replies after them.
 - The preview face on the dashboard moves its mouth in time with each reply. The audio is silent, so the face is all you get.
 - A line you type in the test panel takes the same road and gets an echoed reply.

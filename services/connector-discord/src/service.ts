@@ -19,8 +19,6 @@ const TAG = "discord";
 const VERSION = "0.1.0";
 
 export interface ConnectorServiceOptions {
-  /** Environment to read `DISCORD_TOKEN` from (default `process.env`). */
-  env?: Record<string, string | undefined>;
   /** Registration and heartbeat-detail refresh period, ms (default 5000 / 1000). */
   intervalMs?: number;
   refreshMs?: number;
@@ -40,11 +38,10 @@ export function createConnectorService(opts: ConnectorServiceOptions = {}): {
   health(cfg: Config): HeartbeatSpec;
   main(ctx: ServiceContext<Bus>): Promise<void>;
 } {
-  const token = readToken(opts.env ?? process.env);
   let voiceReady = false;
   let registrar: ConnectorRegistrar | undefined;
   let capture: SpeakerCapture | undefined;
-  const planOf = (cfg: Config) => connectorPlan(cfg.connections.discord.enabled, token !== "");
+  const planOf = (cfg: Config) => connectorPlan(cfg.connections.discord.enabled, readToken(cfg) !== "");
   /** Whether the last registration written offers the capability with `ready` true. */
   const offered = (cap: "audio-in" | "audio-out"): boolean => registrar?.last?.capabilities.some((c) => c.cap === cap && c.tag === TAG && c.ready) ?? false;
 
@@ -72,8 +69,8 @@ export function createConnectorService(opts: ConnectorServiceOptions = {}): {
       }
       // @spec CONN-DISC-002
       if (plan === "no-token") {
-        clipTarget = () => ({ blocked: "DISCORD_TOKEN is not set" }); // @spec CONN-INJ-006
-        const idle = startIdle({ heartbeat, log, kind: "degraded", reason: "DISCORD_TOKEN is not set" });
+        clipTarget = () => ({ blocked: "connections.discord.token is not set" }); // @spec CONN-INJ-006
+        const idle = startIdle({ heartbeat, log, kind: "degraded", reason: "connections.discord.token is not set" });
         onStop(() => idle.stop());
         return;
       }
@@ -160,7 +157,7 @@ export function createConnectorService(opts: ConnectorServiceOptions = {}): {
         return target.voice_channel_id;
       };
       const session = createDiscordVoiceSession({
-        token,
+        token: readToken(cfg),
         guildId: guildKey,
         channelId: channelKey,
         intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers],

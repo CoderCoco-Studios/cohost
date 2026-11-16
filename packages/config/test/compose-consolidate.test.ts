@@ -43,7 +43,7 @@ test("consolidate inherits the shared env, config volume and environment, and re
   assert.equal(svc.env_file, ".env");
   assert.deepEqual(svc.volumes, ["./config:/app/config"]);
   assert.deepEqual(svc.volumes, memory.volumes);
-  for (const k of ["DATABASE_URL", "OLLAMA_URL", "CONFIG_DIR", "MEMORY_STORE", "MEMORY_EMBEDDER", "LLM_PROVIDER"]) {
+  for (const k of ["DATABASE_URL", "OLLAMA_URL", "CONFIG_DIR", "COHOST_ISOLATION"]) {
     assert.ok(svc.environment?.[k] !== undefined, `${k} is set`);
     assert.equal(svc.environment?.[k], memory.environment?.[k], k);
   }

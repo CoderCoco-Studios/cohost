@@ -4,7 +4,7 @@ The operator's web UI and HTTP/WebSocket API: the React UI (live feed, controls,
 
 ## Status
 
-**PARTIAL.** 227 specs: 101 implemented, 126 gaps, 0 deferred. The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH) are implemented and were audited on 2026-11-14 (the docs-serving specs DASH-DOCS-001 to 014, DASH-UI-024 and DASH-UI-025 were added after that audit and observed end to end on 2026-11-15; DASH-DOCS-013 and 014 are docs-page content with no test). The UI is specified and not yet built: the React UI, theme, access dialog, navigation, accessibility and settings screen (DASH-UI changed or added, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT), the route and allow-list edits they need (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-DOCS-013, 015, 016), the ports and upload limits read from `config.yaml` (DASH-HTTP-009, DASH-HOST-001, DASH-HOST-006, DASH-UPL-001, DASH-UPL-002) and the container overrides in the stack snapshot (DASH-STACK-010, DASH-FEED-008) are `[ ]`. The running page is the single static `public/index.html` until the UI lands; the specs it carries over unchanged keep `[x]`. Specs with no test annotation are listed under Coverage notes.
+**PARTIAL.** 233 specs: 108 implemented, 125 gaps, 0 deferred. The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH) are implemented and were audited on 2026-11-14 (the docs-serving specs DASH-DOCS-001 to 014, DASH-UI-024 and DASH-UI-025 were added after that audit and observed end to end on 2026-11-15; DASH-DOCS-013 and 014 are docs-page content with no test). The UI is specified and not yet built: the React UI, theme, access dialog, navigation, accessibility and settings screen (DASH-UI changed or added, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT), the route and allow-list edits they need (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-DOCS-013, 015, 016), the ports and upload limits read from `config.yaml` and the container overrides in the stack snapshot are implemented (DASH-HTTP-009, DASH-HOST-001, DASH-UPL-001, -002, DASH-STACK-010); DASH-FEED-008, the `stack` message on `/ws`, is implemented too. The running page is the single static `public/index.html` until the UI lands; the specs it carries over unchanged keep `[x]`. Specs with no test annotation are listed under Coverage notes.
 
 Orientation:
 
@@ -22,7 +22,7 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (227 specs, prefix `DASH`: 101 `[x]`, 126 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (233 specs, prefix `DASH`: 108 `[x]`, 125 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -110,7 +110,7 @@ Orientation:
 | Settings screen | DASH-SET-001 to DASH-SET-027 | 0 | 0 | 27 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 
-**Summary:** 101 of 227 specs implemented; 0 deferred; 126 open: the UI, the secret write and pick lists, the route edits they need, the config-owned ports and limits, and the overrides in the stack snapshot. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 108 of 233 specs implemented; 0 deferred; 125 open: the UI, the secret write and pick lists, and the route edits they need. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

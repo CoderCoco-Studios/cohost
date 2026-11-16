@@ -5,7 +5,6 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
-import { uploadOptionsFromEnv } from "../src/uploads.js";
 
 /** Every unit up: the not-running refusal (MOD-TEST-005) has its own tests in inject-event.test.ts. */
 const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
@@ -21,10 +20,10 @@ class CtlBus extends FakeBus {
   }
 }
 
-async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64) {
+async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64, ttlMs = 300_000) {
   const bus = new CtlBus();
   const rec = recordingLog();
-  const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs: 300_000 };
+  const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs };
   const setup = setupControl(env, bus, rec.log);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
@@ -118,10 +117,13 @@ test("image upload: bytes stored in Redis under a 128-bit id with the TTL, the r
 });
 
 // @spec DASH-UPL-002
-test("INJECT_TTL_MS sets the key's expiry; the default is 5 minutes", () => {
-  assert.equal(uploadOptionsFromEnv({}).ttlMs, 300_000);
-  assert.equal(uploadOptionsFromEnv({ INJECT_TTL_MS: "90000" }).ttlMs, 90_000);
-  assert.equal(uploadOptionsFromEnv({ INJECT_TTL_MS: "nope" }).ttlMs, 300_000);
+test("the stored upload's expiry is dashboard.inject.ttl_ms, 5 minutes by default", async () => {
+  const stored = async (t: Awaited<ReturnType<typeof boot>>) => {
+    assert.equal((await t.bin("/inject/image", Buffer.from("PNG"), "image/png")).status, 202);
+    return t.bus.uploads.get(t.bus.of("inject.request")[0]!.uploadId!)!.ttlMs;
+  };
+  assert.equal(await stored(await boot()), 300_000);
+  assert.equal(await stored(await boot({}, 64, 90_000)), 90_000);
 });
 
 // @spec DASH-UPL-003

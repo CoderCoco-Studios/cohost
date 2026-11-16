@@ -14,12 +14,12 @@ export interface StoredToken {
 /** `<dataDir()>/chat/twitch-token.json`: chat writes only under its own data directory. */
 export const tokenFile = (): string => join(dataDir(), "chat", "twitch-token.json");
 
-interface TokenFile extends StoredToken { envRefreshToken: string }
+interface TokenFile extends StoredToken { startingRefreshToken: string }
 
 function isTokenFile(x: unknown): x is TokenFile {
   if (!x || typeof x !== "object") return false;
   const t = x as Record<string, unknown>;
-  return typeof t.accessToken === "string" && typeof t.refreshToken === "string" && typeof t.envRefreshToken === "string"
+  return typeof t.accessToken === "string" && typeof t.refreshToken === "string" && typeof t.startingRefreshToken === "string"
     && (t.expiresIn === null || typeof t.expiresIn === "number")
     && typeof t.obtainmentTimestamp === "number"
     && Array.isArray(t.scope) && t.scope.every((s) => typeof s === "string");
@@ -27,14 +27,14 @@ function isTokenFile(x: unknown): x is TokenFile {
 
 // @spec CHAT-TW-012
 /**
- * The stored token, when it was written from the `.env` refresh token that is still current. A missing, unreadable or
- * malformed file, or one written from a different `.env` refresh token (the operator re-authorised), is `undefined`.
+ * The stored token, when it was written from the `chat.twitch.refresh_token` that is still current. A missing, unreadable or
+ * malformed file, or one written from a different `chat.twitch.refresh_token` (the operator re-authorised), is `undefined`.
  */
-export function loadStoredToken(file: string, envRefreshToken: string): StoredToken | undefined {
+export function loadStoredToken(file: string, startingRefreshToken: string): StoredToken | undefined {
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!isTokenFile(parsed) || parsed.envRefreshToken !== envRefreshToken) return undefined;
-    const { envRefreshToken: _from, ...token } = parsed;
+    if (!isTokenFile(parsed) || parsed.startingRefreshToken !== startingRefreshToken) return undefined;
+    const { startingRefreshToken: _from, ...token } = parsed;
     return token;
   } catch {
     return undefined;
@@ -43,11 +43,11 @@ export function loadStoredToken(file: string, envRefreshToken: string): StoredTo
 
 // @spec CHAT-TW-011
 /** Write the token (temp file, then rename) readable by its owner only; throws when it cannot. */
-export function saveStoredToken(file: string, token: StoredToken, envRefreshToken: string): void {
+export function saveStoredToken(file: string, token: StoredToken, startingRefreshToken: string): void {
   mkdirSync(dirname(file), { recursive: true });
   const body: TokenFile = {
     accessToken: token.accessToken, refreshToken: token.refreshToken, expiresIn: token.expiresIn,
-    obtainmentTimestamp: token.obtainmentTimestamp, scope: token.scope, envRefreshToken,
+    obtainmentTimestamp: token.obtainmentTimestamp, scope: token.scope, startingRefreshToken,
   };
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(body), { mode: 0o600 });

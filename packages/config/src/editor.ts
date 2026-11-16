@@ -4,10 +4,11 @@
  * dashboard routes (module-contract MOD-CFG-*) are thin wrappers over this module.
  */
 import { createHash } from "node:crypto";
-import { parse as parseYaml, parseDocument, isMap, isScalar, isSeq, stringify, type Document, type YAMLMap } from "yaml";
+import { parse as parseYaml, parseDocument, isMap, isScalar, stringify, type Document, type YAMLMap } from "yaml";
 import { z } from "zod";
 import { ConfigSchema, SECRET_PATHS } from "./schema.js";
-import { parseConfigText, substituteEnv, coerceEmptyNumbers, type ConfigIssue } from "./pipeline.js";
+import { PRESENTATION, type KeyPresentation, type SectionPresentation } from "./presentation.js";
+import { parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, type ConfigIssue } from "./pipeline.js";
 
 type Json = Record<string, unknown>;
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -15,19 +16,17 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 // ---------- schema introspection (the schema is the form)
 
 /**
- * Strips defaults, optionals and preprocess wrappers; returns the inner type and the nearest description.
+ * Strips defaults, optionals and preprocess wrappers; returns the inner type.
  * Wrappers are recognised by class (`instanceof`), and each exposes the type it wraps as `def.innerType` (a preprocess is a
  * pipe whose input is a transform and whose output is the schema it feeds).
  */
-function unwrap(s: z.ZodType): { schema: z.ZodType; description?: string } {
-  let description = s.description;
+function unwrap(s: z.ZodType): { schema: z.ZodType } {
   for (;;) {
     let next: z.ZodType | undefined;
     if (s instanceof z.ZodPipe) next = (s.def.out instanceof z.ZodTransform ? s.def.in : s.def.out) as z.ZodType;
     else if (s instanceof z.ZodDefault || s instanceof z.ZodPrefault || s instanceof z.ZodOptional || s instanceof z.ZodNullable || s instanceof z.ZodReadonly || s instanceof z.ZodCatch) next = s.def.innerType as z.ZodType;
-    if (!next) return { schema: s, description };
+    if (!next) return { schema: s };
     s = next;
-    description ??= s.description;
   }
 }
 
@@ -47,8 +46,19 @@ export function schemaAt(path: string): z.ZodType | undefined {
   return cur;
 }
 
-function jsonSchemaOf(s: z.ZodType, path: string[]): Json {
-  const { schema: u, description } = unwrap(s);
+/**
+ * The help of the key at `path` (dotted from the config root) or of a property of an array-of-objects key's items, which
+ * the walk reaches as `<array key>.<property>` (CFG-PRES-008, CFG-PRES-009).
+ */
+function helpAt(path: string[]): string | undefined {
+  const dotted = path.join(".");
+  const own = PRESENTATION.keys[dotted]?.help;
+  if (own !== undefined) return own;
+  return PRESENTATION.keys[path.slice(0, -1).join(".")]?.items?.[path[path.length - 1]!]?.help;
+}
+
+function jsonSchemaOf(s: z.ZodType, path: string[], element = false): Json {
+  const { schema: u } = unwrap(s);
   const out: Json = {};
   // A check's own definition (`_zod.def`) is zod 4's documented way to read a bound and whether it is inclusive.
   const checks = (u._zod.def.checks ?? []).map((c) => c._zod.def as { check: string; value?: number; inclusive?: boolean; minimum?: number; maximum?: number });
@@ -78,20 +88,26 @@ function jsonSchemaOf(s: z.ZodType, path: string[]): Json {
   else if (u instanceof z.ZodEnum) { out.type = "string"; out.enum = u.options; }
   else if (u instanceof z.ZodArray) {
     out.type = "array";
-    out.items = jsonSchemaOf(u.element as z.ZodType, path);
+    out.items = jsonSchemaOf(u.element as z.ZodType, path, true);
     const min = checks.find((c) => c.check === "min_length")?.minimum;
     if (min) out.minItems = min;
   } else if (u instanceof z.ZodRecord) { out.type = "object"; out.additionalProperties = jsonSchemaOf(u.valueType as z.ZodType, path); }
   // any, unknown: no constraint
   const d = s.safeParse(undefined);
   if (d.success && d.data !== undefined && !isObj(d.data)) out.default = d.data;
+  // A group of keys has no help of its own: only a leaf (a scalar or an array) is described.
+  const description = u instanceof z.ZodObject || element ? undefined : helpAt(path);
   if (description) out.description = description;
-  if (SECRET_PATHS.includes(path.join("."))) out["x-secret"] = true;
+  if (!element && SECRET_PATHS.includes(path.join("."))) out["x-secret"] = true;
+  if (!element && PRESENTATION.keys[path.join(".")]?.sensitive) out["x-sensitive"] = true;
   return out;
 }
 
-/** JSON Schema for the section at `section`, generated from its zod schema; secret keys carry `"x-secret": true`. */
-// @spec MOD-CFG-001, MOD-CFG-002
+/**
+ * JSON Schema for the section at `section`, generated from its zod schema; secret keys carry `"x-secret": true`, sensitive
+ * keys `"x-sensitive": true`, and each key's `description` is its presentation help.
+ */
+// @spec MOD-CFG-001, MOD-CFG-002, CFG-PRES-008, CFG-PRES-009, CFG-PRES-010
 export function sectionJsonSchema(section: string): Json {
   const s = schemaAt(section);
   if (!s) throw new Error(`no such config section: ${section}`);
@@ -114,6 +130,34 @@ function leavesOf(section: string): Leaf[] {
   };
   walk(root, []);
   return out;
+}
+
+/** The keys of a section as dotted paths from the config root (a scalar or an array is one key; an array is not descended into). */
+// @spec CFG-PRES-001, CFG-PRES-004
+export function sectionKeyPaths(section: string): string[] {
+  return leavesOf(section).map((l) => l.path.join("."));
+}
+
+/** What `GET /config/schema` serves for one section besides its schema: the section's own presentation and each key's, by relative name. */
+export interface SectionPresentationJoined extends SectionPresentation {
+  keys: Record<string, KeyPresentation>;
+}
+
+/**
+ * The presentation table joined for one section: `title`, `group`, `about` and, where the table gives one, `page`, plus
+ * `keys`, a map from each key's relative name (the names `readSection` uses) to its `{ help, label?, unit?, widget?, items?,
+ * sensitive? }`. A key without an entry is left out, so the page falls back to deriving a label from the path.
+ */
+// @spec MOD-CFG-019, MOD-CFG-020, MOD-CFG-021, CFG-PRES-010
+export function sectionPresentation(section: string): SectionPresentationJoined {
+  const leaves = leavesOf(section);
+  const head = PRESENTATION.sections[section];
+  const keys: Record<string, KeyPresentation> = {};
+  for (const l of leaves) {
+    const k = PRESENTATION.keys[l.path.join(".")];
+    if (k) keys[l.key] = structuredClone(k);
+  }
+  return { ...(head ? structuredClone(head) : ({} as SectionPresentation)), keys };
 }
 
 /** The secret keys of a section, relative to the section like the keys of `readSection`. */
@@ -139,73 +183,72 @@ function unknownBySchema(raw: unknown, schema: z.ZodType, path: string): string[
 
 // ---------- reading
 
-export type KeySource = "literal" | "env" | "env-default" | "default" | "composite";
+/** `literal` when the file holds the key, `default` when it does not (every key is a literal or absent, so there is no other form). */
+export type KeySource = "literal" | "default";
 
 export interface KeyInfo {
-  source: KeySource;
+  /** Absent for a secret. */
+  source?: KeySource;
+  /** True for every key except a secret. */
   editable: boolean;
-  /** The effective value (substituted, schema defaults applied). Absent for a secret. */
+  /** The effective value: the file's value or the schema default. Absent for a secret. */
   value?: unknown;
-  /** The file text (`literal`, `composite`) or the default part of the placeholder (`env-default`). Absent for a secret. */
+  /** The file text of a `literal` key. Absent for a secret. */
   raw?: string;
-  env?: { name: string; set: boolean };
-  /** Present (true) only on a secret key, with `set` saying whether its effective value is non-empty. */
+  /** Present (true) only on a secret key, with `set` saying whether `secrets.yaml` holds a value for it. */
   secret?: true;
   set?: boolean;
+  /** On a key that an isolation override selects: the override's name and the ids of the running units started with it. */
+  isolation?: { name: string; overriddenBy: string[] };
 }
 
 export interface SectionRead { keys: Record<string, KeyInfo>; unknown: string[] }
+
+/**
+ * The running units whose container was started with each isolation override: override name (`ISOLATION_OVERRIDES`) to unit
+ * ids. The caller keeps to the units that declare the section; the control plane's stack status is its source.
+ */
+export type RunningOverrides = Readonly<Record<string, readonly string[]>>;
 
 /** SHA-256 hex of the file text. */
 // @spec MOD-CFG-003
 export const etagOf = (text: string): string => createHash("sha256").update(text).digest("hex");
 
-const PLACEHOLDER = /\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/;
 const getPath = (root: unknown, path: string[]): unknown => path.reduce<unknown>((o, k) => (isObj(o) ? o[k] : undefined), root);
-const envSet = (env: NodeJS.ProcessEnv, name: string): boolean => env[name] !== undefined && env[name] !== "";
 const sliceOf = (text: string, node: { range?: [number, number, number] | null }): string => (node.range ? text.slice(node.range[0], node.range[1]) : "");
 
-interface Classified { source: KeySource; raw?: string; env?: { name: string; set: boolean } }
+/** The override name whose key is `path`, if one selects it. */
+const overrideNameOf = (path: string): string | undefined => Object.entries(ISOLATION_OVERRIDES).find(([, key]) => key === path)?.[0];
 
-function classify(text: string, doc: Document, node: unknown, env: NodeJS.ProcessEnv): Classified {
-  if (node === undefined || node === null) return { source: "default" };
-  const n = node as { range?: [number, number, number] | null };
-  if (isScalar(node) && typeof node.value === "string") {
-    const full = /^\$\{([A-Z0-9_]+)\}$/.exec(node.value);
-    if (full) return { source: "env", env: { name: full[1]!, set: envSet(env, full[1]!) } };
-    const withDef = /^\$\{([A-Z0-9_]+):-([^}]*)\}$/.exec(node.value);
-    if (withDef) return { source: "env-default", raw: withDef[2]!, env: { name: withDef[1]!, set: envSet(env, withDef[1]!) } };
-    if (PLACEHOLDER.test(node.value)) return { source: "composite", raw: sliceOf(text, n) };
-    return { source: "literal", raw: sliceOf(text, n) };
-  }
-  if (isSeq(node) || isMap(node)) {
-    return { source: PLACEHOLDER.test(JSON.stringify(node.toJS(doc) ?? null)) ? "composite" : "literal", raw: sliceOf(text, n) };
-  }
-  return { source: "literal", raw: sliceOf(text, n) };
-}
-
-/** Reads one section of the file text: each key's source and effective value, and the keys the schema does not know. */
-// @spec MOD-CFG-004, MOD-CFG-005, MOD-CFG-006
-export function readSection(text: string, section: string, env: NodeJS.ProcessEnv = process.env): SectionRead {
+/**
+ * Reads one section of the file text: each key's source and effective value, the keys the schema does not know, and for each
+ * secret only whether `secretsSet` (the secret paths `secrets.yaml` holds, `setSecretPaths()`) names it. `running` says which
+ * units run with each isolation override.
+ */
+// @spec MOD-CFG-004, MOD-CFG-005, MOD-CFG-006, MOD-CFG-018
+export function readSection(text: string, section: string, secretsSet: readonly string[] = [], running: RunningOverrides = {}): SectionRead {
   const leaves = leavesOf(section);
   const doc = parseDocument(text);
-  const parsed = parseConfigText(text, env);
+  const parsed = parseConfigText(text);
+  // The parsed tree has the secret paths removed, so a credential pasted into the file is never read back.
   const effective: unknown = parsed.ok ? parsed.config : parsed.raw;
   const keys: Record<string, KeyInfo> = {};
   for (const leaf of leaves) {
-    const c = classify(text, doc, doc.getIn(leaf.path, true), env);
-    const value = getPath(effective, leaf.path);
+    const dotted = leaf.path.join(".");
     if (leaf.secret) {
-      const set = typeof value === "string" ? value !== "" : value !== undefined && value !== null;
-      keys[leaf.key] = { source: c.source, editable: false, secret: true, set, ...(c.env ? { env: c.env } : {}) };
+      keys[leaf.key] = { editable: false, secret: true, set: secretsSet.includes(dotted) };
       continue;
     }
+    const node = doc.getIn(leaf.path, true);
+    const present = node !== undefined && node !== null && !(isScalar(node) && node.value === null);
+    const value = getPath(effective, leaf.path);
+    const name = overrideNameOf(dotted);
     keys[leaf.key] = {
-      source: c.source,
-      editable: c.source === "literal" || c.source === "default" || c.source === "env-default",
+      source: present ? "literal" : "default",
+      editable: true,
       ...(value !== undefined ? { value } : {}),
-      ...(c.raw !== undefined ? { raw: c.raw } : {}),
-      ...(c.env ? { env: c.env } : {}),
+      ...(present ? { raw: sliceOf(text, node as { range?: [number, number, number] | null }) } : {}),
+      ...(name ? { isolation: { name, overriddenBy: [...(running[name] ?? [])] } } : {}),
     };
   }
   const segs = section.split(".");
@@ -305,60 +348,61 @@ const sameValue = (a: unknown, b: unknown): boolean =>
   typeof a === "object" || typeof b === "object" ? JSON.stringify(a) === JSON.stringify(b) : String(a) === String(b);
 
 /**
- * Applies `values` (key of the section to new value) to the file text and validates the result with the loader's pipeline.
- * Returns the edited text and warnings, or the issues that stopped it (the text is never partly edited).
+ * Applies `values` (key of the section to new value) to the file text and validates the result with the loader's pipeline,
+ * applying no isolation override. Returns the edited text and warnings, or the issues that stopped it (the text is never
+ * partly edited). The warnings name each edited key a running unit overrides (`running`, as for `readSection`) and, for the
+ * `dashboard` section, that it applies at the dashboard's next start and where the page address moves.
  */
-// @spec MOD-CFG-009, MOD-CFG-010, MOD-CFG-011, MOD-CFG-012
-export function applySection(text: string, section: string, values: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): ApplyResult {
-  const info = readSection(text, section, env).keys;
+// @spec MOD-CFG-009, MOD-CFG-010, MOD-CFG-011, MOD-CFG-012, MOD-CFG-015
+export function applySection(text: string, section: string, values: Record<string, unknown>, secretsSet: readonly string[] = [], running: RunningOverrides = {}): ApplyResult {
+  const info = readSection(text, section, secretsSet, running).keys;
   const leaves = new Map(leavesOf(section).map((l) => [l.key, l]));
   const issues: ConfigIssue[] = [];
   for (const key of Object.keys(values)) {
     const k = info[key];
     if (!k) issues.push({ path: key, message: `not a key of section ${section}` });
-    else if (!k.editable) issues.push({ path: key, message: k.secret ? "a secret; set it in .env" : k.source === "env" ? `set by ${k.env?.name} in .env` : "mixes text and placeholders; edit config.yaml by hand" });
+    else if (!k.editable) issues.push({ path: key, message: "a secret; credentials are written through the secret route, not here" });
   }
   if (issues.length) return { ok: false, issues };
 
   let out = text;
-  const edited: { leaf: Leaf; value: unknown; envName?: string }[] = [];
+  const edited: { leaf: Leaf; value: unknown }[] = [];
   for (const [key, value] of Object.entries(values)) {
     const leaf = leaves.get(key)!;
     const k = info[key]!;
     try {
       const doc = parseDocument(out);
       if (value === null || value === undefined) { issues.push({ path: key, message: "a value is required" }); continue; }
-      if (k.source === "env-default") {
-        const def = String(value);
-        if (/[}\r\n]/.test(def)) { issues.push({ path: key, message: "a default inside ${VAR:-...} cannot contain } or a line break" }); continue; }
-        const node = doc.getIn(leaf.path, true) as { range: [number, number, number]; type?: string };
-        const esc = node.type === "QUOTE_DOUBLE" ? def.replace(/\\/g, "\\\\").replace(/"/g, '\\"') : node.type === "QUOTE_SINGLE" ? def.replace(/'/g, "''") : def;
-        const src = out.slice(node.range[0], node.range[1]).replace(/(\$\{[A-Z0-9_]+:-)[^}]*\}/, (_, head: string) => `${head}${esc}}`);
-        out = out.slice(0, node.range[0]) + src + out.slice(node.range[1]);
-        edited.push({ leaf, value, envName: k.env!.name });
-      } else {
-        if (typeof value === "string" && PLACEHOLDER.test(value)) { issues.push({ path: key, message: "a value cannot contain ${...}; placeholders are written by hand in config.yaml" }); continue; }
-        out = k.source === "literal" ? replaceNode(out, doc, leaf.path, value) : insertKey(out, doc, leaf.path, value);
-        edited.push({ leaf, value });
-      }
+      if (typeof value === "string" && /\$\{[A-Z0-9_]+(?::-[^}]*)?\}/.test(value)) { issues.push({ path: key, message: "a value cannot contain a ${NAME} placeholder; config.yaml holds literals only" }); continue; }
+      out = k.source === "literal" ? replaceNode(out, doc, leaf.path, value) : insertKey(out, doc, leaf.path, value);
+      edited.push({ leaf, value });
     } catch (e) {
       issues.push({ path: key, message: (e as Error).message });
     }
   }
   if (issues.length) return { ok: false, issues };
 
-  const valid = parseConfigText(out, env);
+  const valid = parseConfigText(out);
   if (!valid.ok) return { ok: false, issues: valid.issues };
 
   // The written text must read back as what was asked for (a quote or comment character can change a value).
-  const warnings: string[] = [];
+  const readBack = coerceEmptyNumbers(parseYaml(out));
   for (const e of edited) {
-    const without = { ...env };
-    if (e.envName) delete without[e.envName];
-    const back = getPath(coerceEmptyNumbers(parseYaml(substituteEnv(out, without))), e.leaf.path);
-    if (!sameValue(back, e.value)) issues.push({ path: e.leaf.key, message: "that value cannot be written to config.yaml as given" });
-    if (e.envName && envSet(env, e.envName)) warnings.push(`${e.leaf.path.join(".")}: ${e.envName} is set in the environment, so the new default is shadowed until it is unset`);
+    if (!sameValue(getPath(readBack, e.leaf.path), e.value)) issues.push({ path: e.leaf.key, message: "that value cannot be written to config.yaml as given" });
   }
   if (issues.length) return { ok: false, issues };
+
+  const warnings: string[] = [];
+  for (const e of edited) {
+    const iso = info[e.leaf.key]!.isolation;
+    if (iso && iso.overriddenBy.length) {
+      warnings.push(`${e.leaf.path.join(".")}: ${iso.overriddenBy.join(", ")} ${iso.overriddenBy.length === 1 ? "is" : "are"} running isolated with ${iso.name}, so the new value applies only after ${iso.overriddenBy.length === 1 ? "it is" : "they are"} started again without isolation`);
+    }
+  }
+  if (section === "dashboard" && edited.length) {
+    warnings.push("dashboard: the dashboard reads these keys when it starts, so the change applies at its next start");
+    const ports = edited.filter((e) => e.leaf.key === "port" || e.leaf.key === "lan_port");
+    if (ports.length) warnings.push(`dashboard: the dashboard's page address changes to ${ports.map((e) => `${e.leaf.key === "port" ? "port" : "LAN port"} ${String(e.value)}`).join(" and ")} once it is restarted`);
+  }
   return { ok: true, text: out, warnings };
 }

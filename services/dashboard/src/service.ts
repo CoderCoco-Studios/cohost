@@ -7,7 +7,7 @@ import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
-import { uploadOptionsFromEnv } from "./uploads.js";
+import { uploadLimits } from "./uploads.js";
 import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
@@ -39,15 +39,16 @@ export function dashboardService(deps: DashboardDeps = {}) {
     health: (): HeartbeatSpec => dashboardHealth,
     async main({ cfg, bus, log, heartbeat, onStop }: ServiceContext<Bus>): Promise<void> {
       const tracker = new HealthTracker();
-      // @spec DASH-HTTP-009
-      const { port: PORT, lanPort: LAN_PORT } = resolvePorts(env, cfg.dashboard.port);
+      // @spec DASH-HTTP-009, DASH-HOST-001
+      const { port: PORT, lanPort: LAN_PORT } = resolvePorts(cfg.dashboard);
       // @spec DASH-SINK-004
       const VOICE = urls.voice();
       // @spec DASH-CTRL-003, DASH-HOST-007
       const { control, bind } = setupControl(env, bus, log);
       const html = readFileSync(join(here, "..", "public", "index.html"), "utf8");
 
-      const uploads = uploadOptionsFromEnv(env);
+      // @spec DASH-UPL-001, DASH-UPL-002
+      const uploads = uploadLimits(cfg.dashboard.inject);
 
       // @spec CFG-ENV-009, DASH-VIEWERS-007
       const viewersToken = viewersTokenFromEnv(env);

@@ -17,7 +17,7 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
 ## The checklist
 
-1. In the distro, run `./scripts/install.sh --no-pull` (or copy `.env.example` to `.env`), then start the dashboard:
+1. In the distro, run `./scripts/install.sh --no-pull` (or copy `.env.example` to `.env` and the `config/*.example.*` files to their working names), then start the dashboard:
 
    ```bash
    ./scripts/install.sh --no-pull
@@ -28,11 +28,11 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
    You should see the dashboard log the URL it listens on.
 
-2. In a Windows browser open <http://localhost:3000>. WSL forwards `localhost` to the distro. Enter the `CONTROL_TOKEN` from `.env` when the page asks.
+2. In a Windows browser open <http://localhost:3000> (`dashboard.port` in `config/config.yaml`). WSL forwards `localhost` to the distro. Enter the `CONTROL_TOKEN` from `.env` when the page asks.
 
 3. Press **Launch** and wait for the stack to reach `up` on the Services tab.
 
-4. Load <http://localhost:3001/?sink=1> in a second browser tab, or add it as an OBS [Browser Source](../../start/glossary.md#browser-source) on the same PC, and click **enable audio**. Send a chat line from the test panel and hear a reply.
+4. Load <http://localhost:3001/?sink=1> (`dashboard.lan_port`) in a second browser tab, or add it as an OBS [Browser Source](../../start/glossary.md#browser-source) on the same PC, and click **enable audio**. Send a chat line from the test panel and hear a reply.
 
 5. Inject an image from the dashboard and see `eyes` answer; it needs the `eyes` [Compose profile](../../start/glossary.md#compose-profile). Then inject an audio clip and see `ears` answer; it needs the `ears` profile. Uploads travel over [Redis](../../start/glossary.md#redis), so nothing on the host has to be reachable from a container.
 
@@ -55,6 +55,6 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
 - **`docker: command not found` in the distro.** Turn on Docker Desktop's WSL integration for this distro, or set `COHOST_DOCKER_BIN=docker.exe`.
 - **Windows `docker.exe` and a [GPU](../../start/glossary.md#gpu) overlay.** A Windows `docker.exe` splits `COMPOSE_FILE` on `;`. Set `COMPOSE_PATH_SEPARATOR=:` in `.env` when the list uses `:`, as in `docker-compose.yml:docker-compose.gpu.yml`. The GPU itself comes from the Windows NVIDIA driver; install only the container toolkit in Linux.
-- **The browser cannot reach port 3000.** Check the dashboard's startup log for the URL it actually uses; it differs when `PORT` or `DASHBOARD_HOST` is set.
+- **The browser cannot reach port 3000.** Check the dashboard's startup log for the URL it actually uses: the port is `dashboard.port` in `config/config.yaml`, and the address differs when `DASHBOARD_HOST` is set.
 - **Launch hangs.** The first Launch pulls infrastructure images and models, several gigabytes even in [mock mode](../../start/glossary.md#mock-mode). Watch `docker compose ps`.
 - **Anything else.** See [Troubleshooting](../../guide/troubleshooting.md).

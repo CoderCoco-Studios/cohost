@@ -12,7 +12,7 @@ The co-host remembers. It recalls things people said earlier, it knows regulars 
 ## What you need
 
 - A running co-host. [Install for real](../install/real-install.md) sets up the database that keeps memory. In [mock mode](../../start/glossary.md#mock-mode) memory lives in the computer's RAM and is lost when you stop.
-- For the Viewers page: a `VIEWERS_TOKEN` in `.env` (see below).
+- For the Viewers page: a `VIEWERS_TOKEN` in `.env` (see below). It is a dashboard access control, so it lives in `.env`, not in `config.yaml`.
 
 ## What it remembers
 
@@ -40,7 +40,7 @@ On top of that the co-host keeps short, fading notes about each viewer. They wor
 
 Two things it never stores as a note: a viewer's political views and their money or spending. A subscriber is kept as a flag on the viewer, not as a note.
 
-A very small model reads each chat line and decides whether it holds a note worth keeping. By default that is `NOTES_MODEL` (`gemma3:4b`) on your own Ollama, separate from the model that writes replies, so chat lines and health or family notes stay on your own machine. A second pass, the consolidation, tidies new notes later: merging duplicates, fixing wording and rechecking sensitivity. [After a stream](../operate/after-stream.md) covers it.
+A very small model reads each chat line and decides whether it holds a note worth keeping. By default that is the model named by `brain.memory.notes.capture.llm.model` in `config/config.yaml` (`gemma3:4b`), served by your own Ollama (`brain.memory.notes.capture.llm.provider: ollama`), separate from the model that writes replies, so chat lines and health or family notes stay on your own machine. A second pass, the consolidation, tidies new notes later: merging duplicates, fixing wording and rechecking sensitivity. [After a stream](../operate/after-stream.md) covers it.
 
 ## See and edit notes: the Viewers tab
 
@@ -98,5 +98,5 @@ If you switch the embedding model to one with a different vector size, the memor
 ## If it didn't
 
 - The Viewers tab says it is locked or answers 403: set `VIEWERS_TOKEN` and restart the dashboard.
-- No notes ever appear: the notes model may not have downloaded. A failed download of `NOTES_MODEL` is only a warning, and capture then writes no notes. See [Troubleshooting](../troubleshooting.md).
+- No notes ever appear: the notes model may not have downloaded. A failed download of the model named by `brain.memory.notes.capture.llm.model` is only a warning, and capture then writes no notes. See [Troubleshooting](../troubleshooting.md).
 - The memory service will not start after you changed the embedder: see "Changing the embedding model" above.

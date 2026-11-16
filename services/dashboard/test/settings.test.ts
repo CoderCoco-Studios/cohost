@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { SERVICE_MANIFEST, type ServiceController } from "@cohost/control";
-import { SECRET_PATHS } from "@cohost/config";
+import { SECRET_PATHS, GROUPS } from "@cohost/config";
 import { createDashboardHandler } from "../src/routes.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
 
@@ -16,12 +16,13 @@ const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", ".."
 const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
-interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; env?: NodeJS.ProcessEnv }
+interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; secrets?: string }
 
 async function boot(o: Opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-settings-"));
   const file = join(dir, "config.yaml");
   writeFileSync(file, EXAMPLE);
+  if (o.secrets !== undefined) writeFileSync(join(dir, "secrets.yaml"), o.secrets, { mode: 0o600 });
   const bus = new FakeBus();
   const rec = recordingLog();
   const calls: string[] = [];
@@ -31,7 +32,7 @@ async function boot(o: Opts = {}) {
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
-    configFile: () => file, configEnv: o.env ?? {}, ...(o.write ? { configWrite: o.write } : {}),
+    configFile: () => file, ...(o.write ? { configWrite: o.write } : {}),
     ...(o.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller } } : {}),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -53,12 +54,37 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(sections.map((s) => s.path), [...declared, "dashboard"]);
   const llm = sections.find((s) => s.path === "llm")!;
   assert.deepEqual(llm.services, SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).map((s) => s.id));
-  assert.deepEqual(llm.secrets.sort(), ["claude.api_key", "openai.api_key"]);
+  assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
   assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
   assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets, ["http.token"]);
   assert.ok(SECRET_PATHS.length >= 2);
+});
+
+// @spec MOD-CFG-001, MOD-CFG-019, MOD-CFG-020, MOD-CFG-021
+test("GET /config/schema carries the groups and each section's title, group, about, page and per-key presentation, with the help as the schema description", async () => {
+  const t = await boot({ control: true });
+  const body = (await (await t.get("/config/schema")).json()) as { groups: string[]; sections: any[] };
+  assert.deepEqual(body.groups, [...GROUPS]);
+  for (const s of body.sections) {
+    assert.ok(typeof s.title === "string" && s.title && typeof s.about === "string" && s.about, `${s.path}: title and about`);
+    assert.ok(body.groups.includes(s.group), `${s.path}: group`);
+    for (const [k, p] of Object.entries<any>(s.keys)) assert.ok(typeof p.help === "string" && p.help, `${s.path}.${k}: help`);
+  }
+  const by = (path: string) => body.sections.find((s) => s.path === path)!;
+  assert.equal(by("brain.working_memory_events").page, "brain.memory");
+  assert.equal(by("llm").page, undefined);
+  const llm = by("llm");
+  assert.deepEqual(llm.keys["model"].widget, { type: "model", kind: "chat" });
+  assert.equal(llm.keys["openai.base_url"].sensitive, true);
+  assert.equal(llm.schema.properties.model.description, llm.keys["model"].help);
+  assert.equal(llm.schema.properties.openai.properties.base_url["x-sensitive"], true);
+  assert.equal(by("voice").keys["lang_code"].widget.type, "options");
+  assert.deepEqual(by("ears").keys["sources"].widget, { type: "sources" });
+  const reflexes = by("brain.salience").keys["reflexes"];
+  assert.deepEqual(Object.keys(reflexes.items).sort(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
+  assert.equal(by("brain.salience").schema.properties.reflexes.items.properties.match.description, reflexes.items.match.help);
 });
 
 // @spec MOD-CFG-003
@@ -69,7 +95,7 @@ test("GET /config/:section answers etag, keys and unknown for a declared section
   const j = (await r.json()) as { section: string; etag: string; keys: Record<string, any>; unknown: string[] };
   assert.equal(j.section, "voice");
   assert.equal(j.etag, sha(t.text()));
-  assert.equal(j.keys["engine"].source, "env-default");
+  assert.equal(j.keys["engine"].source, "literal");
   assert.deepEqual(j.unknown, []);
   assert.equal((await t.get("/config/brain.salience")).status, 200);
   assert.equal((await t.get("/config/dashboard")).status, 200);
@@ -80,11 +106,12 @@ test("GET /config/:section answers etag, keys and unknown for a declared section
 
 // @spec MOD-CFG-005
 test("a secret key never appears in a section's answer", async () => {
-  const t = await boot({ env: { LLM_API_KEY: "sk-live-secret", ANTHROPIC_API_KEY: "sk-ant-secret" } });
+  const t = await boot({ secrets: "llm:\n  openai:\n    api_key: sk-live-secret\n" });
   const body = await (await t.get("/config/llm")).text();
-  assert.doesNotMatch(body, /sk-live-secret|sk-ant-secret/);
+  assert.doesNotMatch(body, /sk-live-secret/);
   const keys = JSON.parse(body).keys;
   assert.equal(keys["openai.api_key"].set, true);
+  assert.equal(keys["claude.api_key"].set, false);
   assert.equal(keys["openai.api_key"].editable, false);
   assert.equal("value" in keys["openai.api_key"], false);
 });
@@ -147,15 +174,15 @@ test("an edit that makes the file invalid is a 400 with the loader's issues, and
 
 // @spec MOD-CFG-013
 test("?dryRun=1 runs every check, writes nothing and answers 200 with warnings", async () => {
-  const t = await boot({ env: { LLM_PROVIDER: "ollama" } });
+  const t = await boot();
   const etag = sha(t.text());
-  const ok = await t.put("/config/llm?dryRun=1", { etag, values: { provider: "anthropic" } });
+  const ok = await t.put("/config/dashboard?dryRun=1", { etag, values: { port: 3010 } });
   assert.equal(ok.status, 200);
   const j = (await ok.json()) as { ok: boolean; dryRun: boolean; warnings: string[] };
   assert.equal(j.ok, true);
   assert.equal(j.dryRun, true);
-  assert.equal(j.warnings.length, 1);
-  assert.match(j.warnings[0]!, /LLM_PROVIDER/);
+  assert.equal(j.warnings.length, 2, "the next-start notice and the new page address");
+  assert.match(j.warnings[0]!, /next start/);
   assert.equal(t.text(), EXAMPLE);
   assert.equal((await t.put("/config/voice?dryRun=1", { etag, values: { speed: -1 } })).status, 400);
   assert.equal((await t.put("/config/voice?dryRun=1", { etag: "stale", values: { speed: 1 } })).status, 409);
@@ -194,16 +221,83 @@ test("restart lists units in manifest order that read the section and are runnin
 });
 
 // @spec MOD-CFG-015
-test("warnings name a shadowed env default, and a dashboard save says it applies at the dashboard's next start", async () => {
-  const t = await boot({ env: { VOICE_ENGINE: "stub" } });
-  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "kokoro" } });
+test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
+  const t = await boot();
+  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "stub" } });
   const j = (await r.json()) as { warnings: string[] };
-  assert.equal(j.warnings.length, 1);
-  assert.match(j.warnings[0]!, /voice\.engine.*VOICE_ENGINE/);
+  assert.deepEqual(j.warnings, []);
   const d = await t.put("/config/dashboard", { etag: sha(t.text()), values: { port: 3010 } });
   const dj = (await d.json()) as { warnings: string[]; restart: string[] };
   assert.deepEqual(dj.restart, []);
   assert.ok(dj.warnings.some((w) => /dashboard.*next start/i.test(w)));
+});
+
+const svc = (service: string, overrides?: Record<string, string>, status = "running") => ({ service, status, ...(overrides ? { overrides } : {}) });
+
+// @spec MOD-CFG-018
+test("a running unit that declares the section and was started with an override is listed in isolation.overriddenBy of the key the override name selects", async () => {
+  const t = await boot({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" }), svc("cortex", { LLM_PROVIDER: "mock" }), svc("voice", {}), svc("salience")] } });
+  const avatar = (await (await t.get("/config/avatar")).json()) as { keys: Record<string, { isolation?: { name: string; overriddenBy: string[] } }> };
+  assert.deepEqual(avatar.keys.driver!.isolation, { name: "AVATAR_DRIVER", overriddenBy: ["avatar"] });
+  const llm = (await (await t.get("/config/llm")).json()) as { keys: Record<string, { isolation?: { name: string; overriddenBy: string[] } }> };
+  assert.deepEqual(llm.keys.provider!.isolation, { name: "LLM_PROVIDER", overriddenBy: ["cortex"] });
+  const voice = (await (await t.get("/config/voice")).json()) as { keys: Record<string, { isolation?: unknown }> };
+  assert.equal(voice.keys.engine!.isolation === undefined || (voice.keys.engine!.isolation as { overriddenBy: string[] }).overriddenBy.length === 0, true, "an empty overrides object overrides nothing");
+});
+
+// @spec MOD-CFG-018
+test("a unit that does not declare the section, is not running, or runs while Docker is unavailable is never listed", async () => {
+  const listed = async (o: Opts, path: string, key: string): Promise<string[]> => {
+    const j = (await (await (await boot(o)).get(path)).json()) as { keys: Record<string, { isolation?: { overriddenBy: string[] } }> };
+    return j.keys[key]!.isolation?.overriddenBy ?? [];
+  };
+  assert.deepEqual(await listed({ stack: { services: [svc("cortex", { AVATAR_DRIVER: "null" })] } }, "/config/avatar", "driver"), [], "cortex does not declare avatar");
+  assert.deepEqual(await listed({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" }, "exited")] } }, "/config/avatar", "driver"), [], "not running");
+  assert.deepEqual(await listed({ stack: { docker: { ok: false, detail: "no docker" }, services: [svc("avatar", { AVATAR_DRIVER: "null" })] } }, "/config/avatar", "driver"), [], "Docker unavailable");
+  assert.deepEqual(await listed({ stack: { services: [svc("avatar")] } }, "/config/avatar", "driver"), [], "overrides unread");
+});
+
+// @spec MOD-CFG-015
+test("a save of a key an isolated running unit overrides warns naming the key, the unit and that it applies after a start without isolation", async () => {
+  const t = await boot({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" })] } });
+  const dry = await t.put("/config/avatar?dryRun=1", { etag: sha(t.text()), values: { driver: "vmc" } });
+  const warnings = ((await dry.json()) as { warnings: string[] }).warnings;
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /avatar\.driver/);
+  assert.match(warnings[0]!, /avatar is running isolated with AVATAR_DRIVER/);
+  const real = await t.put("/config/avatar", { etag: sha(t.text()), values: { driver: "vmc" } });
+  assert.equal(real.status, 200);
+  assert.deepEqual(((await real.json()) as { warnings: string[] }).warnings, warnings);
+});
+
+// @spec MOD-CFG-017
+test("no /config response, an error or an issue message included, holds a secret value or a hash of secrets.yaml or of a secret value", async () => {
+  const secretText = 'llm:\n  openai:\n    api_key: "sk-live-secret"\n';
+  const t = await boot({ secrets: secretText });
+  const seen: string[] = [];
+  const keep = async (r: Response): Promise<number> => { seen.push(await r.text()); return r.status; };
+  await keep(await t.get("/config/schema"));
+  await keep(await t.get("/config/llm"));
+  await keep(await t.get("/config/nope"));
+  await keep(await t.put("/config/llm", { etag: sha(t.text()), values: { "openai.api_key": "sk-live-secret" } }));
+  await keep(await t.put("/config/llm", { etag: "stale", values: { temperature: 0.5 } }));
+  await keep(await t.put("/config/llm", { etag: sha(t.text()), values: { temperature: -1 } }));
+  await keep(await t.put("/config/llm?dryRun=1", { etag: sha(t.text()), values: { temperature: 0.5 } }));
+  const all = seen.join("\n");
+  for (const forbidden of ["sk-live-secret", sha(secretText), sha("sk-live-secret"), sha(readFileSync(join(t.dir, "secrets.yaml"), "utf8"))]) assert.ok(!all.includes(forbidden), forbidden);
+});
+
+// @spec MOD-CFG-016
+test("the settings routes read and write config.yaml only: no .env, no secrets.yaml, no unit started, stopped or restarted", async () => {
+  const t = await boot({ secrets: 'llm:\n  openai:\n    api_key: "sk-secret"\n', stack: { services: [svc("voice")] } });
+  const before = readFileSync(join(t.dir, "secrets.yaml"), "utf8");
+  assert.equal((await t.put("/config/llm", { etag: sha(t.text()), values: { "openai.api_key": "pasted" } })).status, 400, "a secret key in a PUT is refused");
+  assert.equal((await t.put("/config/voice", { etag: sha(t.text()), values: { speed: 1.1 } })).status, 200);
+  assert.equal(readFileSync(join(t.dir, "secrets.yaml"), "utf8"), before);
+  assert.deepEqual(readdirSync(t.dir).sort(), ["config.yaml", "secrets.yaml"]);
+  assert.deepEqual(t.calls, []);
+  const src = readFileSync(join(repo, "services", "dashboard", "src", "settings.ts"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*")).join("\n");
+  assert.doesNotMatch(src, /\.env\b|process\.env|\benv\b/, "settings.ts takes no environment");
 });
 
 // @spec MOD-CFG-014

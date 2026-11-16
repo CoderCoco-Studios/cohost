@@ -1,5 +1,5 @@
-import { findWorkspaceRoot } from "@cohost/config";
-import { resolveDockerBin } from "./docker.js";
+import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
+import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { ComposeRuntime, defaultExec, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
@@ -12,6 +12,11 @@ export interface ContainerStatus {
   exitCode?: number;
   /** Compose's restart count for the container, when `statusWithRestarts` read it. */
   restartCount?: number;
+  /**
+   * The isolation overrides the container was started with (`COHOST_ISOLATION`, CFG-ISO-006 names with non-empty values), an
+   * empty object when it sets none; absent where `statusWithRestarts` could not read them.
+   */
+  overrides?: Record<string, string>;
 }
 
 export interface StackStatus {
@@ -56,7 +61,30 @@ export const STOP_TIMEOUT_MS = 300_000;
 export const STATUS_TIMEOUT_MS = 10_000;
 
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
-const INSPECT_FORMAT = '{{index .Config.Labels "com.docker.compose.service"}} {{.RestartCount}}';
+/** One line per container: Compose service, restart count and the environment as a JSON array of `NAME=value` entries. */
+const INSPECT_FORMAT = '{{index .Config.Labels "com.docker.compose.service"}} {{.RestartCount}} {{json .Config.Env}}';
+
+/**
+ * The isolation overrides in one container's environment (a JSON array of `NAME=value`): the `COHOST_ISOLATION` entry's object
+ * kept to the names of `ISOLATION_OVERRIDES` that have a non-empty string value, `{}` when the entry is absent or empty (the usual case), undefined when
+ * the environment or the entry is not what it should be. Every other entry is dropped here and never returned or logged.
+ */
+function isolationOf(envJson: string): Record<string, string> | undefined {
+  let env: unknown;
+  try { env = JSON.parse(envJson); } catch { return undefined; }
+  if (env === null) return {};
+  if (!Array.isArray(env)) return undefined;
+  const prefix = `${ISOLATION_ENV}=`;
+  const entry = env.find((e): e is string => typeof e === "string" && e.startsWith(prefix));
+  const text = entry?.slice(prefix.length).trim();
+  if (text === undefined || text === "") return {};
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return undefined; }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [name, v] of Object.entries(value)) if (Object.hasOwn(ISOLATION_OVERRIDES, name) && typeof v === "string" && v !== "") out[name] = v;
+  return out;
+}
 
 const isLongRunning = (c: ContainerStatus): boolean => !ONE_SHOTS.includes(c.service);
 const isReady = (c: ContainerStatus): boolean => c.status === "running" && (c.health === undefined || c.health === "healthy");
@@ -123,12 +151,13 @@ export class StackController {
     try { this.o.onPhase?.(kind, phase); } catch { /* a progress callback must not fail the action */ }
   }
 
-  /** Runs one fixed `docker compose` command. */
+  /** Runs one fixed `docker compose` command with `COHOST_ISOLATION` set to the empty string, so neither this process's environment nor `.env` supplies it (CTRL-STACK-017). */
+  // @spec CTRL-STACK-017
   private async compose(args: string[], timeoutMs: number): Promise<{ ok: true; stdout: string } | { ok: false; detail: string }> {
     const docker = resolveDockerBin(this.env, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: this.env, cwd: this.cwd, timeoutMs });
+      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: dockerEnv(docker.bin, this.env, { [ISOLATION_ENV]: "" }), cwd: this.cwd, timeoutMs });
       return { ok: true, stdout };
     } catch (err) {
       return { ok: false, detail: execDetail(err) };
@@ -154,10 +183,11 @@ export class StackController {
   }
 
   /**
-   * `status` plus each container's Compose restart count, read with two more fixed commands (`ps -q`, then one
-   * `docker inspect` over the ids it printed). A failure of either leaves the status as `status` returned it.
+   * `status` plus each container's Compose restart count and isolation overrides, read with two more fixed commands (`ps -q`,
+   * then one `docker inspect` over the ids it printed). A failure of either leaves the status as `status` returned it. The
+   * inspect output holds every container's whole environment, tokens included: only the isolation data is kept from it.
    */
-  // @spec CTRL-STACK-014
+  // @spec CTRL-STACK-014, CTRL-STACK-016
   async statusWithRestarts(): Promise<StackStatus> {
     const st = await this.status();
     if (!st.docker.ok) return st;
@@ -174,15 +204,27 @@ export class StackController {
       return st;
     }
     const counts = new Map<string, number>();
+    const overrides = new Map<string, Record<string, string> | undefined>();
     for (const line of stdout.split("\n")) {
-      const m = /^(\S+) (\d+)$/.exec(line.trim());
-      if (m) counts.set(m[1]!, Math.max(counts.get(m[1]!) ?? 0, Number(m[2])));
+      const m = /^(\S+) (\d+) (.+)$/.exec(line.trim());
+      if (!m) continue;
+      const service = m[1]!;
+      counts.set(service, Math.max(counts.get(service) ?? 0, Number(m[2])));
+      const iso = isolationOf(m[3]!);
+      const prior = overrides.get(service);
+      overrides.set(service, iso === undefined ? prior : { ...prior, ...iso });
     }
-    return { ...st, services: st.services.map((c) => (counts.has(c.service) ? { ...c, restartCount: counts.get(c.service)! } : c)) };
+    return {
+      ...st,
+      services: st.services.map((c) => {
+        const found = overrides.get(c.service);
+        return counts.has(c.service) ? { ...c, restartCount: counts.get(c.service)!, ...(found ? { overrides: found } : {}) } : c;
+      }),
+    };
   }
 
   /** The same as `launch`, reported under kind `rebuild`: both build, so images never lag the code. */
-  // @spec CTRL-STACK-013
+  // @spec CTRL-STACK-017
   rebuild(): Promise<StackResult> { return this.bringUp("rebuild"); }
 
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005

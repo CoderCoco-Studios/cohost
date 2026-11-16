@@ -16,18 +16,14 @@ and may ask you to log out and back in once; run it again after that.
 git clone https://github.com/CoderCoco-Studios/cohost.git
 cd cohost
 ./scripts/install.sh
-cat >> .env <<'EOF'
-LLM_PROVIDER=mock
-MEMORY_STORE=memory
-MEMORY_EMBEDDER=hash
-VOICE_ENGINE=stub
-CHAT_SOURCE=fake
-EOF
 pnpm dashboard
 ```
 
 Open the URL the dashboard prints (<http://localhost:3000> by default), enter
-the `CONTROL_TOKEN` from `.env`, and press Launch. For real accounts, follow
+the `CONTROL_TOKEN` from `.env`, and press Launch. To reach mock mode, edit no
+file: on the Services screen, tick **isolated** and press Start (or Restart) on
+`chat`, `memory`, `cortex` and `voice`, which gives each a stand-in backend.
+Nothing is appended to `.env`. For real accounts, follow
 [Install for real](https://codercoco-studios.github.io/cohost/guide/install/real-install).
 
 ## Documentation

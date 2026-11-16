@@ -74,10 +74,30 @@ if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
 fi
 
 # ---------------------------------------------------------------- node + pnpm (for local dev)  @spec DEPLOY-INST-004, DEPLOY-INST-009
-node_major() { node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0; }
-if ! command -v node >/dev/null 2>&1 || [[ "$(node_major)" -lt 26 ]]; then
-  log "Installing Node 26"
-  curl -fsSL https://deb.nodesource.com/setup_26.x | sudo -E bash - >/dev/null
+# begin node-version
+# The Node this repository needs is the "engines.node" minimum of package.json (a `>=MAJOR[.MINOR[.PATCH]]` range), compared
+# whole: major, then minor, then patch. The range is read as text, so a missing or old node is no obstacle to reading it.
+# @spec DEPLOY-INST-009
+node_min() { sed -n 's/^[[:space:]]*"node":[[:space:]]*">=\([0-9][0-9.]*\)".*/\1/p' package.json | head -n 1; }
+node_min_major() { local m; m=$(node_min); echo "${m%%.*}"; }
+# version_ge <have> <min>: true when dotted version <have> is at least <min>; a missing part counts as 0.
+version_ge() {
+  local -a have min; IFS=. read -r -a have <<<"$1"; IFS=. read -r -a min <<<"$2"
+  local i a b
+  for i in 0 1 2; do
+    a=${have[i]:-0}; b=${min[i]:-0}
+    (( 10#$a > 10#$b )) && return 0
+    (( 10#$a < 10#$b )) && return 1
+  done
+  return 0
+}
+node_is_recent() { command -v node >/dev/null 2>&1 && version_ge "$(node -p process.versions.node 2>/dev/null || true)" "$(node_min)"; }
+# end node-version
+NODE_MAJOR=$(node_min_major)
+[[ -n "$NODE_MAJOR" ]] || die "cannot read engines.node from package.json"
+if ! node_is_recent; then
+  log "Installing Node $NODE_MAJOR (package.json engines.node is >=$(node_min))"
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash - >/dev/null
   sudo apt-get install -y -qq nodejs
 fi
 # begin pnpm-version
@@ -86,17 +106,30 @@ pnpm_spec() { node -p "require('./package.json').packageManager"; }
 # end pnpm-version
 command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo npm install -g corepack@0.36.0; sudo corepack enable; corepack prepare "$(pnpm_spec)" --activate; }
 
-# ---------------------------------------------------------------- .env  @spec DEPLOY-INST-005, DEPLOY-INST-006
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  log "Wrote .env from template — fill in Twitch/Discord/OBS values."
-fi
-for f in config.yaml personality.md expressions.yaml; do
-  if [[ ! -f "config/$f" ]]; then
-    cp "config/${f%.*}.example.${f##*.}" "config/$f"
-    log "Wrote config/$f from its .example — this one is yours (git-ignored)."
+# ---------------------------------------------------------------- .env and config files  @spec DEPLOY-INST-005, DEPLOY-INST-006
+# begin seed-files
+# Copies each missing file from its example and never overwrites one that exists. secrets.yaml holds credentials, so it is
+# private (mode 0600) from the moment it exists; an existing one keeps whatever mode the operator gave it.
+# @spec DEPLOY-INST-005
+seed_files() {
+  local f
+  if [[ ! -f .env ]]; then
+    cp .env.example .env
+    log "Wrote .env from its template: the dashboard's access controls and Compose settings."
   fi
-done
+  for f in config.yaml secrets.yaml personality.md expressions.yaml; do
+    [[ -f "config/$f" ]] && continue
+    if [[ $f == secrets.yaml ]]; then
+      (umask 077 && cp "config/${f%.*}.example.${f##*.}" "config/$f") && chmod 600 "config/$f"
+      log "Wrote config/$f from its .example (mode 0600): your credentials go here (git-ignored)."
+    else
+      cp "config/${f%.*}.example.${f##*.}" "config/$f"
+      log "Wrote config/$f from its .example: this one is yours (git-ignored)."
+    fi
+  done
+}
+# end seed-files
+seed_files
 if [[ $HAS_NVIDIA -eq 1 ]]; then
   sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml#' .env
   log "GPU overlay enabled in .env (COMPOSE_FILE)"
@@ -184,24 +217,36 @@ if [[ $PULL -eq 1 ]]; then probe ollama 60 probe_ollama; fi
 # begin next-steps
 # @spec DEPLOY-INST-008
 print_next_steps() {
-  # DASHBOARD_PORT for the URL: the calling shell wins (as in Compose), then .env. .env is
-  # parsed with sed, never sourced, so nothing in it is executed.
-  local port=${DASHBOARD_PORT:-}
-  if [[ -z "$port" ]]; then
-    port=$(sed -n 's/^[[:space:]]*DASHBOARD_PORT=//p' .env | tail -n 1 | tr -d '\r' \
-      | sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^[\"']//" -e "s/[\"']\$//")
+  # The dashboard's port is dashboard.port as the built config loader returns it: the one parser every service uses, run
+  # by node from the repository root. config.yaml is never parsed as text here and never executed. When the load fails
+  # the loader's first error line goes to stderr and the URL carries no port.
+  local url="http://localhost" port_note="" port
+  if port=$(cd "$ROOT" && node --input-type=module -e '
+    try {
+      const config = await import("./packages/config/dist/index.js");
+      config.setConfigLogger({ warn() {} });
+      process.stdout.write(String(config.loadConfig(true).dashboard.port));
+    } catch (e) {
+      console.error(String((e && e.message) || e).split("\n")[0]);
+      process.exit(1);
+    }'); then
+    url="http://localhost:${port}"
+  else
+    port_note="     (config/config.yaml did not load, see above; the dashboard's own start output shows the address it listens on)"
   fi
-  [[ "$port" =~ ^[0-9]+$ ]] || port=3000
   cat <<EOF
 
 Done. Next:
-  1. Edit .env (Twitch token, Discord token, OBS password, AVATAR_DRIVER).
+  1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and config/secrets.yaml (API keys,
+     tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
   2. pnpm dashboard                    # start the dashboard on this machine (it brings up the stack)
-  3. open http://localhost:${port}     # enter CONTROL_TOKEN from .env when asked, press Launch
-     (the dashboard's startup log shows the URL it actually listens on; it differs when PORT or DASHBOARD_HOST is set)
+  3. open ${url}     # enter CONTROL_TOKEN from .env when asked, press Launch
+${port_note:+${port_note}
+}     (the dashboard's startup log shows the URL it actually listens on; it differs when DASHBOARD_HOST is set)
   4. docker compose --profile eyes --profile ears --profile mouth --profile discord up -d
      # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
-     # the one Discord bot is DISCORD_TOKEN in .env, used by the Discord connector; ears and mouth need no token
+     # the one Discord bot is connections.discord.token in config/secrets.yaml, used by the Discord connector;
+     # ears and mouth need no token
 
 Dev loop without Docker for the TS services:
   docker compose up -d redis postgres ollama tts stt   # infra only

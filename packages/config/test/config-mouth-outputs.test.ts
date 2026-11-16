@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { ConfigSchema } from "../src/index.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
@@ -34,11 +35,18 @@ test("mouth.outputs.http defaults to disabled with an empty url, 5000 ms, 3 retr
 });
 
 // @spec CFG-USR-014
-test("the shipped example sets the file and http outputs from placeholders that .env.example lists", () => {
+test("the shipped example sets the file and http outputs to literals, with the other keys at their defaults and a comment on each key", () => {
   const example = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  const block = example.slice(example.indexOf("\n    file:"), example.indexOf("\n  fallback:\n    min_interval_ms"));
+  assert.doesNotMatch(block, /\$\{/);
+  assert.match(block, /file:[^\n]*\n\s+enabled: false\s+#/);
+  assert.match(block, /http:[^\n]*\n\s+enabled: false\s+#/);
+  assert.match(block, /url: ""\s+#/);
+  for (const line of block.split("\n").filter((l) => /^\s{6}[a-z_]+:/.test(l))) assert.match(line, /#/, `a comment on: ${line.trim()}`);
   const env = readFileSync(join(repo, ".env.example"), "utf8");
-  assert.match(example, /file:[^\n]*\n\s+enabled: \$\{MOUTH_FILE_ENABLED:-false\}/);
-  assert.match(example, /http:[^\n]*\n\s+enabled: \$\{MOUTH_HTTP_ENABLED:-false\}/);
-  assert.match(example, /url: "\$\{MOUTH_HTTP_URL:-\}"/);
-  for (const name of ["MOUTH_FILE_ENABLED", "MOUTH_HTTP_ENABLED", "MOUTH_HTTP_URL"]) assert.match(env, new RegExp(`^#?\\s*${name}=`, "m"), name);
+  for (const name of ["MOUTH_FILE_ENABLED", "MOUTH_HTTP_ENABLED", "MOUTH_HTTP_URL"]) assert.doesNotMatch(env, new RegExp(name), name);
+  const text = parse(example) as { mouth: { outputs: Record<string, Record<string, unknown>> } };
+  const parsed = ConfigSchema.parse({ ...baseCfg(), mouth: text.mouth });
+  assert.deepEqual(parsed.mouth.outputs.file, { enabled: false, dir: "mouth/outputs", max_files: 100 });
+  assert.deepEqual(parsed.mouth.outputs.http, { enabled: false, url: "", timeout_ms: 5000, retries: 3, max_queue: 20 });
 });

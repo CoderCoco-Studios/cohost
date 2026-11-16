@@ -78,7 +78,7 @@ test("openai-compatible, claude and bedrock: one warning per provider instance w
   await anth.chat(withImage);
   assert.equal(c.w.length, 1);
   const b = warned();
-  const bed = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }), b.log);
+  const bed = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }), b.log);
   (bed as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }) } } };
   await bed.chat(withImage);
   await bed.chat(withImage);
@@ -92,7 +92,7 @@ test("openai-compatible, claude and bedrock: one warning per provider instance w
 test("claude and bedrock: the SDK client is built with maxRetries 2", () => {
   const a = new AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }));
   assert.equal((a as unknown as { client: { maxRetries: number } }).client.maxRetries, 2);
-  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
+  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }));
   assert.equal((b as unknown as { client: { maxRetries: number } }).client.maxRetries, 2);
 });
 
@@ -126,7 +126,7 @@ test("an aborted signal rejects the request", async () => {
 // @spec LLM-IF-003
 test("no provider value other than mock yields a MockProvider, an unrecognised one included", () => {
   for (const provider of ["ollama", "openai", "anthropic", "bedrock"]) {
-    const p = createChatProvider(llmCfg({ provider, claude: { api_key: "k" }, bedrock: { region: "us-east-1" } }));
+    const p = createChatProvider(llmCfg({ provider, claude: { api_key: "k" }, bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }));
     assert.equal(p instanceof MockProvider, false, provider);
   }
   assert.equal(createChatProvider(llmCfg({ provider: "mock" })) instanceof MockProvider, true);
@@ -139,7 +139,7 @@ test("createChatProvider picks the backend from llm.provider", () => {
   assert.equal(createChatProvider(llmCfg({ provider: "ollama" })).name, "ollama");
   assert.equal(createChatProvider(llmCfg({ provider: "openai" })).name, "openai");
   assert.equal(createChatProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } })).name, "anthropic");
-  assert.equal(createChatProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } })).name, "bedrock");
+  assert.equal(createChatProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } })).name, "bedrock");
 });
 
 // @spec LLM-CHAT-002, LLM-CHAT-003, LLM-CHAT-004, LLM-CHAT-005, LLM-IF-004
@@ -278,7 +278,7 @@ test("claude: ping explains auth and unknown-model failures", async () => {
   const { p } = claude();
   assert.equal(await p.ping(), true);
   const client = (p as unknown as { client: { models: { retrieve: () => Promise<unknown> } } }).client;
-  for (const [status, re] of [[401, /credentials \(401\).*ANTHROPIC_API_KEY/], [403, /credentials \(403\)/], [404, /no model "claude-x".*llm\.model/], [500, /boom/]] as const) {
+  for (const [status, re] of [[401, /credentials \(401\).*llm\.claude\.api_key/], [403, /credentials \(403\)/], [404, /no model "claude-x".*llm\.model/], [500, /boom/]] as const) {
     client.models.retrieve = async () => { throw Object.assign(new Error("boom"), { status }); };
     assert.equal(await p.ping(), false);
     assert.match(p.lastError!, re);
@@ -290,7 +290,7 @@ test("claude: ping explains auth and unknown-model failures", async () => {
 
 // @spec LLM-CLAUDE-008, LLM-PING-004
 test("bedrock: no server fallbacks, and ping is optimistic", async () => {
-  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
+  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }));
   const calls: Record<string, unknown>[] = [];
   (b as unknown as { client: unknown }).client = { beta: { messages: { create: async (req: Record<string, unknown>) => { calls.push(req); return { stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] }; } } } };
   assert.equal(await b.chat([{ role: "user", content: "x" }]), "ok");
@@ -417,7 +417,7 @@ test("timeout: Claude requests carry the default timeout only when the caller pa
 
 // @spec LLM-PING-006
 test("bedrock: pingIsNominal tells callers its ping is not a probe; real providers do not set it", () => {
-  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1" } }));
+  const b = new BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }));
   assert.equal(b.pingIsNominal, true);
   for (const provider of ["ollama", "openai", "mock"] as const) assert.equal(createChatProvider(llmCfg({ provider })).pingIsNominal, undefined);
   assert.equal(createChatProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } })).pingIsNominal, undefined);

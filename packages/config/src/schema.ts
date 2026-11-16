@@ -8,16 +8,21 @@ export type Emotion = z.infer<typeof Emotion>;
 
 /** Kokoro-FastAPI voice-name syntax (its VOICE_NAME_BODY): ids and `+` mixes with optional `(weight)`. */
 const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
-/** A string key with a default: an empty string (an unset `${VAR}` that substituted to nothing) means "use the default". */
+/** A string key with a default: an empty string means "use the default". */
 // @spec CFG-SCH-024
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
 
 /**
- * Dotted paths (from the config root) of the keys that hold secrets. The settings editor never shows or writes them
+ * Dotted paths (from the config root) of the eleven keys that hold credentials. They live in `secrets.yaml` (the loader
+ * merges them there and ignores any value `config.yaml` holds at one), the settings editor never shows or writes them,
  * and a section's `secrets` list is derived from this one list.
  */
-// @spec MOD-CFG-002
-export const SECRET_PATHS: readonly string[] = ["llm.openai.api_key", "llm.claude.api_key", "vision.obs.password", "ears.http.token"];
+// @spec CFG-SEC-003, MOD-CFG-002
+export const SECRET_PATHS: readonly string[] = [
+  "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
+  "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
+  "connections.discord.token",
+];
 export const EMOTIONS = Emotion.options;
 
 /**
@@ -54,9 +59,18 @@ export const DEFAULT_VISION_PROMPT =
   "that a co-host would care about: the game, the situation, anything dramatic, funny, or new (menus, deaths, wins, chat on screen). " +
   "No preamble. If nothing meaningful changed versus the previous description, reply exactly: SAME";
 
-// @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
+// @spec CFG-SCH-001, CFG-SCH-006, CFG-SCH-008, CFG-SCH-010, CFG-SCH-011, CFG-SCH-012, CFG-SCH-013, CFG-SCH-037, CFG-SCH-039, CFG-ISO-001, CFG-ISO-002, CFG-ISO-003, CFG-ISO-005
 /** A listening source name: `http`, `dir` or a connector source tag (CONN-TAG-001). */
 const EARS_SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** A TCP port. */
+const PORT = z.number().int().min(1).max(65535);
+
+/** A Discord id: a string, because a YAML number cannot hold 19 digits without losing some (CFG-SCH-040). */
+// @spec CFG-SCH-040
+const DISCORD_ID = z
+  .string({ error: (iss) => (typeof iss.input === "number" ? "write the id in quotes: a YAML number cannot hold a 19-digit id without losing digits" : undefined) })
+  .default("");
 
 export const ConfigSchema = z.object({
   cohost: z.object({
@@ -88,7 +102,7 @@ export const ConfigSchema = z.object({
     }).prefault({}),
     /** Shared by provider=anthropic and provider=bedrock. */
     claude: z.object({
-      /** Claude API key; leave empty to use ANTHROPIC_API_KEY or an `ant auth login` profile. */
+      /** Claude API key (a secret, from `secrets.yaml`). */
       api_key: z.string().default(""),
       /** Thinking depth. "low" is right for one-line chat replies. */
       effort: z.preprocess((v) => v || "low", z.enum(["low", "medium", "high", "xhigh", "max"])),
@@ -98,8 +112,11 @@ export const ConfigSchema = z.object({
       fallbacks: z.boolean().default(true),
     }).prefault(EMPTY_INPUT),
     bedrock: z.object({
-      /** Empty = AWS_REGION / AWS_DEFAULT_REGION from the environment. */
+      /** AWS region of the Bedrock endpoint; all three of region, access key id and secret access key are needed. */
       region: z.string().default(""),
+      /** Secrets, from `secrets.yaml`. A session token is not supported. */
+      access_key_id: z.string().default(""),
+      secret_access_key: z.string().default(""),
     }).prefault({}),
   }),
   // @spec CFG-SCH-021
@@ -138,7 +155,14 @@ export const ConfigSchema = z.object({
     /** `fake` publishes scripted/stdin messages with no Twitch connection (isolated runs). */
     source: z.preprocess((v) => v || "twitch", z.enum(["twitch", "fake"])),
     fake: z.object({ interval_ms: z.number().int().positive().default(8000) }).prefault({}),
-    twitch: z.object({ channel: z.string().default("") }),
+    twitch: z.object({
+      channel: z.string().default(""),
+      /** Credentials (secrets, from `secrets.yaml`); the refresh token is required whenever the access token is set. */
+      client_id: z.string().default(""),
+      client_secret: z.string().default(""),
+      access_token: z.string().default(""),
+      refresh_token: z.string().default(""),
+    }),
     ignore_users: z.array(z.string()).default([]),
     ignore_prefixes: z.array(z.string()).default(["!"]),
   }),
@@ -285,7 +309,7 @@ export const ConfigSchema = z.object({
       remove_emoji: z.boolean().optional(),
     }).prefault({}), // @spec CFG-SCH-029
     /** Read only by the `stub` engine to size its silence; the Kokoro engine ignores it. */
-    sample_rate: z.number().int().positive().default(24000).describe("Sample rate of the silence the stub voice engine returns. Read only by the stub engine; the Kokoro engine ignores it."), // @spec CFG-SCH-026
+    sample_rate: z.number().int().positive().default(24000), // @spec CFG-SCH-026
     fallback: z.object({
       /** Phrases the co-host says when a line fails to play; voice turns each into a clip. Empty turns the feature off. */
       lines: z.array(
@@ -294,18 +318,18 @@ export const ConfigSchema = z.object({
     }).prefault({}),
   }),
   avatar: z.object({
-    // A blank value (unset AVATAR_DRIVER) means "no avatar app"; a non-empty unknown value still fails.
+    // A blank value means "no avatar app"; a non-empty unknown value still fails.
     driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])), // @spec AVATAR-DRV-004
     fps: z.number().int().positive().default(30),
     smoothing: z.number().min(0).max(1).default(0.25),
     idle_motion: z.boolean().default(true),
     vtube_studio: z.object({
-      host: z.string(),
+      host: str("host.docker.internal"),
       port: z.number().int().default(8001),
       plugin_name: str("cohost"),
       plugin_developer: str("cohost"),
     }),
-    vmc: z.object({ host: z.string(), port: z.number().int().default(39539) }),
+    vmc: z.object({ host: str("host.docker.internal"), port: z.number().int().default(39539) }),
   }),
   ears: z.object({
     /**
@@ -410,12 +434,26 @@ export const ConfigSchema = z.object({
     discord: z.object({
       /** false = the connector idles with heartbeat mode `off` and holds no Discord client. */
       enabled: z.boolean().default(true),
-      guild_id: z.string().default(""),
-      voice_channel_id: z.string().default(""),
+      guild_id: DISCORD_ID,
+      voice_channel_id: DISCORD_ID,
+      /** The bot token (a secret, from `secrets.yaml`). */
+      token: z.string().default(""),
     }).prefault({}),
   }).prefault({}),
+  // @spec CFG-SCH-038
   dashboard: z.object({
-    port: z.number().int().default(3000).describe("Port the host-run dashboard listens on when the PORT and DASHBOARD_PORT environment variables are both unset. Applies at the dashboard's next start."), // @spec CFG-SCH-026
+    /** The full surface's port; applies at the dashboard's next start. */
+    port: PORT.default(3000), // @spec CFG-SCH-026
+    /** The LAN listener's port (the sink page and audio only); applies at the dashboard's next start. */
+    lan_port: PORT.default(3001), // @spec CFG-SCH-026
+    /** Limits of the dashboard's test uploads. */
+    inject: z.object({
+      max_image_bytes: z.number().int().positive().default(8388608),
+      max_audio_bytes: z.number().int().positive().default(26214400),
+      ttl_ms: z.number().int().positive().default(300000),
+    }).prefault({}),
+  }).superRefine((v, ctx) => {
+    if (v.port === v.lan_port) ctx.addIssue({ code: "custom", path: ["lan_port"], message: "must differ from dashboard.port: the full surface and the LAN listener cannot share a port" });
   }),
 });
 

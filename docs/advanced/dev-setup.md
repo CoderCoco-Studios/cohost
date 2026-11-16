@@ -79,7 +79,7 @@ The infrastructure still runs in containers; the services run on your host from 
    cp .env.example .env
    ```
 
-   The services read `.env` from the workspace root themselves, without overriding variables already set in your shell. The first service you start copies `config/config.example.yaml`, `personality.example.md` and `expressions.example.yaml` to `config.yaml`, `personality.md` and `expressions.yaml` (all git-ignored). Config is read from the `config/` folder at the workspace root, found by walking up to `pnpm-workspace.yaml`, so it does not depend on the directory you start from. `CONFIG_DIR` and `COHOST_ENV_FILE` move them.
+   The services read `.env` from the workspace root themselves, without overriding variables already set in your shell. The first service you start copies `config/config.example.yaml`, `personality.example.md` and `expressions.example.yaml` to `config.yaml`, `personality.md` and `expressions.yaml` (all git-ignored). Operator settings are literal keys in `config.yaml`. Credentials go only in `config/secrets.yaml`, which you copy from `config/secrets.example.yaml` (`./scripts/install.sh` does that for you); it is git-ignored too. Config is read from the `config/` folder at the workspace root, found by walking up to `pnpm-workspace.yaml`, so it does not depend on the directory you start from. `CONFIG_DIR` and `COHOST_ENV_FILE` move them.
 
 3. Run every service with file watching:
 
@@ -95,7 +95,7 @@ The infrastructure still runs in containers; the services run on your host from 
    pnpm dashboard
    ```
 
-   The [dashboard](../guide/operate/dashboard.md) is a host process. It builds itself, then prints the URL it listens on. Open <http://localhost:3000>.
+   The [dashboard](../guide/operate/dashboard.md) is a host process. It builds itself, then prints the URL it listens on. Open <http://localhost:3000> (the port is `dashboard.port` in `config.yaml`).
 
 To work on one service, start only that one, from the workspace root:
 
@@ -103,7 +103,7 @@ To work on one service, start only that one, from the workspace root:
 pnpm --filter @cohost/salience dev
 ```
 
-A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with `LLM_PROVIDER=mock`, `MEMORY_STORE=memory` and `MEMORY_EMBEDDER=hash` in your `.env` you can work on the brain with no model server and no database.
+A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with `llm.provider: mock`, `brain.memory.store: memory` and `brain.memory.embedder: hash` in your `config/config.yaml` (or `COHOST_ISOLATION='{"LLM_PROVIDER":"mock","MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}'` in the shell) you can work on the brain with no model server and no database.
 
 ::: aside
 `pnpm dev` starts everything at once, including services you have no account for. They sulk in "degraded" and the rest carry on, which is more than I can say for most group projects.

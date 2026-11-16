@@ -4,7 +4,7 @@
 
 ## Status
 
-Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the one-place configuration design adds the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and reworks CFG-ENV-001, -009 to -012, CFG-LOAD-002, -004, CFG-SCH-010, -026, -037 to -040, CFG-ISO-004, -005, CFG-USR-007, -008, -011, -012, -014 to -016; none of it is built. Total 112 specs: 68 `[x]`, 44 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. Total 121 specs: 121 `[x]`, 0 `[ ]`, 0 `[D]`. The specs added by that design are not covered by the last audit.
 
 **AUDITED.** 82 specs: 82 implemented, 0 deferred, 0 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*.
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (82 specs, prefix `CFG`: 82 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder and the number is not reused)
+- docs/intent/config/config-specs.md (121 specs, prefix `CFG`: 121 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder and the number is not reused)
 
 ### Tests
 `@spec CFG-` annotations are in:

@@ -24,7 +24,7 @@ Every service that talks to the outside world is a publisher and subscriber of [
 | Any bus event | `node --import tsx scripts/dev/bus-pub.ts <type> '<json>'` | A zod-validated publish with source `dev-pub` | Redis only |
 | Operator controls | `POST /control` with `say`, `mute`, `unmute`, `forget_context`, `reload_personality`, `pause` or `resume`, and an optional `target` | The `control` event | Redis and the dashboard |
 | A unit's declared input | The test drawer on a service's row, or `POST /inject/event` with `{ unit, type, data }` | One bus event the service declares as an input, refused when that service is not running | The service running |
-| Stub backends | `VISION_ENGINE=stub`, `EARS_STT_ENGINE=stub`, `VOICE_ENGINE=stub`, `LLM_PROVIDER=mock`, `CHAT_SOURCE=fake`, `MOUTH_DRYRUN_ENABLED=true` | The service's own code with the outside call replaced | Nothing outside |
+| Stub backends | An isolated start of the unit (the `isolated` checkbox, or `pnpm cohostctl start <service> --isolated`), or the real keys `vision.engine: stub`, `ears.stt_engine: stub`, `voice.engine: stub`, `llm.provider: mock`, `chat.source: fake`, `mouth.outputs.dryrun.enabled: true` | The service's own code with the outside call replaced | Nothing outside |
 
 Injected events carry `injected: true`, so they are easy to tell apart on the feed. `remember` (off by default) decides whether `memory` keeps them. An injected `brain.say` is a test input only through `POST /inject/event`; the dashboard's `say` control is the operator's.
 
@@ -95,7 +95,7 @@ chat.message -> affect.state (mood: happy)
 
 `cortex` logs `memory region did not answer in time` because no `memory` is running. That is expected.
 
-Add the dashboard (`pnpm dashboard`, then <http://localhost:3000>) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token while stack control is on, which is the default:
+Add the dashboard (`pnpm dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token while stack control is on, which is the default:
 
 ```bash
 curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'

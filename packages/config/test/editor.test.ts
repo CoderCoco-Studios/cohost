@@ -2,23 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { readSection, applySection, sectionJsonSchema, sectionSecrets, schemaAt, etagOf, SECRET_PATHS, ConfigSchema, parseConfigText } from "../src/index.js";
+import { readSection, applySection, sectionJsonSchema, sectionSecrets, schemaAt, etagOf, SECRET_PATHS, ISOLATION_OVERRIDES, parseConfigText } from "../src/index.js";
 
 const FIXTURE = `# top comment kept
 cohost:
   name: "Coco"                 # the name
   streamer: Chris
 llm:
-  provider: "\${LLM_PROVIDER:-ollama}"   # preset
-  model: "\${LLM_MODEL:-qwen2.5:7b}"  # tag
-  embed_model: "\${EMBED_MODEL}"
-  openai:
-    api_key: "\${LLM_API_KEY}"
+  provider: "ollama"   # preset
+  model: "qwen2.5:7b"  # tag
+  embed_model: "e"
 vision:
-  enabled: \${VISION_ENABLED:-false}
+  enabled: false
   model: "m"
   obs:
-    host: "\${OBS_HOST} and more"
+    host: "obs.lan"
 chat: { twitch: { channel: chan } }
 brain:
   salience:
@@ -32,7 +30,6 @@ avatar: { vtube_studio: { host: h }, vmc: { host: h } }
 ears: {}
 dashboard: {}
 `;
-const ENV = { EMBED_MODEL: "e" } as NodeJS.ProcessEnv;
 const lines = (t: string) => t.split("\n");
 /** The lines of `after` that are not in `before`, and vice versa (order-insensitive): the edit's footprint. */
 const footprint = (before: string, after: string) => {
@@ -49,7 +46,8 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
   assert.equal(voice.properties.engine.default, "kokoro");
   assert.equal(voice.properties.speed.type, "number");
   assert.match(voice.properties.sample_rate.description, /stub/); // @spec CFG-SCH-026
-  assert.match((sectionJsonSchema("dashboard") as any).properties.port.description, /PORT environment variable/); // @spec CFG-SCH-026
+  assert.match((sectionJsonSchema("dashboard") as any).properties.port.description, /full surface.*next start/s); // @spec CFG-SCH-026
+  assert.match((sectionJsonSchema("dashboard") as any).properties.lan_port.description, /LAN.*next start/s); // @spec CFG-SCH-026
   assert.equal(voice.properties.sample_rate.type, "integer");
   assert.equal(voice.properties.fallback.properties.lines.type, "array");
   const llm = sectionJsonSchema("llm") as any;
@@ -65,169 +63,215 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 });
 
 // @spec MOD-CFG-002
-test("exactly the marked keys are secret: SECRET_PATHS, each section's secrets and the schema marks agree", () => {
-  assert.deepEqual([...SECRET_PATHS].sort(), ["ears.http.token", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password"]);
+test("exactly the marked keys are secret: SECRET_PATHS (the eleven), each section's secrets and the schema marks agree", () => {
+  assert.deepEqual([...SECRET_PATHS].sort(), [
+    "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "connections.discord.token", "ears.http.token",
+    "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
+  ]);
   assert.deepEqual(sectionSecrets("ears"), ["http.token"]);
-  assert.deepEqual(sectionSecrets("llm").sort(), ["claude.api_key", "openai.api_key"]);
+  assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
+  assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
+  assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
   assert.deepEqual(sectionSecrets("voice"), []);
   const marked: string[] = [];
   const walk = (s: any, path: string[]) => {
     if (s["x-secret"]) marked.push(path.join("."));
     for (const [k, v] of Object.entries<any>(s.properties ?? {})) walk(v, [...path, k]);
   };
-  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "dashboard"]) walk(sectionJsonSchema(sec), [sec]);
+  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard"]) walk(sectionJsonSchema(sec), [sec]);
   assert.deepEqual(marked.sort(), [...SECRET_PATHS].sort());
 });
 
 // @spec MOD-CFG-004
-test("readSection reports each key's source, editability, effective value, raw text and variable", () => {
-  const { keys } = readSection(FIXTURE, "llm", { ...ENV, LLM_MODEL: "from-env" });
-  assert.deepEqual(keys["provider"], { source: "env-default", editable: true, value: "ollama", raw: "ollama", env: { name: "LLM_PROVIDER", set: false } });
-  assert.deepEqual(keys["model"], { source: "env-default", editable: true, value: "from-env", raw: "qwen2.5:7b", env: { name: "LLM_MODEL", set: true } });
-  assert.deepEqual(keys["embed_model"], { source: "env", editable: false, value: "e", env: { name: "EMBED_MODEL", set: true } });
+test("readSection reports each key's source (literal or default), editability, effective value and raw text", () => {
+  const { keys } = readSection(FIXTURE, "llm");
+  assert.deepEqual(keys["provider"], { source: "literal", editable: true, value: "ollama", raw: '"ollama"', isolation: { name: "LLM_PROVIDER", overriddenBy: [] } });
+  assert.deepEqual(keys["model"], { source: "literal", editable: true, value: "qwen2.5:7b", raw: '"qwen2.5:7b"' });
   assert.deepEqual(keys["max_tokens"], { source: "default", editable: true, value: 120 });
-  const cohost = readSection(FIXTURE, "cohost", ENV).keys;
+  const cohost = readSection(FIXTURE, "cohost").keys;
   assert.deepEqual(cohost["name"], { source: "literal", editable: true, value: "Coco", raw: '"Coco"' });
   assert.deepEqual(cohost["timezone"], { source: "default", editable: true, value: "UTC" });
-  const vision = readSection(FIXTURE, "vision", ENV).keys;
-  assert.deepEqual(vision["enabled"], { source: "env-default", editable: true, value: false, raw: "false", env: { name: "VISION_ENABLED", set: false } });
-  assert.deepEqual(vision["obs.host"], { source: "composite", editable: false, value: " and more", raw: '"${OBS_HOST} and more"' });
-  const arr = readSection(FIXTURE, "brain.salience", ENV).keys["reflexes"]!;
+  const arr = readSection(FIXTURE, "brain.salience").keys["reflexes"]!;
   assert.equal(arr.source, "literal");
   assert.deepEqual(arr.value, [{ match: "hello", on: ["chat", "speech", "vision"], say: ["hi"], emotion: "surprised", cooldown_ms: 30000 }]);
-  const leaf = readSection(FIXTURE, "brain.working_memory_events", ENV).keys;
+  const leaf = readSection(FIXTURE, "brain.working_memory_events").keys;
   assert.deepEqual(leaf, { working_memory_events: { source: "literal", editable: true, value: 30, raw: "30" } });
+  const everyKey = Object.values(readSection(FIXTURE, "vision").keys).concat(Object.values(readSection(FIXTURE, "dashboard").keys)).filter((k) => !k.secret);
+  assert.ok(everyKey.every((k) => (k.source === "literal" || k.source === "default") && k.editable === true), "every non-secret key is editable and has one of two sources");
+  assert.deepEqual(readSection(FIXTURE, "dashboard").keys["lan_port"], { source: "default", editable: true, value: 3001 });
 });
 
-// @spec MOD-CFG-005
-test("a secret key reports only whether it is set, never its value or raw text", () => {
-  const set = readSection(FIXTURE, "llm", { ...ENV, LLM_API_KEY: "sk-very-secret" });
-  const k = set.keys["openai.api_key"]!;
-  assert.deepEqual(k, { source: "env", editable: false, secret: true, set: true, env: { name: "LLM_API_KEY", set: true } });
-  assert.doesNotMatch(JSON.stringify(set), /sk-very-secret/);
-  assert.deepEqual(readSection(FIXTURE, "llm", ENV).keys["openai.api_key"], { source: "env", editable: false, secret: true, set: false, env: { name: "LLM_API_KEY", set: false } });
-  const literal = readSection(FIXTURE.replace('"${LLM_API_KEY}"', "sk-in-file"), "llm", ENV);
-  assert.doesNotMatch(JSON.stringify(literal), /sk-in-file/);
-  assert.deepEqual(literal.keys["openai.api_key"], { source: "literal", editable: false, secret: true, set: true });
+// @spec MOD-CFG-004, MOD-CFG-018
+test("a key that an isolation override selects carries its override name and the units running with it, an empty list when none", () => {
+  const llm = readSection(FIXTURE, "llm").keys;
+  assert.deepEqual(llm["provider"]!.isolation, { name: "LLM_PROVIDER", overriddenBy: [] });
+  assert.equal(llm["model"]!.isolation, undefined, "llm.model is no override target");
+  const running = readSection(FIXTURE, "llm", [], { LLM_PROVIDER: ["cortex"], AVATAR_DRIVER: ["avatar"] }).keys;
+  assert.deepEqual(running["provider"]!.isolation, { name: "LLM_PROVIDER", overriddenBy: ["cortex"] });
+  assert.deepEqual(readSection(FIXTURE, "avatar", [], { AVATAR_DRIVER: ["avatar"] }).keys["driver"]!.isolation, { name: "AVATAR_DRIVER", overriddenBy: ["avatar"] });
+  // every key of the thirteen carries the entry
+  for (const [name, path] of Object.entries(ISOLATION_OVERRIDES)) {
+    const section = path.split(".").slice(0, path.startsWith("brain.") ? 2 : 1).join(".");
+    const key = path.slice(section.length + 1);
+    assert.equal(readSection(FIXTURE, section).keys[key]!.isolation?.name, name, path);
+  }
 });
 
-// @spec MOD-CFG-002, MOD-CFG-005
-test("ears.http.token is reported only as set or not, and editing another ears key keeps its placeholder", () => {
-  const text = FIXTURE.replace("ears: {}", 'ears:\n  http:\n    port: 8765\n    token: "${EARS_HTTP_TOKEN:-}"');
-  const set = readSection(text, "ears", { ...ENV, EARS_HTTP_TOKEN: "tok-very-secret" });
-  assert.doesNotMatch(JSON.stringify(set), /tok-very-secret/);
-  assert.equal((set.keys["http.token"] as any).secret, true);
-  assert.equal((set.keys["http.token"] as any).set, true);
-  assert.equal((set.keys["http.token"] as any).editable, false);
-  const edited = ok(applySection(text, "ears", { "http.port": 9000 }, ENV));
-  assert.ok(edited.text.includes('token: "${EARS_HTTP_TOKEN:-}"'));
-  const refused = applySection(text, "ears", { "http.token": "x" }, ENV);
+// @spec MOD-CFG-005, MOD-CFG-017
+test("a secret key reports only secret: true and whether secrets.yaml holds it, never a source, value or raw text", () => {
+  const unset = readSection(FIXTURE, "llm");
+  assert.deepEqual(unset.keys["openai.api_key"], { editable: false, secret: true, set: false });
+  const set = readSection(FIXTURE, "llm", ["llm.openai.api_key"]);
+  assert.deepEqual(set.keys["openai.api_key"], { editable: false, secret: true, set: true });
+  assert.deepEqual(set.keys["claude.api_key"], { editable: false, secret: true, set: false });
+  assert.deepEqual(Object.keys(readSection(FIXTURE, "chat", ["chat.twitch.client_id"]).keys).filter((k) => k.startsWith("twitch.")).sort(), ["twitch.access_token", "twitch.channel", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
+  // a value pasted into config.yaml at a secret path is never used and does not make the key set; it is not shown either
+  const pasted = readSection(FIXTURE.replace('embed_model: "e"', 'embed_model: "e"\n  openai:\n    api_key: sk-in-file'), "llm");
+  assert.doesNotMatch(JSON.stringify(pasted), /sk-in-file/);
+  assert.deepEqual(pasted.keys["openai.api_key"], { editable: false, secret: true, set: false });
+  const broken = readSection(FIXTURE.replace('name: "Coco"', 'name: ""').replace('embed_model: "e"', 'embed_model: "e"\n  openai:\n    api_key: sk-in-file'), "llm");
+  assert.doesNotMatch(JSON.stringify(broken), /sk-in-file/, "not even when the file is invalid");
+});
+
+// @spec MOD-CFG-002, MOD-CFG-005, MOD-CFG-017
+test("a secret key in an edit is refused without echoing its value, and editing a neighbour leaves it alone", () => {
+  const text = FIXTURE.replace("ears: {}", "ears:\n  http:\n    port: 8765");
+  const refused = applySection(text, "ears", { "http.token": "tok-very-secret" });
   assert.equal(refused.ok, false);
+  assert.doesNotMatch(JSON.stringify(refused), /tok-very-secret/);
+  const edited = ok(applySection(text, "ears", { "http.port": 9000 }));
+  assert.doesNotMatch(edited.text, /token/);
+});
+
+// @spec MOD-CFG-016
+test("the settings editor never touches the filesystem or the environment: it reads and writes text", () => {
+  const src = readFileSync(new URL("../src/editor.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /node:fs|readFileSync|writeFileSync|writeFileAtomic|process\.env|secrets\.yaml.*(read|write)/);
 });
 
 // @spec MOD-CFG-006
 test("unknown lists the dotted paths under the section that the schema does not define, even when the file is invalid", () => {
   const text = FIXTURE.replace("cooldown_ms: 6000", "cooldown_ms: 6000\n    bogus: 1").replace('match: "hello"', 'match: "hello"\n        cooldwn_ms: 5').replace("name: \"Coco\"", "name: \"\"");
-  assert.deepEqual(readSection(text, "brain.salience", ENV).unknown.sort(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
-  assert.deepEqual(readSection(text, "voice", ENV).unknown, []);
+  assert.deepEqual(readSection(text, "brain.salience").unknown.sort(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
+  assert.deepEqual(readSection(text, "voice").unknown, []);
 });
 
 // @spec MOD-CFG-009
-test("a value for an unknown, secret, env or composite key is refused naming each key, and nothing is edited", () => {
-  const r = applySection(FIXTURE, "llm", { nope: 1, "openai.api_key": "x", embed_model: "y" }, ENV);
+test("a value for an unknown or secret key is refused naming each key, and nothing is edited", () => {
+  const r = applySection(FIXTURE, "llm", { nope: 1, "openai.api_key": "x", embed_model: "y" });
   assert.equal(r.ok, false);
-  assert.deepEqual((r as any).issues.map((i: any) => i.path).sort(), ["embed_model", "nope", "openai.api_key"]);
-  const c = applySection(FIXTURE, "vision", { "obs.host": "z" }, ENV);
-  assert.deepEqual((c as any).issues.map((i: any) => i.path), ["obs.host"]);
+  assert.deepEqual((r as any).issues.map((i: any) => i.path).sort(), ["nope", "openai.api_key"]);
 });
 
 // @spec MOD-CFG-010
 test("a literal keeps its quote style, its comment and every other line", () => {
-  const r = ok(applySection(FIXTURE, "cohost", { name: "Zed" }, ENV));
+  const r = ok(applySection(FIXTURE, "cohost", { name: "Zed" }));
   assert.deepEqual(footprint(FIXTURE, r.text), { removed: ['  name: "Coco"                 # the name'], added: ['  name: "Zed"                 # the name'] });
-  const n = ok(applySection(FIXTURE, "brain.salience", { cooldown_ms: 4000 }, ENV));
+  const n = ok(applySection(FIXTURE, "brain.salience", { cooldown_ms: 4000 }));
   assert.deepEqual(footprint(FIXTURE, n.text), { removed: ["    cooldown_ms: 6000   # aligned comment"], added: ["    cooldown_ms: 4000   # aligned comment"] });
 });
 
-// @spec MOD-CFG-010, MOD-CFG-015
-test("an env-default key keeps ${VAR:-...} and gets the new default; a set variable is named as shadowing it", () => {
-  const r = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "claude-x" }, { ...ENV, LLM_MODEL: "set-in-env" }));
+// @spec MOD-CFG-010
+test("a literal or default key is set to the given value whatever the key is, and the footprint is the edited lines", () => {
+  const r = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "claude-x" }));
   assert.deepEqual(footprint(FIXTURE, r.text), {
-    removed: ['  provider: "${LLM_PROVIDER:-ollama}"   # preset', '  model: "${LLM_MODEL:-qwen2.5:7b}"  # tag'],
-    added: ['  provider: "${LLM_PROVIDER:-anthropic}"   # preset', '  model: "${LLM_MODEL:-claude-x}"  # tag'],
+    removed: ['  provider: "ollama"   # preset', '  model: "qwen2.5:7b"  # tag'],
+    added: ['  provider: "anthropic"   # preset', '  model: "claude-x"  # tag'],
   });
-  assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0]!, /llm\.model.*LLM_MODEL.*set/);
-  const plain = ok(applySection(FIXTURE, "vision", { enabled: true }, ENV));
-  assert.deepEqual(footprint(FIXTURE, plain.text), { removed: ["  enabled: ${VISION_ENABLED:-false}"], added: ["  enabled: ${VISION_ENABLED:-true}"] });
+  const plain = ok(applySection(FIXTURE, "vision", { enabled: true }));
+  assert.deepEqual(footprint(FIXTURE, plain.text), { removed: ["  enabled: false"], added: ["  enabled: true"] });
+  const obs = ok(applySection(FIXTURE, "vision", { "obs.host": "10.0.0.5" }));
+  assert.deepEqual(footprint(FIXTURE, obs.text), { removed: ['    host: "obs.lan"'], added: ['    host: "10.0.0.5"'] });
+});
+
+// @spec MOD-CFG-015
+test("an edit to a key that a running unit overrides warns naming the key and the units; the dashboard section warns about its next start and the new page address", () => {
+  const overridden = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "x" }, [], { LLM_PROVIDER: ["cortex", "memory"] }));
+  assert.equal(overridden.warnings.length, 1);
+  assert.match(overridden.warnings[0]!, /llm\.provider/);
+  assert.match(overridden.warnings[0]!, /cortex, memory/);
+  assert.match(overridden.warnings[0]!, /isolation/);
+  assert.deepEqual(ok(applySection(FIXTURE, "llm", { model: "x" }, [], { LLM_PROVIDER: ["cortex"] })).warnings, [], "an unedited overridden key does not warn");
+  assert.deepEqual(ok(applySection(FIXTURE, "llm", { provider: "anthropic" })).warnings, [], "no running override, no warning");
+  const dash = ok(applySection(FIXTURE, "dashboard", { "inject.ttl_ms": 1000 }));
+  assert.equal(dash.warnings.length, 1);
+  assert.match(dash.warnings[0]!, /next start/);
+  const ports = ok(applySection(FIXTURE, "dashboard", { port: 4000, lan_port: 4001 }));
+  assert.equal(ports.warnings.length, 2);
+  assert.match(ports.warnings[0]!, /next start/);
+  assert.match(ports.warnings[1]!, /address.*4000.*4001/s);
+  assert.deepEqual(ok(applySection(FIXTURE, "dashboard", {})).warnings, []);
 });
 
 // @spec MOD-CFG-010
 test("a key absent from the file is added under its section (block and flow), a missing section is appended", () => {
-  const block = ok(applySection(FIXTURE, "brain.salience", { tick_ms: 900 }, ENV));
+  const block = ok(applySection(FIXTURE, "brain.salience", { tick_ms: 900 }));
   assert.match(block.text, /        say: \["hi"\]   # trailing\n    tick_ms: 900\n  working_memory_events: 30\n/);
   assert.equal((parseYaml(block.text) as any).brain.salience.tick_ms, 900);
-  const flow = ok(applySection(FIXTURE, "chat", { source: "fake" }, ENV));
+  const flow = ok(applySection(FIXTURE, "chat", { source: "fake" }));
   assert.deepEqual(footprint(FIXTURE, flow.text).removed, ["chat: { twitch: { channel: chan } }"]);
   assert.equal((parseYaml(flow.text) as any).chat.source, "fake");
   assert.equal((parseYaml(flow.text) as any).chat.twitch.channel, "chan");
-  const section = ok(applySection(FIXTURE, "mouth", { "outputs.discord.gain_db": 3 }, ENV));
+  const section = ok(applySection(FIXTURE, "mouth", { "outputs.discord.gain_db": 3 }));
   assert.ok(section.text.startsWith(FIXTURE));
   assert.equal(section.text.slice(FIXTURE.length), "mouth:\n  outputs:\n    discord:\n      gain_db: 3\n");
-  const deep = ok(applySection(FIXTURE, "vision", { "obs.width": 640 }, ENV));
+  const deep = ok(applySection(FIXTURE, "vision", { "obs.width": 640 }));
   assert.equal((parseYaml(deep.text) as any).vision.obs.width, 640);
-  const nested = ok(applySection(FIXTURE, "ears", { "http.port": 9000 }, ENV));
+  const nested = ok(applySection(FIXTURE, "ears", { "http.port": 9000 }));
   assert.equal((parseYaml(nested.text) as any).ears.http.port, 9000);
 });
 
 // @spec MOD-CFG-010
 test("a leaf section (brain.working_memory_events) is edited at its own path", () => {
-  const r = ok(applySection(FIXTURE, "brain.working_memory_events", { working_memory_events: 12 }, ENV));
+  const r = ok(applySection(FIXTURE, "brain.working_memory_events", { working_memory_events: 12 }));
   assert.deepEqual(footprint(FIXTURE, r.text), { removed: ["  working_memory_events: 30"], added: ["  working_memory_events: 12"] });
 });
 
 // @spec MOD-CFG-011
 test("an array value replaces the whole array, present or absent", () => {
   const reflexes = [{ match: "bye", say: ["later", "cya"], cooldown_ms: 1000 }];
-  const r = ok(applySection(FIXTURE, "brain.salience", { reflexes }, ENV));
+  const r = ok(applySection(FIXTURE, "brain.salience", { reflexes }));
   const parsed = (parseYaml(r.text) as any).brain.salience;
   assert.deepEqual(parsed.reflexes, reflexes);
   assert.equal(parsed.cooldown_ms, 6000);
   assert.match(r.text, /cooldown_ms: 6000   # aligned comment/);
   assert.match(r.text, /\n {2}working_memory_events: 30\n/);
-  const lines = ok(applySection(FIXTURE, "voice", { "fallback.lines": ["a: b", "c"] }, ENV));
+  const lines = ok(applySection(FIXTURE, "voice", { "fallback.lines": ["a: b", "c"] }));
   assert.deepEqual((parseYaml(lines.text) as any).voice.fallback.lines, ["a: b", "c"]);
-  const flowArr = ok(applySection(FIXTURE, "brain.salience", { reflexes: [] }, ENV));
+  const flowArr = ok(applySection(FIXTURE, "brain.salience", { reflexes: [] }));
   assert.deepEqual((parseYaml(flowArr.text) as any).brain.salience.reflexes, []);
 });
 
 // @spec MOD-CFG-012
 test("the edited file must pass the loader's pipeline; a file already invalid accepts only an edit that makes it valid", () => {
-  const bad = applySection(FIXTURE, "voice", { speed: -1 }, ENV);
+  const bad = applySection(FIXTURE, "voice", { speed: -1 });
   assert.equal(bad.ok, false);
   assert.deepEqual((bad as any).issues.map((i: any) => i.path), ["voice.speed"]);
   const broken = FIXTURE.replace('name: "Coco"', 'name: ""');
-  assert.equal(parseConfigText(broken, ENV).ok, false);
-  const still = applySection(broken, "voice", { speed: 1.2 }, ENV);
+  assert.equal(parseConfigText(broken).ok, false);
+  const still = applySection(broken, "voice", { speed: 1.2 });
   assert.equal(still.ok, false);
   assert.ok((still as any).issues.some((i: any) => i.path === "cohost.name"));
-  const fixed = applySection(broken, "cohost", { name: "Fixed" }, ENV);
+  const fixed = applySection(broken, "cohost", { name: "Fixed" });
   assert.ok(fixed.ok);
   // the schema's own cross-key rule runs too
-  const v = applySection(FIXTURE, "vision", { enabled: true }, ENV);
+  const v = applySection(FIXTURE, "vision", { enabled: true });
   assert.ok(v.ok); // model is "m"
-  const noModel = applySection(FIXTURE.replace('model: "m"', 'model: ""'), "vision", { enabled: true }, ENV);
+  const noModel = applySection(FIXTURE.replace('model: "m"', 'model: ""'), "vision", { enabled: true });
   assert.equal(noModel.ok, false);
 });
 
 // @spec MOD-CFG-009, MOD-CFG-012
-test("a value the file cannot represent is refused: a placeholder in a literal, a brace in an env default, a type the schema rejects", () => {
-  assert.equal(applySection(FIXTURE, "cohost", { name: "${HOME}" }, ENV).ok, false);
-  assert.equal(applySection(FIXTURE, "llm", { model: "a}b" }, ENV).ok, false);
-  assert.equal(applySection(FIXTURE, "llm", { provider: "line1\nline2" }, ENV).ok, false);
-  assert.equal(applySection(FIXTURE, "cohost", { name: 5 }, ENV).ok, false);
-  const quoted = ok(applySection(FIXTURE, "llm", { model: 'he said "hi"' }, ENV));
-  assert.equal((parseYaml(quoted.text.replace(/\$\{LLM_MODEL:-([^}]*)\}/, "$1")) as any).llm.model, 'he said "hi"');
+test("a value the file cannot represent is refused: a placeholder in a literal, a line break in an enum, a type the schema rejects", () => {
+  const placeholder = applySection(FIXTURE, "cohost", { name: "${HOME}" });
+  assert.equal(placeholder.ok, false);
+  assert.match(JSON.stringify(placeholder), /placeholder/);
+  assert.equal(applySection(FIXTURE, "llm", { provider: "line1\nline2" }).ok, false);
+  assert.equal(applySection(FIXTURE, "cohost", { name: 5 }).ok, false);
+  const brace = ok(applySection(FIXTURE, "llm", { model: "a}b" }));
+  assert.equal((parseYaml(brace.text) as any).llm.model, "a}b");
+  const quoted = ok(applySection(FIXTURE, "llm", { model: 'he said "hi"' }));
+  assert.equal((parseYaml(quoted.text) as any).llm.model, 'he said "hi"');
 });
 
 // @spec MOD-CFG-014
@@ -238,11 +282,21 @@ test("etagOf is the SHA-256 hex of the text", () => {
 // @spec MOD-CFG-012
 test("a no-op edit of the shipped example is valid for every section and changes nothing", () => {
   const text = readFileSync(new URL("../../../config/config.example.yaml", import.meta.url), "utf8");
-  const env = { LLM_MODEL: "", EMBED_MODEL: "", VISION_MODEL: "" } as NodeJS.ProcessEnv;
-  assert.ok(parseConfigText(text, env).ok);
-  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "dashboard", "brain.salience", "brain.memory", "brain.working_memory_events"]) {
-    const r = applySection(text, sec, {}, env);
+  assert.ok(parseConfigText(text).ok);
+  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard", "brain.salience", "brain.memory", "brain.working_memory_events"]) {
+    const r = applySection(text, sec, {});
     assert.ok(r.ok && r.text === text, sec);
-    for (const [k, v] of Object.entries(readSection(text, sec, env).keys)) assert.ok(v.source, `${sec}.${k}`);
+    for (const [k, v] of Object.entries(readSection(text, sec).keys)) assert.ok(v.secret || v.source, `${sec}.${k}`);
   }
+});
+
+// @spec MOD-CFG-012
+test("the edited text runs through the loader's placeholder check: a file that holds a placeholder accepts only an edit that removes it", () => {
+  const withPlaceholder = FIXTURE.replace('model: "qwen2.5:7b"', 'model: "${LLM_MODEL}"');
+  const other = applySection(withPlaceholder, "voice", { speed: 1.2 });
+  assert.equal(other.ok, false);
+  assert.ok((other as any).issues.some((i: any) => i.path === "llm.model" && /LLM_MODEL/.test(i.message)));
+  const fixed = ok(applySection(withPlaceholder, "llm", { model: "qwen2.5:7b" }));
+  assert.equal((parseYaml(fixed.text) as any).llm.model, "qwen2.5:7b");
+  assert.equal(readSection(withPlaceholder, "llm").keys["model"]!.editable, true);
 });

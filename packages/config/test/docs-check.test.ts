@@ -496,7 +496,7 @@ test("NAME= assignments in shell and env fences must be named on the environment
   fails(check({ [FP]: shellPage("NOPE_X=1", "env") }), /DOCS-FACT-002.*NOPE_X/);
   fails(check({ [FP]: shellPage("NOPE_X=1", "dotenv") }), /DOCS-FACT-002.*NOPE_X/);
   passes(check({ [FP]: shellPage("lowercase=1 echo hi\n# NOPE_X=1\nNOPE_X=1", "text") }));
-  fails(check({ "README.md": baseFiles()["README.md"].replace("CHAT_SOURCE=fake", "CHAT_SOURCE=fake\nNOPE_Y=1") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
+  fails(check({ "README.md": baseFiles()["README.md"].replace("pnpm dashboard\n", "NOPE_Y=1 pnpm dashboard\n") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
 });
 
 // @spec DOCS-FACT-003
@@ -861,15 +861,18 @@ test("README.md has exactly the sections Quick start, Documentation, License in 
 });
 
 // @spec DOCS-README-003
-test("the README quick start clones, changes directory, then at most five commands reaching mock mode", () => {
+test("the README quick start clones, changes directory, then at most five commands, and reaches mock mode by an isolated start", () => {
   fails(check(readmeWith((t) => t.replace("cd cohost\n", ""))), /README\.md.*DOCS-README-003.*cd/);
   fails(check(readmeWith((t) => t.replace("git clone https://github.com/CoderCoco-Studios/cohost.git\n", ""))), /DOCS-README-003.*clone/);
   fails(check(readmeWith((t) => t.replace("scripts/install.sh\n", ""))), /DOCS-README-003.*install\.sh/);
   fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "pnpm build\n"))), /DOCS-README-003.*pnpm dashboard/);
-  fails(check(readmeWith((t) => t.replace("VOICE_ENGINE=stub\n", ""))), /DOCS-README-003.*VOICE_ENGINE=stub/);
-  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "pnpm build\npnpm test\npnpm build\npnpm dashboard\n"))), /DOCS-README-003.*(five|5)/);
+  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "pnpm build\npnpm test\npnpm build\npnpm build\npnpm dashboard\n"))), /DOCS-README-003.*(five|5)/);
   fails(check(readmeWith((t) => t.replace(/\[Install for real\]\([^)]*\)/, "[Install](https://codercoco-studios.github.io/cohost/)"))), /DOCS-README-003.*real-install/);
-  // a heredoc counts as one command line
+  // nothing is appended to .env, whatever the form
+  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "echo X=1 >> .env\npnpm dashboard\n"))), /DOCS-README-003.*\.env/);
+  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "cp .env.example .env\npnpm dashboard\n"))), /DOCS-README-003.*\.env/);
+  // the isolated start is named in the prose of the section
+  fails(check(readmeWith((t) => t.replace(/tick isolated[^;]*;/, "start the services;"))), /DOCS-README-003.*isolated/);
   passes(check(readmeWith((t) => t.replace("scripts/install.sh\n", "scripts/install.sh\ntrue\ntrue\n"))));
 });
 

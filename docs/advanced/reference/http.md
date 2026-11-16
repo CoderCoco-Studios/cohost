@@ -7,7 +7,7 @@ verified: f126b94
 
 # HTTP routes
 
-Three services speak HTTP: the [dashboard](../../guide/operate/dashboard.md) (the operator's surface), `voice` (the audio) and `ears` (an optional capture endpoint). Everything else talks over the [bus](../../start/glossary.md#bus). Ports are on [Environment and ports](env.md).
+Three services speak HTTP: the [dashboard](../../guide/operate/dashboard.md) (the operator's surface), `voice` (the audio) and `ears` (an optional capture endpoint). Everything else talks over the [bus](../../start/glossary.md#bus). The dashboard's ports are keys in [Configuration](config.md); the other addresses are on [Environment and ports](env.md).
 
 ## Who may call what
 
@@ -16,7 +16,7 @@ Three services speak HTTP: the [dashboard](../../guide/operate/dashboard.md) (th
 - **Browser requests are checked.** A `POST`, `PUT` or `DELETE` that carries an `Origin` header must match the request's own host. While the full dashboard is bound to loopback, which is the default, it also requires the `Host` header to name a loopback address. Both checks answer `403` and stop a web page you visit from steering your dashboard.
 - **Bodies are capped.** A body over a route's limit answers `413`.
 
-The full dashboard listens on `DASHBOARD_PORT` (3000). A second listener on `DASHBOARD_LAN_PORT` (3001, all interfaces) serves only `GET /`, `GET /audio/<id>.wav`, `POST /sink` and `GET /health`, and answers `404` to everything else, so a second PC can host the [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) without reaching the controls.
+The full dashboard listens on `dashboard.port` (3000 by default). A second listener on `dashboard.lan_port` (3001 by default, all interfaces) serves only `GET /`, `GET /audio/<id>.wav`, `POST /sink` and `GET /health`, and answers `404` to everything else, so a second PC can host the [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) without reaching the controls.
 
 ## Dashboard: page, audio and feed
 
@@ -61,9 +61,9 @@ Only service ids in the manifest are accepted, and nothing from a request reache
 | --- | --- | --- |
 | `GET /config/schema` | none | Every settings section with the services that read it, its JSON Schema and its secret keys |
 | `GET /config/<section>` | none | The section's keys with their effective values and where each comes from, plus an `etag` of the file. Secret values are never returned |
-| `PUT /config/<section>` | token | Body `{"etag": "...", "values": {...}}`. Validates against the schema, writes `config.yaml` in place (comments and `${VAR}` placeholders kept) and answers `200 {"ok": true, "etag": "...", "restart": [...], "warnings": [...]}`, where `restart` lists the running services that read the section. `400` carries the schema `issues`; `409` means the file changed under you and carries the current `etag`. Add `?dryRun=1` to validate without writing |
+| `PUT /config/<section>` | token | Body `{"etag": "...", "values": {...}}`. Validates against the schema, writes `config.yaml` in place (comments kept; values are literal, so no `${VAR}` placeholders exist) and answers `200 {"ok": true, "etag": "...", "restart": [...], "warnings": [...]}`, where `restart` lists the running services that read the section. `400` carries the schema `issues`; `409` means the file changed under you and carries the current `etag`. Add `?dryRun=1` to validate without writing |
 
-The route never touches `.env` and never starts or restarts a service. See [Configuration](config.md) for the keys.
+The route never touches `secrets.yaml` or `.env` and never starts or restarts a service. See [Configuration](config.md) for the keys.
 
 ## Dashboard: test inputs
 
@@ -72,8 +72,8 @@ All inject routes need the token while control is on. Each answers `202 {"id": "
 | Route | Body or query | What it does |
 | --- | --- | --- |
 | `POST /inject/text` | JSON `{"level": "service" or "bus", "as": "chat", "speech" or "vision", "text": "...", "user", "platform", "isMod", "isSub", "remember", "source"}` | `service` level asks `chat` to publish the line through its real path and supports only `as: chat`. `bus` level publishes `chat.message`, `speech.heard` or `vision.summary` directly with `injected: true`. `source` names a listening source and is only for `level: bus` with `as: speech`. `text` must be non-blank |
-| `POST /inject/image` | The image as the body, with `Content-Type` of `image/png`, `image/jpeg` or `image/webp`. Query `user`, `remember` | Stores the upload in [Redis](../../start/glossary.md#redis) and asks `eyes` to describe it. `415` for another type, `413` over `INJECT_MAX_IMAGE_BYTES`, `400` for an empty body, `503` if the upload store is unavailable |
-| `POST /inject/audio` | The clip as the body, with `Content-Type` of `audio/wav`, `audio/x-wav`, `audio/mpeg`, `audio/ogg`, `audio/webm` or `audio/mp4`. Query `target` (`ears`, the default, or `connector-discord`), `source` (a source tag, for `ears` only), `user`, `remember` | Stores the upload in Redis and asks the target to treat it as heard audio. `413` over `INJECT_MAX_AUDIO_BYTES` |
+| `POST /inject/image` | The image as the body, with `Content-Type` of `image/png`, `image/jpeg` or `image/webp`. Query `user`, `remember` | Stores the upload in [Redis](../../start/glossary.md#redis) and asks `eyes` to describe it. `415` for another type, `413` over `dashboard.inject.max_image_bytes`, `400` for an empty body, `503` if the upload store is unavailable |
+| `POST /inject/audio` | The clip as the body, with `Content-Type` of `audio/wav`, `audio/x-wav`, `audio/mpeg`, `audio/ogg`, `audio/webm` or `audio/mp4`. Query `target` (`ears`, the default, or `connector-discord`), `source` (a source tag, for `ears` only), `user`, `remember` | Stores the upload in Redis and asks the target to treat it as heard audio. `413` over `dashboard.inject.max_audio_bytes` |
 | `POST /inject/event` | JSON `{"unit": "...", "type": "...", "data": {...}}`, at most 64 KiB | Publishes one bus event that the unit declares as a test input, after checking the unit, the type and the payload against the event's schema. `400` otherwise, with the schema `issues` |
 
 Results of the service-level routes arrive later as `inject.result` events. See [Fake inputs](../testing/inject.md).

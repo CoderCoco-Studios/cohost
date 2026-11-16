@@ -16,20 +16,20 @@ The words your co-host says are written by a [language model](../../start/glossa
 
 ## How the choice works
 
-Which model answers is a `config/config.yaml` setting, `llm.provider`. The model's name goes in `llm.model`, written the way that provider names it. Secrets such as API keys never go in `config.yaml`; they go in `.env`.
+Which model answers is a `config/config.yaml` setting, `llm.provider`. The model's name goes in `llm.model`, written the way that provider names it. Credentials such as API keys never go in `config.yaml`; they go in `config/secrets.yaml` (copy it from `config/secrets.example.yaml` if it is not there yet). It is git-ignored, and each key is named by its dotted path.
 
-| `llm.provider` | What it is | Key in `.env` |
+| `llm.provider` | What it is | Key in `secrets.yaml` |
 | --- | --- | --- |
 | `ollama` | A model on your own [GPU](../../start/glossary.md#gpu), run by [Ollama](../../start/glossary.md#ollama). The default. | none |
-| `openai` | Any server that speaks the OpenAI chat format: a GPU box you rent by the hour, or a hosted router such as OpenRouter, Groq, Together or Fireworks. | `LLM_API_KEY` |
-| `anthropic` | Claude through the Claude API. | `ANTHROPIC_API_KEY` |
-| `bedrock` | Claude through Amazon Bedrock, billed to your AWS account. | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| `openai` | Any server that speaks the OpenAI chat format: a GPU box you rent by the hour, or a hosted router such as OpenRouter, Groq, Together or Fireworks. | `llm.openai.api_key` |
+| `anthropic` | Claude through the Claude API. | `llm.claude.api_key` |
+| `bedrock` | Claude through Amazon Bedrock, billed to your AWS account. | `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 
 Two things stay local whatever you choose. The [embeddings](../../start/glossary.md#embedding) that power [memory](memory.md) always come from local Ollama, so switching the chat model never changes the memory database. And the small model that writes [viewer notes](memory.md) defaults to local Ollama too, so chat lines and sensitive notes do not leave your machine unless you name another provider for that hook.
 
 What does leave the machine with a hosted choice is the text the co-host's brain sends to the model: the prompt with recent chat, memories and the [personality](personality.md), and the reflection pass after a stream.
 
-After changing `config.yaml`, restart the parts that read the `llm` section. Each is one command:
+After changing `config.yaml` or `secrets.yaml`, restart the parts that read the `llm` section. Each is one command:
 
 ```bash
 pnpm cohostctl restart cortex
@@ -38,25 +38,19 @@ pnpm cohostctl restart salience
 pnpm cohostctl restart affect
 ```
 
-Or press **Save** on the dashboard's **settings** tab and let it offer to restart them. After changing `.env`, press **Launch** again in the dashboard so the [containers](../../start/glossary.md#container) see the new values; the [Starting and stopping](../operate/start-stop.md) page explains Launch.
+Or press **Save** on the dashboard's **settings** tab and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The settings tab edits `config.yaml`; a key in `secrets.yaml` is edited in the file.
 
 ## Local GPU (the default)
 
 ```yaml
 llm:
   provider: ollama
-  model: "${LLM_MODEL}"
+  model: "qwen2.5:7b-instruct-q4_K_M"
+  # 12 GB of VRAM or more:
+  # model: "qwen2.5:14b-instruct-q4_K_M"
 ```
 
-The model name comes from `.env`, so the stack's `models` one-shot can download it on Launch. Pick a size to match your card's video memory (VRAM):
-
-```dotenv
-LLM_MODEL=qwen2.5:7b-instruct-q4_K_M
-# 12 GB of VRAM or more:
-# LLM_MODEL=qwen2.5:14b-instruct-q4_K_M
-```
-
-The first one suits an 8 GB card. To upgrade your card later, change the line in `.env` and press **Launch**. Nothing else changes. The first download is several gigabytes, so give it a few minutes.
+The stack's `models` one-shot downloads the model `llm.model` names on Launch. Pick a size to match your card's video memory (VRAM). The first one suits an 8 GB card. To upgrade your card later, change the line in `config.yaml`, press **Launch** and restart the services above. Nothing else changes. The first download is several gigabytes, so give it a few minutes.
 
 ## A GPU box you rent by the hour
 
@@ -74,11 +68,14 @@ llm:
   model: meta-llama/Llama-3.3-70B-Instruct
   openai:
     base_url: "http://<box-ip>:8000/v1"
-    api_key: "${LLM_API_KEY}"
 ```
 
-```dotenv
-LLM_API_KEY=change-me
+The key goes in `config/secrets.yaml`:
+
+```yaml
+llm:
+  openai:
+    api_key: "change-me"
 ```
 
 Use a real secret instead of `change-me`, and the same one on both sides. A plain `http://` address sends that key and your chat over the open internet; put the box behind HTTPS or an SSH tunnel if it is not on your own network.
@@ -91,8 +88,10 @@ The same shape works for hosted routers (OpenRouter, Groq, Together, Fireworks):
 llm:
   provider: openai
   model: meta-llama/llama-3.3-70b-instruct
-  openai: { base_url: "https://openrouter.ai/api/v1", api_key: "${LLM_API_KEY}" }
+  openai: { base_url: "https://openrouter.ai/api/v1" }
 ```
+
+with your OpenRouter key as `llm.openai.api_key` in `secrets.yaml`.
 
 ## Claude through the Claude API
 
@@ -101,14 +100,17 @@ llm:
   provider: anthropic
   model: claude-opus-5-5
   claude:
-    api_key: "${ANTHROPIC_API_KEY}"
     effort: low
     max_tokens: 2048
     fallbacks: true
 ```
 
-```dotenv
-ANTHROPIC_API_KEY=sk-ant-...
+The key goes in `config/secrets.yaml`:
+
+```yaml
+llm:
+  claude:
+    api_key: "sk-ant-..."
 ```
 
 The `claude` keys tune how Claude answers:
@@ -130,14 +132,16 @@ llm:
   bedrock: { region: us-east-1 }
 ```
 
-Put your AWS keys in `.env`:
+Put your AWS access key in `config/secrets.yaml`. This is the only way Bedrock is given credentials:
 
-```dotenv
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
+```yaml
+llm:
+  bedrock:
+    access_key_id: "AKIA..."
+    secret_access_key: "..."
 ```
 
-The keys go in `.env` because the stack's containers do not mount your home directory, so an AWS profile in `~/.aws` is not visible to them. On an AWS machine with an instance role, the role works too. An empty `bedrock.region` uses `AWS_REGION` from `.env`.
+Both keys must be set together. With only one set, the services that build the model client (cortex, memory, [salience](../../start/glossary.md#salience) and [affect](../../start/glossary.md#affect)) refuse to start, so setting just one is an incomplete state to avoid. The stack's [containers](../../start/glossary.md#container) do not mount your home directory, and no AWS profile or `~/.aws` file is read. Create the key pair for an IAM user that may invoke Bedrock. `llm.bedrock.region` in `config.yaml` is required with the two keys; write the region of the Bedrock endpoint, such as `us-east-1`.
 
 Server-side fallbacks are not offered on Bedrock; if a safety check declines a reply, the co-host says nothing that turn. Bedrock models other than Claude (Llama, Mistral) are not covered by this provider.
 
@@ -157,6 +161,6 @@ A bigger brain will not make me funnier on its own. It will just make me wrong i
 
 ## If it didn't
 
-- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, the key in `.env` and the [cortex](../../start/glossary.md#cortex)'s detail column on the services tab. See [Troubleshooting](../troubleshooting.md).
+- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, the key in `secrets.yaml` and the [cortex](../../start/glossary.md#cortex)'s detail column on the services tab. See [Troubleshooting](../troubleshooting.md).
 - The download is stuck or failed: the `models` one-shot exits with an error if the main, vision or embedding model fails to download. Check your disk space and connection and press **Launch** again.
 - Replies are cut short or empty on Claude: raise `llm.claude.max_tokens`, since thinking and the reply share it.

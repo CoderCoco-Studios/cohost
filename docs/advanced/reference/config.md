@@ -21,7 +21,7 @@ Terms used in the tables, defined once in the [glossary](../../start/glossary.md
 | When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
 | Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
 | Editing | The dashboard's Settings tab edits one section at a time from the same schema, keeps your comments, never shows or writes secrets, refuses a save when the file changed under it, and offers to restart the services that read the section |
-| Secrets | The eleven credential keys listed under [Credentials](#credentials-secretsyaml) live in `config/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
+| Secrets | The eleven credential keys listed under [Credentials](#credentials-secrets-yaml) live in `config/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
 
 The defaults shown are the schema's, and where the example file sets a different value that is noted.
 

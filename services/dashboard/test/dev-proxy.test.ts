@@ -100,3 +100,28 @@ test("a /ws upgrade is forwarded with the Origin rewritten when it is the dev se
 test("a non-proxied path is left to the dev server", async () => {
   assert.equal((await call("GET", "/src/main.tsx")).body, "dev server page");
 });
+
+// @spec DASH-BUILD-007
+test("a request or /ws upgrade whose Host is not a loopback name with the dev server's port is refused 403 without contacting the dashboard, Origin matching or not", async () => {
+  seen.length = 0;
+  const bad = [`evil.example:${devPort}`, `evil.example`, `127.0.0.1.evil.example:${devPort}`, `localhost.evil.example:${devPort}`, `192.168.1.5:${devPort}`, `127.0.0.1:${devPort + 1}`, `localhost`];
+  for (const host of bad) {
+    assert.equal((await call("GET", "/services", { host })).status, 403, `GET with Host ${host}`);
+    assert.equal((await call("POST", "/control", { host, origin: `http://${host}` })).status, 403, `POST with Host ${host}`);
+    const ws = await upgrade("/ws", { host, origin: `http://${host}` });
+    assert.match(ws, /^HTTP\/1\.1 403/, `upgrade with Host ${host} (a rebinding page controls Host and Origin alike)`);
+    const noOrigin = await upgrade("/ws", { host });
+    assert.match(noOrigin, /^HTTP\/1\.1 403/, `upgrade with Host ${host} and no Origin`);
+  }
+  assert.deepEqual(seen, [], "nothing reached the dashboard");
+});
+
+// @spec DASH-BUILD-007
+test("Host localhost, 127.0.0.1 and [::1] with the dev server's port are served", async () => {
+  seen.length = 0;
+  for (const host of [`localhost:${devPort}`, `127.0.0.1:${devPort}`, `[::1]:${devPort}`]) {
+    assert.equal((await call("GET", "/services", { host })).status, 200, host);
+    const ws = await upgrade("/ws", { host, origin: `http://${host}` });
+    assert.match(ws, /^HTTP\/1\.1 101/, host);
+  }
+});

@@ -22,6 +22,21 @@ function ownOrigin(origin: string, host: string | undefined): boolean {
   } catch { return false; }
 }
 
+const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * True when `host` (the `Host` header) names this dev server as a loopback client does: `localhost`, `127.0.0.1` or `[::1]` with
+ * the port the request arrived on. Any other name, or any other port, is a page the browser reached by a name an attacker
+ * controls (DNS rebinding), whose `Host` and `Origin` would agree with each other.
+ */
+function loopbackHost(host: string | undefined, port: number | undefined): boolean {
+  if (!host || /[@/\\\s]/.test(host) || port === undefined) return false;
+  try {
+    const h = new URL(`http://${host}`);
+    return LOOPBACK_NAMES.has(h.hostname) && (h.port || "80") === String(port);
+  } catch { return false; }
+}
+
 const STATE_CHANGING = new Set(["POST", "PUT", "DELETE"]);
 const FORBIDDEN = "HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
 
@@ -33,7 +48,8 @@ export interface DevProxy {
 }
 
 /**
- * The dev server's proxy to a running dashboard (DASH-BUILD-007). `Host` is set to the target's. A state-changing
+ * The dev server's proxy to a running dashboard (DASH-BUILD-007). It serves only requests whose `Host` is a loopback name
+ * with the dev server's port, and refuses any other 403 before contacting the dashboard. `Host` is then set to the target's. A state-changing
  * request or a `/ws` upgrade that carries an `Origin` is forwarded only when that Origin is the dev server's own,
  * rewritten to the target's, and refused 403 without contacting the dashboard otherwise, so a cross-site page cannot
  * use the dev server to get past the dashboard's Origin checks (which stay as they are). A request with no `Origin`
@@ -48,6 +64,7 @@ export function createDevProxy(targetUrl: string): DevProxy {
     return headers;
   };
   const refused = (req: http.IncomingMessage): boolean => {
+    if (!loopbackHost(req.headers.host, req.socket.localPort)) return true;
     const o = req.headers.origin;
     const guarded = STATE_CHANGING.has(req.method ?? "GET") || req.headers.upgrade !== undefined;
     return guarded && o !== undefined && !ownOrigin(o, req.headers.host);

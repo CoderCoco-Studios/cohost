@@ -180,7 +180,7 @@ test("Origin check: same host and port (defaults explicit) passes; null, unparsa
 test("a POST, PUT or DELETE with a foreign Origin is 403 and runs nothing; GET, and a request with no Origin, are unaffected", async () => {
   const t = await boot();
   const host = `127.0.0.1:${t.l.fullPort}`;
-  for (const method of ["POST", "PUT", "DELETE"]) {
+  for (const method of ["POST", "PUT", "DELETE", "PATCH", "PROPFIND"]) {
     assert.equal((await raw(t.l.fullPort, "/control", { method, headers: { host, origin: "http://evil.example" } })).status, 403, method);
     assert.equal((await raw(t.l.fullPort, "/control", { method, headers: { host, origin: "null" } })).status, 403, method);
   }

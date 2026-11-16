@@ -111,14 +111,15 @@ export function hostPermitted(host: string | undefined, allowed: readonly string
   return key === "localhost" || allowed.some((a) => nameKey(a) === key);
 }
 
-const isStateChanging = (method: string | undefined): boolean => method === "POST" || method === "PUT" || method === "DELETE";
+/** Every method other than GET, HEAD and OPTIONS (PATCH and any unknown method included) may change state. */
+const isStateChanging = (method: string | undefined): boolean => method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
 const STACK_POST = /^\/stack\/[^/]+$/; // any /stack/<name>: with control off every one is a 404 (DASH-CTRL-001)
 
 /**
  * The checks in front of the full-surface handler: while bound to loopback, a foreign Host is a 403 (DASH-HOST-004), and
- * when bound beyond it a Host that fails `hostPermitted` is (DASH-HOST-009); a POST, PUT or DELETE with a foreign Origin is a 403 (DASH-HOST-005). With control disabled the stack and lifecycle
+ * when bound beyond it a Host that fails `hostPermitted` is (DASH-HOST-009); a state-changing method (any but GET, HEAD and OPTIONS) with a foreign Origin is a 403 (DASH-HOST-005). With control disabled the stack and lifecycle
  * routes are answered by the handler's 404 first (DASH-STACK-002's refusal order).
  */
 // @spec DASH-HOST-004, DASH-HOST-005, DASH-HOST-009

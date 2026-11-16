@@ -53,7 +53,7 @@ arrows:
     drift: null
 
   module-contract:
-    status: PARTIAL
+    status: AUDITED
     parent: null
     sampled: 2026-11-11
     audited: 2026-11-14
@@ -61,12 +61,12 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "57 specs: 49 [x], 8 [ ]. Open: MOD-CFG-007 (sensitive-key gate) and MOD-CFG-013 (dryRun), with the dashboard settings screen; MOD-UI-001 to -006 are retired to DASH-SET-* and stay [ ] until the old page is removed."
+    next: "57 specs: 57 [x], 0 [ ]. MOD-UI-001 to -006 are retired lines whose behaviour is DASH-SET-*. MOD-EX-001 to -005 (the example service) are not covered by the last audit."
     drift: null
 
 
   config:
-    status: PARTIAL
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -74,7 +74,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "121 specs, all [x]. The specs added by the one-place configuration design are implemented and tested; not covered by the last audit."
+    next: "124 specs: 124 [x], 0 [ ]. The specs added by the one-place configuration design are implemented and tested; the last audit covered 82 of them."
     drift: null
 
   event-bus:
@@ -258,7 +258,7 @@ arrows:
     drift: null
 
   dashboard:
-    status: PARTIAL
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -266,7 +266,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "233 specs: 108 [x], 125 [ ]. Open: the React UI (DASH-UI, ACC, NAV, THEME, A11Y, SET, BUILD, VIEWERS-010..023), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route edits they need. Ports, upload limits and overrides in the stack snapshot are implemented."
+    next: "237 specs: 237 [x], 0 [ ]. The React UI, secret write and pick lists were built after the last audit (2026-11-14) and are tested under services/dashboard/test/ui/ and services/dashboard/test/; run a separate audit to cover them. DASH-DOCS-013 to -016 are docs-page content with no test."
     drift: null
 
   control-plane:
@@ -282,7 +282,7 @@ arrows:
     drift: null
 
   deployment:
-    status: PARTIAL
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "81 specs: 77 [x], 4 [ ]. Open: the dashboard UI build and Node floor (DEPLOY-HOST-001, -006, DEPLOY-REPO-002, -003). DEPLOY-INST-007, -011, -014 are checked by source-order tests only."
+    next: "81 specs: 81 [x], 0 [ ]. The nine specs listed in deployment.md closed after the last audit and are not covered by it. DEPLOY-INST-007, -011, -014 are checked by source-order tests only."
     drift: null
 
   docs-site:

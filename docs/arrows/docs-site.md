@@ -4,7 +4,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 ## Status
 
-**MAPPED** — 156 specs: 155 implemented, 0 deferred, 1 gap (DOCS-THEME-017, the favicon). The README quick start (DOCS-README-003) and the ports the Environment page names (DOCS-FACT-004) follow the config-owned settings and are implemented and tested. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are built and tested: the docs check's Extend rules and `docs-guides.test.ts` (DOCS-GUIDE-001 to 026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), the twelve Extend pages and the reworded DOCS-PAGE-006. The example specs in the owning segments are implemented too, except BUS-NAT-EX-002 to 005 (the Rust bus example's round trip needs Redis and has not run; Verification log). A separate audit has not been run.
+**MAPPED** — 156 specs: 155 implemented, 0 deferred, 1 gap (DOCS-THEME-017, the favicon). The README quick start (DOCS-README-003) and the ports the Environment page names (DOCS-FACT-004) follow the config-owned settings and are implemented and tested. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are built and tested: the docs check's Extend rules and `docs-guides.test.ts` (DOCS-GUIDE-001 to 026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), the twelve Extend pages and the reworded DOCS-PAGE-006. The example specs in the owning segments are implemented too, except BUS-NAT-EX-002 to 005 (the Rust bus example's round trip needs Redis and has not run; Verification log). The Dashboard tour (`guide/operate/dashboard.md`) and the HTTP routes page (`advanced/reference/http.md`) describe the React dashboard (dashboard DASH-DOCS-013 to 016), and the operator guides name its screens and controls. A separate audit has not been run.
 
 ## Orientation
 
@@ -55,9 +55,9 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 | Page authoring | DOCS-PAGE-001 to DOCS-PAGE-007 | 7 | 7 | 0 | 0 |
 | Glossary | DOCS-GLOSS-001 to DOCS-GLOSS-004 | 4 | 4 | 0 | 0 |
 | Links | DOCS-LINK-001 to DOCS-LINK-003 | 3 | 3 | 0 | 0 |
-| Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 5 | 0 | 1 |
+| Facts | DOCS-FACT-001 to DOCS-FACT-006 | 6 | 6 | 0 | 0 |
 | Architecture excerpts | DOCS-ARCH-001 to DOCS-ARCH-010 | 10 | 10 | 0 | 0 |
-| README | DOCS-README-001 to DOCS-README-004 | 4 | 3 | 0 | 1 |
+| README | DOCS-README-001 to DOCS-README-004 | 4 | 4 | 0 | 0 |
 | Examples | DOCS-EX-001 to DOCS-EX-005 | 5 | 5 | 0 | 0 |
 | Theme and personality | DOCS-THEME-001 to DOCS-THEME-056 | 56 | 55 | 0 | 1 |
 | Served by the dashboard | DOCS-LIVE-001 to DOCS-LIVE-013 | 13 | 13 | 0 | 0 |

@@ -39,6 +39,8 @@
   .srow { grid-template-columns: minmax(0, 1fr); }
   .srow-s { text-align: left; }
   .range-wrap { flex-wrap: wrap; }
+  /* The save bar's status line takes the full width, so the edit count and messages are not squeezed into what the three buttons leave. */
+  .savebar .grow { flex: 1 1 100%; }
 
   /* Services: one block per service, each cell's label in front. */
   .svc-table, .svc-table tbody, .svc-table tr, .svc-table th, .svc-table td { display: block; }

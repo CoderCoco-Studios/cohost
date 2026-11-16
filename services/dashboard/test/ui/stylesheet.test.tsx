@@ -156,6 +156,12 @@ test("no bare input rule stretches a switch, slider, radio, checkbox or file inp
   assert.match(rule(all, ".switch"), /height:\s*26px/);
 });
 
+// @spec DASH-A11Y-007
+test("at phone width the save bar's status takes its own line above the buttons, so the edit count is not squeezed beside them", () => {
+  const narrow = media(sheet("narrow.css"), "(max-width: 719.98px)");
+  assert.match(rule(narrow, ".savebar .grow"), /flex:\s*1 1 100%/);
+});
+
 // @spec DASH-SET-016
 test("on touch widths the switch keeps its pill shape and the 44px target is the row's: .check carries the touch height", () => {
   const narrow = media(sheet("narrow.css"), "(max-width: 719.98px)");

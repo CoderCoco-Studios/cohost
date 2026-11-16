@@ -11,7 +11,7 @@ React 19 + TypeScript + Vite. Design and specs: `docs/intent/dashboard/dashboard
 | `src/state/` | `runtime.ts` builds the stores once: `api`, `access`, `feed`, `audio`, `theme`; `hooks.ts` reads them in React |
 | `src/screens/<id>/` | One folder per screen (`live`, `services`, `viewers`, `settings`); `index.tsx` exports `Screen` |
 | `src/components/` | Shared parts; each has a test in `test/ui/` |
-| `src/styles/` | `tokens.css` (the only place a colour literal appears), `base.css`, `components.css` |
+| `src/styles/` | `tokens.css` (the only place a colour literal appears), `base.css`, `components.css`, one file per screen, and `narrow.css` (every phone-width rule, imported last) |
 
 ## Running things (always bounded)
 
@@ -43,7 +43,7 @@ export function Screen({ route }: ScreenProps) { ... }   // route.view, route.se
 - The Live screen's Say field carries `data-shortcut="say"` so `/` can focus it. The shell owns the header, Mute, Audio and the shortcut list; reuse `useMute()` for a mute control on the screen (the header's is the shell's).
 - Settings routes are `#settings/<section path>`: read `route.section`.
 - No inline `style` (a run-time computed value in `components/Slider.tsx` is the only allowed one; a new one needs an entry in the allow-list in `test/ui/stylesheet.test.tsx`), no `dangerouslySetInnerHTML`, no `alert`/`confirm`/`prompt`, no emoji, no colour literal outside `tokens.css`. `stylesheet.test.tsx` and `tokens.test.tsx` fail on each.
-- Screen styles go in `src/styles/components.css` (or a new `.css` imported by `main.tsx`), using tokens and the narrow block in `base.css` (`@media (max-width: 719.98px)`).
+- Screen styles go in `src/styles/components.css` (or a new `.css` imported by `main.tsx` before `narrow.css`), using tokens. Narrow-width rules (`@media (max-width: 719.98px)`) go in `narrow.css` only, which `main.tsx` imports last so they come after every rule they override; no other stylesheet holds a `max-width` media block (`stylesheet.test.tsx` fails on one).
 
 ## Add a component
 

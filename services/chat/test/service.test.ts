@@ -53,7 +53,6 @@ function rig(over: Record<string, unknown> = {}, deps: Partial<ChatServiceDeps> 
     createClient: (opts) => { const c = new FakeClient(opts); clients.push(c); return c; },
     createAuth: () => { const a = new FakeAuth(); auths.push(a); return a as never; },
     exit: (c) => { exits.push(c); },
-    env: {},
     ...deps,
   });
   const cfg = testConfig(over);
@@ -99,15 +98,15 @@ test("the client keeps its library reconnect, and a reconnect signals ready agai
 });
 
 // @spec CHAT-PLAN-003
-test("no channel: one error naming TWITCH_CHANNEL, a degraded heartbeat, then only warnings; no Twitch client is built", async () => {
+test("no channel: one error naming chat.twitch.channel, a degraded heartbeat, then only warnings; no Twitch client is built", async () => {
   const r = rig({ chat: { twitch: { channel: "" } } }, { idleWarnEveryMs: 15 });
   try {
     await r.start();
     await waitFor(() => r.rec.msgs("warn").filter((m) => /still idle/.test(String(m))).length >= 2, "reminders");
     assert.equal(r.rec.msgs("error").length, 1, "one error, not one per reminder");
-    assert.match(String(r.rec.msgs("error")[0]), /TWITCH_CHANNEL/);
+    assert.match(String(r.rec.msgs("error")[0]), /chat\.twitch\.channel/);
     assert.equal(r.clients.length, 0);
-    await waitFor(() => r.bus.health.some((h) => h.state === "degraded" && /TWITCH_CHANNEL/.test(h.detail ?? "")), "degraded heartbeat");
+    await waitFor(() => r.bus.health.some((h) => h.state === "degraded" && /chat\.twitch\.channel/.test(h.detail ?? "")), "degraded heartbeat");
   } finally { await r.stop(); }
 });
 
@@ -136,19 +135,21 @@ test("twitch shutdown quits the client; fake source builds no client", async () 
   } finally { await f.stop(); }
 });
 
-const creds = { TWITCH_CLIENT_ID: "id", TWITCH_CLIENT_SECRET: "sec", TWITCH_ACCESS_TOKEN: "envA", TWITCH_REFRESH_TOKEN: "envR" };
+/** Config override carrying Twitch credentials, as `secrets.yaml` would supply them (the channel stays the test default). */
+const tw = (c: Record<string, string>) => ({ chat: { twitch: c } });
+const creds = { client_id: "id", client_secret: "sec", access_token: "secA", refresh_token: "secR" };
 const refreshed = { accessToken: "newA", refreshToken: "newR", expiresIn: 14000, obtainmentTimestamp: 1234, scope: ["chat:read"] };
 
 // @spec CHAT-TW-003, CHAT-TW-011
 test("a refreshed token is logged with expiresIn and persisted atomically, owner-only", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
   const tokenPath = join(dir, "chat", "twitch-token.json");
-  const r = rig({}, { env: creds, tokenPath });
+  const r = rig(tw(creds), { tokenPath });
   try {
     await r.start();
     r.auths[0]!.refresh!("uid", refreshed);
     const saved = JSON.parse(readFileSync(tokenPath, "utf8"));
-    assert.deepEqual(saved, { ...refreshed, envRefreshToken: "envR" });
+    assert.deepEqual(saved, { ...refreshed, startingRefreshToken: "secR" });
     assert.equal(statSync(tokenPath).mode & 0o777, 0o600);
     assert.ok(r.rec.lines.some((l) => l.msg === "twitch token refreshed" && (l.obj as { expiresIn: number }).expiresIn === 14000));
     assert.deepEqual(r.exits, []);
@@ -159,7 +160,7 @@ test("a refreshed token is logged with expiresIn and persisted atomically, owner
 test("a failed token write is logged and ignored", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
   writeFileSync(join(dir, "chat"), "a file where the directory should be");
-  const r = rig({}, { env: creds, tokenPath: join(dir, "chat", "twitch-token.json") });
+  const r = rig(tw(creds), { tokenPath: join(dir, "chat", "twitch-token.json") });
   try {
     await r.start();
     r.auths[0]!.refresh!("uid", refreshed);
@@ -169,34 +170,34 @@ test("a failed token write is logged and ignored", async () => {
 });
 
 // @spec CHAT-TW-012
-test("a stored token is preferred over .env; a superseded, malformed or missing file falls back to .env", async () => {
+test("a stored token is preferred over secrets.yaml; a superseded, malformed or missing file falls back to secrets.yaml", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
   const tokenPath = join(dir, "chat", "twitch-token.json");
   try {
-    saveStoredToken(tokenPath, refreshed, "envR");
-    const withStore = rig({}, { env: creds, tokenPath });
+    saveStoredToken(tokenPath, refreshed, "secR");
+    const withStore = rig(tw(creds), { tokenPath });
     await withStore.start();
     assert.equal(withStore.auths[0]!.added[0]!.token.accessToken, "newA");
     assert.equal(withStore.auths[0]!.added[0]!.token.refreshToken, "newR");
     assert.deepEqual(withStore.auths[0]!.added[0]!.intents, ["chat"]);
     await withStore.stop();
 
-    const superseded = rig({}, { env: { ...creds, TWITCH_REFRESH_TOKEN: "operatorNew" }, tokenPath });
+    const superseded = rig(tw({ ...creds, refresh_token: "operatorNew" }), { tokenPath });
     await superseded.start();
-    assert.equal(superseded.auths[0]!.added[0]!.token.accessToken, "envA");
+    assert.equal(superseded.auths[0]!.added[0]!.token.accessToken, "secA");
     assert.equal(superseded.auths[0]!.added[0]!.token.refreshToken, "operatorNew");
     await superseded.stop();
 
     writeFileSync(tokenPath, "{not json");
-    const malformed = rig({}, { env: creds, tokenPath });
+    const malformed = rig(tw(creds), { tokenPath });
     await malformed.start();
-    assert.equal(malformed.auths[0]!.added[0]!.token.accessToken, "envA");
+    assert.equal(malformed.auths[0]!.added[0]!.token.accessToken, "secA");
     await malformed.stop();
 
     rmSync(tokenPath);
-    const missing = rig({}, { env: creds, tokenPath });
+    const missing = rig(tw(creds), { tokenPath });
     await missing.start();
-    assert.equal(missing.auths[0]!.added[0]!.token.accessToken, "envA");
+    assert.equal(missing.auths[0]!.added[0]!.token.accessToken, "secA");
     await missing.stop();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -206,21 +207,21 @@ test("the token store round-trips and rejects a file of the wrong shape", () => 
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
   const file = join(dir, "chat", "twitch-token.json");
   try {
-    assert.equal(loadStoredToken(file, "envR"), undefined);
-    saveStoredToken(file, refreshed, "envR");
-    assert.deepEqual(loadStoredToken(file, "envR"), refreshed);
+    assert.equal(loadStoredToken(file, "secR"), undefined);
+    saveStoredToken(file, refreshed, "secR");
+    assert.deepEqual(loadStoredToken(file, "secR"), refreshed);
     assert.equal(loadStoredToken(file, "other"), undefined);
     mkdirSync(join(dir, "chat"), { recursive: true });
     writeFileSync(file, JSON.stringify({ accessToken: 5 }));
-    assert.equal(loadStoredToken(file, "envR"), undefined);
+    assert.equal(loadStoredToken(file, "secR"), undefined);
     assert.equal(existsSync(file + ".tmp"), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // @spec CHAT-TW-010
-test("a missing TWITCH_REFRESH_TOKEN with the other credentials set is fatal at startup", async () => {
-  const { TWITCH_REFRESH_TOKEN: _omit, ...partial } = creds;
-  const r = rig({}, { env: partial });
+test("a missing chat.twitch.refresh_token with the other credentials set is fatal at startup", async () => {
+  const { refresh_token: _omit, ...partial } = creds;
+  const r = rig(tw(partial));
   await r.start();
   assert.deepEqual(r.exits, [1]);
   assert.ok(r.rec.lines.some((l) => l.msg === "fatal"));
@@ -228,16 +229,16 @@ test("a missing TWITCH_REFRESH_TOKEN with the other credentials set is fatal at 
 
 const ANON_CASES: [string, Record<string, string>][] = [
   ["no credentials", {}],
-  ["client id only", { TWITCH_CLIENT_ID: "id" }],
-  ["no client id", { TWITCH_CLIENT_SECRET: "sec", TWITCH_ACCESS_TOKEN: "envA", TWITCH_REFRESH_TOKEN: "envR" }],
-  ["no client secret", { TWITCH_CLIENT_ID: "id", TWITCH_ACCESS_TOKEN: "envA", TWITCH_REFRESH_TOKEN: "envR" }],
-  ["no access token", { TWITCH_CLIENT_ID: "id", TWITCH_CLIENT_SECRET: "sec", TWITCH_REFRESH_TOKEN: "envR" }],
+  ["client id only", { client_id: "id" }],
+  ["no client id", { client_secret: "sec", access_token: "secA", refresh_token: "secR" }],
+  ["no client secret", { client_id: "id", access_token: "secA", refresh_token: "secR" }],
+  ["no access token", { client_id: "id", client_secret: "sec", refresh_token: "secR" }],
 ];
 
 // @spec CHAT-TW-001
 test("anonymous: with no or partial credentials no auth provider is created and the client has none", async () => {
   for (const [label, env] of ANON_CASES) {
-    const r = rig({}, { env });
+    const r = rig(tw(env));
     try {
       await r.start();
       assert.equal(r.auths.length, 0, `${label}: no auth provider is created`);
@@ -248,18 +249,39 @@ test("anonymous: with no or partial credentials no auth provider is created and 
   }
 });
 
+// @spec CHAT-TW-001, CHAT-PLAN-003
+test("TWITCH_* variables in the process environment supply no credential and no channel", async () => {
+  const names = ["TWITCH_CHANNEL", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_ACCESS_TOKEN", "TWITCH_REFRESH_TOKEN"];
+  const old = names.map((n) => process.env[n]);
+  for (const n of names) process.env[n] = `env-${n}`;
+  try {
+    const anon = rig();
+    try {
+      await anon.start();
+      assert.equal(anon.auths.length, 0, "no auth provider from the environment");
+      assert.equal(anon.clients[0]!.opts.authProvider, undefined);
+      assert.deepEqual(anon.clients[0]!.opts.channels, ["chan"], "the channel is the configured one");
+    } finally { await anon.stop(); }
+    const idle = rig({ chat: { twitch: { channel: "" } } });
+    try {
+      await idle.start();
+      assert.equal(idle.clients.length, 0, "an environment channel does not end the idle plan");
+    } finally { await idle.stop(); }
+  } finally { names.forEach((n, i) => { if (old[i] === undefined) delete process.env[n]; else process.env[n] = old[i]; }); }
+});
+
 // @spec CHAT-TW-002
-test("with all three credentials the auth provider holds the env tokens for intent chat and is handed to the client", async () => {
+test("with all three credentials the auth provider holds the configured tokens for intent chat and is handed to the client", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
-  const r = rig({}, { env: creds, tokenPath: join(dir, "chat", "twitch-token.json") });
+  const r = rig(tw(creds), { tokenPath: join(dir, "chat", "twitch-token.json") });
   try {
     await r.start();
     assert.equal(r.auths.length, 1);
     assert.equal(r.clients[0]!.opts.authProvider, r.auths[0], "the provider is passed to the client");
     const added = r.auths[0]!.added;
     assert.equal(added.length, 1);
-    assert.equal(added[0]!.token.accessToken, "envA");
-    assert.equal(added[0]!.token.refreshToken, "envR");
+    assert.equal(added[0]!.token.accessToken, "secA");
+    assert.equal(added[0]!.token.refreshToken, "secR");
     assert.deepEqual(added[0]!.intents, ["chat"]);
   } finally { await r.stop(); rmSync(dir, { recursive: true, force: true }); }
 });

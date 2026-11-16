@@ -21,7 +21,7 @@ test("twitch disconnected reports down and degrades", async () => {
 
 // @spec CHAT-HEALTH-005, CHAT-HEALTH-006
 test("no channel (twitch source): stays live-mode, twitch down, state degraded", async () => {
-  const hbs = await runHeartbeat(chatHealth("", () => false), (hb) => hb.degraded("TWITCH_CHANNEL is not set"));
+  const hbs = await runHeartbeat(chatHealth("", () => false), (hb) => hb.degraded("chat.twitch.channel is not set"));
   const hb = hbs.find((h) => h.state === "degraded")!;
   assert.equal(hb.mode, "live");
   assert.deepEqual(hb.deps, { twitch: "down" });

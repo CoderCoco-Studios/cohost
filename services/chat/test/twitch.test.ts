@@ -50,11 +50,11 @@ test("the user token is registered (awaited) before registerUserToken resolves, 
 });
 
 // @spec CHAT-TW-010
-test("an unset or blank refresh token rejects naming TWITCH_REFRESH_TOKEN before any registration", async () => {
+test("an unset or blank refresh token rejects naming chat.twitch.refresh_token before any registration", async () => {
   let calls = 0;
   const provider = { addUserForToken: async () => { calls++; return "uid"; } };
   for (const refreshToken of [undefined, "", "   "]) {
-    await assert.rejects(registerUserToken(provider, { accessToken: "a", refreshToken }), /TWITCH_REFRESH_TOKEN/);
+    await assert.rejects(registerUserToken(provider, { accessToken: "a", refreshToken }), /chat\.twitch\.refresh_token/);
   }
   assert.equal(calls, 0, "addUserForToken is never called");
 });

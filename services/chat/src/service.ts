@@ -1,9 +1,9 @@
 /**
  * chat — ingests Twitch chat and publishes `chat.message` events.
  *
- * Works read-only with just TWITCH_CHANNEL set (anonymous IRC). Add client id /
- * secret / tokens in .env to connect as the bot account (needed later if you
- * want the co-host to also *type* in chat).
+ * Works read-only with just `chat.twitch.channel` set (anonymous IRC). Add the client id / secret / tokens
+ * (`secrets.yaml`) to connect as the bot account (needed later if you want the co-host to also *type* in chat).
+ * Every value comes from the loaded config; the process environment supplies none of them.
  *
  * `chatService(deps)` is the service minus the process: `index.ts` hands its `main` to `runService`, and a test
  * hands it a fake Twitch client and auth provider.
@@ -30,8 +30,6 @@ export interface ChatClientLike {
 }
 
 export interface ChatServiceDeps {
-  /** The environment the Twitch credentials are read from (default `process.env`). */
-  env?: Record<string, string | undefined>;
   /** Where refreshed tokens are kept (default `<dataDir()>/chat/twitch-token.json`). */
   tokenPath?: string;
   createClient?: (opts: { authProvider?: AuthProvider; channels: string[]; logger: { minLevel: "warning" } }) => ChatClientLike | Promise<ChatClientLike>;
@@ -55,7 +53,6 @@ async function defaultCreateAuth(clientId: string, clientSecret: string): Promis
 export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): HeartbeatSpec; main(ctx: ServiceContext<Bus>): Promise<void> } {
   let connected = false;
   let channel = "";
-  const env = deps.env ?? process.env;
 
   return {
     // @spec CHAT-HEALTH-001
@@ -95,7 +92,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
       } else if (plan === "idle") {
         // @spec CHAT-HEALTH-005
         // A configuration gap, not a crash: stay up so a supervisor sees `degraded`, not a restart loop.
-        const idle = startIdle({ heartbeat, log, kind: "degraded", reason: "TWITCH_CHANNEL is not set", warnEveryMs: deps.idleWarnEveryMs });
+        const idle = startIdle({ heartbeat, log, kind: "degraded", reason: "chat.twitch.channel is not set", warnEveryMs: deps.idleWarnEveryMs });
         onStop(() => idle.stop());
       } else {
         await startTwitch(channel);
@@ -103,24 +100,24 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
 
       // @spec CHAT-TW-001, CHAT-TW-002, CHAT-TW-003, CHAT-TW-010, CHAT-TW-011, CHAT-TW-012
       async function buildAuth(): Promise<AuthProvider | undefined> {
-        const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_ACCESS_TOKEN, TWITCH_REFRESH_TOKEN } = env;
-        if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET || !TWITCH_ACCESS_TOKEN) return undefined;
-        const provider = await (deps.createAuth ?? defaultCreateAuth)(TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET);
+        const { client_id: clientId, client_secret: clientSecret, access_token: accessToken, refresh_token: refreshToken } = cfg.chat.twitch;
+        if (!clientId || !clientSecret || !accessToken) return undefined;
+        const provider = await (deps.createAuth ?? defaultCreateAuth)(clientId, clientSecret);
         const file = deps.tokenPath ?? tokenFile();
-        const envRefresh = (TWITCH_REFRESH_TOKEN ?? "").trim();
+        const startingRefresh = refreshToken.trim();
         provider.onRefresh((_userId, token) => {
           log.info({ expiresIn: token.expiresIn }, "twitch token refreshed");
           if (!token.refreshToken) return;
           try {
-            saveStoredToken(file, { ...token, refreshToken: token.refreshToken } as StoredToken, envRefresh);
+            saveStoredToken(file, { ...token, refreshToken: token.refreshToken } as StoredToken, startingRefresh);
           } catch (err) {
             log.warn({ err: String(err), file }, "could not persist the refreshed twitch token");
           }
         });
         // @spec CHAT-TW-006
-        const stored = envRefresh ? loadStoredToken(file, envRefresh) : undefined;
+        const stored = startingRefresh ? loadStoredToken(file, startingRefresh) : undefined;
         if (stored) log.info({ file }, "using the stored twitch token");
-        await registerUserToken(provider, { accessToken: TWITCH_ACCESS_TOKEN, refreshToken: TWITCH_REFRESH_TOKEN, stored });
+        await registerUserToken(provider, { accessToken, refreshToken, stored });
         return provider;
       }
 

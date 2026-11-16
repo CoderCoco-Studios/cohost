@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, realpathSync, lstatSync } from "node:fs";
 import { parseDocument, Document, isMap } from "yaml";
 import { SECRET_PATHS } from "./schema.js";
 import { writeFileAtomic } from "./atomic.js";
@@ -33,7 +33,7 @@ function parseSecretsText(file: string, text: string): Document {
 }
 
 /** Reads `file` as `secrets.yaml`: a missing file holds nothing, one that cannot be read or parsed is an error. */
-// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-006, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010
+// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010
 export function loadSecrets(file: string): LoadedSecrets {
   let text: string;
   try {
@@ -49,13 +49,17 @@ export function loadSecrets(file: string): LoadedSecrets {
   const values: Record<string, string> = {};
   const ignored: string[] = [];
   const wrong: string[] = [];
+  const multiline: string[] = [];
   const walk = (node: Record<string, unknown>, prefix: string): void => {
     for (const [k, v] of Object.entries(node)) {
       const path = prefix ? `${prefix}.${k}` : k;
       if (SECRET_PATHS.includes(path)) {
-        if (v === null || v === "") continue;
-        if (typeof v === "string") values[path] = v;
-        else wrong.push(path);
+        if (v === null) continue;
+        if (typeof v !== "string") { wrong.push(path); continue; }
+        const trimmed = v.trim();
+        if (trimmed === "") continue;
+        if (/[\r\n]/.test(trimmed)) multiline.push(path);
+        else values[path] = trimmed;
       } else if (PREFIXES.has(path) && (v === null || isObj(v))) {
         if (v !== null) walk(v, path);
       } else {
@@ -64,7 +68,12 @@ export function loadSecrets(file: string): LoadedSecrets {
     }
   };
   if (root) walk(root, "");
-  if (wrong.length) throw invalid(file, wrong.map((p) => `${p}: must be a string (write a value made only of digits in quotes)`));
+  if (wrong.length || multiline.length) {
+    throw invalid(file, [
+      ...wrong.map((p) => `${p}: must be a string (write a value made only of digits in quotes)`),
+      ...multiline.map((p) => `${p}: must be a single line`),
+    ]);
+  }
 
   const mode = statSync(file).mode & 0o777;
   return { values, ignored, loose: process.platform !== "win32" && mode !== 0o777 && (mode & 0o077) !== 0 };
@@ -75,8 +84,8 @@ export function loadSecrets(file: string): LoadedSecrets {
  * keeping every other key and comment. Refuses a path outside `SECRET_PATHS` and a value that is empty after trimming, and
  * applies nothing when any change is refused. Returns nothing and never logs or echoes a value.
  */
-// @spec CFG-SEC-009, CFG-SEC-010, CFG-SEC-012, CFG-SEC-013
-export function updateSecrets(file: string, changes: Readonly<Record<string, string | null>>): void {
+// @spec CFG-SEC-009, CFG-SEC-010, CFG-SEC-012, CFG-SEC-013, CFG-SEC-015
+export function updateSecrets(linkOrFile: string, changes: Readonly<Record<string, string | null>>): void {
   const next: [string, string][] = [];
   for (const [path, value] of Object.entries(changes)) {
     if (!SECRET_PATHS.includes(path)) throw new Error(`${path} is not a secret key`);
@@ -85,6 +94,14 @@ export function updateSecrets(file: string, changes: Readonly<Record<string, str
     if (trimmed === "") throw new Error(`${path}: the value is empty after trimming; to remove a credential, clear it`);
     if (/[\r\n]/.test(trimmed)) throw new Error(`${path}: the value must be a single line`);
     next.push([path, trimmed]);
+  }
+  // A symbolic link is followed: the rename must replace the file it resolves to, or the link would be replaced by a regular file
+  // and its target left stale. A link that resolves to nothing is an error, never a file to create.
+  let file = linkOrFile;
+  let isLink = false;
+  try { isLink = lstatSync(linkOrFile).isSymbolicLink(); } catch { /* no such file yet */ }
+  if (isLink) {
+    try { file = realpathSync(linkOrFile); } catch { throw new Error(`Cannot write ${linkOrFile}: the symbolic link does not resolve to a file`); }
   }
   let text = "";
   try {

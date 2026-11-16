@@ -109,7 +109,7 @@ function placeholderIssues(raw: unknown, path = ""): ConfigIssue[] {
   if (typeof raw === "string") {
     return [...raw.matchAll(PLACEHOLDER)].map((m) => ({
       path,
-      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "write the credential in secrets.yaml" : "write the value as a literal in config.yaml"} (no environment variable is substituted)`,
+      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "write the credential in secrets.yaml" : "write the value as a literal in config.yaml"} (\${...} is not supported in config.yaml and no environment variable is substituted; there is no escape, so to keep this text literal write the name in lower-case or reword it)`,
     }));
   }
   if (Array.isArray(raw)) return raw.flatMap((v, i) => placeholderIssues(v, `${path}[${i}]`));
@@ -160,15 +160,20 @@ export type ParsedConfigText =
  * settings editor both run it, so they accept exactly the same files; the editor passes no overrides.
  *
  * `raw` is the file's tree with the secret paths removed, and `ignoredSecrets` lists the secret paths the file held a value at.
- * Secrets are set into the validated config, so a credential can never supply a section the file lacks.
+ * Secrets are merged into the config after validation, so a credential can never supply a section the file lacks (CFG-SEC-002).
  */
-// @spec CFG-LOAD-001, CFG-ENV-011, CFG-SEC-002, CFG-SEC-004, CFG-SEC-011, CFG-ISO-007, MOD-CFG-012
+// @spec CFG-LOAD-001, CFG-LOAD-007, CFG-ENV-011, CFG-SEC-002, CFG-SEC-004, CFG-SEC-011, CFG-ISO-007, MOD-CFG-012
 export function parseConfigText(text: string, secrets: SecretValues = {}, overrides: IsolationOverrides = {}): ParsedConfigText {
   let parsed: unknown;
   try {
     parsed = parseYaml(text);
   } catch (e) {
-    return { ok: false, issues: [{ path: "", message: `not valid YAML: ${(e as Error).message}` }], raw: undefined, ignoredSecrets: [] };
+    // The library's message quotes the offending source line, which may hold a credential: report position and reason code only.
+    const err = e as { code?: unknown; linePos?: { line: number; col: number }[] };
+    const pos = err.linePos?.[0];
+    const where = pos ? ` at line ${pos.line}, column ${pos.col}` : "";
+    const code = typeof err.code === "string" ? ` (${err.code})` : "";
+    return { ok: false, issues: [{ path: "", message: `not valid YAML${where}${code}` }], raw: undefined, ignoredSecrets: [] };
   }
   const placeholders = placeholderIssues(parsed);
   if (placeholders.length) return { ok: false, issues: placeholders, raw: undefined, ignoredSecrets: [] };

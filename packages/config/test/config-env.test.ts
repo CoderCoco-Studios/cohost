@@ -125,3 +125,29 @@ test("the environment-read scan finds property, call, index and dynamic reads an
   ].join("\n");
   assert.deepEqual(envReads("x.ts", text).map((r) => r.split("::")[1]).sort(), ["FIVE", "FOUR", "ONE", "SEVEN_EIGHT", "SIX", "THREE", "TWO"]);
 });
+
+// @spec CFG-LOAD-007, CFG-SEC-010
+test("a config.yaml syntax error is reported by line, column and reason code only: no text of the source reaches the message, the issues or the log", () => {
+  const MARKER = "sk-LEFTOVER-CREDENTIAL-MARKER";
+  const broken = `${MINIMAL_YAML}\nnote: a: ${MARKER}\n`;
+  const r = parseConfigText(broken);
+  assert.equal(r.ok, false);
+  const issues = JSON.stringify(!r.ok ? r.issues : []);
+  assert.match(issues, /line \d+, column \d+/);
+  assert.doesNotMatch(issues, /LEFTOVER|MARKER/);
+  sandbox({ "config.yaml": broken });
+  let thrown = "";
+  const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
+  assert.match(thrown, /^Invalid .*config\.yaml:/);
+  assert.match(thrown, /line \d+, column \d+/);
+  assert.doesNotMatch(thrown + warnings.join("\n"), /LEFTOVER|MARKER/);
+});
+
+// @spec CFG-ENV-011
+test("the placeholder failure says ${...} is not supported in config.yaml and how to keep the text literal", () => {
+  const m = message(MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"say ${NAME} now\" } }"));
+  assert.match(m, /chat\.twitch\.channel: /);
+  assert.match(m, /\$\{\.\.\.\} is not supported in config\.yaml/);
+  assert.match(m, /no escape/);
+  assert.match(m, /lower-case/);
+});

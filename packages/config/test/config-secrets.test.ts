@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, chmodSync, copyFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, chmodSync, copyFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
@@ -245,4 +245,52 @@ test("the shipped secrets.example.yaml lists the eleven secret paths as empty st
   assert.equal(leafLines.length, 11);
   for (const { l, i } of leafLines) assert.ok(/#/.test(l) || /^\s*#/.test(lines[i - 1] ?? ""), `comment for: ${l.trim()}`);
   assert.deepEqual(setSecretPaths(join(dir, "secrets.yaml")), []);
+});
+
+// @spec CFG-SEC-014
+test("loadConfig trims every secret value: a block scalar's trailing newline and padding are dropped, a blank value counts as not set", () => {
+  const dir = sandbox({
+    "config.yaml": MINIMAL_YAML,
+    "secrets.yaml": 'llm:\n  openai:\n    api_key: |\n      sk-block\n  claude:\n    api_key: "  sk-padded \\t"\nvision:\n  obs:\n    password: "   "\nconnections:\n  discord:\n    token: >\n      disc-folded\n',
+  });
+  chmodSync(join(dir, "secrets.yaml"), 0o600);
+  const cfg = loadConfig(true);
+  assert.equal(cfg.llm.openai.api_key, "sk-block");
+  assert.equal(cfg.llm.claude.api_key, "sk-padded");
+  assert.equal(cfg.vision.obs.password, "");
+  assert.equal(cfg.connections.discord.token, "disc-folded");
+});
+
+// @spec CFG-SEC-014, CFG-SEC-010
+test("a secret value that still holds a line break after trimming fails the load naming the path, never the value", () => {
+  const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": 'llm:\n  openai:\n    api_key: "first-LINE-MARKER\\nsecond"\n' });
+  chmodSync(join(dir, "secrets.yaml"), 0o600);
+  assert.throws(() => loadConfig(true), (e: Error) =>
+    e.message.startsWith(`Invalid ${join(dir, "secrets.yaml")}:`) && e.message.includes("llm.openai.api_key") && !/LINE-MARKER|second/.test(e.message));
+});
+
+// @spec CFG-SEC-015
+test("updateSecrets on a symlinked secrets.yaml writes the file the link resolves to and keeps the link", () => {
+  const dir = sandbox({ "config.yaml": MINIMAL_YAML });
+  mkdirSync(join(dir, "store"));
+  const target = join(dir, "store", "real-secrets.yaml");
+  writeFileSync(target, "# mine\nllm:\n  openai:\n    api_key: old\n", { mode: 0o600 });
+  const link = join(dir, "secrets.yaml");
+  symlinkSync(target, link);
+  updateSecrets(link, { "llm.openai.api_key": "sk-new" });
+  assert.equal(lstatSync(link).isSymbolicLink(), true, "the link is kept");
+  assert.match(readFileSync(target, "utf8"), /# mine[\s\S]*api_key: sk-new/);
+  assert.equal(mode(target), 0o600);
+  assert.deepEqual(readdirSync(join(dir, "store")), ["real-secrets.yaml"], "no temp file is left in the target's directory");
+  assert.equal(loadConfig(true).llm.openai.api_key, "sk-new");
+});
+
+// @spec CFG-SEC-015
+test("updateSecrets on a dangling symlink fails naming the path and writes nothing", () => {
+  const dir = sandbox({ "config.yaml": MINIMAL_YAML });
+  const link = join(dir, "secrets.yaml");
+  symlinkSync(join(dir, "nowhere", "secrets.yaml"), link);
+  assert.throws(() => updateSecrets(link, { "llm.openai.api_key": "sk-new" }), (e: Error) => e.message.includes(link) && !e.message.includes("sk-new"));
+  assert.equal(lstatSync(link).isSymbolicLink(), true);
+  assert.equal(existsSync(join(dir, "nowhere")), false);
 });

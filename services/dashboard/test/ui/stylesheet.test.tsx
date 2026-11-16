@@ -166,7 +166,7 @@ test("on touch widths the switch keeps its pill shape and the 44px target is the
 test("the memory meter keeps a fixed width and one line, and its fill takes the token colours in WebKit and Firefox", () => {
   assert.match(rule(all, ".meter"), /flex:\s*none/);
   assert.match(rule(all, ".meter-text"), /white-space:\s*nowrap/);
-  assert.match(rule(all, ".meter meter"), /width:\s*min\(\d+px/);
+  assert.match(rule(all, ".meter meter"), /width:\s*[\d.]+em/);
   for (const p of [".meter meter::-webkit-meter-bar", ".meter meter::-webkit-meter-optimum-value", ".meter meter::-webkit-meter-suboptimum-value", ".meter meter::-webkit-meter-even-less-good-value", ".meter meter::-moz-meter-bar"]) assert.match(rule(all, p), /var\(--/, p);
 });
 

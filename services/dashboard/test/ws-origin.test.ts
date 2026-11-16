@@ -30,7 +30,7 @@ test("wsOriginAllowed: absent is accepted; a same host and port (defaults explic
   assert.equal(wsOriginAllowed(undefined, "localhost:3000"), true);
   assert.equal(wsOriginAllowed("http://localhost:3000", "localhost:3000"), true);
   assert.equal(wsOriginAllowed("http://example.test", "example.test:80"), true);
-  assert.equal(wsOriginAllowed("https://example.test:443", "example.test"), true);
+  assert.equal(wsOriginAllowed("https://example.test:443", "example.test"), false);
   for (const [o, h] of [["null", "localhost:3000"], ["", "localhost:3000"], ["not a url", "localhost:3000"], ["http://evil.example", "localhost:3000"], ["http://localhost:3001", "localhost:3000"], ["http://localhost:3000", undefined], ["http://localhost:3000, http://evil.example", "localhost:3000"]] as const) {
     assert.equal(wsOriginAllowed(o, h), false, `${o} vs ${h}`);
   }

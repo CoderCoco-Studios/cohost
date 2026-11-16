@@ -169,7 +169,10 @@ test("Origin check: same host and port (defaults explicit) passes; null, unparsa
   assert.equal(originAllowed("http://localhost:3000", "localhost:3000"), true);
   assert.equal(originAllowed("http://127.0.0.1:3000", "127.0.0.1:3000"), true);
   assert.equal(originAllowed("http://example.test", "example.test:80"), true);
-  assert.equal(originAllowed("https://example.test", "example.test:443"), true);
+  // the dashboard serves plain HTTP: an https Origin is never its own
+  assert.equal(originAllowed("https://example.test", "example.test:443"), false);
+  assert.equal(originAllowed("https://1.2.3.4:3001", "1.2.3.4:3001"), false);
+  assert.equal(originAllowed("http://1.2.3.4:3001", "1.2.3.4:3001"), true);
   assert.equal(originAllowed("http://example.test:80", "example.test"), true);
   for (const [o, h] of [["null", "localhost:3000"], ["not a url", "localhost:3000"], ["http://evil.example", "localhost:3000"], ["http://localhost:3001", "localhost:3000"], ["http://localhost", "localhost:3000"], ["http://localhost:3000", undefined]] as const) {
     assert.equal(originAllowed(o, h), false, `${o} vs ${h}`);

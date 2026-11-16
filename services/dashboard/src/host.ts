@@ -62,15 +62,15 @@ export function hostAllowed(host: string | undefined): boolean {
   return h !== undefined && LOOPBACK_HOST(h);
 }
 
-const DEFAULT_PORT: Record<string, string> = { "http:": "80", "https:": "443" };
+const DEFAULT_PORT: Record<string, string> = { "http:": "80" };
 
-/** True when an Origin's host and port (default ports made explicit) equal the Host header's. */
+/** True when an Origin is `http:` (the dashboard serves plain HTTP) and its host and port (default ports made explicit) equal the Host header's. */
 // @spec DASH-HOST-005
 export function originAllowed(origin: string, host: string | undefined): boolean {
   if (!host) return false;
   let o: URL, h: URL;
   try { o = new URL(origin); h = new URL(`${o.protocol}//${host}`); } catch { return false; }
-  if (o.origin === "null" || !DEFAULT_PORT[o.protocol]) return false;
+  if (o.origin === "null" || o.protocol !== "http:") return false;
   const port = (u: URL) => u.port || DEFAULT_PORT[u.protocol];
   return o.hostname === h.hostname && port(o) === port(h);
 }

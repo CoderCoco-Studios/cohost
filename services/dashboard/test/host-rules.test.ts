@@ -134,6 +134,7 @@ test("POST /sink on the LAN listener: no Origin passes; an Origin must name the 
     ["cross-site Origin that names the host with another port", h, "http://192.168.1.5:3002", 403],
     ["Origin: null", h, "null", 403],
     ["unparsable Origin", h, "not a url", 403],
+    ["https Origin naming the same host and port", h, `https://${h}`, 403],
     ["same origin but a Host that is refused", "evil.example:3001", "http://evil.example:3001", 403],
     ["no Origin but a Host that is refused", "evil.example:3001", undefined, 403],
     ["no Host", undefined, undefined, 403],
@@ -151,6 +152,7 @@ test("POST /sink on a full surface bound beyond loopback follows the same Origin
   const h = "192.168.1.5:3000";
   assert.equal(await send(b.l.fullPort, "POST", "/sink", { host: h, origin: "http://evil.example" }), 403);
   assert.equal(await send(b.l.fullPort, "POST", "/sink", { host: h, origin: "null" }), 403);
+  assert.equal(await send(b.l.fullPort, "POST", "/sink", { host: h, origin: `https://${h}` }), 403);
   assert.equal(await send(b.l.fullPort, "POST", "/sink", { host: h, origin: `http://${h}` }), 200);
   assert.equal(await send(b.l.fullPort, "POST", "/sink", { host: h }), 200);
 });

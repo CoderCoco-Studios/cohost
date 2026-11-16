@@ -1,6 +1,6 @@
 import type http from "node:http";
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
-import { ensureFromExample, type Logger } from "@cohost/config";
+import { ConfigSchema, ensureFromExample, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
@@ -8,7 +8,7 @@ import { handleInject } from "./inject.js";
 import { handleMouthRouting } from "./routing.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
-import { uploadOptionsFromEnv, type UploadLimits } from "./uploads.js";
+import { uploadLimits, type UploadLimits } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
 
 export interface DashboardDeps {
@@ -20,7 +20,7 @@ export interface DashboardDeps {
   cohostName: string;
   /** The voice service, which holds the audio. */
   voiceUrl: string;
-  /** Upload size caps and TTL. Defaults to the INJECT_* env. */
+  /** Upload size caps and TTL (`dashboard.inject`). Defaults to the config schema's defaults. */
   uploads?: UploadLimits;
   /** Request/reply client for the Viewers page; the feed hands it memory's replies. Defaults to a private client that never hears one. */
   viewers?: ViewersClient;
@@ -37,8 +37,6 @@ export interface DashboardDeps {
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
   /** Path of `config.yaml` for the settings routes. Defaults to the loader's file, seeded from the example when missing. */
   configFile?: () => string;
-  /** The environment the settings routes substitute placeholders from. Defaults to `process.env`. */
-  configEnv?: NodeJS.ProcessEnv;
   /** Replaces `config.yaml` atomically. Defaults to `writeFileAtomic`. */
   configWrite?: (file: string, text: string) => void;
   /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
@@ -54,7 +52,7 @@ const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
-  const uploads = d.uploads ?? uploadOptionsFromEnv(process.env);
+  const uploads = d.uploads ?? uploadLimits(ConfigSchema.shape.dashboard.parse({}).inject);
   const inject = {
     bus: d.bus,
     uploads,
@@ -66,7 +64,6 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   };
   const settings = {
     file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
-    env: d.configEnv ?? process.env,
     write: d.configWrite ?? defaultWrite,
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),

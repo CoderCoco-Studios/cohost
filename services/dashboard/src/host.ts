@@ -5,17 +5,10 @@ import type { WebSocketServer } from "ws";
 import type { Logger } from "@cohost/config";
 import { isLoopback } from "@cohost/control";
 
-export const DEFAULT_LAN_PORT = 3001;
-
-const nonEmpty = (v: string | undefined): string | undefined => (v !== undefined && v.trim() !== "" ? v.trim() : undefined);
-
-/** The full-surface port (`PORT`, else `DASHBOARD_PORT`, else the config's) and the LAN listener's port. */
+/** The full-surface port and the LAN listener's port: `dashboard.port` and `dashboard.lan_port` of the loaded config, and nothing else. */
 // @spec DASH-HTTP-009, DASH-HOST-001
-export function resolvePorts(env: NodeJS.ProcessEnv, configPort: number): { port: number; lanPort: number } {
-  return {
-    port: Number(nonEmpty(env.PORT) ?? nonEmpty(env.DASHBOARD_PORT) ?? String(configPort)),
-    lanPort: Number(nonEmpty(env.DASHBOARD_LAN_PORT) ?? String(DEFAULT_LAN_PORT)),
-  };
+export function resolvePorts(dashboard: { port: number; lan_port: number }): { port: number; lanPort: number } {
+  return { port: dashboard.port, lanPort: dashboard.lan_port };
 }
 
 /** What the LAN listener serves: the sink page, its audio and the health check. */

@@ -16,7 +16,7 @@ const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", ".."
 const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
-interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; env?: NodeJS.ProcessEnv; secrets?: string }
+interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; secrets?: string }
 
 async function boot(o: Opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-settings-"));
@@ -32,7 +32,7 @@ async function boot(o: Opts = {}) {
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
-    configFile: () => file, configEnv: o.env ?? {}, ...(o.write ? { configWrite: o.write } : {}),
+    configFile: () => file, ...(o.write ? { configWrite: o.write } : {}),
     ...(o.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller } } : {}),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -230,6 +230,74 @@ test("a dashboard save says it applies at the dashboard's next start, and a save
   const dj = (await d.json()) as { warnings: string[]; restart: string[] };
   assert.deepEqual(dj.restart, []);
   assert.ok(dj.warnings.some((w) => /dashboard.*next start/i.test(w)));
+});
+
+const svc = (service: string, overrides?: Record<string, string>, status = "running") => ({ service, status, ...(overrides ? { overrides } : {}) });
+
+// @spec MOD-CFG-018
+test("a running unit that declares the section and was started with an override is listed in isolation.overriddenBy of the key the override name selects", async () => {
+  const t = await boot({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" }), svc("cortex", { LLM_PROVIDER: "mock" }), svc("voice", {}), svc("salience")] } });
+  const avatar = (await (await t.get("/config/avatar")).json()) as { keys: Record<string, { isolation?: { name: string; overriddenBy: string[] } }> };
+  assert.deepEqual(avatar.keys.driver!.isolation, { name: "AVATAR_DRIVER", overriddenBy: ["avatar"] });
+  const llm = (await (await t.get("/config/llm")).json()) as { keys: Record<string, { isolation?: { name: string; overriddenBy: string[] } }> };
+  assert.deepEqual(llm.keys.provider!.isolation, { name: "LLM_PROVIDER", overriddenBy: ["cortex"] });
+  const voice = (await (await t.get("/config/voice")).json()) as { keys: Record<string, { isolation?: unknown }> };
+  assert.equal(voice.keys.engine!.isolation === undefined || (voice.keys.engine!.isolation as { overriddenBy: string[] }).overriddenBy.length === 0, true, "an empty overrides object overrides nothing");
+});
+
+// @spec MOD-CFG-018
+test("a unit that does not declare the section, is not running, or runs while Docker is unavailable is never listed", async () => {
+  const listed = async (o: Opts, path: string, key: string): Promise<string[]> => {
+    const j = (await (await (await boot(o)).get(path)).json()) as { keys: Record<string, { isolation?: { overriddenBy: string[] } }> };
+    return j.keys[key]!.isolation?.overriddenBy ?? [];
+  };
+  assert.deepEqual(await listed({ stack: { services: [svc("cortex", { AVATAR_DRIVER: "null" })] } }, "/config/avatar", "driver"), [], "cortex does not declare avatar");
+  assert.deepEqual(await listed({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" }, "exited")] } }, "/config/avatar", "driver"), [], "not running");
+  assert.deepEqual(await listed({ stack: { docker: { ok: false, detail: "no docker" }, services: [svc("avatar", { AVATAR_DRIVER: "null" })] } }, "/config/avatar", "driver"), [], "Docker unavailable");
+  assert.deepEqual(await listed({ stack: { services: [svc("avatar")] } }, "/config/avatar", "driver"), [], "overrides unread");
+});
+
+// @spec MOD-CFG-015
+test("a save of a key an isolated running unit overrides warns naming the key, the unit and that it applies after a start without isolation", async () => {
+  const t = await boot({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" })] } });
+  const dry = await t.put("/config/avatar?dryRun=1", { etag: sha(t.text()), values: { driver: "vmc" } });
+  const warnings = ((await dry.json()) as { warnings: string[] }).warnings;
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /avatar\.driver/);
+  assert.match(warnings[0]!, /avatar is running isolated with AVATAR_DRIVER/);
+  const real = await t.put("/config/avatar", { etag: sha(t.text()), values: { driver: "vmc" } });
+  assert.equal(real.status, 200);
+  assert.deepEqual(((await real.json()) as { warnings: string[] }).warnings, warnings);
+});
+
+// @spec MOD-CFG-017
+test("no /config response, an error or an issue message included, holds a secret value or a hash of secrets.yaml or of a secret value", async () => {
+  const secretText = 'llm:\n  openai:\n    api_key: "sk-live-secret"\n';
+  const t = await boot({ secrets: secretText });
+  const seen: string[] = [];
+  const keep = async (r: Response): Promise<number> => { seen.push(await r.text()); return r.status; };
+  await keep(await t.get("/config/schema"));
+  await keep(await t.get("/config/llm"));
+  await keep(await t.get("/config/nope"));
+  await keep(await t.put("/config/llm", { etag: sha(t.text()), values: { "openai.api_key": "sk-live-secret" } }));
+  await keep(await t.put("/config/llm", { etag: "stale", values: { temperature: 0.5 } }));
+  await keep(await t.put("/config/llm", { etag: sha(t.text()), values: { temperature: -1 } }));
+  await keep(await t.put("/config/llm?dryRun=1", { etag: sha(t.text()), values: { temperature: 0.5 } }));
+  const all = seen.join("\n");
+  for (const forbidden of ["sk-live-secret", sha(secretText), sha("sk-live-secret"), sha(readFileSync(join(t.dir, "secrets.yaml"), "utf8"))]) assert.ok(!all.includes(forbidden), forbidden);
+});
+
+// @spec MOD-CFG-016
+test("the settings routes read and write config.yaml only: no .env, no secrets.yaml, no unit started, stopped or restarted", async () => {
+  const t = await boot({ secrets: 'llm:\n  openai:\n    api_key: "sk-secret"\n', stack: { services: [svc("voice")] } });
+  const before = readFileSync(join(t.dir, "secrets.yaml"), "utf8");
+  assert.equal((await t.put("/config/llm", { etag: sha(t.text()), values: { "openai.api_key": "pasted" } })).status, 400, "a secret key in a PUT is refused");
+  assert.equal((await t.put("/config/voice", { etag: sha(t.text()), values: { speed: 1.1 } })).status, 200);
+  assert.equal(readFileSync(join(t.dir, "secrets.yaml"), "utf8"), before);
+  assert.deepEqual(readdirSync(t.dir).sort(), ["config.yaml", "secrets.yaml"]);
+  assert.deepEqual(t.calls, []);
+  const src = readFileSync(join(repo, "services", "dashboard", "src", "settings.ts"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*")).join("\n");
+  assert.doesNotMatch(src, /\.env\b|process\.env|\benv\b/, "settings.ts takes no environment");
 });
 
 // @spec MOD-CFG-014

@@ -1,15 +1,13 @@
 import type http from "node:http";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic } from "@cohost/config";
+import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
 import type { ServiceDef } from "@cohost/control";
 import type { StackSnapshot } from "./stack.js";
 
 export interface SettingsDeps {
   /** The path of config.yaml, seeded from the example when missing. */
   file: () => string;
-  /** The environment placeholders are substituted from. */
-  env: NodeJS.ProcessEnv;
   /** Replaces `file` with `text` atomically. */
   write: (file: string, text: string) => void;
   manifest: readonly ServiceDef[];
@@ -36,10 +34,27 @@ const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new 
 const readers = (manifest: readonly ServiceDef[], section: string): string[] => manifest.filter((s) => s.config.includes(section)).map((s) => s.id);
 
 /**
+ * The isolation overrides the running units that declare `section` were started with, from the latest stack status: override
+ * name to unit ids, in manifest order. Nothing is reported while Docker is unavailable, for a container that is not running, or
+ * for one whose overrides the probe could not read (control-plane CTRL-STACK-016, MOD-CFG-018).
+ */
+// @spec MOD-CFG-018
+export function runningOverrides(d: SettingsDeps, section: string): RunningOverrides {
+  const stack = d.stack();
+  if (!stack.docker.ok) return {};
+  const byUnit = new Map(stack.services.filter((c) => c.status === "running" && c.overrides).map((c) => [c.service, c.overrides!] as const));
+  const out: Record<string, string[]> = {};
+  for (const id of readers(d.manifest, section)) {
+    for (const name of Object.keys(byUnit.get(id) ?? {})) (out[name] ??= []).push(id);
+  }
+  return out;
+}
+
+/**
  * The settings editor's routes: `GET /config/schema`, `GET /config/:section`, `PUT /config/:section`. They read and write
  * `config.yaml` through `@cohost/config`'s editor, never touch `.env`, and never start, stop or restart a unit.
  */
-// @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, MOD-CFG-019, MOD-CFG-020
+// @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-015, MOD-CFG-016, MOD-CFG-018, MOD-CFG-019, MOD-CFG-020
 export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (!url.pathname.startsWith("/config/")) return false;
   const name = decodeURIComponent(url.pathname.slice("/config/".length));
@@ -57,7 +72,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
 
   if (req.method === "GET") {
     const text = readFileSync(d.file(), "utf8");
-    json(res, 200, { section: name, etag: etagOf(text), ...readSection(text, name, secretsSet(d)) });
+    json(res, 200, { section: name, etag: etagOf(text), ...readSection(text, name, secretsSet(d), runningOverrides(d, name)) });
     return true;
   }
 
@@ -76,7 +91,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
   const text = readFileSync(file, "utf8");
   const current = etagOf(text);
   if (etag !== current) { json(res, 409, { ok: false, etag: current }); return true; }
-  const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d));
+  const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d), runningOverrides(d, name));
   if (!edit.ok) { json(res, 400, { ok: false, issues: edit.issues }); return true; }
   const warnings = edit.warnings;
   if (url.searchParams.get("dryRun") === "1") { json(res, 200, { ok: true, dryRun: true, warnings }); return true; }

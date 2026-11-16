@@ -50,7 +50,7 @@ async function boot(states: Record<string, HealthState> = {}) {
     bus, log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
-    configFile: () => file, configEnv: {},
+    configFile: () => file,
     control: { token: "tok", runtime: "compose", advanced: false, controller },
    
     uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },

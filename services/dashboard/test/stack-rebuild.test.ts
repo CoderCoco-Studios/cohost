@@ -8,6 +8,7 @@ import { setupControl } from "../src/control.js";
 import { createFeed, type FeedSocket } from "../src/feed.js";
 import { StackService, type StackOps } from "../src/stack.js";
 
+const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
 const restarter = { restart: async () => ({ ok: true }) };
 
@@ -66,7 +67,6 @@ test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and
   const off = mk(undefined as never);
   for (const s of [on, off]) await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
   after(() => { on.close(); off.close(); });
-  const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
   assert.equal((await fetch(url(off, "/stack/rebuild"), { method: "POST" })).status, 404);
   assert.equal((await fetch(url(on, "/stack/rebuild"), { method: "POST" })).status, 401);
   const r = await fetch(url(on, "/stack/rebuild"), { method: "POST", headers: { authorization: "Bearer s3cret" } });
@@ -83,6 +83,35 @@ test("the probe reads container restart counts, and the snapshot carries them pe
   await svc.probe();
   assert.deepEqual(f.calls, ["statusWithRestarts"]);
   assert.deepEqual(svc.snapshot().services.map((c) => [c.service, c.restartCount]), [["cortex", 6], ["redis", 0]]);
+});
+
+// @spec DASH-STACK-010
+test("the snapshot carries each container's isolation overrides as `overrides`: empty for none, absent where the probe could not read them; GET /stack serves them", async () => {
+  const status: StackStatus = {
+    docker: { ok: true },
+    services: [
+      { service: "avatar", status: "running", restartCount: 0, overrides: { AVATAR_DRIVER: "null" } },
+      { service: "cortex", status: "running", restartCount: 0, overrides: {} },
+      { service: "redis", status: "running", health: "healthy" },
+    ],
+  };
+  const rec = recordingLog();
+  const svc = new StackService({ log: rec.log, bus: () => "connected" });
+  svc.attach(ops(status).o);
+  await svc.probe();
+  const snap = svc.snapshot();
+  const of = (name: string) => snap.services.find((c) => c.service === name)!;
+  assert.deepEqual(of("avatar").overrides, { AVATAR_DRIVER: "null" });
+  assert.deepEqual(of("cortex").overrides, {});
+  assert.equal("overrides" in of("redis"), false);
+  const server = http.createServer(createDashboardHandler({
+    bus: new FakeBus(), log: rec.log, html: "x", cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc,
+  }));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  after(() => server.close());
+  const body = (await (await fetch(url(server, "/stack"))).json()) as { services: { service: string; overrides?: unknown }[] };
+  assert.deepEqual(body.services.map((c) => [c.service, c.overrides]), [["avatar", { AVATAR_DRIVER: "null" }], ["cortex", {}], ["redis", undefined]]);
 });
 
 // @spec DASH-HTTP-014, MOD-MAN-007

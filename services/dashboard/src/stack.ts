@@ -13,7 +13,8 @@ export interface StackSnapshot {
   bus: BusState;
   action: null | { kind: StackActionKind; phase: string; startedAt: number };
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: ContainerStatus[]; finishedAt: number };
-  services: { service: string; status: string; health?: string; restartCount?: number }[];
+  /** Per container; `overrides` (CTRL-STACK-016) is empty for a container that sets none and absent where the probe could not read it. */
+  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string> }[];
 }
 
 /** The slice of `StackController` the service drives. */
@@ -96,7 +97,7 @@ export class StackService {
     },
   };
 
-  // @spec DASH-STACK-001
+  // @spec DASH-STACK-001, DASH-STACK-010
   snapshot(): StackSnapshot {
     const st = this.status;
     const running = this.action?.kind === "launch" || this.action?.kind === "rebuild" ? "launch" : this.action?.kind === "stop" ? "stop" : undefined;
@@ -108,7 +109,7 @@ export class StackService {
       action: this.action ? { ...this.action } : null,
       last: this.last ? { ...this.last } : null,
       services: (st?.services ?? [])
-        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}) }))
+        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}), ...(c.overrides ? { overrides: { ...c.overrides } } : {}) }))
         .sort((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
     };
   }

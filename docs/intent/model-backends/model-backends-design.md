@@ -117,7 +117,7 @@ Consumers: cortex blocks startup in a 3-second retry loop until `ping()` is true
 
 `MockProvider` (`mock.ts`): throws `mock chat aborted` if the signal is already aborted; returns `"{}"` for `json: true` (valid JSON that the salience, affect and critic `validate` functions all reject, so mock-backed `llm` hooks always fall back to rules); otherwise returns `[happy] mock: <last user message, whitespace-collapsed, first 80 chars, or "hello">`, in the `[emotion] text` format cortex parses. It sleeps for nothing and does no I/O.
 
-Who builds embedders: memory, not this package. `services/memory/src/backend.ts` switches on its own key `brain.memory.embedder` (`ollama` or `hash`), constructing `HashEmbedder` or `Ollama` directly, so a mock chat provider leaves memory on the Ollama embedder unless `MEMORY_EMBEDDER=hash` is set as well (LLM-EMBED-004; the `memory` segment owns that key). The separate switch avoids a silently offline memory: "Memory always uses the real Ollama embedder unless `MEMORY_EMBEDDER=hash`, even with `LLM_PROVIDER=mock` (deliberate, avoids silent offline)" (commit `51d5a9c`).
+Who builds embedders: memory, not this package. `services/memory/src/backend.ts` switches on its own key `brain.memory.embedder` (`ollama` or `hash`), constructing `HashEmbedder` or `Ollama` directly, so a mock chat provider leaves memory on the Ollama embedder unless `brain.memory.embedder` is `hash` as well (an isolated start of `memory` sets it) (LLM-EMBED-004; the `memory` segment owns that key). The separate switch avoids a silently offline memory: "Memory always uses the real Ollama embedder unless `MEMORY_EMBEDDER=hash`, even with `LLM_PROVIDER=mock` (deliberate, avoids silent offline)" (commit `51d5a9c`).
 
 ## Configuration read
 

@@ -4,9 +4,9 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 ## Status
 
-Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller (DEPLOY-COMPOSE-008, -011), no per-service credentials (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` in the installer, `.gitignore` and `.dockerignore` (DEPLOY-INST-005, DEPLOY-REPO-003, DEPLOY-IMG-005), the dashboard ports in `config.yaml` (DEPLOY-INST-008, DEPLOY-HOST-002, -003) and the dashboard UI build and Node floor (DEPLOY-HOST-001, -006, DEPLOY-REPO-002) are specified and not built. Total 81 specs: 62 `[x]`, 19 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller reads `config.yaml` (DEPLOY-COMPOSE-008, -011), Compose carries no operator credential and mounts `./config` (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` is seeded and ignored (DEPLOY-INST-005, DEPLOY-REPO-003 is open below, DEPLOY-IMG-005), the dashboard ports are `config.yaml` keys (DEPLOY-INST-008, DEPLOY-HOST-002, -003) and the operator documentation, README quick start and Bedrock guidance follow (DEPLOY-README-002, -005, -007). Open: the dashboard UI build and Node floor (DEPLOY-HOST-001, -006, DEPLOY-REPO-002, DEPLOY-REPO-003), which belong to the new dashboard. Total 81 specs: 77 `[x]`, 4 `[ ]`, 0 `[D]`.
 
-**AUDITED** — 79 specs: 79 implemented, 0 deferred, 0 gaps (audit last run before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-HOST-001 (the script builds the docs first), DEPLOY-HOST-005 (the Commands page says so) and DEPLOY-HOST-006 (a failed docs build does not stop the start) were added after the audit; they are implemented, DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts`, and the real script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
+**PARTIAL** — 81 specs: 77 implemented, 0 deferred, 4 gaps (the dashboard UI build: DEPLOY-HOST-001, -006, DEPLOY-REPO-002, -003); the last audit covered 79 specs and ran before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004 and DEPLOY-README-002, -003, -005, -006 closed; those nine are not covered by that audit). DEPLOY-HOST-001 (the script builds the docs first), DEPLOY-HOST-005 (the Commands page says so) and DEPLOY-HOST-006 (a failed docs build does not stop the start) were added after the audit; they are implemented, DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts`, and the real script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them.
 
 ## Orientation
 
@@ -26,7 +26,7 @@ Open since the one-place configuration design ([decision](../decisions/config-in
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (79 specs, prefix `DEPLOY`: 79 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (81 specs, prefix `DEPLOY`: 77 `[x]`, 4 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -80,7 +80,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-006 | 6 | 6 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 79 of 79 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 77 of 81 specs implemented; 0 deferred; 4 open (DEPLOY-HOST-001, DEPLOY-HOST-006, DEPLOY-REPO-002, DEPLOY-REPO-003: the dashboard UI build). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

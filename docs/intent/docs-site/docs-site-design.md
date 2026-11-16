@@ -55,7 +55,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | --- | --- | --- | --- |
 | Install | What you need | `guide/install/prerequisites.md` | The machine, the OS (Ubuntu/Debian or WSL2), disk and GPU, and what the installer puts on it (Docker, Node, pnpm, the Rust toolchain) |
 | Install | Try it with no accounts | `guide/install/first-run.md` | Mock mode from a clean checkout to a talking co-host on the dashboard, building the bus addon first; the WSL2 Docker note |
-| Install | Install for real | `guide/install/real-install.md` | `scripts/install.sh`, `.env`, `config.yaml`, the first real Launch, the model downloads |
+| Install | Install for real | `guide/install/real-install.md` | `scripts/install.sh`, `.env`, `config.yaml`, `secrets.yaml`, the first real Launch, the model downloads |
 | Connect | Twitch chat | `guide/connect/twitch.md` | Reading a channel, the optional login, the token kept on the host |
 | Connect | Discord | `guide/connect/discord.md` | Creating and inviting the one bot, the `discord`, `ears` and `mouth` profiles, choosing the guild and channel, where its voice goes |
 | Connect | OBS and the voice on stream | `guide/connect/obs.md` | The sink Browser Source on the same PC and on a second PC, the screenshot sense (`eyes`) and obs-websocket |
@@ -199,7 +199,7 @@ The site speaks to the reader as "you", warmly and plainly, the way a friend who
 
 ## README and examples
 
-`README.md` is a pointer, not a manual: one paragraph saying what cohost is, a quick start that clones the repository, changes into it and then runs at most five command lines (a heredoc counts as one): `scripts/install.sh`, which creates `.env` from `.env.example`, and `pnpm dashboard`, then an isolated start from the dashboard with no file edited, leaving a co-host talking with no accounts (real accounts are the site's Install for real page), a link to the docs site, and the licence section the deployment segment requires (DEPLOY-LIC-004). It has exactly three `##` sections: Quick start, Documentation, License. The site's URL is `https://codercoco-studios.github.io/cohost/`.
+`README.md` is a pointer, not a manual: one paragraph saying what cohost is, a quick start that clones the repository, changes into it and then runs at most five command lines: `scripts/install.sh`, which creates `.env`, `config/config.yaml` and `config/secrets.yaml` from their examples, and `pnpm dashboard`, then an isolated start from the dashboard with no file edited, leaving a co-host talking with no accounts (real accounts are the site's Install for real page), a link to the docs site, and the licence section the deployment segment requires (DEPLOY-LIC-004). It has exactly three `##` sections: Quick start, Documentation, License. The site's URL is `https://codercoco-studios.github.io/cohost/`.
 
 The `examples/` directory keeps runnable files, one directory per task, laid out in Extension guides below. Its `README.md` files are directory guides: what the files in that directory are, how to run them, and a link to the site page that explains them (`examples/modules/README.md` links Brain hooks; `examples/README.md` lists the directories). The explanations live only on the site. Every directory directly under `examples/` holds something a reader runs or a runnable example reads; the model-provider recipes, which are `.env` and `config.yaml` lines with nothing to run, are on the Choose a model page.
 

@@ -2,11 +2,10 @@ packages:
   - packages/*
   - services/*
 
-# Install scripts: pnpm 11+ runs none unless allowed here. onnxruntime-node's script is
-# not run (it was never allowed); every dependency with a script must appear.
+# Install scripts: pnpm 11+ runs none unless allowed here, and fails an install that meets a
+# dependency with an unlisted install script. Only esbuild (postinstall, validates its platform
+# binary) and onnxruntime-node (postinstall downloads GPU binaries, which cohost does not run)
+# have one; no other dependency declares preinstall, install or postinstall.
 allowBuilds:
-  "@snazzah/davey": true
   esbuild: true
-  libsodium-wrappers: true
   onnxruntime-node: false
-  opusscript: true

@@ -29,7 +29,7 @@
   .svc { grid-template-columns: minmax(0, 1fr); }
   .svc-head { display: none; }
   .viewers-panes, .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .ev { grid-template-columns: 52px minmax(0, 1fr); }
+  .ev { grid-template-columns: 66px minmax(0, 1fr); }
   .ev .k { grid-column: 2; }
   .ev p { grid-column: 1 / -1; }
 

@@ -21,7 +21,7 @@
 .srow-c .field { max-width: 420px; }
 .srow-c .num { max-width: 140px; }
 .srow-c textarea.field { max-width: 640px; }
-.srow-c .help { margin: 0; }
+.srow-c .help { margin: 6px 0 0; }
 .srow-c .note-inline { margin: 0; }
 .srow-l .mono { overflow-wrap: break-word; word-break: normal; }
 .srow-c .secret-field .tag { margin-top: 2px; }

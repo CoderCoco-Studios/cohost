@@ -32,7 +32,7 @@ const bodyOf = (app: TestApp, key: string) => JSON.parse(app.fetch.callsTo(key)[
 // @spec DASH-UI-009
 test("the panel starts on Text with the viewer fields, remember off, one Send, one status line and the note that tests are treated as real", async () => {
   boot();
-  assert.deepEqual(within(card()).getAllByRole("radio").map((r) => r.closest("label")!.textContent), ["Text", "Image", "Audio"]);
+  assert.deepEqual(within(within(card()).getByRole("group", { name: "Input kind" })).getAllByRole("radio").map((r) => r.closest("label")!.textContent), ["Text", "Image", "Audio"]);
   assert.equal((within(card()).getByRole("radio", { name: "Text" }) as HTMLInputElement).checked, true);
   within(card()).getByRole("textbox", { name: "Message" });
   within(card()).getByRole("textbox", { name: "Viewer name" });
@@ -67,18 +67,19 @@ test("Image shows a PNG, JPEG and WebP picker only; Audio shows an audio picker 
 
 // @spec DASH-UI-009
 test("a microphone record button is offered only where MediaRecorder and getUserMedia exist", async () => {
-  boot();
+  const first = boot();
   await kind("Audio");
   assert.ok(within(card()).queryByRole("button", { name: /Record/ }) === null);
+  first.unmount();
   const g = globalThis as unknown as { MediaRecorder?: unknown };
   const nav = navigator as unknown as { mediaDevices?: unknown };
   g.MediaRecorder = class {};
   Object.defineProperty(nav, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({}) } });
   try {
-    document.body.innerHTML = "";
-    boot();
+    const second = boot();
     await kind("Audio");
     within(card()).getByRole("button", { name: "Record from microphone" });
+    second.unmount();
   } finally { delete g.MediaRecorder; Object.defineProperty(nav, "mediaDevices", { configurable: true, value: undefined }); }
 });
 
@@ -147,6 +148,7 @@ test("with no inject.result within 10 s the target is reported as not responding
   await waitFor(() => assert.equal(app.clock.pending, 1));
   result(app, { id: "r1", ok: true });
   assert.equal(app.clock.pending, 0, "a result clears the timer");
+  app.fetch.on("POST /inject/text", { status: 202, json: { id: "r3" } });
   await user.click(send());
   await waitFor(() => assert.equal(app.clock.pending, 1));
   unmount();
@@ -326,10 +328,11 @@ test("recording from the microphone stops on the second press, releases the micr
 test("a refused microphone is reported and unmounting while recording releases it without sending", async () => {
   await withMicrophone(async () => {
     const user = userEvent.setup();
-    boot();
+    const first = boot();
     await kind("Audio");
     await user.click(within(card()).getByRole("button", { name: "Record from microphone" }));
     assert.match((await within(card()).findByRole("alert")).textContent!, /Microphone unavailable: denied/);
+    first.unmount();
   }, async () => { throw new Error("denied"); });
   await withMicrophone(async (tracks) => {
     const user = userEvent.setup();

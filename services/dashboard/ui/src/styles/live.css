@@ -35,3 +35,8 @@
 .face-head { fill: var(--surface-2); stroke: var(--ctl); }
 .face-eye { fill: var(--fg); }
 .face-mouth { fill: var(--bg); stroke: var(--fg); }
+
+/* Say a line, test inputs, wipe context */
+.live-outputs, .live-advanced { margin-top: 10px; }
+.inject-status { color: var(--muted); font-size: 12.5px; }
+.inject-status.action-ok { color: var(--ok); }

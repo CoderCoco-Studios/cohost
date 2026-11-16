@@ -3,6 +3,7 @@ import type { ScreenProps } from "../../app/screens";
 import { ActivityCard } from "./ActivityCard";
 import { AvatarCard } from "./AvatarCard";
 import { SayCard } from "./SayCard";
+import { TestInputs } from "./TestInputs";
 import { WipeCard } from "./WipeCard";
 
 /**
@@ -18,6 +19,7 @@ export function Screen(_props: ScreenProps) {
         <SayCard />
         <ActivityCard />
         <AvatarCard />
+        <TestInputs />
         <WipeCard />
       </div>
     </>

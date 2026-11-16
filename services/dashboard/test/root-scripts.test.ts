@@ -41,3 +41,12 @@ test("dashboard:ui runs the Vite dev server of the dashboard package", () => {
 test("the built UI is git-ignored", () => {
   assert.ok(root(".gitignore").split("\n").includes("services/dashboard/dist-ui/"));
 });
+
+// @spec DASH-BUILD-008
+test("the UI tsconfig covers the UI source and test/ui and emits nothing", () => {
+  const cfg = readFileSync(new URL("../ui/tsconfig.json", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "");
+  const j = JSON.parse(cfg) as { compilerOptions: { noEmit: boolean; jsx: string }; include: string[] };
+  assert.equal(j.compilerOptions.noEmit, true);
+  assert.equal(j.compilerOptions.jsx, "react-jsx");
+  assert.ok(j.include.includes("src") && j.include.includes("../test/ui"));
+});

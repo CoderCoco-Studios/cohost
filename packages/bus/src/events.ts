@@ -385,7 +385,7 @@ export const EventPayloads = {
     /** Epoch ms the process started; constant for its lifetime. */
     startedAt: z.number(),
     state: z.enum(["starting", "ready", "degraded", "stopping"]),
-    deps: z.record(z.enum(["ok", "down", "n/a"])),
+    deps: z.record(z.string(), z.enum(["ok", "down", "n/a"])),
     /** "live" | "mock" | "off" by convention. */
     mode: z.string(),
     detail: z.string().optional(),

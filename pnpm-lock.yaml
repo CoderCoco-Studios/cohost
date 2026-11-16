@@ -200,8 +200,8 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
       zod:
-        specifier: ^3.25.76
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/config:
     dependencies:
@@ -212,8 +212,8 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
       zod:
-        specifier: ^3.25.76
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/control:
     dependencies:
@@ -232,10 +232,10 @@ importers:
     dependencies:
       '@anthropic-ai/bedrock-sdk':
         specifier: ^1.1.2
-        version: 1.1.2(zod@3.25.76)
+        version: 1.1.2(zod@4.6.7)
       '@anthropic-ai/sdk':
         specifier: ^1.8.0
-        version: 1.8.0(zod@3.25.76)
+        version: 1.8.0(zod@4.6.7)
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
@@ -2493,8 +2493,8 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -2613,9 +2613,9 @@ snapshots:
     dependencies:
       '@algolia/client-common': 5.64.0
 
-  '@anthropic-ai/bedrock-sdk@1.1.2(zod@3.25.76)':
+  '@anthropic-ai/bedrock-sdk@1.1.2(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 1.8.0(zod@3.25.76)
+      '@anthropic-ai/sdk': 1.8.0(zod@4.6.7)
       '@aws-crypto/sha256-js': 4.0.0
       '@aws-sdk/client-bedrock-runtime': 3.1169.0
       '@aws-sdk/credential-providers': 3.1169.0
@@ -2630,13 +2630,13 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  '@anthropic-ai/sdk@1.8.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@1.8.0(zod@4.6.7)':
     dependencies:
       '@opentelemetry/api': 1.10.0
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 3.25.76
+      zod: 4.6.7
 
   '@aws-crypto/crc32@3.0.0':
     dependencies:
@@ -4586,6 +4586,6 @@ snapshots:
 
   yaml@2.9.1: {}
 
-  zod@3.25.76: {}
+  zod@4.6.7: {}
 
   zwitch@2.0.4: {}

@@ -43,7 +43,7 @@ import { ConfigSchema, ModuleSchema, unknownKeys } from "../src/index.js";
 
 // @spec CFG-SCH-004
 test("reflex match must be a valid regex (a bad one would crash-loop salience)", () => {
-  const reflexes = ConfigSchema.shape.brain.shape.salience.removeDefault().shape.reflexes;
+  const reflexes = ConfigSchema.shape.brain.shape.salience.def.innerType.shape.reflexes;
   assert.equal(reflexes.safeParse([{ match: "(you died", say: ["x"] }]).success, false);
   assert.equal(reflexes.safeParse([{ match: "\\b(you died)\\b", say: ["x"] }]).success, true);
 });

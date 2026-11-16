@@ -5,7 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { parse as parseYaml, parseDocument, isMap, isScalar, isSeq, stringify, type Document, type YAMLMap } from "yaml";
-import type { ZodTypeAny } from "zod";
+import { z } from "zod";
 import { ConfigSchema, SECRET_PATHS } from "./schema.js";
 import { parseConfigText, substituteEnv, coerceEmptyNumbers, type ConfigIssue } from "./pipeline.js";
 
@@ -14,28 +14,32 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 
 // ---------- schema introspection (the schema is the form)
 
-/** Strips defaults, optionals, preprocess/refine wrappers; returns the inner type and the nearest description. */
-function unwrap(s: ZodTypeAny): { schema: ZodTypeAny; description?: string } {
+/**
+ * Strips defaults, optionals and preprocess wrappers; returns the inner type and the nearest description.
+ * Wrappers are recognised by class (`instanceof`), and each exposes the type it wraps as `def.innerType` (a preprocess is a
+ * pipe whose input is a transform and whose output is the schema it feeds).
+ */
+function unwrap(s: z.ZodType): { schema: z.ZodType; description?: string } {
   let description = s.description;
   for (;;) {
-    const d = s._def as { typeName: string; schema?: ZodTypeAny; innerType?: ZodTypeAny; type?: ZodTypeAny };
-    const next = d.typeName === "ZodEffects" ? d.schema : d.typeName === "ZodBranded" ? d.type : d.innerType;
+    let next: z.ZodType | undefined;
+    if (s instanceof z.ZodPipe) next = (s.def.out instanceof z.ZodTransform ? s.def.in : s.def.out) as z.ZodType;
+    else if (s instanceof z.ZodDefault || s instanceof z.ZodPrefault || s instanceof z.ZodOptional || s instanceof z.ZodNullable || s instanceof z.ZodReadonly || s instanceof z.ZodCatch) next = s.def.innerType as z.ZodType;
     if (!next) return { schema: s, description };
     s = next;
     description ??= s.description;
   }
 }
 
-const typeName = (s: ZodTypeAny): string => (s._def as { typeName: string }).typeName;
-const shapeOf = (s: ZodTypeAny): Record<string, ZodTypeAny> => (s as unknown as { shape: Record<string, ZodTypeAny> }).shape;
+const shapeOf = (s: z.ZodObject): Record<string, z.ZodType> => s.shape as Record<string, z.ZodType>;
 
 /** The zod schema at a dotted path of `ConfigSchema` (e.g. `brain.salience`), or undefined when there is no such path. */
 // @spec MOD-CFG-001, MOD-MAN-008
-export function schemaAt(path: string): ZodTypeAny | undefined {
-  let cur: ZodTypeAny = ConfigSchema;
+export function schemaAt(path: string): z.ZodType | undefined {
+  let cur: z.ZodType = ConfigSchema;
   for (const seg of path.split(".")) {
     const u = unwrap(cur).schema;
-    if (typeName(u) !== "ZodObject") return undefined;
+    if (!(u instanceof z.ZodObject)) return undefined;
     const next = shapeOf(u)[seg];
     if (!next) return undefined;
     cur = next;
@@ -43,49 +47,42 @@ export function schemaAt(path: string): ZodTypeAny | undefined {
   return cur;
 }
 
-function jsonSchemaOf(s: ZodTypeAny, path: string[]): Json {
+function jsonSchemaOf(s: z.ZodType, path: string[]): Json {
   const { schema: u, description } = unwrap(s);
   const out: Json = {};
-  const checks = ((u._def as { checks?: { kind: string; value?: number; inclusive?: boolean }[] }).checks) ?? [];
-  switch (typeName(u)) {
-    case "ZodObject": {
-      const properties: Json = {};
-      const required: string[] = [];
-      for (const [k, v] of Object.entries(shapeOf(u))) {
-        properties[k] = jsonSchemaOf(v, [...path, k]);
-        if (!v.safeParse(undefined).success) required.push(k);
-      }
-      out.type = "object";
-      out.properties = properties;
-      if (required.length) out.required = required;
-      break;
+  // A check's own definition (`_zod.def`) is zod 4's documented way to read a bound and whether it is inclusive.
+  const checks = (u._zod.def.checks ?? []).map((c) => c._zod.def as { check: string; value?: number; inclusive?: boolean; minimum?: number; maximum?: number });
+  if (u instanceof z.ZodObject) {
+    const properties: Json = {};
+    const required: string[] = [];
+    for (const [k, v] of Object.entries(shapeOf(u))) {
+      properties[k] = jsonSchemaOf(v, [...path, k]);
+      if (!v.safeParse(undefined).success) required.push(k);
     }
-    case "ZodString":
-      out.type = "string";
-      for (const c of checks) {
-        if (c.kind === "min") out.minLength = c.value;
-        if (c.kind === "max") out.maxLength = c.value;
-      }
-      break;
-    case "ZodNumber":
-      out.type = checks.some((c) => c.kind === "int") ? "integer" : "number";
-      for (const c of checks) {
-        if (c.kind === "min") out[c.inclusive ? "minimum" : "exclusiveMinimum"] = c.value;
-        if (c.kind === "max") out[c.inclusive ? "maximum" : "exclusiveMaximum"] = c.value;
-      }
-      break;
-    case "ZodBoolean": out.type = "boolean"; break;
-    case "ZodEnum": out.type = "string"; out.enum = (u._def as { values: string[] }).values; break;
-    case "ZodArray": {
-      out.type = "array";
-      out.items = jsonSchemaOf((u._def as { type: ZodTypeAny }).type, path);
-      const min = (u._def as { minLength?: { value: number } | null }).minLength;
-      if (min) out.minItems = min.value;
-      break;
+    out.type = "object";
+    out.properties = properties;
+    if (required.length) out.required = required;
+  } else if (u instanceof z.ZodString) {
+    out.type = "string";
+    for (const c of checks) {
+      if (c.check === "min_length") out.minLength = c.minimum;
+      if (c.check === "max_length") out.maxLength = c.maximum;
     }
-    case "ZodRecord": out.type = "object"; out.additionalProperties = jsonSchemaOf((u._def as { valueType: ZodTypeAny }).valueType, path); break;
-    default: break; // any, unknown: no constraint
-  }
+  } else if (u instanceof z.ZodNumber) {
+    out.type = u.isInt ? "integer" : "number";
+    for (const c of checks) {
+      if (c.check === "greater_than") out[c.inclusive ? "minimum" : "exclusiveMinimum"] = c.value;
+      if (c.check === "less_than") out[c.inclusive ? "maximum" : "exclusiveMaximum"] = c.value;
+    }
+  } else if (u instanceof z.ZodBoolean) out.type = "boolean";
+  else if (u instanceof z.ZodEnum) { out.type = "string"; out.enum = u.options; }
+  else if (u instanceof z.ZodArray) {
+    out.type = "array";
+    out.items = jsonSchemaOf(u.element as z.ZodType, path);
+    const min = checks.find((c) => c.check === "min_length")?.minimum;
+    if (min) out.minItems = min;
+  } else if (u instanceof z.ZodRecord) { out.type = "object"; out.additionalProperties = jsonSchemaOf(u.valueType as z.ZodType, path); }
+  // any, unknown: no constraint
   const d = s.safeParse(undefined);
   if (d.success && d.data !== undefined && !isObj(d.data)) out.default = d.data;
   if (description) out.description = description;
@@ -101,7 +98,7 @@ export function sectionJsonSchema(section: string): Json {
   return jsonSchemaOf(s, section.split("."));
 }
 
-interface Leaf { key: string; path: string[]; schema: ZodTypeAny; secret: boolean }
+interface Leaf { key: string; path: string[]; schema: z.ZodType; secret: boolean }
 
 /** The keys of a section: every scalar or array under it, named by its dotted path relative to the section (a leaf section is named for itself). */
 function leavesOf(section: string): Leaf[] {
@@ -109,9 +106,9 @@ function leavesOf(section: string): Leaf[] {
   const root = schemaAt(section);
   if (!root) throw new Error(`no such config section: ${section}`);
   const out: Leaf[] = [];
-  const walk = (s: ZodTypeAny, rel: string[]): void => {
+  const walk = (s: z.ZodType, rel: string[]): void => {
     const u = unwrap(s).schema;
-    if (typeName(u) === "ZodObject") { for (const [k, v] of Object.entries(shapeOf(u))) walk(v, [...rel, k]); return; }
+    if (u instanceof z.ZodObject) { for (const [k, v] of Object.entries(shapeOf(u))) walk(v, [...rel, k]); return; }
     const path = [...segs, ...rel];
     out.push({ key: rel.length ? rel.join(".") : segs[segs.length - 1]!, path, schema: s, secret: SECRET_PATHS.includes(path.join(".")) });
   };
@@ -125,18 +122,17 @@ export function sectionSecrets(section: string): string[] {
   return leavesOf(section).filter((l) => l.secret).map((l) => l.key);
 }
 
-function unknownBySchema(raw: unknown, schema: ZodTypeAny, path: string): string[] {
+function unknownBySchema(raw: unknown, schema: z.ZodType, path: string): string[] {
   const u = unwrap(schema).schema;
-  const t = typeName(u);
-  if (t === "ZodObject" && isObj(raw)) {
+  if (u instanceof z.ZodObject && isObj(raw)) {
     const shape = shapeOf(u);
     return Object.entries(raw).flatMap(([k, v]) => {
       const here = `${path}.${k}`;
       return k in shape ? unknownBySchema(v, shape[k]!, here) : [here];
     });
   }
-  if (t === "ZodArray" && Array.isArray(raw)) {
-    return raw.flatMap((v, i) => unknownBySchema(v, (u._def as { type: ZodTypeAny }).type, `${path}[${i}]`));
+  if (u instanceof z.ZodArray && Array.isArray(raw)) {
+    return raw.flatMap((v, i) => unknownBySchema(v, u.element as z.ZodType, `${path}[${i}]`));
   }
   return [];
 }

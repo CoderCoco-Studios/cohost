@@ -63,6 +63,15 @@ export function originAllowed(origin: string, host: string | undefined): boolean
   return o.hostname === h.hostname && port(o) === port(h);
 }
 
+/**
+ * True when a `/ws` upgrade may proceed on its Origin: none (a non-browser client) is accepted, any other must satisfy
+ * the rule of `originAllowed`, so a page from another origin cannot read the feed.
+ */
+// @spec DASH-HOST-008
+export function wsOriginAllowed(origin: string | undefined, host: string | undefined): boolean {
+  return origin === undefined || originAllowed(origin, host);
+}
+
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
 const STACK_POST = /^\/stack\/[^/]+$/; // any /stack/<name>: with control off every one is a 404 (DASH-CTRL-001)
 
@@ -143,8 +152,9 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const loopback = isLoopback(o.bind);
   const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled }));
   const lan = http.createServer(lanHandler(o.handler));
-  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) : undefined);
-  attachUpgrade(lan, o.wss);
+  const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host); // @spec DASH-HOST-008
+  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : wsOrigin);
+  attachUpgrade(lan, o.wss, wsOrigin);
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const fullOk = await listen(full, o.bind, o.port, "full surface", o.log);
   const lanOk = fullOk && (await listen(lan, o.lanHost, o.lanPort, "LAN", o.log));

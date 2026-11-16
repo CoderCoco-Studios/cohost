@@ -31,7 +31,7 @@ test("the first focusable element is a skip link to the main content, which move
   const focusables = [...document.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex='-1'])")];
   assert.equal(focusables[0]!.textContent, "Skip to main content");
   await user.click(focusables[0]!);
-  assert.equal(document.activeElement, document.getElementById("main"));
+  assert.ok(document.activeElement === document.getElementById("main"), "focus is on the expected element");
   assert.equal(location.hash, "", "the skip link does not change the view");
 });
 
@@ -69,9 +69,9 @@ test("the nav lists Live, Services, Viewers, Settings and then a Docs link that 
 // @spec DASH-UI-024
 test("in sink mode the Docs link, the nav and every control are absent: only the sink view renders", () => {
   boot("", { sink: true });
-  assert.equal(screen.queryByRole("link", { name: "Docs" }), null);
-  assert.equal(screen.queryByRole("navigation"), null);
-  assert.equal(document.querySelector("header"), null);
+  assert.ok(screen.queryByRole("link", { name: "Docs" }) === null, "expected nothing to be found");
+  assert.ok(screen.queryByRole("navigation") === null, "expected nothing to be found");
+  assert.ok(document.querySelector("header") === null, "expected nothing to be found");
 });
 
 // @spec DASH-NAV-001
@@ -103,7 +103,7 @@ test("after a navigation focus moves to the new screen's heading; on first load 
   boot("#live");
   assert.notEqual(document.activeElement, screen.getByRole("heading", { level: 1 }));
   await user.click(screen.getByRole("link", { name: "Viewers" }));
-  assert.equal(document.activeElement, screen.getByRole("heading", { level: 1, name: "Viewers" }));
+  assert.ok(document.activeElement === screen.getByRole("heading", { level: 1, name: "Viewers" }), "focus is on the expected element");
 });
 
 // @spec DASH-NAV-003
@@ -120,7 +120,7 @@ test("1 to 4 open the four views, / opens Live and focuses the Say field, ? open
   for (const k of ["/", "1\u20134", "m", "Esc", "?"]) assert.ok(within(dlg).getByText(k, { selector: "kbd" }), k);
   // Esc closes it; the emulated DOM has no native Escape, so the shell's handler dispatches the cancel a browser would.
   await user.keyboard("{Escape}");
-  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
 });
 
 // @spec DASH-NAV-003
@@ -132,7 +132,7 @@ test("/ opens Live and focuses the element marked data-shortcut=say once Live ha
   document.querySelector("main")!.append(input);
   await user.keyboard("/");
   assert.equal(location.hash, "#live");
-  assert.equal(document.activeElement, input);
+  assert.ok(document.activeElement === input, "focus is on the expected element");
 });
 
 // @spec DASH-NAV-003
@@ -153,7 +153,7 @@ test("a shortcut does nothing while typing, with Ctrl, Alt or Meta held, or whil
   await user.keyboard("m");
   assert.equal(app.fetch.callsTo("POST /control").length, 0);
   await user.keyboard("{Escape}");
-  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
   box.remove();
 });
 
@@ -239,7 +239,7 @@ test("the status cluster shows what the co-host is doing from brain.status and t
 // @spec DASH-UI-007
 test("the Services nav item carries a count of services that are down, crash-looping or stale, with an accessible label", () => {
   const { app } = boot();
-  assert.equal(document.querySelector("nav .count"), null);
+  assert.ok(document.querySelector("nav .count") === null, "expected nothing to be found");
   frame(app, { type: "services", services: [
     { service: "voice", state: "down", restarts: 0 }, { service: "ears", state: "stale", restarts: 0 },
     { service: "mouth", state: "crash-looping", restarts: 3 }, { service: "chat", state: "up", restarts: 0 }, { service: "eyes", state: "unknown", restarts: 0 },
@@ -252,14 +252,14 @@ test("the Services nav item carries a count of services that are down, crash-loo
 // @spec DASH-UI-001
 test("when the socket closes a banner says live updates stopped, when, and when the next attempt is; it clears on reconnect", () => {
   const { app } = boot();
-  assert.equal(screen.queryByText(/Live updates stopped/), null);
+  assert.ok(screen.queryByText(/Live updates stopped/) === null, "expected nothing to be found");
   act(() => { app.clock.tick(1000); app.socket().serverClose(); });
   const banner = screen.getByRole("status", { name: "Connection" });
   assert.match(banner.textContent!, /Live updates stopped at \d\d?:\d\d:\d\d/);
   assert.match(banner.textContent!, /trying again at \d\d?:\d\d:\d\d/);
   act(() => { app.clock.tick(2000); });
   act(() => { app.socket().open(); });
-  assert.equal(screen.queryByText(/Live updates stopped/), null);
+  assert.ok(screen.queryByText(/Live updates stopped/) === null, "expected nothing to be found");
 });
 
 // @spec DASH-UI-001

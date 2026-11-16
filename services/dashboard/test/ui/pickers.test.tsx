@@ -51,7 +51,7 @@ test("Clear asks for confirmation in a dialog and clears only when confirmed", a
   await user.click(screen.getByRole("button", { name: "Clear" }));
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Clear" }));
   assert.equal(cleared, 1);
-  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
 });
 
 // @spec DASH-SET-009
@@ -100,7 +100,7 @@ test("VoicePicker is a select of the voices with decoded labels and a Custom mix
   render(<H />);
   const sel = screen.getByRole("combobox", { name: "Voice" }) as HTMLSelectElement;
   assert.deepEqual([...sel.options].map((o) => o.textContent), ["af_heart · American, female", "bm_george · British, male", "Custom mix…"]);
-  assert.equal(screen.queryByRole("textbox", { name: "Custom mix" }), null);
+  assert.ok(screen.queryByRole("textbox", { name: "Custom mix" }) === null, "expected nothing to be found");
   await user.selectOptions(sel, "Custom mix…");
   const mix = screen.getByRole("textbox", { name: "Custom mix" });
   await user.type(mix, "af_bella(2)+af_sky");

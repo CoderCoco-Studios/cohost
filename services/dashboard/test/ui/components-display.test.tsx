@@ -84,7 +84,7 @@ test("ActionStatus announces success in an <output> and a failure in a role=aler
   let dismissed = 0;
   const { rerender } = render(<ActionStatus state={{ kind: "ok", message: "Muted" }} onDismiss={() => dismissed++} />);
   assert.equal(document.querySelector("output")!.textContent, "Muted");
-  assert.equal(screen.queryByRole("alert"), null);
+  assert.ok(screen.queryByRole("alert") === null, "expected nothing to be found");
   rerender(<ActionStatus state={{ kind: "error", message: "409 busy: launch held", status: 409, locked: false }} onDismiss={() => dismissed++} />);
   assert.equal(within(screen.getByRole("alert")).getByText("409 busy: launch held").textContent, "409 busy: launch held");
   assert.equal(document.querySelector("output")!.textContent, "", "no success text while failed");
@@ -98,7 +98,7 @@ test("ActionStatus shows nothing while idle or pending, but keeps the live regio
   assert.equal(document.querySelector("output")!.textContent, "");
   rerender(<ActionStatus state={{ kind: "pending" }} />);
   assert.equal(document.querySelector("output")!.textContent, "");
-  assert.equal(screen.queryByRole("alert"), null);
+  assert.ok(screen.queryByRole("alert") === null, "expected nothing to be found");
 });
 
 test("state blocks: empty, loading (aria-busy status) and error (alert with Retry)", async () => {

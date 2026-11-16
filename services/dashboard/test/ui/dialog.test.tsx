@@ -22,7 +22,7 @@ function Host({ children = <input aria-label="Field" />, initialFocus }: { child
 test("a dialog is a modal <dialog> named by its heading, opened with showModal, and nothing renders while it is closed", async () => {
   const user = userEvent.setup();
   render(<Host />);
-  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
   await user.click(screen.getByRole("button", { name: "Open" }));
   const dlg = screen.getByRole("dialog", { name: "Restart voice?" }) as HTMLDialogElement;
   assert.equal(dlg.tagName, "DIALOG");
@@ -39,8 +39,8 @@ test("focus moves into the dialog on open and returns to the control that opened
   assert.ok(screen.getByRole("dialog").contains(document.activeElement), "focus is inside");
   assert.equal((document.activeElement as HTMLElement).getAttribute("aria-label"), "Field");
   fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
-  assert.equal(screen.queryByRole("dialog"), null);
-  assert.equal(document.activeElement, opener);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
+  assert.ok(document.activeElement === opener, "focus is on the expected element");
 });
 
 // @spec DASH-A11Y-005
@@ -61,7 +61,7 @@ test("the cancel event (what Esc fires) closes the dialog as a cancel and is not
   fireEvent(screen.getByRole("dialog"), ev);
   assert.equal(ev.defaultPrevented, true);
   assert.equal(reason, "cancel");
-  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
   void user;
 });
 
@@ -110,5 +110,5 @@ test("a SideSheet is a dialog with the sheet class that takes focus on open and 
   assert.match(dlg.className, /\bsheet\b/);
   assert.ok(dlg.contains(document.activeElement));
   fireEvent(dlg, new Event("cancel", { cancelable: true }));
-  assert.equal(document.activeElement, opener);
+  assert.ok(document.activeElement === opener, "focus is on the expected element");
 });

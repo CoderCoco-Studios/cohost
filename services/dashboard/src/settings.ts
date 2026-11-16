@@ -1,6 +1,7 @@
 import type http from "node:http";
 import { readFileSync } from "node:fs";
-import { applySection, etagOf, readSection, sectionJsonSchema, sectionSecrets, writeFileAtomic } from "@cohost/config";
+import { dirname, join } from "node:path";
+import { applySection, etagOf, readSection, sectionJsonSchema, sectionSecrets, setSecretPaths, writeFileAtomic } from "@cohost/config";
 import type { ServiceDef } from "@cohost/control";
 import type { StackSnapshot } from "./stack.js";
 
@@ -27,6 +28,9 @@ const json = (res: http.ServerResponse, status: number, value: unknown): void =>
   res.end(JSON.stringify(value));
 };
 
+/** The secret paths `secrets.yaml` (beside `config.yaml`) holds a value for. */
+const secretsSet = (d: SettingsDeps): string[] => setSecretPaths(join(dirname(d.file()), "secrets.yaml"));
+
 /** The declared sections, in manifest order, then `dashboard`. */
 const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new Set(manifest.flatMap((s) => s.config)), "dashboard"];
 const readers = (manifest: readonly ServiceDef[], section: string): string[] => manifest.filter((s) => s.config.includes(section)).map((s) => s.id);
@@ -52,7 +56,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
 
   if (req.method === "GET") {
     const text = readFileSync(d.file(), "utf8");
-    json(res, 200, { section: name, etag: etagOf(text), ...readSection(text, name, d.env) });
+    json(res, 200, { section: name, etag: etagOf(text), ...readSection(text, name, secretsSet(d)) });
     return true;
   }
 
@@ -71,9 +75,9 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
   const text = readFileSync(file, "utf8");
   const current = etagOf(text);
   if (etag !== current) { json(res, 409, { ok: false, etag: current }); return true; }
-  const edit = applySection(text, name, values as Record<string, unknown>, d.env);
+  const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d));
   if (!edit.ok) { json(res, 400, { ok: false, issues: edit.issues }); return true; }
-  const warnings = [...edit.warnings, ...(name === "dashboard" ? ["the dashboard reads this section at start: the change applies at the dashboard's next start"] : [])];
+  const warnings = edit.warnings;
   if (url.searchParams.get("dryRun") === "1") { json(res, 200, { ok: true, dryRun: true, warnings }); return true; }
   try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(String((e as Error).message ?? e)); return true; }
 

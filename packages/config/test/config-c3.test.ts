@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConfigSchema, loadConfig, loadExpressions, savePersonality, loadPersonality, writeFileAtomic, dotEnvPath, missingDotEnv, setConfigLogger } from "../src/index.js";
+import { parse } from "yaml";
+import { ConfigSchema, SECRET_PATHS, loadConfig, loadExpressions, savePersonality, loadPersonality, writeFileAtomic, dotEnvPath, setConfigLogger } from "../src/index.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const initialEnv = { ...process.env };
@@ -51,11 +52,11 @@ test("a blank plain string key with a default takes the default; a blank require
 });
 
 // @spec CFG-SCH-024
-test("the shipped example loads with STT_MODEL unset or empty and lands on the default model", () => {
+test("the shipped example loads with ears.stt_model as the literal default model, whatever STT_MODEL holds", () => {
   const { dir } = sandbox();
   writeFileSync(join(dir, "config.example.yaml"), readFileSync(join(repo, "config", "config.example.yaml"), "utf8"));
   setConfigLogger({ warn: (() => {}) as never });
-  for (const v of [undefined, ""]) {
+  for (const v of [undefined, "", "other-model"]) {
     if (v === undefined) delete process.env.STT_MODEL; else process.env.STT_MODEL = v;
     assert.equal(loadConfig(true).ears.stt_model, "Systran/faster-whisper-small");
   }
@@ -83,7 +84,7 @@ test("@cohost/modules re-exports ModuleConfig from the config package instead of
 });
 
 // @spec CFG-ENV-010
-test("dotEnvPath is .env at the workspace root whatever CONFIG_DIR says, COHOST_ENV_FILE wins, and the container probe is replaceable", () => {
+test("dotEnvPath is .env at the workspace root whatever CONFIG_DIR says, and COHOST_ENV_FILE wins", () => {
   const root = mkdtempSync(join(tmpdir(), "cohost-c3-ws-"));
   writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
   const prevCwd = process.cwd();
@@ -95,10 +96,6 @@ test("dotEnvPath is .env at the workspace root whatever CONFIG_DIR says, COHOST_
     process.env.COHOST_ENV_FILE = "/explicit/.env";
     assert.equal(dotEnvPath(), "/explicit/.env");
     delete process.env.COHOST_ENV_FILE;
-    assert.equal(missingDotEnv(() => false), true);
-    assert.equal(missingDotEnv(() => true), false); // a container is exempt
-    writeFileSync(join(root, ".env"), "X=1\n");
-    assert.equal(missingDotEnv(() => false), false);
   } finally { process.chdir(prevCwd); }
 });
 
@@ -156,16 +153,35 @@ test("writeFileAtomic replaces through a temp file and a failed write leaves the
 });
 
 // @spec CFG-USR-012
-test(".env.example lists the isolation presets, control settings, injection limits, compose profiles and Discord/mouth variables", () => {
+test(".env.example lists exactly the bootstrap, access-control and compose variables, none a config key, credential or isolation name", () => {
   const text = readFileSync(join(repo, ".env.example"), "utf8");
-  const names = new Set([...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!));
-  const want = ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCES", "MOUTH_DISCORD_ENABLED",
-    "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COMPOSE_PROFILES", "INJECT_MAX_IMAGE_BYTES", "INJECT_MAX_AUDIO_BYTES", "INJECT_TTL_MS", "DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "CONNECTIONS_DISCORD_ENABLED"];
-  const example = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
-  for (const m of example.matchAll(/\$\{(MOUTH_[A-Z0-9_]+)/g)) want.push(m[1]!);
-  assert.deepEqual(want.filter((n) => !names.has(n)), []);
+  const names = [...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
+  const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR", "VIEWERS_TOKEN"];
+  assert.deepEqual([...new Set(names)].sort(), [...want].sort());
+  assert.doesNotMatch(text, /COHOST_ISOLATION/);
+  // each variable carries a comment, and a variable with a default is commented out
   const lines = text.split("\n");
-  const at = lines.findIndex((l) => /^STT_MODEL=/.test(l));
-  const heading = lines.slice(0, at).reverse().find((l) => /^# ---/.test(l))!;
-  assert.doesNotMatch(heading, /ollama/i);
+  for (const n of want) {
+    const i = lines.findIndex((l) => new RegExp(`^#?\\s*${n}=`).test(l));
+    assert.ok(i > 0, n);
+    assert.ok(/#/.test(lines[i]!) || /^#/.test(lines[i - 1]!), `${n} has a comment`);
+  }
+  for (const n of ["COMPOSE_FILE", "CONTROL_ENABLED", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
+  for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
+});
+
+// @spec CFG-USR-015
+test("the shipped example writes the former per-machine values as literals, holds no placeholder and no secret key", () => {
+  const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{/);
+  const cfg = parse(text) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.equal(cfg.chat.twitch.channel, "");
+  assert.deepEqual([cfg.vision.obs.host, cfg.vision.obs.port, cfg.vision.obs.source], ["host.docker.internal", 4455, "Game Capture"]);
+  assert.deepEqual([cfg.avatar.vtube_studio.host, cfg.avatar.vmc.host, cfg.avatar.vtube_studio.port, cfg.avatar.vmc.port], ["host.docker.internal", "host.docker.internal", 8001, 39539]);
+  assert.equal(cfg.avatar.vtube_studio.plugin_developer, "cohost");
+  assert.equal(cfg.ears.stt_model, "Systran/faster-whisper-small");
+  assert.equal(cfg.llm.bedrock.region, "");
+  assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  const has = (path: string): boolean => path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), cfg) !== undefined;
+  for (const p of SECRET_PATHS) assert.equal(has(p), false, `${p} belongs in secrets.yaml`);
 });

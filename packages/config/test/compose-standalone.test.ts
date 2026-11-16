@@ -105,13 +105,13 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
 });
 
 // @spec DEPLOY-HOST-002
-test(".env.example turns control on, carries the empty token, the ports, the host and the docker bin hint", () => {
+test(".env.example turns control on, carries the empty token, the host and the docker bin hint, and no port", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   const line = (k: string) => env.split("\n").find((l) => l.startsWith(`${k}=`));
   assert.equal(line("CONTROL_ENABLED"), "CONTROL_ENABLED=1");
   assert.match(line("CONTROL_TOKEN") ?? "", /^CONTROL_TOKEN=\s*(#.*)?$/);
-  assert.equal(line("DASHBOARD_PORT"), "DASHBOARD_PORT=3000");
-  assert.equal(line("DASHBOARD_LAN_PORT"), "DASHBOARD_LAN_PORT=3001");
+  assert.equal(line("DASHBOARD_PORT"), undefined, "the ports are dashboard.port and dashboard.lan_port in config.yaml");
+  assert.equal(line("DASHBOARD_LAN_PORT"), undefined);
   assert.equal(line("DASHBOARD_HOST"), "DASHBOARD_HOST=127.0.0.1");
   assert.match(env, /^# COHOST_DOCKER_BIN=/m);
   assert.match(env, /openssl rand -hex 24/);

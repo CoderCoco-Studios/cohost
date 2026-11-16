@@ -16,12 +16,13 @@ const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", ".."
 const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
-interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; env?: NodeJS.ProcessEnv }
+interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; env?: NodeJS.ProcessEnv; secrets?: string }
 
 async function boot(o: Opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-settings-"));
   const file = join(dir, "config.yaml");
   writeFileSync(file, EXAMPLE);
+  if (o.secrets !== undefined) writeFileSync(join(dir, "secrets.yaml"), o.secrets, { mode: 0o600 });
   const bus = new FakeBus();
   const rec = recordingLog();
   const calls: string[] = [];
@@ -53,7 +54,7 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(sections.map((s) => s.path), [...declared, "dashboard"]);
   const llm = sections.find((s) => s.path === "llm")!;
   assert.deepEqual(llm.services, SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).map((s) => s.id));
-  assert.deepEqual(llm.secrets.sort(), ["claude.api_key", "openai.api_key"]);
+  assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
   assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
@@ -69,7 +70,7 @@ test("GET /config/:section answers etag, keys and unknown for a declared section
   const j = (await r.json()) as { section: string; etag: string; keys: Record<string, any>; unknown: string[] };
   assert.equal(j.section, "voice");
   assert.equal(j.etag, sha(t.text()));
-  assert.equal(j.keys["engine"].source, "env-default");
+  assert.equal(j.keys["engine"].source, "literal");
   assert.deepEqual(j.unknown, []);
   assert.equal((await t.get("/config/brain.salience")).status, 200);
   assert.equal((await t.get("/config/dashboard")).status, 200);
@@ -80,11 +81,12 @@ test("GET /config/:section answers etag, keys and unknown for a declared section
 
 // @spec MOD-CFG-005
 test("a secret key never appears in a section's answer", async () => {
-  const t = await boot({ env: { LLM_API_KEY: "sk-live-secret", ANTHROPIC_API_KEY: "sk-ant-secret" } });
+  const t = await boot({ secrets: "llm:\n  openai:\n    api_key: sk-live-secret\n" });
   const body = await (await t.get("/config/llm")).text();
-  assert.doesNotMatch(body, /sk-live-secret|sk-ant-secret/);
+  assert.doesNotMatch(body, /sk-live-secret/);
   const keys = JSON.parse(body).keys;
   assert.equal(keys["openai.api_key"].set, true);
+  assert.equal(keys["claude.api_key"].set, false);
   assert.equal(keys["openai.api_key"].editable, false);
   assert.equal("value" in keys["openai.api_key"], false);
 });
@@ -147,15 +149,15 @@ test("an edit that makes the file invalid is a 400 with the loader's issues, and
 
 // @spec MOD-CFG-013
 test("?dryRun=1 runs every check, writes nothing and answers 200 with warnings", async () => {
-  const t = await boot({ env: { LLM_PROVIDER: "ollama" } });
+  const t = await boot();
   const etag = sha(t.text());
-  const ok = await t.put("/config/llm?dryRun=1", { etag, values: { provider: "anthropic" } });
+  const ok = await t.put("/config/dashboard?dryRun=1", { etag, values: { port: 3010 } });
   assert.equal(ok.status, 200);
   const j = (await ok.json()) as { ok: boolean; dryRun: boolean; warnings: string[] };
   assert.equal(j.ok, true);
   assert.equal(j.dryRun, true);
-  assert.equal(j.warnings.length, 1);
-  assert.match(j.warnings[0]!, /LLM_PROVIDER/);
+  assert.equal(j.warnings.length, 2, "the next-start notice and the new page address");
+  assert.match(j.warnings[0]!, /next start/);
   assert.equal(t.text(), EXAMPLE);
   assert.equal((await t.put("/config/voice?dryRun=1", { etag, values: { speed: -1 } })).status, 400);
   assert.equal((await t.put("/config/voice?dryRun=1", { etag: "stale", values: { speed: 1 } })).status, 409);
@@ -194,12 +196,11 @@ test("restart lists units in manifest order that read the section and are runnin
 });
 
 // @spec MOD-CFG-015
-test("warnings name a shadowed env default, and a dashboard save says it applies at the dashboard's next start", async () => {
-  const t = await boot({ env: { VOICE_ENGINE: "stub" } });
-  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "kokoro" } });
+test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
+  const t = await boot();
+  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "stub" } });
   const j = (await r.json()) as { warnings: string[] };
-  assert.equal(j.warnings.length, 1);
-  assert.match(j.warnings[0]!, /voice\.engine.*VOICE_ENGINE/);
+  assert.deepEqual(j.warnings, []);
   const d = await t.put("/config/dashboard", { etag: sha(t.text()), values: { port: 3010 } });
   const dj = (await d.json()) as { warnings: string[]; restart: string[] };
   assert.deepEqual(dj.restart, []);

@@ -1,7 +1,8 @@
-# Behavioural config: models, hooks, timings, voice, avatar. Copy to config.yaml
-# (install.sh does this); config.yaml is git-ignored and is the one that's read.
-# ${VAR} is substituted from .env, ${VAR:-default} falls back when VAR is unset.
-# Secrets (API keys, tokens) stay in .env; everything else belongs here.
+# Every operator setting: models, hooks, timings, voice, avatar, senses, addresses and ports. Copy to config.yaml
+# (install.sh does this); config.yaml is git-ignored and is the one that's read. Every value is a literal, edited here or
+# on the dashboard's Settings screen; no environment variable is read and a placeholder written as a dollar sign and braces fails the load.
+# Credentials (API keys, tokens, passwords) live in secrets.yaml beside this file (see secrets.example.yaml); .env holds
+# only what must exist before this file can be read, and the dashboard's own access controls.
 
 cohost:
   name: "Coco"                 # how the co-host refers to itself / is addressed in chat
@@ -10,36 +11,35 @@ cohost:
 
 llm:
   # Who answers for the co-host. Everything else in the stack stays local whichever you pick.
-  #   ollama     local GPU (default). Model tag comes from LLM_MODEL in .env so `docker compose up models` can pull it.
+  #   ollama     local GPU (default). `docker compose up models` pulls the model named below.
   #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
-  #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
-  #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
+  #              (the API key is llm.openai.api_key in secrets.yaml)
+  #   anthropic  Claude via the Claude API           (llm.claude.api_key in secrets.yaml)
+  #   bedrock    Claude via Amazon Bedrock            (region below; llm.bedrock.access_key_id and secret_access_key in secrets.yaml)
   # Recipes for each: the "Choose a model" page of the docs site (docs/guide/tune/model.md)
-  #   mock       deterministic offline replies only; for isolated runs (LLM_PROVIDER=mock), never a default.
-  #              Memory's embedder is chosen separately by brain.memory.embedder (MEMORY_EMBEDDER), not by this provider.
-  provider: "${LLM_PROVIDER:-ollama}"
-  model: "${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"  # ollama tag (LLM_MODEL in .env overrides); for other providers write the id here,
+  #   mock       deterministic offline replies only; for isolated runs, never a default.
+  #              Memory's embedder is chosen separately by brain.memory.embedder, not by this provider.
+  provider: "ollama"
+  model: "qwen2.5:7b-instruct-q4_K_M"  # ollama tag; for other providers write the id here,
                                # e.g. claude-opus-5-5, anthropic.claude-opus-5-5, meta-llama/Llama-3.3-70B-Instruct
   num_ctx: 8192                # ollama: context window; raise with VRAM
   temperature: 0.9             # ollama + openai
   max_tokens: 120              # ollama + openai: short replies read better as speech
   timeout_ms: 60000            # request timeout for chat / embed / ping when the caller sets none
-  embed_model: "${EMBED_MODEL:-nomic-embed-text}" # always Ollama, whatever `provider` is: memory vectors must not change size
+  embed_model: "nomic-embed-text" # always Ollama, whatever `provider` is: memory vectors must not change size
   openai:
     base_url: "https://api.openai.com/v1"   # e.g. http://my-gpu-box:8000/v1 or https://openrouter.ai/api/v1
-    api_key: "${LLM_API_KEY}"
   claude:                      # provider: anthropic or bedrock
-    api_key: "${ANTHROPIC_API_KEY}"
     effort: low                # thinking depth; low is right for one-liners
     max_tokens: 2048           # caps thinking + reply together
     fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
   bedrock:
-    region: ""                 # empty = AWS_REGION / AWS_DEFAULT_REGION from the environment
+    region: ""                 # AWS region of the Bedrock endpoint, e.g. us-east-1; required with the two keys in secrets.yaml
 
 vision:
-  enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
-  model: "${VISION_MODEL:-qwen2.5vl:3b}"
-  engine: "${VISION_ENGINE:-ollama}"  # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
+  enabled: false               # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
+  model: "qwen2.5vl:3b"        # required while enabled
+  engine: "ollama"             # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
   interval_ms: 8000            # how often to look at the game
   temperature: 0.2             # vision model sampling temperature (0 to 2)
   num_predict: 60              # longest description the model may write, in tokens
@@ -49,18 +49,17 @@ vision:
   upload_timeout_ms: 10000     # injected uploads: timeout reading the image from Redis
   upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)
   obs:
-    host: "${OBS_HOST}"
-    port: ${OBS_PORT}
-    password: "${OBS_PASSWORD}"
-    source: "${OBS_SOURCE}"
+    host: "host.docker.internal"  # OBS WebSocket host; from Docker on the same machine use host.docker.internal, on a 2nd PC its LAN IP
+    port: 4455                 # OBS WebSocket port (Tools > WebSocket Server Settings); the password is vision.obs.password in secrets.yaml
+    source: "Game Capture"     # the OBS source to screenshot
     width: 896                 # downscale before sending to the VLM
 
 chat:
-  source: "${CHAT_SOURCE:-twitch}"  # twitch | fake (scripted/stdin messages, no channel needed)
+  source: "twitch"             # twitch | fake (scripted/stdin messages, no channel needed)
   fake:
     interval_ms: 8000          # source=fake: gap between scripted messages
   twitch:
-    channel: "${TWITCH_CHANNEL}"
+    channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in secrets.yaml
   ignore_users: ["nightbot", "streamelements", "moobot"]
   ignore_prefixes: ["!"]       # bot commands
 
@@ -129,8 +128,8 @@ brain:
         model: ""              # while the cortex talks through something bigger.
 
   memory:
-    store: "${MEMORY_STORE:-postgres}"      # postgres (pgvector + Ollama embeddings) | memory (in-process fake, lost on exit; dev/CI/isolated runs)
-    embedder: "${MEMORY_EMBEDDER:-ollama}"  # ollama | hash (deterministic, offline)
+    store: "postgres"          # postgres (pgvector + Ollama embeddings) | memory (in-process fake, lost on exit; dev/CI/isolated runs)
+    embedder: "ollama"         # ollama | hash (deterministic, offline)
     recall_k: 6                # memories pulled per prompt (0 disables recall)
     min_similarity: 0.35
     regular_messages: 25       # lifetime messages above which a viewer counts as a regular (the owner can also flag one)
@@ -152,14 +151,14 @@ brain:
       deleted_retention_days: 30     # deletions without a reason are forgotten after this long
       # Hook: live capture, run on every chat line (rules | llm | http). A very small model on its own slot, never the cortex's,
       # through local Ollama so chat lines and health or family notes stay on your LAN (name a provider here to change that).
-      # Failure = no note for that line. The compose `models` service pulls NOTES_MODEL (.env; default gemma3:4b).
+      # Failure = no note for that line. The compose `models` service pulls the model named here.
       capture:
         kind: llm
         url: ""
         timeout_ms: 20000
         llm:
           provider: ollama
-          model: "${NOTES_MODEL:-gemma3:4b}"
+          model: "gemma3:4b"
       # Hook: the quality pass over new notes (merge duplicates, fix wording, recheck sensitivity). rules | llm | http.
       # Runs only while the cortex is idle, on the cortex's own model through local Ollama. Failure = no changes.
       consolidator:
@@ -168,7 +167,7 @@ brain:
         timeout_ms: 60000
         llm:
           provider: ollama
-          model: "${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"
+          model: "qwen2.5:7b-instruct-q4_K_M"  # the same model as llm.model above: change both together
 
   cortex:
     recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
@@ -185,7 +184,7 @@ brain:
         model: ""              # while the cortex talks through something bigger.
 
 voice:
-  engine: "${VOICE_ENGINE:-kokoro}"  # kokoro | stub (silent WAV sized from the text; isolated runs)
+  engine: "kokoro"             # kokoro | stub (silent WAV sized from the text; isolated runs)
   voice: "af_heart"            # kokoro voice id
   speed: 1.05                  # 0.25 to 4
   # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
@@ -216,37 +215,35 @@ voice:
       - "Error four oh four: words not found."
 
 avatar:
-  driver: "${AVATAR_DRIVER:-null}"   # vtube-studio | vmc | null
+  driver: "null"               # vtube-studio | vmc | null (null = no avatar app, dashboard only)
   fps: 30
   smoothing: 0.25              # 0..1, higher = snappier
   idle_motion: true            # gentle head/eye drift when idle
   vtube_studio:
-    host: "${VTS_HOST}"
-    port: ${VTS_PORT}
+    host: "host.docker.internal"  # VTube Studio's host; on a 2nd PC use its LAN IP
+    port: 8001                 # VTube Studio's API port
     plugin_name: "cohost"
-    plugin_developer: "${TWITCH_CHANNEL}"
+    plugin_developer: "cohost" # with plugin_name, what VTube Studio ties its saved token to: keep it fixed
   vmc:
-    host: "${VMC_HOST}"
-    port: ${VMC_PORT}
+    host: "host.docker.internal"  # the VMC receiver's host
+    port: 39539                # the VMC receiver's port
 
 ears:
   # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
-  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord, DISCORD_TOKEN)
+  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord; the token is connections.discord.token in secrets.yaml)
   #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
   #   <tag>    any other connector's source tag, such as desktop
-  # An empty list idles with nothing heard (isolated runs). EARS_SOURCES overrides the whole list in flow syntax, for
-  # example `EARS_SOURCES=[http, dir]` or `EARS_SOURCES=[]`.
+  # An empty list idles with nothing heard: write `sources: []`. A list such as `[http, dir]` hears those two.
   # http and dir work with stt_engine: stub, so they run with no accounts and no STT server.
-  sources: ${EARS_SOURCES:-[discord]}
+  sources: [discord]           # the sources to listen to; [] = idle
   # The `http` source's listener. Example: curl -X POST -H 'Content-Type: audio/wav' --data-binary @clip.wav 'http://127.0.0.1:8765/audio?speaker=Chris'
   # In Docker, bind 0.0.0.0 and publish the port yourself; the default is local only. Bodies are capped at 25 MiB.
   http:
     host: 127.0.0.1
     port: 8765
-    # Bearer token POST /audio must carry (Authorization: Bearer <token>); empty requires none. Set it when the port is reachable by others.
-    # A clip names its source with ?source=<tag> (default http).
-    token: "${EARS_HTTP_TOKEN:-}"
+    # POST /audio can require a bearer token (Authorization: Bearer <token>): set ears.http.token in secrets.yaml when the port
+    # is reachable by others; empty requires none. A clip names its source with ?source=<tag> (default http).
   # The `dir` source: the directory to watch (created if missing) and how often to look. Empty path = not configured (ears idles degraded).
   dir:
     path: ""
@@ -262,8 +259,8 @@ ears:
   stt_gpu: false               # true when the STT backend runs on a GPU (only silences the partials warning)
   partial_step_ms: 1000
   min_speech_ms: 400
-  stt_model: "${STT_MODEL}"
-  stt_engine: "${EARS_STT_ENGINE:-speaches}"  # speaches | stub (fixed text, no STT server; isolated runs)
+  stt_model: "Systran/faster-whisper-small"  # the speech-to-text model name sent to the stt service (it is not pulled by the `models` service)
+  stt_engine: "speaches"       # speaches | stub (fixed text, no STT server; isolated runs)
   # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
   # hallucinations on silence. Empty by default; uncomment to use.
   drop_phrases: []
@@ -271,30 +268,31 @@ ears:
   #  - "Thanks for watching!"
   #  - "you"
 
-# External connectors that attach to the bus. The Discord connector (service `connector-discord`, DISCORD_TOKEN) holds the
-# bot's one voice connection: it publishes what people say as source `discord` and plays sink `discord` into the channel.
+# External connectors that attach to the bus. The Discord connector (service `connector-discord`) holds the bot's one voice
+# connection: it publishes what people say as source `discord` and plays sink `discord` into the channel. The bot token is
+# connections.discord.token in secrets.yaml.
 connections:
   discord:
-    enabled: ${CONNECTIONS_DISCORD_ENABLED:-true}  # false = the connector idles and holds no connection (isolated runs)
-    guild_id: "${DISCORD_GUILD_ID}"
-    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+    enabled: true              # false = the connector idles and holds no connection (isolated runs)
+    guild_id: ""               # the server's id, in quotes (a YAML number loses digits)
+    voice_channel_id: ""       # the voice channel's id, in quotes
 
 # The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
 mouth:
   outputs:
     discord:                   # sink `discord`: her voice goes to the Discord connector, into the channel set under connections.discord
-      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth plays nothing on it (isolated runs)
+      enabled: true            # false = mouth plays nothing on it (isolated runs)
       gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
     dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
-      enabled: ${MOUTH_DRYRUN_ENABLED:-false}
+      enabled: false           # true = the dry-run output accepts lines and plays nothing
       fail_every: 0            # 0 = never fail; N = fail every Nth line, to exercise the fallback path
     file:                      # appends each line's WAV to a folder under the data directory; the newest max_files are kept
-      enabled: ${MOUTH_FILE_ENABLED:-false}
+      enabled: false           # true = the file output appends each line's WAV under the data directory
       dir: mouth/outputs       # relative to the data directory (no absolute path, no "..")
-      max_files: 100
+      max_files: 100           # the newest this many files are kept
     http:                      # POSTs each line's WAV (audio/wav) to a URL; retried with backoff, then dropped
-      enabled: ${MOUTH_HTTP_ENABLED:-false}
-      url: "${MOUTH_HTTP_URL:-}"  # an http(s) URL; empty while enabled = the output is down
+      enabled: false           # true = the http output POSTs each line's WAV to url
+      url: ""                  # an http(s) URL; empty while enabled = the output is down
       timeout_ms: 5000         # per attempt
       retries: 3               # attempts after the first
       max_queue: 20            # undelivered lines held; the oldest is dropped past this
@@ -302,4 +300,9 @@ mouth:
     min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
 
 dashboard:
-  port: 3000
+  port: 3000                   # the full surface's port (page, controls, Launch and Stop); applies at the dashboard's next start
+  lan_port: 3001               # the LAN listener's port (sink page and audio for a second PC's OBS Browser Source); must differ from port
+  inject:                      # limits of the test-upload panel
+    max_image_bytes: 8388608   # largest image accepted (8 MiB)
+    max_audio_bytes: 26214400  # largest audio clip accepted (25 MiB)
+    ttl_ms: 300000             # how long an upload stays available to the service that asked for it

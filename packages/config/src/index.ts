@@ -1,13 +1,20 @@
-import { readFileSync, writeFileSync, existsSync, copyFileSync, renameSync, unlinkSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { dirname, join, resolve, basename } from "node:path";
+import { readFileSync, existsSync, copyFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
+import { writeFileAtomic } from "./atomic.js";
 import { ExpressionMapSchema, type Config, type ExpressionMap } from "./schema.js";
-import { parseConfigText, unknownKeys, type ConfigIssue } from "./pipeline.js";
+import { parseConfigText, unknownKeys, decodeIsolation, ISOLATION_ENV, type ConfigIssue } from "./pipeline.js";
+import { loadSecrets } from "./secrets.js";
 
 export * from "./schema.js";
-export { substituteEnv, unknownKeys, parseConfigText, type ConfigIssue, type ParsedConfigText } from "./pipeline.js";
+export {
+  unknownKeys, parseConfigText, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
+  type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
+} from "./pipeline.js";
+export { updateSecrets } from "./secrets.js";
+export { writeFileAtomic } from "./atomic.js";
+export { ollamaModels, type OllamaModels } from "./models.js";
 export * from "./editor.js";
 
 /**
@@ -47,10 +54,18 @@ let cached: Config | undefined;
 export const dotEnvPath = (): string =>
   process.env.COHOST_ENV_FILE || join(findWorkspaceRoot() ?? dirname(configDir()), ".env");
 
-/** True when a dev run has no .env (compose injects env itself, so containers, per `inContainer`, are exempt). */
-// @spec CFG-ENV-010, CFG-LOAD-004
-export const missingDotEnv = (inContainer: () => boolean = () => existsSync("/.dockerenv")): boolean =>
-  !existsSync(dotEnvPath()) && !inContainer();
+/** `secrets.yaml`, beside `config.yaml`: the credentials the loader merges at the secret paths. The loader never creates it. */
+// @spec CFG-SEC-001
+export const secretsPath = (): string => join(configDir(), "secrets.yaml");
+
+/**
+ * The secret paths (CFG-SEC-003) that `secrets.yaml` holds a value for, sorted: the read side of the secret route and the
+ * settings editor, which report a credential only as set or not set. Throws the loader's error when the file cannot be used.
+ */
+// @spec CFG-SEC-002, MOD-CFG-005
+export function setSecretPaths(file: string = secretsPath()): string[] {
+  return Object.keys(loadSecrets(file).values).sort();
+}
 
 let diagnostics: Pick<Logger, "warn"> | undefined;
 /** Replace (or, with `undefined`, restore) the logger the loader reports its notices and warnings through. */
@@ -60,7 +75,7 @@ const diag = (): Pick<Logger, "warn"> => (diagnostics ??= createLogger("config")
 
 const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
 
-// @spec CFG-ENV-004, CFG-ENV-005, CFG-ENV-006
+// @spec CFG-ENV-004, CFG-ENV-005, CFG-ENV-006, CFG-ISO-008
 export function loadDotEnv(file = dotEnvPath()): void {
   if (!existsSync(file)) return;
   for (const raw of readFileSync(file, "utf8").split("\n")) {
@@ -76,22 +91,26 @@ export function loadDotEnv(file = dotEnvPath()): void {
     if (close > 0 && /^\s*(#.*)?$/.test(val.slice(close + 1))) val = val.slice(1, close); // quoted, optionally followed by a comment
     else if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
     else val = rest.replace(/\s+#.*$/, "").trim(); // unquoted: whitespace then `#` starts a comment (Compose env_file)
-    if (process.env[key] === undefined) process.env[key] = val;
+    if (key !== ISOLATION_ENV && process.env[key] === undefined) process.env[key] = val; // only the process itself can carry an override
   }
 }
 
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-004, CFG-LOAD-005, CFG-LOAD-006
+// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
   const file = ensureFromExample("config.yaml", "config.example.yaml");
-  const parsed = parseConfigText(readFileSync(file, "utf8"));
+  const secretsFile = secretsPath();
+  const secrets = loadSecrets(secretsFile);
+  if (secrets.ignored.length > 0) diag().warn(`[config] ${secretsFile}: ignoring keys that are not secret keys: ${secrets.ignored.join(", ")}`);
+  if (secrets.loose) diag().warn(`[config] ${secretsFile} can be read by other users; run: chmod 600 ${secretsFile}`);
+  const overrides = decodeIsolation(process.env[ISOLATION_ENV]);
+  const parsed = parseConfigText(readFileSync(file, "utf8"), secrets.values, overrides);
   if (!parsed.ok) {
-    throw new Error(
-      `Invalid ${file}:\n${formatIssues(parsed.issues)}` +
-      (missingDotEnv() ? `\n\nNo .env found at ${dotEnvPath()} — ${"${VAR}"} values in config.yaml came out empty. Run: cp .env.example .env` : ""),
-    );
+    const applied = Object.keys(overrides);
+    throw new Error(`Invalid ${file}:\n${formatIssues(parsed.issues)}` + (applied.length ? `\n\n(${ISOLATION_ENV} overrides applied: ${applied.join(", ")})` : ""));
   }
+  if (parsed.ignoredSecrets.length > 0) diag().warn(`[config] ${file}: ignoring values at secret keys: ${parsed.ignoredSecrets.join(", ")}; credentials belong in ${secretsFile}`);
   const stray = unknownKeys(parsed.raw, parsed.config);
   if (stray.length > 0) diag().warn(`[config] ${file}: ignoring unknown keys: ${stray.join(", ")}`);
   cached = parsed.config;
@@ -122,22 +141,6 @@ export function loadExpressions(): ExpressionMap {
     throw new Error(`Invalid ${file}:\n${formatIssues(parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })))}`);
   }
   return parsed.data;
-}
-
-/**
- * Replace `file` with `text` through a temporary file in the same directory and a rename, so a failed write leaves the
- * previous file whole. Shared by `savePersonality` and the settings editor's section writer.
- */
-// @spec CFG-USR-013, MOD-CFG-014
-export function writeFileAtomic(file: string, text: string): void {
-  const tmp = join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
-  try {
-    writeFileSync(tmp, text, "utf8");
-    renameSync(tmp, file);
-  } catch (e) {
-    try { unlinkSync(tmp); } catch { /* the temp file was never created */ }
-    throw e;
-  }
 }
 
 // @spec CFG-USR-001

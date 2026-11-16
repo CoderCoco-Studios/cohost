@@ -36,11 +36,11 @@ test("layering merges mappings key by key and replaces scalars and lists", () =>
 });
 
 // @spec DOCS-GUIDE-010
-test("placeholders resolve as the loader does with nothing set: a default is taken, none leaves the key to its schema default", () => {
+test("a placeholder in a fragment fails as it does in a real config.yaml, naming the key and the variable", () => {
   const real = read("config/config.example.yaml");
-  assert.equal(fragmentProblem(real, "llm:\n  provider: ${NOT_SET:-mock}\n"), null);
-  assert.equal(fragmentProblem(real, "llm:\n  provider: ${NOT_SET}\n"), null);
-  assert.match(fragmentProblem(real, "llm:\n  provider: ${NOT_SET:-bogus}\n") ?? "", /llm\.provider/);
+  assert.match(fragmentProblem(real, "llm:\n  provider: ${NOT_SET:-mock}\n") ?? "", /llm\.provider.*NOT_SET/);
+  assert.match(fragmentProblem(real, "llm:\n  provider: ${NOT_SET}\n") ?? "", /llm\.provider.*NOT_SET/);
+  assert.equal(fragmentProblem(real, "llm:\n  provider: mock\n"), null);
 });
 
 // @spec DOCS-GUIDE-010

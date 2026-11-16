@@ -47,17 +47,20 @@ test("connector-discord waits for redis alone, publishes no port, mounts only th
 });
 
 // @spec DEPLOY-README-004
-test(".env.example carries DISCORD_TOKEN as the one bot, with its guild and channel", () => {
-  const env = readFileSync(root(".env.example"), "utf8");
-  assert.match(env, /^DISCORD_TOKEN=/m);
-  assert.match(env, /^DISCORD_GUILD_ID=/m);
-  assert.match(env, /^DISCORD_VOICE_CHANNEL_ID=/m);
-  const head = env.slice(env.search(/^# --- Discord/m));
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /one Discord bot|one bot/i);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Discord connector/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Connect/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Speak/);
-  assert.match(head.split("\nDISCORD_TOKEN=")[0]!, /Server Members/);
+test("secrets.example.yaml carries the Discord bot token as the one bot, and config.example.yaml its guild and channel", () => {
+  const secrets = readFileSync(root("config/secrets.example.yaml"), "utf8");
+  const tokenLine = secrets.split("\n").find((l) => /^\s+token: ""/.test(l) && /Discord|bot/i.test(l))!;
+  assert.ok(tokenLine, "connections.discord.token has a comment");
+  assert.match(secrets, /connections:\n {2}discord:\n {4}token: ""/);
+  assert.match(tokenLine, /one Discord bot|one bot/i);
+  assert.match(tokenLine, /Discord connector/);
+  assert.match(tokenLine, /Connect/);
+  assert.match(tokenLine, /Speak/);
+  assert.match(tokenLine, /Server Members/);
+  const config = readFileSync(root("config/config.example.yaml"), "utf8");
+  assert.match(config, /^\s+guild_id: ""/m);
+  assert.match(config, /^\s+voice_channel_id: ""/m);
+  assert.doesNotMatch(readFileSync(root(".env.example"), "utf8"), /DISCORD_/);
 });
 
 // @spec DEPLOY-README-005

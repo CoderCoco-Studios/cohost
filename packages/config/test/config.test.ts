@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, cop
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { substituteEnv, ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, createLogger, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
+import { ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, createLogger, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
 
 /** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
 const initialEnv = { ...process.env };
@@ -13,17 +13,6 @@ function restoreEnv(to: NodeJS.ProcessEnv = initialEnv): void {
   Object.assign(process.env, to);
 }
 afterEach(() => { restoreEnv(); setConfigLogger(undefined); });
-
-// @spec CFG-ENV-001, CFG-ENV-002
-test("substituteEnv: ${VAR}, ${VAR:-default}, unset and empty", () => {
-  process.env.T_SET = "set";
-  process.env.T_EMPTY = "";
-  delete process.env.T_UNSET;
-  assert.equal(substituteEnv("${T_SET}|${T_EMPTY}|${T_UNSET}"), "set||");
-  assert.equal(substituteEnv("${T_SET:-d}|${T_EMPTY:-d}|${T_UNSET:-d}"), "set|d|d");
-  assert.equal(substituteEnv("${T_UNSET:-http://x:8000/v1}"), "http://x:8000/v1");
-  assert.equal(substituteEnv("no vars here"), "no vars here");
-});
 
 // @spec CFG-DIR-003, CFG-DIR-004, CFG-DIR-005
 test("ensureFromExample seeds the real file once and then leaves it alone", () => {
@@ -85,8 +74,8 @@ function captureWarnings(fn: () => void): string[] {
 const minimalYaml = `
 cohost: { name: Coco, streamer: Chris }
 llm: { model: m, embed_model: e }
-vision: { model: v, obs: { port: \${T_OBS_PORT} } }
-chat: { twitch: { channel: "\${T_CHANNEL:-somechan}" } }
+vision: { model: v, obs: { port: } }
+chat: { twitch: { channel: somechan } }
 brain: {}
 voice: {}
 avatar: { vtube_studio: { host: h, port: 8001 }, vmc: { host: h, port: 39539 } }
@@ -123,37 +112,21 @@ test("the shipped expressions.example.yaml parses and maps every emotion for eac
   }
 });
 
-// @spec CFG-LOAD-001, CFG-LOAD-002, CFG-ENV-001, CFG-SCH-005
-test("loadConfig: env substitution, empty numbers fall back to defaults, results are cached", () => {
+// @spec CFG-LOAD-001, CFG-LOAD-002, CFG-SCH-005
+test("loadConfig: empty numbers fall back to defaults, no environment variable changes a value, results are cached", () => {
   sandbox({ "config.yaml": minimalYaml });
-  delete process.env.T_OBS_PORT;
-  delete process.env.T_CHANNEL;
+  process.env.T_CHANNEL = "from-env";
   const cfg = loadConfig(true);
   assert.equal(cfg.vision.obs.port, 4455); // `port: ` (null) → schema default, not a validation error
   assert.equal(cfg.chat.twitch.channel, "somechan");
   assert.equal(cfg.brain.salience.cooldown_ms, 6000);
   assert.equal(loadConfig(), cfg);
-  process.env.T_CHANNEL = "other";
-  assert.equal(loadConfig(true).chat.twitch.channel, "other");
-  delete process.env.T_CHANNEL;
 });
 
 // @spec CFG-LOAD-003, CFG-SCH-001, CFG-SCH-006
 test("loadConfig: an invalid file names every bad path", () => {
   sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''").replace("voice: {}", "voice: { speed: -1 }") });
   assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /voice\.speed:/.test(e.message));
-});
-
-// @spec CFG-LOAD-004
-test("loadConfig: an invalid file with no .env says to copy .env.example", () => {
-  sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''") });
-  assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /no \.env/i.test(e.message) && /cp \.env\.example \.env/.test(e.message));
-});
-
-// @spec CFG-LOAD-004
-test("loadConfig: an invalid file with a .env present gets no .env hint", () => {
-  sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''"), ".env": "X=1\n" });
-  assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && !/\.env/.test(e.message));
 });
 
 // @spec CFG-LOAD-005
@@ -259,58 +232,14 @@ test("urls has no dashboard(): uploads travel over Redis, so no service needs th
   assert.equal("dashboard" in urls, false);
 });
 
-function loadShipped(env: Record<string, string> = {}) {
+function loadShipped() {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
   copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
-  const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE", "CHAT_SOURCE", "VISION_ENABLED", "EARS_SOURCES", "MOUTH_DISCORD_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "VISION_ENGINE", "EARS_STT_ENGINE", "MOUTH_DRYRUN_ENABLED"]) delete process.env[k];
-  Object.assign(process.env, env);
-  try {
-    let cfg!: ReturnType<typeof loadConfig>;
-    captureWarnings(() => { cfg = loadConfig(true); });
-    return cfg;
-  } finally {
-    restoreEnv(saved);
-  }
+  let cfg!: ReturnType<typeof loadConfig>;
+  captureWarnings(() => { cfg = loadConfig(true); });
+  return cfg;
 }
-
-// @spec CFG-ISO-004
-test("isolation presets: unset env equals the live defaults", () => {
-  const cfg = loadShipped();
-  assert.equal(cfg.llm.provider, "ollama");
-  assert.equal(cfg.voice.engine, "kokoro");
-  assert.equal(cfg.vision.enabled, false);
-  assert.equal(cfg.brain.memory.store, "postgres");
-  assert.equal(cfg.brain.memory.embedder, "ollama");
-  assert.equal(cfg.chat.source, "twitch");
-  assert.equal(cfg.chat.fake.interval_ms, 8000);
-  assert.deepEqual(earsSources(cfg.ears), ["discord"]);
-  assert.equal(cfg.mouth.outputs.discord.enabled, true);
-  assert.equal(cfg.vision.engine, "ollama");
-  assert.equal(cfg.ears.stt_engine, "speaches");
-  assert.equal(cfg.mouth.outputs.dryrun.enabled, false);
-});
-
-// @spec CFG-ISO-004
-test("isolation presets: each env var flips its key without editing config.yaml", () => {
-  const cfg = loadShipped({
-    LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash",
-    VOICE_ENGINE: "stub", CHAT_SOURCE: "fake", VISION_ENABLED: "true", EARS_SOURCES: "[]", MOUTH_DISCORD_ENABLED: "false",
-    VISION_ENGINE: "stub", EARS_STT_ENGINE: "stub", MOUTH_DRYRUN_ENABLED: "true",
-  });
-  assert.equal(cfg.llm.provider, "mock");
-  assert.equal(cfg.brain.memory.store, "memory");
-  assert.equal(cfg.brain.memory.embedder, "hash");
-  assert.equal(cfg.voice.engine, "stub");
-  assert.equal(cfg.chat.source, "fake");
-  assert.equal(cfg.vision.enabled, true);
-  assert.deepEqual(earsSources(cfg.ears), []);
-  assert.equal(cfg.mouth.outputs.discord.enabled, false);
-  assert.equal(cfg.vision.engine, "stub");
-  assert.equal(cfg.ears.stt_engine, "stub");
-  assert.equal(cfg.mouth.outputs.dryrun.enabled, true);
-});
 
 // @spec CFG-ISO-001, CFG-ISO-003
 test("new keys default to live backends when omitted; bad enum values are rejected", () => {
@@ -326,40 +255,14 @@ test("new keys default to live backends when omitted; bad enum values are reject
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
 
-/** Loads the shipped example through the real loader with no .env file and the given env vars set. */
-function loadShippedBare(env: Record<string, string> = {}) {
+/** Loads the shipped example through the real loader with no .env file, no secrets.yaml and no override. */
+function loadShippedBare() {
   const dir = sandbox();
   copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
-  const saved = { ...process.env };
-  for (const k of ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "ANTHROPIC_API_KEY", "EMBED_MODEL", "VISION_MODEL", "NOTES_MODEL", "STT_MODEL", "AVATAR_DRIVER", "VTS_PORT", "VMC_PORT", "VTS_HOST", "VMC_HOST", "OBS_PORT", "OBS_HOST", "OBS_PASSWORD", "OBS_SOURCE", "CHAT_SOURCE", "EARS_SOURCES", "EARS_STT_ENGINE", "MEMORY_EMBEDDER", "MEMORY_STORE", "VISION_ENABLED", "VISION_ENGINE", "VOICE_ENGINE", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "TWITCH_CHANNEL", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]) delete process.env[k];
-  Object.assign(process.env, env);
-  try {
-    let cfg!: ReturnType<typeof loadConfig>;
-    const warnings = captureWarnings(() => { cfg = loadConfig(true); });
-    return { cfg, warnings };
-  } finally {
-    restoreEnv(saved);
-  }
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  return { cfg, warnings };
 }
-
-// @spec CFG-ISO-005, AVATAR-DRV-004
-test("the shipped example loads with no .env: model defaults, avatar.driver null, default avatar ports", () => {
-  const { cfg, warnings } = loadShippedBare();
-  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
-  assert.equal(cfg.llm.model, "qwen2.5:7b-instruct-q4_K_M");
-  assert.equal(cfg.llm.embed_model, "nomic-embed-text");
-  assert.equal(cfg.vision.model, "qwen2.5vl:3b");
-  assert.equal(cfg.avatar.driver, "null");
-  assert.equal(cfg.avatar.vtube_studio.port, 8001);
-  assert.equal(cfg.avatar.vmc.port, 39539);
-  assert.equal(loadShippedBare({ AVATAR_DRIVER: "", VTS_PORT: "", VMC_PORT: "" }).cfg.avatar.driver, "null");
-});
-
-// @spec CFG-ISO-005, AVATAR-DRV-004
-test("an unknown avatar.driver still fails the load, naming avatar.driver", () => {
-  assert.throws(() => loadShippedBare({ AVATAR_DRIVER: "bogus" }), (e: Error) => /avatar\.driver:/.test(e.message));
-  assert.equal(loadShippedBare({ AVATAR_DRIVER: "vmc", VMC_PORT: "1234" }).cfg.avatar.driver, "vmc");
-});
 
 // @spec CFG-ENV-006
 test("loadDotEnv strips an unquoted ' #' suffix, keeps '#' in quotes and inside a word", () => {
@@ -522,7 +425,6 @@ test("the shipped example configures the consolidator on the cortex's model via 
   assert.equal(c.llm.provider, "ollama");
   assert.equal(c.llm.model, cfg.llm.model);
   assert.equal(c.llm.model, "qwen2.5:7b-instruct-q4_K_M");
-  assert.equal(loadShippedBare({ LLM_MODEL: "other:tag" }).cfg.brain.memory.notes.consolidator.llm.model, "other:tag");
   assert.equal(cfg.brain.memory.regular_messages, 25);
   const { capture: _c, consolidator: _k, ...numbers } = cfg.brain.memory.notes;
   const { capture: _c2, consolidator: _k2, ...expected } = ConfigSchema.parse(baseCfg()).brain.memory.notes;
@@ -559,7 +461,7 @@ test("VIEWERS_TOKEN is env-only: no schema key at any depth, and a YAML key for 
 });
 
 // @spec CFG-USR-008
-test("the shipped example configures the capture hook on its own small ollama model, overridable with NOTES_MODEL, and .env.example documents it", () => {
+test("the shipped example configures the capture hook on its own small ollama model as a literal, and .env.example holds no model name", () => {
   const { cfg } = loadShippedBare();
   const c = cfg.brain.memory.notes.capture;
   assert.equal(c.kind, "llm");
@@ -567,9 +469,8 @@ test("the shipped example configures the capture hook on its own small ollama mo
   assert.equal(c.llm.model, "gemma3:4b");
   assert.equal(c.timeout_ms, 20000);
   assert.notEqual(c.llm.model, cfg.llm.model, "its own model slot, not the cortex's");
-  assert.equal(loadShippedBare({ NOTES_MODEL: "other:tag" }).cfg.brain.memory.notes.capture.llm.model, "other:tag");
-  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /\$\{NOTES_MODEL:-gemma3:4b\}/);
-  assert.match(readFileSync(join(repo, ".env.example"), "utf8"), /^NOTES_MODEL=gemma3:4b$/m);
+  assert.match(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"), /^\s+model: "gemma3:4b"/m, "a literal in the file");
+  assert.doesNotMatch(readFileSync(join(repo, ".env.example"), "utf8"), /NOTES_MODEL/);
 });
 
 // @spec CFG-DIR-006, CFG-DIR-007
@@ -679,27 +580,24 @@ test("vision.engine defaults to ollama (blank too), accepts stub, rejects others
 });
 
 // @spec CFG-USR-011
-test("the shipped config.example.yaml sends the co-host's voice to the Discord connector's channel, at gain 0, with comments; the channel is set once, under connections.discord", () => {
+test("the shipped config.example.yaml sends the co-host's voice to the Discord connector's channel, at gain 0, with literals and comments; the channel is set once, under connections.discord", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
-  assert.match(text, /enabled:\s*\$\{MOUTH_DISCORD_ENABLED:-true\}/);
-  assert.match(text, /enabled:\s*\$\{CONNECTIONS_DISCORD_ENABLED:-true\}/);
   const connBlock = text.slice(text.indexOf("\nconnections:"), text.indexOf("\nmouth:"));
-  assert.match(connBlock, /guild_id:\s*"\$\{DISCORD_GUILD_ID\}"/);
-  assert.match(connBlock, /voice_channel_id:\s*"\$\{DISCORD_VOICE_CHANNEL_ID\}"/);
+  assert.match(connBlock, /^\s+enabled: true\s+#/m, "connections.discord.enabled: true, with a comment");
+  assert.match(connBlock, /guild_id: ""\s*#/);
+  assert.match(connBlock, /voice_channel_id: ""\s*#/);
   const mouthBlock = text.slice(text.indexOf("\nmouth:"));
   assert.doesNotMatch(mouthBlock, /guild_id|voice_channel_id/, "mouth has no channel keys of its own");
   assert.doesNotMatch(text.slice(text.indexOf("\nears:"), text.indexOf("\nconnections:")), /guild_id|voice_channel_id/, "ears has no channel keys of its own");
-  assert.match(mouthBlock, /gain_db:\s*0\b[^\n]*#/, "gain_db carries a comment");
-  assert.match(mouthBlock, /enabled:[^\n]*#/, "enabled carries a comment");
-  assert.match(connBlock, /enabled:[^\n]*#/, "connections.discord.enabled carries a comment");
-  const cfg = loadShipped({ DISCORD_GUILD_ID: "g-9", DISCORD_VOICE_CHANNEL_ID: "vc-9" });
-  assert.deepEqual(cfg.connections.discord, { enabled: true, guild_id: "g-9", voice_channel_id: "vc-9" });
+  assert.match(mouthBlock, /discord:[^\n]*\n\s+enabled: true\s+#/, "mouth.outputs.discord.enabled: true, with a comment");
+  assert.match(mouthBlock, /gain_db: 0\s+#/, "gain_db carries a comment");
+  assert.match(text, /^\s+sources: \[discord\]\s+#/m, "ears.sources in flow syntax, with a comment");
+  assert.match(text, /^\s+# .*\[\]/m, "a comment shows [] for idle");
+  const cfg = loadShipped();
+  assert.deepEqual(cfg.connections.discord, { enabled: true, guild_id: "", voice_channel_id: "", token: "" });
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
   assert.equal(cfg.mouth.outputs.discord.gain_db, 0);
-  assert.deepEqual(earsSources(cfg.ears), ["discord"], "ears.sources defaults to [discord]");
-  const iso = loadShipped({ EARS_SOURCES: "[]" });
-  assert.deepEqual(earsSources(iso.ears), [], "EARS_SOURCES=[] idles ears");
-  assert.deepEqual(earsSources(loadShipped({ EARS_SOURCES: "[http, dir]" }).ears), ["http", "dir"]);
+  assert.deepEqual(earsSources(cfg.ears), ["discord"], "ears.sources is [discord]");
 });
 
 // @spec CFG-USR-011
@@ -790,25 +688,44 @@ test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir
   assert.equal(ears({ dir: { poll_ms: 0 } }).success, false);
 });
 
-// @spec CFG-ENV-003
-test("substituteEnv replaces only upper-case placeholders and leaves lower- or mixed-case ones unchanged", () => {
-  process.env.T_UP = "up";
-  process.env.t_low = "low";
-  process.env.Mixed_1 = "mixed";
-  assert.equal(substituteEnv("${t_low}|${Mixed_1}|${t_low:-d}|${A-B}|${T_UP}|${T_UP9:-d9}"), "${t_low}|${Mixed_1}|${t_low:-d}|${A-B}|up|d9");
-  assert.equal(substituteEnv("${T_UP}", { T_UP: "from-arg" }), "from-arg");
-});
-
-// @spec CFG-SCH-010
-test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required, and so is a host in the two avatar blocks", () => {
+// @spec CFG-SCH-010, CFG-SCH-037
+test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required objects whose hosts and ports default", () => {
   assert.equal(ConfigSchema.safeParse(baseCfg()).success, true);
   const without = (mutate: (c: ReturnType<typeof baseCfg>) => void) => { const c = baseCfg(); mutate(c); return ConfigSchema.safeParse(c).success; };
   assert.equal(without((c) => { delete (c.vision as Record<string, unknown>).obs; }), false, "vision.obs");
   assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), false, "chat.twitch");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vtube_studio; }), false, "avatar.vtube_studio");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vmc; }), false, "avatar.vmc");
-  assert.equal(without((c) => { c.avatar.vtube_studio = {} as never; }), false, "vtube_studio.host");
-  assert.equal(without((c) => { c.avatar.vmc = {} as never; }), false, "vmc.host");
+  const c = ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: {}, vmc: {} } });
+  assert.deepEqual([c.avatar.vtube_studio.host, c.avatar.vtube_studio.port, c.avatar.vmc.host, c.avatar.vmc.port], ["host.docker.internal", 8001, "host.docker.internal", 39539]);
+  assert.equal(c.vision.obs.port, 4455);
+  const blank = ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: { host: "" }, vmc: { host: "" } } });
+  assert.deepEqual([blank.avatar.vtube_studio.host, blank.avatar.vmc.host], ["host.docker.internal", "host.docker.internal"], "an empty host means the default");
+  assert.equal(ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: { host: "10.0.0.2", port: 9 }, vmc: { host: "h", port: 1 } } }).avatar.vtube_studio.host, "10.0.0.2");
+});
+
+// @spec CFG-SCH-038
+test("dashboard.port and lan_port are ports 1 to 65535 defaulting to 3000 and 3001, inject limits default, and equal ports fail on dashboard.lan_port", () => {
+  const dash = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), dashboard: v });
+  assert.deepEqual(dash({}).data!.dashboard, { port: 3000, lan_port: 3001, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  assert.deepEqual(dash({ inject: {} }).data!.dashboard.inject, { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 });
+  assert.deepEqual(dash({ port: 8080, lan_port: 8081, inject: { ttl_ms: 1000 } }).data!.dashboard, { port: 8080, lan_port: 8081, inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 1000 } });
+  for (const [k, v] of [["port", 0], ["port", 65536], ["port", 1.5], ["lan_port", 0], ["lan_port", 70000]] as const) {
+    const r = dash({ [k]: v });
+    assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === `dashboard.${k}`), `${k}=${v}`);
+  }
+  for (const k of ["max_image_bytes", "max_audio_bytes", "ttl_ms"]) {
+    for (const v of [0, -1, 1.5]) {
+      const r = dash({ inject: { [k]: v } });
+      assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === `dashboard.inject.${k}`), `${k}=${v}`);
+    }
+  }
+  const same = dash({ port: 4000, lan_port: 4000 });
+  assert.ok(!same.success);
+  assert.deepEqual(same.error.issues.map((i) => i.path.join(".")), ["dashboard.lan_port"]);
+  assert.match(same.error.issues[0]!.message, /differ/);
+  assert.equal(dash({ port: 3001 }).success, false, "port equal to the default lan_port");
+  assert.equal(dash({ port: 3001, lan_port: 3000 }).success, true);
 });
 
 // @spec CFG-URL-004
@@ -825,7 +742,7 @@ test("createLogger returns a pino logger named for the service at LOG_LEVEL, inf
 });
 
 // @spec CFG-ISO-002
-test("a backend-selection value that is blank after substitution takes the live default", () => {
+test("a backend-selection value that is blank takes the live default", () => {
   const blanks = (v: unknown) => ConfigSchema.parse({
     ...baseCfg(),
     llm: { model: "m", embed_model: "e", provider: v },
@@ -837,17 +754,16 @@ test("a backend-selection value that is blank after substitution takes the live 
     const c = blanks(v);
     assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"], String(v));
   }
-  // a `${VAR}` placeholder with no `:-` default and no value resolves to a blank key, which is the same case
-  delete process.env.T_ISO_UNSET;
+  // a key written as an empty string in the file is the same case
   const text = [
     "cohost: { name: a, streamer: b }",
-    "llm:", "  provider: ${T_ISO_UNSET}", "  model: m", "  embed_model: e",
+    "llm:", "  provider: ''", "  model: m", "  embed_model: e",
     "vision: { model: v, obs: {} }",
-    "chat:", "  source: ${T_ISO_UNSET}", "  twitch: {}",
-    "voice: { engine: ${T_ISO_UNSET} }",
-    "avatar: { vtube_studio: { host: h }, vmc: { host: h } }",
+    "chat:", "  source: ''", "  twitch: {}",
+    "voice: { engine: '' }",
+    "avatar: { vtube_studio: {}, vmc: {} }",
     "ears: {}", "dashboard: {}",
-    "brain: { memory: { store: ${T_ISO_UNSET}, embedder: ${T_ISO_UNSET} } }",
+    "brain: { memory: { store: '', embedder: '' } }",
   ].join("\n");
   const parsed = parseConfigText(text);
   assert.ok(parsed.ok, JSON.stringify(parsed.ok ? [] : parsed.issues));

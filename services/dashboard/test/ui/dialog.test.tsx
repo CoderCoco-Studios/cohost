@@ -112,3 +112,28 @@ test("a SideSheet is a dialog with the sheet class that takes focus on open and 
   fireEvent(dlg, new Event("cancel", { cancelable: true }));
   assert.ok(document.activeElement === opener, "focus is on the expected element");
 });
+
+// @spec DASH-NAV-003, DASH-A11Y-005
+test("Esc cancels the top-most modal, the one opened last, whatever the order of the dialogs in the document", async () => {
+  const { useShortcuts } = await import("../../ui/src/app/shortcuts");
+  const log: string[] = [];
+  function Harness() {
+    const [first, setFirst] = useState(false);   // later in the document, opened second
+    const [second, setSecond] = useState(true);  // earlier in the document, open from the start
+    useShortcuts({ say() {}, view() {}, mute() {}, help() {} });
+    return (<>
+      <Dialog open={second} title="Behind" onClose={() => { log.push("behind"); setSecond(false); }}><button type="button" onClick={() => setFirst(true)}>Open on top</button></Dialog>
+      <Dialog open={first} title="On top" onClose={() => { log.push("top"); setFirst(false); }}><button type="button">Inside</button></Dialog>
+    </>);
+  }
+  const user = userEvent.setup();
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Open on top" }));
+  assert.equal(screen.getAllByRole("dialog").length, 2);
+  await user.keyboard("{Escape}");
+  assert.deepEqual(log, ["top"], "the dialog opened last is the one that closes");
+  assert.ok(screen.getByRole("dialog", { name: "Behind" }), "the dialog behind stays open");
+  await user.keyboard("{Escape}");
+  assert.deepEqual(log, ["top", "behind"]);
+  assert.ok(screen.queryByRole("dialog") === null, "expected nothing to be found");
+});

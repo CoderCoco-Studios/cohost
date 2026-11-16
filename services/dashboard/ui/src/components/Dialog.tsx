@@ -17,6 +17,18 @@ export interface DialogProps {
 
 const FOCUSABLE = 'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
+/** The modal dialogs this module opened, oldest first: the browser's top layer stacks them in this order, not in document order. */
+const stack: HTMLDialogElement[] = [];
+
+/**
+ * The top-most open modal `<dialog>`: the one opened last. A dialog this module did not open (none today) ranks by document
+ * order below those it did.
+ */
+export function topModal(): HTMLDialogElement | undefined {
+  const mine = stack.filter((d) => d.open);
+  return mine[mine.length - 1] ?? [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].pop();
+}
+
 function ModalDialog({ title, onClose, children, footer, className, initialFocus }: Omit<DialogProps, "open">) {
   const ref = useRef<HTMLDialogElement>(null);
   const headingId = useId();
@@ -26,9 +38,10 @@ function ModalDialog({ title, onClose, children, footer, className, initialFocus
     const d = ref.current!;
     const opener = document.activeElement as HTMLElement | null;
     if (!d.open) d.showModal();
+    if (!stack.includes(d)) stack.push(d);
     const target = (initialFocus ? d.querySelector<HTMLElement>(initialFocus) : null) ?? d.querySelector<HTMLElement>("[data-autofocus]") ?? d.querySelector<HTMLElement>(FOCUSABLE) ?? d;
     target.focus();
-    return () => { if (opener?.isConnected) opener.focus(); };
+    return () => { const i = stack.indexOf(d); if (i >= 0) stack.splice(i, 1); if (opener?.isConnected) opener.focus(); };
   }, [initialFocus]);
   return (
     <dialog ref={ref} className={`dialog${className ? ` ${className}` : ""}`} aria-labelledby={headingId} tabIndex={-1}

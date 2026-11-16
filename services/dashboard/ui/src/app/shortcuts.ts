@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { topModal } from "../components/Dialog";
 
 export interface ShortcutActions {
   /** `/`: open Live and focus the Say field. */
@@ -14,8 +15,9 @@ const EDITABLE = "input, textarea, select, [contenteditable=''], [contenteditabl
 /**
  * Global keyboard shortcuts (DASH-NAV-003): `/`, `1`-`4`, `m`, `Esc`, `?`. They do nothing while focus is in an input,
  * textarea, select or editable element, with Ctrl, Alt or Meta held, or (except `Esc`) while a modal dialog is open.
- * Esc closes the open dialog by sending it the `cancel` event itself and cancelling the key's default, so the result is
- * the same in a browser (where Esc would also fire `cancel`) and in the emulated DOM (which has no native Esc).
+ * Esc closes the top-most modal dialog (the one opened last, which the browser also treats as the one Esc is for) by sending
+ * it the `cancel` event itself and cancelling the key's default. A browser acts on Esc only when the keydown is not default-
+ * prevented, so it does not also cancel the dialog (or the one behind it); the emulated DOM has no native Esc at all.
  */
 // @spec DASH-NAV-003
 export function useShortcuts(actions: ShortcutActions): void {
@@ -25,7 +27,7 @@ export function useShortcuts(actions: ShortcutActions): void {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
       const target = e.target as Element | null;
-      const dialog = document.querySelector<HTMLDialogElement>("dialog[open]");
+      const dialog = topModal();
       if (e.key === "Escape") {
         if (dialog) { e.preventDefault(); dialog.dispatchEvent(new Event("cancel", { cancelable: true })); }
         return;

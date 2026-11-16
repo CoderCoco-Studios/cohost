@@ -2,7 +2,7 @@
 title: HTTP routes
 description: Every HTTP route of the dashboard, the voice service and the ears capture endpoint, with methods, bodies, status codes and who may call them.
 track: advanced
-verified: f126b94
+verified: 11075e1
 ---
 
 # HTTP routes
@@ -17,17 +17,20 @@ Three services speak HTTP: the [dashboard](../../guide/operate/dashboard.md) (th
 - **Browser requests are checked.** A `POST`, `PUT` or `DELETE`, and a `/ws` upgrade, that carries an `Origin` header must match the request's own host (a `null` or unparsable `Origin` fails too); a request without an `Origin` header, as from `curl`, passes. While the full dashboard is bound to loopback, which is the default, it also requires the `Host` header to name a loopback address. Both checks answer `403` (a refused `/ws` upgrade is a `403` too, on both listeners) and stop a web page you visit from steering your dashboard or reading its feed.
 - **Bodies are capped.** A body over a route's limit answers `413`.
 
-The full dashboard listens on `dashboard.port` (3000 by default). A second listener on `dashboard.lan_port` (3001 by default, all interfaces) serves only `GET /`, `GET /audio/<id>.wav`, `POST /sink` and `GET /health`, and answers `404` to everything else, so a second PC can host the [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) without reaching the controls.
+The full dashboard listens on `dashboard.port` (3000 by default). A second listener on `dashboard.lan_port` (3001 by default, all interfaces) serves only `GET /`, `GET` and `HEAD` for the UI's files (`/assets/*` and `/favicon.svg`), `GET /audio/<id>.wav`, `POST /sink`, `/health` and the `/ws` upgrade, and answers `404` to everything else, so a second PC can host the [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) without reaching the controls.
 
 ## Dashboard: page, audio and feed
 
+`GET /`, `/assets/*`, `/favicon.svg`, `/ws`, `/audio/<id>.wav`, `POST /sink` and `/health` are served on both listeners; every other route below is on the full dashboard only.
+
 | Route | Auth | What it does |
 | --- | --- | --- |
-| `GET /` | none | The dashboard page. The [sink](../../start/glossary.md#sink) page is the same page with `?sink=1` |
-| `GET /ws` | none | The WebSocket live feed of bus [events](../../start/glossary.md#event) (the memory note and viewer events are not sent) |
+| `GET /` | none | The dashboard page: the built UI's `index.html`, with the co-host's name filled in, read on every request, so a rebuild shows without a restart. While the UI is not built it answers `503` with a page that says so and names `pnpm build`. The [sink](../../start/glossary.md#sink) page is the same page with `?sink=1` (any value) |
+| `GET /assets/*`, `HEAD /assets/*`, `GET /favicon.svg`, `HEAD /favicon.svg` | none | The UI's files (its script, stylesheet and icon), served from the built UI with a content type, an `etag` and a long cache lifetime for the hashed files under `assets/`; `304` when `If-None-Match` names the etag, `404` for anything not in the build |
+| `GET /ws` | none | The WebSocket live feed of bus [events](../../start/glossary.md#event) (the memory note and viewer events are not sent). A browser's upgrade request carries an `Origin` header, and it must name the same host and port as the request's `Host`; a different or `null` origin is refused with `403`, so another web page cannot read the feed. A client that sends no `Origin`, such as a script, is accepted |
 | `GET /audio/<id>.wav` | none | The audio of one utterance, fetched from `voice` and sent without caching |
 | `POST /sink` | none | A sink page reports playback: body `{"event": "playing" or "done", "id": "..."}`. Publishes `voice.playing` or `voice.done` with sink `dashboard`. Answers `204`, or `400` for any other `event` |
-| `GET /health` | none | `ok` |
+| `GET /health` | none | `ok`, for any method |
 | `GET /cohost/…`, `HEAD /cohost/…` | none | The built documentation site, served on the full-surface listener only (not on the second listener). It answers with the pages built by `pnpm docs:build`, or, while the site is not built, with a page that says so and names `pnpm docs:build`. See [Service health](../../guide/operate/health.md) for the one page that reads `GET /services` live |
 | `GET /personality` | none | The text of `personality.md` |
 | `PUT /personality` | token | Replaces `personality.md` with the request body and publishes `control` with `reload_personality`. Answers `204` |
@@ -50,7 +53,7 @@ curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 
 | `GET /services` | none | `{"services": [...]}`: the derived health of each service: state, mode and dependencies, from [heartbeats](../../start/glossary.md#heartbeat) |
 | `GET /services/manifest` | none | `{"units": [...]}`: each unit's config sections, the units it uses and requires, whether it honours `pause`, its test inputs and the event types that show its reaction |
 | `GET /services/control` | none | `{"enabled": true, "runtime": "...", "advanced": false}`, or `{"enabled": false}` |
-| `POST /services/<id>/start`, `/stop`, `/restart` | token | Runs the action on one service. An optional body `{"mode": "resume" or "fresh", "isolated": true}` picks the start mode and the isolation presets. Answers `200 {"ok": ...}`, `404` for an unknown service, `403` for `redis` or `postgres` while `CONTROL_ADVANCED` is off, `409` while another action holds the lock or for the dashboard itself, `400` for a malformed body |
+| `POST /services/<id>/start`, `/stop`, `/restart` | token | Runs the action on one service. An optional body `{"mode": "resume" or "fresh", "isolated": true}` picks the start mode and the isolation presets. Answers `200 {"ok": ...}`, `404` for an unknown service (the dashboard itself is not one), `403` for `redis` or `postgres` while `CONTROL_ADVANCED` is off, `409` while another action holds the lock, `400` for a malformed body |
 | `GET /stack` | none | The stack's state: [Docker](../../start/glossary.md#docker) reachability, the [containers](../../start/glossary.md#container) and the running action |
 | `POST /stack/launch`, `/rebuild`, `/stop`, `/restart`, `/consolidate` | token | Starts a whole-stack action and answers `202 {"ok": true, "action": "..."}` at once; progress shows in `GET /stack`. Answers `409` while another action runs |
 

@@ -46,7 +46,7 @@ function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiRes
  * One service row, keyed by the service name by its parent so it is patched in place (DASH-UI-007): the status, the plain
  * why, the last-seen text, and, for a manifest unit, its actions with per-action feedback (DASH-UI-008, DASH-UI-015).
  */
-// @spec DASH-UI-007, DASH-UI-008, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
+// @spec DASH-UI-007, DASH-UI-008, DASH-UI-035, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
 export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked, isolatedBy, onTest }: RowProps) {
   const api = useApi();
   const act = useAction();
@@ -59,6 +59,8 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
   const pending = act.state.kind === "pending";
   const paused = s.heartbeat?.detail === "paused";
   const test = unit ? unitTest(unit) : null;
+  const why = whyOf(s);
+  const running = s.state !== "down" && s.state !== "unknown";
 
   const open = (op: Op) => { act.dismiss(); setMode(""); setIsolated(false); setDialog(op); };
   const send = async (op: Op) => {
@@ -82,9 +84,9 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
           {(s.needs ?? []).map((n) => <span key={n.service} className="needs small muted">{`needs ${n.service} (${n.state})`}</span>)}
         </div>
       </td>
-      <td data-label="Why">{whyOf(s)}</td>
+      <td data-label="Why">{why.lead ? <span className="small">{why.lead}</span> : null}{why.lead && why.rest ? " " : ""}{why.rest ? <span className="small muted">{why.rest}</span> : null}</td>
       <td data-label="Last seen">
-        <span className="svc-age"><Age s={s} /></span>
+        <span className="svc-age">{id === "dashboard" ? "now" : <Age s={s} />}</span>
         <span className="svc-restarts small muted">{`${s.restarts} ${s.restarts === 1 ? "restart" : "restarts"}${s.containerRestarts ? ` · container restarted ${s.containerRestarts}` : ""}`}</span>
       </td>
       <td data-label="Actions">
@@ -93,9 +95,12 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
             <div className="row">
               {controlOn ? (
                 <>
-                  <Button size="sm" aria-label={`Start ${id}`} disabled={pending} onClick={() => open("start")}>Start</Button>
-                  <Button size="sm" aria-label={`Restart ${id}`} disabled={pending} onClick={() => open("restart")}>Restart</Button>
-                  <Button size="sm" aria-label={`Stop ${id}`} disabled={pending} onClick={() => open("stop")}>Stop</Button>
+                  {running ? (
+                    <>
+                      <Button size="sm" variant={needsAttention(s) ? "primary" : undefined} aria-label={`Restart ${id}`} disabled={pending} onClick={() => open("restart")}>Restart</Button>
+                      <Button size="sm" aria-label={`Stop ${id}`} disabled={pending} onClick={() => open("stop")}>Stop</Button>
+                    </>
+                  ) : <Button size="sm" variant="primary" aria-label={`Start ${id}`} disabled={pending} onClick={() => open("start")}>Start</Button>}
                   {unit.pause ? (
                     <>
                       <Button size="sm" aria-label={`Pause ${id}`} disabled={pending} onClick={() => pause("pause")}>Pause</Button>
@@ -104,7 +109,7 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
                   ) : null}
                 </>
               ) : null}
-              {test && test.inputs.length > 0 ? <Button size="sm" aria-label={`Test ${id}`} onClick={() => onTest(id)}>Test</Button> : null}
+              {test && test.inputs.length > 0 ? <Button size="sm" variant="ghost" aria-label={`Test ${id}`} onClick={() => onTest(id)}>Test</Button> : null}
             </div>
             {pending ? <span className="small muted">{working}</span> : null}
             <ActionStatus state={rowState} onDismiss={act.dismiss} />

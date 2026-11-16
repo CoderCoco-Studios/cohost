@@ -18,24 +18,33 @@ const STATE_WHY: Partial<Record<HealthState, string>> = {
   degraded: "It reports a problem without saying what.",
 };
 
+export interface Why { /** The plain sentence for a service that is not ok, or a note on it; absent for an ok one. */ lead?: string; /** Muted: mode, dependency states and the heartbeat detail. */ rest?: string }
+
 /**
- * The one-sentence "why" of a service row, in the design's order of preference: a crash-loop, what the service needs,
- * the heartbeat's own detail, then (for a state that is not ok) a plain sentence for the state, then mode and dependency
- * states. A service never seen says it has not been started; the dashboard's own row says it is this page (DASH-UI-007).
+ * The why cell of a service row (DASH-UI-007): a plain sentence first for a service that needs attention, in the
+ * design's order of preference (a crash-loop, what it needs, the state itself), then, muted, the heartbeat's mode and
+ * dependency states and its detail. A service never seen says it has not been started; the dashboard's own row says it is
+ * this page.
  */
 // @spec DASH-UI-007
-export function whyOf(s: ServiceHealth): string {
-  if (s.service === "dashboard") return "This page. It has no controls.";
+export function whyOf(s: ServiceHealth): Why {
+  if (s.service === "dashboard") return { lead: "This page. Runs on the host, so it has no controls here." };
   const hb = s.heartbeat;
-  if (s.state === "crash-looping") return `${s.restarts} ${s.restarts === 1 ? "restart" : "restarts"} in the last minute`;
-  if (s.needs?.length) return `Needs ${s.needs.map((n) => `${n.service} (${n.state})`).join(", ")}`;
-  if (typeof hb?.detail === "string" && hb.detail !== "") return hb.detail;
-  if (!hb) return "No heartbeat yet. It has not been started.";
-  const byState = STATE_WHY[s.state];
-  if (byState) return byState;
-  const deps = Object.entries(hb.deps ?? {}).map(([k, v]) => `${k} ${v}`);
-  const parts = [typeof hb.mode === "string" ? hb.mode : "", deps.length ? `deps: ${deps.join(", ")}` : ""].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "Running normally.";
+  if (!hb && s.state !== "crash-looping" && !s.needs?.length) return { lead: "No heartbeat yet. It has not been started." };
+  let lead: string | undefined;
+  if (s.state === "crash-looping") lead = `${s.restarts} ${s.restarts === 1 ? "restart" : "restarts"} in the last minute`;
+  else if (s.needs?.length) lead = `Needs ${s.needs.map((n) => `${n.service} (${n.state})`).join(", ")}`;
+  else if (!(s.state === "degraded" && hb?.state === "starting")) lead = STATE_WHY[s.state];
+  const deps = Object.entries(hb?.deps ?? {}).map(([k, v]) => `${k} ${v}`);
+  const rest = [typeof hb?.mode === "string" ? hb.mode : "", deps.length ? `deps: ${deps.join(", ")}` : "", typeof hb?.detail === "string" ? hb.detail : ""].filter(Boolean).join(" · ");
+  return { lead, rest: rest || undefined };
+}
+
+/** A past span in plain words: `42 seconds`, `1 minute`, `14 minutes`, `3 hours`. */
+export function agoWords(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const unit = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  return s < 60 ? unit(s, "second") : s < 3600 ? unit(Math.floor(s / 60), "minute") : unit(Math.floor(s / 3600), "hour");
 }
 
 /** Rows needing attention (down, crash-looping, stale) first; each group keeps the snapshot's (manifest) order. */
@@ -68,6 +77,11 @@ export function stackCause(s: StackSnapshot): string[] {
   if (s.bus === "unreachable") out.push("The bus (Redis) is not reachable. Mute, say and test inputs cannot be sent.");
   else if (s.docker.ok && s.state !== "down") out.push("The bus (Redis) is connected.");
   return out;
+}
+
+/** Services whose derived state is up, of all listed: `2 of 3 services healthy`. */
+export function healthySummary(list: readonly Pick<ServiceHealth, "state">[]): string {
+  return `${list.filter((x) => x.state === "up").length} of ${list.length} services healthy`;
 }
 
 /** Why a start, restart, stop or stack action cannot be sent right now, or undefined (DASH-UI-008). */

@@ -21,6 +21,16 @@ test("the card shows the stack state as a status with a sentence of cause, with 
 });
 
 // @spec DASH-UI-018
+test("the card says how many services are healthy and sums up the last action in one plain line", async () => {
+  const { app } = await mountServices({ services: [svc("chat"), svc("voice", { state: "down" }), svc("ears")], stack: stackMsg({ state: "degraded" }) });
+  const before = app.clock.now;
+  app.clock.now += 14 * 60_000;
+  push(app, { type: "stack", ...stackMsg({ state: "degraded", last: { kind: "launch", ok: true, finishedAt: before } }) });
+  assert.ok(within(card()).getByText("2 of 3 services healthy") !== null);
+  assert.match(card().textContent ?? "", /Last action: launch finished 14 minutes ago, ok\./);
+});
+
+// @spec DASH-UI-018
 test("with Docker unavailable the card gives the probe's detail; with the stack down it says nothing is running; with the bus unreachable it says what cannot be sent", async () => {
   const { app } = await mountServices({ stack: stackMsg({ state: "docker-unavailable", docker: { ok: false, detail: "docker: command not found" } }) });
   assert.ok(within(card()).getByText("Docker unavailable", { selector: ".st" }) !== null);
@@ -168,7 +178,7 @@ test("a running launch shows its kind, phase in words, the step and the elapsed 
   assert.match(t(), /Launch/);
   assert.match(t(), /building images and starting containers/);
   assert.match(t(), /step 1 of 2/);
-  assert.match(t(), /2m 05s/);
+  assert.match(t(), /Started 2m 05s ago\. Stack actions are locked until this finishes\./);
   push(app, { type: "stack", ...stackMsg({ state: "starting", action: { kind: "launch", phase: "waiting", startedAt: start } }) });
   assert.match(t(), /waiting for every service/);
   assert.match(t(), /step 2 of 2/);
@@ -193,14 +203,12 @@ test("when last changes the card shows the result and every service it lists as 
   const { app } = await mountServices({ control: ON, stack: stackMsg() });
   push(app, { type: "stack", ...stackMsg({ state: "degraded", last: { kind: "launch", ok: false, detail: "not ready after 180s", finishedAt: app.clock.now - 60_000, services: [{ service: "voice", status: "running", health: "starting" }, { service: "x<b>", status: "exited" }] } }) });
   const c = card();
-  assert.match(c.textContent ?? "", /Launch failed/);
-  assert.match(c.textContent ?? "", /not ready after 180s/);
+  assert.match(c.textContent ?? "", /Last action: launch finished 1 minute ago, failed: not ready after 180s\./);
   assert.ok(within(c).getByText("voice") !== null);
   assert.ok(within(c).getByText("running, starting") !== null);
   assert.ok(within(c).getByText("x<b>") !== null && c.querySelector("b") === null, "rendered as text");
-  assert.match(c.textContent ?? "", /1m 00s ago/);
   push(app, { type: "stack", ...stackMsg({ last: { kind: "stop", ok: true, finishedAt: app.clock.now } }) });
-  assert.match(card().textContent ?? "", /Stop succeeded/);
+  assert.match(card().textContent ?? "", /Last action: stop finished .*, ok\./);
   assert.ok(within(card()).queryByText("voice") === null);
 });
 

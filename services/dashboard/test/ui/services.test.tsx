@@ -57,17 +57,20 @@ test("each state shows as a status: its word and its shape class, so colour is n
 });
 
 // @spec DASH-UI-007
-test("the why sentence prefers a crash-loop, then what the service needs, then the heartbeat detail, then mode and dependencies", async () => {
+test("the why cell leads with a crash-loop, then what the service needs, then the state, and always shows mode, dependencies and detail after it", async () => {
   await mountServices({ services: [
-    svc("eyes", { state: "crash-looping", restarts: 4, needs: [{ service: "voice", state: "crash-looping" }], heartbeat: beat({ detail: "ignored" }) }),
-    svc("avatar", { state: "up", needs: [{ service: "voice", state: "down" }, { service: "tts", state: "unknown" }] }),
+    svc("eyes", { state: "crash-looping", restarts: 4, needs: [{ service: "voice", state: "crash-looping" }], heartbeat: beat({ detail: "tts backend unreachable", deps: { redis: "ok" } }) }),
+    svc("avatar", { state: "degraded", needs: [{ service: "voice", state: "down" }, { service: "tts", state: "unknown" }], heartbeat: beat({ deps: { redis: "ok" } }) }),
     svc("chat", { heartbeat: beat({ detail: "listening to twitch", deps: { twitch: "ok" } }) }),
     svc("cortex", { heartbeat: beat({ mode: "live", deps: { redis: "ok", llm: "ok" } }) }),
   ] });
   assert.ok(within(rowOf("eyes")).getByText("4 restarts in the last minute") !== null);
+  assert.ok(within(rowOf("eyes")).getByText("live · deps: redis ok · tts backend unreachable") !== null);
   assert.ok(within(rowOf("avatar")).getByText("Needs voice (down), tts (unknown)") !== null);
-  assert.ok(within(rowOf("chat")).getByText("listening to twitch") !== null);
+  assert.ok(within(rowOf("avatar")).getByText("live · deps: redis ok") !== null);
+  assert.ok(within(rowOf("chat")).getByText("live · deps: twitch ok · listening to twitch") !== null);
   assert.ok(within(rowOf("cortex")).getByText("live · deps: redis ok, llm ok") !== null);
+  assert.equal(within(rowOf("cortex")).getAllByRole("cell")[1]!.children.length, 1, "an ok service has only the muted line");
 });
 
 // @spec DASH-UI-007
@@ -78,10 +81,12 @@ test("a non-ok state with nothing more specific still gets a plain sentence; a n
     svc("ears", { state: "unknown", heartbeat: undefined, lastSeenAgeMs: undefined }),
     svc("dashboard", { state: "up" }),
   ] });
-  assert.match(within(rowOf("voice")).getByText(/heartbeat/i).textContent ?? "", /heartbeats? (have |has )?stopped/i);
-  assert.match(within(rowOf("cortex")).getByText(/not running|stopped/i).textContent ?? "", /./);
+  assert.match(within(rowOf("voice")).getByText(/heartbeats have stopped/i).textContent ?? "", /./);
+  assert.match(within(rowOf("cortex")).getByText(/probably not running/i).textContent ?? "", /./);
+  assert.ok(within(rowOf("voice")).getByText("live") !== null, "mode follows the sentence");
   assert.ok(within(rowOf("ears")).getByText("No heartbeat yet. It has not been started.") !== null);
-  assert.ok(within(rowOf("dashboard")).getByText(/this page/i) !== null);
+  assert.ok(within(rowOf("dashboard")).getByText("This page. Runs on the host, so it has no controls here.") !== null);
+  assert.ok(within(rowOf("dashboard")).getByText("now") !== null);
 });
 
 // @spec MOD-LIFE-002
@@ -104,7 +109,7 @@ test("a unit shows as paused exactly while its heartbeat detail is paused; anoth
   assert.ok(within(rowOf("salience")).getByText("Paused", { selector: ".tag" }) !== null);
   push(app, { type: "services", services: [svc("salience", { heartbeat: beat({ detail: "degraded: scorer down" }) })] });
   assert.ok(within(rowOf("salience")).queryByText("Paused") === null);
-  assert.ok(within(rowOf("salience")).getByText("degraded: scorer down") !== null);
+  assert.ok(within(rowOf("salience")).getByText(/degraded: scorer down/) !== null);
   push(app, { type: "services", services: [svc("salience", { heartbeat: beat() })] });
   assert.ok(within(rowOf("salience")).queryByText(/paused/i) === null);
 });
@@ -148,7 +153,7 @@ test("last seen is the snapshot's age plus the time since it arrived, shown as n
 test("while the socket is closed ages stop counting and the regions are busy and stale", async () => {
   const { app } = await mountServices({ services: [svc("chat", { lastSeenAgeMs: 3000 })], stack: stackMsg() });
   act(() => app.socket().serverClose());
-  const region = screen.getByRole("region", { name: "Service states" });
+  const region = screen.getByRole("region", { name: "Services" });
   assert.equal(region.getAttribute("aria-busy"), "true");
   assert.ok(region.classList.contains("stale"));
   assert.equal(screen.getByRole("region", { name: "Stack" }).getAttribute("aria-busy"), "true");
@@ -162,7 +167,7 @@ test("a service id or detail holding markup renders as text, never as elements",
   await mountServices({ services: [svc("x<b>bold</b>", { heartbeat: beat({ detail: "<img src=x onerror=alert(1)>" }) })] });
   assert.ok(table().querySelector("b") === null && table().querySelector("img") === null, "no element was created");
   assert.ok(screen.getByText("x<b>bold</b>") !== null);
-  assert.ok(screen.getByText("<img src=x onerror=alert(1)>") !== null);
+  assert.ok(screen.getByText(/<img src=x onerror=alert\(1\)>/) !== null);
 });
 
 // @spec DASH-UI-029
@@ -176,11 +181,18 @@ test("with control off a note names CONTROL_ENABLED=1 and cohostctl and no lifec
 
 // @spec DASH-UI-008, DASH-UI-021
 test("Start, Restart, Stop and Test show on manifest unit rows only, named for their service; none on the dashboard row or an unlisted service", async () => {
-  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("chat"), svc("redis"), svc("dashboard"), svc("mystery")] });
-  for (const unit of ["chat", "redis"]) {
+  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("chat"), svc("redis"), svc("dashboard"), svc("mystery"), svc("ears", { state: "down" }), svc("eyes", { state: "unknown", heartbeat: undefined, lastSeenAgeMs: undefined }), svc("voice", { state: "crash-looping", restarts: 4 })] });
+  for (const unit of ["chat", "redis", "voice"]) {
     const r = rowOf(unit);
-    for (const verb of ["Start", "Restart", "Stop"]) assert.ok(btn(r, `${verb} ${unit}`) !== null, `${verb} ${unit}`);
+    for (const verb of ["Restart", "Stop"]) assert.ok(btn(r, `${verb} ${unit}`) !== null, `${verb} ${unit}`);
+    assert.ok(btn(r, `Start ${unit}`) === null, `a running unit has no Start: ${unit}`);
   }
+  for (const unit of ["ears", "eyes"]) {
+    const r = rowOf(unit);
+    assert.ok(btn(r, `Start ${unit}`) !== null, `Start ${unit}`);
+    for (const verb of ["Restart", "Stop"]) assert.ok(btn(r, `${verb} ${unit}`) === null, `${verb} ${unit}`);
+  }
+  assert.ok(btn(rowOf("ears"), "Test ears") !== null);
   assert.ok(btn(rowOf("chat"), "Test chat") !== null);
   for (const other of ["dashboard", "mystery"]) assert.equal(within(rowOf(other)).queryAllByRole("button").length, 0, other);
 });
@@ -283,7 +295,7 @@ test("while a lifecycle request is in flight the row shows its progress and disa
   await user.click(btn(rowOf("voice"), "Restart voice")!);
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restart voice" }));
   await waitFor(() => assert.ok(within(rowOf("voice")).queryByText("Restarting…") !== null));
-  for (const verb of ["Start", "Restart", "Stop"]) assert.equal((btn(rowOf("voice"), `${verb} voice`) as HTMLButtonElement).disabled, true, verb);
+  for (const verb of ["Restart", "Stop"]) assert.equal((btn(rowOf("voice"), `${verb} voice`) as HTMLButtonElement).disabled, true, verb);
   assert.equal((btn(rowOf("chat"), "Restart chat") as HTMLButtonElement).disabled, false);
   await act(async () => { release(); });
   await waitFor(() => assert.equal((btn(rowOf("voice"), "Restart voice") as HTMLButtonElement).disabled, false));
@@ -331,6 +343,7 @@ test("a 200 whose body says ok false is a failure, not a success", async () => {
   assert.match((await within(screen.getByRole("dialog")).findByRole("alert")).textContent ?? "", /controller refused/);
 });
 
+// @spec DASH-UI-035
 test("a unit whose container runs with isolation overrides is marked as running isolated", async () => {
   await mountServices({
     services: [svc("voice"), svc("chat")],

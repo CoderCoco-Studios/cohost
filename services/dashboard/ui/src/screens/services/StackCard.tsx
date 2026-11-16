@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../../components/Dialog";
 import { Status, stackStatus } from "../../components/Status";
 import { useAction, useApi, useFeed } from "../../state/hooks";
 import type { StackActionKind } from "../../state/types";
-import { KIND_LABEL, blockReason, phaseWords, stackCause, stackStep } from "./model";
+import { KIND_LABEL, blockReason, healthySummary, phaseWords, stackCause, stackStep } from "./model";
 import { Since } from "./Since";
 
 interface Ask { title: string; body: string; confirm: string; danger?: boolean }
@@ -63,28 +63,27 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
         <div className="card-h">
           <h2 id="stack-h">Stack</h2>
           {info ? <Status status={info.status} label={info.word} /> : null}
+          {services && services.length > 0 ? <span className="small muted">{healthySummary(services)}</span> : null}
         </div>
         <div className="card-b stack-y">
           {stack === null ? <p className="muted">Waiting for the stack status…</p> : (
             <>
-              <p>{stackCause(stack).join(" ")}</p>
+              <p>
+                {stackCause(stack).join(" ")}
+                {last ? <>{` Last action: ${last.kind} finished `}<Since at={last.finishedAt} words />{`, ${last.ok ? "ok" : `failed${last.detail ? `: ${last.detail}` : ""}`}.`}</> : null}
+              </p>
               {stack.action ? (
                 <div role="group" aria-label="Running action" className="note note-build">
                   <strong>{KIND_LABEL[stack.action.kind]}</strong>
                   <span>{" · "}
                     {phaseWords(stack.action.phase)}
                     {stackStep(stack.action.kind, stack.action.phase) ? ` · step ${stackStep(stack.action.kind, stack.action.phase)} of 2` : ""}
-                    {" · "}<Since at={stack.action.startedAt} />
                   </span>
+                  <span className="small">Started <Since at={stack.action.startedAt} /> ago. Stack actions are locked until this finishes.</span>
                 </div>
               ) : null}
-              {last ? (
+              {last?.services?.length ? (
                 <div className="stack-last">
-                  <p>
-                    <strong className={last.ok ? "ok-text" : "bad-text"}>{`${KIND_LABEL[last.kind]} ${last.ok ? "succeeded" : "failed"}`}</strong>
-                    {last.detail ? ` · ${last.detail}` : ""}
-                    {" · "}<Since at={last.finishedAt} ago />
-                  </p>
                   {last.services?.length ? (
                     <ul aria-label="Not ready" className="plain-list">
                       {last.services.map((x) => <li key={x.service}><span className="mono">{x.service}</span> <span className="muted">{x.health ? `${x.status}, ${x.health}` : x.status}</span></li>)}

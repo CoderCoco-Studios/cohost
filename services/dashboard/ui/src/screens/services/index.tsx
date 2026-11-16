@@ -62,9 +62,9 @@ export function Screen(_props: ScreenProps) {
       <StackCard controlOn={controlOn} controlOff={controlOff} />
       <section {...stale} className={`card${stale.className ? ` ${stale.className}` : ""}`} aria-labelledby="svc-h">
         <div className="card-h">
-          <h2 id="svc-h">Service states</h2>
-          {attention > 0 ? <span className="count">{`${attention} ${attention === 1 ? "needs" : "need"} attention`}</span> : null}
-          <a className="small grow" href="/cohost/guide/operate/health#the-states" target="_blank" rel="noopener">How to read these states</a>
+          <h2 id="svc-h">Services</h2>
+          {attention > 0 ? <span className="small muted">{`${attention} ${attention === 1 ? "needs" : "need"} attention`}</span> : null}
+          <span className="grow" /><a className="small" href="/cohost/guide/operate/health#the-states" target="_blank" rel="noopener">How to read these states</a>
         </div>
         {load.status === "error" ? <ErrorState message={load.message} onRetry={reload} />
           : services === null || load.status === "loading" ? <LoadingState label="Loading services…" />

@@ -1,0 +1,90 @@
+/*
+ * Base: reset, typography, layout primitives, focus, the narrow-width rules and reduced motion. Colours come from
+ * tokens.css only. Component styles are in components.css.
+ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font: 14px/1.5 var(--font);
+  color: var(--fg);
+  background: var(--bg);
+  background-image: var(--bg-grad);
+  background-attachment: fixed;
+}
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+a { color: var(--accent); }
+dl, dd { margin: 0; }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: 12.5px; }
+.grow { flex: 1 1 0; min-width: 0; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stack-y { display: flex; flex-direction: column; gap: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Text never forces the page wider: names, ids, details and long tokens wrap at every width (DASH-A11Y-007). */
+@media (min-width: 0px) {
+  .wrap, .label, .help, .tag, .note, .svc > *, .ev > *, .card, .state, p, h1, h2, h3, dd, dt, td, li, output { overflow-wrap: anywhere; min-width: 0; }
+}
+
+/* One focus ring on every interactive element (DASH-A11Y-002). */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+h1[tabindex]:focus-visible, main[tabindex]:focus-visible { outline-offset: 4px; }
+
+/* Touch and click targets (DASH-A11Y-006). */
+button, input, select { min-height: var(--target-dense); }
+.row-action { min-height: var(--target-dense); }
+
+.skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; padding: 8px 14px; border-radius: 999px; background: var(--accent-fill); color: var(--on-accent); font-weight: 600; text-decoration: none; }
+.skip-link:focus { top: 8px; }
+
+/* Page */
+.page { padding: 20px var(--gutter); display: flex; flex-direction: column; gap: 16px; max-width: 1480px; margin: 0 auto; }
+.page-title { font-size: 20px; }
+
+/* Header (DASH-NAV-002): four groups that wrap; the gradient rule sits under it. */
+.top { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px var(--gutter) 13px; background: var(--surface); }
+.top::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, var(--accent-fill), var(--current-fill)); }
+.header-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.nav { gap: 2px; }
+.header-group.controls { margin-left: auto; }
+.brand { gap: 10px; }
+.brand::before { content: ""; width: 22px; height: 22px; border-radius: 7px; background: var(--accent-fill); box-shadow: inset -7px -7px 0 -1px var(--current-fill); flex: none; }
+.brand-name { font-size: 19px; font-weight: 750; letter-spacing: -.02em; }
+.brand-sub { font-size: 12px; color: var(--faint); }
+
+/* Narrow screens (DASH-A11Y-007): 16px gutter, the nav on its own row, rows and panes stacked, touch-size targets.
+   719.98px is --bp-narrow (720px) as a max-width; a media query cannot read a custom property. */
+@media (max-width: 719.98px) {
+  :root { --gutter: 16px; }
+  .nav { flex-basis: 100%; order: 3; }
+  .header-group.cluster { order: 2; }
+  .header-group.controls { margin-left: 0; }
+  button, input, select, .row-action { min-height: var(--target-touch); }
+  .svc { grid-template-columns: minmax(0, 1fr); }
+  .svc-head { display: none; }
+  .viewers-panes, .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .ev { grid-template-columns: 52px minmax(0, 1fr); }
+  .ev .k { grid-column: 2; }
+  .ev p { grid-column: 1 / -1; }
+  .srow { grid-template-columns: minmax(0, 1fr); }
+  .srow-s { text-align: left; }
+}
+
+/* Regions whose data stopped updating (DASH-UI-001). */
+.stale { opacity: .55; }
+
+/* Reduced motion (DASH-THEME-005). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

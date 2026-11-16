@@ -27,7 +27,7 @@ export function sttTranscriber(cfg: Config["ears"]): (audio: Buffer, hint?: { co
   return async (wav, hint) => {
     const type = hint?.contentType.split(";")[0]?.trim() || "audio/wav";
     const form = new FormData();
-    form.append("file", new Blob([wav], { type }), `speech.${EXT[type] ?? "wav"}`);
+    form.append("file", new Blob([new Uint8Array(wav)], { type }), `speech.${EXT[type] ?? "wav"}`);
     form.append("model", cfg.stt_model);
     form.append("language", "en");
     form.append("response_format", "json");

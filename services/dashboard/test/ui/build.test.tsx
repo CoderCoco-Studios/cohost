@@ -25,7 +25,7 @@ test("the build writes index.html, favicon.svg and assets/ with one script and o
 // @spec DASH-BUILD-002
 test("the built index.html references only root-relative files, carries the name placeholder and loads nothing external", () => {
   const html = readFileSync(join(out, "index.html"), "utf8");
-  for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) assert.match(m[1]!, /^\/(assets\/|favicon\.svg)/, m[1]);
+  for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) assert.match(m[1]!, /^\/(assets\/|favicon\.svg)/, m[1]!);
   assert.match(html, /<meta name="cohost-name" content="__COHOST_NAME__"/);
   assert.match(html, /<title>__COHOST_NAME__ dashboard<\/title>/);
   assert.ok(!/https?:\/\//.test(html));

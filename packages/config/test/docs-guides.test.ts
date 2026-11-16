@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { join, posix, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 import { repoRoot } from "./helpers/docs-fixture.ts";
 import { extendYamlFences, fences, fragmentProblem, layer, lockMismatches, tsFilesUnder, workspaceMembers } from "./helpers/docs-guides.ts";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
-const tsc = createRequire(import.meta.url).resolve("typescript/lib/tsc.js");
+// The package's `bin` entry: TypeScript 7 exports only `package.json` and the library entry points, not its internal files.
+const tsc = join(dirname(createRequire(import.meta.url).resolve("typescript/package.json")), "bin", "tsc");
 
 /** Runs tsc from the repository root; returns its combined output and exit status. */
 function runTsc(...args: string[]): { status: number | null; out: string } {

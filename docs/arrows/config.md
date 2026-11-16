@@ -4,13 +4,15 @@
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the one-place configuration design adds the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and reworks CFG-ENV-001, -009 to -012, CFG-LOAD-002, -004, CFG-SCH-010, -026, -037 to -040, CFG-ISO-004, -005, CFG-USR-007, -008, -011, -012, -014 to -016; none of it is built. Total 111 specs: 68 `[x]`, 43 `[ ]`, 0 `[D]`.
+
 **AUDITED.** 82 specs: 82 implemented, 0 deferred, 0 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*.
 
 Orientation:
 
 - Design: LLD § Files, directory resolution and seeding; Loading pipeline; Schema key groups; Environment variables; Decisions & Alternatives.
 - Keys owned by other segments live in the config schema and are specified here (CFG-SCH-*), but the behaviour that reads them is the reader's: salience (SAL-*), affect (AFF-*), eyes (EYES-*), ears (EARS-*), mouth (MOUTH-*, see [mouth.md](mouth.md)), voice (VOICE-*), model-backends (LLM-*), connections (CONN-*).
-- Env-only settings (`CONTROL_*`, `HEARTBEAT_INTERVAL_MS`, `INJECT_*`, `VIEWERS_TOKEN`, `PORT`, `DASHBOARD_PORT`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009).
+- Environment-only values (`CONTROL_*`, `DASHBOARD_HOST`, `VIEWERS_TOKEN`, `HEARTBEAT_INTERVAL_MS`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009); every other operator setting is a `config.yaml` key and every credential a `secrets.yaml` key (CFG-ENV-012).
 
 ## References
 

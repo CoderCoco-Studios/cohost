@@ -4,6 +4,8 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): MOD-CFG-001, -002, -004, -005, -010, -015, -016 are reworded and MOD-CFG-017 to -021 are new (secrets read as set or not set, override report, presentation served with the schema); none of it is built. Total 57 specs: 45 `[x]`, 12 `[ ]`, 0 `[D]`.
+
 **COMPLETE** for the contract itself: 52 of 52 specs implemented; the last 5 are the example service (below). Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its page (MOD-CFG, MOD-UI), dependents shown `needs` in the Services tab (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test drawer and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). The docs site's extension guides added MOD-EX-001 to MOD-EX-005 (the `now-playing` example service), implemented and tested, not yet audited; the spec file now holds 52 specs (52 `[x]`, 0 `[ ]`, 0 `[D]`).
 
 ## Spec Coverage

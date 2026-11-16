@@ -4,6 +4,8 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the stack status reports each container's isolation overrides (CTRL-STACK-014, -016); not built. Total 87 specs: 83 `[x]`, 2 `[ ]`, 2 `[D]`.
+
 **AUDITED** — 86 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps.
 
 ## Orientation

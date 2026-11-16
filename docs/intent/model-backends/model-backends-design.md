@@ -40,7 +40,7 @@ interface Embedder { embed(text: string): Promise<number[]> }
 | --- | --- | --- | --- | --- | --- |
 | `ollama` | `Ollama` (`index.ts`) | `POST ${OLLAMA_URL}/api/chat` | none | `REPLY_STOPS` in `options.stop` | `GET /api/tags` |
 | `openai` | `OpenAICompatible` (`index.ts`) | `POST ${base_url}/chat/completions` | `Authorization: Bearer` only if `openai.api_key` non-empty | `REPLY_STOPS` in `stop` | `GET ${base_url}/models` |
-| `anthropic` | `AnthropicProvider` (`index.ts`) | SDK `beta.messages.create` | `claude.api_key`, else SDK default (`ANTHROPIC_API_KEY` or a profile) | `TRANSCRIPT_STOPS` as `stop_sequences` | `models.retrieve(model)` |
+| `anthropic` | `AnthropicProvider` (`index.ts`) | SDK `beta.messages.create` | `claude.api_key` (`secrets.yaml`), else SDK default (an `ANTHROPIC_API_KEY` in the process environment or a profile) | `TRANSCRIPT_STOPS` as `stop_sequences` | `models.retrieve(model)` |
 | `bedrock` | `BedrockProvider` (`index.ts`) | SDK `beta.messages.create` via `AnthropicBedrockMantle` | AWS credential chain, region from `bedrock.region` if set | `TRANSCRIPT_STOPS` | always `true` |
 | `mock` | `MockProvider` (`mock.ts`) | none (no I/O) | none | n/a | always `true` |
 
@@ -95,7 +95,7 @@ Rules that follow:
 7. **Reply assembly.** Only `text` blocks are kept, concatenated and trimmed; `thinking` blocks are dropped (`index.ts`, `llm.test.ts`).
 8. **Abort.** `opts.signal` is passed as the SDK request option (`index.ts`).
 
-`AnthropicProvider` builds `new Anthropic({ apiKey })` only when `claude.api_key` is non-empty, else `new Anthropic({})` (`index.ts`). `BedrockProvider` builds `new AnthropicBedrockMantle({ awsRegion })` only when `bedrock.region` is non-empty (`index.ts`); an empty region leaves the SDK to resolve it from the environment (`AWS_REGION`); `backends.test.ts` asserts that a provider built with an empty region and `AWS_REGION` set completes a chat.
+`AnthropicProvider` builds `new Anthropic({ apiKey })` only when `claude.api_key` is non-empty, else `new Anthropic({})` (`index.ts`). `BedrockProvider` builds `new AnthropicBedrockMantle({ awsRegion })` only when `bedrock.region` is non-empty (`index.ts`); an empty region leaves the SDK to resolve it from the environment (`AWS_REGION`). Where `bedrock.access_key_id` and `bedrock.secret_access_key` (keys of `secrets.yaml`) are both set, the provider passes them to the SDK as its explicit credentials; with both empty the SDK's default credential chain applies; with exactly one set the provider refuses to start and names both keys (LLM-CLAUDE-015, LLM-CLAUDE-016); `backends.test.ts` asserts that a provider built with an empty region and `AWS_REGION` set completes a chat.
 
 ## Health ping semantics
 
@@ -103,7 +103,7 @@ Rules that follow:
 
 - **Ollama:** `GET /api/tags`; non-OK sets `ollama <status> at <base>`; a thrown fetch error sets `cannot reach ollama at <base>: <err>` (`index.ts`).
 - **OpenAI-compatible:** `GET <base>/models` with the same headers; non-OK sets `<base>/models answered <status>` plus ` (check llm.openai.api_key)` on 401/403; thrown error sets `cannot reach <base>: <err>` (`index.ts`).
-- **Anthropic:** `client.models.retrieve(model)`; on failure the SDK error's `status` selects `Claude API rejected the credentials (<status>): check ANTHROPIC_API_KEY` (401/403), `Claude API has no model "<model>": check llm.model` (404), or `String(err)` (`index.ts`).
+- **Anthropic:** `client.models.retrieve(model)`; on failure the SDK error's `status` selects `Claude API rejected the credentials (<status>): check llm.claude.api_key` (401/403), `Claude API has no model "<model>": check llm.model` (404), or `String(err)` (`index.ts`).
 - **Bedrock:** always `true`, and the provider exposes `pingIsNominal = true` so a caller can tell the answer is not a probe (LLM-PING-006); the comment says there is no cheap probe and errors surface on the first chat (`index.ts`).
 - **Mock:** always `true`, `lastError` stays undefined (`mock.ts`).
 
@@ -121,7 +121,7 @@ Who builds embedders: memory, not this package. `services/memory/src/backend.ts`
 
 ## Configuration read
 
-From `cfg.llm` (`packages/config/src/schema.ts`): `provider`, `model`, `num_ctx` (Ollama only, `index.ts`), `temperature` (Ollama/OpenAI only), `max_tokens` (Ollama/OpenAI reply cap; the Claude path uses its own), `embed_model`, `openai.base_url`, `openai.api_key`, `claude.api_key`, `claude.effort`, `claude.max_tokens`, `claude.fallbacks`, `bedrock.region`. Environment: `OLLAMA_URL` via `urls.ollama()`; `ANTHROPIC_API_KEY` and AWS credentials are resolved inside the SDKs, not by this package. Operator-facing recipes are on the docs site's Choose a model page (`docs/guide/tune/model.md`); their keys exist in the schema (`schema.ts`). `scripts/dev/stub-llm.ts` is a separate fake Ollama server (`GET /api/tags`, `POST /api/chat`; `:11434` or `STUB_LLM_PORT`; no `/api/embed`; ignores `stop`, `options` and `json`; always replies `Stub brain here. You said: <tail>`, which carries no emotion tag and is not JSON) used for local runs without a GPU. The docs site's One service on its own page (`docs/advanced/testing/isolated.md`) documents the stub and the offline `LLM_PROVIDER=mock` setting.
+From `cfg.llm` (`packages/config/src/schema.ts`): `provider`, `model`, `num_ctx` (Ollama only, `index.ts`), `temperature` (Ollama/OpenAI only), `max_tokens` (Ollama/OpenAI reply cap; the Claude path uses its own), `embed_model`, `openai.base_url`, `openai.api_key`, `claude.api_key`, `claude.effort`, `claude.max_tokens`, `claude.fallbacks`, `bedrock.region`, `bedrock.access_key_id`, `bedrock.secret_access_key`. Environment: `OLLAMA_URL` via `urls.ollama()`; where a credential key is empty the SDK's own environment and profile resolution applies inside the SDK, not in this package. Operator-facing recipes are on the docs site's Choose a model page (`docs/guide/tune/model.md`); their keys exist in the schema (`schema.ts`). `scripts/dev/stub-llm.ts` is a separate fake Ollama server (`GET /api/tags`, `POST /api/chat`; `:11434` or `STUB_LLM_PORT`; no `/api/embed`; ignores `stop`, `options` and `json`; always replies `Stub brain here. You said: <tail>`, which carries no emotion tag and is not JSON) used for local runs without a GPU. The docs site's One service on its own page (`docs/advanced/testing/isolated.md`) documents the stub and the offline `LLM_PROVIDER=mock` setting.
 
 ## Example stub servers
 

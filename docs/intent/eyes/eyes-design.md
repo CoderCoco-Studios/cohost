@@ -137,7 +137,7 @@ None open.
 
 ### External
 - `obs-websocket-js` (`^5.0.6`), OBS 28+ obs-websocket v5 (`GetSourceScreenshot`).
-- Ollama `/api/chat` with a vision model (`VISION_MODEL`, e.g. `qwen2.5vl:3b` in `.env.example`).
+- Ollama `/api/chat` with a vision model (`vision.model`, e.g. `qwen2.5vl:3b` in `config.example.yaml`).
 
 ### Docs
 - [HLD](../../high-level-design.md), [specs](eyes-specs.md), [arrow](../../arrows/eyes.md)

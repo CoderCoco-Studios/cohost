@@ -4,6 +4,8 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` (AVATAR-VTS-017); not built. Total 67 specs: 66 `[x]`, 1 `[ ]`, 0 `[D]`.
+
 **AUDITED**: 62 specs: 62 implemented, 0 deferred, 0 gaps. The LLD has no open questions. The docs site's extension guides added AVATAR-EX-001 to AVATAR-EX-004 (the UDP JSON example driver), implemented and tested, not yet audited; the spec file now holds 66 specs (66 `[x]`, 0 `[ ]`, 0 `[D]`).
 
 ## References

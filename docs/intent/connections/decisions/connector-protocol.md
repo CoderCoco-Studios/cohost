@@ -76,5 +76,5 @@ Fit: the selection flips to a merged ears-and-mouth process if the owner decides
 ## Consequences for other decisions
 
 - [listen-speak-split](../../ears/decisions/listen-speak-split.md) is superseded; its record of why listening and speaking are separate services still stands, and its Discord-bot choice does not.
-- ears and mouth hold no Discord client, read no Discord token, and drop the same-token guard; `DISCORD_TOKEN` is read only by the Discord connector.
+- ears and mouth hold no Discord client, read no Discord token, and drop the same-token guard; `connections.discord.token` is used only by the Discord connector (every service can read `secrets.yaml`, and none but the connector uses the token).
 - The HLD's Binary payloads decision is narrowed: live audio rides dedicated capped streams outside `cohost:events` and outside the event catalogue.

@@ -4,6 +4,8 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): `ears.http.token` is set in `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002); not built. Total 100 specs: 94 `[x]`, 4 `[ ]`, 2 `[D]`.
+
 **AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone. The docs site's extension guides added EARS-EX-001 to EARS-EX-007 (the example audio clients, the `curl` script and the conversion scripts), implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent), not yet audited; the spec file now holds 100 specs (96 `[x]`, 2 `[ ]`, 2 `[D]`).
 
 ## Design

@@ -51,6 +51,8 @@ Design: [model-backends-design.md](model-backends-design.md). Prefix `LLM`. `[x]
 - [x] **LLM-CLAUDE-012**: The `bedrock` provider shall be exercised through the real `AnthropicBedrockMantle` client against a recorded response in the same fixtures, with a SigV4-signed request and no `betas` or `fallbacks`. <!-- test: packages/llm/test/backends.test.ts -->
 - [x] **LLM-CLAUDE-013**: Where `ANTHROPIC_API_KEY` and `COHOST_LIVE_CLAUDE_MODEL` are both set, a live smoke test shall ping the Claude API and complete one short chat; without them it shall be skipped. <!-- test: packages/llm/test/backends.test.ts (skipped without the variables) -->
 - [x] **LLM-CLAUDE-014**: The `anthropic` and `bedrock` providers shall construct their SDK client with `maxRetries` of 2, so a failed Claude request is retried by the SDK at most twice before `chat()` rejects. <!-- test: packages/llm/test/llm.test.ts -->
+- [ ] **LLM-CLAUDE-015**: Where `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key` are both non-empty, the `bedrock` provider shall construct its client with them as its explicit AWS credentials, and where both are empty it shall construct its client without credentials so that the SDK default credential chain applies.
+- [ ] **LLM-CLAUDE-016**: If exactly one of `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key` is non-empty, then the `bedrock` provider shall refuse to construct its client and shall report an error naming both keys.
 
 ## Health ping
 

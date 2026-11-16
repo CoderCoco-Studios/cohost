@@ -4,6 +4,8 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
+Open since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001); not built. Total 84 specs: 82 `[x]`, 1 `[ ]`, 1 `[D]`.
+
 **AUDITED**, 2026-11-12: 84 specs, 83 implemented (`[x]`), 0 gaps, 1 deferred (`[D]`: MOUTH-POS-001, playback position). The service is wired into the manifest, Compose (profile `mouth`, off by default) and the dashboard's unit list. Design: [LLD](../intent/mouth/mouth-design.md); decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
 
 ## Cross-segment lines

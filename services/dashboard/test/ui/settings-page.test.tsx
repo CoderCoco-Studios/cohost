@@ -700,6 +700,37 @@ test("when a later section of a save is refused for the token or the network, th
   assert.ok(b);
 });
 
+// @spec DASH-SET-033
+test("a key in config.yaml that the schema does not define is listed in a notice saying it is not recognised, ignored, left as it is by a save and removed by editing config.yaml", async () => {
+  const fx = await import("./settings-fixture");
+  await open("demo", { routes: {
+    "GET /config/demo": { json: { ...fx.demoRead, unknown: ["demo.moode", "demo.nested.typo"] } },
+    "GET /config/extra": { json: { ...fx.extraRead, unknown: [] } },
+  } });
+  const notice = screen.getByRole("note", { name: "Unrecognised keys" });
+  assert.match(text(notice), /demo\.moode/);
+  assert.match(text(notice), /demo\.nested\.typo/);
+  assert.match(text(notice), /not recognised/);
+  assert.match(text(notice), /ignored/);
+  assert.match(text(notice), /edit(ing)? config\.yaml/);
+  assert.match(text(notice), /a save leaves them as they are/i);
+});
+
+// @spec DASH-SET-033
+test("a merged page lists the unknown keys of every section it shows, and a page with none shows no notice", async () => {
+  const fx = await import("./settings-fixture");
+  await open("demo", { routes: {
+    "GET /config/demo": { json: { ...fx.demoRead, unknown: ["demo.a"] } },
+    "GET /config/extra": { json: { ...fx.extraRead, unknown: ["extra.b"] } },
+  } });
+  const notice = screen.getByRole("note", { name: "Unrecognised keys" });
+  assert.match(text(notice), /demo\.a/);
+  assert.match(text(notice), /extra\.b/);
+  document.body.innerHTML = "";
+  await open("plain");
+  assert.equal(screen.queryByRole("note", { name: "Unrecognised keys" }), null);
+});
+
 // @spec DASH-UI-030
 test("values reach the DOM as text: markup in a loaded value is shown literally", async () => {
   const demo = (await import("./settings-fixture")).demoRead;

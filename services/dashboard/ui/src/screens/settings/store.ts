@@ -16,6 +16,8 @@ export interface SectionState {
   error?: string;
   etag?: string;
   keys: Record<string, KeyRead>;
+  /** Dotted paths of keys the file holds under this section that the schema does not define (`unknown` of the read). */
+  unknown: string[];
   edits: Record<string, EditedKey>;
   /** The issues the last Check or Save answered with. */
   issues: Issue[];
@@ -55,7 +57,7 @@ export const PERSONALITY_CAP = 64 * 1024;
 export const personalityBytes = (text: string): number => new TextEncoder().encode(text).length;
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-const blankSection = (): SectionState => ({ status: "loading", keys: {}, edits: {}, issues: [], conflict: false });
+const blankSection = (): SectionState => ({ status: "loading", keys: {}, unknown: [], edits: {}, issues: [], conflict: false });
 const detailOf = (r: Extract<ApiResult<unknown>, { ok: false }>): string => (r.status === 0 ? r.detail : `${r.status} ${r.detail}`);
 
 export interface Settings {
@@ -98,7 +100,7 @@ export function sectionValid(s: SectionState, model: SectionModel | undefined): 
   });
 }
 
-// @spec DASH-SET-006, DASH-SET-011, DASH-SET-012, DASH-SET-031, DASH-SET-032
+// @spec DASH-SET-006, DASH-SET-011, DASH-SET-012, DASH-SET-031, DASH-SET-032, DASH-SET-033
 export function createSettings(api: Api, access: Access, win: Pick<Window, "addEventListener" | "removeEventListener"> = window): Settings {
   const state = createStore<SettingsState>({
     schema: { status: "loading" }, sections: {}, bars: {}, restart: { units: [], warnings: [], running: false, results: {} },
@@ -129,9 +131,9 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
 
   /** Reads a section into the state; true when it answered. A failed read leaves earlier values on screen. */
   async function readSection(path: string, keepEdits = false): Promise<boolean> {
-    const r = await api.get<{ etag: string; keys: Record<string, KeyRead> }>(`/config/${encodeURIComponent(path)}`);
+    const r = await api.get<{ etag: string; keys: Record<string, KeyRead>; unknown?: unknown }>(`/config/${encodeURIComponent(path)}`);
     if (r.ok && r.data && typeof r.data === "object" && r.data.keys) {
-      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, edits: keepEdits ? s.edits : {}, issues: [], conflict: false }));
+      patchSection(path, (s) => ({ ...s, status: "ready", error: undefined, etag: r.data.etag, keys: r.data.keys, unknown: Array.isArray(r.data.unknown) ? r.data.unknown.filter((u): u is string => typeof u === "string") : [], edits: keepEdits ? s.edits : {}, issues: [], conflict: false }));
       return true;
     }
     const error = r.ok ? "The answer had an unexpected shape." : detailOf(r);

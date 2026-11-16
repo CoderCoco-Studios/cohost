@@ -85,11 +85,22 @@ function Group({ title, section, keys, st, picks }: { title: string; section: Se
   );
 }
 
+/** The keys `config.yaml` holds that the schema does not define, for every section of the page (DASH-SET-033). */
+function UnknownKeys({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <div className="note note-warn small" role="note" aria-label="Unrecognised keys">
+      <p>{`config.yaml holds ${paths.length === 1 ? "a key that is" : "keys that are"} not recognised and ${paths.length === 1 ? "is" : "are"} ignored (a misspelt name is the usual cause). A save leaves ${paths.length === 1 ? "it" : "them"} as ${paths.length === 1 ? "it is" : "they are"}. To remove ${paths.length === 1 ? "it" : "them"}, edit config.yaml.`}</p>
+      <ul className="plain mono">{paths.map((p) => <li key={p}>{p}</li>)}</ul>
+    </div>
+  );
+}
+
 /**
  * One settings page: the title, the about line, the config path with the setting count and readers, then the keys in
  * collapsible groups and the save bar (design: Page header, Rows and groups). A section shown on this page (`page`) is a group.
  */
-// @spec DASH-SET-002, DASH-SET-003, DASH-SET-004, DASH-SET-025
+// @spec DASH-SET-002, DASH-SET-003, DASH-SET-004, DASH-SET-025, DASH-SET-033
 export function SectionPage({ primary, members }: { primary: SectionModel; members: SectionModel[] }) {
   const settings = useSettings();
   const sections = useSettingsState((s) => s.sections);
@@ -116,6 +127,7 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
           : !loaded ? <LoadingState label="Loading settings…" />
           : (
             <>
+              <UnknownKeys paths={members.flatMap((m) => sections[m.path]?.unknown ?? [])} />
               {keyGroups(full).map((g) => <Group key={g.id || "general"} title={g.title} section={full} keys={g.keys} st={sections[primary.path]!} picks={picks} />)}
               {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} />; })}
             </>

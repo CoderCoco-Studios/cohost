@@ -2,7 +2,7 @@ import "./helpers/dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GROUPS, SECTION_PATHS, sectionJsonSchema, sectionPresentation, sectionSecrets, sectionKeyPaths, readSection } from "@cohost/config";
-import { cleanup, screen } from "./helpers/render";
+import { screen } from "./helpers/render";
 import { boot, settle } from "./settings-helpers";
 
 /** The payload `GET /config/schema` serves, built from the config package exactly as `handleConfig` builds it. */
@@ -44,12 +44,11 @@ test("every section of the real schema renders every key as a labelled control w
         assert.ok(pres?.help, `${key} has no presentation help in the config package`);
         assert.ok((row.textContent ?? "").includes(pres.help), `${key}: its help text is not shown`);
         const controls = [...row.querySelectorAll<HTMLElement>("input:not([type=hidden]):not([type=range]), select, textarea")];
-        assert.ok(controls.length > 0, `${key} has no control`);
+        assert.ok(controls.length > 0 || (row.querySelector("button")?.textContent ?? "").startsWith("Add"), `${key} has no control`); // an empty list of cards is its Add button
         for (const c of controls) assert.ok(hasName(c), `${key}: a ${c.tagName.toLowerCase()} has no accessible name`);
       }
     }
     b.unmount();
-    cleanup();
     document.body.innerHTML = "";
   }
 });

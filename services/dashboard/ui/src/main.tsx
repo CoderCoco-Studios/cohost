@@ -7,6 +7,7 @@ import "./styles/services.css";
 import "./styles/live.css";
 import "./styles/access.css";
 import "./styles/viewers.css";
+import "./styles/settings.css";
 import { App } from "./app/App";
 import { isSinkLocation } from "./app/SinkView";
 import { AppProviders } from "./app/providers";

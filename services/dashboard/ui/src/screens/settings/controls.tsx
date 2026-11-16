@@ -108,7 +108,7 @@ function ModelBox(p: ControlProps & { control: Extract<Control, { kind: "model" 
   const installed = p.models ?? [];
   const optional = p.schema.minLength === undefined || p.schema.minLength < 1;
   return (
-    <ModelPicker label={p.label} value={asString(p.value)} onChange={(v) => p.onChange(v)} installed={installed} curated={CURATED_MODELS[p.control.modelKind]} help={p.help}
+    <ModelPicker label={p.label} value={asString(p.value)} onChange={(v) => p.onChange(v)} installed={installed} curated={p.models === null ? [] : CURATED_MODELS[p.control.modelKind]} help={p.help}
       placeholder={optional && p.control.modelKind !== "chat" ? "Same as the main model" : undefined} unreachable={p.models === null ? "the model server" : undefined} />
   );
 }
@@ -151,7 +151,7 @@ function ObjectsEditor({ props, value, onChange, label, wiring, errors = {} }: {
       {items.map((it, i) => (
         <ItemCard key={i} n={i + 1} noun={noun} props={props} item={it} errors={errors} index={i} onPatch={(patch) => setAt(i, patch)} onRemove={() => onChange(items.filter((_, j) => j !== i))} />
       ))}
-      <div><Button onClick={() => onChange([...items, defaultItem(props)])}>{`Add ${lc(noun)}`}</Button></div>
+      <div><Button onClick={() => onChange([...items, defaultItem(props)])}>{`Add a ${lc(noun)}`}</Button></div>
     </div>
   );
 }

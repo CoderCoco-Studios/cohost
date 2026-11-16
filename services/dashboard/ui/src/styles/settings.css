@@ -1,0 +1,37 @@
+/*
+ * The Settings screen (design: Settings screen), ported from the approved mockups. Tokens only; the narrow-width rules
+ * for `.settings-layout` and `.srow` are in base.css.
+ */
+.snav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.snav ul, ul.plain { list-style: none; margin: 0; padding: 0; }
+.snav .tab { justify-content: flex-start; width: 100%; border-radius: 8px; }
+.snav .tab.sub { padding-left: 28px; justify-content: space-between; }
+.snav .tab[aria-current="page"] { box-shadow: inset 3px 0 0 var(--current-fill); font-weight: 700; }
+.snav .nav-h { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--current); padding: 10px 12px 2px; margin: 0; }
+.settings-main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.card-h.block { display: block; }
+.card-h.block .muted { margin-top: 2px; }
+
+.sgroup { border: 0; padding: 0; margin: 0; min-width: 0; }
+.sgroup > summary { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--fg); padding: 18px 0 8px; background: linear-gradient(90deg, var(--current-fill), var(--current-fill)) left bottom / 28px 3px no-repeat; }
+.srow-l .label { color: var(--fg); font-size: 14px; margin-bottom: 2px; }
+.srow-l .mono { color: var(--faint); overflow-wrap: anywhere; font-size: 12px; }
+.srow-c { min-width: 0; align-items: flex-start; gap: 4px; }
+.srow-c .field { max-width: 420px; }
+.srow-c .num { max-width: 140px; }
+.srow-c textarea.field { max-width: 640px; }
+.srow-c .help { margin: 0; }
+.srow-c .note { align-self: stretch; }
+
+/* A shared picker or the secret field brings its own label; the row's visible label is not repeated. */
+.embedded .label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.cards { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 680px; }
+.item-card .card-h { padding: 8px 12px; }
+.item-card .card-h h3 { font-size: 13.5px; }
+.item-card .card-b { padding: 12px; }
+.item-prop { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.item-prop .field { max-width: 100%; }
+
+.savebar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 14px 14px; }
+textarea.pers { min-height: 420px; line-height: 1.6; max-width: none; }

@@ -73,7 +73,7 @@ export interface Settings {
   setSecrets(section: string, values: Record<string, string | null>, action: string): Promise<{ ok: true } | { ok: false; detail: string; paths?: string[] }>;
   restartUnits(): Promise<void>;
   dismissRestart(): void;
-  loadPersonality(): Promise<void>;
+  loadPersonality(force?: boolean): Promise<void>;
   setPersonalityText(text: string): void;
   savePersonality(): Promise<void>;
   /** Edits or personality text not yet saved. */
@@ -268,9 +268,9 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
       state.set((st) => ({ ...st, restart: { ...st.restart, running: false, warnings: st.restart.units.length === 0 ? [] : st.restart.warnings } }));
     },
     dismissRestart() { state.set((st) => ({ ...st, restart: { units: [], warnings: [], running: false, results: {} } })); },
-    async loadPersonality() {
+    async loadPersonality(force) {
       const cur = state.get().personality;
-      if (cur.status === "ready") return; // a loaded text, saved or not, is not replaced by a re-read
+      if (cur.status === "ready" && !force) return; // a loaded text, saved or not, is not replaced by a re-read
       state.set((st) => ({ ...st, personality: { status: "loading", loaded: "", text: "", saving: false } }));
       const r = await api.get<string>("/personality");
       if (!r.ok) { state.set((st) => ({ ...st, personality: { status: "error", error: detailOf(r), loaded: "", text: "", saving: false } })); return; }

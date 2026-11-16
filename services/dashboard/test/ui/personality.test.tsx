@@ -23,7 +23,7 @@ test("Personality is the first entry of Identity and its page loads GET /persona
   assert.equal(within(nav).getByRole("link", { name: "Personality" }).getAttribute("aria-current"), "page");
   assert.equal(editor().value, "# Coco\n");
   assert.equal(b.app.fetch.callsTo("GET /personality").length, 1);
-  assert.ok(screen.getByText(/2 lines/));
+  assert.ok(screen.getByText(/1 line\b/));
   assert.ok(screen.getByText(/0\.0 KiB of 64 KiB/));
 });
 

@@ -7,6 +7,7 @@ import { schemaPayload } from "./settings-fixture";
 
 const body = (c: { body?: string }) => JSON.parse(c.body ?? "null");
 const row = (key: string): HTMLElement => document.querySelector<HTMLElement>(`[data-key="${key}"]`)!;
+const bar = (name: string): HTMLButtonElement => within(screen.getByRole("group", { name: "Save settings" })).getByRole("button", { name }) as HTMLButtonElement;
 const text = (el: Element | null | undefined) => el?.textContent ?? "";
 
 async function open(section = "demo", over = {}) {
@@ -46,7 +47,7 @@ test("a page shows the title as its heading, the about line, the config path wit
   await open();
   assert.equal(text(screen.getByRole("heading", { level: 1 })), "Demo");
   assert.ok(screen.getByText("A section with one control of every kind."));
-  const line = screen.getByText(/config\.yaml/);
+  const line = screen.getByText(/\d+ settings · /);
   assert.match(text(line), /demo/);
   assert.match(text(line), /23 settings/);
   assert.match(text(line), /read by voice, mouth/);
@@ -59,7 +60,7 @@ test("a page shows the title as its heading, the about line, the config path wit
 // @spec DASH-SET-002
 test("a section no unit reads says it applies at the dashboard's next start; a section with page appears as a group on that page", async () => {
   await open("plain");
-  assert.match(text(screen.getByText(/config\.yaml/)), /read by the dashboard itself .* next start/);
+  assert.match(text(screen.getByText(/read by the dashboard itself/)), /read by the dashboard itself .* next start/);
   document.body.innerHTML = "";
   const b = await open("extra"); // `extra` has page: demo, so it opens Demo with its keys as a group
   assert.equal(text(screen.getByRole("heading", { level: 1 })), "Demo");
@@ -156,12 +157,12 @@ test("an invalid number is marked aria-invalid with its message in aria-describe
   assert.equal(box.getAttribute("aria-invalid"), "true");
   const ids = box.getAttribute("aria-describedby")!.split(" ");
   assert.ok(ids.some((id) => /at most 65535/i.test(text(document.getElementById(id)))));
-  assert.equal((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled, true);
-  assert.equal((screen.getByRole("button", { name: "Check" }) as HTMLButtonElement).disabled, true);
+  assert.equal(bar("Save").disabled, true);
+  assert.equal(bar("Check").disabled, true);
   await user.clear(box);
   await user.type(box, "8080");
   assert.equal(box.getAttribute("aria-invalid"), null);
-  assert.equal((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled, false);
+  assert.equal(bar("Save").disabled, false);
 });
 
 // @spec DASH-SET-004, DASH-SET-029
@@ -277,7 +278,7 @@ test("a shape with no control is a JSON textarea marked raw JSON; text that is n
   await user.type(area, "{{");
   assert.equal(area.getAttribute("aria-invalid"), "true");
   assert.ok(within(row("extras")).getByText(/Not valid JSON/));
-  assert.equal((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled, true);
+  assert.equal(bar("Save").disabled, true);
 });
 
 // @spec DASH-SET-020
@@ -292,12 +293,12 @@ test("an array of objects is a card per item with a numbered heading, per-proper
   assert.ok(within(card).getByRole("group", { name: "Listens to" }), "chips for the enum array");
   assert.ok(within(card).getByRole("combobox", { name: "Emotion" }));
   assert.ok(within(card).getByText("ms"));
-  await user.click(within(r).getByRole("button", { name: "Add reflex" }));
+  await user.click(within(r).getByRole("button", { name: "Add a reflex" }));
   const second = within(r).getByRole("group", { name: "Reflex 2" });
   assert.equal(within(second).getByRole("combobox", { name: "Emotion" }).getAttribute("aria-invalid"), null);
   assert.equal(within(second).getByRole("textbox", { name: "Match" }).getAttribute("aria-invalid"), "true", "a new card has an empty required property");
   assert.ok(within(second).getByText(/required/i));
-  assert.equal((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled, true);
+  assert.equal(bar("Save").disabled, true);
   await user.click(within(r).getByRole("button", { name: "Remove reflex 2" }));
   assert.equal(within(r).queryByRole("group", { name: "Reflex 2" }), null);
   await user.click(within(r).getByRole("button", { name: "Remove reflex 1" }));
@@ -308,23 +309,24 @@ test("an array of objects is a card per item with a numbered heading, per-proper
 test("edits are counted in the nav and the save bar; Discard drops them and Check and Save are disabled without edits", async () => {
   await open();
   const user = userEvent.setup();
-  const save = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+  const save = () => bar("Save") as HTMLButtonElement;
   assert.equal(save().disabled, true);
-  assert.equal((screen.getByRole("button", { name: "Check" }) as HTMLButtonElement).disabled, true);
+  assert.equal(bar("Check").disabled, true);
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "o");
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   assert.match(text(within(nav).getByRole("link", { name: /Demo/ })), /Demo.*1/);
   assert.ok(screen.getByText("1 edit in this section"));
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "x");
   assert.ok(screen.getByText("1 edit in this section"), "the same key is one edit");
-  await user.click(screen.getByRole("button", { name: "Discard" }));
+  await user.click(bar("Discard"));
   assert.equal((within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value, "Coco");
   assert.equal(save().disabled, true);
-  await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "{Backspace}");
-  await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "o");
+  const name = within(row("name")).getByRole("textbox", { name: "Name" });
+  await user.type(name, "{Backspace}");
   assert.equal(save().disabled, false);
-  await user.keyboard("{Backspace}o");
-  assert.ok(screen.getByText("1 edit in this section"));
+  await user.type(name, "o");
+  assert.equal(save().disabled, true, "typed back to the loaded value: not an edit");
+  assert.ok(screen.getByText("0 edits in this section"));
 });
 
 // @spec DASH-SET-006, DASH-UI-015
@@ -337,20 +339,20 @@ test("Check sends only the changed keys with ?dryRun=1 and shows the warnings; S
   await user.click(within(row("enabled")).getByRole("switch"));
   const port = within(row("port")).getByRole("spinbutton", { name: "Port" });
   await user.clear(port); await user.type(port, "8080");
-  await user.click(screen.getByRole("button", { name: "Check" }));
+  await user.click(bar("Check"));
   await settle();
   const check = b.app.fetch.callsTo("PUT /config/demo?dryRun=1")[0]!;
   assert.deepEqual(body(check), { etag: "e1", values: { enabled: false, port: 8080 } });
   assert.ok(screen.getByText(/Check passed with warnings/));
   assert.ok(screen.getByText("demo.port: x is running isolated"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[0]!), { etag: "e1", values: { enabled: false, port: 8080 } });
   assert.match(text(screen.getByRole("alert")), /500 disk full/);
   assert.ok(screen.getByText("2 edits in this section"), "the edits are kept");
   assert.equal((within(row("port")).getByRole("spinbutton", { name: "Port" }) as HTMLInputElement).value, "8080");
   b.app.fetch.on("PUT /config/demo", { json: { ok: true, etag: "e2", restart: [], warnings: [] } });
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.ok(screen.getByText("Saved."));
   assert.equal(screen.queryByRole("alert"), null);
@@ -362,7 +364,7 @@ test("a 400 attaches each issue to the field with that path and keeps an issue w
   const b = await open("demo", { routes: { "PUT /config/demo": { status: 400, json: { ok: false, issues: [{ path: "demo.name", message: "name too odd" }, { path: "demo.reflexes[0].match", message: "bad pattern" }, { path: "", message: "file is not valid" }] } } } });
   const user = userEvent.setup();
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   const name = within(row("name")).getByRole("textbox", { name: "Name" });
   assert.equal(name.getAttribute("aria-invalid"), "true");
@@ -379,12 +381,12 @@ test("a 409 keeps the edits, says config.yaml changed and offers Reload, which r
   const b = await open("demo", { routes: { "PUT /config/demo": { status: 409, json: { ok: false, etag: "e9" } } } });
   const user = userEvent.setup();
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/);
   assert.equal((within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value, "Cocoz", "nothing discarded yet");
   const before = b.app.fetch.callsTo("GET /config/demo").length;
-  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await user.click(bar("Reload"));
   await settle();
   assert.equal(b.app.fetch.callsTo("GET /config/demo").length, before + 1);
   assert.equal((within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value, "Coco");
@@ -399,14 +401,14 @@ test("a save whose answer is lost re-reads the section: done when every edited k
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
   b.app.fetch.fail("PUT /config/demo");
   b.app.fetch.on("GET /config/demo", { json: { ...demo, etag: "e2", keys: { ...demo.keys, name: { source: "literal", editable: true, value: "Cocoz" } } } });
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.ok(screen.getByText("Saved."), "the file already holds the edited value");
   assert.ok(screen.getByText("0 edits in this section"));
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "q");
   b.app.fetch.fail("PUT /config/demo");
   b.app.fetch.on("GET /config/demo", { json: { ...demo, etag: "e3", keys: { ...demo.keys, name: { source: "literal", editable: true, value: "Cocoz" } } } });
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.match(text(screen.getByRole("alert")), /could not be confirmed/);
   assert.ok(screen.getByText("1 edit in this section"));
@@ -437,7 +439,7 @@ test("after a save with units to restart a banner names them and the warnings; R
   } });
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   const banner = screen.getByRole("region", { name: "Restart needed" });
   assert.match(text(banner), /Restart these services to apply: voice, mouth, salience/);
@@ -457,10 +459,12 @@ test("the restart banner survives moving to another section and unmounting the s
   const b = await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: ["voice"], warnings: [] } } } });
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   b.unmount();
-  const again = (await import("./helpers/render")).renderApp((await import("../../ui/src/screens/settings")).Screen({ route: { view: "settings", section: "plain" } }) as never, b.app);
+  const { renderApp } = await import("./helpers/render");
+  const { Screen } = await import("../../ui/src/screens/settings");
+  const again = renderApp(<Screen route={{ view: "settings", section: "plain" }} />, b.app);
   await settle();
   assert.match(text(screen.getByRole("region", { name: "Restart needed" })), /voice/);
   again.unmount();
@@ -471,7 +475,7 @@ test("where control is disabled the banner names the units and the cohostctl com
   await open("demo", { control: false, routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: ["voice", "mouth"], warnings: [] } } } });
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   const banner = screen.getByRole("region", { name: "Restart needed" });
   assert.equal(within(banner).queryByRole("button", { name: "Restart" }), null);
@@ -486,7 +490,7 @@ test("a sensitive key carries a control-token note; saving it asks for the token
   assert.ok(within(row("url")).getByText(/Changing this needs the control token/));
   assert.equal(within(row("name")).queryByText(/needs the control token/), null);
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   const prompt = b.app.rt.access.state.get().prompt;
   assert.ok(prompt, "the Access dialog is asked for the token");
@@ -496,7 +500,7 @@ test("a sensitive key carries a control-token note; saving it asks for the token
   await settle();
   assert.match(text(screen.getByRole("alert")), /not done: locked/);
   assert.ok(screen.getByText("1 edit in this section"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle(1);
   act(() => { b.app.rt.access.setToken("control", "tok", "tab"); b.app.rt.access.resolvePrompt(true); });
   await settle();
@@ -510,12 +514,12 @@ test("Check never asks for the token, a 403 on save shows the control token as n
   const b = await open("demo", { routes: { "PUT /config/demo?dryRun=1": { status: 401, text: "unauthorized" }, "PUT /config/demo": { status: 403, json: { ok: false, detail: "set CONTROL_TOKEN and CONTROL_ENABLED", sensitive: ["demo.url"] } } } });
   const user = userEvent.setup();
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
-  await user.click(screen.getByRole("button", { name: "Check" }));
+  await user.click(bar("Check"));
   await settle();
   assert.equal(b.app.rt.access.state.get().prompt, null, "a dry run never opens the Access dialog");
   assert.match(text(screen.getByRole("alert")), /401/);
   b.app.rt.access.setToken("control", "tok", "tab");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.equal(b.app.fetch.callsTo("PUT /config/demo")[0]!.headers.authorization, "Bearer tok");
   assert.equal(b.app.rt.access.state.get().control.notSetUp, true);
@@ -530,7 +534,7 @@ test("leaving the page with unsaved edits asks first (beforeunload); once they a
   const user = userEvent.setup();
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
   assert.equal(ask(), true);
-  await user.click(screen.getByRole("button", { name: "Discard" }));
+  await user.click(bar("Discard"));
   assert.equal(ask(), false);
 });
 
@@ -558,7 +562,7 @@ test("a page that merges a section keeps one save bar that sends each section's 
   const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });
   await user.clear(extra); await user.type(extra, "30");
   assert.ok(screen.getByText("2 edits in this section"));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(bar("Save"));
   await settle();
   assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/extra")[0]!), { etag: "x1", values: { extra: 30 } });
   assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[0]!), { etag: "e1", values: { enabled: false } });

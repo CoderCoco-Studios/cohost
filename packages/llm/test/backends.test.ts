@@ -25,8 +25,9 @@ interface Seen { method?: string; url?: string; headers: http.IncomingHttpHeader
 interface Reply { status?: number; file: string }
 
 /** A server that records each request and answers from a queue of fixture files. */
-async function replay(replies: Reply[]): Promise<{ base: string; seen: Seen[]; close: () => void }> {
+async function replay(replies: Reply[]): Promise<{ base: string; seen: Seen[]; urls: string[]; fetch: typeof fetch; close: () => void }> {
   const seen: Seen[] = [];
+  const urls: string[] = [];
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
     seen.push({ method: req.method, url: req.url, headers: req.headers, body: raw ? JSON.parse(raw) : {} });
@@ -36,7 +37,15 @@ async function replay(replies: Reply[]): Promise<{ base: string; seen: Seen[]; c
     res.end(next ? fixture(next.file) : "{}");
   });
   await new Promise<void>((r) => server.listen(0, r));
-  return { base: `http://127.0.0.1:${(server.address() as { port: number }).port}`, seen, close: () => server.close() };
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  // The providers' `deps.fetch`: records the URL the SDK chose and serves it from the local server, so a test sees where a request
+  // would have gone without any network.
+  const replayFetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url);
+    urls.push(u.href);
+    return fetch(`${base}${u.pathname}${u.search}`, init);
+  }) as typeof fetch;
+  return { base, seen, urls, fetch: replayFetch, close: () => server.close() };
 }
 
 /** Set environment variables for one test and restore them afterwards. */
@@ -54,8 +63,8 @@ async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Pr
 test("claude api: a recorded reply is parsed and the request carries effort, betas, fallbacks and no temperature", async () => {
   const srv = await replay([{ file: "anthropic-message.json" }]);
   try {
-    await withEnv({ ANTHROPIC_BASE_URL: srv.base }, async () => {
-      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-fixture" } }));
+    await withEnv({}, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-fixture" } }), undefined, { fetch: srv.fetch });
       const out = await p.chat([{ role: "system", content: "persona" }, ...user("hi")], { maxTokens: 90 });
       assert.equal(out, "[happy] Hello chat! Welcome in.");
     });
@@ -78,8 +87,8 @@ test("claude api: a recorded reply is parsed and the request carries effort, bet
 test("claude api: with fallbacks off the request carries neither betas nor fallbacks", async () => {
   const srv = await replay([{ file: "anthropic-message.json" }]);
   try {
-    await withEnv({ ANTHROPIC_BASE_URL: srv.base }, async () => {
-      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "k", fallbacks: false } }));
+    await withEnv({}, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "k", fallbacks: false } }), undefined, { fetch: srv.fetch });
       await p.chat(user("hi"));
     });
     const req = srv.seen[0]!;
@@ -93,8 +102,8 @@ test("claude api: with fallbacks off the request carries neither betas nor fallb
 test("claude: with no maxTokens from the caller, max_tokens is llm.claude.max_tokens", async () => {
   const srv = await replay([{ file: "anthropic-message.json" }, { file: "anthropic-message.json" }]);
   try {
-    await withEnv({ ANTHROPIC_BASE_URL: srv.base }, async () => {
-      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "k", max_tokens: 1536 } }));
+    await withEnv({}, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "k", max_tokens: 1536 } }), undefined, { fetch: srv.fetch });
       await p.chat(user("hi"));
       await p.chat(user("hi"), { maxTokens: 0 }); // below the API minimum of 1: raised to it
     });
@@ -102,15 +111,49 @@ test("claude: with no maxTokens from the caller, max_tokens is llm.claude.max_to
   } finally { srv.close(); }
 });
 
-// @spec LLM-CLAUDE-011, LLM-CLAUDE-006, LLM-CLAUDE-009
-test("claude api: a recorded refusal gives an empty reply; no configured key falls back to ANTHROPIC_API_KEY", async () => {
+// @spec LLM-CLAUDE-011, LLM-CLAUDE-006
+test("claude api: a recorded refusal gives an empty reply", async () => {
   const srv = await replay([{ file: "anthropic-refusal.json" }]);
   try {
-    await withEnv({ ANTHROPIC_BASE_URL: srv.base, ANTHROPIC_API_KEY: "sk-from-env" }, async () => {
-      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "" } }));
-      assert.equal(await p.chat(user("hi")), "");
+    const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "k" } }), undefined, { fetch: srv.fetch });
+    assert.equal(await p.chat(user("hi")), "");
+  } finally { srv.close(); }
+});
+
+const AMBIENT_CLAUDE = {
+  ANTHROPIC_API_KEY: "sk-from-env", ANTHROPIC_AUTH_TOKEN: "token-from-env", ANTHROPIC_BASE_URL: "http://127.0.0.1:9/evil",
+  ANTHROPIC_PROFILE: "ambient-profile", ANTHROPIC_CUSTOM_HEADERS: "x-api-key: header-from-env",
+};
+
+// @spec LLM-CLAUDE-009
+test("claude api: the configured key and the API's own base URL win over ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL and friends", async () => {
+  const srv = await replay([{ file: "anthropic-message.json" }, { file: "anthropic-model.json" }]);
+  try {
+    await withEnv(AMBIENT_CLAUDE, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" } }), undefined, { fetch: srv.fetch });
+      assert.match(await p.chat(user("hi")), /Hello chat/);
+      assert.equal(await p.ping(), true);
     });
-    assert.equal(srv.seen[0]!.headers.authorization, "Bearer sk-from-env");
+    assert.equal(srv.urls.length, 2);
+    for (const u of srv.urls) assert.equal(new URL(u).origin, "https://api.anthropic.com");
+    for (const r of srv.seen) {
+      assert.equal(r.headers.authorization, "Bearer sk-config");
+      assert.equal(r.headers["x-api-key"], undefined, "a credential header from ANTHROPIC_CUSTOM_HEADERS is not sent");
+    }
+  } finally { srv.close(); }
+});
+
+// @spec LLM-CLAUDE-017
+test("claude api: with no key configured there is no client, whatever ANTHROPIC_API_KEY holds: chat rejects and ping is false, both naming llm.claude.api_key, and nothing is sent", async () => {
+  const srv = await replay([{ file: "anthropic-message.json" }]);
+  try {
+    await withEnv(AMBIENT_CLAUDE, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "" } }), undefined, { fetch: srv.fetch });
+      await assert.rejects(p.chat(user("hi")), /llm\.claude\.api_key/);
+      assert.equal(await p.ping(), false);
+      assert.match(p.lastError!, /llm\.claude\.api_key/);
+    });
+    assert.equal(srv.seen.length, 0);
   } finally { srv.close(); }
 });
 
@@ -122,8 +165,8 @@ test("claude api: ping against recorded model, 401 and 404 answers", async () =>
     { file: "anthropic-model.json" },
   ]);
   try {
-    await withEnv({ ANTHROPIC_BASE_URL: srv.base }, async () => {
-      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "bad" } }));
+    await withEnv({}, async () => {
+      const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "bad" } }), undefined, { fetch: srv.fetch });
       assert.equal(await p.ping(), false);
       assert.match(p.lastError!, /credentials \(401\)/);
       assert.equal(await p.ping(), false);
@@ -137,19 +180,17 @@ test("claude api: ping against recorded model, 401 and 404 answers", async () =>
 
 // ---- Bedrock, recorded fixtures
 
-// @spec LLM-CLAUDE-012, LLM-CLAUDE-008, LLM-CLAUDE-009, LLM-PING-004, LLM-PING-006
-test("bedrock: a recorded reply is parsed; no betas or fallbacks are sent; a region from the environment is accepted", async () => {
+const bedrockCfg = (bedrock: Record<string, unknown>) => llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock });
+const CONFIGURED = { region: "eu-west-2", access_key_id: "AKIACONFIG", secret_access_key: "config-secret" };
+
+// @spec LLM-CLAUDE-012, LLM-CLAUDE-008, LLM-PING-004, LLM-PING-006
+test("bedrock: a recorded reply is parsed; no betas or fallbacks are sent; the request is SigV4-signed with the configured credentials", async () => {
   const srv = await replay([{ file: "bedrock-message.json" }]);
   try {
-    await withEnv({
-      ANTHROPIC_BEDROCK_MANTLE_BASE_URL: srv.base, AWS_REGION: "us-east-1",
-      AWS_ACCESS_KEY_ID: "AKIAFIXTURE", AWS_SECRET_ACCESS_KEY: "fixture-secret",
-    }, async () => {
-      const b = new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: { region: "" } }));
-      assert.equal(await b.chat(user("hi"), { maxTokens: 70 }), "[smug] From Bedrock, with love.");
-      assert.equal(await b.ping(), true);
-      assert.equal(b.pingIsNominal, true);
-    });
+    const b = new BedrockProvider(bedrockCfg(CONFIGURED), undefined, { fetch: srv.fetch });
+    assert.equal(await b.chat(user("hi"), { maxTokens: 70 }), "[smug] From Bedrock, with love.");
+    assert.equal(await b.ping(), true);
+    assert.equal(b.pingIsNominal, true);
     assert.equal(srv.seen.length, 1, "ping makes no request");
     const req = srv.seen[0]!;
     assert.match(req.url!, /messages/);
@@ -159,6 +200,61 @@ test("bedrock: a recorded reply is parsed; no betas or fallbacks are sent; a reg
     assert.equal("betas" in req.body, false);
     assert.doesNotMatch(String(req.headers["anthropic-beta"] ?? ""), /server-side-fallback/);
     assert.match(String(req.headers.authorization), /AWS4-HMAC-SHA256/);
+  } finally { srv.close(); }
+});
+
+// @spec LLM-CLAUDE-015
+test("bedrock: the configured region and keys sign the request, whatever AWS_* and the Bedrock variables hold", async () => {
+  const srv = await replay([{ file: "bedrock-message.json" }]);
+  try {
+    await withEnv({
+      AWS_ACCESS_KEY_ID: "AKIAAMBIENT", AWS_SECRET_ACCESS_KEY: "ambient-secret", AWS_SESSION_TOKEN: "ambient-session",
+      AWS_PROFILE: "ambient-profile", AWS_REGION: "us-east-1", AWS_DEFAULT_REGION: "us-east-2",
+      AWS_BEARER_TOKEN_BEDROCK: "ambient-bearer", ANTHROPIC_BEDROCK_MANTLE_BASE_URL: "http://127.0.0.1:9/evil",
+    }, async () => {
+      const b = new BedrockProvider(bedrockCfg(CONFIGURED), undefined, { fetch: srv.fetch });
+      assert.equal(await b.chat(user("hi")), "[smug] From Bedrock, with love.");
+    });
+    assert.equal(new URL(srv.urls[0]!).origin, "https://bedrock-mantle.eu-west-2.api.aws");
+    const req = srv.seen[0]!;
+    const auth = String(req.headers.authorization);
+    assert.match(auth, /^AWS4-HMAC-SHA256 Credential=AKIACONFIG\/\d{8}\/eu-west-2\/bedrock-mantle\/aws4_request/);
+    assert.equal(req.headers["x-amz-security-token"], undefined, "no session token is sent");
+    assert.doesNotMatch(auth, /ambient|Bearer/i);
+  } finally { srv.close(); }
+});
+
+// @spec LLM-CLAUDE-016
+test("bedrock: exactly one of the two keys set refuses to construct, naming both keys, whatever the environment holds", async () => {
+  await withEnv({ AWS_ACCESS_KEY_ID: "AKIAAMBIENT", AWS_SECRET_ACCESS_KEY: "ambient-secret" }, async () => {
+    for (const half of [{ access_key_id: "AKIACONFIG" }, { secret_access_key: "config-secret" }]) {
+      assert.throws(() => new BedrockProvider(bedrockCfg({ region: "eu-west-2", ...half })), (e: Error) =>
+        /llm\.bedrock\.access_key_id/.test(e.message) && /llm\.bedrock\.secret_access_key/.test(e.message));
+    }
+  });
+});
+
+// @spec LLM-CLAUDE-018
+test("bedrock: an empty key pair or region builds no client, whatever the environment holds: chat rejects naming each empty key, ping stays nominal, nothing is sent", async () => {
+  const srv = await replay([{ file: "bedrock-message.json" }]);
+  try {
+    await withEnv({
+      AWS_ACCESS_KEY_ID: "AKIAAMBIENT", AWS_SECRET_ACCESS_KEY: "ambient-secret", AWS_REGION: "us-east-1", AWS_PROFILE: "p",
+    }, async () => {
+      const cases: [Record<string, unknown>, string[]][] = [
+        [{}, ["region", "access_key_id", "secret_access_key"]],
+        [{ region: "eu-west-2" }, ["access_key_id", "secret_access_key"]],
+        [{ access_key_id: "AKIACONFIG", secret_access_key: "s" }, ["region"]],
+      ];
+      for (const [bedrock, empty] of cases) {
+        const b = new BedrockProvider(bedrockCfg(bedrock), undefined, { fetch: srv.fetch });
+        await assert.rejects(b.chat(user("hi")), (e: Error) => empty.every((k) => e.message.includes(`llm.bedrock.${k}`)) &&
+          ["region", "access_key_id", "secret_access_key"].filter((k) => !empty.includes(k)).every((k) => !e.message.includes(`llm.bedrock.${k}`)));
+        assert.equal(await b.ping(), true);
+        assert.equal(b.pingIsNominal, true);
+      }
+    });
+    assert.equal(srv.seen.length, 0);
   } finally { srv.close(); }
 });
 

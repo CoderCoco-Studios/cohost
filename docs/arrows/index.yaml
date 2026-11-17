@@ -49,7 +49,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "74 specs, all [x]. No open gaps."
+    next: "98 specs: 74 [x], 24 [ ] (SHARED-GUARD-001 to SHARED-GUARD-024, the untrusted text guard). Chat safety design awaiting spec review."
     drift: null
 
   module-contract:
@@ -61,7 +61,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "57 specs: 57 [x], 0 [ ]. MOD-UI-001 to -006 are retired lines whose behaviour is DASH-SET-*. MOD-EX-001 to -005 (the example service) are not covered by the last audit. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
+    next: "56 of 57 specs [x]; MOD-MAN-002 [ ] (manifest section lists for the chat safety sections). 57 specs: 56 [x], 1 [ ]. MOD-UI-001 to -006 are retired lines whose behaviour is DASH-SET-*. MOD-EX-001 to -005 (the example service) are not covered by the last audit. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
     drift: null
 
 
@@ -74,7 +74,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "125 specs: 125 [x], 0 [ ]. The specs added by the one-place configuration design are implemented and tested; the last audit covered 82 of them. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
+    next: "134 specs: 124 [x], 10 [ ] (the chat safety keys: CFG-SCH-042 to CFG-SCH-047, CFG-PRES-001, CFG-PRES-012, CFG-PRES-013, CFG-USR-017). The last audit covered 82 of the earlier specs; an audit pass is still the next step."
     drift: null
 
   event-bus:
@@ -114,7 +114,7 @@ arrows:
     drift: null
 
   working-memory:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -122,7 +122,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "42 specs: 41 [x], 1 [D] (WM-STACK-001, the interrupted-thought stack). No open gaps."
+    next: "56 specs: 33 [x], 22 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard), 1 [D] (WM-STACK-001)."
     drift: null
 
   chat:
@@ -134,7 +134,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "45 specs, all [x]."
+    next: "52 specs: 36 [x], 16 [ ] (chat safety: bounded text and name, name fallback, bounded injection)."
     drift: null
 
   eyes:
@@ -174,7 +174,7 @@ arrows:
     drift: null
 
   salience:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -182,11 +182,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "78 specs: 77 [x], 1 [D] (SAL-TRIG-010, re-evaluate at cooldown or valve expiry). No open gaps."
+    next: "92 specs: 75 [x], 16 [ ] (chat safety: counting a burst once, guarded scorer prompt), 1 [D] (SAL-TRIG-010)."
     drift: null
 
   affect:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -194,11 +194,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "39 specs, all [x]. No open gaps."
+    next: "53 specs: 37 [x], 16 [ ] (chat safety: bounded intake, counting chat once per window, guarded appraiser prompt)."
     drift: null
 
   memory:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -206,11 +206,11 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "129 specs, all [x]. No open gaps."
+    next: "147 specs: 122 [x], 25 [ ] (chat safety: bounded rows, guarded capture, consolidation and reflection prompts)."
     drift: null
 
   cortex:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -218,7 +218,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "88 specs: 87 [x], 1 [D] (CTX-REPLAN-001). No open gaps."
+    next: "124 specs: 78 [x], 45 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit), 1 [D] (CTX-REPLAN-001)."
     drift: null
 
   voice:

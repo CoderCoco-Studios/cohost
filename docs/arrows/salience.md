@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 78 specs: 77 `[x]`, 0 `[ ]`, 1 `[D]` (SAL-TRIG-010). The LLD has no open questions beyond the one it lists.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 92 specs: 75 `[x]`, 16 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -36,7 +36,7 @@ SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (78 specs, prefix `SAL`: 77 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (92 specs, prefix `SAL`: 75 `[x]`, 16 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -80,8 +80,8 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
 | Intake | SAL-IN-001 to SAL-IN-007 | 7 | 0 | 0 |
-| Scoring | SAL-SCORE-001 to SAL-SCORE-008 | 8 | 0 | 0 |
-| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-008 | 8 | 0 | 0 |
+| Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 8 | 0 | 6 |
+| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-016 | 6 | 0 | 10 |
 | Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-006 | 6 | 0 | 0 |
 | Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 9 | 1 | 0 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-004 | 4 | 0 | 0 |
@@ -91,7 +91,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-011 | 11 | 0 | 0 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 
-**Summary:** 78 specs: 77 implemented, 1 deferred (SAL-TRIG-010), 0 gaps.
+**Summary:** 92 specs: 75 implemented, 1 deferred (SAL-TRIG-010), 16 gaps.
 
 ## Key Findings
 
@@ -106,7 +106,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 ## Work Required
 
 ### Must Fix
-None.
+Counting a burst once per viewer and per text, and the guarded `llm` scorer prompt, are specified and not built (SAL-DECIDE-002, SAL-DECIDE-009 to SAL-DECIDE-016, SAL-SCORE-009 to SAL-SCORE-014). The LLD has two open questions: repeated mentions across decisions, and several viewers named `unknown`.
 
 ### Should Fix
 None.

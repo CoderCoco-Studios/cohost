@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 88 specs: 87 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The LLD has one open question (a stop while a think is in flight).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 124 specs: 78 `[x]`, 45 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the chat safety work (below). The LLD has open questions (a stop while a think is in flight; streamed replies and the checks after parsing; a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (88 specs, prefix `CTX`: 87 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (124 specs, prefix `CTX`: 78 `[x]`, 45 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -89,22 +89,23 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event handling | CTX-EVT-001 to CTX-EVT-010 | 10 | 0 | 0 |
-| Think gating | CTX-GATE-001 to CTX-GATE-011 | 11 | 0 | 0 |
+| Event handling | CTX-EVT-001 to CTX-EVT-012 | 9 | 0 | 3 |
+| Think gating | CTX-GATE-001 to CTX-GATE-013 | 10 | 0 | 3 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 |
-| Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-003 | 3 | 0 | 0 |
-| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-008 | 8 | 0 | 0 |
-| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-008 | 8 | 0 | 0 |
-| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-007 | 7 | 0 | 0 |
-| Critic | CTX-CRITIC-001 to CTX-CRITIC-006 | 6 | 0 | 0 |
+| Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-004 | 2 | 0 | 2 |
+| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-010 | 7 | 0 | 3 |
+| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-015 | 6 | 0 | 9 |
+| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-007 | 6 | 0 | 1 |
+| Critic | CTX-CRITIC-001 to CTX-CRITIC-013 | 4 | 0 | 9 |
 | Saying | CTX-SAY-001 to CTX-SAY-008 | 8 | 0 | 0 |
 | Control | CTX-CTRL-001 to CTX-CTRL-007 | 7 | 0 | 0 |
 | Interruptible speech | CTX-REPLAN-001 | 0 | 1 | 0 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 |
 | Startup and shutdown | CTX-START-001 to CTX-START-005 | 5 | 0 | 0 |
 | Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
+| Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 0 | 0 | 15 |
 
-**Summary:** 88 specs: 87 implemented, 1 deferred, 0 gaps.
+**Summary:** 124 specs: 78 implemented, 1 deferred, 45 gaps.
 
 ## Key Findings
 
@@ -122,7 +123,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 ## Work Required
 
 ### Must Fix
-None.
+The repetition check, the no-line exit status, parsed critic rewrites, the guarded prompt (names, recalled memories, viewer notes, notice) and heard-text records are specified and not built (CTX-REPEAT-001 to CTX-REPEAT-015, CTX-GATE-012, CTX-CRITIC-002, CTX-CRITIC-003, CTX-CRITIC-007 to CTX-CRITIC-011, CTX-PROMPT-002, CTX-PROMPT-006, CTX-PROMPT-009 to CTX-PROMPT-015, CTX-EVT-005, CTX-EVT-011, CTX-EVT-012, CTX-FALL-007, CTX-NOTES-004, CTX-NOTES-009, CTX-NOTES-010, CTX-VIEWER-004). The LLD has three open questions: a stop during a think, streamed replies and the checks after parsing, and a repeat on a mention.
 
 ### Nice to Have
 None.

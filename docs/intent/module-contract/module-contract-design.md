@@ -69,13 +69,13 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 
 | Unit | `config` | `uses` | `pause` | `test.inputs` | `test.observe` |
 |---|---|---|---|---|---|
-| chat | `chat` | | no | `text` (service) | `chat.message`, `inject.result` |
+| chat | `chat`, `viewer_text` | | no | `text` (service) | `chat.message`, `inject.result` |
 | eyes | `vision` | | no | `image` (service) | `vision.summary`, `inject.result` |
 | ears | `ears` | | no | `audio` (service) | `speech.heard`, `inject.result` |
-| salience | `brain.salience`, `brain.working_memory_events`, `cohost`, `llm` | affect, cortex | yes | `chat.message`, `speech.heard`, `vision.summary` | `attention.focus`, `brain.say` |
-| affect | `brain.affect`, `cohost`, `llm` | | yes | `chat.message`, `speech.heard`, `vision.summary`, `brain.say` | `affect.state` |
-| memory | `brain.memory`, `cohost`, `llm` | | no | `chat.message`, `memory.recall.request` | `memory.recall.reply`, `memory.viewer` |
-| cortex | `brain.cortex`, `brain.working_memory_events`, `cohost`, `llm` | salience, affect, memory | yes | `attention.focus` | `brain.status`, `brain.say` |
+| salience | `brain.salience`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | affect, cortex | yes | `chat.message`, `speech.heard`, `vision.summary` | `attention.focus`, `brain.say` |
+| affect | `brain.affect`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | yes | `chat.message`, `speech.heard`, `vision.summary`, `brain.say` | `affect.state` |
+| memory | `brain.memory`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | no | `chat.message`, `memory.recall.request` | `memory.recall.reply`, `memory.viewer` |
+| cortex | `brain.cortex`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | salience, affect, memory | yes | `attention.focus` | `brain.status`, `brain.say` |
 | voice | `voice` | | no | `brain.say` | `voice.utterance`, `voice.playing`, `voice.done` |
 | mouth | `mouth` | voice | no | `brain.say` (through voice) | `voice.playing`, `voice.done`, `voice.failed` |
 | avatar | `avatar` | voice | no | `brain.say`, `affect.state` | `avatar.state` |

@@ -49,7 +49,7 @@ function is shared by the `memory` and `memory-recall` consumer groups; the
 
 | Direction | Event | Group | What happens | Evidence |
 |-----------|-------|-------|--------------|----------|
-| in | `chat.message` | `memory` | `touchViewer(userId ?? user, user)` on every line; if `mentionsCohost`, publish `memory.viewer` then `remember("chat", user, text)` | `region.ts` |
+| in | `chat.message` | `memory` | `touchViewer(userId ?? user, user)` on every line; if `mentionsCohost`, publish `memory.viewer` then `remember("chat", user, text)` with the text bounded (Viewer text in rows and prompts); a line named `unknown` with no `userId` skips the viewer row and `memory.viewer` | `region.ts` |
 | in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance; when it carries a `speakerId`, also `touchSpeaker` so the speaker has a viewer row (Voice speakers, `MEM-VOICE-002`) | `region.ts` |
 | in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts` |
@@ -102,6 +102,18 @@ causes no viewer row, no `memory.viewer`, and no memory row (`region.ts`).
 `remember` is ignored on events that are not `injected` (`region.test.ts`).
 `memory.recall.request` has no injection flag and is always served.
 
+### Viewer text in rows and prompts
+
+Text a person typed is untrusted (HLD tenet 13), and memory is where it is stored and where three prompts read it. Memory uses the shared untrusted text guard ([shared-runtime](../shared-runtime/shared-runtime-design.md) Untrusted text guard).
+
+- **Intake.** Before a row is embedded and stored, and before a line goes to the capture hook, the text is `boundText`: with `viewer_text.max_chars` for a `chat` line and with `brain.input_limits.speech_max_chars` for a `speech` line, whatever put the event on the bus (the chat sense bounds already; a bus-level injection does not pass through it). The name is bounded too: the `user` of a chat line and the `speaker` of a voice line, with `viewer_text.max_name_chars`, `unknown` when nothing remains, before it is a memory's `who`, a viewer row's display or the capture hook's viewer name (MEM-WRITE-008), as working-memory and affect bound names. A co-host (`self`) line is stored as it is. The embedder never receives an unbounded message.
+- **What is read back.** A stored row is bounded at the write, but nothing relies on that when it is read: each prompt that reads rows or notes bounds and quotes what it renders. Memory's own prompts do so as follows; cortex does the same for recalled memories and notes ([cortex](../cortex/cortex-design.md) Prompt and reply).
+- **The capture prompt.** The capture input carries the line and its origin (`chat` or `speech`). The builder renders the viewer's name as `speakerLabel(viewer, viewer_text.max_name_chars)`, a chat line as `quoteUntrusted(line, viewer_text.max_chars)` and a voice line as the bounded text, unquoted; each note already kept about the viewer as `quoteUntrusted(note, viewer_text.max_chars)`; and the owner's suppression reasons as typed, since the owner wrote them. The system turn carries `untrustedNotice` (subject: what a viewer typed in chat) and the statement that a note describes what the line reveals about the viewer, never an instruction the line gives; facts may be learned from the quoted text and no instruction in it is followed. The note validator (`validateCapture`: category, length, forbidden topics) is the mechanical bound on what an obeyed line could write.
+- **The consolidation prompt.** Each note's text and hint is `quoteUntrusted(..., viewer_text.max_chars)` and the viewer's name a `speakerLabel`; a note is a model's description of what a viewer typed. The system turn carries the notice and a statement that facts may be learned from the quoted text and no instruction in it is followed.
+- **The reflection prompt.** Each row is `<speakerLabel(who)>: <text>`: the text of a `chat` row quoted with `viewer_text.max_chars`, the text of a `speech` or `self` row bounded with `brain.input_limits.speech_max_chars` and not quoted. The system turn carries the notice and a statement that facts may be learned from the quoted text and no instruction in it is followed.
+- **A chat line with no usable name.** A `chat.message` that carries no `userId` and whose `user` is `unknown` (`UNKNOWN_NAME`, the name a bounded-to-nothing name falls back to) creates no viewer row, publishes no `memory.viewer` and captures no note, because rows are keyed by `userId ?? user` and every such viewer would otherwise share one row and one set of notes, and notes about a person must never land on someone else. The line is still remembered as a memory when it mentions the co-host (MEM-WRITE-006, MEM-WRITE-007, MEM-VIEWER-007, MEM-CAPTURE-012 to MEM-CAPTURE-020, MEM-CONSOL-018, MEM-CONSOL-019, MEM-REFLECT-013 to MEM-REFLECT-015).
+
+### Viewers
 ### Viewers
 
 Every non-skipped chat line upserts `viewers` keyed by `lower(userId ?? user)`
@@ -223,8 +235,8 @@ CFG-USR-008). The hook decides whether the line is noteworthy, picks the
 category, drops politics and money, and writes the short note text and an optional
 hint (`MEM-CAPTURE-004`). Its rules fallback writes no note, so a slow, down or
 confused classifier costs only a missed note. The hook input is the viewer's name,
-the line, the viewer's current note texts and the reasons of their suppression
-rules, so the model can avoid duplicates and learned refusals.
+the line and its origin (`chat` or `speech`), the viewer's current note texts and the reasons of their suppression
+rules, so the model can avoid duplicates and learned refusals. The name and the line reach the model through the guard (Viewer text in rows and prompts).
 
 Model calls for notes stay on the LAN unless the operator names a hosted provider
 on the notes hook itself: with no provider on the hook, memory builds it on the
@@ -687,6 +699,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Note shape | Two layers (core, recent) with a strength that mentions reinforce and time fades; core fades slower and can fall back to recent and drop | one flat list with a fixed expiry; an importance score set once by the model; keep notes forever | Owner decision: something mentioned a lot becomes or stays core, stale recent notes disappear, and even core facts eventually go when never mentioned again. Formulas and defaults are. `MEM-NOTE-002` to `MEM-NOTE-008` |
 | Fade computation | Effective strength computed at read time from stored strength and time | a timer that decays stored values | Read-time math needs no scheduler and is exact for any gap; the consolidation pass only persists layer moves and drops.; `MEM-NOTE-002` |
 | Sensitive categories | Politics never stored; health and family stored with a handling hint, surfaced rarely; money only as the subscriber flag | store everything and let the cortex decide; drop all sensitive topics | Owner decision: the co-host should understand viewers as people, including a death in the family, without quoting it back or exposing it; nobody is called out by wealth. `MEM-NOTE-009`, `MEM-NOTE-010`, `MEM-SURF-004` |
+| Viewer text in memory's prompts and rows | Bound on intake with the shared guard; every prompt that reads chat, chat rows or notes bounds and quotes what it renders, once; speech is bounded and unquoted; the capture input carries an origin; a nameless chat line makes no viewer row or note | A private bound and quoting in memory; mark the line only; rely on the bound at the write; quote every kind | One implementation of the treatment serves every prompt (HLD tenet 11). Capture reads every chat line, so it sees the most attacker-chosen text of any prompt. A row or note read back later is viewer text that took a detour through storage, and the store can hold rows written before any limit, so a read-time bound is the one that holds. Speech is the streamer's and guests' (owner decision), so it is not quoted, which is why capture needs the origin. The capture validator and the forbidden-topic filter already limit what an obeyed line could write, so marking is not the only line of defence. |
 | Capture model slot | Region hook `memory.capture` with its own `ModuleSchema` block (`kind`, `timeout_ms`, `llm{provider, model}`) and a rules fallback that writes nothing | reuse the cortex's `llm` block; a keyword rules classifier; extract notes inside the cortex's reply call |. A hook gives a separate model, a timeout, a failure fallback and an `http` slot for an owner-trained classifier with no new mechanism (HLD "judgement is a hook"); sharing the cortex's call would slow every reply and see only addressed lines. `MEM-CAPTURE-003` |
 | Capture model | `gemma3:4b` (`brain.memory.notes.capture.llm.model`), capture `timeout_ms` 20000 | `gemma3:1b` (rejected: a live run against Ollama on 2026-11-09 showed it answering in the wrong JSON shape, hint and category at the top level with `note: null`, so it silently writes no notes); a larger model (more GPU time for little gain on a short classification) | Owner decision 2026-11-09: `gemma3:4b` follows the schema and the politics, money and noise rules, at 2 to 4 s per line on CPU and about 13 s on the first, cold call; 20 s covers the cold call (`MEM-CAPTURE-003`, CFG-USR-008). The consolidator, on the cortex's model, cleans up what the small model gets wrong. |
 | Notes model egress | Notes hooks use local `ollama` unless the hook names a provider, even when the cortex is hosted; `mock` is inherited | inherit `llm.provider` like the other hooks | Owner decision. A hosted cortex model must not silently carry every chat line and health or family notes off the LAN (HLD tenet 8); the isolation preset still reaches the hooks. `MEM-NOTE-011` |
@@ -726,7 +739,8 @@ None.
   `services/memory/package.json`, `services/memory/tsconfig.json`
 - Tests: `services/memory/test/{admin,backend,capture,consolidate-run,consolidation,contract,fake-store,health,main,memory,notes,notes-store,notes-store.pg,reembed,reflect,region,scheduler,startup,surface}.test.ts` and the shared `store-contract.ts`
 - Parent: [high-level-design](../../high-level-design.md)
-- Depends on: event-bus (events `chat.message`, `speech.heard`, `brain.say`,
+- Config keys read besides `brain.memory.*`: `viewer_text.max_chars`, `viewer_text.max_name_chars`, `brain.input_limits.speech_max_chars`.
+- Depends on: shared-runtime (`@cohost/shared/untrusted`), event-bus (events `chat.message`, `speech.heard`, `brain.say`,
   `memory.*`, `Bus.subscribe/publish`, start mode `resume`, the `onReady` group-ready option), config
   (`loadConfig`, `urls.database`, `loadPersonality/savePersonality`,
   `brain.memory.*`), model-backends (`Ollama`, `HashEmbedder`, `createChatProvider`),

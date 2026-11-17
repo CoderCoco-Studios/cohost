@@ -6,7 +6,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 88 specs: 86 `[x]`, 0 `[ ]`, 2 `[D]`.
 
-**AUDITED** — 86 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps.
+**AUDITED**: 89 specs: 85 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 2 gaps (the `CHAT_SOURCES` preset, YouTube chat design 2026-11-16).
 
 ## Orientation
 
@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (86 specs, prefix `CTRL`: 84 `[x]`, 0 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (89 specs, prefix `CTRL`: 85 `[x]`, 2 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -81,7 +81,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -017 | 15 | 15 | 0 | 0 |
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
 
-**Summary:** 84 of 86 specs implemented; 2 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 85 of 89 specs implemented; 2 deferred; 2 open (CTRL-MANIFEST-003, CTRL-RUNTIME-009). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -92,6 +92,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 
 ## Work Required
 
+- YouTube chat (design 2026-11-16): the chat isolation preset is `CHAT_SOURCES=[fake]` (CTRL-MANIFEST-003, CTRL-RUNTIME-009).
 ### Must Fix
 None.
 

@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 92 specs: 75 `[x]`, 16 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 98 specs: 73 `[x]`, 24 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -36,7 +36,7 @@ SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (92 specs, prefix `SAL`: 75 `[x]`, 16 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (98 specs, prefix `SAL`: 73 `[x]`, 24 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -91,7 +91,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-011 | 11 | 0 | 0 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 
-**Summary:** 92 specs: 75 implemented, 1 deferred (SAL-TRIG-010), 16 gaps.
+**Summary:** 98 specs: 73 implemented, 1 deferred (SAL-TRIG-010), 24 gaps.
 
 ## Key Findings
 
@@ -105,6 +105,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 ## Work Required
 
+- Viewer identity and forgetting (design 2026-11-16, no code): the burst counter keys a viewer by platform and user id (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019), the focus carries them (SAL-FOCUS-003), and `chat.removed` is read and forgotten (SAL-IN-001, SAL-IN-008, SAL-IN-009, SAL-FOCUS-007).
 ### Must Fix
 Counting a burst once per viewer and per text, and the guarded `llm` scorer prompt, are specified and not built (SAL-DECIDE-002, SAL-DECIDE-009 to SAL-DECIDE-016, SAL-SCORE-009 to SAL-SCORE-014). The LLD has two open questions: repeated mentions across decisions, and several viewers named `unknown`.
 

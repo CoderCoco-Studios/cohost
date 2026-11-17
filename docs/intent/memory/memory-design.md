@@ -49,7 +49,8 @@ function is shared by the `memory` and `memory-recall` consumer groups; the
 
 | Direction | Event | Group | What happens | Evidence |
 |-----------|-------|-------|--------------|----------|
-| in | `chat.message` | `memory` | `touchViewer(userId ?? user, user)` on every line; if `mentionsCohost`, publish `memory.viewer` then `remember("chat", user, text)` with the text bounded (Viewer text in rows and prompts); a line named `unknown` with no `userId` skips the viewer row and `memory.viewer` | `region.ts` |
+| in | `chat.message` | `memory` | `touchViewer(viewerKey, user)` on every line, with the key the shared guard's `viewerKey` gives (Viewers); if `mentionsCohost`, publish `memory.viewer` (with the viewer's `platform` and `userId`) then `remember("chat", user, text)` with the text bounded (Viewer text in rows and prompts) and the line's `platform`, `userId` and `messageId` recorded on the row; a line named `unknown` with no `userId` skips the viewer row and `memory.viewer` | `region.ts` |
+| in | `chat.removed` | `memory` | delete the stored chat memory rows the removal covers (Forgetting a removed message) | `region.ts` |
 | in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance; when it carries a `speakerId`, also `touchSpeaker` so the speaker has a viewer row (Voice speakers, `MEM-VOICE-002`) | `region.ts` |
 | in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts` |
@@ -111,13 +112,12 @@ Text a person typed is untrusted (HLD tenet 13), and memory is where it is store
 - **The capture prompt.** The capture input carries the line and its origin (`chat` or `speech`). The builder renders the viewer's name as `speakerLabel(viewer, viewer_text.max_name_chars)`, a chat line as `quoteUntrusted(line, viewer_text.max_chars)` and a voice line as the bounded text, unquoted; each note already kept about the viewer as `quoteUntrusted(note, viewer_text.max_chars)`; and the owner's suppression reasons as typed, since the owner wrote them. The system turn carries `untrustedNotice` (subject: what a viewer typed in chat) and the statement that a note describes what the line reveals about the viewer, never an instruction the line gives; facts may be learned from the quoted text and no instruction in it is followed. The note validator (`validateCapture`: category, length, forbidden topics) is the mechanical bound on what an obeyed line could write.
 - **The consolidation prompt.** Each note's text and hint is `quoteUntrusted(..., viewer_text.max_chars)` and the viewer's name a `speakerLabel`; a note is a model's description of what a viewer typed. The system turn carries the notice and a statement that facts may be learned from the quoted text and no instruction in it is followed.
 - **The reflection prompt.** Each row is `<speakerLabel(who)>: <text>`: the text of a `chat` row quoted with `viewer_text.max_chars`, the text of a `speech` or `self` row bounded with `brain.input_limits.speech_max_chars` and not quoted. The system turn carries the notice and a statement that facts may be learned from the quoted text and no instruction in it is followed.
-- **A chat line with no usable name.** A `chat.message` that carries no `userId` and whose `user` is `unknown` (`UNKNOWN_NAME`, the name a bounded-to-nothing name falls back to) creates no viewer row, publishes no `memory.viewer` and captures no note, because rows are keyed by `userId ?? user` and every such viewer would otherwise share one row and one set of notes, and notes about a person must never land on someone else. The line is still remembered as a memory when it mentions the co-host (MEM-WRITE-006, MEM-WRITE-007, MEM-VIEWER-007, MEM-CAPTURE-012 to MEM-CAPTURE-020, MEM-CONSOL-018, MEM-CONSOL-019, MEM-REFLECT-013 to MEM-REFLECT-015).
+- **A chat line with no usable name.** A `chat.message` that carries no `userId` and whose `user` is `unknown` (`UNKNOWN_NAME`, the name a bounded-to-nothing name falls back to) creates no viewer row, publishes no `memory.viewer` and captures no note, because a viewer with no `userId` is keyed by platform and name and every such viewer would otherwise share one row and one set of notes, and notes about a person must never land on someone else. The line is still remembered as a memory when it mentions the co-host (MEM-WRITE-006, MEM-WRITE-007, MEM-VIEWER-007, MEM-CAPTURE-012 to MEM-CAPTURE-020, MEM-CONSOL-018, MEM-CONSOL-019, MEM-REFLECT-013 to MEM-REFLECT-015).
 
 ### Viewers
 ### Viewers
 
-Every non-skipped chat line upserts `viewers` keyed by `lower(userId ?? user)`
-(`store.ts`). A new row starts at `msg_count` 1 (the INSERT sets it
+Every non-skipped chat line upserts `viewers` keyed by `viewerKey` of its platform, user id and name (`store.ts`; below). A new row starts at `msg_count` 1 (the INSERT sets it
 explicitly; the column default is 0) and each later
 message adds 1, so `msgCount` is the number of messages seen and `isNew`
 (`msg_count <= 1`) is true for the first message only, in both
@@ -126,6 +126,8 @@ stores (`MEM-VIEWER-001`, in-memory: `fake-store.ts`). On conflict the row's
 (`store.ts`). `first_seen` is
 selected but unused; `last_seen` orders the lookups that pick the most recent of several
 viewers (a display-name match, a placeholder claim).
+
+A viewer is a platform and a user id, never a display name. The key is the shared guard's `viewerKey` ([shared-runtime](../shared-runtime/shared-runtime-design.md)): `<platform>:<userId>`, the id exactly as the platform wrote it (`twitch:<Twitch user id>`, `youtube:<channel id>`, `discord:<id>`, the same shape as a voice speaker's `discord:<speakerId>`). A YouTube channel id is case-sensitive, so no key that holds an id is case-folded; a Twitch id is digits, which folding would not change, so Twitch keys are unaffected. A chat line with no user id (a test-injected line) is keyed `<platform>:name:<lowercased name>`, the one fallback, so it is still separated by platform. A Twitch viewer and a YouTube viewer with the same display name are two rows, and `display` is for rendering only. Rows keyed in any other format are not read and not converted (`MEM-VIEWER-011`). The in-memory store counts per `viewerKey` too (`MEM-BACKEND-005`). Memory treats every platform's viewer the same: rows, memories and notes are kept across streams with no platform-specific expiry (Decisions & Alternatives, Retention of YouTube viewers).
 
 A viewer is a **regular** when the owner has flagged them as one or when their
 lifetime `msg_count` is above `brain.memory.regular_messages` (default 25)
@@ -275,8 +277,8 @@ voice-specific except how the speaker's identity is found.
 
 **Identity.** [ears](../ears/ears-design.md) publishes each transcript with the
 speaker's Discord display name (`speaker`) and Discord user id (`speakerId`).
-Memory keys viewers by `lower(userId ?? user)`, and a Twitch chat viewer's key is
-a Twitch user id, so a Discord id is a different namespace. A speaker's viewer key
+Memory keys chat viewers by `viewerKey` (`<platform>:<userId>`), so a Twitch chat viewer's key
+is `twitch:<id>` and a Discord id is a different namespace. A speaker's viewer key
 is therefore one of two things (`MEM-VOICE-001`, `MEM-VOICE-004`):
 
 - **Linked.** The owner has linked the Discord id to a chat viewer: the speaker
@@ -398,12 +400,11 @@ leaves the rest dirty (`MEM-CONSOL-011`). Each completed pass records
 
 ### Surfacing to the cortex
 
-The cortex asks for notes when it replies, with `memory.notes.request {id, users}`,
-handled in the `memory-recall` group next to recall (`MEM-SURF-001`). The first name in `users` is the viewer being replied to; the rest
-are the other viewers in the cortex's working-memory window. A name resolves to
+The cortex asks for notes when it replies, with `memory.notes.request {id, viewers}`,
+handled in the `memory-recall` group next to recall (`MEM-SURF-001`). The first entry in `viewers` is the viewer being replied to; the rest
+are the other viewers in the cortex's working-memory window. An entry that carries a `platform` and a `userId` resolves to the viewer row with the `viewerKey` of that pair, and to nothing when there is no such row: it is never matched by name, so a same-named viewer on another platform cannot receive these notes (`MEM-SURF-002`). An entry with a `platform` and no `userId` (an injected line) resolves to the row with the `viewerKey` of that platform and its name (`MEM-SURF-007`). Only an entry with no `platform` (a speech focus, whose speaker is known by name) resolves by display name, to
 the viewer row whose display name matches it case-insensitively, the most recently
-seen one when several do (`MEM-SURF-002`), so a renamed viewer is found by their
-current name once they have chatted under it. The reply lists, per resolved
+seen one when several do (`MEM-SURF-006`). The reply lists, per resolved
 viewer, `regular`, `msgCount` and their notes (never subscriber status, which is
 stored but not surfaced), strongest first, at most
 `max_notes_per_viewer` (default 5) each and `max_notes_total` (default 15) overall,
@@ -446,6 +447,17 @@ creates a placeholder row keyed by the lower-cased name with `msg_count` 0
 `chat.message` arrives from a key with no row and a placeholder's display matches
 the message's `user` case-insensitively, memory re-keys the placeholder to the
 message's key and counts the message on it, keeping the flag (`MEM-REG-004`).
+
+### Forgetting a removed message
+
+When a platform removes chat, the chat sense publishes `chat.removed` ([event-bus](../event-bus/event-bus-design.md), [chat](../chat/chat-design.md) Forgetting a removed message), and memory forgets what it stored from that chat. The `memory` group reads it in the same subscription as `chat.message`, in start mode `resume`, and the bus delivers one entry at a time in stream order (BUS-SUB-006), so a removal always arrives after the message it names, including after a restart that replays the backlog, and never races that message's embed and insert (`MEM-FORGET-001`).
+
+- `scope: message` deletes the `memories` rows of kind `chat` with that `platform` and `messageId`.
+- `scope: user` deletes the `memories` rows of kind `chat` with that `platform` and `userId`: every remembered line of that viewer.
+- `scope: all` deletes no row. A stored row is durable across streams and a cleared chat names no viewer or message, so memory cannot tell which stored rows belong to the cleared chat. The working-memory windows forget it; stored memory does not.
+- A removal that matches no row changes nothing; a failing delete is logged at warn level and the next event is handled.
+
+What memory does not do, plainly: it does not undo a viewer-notes capture that already ran, and it does not trace a note back to the message it came from, so a note derived from a removed message stands (the owner deletes it on the Viewers page); it does not change the viewer row, its `msg_count` or its flags; and a removal is not moderation: cohost never acts on the platform (HLD Non-Goal 1).
 
 ### Edge cases
 
@@ -508,7 +520,7 @@ structurally.
   query (`MEM-HEALTH-005`).
 - `init()` (`store.ts`): embeds the literal `"hello"` to learn the vector
   dimension, then `CREATE EXTENSION IF NOT EXISTS vector`, `CREATE TABLE IF NOT
-  EXISTS` for `memories(id, ts, kind, who, text, embedding vector(dims))`,
+  EXISTS` for `memories(id, ts, kind, who, text, embedding vector(dims), platform, user_id, message_id)` (the last three nullable text columns, set on chat rows, with an index on `(platform, message_id)` and one on `(platform, user_id)`; MEM-STORE-004),
   `viewers(user_key PK, display, first_seen, last_seen, msg_count, regular_manual, is_sub, placeholder)` and
   `meta(k PK, v)`, the tables of the Storage section and their
   btree indexes (`viewers_placeholder_idx`, `viewer_links_user_idx`, `viewer_notes_user_idx`,
@@ -712,7 +724,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
 | Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
 | Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres |. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
-| Viewer lookup for surfacing | By current display name, case-insensitive, most recently seen first | carry `userId` through working memory and `attention.focus` |. The cortex holds names only (`attention.focus.who`, the working-memory chat lines); a name lookup needs no change to working-memory or salience. A name shared by two viewers resolves to the one seen last. `MEM-SURF-002` |
+| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
 | Sensitive-cooldown concurrency | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a courtesy, not a safety property, and a race costs at most one repeated hint. `MEM-SURF-004` |
@@ -728,10 +740,13 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Pure text helpers split out | `learned.ts` holds bullet parsing and heading logic | inline in reflect.ts | Extracted so the reflection logic could be tested (`reflect.ts` runs at import): commit `95afa19` ("reflection merge logic (extracted from reflect.ts into learned.ts, behaviour unchanged)"), `learned.ts` |
 | Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `main.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
 | Startup readiness vs group creation | `ready` is reported once every subscription's `onReady` has fired | report ready right after starting the subscriptions; call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the bus's `onReady` hook is the group-exists signal (`MEM-START-005`) |
+| Retention of YouTube viewers | A YouTube viewer is remembered exactly as a Twitch viewer: viewer row, remembered chat lines and notes are kept across streams with no platform-specific expiry. Owner decision 2026-11-16 | Expire YouTube-sourced rows and notes 30 days after the viewer last chatted; store nothing from YouTube (memory ignores `chat.message` with `platform: youtube`) | The YouTube API Services Developer Policies (III.E.4) say that stored API data is to be deleted or refreshed after 30 days, and deleted within 7 days of a user's request. Keeping YouTube viewers' rows and notes indefinitely does not meet the 30-day term, and cohost has no refresh of stored YouTube data; the owner made this decision knowing that. The dashboard's Viewers page is the means of deleting a viewer's notes on request (`clear`, `delete_note`); it has no operation that deletes a viewer's row or stored chat lines. |
+| Viewer key | `viewerKey`: `<platform>:<userId>` with the id as written, never case-folded; `<platform>:name:<lowercased name>` when a line has no user id | The lowercased `userId ?? user` (a bare id, folded); the display name | Owner decision 2026-11-16: a viewer is a platform and a user id. A YouTube channel id is case-sensitive, so folding a key that holds one could merge two channels; Twitch ids are digits and a key with them is unchanged by folding rules. The prefix gives each platform its own namespace, as `discord:<speakerId>` already does for a voice speaker. A name fallback keeps an injected line separated by platform. `MEM-VIEWER-001`, `MEM-VIEWER-008` |
+| Forgetting a removed message | `chat.removed` deletes the stored chat rows it names (`message`: by platform and message id; `user`: by platform and user id) and nothing else; `all` deletes no stored row | Mark rows deleted and keep them; also delete the viewer's notes, row and counts; delete every stored chat row of the platform on `all`; trace notes back to their line | Owner decision 2026-11-16: cohost forgets a message the platform removed, without acting on the platform. A row is the only place chat text is stored, so deleting it is forgetting; notes are a model's description and carry no link to a line, so they are not traced back and the owner deletes them on the Viewers page; a viewer row holds only a name, a count and flags. A cleared chat names no message, and stored rows outlive the stream, so `all` is limited to the windows. `MEM-FORGET-001` to `MEM-FORGET-007` |
 
 ## Open Questions & Future Decisions
 
-None.
+- **A placeholder claim from another platform.** The owner's regular flag set on a name with no row creates a placeholder with no platform, and the first chat line whose display name matches claims it, from any platform (`MEM-REG-004`). The claim cannot tell a Twitch `Sam` from a YouTube `Sam`. Readings: keep the claim by name (the placeholder carries only the flag); or let the owner name the platform when setting the flag, and claim only from it. Not decided.
 
 ## References
 

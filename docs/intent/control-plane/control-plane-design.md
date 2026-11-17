@@ -31,7 +31,7 @@ The package is `@cohost/control` (`packages/control/package.json`): ESM, AGPL-3.
 
 | Unit | Kind | Groups reset on fresh | Default mode | Flags | Isolation preset (`isolatedEnv`) |
 |---|---|---|---|---|---|
-| chat | pnpm | chat | fresh | | `CHAT_SOURCE=fake` |
+| chat | pnpm | chat | fresh | | `CHAT_SOURCES=[fake]` |
 | salience | pnpm | salience | fresh | | none |
 | affect | pnpm | affect | fresh | | none |
 | memory | pnpm | memory, memory-recall, memory-notes | resume | | `MEMORY_STORE=memory`, `MEMORY_EMBEDDER=hash` |
@@ -305,7 +305,7 @@ Other segments (direction):
 - event-bus: this segment depends on `Bus.publishHealth`, `tailHealth`, `recentHealth`, `resetGroup`, `onShutdown`/`beforeShutdown`, and the `service.heartbeat` and `service.lifecycle` schemas in `packages/bus/src/events.ts`; event-bus documents the schema and points here for semantics.
 - config: `findWorkspaceRoot` and `urls`; `Bus` takes its Redis URL from `urls.redis()`. Presets rely on the loader's application of `COHOST_ISOLATION` by key path (CFG-ISO-007) over the literal keys of `config/config.example.yaml`.
 - dashboard: consumes `HealthTracker`, `ServiceController`, runtimes, `loadControlConfig`, `bearerOk`, `isLoopback` (`services/dashboard/src/control.ts`, `routes.ts`, `feed.ts`, `index.ts`); dashboard owns the HTTP routes, token prompt and UI.
-- chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar: each owns `src/health.ts` and its `startHeartbeat` call; their isolation presets (`CHAT_SOURCE`, `VISION_ENABLED`, `EARS_SOURCES`, `MOUTH_DISCORD_ENABLED`, `MEMORY_STORE`/`MEMORY_EMBEDDER`, `LLM_PROVIDER`, `VOICE_ENGINE`, `AVATAR_DRIVER`) are named in this segment's manifest but implemented by the backends' segments (model-backends, memory, voice, chat, ears, eyes, avatar). salience, affect and cortex also consume `control` `pause`/`resume` (not part of this segment).
+- chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar: each owns `src/health.ts` and its `startHeartbeat` call; their isolation presets (`CHAT_SOURCES`, `VISION_ENABLED`, `EARS_SOURCES`, `MOUTH_DISCORD_ENABLED`, `MEMORY_STORE`/`MEMORY_EMBEDDER`, `LLM_PROVIDER`, `VOICE_ENGINE`, `AVATAR_DRIVER`) are named in this segment's manifest but implemented by the backends' segments (model-backends, memory, voice, chat, ears, eyes, avatar). salience, affect and cortex also consume `control` `pause`/`resume` (not part of this segment).
 - deployment: the `x-ts-service` healthcheck in `docker-compose.yml` and the `Dockerfile` `ENV` wire the healthcheck and `SERVICE`.
 
 External: Redis Streams (`cohost:events`, `cohost:health`), `docker compose` CLI, `pnpm`, Node `child_process`, `util.parseArgs`, `crypto`.

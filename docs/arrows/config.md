@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. Total 134 specs: 124 `[x]`, 10 `[ ]`, 0 `[D]`. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 134 specs: 124 implemented, 0 deferred, 10 gaps (the audit covered 82 of them). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 142 specs: 113 implemented, 0 deferred, 29 gaps (the audit covered 82 of them). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (134 specs, prefix `CFG`: 124 `[x]`, 10 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (142 specs, prefix `CFG`: 113 `[x]`, 29 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -77,7 +77,7 @@ Orientation:
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-017 (CFG-USR-005 does not exist) | 15 | 0 | 1 |
 
-**Summary:** 124 of 134 specs implemented; 0 deferred; 10 open. 123 carry a test `<!-- test: -->` pointer; implemented without one: CFG-USR-006 (carried by example-file comments, which are not annotated by design). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 113 of 142 specs implemented; 0 deferred; 29 open. 123 carry a test `<!-- test: -->` pointer; implemented without one: CFG-USR-006 (carried by example-file comments, which are not annotated by design). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 
@@ -85,5 +85,6 @@ Annotated tests that cover only part of their spec line: CFG-SCH-001 (only `coho
 
 ## Work Required
 
+- YouTube chat (design 2026-11-16, no code): `chat.sources`, the `chat.youtube` section and its numeric ranges, the twelfth secret path `chat.youtube.api_key`, the `CHAT_SOURCES` override and the example files (CFG-SCH-048 to CFG-SCH-054, CFG-SEC-003, CFG-SCH-010, CFG-SCH-039, CFG-ISO-001 to CFG-ISO-004, CFG-ISO-006, CFG-ISO-007, CFG-PRES-006, CFG-USR-016, CFG-USR-018).
 ### Must Fix
 Seven new keys and three new declared sections are specified and not built: `viewer_text.*`, `brain.input_limits.*`, `brain.working_memory_own_lines`, `brain.cortex.repeat_similarity`, `brain.affect.count_window_ms` (CFG-SCH-042 to CFG-SCH-047, CFG-PRES-001 revised, CFG-PRES-012, CFG-PRES-013, CFG-USR-017). The control plane manifest's `config` lists need the new sections for the services that read them.

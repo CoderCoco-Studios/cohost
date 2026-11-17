@@ -30,7 +30,7 @@ Generated audio leaves for Discord only when mouth's Discord output is enabled.
 
 Viewer chat is untrusted text. It is bounded and marked as viewer text before
 it reaches any model prompt, so instructions inside it are not obeyed, and
-against hostile or flooding chat the co-host only ever ignores or discounts
+against hostile or flooding chat the co-host only ever ignores, discounts or forgets
 what it reads.
 
 ## Approach
@@ -248,7 +248,7 @@ code keeps the seams they need.
 1. **Not a chat moderation or command bot.** Lines starting with `!` and
    messages from known bots are dropped at the sense; cohost never times
    out, bans, or answers commands. Against hostile or flooding chat it only
-   ignores or discounts what it reads.
+   ignores, discounts or forgets what it reads.
 2. **Not a general assistant.** Goal 1 is the tie-breaker: the co-host is a
    second person in the room, so a tool serves the co-host's own lines and
    never turns it into a service that answers every message; the personality
@@ -370,7 +370,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
     per frame or per sample without a passing gate.
 13. **Viewer chat is data, never instructions.** Chat reaches a model prompt
     only bounded and marked as viewer text, and the defence against hostile
-    chat is to ignore or discount it (Non-Goal 1). Reject a path that puts
+    chat is to ignore, discount or forget it (Non-Goal 1). Reject a path that puts
     unbounded or unmarked viewer text in a prompt, and a defence that
     moderates a viewer.
 
@@ -378,7 +378,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 25 event types) plus a separate `cohost:health` heartbeat stream (26 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 26 event types) plus a separate `cohost:health` heartbeat stream (27 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
 decide when and what to say; the `tools` service runs the tools cortex asks
 for; the body speaks and animates; an operator dashboard watches and steers.
 
@@ -423,7 +423,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 25 event types plus 1 health type; consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 26 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML config schema and loader (`config.yaml`, `secrets.yaml`, start-time overrides), the presentation table that names every setting; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock, and a mock; streamed replies; image input on the chat providers that support it |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -608,7 +608,7 @@ direction.
   marked as viewer text (tenet 13). A flood of chat is discounted: it cannot
   displace the co-host's own recent lines from its context, and salience
   bounds how far one burst of chat counts toward speaking. The co-host avoids
-  repeating its own recent lines. Every defence ignores or discounts what the
+  repeating its own recent lines. Every defence ignores, discounts or forgets what the
   co-host reads; none moderates a viewer.
 - **Streamed speech.** cortex streams the chat model's reply, and `voice`
   synthesizes and a sink plays it clause by clause, so the first clause starts

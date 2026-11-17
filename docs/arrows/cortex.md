@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 124 specs: 78 `[x]`, 45 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the chat safety work (below). The LLD has open questions (a stop while a think is in flight; streamed replies and the checks after parsing; a repeat on a mention).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 128 specs: 74 `[x]`, 53 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the chat safety work (below). The LLD has open questions (a stop while a think is in flight; streamed replies and the checks after parsing; a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (124 specs, prefix `CTX`: 78 `[x]`, 45 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (128 specs, prefix `CTX`: 74 `[x]`, 53 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -105,7 +105,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 0 | 0 | 15 |
 
-**Summary:** 124 specs: 78 implemented, 1 deferred, 45 gaps.
+**Summary:** 128 specs: 74 implemented, 1 deferred, 53 gaps.
 
 ## Key Findings
 
@@ -122,6 +122,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 ## Work Required
 
+- Viewer identity and forgetting (design 2026-11-16, no code): viewer notes and the notes request are keyed by platform and user id (CTX-VIEWER-002, CTX-VIEWER-003, CTX-NOTES-001, CTX-NOTES-011) and `chat.removed` is read and forgotten (CTX-EVT-001, CTX-FORGET-001 to CTX-FORGET-003).
 ### Must Fix
 The repetition check, the no-line exit status, parsed critic rewrites, the guarded prompt (names, recalled memories, viewer notes, notice) and heard-text records are specified and not built (CTX-REPEAT-001 to CTX-REPEAT-015, CTX-GATE-012, CTX-CRITIC-002, CTX-CRITIC-003, CTX-CRITIC-007 to CTX-CRITIC-011, CTX-PROMPT-002, CTX-PROMPT-006, CTX-PROMPT-009 to CTX-PROMPT-015, CTX-EVT-005, CTX-EVT-011, CTX-EVT-012, CTX-FALL-007, CTX-NOTES-004, CTX-NOTES-009, CTX-NOTES-010, CTX-VIEWER-004). The LLD has three open questions: a stop during a think, streamed replies and the checks after parsing, and a repeat on a mention.
 

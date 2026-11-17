@@ -49,7 +49,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "98 specs: 74 [x], 24 [ ] (SHARED-GUARD-001 to SHARED-GUARD-024, the untrusted text guard). Chat safety design awaiting spec review."
+    next: "101 specs: 74 [x], 27 [ ] (SHARED-GUARD-001 to SHARED-GUARD-027, the untrusted text guard and the viewer key). Chat safety design awaiting spec review."
     drift: null
 
   module-contract:
@@ -61,7 +61,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "56 of 57 specs [x]; MOD-MAN-002 [ ] (manifest section lists for the chat safety sections). 57 specs: 56 [x], 1 [ ]. MOD-UI-001 to -006 are retired lines whose behaviour is DASH-SET-*. MOD-EX-001 to -005 (the example service) are not covered by the last audit. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
+    next: "55 of 57 specs [x]; MOD-MAN-002 [ ] (manifest section lists for the chat safety sections) and MOD-CFG-002 [ ] (twelve secret keys, YouTube chat)."
     drift: null
 
 
@@ -74,7 +74,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "134 specs: 124 [x], 10 [ ] (the chat safety keys: CFG-SCH-042 to CFG-SCH-047, CFG-PRES-001, CFG-PRES-012, CFG-PRES-013, CFG-USR-017). The last audit covered 82 of the earlier specs; an audit pass is still the next step."
+    next: "142 specs: 113 [x], 29 [ ] (chat safety keys; YouTube chat keys: chat.sources, chat.youtube.*, chat.youtube.api_key, CHAT_SOURCES). The last audit covered 82 of the earlier specs; an audit pass is still the next step."
     drift: null
 
   event-bus:
@@ -86,7 +86,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "171 specs: 162 [x], 4 [ ], 5 [D]. Open: BUS-NAT-EX-002..005, the Rust example client's round trip, which needs Redis and has not run. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009."
+    next: "175 specs: 158 [x], 12 [ ], 5 [D]. Open: BUS-NAT-EX-002..005, the Rust example client's round trip (needs Redis); YouTube chat and forgetting: BUS-EVT-001, 002, 010, 020, 033 to 036. Deferred: the merge-gate specs BUS-NAT-GATE-001, 004, 005, 006 and BUS-NAT-RS-009."
     drift: null
 
   model-backends:
@@ -122,7 +122,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "56 specs: 33 [x], 22 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard), 1 [D] (WM-STACK-001)."
+    next: "62 specs: 33 [x], 28 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard; platform and user id on the chat entry; forget), 1 [D] (WM-STACK-001)."
     drift: null
 
   chat:
@@ -134,7 +134,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "52 specs: 36 [x], 16 [ ] (chat safety: bounded text and name, name fallback, bounded injection)."
+    next: "165 specs: 20 [x], 145 [ ] (YouTube chat source, source list and plan, forgetting removed messages, chat safety). Design 2026-11-16; no code."
     drift: null
 
   eyes:
@@ -182,7 +182,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory]
     detail: salience.md
-    next: "92 specs: 75 [x], 16 [ ] (chat safety: counting a burst once, guarded scorer prompt), 1 [D] (SAL-TRIG-010)."
+    next: "98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
     drift: null
 
   affect:
@@ -194,7 +194,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "53 specs: 37 [x], 16 [ ] (chat safety: bounded intake, counting chat once per window, guarded appraiser prompt)."
+    next: "57 specs: 36 [x], 21 [ ] (chat safety: bounded intake, counting chat once per window, guarded appraiser prompt; viewer identity by platform and user id; dropping queued removed chat)."
     drift: null
 
   memory:
@@ -206,7 +206,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "147 specs: 122 [x], 25 [ ] (chat safety: bounded rows, guarded capture, consolidation and reflection prompts)."
+    next: "162 specs: 116 [x], 46 [ ] (chat safety: bounded rows, guarded capture, consolidation and reflection prompts; viewer identity by platform and user id; forgetting removed chat). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -218,7 +218,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory]
     detail: cortex.md
-    next: "124 specs: 78 [x], 45 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit), 1 [D] (CTX-REPLAN-001)."
+    next: "128 specs: 74 [x], 53 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit; viewer identity by platform and user id; forgetting removed chat), 1 [D] (CTX-REPLAN-001)."
     drift: null
 
   voice:
@@ -266,7 +266,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "239 specs: 239 [x], 0 [ ]. The React UI, secret write and pick lists were built after the last audit (2026-11-14) and are tested under services/dashboard/test/ui/ and services/dashboard/test/; run a separate audit to cover them. DASH-DOCS-013 to -016 are docs-page content with no test. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
+    next: "243 specs: 242 [x], 1 [ ] (DASH-SECRET-001: twelve secret paths, YouTube API key). The React UI, secret write and pick lists were built after the last audit (2026-11-14) and are tested under services/dashboard/test/ui/ and services/dashboard/test/; run a separate audit to cover them."
     drift: null
 
   control-plane:
@@ -278,7 +278,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "88 specs: 86 [x], 2 [D]. No open gaps."
+    next: "89 specs: 85 [x], 2 [ ] (the CHAT_SOURCES preset: CTRL-MANIFEST-003, CTRL-RUNTIME-009), 2 [D]."
     drift: null
 
   deployment:

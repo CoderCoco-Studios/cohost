@@ -1,10 +1,10 @@
 # Arrow: eyes
 
-Visual sense: OBS screenshot -> Ollama vision model -> change-only `vision.summary`, plus uploaded-image test injection and a heartbeat.
+Visual sense: OBS screenshot -> vision model through a chat provider that takes images (`vision.provider`, Ollama by default) -> change-only `vision.summary`, plus uploaded-image test injection and a heartbeat.
 
 ## Status
 
-**AUDITED**: 44 specs: 44 implemented, 0 deferred, 0 gaps.
+**DRIFTED**: 63 specs: 38 implemented, 25 gaps, 0 deferred. The code builds an Ollama-only describer from `vision.engine` and names its dependency `ollama`; `vision.provider`, the provider construction, hosted choice, configuration gaps, outage classes, egress notes and the `vision` dependency are specified and not built. Six earlier lines are revised and re-marked as gaps (`EYES-DESC-001`, `-006`, `EYES-STUB-001`, `-002`, `EYES-HEALTH-001`, `-003`).
 
 ## References
 
@@ -15,7 +15,7 @@ Visual sense: OBS screenshot -> Ollama vision model -> change-only `vision.summa
 - docs/intent/eyes/eyes-design.md
 
 ### EARS
-- docs/intent/eyes/eyes-specs.md (44 specs: 44 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `EYES`)
+- docs/intent/eyes/eyes-specs.md (63 specs: 38 `[x]`, 25 `[ ]`, 0 `[D]`; prefix `EYES`)
 
 ### Tests
 Files with `@spec EYES-` annotations:
@@ -48,9 +48,9 @@ Also: services/eyes/src/index.ts, services/eyes/package.json, services/eyes/tsco
 2. `eyes.ts`: `Eyes.look()` change-only publisher, `modelDescriber` (with the describe timeout) and `stubDescriber`, `stripDataUrl`, `startEyes` enablement gate.
 3. `inject.ts`: `createInjectHandler` over the shared inject handler (upload read timeout and size cap; the upload comes from Redis through `Bus.takeUpload`, SHARED-INJ-004 to SHARED-INJ-013) and `subscribeInject` (group created first, start mode `latest`); the staleness window `INJECT_STALE_MS` lives in `@cohost/shared`.
 4. `obs.ts`: `createObsLink` (connect with backoff, degraded while unreachable, reconnect on any close) and `stopEyes` (the single shutdown sequence).
-5. `health.ts`: `EyesHealth` (mode off/live/mock, deps `obs`/`ollama`, `track()` wrapper).
+5. `health.ts`: `EyesHealth` (mode off/live/mock, deps `obs`/`ollama`, `track()` wrapper); the intended dependency is `vision` (`EYES-HEALTH-001`, `-003`).
 
-Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` (the `ollama` provider) and the `@cohost/shared` workspace package (inject helpers; owned by this segment, no segment of its own). Calls OBS directly. Reads uploads from Redis, which `dashboard` writes. Consumed by `salience`, `affect`.
+Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` (the chat provider `vision.provider` names) and the `@cohost/shared` workspace package (inject helpers; owned by this segment, no segment of its own). Calls OBS directly. Reads uploads from Redis, which `dashboard` writes. Consumed by `salience`, `affect`.
 
 ## Spec Coverage
 
@@ -62,9 +62,12 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` 
 | Look loop and publication | EYES-LOOK-001 to EYES-LOOK-007 | 7 | 0 | 0 | 7 |
 | Test injection | EYES-INJ-001, EYES-INJ-007 to EYES-INJ-011, EYES-INJ-014, EYES-INJ-016, EYES-INJ-017 | 9 | 0 | 0 | 9 |
 | Stub describer | EYES-STUB-001 to EYES-STUB-002 | 2 | 0 | 0 | 2 |
-| Health | EYES-HEALTH-001 to EYES-HEALTH-006 | 6 | 0 | 0 | 6 |
+| Health | EYES-HEALTH-001 to EYES-HEALTH-007 | 7 | 0 | 0 | 7 |
+| Describer provider | EYES-PROV-001 to EYES-PROV-007 | 0 | 0 | 7 | 0 |
+| Configuration gaps | EYES-GAP-001 to EYES-GAP-005 | 0 | 0 | 5 | 0 |
+| Egress | EYES-EGR-001 to EYES-EGR-004 | 0 | 0 | 4 | 0 |
 
-**Summary:** 44 of 44 specs implemented; 0 deferred; 0 open. 44 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 38 of 62 specs implemented; 0 deferred; 24 gaps. The Vision description, Test injection, Stub describer and Health rows above list their original counts; the revised and new lines in them (`EYES-INJ-018`, `EYES-STUB-003`, and the six re-marked lines) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -80,7 +83,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `model-backends` 
 ## Work Required
 
 ### Must Fix
-None.
+1. Build `vision.provider`, the provider construction, the `vision` dependency, configuration gaps, outage classes and egress notes (the `[ ]` lines of `EYES-PROV`, `-GAP`, `-EGR` and the re-marked lines); the config schema and presentation follow in the config segment.
 
 ### Should Fix
 None.

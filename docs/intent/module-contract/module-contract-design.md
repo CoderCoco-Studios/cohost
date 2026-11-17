@@ -83,6 +83,8 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 
 The `dashboard` section is read by the dashboard itself, which is not a unit: it applies on the dashboard's next start.
 
+The optional engine servers (`tts-pocket`, `stt-nemotron`, `stt-kyutai`, each behind a Compose profile) are compose-only units with no descriptor fields: the Services screen lists them and the two-way test between the Compose file and the manifest covers them, and no unit lists one in `uses`, because a profile that is not enabled leaves the unit `unknown` and the `needs` annotation would then name a server nobody asked for. The dependency of `voice` and `ears` on the engine they selected is their own `deps.tts` and `deps.stt`. Launch starts whichever profiles `COMPOSE_PROFILES` names, and the stack card shows a first build and a first weights download as ordinary starting phases and not-ready services ([deployment](../deployment/deployment-design.md) Speech engine servers).
+
 ## Settings editor
 
 ### Routes (dashboard)
@@ -162,7 +164,7 @@ Start, stop and restart stay the control plane's: manifest-gated, one unit at a 
 
 Each Services row opens a test panel for that unit (a side sheet in the React UI):
 
-1. **Run isolated.** The existing isolated start (its preset and its `requires` closure). The presets make every declared input work with no account and no model server: eyes adds `VISION_ENGINE=stub` (a stub describer), ears `EARS_STT_ENGINE=stub` (a stub transcriber), mouth `MOUTH_DRYRUN_ENABLED=true` (a `dryrun` output that times each line and claims it as a sink, and can be told to give up on every n-th line to exercise the fallback line). Each stub is specified by its own segment (eyes EYES-STUB-*, ears EARS-STUB-*, mouth MOUTH-DRY-*).
+1. **Run isolated.** The existing isolated start (its preset and its `requires` closure). The presets make every declared input work with no account and no model server: eyes adds `VISION_PROVIDER=stub` (a stub describer), ears `EARS_STT_ENGINE=stub` (a stub transcriber), mouth `MOUTH_DRYRUN_ENABLED=true` (a `dryrun` output that times each line and claims it as a sink, and can be told to give up on every n-th line to exercise the fallback line). Each stub is specified by its own segment (eyes EYES-STUB-*, ears EARS-STUB-*, mouth MOUTH-DRY-*).
 2. **Inputs.** One form per declared input. Service-level kinds use the existing `POST /inject/text|image|audio`; the side sheet names the unit as the `target` of an audio injection (`ears` or `connector-discord`). Bus event types use `POST /inject/event { unit, type, data }`: the type must be one of the unit's declared inputs, `data` is validated against the bus schema, `injected: true` is set where the event schema has the flag, and the response is `202 { id }` with the bus id of the published event. Gated like the other inject routes. An injection for a unit whose derived state is `down` or `unknown` is refused `409` (`service not running: <unit>`), for the service-level routes too, so a test input never vanishes into a stopped consumer group.
 3. **Feed.** The live feed filtered to the unit's `test.observe` types and its `inject.result`s.
 

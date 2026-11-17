@@ -4,7 +4,7 @@
 
 ## Status
 
-**DRIFTED**: 123 specs: 58 implemented, 62 gaps, 3 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002` dynamic speech; `VOICE-ENG-017` Qwen3-TTS). The code is the Kokoro-only synthesizer; the engine contract, `openai` and `pocket` engines, the shared WAV reader, bounds, the concurrency gate, error classes, configuration gaps, egress notes and the `tts` health dependency are specified and not built. Eight earlier lines are revised and re-marked as gaps (`VOICE-SYN-002`, `VOICE-ENV-005`, `VOICE-CLIP-001`, `-003`, `-005`, `-006`, `VOICE-HLTH-001` to `-003`).
+**DRIFTED**: 123 specs: 58 implemented, 62 gaps, 3 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002`, clause-chunked synthesis and streaming input; `VOICE-ENG-017` Qwen3-TTS). The code is the Kokoro-only synthesizer; the engine contract, `openai` and `pocket` engines, the shared WAV reader, bounds, the concurrency gate, error classes, configuration gaps, egress notes and the `tts` health dependency are specified and not built. Eight earlier lines are revised and re-marked as gaps (`VOICE-SYN-002`, `VOICE-ENV-005`, `VOICE-CLIP-001`, `-003`, `-005`, `-006`, `VOICE-HLTH-001` to `-003`).
 
 ## Listening and speaking split
 
@@ -20,7 +20,7 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 
 ## Barge-in and echo gate
 
-`VOICE-STOP-001` to `VOICE-STOP-010` obey `voice.stop`; `VOICE-CHUNK-001` and `VOICE-CHUNK-002` are `[D]` (dynamic speech). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+`VOICE-STOP-001` to `VOICE-STOP-010` obey `voice.stop`; `VOICE-CHUNK-001` and `VOICE-CHUNK-002` are `[D]` (clause-chunked synthesis and streaming input). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
 
 ## References
 
@@ -31,7 +31,7 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (123 specs: 58 `[x]`, 62 `[ ]`, 3 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (147 specs: 35 `[x]`, 111 `[ ]`, 1 `[D]`; prefix `VOICE`)
 
 ### Tests
 Files with `@spec VOICE-` annotations:
@@ -81,7 +81,7 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 | WAV and lip-sync envelope | VOICE-ENV-003 to VOICE-ENV-005 | 3 | 0 | 0 | 3 |
 | Sink arbitration | VOICE-SINK-001 to VOICE-SINK-013 | 13 | 0 | 0 | 13 |
 | Stopping a line | VOICE-STOP-001 to VOICE-STOP-008 | 8 | 0 | 0 | 8 |
-| Dynamic speech | VOICE-CHUNK-001 to VOICE-CHUNK-002 | 0 | 2 | 0 | 0 |
+| Clause-chunked synthesis | VOICE-CHUNK-001 to VOICE-CHUNK-002 | 0 | 2 | 0 | 0 |
 | Audio store and HTTP | VOICE-HTTP-001 to VOICE-HTTP-008 | 8 | 0 | 0 | 8 |
 | Fallback clips | VOICE-CLIP-001 to VOICE-CLIP-012 | 12 | 0 | 0 | 12 |
 | Health | VOICE-HLTH-001 to VOICE-HLTH-005 | 5 | 0 | 0 | 5 |
@@ -91,7 +91,7 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 | Errors and configuration gaps | VOICE-ERR-001 to VOICE-ERR-003, VOICE-GAP-001 to VOICE-GAP-005 | 0 | 0 | 8 | 0 |
 | Egress | VOICE-EGR-001, VOICE-EGR-002 | 0 | 0 | 2 | 0 |
 
-**Summary:** 58 of 123 specs implemented; 3 deferred; 62 gaps. The category rows above for Synthesis, Fallback clips and Health list their original counts; the revised and new lines in those facets are gaps (`VOICE-CLIP-013` to `016`, `VOICE-HLTH-006` to `010`, and the eight re-marked lines). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 147 specs: 35 implemented, 111 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

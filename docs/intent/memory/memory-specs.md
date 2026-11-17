@@ -4,14 +4,14 @@ Design: [memory-design.md](memory-design.md). Prefix `MEM`. `[x]` = implemented,
 
 ## Event handling
 
-- [x] **MEM-EVT-001**: The memory service shall consume the bus in three consumer groups subscribed with start mode `resume` (a group created by this subscription starts at the stream's newest entry; a group that already exists resumes after its last delivered entry, so events published while memory was down are stored after a restart): group `memory` for `chat.message`, `speech.heard`, `brain.say` and `brain.status`, group `memory-recall` for `memory.recall.request`, `memory.notes.request` and `memory.viewers.request`, and group `memory-notes` for `chat.message` and `speech.heard` (note capture), so that a recall never queues behind a slow embed plus INSERT and a slow classifier call never delays either. <!-- openspec: memory § Event handling and consumer groups --> <!-- test: services/memory/test/startup.test.ts -->
+- [ ] **MEM-EVT-001**: The memory service shall consume the bus in three consumer groups subscribed with start mode `resume` (a group created by this subscription starts at the stream's newest entry; a group that already exists resumes after its last delivered entry, so events published while memory was down are stored after a restart): group `memory` for `chat.message`, `speech.heard`, `brain.say`, `brain.clause` and `brain.status`, group `memory-recall` for `memory.recall.request`, `memory.notes.request` and `memory.viewers.request`, and group `memory-notes` for `chat.message` and `speech.heard` (note capture), so that a recall never queues behind a slow embed plus INSERT and a slow classifier call never delays either. <!-- openspec: memory § Event handling and consumer groups --> <!-- test: services/memory/test/startup.test.ts -->
 - [x] **MEM-EVT-002**: When the memory handler receives an event type it does not act on (for example `affect.state`), the memory service shall do nothing and publish nothing. <!-- test: services/memory/test/region.test.ts -->
 
 ## Storing memories
 
 - [ ] **MEM-WRITE-001**: When a `chat.message` arrives, the memory service shall remember it as kind `chat` with its text as bounded by MEM-WRITE-006 (who = the message `user`) only if `mentionsCohost` is true, and shall store nothing for unaddressed chat. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/region.test.ts, services/memory/test/region.test.ts -->
 - [ ] **MEM-WRITE-002**: When a `speech.heard` arrives, the memory service shall remember it as kind `speech` with its text as bounded by MEM-WRITE-007 with who = the `speaker`. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/region.test.ts -->
-- [x] **MEM-WRITE-003**: When a `brain.say` arrives from any publisher, the memory service shall remember it as kind `self` (who = `cfg.cohost.name`) only if its text is two or more characters. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/region.test.ts -->
+- [ ] **MEM-WRITE-003**: When a `brain.say` without `more` arrives from any publisher, the memory service shall remember it as kind `self` (who = `cfg.cohost.name`) only if its text is two or more characters. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/region.test.ts -->
 - [x] **MEM-WRITE-004**: When the Postgres store remembers a line, it shall embed the string `"<who>: <text>"` and insert `kind`, `who`, `text` and the embedding as a pgvector literal into table `memories`. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/memory.test.ts -->
 - [x] **MEM-WRITE-005**: If embedding or INSERT throws while remembering, the Postgres store shall log a warning and not propagate the error. <!-- openspec: memory § Storing memories --> <!-- test: services/memory/test/memory.test.ts -->
 - [ ] **MEM-WRITE-006**: When the memory service remembers a `chat` line, it shall store and embed its text as `boundText(text, viewer_text.max_chars)`, whatever put the event on the bus.
@@ -222,3 +222,18 @@ A voice speaker accrues notes like a chat viewer. Design: [Voice speakers](memor
 - [ ] **MEM-FORGET-005**: When a `chat.removed` matches no stored memory row, the memory service shall change nothing and raise no error.
 - [ ] **MEM-FORGET-006**: If deleting the rows for a `chat.removed` fails, then the memory service shall log a warning and handle the next event.
 - [ ] **MEM-FORGET-007**: When a `chat.removed` arrives, the memory service shall leave every viewer row, its `msg_count` and flags, and every viewer note and deletion record unchanged.
+
+## Streamed lines
+
+Design: LLD Streamed lines. A streamed reply is one `self` row, written when its line closes; memory's 300 s write-out bound counts memory's own events (it is not the line-end bound of event-bus).
+
+- [ ] **MEM-WRITE-010**: When a `brain.say` carrying `more` arrives, the memory service shall open a line keyed by its `id` holding its text and its `skipInjected` decision, and write no row yet; more than one line may be open at once.
+- [ ] **MEM-WRITE-011**: When a `brain.clause` arrives for an open line, whose `seq` is exactly one more than the last it accepted and whose text is not empty, the memory service shall add the text to the line, separated by one space.
+- [ ] **MEM-WRITE-012**: When a `brain.clause` arrives for an `id` with no open line, or with a `seq` that is a duplicate or out of order, the memory service shall drop it, logging a warning for the latter; an empty closing clause shall append nothing.
+- [ ] **MEM-WRITE-013**: When a `brain.clause` with `last` true arrives for an open line, the memory service shall write the line as one row of kind `self` (who = `cfg.cohost.name`) if its text is two or more characters, and close it.
+- [ ] **MEM-WRITE-014**: When a `brain.status` of `idle` or `muted` arrives, the memory service shall write and close every open line.
+- [ ] **MEM-WRITE-015**: When 300 s have passed since the memory service last read a `brain.say` or `brain.clause` of an open line, it shall write and close that line.
+- [ ] **MEM-WRITE-016**: When the memory service stops, it shall write every open line.
+- [ ] **MEM-WRITE-017**: When the memory service restarts, it shall hold no open line: a line open at the restart is lost, and the `brain.clause` events replayed for it shall be dropped.
+- [ ] **MEM-WRITE-018**: A `brain.say` of another line, and a `brain.status` of `thinking` or `speaking`, shall close no open line and drop no later clause of it.
+- [ ] **MEM-WRITE-019**: Where an open line's `brain.say` was injected and not remembered (MEM-INJ-*), the memory service shall write no row for the line or its clauses.

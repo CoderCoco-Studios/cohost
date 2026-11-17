@@ -306,7 +306,10 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 4. **Speaking is gated.** Every `brain.say` either passed salience's
    threshold, cooldown and busy checks, matched a reflex that respects the
    same busy and cooldown gates, or was an explicit operator `say`. A tool
-   result is input to cortex's reply, not a path to `brain.say`. Reject a
+   result is input to cortex's reply, not a path to `brain.say`. A reply
+   spoken clause by clause is one `brain.say` with its later clauses in
+   `brain.clause` events, which only cortex publishes and only for a line that
+   passed these checks, each behind the mute and busy re-check. Reject a
    new path to `brain.say` that bypasses those gates.
 5. **A configuration gap degrades, never crashes.** A service missing a
    token, channel, device or app stays up, reports `degraded` or `off` in
@@ -378,7 +381,7 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
-bus (`cohost:events`, 26 event types) plus a separate `cohost:health` heartbeat stream (27 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
+bus (`cohost:events`, 27 event types) plus a separate `cohost:health` heartbeat stream (28 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
 decide when and what to say; the `tools` service runs the tools cortex asks
 for; the body speaks and animates; an operator dashboard watches and steers.
 
@@ -423,7 +426,7 @@ flowchart LR
 
 | Taxonomy | Segment | Role (observed) |
 | --- | --- | --- |
-| platform | event-bus | Typed Redis Streams bus; 26 event types plus 1 health type; consumer groups; test double |
+| platform | event-bus | Typed Redis Streams bus; 27 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML config schema and loader (`config.yaml`, `secrets.yaml`, start-time overrides), the presentation table that names every setting; personality / expressions files |
 | platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock, and a mock; streamed replies; image input on the chat providers that support it |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
@@ -436,8 +439,8 @@ flowchart LR
 | brain | salience | Scores events, decides when to speak, fires reflexes |
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
-| brain | cortex | `attention.focus` → recall → LLM (streamed, with the tool loop) → critic → `brain.say` |
-| body | voice | `brain.say` → TTS engine (Kokoro or another) → `voice.utterance` + lip-sync envelope, clause by clause; sink arbitration; generates and serves the fallback clips |
+| brain | cortex | `attention.focus` → recall → LLM (streamed, with the tool loop) → clauses, each checked (critic, repetition, mute and busy) → `brain.say` (first clause) and `brain.clause` (the rest) |
+| body | voice | `brain.say` and `brain.clause` → TTS engine (Kokoro or another) → `voice.utterance` + lip-sync envelope, one per clause; sink arbitration; generates and serves the fallback clips |
 | body | mouth | `voice.utterance` → the owner's routed outputs (today Discord, through the co-host's bot) as sinks; the spoken fallback line when a line cannot play |
 | body | avatar | Canonical avatar state → VTube Studio / VMC / browser driver; the browser driver writes each frame's canonical parameters to a capped Redis stream of its own |
 | operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, settings editor, Services screen, stack launch / stop / restart-all, Viewers page, test-input injection; serves its own UI bundle and the built docs site, and, on its LAN listener, the avatar renderer page, the owner's model file and the avatar frame relay |
@@ -557,21 +560,29 @@ direction.
 
 - **Turn-taking.** salience publishes `attention.focus`; cortex publishes
   `brain.status` (thinking / speaking / idle / muted) which salience uses as a
-  busy flag; `voice.done` releases cortex. Reflexes bypass the LLM by
+  busy flag; `voice.done` releases cortex (for a line of several clauses, once every
+  sink that played part of it has reported the `voice.done` of its last
+  clause). Reflexes bypass the LLM by
   publishing `brain.say` from salience directly. Mute and pause are seen only
   by the regions that decide to speak: salience and cortex honour `mute` and
   `pause` (affect also honours `pause` for its own appraisal), and a mute or
   pause that lands while a decision is in flight stops that decision. voice and
   ears never read `control`, and mouth reads it only for `set_routing` (which
   outputs are live): none of them acts on `mute` or `pause`, so they speak and
-  play every `brain.say` they receive and muting upstream is the only mute. An operator `say` is the one
+  play every `brain.say` they receive and muting upstream is the only mute;
+  when a mute or pause lands while cortex has a reply of its own being spoken,
+  cortex stops that line by publishing a `voice.stop` (reason `muted` or
+  `paused`), which the body obeys like any stop. An operator `say` is the one
   override: cortex speaks it even while muted, paused or busy. A line that
   is stopped by barge-in (below) is released by `voice.stop` and the
   interrupted `voice.done` instead of by the end of its audio.
-- **Audio sink arbitration.** voice publishes `voice.utterance`; any sink
+- **Audio sink arbitration.** voice publishes `voice.utterance`, one per
+  clause of a streamed line; any sink
   (each mouth output under its own name, today "discord"; the dashboard page
-  "dashboard") claims it with `voice.playing`; if no
-  claim arrives within 1.5 s voice emits a virtual playing / done pair, and a
+  "dashboard") claims it with `voice.playing`, a claim covering the line's later
+  clauses; if no
+  claim arrives within 1.5 s of the line's first clause voice emits a virtual
+  playing / done pair per clause, in order, and a
   real claim that arrives after the window cancels the pending virtual
   `voice.done` so cortex is not released while audio still plays.
   avatar lip-syncs on `voice.playing` using the envelope from the utterance.
@@ -612,8 +623,16 @@ direction.
   co-host reads; none moderates a viewer.
 - **Streamed speech.** cortex streams the chat model's reply, and `voice`
   synthesizes and a sink plays it clause by clause, so the first clause starts
-  before the whole reply exists. The speaking gates apply as for any line
-  (tenet 4), and barge-in, `voice.stop` and the fallback line behave as above.
+  before the whole reply exists. A reply is one line with one id: its
+  `brain.say` carries the first clause and `brain.clause` events of the same id
+  the rest, so everything that acts once per line (salience's cooldown, the
+  mood nudge, the avatar's gesture) needs no clause handling. cortex checks each clause
+  before it publishes it (the critic hook, the repetition check, the mute and busy
+  re-check; an `llm` or `http` critic sees the whole reply first). The
+  speaking gates apply as for any line (tenet 4), and barge-in, `voice.stop`
+  and the fallback line behave as above, covering every clause of the line; a
+  stop also ends cortex's reading of the stream. Records (working memory and
+  long-term memory) hold the clauses cortex published.
   Deciding at clause boundaries whether to continue, adapt, pivot or resume
   stays in Future / ideal state below.
 - **Avatar frames.** The avatar Engine alone owns animation: timing, smoothing,
@@ -695,8 +714,9 @@ direction.
   silence is immediate rather than one buffer later. The interrupted line ends
   with a `voice.done` flagged `interrupted`, which carries the text spoken so
   far and the text left unsaid when mouth can compute them. cortex ends every
-  line it was waiting on and starts no think and aborts none: one thought at a
-  time stays. The reverse problem is echo: audio sources that can carry the
+  line it was waiting on and starts no think, and aborts no think that has not
+  begun to speak: one thought at a time stays. Salience's barge-in is not the
+  only stop: cortex also stops its own reply on a mute or pause. The reverse problem is echo: audio sources that can carry the
   co-host's own voice back (the desktop capture helper; the Discord source
   cannot, because bot accounts are never read) are named in
   `ears.echo_suppress_sources`, and ears drops their utterances while any line
@@ -718,9 +738,12 @@ audio ears received) to `voice.playing` for the line that answers it, split
 across the stages `cohostctl latency` reports: `stt` (audio end to
 `speech.heard`), `salience` (`speech.heard` to `attention.focus`), `prep`
 (`attention.focus` to the first LLM request: memory recall and viewer notes),
-`llm` (first LLM request to the reply), `critic` (the critic hook's call, when
-it ran), `say` (the last of those to `brain.say`), `tts` (`brain.say` to `voice.utterance`) and `sink`
-(`voice.utterance` to `voice.playing`).
+`llm` (first LLM request to the first clause of the reply, which is the whole
+reply when the critic is an `llm` or `http` hook that has to see all of it),
+`critic` (the critic hook's call, when it ran), `say` (the last of those to
+`brain.say`, the first clause's publication), `tts` (`brain.say` to `voice.utterance`) and `sink`
+(`voice.utterance` to `voice.playing`), the last two measured on the first
+clause: the budget is the wait before the co-host starts speaking.
 
 The vision path runs from the moment eyes captured the frame (`capturedAt`) to
 `voice.playing`, split into `describe` (`capturedAt` to
@@ -783,7 +806,7 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Vision before model choice | The vision path is stamped and reported (`cohostctl latency`) before the vision model or frame source is chosen | Pick a smaller model or a new frame source first, on expectation | The vision model's share of reaction time is unknown, and a model swap or a new frame source costs far more than a stamp. The measured per-stage p50 and p95 decide whether describe time, the salience tick or the frame source is the bottleneck. | [eyes](intent/eyes/eyes-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
-| Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop`; every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
+| Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop` (cortex publishes one too when a mute or pause lands during its own reply); every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
 | Echo of the co-host's own voice | ears drops utterances of the sources named in `ears.echo_suppress_sources` (default `desktop`) while any line plays and for `ears.echo_tail_ms` after it | Acoustic echo cancellation; a transcript-similarity filter; filtering in salience; gating every source | The desktop helper records the host's output device and so can hear the co-host; Discord cannot, because the connector never reads a bot account. Dropping at the source before speech-to-text spends no model call on the echo and keeps the brain unaware of it. The cost is that a person's speech on a gated source is lost while a line plays, which is why barge-in listens to Discord by default. | [ears](intent/ears/ears-design.md); [salience](intent/salience/salience-design.md) |
 | Streamed, clause-sized speech | cortex streams the chat model's reply and `voice` synthesizes it and a sink plays it clause by clause, so the first clause starts before the whole reply exists; the speaking gates (tenet 4) and barge-in apply unchanged | Synthesize and play the whole reply once it is complete | A whole-reply hand-off makes the `llm` and `tts` stages add, and both grow with the length of the reply; starting the first clause as soon as it exists overlaps them, so the wait before the co-host starts speaking depends on the first clause rather than the whole reply. | [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md); [model-backends](intent/model-backends/model-backends-design.md) |
 | Re-planning at clause boundaries (deferred) | Recorded as deferred specs; not built. Deciding at each clause boundary whether to continue, adapt, pivot or resume stays in Future / ideal state | Build clause-level re-thinking now | It needs a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist; stopping and re-answering delivers most of the value for a fraction of the change. | The HLD ideal-state section above; [cortex](intent/cortex/cortex-design.md) |

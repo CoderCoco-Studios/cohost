@@ -20,7 +20,7 @@ separate, offline CLI (`reflect.ts`) consolidates stored memories into the
 Guiding shape, as observed:
 
 - Memory is a bus region like the others: it talks only through events
-  (`chat.message`, `speech.heard`, `brain.say`, `brain.status`,
+  (`chat.message`, `speech.heard`, `brain.say`, `brain.clause`, `brain.status`,
   `memory.recall.request`, `memory.notes.request`, `memory.viewers.request` in;
   `memory.viewer`, `memory.recall.reply`, `memory.notes.reply`,
   `memory.viewers.reply` out). The dashboard reaches viewer notes only through
@@ -52,10 +52,11 @@ function is shared by the `memory` and `memory-recall` consumer groups; the
 | in | `chat.message` | `memory` | `touchViewer(viewerKey, user)` on every line, with the key the shared guard's `viewerKey` gives (Viewers); if `mentionsCohost`, publish `memory.viewer` (with the viewer's `platform` and `userId`) then `remember("chat", user, text)` with the text bounded (Viewer text in rows and prompts) and the line's `platform`, `userId` and `messageId` recorded on the row; a line named `unknown` with no `userId` skips the viewer row and `memory.viewer` | `region.ts` |
 | in | `chat.removed` | `memory` | delete the stored chat memory rows the removal covers (Forgetting a removed message) | `region.ts` |
 | in | `speech.heard` | `memory` | `remember("speech", speaker, text)` for every utterance; when it carries a `speakerId`, also `touchSpeaker` so the speaker has a viewer row (Voice speakers, `MEM-VOICE-002`) | `region.ts` |
-| in | `brain.say` | `memory` | if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator) | `region.ts` |
+| in | `brain.say` | `memory` | a line without `more`: if `text.length >= 2`, `remember("self", cfg.cohost.name, text)`; any publisher (cortex, reflex, operator). A line with `more` is held open instead (Streamed lines) | `region.ts` |
+| in | `brain.clause` | `memory` | add the clause to the open line with that id; the closing clause (`last`) writes the line (Streamed lines) | `region.ts` |
 | in | `memory.recall.request` | `memory-recall` | `store.recall(query, k)` then publish `memory.recall.reply` | `region.ts` |
 | in | `chat.message`, `speech.heard` | `memory-notes` | live note capture on every non-skipped chat line and every non-skipped voice line that carries a `speakerId` (Viewer notes, `MEM-CAPTURE-*`, `MEM-VOICE-003`) | `capture.ts` |
-| in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`) | `region.ts`, `startup.ts` |
+| in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`); an `idle` or `muted` state also writes every open streamed line (Streamed lines) | `region.ts`, `startup.ts` |
 | in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
 | out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
@@ -95,11 +96,20 @@ that event rather than retrying it. The handler therefore catches a failed
 `touchViewer` itself, logs it, skips `memory.viewer` and still remembers the
 mention (`MEM-VIEWER-006`, `region.ts`).
 
+### Streamed lines
+
+A reply the co-host speaks clause by clause is one line, and memory stores one `self` row for it holding the text of the clauses cortex published, whether the reply finished, was cut by a check or was interrupted ([event-bus](../event-bus/event-bus-design.md) Streamed lines). One row, not one per clause, because recall embeds and matches a row as a whole, and a clause alone is a poor memory of what was said.
+
+- A `brain.say` without `more` is stored at once.
+- A `brain.say` with `more` opens a line in memory, keyed by its id: the first clause and the `skipInjected` decision of the `brain.say`. More than one line may be open at once. Each `brain.clause` adds its text to the open line with its id, separated by one space, when its `seq` is exactly one more than the last it accepted for the line and its text is not empty; any other clause is dropped with a warning (an empty closing event appends nothing). A line is written, as one row with the usual `text.length >= 2` rule, when the first of these happens for it: its closing clause (`last`) arrives; cortex reports `idle` or `muted` through `brain.status`, which says it has nothing pending and so closes every open line (a safety for a line whose closing clause never came, as after a cortex crash); 300 seconds pass since the line's last `brain.say` or `brain.clause` was read (memory's write-out bound, the same number as the 300 s of [event-bus](../event-bus/event-bus-design.md) Streamed lines but counted on memory's own events only); or memory stops. Another line's `brain.say` (an operator `say`, a reflex) and a `thinking` or `speaking` status close nothing and drop no later clause: a `thinking` status is published for a focus cortex declines while a reply is still streaming.
+- A `brain.clause` for an id with no open line (the line was written, or memory started in the middle of it) is ignored.
+- An open line is a small in-memory entry that nothing waits on, so it adds no wait to the live path. Open lines are not persisted: a line open when memory restarts is lost, and the clauses the `resume` group replays for it find no open line and are ignored. Persisting open lines was rejected as machinery for the rare loss of one line.
+
 ### Test injection
 
 `skipInjected` (`region.ts`) returns true for `injected === true && remember !== true`.
 For `chat.message`, `speech.heard` and `brain.say` an injected, not-remembered event
-causes no viewer row, no `memory.viewer`, and no memory row (`region.ts`).
+causes no viewer row, no `memory.viewer`, and no memory row (`region.ts`); the clauses of such a line, which carry no flags, follow the line's `brain.say` and are not remembered either.
 `remember` is ignored on events that are not `injected` (`region.test.ts`).
 `memory.recall.request` has no injection flag and is always served.
 
@@ -695,6 +705,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Announce viewer before embed | publish `memory.viewer` then `remember` | after | Comment `region.ts`: "before the slow embed so the cortex has it when the reply is built." |
 | Recency exclusion | `ts < now() - 2 minutes` | include everything | Keeps the live conversation, which the cortex already has in its working-memory transcript, out of recalled memories, so a reply does not "remember" what was said a moment ago. The window is a fixed time span while the cortex window is a count of events (`brain.working_memory_events`), so the two are an approximation of each other, not an exact match; `store.ts`, `fake-store.ts` |
 | Write error handling | `remember`/`recall` swallow and warn; a failed `touchViewer` is caught, logged, and the mention is still remembered | throw everywhere; let the bus drop the whole event | owner decision 2026-11-01: the show goes on without memory, and a viewer-table error must not lose the memory itself; `store.ts`, `MEM-VIEWER-006` |
+| A streamed line is one memory row, written when it closes | Hold each open line by id and write one `self` row at its closing clause, an `idle` or `muted` status, a 300 s bound or shutdown | A row per clause; write the first clause at once and update the row as clauses arrive; write only the whole planned reply; persist open lines so a restart keeps them | Recall and the reflection pass read a `self` row as the co-host's line, so one row per line keeps them reading lines. Updating a stored row would embed it again for every clause. The text is what cortex published, the stance already taken for a failed line (the mouth decision Long-term memory keeps the intended line): a cut reply is remembered as far as it went. The status and the 300 s bound end the hold when no closing clause comes; a next line or a `thinking` status says nothing about this line, so neither closes it. Open lines live in memory only: persisting them is machinery for the rare loss of one line when the service restarts mid-line. |
 | Vector dimension mismatch | Fail `init` loudly, no retry, fatal exit | silently keep running; report degraded; migrate or re-embed | owner decision 2026-11-01: a mismatch makes every write and recall fail while health says `ok`, so it must stop startup; migration is decided separately; `MEM-STORE-002` |
 | Moving to a new vector dimension | A `reembed` one-shot (also `cohostctl reembed`) that stages new vectors in `embedding_new` and swaps every table's column in one transaction | a table per model; drop and start over; migrate lazily inside the running service | The stored text is the source of truth and the owner keeps memories and viewer notes across an embedder change; staging keeps the old vectors serving until every row is done, so an interrupted run loses nothing. A table per model would split recall across vector spaces that cannot be compared; starting over throws away notes the owner curated; a running service would race live writes with half-migrated columns. The dimension check at `init` stays fatal (`MEM-STORE-002`). `MEM-REEMBED-*` |
 | Reflection's access to the store | `connect()` (tables exist, no DDL, no embedder) and the consolidation lock | `init()` with its embed probe; no lock | Reflection reads rows and a cursor and calls the chat model, so an unreachable embedder must not stop it; the lock keeps it from overlapping a note pass or another reflection. `MEM-REFLECT-011`, `MEM-REFLECT-012` |
@@ -755,7 +766,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 - Tests: `services/memory/test/{admin,backend,capture,consolidate-run,consolidation,contract,fake-store,health,main,memory,notes,notes-store,notes-store.pg,reembed,reflect,region,scheduler,startup,surface}.test.ts` and the shared `store-contract.ts`
 - Parent: [high-level-design](../../high-level-design.md)
 - Config keys read besides `brain.memory.*`: `viewer_text.max_chars`, `viewer_text.max_name_chars`, `brain.input_limits.speech_max_chars`.
-- Depends on: shared-runtime (`@cohost/shared/untrusted`), event-bus (events `chat.message`, `speech.heard`, `brain.say`,
+- Depends on: shared-runtime (`@cohost/shared/untrusted`), event-bus (events `chat.message`, `speech.heard`, `brain.say`, `brain.clause`,
   `memory.*`, `Bus.subscribe/publish`, start mode `resume`, the `onReady` group-ready option), config
   (`loadConfig`, `urls.database`, `loadPersonality/savePersonality`,
   `brain.memory.*`), model-backends (`Ollama`, `HashEmbedder`, `createChatProvider`),

@@ -24,7 +24,7 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (250 specs, prefix `DASH`: 238 `[x]`, 12 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (269 specs, prefix `DASH`: 234 `[x]`, 31 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -84,7 +84,7 @@ Orientation:
 | Settings screen | DASH-SET-001 to DASH-SET-030 | 30 | 0 | 0 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 
-**Summary:** 239 of 250 specs implemented; 0 deferred; 11 open (DASH-SECRET-001, DASH-OPT-001, DASH-OPT-005, DASH-EGR-001 to -004, DASH-UI-037, DASH-SET-034, DASH-CTRL-005, DASH-DOCS-016). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 269 specs: 231 implemented, 38 gaps, 0 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

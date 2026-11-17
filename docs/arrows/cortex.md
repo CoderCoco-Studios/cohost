@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 128 specs: 74 `[x]`, 53 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the chat safety work (below). The LLD has open questions (a stop while a think is in flight; streamed replies and the checks after parsing; a repeat on a mention).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 191 specs: 58 `[x]`, 132 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the chat safety work (below) and the streamed-reply specs. The LLD has open questions (a stop while a think is in flight; a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (128 specs, prefix `CTX`: 74 `[x]`, 53 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (191 specs, prefix `CTX`: 69 `[x]`, 106 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -105,7 +105,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 0 | 0 | 15 |
 
-**Summary:** 128 specs: 74 implemented, 1 deferred, 53 gaps.
+**Summary:** 191 specs: 58 implemented, 132 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

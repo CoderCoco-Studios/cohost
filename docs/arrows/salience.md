@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 98 specs: 73 `[x]`, 24 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 103 specs: 71 `[x]`, 31 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -36,7 +36,7 @@ SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (98 specs, prefix `SAL`: 73 `[x]`, 24 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (103 specs, prefix `SAL`: 71 `[x]`, 31 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -91,7 +91,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-011 | 11 | 0 | 0 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 
-**Summary:** 98 specs: 73 implemented, 1 deferred (SAL-TRIG-010), 24 gaps.
+**Summary:** 103 specs: 71 implemented, 31 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

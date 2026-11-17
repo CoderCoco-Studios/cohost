@@ -4,7 +4,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus event
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` (AVATAR-VTS-017). Total 67 specs: 67 `[x]`, 0 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` (AVATAR-VTS-017). Total 71 specs: 60 `[x]`, 11 `[ ]`, 0 `[D]`.
 
 **AUDITED**: 62 specs: 62 implemented, 0 deferred, 0 gaps. The LLD has no open questions. The docs site's extension guides added AVATAR-EX-001 to AVATAR-EX-004 (the UDP JSON example driver), implemented and tested, not yet audited; the spec file now holds 66 specs (66 `[x]`, 0 `[ ]`, 0 `[D]`).
 
@@ -17,7 +17,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (66 specs: 66 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `AVATAR`)
+- docs/intent/avatar/avatar-specs.md (71 specs: 60 `[x]`, 11 `[ ]`, 0 `[D]`; prefix `AVATAR`)
 
 ### Tests
 Files with `@spec AVATAR-` annotations:
@@ -74,7 +74,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 | Health | AVATAR-HEALTH-001 to AVATAR-HEALTH-004 | 4 | 0 | 0 | 4 |
 | Development | AVATAR-DEV-001 | 1 | 0 | 0 | 1 |
 
-**Summary:** 62 of 62 specs implemented; 0 deferred; 0 open. 62 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 71 specs: 60 implemented, 11 gaps, 0 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

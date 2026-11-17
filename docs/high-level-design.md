@@ -437,7 +437,6 @@ flowchart LR
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
 | brain | cortex | `attention.focus` → recall → LLM (streamed, with the tool loop) → critic → `brain.say` |
-| tools | tools | Tool requests from cortex → the owner's allow-listed MCP tools, with per-call timeouts and a mock mode → tool results |
 | body | voice | `brain.say` → TTS engine (Kokoro or another) → `voice.utterance` + lip-sync envelope, clause by clause; sink arbitration; generates and serves the fallback clips |
 | body | mouth | `voice.utterance` → the owner's routed outputs (today Discord, through the co-host's bot) as sinks; the spoken fallback line when a line cannot play |
 | body | avatar | Canonical avatar state → VTube Studio / VMC / browser driver; the browser driver writes each frame's canonical parameters to a capped Redis stream of its own |

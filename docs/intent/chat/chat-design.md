@@ -119,7 +119,7 @@ Every value is a key of `config.yaml` except the key, which is the one secret (H
 
 ### The video value
 
-The value is trimmed and read by one pure function, which returns a video id or nothing; the host of a URL is compared case-insensitively. A video id is eleven characters of letters, digits, `-` and `_`. Accepted:
+The value is trimmed and read by one pure function, `parseVideoValue` in `@cohost/shared`, which returns a video id or nothing and which the [tools](../tools/tools-design.md) service's stream info calls too, so the second reader does not copy it (HLD tenet 11); the host of a URL is compared case-insensitively. A video id is eleven characters of letters, digits, `-` and `_`. Accepted:
 
 | Form | Example |
 |---|---|
@@ -234,7 +234,7 @@ A message of a type that is mapped to `chat.message` with no text, or an author 
 
 ### Egress and trust
 
-Reading YouTube chat is a platform connection, an intentional external integration, not egress (HLD tenet 8). What leaves the host is the API key, the video id and the chat id, and no other credential or identifier, to the two fixed Google hosts; no chat text, memory, embedding or viewer note is sent anywhere. The chat container needs outbound HTTPS (port 443) to those hosts and publishes no port. Chat stores nothing from YouTube; what memory keeps of a YouTube viewer, and for how long, is memory's owner decision (memory Decisions & Alternatives, Retention of YouTube viewers).
+Reading YouTube chat is a platform connection, an intentional external integration, not egress (HLD tenet 8); the tools service's stream info reads the same `chat.youtube.video` and `chat.youtube.api_key` and `chat.twitch.channel`, `client_id` and `client_secret` for its own lookups and is a platform connection of the same kind. What leaves the host is the API key, the video id and the chat id, and no other credential or identifier, to the two fixed Google hosts; no chat text, memory, embedding or viewer note is sent anywhere. The chat container needs outbound HTTPS (port 443) to those hosts and publishes no port. Chat stores nothing from YouTube; what memory keeps of a YouTube viewer, and for how long, is memory's owner decision (memory Decisions & Alternatives, Retention of YouTube viewers).
 
 ## Forgetting a removed message
 

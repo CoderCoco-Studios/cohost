@@ -20,7 +20,7 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 | Page (retired to DASH-SET-*) | MOD-UI-001 to MOD-UI-006 | 6 | 0 | 0 |
 | Example service | MOD-EX-001 to MOD-EX-005 | 5 | 0 | 0 |
 
-**Summary:** 55 of 59 specs implemented; 0 deferred; 4 open (MOD-MAN-002, MOD-CFG-002, MOD-MAN-013, MOD-MAN-014). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 49 of 60 specs implemented; 0 deferred; 11 open (MOD-MAN-002, MOD-CFG-002, MOD-MAN-013, MOD-MAN-014). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work required
 
@@ -36,7 +36,7 @@ None outstanding.
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (59 specs: 55 `[x]`, 4 `[ ]`, 0 `[D]`)
+- docs/intent/module-contract/module-contract-specs.md (60 specs: 49 `[x]`, 11 `[ ]`, 0 `[D]`)
 
 ### Code
 - packages/control/src/manifest.ts, health.ts

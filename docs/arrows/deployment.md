@@ -28,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (103 specs, prefix `DEPLOY`: 76 `[x]`, 27 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (105 specs, prefix `DEPLOY`: 73 `[x]`, 32 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -82,7 +82,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-007 | 7 | 7 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 77 of 101 specs implemented; 0 deferred; 24 open (the speech engine servers: DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, and DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008 revised). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 73 of 105 specs implemented; 0 deferred; 32 open (the speech engine servers: DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, and DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008 revised). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

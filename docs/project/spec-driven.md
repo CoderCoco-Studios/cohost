@@ -30,7 +30,7 @@ HLD → LLDs → EARS → Tests → Code
 
 Segments (flat): `config`, `event-bus`, `model-backends`, `region-hooks`, `connections`,
 `working-memory`, `shared-runtime`, `control-plane`, `chat`, `eyes`, `ears`,
-`salience`, `affect`, `memory`, `cortex`, `voice`, `mouth`, `avatar`,
+`salience`, `affect`, `memory`, `cortex`, `tools`, `voice`, `mouth`, `avatar`,
 `dashboard`, `deployment`, `module-contract`, `docs-site`.
 Start at `docs/arrows/index.yaml`; `blockedBy` gives the dependency order.
 The `@cohost/shared` package is the `shared-runtime` segment.

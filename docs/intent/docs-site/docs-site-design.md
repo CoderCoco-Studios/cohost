@@ -115,7 +115,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | Status | `project/status.md` | What has run against real accounts and apps and what has not |
 | Verification log | `project/verification-log.md` | Dated records of live runs |
 
-The sidebar has four levels at most. Level 1 is the four sections (Start here, Set it up and run it, Build on it, Project), always open. Level 2 is the groups inside a section: Install, Connect, Tune and Operate are open; Testing, Extend, Reference and Architecture start closed. Start here and Project hold pages directly. Levels 3 and 4 exist only inside Architecture: the subgroups Design (the five HLD excerpts), Segments (holding one taxonomy group per HLD Segments taxonomy value, platform, senses, brain, body, operator, in that table's order) and Decisions, all starting closed.
+The sidebar has four levels at most. Level 1 is the four sections (Start here, Set it up and run it, Build on it, Project), always open. Level 2 is the groups inside a section: Install, Connect, Tune and Operate are open; Testing, Extend, Reference and Architecture start closed. Start here and Project hold pages directly. Levels 3 and 4 exist only inside Architecture: the subgroups Design (the five HLD excerpts), Segments (holding one taxonomy group per HLD Segments taxonomy value, platform, senses, brain, tools, body, operator, in that table's order) and Decisions, all starting closed.
 
 The top nav links the start of each track: Start here (What is cohost?), Guide (What you need), Advanced (Developer setup) and Project (How specs work), plus the GitHub repository. The home page's three entry actions go to What is cohost?, What you need and Developer setup.
 

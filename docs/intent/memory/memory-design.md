@@ -111,7 +111,7 @@ A reply the co-host speaks clause by clause is one line, and memory stores one `
 For `chat.message`, `speech.heard` and `brain.say` an injected, not-remembered event
 causes no viewer row, no `memory.viewer`, and no memory row (`region.ts`); the clauses of such a line, which carry no flags, follow the line's `brain.say` and are not remembered either.
 `remember` is ignored on events that are not `injected` (`region.test.ts`).
-`memory.recall.request` has no injection flag and is always served.
+`memory.recall.request` has no injection flag and is always served, whoever asks: cortex for the focus of each reply and the tools service for the model's own `memory_lookup` question ([tools](../tools/tools-design.md) Built-in tools). Both read the reply by `id`; each ignores a reply to the other's request.
 
 ### Viewer text in rows and prompts
 
@@ -576,7 +576,7 @@ after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 
 After the owner changes the embedder to one with another vector size, `init` refuses the
 existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
-`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `tools` profile, or
+`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `jobs` profile, or
 `cohostctl reembed`) is the way forward; run it with the memory service stopped.
 
 - `runReembed` (`reembed-run.ts`) takes the consolidation lock (`MEM-REEMBED-004`), calls
@@ -774,7 +774,7 @@ The running cortex does not learn of the change until a `reload_personality` con
   control-plane (heartbeat contract, `startHeartbeat`, `tracked`, manifest start
   mode `resume` and groups `memory`, `memory-recall` and `memory-notes`), cortex (`brain.status`, read to pace consolidation)
 - Depended on by: cortex (sends `memory.recall.request` and `memory.notes.request`,
-  consumes `memory.recall.reply`, `memory.notes.reply` and `memory.viewer`),
+  consumes `memory.recall.reply`, `memory.notes.reply` and `memory.viewer`), tools (sends `memory.recall.request` for `memory_lookup` and consumes `memory.recall.reply`),
   dashboard (test injection of chat and speech reaches memory with
   `injected`/`remember` flags; Viewers page through `memory.viewers.*`),
   deployment (compose service `memory`, reflect and consolidate invocation, the

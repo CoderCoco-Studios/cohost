@@ -21,7 +21,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |
 | Untrusted text guard | SHARED-GUARD-001 to SHARED-GUARD-024 | 0 | 0 | 24 | 0 |
 
-**Summary:** 74 of 101 specs `[x]`; 27 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 74 of 106 specs `[x]`; 32 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## References
 
@@ -32,7 +32,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (101 specs: 74 `[x]`, 27 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (106 specs: 74 `[x]`, 32 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec SHARED-` annotations)
 - packages/shared/test/: audio, boot, boundary, control-routing, control, discord-voice, idle, inject-handler, lifecycle, retry, shutdown, wav (`*.test.ts`)

@@ -11,7 +11,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 ## Orientation
 
 - Design: LLD § Service manifest, Runtime, Controller, Stack controller, Lifecycle lock, Health derivation, Container healthcheck, `cohostctl`, Latency report.
-- The manifest has 16 units: eleven pnpm application services (`connector-discord` among them) and five compose-only units. The host-run dashboard is not a unit.
+- The manifest has 20 units: twelve pnpm application services (`connector-discord` and `tools` among them) and eight compose-only units. The host-run dashboard is not a unit.
 - The heartbeat publisher is `startHeartbeat` in `packages/shared/src/lifecycle.ts`, called from `packages/shared/src/boot.ts`; its mechanics are SHARED-LIFE-006 to SHARED-LIFE-014 ([shared-runtime.md](shared-runtime.md)). What a published state means to an observer is CTRL-HEALTH-*.
 - Compose side: the `x-ts-service` anchor in `docker-compose.yml` realizes CTRL-CHECK-003 and passes the isolation preset through (CTRL-RUNTIME-009); the `Dockerfile` bakes `SERVICE` into the image. Both belong to [deployment.md](deployment.md) (DEPLOY-HC-001, DEPLOY-COMPOSE-017).
 - The dashboard consumes the stack controller (DASH-STACK-*, [dashboard.md](dashboard.md)); the readiness wait relies on the Compose healthcheck.
@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (94 specs, prefix `CTRL`: 84 `[x]`, 8 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (95 specs, prefix `CTRL`: 78 `[x]`, 15 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -55,7 +55,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 **Purpose:** Let the operator see per-service health and start, stop or restart services (compose containers), safely and with an audit trail, from the dashboard or a CLI.
 
 **Key Components:**
-1. `manifest.ts` — allow-list of 16 units (11 pnpm services, 5 compose-only), with consumer groups, default start mode, `infra` flag, `requires`, isolation env presets.
+1. `manifest.ts` — allow-list of 20 units (12 pnpm services, 8 compose-only), with consumer groups, default start mode, `infra` flag, `requires`, isolation env presets.
 2. `runtime.ts` — `ComposeRuntime` (`docker compose up -d|stop|restart`, `--force-recreate` for env overrides, the `consolidate` and `reembed` one-shots), the only runtime; `docker.ts` resolves the Docker executable.
 3. `controller.ts` — `ServiceController`: guards (unknown, infra), fresh/resume orchestration with consumer-group reset to `$`, the `requires` closure for isolated starts, `service.lifecycle` audit callback.
 4. `stack.ts` — `StackController`: launch, rebuild, stop-all, restart-all, status with restart counts, derived stack state.
@@ -81,7 +81,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -017 | 15 | 15 | 0 | 0 |
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
 
-**Summary:** 94 specs: 83 implemented, 9 gaps, 2 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 95 specs: 78 implemented, 15 gaps, 2 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

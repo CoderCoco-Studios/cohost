@@ -61,7 +61,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "55 of 57 specs [x]; MOD-MAN-002 [ ] (manifest section lists for the chat safety sections) and MOD-CFG-002 [ ] (twelve secret keys, YouTube chat)."
+    next: "55 of 59 specs [x]; MOD-MAN-002 [ ] (manifest section lists, `network` added for voice, ears and eyes), MOD-CFG-002 [ ] (secret keys) and MOD-MAN-013, MOD-MAN-014 [ ] (engine server units)."
     drift: null
 
 
@@ -74,7 +74,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "142 specs: 113 [x], 29 [ ] (chat safety keys; YouTube chat keys: chat.sources, chat.youtube.*, chat.youtube.api_key, CHAT_SOURCES). The last audit covered 82 of the earlier specs; an audit pass is still the next step."
+    next: "174 specs: 104 [x], 70 [ ] (chat safety keys; YouTube chat keys; speech and vision engine keys, network.lan, five new secret paths, egressDestinations, VISION_PROVIDER). The last audit covered 82 of the earlier specs; an audit pass is still the next step."
     drift: null
 
   event-bus:
@@ -266,7 +266,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane]
     detail: dashboard.md
-    next: "243 specs: 242 [x], 1 [ ] (DASH-SECRET-001: twelve secret paths, YouTube API key). The React UI, secret write and pick lists were built after the last audit (2026-11-14) and are tested under services/dashboard/test/ui/ and services/dashboard/test/; run a separate audit to cover them."
+    next: "250 specs: 239 [x], 11 [ ] (DASH-SECRET-001: secret paths; the egress marks DASH-EGR-*, DASH-UI-037, DASH-SET-034; Kokoro-only voice list DASH-OPT-001, -005; DASH-CTRL-005, DASH-DOCS-016). The React UI, secret write and pick lists were built after the last audit (2026-11-14) and are tested under services/dashboard/test/ui/ and services/dashboard/test/; run a separate audit to cover them."
     drift: null
 
   control-plane:
@@ -278,7 +278,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "89 specs: 85 [x], 2 [ ] (the CHAT_SOURCES preset: CTRL-MANIFEST-003, CTRL-RUNTIME-009), 2 [D]."
+    next: "91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
     drift: null
 
   deployment:
@@ -290,7 +290,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "81 specs: 81 [x], 0 [ ]. The nine specs listed in deployment.md closed after the last audit and are not covered by it. DEPLOY-INST-007, -011, -014 are checked by source-order tests only. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
+    next: "101 specs: 77 [x], 24 [ ] (speech engine servers: DEPLOY-ENG-*, DEPLOY-CI-010, -011, DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008). The nine specs listed in deployment.md closed after the last audit and are not covered by it. DEPLOY-INST-007, -011, -014 are checked by source-order tests only. An audit pass is the next step: the specs are written and implemented, and the segment moves from MAPPED to AUDITED once the audit has verified them against the code."
     drift: null
 
   docs-site:

@@ -4,7 +4,7 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002). Total 100 specs: 96 `[x]`, 2 `[ ]` (EARS-SRC-014 and -015, the desktop capture helper), 2 `[D]`.
+**PARTIAL**, 2026-11-16: the STT engine design (more speech engines) is specified and not built. The spec file holds 162 specs: 88 `[x]`, 72 `[ ]`, 2 `[D]`. 62 new `[ ]` specs cover the engine contract (EARS-ENG), the streaming session (EARS-SES), the Nemotron and Kyutai engines (EARS-NEM, EARS-KYU), streaming partials (EARS-PART-016 to 022) and health (EARS-HLTH-004 to 011); eight existing specs are revised and re-marked `[ ]` (EARS-HEAR-005, EARS-PART-001, 004, 005, 006, 012, EARS-VAD-003, EARS-HLTH-003). The other 88 `[x]` lines are unchanged. Earlier: `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002); the two older gaps are the desktop capture helper (EARS-SRC-014, 015).
 
 **AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone. The docs site's extension guides added EARS-EX-001 to EARS-EX-007 (the example audio clients, the `curl` script and the conversion scripts), implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent), not yet audited; the spec file now holds 100 specs (96 `[x]`, 2 `[ ]`, 2 `[D]`).
 
@@ -17,6 +17,7 @@ LLD: [ears-design.md](../intent/ears/ears-design.md) (Startup plans, Capture sou
 - `http` takes POSTed 16-bit PCM or WAV, `dir` takes WAV files dropped in a polled directory, both bounded by the shared inject limits and both working with `ears.stt_engine: stub` (EARS-CAP-*). A container serving `http` needs `ears.http.host: 0.0.0.0` and a published port, left to the operator.
 - The `desktop` source is a connector whose clips arrive over the `http` listener until the capture helper writes frames (EARS-SRC-009 to 016, CONN-DESK-*).
 - Injection (`inject.request`, kind `audio`) works in every plan (EARS-INJ-*, SHARED-INJ-*).
+- STT engines: batch (`speaches`, `openai`, `stub`) and streaming (`nemotron`, `kyutai`) behind one contract; one session per open utterance; echo-suppressed sources, `http`, `dir` and injection never use a session; a session that cannot serve falls back to the batch engine `ears.stt_fallback_engine` (EARS-ENG-*, EARS-SES-*, EARS-NEM-*, EARS-KYU-*, EARS-HLTH-004 to 011).
 
 ## Barge-in and echo gate
 
@@ -31,23 +32,27 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (100 specs: 96 `[x]`, 2 `[ ]`, 2 `[D]`; the gaps are the desktop helper, EARS-SRC-014 and 015; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
+- docs/intent/ears/ears-specs.md (162 specs: 88 `[x]`, 72 `[ ]`, 2 `[D]`; the gaps are the engine design above and the desktop helper, EARS-SRC-014 and 015; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Spec Coverage
 
 | IDs | Topic | Specs | Markers |
 | --- | --- | --- | --- |
 | EARS-START-001 to 008 | startup plans, consumer group | 6 | 6 `[x]` |
-| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 11 `[x]` |
-| EARS-VAD-001 to 008 | endpointing | 8 | 8 `[x]` |
-| EARS-PART-001 to 015 | partial transcripts | 15 | 14 `[x]`, 1 `[D]` |
+| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 10 `[x]`, 1 `[ ]` |
+| EARS-VAD-001 to 008 | endpointing | 8 | 7 `[x]`, 1 `[ ]` |
+| EARS-PART-001 to 022 | partial transcripts | 22 | 9 `[x]`, 12 `[ ]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
 | EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 12 `[x]`, 2 `[ ]`, 1 `[D]` |
 | EARS-CON-001 to 005 | connector sources | 5 | 5 `[x]` |
 | EARS-ECHO-001 to 009 | echo gate | 9 | 9 `[x]` |
 | EARS-INJ-005 to 012 | audio injection | 7 | 7 `[x]` |
 | EARS-STUB-001 to 002 | stub transcriber | 2 | 2 `[x]` |
-| EARS-HLTH-001 to 003 | health | 3 | 3 `[x]` |
+| EARS-HLTH-001 to 012 | health | 12 | 2 `[x]`, 10 `[ ]` |
+| EARS-ENG-001 to 012 | STT engines, batch engine, fallback, timeouts, gaps | 12 | 12 `[ ]` |
+| EARS-SES-001 to 013 | streaming session | 13 | 13 `[ ]` |
+| EARS-NEM-001 to 007 | Nemotron engine | 7 | 7 `[ ]` |
+| EARS-KYU-001 to 014 | Kyutai engine | 14 | 14 `[ ]` |
 
 ### Tests
 - services/ears/test/*.test.ts (`audio`, `ears`, `filter`, `transcript`, `stub`, `loop`, `service`, `session`, `health`, `inject`, `inject-limits`, `capture`, `capture-http`, `capture-dir`, `connector-source`, `endpointing`, `partials`, `echo`, `timing`, `silero`, `no-discord`)
@@ -67,7 +72,7 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 1. `index.ts` / `service.ts`: start through `runService`, choose the startup plan with `earsPlan`, wire the heartbeat and inject handler, register the one shutdown.
 2. `sources.ts`, `capture.ts`: resolve `ears.sources` into adapters; `capture-http.ts`, `capture-dir.ts` and `connector-source.ts` are the adapters.
 3. `session.ts`: the `ears` bus loop (`inject.request`, plus `voice.playing` and `voice.done` for the echo gate), group creation with start mode `latest`, the single shutdown sequence.
-4. `hearing.ts`: resampling of any clip rate to 16 kHz mono, min-length gate, STT HTTP client, echo-gate drop, `speech.heard` publish with the clip's `source`.
+4. `hearing.ts`: resampling of any clip rate to 16 kHz mono, min-length gate, the STT engine call (or a streaming session's final), echo-gate drop, `speech.heard` publish with the clip's `source`.
 5. `vad.ts`, `echo.ts`: the Silero endpointing detector and the echo gate.
 6. `audio.ts`, `inject.ts`, `health.ts`, `transcript.ts`: WAV header reading, the inject handler, the plan and heartbeat, `ears.drop_phrases`.
 
@@ -82,6 +87,9 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 
 ### Must Fix
 None.
+
+### Drift
+The design of the STT engines (EARS-ENG, EARS-SES, EARS-NEM, EARS-KYU, EARS-PART-016 to 022, EARS-HLTH-004 to 011) is ahead of the code: `hearing.ts` has the one speaches transcriber and `ears.stt_engine` has two values. The eight revised specs name the lines whose built behaviour changes.
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.

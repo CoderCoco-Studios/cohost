@@ -6,7 +6,7 @@ The four obligations every application service meets (dashboard-configurable thr
 
 Under the one-place configuration design ([decision](../decisions/config-in-one-place.md)) the settings editor reports secrets as set or not set, lists the units that run an isolation override, serves the presentation table with the schema and answers the success and error shapes of MOD-CFG-001 to -021, the sensitive-key gate (MOD-CFG-007) and `?dryRun=1` (MOD-CFG-013) included, both realized by the dashboard's Settings screen. MOD-UI-001 to -006 are retired lines whose behaviour is the dashboard's DASH-SET-*, marked `[x]` like the dashboard's other retired lines. Total 57 specs: 56 `[x]`, 1 `[ ]`, 0 `[D]`.
 
-**MAPPED.** 55 of 57 specs implemented, 2 gaps (MOD-MAN-002, the manifest's section lists for the chat safety sections); the last 5 are the example service (below). Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its Settings screen (MOD-CFG; MOD-UI is retired to the dashboard's DASH-SET-*), dependents shown `needs` in the Services screen (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test side sheet and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). The docs site's extension guides added MOD-EX-001 to MOD-EX-005 (the `now-playing` example service), implemented and tested, not yet audited. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 55 of 59 specs implemented, 4 gaps (MOD-MAN-002, the manifest's section lists, now with `network`; MOD-CFG-002; MOD-MAN-013 and -014, the engine units); the last 5 are the example service (below). Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its Settings screen (MOD-CFG; MOD-UI is retired to the dashboard's DASH-SET-*), dependents shown `needs` in the Services screen (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test side sheet and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). The docs site's extension guides added MOD-EX-001 to MOD-EX-005 (the `now-playing` example service), implemented and tested, not yet audited. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 ## Spec Coverage
 
@@ -20,7 +20,7 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 | Page (retired to DASH-SET-*) | MOD-UI-001 to MOD-UI-006 | 6 | 0 | 0 |
 | Example service | MOD-EX-001 to MOD-EX-005 | 5 | 0 | 0 |
 
-**Summary:** 55 of 57 specs implemented; 0 deferred; 2 open (MOD-MAN-002, MOD-CFG-002). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 55 of 59 specs implemented; 0 deferred; 4 open (MOD-MAN-002, MOD-CFG-002, MOD-MAN-013, MOD-MAN-014). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work required
 
@@ -36,7 +36,7 @@ None outstanding.
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (57 specs: 55 `[x]`, 2 `[ ]`, 0 `[D]`)
+- docs/intent/module-contract/module-contract-specs.md (59 specs: 55 `[x]`, 4 `[ ]`, 0 `[D]`)
 
 ### Code
 - packages/control/src/manifest.ts, health.ts

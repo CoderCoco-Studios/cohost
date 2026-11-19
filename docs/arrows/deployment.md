@@ -6,7 +6,9 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller reads `config.yaml` (DEPLOY-COMPOSE-008, -011), Compose carries no operator credential and mounts `./config` (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` is seeded and ignored (DEPLOY-INST-005, DEPLOY-REPO-003, DEPLOY-IMG-005), the dashboard ports are `config.yaml` keys (DEPLOY-INST-008, DEPLOY-HOST-002, -003), the dashboard UI build and its place in `build`, `typecheck`, `test` and `dashboard` (DEPLOY-REPO-002, DEPLOY-HOST-001) and the operator documentation, README quick start and Bedrock guidance follow (DEPLOY-README-002, -005, -007). Total 81 specs: 81 `[x]`, 0 `[ ]`, 0 `[D]`.
 
-**MAPPED** — 81 specs: 81 implemented, 0 deferred, 0 gaps; the last audit covered 79 specs and ran before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004, -005, -006, DEPLOY-README-002, -003, -005, -006 and the UI-build wording of DEPLOY-REPO-002, DEPLOY-REPO-003 and DEPLOY-HOST-001 closed; those are not covered by that audit. DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts` and DEPLOY-REPO-002 and 003 in `services/dashboard/test/root-scripts.test.ts`; the real `dashboard` script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED** — 101 specs: 77 implemented, 0 deferred, 24 gaps (the engine servers, below); the last audit covered 79 specs and ran before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004, -005, -006, DEPLOY-README-002, -003, -005, -006 and the UI-build wording of DEPLOY-REPO-002, DEPLOY-REPO-003 and DEPLOY-HOST-001 closed; those are not covered by that audit. DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts` and DEPLOY-REPO-002 and 003 in `services/dashboard/test/root-scripts.test.ts`; the real `dashboard` script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+
+**Speech engine servers (design 2026-11-16, no code).** Three opt-in Compose profiles (`pocket`, `nemotron`, `kyutai`) build and run Pocket TTS, NeMo-Speech.cpp and `moshi-server`: image names `cohost-<service>:<version>`, sources pinned by full commit SHA or exact crate version, loopback ports, weight-cache volumes, GPU overlay entries, healthchecks and the Pocket token path are DEPLOY-ENG-001 to -018; the pin checks added to `scripts/lid-check.mjs` are DEPLOY-CI-010 and -011. Unverified: the servers' cache paths, VRAM, the Pocket and NeMo-Speech.cpp build times and whether the Pocket download needs the token.
 
 ## Orientation
 
@@ -26,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (81 specs, prefix `DEPLOY`: 81 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (103 specs, prefix `DEPLOY`: 76 `[x]`, 27 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
@@ -80,11 +82,12 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-007 | 7 | 7 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 81 of 81 specs implemented; 0 deferred; 0 open. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 77 of 101 specs implemented; 0 deferred; 24 open (the speech engine servers: DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, and DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008 revised). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
 ### Must Fix
+- Speech engine servers: three Compose services, their Dockerfiles under `docker/`, the overlay entries, `.env.example` and installer text, and the `lid-check` pin checks (DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008).
 None.
 
 ### Should Fix

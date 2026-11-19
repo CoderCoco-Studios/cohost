@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**AUDITED** — 42 specs: 41 implemented (`[x]`), 0 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL** — 56 specs: 33 implemented (`[x]`), 22 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the chat safety work (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (42 specs: 41 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (56 specs: 33 `[x]`, 22 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -47,15 +47,15 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Window | WM-WIN-001 to WM-WIN-008 | 8 | 0 | 0 | 8 |
-| Ingest | WM-PUSH-001 to WM-PUSH-013 | 13 | 0 | 0 | 13 |
+| Window | WM-WIN-001 to WM-WIN-012 | 7 | 0 | 5 | 8 |
+| Ingest | WM-PUSH-001 to WM-PUSH-020 | 10 | 0 | 10 | 13 |
 | Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
-| Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
-| Transcript | WM-TRANS-001 to WM-TRANS-011 | 11 | 0 | 0 | 11 |
+| Package | WM-PKG-001 | 0 | 0 | 1 | 1 |
+| Transcript | WM-TRANS-001 to WM-TRANS-014 | 8 | 0 | 6 | 11 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 41 of 42 specs implemented; 1 deferred; 0 gaps. 41 carry a test `@spec` annotation.
+**Summary:** 33 of 56 specs implemented; 1 deferred; 22 gaps. 41 carry a test `@spec` annotation.
 
 ## Key Findings
 
@@ -70,7 +70,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 ## Work Required
 
 ### Must Fix
-None.
+Bounding on `push`, the quoted `[chat]` line and speaker labels, own-line protection in eviction, `markHeard`, and the `@cohost/shared` dependency are specified and not built (WM-WIN-001, WM-WIN-009 to WM-WIN-011, WM-PUSH-014 to WM-PUSH-020, WM-PKG-001, WM-TRANS-002, WM-TRANS-003, WM-TRANS-008, WM-TRANS-012 to WM-TRANS-014).
 
 ### Should Fix
 1. Add `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise propagation (other segments' files).

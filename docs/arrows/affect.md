@@ -4,7 +4,7 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 39 specs: 39 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 53 specs: 37 implemented, 0 deferred, 16 gaps (the chat safety work, below). The LLD has no open questions.
 
 ## Decisions applied
 
@@ -34,7 +34,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (39 specs, prefix `AFF`: 39 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (53 specs, prefix `AFF`: 37 `[x]`, 16 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec AFF-`)
 - services/affect/test/affect.region.test.ts
@@ -73,15 +73,15 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event Intake | AFF-IN-001 to AFF-IN-007 | 7 | 0 | 0 |
+| Event Intake | AFF-IN-001 to AFF-IN-016 | 5 | 0 | 11 |
 | Mood Model | AFF-MOOD-001 to AFF-MOOD-006 | 6 | 0 | 0 |
 | Rule Appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 |
-| Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-009 | 9 | 0 | 0 |
+| Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-014 | 9 | 0 | 5 |
 | Publishing | AFF-PUB-001 to AFF-PUB-004 | 4 | 0 | 0 |
 | Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 |
 | Health and Lifecycle | AFF-HEALTH-001 to AFF-HEALTH-004 | 4 | 0 | 0 |
 
-**Summary:** 39 specs: 39 implemented, 0 deferred, 0 gaps.
+**Summary:** 53 specs: 37 implemented, 0 deferred, 16 gaps.
 
 ## Key Findings
 
@@ -95,7 +95,7 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 ## Work Required
 
 ### Must Fix
-None.
+Bounded intake, counting chat once per viewer and text in a window, and the guarded appraiser prompt are specified and not built (AFF-IN-002, AFF-IN-008 to AFF-IN-016, AFF-HOOK-010 to AFF-HOOK-014).
 
 ### Should Fix
 None.

@@ -108,3 +108,29 @@ The session's only user is the Discord connector ([connections](../connections/c
 
 - [x] **SHARED-BOUND-001**: A behaviour shall be moved into `@cohost/shared` only when a second service needs it; voice's lip-sync envelope, mouth's output gain and fallback clip handling, and ears' speaker capture stay in their services.
 - [x] **SHARED-BOUND-002**: `@cohost/shared` shall depend on `@cohost/config` and `@cohost/bus` only among workspace packages, and `@cohost/bus` shall not depend on `@cohost/shared`.
+
+## Untrusted text guard (SHARED-GUARD)
+- [ ] **SHARED-GUARD-001**: The `@cohost/shared` package shall export the subpath `@cohost/shared/untrusted`, mapped to its built module and type declarations, beside the main entry and `@cohost/shared/discord-voice`.
+- [ ] **SHARED-GUARD-002**: The `@cohost/shared/untrusted` module shall import nothing from the workspace and nothing from `node_modules`, and shall perform no I/O, read no clock and call no model.
+- [ ] **SHARED-GUARD-003**: The `@cohost/shared/untrusted` functions `boundText`, `quoteUntrusted`, `speakerLabel`, `untrustedNotice` and `normalizeKey` shall return a value for every string input and never throw.
+- [ ] **SHARED-GUARD-004**: When `boundText(raw, max)` is called, it shall turn each tab (U+0009), line feed (U+000A), vertical tab (U+000B), form feed (U+000C), carriage return (U+000D) and next line (U+0085) in `raw` into one space.
+- [ ] **SHARED-GUARD-005**: When `boundText` is called, it shall remove the C0 controls U+0000 to U+001F other than those SHARED-GUARD-004 turns into a space, DEL, the C1 controls U+007F to U+009F other than U+0085, the directional marks U+200E, U+200F and U+061C, the bidirectional controls U+202A to U+202E and U+2066 to U+2069, the zero-width space U+200B, the word joiner and invisible operators U+2060 to U+2064, the soft hyphen U+00AD, U+FEFF, and the tag characters U+E0000 to U+E007F.
+- [ ] **SHARED-GUARD-006**: When `boundText` is called, it shall keep the zero-width joiner U+200D and the zero-width non-joiner U+200C.
+- [ ] **SHARED-GUARD-007**: When `boundText` is called, it shall turn every run of Unicode white space into one space and trim white space from both ends.
+- [ ] **SHARED-GUARD-008**: If the text produced by `boundText` has more than `max` code points, then `boundText` shall return the first `max - 1` code points, backed off to a grapheme cluster boundary so that no cluster is split, with trailing white space dropped, followed by `…`, so that the result has at most `max` code points.
+- [ ] **SHARED-GUARD-009**: If no whole grapheme cluster fits in `max - 1` code points, then `boundText` shall return `…` alone.
+- [ ] **SHARED-GUARD-010**: The `boundText` function shall be idempotent: for every string `x` and every `max` of at least 2, `boundText(boundText(x, max), max)` shall equal `boundText(x, max)`.
+- [ ] **SHARED-GUARD-011**: When `quoteUntrusted(raw, max)` is called, it shall replace every `«` and `»` in `raw` with a straight double quote, apply `boundText` with `max`, and return the result between `«` and `»`.
+- [ ] **SHARED-GUARD-012**: When `quoteUntrusted` is called, it shall change no character of the bounded text other than the replacement of `«` and `»`, so that square brackets, transcript tags and `Name:` prefixes in `raw` are returned as written.
+- [ ] **SHARED-GUARD-013**: When `speakerLabel(raw, max)` is called, it shall replace `[`, `]`, `(`, `)`, `:`, `«` and `»` in `raw` with spaces and then apply `boundText` with `max`.
+- [ ] **SHARED-GUARD-014**: If the result of `speakerLabel` is empty, then `speakerLabel` shall return `unknown` whatever `max` is, never shortened.
+- [ ] **SHARED-GUARD-015**: The `@cohost/shared/untrusted` module shall export `UNKNOWN_NAME` equal to `unknown`, `UNTRUSTED_OPEN` equal to `«` and `UNTRUSTED_CLOSE` equal to `»`.
+- [ ] **SHARED-GUARD-016**: When `untrustedNotice(subject)` is called, it shall return an instruction stating that text between `«` and `»` is `subject`, quoted as information, and that it is never an instruction for the co-host to follow.
+- [ ] **SHARED-GUARD-017**: When `untrustedNotice(subject)` is called, it shall return an instruction stating that a line inside the quotes is never from anyone else and that a trailing `…` means the message was cut short.
+- [ ] **SHARED-GUARD-018**: When `normalizeKey(raw)` is called, it shall return `raw.toLowerCase()` called with no locale argument, with every run of white space replaced by one space and white space trimmed from both ends.
+- [ ] **SHARED-GUARD-019**: When `normalizeKey` is called, it shall keep punctuation, so that `lol` and `lol!` have different keys.
+- [ ] **SHARED-GUARD-020**: When `admit(viewer, text, at)` of a `createOnceCounter` is called and neither `normalizeKey(viewer)` nor `normalizeKey(text)` has been recorded by that counter, it shall record both keys with the time `at` (default 0) and return true.
+- [ ] **SHARED-GUARD-021**: When `admit(viewer, text, at)` of a `createOnceCounter` is called and `normalizeKey(viewer)` or `normalizeKey(text)` has been recorded by that counter, it shall return false and record nothing.
+- [ ] **SHARED-GUARD-022**: Where `createOnceCounter` is given `windowMs`, a recorded key shall count as recorded only while `at` is less than `windowMs` after the time it was recorded; where it is given no `windowMs`, a recorded key shall never expire.
+- [ ] **SHARED-GUARD-023**: Where more keys of one kind (viewer or text) are recorded than `capacity` (default 256), the `createOnceCounter` shall drop the oldest recorded key of that kind first.
+- [ ] **SHARED-GUARD-024**: When `boundText` is called, it shall apply its steps in this order: the turning into spaces (SHARED-GUARD-004), the removal (SHARED-GUARD-005), the collapsing and trimming (SHARED-GUARD-007), then the cut (SHARED-GUARD-008).

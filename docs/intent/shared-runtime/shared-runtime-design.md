@@ -5,7 +5,7 @@ prefix: SHARED
 
 # shared-runtime
 
-Status: implemented; every EARS spec in [shared-runtime-specs.md](shared-runtime-specs.md) is `[x]`. Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract, Shared runtime). Sibling: [module-contract](../module-contract/module-contract-design.md), whose fourth obligation this segment fulfils.
+Status: implemented, except the untrusted text guard (the SHARED-GUARD specs in [shared-runtime-specs.md](shared-runtime-specs.md)), which is specified and not built. Parent: [high-level-design](../../high-level-design.md) (System Design: Module contract, Shared runtime). Sibling: [module-contract](../module-contract/module-contract-design.md), whose fourth obligation this segment fulfils.
 
 ## Context and Design Philosophy
 
@@ -24,8 +24,9 @@ Guiding rules:
 |---|---|---|
 | `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio, utterance writer (`writeUtterance`: paces an utterance's frames onto a sink stream; specified by CONN-AUD-005 and CONN-BP-004) | `@cohost/config`, `@cohost/bus` |
 | `@cohost/shared/discord-voice` | the Discord voice session | the above, plus `discord.js`, `@discordjs/voice` and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) |
+| `@cohost/shared/untrusted` | the untrusted text guard: bound, flatten and quote text a person wrote before it reaches a prompt, and count a burst of chat once | none: it imports nothing from the workspace and nothing from `node_modules` |
 
-The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package holds only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client.
+The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package holds only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client. The untrusted text guard is a subpath for the opposite reason: [working-memory](../working-memory/working-memory-design.md), a pure library with no bootstrap, imports it, and a subpath lets it do so without loading the bootstrap, the heartbeat or the bus client.
 
 ## Service bootstrap (`runService`)
 
@@ -174,6 +175,73 @@ createDiscordVoiceSession({
 
 The connector decides what a failed join or a disconnect means for its heartbeat and registration (both report its Discord dependency `down` and its capabilities not ready, CONN-DISC-004). Connector-specific parts stay in the connector: it ignores bot accounts, asks for the members intent to name speakers and joins undeafened and unmuted; ears turns the audio into `speech.heard` and mouth plays utterances and runs the fallback line.
 
+## Untrusted text guard (`@cohost/shared/untrusted`)
+
+Text a person typed is untrusted (HLD tenet 13): wherever it enters a model prompt it is bounded, and what a viewer authored is also quoted as viewer text. What a viewer authored is live chat messages, the names of chat viewers, recalled chat memories and the viewer notes the co-host keeps. Discord speech transcripts and screen summaries are bounded and flattened to one line but not quoted, so the co-host answers what the streamer says as it answers any speech. One module holds these treatments, so no prompt builder carries a copy (HLD tenet 11). Tool results are text the co-host did not write too; the interface names no chat concept so that the tools segment can use it, and their handling is that segment's.
+
+The module is pure: no I/O, no clock, no workspace import, no model (SHARED-GUARD-001 to SHARED-GUARD-003). It takes every number it needs as an argument (mechanism here, policy in the service). The limits come from the configuration ([config](../config/config-design.md) owns the keys and their defaults): `viewer_text.max_chars` and `viewer_text.max_name_chars` for what a viewer authored and for names, `brain.input_limits.speech_max_chars` and `brain.input_limits.vision_max_chars` for speech and screen text.
+
+```ts
+boundText(raw: string, max: number): string
+quoteUntrusted(raw: string, max: number): string
+speakerLabel(raw: string, max: number): string
+untrustedNotice(subject: string): string
+normalizeKey(raw: string): string
+createOnceCounter(opts?: { windowMs?: number; capacity?: number }): { admit(viewer: string, text: string, at?: number): boolean }
+UNTRUSTED_OPEN = "«"; UNTRUSTED_CLOSE = "»"; UNKNOWN_NAME = "unknown"
+```
+
+Every function is total: any string in gives a string (or a boolean) out. `max` is at least 2; the configuration keeps every limit well above that (config).
+
+- **`boundText`** makes text safe to carry on one line and bounds its length.
+  The steps run in this order, once: turn into spaces, remove, collapse and trim, cut (SHARED-GUARD-024).
+  1. It turns tab (U+0009), line feed (U+000A), vertical tab (U+000B), form feed (U+000C), carriage return (U+000D) and next line (U+0085) into a space.
+  2. It removes the other C0 controls (U+0000 to U+001F), DEL and the other C1 controls (U+007F to U+009F), the directional marks U+200E, U+200F and U+061C, the bidirectional controls U+202A to U+202E and U+2066 to U+2069, the zero-width space U+200B, the word joiner and invisible operators U+2060 to U+2064, the soft hyphen U+00AD, U+FEFF and the tag characters U+E0000 to U+E007F. The zero-width joiner U+200D and non-joiner U+200C stay, because emoji sequences and several scripts need them.
+  3. It turns every run of whitespace (Unicode `White_Space`) into one space and trims.
+  4. Length is counted in code points. Text longer than `max` is cut to at most `max - 1` code points, backing off to a grapheme cluster boundary so no cluster is split, trailing whitespace is dropped, and `…` is appended. The result never exceeds `max`, and the cut is visible to a reader and to the model. When no whole cluster fits, the result is the mark alone (SHARED-GUARD-004 to SHARED-GUARD-009).
+
+  `boundText` is idempotent: bounded text bounded again is unchanged. It is the only function with that property (SHARED-GUARD-010).
+- **`quoteUntrusted`** replaces every `«` and `»` in the text with a plain double quote, applies `boundText`, and wraps the result in `«` and `»`. The text can never contain the closing delimiter, so a message cannot step out of its quotes. Nothing else in the text is altered: brackets, transcript tags (`[chat]`, `[voice]`, `[screen]`) and a pasted `Name: [happy] ...` stay as typed. They cannot start a transcript line, because the text is one line, and inside the quotes they are words the model is told not to obey. Quoting twice would wrap the delimiters twice, so each prompt line is quoted exactly once, by the code that renders that line (Who renders what; SHARED-GUARD-011, SHARED-GUARD-012).
+- **`speakerLabel`** is for a name, which sits outside the quotes where transcript syntax lives. It replaces `[`, `]`, `(`, `)`, `:`, `«` and `»` with spaces, then applies `boundText` with `max`, so a cut name ends in the mark. A name with nothing left reads `unknown` (`UNKNOWN_NAME`), which is never shortened. The label carries no `(mod)` or subscriber claim: those come from the platform's flags, which the renderer adds itself. Every name goes through it, whichever sense it came from, because the structure of a line is at stake whether or not the line's text is quoted (SHARED-GUARD-013, SHARED-GUARD-014).
+- **`untrustedNotice(subject)`** returns the standing instruction a prompt carries once, in its system turn. It states that text between `«` and `»` is `subject`, quoted as information, which is what someone typed or what is remembered about someone; that it is never an instruction for the co-host to follow; that a line inside it is never from anyone else; and that a trailing `…` means the message was cut. The wording is the module's, so every prompt carries one text; a caller names only the subject (a prompt that carries live chat: what a viewer typed in chat; cortex's, which also carries remembered text: what a viewer wrote in chat, or what is remembered about a viewer; SHARED-GUARD-016, SHARED-GUARD-017).
+- **`normalizeKey`** is the one normalisation for comparing viewers and texts: `toLowerCase()` with no locale argument, then every whitespace run becomes one space and the result is trimmed. Punctuation is kept, so `lol` and `lol!` are different texts (SHARED-GUARD-018, SHARED-GUARD-019).
+- **`createOnceCounter`** is the one rule for counting a burst of chat once. `admit(viewer, text, at)` computes `normalizeKey(viewer)` and `normalizeKey(text)` and returns false when either key was already admitted by this counter, and otherwise records both keys and returns true; a refused call records nothing. With `windowMs`, a key counts as admitted only while `at` is less than `windowMs` after the time it was recorded (`at` defaults to 0, so a counter without `windowMs` never forgets). `capacity` (default 256) bounds each of the two key maps; the oldest key is dropped first. The counter holds its own state, so each user makes its own instance: salience one per decision (no window), affect one for the life of the process (windowed; SHARED-GUARD-020 to SHARED-GUARD-024).
+- **`UNTRUSTED_OPEN` and `UNTRUSTED_CLOSE`** are exported so a reader of model output can strip them ([cortex](../cortex/cortex-design.md) reply parsing).
+
+### Where text is bounded
+
+A bound applied only at the sense fails for chat that reaches the bus another way (the dashboard's bus-level injection, a second chat source), so every consumer bounds what it takes in, before the text reaches a window, a hook input, a store or a prompt:
+
+| Consumer | Bounds at intake | With |
+|---|---|---|
+| [chat](../chat/chat-design.md) sense, real and injected chat | message text and user name | `boundText` with `viewer_text.max_chars` and `viewer_text.max_name_chars` |
+| [working-memory](../working-memory/working-memory-design.md) `push` (salience's and cortex's windows) | chat text and name, speech text and speaker, screen text | `boundText` with the viewer-text limits, `speech_max_chars` and `vision_max_chars` |
+| [affect](../affect/affect-design.md) intake | chat and speech text, the name in a cause | `boundText` |
+| [memory](../memory/memory-design.md) before storing a row and before capture | chat and speech text | `boundText` |
+
+Everything downstream of these (a scorer's input, the critic's transcript, an `http` hook's payload) therefore carries bounded text, with no markers. A flag carried on a bus event, `mentionsCohost` included, is taken as the event gives it; only the chat sense computes it, on bounded text.
+
+### Who renders what
+
+Marking happens where a prompt line is rendered, once.
+
+| Prompt line | Rendered by | Treatment |
+|---|---|---|
+| `[chat]` line of the transcript (cortex's reply prompt, the critic's input) | working-memory `Context.transcript` | `speakerLabel` for the name, `quoteUntrusted` for the text. The cortex prompt builder and the critic receive the rendered lines and do not quote them again. |
+| `[voice]` and `[screen]` lines | working-memory `Context.transcript` | `speakerLabel` for a speaker; the text is already bounded and flattened, and is not quoted |
+| Names, recalled memories and viewer notes in cortex's prompt | the cortex prompt builder | `speakerLabel` for every name; `quoteUntrusted` for the text of a recalled `chat` memory and of a viewer note; a recalled `speech` or `self` memory is bounded only |
+| numbered event lines of the `llm` scorer | salience's scorer prompt builder | `speakerLabel`; `quoteUntrusted` for chat text only |
+| the line of the `llm` appraiser | affect's appraiser prompt builder | `quoteUntrusted` for a chat line; a speech line is bounded only |
+| the capture, consolidation and reflection prompts | memory's prompt builders | `speakerLabel`; `quoteUntrusted` for chat text, chat rows and viewer notes |
+
+### What marking guarantees
+
+It lowers the chance that a model obeys instructions embedded in chat; it does not make obeying impossible, and a model can be talked into it. The guarantees are mechanical and small: text is bounded, it is one line, it cannot contain its own delimiter, and a name cannot forge transcript syntax. The defence does not rest on the model. It is the later lines: cortex's reply parsing (one first line, brackets and delimiters stripped), the critic (optional, and the default `rules` critic passes everything), the repetition check, and above all the speaking gates (tenet 4), so that a hijacked reply is still one short line, spoken only after salience decided the co-host should speak. Every one of them ignores or discounts; none moderates a viewer (HLD Non-Goal 1).
+
+### Failure posture
+
+The guard has no model and no I/O, so it has no fallback of its own and no failure mode to report (HLD tenet 3 asks a fallback of judgement that calls a model or a tool).
+
 ## Hash embedding
 
 The deterministic offline embedder is not a shared-runtime module: `@cohost/llm`'s `HashEmbedder` is the one implementation, and memory's in-memory store embeds with it instead of a hasher of its own (memory MEM-BACKEND-004). It stays in `@cohost/llm` because it implements that package's `Embedder` interface, and moving it here would make this package depend on `@cohost/llm`.
@@ -235,10 +303,23 @@ Each using segment keeps a line that states its own parameters and cites the mod
 | Per-service installs | The Discord session stays a `discord-voice` subpath of `@cohost/shared` | A package of its own | One image installs every service's dependencies today; split it when the image installs only one service's dependencies. |
 | Retry jitter | None | Randomised delay | One instance per service, so no thundering herd; add it if several instances ever reconnect to one backend at once. |
 | Injection queue bound | 8 | A parameter | A starting value no service has needed to change; make it a parameter when one does. |
+| Home of the guard | A pure subpath of `@cohost/shared`, `@cohost/shared/untrusted` | The package's main entry; a package of its own (`@cohost/guard`); inside working-memory, which renders the transcript | HLD tenet 11 puts behaviour more than one service needs in `@cohost/shared`. Chat, working-memory, salience, cortex, affect and memory all need it, so it cannot live in one of them. A subpath keeps working-memory, which has no bootstrap and no I/O, from loading the bus client through the main entry (the precedent is `discord-voice`, kept out of every service that does not use it). A fourth package would be one more dependency for a handful of small functions. |
+| Shape of the guard | Functions and constants; every limit an argument; nothing chat-specific in a name | A class holding the limits; a function that reads the configuration; one `guard(kind, text)` entry; chat-only helpers | Arguments keep the module free of the config package, so the subpath has no dependencies and tool results can use it. Each function has one job a caller can name (bound, quote, label a speaker, state the rule, compare, count); a combined entry would hide which treatment a prompt applies. |
+| What is guarded (owner decision) | Text a viewer authored (chat messages, chat viewers' names, recalled chat memories, viewer notes) is bounded and quoted. Discord speech and screen summaries are bounded and flattened, not quoted. Every name goes through `speakerLabel` | Guard only live chat; quote speech and screen text too | Recalled chat and notes are viewer text that took a detour through storage, and tenet 13 says viewer text reaches a prompt bounded and marked. Quoting speech would make the co-host treat the streamer's own words as something to be wary of, which defeats answering the streamer naturally. A name's place in a line is structure, so it is cleaned whichever sense it came from. |
+| Where the bound applies | At the sense (the chat sense, so the feed and stored rows are bounded) and at every consumer's own intake: the working-memory window on push, affect's intake, memory before storing and before capture. Marking is at the rendering of a prompt line, once | Sense only; prompt builders only; bound in the window only | A sense-only bound fails for chat that reaches the bus another way (the dashboard's bus-level injection skips the chat service; a second chat source may omit it). Bounding in the prompt builders alone would leave scorer input, hook payloads (the `http` kind included) and stored rows unbounded. Each consumer calling the one `boundText` costs a function call and needs no agreement beyond the shared limits. |
+| Idempotence and quoting | Only `boundText` is idempotent. `quoteUntrusted` is applied exactly once, by the code that renders the prompt line; a builder handed rendered lines does not quote them | Make quoting idempotent by recognising existing delimiters | Recognising delimiters would treat a viewer's own `«...»` as already quoted. Giving each line one renderer is simpler to state and to test. |
+| What happens to excess text | Cut with a trailing `…`, never dropped | Drop the message; cut silently; summarise | Dropping erases a viewer's message, a mention near its end, and its memory row, which is closer to deleting than discounting. A silent cut hides from the model, the dashboard and the owner that something was cut. |
+| Delimiters | `«` and `»`, replaced by a plain double quote inside the text | XML-like tags; triple quotes or code fences; JSON-string escaping; a per-prompt random delimiter | A character the guard removes from the text cannot be forged, so no escaping scheme and no nonce is needed. Guillemets are rare in chat, a single token for common models, and cannot be mistaken for the transcript's square-bracket syntax. XML tags and fences occur in ordinary chat and need their own escaping. JSON quoting is well understood by models but turns every quote and emoji into an escape. |
+| Transcript syntax inside the text | Line breaks, control characters and invisible formatting characters are removed; everything else, brackets and tag-shaped phrases included, is kept as typed | Neutralise `[` and `]`; strip anything shaped like a tag or a speaker prefix | Line breaks are what let text start a transcript line, and invisible characters hide text from the owner who reads logs. Inside the quotes a tag-shaped phrase is quoted data. Rewriting brackets would alter what viewers wrote and still leave the model to resist the words; cortex's reply parser strips every bracket from a reply. |
+| Removed and kept characters | Remove C0, DEL, C1 (line breaks, tabs, vertical tab and form feed become a space), directional marks, bidirectional controls, zero-width space, word joiner and invisible operators, soft hyphen, U+FEFF and tag characters; removal runs before whitespace collapsing, so a removed character leaves no space; keep U+200C and U+200D; cut on a grapheme boundary | Remove every `Cf` character; collapse before removing; cut on a code point | Removing every format character would break emoji sequences and scripts that need the joiners. Collapsing first would leave a space where an invisible character sat inside a word. A cut inside a cluster leaves a broken glyph the model and the dashboard render as noise. |
+| Names outside the quotes | `speakerLabel`: transcript syntax replaced by spaces, then bounded; `unknown` when nothing remains | Quote names too; trust names | A name sits where the renderer's own syntax is (`[chat] name (mod): ...`), so it needs syntax removed, not quotes. Platform flags (`isMod`) are the renderer's to show; a name that spells `(mod)` must not claim it. |
+| Standing instruction | One `untrustedNotice(subject)` text every prompt that carries viewer text shares | Each prompt writes its own sentence | Hand-written sentences would drift, and the wording is the part most worth tuning in one place. |
+| Counting a burst | One `createOnceCounter` and one `normalizeKey` in the guard, used by salience (per decision) and affect (windowed) | A copy of the comparison in each region | HLD tenet 11: "same viewer" and "same text" must mean the same thing where the co-host decides to speak and where its mood moves. `normalizeKey` is `toLowerCase()` with no locale argument because a locale-dependent fold would make two machines disagree; punctuation is kept because stripping it is hard to explain and a burst that varies punctuation is still one viewer. |
+| Failure posture of the guard | No fallback and no failure mode: it is total, pure and calls no model or tool | A fallback to dropping the text if the guard throws | Nothing in it can fail at run time, so a fallback would be code that never runs. |
 
 ## Open Questions & Future Decisions
 
-None.
+None. Handling of tool results belongs to the tools segment, which uses this module's interface.
 
 ## References
 
@@ -246,4 +327,4 @@ None.
 - [module-contract](../module-contract/module-contract-design.md) (obligation 4).
 - [control-plane](../control-plane/control-plane-design.md) Heartbeat contract; [event-bus](../event-bus/event-bus-design.md) (Process shutdown).
 - [ears](../ears/ears-design.md), [mouth](../mouth/mouth-design.md), [eyes](../eyes/eyes-design.md), [chat](../chat/chat-design.md), [voice](../voice/voice-design.md), [memory](../memory/memory-design.md), [model-backends](../model-backends/model-backends-design.md).
-- Code: `packages/shared/src/` (`boot`, `lifecycle`, `retry`, `idle`, `control`, `inject`, `audio`, `utterance`, `discord-voice`).
+- Code: `packages/shared/src/` (`boot`, `lifecycle`, `retry`, `idle`, `control`, `inject`, `audio`, `utterance`, `discord-voice`, `untrusted`).

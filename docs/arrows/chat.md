@@ -4,9 +4,9 @@ Twitch chat sense: Twitch IRC (or a fake source) in, filtered `chat.message` eve
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Twitch channel and credentials come from `chat.twitch.*` keys and `secrets.yaml`. Total 45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Twitch channel and credentials come from `chat.twitch.*` keys and `secrets.yaml`. Total 52 specs: 36 `[x]`, 16 `[ ]`, 0 `[D]`.
 
-**AUDITED**: 45 specs: 45 implemented, 0 deferred, 0 gaps.
+**PARTIAL**: 52 specs: 36 implemented, 0 deferred, 16 gaps (chat safety, below).
 
 ## References
 
@@ -17,7 +17,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/chat/chat-design.md
 
 ### EARS
-- docs/intent/chat/chat-specs.md (45 specs: 45 `[x]`, 0 `[ ]`, 0 `[D]`; prefix `CHAT`)
+- docs/intent/chat/chat-specs.md (52 specs: 36 `[x]`, 16 `[ ]`, 0 `[D]`; prefix `CHAT`)
 
 ### Tests
 Files with `@spec CHAT-` annotations:
@@ -65,12 +65,12 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 |----------|----------|-------------|----------|------|----------------|
 | Source selection | CHAT-PLAN-001 to CHAT-PLAN-006 | 6 | 0 | 0 | 6 |
 | Twitch connection | CHAT-TW-001 to CHAT-TW-012 | 12 | 0 | 0 | 12 |
-| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-007 | 7 | 0 | 0 | 7 |
+| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-011 | 1 | 0 | 10 | 7 |
 | Fake source | CHAT-FAKE-001 to CHAT-FAKE-006 | 6 | 0 | 0 | 6 |
-| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-010 | 8 | 0 | 0 | 8 |
+| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-013 | 5 | 0 | 6 | 8 |
 | Health | CHAT-HEALTH-001 to CHAT-HEALTH-006 | 6 | 0 | 0 | 6 |
 
-**Summary:** 45 of 45 specs implemented; 0 deferred; 0 open. 45 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 36 of 52 specs implemented; 0 deferred; 16 open. 45 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -85,7 +85,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 ## Work Required
 
 ### Must Fix
-None.
+Bounded message text and name, the login and `unknown` name fallback, the mention test on bounded text, and the same bound for injected chat are specified and not built (CHAT-FILT-004, CHAT-FILT-005, CHAT-FILT-008 to CHAT-FILT-011, CHAT-INJ-004, CHAT-INJ-005, CHAT-INJ-011 to CHAT-INJ-013).
 
 ### Nice to Have
 None.

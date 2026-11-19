@@ -15,7 +15,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (162 specs: 116 `[x]`, 46 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+- docs/intent/memory/memory-specs.md (172 specs: 114 `[x]`, 58 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
 
 ### Code and tests
 - services/memory/src/ and services/memory/test/ (`@spec MEM-` annotations)

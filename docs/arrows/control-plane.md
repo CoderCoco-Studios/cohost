@@ -4,7 +4,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 91 specs: 84 `[x]`, 5 `[ ]`, 2 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 94 specs: 83 `[x]`, 9 `[ ]`, 2 `[D]`.
 
 **AUDITED**: 92 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 6 gaps (the `CHAT_SOURCES` preset, YouTube chat design 2026-11-16; the 19-unit manifest, `VISION_PROVIDER` preset, engine units and Launch profiles, engines design 2026-11-16: CTRL-MANIFEST-001, -003, -006, CTRL-STACK-018).
 
@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (92 specs, prefix `CTRL`: 84 `[x]`, 6 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (94 specs, prefix `CTRL`: 84 `[x]`, 8 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -81,7 +81,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -017 | 15 | 15 | 0 | 0 |
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
 
-**Summary:** 84 of 92 specs implemented; 2 deferred; 6 open (CTRL-MANIFEST-001, -003, -006, CTRL-RUNTIME-009, CTRL-STACK-018, -019). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 94 specs: 83 implemented, 9 gaps, 2 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

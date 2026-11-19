@@ -4,7 +4,7 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001). Total 84 specs: 83 `[x]`, 0 `[ ]`, 1 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001). Total 101 specs: 64 `[x]`, 36 `[ ]`, 1 `[D]`.
 
 **AUDITED**, 2026-11-12: 84 specs, 83 implemented (`[x]`), 0 gaps, 1 deferred (`[D]`: MOUTH-POS-001, playback position). The service is wired into the manifest, Compose (profile `mouth`, off by default) and the dashboard's unit list. Design: [LLD](../intent/mouth/mouth-design.md); decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
 
@@ -38,7 +38,7 @@ MOUTH-STOP-001 to MOUTH-STOP-010 flush queues, stop the line and report it inter
 - docs/intent/mouth/mouth-design.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (84 specs: 83 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/mouth/mouth-specs.md (101 specs: 64 `[x]`, 36 `[ ]`, 1 `[D]`)
 
 ### Tests
 - services/mouth/test/{audio,connector-output,dryrun,fallback,guard,health,mouth,no-discord,outputs,playback,routing,session,stop}.test.ts

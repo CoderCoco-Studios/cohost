@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 175 specs, 158 `[x]`, 12 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); the spec file now holds 171 specs (162 `[x]`, 4 `[ ]`, 5 `[D]`). BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 181 specs, 154 `[x]`, 22 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); the spec file now holds 171 specs (162 `[x]`, 4 `[ ]`, 5 `[D]`). BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -20,7 +20,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 
 - **Upload store over Redis.** `Bus.putUpload` / `Bus.takeUpload` (BUS-UPL-001 to BUS-UPL-003); `inject.request` carries `uploadId` and `contentType` (BUS-EVT-006); `FakeBus` mirrors both (BUS-TEST-012).
 - **Transport behaviour.** Pending drain batch by batch (BUS-SUB-003), no ack or further handling after `stop()` (BUS-SUB-013), `failFast` (BUS-STREAM-009), `streamPrefix` (BUS-STREAM-008), one `PlaybackReport` shape and ranges on `avatar.state` (BUS-EVT-017, BUS-EVT-018), time-ordered ids in `FakeBus` and `event()` (BUS-TEST-011, BUS-TEST-003, BUS-TEST-006). Design: LLD Decisions & Alternatives.
-- **Event catalogue.** Exactly 27 types (BUS-EVT-001), including `voice.failed` (BUS-EVT-022), the four viewer-notes events (BUS-EVT-020, BUS-EVT-021), `speech.partial` (BUS-EVT-026 to BUS-EVT-029) and `voice.stop` with the interruption members of `voice.done` (BUS-EVT-030, BUS-EVT-031). Design: LLD § Event catalogue.
+- **Event catalogue.** Exactly 28 payloads in `EventPayloads` (BUS-EVT-001): 27 event types on the event stream and `service.heartbeat` on the health stream, including `brain.clause`, the clause of a streamed line, `voice.failed` (BUS-EVT-022), the four viewer-notes events (BUS-EVT-020, BUS-EVT-021), `speech.partial` (BUS-EVT-026 to BUS-EVT-029) and `voice.stop` with the interruption members of `voice.done` (BUS-EVT-030, BUS-EVT-031). Design: LLD § Event catalogue.
 - **Restart and delivery.** `subscribe` takes a required `start` (`latest` or `resume`); a missing group is created at `$`, `latest` moves an existing group to `$` before the first read, `resume` keeps it (BUS-SUB-001, 002, 010, 011). Delivery is at most once; a refused ack leaves the entry pending for one redelivery by a later drain, and a second refusal drops it (BUS-SUB-008, BUS-NAT-ACK-003, BUS-NAT-ACK-008, BUS-NAT-ACK-009). `stop()` flushes queued acks within 2 s (BUS-NAT-ACK-005 to 007).
 - **Outage behaviour.** The shared connection waits only for its first connect attempt (at most 10 s); afterwards every command rejects `BUS_CONNECTION` at once while it is down, and reconnects in the background (BUS-NAT-CONN-004 to 007). Read loops back off and drain pending entries after a failure (BUS-NAT-CONN-002, 003).
 - **Shutdown** lives in shared-runtime (`onShutdown`, `beforeShutdown`, SHARED-LIFE-*); `Bus.stop()` is async and is awaited by that sequence (BUS-STOP-001, SHARED-BOOT-005).
@@ -34,7 +34,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (175 specs: 158 `[x]`, 12 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (181 specs: 154 `[x]`, 22 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -54,7 +54,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 **Purpose:** Validate-and-forward typed events between services over Redis Streams, with a per-service read position via consumer groups (start mode `latest` or `resume`), a non-group live tail for the dashboard, a separate capped heartbeat stream, and a native (Rust) events-path transport.
 
 **Key Components:**
-1. `events.ts`: `EventPayloads` zod registry of 27 event types, derived types, `EVENT_TYPES`.
+1. `events.ts`: `EventPayloads` zod registry of 28 payloads (27 event types and the heartbeat), derived types, `EVENT_TYPES`.
 2. `Bus` class in `index.ts`: `publish`, `publishHealth`, `subscribe` (consumer group), `tail`, `tailHealth`, `recent`, `recentHealth`, `resetGroup`, `stop`, plus uploads, registrations and frames.
 3. `native.ts` and `crates/cohost-bus`, `crates/cohost-bus-node`: the events-path transport; `frames.ts`: the ioredis frame transport.
 4. `FakeBus`, `testConfig`, `event`, `runHeartbeat`, `waitFor`, `silentLog`, `recordingLog` in `@cohost/testing`: the test double and helpers.
@@ -85,7 +85,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 175 specs, 158 `[x]`, 12 `[ ]`, 5 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 181 specs: 154 implemented, 22 gaps, 5 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

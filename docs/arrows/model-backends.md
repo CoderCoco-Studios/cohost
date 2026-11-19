@@ -4,9 +4,9 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Total 64 specs: 64 `[x]`, 0 `[ ]`, 0 `[D]`. Not covered by the last audit.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Revised since: `complete()`, `stream()`, tool calls, image input on every provider and one `ChatError` type (kinds `http`, `connect`, `stream`, `not_configured`) are specified and not yet built. The spec file now holds 226 specs: 63 `[x]`, 163 `[ ]`, 0 `[D]`. Existing `chat()` specs keep their markers except LLM-VIS-002 and LLM-VIS-003, whose `chat()` behaviour reverses (images are sent, not dropped) and are `[ ]`; the other 161 gaps are new specs. Not covered by the last audit.
 
-**AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). The docs site's extension guides added LLM-EX-001 to LLM-EX-006 (the OpenAI-compatible stub servers in Python and TypeScript and their try-it script), implemented and tested, not yet audited; the spec file now holds 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`).
+**AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). The docs site's extension guides added LLM-EX-001 to LLM-EX-006 (the OpenAI-compatible stub servers in Python and TypeScript and their try-it script), implemented and tested, not yet audited; the spec file then held 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`).
 
 ## References
 
@@ -17,7 +17,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (64 specs, prefix LLM: 64 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (226 specs, prefix LLM: 63 `[x]`, 163 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)
@@ -38,7 +38,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 **Purpose:** Let regions call a chat model without knowing the vendor, so that a stronger model is a config change. Keep embeddings on Ollama (or the hash stand-in under `mock`) so the memory vector size never depends on the chat model.
 
 **Key Components:**
-1. `ChatProvider` / `Embedder` / `ChatOptions` (`index.ts`) - the contract; `json: true` means "no stop sequences".
+1. `ChatProvider` / `Embedder` / `ChatOptions` / `ChatRequest` / `ChatResult` / `ChatEvent` / `ChatError` (`index.ts`) - the contract: `chat()` text, `complete()` a result with tool calls, `stream()` events; `json: true` means "no stop sequences".
 2. `createChatProvider` (`index.ts`) - the factory switch over `llm.provider`.
 3. `Ollama` (`index.ts`) - chat, embeddings and ping against a local Ollama.
 4. `OpenAICompatible` (`index.ts`) - `/chat/completions` and `/models`, optional bearer key.
@@ -50,18 +50,22 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 ## Spec Coverage
 
-| Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
+| Category | Spec IDs | Implemented | Deferred | Gaps | Test pointers |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-004 | 4 | 0 | 0 | 3 |
-| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-010 | 10 | 0 | 0 | 10 |
-| Vision | LLM-VIS-001 to LLM-VIS-003 | 3 | 0 | 0 | 3 |
-| Stop sequences | LLM-STOP-001 to LLM-STOP-007 | 7 | 0 | 0 | 7 |
-| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-014 | 14 | 0 | 0 | 14 |
-| Health ping | LLM-PING-001 to LLM-PING-006 | 6 | 0 | 0 | 6 |
+| Interface and factory | LLM-IF-001 to LLM-IF-022 | 4 | 0 | 18 | 4 |
+| Errors | LLM-ERR-001 to LLM-ERR-009 | 0 | 0 | 9 | 0 |
+| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 10 | 0 | 12 | 10 |
+| Vision | LLM-VIS-001 to LLM-VIS-013 | 1 | 0 | 12 | 1 |
+| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 0 | 0 | 37 | 0 |
+| Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 0 | 0 | 30 | 0 |
+| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 7 | 0 | 12 | 7 |
+| Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-033 | 19 | 0 | 14 | 19 |
+| Health ping | LLM-PING-001 to LLM-PING-007 | 6 | 0 | 1 | 6 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
-| Mock provider | LLM-MOCK-001 to LLM-MOCK-005 | 5 | 0 | 0 | 5 |
+| Mock provider | LLM-MOCK-001 to LLM-MOCK-021 | 5 | 0 | 16 | 5 |
+| Example stub servers | LLM-EX-001 to LLM-EX-008 | 6 | 0 | 2 | 6 |
 
-**Summary:** 54 of 54 specs implemented; 0 deferred; 0 gaps. 53 carry a test `@spec` annotation; implemented without one: LLM-IF-001 (verified by the type system).
+**Summary:** 63 of 226 specs implemented; 0 deferred; 163 gaps. The gaps are the streamed reply, tool calls, image input on every provider, the single `ChatError` type, the mock's tool and failure markers, the `complete()` and `stream()` counterparts of the `chat()` specs, and LLM-VIS-002 and LLM-VIS-003.
 
 ## Key Findings
 
@@ -79,6 +83,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 None.
 
 ### Should Fix
+- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE, LLM-PING-007, LLM-MOCK and LLM-EX-007, -008): `complete()`, `stream()`, tools, images on OpenAI-compatible, `anthropic` and `bedrock`, and `ChatError` kinds `http`, `stream` and `not_configured`.
 - Audit the stub model servers (LLM-EX-001..006), cited by the docs site's Extend pages.
 1. Fix the docs site's Choose a model page (`docs/guide/tune/model.md`): its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
 

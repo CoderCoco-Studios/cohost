@@ -4,7 +4,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Status
 
-**AUDITED** for the specs marked `[x]`; the untrusted text guard is open work. Spec file: 101 specs, 74 `[x]`, 27 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, and (at the `discord-voice` subpath) `createDiscordVoiceSession`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
+**AUDITED** for the specs marked `[x]`; the untrusted text guard is open work. Spec file: 109 specs, 74 `[x]`, 35 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, and (at the `discord-voice` subpath) `createDiscordVoiceSession`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
 
 ## Spec Coverage
 
@@ -21,7 +21,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |
 | Untrusted text guard | SHARED-GUARD-001 to SHARED-GUARD-024 | 0 | 0 | 24 | 0 |
 
-**Summary:** 74 of 106 specs `[x]`; 32 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 74 of 109 specs `[x]`; 35 `[ ]` (the head-rotation module, SHARED-ROT-001 to -003, among them); 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## References
 
@@ -32,7 +32,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (106 specs: 74 `[x]`, 32 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (109 specs: 74 `[x]`, 35 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec SHARED-` annotations)
 - packages/shared/test/: audio, boot, boundary, control-routing, control, discord-voice, idle, inject-handler, lifecycle, retry, shutdown, wav (`*.test.ts`)

@@ -82,7 +82,7 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | avatar | `avatar` | voice | no | `brain.say`, `affect.state` | `avatar.state` |
 | connector-discord | `connections` | | no | `audio` (service; target `connector-discord`) | `inject.result` |
 
-The `dashboard` section is read by the dashboard itself, which is not a unit: it applies on the dashboard's next start.
+The `dashboard` section is read by the dashboard itself, which is not a unit: it applies on the dashboard's next start. The `renderer` section (the browser renderer's model and framing) is read by the dashboard alone as well, and declared by no unit, but the dashboard applies a save of it at once and restarts nothing ([dashboard](../dashboard/dashboard-design.md) Avatar settings; the presentation table marks it `live`).
 
 The optional engine servers (`tts-pocket`, `stt-nemotron`, `stt-kyutai`, each behind a Compose profile) are compose-only units with no descriptor fields: the Services screen lists them and the two-way test between the Compose file and the manifest covers them, and no unit lists one in `uses`, because a profile that is not enabled leaves the unit `unknown` and the `needs` annotation would then name a server nobody asked for. The dependency of `voice` and `ears` on the engine they selected is their own `deps.tts` and `deps.stt`. Launch starts whichever profiles `COMPOSE_PROFILES` names, and the stack card shows a first build and a first weights download as ordinary starting phases and not-ready services ([deployment](../deployment/deployment-design.md) Speech engine servers).
 
@@ -143,7 +143,7 @@ Secrets (the schema marks them; the twelve keys of config CFG-SEC-003) are never
 4. The edited text runs through the same pipeline as `loadConfig` (placeholder check, null dropping, `ConfigSchema`), with no isolation override applied. Issues are `400 { ok: false, issues: [{ path, message }] }` and nothing is written.
 5. With `?dryRun=1` the route stops here: `200 { ok: true, dryRun: true, warnings }`.
 6. The text is written to a temporary file in the config directory and renamed over `config.yaml`.
-7. `200 { ok: true, etag, restart, warnings }`: `restart` lists the units that read the section and that the latest stack status shows running; `warnings` names each edited key a running unit overrides (`isolation.overriddenBy` is non-empty) and, when the `dashboard` section changed, that the change applies at the dashboard's next start, with, for a changed `dashboard.port` or `dashboard.lan_port`, that the page address changes to the new port. A dry run (step 5) returns the same warnings.
+7. `200 { ok: true, etag, restart, warnings }`: `restart` lists the units that read the section and that the latest stack status shows running (none for `renderer`, which no unit reads); `warnings` names each edited key a running unit overrides (`isolation.overriddenBy` is non-empty) and, when the `dashboard` section changed, that the change applies at the dashboard's next start, with, for a changed `dashboard.port` or `dashboard.lan_port`, that the page address changes to the new port. A dry run (step 5) returns the same warnings.
 
 The route never restarts anything itself.
 

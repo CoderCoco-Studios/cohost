@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 181 specs, 154 `[x]`, 22 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); the spec file now holds 171 specs (162 `[x]`, 4 `[ ]`, 5 `[D]`). BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 204 specs, 144 `[x]`, 55 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. 145 of the 161 `[x]` specs have a test or source annotation that carries their `@spec` ID; 16 have no annotated test (listed under Work Required). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); the avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is specified and not built. BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -34,7 +34,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (192 specs: 148 `[x]`, 39 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (204 specs: 144 `[x]`, 55 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: bus.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -71,21 +71,22 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |
 | Health stream | BUS-HEALTH-001 to 004 | 4 | 0 | 0 |
 | Group reset | BUS-GROUP-001 | 1 | 0 | 0 |
-| Shutdown | BUS-STOP-001 | 1 | 0 | 0 |
-| Native: facade API | BUS-NAT-API-001 to 011 | 11 | 0 | 0 |
+| Shutdown | BUS-STOP-001 | 0 | 1 | 0 |
+| Native: facade API | BUS-NAT-API-001 to 011 | 9 | 0 | 2 |
 | Native: transport | BUS-NAT-TRN-001 to 014 (006, 012 retired) | 12 | 0 | 0 |
 | Native: acks | BUS-NAT-ACK-001 to 009 | 9 | 0 | 0 |
 | Native: connections | BUS-NAT-CONN-001 to 007 | 7 | 0 | 0 |
 | Native: errors | BUS-NAT-ERR-001 to 011 | 11 | 0 | 0 |
-| Native: frames | BUS-NAT-FRM-001 to 008 | 8 | 0 | 0 |
-| Native: crate | BUS-NAT-RS-001 to 009 | 8 | 0 | 1 |
+| Native: frames | BUS-NAT-FRM-001 to 008 | 7 | 0 | 1 |
+| Avatar frames | BUS-AVF-001 to 012 | 0 | 0 | 12 |
+| Native: crate | BUS-NAT-RS-001 to 009 | 7 | 1 | 1 |
 | Native: contract fixtures | BUS-NAT-FIX-001 to 004 | 4 | 0 | 0 |
 | Native: build | BUS-NAT-BLD-001 to 009 (008 retired) | 8 | 0 | 0 |
 | Native: CI | BUS-NAT-CI-002 (001, 003 retired) | 1 | 0 | 0 |
 | Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 192 specs: 148 implemented, 39 gaps, 5 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 204 specs: 144 implemented, 55 gaps, 5 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

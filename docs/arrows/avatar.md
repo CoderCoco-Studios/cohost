@@ -1,12 +1,12 @@
 # Arrow: avatar
 
-Animates an avatar app (VTube Studio, a VMC receiver, or nothing) from bus events: lip-sync from the voice envelope, expression from the brain and mood, idle motion, and a throttled `avatar.state` preview feed.
+Animates an avatar app (VTube Studio, a VMC receiver, the browser renderer, or nothing) from bus events: lip-sync from the voice envelope, expression from the brain and mood, idle motion, and a throttled `avatar.state` preview feed.
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` (AVATAR-VTS-017). Total 71 specs: 60 `[x]`, 11 `[ ]`, 0 `[D]`.
+Total 91 specs: 57 `[x]`, 34 `[ ]`, 0 `[D]`. The gaps are AVATAR-BUS-003 to AVATAR-BUS-005 and AVATAR-BUS-009, AVATAR-ENG-002 to AVATAR-ENG-004 and AVATAR-ENG-007 (the streamed-speech clause specs, among them), AVATAR-ENG-019 to AVATAR-ENG-021, AVATAR-DRV-002 to AVATAR-DRV-004 (the driver set now includes `browser`), AVATAR-VMC-007, AVATAR-VTS-018, AVATAR-DIR-001 to AVATAR-DIR-005 and AVATAR-BRW-001 to AVATAR-BRW-013. The VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` ([decision](../decisions/config-in-one-place.md); AVATAR-VTS-017). The example driver (AVATAR-EX-001 to AVATAR-EX-004) is implemented and tested, and cited by the docs site's Extend pages.
 
-**AUDITED**: 62 specs: 62 implemented, 0 deferred, 0 gaps. The LLD has no open questions. The docs site's extension guides added AVATAR-EX-001 to AVATAR-EX-004 (the UDP JSON example driver), implemented and tested, not yet audited; the spec file now holds 66 specs (66 `[x]`, 0 `[ ]`, 0 `[D]`).
+The `browser` driver is specified (AVATAR-BRW-*) and not built: its frame contents, expression block, health meaning and the page's share of animation are in the LLD's browser section, and the stream, relay and renderer page are in the event-bus (BUS-AVF-*) and dashboard (DASH-AVR-*, DASH-MDL-*, DASH-AVP-*, DASH-AVS-*) specs.
 
 ## References
 
@@ -17,7 +17,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (71 specs: 60 `[x]`, 11 `[ ]`, 0 `[D]`; prefix `AVATAR`)
+- docs/intent/avatar/avatar-specs.md (91 specs: 57 `[x]`, 34 `[ ]`, 0 `[D]`; prefix `AVATAR`)
 
 ### Tests
 Files with `@spec AVATAR-` annotations:
@@ -58,23 +58,27 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 4. `VTubeStudioDriver`: VTS WebSocket API, plugin token in `<configDir>/.vts-token`, parameter injection, hotkey toggling, 5 s reconnect.
 5. `VmcDriver`: hand-rolled OSC over UDP (head quaternion, `A`/`aa` mouth, `Blink`/`blink`, expression blendshape).
 6. `NullDriver`: does nothing and reports connected; the default (also for an unset or empty `avatar.driver`) and the isolated-mode choice.
-7. `health.ts`: `off` with the null driver, else `live` with `deps.driver` ok/down.
-8. `config/expressions.example.yaml`: per-driver emotion-to-expression/hotkey map and gesture map.
+7. `BrowserDriver` (`drivers/browser.ts`, specified, not built): writes each Engine tick's canonical parameters, emotion, intensity and resolved VRM expression name to the avatar-frame stream; gestures are ignored; `connected()` means the latest write succeeded.
+8. `health.ts`: `off` with the null driver, else `live` with `deps.driver` ok/down.
+9. `config/expressions.example.yaml`: per-driver emotion-to-expression/hotkey map and gesture map; the `browser` block holds VRM expression names.
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-008 | 8 | 0 | 0 | 8 |
-| Animation engine | AVATAR-ENG-001 to AVATAR-ENG-018 | 18 | 0 | 0 | 18 |
-| Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 7 | 0 | 0 | 7 |
-| VTube Studio driver | AVATAR-VTS-001 to AVATAR-VTS-016 | 16 | 0 | 0 | 16 |
-| VMC driver | AVATAR-VMC-001 to AVATAR-VMC-006 | 6 | 0 | 0 | 6 |
+| Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-009 | 5 | 0 | 4 | 5 |
+| Animation engine | AVATAR-ENG-001 to AVATAR-ENG-021 | 14 | 0 | 7 | 14 |
+| Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 4 | 0 | 3 | 4 |
+| VTube Studio driver | AVATAR-VTS-001 to AVATAR-VTS-018 | 17 | 0 | 1 | 17 |
+| VMC driver | AVATAR-VMC-001 to AVATAR-VMC-007 | 6 | 0 | 1 | 6 |
+| Direction of the parameters | AVATAR-DIR-001 to AVATAR-DIR-005 | 0 | 0 | 5 | 0 |
+| Browser driver | AVATAR-BRW-001 to AVATAR-BRW-013 | 0 | 0 | 13 | 0 |
 | State publication | AVATAR-STATE-001 to AVATAR-STATE-002 | 2 | 0 | 0 | 2 |
 | Health | AVATAR-HEALTH-001 to AVATAR-HEALTH-004 | 4 | 0 | 0 | 4 |
 | Development | AVATAR-DEV-001 | 1 | 0 | 0 | 1 |
+| Example driver | AVATAR-EX-001 to AVATAR-EX-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 71 specs: 60 implemented, 11 gaps, 0 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 91 specs: 57 implemented, 34 gaps, 0 deferred. The gaps are the streamed-speech clause specs, the driver-set revisions and the browser driver. `node scripts/lid-check.mjs` finds no reverse orphans. The Test-annotated column counts specs that name a test (`<!-- test: ... -->`).
 
 ## Key Findings
 
@@ -90,7 +94,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 None.
 
 ### Should Fix
-- Audit the example driver (AVATAR-EX-001..004), cited by the docs site's Extend pages.
+- Build the browser driver (AVATAR-BRW-001 to AVATAR-BRW-013) with a driver test over a fake frame writer, and move the shared `eulerToQuat` into `@cohost/shared/head-rotation` for the VMC driver (AVATAR-VMC-007).
 1. Add an event-bus "subscribed" hook so boot does not need the duplicate `resetGroup` call (event-bus segment).
 2. Re-apply the current expression after a VTS reconnect (the driver forgets its record; the engine does not re-send).
 

@@ -20,7 +20,6 @@ taxonomy:
     - affect
     - memory
     - cortex
-  tools:
     - tools
   body:
     - voice

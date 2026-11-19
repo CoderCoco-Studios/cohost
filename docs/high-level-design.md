@@ -443,7 +443,7 @@ flowchart LR
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
 | brain | cortex | `attention.focus` → recall → LLM (streamed, with the tool loop) → clauses, each checked (critic, repetition, mute and busy) → `brain.say` (first clause) and `brain.clause` (the rest) |
-| tools | tools | The tool service: MCP servers over Streamable HTTP, built-in tools (stream info, memory lookup, clock, timers), the owner's per-tool marks (allowed, may act, usable for chat), who can cause a call, per-call timeouts, timers that come due as a reminder for salience, a mock mode; the catalog and every call on the bus |
+| brain | tools | The tool service: MCP servers over Streamable HTTP, built-in tools (stream info, memory lookup, clock, timers), the owner's per-tool marks (allowed, may act, usable for chat), who can cause a call, per-call timeouts, timers that come due as a reminder for salience, a mock mode; the catalog and every call on the bus |
 | body | voice | `brain.say` and `brain.clause` → TTS engine (Kokoro or another) → `voice.utterance` + lip-sync envelope, one per clause; sink arbitration; generates and serves the fallback clips |
 | body | mouth | `voice.utterance` → the owner's routed outputs (today Discord, through the co-host's bot) as sinks; the spoken fallback line when a line cannot play |
 | body | avatar | Canonical avatar state → VTube Studio / VMC / browser driver; the browser driver writes each frame's canonical parameters to a capped Redis stream of its own |

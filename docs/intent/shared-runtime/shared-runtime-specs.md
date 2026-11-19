@@ -142,3 +142,9 @@ The session's only user is the Discord connector ([connections](../connections/c
 - [ ] **SHARED-GUARD-030**: When `untrustedToolNotice()` is called, it shall return an instruction stating that a trailing `…` means the text was cut short.
 - [ ] **SHARED-VID-001**: The `@cohost/shared` entry point shall export `parseVideoValue(value)`, a pure function that returns the video id that CHAT-YT-004 to CHAT-YT-006 read from a YouTube video value, or nothing.
 - [ ] **SHARED-VID-002**: The chat service and the tools service shall read a YouTube video value only through `parseVideoValue`.
+
+## Head rotation (SHARED-ROT)
+
+- [ ] **SHARED-ROT-001**: The `@cohost/shared` package shall export the subpath `@cohost/shared/head-rotation`, mapped to its built module and type declarations, beside the main entry and the other subpaths.
+- [ ] **SHARED-ROT-002**: The `@cohost/shared/head-rotation` module shall import nothing from the workspace, nothing from `node_modules` and no Node built-in module, and shall perform no I/O and read no clock.
+- [ ] **SHARED-ROT-003**: When `eulerToQuat(pitch, yaw, roll)` is called with angles in degrees, it shall return the quaternion `[x, y, z, w]` with `x = sp*cy*cr - cp*sy*sr`, `y = cp*sy*cr + sp*cy*sr`, `z = cp*cy*sr - sp*sy*cr` and `w = cp*cy*cr + sp*sy*sr`, where `c` and `s` are the cosine and sine of half the angle named by the letter after them (`p` pitch, `y` yaw, `r` roll), so that `eulerToQuat(0, 0, 0)` is `[0, 0, 0, 1]`.

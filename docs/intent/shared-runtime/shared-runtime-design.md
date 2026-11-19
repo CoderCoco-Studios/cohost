@@ -24,6 +24,7 @@ Guiding rules:
 |---|---|---|
 | `@cohost/shared` | bootstrap, lifecycle, retry, idle plan, control, injection, audio, utterance writer (`writeUtterance`: paces an utterance's frames onto a sink stream; specified by CONN-AUD-005 and CONN-BP-004), the YouTube video value parser (`parseVideoValue`, a pure function that chat and the tools service's stream info both use, [chat](../chat/chat-design.md) The video value) | `@cohost/config`, `@cohost/bus` |
 | `@cohost/shared/discord-voice` | the Discord voice session | the above, plus `discord.js`, `@discordjs/voice` and the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) |
+| `@cohost/shared/head-rotation` | `eulerToQuat`, the pure conversion of a head's pitch, yaw and roll to a quaternion, used by the avatar service's VMC driver and by the dashboard's renderer page | none: it imports nothing |
 | `@cohost/shared/untrusted` | the untrusted text guard: bound, flatten and quote text a person wrote before it reaches a prompt, and count a burst of chat once | none: it imports nothing from the workspace and nothing from `node_modules` |
 
 The package depends on the bus and config packages and on no service, no `@cohost/control` and no `@cohost/llm` (SHARED-BOUND-002). The bus package holds only the transport (publish, subscribe, tail, health stream, `resetGroup`); the process-lifecycle helpers live here. The Discord voice session is a separate subpath so that a service that does not use Discord never loads `discord.js` or a native module; only the Discord connector ([connections](../connections/connections-design.md)) imports it; ears and mouth hold no Discord client. The untrusted text guard is a subpath for the opposite reason: [working-memory](../working-memory/working-memory-design.md), a pure library with no bootstrap, imports it, and a subpath lets it do so without loading the bootstrap, the heartbeat or the bus client.
@@ -246,6 +247,10 @@ It lowers the chance that a model obeys instructions embedded in chat; it does n
 ### Failure posture
 
 The guard has no model and no I/O, so it has no fallback of its own and no failure mode to report (HLD tenet 3 asks a fallback of judgement that calls a model or a tool).
+
+## Head rotation (`@cohost/shared/head-rotation`)
+
+`eulerToQuat(pitch, yaw, roll)` takes degrees and returns the quaternion `[x, y, z, w]` of the rotation. It is the one conversion the VMC driver sends a receiver and the renderer page applies to a model's head bone, so a model turns the same way under either driver; two copies would drift, and the page and the avatar service are different programs (HLD tenet 11). It is a subpath of its own for the reason the untrusted guard is one: the dashboard's UI build imports it, and it must pull in no Node module, no workspace package and no `node_modules` package. The avatar segment calls it with `(headY, headX, headZ)` ([avatar](../avatar/avatar-design.md) vmc).
 
 ## Hash embedding
 

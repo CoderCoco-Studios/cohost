@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. Total 178 specs: 104 `[x]`, 74 `[ ]`, 0 `[D]`. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 174 specs: 104 implemented, 0 deferred, 70 gaps (the audit covered 82 of them). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 220 specs: 100 implemented, 0 deferred, 120 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (209 specs, prefix `CFG`: 102 `[x]`, 107 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (220 specs, prefix `CFG`: 100 `[x]`, 120 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -78,7 +78,7 @@ Orientation:
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-019 (CFG-USR-005 does not exist) | 14 | 0 | 4 |
 
-**Summary:** 209 specs: 102 implemented, 107 gaps, 0 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 220 specs: 100 implemented, 120 gaps, 0 deferred. The renderer settings (CFG-SCH-097 to -101, CFG-PRES-018 to -020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008, with CFG-PRES-005, -007, CFG-SCH-006 and CFG-ISO-005 revised for the `browser` driver and the `renderer` section) are specified and not built. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

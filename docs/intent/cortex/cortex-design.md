@@ -39,7 +39,7 @@ Observed principles:
 ## Event wiring
 
 Subscription (`startup.ts`): group `cortex`, start mode `latest`, types
-`chat.message, speech.heard, vision.summary, brain.say, voice.done, voice.stop, voice.failed,
+`chat.message, chat.removed, speech.heard, vision.summary, brain.say, voice.done, voice.stop, voice.failed,
 attention.focus, memory.recall.reply, memory.notes.reply, memory.viewer, affect.state, control`
 (`CTX-EVT-001`; `voice.failed` carries the spoken fallback line, `CTX-EVT-008`; never
 `speech.partial`: an interim transcript is not speech to the cortex, CTX-EVT-009). The service publishes `brain.status`,
@@ -70,7 +70,8 @@ the caller no signal when it has, so readiness cannot hang off it.
 | `attention.focus` | `this.think(...)` not awaited, so the recall reply can be delivered; a rejection is logged | `cortex.ts` |
 | `memory.recall.reply` | resolve the pending recall with the same `id`; unknown or late ids ignored | `cortex.ts` |
 | `memory.notes.reply` | resolve the pending notes request with the same `id`; unknown or late ids ignored (`CTX-NOTES-003`) | `cortex.ts` |
-| `memory.viewer` | build or clear a one-line note for that user | `cortex.ts` |
+| `memory.viewer` | build or clear a one-line note for that viewer, keyed by platform and user id | `cortex.ts` |
+| `chat.removed` | `ctx.forget(removal)`; for `scope: user`, also delete that viewer's familiarity note (Forgetting a removed message); a think already in flight keeps the transcript it took (`CTX-FORGET-001`, `CTX-FORGET-002`) | `cortex.ts` |
 | `affect.state` | store as the latest `Mood` | `cortex.ts` |
 | `control` | see Control commands | `cortex.ts` |
 
@@ -104,7 +105,7 @@ lines are a map by `brain.say` id, not a single id: a line stays pending until i
    In parallel, publish `memory.notes.request` for the viewers in the focus and the
    window and wait for its reply under the same deadline (`CTX-NOTES-001`,
    `CTX-NOTES-002`; see Viewer notes).
-4. Viewer note: look up `focus.focus.who` lowercased and put it in the prompt; it
+4. Viewer note: look up the `viewerKey` of `focus.focus` (its `platform`, `userId` and `who`) and put the note in the prompt; it
    is deleted only once the reply's `brain.say` is published, so a vetoed, dropped
    or failed reply keeps it for the next one (`CTX-VIEWER-003`; looked up at
    `cortex.ts`, deleted by the `onPublished` callback of `say()`,
@@ -187,7 +188,7 @@ text: `isNew` gives "`<user>` is new here (first message)."; `regular` true give
 "`<user>` is a regular (N messages)."; otherwise no note (`CTX-VIEWER-001`). Memory
 decides who is a regular (the owner's flag or the configured message threshold,
 memory `MEM-REG-001`); the cortex holds no threshold of its own and the event
-carries no notes text. Notes are keyed by lowercased user, a new event replaces or clears
+carries no notes text. Notes are keyed by the viewer's key from the shared guard's `viewerKey` (platform and user id; a `memory.viewer` that carries no `platform` makes no note), a new event replaces or clears
 the old one, and the map is capped at 50 with oldest-first eviction
 (`cortex.ts`).
 
@@ -195,9 +196,9 @@ the old one, and the map is capped at 50 with oldest-first eviction
 viewers (core: who they are; recent: what they are up to lately) are fetched for
 each reply, for the viewer being replied to and for the other viewers in the
 working-memory window, whatever their message count. Step 3 of the think pipeline
-publishes `memory.notes.request {id, users}` alongside the recall request; `users`
-is the focus's `who` followed by the distinct chat users in the window, newest
-first (`CTX-NOTES-001`). Both replies share one
+publishes `memory.notes.request {id, viewers}` alongside the recall request; `viewers`
+is the focus's viewer (`who`, `platform`, `userId`) followed by the distinct chat viewers in the window, one entry per `viewerKey`, newest
+first, each entry carrying the display name and the platform and user id of its window entry (`CTX-NOTES-001`). Memory identifies each by platform and user id, so notes about one viewer never reach another viewer who shares the name. Both replies share one
 `recall_timeout_ms` deadline, and a missing reply means no notes, never a stalled
 reply (`CTX-NOTES-002`, HLD tenet 3). Memory has already capped, ordered and
 filtered the notes (strongest first, a per-viewer and a total cap, sensitive

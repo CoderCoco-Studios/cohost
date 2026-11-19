@@ -392,23 +392,23 @@ What the native transport does in situations the sections above do not make obvi
 | 28 | Redis goes away while a producer publishes frames | After the publish connection's first connect, `publishFrame` rejects at once while it is down and nothing is queued; ioredis reconnects in the background. The producer logs the failure as any failed write; the frames lost are counted by consumers as `seq` gaps (CONN-BP-003, BUS-NAT-FRM-006). A `tailAudio` read waits for its reader's reconnect and resumes from the last id it read. |
 | 29 | A service imports `@cohost/bus` but never touches frames | It opens no frames connection: the frame transport connects only at the first `publishFrame` or `tailAudio` (BUS-NAT-FRM-005). |
 
-## Event catalogue (26 types)
+## Event catalogue (27 types)
 
 Source: `packages/bus/src/events.ts`. Producer / consumer columns are observed from `publish(` and `subscribe(` call sites; the schema encodes neither (comments only). Optional fields marked `?`; `default` shows the zod default. Flags `injected?` and `remember?` are both `z.boolean().optional()` with no default.
 
 | # | Type | Payload | Producers -> consumers (observed) | spec |
 |---|---|---|---|---|
-| 1 | `chat.message` | `platform` (`twitch`, `youtube`, `discord`), `user`, `userId?`, `text`, `isMod` default false, `isSub` default false, `mentionsCohost` default false, `injected?`, `remember?` | chat (`services/chat/src/service.ts`, `inject.ts`), dashboard direct inject (`services/dashboard/src/inject.ts`) -> salience, affect, memory, cortex | BUS-EVT-002 |
+| 1 | `chat.message` | `platform` (`twitch`, `youtube`, `discord`), `user`, `userId?` (the platform's own viewer id, exactly as the platform writes it: a Twitch user id, a YouTube channel id; absent on injected lines), `messageId?` (the platform's id of the message; absent on injected lines), `text`, `isMod` default false, `isSub` default false, `mentionsCohost` default false, `injected?`, `remember?` | chat (`services/chat/src/service.ts`, `inject.ts`), dashboard direct inject (`services/dashboard/src/inject.ts`) -> salience, affect, memory, cortex | BUS-EVT-002 |
 | 2 | `vision.summary` | `text`, `changed` default true, `timing?`, `injected?`, `remember?` | eyes (`eyes.ts`, `inject.ts`), dashboard (`inject.ts`) -> salience, affect, cortex | BUS-EVT-012 |
 | 3 | `speech.heard` | `speaker`, `speakerId?`, `text`, `durationMs`, `injected?`, `remember?` | ears (`hearing.ts`, `inject.ts`), dashboard (`inject.ts`) -> salience, affect, memory, cortex | BUS-EVT-013 |
 | 3b | `speech.partial` | `speaker`, `speakerId?`, `source`, `text`, `seq` (integer, not negative), `utteranceId`, `timing?` | ears (live connector utterances, while open and only when partials are enabled) -> none in this release (salience, cortex, working-memory, affect and memory do not subscribe; the dashboard feed renders no row for it) | BUS-EVT-026 |
 | 4 | `brain.say` | `id`, `text`, `emotion`, `gesture?`, `reason?`, `route?`, `injected?`, `remember?` | cortex (`cortex.ts`), salience reflex (`salience.ts`) -> voice, avatar, memory, salience, cortex (self line), dashboard | BUS-EVT-014 |
 | 5 | `brain.status` | `state` (`idle`, `thinking`, `speaking`, `muted`), `detail?` | cortex (`cortex.ts`) -> salience, dashboard | BUS-EVT-015 |
-| 6 | `attention.focus` | `reason`, `score`, `focus?` (`kind` of `chat`, `speech`, `vision`; `who?`; `text`; `mention` default false), `injected?`, `remember?` | salience (`salience.ts`) -> cortex | BUS-EVT-010 |
+| 6 | `attention.focus` | `reason`, `score`, `focus?` (`kind` of `chat`, `speech`, `vision`; `who?` (the display name, for rendering); `platform?` and `userId?` (the focused chat viewer's identity, as on `chat.message`; absent for speech and vision and for an injected line's `userId`); `text`; `mention` default false), `injected?`, `remember?` | salience (`salience.ts`) -> cortex | BUS-EVT-010, BUS-EVT-036 |
 | 7 | `affect.state` | `valence` in -1..1, `arousal` in 0..1, `mood` (Emotion), `cause?` | affect (`affect.ts`) -> salience, avatar, cortex | BUS-EVT-003 |
 | 8 | `memory.recall.request` | `id`, `query`, `k?` (positive int) | cortex (`cortex.ts`) -> memory | BUS-EVT-010 |
 | 9 | `memory.recall.reply` | `id`, `memories` (array of `ts`, `kind` of `chat`, `speech`, `self`, `note`; `who`; `text`; `similarity?`) | memory (`region.ts`) -> cortex | BUS-EVT-010 |
-| 10 | `memory.viewer` | `user`, `isNew`, `msgCount` (int), `regular` (boolean); no notes text | memory (`region.ts`) -> cortex | BUS-EVT-010 |
+| 10 | `memory.viewer` | `user`, `platform?`, `userId?` (the viewer's identity as on `chat.message`), `isNew`, `msgCount` (int), `regular` (boolean); no notes text | memory (`region.ts`) -> cortex | BUS-EVT-010, BUS-EVT-036 |
 | 11 | `voice.utterance` | `id`, `text`, `emotion`, `gesture?`, `route?`, `durationMs`, `envelopeHz`, `envelope` (number array), `audioUrl`, `sampleRate` | voice (`voice.ts`) -> avatar, mouth (each output a sink), dashboard | BUS-EVT-016 |
 | 12 | `voice.playing` | `id`, `sink` | voice virtual sink (`voice.ts`), mouth outputs (today `discord`) -> voice, avatar, mouth | BUS-EVT-017 |
 | 13 | `voice.done` | `id`, `sink`, `interrupted?`, `spokenText?`, `unsaidText?` | voice (`voice.ts`), mouth outputs -> cortex, avatar | BUS-EVT-017, BUS-EVT-031 |
@@ -423,8 +423,8 @@ Viewer-notes events (design in the memory, cortex and dashboard segments):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|
-| 20 | `memory.notes.request` | `id`, `users` (non-empty string array; first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
-| 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
+| 20 | `memory.notes.request` | `id`, `viewers` (non-empty array of `user` (display name), `platform?`, `userId?`; first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
+| 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `platform?`, `userId?` (echoing the request entry it answers), `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
 | 22 | `memory.viewers.request` | `id`, `op` (`list`, `get`, `delete_note`, `restore`, `clear`, `set_regular`, `link_discord`, `unlink_discord`) with per-op fields | dashboard -> memory | BUS-EVT-021 |
 | 23 | `memory.viewers.reply` | `id`, `ok`, `error?` (`not_found`, `failed`), `detail?`, `data?` | memory -> dashboard | BUS-EVT-021 |
 
@@ -437,6 +437,14 @@ Spoken fallback line (design in the [voice](../voice/voice-design.md) Sink Arbit
 | 24 | `voice.failed` | `id`, `sink`, `reason`, `fallback?` (`clip`, `text`) | mouth outputs (today `discord`) -> voice, cortex, dashboard feed | BUS-EVT-022 |
 
 | 25 | `voice.stop` | `reason`, `ids?` | salience (barge-in) -> voice, mouth, cortex | BUS-EVT-030 |
+
+Forgetting (design in [chat](../chat/chat-design.md) Forgetting a removed message; consumers [working-memory](../working-memory/working-memory-design.md), [affect](../affect/affect-design.md), [memory](../memory/memory-design.md)):
+
+| # | Type | Payload | Producers -> consumers (intended) | spec |
+|---|---|---|---|---|
+| 26 | `chat.removed` | `platform` (`twitch`, `youtube`, `discord`), `scope` (`message`, `user`, `all`), `messageId?` (required when `scope` is `message`), `userId?` (required when `scope` is `user`), `reason?` (free string: `deleted`, `banned`, `timeout`, `cleared` by convention) | chat -> salience, cortex, affect, memory | BUS-EVT-033 to BUS-EVT-035 |
+
+`chat.removed` announces that a platform removed chat the co-host may already hold. `scope: message` names one message by the `messageId` its `chat.message` carried; `scope: user` names every message of one viewer by the `userId` their `chat.message` carried; `scope: all` names every chat line of the platform. `messageId` and `userId` are the platform's own values, exactly as `chat.message` carries them, so a consumer matches on platform plus id and never on a display name. The event is a report and not an order to moderate: it says what the platform did, and the name follows the event types that report (`voice.done`, `voice.failed`). It carries no `injected` or `remember` flag and no text.
 
 `voice.stop` orders the body to stop speaking now: `reason` is a free string naming why (salience publishes `barge-in`), `ids` narrows the order to the named `brain.say` ids and, when absent, means every line voice holds and every line a mouth output holds or plays. It is an order and not a report: it carries no sink, and the events that report its effect are the ordinary `voice.done` (flagged `interrupted`) from each sink that was playing. It is not a mute: a `brain.say` published after it is spoken as usual.
 

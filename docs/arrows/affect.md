@@ -4,7 +4,7 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 53 specs: 37 implemented, 0 deferred, 16 gaps (the chat safety work, below). The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 36 implemented, 0 deferred, 21 gaps (the chat safety work, below). The LLD has no open questions.
 
 ## Decisions applied
 
@@ -34,7 +34,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (53 specs, prefix `AFF`: 37 `[x]`, 16 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (57 specs, prefix `AFF`: 36 `[x]`, 21 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec AFF-`)
 - services/affect/test/affect.region.test.ts
@@ -81,7 +81,7 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 | Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 |
 | Health and Lifecycle | AFF-HEALTH-001 to AFF-HEALTH-004 | 4 | 0 | 0 |
 
-**Summary:** 53 specs: 37 implemented, 0 deferred, 16 gaps.
+**Summary:** 57 specs: 36 implemented, 0 deferred, 21 gaps.
 
 ## Key Findings
 
@@ -94,6 +94,7 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 ## Work Required
 
+- Viewer identity and forgetting (design 2026-11-16, no code): the counter keys a viewer by platform and user id (AFF-IN-011, AFF-IN-020) and queued appraisals of removed chat are dropped (AFF-IN-001, AFF-IN-017 to AFF-IN-019).
 ### Must Fix
 Bounded intake, counting chat once per viewer and text in a window, and the guarded appraiser prompt are specified and not built (AFF-IN-002, AFF-IN-008 to AFF-IN-016, AFF-HOOK-010 to AFF-HOOK-014).
 

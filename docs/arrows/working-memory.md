@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**PARTIAL** — 56 specs: 33 implemented (`[x]`), 22 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the chat safety work (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL**: 62 specs: 33 implemented (`[x]`), 28 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the chat safety work (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (56 specs: 33 `[x]`, 22 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (62 specs: 33 `[x]`, 28 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -55,7 +55,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 33 of 56 specs implemented; 1 deferred; 22 gaps. 41 carry a test `@spec` annotation.
+**Summary:** 33 of 62 specs implemented; 1 deferred; 28 gaps. 41 carry a test `@spec` annotation.
 
 ## Key Findings
 
@@ -69,6 +69,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Work Required
 
+- Platform, user id and forgetting (design 2026-11-16, no code): the chat entry carries `platform`, `userId` and `messageId` (WM-PUSH-001) and `forget` removes chat for a `chat.removed` (WM-FORGET-001 to WM-FORGET-006).
 ### Must Fix
 Bounding on `push`, the quoted `[chat]` line and speaker labels, own-line protection in eviction, `markHeard`, and the `@cohost/shared` dependency are specified and not built (WM-WIN-001, WM-WIN-009 to WM-WIN-011, WM-PUSH-014 to WM-PUSH-020, WM-PKG-001, WM-TRANS-002, WM-TRANS-003, WM-TRANS-008, WM-TRANS-012 to WM-TRANS-014).
 

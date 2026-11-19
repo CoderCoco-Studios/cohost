@@ -21,10 +21,17 @@ locally in separate containers. All internal processing and storage stays on
 the owner's LAN unless explicitly configured otherwise. Platform connections
 (Twitch chat by default, YouTube, Discord) are intentional external
 integrations. Chat-model and hook calls leave the LAN only
-when explicitly configured. Audio, screenshots and synthesized text leave the
+when explicitly configured, and so do the frames a hosted chat provider is
+asked to describe. A tool or MCP server outside the LAN is explicitly
+configured too. Audio, screenshots and synthesized text leave the
 LAN only when a configured service URL (STT, Ollama, TTS, `VOICE_URL`, Redis,
 Postgres, or any other) points to a host outside it.
 Generated audio leaves for Discord only when mouth's Discord output is enabled.
+
+Viewer chat is untrusted text. It is bounded and marked as viewer text before
+it reaches any model prompt, so instructions inside it are not obeyed, and
+against hostile or flooding chat the co-host only ever ignores or discounts
+what it reads.
 
 ## Approach
 
@@ -36,10 +43,11 @@ outputs, and lets any part be replaced, mocked or run alone without the others
 noticing.
 
 - **Senses** publish what they observe and consume nothing from the brain:
-  `chat` turns Twitch IRC into `chat.message`, `eyes` turns an OBS screenshot
-  into a one-line `vision.summary` from a local vision model, `ears` turns
-  each human speaker's audio (Discord voice, desktop audio) into
-  `speech.heard` through local speech-to-text. Summaries and transcripts go on the bus, never frames or
+  `chat` turns Twitch IRC and YouTube live chat into `chat.message`, `eyes`
+  turns an OBS screenshot into a one-line `vision.summary` from a vision model
+  (local by default), `ears` turns each human speaker's audio (Discord voice,
+  desktop audio) into `speech.heard` through speech-to-text (local by
+  default). Summaries and transcripts go on the bus, never frames or
   audio bytes.
 - **The brain** is four regions, named for the parts of a brain they play.
   `salience` scores every unseen event and decides *when* to speak
@@ -52,14 +60,26 @@ noticing.
   affect `llm` hooks and the cortex critic hook may also call a model):
   it turns a focus plus personality, mood, viewer notes, recalled memories
   and the recent transcript into one spoken line, vetted by a critic hook.
+  When the owner has configured tools, cortex runs the chat model's tool
+  loop but never calls a tool itself.
+- **Tools** are one service, `tools`, that sits beside the brain. It owns the
+  connections to MCP servers, the owner's allow-list of tools, per-call
+  timeouts and a mock mode. cortex publishes a tool request on the bus and
+  `tools` publishes the result; MCP servers are backends of `tools` in the
+  same sense that the TTS server is a backend of `voice`. No tool is
+  configured by default.
 - **The body** speaks and animates. `voice` synthesizes `brain.say` into
   audio, serves it over HTTP, computes a lip-sync envelope, and arbitrates
-  which sink plays it. `mouth` plays those lines on the outputs the owner
+  which sink plays it. The chat model's reply is streamed, and `voice`
+  synthesizes and plays it clause by clause, so the first clause starts before
+  the whole reply exists. `mouth` plays those lines on the outputs the owner
   routes them to (today a Discord voice channel, through the co-host's own
   bot, held by the Discord connector) and says a pre-generated fallback line
   when one cannot play. `avatar`
   turns bus events into a smooth canonical face state and hands it to a thin
-  driver for VTube Studio, a VMC app, or nothing. Listening (`ears`) and
+  driver for VTube Studio, a VMC app, the browser renderer (a web page that
+  draws an owner-supplied VRM model, added to OBS as a Browser Source), or
+  nothing. Listening (`ears`) and
   speaking (`mouth`) are separate services that reach Discord through one
   connector, so either restarts, fails or is routed without the other.
 - **Connectors** are external processes that attach to the bus dynamically.
@@ -85,7 +105,8 @@ falls back to built-in rules, so the show goes on when a model is slow or
 down. The chat model is behind one `ChatProvider` interface, so a stronger
 brain is a `config.yaml` change, while embeddings are chosen separately by
 `brain.memory.embedder` (local Ollama by default, a deterministic hash embedder
-offline) and never follow the chat provider. And every
+offline) and never follow the chat provider. Engines (TTS, STT, vision) are
+off-the-shelf, behind adapters and local by default. And every
 service has a mock, stub or off backend, so any one of them runs on Redis
 alone with no account, GPU or API key.
 
@@ -95,7 +116,8 @@ cohost is built for one streamer: the owner, on their own stream.
 
 1. **The owner, streaming.** One person running cohost on their own Linux or
    WSL2 box with an NVIDIA GPU, OBS on the same or a second PC, a Twitch
-   channel, a Discord voice channel, and a Live2D or VRM avatar app. They
+   channel (or a YouTube one), a Discord voice channel, and a Live2D or VRM
+   avatar app, or their own VRM model drawn by the browser renderer. They
    set a few bootstrap values in `.env` by hand, edit `config.yaml` and
    `personality.md` by hand or from the dashboard, enter credentials through
    the dashboard (or by hand in `secrets.yaml`), start the dashboard on the
@@ -157,12 +179,13 @@ for them to operate.
    for internal processing and storage (platform connections such as Twitch
    chat are intentional external integrations);
    chat-model, reflection and hook calls leave the LAN only when explicitly
-   configured; audio, screenshots and synthesized text leave only when a configured
+   configured, as do the frames sent to a hosted chat provider for description
+   and any tool or MCP server outside the LAN; audio, screenshots and synthesized text leave only when a configured
    service URL (STT, Ollama, TTS, `VOICE_URL`, Redis, Postgres, or any other)
    points outside it; generated audio reaches Discord
    only when mouth's Discord output is enabled.
-5. **Swap any piece.** Adding a chat source, a TTS engine, an avatar driver,
-   a model provider or a hook implementation never touches the brain
+5. **Swap any piece.** Adding a chat source, a TTS or STT engine, an avatar
+   driver, a model provider, a tool or a hook implementation never touches the brain
    regions; adding a region is a new service that subscribes and publishes.
 6. **Keep the stream going through failures.** A slow or absent model,
    memory region, voice sink or avatar app degrades one feature and is
@@ -182,8 +205,15 @@ for them to operate.
    to delete or restore.
 9. **Hear chat from more than one platform.** `chat.message.platform` admits
    `twitch`, `youtube` and `discord`, and a new chat source is a new sense
-   that publishes `chat.message` without touching the brain. Twitch is the
-   only platform implemented today.
+   that publishes `chat.message` without touching the brain. Twitch chat and
+   YouTube live chat are read side by side, and the co-host answers a viewer
+   on either the same way.
+10. **Use a tool when it helps, in the co-host's own voice.** The co-host can
+    look something up or run a tool the owner has allowed in the middle of a
+    reply, and it speaks the result as its own line, with the same short,
+    in-character voice as goal 1. A tool is never a reason to answer every
+    message, and a slow or failed tool never leaves the co-host silent or
+    stuck.
 
 ### Deferred goals
 
@@ -217,9 +247,12 @@ code keeps the seams they need.
 
 1. **Not a chat moderation or command bot.** Lines starting with `!` and
    messages from known bots are dropped at the sense; cohost never times
-   out, bans, or answers commands.
-2. **Not a general assistant.** It does not look things up, run tools, or
-   answer every message; the personality file says so explicitly.
+   out, bans, or answers commands. Against hostile or flooding chat it only
+   ignores or discounts what it reads.
+2. **Not a general assistant.** Goal 1 is the tie-breaker: the co-host is a
+   second person in the room, so a tool serves the co-host's own lines and
+   never turns it into a service that answers every message; the personality
+   file says so explicitly.
 3. **Not a hosted, multi-tenant or hardened service.** One install serves one
    streamer; there is no account system and no tenancy. The trust boundary is
    the operator's LAN (see Trust boundary below); hardening against other
@@ -228,12 +261,16 @@ code keeps the seams they need.
    sends input to the game or OBS.
 5. **Not a voice pipeline of its own.** Speaker segmentation is Discord's
    per-user streams and voice-activity endpointing of each speaker's audio;
-   STT and TTS are off-the-shelf local servers. cohost adds no diarisation and
+   STT and TTS are off-the-shelf engines behind adapters, local by default;
+   an engine that is hosted is explicitly configured egress (tenet 8).
+   cohost adds no diarisation and
    no acoustic echo cancellation: echo of the co-host's own voice is handled by
    ears dropping the audio of configured sources while a line plays, not by
    subtracting the line from the signal.
-6. **Not a rendering engine.** The avatar is drawn by VTube Studio or a VMC
-   app; cohost only drives parameters, expressions and gestures. The
+6. **Not a modelling or compositing tool.** cohost does not author, rig or
+   edit avatar models, and does not composite the stream. It can draw an
+   owner-supplied VRM model itself in the browser renderer; Live2D rendering
+   stays with VTube Studio, and a VMC app stays a supported alternative. The
    dashboard's SVG face is a preview, not a stream asset.
 7. **Not Windows-native.** The supported hosts are Ubuntu/Debian and WSL2;
    the installer targets those only.
@@ -248,23 +285,28 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 1. **The bus is the only seam.** Services exchange control and events as
    typed events on `cohost:events`, through one bus client (`@cohost/bus`
    for TypeScript services, `crates/cohost-bus` for Rust ones, see Native layer); live audio between a connector and its
-   consumers is the one other seam, on its own capped streams (see
-   Connectors); HTTP is allowed only for binary or object
+   consumers, and the avatar frames between the avatar service's browser
+   driver and the dashboard that relays them, are the other seams, each on its
+   own capped streams (see Connectors and Avatar frames); HTTP is allowed only for binary or object
    transfer (such as voice audio), operator APIs, and configured `http` hooks
-   that POST JSON to `module.url`. Reject a design in which two services
+   that POST JSON to `module.url`. An MCP server is a backend of the `tools`
+   service, as the TTS server is a backend of `voice`, not a service on the
+   bus. Reject a design in which two services
    call each other over HTTP, share a database, or import each other's
-   runtime code.
+   runtime code, or in which cortex holds a connection to a tool.
 2. **Senses and body are swappable without touching the brain.** A new chat
-   source, TTS engine, avatar driver, model provider or hook implementation
+   source, TTS or STT engine, avatar driver, model provider or hook implementation
    changes config and one adapter file. Reject a change to a sense or body
    adapter that requires editing `salience`, `affect`, `memory` or `cortex`.
-3. **No model on the live path without a rules fallback and a timeout.** Any
+3. **No model or tool on the live path without a fallback and a timeout.** Any
    judgement that can call a model (scoring, appraisal, critic, recall) must
-   have a built-in answer it falls back to, bounded by `timeout_ms`. Reject
+   have a built-in answer it falls back to, bounded by `timeout_ms`. Any tool
+   call has a timeout and a built-in way to answer without the tool. Reject
    a feature whose failure mode is a silent or stuck co-host.
 4. **Speaking is gated.** Every `brain.say` either passed salience's
    threshold, cooldown and busy checks, matched a reflex that respects the
-   same busy and cooldown gates, or was an explicit operator `say`. Reject a
+   same busy and cooldown gates, or was an explicit operator `say`. A tool
+   result is input to cortex's reply, not a path to `brain.say`. Reject a
    new path to `brain.say` that bypasses those gates.
 5. **A configuration gap degrades, never crashes.** A service missing a
    token, channel, device or app stays up, reports `degraded` or `off` in
@@ -272,7 +314,9 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
    that exits non-zero because an optional dependency is absent.
 6. **Every service runs on Redis alone.** Each backend a service talks to
    ships with a mock, stub or off mode selectable by one start-time override
-   the control plane injects, and reported honestly as `mode: mock|off`. Reject a new backend without an
+   the control plane injects, and reported honestly as `mode: mock|off`. The
+   `tools` service's isolated mode is its mock mode, which answers every
+   allowed tool without reaching an MCP server. Reject a new backend without an
    isolated mode.
 7. **Behaviour in `config.yaml`, secrets in `secrets.yaml`, persona in
    Markdown; `.env` only for bootstrap and access.** Every operator setting
@@ -289,13 +333,15 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
 8. **Local by default; only explicitly configured egress may leave the LAN.**
    Internal processing and storage stay on the LAN; platform connections
    (Twitch chat, YouTube, Discord) are intentional external integrations, not
-   egress in this sense. Egress means chat-model and hook calls, any configured
+   egress in this sense. Egress means chat-model and hook calls (including
+   frames sent to a hosted chat provider for description), any configured
    service URL that points outside the LAN (for example STT, Ollama, TTS,
-   `VOICE_URL`, `REDIS_URL` or `DATABASE_URL`), and Discord audio when
+   `VOICE_URL`, `REDIS_URL` or `DATABASE_URL`, whether the engine behind it is
+   local or hosted), any tool or MCP server outside the LAN, and Discord audio when
    mouth's Discord output is enabled.
    Audio, frames, chat text, embeddings, memories and viewer notes stay on
    the operator's LAN unless that egress is configured. Reject a default that
-   sends any of them to a hosted service, and reject an embedding or
+   sends any of them to a hosted service or a tool outside the LAN, and reject an embedding or
    viewer-notes model path that follows the chat provider off the LAN.
 9. **Viewers' sensitive details shape tone, never content.** The co-host may
    know a viewer's health or family news; it changes how warmly the co-host
@@ -322,19 +368,24 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
     baseline, with no bespoke gate. Reject a service with code of its own in
     two languages, and project-written native code whose boundary is crossed
     per frame or per sample without a passing gate.
+13. **Viewer chat is data, never instructions.** Chat reaches a model prompt
+    only bounded and marked as viewer text, and the defence against hostile
+    chat is to ignore or discount it (Non-Goal 1). Reject a path that puts
+    unbounded or unmarked viewer text in a prompt, and a defence that
+    moderates a viewer.
 
 ## System Design
 
 cohost is a locally hosted AI VTuber co-host. Every component is a
 separate Node process that talks only through typed events on a Redis Streams
 bus (`cohost:events`, 25 event types) plus a separate `cohost:health` heartbeat stream (26 registered payloads in all, counting `service.heartbeat`). Senses publish what they observe; four brain regions
-decide when and what to say; the body speaks and animates; an operator
-dashboard watches and steers.
+decide when and what to say; the `tools` service runs the tools cortex asks
+for; the body speaks and animates; an operator dashboard watches and steers.
 
 ```mermaid
 flowchart LR
   subgraph senses
-    chat[chat<br/>Twitch IRC]
+    chat[chat<br/>Twitch + YouTube]
     eyes[eyes<br/>OBS + vision model]
     ears[ears<br/>audio sources + STT]
   end
@@ -344,17 +395,19 @@ flowchart LR
     memory[memory<br/>pgvector + reflection]
     cortex[cortex<br/>LLM reply + critic]
   end
+  tools[tools<br/>MCP servers, allow-list]
   subgraph body
     voice[voice<br/>TTS + sink arbitration]
     mouth[mouth<br/>outputs: Discord + fallback line]
-    avatar[avatar<br/>VTS / VMC / null]
+    avatar[avatar<br/>VTS / VMC / browser / null]
   end
-  dashboard[dashboard on the host<br/>feed, control, sink, launch]
+  dashboard[dashboard on the host<br/>feed, control, sink, launch, renderer]
   connectors[connectors<br/>Discord, desktop audio]
+  frames[(avatar frame stream)]
   bus[(redis bus)]
 
   chat & eyes & ears --> bus
-  bus <--> salience & affect & memory & cortex
+  bus <--> salience & affect & memory & cortex & tools
   bus --> voice & mouth & avatar & dashboard
   voice --> bus
   mouth --> bus
@@ -363,6 +416,7 @@ flowchart LR
   mouth -. fetches audio .-> voice
   connectors <-. audio streams .-> ears & mouth
   connectors --> bus
+  avatar -. browser driver .-> frames -. relay .-> dashboard
 ```
 
 ### Segments
@@ -371,22 +425,22 @@ flowchart LR
 | --- | --- | --- |
 | platform | event-bus | Typed Redis Streams bus; 25 event types plus 1 health type; consumer groups; test double |
 | platform | config | YAML config schema and loader (`config.yaml`, `secrets.yaml`, start-time overrides), the presentation table that names every setting; personality / expressions files |
-| platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock, and a mock |
+| platform | model-backends | Chat + embedding providers: Ollama, OpenAI-compatible, Claude API, Bedrock, and a mock; streamed replies; image input on the chat providers that support it |
 | platform | region-hooks | Pluggable judgement hooks: rules / llm / http with fallback to rules |
 | platform | working-memory | Rolling window of recent events rendered as a prompt transcript |
 | platform | connections | The connector protocol (registration, heartbeat, source and sink tags, `audio.in` / `audio.out` streams, loss policy) and the Discord connector: the one bot login and voice connection |
 | platform | shared-runtime | `@cohost/shared`: service bootstrap, shutdown and heartbeat publisher, retry with backoff, missing-credentials idle plan, `control` handling, `inject.request` handling, WAV and resampling, Discord voice session |
-| senses | chat | Twitch chat → `chat.message` |
-| senses | eyes | OBS screenshot → vision model → `vision.summary` |
-| senses | ears | Audio sources (Discord voice through the connector, desktop audio, `http` and `dir` capture) → Whisper → `speech.heard`; uploaded audio → `speech.heard` (test injection) |
+| senses | chat | Twitch chat and YouTube live chat → `chat.message` |
+| senses | eyes | OBS screenshot → vision model (a local model or a chat provider with image input) → `vision.summary` |
+| senses | ears | Audio sources (Discord voice through the connector, desktop audio, `http` and `dir` capture) → STT engine (speaches/Whisper or another) → `speech.heard`; uploaded audio → `speech.heard` (test injection) |
 | brain | salience | Scores events, decides when to speak, fires reflexes |
 | brain | affect | Valence / arousal mood with decay → `affect.state` |
 | brain | memory | Embeds and recalls exchanges; viewer table, regular status and viewer notes (live capture, consolidation); reflection pass |
-| brain | cortex | `attention.focus` → recall → LLM → critic → `brain.say` |
-| body | voice | `brain.say` → TTS → `voice.utterance` + lip-sync envelope; sink arbitration; generates and serves the fallback clips |
+| brain | cortex | `attention.focus` → recall → LLM (streamed, with the tool loop) → critic → `brain.say` |
+| body | voice | `brain.say` → TTS engine (Kokoro or another) → `voice.utterance` + lip-sync envelope, clause by clause; sink arbitration; generates and serves the fallback clips |
 | body | mouth | `voice.utterance` → the owner's routed outputs (today Discord, through the co-host's bot) as sinks; the spoken fallback line when a line cannot play |
-| body | avatar | Canonical avatar state → VTube Studio / VMC driver |
-| operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, settings editor, Services screen, stack launch / stop / restart-all, Viewers page, test-input injection; serves its own UI bundle and the built docs site |
+| body | avatar | Canonical avatar state → VTube Studio / VMC / browser driver; the browser driver writes each frame's canonical parameters to a capped Redis stream of its own |
+| operator | dashboard | Host-run (outside Compose): live feed, mute / say, audio sink, personality editor, settings editor, Services screen, stack launch / stop / restart-all, Viewers page, test-input injection; serves its own UI bundle and the built docs site, and, on its LAN listener, the avatar renderer page, the owner's model file and the avatar frame relay |
 | operator | control-plane | Service manifest, start / stop / restart runtimes, stack actions (launch, stop-all, restart-all), heartbeat health tracker, `cohostctl` CLI |
 | operator | deployment | Compose topology (every service except the dashboard), single parameterized Dockerfile, host start script, installer, CI |
 | operator | docs-site | The published documentation site: its page tree and two reading tracks, hand-written pages, voice, glossary, theme and personality, the boundary between published pages and the unpublished design tree, and the link, fact and theme checks its build runs; the README as a short pointer to it |
@@ -481,7 +535,7 @@ audio, connector-discord (on songbird, after a live Discord run), ears and
 mouth, each moving whole, as one service in one language, and only where
 measurement shows a gain. Which stay TypeScript: the LLM-, HTTP- and
 database-bound services (cortex, salience, affect, memory, chat, eyes,
-voice, avatar, dashboard, `cohostctl`).
+voice, tools, avatar, dashboard, `cohostctl`).
 
 Port rule: measure before and after; a port that misses its gate is not
 merged. The bus gate, on `scripts/dev/bus-bench.ts` at 8 sources, medians
@@ -537,6 +591,37 @@ direction.
   Audio is live only: producers never wait, consumers start at the end of the
   stream, loss is counted and shown in health. A connector that is down turns
   the dependencies that use its tags `down` and nothing else.
+- **Tool use.** When the owner has allowed tools, cortex runs the chat model's
+  tool loop. When the model asks for a tool, cortex publishes a tool request
+  on the bus and waits for the matching result; it never calls a tool or an
+  MCP server itself. The `tools` service consumes the request, checks it
+  against the owner's allow-list, calls the tool on its MCP server within a
+  per-call timeout (or answers from its mock mode) and publishes the result,
+  so the dashboard feed shows every call. A tool that is not allowed, times out
+  or fails comes back as a result that says so, and cortex answers without the
+  tool. A tool result is input to cortex's reply and never a new path to
+  `brain.say`, so every spoken line still passes the gates in tenet 4. No tool
+  is configured by default, and a tool or MCP server outside the LAN is
+  explicitly configured egress (tenet 8). If `tools` is down, cortex answers
+  without tools and the dashboard marks it as needing `tools`.
+- **Chat safety.** Chat reaches a model prompt only after it is bounded and
+  marked as viewer text (tenet 13). A flood of chat is discounted: it cannot
+  displace the co-host's own recent lines from its context, and salience
+  bounds how far one burst of chat counts toward speaking. The co-host avoids
+  repeating its own recent lines. Every defence ignores or discounts what the
+  co-host reads; none moderates a viewer.
+- **Streamed speech.** cortex streams the chat model's reply, and `voice`
+  synthesizes and a sink plays it clause by clause, so the first clause starts
+  before the whole reply exists. The speaking gates apply as for any line
+  (tenet 4), and barge-in, `voice.stop` and the fallback line behave as above.
+  Deciding at clause boundaries whether to continue, adapt, pivot or resume
+  stays in Future / ideal state below.
+- **Avatar frames.** The avatar Engine alone owns animation: timing, smoothing,
+  idle motion, blink and lip sync. The `browser` driver writes each frame's
+  canonical parameters to a capped Redis stream of its own, outside
+  `cohost:events`, in the same way live audio rides its own capped streams.
+  The dashboard's LAN listener serves the renderer page and the model file and
+  relays the frames to the page, so the page only draws.
 - **Region hooks.** salience.scorer, affect.appraiser, cortex.critic,
   memory.capture and memory.consolidator each run as rules / llm / http per
   config, falling back to rules on any failure. Each of the five reports its
@@ -670,13 +755,13 @@ co-host keeps talking while it watches for key events (a person speaking, and
 once live vision exists, something happening on screen) and decides at clause
 boundaries whether to continue, adapt the rest of the line, pivot to the new
 event, or return to the interrupted thought afterwards ("as I was saying").
-This is deferred; the arrow records it as `[D]` specs in
-[cortex](intent/cortex/cortex-specs.md) (CTX-REPLAN), [voice](intent/voice/voice-specs.md)
-(VOICE-CHUNK), [mouth](intent/mouth/mouth-specs.md) (MOUTH-POS) and
+Streamed, clause-sized speech (Streamed speech, above) is the foundation this
+builds on; the re-planning at its boundaries is deferred. The arrow records it
+as `[D]` specs in [cortex](intent/cortex/cortex-specs.md) (CTX-REPLAN),
+[mouth](intent/mouth/mouth-specs.md) (MOUTH-POS) and
 [working-memory](intent/working-memory/working-memory-specs.md) (WM-STACK).
-Prerequisites: speech synthesized and played in clause-sized chunks; the chat
-model's output streamed rather than returned whole; a playback position a
-re-think can read; a boundary re-think call that fits the latency budget; and
+Prerequisites: a playback position a re-think can read; a boundary re-think
+call that fits the latency budget; and
 live vision (screen events) as a second source of key events. Building it would
 supersede the decisions that keep one thought at a time and never cancel one in
 flight (cortex and salience Decisions & Alternatives); until then barge-in as
@@ -694,20 +779,23 @@ rows here are the ones a fresh author would need before reading any LLD.
 | One language per service | A service's own code is all TypeScript or all Rust (tenet 12). The coarse-boundary gate applies to native code this project writes (the bus addon): a few large calls rather than one per frame or sample, shown by a measured gate. A third-party native library a service loads (`onnxruntime-node` in ears, one inference per 32 ms voice-activity window) is accepted as a dependency and judged by the measured latency baseline, not a bespoke gate. Rust services link `crates/cohost-bus` directly with no napi; TypeScript services use the bus addon for the events path only, and keep the audio frames path in TypeScript on ioredis until connector-discord, ears and mouth move to Rust. Owner decision | Mixed-language services with fine-grained crossings (Rust glue inside a TypeScript service, called per frame); strict no native libraries (every TypeScript service pure TypeScript, including the bus client and ears' voice-activity detector); a bespoke gate for third-party native libraries | Measured on `scripts/dev/bus-bench.ts` at 8 sources, medians of 3 runs. Frames path: TypeScript 6.23% CPU and 1.31 ms p99, native 8.19% and 1.46 ms (1.31 times the CPU, 1.11 times the p99; gate failed): a per-frame napi crossing costs more than native Redis I/O saves. Events path: TypeScript 7.41% and 2.87 ms, native 6.41% and 1.40 ms (0.87 times the CPU, 0.49 times the p99; gate passed): one crossing per batch pays. Fine-grained crossings are therefore a cost, not a speed-up. Forbidding native libraries outright would give up the measured events-path gain and in-process inference that has no TypeScript equivalent. | [event-bus](intent/event-bus/event-bus-design.md) Native transport and Measurement gate; Native layer above |
 | Brain shape | Four regions (salience, affect, memory, cortex) as separate bus services | One brain process | Each region has one job and one set of inputs; regions can be paused, mocked, restarted and swapped independently, and cortex or an explicitly configured `llm` hook can call a chat model. | commit `969f6d7`; [salience](intent/salience/salience-design.md), [affect](intent/affect/affect-design.md), [memory](intent/memory/memory-design.md), [cortex](intent/cortex/cortex-design.md) |
 | Who decides vs. who speaks | salience decides *when* (`attention.focus`), cortex decides *what* (`brain.say`), reflexes short-circuit both | cortex decides on its own; every event prompts the model | Talkativeness is a cheap, tunable scoring loop with no model in it; the expensive call only happens once something is worth a reply. | [salience](intent/salience/salience-design.md) Scoring and Decision; [cortex](intent/cortex/cortex-design.md) think pipeline |
-| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider` | Vendor code in each region; embeddings from the chat vendor | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
+| Model backend | One `ChatProvider` interface over Ollama, OpenAI-compatible, Claude API, Bedrock and a mock, streaming its reply, carrying the model's tool calls and their results, and accepting image input on the providers that support it, so the vision describer is not tied to Ollama; embeddings are selected by `brain.memory.embedder` (local Ollama, or a deterministic hash embedder offline), independently of `llm.provider`. TTS and STT engines are off-the-shelf servers behind adapters, local by default | Vendor code in each region; embeddings from the chat vendor; a vision path tied to one local runtime | A stronger brain is a config change; the memory table's vector size never depends on which chat model is in use. Frames sent to a hosted chat provider for description are egress, so a hosted describer is an explicit setting (tenet 8). | [model-backends](intent/model-backends/model-backends-design.md); `packages/llm/src/index.ts:1-14` |
 | Vision before model choice | The vision path is stamped and reported (`cohostctl latency`) before the vision model or frame source is chosen | Pick a smaller model or a new frame source first, on expectation | The vision model's share of reaction time is unknown, and a model swap or a new frame source costs far more than a stamp. The measured per-stage p50 and p95 decide whether describe time, the salience tick or the frame source is the bottleneck. | [eyes](intent/eyes/eyes-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Judgement hooks | `rules` / `llm` / `http` per hook, any failure falls back to rules | Built-in heuristics only; model-only | An operator can replace a region's judgement with a model, or a model they trained, without a code change, and a hook outage can never stop the show. | [region-hooks](intent/region-hooks/region-hooks-design.md); `packages/modules/src/index.ts:14` |
 | Turn-taking | `brain.status` as a busy flag, `voice.done` as the release, cooldown and `speaking_timeout_ms` as safety valves | Cortex queues focuses; voice drives the brain directly | The co-host never talks over itself; a missing sink or a crashed cortex releases the brain by timeout instead of freezing it. | [salience](intent/salience/salience-design.md) Busy Gating; [cortex](intent/cortex/cortex-design.md) status machine |
 | Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop`; every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
 | Echo of the co-host's own voice | ears drops utterances of the sources named in `ears.echo_suppress_sources` (default `desktop`) while any line plays and for `ears.echo_tail_ms` after it | Acoustic echo cancellation; a transcript-similarity filter; filtering in salience; gating every source | The desktop helper records the host's output device and so can hear the co-host; Discord cannot, because the connector never reads a bot account. Dropping at the source before speech-to-text spends no model call on the echo and keeps the brain unaware of it. The cost is that a person's speech on a gated source is lost while a line plays, which is why barge-in listens to Discord by default. | [ears](intent/ears/ears-design.md); [salience](intent/salience/salience-design.md) |
-| Interruptible, dynamic speech (deferred) | Recorded as deferred specs; not built | Build clause-level re-thinking now | It needs chunked synthesis, a streaming chat model, a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist; stopping and re-answering delivers most of the value for a fraction of the change. | The HLD ideal-state section above; [cortex](intent/cortex/cortex-design.md) |
+| Streamed, clause-sized speech | cortex streams the chat model's reply and `voice` synthesizes it and a sink plays it clause by clause, so the first clause starts before the whole reply exists; the speaking gates (tenet 4) and barge-in apply unchanged | Synthesize and play the whole reply once it is complete | A whole-reply hand-off makes the `llm` and `tts` stages add, and both grow with the length of the reply; starting the first clause as soon as it exists overlaps them, so the wait before the co-host starts speaking depends on the first clause rather than the whole reply. | [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md); [model-backends](intent/model-backends/model-backends-design.md) |
+| Re-planning at clause boundaries (deferred) | Recorded as deferred specs; not built. Deciding at each clause boundary whether to continue, adapt, pivot or resume stays in Future / ideal state | Build clause-level re-thinking now | It needs a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist; stopping and re-answering delivers most of the value for a fraction of the change. | The HLD ideal-state section above; [cortex](intent/cortex/cortex-design.md) |
 | Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control` and mouth reads it only for `set_routing`, so none of them acts on mute or pause; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
 | Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |
 | Where audio plays | voice synthesizes and serves WAV over HTTP; sinks (mouth's outputs such as the co-host's Discord bot, the dashboard browser page) claim and play; a virtual sink times unclaimed lines | voice plays audio itself; audio bytes on the bus | The same line can land on stream through an OBS Browser Source and in the Discord channel with no virtual audio cables, and the brain moves on even when nobody is listening. | [voice](intent/voice/voice-design.md) Sink Arbitration Protocol; [dashboard](intent/dashboard/dashboard-design.md) audio sink |
 | Listening and speaking | Two services: `ears` listens and `mouth` speaks; neither holds a Discord client. One Discord connector holds the co-host's one bot and the one voice connection, publishes each human speaker's audio on `audio.in.discord` and plays what mouth writes to `audio.out.discord`; the owner routes the co-host's voice with mouth's `mouth.outputs` table, where each output is a sink | Two services each with its own Discord bot (the earlier choice); one process with both jobs; a Discord-only connections service; speaking folded into voice | One bot login is the owner's direction. A connector keeps ears and mouth separately restartable and gives the desktop helper and later sources the same path; a merged process would stop one direction with the other, and playback inside voice would die with the service the fallback line exists to survive. The connector is a single point of failure for Discord audio only, reported as a dependency. Owner decision. | [connector-protocol](intent/connections/decisions/connector-protocol.md) (supersedes [listen-speak-split](intent/ears/decisions/listen-speak-split.md)); [connections](intent/connections/connections-design.md); [ears](intent/ears/ears-design.md); [mouth](intent/mouth/mouth-design.md) |
 | Spoken fallback line | When a mouth output cannot play a line it reports `voice.failed` and says a short funny line instead, picked at random from an owner-edited list; voice pre-generates the lines as clips in the co-host's TTS voice and serves them over its HTTP server, and mouth prefetches them into its own cache, so playback never touches the failing path; clips regenerate when the list or voice settings change; the transcript keeps the fallback as her line with a note that the intended one failed; her next reply gets a hint with a base chance (default 1 in 4) and the model decides in character whether to riff on it | Stay silent and let the virtual sink time the line; synthesize the fallback when the failure happens; a file directory shared by voice and ears; enforce the acknowledgement rate in code | Dead air after a glitch is worse on stream than owning it; playback of the fallback must not depend on the voice HTTP and TTS path that just failed; the character, not a dice roll, decides how she reacts, so the real rate drifts with the personality. The fallback replaces a line that already passed the speaking gates (tenet 4) and is not a new `brain.say`. No file store is shared: the clips travel over HTTP, as tenet 1 allows for binary transfer. Owner decision, including waiting out the claim window when nothing plays, no fallback when another sink already plays the line, a 20 s storm limit, and memory keeping the failed line as said; event shape, clip routes, cache refresh and transcript format are. | [mouth](intent/mouth/mouth-design.md) Fallback Line; [voice](intent/voice/voice-design.md) Fallback Clips and Sink Arbitration Protocol; [working-memory](intent/working-memory/working-memory-design.md); [cortex](intent/cortex/cortex-design.md) Fallback acknowledgement |
-| Binary payloads | Never on the event stream (the bus client's audio frame codec carries the audio streams): events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, injected test uploads sit in a short-lived Redis key the event names by id, and live connector audio rides its own capped streams (`audio.in.<source>`, `audio.out.<sink>`) outside `cohost:events` | Base64 on the stream; live audio on the event stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. Live audio needs a transport of its own, and a separate capped stream keeps it off the event stream and the dashboard feed. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads; [connections](intent/connections/connections-design.md) Audio streams |
-| Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers translate canonical params to VTube Studio or VMC | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
+| Binary payloads | Never on the event stream (the bus client's audio frame codec carries the audio streams): events carry text, numbers, envelopes, URLs and ids; audio travels over HTTP, injected test uploads sit in a short-lived Redis key the event names by id, and live connector audio rides its own capped streams (`audio.in.<source>`, `audio.out.<sink>`) outside `cohost:events`; the browser avatar driver's per-frame parameters, which are high-rate rather than binary, ride a capped stream of their own in the same way | Base64 on the stream; live audio on the event stream; avatar frames on the event stream | Keeps the 20 000-entry event stream small and replayable; sinks fetch what they need when they need it. Live audio and avatar frames need a transport of their own, and a separate capped stream keeps them off the event stream and the dashboard feed. | `packages/bus/src/events.ts:137-151,188-204`; [voice](intent/voice/voice-design.md) Audio Store; [dashboard](intent/dashboard/dashboard-design.md) uploads; [connections](intent/connections/connections-design.md) Audio streams |
+| Avatar architecture | One `Engine` owns timing, smoothing, idle motion, blink and lip-sync; drivers (`vtube-studio`, `vmc`, `browser`, `null`) translate canonical params to VTube Studio, a VMC app, the browser renderer or nothing | Per-app animation logic | Adding an avatar app is one ~100-line driver plus an `expressions.yaml` block; the brain never knows which app is running. | [avatar](intent/avatar/avatar-design.md); `services/avatar/src/engine.ts:6-9`, `types.ts:31-34` |
+| Tool runtime | cortex runs the chat model's tool loop and never calls a tool. It publishes a tool request on the bus; a separate `tools` service owns the connections to MCP servers, the owner's allow-list, per-call timeouts and a mock mode, and publishes the result. MCP servers are backends of `tools`. No tool is configured by default | Tools as a sense: a service fetches facts on triggers and publishes them as events, and cortex still makes one model call; cortex calling MCP servers itself | As a sense, the model never chooses a tool in the middle of a reply. With cortex calling MCP servers, cortex would hold outside connections, tools could not be mocked or restarted on their own, and the dashboard would not see calls on the bus. A separate service keeps tenet 1 whole, gives tools an isolated mode (tenet 6), and keeps outside reach in one place for tenet 8. The tool loop does not add a path to `brain.say`, so tenet 4 holds. | [cortex](intent/cortex/cortex-design.md); [module-contract](intent/module-contract/module-contract-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
+| Browser renderer placement | The `browser` avatar driver writes each frame's canonical parameters to a capped Redis stream of its own, outside `cohost:events`; the dashboard's LAN listener serves the renderer page and the model file and relays the frames to the page; the Engine keeps sole ownership of animation | A dashboard page that animates from `avatar.state`, the lip-sync envelope and `voice.playing`; the avatar service serving the page and a socket itself | A page that animates from events means animation logic exists twice, or motion is limited to the roughly 4 Hz of `avatar.state`. The avatar service serving the page would open a second LAN port out of Compose, and model files would have to reach the container. Relaying through the dashboard keeps it the only program listening on the LAN. | [avatar](intent/avatar/avatar-design.md); [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md) |
 | Configuration split | Every operator setting in `config.yaml`; credentials in a separate git-ignored `secrets.yaml` the loader merges at the secret paths; `.env` only for bootstrap values and the dashboard's access controls; persona in `personality.md`, emotion names in `expressions.yaml`; user files seeded from committed `*.example.*`; isolated starts are start-time overrides the control plane passes in one namespaced variable, `COHOST_ISOLATION`, which the loader applies by key path; no other environment variable and no SDK default lookup decides a setting or a credential | Settings in Redis or Postgres; a dashboard-edited `.env`; secrets in `config.yaml`; env only; one JSON; baked config | The user files are the operator's, git-ignored and hand-editable; a fresh clone runs from the examples; one file is the whole operator surface, so the settings editor can show and change all of it; a restart applies it because `./config` is bind-mounted. | [config](intent/config/config-design.md); [config in one place](decisions/config-in-one-place.md) |
 | Persona and learning | Personality is a plain Markdown prompt; the reflection pass appends a dated `## Learned` block the owner edits by hand. Viewer notes live in Postgres, and the dashboard's Viewers page lists every stored note, and every deletion with its reason, for the owner to delete or restore | Learned facts in the database only; a structured persona schema; viewer notes in the personality file | The owner stays in control of who the co-host is with a text editor; nothing learned is hidden in a table. Viewer notes are per-viewer records that change during the stream, so a table fits them, and the Viewers page keeps them as visible and editable as the personality file. | [memory](intent/memory/memory-design.md) Reflection pass and Viewer notes; [dashboard](intent/dashboard/dashboard-design.md) Viewers page; `config/personality.example.md` |
 | Viewer notes | Two layers (core, recent) with a strength that mentions reinforce and time fades; captured live by a small classifier model behind a region hook, cleaned by a stronger model in a consolidation pass triggered by a dirty-note count and once after shutdown; surfaced to the cortex for the viewers in the conversation; sensitivity per tenet 9 | reflection-only notes between streams; regulars only; no fade | The co-host should know what viewers are up to now, not only what the last reflection saw; a cheap model can afford every chat line while a stronger one fixes its mistakes later; fading keeps notes current without manual cleanup. Owner decision; formulas, defaults and event names are. | [memory](intent/memory/memory-design.md) Viewer notes; [cortex](intent/cortex/cortex-design.md) Viewer notes |
@@ -716,9 +804,9 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Module contract | Every manifest service is configurable from the dashboard's one schema-driven settings editor, starts, stops and restarts on its own with per-service health, takes a dashboard test input with no platform account, and is built on the shared runtime modules; the manifest is the one list of services | A settings page and a test panel per service; configuration edited by hand only; each service writing its own bootstrap, retry and idle code; service lists kept by hand in the dashboard, the tracker and the CLI | Eleven services written to one shape are operated, tested and reviewed the same way, and a new service has a checklist rather than a precedent to copy. One editor generated from the schema the loader already validates cannot drift from it, where a hand-built page per service would. Hand-kept service lists have already drifted once and are tied together only by tests. Owner direction. | [module-contract](intent/module-contract/module-contract-design.md); [shared-runtime](intent/shared-runtime/shared-runtime-design.md) |
 | Applying an edited setting | Validate the whole edited file with the services' own loader, write `config.yaml` in place keeping comments, then restart the services that read the changed section | Live reload inside each service; a separate overrides file for ordinary settings written by the dashboard; settings in a database or in `.env` | Configuration is read once per process and a single-service restart is already a guarded, audited operation, so restart-to-apply adds no reload path to every service and no state a restart could disagree with. Writing `config.yaml` itself keeps one source of truth that the owner can still edit by hand and diff; an overrides file for ordinary settings would hide which value wins, a database would take the file out of the owner's editor, and `.env` reaches a container only when Compose creates it, so a restart would not apply an edit to it. Owner direction. | [module-contract](intent/module-contract/module-contract-design.md); [config](intent/config/config-design.md) |
 | Where the dashboard runs | A standalone host process the owner starts first (`pnpm dashboard`); its Launch button runs the Compose stack, which no longer contains a dashboard service; it reaches Redis and voice on the host's loopback ports and drives Compose with the host's `docker` CLI | The dashboard as a Compose service (monitor-only, with control from a separate host-run copy or `cohostctl`); the dashboard as a Compose service with the Docker socket mounted; a desktop wrapper (Electron) around the page | The owner wants one thing to start, which then starts everything else; a containerised dashboard cannot start the stack it is part of, and a mounted Docker socket gives a container root-equivalent control of the host. A host process needs no extra privilege: it uses the owner's own `docker` access. A desktop wrapper adds a toolchain for no capability the browser page lacks, and OBS still needs an HTTP URL. Owner decision. | [dashboard](intent/dashboard/dashboard-design.md) Host process and stack control; [deployment](intent/deployment/deployment-design.md); [dashboard decision: standalone dashboard](intent/dashboard/decisions/standalone-dashboard.md) |
-| Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`, `GET /config/*`, `GET /options/*` and the UI's static files) stay open and never return a secret, while the secret write (`PUT /secrets/:path`) and a config save that changes a key deciding where a credential or private data goes (a `sensitive` key) always need the control token, with control mode on or off, and a `/ws` upgrade from another origin is refused, as is a request whose `Host` is a name the owner did not list on a listener other machines can reach; `POST /sink` stays ungated but refuses a foreign `Origin`; LAN players (an OBS Browser Source on another PC) use a second listener that carries only the ungated sink routes and the UI files they need (test uploads travel over Redis, so no container needs to reach the host); browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. The Host rule stops such a page reading the listener, not reaching it: a page on another site that knows the listener's address can still send requests whose responses it cannot read, so it can detect that the dashboard is there and, if it has an utterance id, cause that audio to load in an element without reading it. Fixed Postgres credentials, voice CORS `*`, root containers and every application container's read access to `secrets.yaml` through the shared `./config` mount (as `.env` reaches every container today) are accepted inside this boundary; the access controls (`CONTROL_*`, `DASHBOARD_HOST`, `VIEWERS_TOKEN`) stay in `.env` so the settings editor cannot lift its own lock. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
+| Trust boundary | The operator's LAN is the boundary; the control surface is host-local by default. Control mode (`CONTROL_ENABLED=1`) puts a bearer token on mutations only (lifecycle and stack routes and other state-changing posts), which the full-surface listener serves on `127.0.0.1` unless the owner sets `DASHBOARD_HOST` to open it to other machines, which then requires control mode; reads (`/ws`, `GET /personality`, `GET /services`, `GET /stack`, `GET /config/*`, `GET /options/*` and the UI's static files) stay open and never return a secret, while the secret write (`PUT /secrets/:path`) and a config save that changes a key deciding where a credential or private data goes (a `sensitive` key) always need the control token, with control mode on or off, and a `/ws` upgrade from another origin is refused, as is a request whose `Host` is a name the owner did not list on a listener other machines can reach; `POST /sink` stays ungated but refuses a foreign `Origin`; LAN players (an OBS Browser Source on another PC) use a second listener that carries only the ungated sink routes, the UI files they need, and the avatar renderer page, the owner's model file and the avatar frame relay (test uploads travel over Redis, so no container needs to reach the host); browsers reach voice's audio only through the dashboard proxy | Gate reads and sink events with the same token; per-user accounts; one all-interfaces listener with a loopback-peer check on the gated routes | cohost serves the owner's own stream on their own network. Launching and stopping the stack are the most powerful actions, so they are host-local by default and always need the token. An OBS Browser Source cannot answer an auth prompt, so gating `/sink` would break the main audio path. The open reads do expose more than the stream shows: `GET /personality` returns the whole personality file including its `## Learned` notes, and `/ws` carries every domain event (unaddressed chat, recall replies, vision summaries) except the viewer-notes events, which never reach `/ws`; the Viewers page routes need their own token (`VIEWERS_TOKEN`); the operator keeps the dashboard's ports off untrusted networks. The Host rule stops such a page reading the listener, not reaching it: a page on another site that knows the listener's address can still send requests whose responses it cannot read, so it can detect that the dashboard is there and, if it has an utterance id, cause that audio to load in an element without reading it. Fixed Postgres credentials, voice CORS `*`, root containers and every application container's read access to `secrets.yaml` through the shared `./config` mount (as `.env` reaches every container today) are accepted inside this boundary; the access controls (`CONTROL_*`, `DASHBOARD_HOST`, `VIEWERS_TOKEN`) stay in `.env` so the settings editor cannot lift its own lock. Owner decisions. | [dashboard](intent/dashboard/dashboard-design.md); [deployment](intent/deployment/deployment-design.md); [control-plane](intent/control-plane/control-plane-design.md) |
 | Licensing | Dual licence: the public gets AGPL-3.0-only; a separate commercial licence, without the AGPL obligations, is reserved to the owner (CoderCoco) and granted case by case (`COMMERCIAL.md`). Every outside contribution is accepted only under an individual Contributor License Agreement (`CLA.md`, adapted from the Apache ICLA) that lets the owner relicense it, enforced in CI | Plain AGPL-3.0 with a DCO sign-off; a permissive licence (MIT/Apache-2.0); a source-available non-commercial licence (PolyForm Noncommercial); the Business Source License | The goal is source that anyone can read, run, modify and contribute to, while a company cannot build a business on cohost for free. AGPL section 13 means anyone who offers a modified cohost to users over a network must offer those users its source, which removes a closed hosted competitor's advantage; it does not forbid commercial use, and running a modified private copy obliges nothing by itself. The commercial licence is what a business buys to be exempt from the AGPL obligations, and the owner can only grant it for code they hold relicensing rights to, which a DCO (a certificate of the right to submit under the project licence) does not give and a CLA does. A permissive licence lets anyone close and sell it; PolyForm Noncommercial and BUSL stop commercial use outright but are not open source licences. | [deployment](intent/deployment/deployment-design.md) Licensing and contribution; `LICENSE`, `CLA.md`, `COMMERCIAL.md` |
-| Deployment shape | Compose runs everything except the dashboard: one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN | Per-service images; everything published; the dashboard in Compose | One build cached across eleven images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
+| Deployment shape | Compose runs everything except the dashboard (the `tools` service among it): one Dockerfile parameterised by `SERVICE`, infra and voice ports on loopback only, no port published to the LAN, optional senses behind Compose profiles; the dashboard runs on the host and is the only program listening on the LAN, serving the avatar renderer page and relaying avatar frames so that no avatar port is published | Per-service images; everything published; the dashboard in Compose; a published port for the avatar renderer | One build cached across the service images; OBS on another PC reaches only the dashboard; accounts and hardware are opted into per sense. | [deployment](intent/deployment/deployment-design.md) |
 
 ### Trust boundary
 
@@ -732,7 +820,9 @@ route needs `CONTROL_TOKEN` and every Viewers route needs `VIEWERS_TOKEN`.
 With `CONTROL_ENABLED=1` (what the shipped `.env.example` sets) every
 mutating route, the stack actions included, needs the bearer token. A second
 listener on all interfaces carries only the routes an OBS Browser Source on
-another PC needs (the page and the UI assets it loads, `/ws`, `/audio/*`, `POST /sink`, `/health`) and
+another PC needs (the page and the UI assets it loads, `/ws`, `/audio/*`, `POST /sink`, `/health`, and,
+for the browser avatar renderer, the renderer page, the owner's model file and the relay of avatar
+frames, which carry animation parameters only) and
 answers nothing else. With control off nothing but the Viewers routes, the secret write and a config
 save that changes a sensitive key is gated, and the full surface must stay on
 loopback. The `/ws` feed, the `GET` routes

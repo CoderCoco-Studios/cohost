@@ -716,10 +716,16 @@ direction.
   operator enables it (an explicit setting; with a batch engine partials cost
   speech-to-text calls and suit a GPU backend), ears also publishes `speech.partial` events while an utterance is
   still open, so a viewer of the bus sees words as they firm up. `speech.heard`
-  stays the one final event and the only one the brain regions act on: a
-  partial never enters working memory, never triggers salience and never
-  reaches cortex as speech. Partials are an explicit setting and are
-  off unless enabled. A final `speech.heard` that no reflex answered starts
+  stays the one final event and the only transcript that enters working memory
+  as speech that happened (the one exception is a spoken interjection, below): a partial never enters working memory, never triggers
+  salience and never reaches cortex as speech. Partials are an explicit
+  setting and are off unless enabled. An **early transcript** (Early reply,
+  below) is a third thing, neither a partial nor a final: salience may act on
+  it provisionally and cortex may prepare a reply to it, but nothing audible
+  follows from it until salience confirms it, and it enters a working-memory
+  window in one case only: a spoken interjection (Early reply), as an unfinished
+  line appended before the reply, the utterance's final being appended later as
+  an ordinary line. A final `speech.heard` that no reflex answered starts
   salience's decision at once instead of at its next poll (an explicit setting,
   `brain.salience.trigger_on_speech`, on by default); the poll stays as the
   fallback and as the only starter for chat, vision and idle chatter, and every
@@ -740,7 +746,9 @@ direction.
   with a `voice.done` flagged `interrupted`, which carries the text spoken so
   far and the text left unsaid when mouth can compute them. cortex ends every
   line it was waiting on and starts no think, and aborts no think that has not
-  begun to speak: one thought at a time stays. Salience's barge-in is not the
+  begun to speak: one thought at a time stays (a provisional think, Early
+  reply, is ended only by the events that section lists, and a stop is not
+  one of them). Salience's barge-in is not the
   only stop: cortex also stops its own reply on a mute or pause. The reverse problem is echo: audio sources that can carry the
   co-host's own voice back (the desktop capture helper; the Discord source
   cannot, because bot accounts are never read) are named in
@@ -750,6 +758,96 @@ direction.
   [voice](intent/voice/voice-design.md), [mouth](intent/mouth/mouth-design.md),
   [connections](intent/connections/connections-design.md) and
   [ears](intent/ears/ears-design.md).
+- **Early reply.** A person's utterance is closed by `ears.silence_ms` of
+  silence (default 700 ms), and everything the co-host does to answer waits
+  for that close. Early reply starts the transcription and the model call
+  before the close and speaks only when the person has finished (interjection,
+  below, is the owner's optional exception). It exists only for an utterance
+  ears cuts itself from a connector source's frames, under a batch
+  speech-to-text engine, where the owner enables it (`ears.early.enabled`, off
+  by default). With a streaming engine selected and `ears.early.enabled` true,
+  ears makes no early transcript, the config load does not fail, and ears'
+  heartbeat detail says so. The vocabulary, defined here once:
+  - An **early transcript** is a transcript of the audio so far, published as
+    `speech.early` after `ears.early.after_ms` of silence (default 250 ms,
+    always below `silence_ms`) while the utterance stays open; ears takes an
+    **early snapshot**, a transcription of the audio so far that leaves the
+    utterance open where a close would end it. ears **reuses**
+    it when the speaker does not resume: the utterance closes at `silence_ms`
+    as usual and the early transcript is published as the final
+    `speech.heard`, flagged `earlySeq`, with no second transcription. ears
+    **retracts** it (`speech.retracted`) when the speaker resumes: the
+    utterance continues as one utterance, so there is no extra cut and no
+    second utterance.
+  - A **provisional focus** is salience's decision to speak, taken on an early
+    transcript through the same gates as any decision (mute, pause, busy,
+    cooldown, threshold) and published as an `attention.focus` flagged
+    `provisional`. salience always resolves it with `attention.resolve`:
+    it **confirms** it, on the reused final or, for an interjection, at a
+    retraction, or **withdraws** it (on a retraction, a mute or a pause at the
+    `control` event, `forget_context`, preemption or its unresolved limit,
+    `brain.salience.unresolved_limit_ms`, which runs from the focus's
+    publication). A confirm carries everything an ordinary focus carries.
+  - A **provisional think** is cortex's work on a provisional focus: it
+    publishes `brain.status` `thinking` and its recall and notes requests as
+    any think does, and withholds `brain.say`, `brain.clause`, `tool.request`
+    and every memory write until the confirm. On a confirm the prepared reply
+    is released as an ordinary reply. A provisional think ends only by a
+    withdrawal, a mute, a pause, `forget_context`, its hold limit
+    (`brain.cortex.hold_limit_ms`, which runs from the think's start and bounds
+    only the hold), or replacement by an ordinary focus; a `voice.stop` never ends it. It never
+    blocks an ordinary focus, and a confirm for a think cortex does not hold
+    is treated as an ordinary focus, so a lost think is never silence. This is
+    the one case in which a think is cancelled, and it is bounded: a
+    provisional think has published no line and recorded nothing.
+  - An **interjection** is an owner-chosen exception
+    (`brain.salience.interject`, off by default): when the person resumes
+    and ears retracts the early transcript, salience may, by a configured
+    chance and under minimum limits, ask cortex to release the prepared reply
+    instead of withdrawing it, so it is spoken while the person carries on.
+    cortex releases it only if the reply is ready at that moment (its first
+    clause held and checked, not parked at a tool call); otherwise the focus is
+    withdrawn and nothing is spoken, and an interjected resolve never becomes
+    an ordinary focus. A spoken interjection appends the early text to working
+    memory as that speaker's unfinished line before the reply; the speaker's
+    final is appended later as an ordinary line. Whether the final stops the
+    interjected line is `interject_yield` (default true). What follows is in
+    [salience](intent/salience/salience-design.md) Interjection.
+
+  The wait the person experiences does not shrink at its start: `endpoint`,
+  the wait for the close, stays about `silence_ms`. What early reply removes
+  from after the close is work already done. With the measured stages (`stt`
+  about 270 ms, `salience` 1, `prep` 30, `llm` 203) and the defaults
+  (`after_ms` 250, `silence_ms` 700), the early transcript is ready at about
+  520 ms after the last speech frame and the reply's first clause (the whole
+  reply when it is one clause) at about 755 ms, the baseline having no critic
+  stage,
+  against about 1,205 ms without early reply (700 ms plus the four stages); the
+  text is ready just after the close instead of 500 ms after it. The gain is
+  at most the time between the early snapshot and the close (about 450 ms with
+  these defaults) and is smaller whenever the work is shorter, or when the
+  early transcription is still running at the close, which `cohostctl latency`
+  counts. The cost is one extra transcription whenever a speaker resumes, one
+  wasted model call per withdrawal, and a reply built from the window as it
+  stood at the early snapshot and released unchanged: events that arrive during the
+  hold are not in it, which is accepted because the hold is shorter than
+  `silence_ms`.
+
+  Latency is reported with `endpoint` as its own stage and a counts line (see
+  Latency budget). Early reply does not weaken Tenet 3 (the early
+  transcription is bounded by `ears.stt_timeout_ms`; a failed one publishes
+  nothing and the utterance proceeds as it would without early reply; the
+  provisional focus and the provisional think each have a time limit) or
+  Tenet 4 (every `brain.say` still follows a confirmed decision that passed
+  the gates, with the mute and busy checks run again at release; an
+  interjection is the same decision, passed through the same gates). It
+  composes with streamed speech by holding the first clause until the confirm
+  and then releasing the held clauses in order, each behind the usual
+  re-checks; a tool call in a provisional think waits for the confirm before
+  it is requested, so the filler line's clock starts then; barge-in is
+  unchanged, since a provisional think is never a speaking line. See
+  [ears](intent/ears/ears-design.md), [salience](intent/salience/salience-design.md)
+  and [cortex](intent/cortex/cortex-design.md).
 - **Restart start position.** Every subscription names a start mode:
   `latest` resets the service's consumer group to the newest entry on every
   start, `resume` keeps the group's stored position. memory uses `resume`;
@@ -760,15 +858,21 @@ direction.
 
 The end-to-end budget is the time from the end of a person's speech (the last
 audio ears received) to `voice.playing` for the line that answers it, split
-across the stages `cohostctl latency` reports: `stt` (audio end to
-`speech.heard`), `salience` (`speech.heard` to `attention.focus`), `prep`
+across the stages `cohostctl latency` reports: `endpoint` (the last speech
+frame to the utterance being closed: the wait of `ears.silence_ms`, present
+for an utterance ears cut itself), `stt` (the close to `speech.heard`;
+audio end to `speech.heard` where there is no `endpoint` stamp), `salience` (`speech.heard` to `attention.focus`), `prep`
 (`attention.focus` to the first LLM request: memory recall and viewer notes),
 `llm` (first LLM request to the first clause of the reply, which is the whole
 reply when the critic is an `llm` or `http` hook that has to see all of it, less `tool`, the wait for a tool that held the first clause back, reported as its own stage when there was one),
 `critic` (the critic hook's call, when it ran), `say` (the last of those to
 `brain.say`, the first clause's publication), `tts` (`brain.say` to `voice.utterance`) and `sink`
 (`voice.utterance` to `voice.playing`), the last two measured on the first
-clause: the budget is the wait before the co-host starts speaking.
+clause: the budget is the wait before the co-host starts speaking. A reply
+prepared early (Early reply) is cut at the confirm: the stages after `stt` start
+there, so the work done before the close shows as short `prep`, `llm` and
+`critic` stages, the real think time is its own row outside the sum, and the
+stages still add up to the total.
 
 The vision path runs from the moment eyes captured the frame (`capturedAt`) to
 `voice.playing`, split into `describe` (`capturedAt` to
@@ -778,10 +882,13 @@ same `prep`, `llm`, `critic`, `say`, `tts` and `sink` stages.
 **Measured baseline.** `scripts/dev/perf-baseline.sh` drives one short,
 repeated clip through the warm speech path on the owner's GPU box with the
 default local models. Median total is about 1,080 ms: `stt` 270, `salience` 1,
-`prep` 30, `llm` 203, `tts` 541, `sink` 4. The total excludes the endpointing
-wait (about 700 ms of silence, `silence_ms`, plus 500 ms of connector
-`AfterSilence` on Discord), so a line heard on Discord lands about 2.3 s after
-the person stops. Cold start is about 63 s (LLM load about 42 s, STT about
+`prep` 30, `llm` 203, `tts` 541, `sink` 4. The clips go in through the `http`
+source, which takes whole clips and has no endpointing, so the baseline holds
+no `endpoint` stage. A person heard on a connector source adds the wait of
+`ears.silence_ms` (default 700 ms) between the last speech frame and the close
+of the utterance; the Discord connector's 500 ms `AfterSilence` only frees its
+capture slot, holds no frames and adds nothing to that wait. No figure for the
+connector path has been measured. Cold start is about 63 s (LLM load about 42 s, STT about
 18 s). The Kokoro GPU image has no Blackwell (RTX 50xx) kernels, so TTS runs
 on CPU on that hardware, and `tts` is the largest stage. The bus is not a
 bottleneck: on `scripts/dev/bus-bench.ts` the TypeScript bus holds p99 under
@@ -789,12 +896,23 @@ bottleneck: on `scripts/dev/bus-bench.ts` the TypeScript bus holds p99 under
 
 **Open item: the budget numbers.** The baseline above is one clip with a short
 prompt, not a budget: this section sets no per-stage or end-to-end figure.
-Ending an utterance by speech activity and publishing partials change the
-`stt` stage, so the budget stays open until it is re-measured with longer
-prompts, and is recorded here in the same change that sets it. Until then the
+Ending an utterance by speech activity, publishing partials and replying
+early change the `endpoint` and `stt` stages and those after them, so the budget
+stays open until it is re-measured with longer prompts and on the connector
+path, and is recorded here in the same change that sets it. Until then the
 end-to-end median is tracked, as Success Metric 2 describes, with no pass/fail
 threshold. Planned latency item: startup warm-up of the LLM, STT and TTS
 models, which removes the cold start.
+
+**Measuring the connector path.** The connector path is measured by feeding
+frames, not clips: a connector mode of `scripts/dev/perf-baseline.sh` registers
+as a test connector for a source tag and writes the same clip onto
+`audio.in.<tag>` as 16 kHz mono frames paced at real time, followed by silence,
+so ears endpoints it as it endpoints a person. `cohostctl latency` then reports
+`endpoint` and `stt` as separate stages for those samples, with and without
+`ears.early.enabled`, and counts early transcripts published, retracted, reused as the final, released from a prepared think and still running at the close.
+The `http` mode stays as the baseline of the stages after the close. Both are
+reported beside each other, and neither sets a budget.
 
 ### Future / ideal state: controlling the game
 
@@ -816,8 +934,14 @@ Prerequisites: a playback position a re-think can read; a boundary re-think
 call that fits the latency budget; and
 live vision (screen events) as a second source of key events. Building it would
 supersede the decisions that keep one thought at a time and never cancel one in
-flight (cortex and salience Decisions & Alternatives); until then barge-in as
-above is the whole mechanism.
+flight (cortex and salience Decisions & Alternatives) for a line that is being
+spoken; until then barge-in as above is the whole mechanism for a line that
+plays. Early reply (Real-time speech path) is a separate, narrower thing: it
+works before the co-host speaks, ends only a provisional think (which has
+published no line and recorded nothing) by the events the Early reply section
+lists, and never changes a line already playing. The two do
+not merge: early reply decides *when a reply may start*, dynamic speech would
+decide *what a line already playing does next*.
 
 ## Key Design Decisions
 
@@ -838,6 +962,8 @@ rows here are the ones a fresh author would need before reading any LLD.
 | Interrupting a line | salience decides (a final transcript from an allowed source while the co-host speaks) and publishes `voice.stop` (cortex publishes one too when a mute or pause lands during its own reply); every body service obeys it and the interrupted line ends with `voice.done` flagged `interrupted`; cortex ends its pending lines and neither aborts nor starts a think; off by default | cortex aborts its in-flight think and decides; ears publishes a speech-start event that stops speech at once; mute-style gating inside voice or mouth; cancelling only the sink's player | Deciding when to speak or stop is salience's job (talkativeness is a cheap, tunable loop with no model in it), and the body stays a dumb output that does what it is told. A final transcript is the one speech event the brain already trusts, so a partial or a raw voice-activity edge cannot stop the co-host on a cough. The flag is off until live-tested. The scope (trigger, sources, minimum words) is the owner's; the event shape and the flush mechanics are not. | [salience](intent/salience/salience-design.md) Barge-in; [voice](intent/voice/voice-design.md); [mouth](intent/mouth/mouth-design.md); [connections](intent/connections/connections-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md) |
 | Echo of the co-host's own voice | ears drops utterances of the sources named in `ears.echo_suppress_sources` (default `desktop`) while any line plays and for `ears.echo_tail_ms` after it | Acoustic echo cancellation; a transcript-similarity filter; filtering in salience; gating every source | The desktop helper records the host's output device and so can hear the co-host; Discord cannot, because the connector never reads a bot account. Dropping at the source before speech-to-text spends no model call on the echo and keeps the brain unaware of it. The cost is that a person's speech on a gated source is lost while a line plays, which is why barge-in listens to Discord by default. | [ears](intent/ears/ears-design.md); [salience](intent/salience/salience-design.md) |
 | Streamed, clause-sized speech | cortex streams the chat model's reply and `voice` synthesizes it and a sink plays it clause by clause, so the first clause starts before the whole reply exists; the speaking gates (tenet 4) and barge-in apply unchanged | Synthesize and play the whole reply once it is complete | A whole-reply hand-off makes the `llm` and `tts` stages add, and both grow with the length of the reply; starting the first clause as soon as it exists overlaps them, so the wait before the co-host starts speaking depends on the first clause rather than the whole reply. | [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md); [model-backends](intent/model-backends/model-backends-design.md) |
+| Early reply (think early, speak only when sure) | Where the owner enables it (`ears.early.enabled`, off by default), ears publishes an early transcript (`speech.early`) after `ears.early.after_ms` of silence while the utterance stays open; salience takes a provisional decision on it through the ordinary gates and cortex runs a provisional think that publishes no line, no tool request and no memory write; when the speaker does not resume, ears reuses the early transcript as the final `speech.heard` (flagged `earlySeq`) and salience confirms, and the prepared reply is released as an ordinary reply; when the speaker resumes, ears retracts it (`speech.retracted`), salience withdraws (`attention.resolve`) and the utterance continues as one utterance. salience resolves every provisional focus, a confirm carries a whole focus, and cortex treats a confirm for a think it no longer holds as an ordinary focus. `brain.status` gains no state | Lowering `silence_ms` alone; a model-judged end of turn (an optional, separate path for the Kyutai engine only); synthesizing the first clause before confirmation; treating a partial as the early transcript; salience or cortex reading `speech.partial`; letting cortex decide confirmation; a new `brain.status` value | Lowering `silence_ms` alone splits sentences at every pause; early reply does not, because a resumed utterance is retracted rather than cut. A model-judged end of turn is a prediction that can cut a speaker mid-thought and needs a model on the hot path; the Kyutai end of turn stays its own opt-in. Synthesizing the first clause before confirmation would hide the TTS stage as well, but it needs a synthesis and a sink queue that can be discarded without a sound, which voice and mouth do not have; it is a possible later step. A partial is unstable by design. Confirmation is salience's, because deciding when the co-host may speak is salience's job (tenet 4). The wait for the close is not shortened; the saving is that transcription and the model call have already run (about 755 ms to reply text instead of about 1,205 ms with the baseline stages), at most the time between the early snapshot and the close, at the cost of an extra transcription and a wasted model call whenever a speaker resumes. | [ears](intent/ears/ears-design.md); [salience](intent/salience/salience-design.md); [cortex](intent/cortex/cortex-design.md); [event-bus](intent/event-bus/event-bus-design.md); [control-plane](intent/control-plane/control-plane-design.md); [config](intent/config/config-design.md) |
+| Interjecting | `brain.salience.interject` (off by default): when the speaker resumes and salience holds a provisional focus, salience may, by `interject_chance` and subject to `interject_min_gap_ms`, `interject_min_words` and an unpreempted record, ask cortex to release the prepared reply; cortex releases it only if the reply is ready, else the focus is withdrawn and nothing is spoken; the gap is charged only when the line was spoken. A spoken interjection appends the early text to working memory as the speaker's unfinished line before the reply, and the final is appended later as an ordinary line. For the final: if `interject_yield` is true (default) and the line still plays, salience stops it (`voice.stop`, reason `yield`, naming the line); a final adding fewer than `interject_followup_min_words` beyond the early text is marked seen and decides nothing; otherwise it is an ordinary line. With `interject_yield` false only the barge-in rules apply, so with `barge_in` off the co-host talks over the person, an owner-chosen exception to Goal 2's "a person who speaks over it can stop it" | Never speaking before the close; a model that judges when to interject; interjecting at every pause; interjecting at the hand-over of the provisional focus; releasing a reply that is not ready; always yielding | The owner wants a co-host that is sometimes funny by cutting in, as a person in the room sometimes does, kept rare and switchable. Deciding at the retraction means the reply is prepared and has passed every gate (tenet 4), and the person has shown they are carrying on; releasing only a ready reply keeps it from arriving late and talking over them. Barge-in stays one mechanism on a final transcript; the yield is the same stop with its own switch. Owner decision. | [salience](intent/salience/salience-design.md); [cortex](intent/cortex/cortex-design.md); [working-memory](intent/working-memory/working-memory-design.md); [config](intent/config/config-design.md) |
 | Re-planning at clause boundaries (deferred) | Recorded as deferred specs; not built. Deciding at each clause boundary whether to continue, adapt, pivot or resume stays in Future / ideal state | Build clause-level re-thinking now | It needs a playback position, a boundary re-think inside the latency budget and, for screen events, live vision, none of which exist; stopping and re-answering delivers most of the value for a fraction of the change. | The HLD ideal-state section above; [cortex](intent/cortex/cortex-design.md) |
 | Who honours mute and pause | Only salience and cortex (and affect, for `pause` of its own appraisal); voice and ears never read `control` and mouth reads it only for `set_routing`, so none of them acts on mute or pause; an operator `say` bypasses mute, pause and busy | Every service mutes itself; voice drops lines while muted | One place decides whether the co-host may speak, so a mute cannot be half-applied across services; the body stays a dumb output that plays what it is given; the operator always has a way to speak. Owner decision 2026-11-01. | [salience](intent/salience/salience-design.md), [cortex](intent/cortex/cortex-design.md); [voice](intent/voice/voice-design.md), [ears](intent/ears/ears-design.md) |
 | Start position after a restart | An explicit subscribe start mode: `latest` resets the consumer group to `$` on every start, `resume` keeps the stored position; memory uses `resume`, every other subscriber uses `latest`; delivery across restarts is at-most-once (a crashed instance's unacknowledged entries are not redelivered) | Resume everywhere (replay the backlog after downtime); at-least-once with stable consumer names and `XAUTOCLAIM` | A co-host that comes back after a crash must not answer minutes-old chat, speak queued lines or replay old focuses; memory is the one region that wants the backlog, because storing what was said while it was down costs nothing on stream. Owner decision 2026-11-01. | [event-bus](intent/event-bus/event-bus-design.md); [memory](intent/memory/memory-design.md) |

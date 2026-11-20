@@ -64,7 +64,7 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 
 - [x] **WM-TRANS-001**: When `transcript(cohostName)` is called, the system shall render the window oldest to newest as one line per event joined by a newline, and shall return the empty string for an empty window. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
 - [ ] **WM-TRANS-002**: When `transcript` renders a `chat` context event, the system shall emit `[chat] <label>: «<text>»`, inserting ` (mod)` after the label when `isMod` is true, where `<label>` is `speakerLabel(user, viewer_text.max_name_chars)` and `«<text>»` is `quoteUntrusted(text, viewer_text.max_chars)`. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
-- [ ] **WM-TRANS-003**: When `transcript` renders a `speech` context event, the system shall emit `[voice] <label>: <text>`, where `<label>` is `speakerLabel(speaker, viewer_text.max_name_chars)` and `<text>` is the stored text, not quoted. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
+- [ ] **WM-TRANS-003**: When `transcript` renders a `speech` context event that is not unfinished (WM-UNF-004), the system shall emit `[voice] <label>: <text>`, where `<label>` is `speakerLabel(speaker, viewer_text.max_name_chars)` and `<text>` is the stored text, not quoted. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
 - [x] **WM-TRANS-004**: When `transcript` renders a `vision` context event, the system shall emit `[screen] <text>`. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
 - [x] **WM-TRANS-005**: When `transcript(cohostName)` renders a `self` context event, the system shall emit `<cohostName>: [<emotion>] <text>`. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Transcript rendering -->
 - [x] **WM-TRANS-006**: The working-memory segment shall own the transcript tag list: `transcript` emits `[chat]`, `[voice]` and `[screen]` for chat, speech and vision events, and the LLM layer's transcript stops (`"\n[chat]"`, `"\n[voice]"`, `"\n[screen]"`, LLM-STOP-006) are derived from that list, so a model continuing the transcript is cut at the next input line; the co-host's own line is not a stop. <!-- test: packages/working-memory/test/context.test.ts (the exported list equals the rendered tags); the stop list's side is LLM-STOP-007; the end-to-end check is a cortex-level test -->
@@ -89,6 +89,17 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 Design: LLD Interrupted thoughts (deferred). Prerequisite: CTX-REPLAN-001.
 
 - [D] **WM-STACK-001**: Where speech is dynamic, the window shall keep a bounded stack of interrupted thoughts, each holding the interrupted line's `brain.say` id, its `spokenText` and its `unsaidText` from the interrupted `voice.done`, so that the cortex can resume the unsaid part later or discard it.
+
+## Unfinished line (UNF)
+
+Design: [working-memory-design.md § An unfinished line](working-memory-design.md#an-unfinished-line). Only an interjection writes an unfinished event (SAL-INTJ-007, CTX-INTJ-002); nothing else writes an early transcript to a window.
+
+- [ ] **WM-UNF-001**: When `pushUnfinished(utteranceId, speaker, text, ts)` is called, the system shall append one `speech` context event flagged `unfinished` that carries `utteranceId`, `seen` true, `speaker` bounded as WM-PUSH-017 bounds it and `text` bounded as WM-PUSH-016 bounds it, and shall return that event.
+- [ ] **WM-UNF-002**: When `push` is given a `speech.heard` bus event for an `utteranceId` that has an unfinished event in the window, the system shall append an ordinary unseen `speech` context event with the final's full text after it, and shall remove or change no existing event.
+- [ ] **WM-UNF-003**: When `push` is given a `speech.early` or a `speech.retracted` bus event, the system shall leave the window unchanged and return `undefined` (WM-PUSH-009).
+- [ ] **WM-UNF-004**: When `transcript` renders an unfinished `speech` context event, the system shall emit `[voice] <label> (unfinished): <text>` on one line, where `<label>` is `speakerLabel(speaker, viewer_text.max_name_chars)` and `<text>` is the stored text, not quoted.
+- [ ] **WM-UNF-005**: While an unfinished `speech` context event's `utteranceId` has produced no `speech.heard`, the system shall keep the event until the count trimming of WM-WIN-001 removes it, and shall evict it by no age (WM-WIN-002).
+- [ ] **WM-UNF-006**: When `push` is given a `speech.heard` bus event that carries an `utteranceId`, the system shall store it on the entry's `utteranceId`.
 
 ## Streamed lines
 

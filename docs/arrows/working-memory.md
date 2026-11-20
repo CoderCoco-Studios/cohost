@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (68 specs: 31 `[x]`, 36 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (74 specs: 31 `[x]`, 42 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -55,7 +55,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 68 specs: 31 implemented, 36 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 74 specs: 31 implemented, 42 gaps, 1 deferred. The unfinished-line specs (WM-UNF, with WM-TRANS-003 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

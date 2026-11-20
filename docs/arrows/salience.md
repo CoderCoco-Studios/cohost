@@ -36,7 +36,7 @@ SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (111 specs, prefix `SAL`: 68 `[x]`, 42 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 62 `[x]`, 105 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -91,7 +91,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-011 | 11 | 0 | 0 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 
-**Summary:** 111 specs: 68 implemented, 42 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 168 specs: 62 implemented, 105 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

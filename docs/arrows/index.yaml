@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "220 specs: 100 [x], 120 [ ] (streamed-speech clause specs and the renderer settings are open gaps)."
+    next: "231 specs: 100 [x], 131 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:
@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "204 specs: 144 [x], 55 [ ], 5 [D] (streamed-speech clause specs and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
+    next: "213 specs: 144 [x], 64 [ ], 5 [D] (streamed-speech clause specs, the early-reply specs BUS-EVT-052 to 060 and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
     drift: null
 
   model-backends:
@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "68 specs: 31 [x], 36 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 62 specs: 33 [x], 28 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard; platform and user id on the chat entry; forget), 1 [D] (WM-STACK-001)."
+    next: "74 specs: 31 [x], 42 [ ], 1 [D] (streamed-speech clause specs and the unfinished-line specs WM-UNF are open gaps). Notes (the counts above are current): 62 specs: 33 [x], 28 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard; platform and user id on the chat entry; forget), 1 [D] (WM-STACK-001)."
     drift: null
 
   chat:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "162 specs: 86 [x], 74 [ ], 2 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015)."
+    next: "188 specs: 84 [x], 102 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Notes (the counts above are current): 100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015)."
     drift: null
 
   salience:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "111 specs: 68 [x], 42 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
+    next: "168 specs: 62 [x], 105 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
     drift: null
 
   affect:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "241 specs: 54 [x], 186 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 128 specs: 74 [x], 53 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit; viewer identity by platform and user id; forgetting removed chat), 1 [D] (CTX-REPLAN-001)."
+    next: "285 specs: 50 [x], 234 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Notes (the counts above are current): 128 specs: 74 [x], 53 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit; viewer identity by platform and user id; forgetting removed chat), 1 [D] (CTX-REPLAN-001)."
     drift: null
 
   tools:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "95 specs: 78 [x], 15 [ ], 2 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
+    next: "111 specs: 78 [x], 31 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
     drift: null
 
   deployment:

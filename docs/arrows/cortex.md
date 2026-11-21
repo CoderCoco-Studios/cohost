@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (241 specs, prefix `CTX`: 54 `[x]`, 186 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 50 `[x]`, 234 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -105,7 +105,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 0 | 0 | 15 |
 
-**Summary:** 241 specs: 54 implemented, 186 gaps, 1 deferred. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 285 specs: 50 implemented, 234 gaps, 1 deferred. The early-reply specs (CTX-PROV, CTX-INTJ, with CTX-EVT-001 revised and CTX-GATE-001, CTX-SAY-006, CTX-EVT-009 and CTX-START-002 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

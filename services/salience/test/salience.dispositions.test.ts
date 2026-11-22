@@ -165,7 +165,7 @@ test("a fresh salience has arousal 0, an idle cortex and is neither muted nor pa
 });
 
 test("the salience window is sized by brain.working_memory_events", async () => { // @spec WM-WIN-005
-  const { s } = setup({}, { extra: { brain: { working_memory_events: 3 } } });
+  const { s } = setup({}, { extra: { brain: { working_memory_events: 3, working_memory_own_lines: 2 } } });
   for (const t of ["a", "b", "c", "d", "e"]) await s.onEvent(chat(t));
   assert.deepEqual(s.ctx.all().map((e) => (e as { text: string }).text), ["c", "d", "e"]);
 });

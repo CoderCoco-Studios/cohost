@@ -8,7 +8,7 @@
  * Writing help: one or two plain sentences an operator who is not a programmer can act on: what the setting changes in what
  * the co-host does, and what a higher or lower, on or off value means. Read the code that consumes the key before writing it.
  */
-// @spec CFG-PRES-001, CFG-PRES-002, CFG-PRES-003, CFG-PRES-004, CFG-PRES-005, CFG-PRES-006, CFG-PRES-009, CFG-PRES-010, CFG-PRES-011, CFG-SCH-026
+// @spec CFG-PRES-001, CFG-PRES-012, CFG-PRES-013, CFG-PRES-002, CFG-PRES-003, CFG-PRES-004, CFG-PRES-005, CFG-PRES-006, CFG-PRES-009, CFG-PRES-010, CFG-PRES-011, CFG-SCH-026
 
 /** The sidebar groups of the Settings screen, in order. */
 export const GROUPS = ["Identity", "Brain", "Senses", "Voice and body", "System"] as const;
@@ -50,9 +50,10 @@ export interface SectionPresentation {
   page?: string;
 }
 
-/** The declared sections, in screen order: each top-level key of `ConfigSchema` except `brain`, plus the five brain parts. */
+/** The declared sections, in screen order: each top-level key of `ConfigSchema` except `brain`, plus the seven brain parts. */
 export const SECTION_PATHS: readonly string[] = [
-  "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.affect", "brain.memory", "brain.cortex",
+  "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.affect", "brain.memory", "brain.cortex",
+  "brain.input_limits", "viewer_text",
   "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard",
 ];
 
@@ -61,9 +62,12 @@ const sections: Record<string, SectionPresentation> = {
   "llm": { title: "Language model", group: "Brain", about: "Which model writes the co-host's replies, how long and how adventurous they are, and the accounts a hosted model needs." },
   "brain.salience": { title: "Salience", group: "Brain", about: "Salience decides when the co-host speaks up: how much a chat line, remark or screen change has to matter, how long it waits between lines, when it chats unprompted, and its instant canned reflexes." },
   "brain.working_memory_events": { title: "Working memory", group: "Brain", about: "How many recent events (chat lines, remarks, screen changes, its own lines) the co-host keeps in view when it decides to speak and when it writes a reply.", page: "brain.memory" },
+  "brain.working_memory_own_lines": { title: "Own lines kept", group: "Brain", about: "How many of the co-host's own recent lines are never dropped from what it keeps in view, so a flood of chat cannot push them out and leave it repeating itself.", page: "brain.memory" },
   "brain.affect": { title: "Mood", group: "Brain", about: "The co-host's mood: what pushes it up or down, how quickly it settles back, and how it shows in the replies, in when the co-host speaks and on the avatar." },
   "brain.memory": { title: "Memory", group: "Brain", about: "What the co-host remembers: how many past moments it recalls for each reply, how it tells regulars from newcomers, and how its short notes about each viewer are kept, fade and are tidied." },
   "brain.cortex": { title: "Replies", group: "Brain", about: "How a reply is produced: how long the co-host waits for memory and for the voice, how it reacts to a line that failed to play, and the optional editor that checks a reply before it is spoken." },
+  "brain.input_limits": { title: "Text limits", group: "Brain", about: "How long a spoken transcript or a screen description may be before it reaches a prompt; anything longer is cut short." },
+  "viewer_text": { title: "Viewer text", group: "Brain", about: "How long a chat message and a viewer's name may be before they reach a prompt; anything longer is cut short." },
   "chat": { title: "Twitch chat", group: "Senses", about: "Which Twitch channel the co-host reads, the Twitch account it reads it with, and which users and commands it ignores." },
   "vision": { title: "Vision", group: "Senses", about: "Whether the co-host looks at your game through OBS, which model describes the screen, how often, and how the description is worded." },
   "ears": { title: "Hearing", group: "Senses", about: "Where the co-host's audio comes from and how it is cut into sentences and turned into text." },
@@ -143,6 +147,17 @@ const keys: Record<string, KeyPresentation> = {
   // ---- brain.working_memory_events
   "brain.working_memory_events": { help: "How many of the most recent events (chat lines, things said aloud, screen changes and the co-host's own lines) salience and the reply writer each keep in view. Higher gives replies more context about the last few minutes but makes every prompt longer and slower; lower makes the co-host forget sooner.", label: "Events kept in view" },
 
+  // ---- brain.working_memory_own_lines
+  "brain.working_memory_own_lines": { help: "How many of the co-host's own most recent lines always stay in view, however much chat arrives after them. Higher helps it remember what it just said in a busy chat but leaves less room for everything else; it must be lower than the number of events kept in view.", label: "Own lines kept in view" },
+
+  // ---- brain.input_limits
+  "brain.input_limits.speech_max_chars": { help: "The longest spoken transcript the co-host takes in; a longer one is cut to this length and marked as cut. Lower keeps prompts short and quick; higher lets a long remark through whole. It cannot be below 16.", unit: "chars", label: "Longest spoken transcript" },
+  "brain.input_limits.vision_max_chars": { help: "The longest screen description the co-host takes in; a longer one is cut to this length and marked as cut. Lower keeps prompts short and quick; higher keeps more detail about the screen. It cannot be below 16.", unit: "chars", label: "Longest screen description" },
+
+  // ---- viewer_text
+  "viewer_text.max_chars": { help: "The longest chat message the co-host takes in; a longer one is cut to this length and marked as cut. The default is Twitch's own message limit; lower keeps a wall of text from filling the prompt. It cannot be below 16.", unit: "chars", label: "Longest chat message" },
+  "viewer_text.max_name_chars": { help: "The longest viewer name the co-host takes in or shows; a longer one is cut to this length and marked as cut. Lower keeps an overlong name from crowding the prompt. It cannot be below 8.", unit: "chars", label: "Longest viewer name" },
+
   // ---- brain.salience
   "brain.salience.tick_ms": { help: "How often salience re-checks whether it is time to speak. Chat, screen changes and quiet-time chatter are only noticed at these checks, so a lower number reacts to chat sooner; speech is handled at once unless trigger_on_speech is off.", unit: "ms", label: "Check every" },
   "brain.salience.trigger_on_speech": { help: "When on, a finished sentence you say aloud is considered immediately instead of waiting for the next check, so the co-host answers you faster. Off makes it wait for the next check, which adds up to one check interval of delay." },
@@ -180,6 +195,7 @@ const keys: Record<string, KeyPresentation> = {
   "brain.affect.baseline_arousal": { help: "The co-host's resting energy, from 0 (sleepy) to 1 (wired), where it settles when nothing is happening. Higher makes it more animated by default and, through the speak threshold, a little chattier.", label: "Resting energy" },
   "brain.affect.republish_ms": { help: "An unchanged mood is announced again this often, so a part of the co-host that starts late still learns the current mood. It does not change the mood itself.", unit: "ms" },
   "brain.affect.short_line_chars": { help: "Only when the mood is judged by a model or server: a chat or spoken line shorter than this (and not mentioning the co-host) is judged by the built-in rules instead, since there is too little tone to be worth a model call.", unit: "chars" },
+  "brain.affect.count_window_ms": { help: "After a viewer, or a particular text, has moved the mood, the same viewer and the same text do not move it again for this long. Higher makes it harder for one person or a pasted line to swing the mood; lower lets repeated lines count sooner.", unit: "ms", label: "Count a viewer or text once per" },
   "brain.affect.nudge_sub_valence": { help: "How much a chat line from a subscriber lifts the mood, from 0 to 1. Higher makes subs cheer the co-host up more; 0 means subs do not change its mood.", label: "Subscriber boost to mood" },
   "brain.affect.nudge_sub_arousal": { help: "How much a chat line from a subscriber raises the co-host's energy, from 0 to 1. Higher makes subscribers wind it up more.", label: "Subscriber boost to energy" },
   "brain.affect.nudge_screen_arousal": { help: "How much a change on screen raises the co-host's energy, from 0 to 1. Higher makes a busy game keep it more worked up.", label: "Screen change boost to energy" },
@@ -229,6 +245,7 @@ const keys: Record<string, KeyPresentation> = {
   "brain.cortex.recall_timeout_ms": { help: "How long the co-host waits for memory to answer before writing its reply without it. Lower keeps replies quick when memory is slow; higher waits longer so slow memories still make it in.", unit: "ms" },
   "brain.cortex.speaking_timeout_ms": { help: "How long the co-host waits for its voice to report that a line has finished playing before it gives up and carries on. It is a safety net for a voice that never answers; raise it if your lines are very long.", unit: "ms" },
   "brain.cortex.fallback_ack_chance": { help: "After a line fails to play and a fallback line is said instead, the co-host is told this chance (0 to 1) of joking about the glitch in its next reply. It is a nudge to the model, not a guaranteed rate; 0 means it is never told.", label: "Chance to joke about a glitch" },
+  "brain.cortex.repeat_similarity": { help: "How alike a new reply may be to something the co-host said recently, from 0 to 1, before it stays silent instead of repeating itself. Lower blocks looser look-alikes and may also drop lines you wanted; 0 turns the check off.", label: "Repeat check" },
   ...hook("brain.cortex.critic", {
     kind: "An editor that checks each reply before it is spoken: rules lets every reply through, llm asks a language model to block or fix it, http sends it to a server you run. If the chosen judge fails, the reply is spoken unchecked.",
     url: "Only for kind http: the address of your own server that checks replies. Each request carries the reply and the recent conversation, so only point it somewhere you trust.",

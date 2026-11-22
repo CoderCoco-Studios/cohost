@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 100 [x], 131 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 109 [x], 122 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:

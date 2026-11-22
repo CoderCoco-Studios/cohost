@@ -106,6 +106,17 @@ The four [brain regions](../../start/glossary.md#brain-region), which only talk 
 | --- | --- | --- |
 | `brain` | map | The brain |
 | `brain.working_memory_events` | `24` | Recent events each region keeps as its working memory and prompt window |
+| `brain.working_memory_own_lines` | `4` | How many of the co-host's own recent lines the window never drops, so a flood of chat cannot push them out. An integer of at least 1 that must be less than `brain.working_memory_events`; otherwise the file fails to load |
+
+## `brain.input_limits`
+
+The longest text a speech engine or the vision model may hand to a prompt. Longer text is cut to the limit.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `brain.input_limits` | map | The speech and screen text limits. The section is optional |
+| `brain.input_limits.speech_max_chars` | `1000` | The longest spoken transcript a prompt carries, in characters. At least 16 |
+| `brain.input_limits.vision_max_chars` | `500` | The longest screen description a prompt carries, in characters. At least 16 |
 
 ## `brain.salience`
 
@@ -153,6 +164,7 @@ The mood: a valence and arousal pair that drifts back to a baseline.
 | `brain.affect.baseline_arousal` | `0.1` | The resting arousal, 0 to 1 |
 | `brain.affect.republish_ms` | `15000` | An unchanged mood is sent again this often so late joiners get a value |
 | `brain.affect.short_line_chars` | `4` | `llm` and `http` hooks only: shorter lines with no mention are judged by the built-in rules |
+| `brain.affect.count_window_ms` | `30000` | A viewer, or a text, moves the mood at most once in this long. A positive integer |
 | `brain.affect.nudge_sub_valence` | `0.05` | Valence nudge, 0 to 1, for a subscriber's chat line |
 | `brain.affect.nudge_sub_arousal` | `0.05` | Arousal nudge for a subscriber's chat line |
 | `brain.affect.nudge_screen_arousal` | `0.08` | Arousal nudge for a changed screen |
@@ -218,6 +230,7 @@ The only region that calls the chat model.
 | `brain.cortex.recall_timeout_ms` | `2500` | Answer without memories if the memory region is slow or down |
 | `brain.cortex.speaking_timeout_ms` | `20000` | Stop waiting on a voice sink that never reports done |
 | `brain.cortex.fallback_ack_chance` | `0.25` | The base chance, 0 to 1, that she riffs on a line that failed to play. A nudge stated to the model, not an enforced rate |
+| `brain.cortex.repeat_similarity` | `0.8` | Stay silent rather than say a line this similar, 0 to 1, to a recent one. 0 turns the check off |
 | `brain.cortex.critic` | map | The hook. See [Brain hooks](../extend/hooks.md) |
 | `brain.cortex.critic.kind` | `rules` | `rules` (built in), `llm` (one chat call, JSON reply) or `http` (POST to your URL). A blank value means `rules` |
 | `brain.cortex.critic.url` | `""` | `http` only: the endpoint to POST to, for example `http://host.docker.internal:8900/critic`. Required when `kind` is `http` |
@@ -225,6 +238,16 @@ The only region that calls the chat model.
 | `brain.cortex.critic.llm` | map | `llm` only: which model answers. Empty reuses the `llm.*` model |
 | `brain.cortex.critic.llm.provider` | `""` | `ollama`, `openai`, `anthropic` or `bedrock`. Needs `model` too |
 | `brain.cortex.critic.llm.model` | `""` | The model id as that provider names it |
+
+## `viewer_text`
+
+The longest text a viewer may hand to a prompt. Longer text is cut to the limit. The whole section is optional.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `viewer_text` | map | The chat message and viewer name limits |
+| `viewer_text.max_chars` | `500` | The longest chat message a prompt carries, in characters. 500 is Twitch's own message limit. At least 16 |
+| `viewer_text.max_name_chars` | `40` | The longest viewer name a prompt carries, in characters. At least 8 |
 
 ## `voice`
 

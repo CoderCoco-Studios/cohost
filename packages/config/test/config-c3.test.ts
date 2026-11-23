@@ -63,13 +63,14 @@ test("the shipped example loads with ears.stt_model as the literal default model
 });
 
 // @spec CFG-SCH-025
-test("vision.model is required only while vision is enabled", () => {
+test("vision.model defaults to empty and a blank model loads whether vision is enabled or not", () => {
   const off = base();
   off.vision = { enabled: false, obs: {} } as never;
   assert.equal(ConfigSchema.parse(off).vision.model, "");
   const on = base();
   on.vision = { enabled: true, model: "", obs: {} } as never;
-  assert.deepEqual(issuesOf(ConfigSchema.safeParse(on)), ["vision.model"]);
+  assert.deepEqual(issuesOf(ConfigSchema.safeParse(on)), []);
+  assert.equal(ConfigSchema.parse(on).vision.model, "");
   on.vision = { enabled: true, model: "qwen2.5vl:3b", obs: {} } as never;
   assert.equal(ConfigSchema.parse(on).vision.model, "qwen2.5vl:3b");
 });

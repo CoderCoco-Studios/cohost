@@ -61,16 +61,16 @@ export function modelDescriber(cfg: Config["vision"], llm: Config["llm"], provid
 
 // @spec EYES-STUB-001
 /**
- * The describer of `vision.engine: stub`: no request. A frame without a previous description is `stub vision: <n> bytes`
+ * The describer of `vision.provider: stub`: no request. A frame without a previous description is `stub vision: <n> bytes`
  * (`n` the decoded size), and every later capture is `SAME`, so an isolated eyes with OBS reports one change.
  */
 export function stubDescriber(): Describe {
   return async (b64, previous) => (previous ? "SAME" : `stub vision: ${Buffer.from(b64, "base64").length} bytes`);
 }
 
-/** The describer `vision.engine` selects. */
+/** The describer `vision.provider` selects. */
 export function createDescriber(cfg: Config): Describe {
-  return cfg.vision.engine === "stub" ? stubDescriber() : modelDescriber(cfg.vision, cfg.llm);
+  return cfg.vision.provider === "stub" ? stubDescriber() : modelDescriber(cfg.vision, cfg.llm);
 }
 
 /** One look at the screen; publishes `vision.summary` only when the model saw a change. */

@@ -23,10 +23,10 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `cortex`, and the `salience`, `affect` and notes [hooks](../../start/glossary.md#hook) that inherit its model | `LLM_PROVIDER=mock` (`llm.provider`) | Deterministic echo replies and hash [embeddings](../../start/glossary.md#embedding) (`mock`) |
 | `memory` | `MEMORY_STORE=memory` and `MEMORY_EMBEDDER=hash` (`brain.memory.store`, `brain.memory.embedder`) | An in-process store with offline embeddings, lost on exit (`mock`). Needs no [Postgres](../../start/glossary.md#postgres) and no [Ollama](../../start/glossary.md#ollama) |
 | `voice` | `VOICE_ENGINE=stub` (`voice.engine`) | A silent WAV of 60 ms per character (400 ms minimum), no [TTS](../../start/glossary.md#tts) call (`mock`) |
-| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages, no Twitch (`mock`) |
-| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`) and still accepts injected chat |
+| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages from `fake_viewer1` and `fake_viewer3` (Twitch shape) and `fake_viewer2` (YouTube shape); no Twitch or YouTube connection; mode `mock`, ready at once |
+| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`, `deps.youtube: n/a`, mode `live`) and still accepts injected chat |
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
-| `eyes` | `VISION_ENGINE=stub` (`vision.engine`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
+| `eyes` | `VISION_PROVIDER=stub` (`vision.provider`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
 | `ears` | `EARS_SOURCES=[]` (`ears.sources`) | Idles with no Discord client; injected audio is still transcribed |
 | `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips; no account |
 | `ears` | `EARS_SOURCES=[dir]` | Hears `.wav` files dropped in `ears.dir.path`, then renames them; no account |
@@ -86,7 +86,7 @@ Each was started with only Redis available:
 | `cortex` | Redis and a chat model | With `llm.provider: mock` (the isolated start) it answers by itself. Otherwise it logs `waiting for the model backend` every 3 seconds until the model answers |
 | `memory` | Redis, and Postgres plus Ollama unless stubbed | With `brain.memory.store: memory` and `brain.memory.embedder: hash` (the isolated start) it needs neither. Without them it logs `waiting for ollama (embeddings)...` until Ollama answers |
 | `chat` | `chat.twitch.channel` for the real source | Idles `degraded` without a channel and still accepts injected chat |
-| `eyes` | OBS and a vision model, only with `vision.enabled: true` | Idles `off` by default; injected images are described by the stub with `vision.engine: stub` |
+| `eyes` | OBS and a vision model, only with `vision.enabled: true` | Idles `off` by default; injected images are described by the stub with `vision.provider: stub` |
 | `ears` | The Discord [connector](../../start/glossary.md#connector), for the `discord` source, and an [STT](../../start/glossary.md#stt) server | With the connector absent, `deps.discord` is `down` and injected audio still works; `ears.stt_engine: stub` needs no STT server |
 | `mouth` | Redis, and `voice` for audio | `mouth.outputs.dryrun.enabled: true` runs the whole speaking path above Discord with no sound |
 

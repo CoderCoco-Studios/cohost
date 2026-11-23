@@ -6,3 +6,4 @@ export * from "./inject.js";
 export * from "./audio.js";
 export * from "./boot.js";
 export * from "./utterance.js";
+export * from "./video.js";

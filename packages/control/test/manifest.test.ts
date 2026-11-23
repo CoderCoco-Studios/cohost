@@ -56,7 +56,7 @@ test("flags and defaults match the spec", () => {
   assert.deepEqual(findService("connector-discord")!.isolatedEnv, { CONNECTIONS_DISCORD_ENABLED: "false" });
   assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" });
   assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });
-  assert.deepEqual(findService("eyes")!.isolatedEnv, { VISION_ENABLED: "false", VISION_ENGINE: "stub" });
+  assert.deepEqual(findService("eyes")!.isolatedEnv, { VISION_ENABLED: "false", VISION_PROVIDER: "stub" });
 });
 
 // @spec CTRL-MANIFEST-004
@@ -82,7 +82,7 @@ test("the isolation presets are exactly the specified ones; every other unit has
     cortex: { LLM_PROVIDER: "mock" },
     voice: { VOICE_ENGINE: "stub" },
     avatar: { AVATAR_DRIVER: "null" },
-    eyes: { VISION_ENABLED: "false", VISION_ENGINE: "stub" },
+    eyes: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
     ears: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
     mouth: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
     "connector-discord": { CONNECTIONS_DISCORD_ENABLED: "false" },

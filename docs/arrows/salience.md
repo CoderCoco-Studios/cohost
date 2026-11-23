@@ -100,17 +100,20 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 1. **A reflex starts the cooldown and marks `speaking` before it publishes** (`Salience.reflex` in `salience.ts`); `Salience.tick()` catches and logs its own failures, so the timer never leaves a rejection unhandled. A failed reflex publish is not fatal, because the bus catches and logs handler errors (`packages/bus/src/index.ts`).
 2. **Spec wording matches code where the decision confirmed it.** SAL-FOCUS-003: the bus schema fills a missing `mention` with false (`packages/bus/src/events.ts`). SAL-DECIDE-005: a fully silent stream stays silent. SAL-BUSY-004: cortex `muted` is not busy. SAL-CTRL-006: mute and pause are not persisted.
-3. **A decision made before a mute, pause or busy cortex does not publish** (SAL-FOCUS-005). Its events stay unseen, with their scores cached. Only llm/http scorers open the window. The same holds when the focused chat line has left the window while the scorer ran, by `chat.removed` or by window eviction (SAL-FOCUS-007; `decideAndPublish` in `salience.ts`).
+3. **A decision made before a mute, pause or busy cortex does not publish** (SAL-FOCUS-005). Its events stay unseen, with their scores cached. Only llm/http scorers open the window. A focused chat line that a `chat.removed` takes out of the window while the scorer runs voids the decision too (SAL-FOCUS-007; `decideAndPublish` in `salience.ts`). Window eviction and `forget_context` do not.
 4. **Restart skips the backlog.** `main.ts` names start mode `latest`, so the `salience` group moves to the tail on every start (SAL-IN-001).
 5. **Rule weights match the config defaults.** Mention 1.0, voice 0.9, question 0.55, mod/sub 0.35, screen 0.3, plain 0.15, threshold 0.6 are the values of `scoring.ts` and the schema defaults (`packages/config/src/schema.ts`; `config/config.example.yaml`), asserted in `services/salience/test/salience.test.ts`. The total is a sum over the counted unseen events; the focus is the first counted event whose score is above 0 (SAL-DECIDE-002, SAL-DECIDE-014; `Scheduler.decide`).
 6. **Startup runs under the bootstrap and `ready` follows group creation** (SAL-HEALTH-001, SAL-HEALTH-003). `Bus.subscribe` has no readiness signal, so `salienceMain` awaits `bus.resetGroup("salience")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, commit `969f6d7` ("Fix review findings") or the 2026-11-01 owner decisions; two keep a partial `[inferred]` (why sum not max, the 0.1 threshold floor) and the 60 s valve default value is `[inferred]`.
+8. **`chat.removed` is forgotten in `onEvent`, which has no pause gate** (SAL-IN-008, SAL-IN-009). The removed entries are recorded, so a decision whose focus is one of them publishes nothing (SAL-FOCUS-007). The burst counter keys viewers by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019).
 
 ## Work Required
 
-- Viewer identity and forgetting (#182, built): the burst counter keys a viewer by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019), `chat.removed` is subscribed and forgotten before the pause check (SAL-IN-008, SAL-IN-009), and a focus removed mid-decision publishes nothing (SAL-FOCUS-007). SAL-IN-001 stays open: its listed types name sources salience does not yet subscribe to.
+- SAL-IN-001 stays open: its listed types name sources salience does not yet subscribe to.
+- Open LLD questions: repeated mentions across decisions, and several viewers named `unknown`.
+
 ### Must Fix
-Counting a burst once (the walk, speech and vision always counting, discounted lines adding nothing and never the focus, reflexes untouched) and the guarded `llm` scorer prompt are built (SAL-DECIDE-002, -007, -009, -010, -013 to -016; SAL-SCORE-009 to -014). The viewer and text comparison, SAL-DECIDE-011 and -012, and the viewer key, SAL-DECIDE-017 to -019, were completed by #182. The LLD has two open questions: repeated mentions across decisions, and several viewers named `unknown`.
+None.
 
 ### Should Fix
 None.

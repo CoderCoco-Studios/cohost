@@ -305,9 +305,9 @@ test("Scheduler: lines with no user id are one viewer only on one platform and o
 test("Scheduler: counts through admit(viewerKey, text) of a once counter, viewers by key and texts by normalizeKey", async () => { // @spec SAL-DECIDE-011, SAL-DECIDE-012
   const sch = new Scheduler(salienceCfg(), rulesScorer());
   const ctx = new Context(20);
-  ctx.push(chat("Hello  World", { platform: "twitch", userId: "1", user: "a" }));
+  ctx.push(chat("unrelated words", { platform: "twitch", userId: "1", user: "a" })); // viewer 1 repeats below, text is new
   ctx.push(chat("hello world", { platform: "youtube", userId: "9", user: "b" })); // same text key, other viewer
   ctx.push(chat("other", { platform: "twitch", userId: "1", user: "renamed" })); // same viewer key
   ctx.push(chat("HELLO world", { platform: "twitch", userId: "5", user: "c" })); // walked first: counts, and takes the text
-  near((await sch.decide(ctx, false, false)).score, 0.3); // the youtube copy is a text repeat, the first line a viewer repeat
+  near((await sch.decide(ctx, false, false)).score, 0.3); // the youtube copy is a text repeat of "HELLO world"; the first line is a viewer repeat only
 });

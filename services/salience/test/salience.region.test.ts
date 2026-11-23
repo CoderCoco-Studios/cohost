@@ -585,6 +585,32 @@ test("a focused line removed while the scorer runs publishes no focus, leaves ev
   assert.equal(bus.of("attention.focus").length, 1, "not thinking, so the next decision publishes");
 });
 
+test("a focused line evicted by window overflow while the scorer runs still publishes: only a removal voids the decision", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  const running = s.tick();
+  for (let i = 0; i < 60; i++) await s.onEvent(chat(`line ${i}`, { userId: `v${i}`, messageId: `x${i}` })); // pushes the mention out of the window
+  release();
+  await running;
+  assert.equal(texts(s).includes("hey Coco?"), false, "the focus is no longer in the window");
+  assert.equal(bus.of("attention.focus").length, 1, "evicted, not removed: the decision stands");
+  assert.equal((bus.of("attention.focus")[0]!.focus as { text: string }).text, "hey Coco?");
+});
+
+test("a focused line cleared by forget_context while the scorer runs still publishes", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  const running = s.tick();
+  await s.onEvent(event("control", { cmd: "forget_context" }));
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 1, "cleared, not removed: the decision stands");
+});
+
 test("a removal of a line that is not the focus leaves the decision standing", async () => { // @spec SAL-FOCUS-007
   const { s, bus, setGate } = setup();
   let release!: () => void;

@@ -190,3 +190,29 @@ test("a value an override gives that fails the schema fails the load and names t
   process.env.COHOST_ISOLATION = JSON.stringify({ AVATAR_DRIVER: "bogus" });
   assert.throws(() => loadConfig(true), (e: Error) => /avatar\.driver:/.test(e.message) && /COHOST_ISOLATION/.test(e.message));
 });
+
+// @spec CFG-ISO-007, CFG-ISO-006
+test("COHOST_ISOLATION CHAT_SOURCES parses as a YAML flow value into chat.sources; the retired CHAT_SOURCE name is gone", () => {
+  assert.deepEqual(loadShipped({ CHAT_SOURCES: "[fake]" }).cfg.chat.sources, ["fake"]);
+  assert.deepEqual(loadShipped({ CHAT_SOURCES: "[twitch, youtube]" }).cfg.chat.sources, ["twitch", "youtube"]);
+  assert.deepEqual(loadShipped({ CHAT_SOURCES: "[]" }).cfg.chat.sources, []);
+  assert.deepEqual(loadShipped().cfg.chat.sources, ["twitch"], "no override leaves the file's value");
+  assert.equal((ISOLATION_OVERRIDES as Record<string, string>).CHAT_SOURCES, "chat.sources");
+  assert.equal("CHAT_SOURCE" in ISOLATION_OVERRIDES, false);
+});
+
+// @spec CFG-ISO-003, CFG-ISO-007
+test("an isolation override naming an unknown chat source fails the load naming chat.sources", () => {
+  shippedSandbox();
+  process.env.COHOST_ISOLATION = JSON.stringify({ CHAT_SOURCES: "[irc]" });
+  assert.throws(() => loadConfig(true), /chat\.sources/);
+});
+
+// @spec CFG-ISO-007
+test("the settings editor's validation of an edited file applies no CHAT_SOURCES override", () => {
+  shippedSandbox();
+  process.env.COHOST_ISOLATION = JSON.stringify({ CHAT_SOURCES: "[fake]" });
+  const r = parseConfigText(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"));
+  assert.ok(r.ok);
+  assert.deepEqual(r.config.chat.sources, ["twitch"]);
+});

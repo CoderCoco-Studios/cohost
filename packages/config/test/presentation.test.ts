@@ -250,3 +250,12 @@ test("sectionPresentation joins a section's title, group, about, page and per-ke
   assert.equal(sal.keys["reflexes"]!.items!["cooldown_ms"]!.unit, "ms");
   assert.throws(() => sectionPresentation("nope"), /no such config section/);
 });
+
+// @spec CFG-PRES-006
+test("chat.sources gets the sources widget beside ears.sources, and each chat.youtube key has presentation help", () => {
+  assert.deepEqual(PRESENTATION.keys["chat.sources"]?.widget, { type: "sources" });
+  assert.equal(PRESENTATION.keys["chat.source"], undefined, "the retired key has no entry");
+  for (const k of ["video", "api_key", "transport", "poll_floor_ms", "recheck_ms"]) {
+    assert.ok(oneLine(PRESENTATION.keys[`chat.youtube.${k}`]?.help), `chat.youtube.${k} has help`);
+  }
+});

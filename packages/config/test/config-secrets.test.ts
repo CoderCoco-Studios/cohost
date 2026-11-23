@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, chmodSync, copyFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema } from "../src/index.js";
+import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
@@ -293,4 +293,18 @@ test("updateSecrets on a dangling symlink fails naming the path and writes nothi
   assert.throws(() => updateSecrets(link, { "llm.openai.api_key": "sk-new" }), (e: Error) => e.message.includes(link) && !e.message.includes("sk-new"));
   assert.equal(lstatSync(link).isSymbolicLink(), true);
   assert.equal(existsSync(join(dir, "nowhere")), false);
+});
+
+// @spec CFG-SEC-003, CFG-SCH-049
+test("chat.youtube.api_key is a secret path (owned by CFG-SEC-003): listed, defaulting to empty, merged from secrets.yaml and marked in the editor schema", () => {
+  assert.ok((SECRET_PATHS as readonly string[]).includes("chat.youtube.api_key"));
+  const cfg = ConfigSchema.parse({
+    cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: {},
+    voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
+  });
+  assert.equal(getPath(cfg, "chat.youtube.api_key"), "");
+  sandbox({ "secrets.yaml": "chat:\n  youtube:\n    api_key: yt-key\n" });
+  assert.equal(loadConfig(true).chat.youtube.api_key, "yt-key");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal((sectionJsonSchema("chat") as any).properties.youtube.properties.api_key["x-secret"], true);
 });

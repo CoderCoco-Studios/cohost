@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 139 [x], 54 [ ], 2 [D] (the Nemotron and Kyutai engines EARS-NEM and EARS-KYU, the early-reply specs EARS-EARLY-001 to 026, and EARS-SES-003 skipped, are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022); the real streaming adapters are #188."
+    next: "195 specs: 138 [x], 55 [ ], 2 [D] (the Nemotron and Kyutai engines EARS-NEM and EARS-KYU, the early-reply specs EARS-EARLY-001 to 026, EARS-ENG-007 and EARS-SES-003 (the buffered-start push, which has no acknowledgement) are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022); the real streaming adapters are #188."
     drift: null
 
   salience:

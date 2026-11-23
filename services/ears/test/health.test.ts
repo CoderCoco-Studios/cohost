@@ -30,19 +30,6 @@ test("earsPlan: a set of sources; only dir without a path is a gap; every other 
   assert.deepEqual(earsPlan(["discord"], true).sources.map((x) => x.kind), ["connector"], "no token or client is involved: discord is a plain tag");
 });
 
-// @spec EARS-HLTH-001, EARS-HLTH-002, EARS-HLTH-003
-test("discord is a connector source: its dependency follows the source, stt follows transcriptions", async () => {
-  let up = true;
-  const h = new EarsHealth(earsPlan(["discord"], true), false, () => (up ? "ok" : "down"));
-  assert.deepEqual((await runHeartbeat(h.spec))[1]!.deps, { discord: "ok", stt: "ok", http: "n/a", dir: "n/a" });
-  await assert.rejects(h.track(async () => { throw new Error("stt 500"); })(Buffer.alloc(0)));
-  up = false;
-  const hbs = await runHeartbeat(h.spec);
-  assert.deepEqual(hbs[1]!.deps, { discord: "down", stt: "down", http: "n/a", dir: "n/a" });
-  assert.equal(hbs[1]!.mode, "live");
-  assert.equal(hbs[1]!.service, "ears");
-});
-
 // @spec EARS-SRC-005, EARS-HLTH-001
 test("heartbeat: one dep per enabled source, n/a for the rest, stt shared; a gap or failing source is down", async () => {
   const status: Record<string, "ok" | "down"> = { http: "ok", desktop: "down" };
@@ -236,4 +223,55 @@ test("the batch engine failing on a whole clip while the selected streaming engi
     assert.equal(stt(r), "ok");
     assert.ok(!everDown(r));
   }, { streaming: eng.engine });
+});
+
+// @spec EARS-HLTH-003, EARS-HLTH-005
+test("a session that drops mid-stream sets deps.stt down with the reason, and the fallback transcribes the utterance", async () => {
+  const s = fakeStt(() => "from the fallback");
+  const eng = fakeStreaming({ finish: () => "unused" });
+  await run(cfg({ stt_engine: "nemotron" }), s, async (r) => {
+    const speaking = say(r);
+    await waitFor(() => eng.sessions.length === 1, "session");
+    eng.sessions[0]!.fail(new Error("server closed"));
+    await speaking;
+    await waitFor(() => r.heard().length === 1, "heard by the fallback", 3000);
+    assert.equal(r.heard()[0]!.text, "from the fallback");
+    await waitFor(() => stt(r) === "down" && /nemotron unavailable: server closed; transcribing with speaches/.test(detail(r)), "down on the drop", 3000);
+  }, { streaming: eng.engine });
+});
+
+// @spec EARS-HLTH-003, EARS-ENG-009
+test("a failed finish() sets deps.stt down with the reason, and the batch fallback transcribes the retained clip", async () => {
+  const s = fakeStt(() => "rescued");
+  const eng = fakeStreaming({ finish: () => { throw new Error("no final"); } });
+  await run(cfg({ stt_engine: "nemotron" }), s, async (r) => {
+    await say(r);
+    await waitFor(() => r.heard().length === 1, "rescued", 3000);
+    assert.equal(r.heard()[0]!.text, "rescued");
+    await waitFor(() => stt(r) === "down" && /nemotron unavailable: no final; transcribing with speaches/.test(detail(r)), "down after a failed finish", 3000);
+  }, { streaming: eng.engine });
+});
+
+// @spec EARS-HLTH-008, EARS-ENG-007
+test("a ping that never answers is bounded by ears.stt_timeout_ms, and no second ping is sent while it is in flight", async () => {
+  const s = fakeStt(() => "x");
+  const eng = fakeStreaming({ ping: () => new Promise<boolean>(() => {}) });
+  await run(cfg({ stt_engine: "nemotron", stt_timeout_ms: 100 }), s, async (r) => {
+    await sleep(500);
+    assert.equal(eng.stats.maxPingsInFlight, 1, "never more than one ping in flight");
+    assert.equal(eng.stats.pings, 1, "the hung ping is not joined by another");
+    assert.equal(stt(r), "down");
+    assert.match(detail(r), /awaiting first ping|ping did not answer/);
+  }, { streaming: eng.engine, pingIntervalMs: 30 });
+});
+
+// @spec EARS-HLTH-008
+test("a ping that answers after the bound is not ok, and the next probe after it settles can bring deps.stt ok", async () => {
+  let n = 0;
+  const s = fakeStt(() => "x");
+  const eng = fakeStreaming({ ping: async (signal) => { n++; if (n === 1) { await new Promise((r) => setTimeout(r, 250)); return true; } return true; } });
+  await run(cfg({ stt_engine: "nemotron", stt_timeout_ms: 100 }), s, async (r) => {
+    await waitFor(() => stt(r) === "ok", "ok after the second ping", 3000);
+    assert.equal(eng.stats.pings, 2, "a second ping followed the first once it settled");
+  }, { streaming: eng.engine, pingIntervalMs: 30 });
 });

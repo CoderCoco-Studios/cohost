@@ -148,23 +148,30 @@ export interface FakeSession {
 export interface FakeStreamingOptions {
   name?: "nemotron" | "kyutai";
   destination?: string;
-  /** Runs at every `open` (n counts from 0): throw to refuse, await to take time. */
-  open?: (n: number) => void | Promise<void>;
+  /** Runs at every `open` (n counts from 0): throw to refuse, await to take time. A pending open is rejected when its signal aborts. */
+  open?: (n: number, o: { signal: AbortSignal }) => void | Promise<void>;
   /** The final text; a throw or a never-settling promise is a failed `finish()`. Default: the last hypothesis. */
   finish?: (s: FakeSession) => string | Promise<string>;
   /** Readiness probe; absent means the engine has none (EARS-HLTH-008). */
-  ping?: () => boolean | Promise<boolean>;
+  ping?: (signal: AbortSignal) => boolean | Promise<boolean>;
 }
 /** A scripted `StreamingSttEngine`: no network. `sessions` are the ones opened; `stats.opens` counts every `open` call, refused ones too. */
 export function fakeStreaming(o: FakeStreamingOptions = {}) {
   const sessions: FakeSession[] = [];
-  const stats = { opens: 0, pings: 0 };
+  const stats = { opens: 0, pings: 0, pingsInFlight: 0, maxPingsInFlight: 0 };
   const engine: StreamingSttEngine = {
     kind: "streaming", name: o.name ?? "nemotron", ...(o.destination ? { destination: o.destination } : {}),
-    ...(o.ping ? { ping: async () => { stats.pings++; return o.ping!(); } } : {}),
-    async open() {
+    ...(o.ping ? { ping: async (signal: AbortSignal) => {
+      stats.pings++; stats.pingsInFlight++; stats.maxPingsInFlight = Math.max(stats.maxPingsInFlight, stats.pingsInFlight);
+      try { return await o.ping!(signal); } finally { stats.pingsInFlight--; }
+    } } : {}),
+    async open(opts: { signal: AbortSignal }) {
       const n = stats.opens++;
-      await o.open?.(n);
+      const signal = opts.signal;
+      if (o.open) await new Promise<void>((res, rej) => {
+        signal.addEventListener("abort", () => rej(signal.reason ?? new Error("aborted")), { once: true });
+        Promise.resolve().then(() => o.open!(n, { signal })).then(() => res(), rej);
+      });
       let last = "";
       let cb: ((t: string) => void) | undefined;
       let signalFailed!: (e: Error) => void;

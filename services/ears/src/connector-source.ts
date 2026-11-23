@@ -30,7 +30,7 @@ export interface PartialDeps {
   /** `ears.min_speech_ms`: no partial for less audio than this. */
   minSpeechMs: number;
   dropPhrases: readonly string[];
-  /** 16 kHz mono WAV -> text through the batch STT request; not the tracked transcriber, so a failure never moves `deps.stt` (EARS-PART-010). */
+  /** 16 kHz mono WAV -> text through the batch engine's request; not the router's whole-clip call, so a failure never moves `deps.stt` (EARS-PART-010). */
   transcribe: (wav: Buffer) => Promise<string>;
   publish: (data: PartialData) => Promise<void>;
 }
@@ -91,6 +91,10 @@ interface Stream {
   session?: SttSession;
   /** Frames received while connecting, pushed in order once the session is live. */
   pending: Buffer[];
+  /** Aborts the connect when the source stops (EARS-SES-007). */
+  ac: AbortController;
+  /** The utterance closed while the connect was pending: its clip waits for the connect to settle (EARS-SES-004). */
+  closeWith?: { clip: Clip; spk: string };
 }
 
 interface Open {
@@ -122,6 +126,10 @@ interface Open {
   lastText?: string;
   lastPubAt?: number;
   hypTimer?: ReturnType<typeof setTimeout>;
+  /** A hypothesis that arrived before `ears.min_speech_ms` of audio, held until the minimum is reached (EARS-PART-018). */
+  held?: string;
+  /** Streamed partials of this utterance are published one after another (EARS-PART-014). */
+  pubChain: Promise<void>;
 }
 
 interface Speaker { detector?: SpeechDetector; open?: Open; ring: Buffer[]; ringAt: number[]; chain: Promise<void> }
@@ -186,6 +194,19 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     ).catch((err) => d.log.error({ err: msg(err), source: d.name }, "ears connector source: final failed")));
   };
 
+  /** The close of an utterance with a live session: too short aborts it (EARS-SES-006), otherwise its final is taken. */
+  const closeLive = (o: Open, s: Stream, clip: Clip, spk: string): void => {
+    const durationMs = clip.pcm.length / BYTES_PER_MS;
+    // @spec EARS-SES-006
+    if (durationMs < d.stream!.minSpeechMs) {
+      s.state = "done";
+      s.session?.abort();
+      releaseSlot(o);
+      return;
+    }
+    finalize(o, s, s.session!, clip, spk, durationMs);
+  };
+
   /** Close a speaker's open utterance and hand its clip, up to the last speech frame, on: to its session, or to transcription (EARS-VAD-003). */
   const close = (sp: Speaker): void => {
     const o = sp.open;
@@ -198,19 +219,12 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const pcm = Buffer.concat(o.chunks.slice(0, end));
     const clip: Clip = { pcm, ...IN_FORMAT, audioEndedAt: o.at[end - 1]!, utteranceId: o.id };
     const s = o.stream;
-    if (s?.state === "live" && s.session) {
-      const durationMs = pcm.length / BYTES_PER_MS;
-      // @spec EARS-SES-006
-      if (durationMs < d.stream!.minSpeechMs) {
-        s.state = "done";
-        s.session.abort();
-        releaseSlot(o);
-        return;
-      }
-      finalize(o, s, s.session, clip, spk, durationMs);
+    if (s?.state === "live" && s.session) return closeLive(o, s, clip, spk);
+    // A connect still pending is waited for: its session takes the close when it connects, and only its failure falls back.
+    if (s?.state === "connecting") {
+      s.closeWith = { clip, spk };
       return;
     }
-    // A session still connecting is ended when it connects (see startSession); the clip goes to the batch engine now.
     hearClip(clip, spk, o.name, s !== undefined);
   };
 
@@ -218,20 +232,26 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
   /** Publishes a streamed hypothesis, once it is filtered and paced (EARS-PART-017): the first change at once, then one per window. */
   const publishHypothesis = (o: Open, text: string): void => {
     const pd = d.partials!;
+    // a filtered hypothesis is not published and does not start the pacing window
+    if (!hasWordCharacter(text) || isDropPhrase(text, pd.dropPhrases)) return;
     o.lastText = text;
     o.lastPubAt = Date.now();
-    if (!hasWordCharacter(text) || isDropPhrase(text, pd.dropPhrases)) return;
-    const seq = o.seq++;
     const audioEndedAt = o.at[o.at.length - 1]!;
-    track(pd.publish({ speaker: o.name, speakerId: o.spk, source: d.name, text, utteranceId: o.id, seq, timing: { audioEndedAt } })
-      .catch((err) => d.log.warn({ err: msg(err), source: d.name }, "speech.partial publish failed")));
+    // one publish at a time; the sequence number is taken only when a publish succeeds (EARS-PART-006, 014)
+    o.pubChain = o.pubChain.then(() => pd.publish({ speaker: o.name, speakerId: o.spk, source: d.name, text, utteranceId: o.id, seq: o.seq, timing: { audioEndedAt } })
+      .then(() => { o.seq++; }, (err) => d.log.warn({ err: msg(err), source: d.name }, "speech.partial publish failed")));
+    track(o.pubChain);
   };
 
-  /** A hypothesis of a live session (EARS-PART-016): nothing before the minimum audio, nothing after the close, only on change. */
+  /** A hypothesis of a live session (EARS-PART-016): nothing after the close, only on change; before the minimum audio it is held (EARS-PART-018). */
   const hypothesis = (o: Open, text: string): void => {
     const pd = d.partials;
     if (!pd || o.closed || o.stream?.state !== "live") return;
-    if (o.bytes < pd.minSpeechMs * BYTES_PER_MS) return;
+    if (o.bytes < pd.minSpeechMs * BYTES_PER_MS) {
+      o.held = text;
+      return;
+    }
+    o.held = undefined;
     o.latest = text;
     if (o.hypTimer !== undefined || text === o.lastText) return;
     const wait = o.lastPubAt === undefined ? 0 : o.lastPubAt + pd.stepMs - Date.now();
@@ -287,7 +307,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
   const open = (sp: Speaker, spk: string, name: string, chunks: Buffer[], at: number[]): Open => {
     const o: Open = {
       id: randomUUID(), name, spk, chunks, at, bytes: chunks.reduce((n, c) => n + c.length, 0), speechEnd: chunks.length, silentBytes: 0,
-      timer: setTimeout(() => close(sp), d.silenceMs), closed: false, inflight: false, publishedWords: 0, seq: 0, slot: false,
+      timer: setTimeout(() => close(sp), d.silenceMs), closed: false, inflight: false, publishedWords: 0, seq: 0, slot: false, pubChain: Promise.resolve(),
     };
     if (d.partials) { o.steps = setInterval(() => step(spk, o), d.partials.stepMs); o.steps.unref(); }
     sp.open = o;
@@ -300,11 +320,11 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const st = d.stream;
     if (!st || !st.router.slots.acquire()) return;
     o.slot = true;
-    const s: Stream = { state: "connecting", pending: [...o.chunks] };
+    const s: Stream = { state: "connecting", pending: [...o.chunks], ac: new AbortController() };
     o.stream = s;
-    st.router.openSession().then(
+    st.router.openSession(s.ac.signal).then(
       (session) => {
-        if (o.closed || stopped) {
+        if (stopped) {
           session.abort();
           releaseSlot(o);
           s.state = "done";
@@ -312,20 +332,31 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         }
         s.session = session;
         s.state = "live";
-        for (const c of s.pending) session.push(c);
-        s.pending = [];
         session.onHypothesis((t) => hypothesis(o, t));
         void session.failed.then((err) => {
           if (s.state !== "live") return;
           s.state = "failed";
+          s.session?.abort();
           releaseSlot(o);
           st.router.sessionFailed(msg(err));
         });
+        for (const c of s.pending) session.push(c);
+        s.pending = [];
+        if (s.closeWith) {
+          const c = s.closeWith;
+          s.closeWith = undefined;
+          closeLive(o, s, c.clip, c.spk);
+        }
       },
       () => {
-        // the router has reported an outage; a capacity refusal reports nothing. The utterance goes to the batch engine at close.
+        // the router reports an outage; a capacity refusal and a stop report nothing. Only here does a waiting close fall back.
         releaseSlot(o);
         s.state = "failed";
+        if (s.closeWith && !stopped) {
+          const c = s.closeWith;
+          s.closeWith = undefined;
+          hearClip(c.clip, c.spk, o.name, true);
+        }
       },
     );
   };
@@ -354,6 +385,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     o.name = name;
     if (o.stream?.state === "live") o.stream.session!.push(pcm);
     else if (o.stream?.state === "connecting") o.stream.pending.push(pcm);
+    if (o.held !== undefined) hypothesis(o, o.held);
     if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; } else o.silentBytes += pcm.length;
     if (d.maxUtteranceMs !== undefined && o.bytes >= d.maxUtteranceMs * BYTES_PER_MS) return close(sp);
     if (d.vad && o.silentBytes >= d.silenceMs * BYTES_PER_MS) return close(sp);
@@ -426,6 +458,8 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
           o.stream.state = "done";
           o.stream.session?.abort();
           releaseSlot(o);
+        } else if (o.stream?.state === "connecting") {
+          o.stream.ac.abort(new Error("source stopped")); // the connect is ended; its outcome is dropped (EARS-SES-007)
         }
       }
       speakers.clear();

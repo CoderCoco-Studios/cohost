@@ -35,6 +35,8 @@ export interface SttRouterDeps {
 export class SttRouter {
   readonly slots: SessionSlots;
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** A probe is in flight: the next tick waits for it instead of piling another up. */
+  private probing = false;
 
   constructor(private readonly d: SttRouterDeps) {
     this.slots = new SessionSlots(d.maxSessions);
@@ -62,14 +64,23 @@ export class SttRouter {
     const s = this.d.built.selected;
     if (s.kind !== "streaming" || !s.ping || this.d.built.selectedGap !== undefined) return;
     const probe = async (): Promise<void> => {
-      if (!this.d.health.sttDown()) return;
+      if (this.probing || !this.d.health.sttDown()) return;
+      // the slot is held until the ping itself settles, so a ping that never answers is not joined by another
+      this.probing = true;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), this.d.timeoutMs);
+      const pending = Promise.resolve().then(() => s.ping!(ac.signal));
+      const settle = (): void => { this.probing = false; };
+      pending.then(settle, settle);
       try {
-        if (await s.ping!()) {
+        if (await withTimeout(pending, this.d.timeoutMs, `${s.name} ping did not answer`)) {
           this.d.log.info({ engine: s.name }, "speech-to-text engine ready");
           this.d.health.selectedOk();
         }
       } catch {
         // still down; the next probe tries again
+      } finally {
+        clearTimeout(timer);
       }
     };
     void probe();
@@ -93,15 +104,16 @@ export class SttRouter {
     const streaming = this.streamingSelected;
     try {
       const text = await batch.transcribe(audio, { contentType: o.contentType ?? "audio/wav" });
+      // the same rule for a whole clip and a fallback: a success clears a stale fallback failure (EARS-HLTH-007)
       if (!streaming) this.d.health.selectedOk();
-      else if (o.fallback) this.d.health.fallbackOk();
+      else this.d.health.fallbackOk();
       return text;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       if (isOutage(err)) {
         if (!streaming) this.d.health.selectedDown(reason);
         else this.d.health.fallbackFailed(reason);
-        this.d.log.warn({ engine: batch.name, reason }, "batch transcription failed");
+        this.d.log.warn({ engine: batch.name, reason, fallback: o.fallback === true }, "batch transcription failed");
       }
       throw err;
     }
@@ -116,20 +128,41 @@ export class SttRouter {
 
   // @spec EARS-SES-009, EARS-SES-010, EARS-HLTH-003, EARS-HLTH-011
   /** Opens a session bounded by `ears.stt_timeout_ms`; a capacity refusal leaves `deps.stt` alone, any other failure is an outage. */
-  openSession(): Promise<SttSession> {
+  /**
+   * Opens a session. The connect is aborted at `ears.stt_timeout_ms` and when `caller` aborts (a source stop); a connect
+   * that answers after either is ended at once. A capacity refusal leaves `deps.stt` alone (EARS-HLTH-004); a caller's
+   * abort is not an outage; any other failure is.
+   */
+  openSession(caller?: AbortSignal): Promise<SttSession> {
     const s = this.stream;
     if (!s) return Promise.reject(new Error(`${this.d.built.selected.name} has no session to open`));
-    const p = s.open();
-    return withTimeout(p, this.d.timeoutMs, `${s.name} session did not connect`).catch((err: unknown) => {
-      // a connect that answers after the bound is ended at once
-      p.then((late) => late.abort(), () => {});
-      if (err instanceof SttCapacityError) {
-        this.d.log.info({ engine: s.name }, "speech-to-text session refused: no free channel");
-        throw err;
-      }
-      this.sessionFailed(err instanceof Error ? err.message : String(err));
-      throw err;
+    const ms = this.d.timeoutMs;
+    const ac = new AbortController();
+    const onCaller = (): void => ac.abort(new Error("session cancelled"));
+    if (caller?.aborted) onCaller();
+    caller?.addEventListener("abort", onCaller, { once: true });
+    const timer = setTimeout(() => ac.abort(new Error(`${s.name} session did not connect after ${ms} ms`)), ms);
+    const cleanup = (): void => { clearTimeout(timer); caller?.removeEventListener("abort", onCaller); };
+    // a synchronous throw of open() becomes a rejection, so the caller releases its slot
+    const p = Promise.resolve().then(() => s.open({ signal: ac.signal }));
+    const bound = new Promise<never>((_, reject) => {
+      ac.signal.addEventListener("abort", () => reject(ac.signal.reason), { once: true });
     });
+    return Promise.race([p, bound]).then(
+      (session) => { cleanup(); return session; },
+      (err: unknown) => {
+        cleanup();
+        // a connect that answers after the bound is ended at once
+        p.then((late) => late.abort(), () => {});
+        if (caller?.aborted) throw err;
+        if (err instanceof SttCapacityError) {
+          this.d.log.info({ engine: s.name }, "speech-to-text session refused: no free channel");
+          throw err;
+        }
+        this.sessionFailed(err instanceof Error ? err.message : String(err));
+        throw err;
+      },
+    );
   }
 
   /** The final of a session, bounded by `ears.stt_timeout_ms` (EARS-SES-004). */

@@ -1,4 +1,4 @@
-import { tracked, type HeartbeatSpec } from "@cohost/shared";
+import type { HeartbeatSpec } from "@cohost/shared";
 import type { BuiltEngines } from "./engines.js";
 
 /** One enabled listening source in the plan. `gap` is set when it cannot run for lack of configuration. */
@@ -113,9 +113,10 @@ export class EarsHealth {
     return `${i.engine} unavailable: ${this.selDown}; ${tail}${failed}`;
   }
 
-  /** The selected engine and the host it talks to (EARS-HLTH-009). */
+  /** The selected engine and the host it talks to (EARS-HLTH-009); the host is omitted where the engine has none (stub, a blank URL). */
   sttSummary(): string | undefined {
-    return this.info ? `${this.info.engine} at ${this.info.host}` : undefined;
+    if (!this.info) return undefined;
+    return this.info.host === "" ? this.info.engine : `${this.info.engine} at ${this.info.host}`;
   }
 
   /** The selected engine (or, for a batch selection, the batch engine) answered: `deps.stt` back to ok (EARS-HLTH-003, 011). */
@@ -144,10 +145,5 @@ export class EarsHealth {
     if (this.selDown === undefined) return;
     this.fbFail = reason;
     this.changed?.();
-  }
-
-  /** Wraps a batch call of a batch-selected engine: its outcome sets `deps.stt`. */
-  track<A extends unknown[]>(transcribe: (...a: A) => Promise<string>) {
-    return tracked(transcribe, (ok) => { if (ok) this.selectedOk(); else this.selectedDown("the last call failed"); });
   }
 }

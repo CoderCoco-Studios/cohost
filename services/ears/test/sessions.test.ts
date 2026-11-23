@@ -275,3 +275,42 @@ test("with no batch engine, an utterance refused a session for capacity, and one
     assert.ok(neverDown(r));
   });
 });
+
+// @spec EARS-SES-002, EARS-SES-004
+test("an utterance that closes while its connect is pending waits for the connect: its held frames are pushed, then its final comes from the session", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ open: () => sleep(400), finish: () => "waited for the connect" });
+  await run(cfg({ stt_timeout_ms: 1000 }), s, stt, async (r) => {
+    await say(r);
+    await waitFor(() => r.heard().length === 1, "heard", 3000);
+    assert.equal(r.heard()[0]!.text, "waited for the connect");
+    assert.equal(stt.calls.length, 0, "no batch call while the connect was pending");
+    assert.equal(s.sessions[0]!.finishCalls, 1);
+    assert.equal(s.sessions[0]!.audio().length, 10 * FRAME_BYTES, "every frame held while connecting was pushed");
+  });
+});
+
+// @spec EARS-SES-007, EARS-ENG-007
+test("a connect still pending when its source stops is aborted, and one that never answers is aborted at ears.stt_timeout_ms", async () => {
+  const stt = fakeStt(() => "unused");
+  const seen: AbortSignal[] = [];
+  const s = fakeStreaming({ open: (_n, { signal }) => { seen.push(signal); return new Promise<void>(() => {}); } });
+  resetSeq();
+  const r = await boot(cfg({ silence_ms: 5000, stt_timeout_ms: 5000 }), { setup: reg, streaming: s.engine });
+  try {
+    await sleep(60);
+    await say(r);
+    await waitFor(() => seen.length === 1, "connect started");
+    assert.ok(!seen[0]!.aborted);
+  } finally { await r.stop(); stt.restore(); }
+  assert.ok(seen[0]!.aborted, "aborted at source stop");
+
+  const timedOut: AbortSignal[] = [];
+  const t = fakeStreaming({ open: (_n, { signal }) => { timedOut.push(signal); return new Promise<void>(() => {}); } });
+  await run(cfg({ silence_ms: 5000, stt_timeout_ms: 100 }), t, stt, async (r2) => {
+    await say(r2);
+    await waitFor(() => timedOut.length === 1, "connect started");
+    await waitFor(() => timedOut[0]!.aborted, "aborted at the bound", 1000);
+    await waitFor(() => r2.lastHeartbeat()?.deps.stt === "down" && /session did not connect after 100 ms/.test(r2.lastHeartbeat()?.detail ?? ""), "outage recorded", 2000);
+  });
+});

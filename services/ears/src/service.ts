@@ -65,14 +65,17 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       // @spec EARS-STUB-002
       if (stub) log.warn("ears.stt_engine is stub: transcripts are fixed text (stub transcript), nothing is sent to the STT service");
       // @spec EARS-HLTH-010
-      for (const e of egressDestinations(cfg).filter((x) => x.service === "ears" && x.offLan)) {
-        log.warn(`ears sends speech to ${e.engine} at ${e.host}, which is off the LAN`);
+      if (plan.sources.length > 0) {
+        for (const e of egressDestinations(cfg).filter((x) => x.service === "ears" && x.offLan)) {
+          log.warn(`ears sends speech to ${e.engine} at ${e.host}, which is off the LAN`);
+        }
       }
       const rt = new SttRouter({
         built: engines, health: h, log, timeoutMs: cfg.ears.stt_timeout_ms, maxSessions: cfg.ears.max_stt_sessions,
         ...(opts.pingIntervalMs === undefined ? {} : { pingIntervalMs: opts.pingIntervalMs }),
       });
-      rt.start();
+      // mode off has no engine to probe (EARS-HLTH-008 applies to a live plan only)
+      if (plan.sources.length > 0) rt.start();
       onStop(() => rt.stop());
       // Injected clips only need the batch engine, so this works whatever the sources.
       const onInject = createInjectHandler({ bus, log, transcribe: (audio, hint) => rt.transcribe(audio, hint ? { contentType: hint.contentType } : {}) });

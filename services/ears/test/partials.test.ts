@@ -472,3 +472,63 @@ test("a batch engine other than stub with ears.stt_gpu false logs the startup GP
     assert.ok(r.log.msgs("warn").some((m) => /gpu/i.test(String(m)) && /partial/i.test(String(m))));
   });
 });
+
+// @spec EARS-PART-018
+test("a hypothesis that arrives before ears.min_speech_ms is published once the minimum is reached, without a new hypothesis", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "early words here" });
+  await run(stt, scfg({ min_speech_ms: 200 }), async (r) => {
+    const speaking = speak(r);
+    await waitFor(() => s.sessions.length === 1, "session");
+    s.sessions[0]!.hypothesis("early words");
+    await speaking;
+    await waitFor(() => r.partials().length === 1, "held hypothesis published", 1000);
+    assert.equal(r.partials()[0]!.text, "early words");
+  }, sreg(s));
+});
+
+// @spec EARS-PART-016, EARS-PART-017
+test("a filtered hypothesis does not start the pacing window: the next change is published at once", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "hello" });
+  await run(stt, scfg({ partial_step_ms: 2000 }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    const h = s.sessions[0]!;
+    h.hypothesis("...");
+    await sleep(50);
+    h.hypothesis("hello");
+    await waitFor(() => r.partials().length === 1, "hello at once", 800);
+    assert.equal(r.partials()[0]!.text, "hello");
+    await speaking;
+  }, sreg(s));
+});
+
+// @spec EARS-PART-006, EARS-PART-014
+test("streamed partials are published one at a time, and seq rises by one for each one published", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "a b c d" });
+  let inflight = 0;
+  let maxInflight = 0;
+  await run(stt, scfg({ partial_step_ms: 20 }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    const h = s.sessions[0]!;
+    for (const t of ["a", "a b", "a b c", "a b c d"]) { h.hypothesis(t); await sleep(25); }
+    await speaking;
+    await waitFor(() => r.heard().length === 1, "final");
+    await sleep(300);
+    assert.equal(maxInflight, 1, "a publish never overlaps the one before it");
+    assert.deepEqual(r.partials().map((p) => p.seq), r.partials().map((_, i) => i));
+  }, sreg(s, (bus) => {
+    const pub = bus.publish.bind(bus);
+    (bus as unknown as { publish: unknown }).publish = async (t: string, d: { seq: number }) => {
+      if (t !== "speech.partial") return pub(t, d);
+      inflight++;
+      maxInflight = Math.max(maxInflight, inflight);
+      await sleep(40);
+      inflight--;
+      return pub(t, d);
+    };
+  }));
+});

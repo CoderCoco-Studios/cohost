@@ -73,10 +73,10 @@ export interface StreamingSttEngine {
   readonly kind: "streaming";
   readonly name: "nemotron" | "kyutai";
   readonly destination?: string;
-  /** Readiness probe (EARS-HLTH-008); absent when the engine has none. */
-  ping?(): Promise<boolean>;
-  /** Opens a session; rejects with `SttCapacityError` for a capacity refusal, with any other error for an outage. */
-  open(): Promise<SttSession>;
+  /** Readiness probe (EARS-HLTH-008); absent when the engine has none. Aborted by `signal` when the probe times out. */
+  ping?(signal: AbortSignal): Promise<boolean>;
+  /** Resolves when the server is connected and ready for audio. Aborted by `signal` on timeout or source stop. Rejects with `SttCapacityError` for a capacity refusal, with any other error for an outage. */
+  open(opts: { signal: AbortSignal }): Promise<SttSession>;
 }
 
 export type SttEngine = BatchSttEngine | StreamingSttEngine;

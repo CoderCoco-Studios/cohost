@@ -50,7 +50,7 @@ test("hearing: an STT failure is a warning, not a crash", async () => {
 });
 
 // @spec EARS-HEAR-005
-test("sttTranscriber posts the WAV as OpenAI-style multipart form data", async () => {
+test("the speaches batch engine posts the WAV as OpenAI-style multipart form data", async () => {
   let form: FormData | undefined;
   let path: string | undefined;
   const server = http.createServer(async (req, res) => {

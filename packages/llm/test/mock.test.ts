@@ -208,3 +208,45 @@ test("mock: images on a user message are accepted and ignored by chat, complete 
   assert.deepEqual(await p.complete(withImg), await p.complete(plain));
   assert.deepEqual(await drain(p.stream(withImg)), await drain(p.stream(plain)));
 });
+
+// @spec LLM-TOOL-001, LLM-TOOL-002
+test("mock request checks: a bad tool name and json with tools are TypeErrors; stream fails on its first read", async () => {
+  const p = mockP();
+  const bad = { name: "bad name", description: "d", parameters: { type: "object" } };
+  await assert.rejects(p.complete([user("x")], { tools: [bad] }), TypeError);
+  await assert.rejects(p.complete([user("x")], { tools: [spec("say")], json: true }), TypeError);
+  const g = p.stream([user("x")], { tools: [bad] });
+  await assert.rejects(g.next(), TypeError);
+});
+
+// @spec LLM-MOCK-014, LLM-MOCK-016
+test("mock fail-after with a tool last message: read from the last user message, the tool reply's words count", async () => {
+  const p = mockP();
+  const calls = [{ id: "mock_call_1", name: "say", arguments: {} }];
+  const tail: Msg[] = [{ role: "assistant", content: "", toolCalls: calls }, { role: "tool", callId: "mock_call_1", name: "say", content: "a b c" }];
+  await assert.rejects(p.complete([user("[mock-fail-after 0]"), ...tail]), (e) => e instanceof ChatError && e.kind === "stream");
+  const zero: Ev[] = [];
+  await assert.rejects(async () => { for await (const e of p.stream([user("[mock-fail-after 0]"), ...tail])) zero.push(e); }, (e) => e instanceof ChatError);
+  assert.equal(zero.length, 0);
+  // The tool reply is "[happy] mock: say said a b c": six words, so n = 1 cuts it after one event.
+  const one: Ev[] = [];
+  await assert.rejects(async () => { for await (const e of p.stream([user("[mock-fail-after 1]"), ...tail])) one.push(e); }, (e) => e instanceof ChatError);
+  assert.deepEqual(textOf(one), ["[happy]"]);
+  const done = await p.complete([user("[mock-fail-after 99]"), ...tail]);
+  assert.equal(done.text, "[happy] mock: say said a b c");
+});
+
+// @spec LLM-MOCK-009, LLM-MOCK-013
+test("mock tool marker: the shortest {...} that parses is the arguments, so a later marker does not join them", async () => {
+  const p = mockP();
+  const r = await p.complete([user("hi [mock-tool say {}] [mock-fail-after 1]")], { tools: [spec("say")] });
+  assert.deepEqual(r.toolCalls, [{ id: "mock_call_1", name: "say", arguments: {} }]);
+  const q = await p.complete([user("x [mock-tool say {\"a\":\"]\"}]")], { tools: [spec("say")] });
+  assert.deepEqual(q.toolCalls[0]?.arguments, { a: "]" });
+});
+
+// @spec LLM-MOCK-008, LLM-MOCK-014
+test("mock stream: a pre-aborted signal throws the abort reason even when a fail-after marker is due", async () => {
+  const pre = new Error("pre");
+  await assert.rejects(async () => { for await (const e of mockP().stream([user("[mock-fail-after 0]")], { signal: AbortSignal.abort(pre) })) void e; }, (e) => e === pre);
+});

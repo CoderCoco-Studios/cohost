@@ -31,6 +31,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 ### Code
 - packages/llm/src/index.ts
 - packages/llm/src/mock.ts
+- packages/llm/src/request.ts (the request checks shared by the tool-carrying providers, LLM-TOOL-001, LLM-TOOL-002)
 - packages/llm/package.json, packages/llm/tsconfig.json
 - Other files citing LLM IDs: packages/modules/src/index.ts, services/memory/src/reflect-run.ts, services/memory/src/backend.ts
 - docs/guide/tune/model.md (operator recipes, docs-site)
@@ -86,7 +87,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 None.
 
 ### Should Fix
-- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE and LLM-MOCK): `complete()` on `anthropic` and `bedrock` (#161), tools and streamed tool calls on the Claude and Bedrock providers (#163), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and the `ChatError` kind `not_configured`.
+- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE): `complete()` on `anthropic` and `bedrock` (#161), tools and streamed tool calls on the Claude and Bedrock providers (#163), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and the `ChatError` kind `not_configured`.
 - Audit the stub model servers (LLM-EX-001..006), cited by the docs site's Extend pages.
 1. Fix the docs site's Choose a model page (`docs/guide/tune/model.md`): its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
 

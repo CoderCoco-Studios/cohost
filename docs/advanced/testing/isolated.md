@@ -67,10 +67,10 @@ With `llm.provider: mock`, two markers in a message drive the mock model's reply
 
 | Marker | Where it is read | Effect |
 | --- | --- | --- |
-| `[mock-tool <name> <json>]` | the last paragraph (after the last blank line) of the last message, when that message is a user message | When `<name>` is one of the offered tools, the reply has no text and one call with id `mock_call_<n>` and the parsed arguments. Arguments that are not a JSON object give `{}` with the raw text as `invalid`. An unoffered name gives the plain reply. |
+| `[mock-tool <name> <json>]` | the last paragraph (after the last blank line) of the last message, when that message is a user message | When `<name>` is one of the offered tools, the reply has no text and one call with id `mock_call_<n>` and the parsed arguments. The arguments are the shortest `{...}` that parses, so text after the marker is not taken in; arguments that are not a JSON object give `{}` with the raw text as `invalid`. An unoffered name gives the plain reply. |
 | `[mock-fail-after <n>]` | the last user message, anywhere in it | `stream()` delivers `n` words and then fails with a `stream` error. `complete()` fails at once. When `n` is at or past the reply's word count, the call completes normally. |
 
-A `tool` message as the last message gets the reply `[happy] mock: <tool name> said <its content>` instead, and neither marker is read.
+When a `tool` message is the last message, the reply is `[happy] mock: <tool name> said <its content>` with no tool call, so `[mock-tool]` is not read. `[mock-fail-after]` is still read from the last user message, and its word count is the tool reply's.
 
 ## What each service needs
 

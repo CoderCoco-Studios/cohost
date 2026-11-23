@@ -8,14 +8,16 @@ import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./help
 isolateEnv();
 
 const mode = (f: string): number => statSync(f).mode & 0o777;
+// The seventeen wildcard-free paths of CFG-SEC-003; `tools.servers.*.token` joins them when #204 adds CFG-SEC-016, and this list then
+// gains a wildcard entry (its test builds a config with a server entry).
 const TWELVE = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
-  "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
+  "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
 ];
 const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>((x, k) => (x as Record<string, unknown> | undefined)?.[k], o);
 
 // @spec CFG-SEC-003, CFG-SCH-039
-test("SECRET_PATHS lists exactly the twelve credentials, and each is a schema key that defaults to the empty string", () => {
+test("SECRET_PATHS lists exactly the seventeen wildcard-free credentials, and each is a schema key that defaults to the empty string", () => {
   assert.deepEqual([...SECRET_PATHS].sort(), [...TWELVE].sort());
   const cfg = ConfigSchema.parse({
     cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },

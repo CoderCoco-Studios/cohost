@@ -42,7 +42,7 @@ const ok = (r: ReturnType<typeof applySection>) => { assert.ok(r.ok, JSON.string
 test("sectionJsonSchema renders a section from the zod schema with defaults, enums, bounds and secret marks", () => {
   const voice = sectionJsonSchema("voice") as any;
   assert.equal(voice.type, "object");
-  assert.deepEqual(voice.properties.engine.enum, ["kokoro", "stub"]);
+  assert.deepEqual(voice.properties.engine.enum, ["kokoro", "openai", "pocket", "stub"]);
   assert.equal(voice.properties.engine.default, "kokoro");
   assert.equal(voice.properties.speed.type, "number");
   assert.match(voice.properties.sample_rate.description, /stub/); // @spec CFG-SCH-026
@@ -63,16 +63,17 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 });
 
 // @spec MOD-CFG-002
-test("exactly the marked keys are secret: SECRET_PATHS (the twelve), each section's secrets and the schema marks agree", () => {
+test("exactly the marked keys are secret: SECRET_PATHS (the seventeen without the tools wildcard), each section's secrets and the schema marks agree", () => {
   assert.deepEqual([...SECRET_PATHS].sort(), [
     "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
+    "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
     "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
   ]);
-  assert.deepEqual(sectionSecrets("ears"), ["http.token"]);
+  assert.deepEqual(sectionSecrets("ears").sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
   assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
-  assert.deepEqual(sectionSecrets("voice"), []);
+  assert.deepEqual(sectionSecrets("voice").sort(), ["openai.api_key", "pocket.hf_token"]);
   const marked: string[] = [];
   const walk = (s: any, path: string[]) => {
     if (s["x-secret"]) marked.push(path.join("."));

@@ -3,6 +3,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { getEventListeners } from "node:events";
 import net from "node:net";
 import { ConfigSchema } from "@cohost/config";
 import { OpenAICompatible, Ollama, ChatError } from "../src/index.js";
@@ -404,6 +405,7 @@ test("a signal aborted before stream() is read rejects with the caller's reason 
     await assert.rejects(collect(make(kind, b.url).stream(hello, { signal: ac.signal })), (e: unknown) => e === reason, kind);
     await sleep(50);
     assert.equal(b.seen.length, 0, `${kind}: request sent for an aborted signal`);
+    assert.equal(getEventListeners(ac.signal, "abort").length, 0, `${kind}: abort listener left on the caller's signal`);
   }
 });
 

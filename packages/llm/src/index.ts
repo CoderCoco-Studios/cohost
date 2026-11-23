@@ -229,11 +229,11 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   const { url, init } = plan.request(); // @spec LLM-STREAM-001, LLM-STREAM-004, LLM-STREAM-014, LLM-STOP-012, LLM-STOP-014, LLM-STOP-018
   const caller = opts.signal;
   const ac = new AbortController();
-  const onCallerAbort = () => ac.abort(caller?.reason);
-  caller?.addEventListener("abort", onCallerAbort, { once: true });
   /** A caller that aborted (before the call, or between reads) gets its reason, never another event (LLM-STREAM-026). */
   const throwIfAborted = () => { if (caller?.aborted) throw caller.reason; };
   throwIfAborted();
+  const onCallerAbort = () => ac.abort(caller?.reason);
+  caller?.addEventListener("abort", onCallerAbort, { once: true });
 
   let timedOut = false;
   let responded = false;

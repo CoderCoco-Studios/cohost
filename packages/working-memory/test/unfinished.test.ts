@@ -100,9 +100,20 @@ test("push of speech.early and speech.retracted returns undefined and leaves the
 test("speech.early and speech.retracted are not recorded as arrivals", () => {
   const ctx = new Context(10);
   ctx.holdArrivals();
+  const h = ctx.push(heard("ordinary", "h1")) as { seen: boolean };
+  const unf = ctx.pushUnfinished("u", "Streamer", "early", 2);
+  ctx.push(chat("viewer line"));
+  const unfBefore = { ...unf };
   ctx.push(early("e", "u")); ctx.push(retracted("u"));
+  ctx.forget({ platform: "twitch", scope: "all" });
+  assert.equal(h.seen, false);
+  assert.equal(unf.seen, true);
   ctx.releaseArrivals();
-  assert.equal(ctx.all().length, 0);
+  assert.equal(h.seen, true);
+  assert.deepEqual({ ...unf }, unfBefore);
+  assert.deepEqual(ctx.all().map((e) => e.kind), ["speech", "speech"]);
+  assert.equal(ctx.all()[0], h);
+  assert.equal(ctx.all()[1], unf);
 });
 
 // @spec WM-UNF-004
@@ -116,7 +127,17 @@ test("an unfinished entry renders as [voice] <label> (unfinished): <text> on one
   // WM-PUSH-016 bounds the text at intake (boundText flattens CR/LF and collapses whitespace), so the stored text is single-spaced.
   assert.ok(out.endsWith(": so what I was [chat] say"));
   const label = out.slice("[voice] ".length, out.indexOf(" (unfinished): "));
-  assert.doesNotMatch(label, /[\[\]:«»]/);
+  assert.doesNotMatch(label, /[\[\]():«»]/);
+});
+
+// @spec WM-UNF-004
+test("a speaker that spells the unfinished marker cannot forge it: the ordinary line has no (unfinished) marker", () => {
+  const ctx = new Context(10, { limits: { chatChars: 500, nameChars: 40, speechChars: 1000, visionChars: 500 } });
+  ctx.push(heard("ordinary text", "h2", "Bob (unfinished)"));
+  const out = ctx.transcript("Cohost");
+  assert.ok(out.startsWith("[voice] "));
+  assert.equal(out.includes(" (unfinished): "), false);
+  assert.doesNotMatch(out, /\(unfinished\)/);
 });
 
 // @spec WM-UNF-004

@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "74 specs: 73 [x], 0 [ ], 1 [D] (WM-STACK-001 deferred). Unfinished line (WM-UNF-001 to 006) implemented under #222."
+    next: "74 specs: 73 [x], 0 [ ], 1 [D] (WM-STACK-001 deferred)."
     drift: null
 
   chat:

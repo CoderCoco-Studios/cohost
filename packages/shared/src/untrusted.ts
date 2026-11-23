@@ -98,6 +98,15 @@ export function normalizeKey(raw: string): string {
   return raw.toLowerCase().replace(WHITE_SPACE_RUN, " ").trim();
 }
 
+/**
+ * The one identity of a chat viewer (SHARED-GUARD-025..027): `<platform>:id:<userId>` with the id exactly as given, or,
+ * with no id, `<platform>:name:<normalizeKey(user)>`. The platform is passed through unchanged, never validated.
+ */
+// @spec SHARED-GUARD-025, SHARED-GUARD-026, SHARED-GUARD-027
+export function viewerKey(viewer: { platform: string; userId?: string; user: string }): string {
+  return viewer.userId ? `${viewer.platform}:id:${viewer.userId}` : `${viewer.platform}:name:${normalizeKey(viewer.user)}`;
+}
+
 export interface OnceCounterOptions {
   /** A recorded key counts only while `at` is less than `windowMs` after it was recorded. Absent: never expires. */
   windowMs?: number;
@@ -143,6 +152,7 @@ export function createOnceCounter(options: OnceCounterOptions = {}): OnceCounter
   };
 
   return {
+    // @spec SHARED-GUARD-020, SHARED-GUARD-021
     admit(viewerKey, text, at = 0) {
       const textKey = normalizeKey(text);
       if (live(viewers, viewerKey, at) || live(texts, textKey, at)) return false;

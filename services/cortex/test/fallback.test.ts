@@ -13,6 +13,7 @@ class FakeLlm implements ChatProvider {
   calls: ChatMessage[][] = [];
   reply: () => string | Promise<string> = () => "[happy] hey chat!";
   async chat(msgs: ChatMessage[]) { this.calls.push(msgs); return this.reply(); }
+  async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
   async ping() { return true; }
   system(i = -1) { return this.calls.at(i)![0]!.content; }
   user(i = -1) { return this.calls.at(i)![1]!.content; }

@@ -30,7 +30,16 @@ async function providerStops(provider: "ollama" | "openai"): Promise<string[]> {
 test("every other-speaker transcript line starts with a provider stop tag; the co-host's own line matches none", async () => {
   const cfg = testConfig({ brain: { memory: { recall_k: 0 } } });
   const sent: ChatMessage[][] = [];
-  const llm: ChatProvider = { name: "fake", model: "fake", chat: async (m) => { sent.push(m); return "[happy] hi"; }, ping: async () => true };
+  const llm = {
+    name: "fake", model: "fake", ping: async () => true,
+    chat: async () => { throw new Error("the reply is read with stream()"); },
+    // The reply is read with llm.stream, so the transcript it is rendered into is what the provider's stop strings guard.
+    async *stream(m: ChatMessage[]) {
+      sent.push(m);
+      yield { type: "text" as const, delta: "[happy] hi" };
+      yield { type: "done" as const, result: { text: "[happy] hi", toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: "[happy] hi" } } };
+    },
+  } as unknown as ChatProvider;
   const critic = new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: () => ({ ok: true }) }, silentLog);
   const cortex = new Cortex({ cfg, bus: new FakeBus(), llm, critic, log: silentLog, loadPersonality: () => "You are Coco." });
   await cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: "hello", isMod: true, isSub: false, mentionsCohost: false }));
@@ -39,6 +48,7 @@ test("every other-speaker transcript line starts with a provider stop tag; the c
   await cortex.onEvent(event("brain.say", { id: "own", text: "earlier line", emotion: "smug" }, "cortex"));
   await cortex.think({ reason: "idle chatter", score: 0 });
 
+  assert.equal(sent.length, 1, "the think called llm.stream");
   const lines = sent[0]![1]!.content.split("\n").filter((l) => /^(\[chat\]|\[voice\]|\[screen\]|Coco:)/.test(l));
   assert.equal(lines.length, 4, lines.join(" | "));
   const [chat, voice, screen, own] = lines as [string, string, string, string];

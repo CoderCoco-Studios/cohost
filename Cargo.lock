@@ -79,6 +79,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cohost-desktop-audio"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

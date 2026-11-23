@@ -226,3 +226,14 @@ test("with a token set, POST /audio needs a matching Bearer header (401 otherwis
     await open.cap.stop();
   }
 });
+
+// @spec CONN-DESK-001
+test("ears has no POST /ping route: the desktop helper's liveness is its registration, so a ping is refused", async () => {
+  const r = await rig();
+  try {
+    const res = await post(`http://127.0.0.1:${r.cap.port}/ping`, Buffer.alloc(0), "application/json");
+    assert.equal(res.status, 404);
+  } finally {
+    await r.cap.stop();
+  }
+});

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { FakeBus, event, silentLog, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { createInjectHandler } from "../src/inject.js";
-import { SPEECH, boot, frame, connectorOffer, fakeStt, feed, resetSeq, sleep } from "./rig.js";
+import { SPEECH, boot, frame, connectorOffer, fakeStreaming, fakeStt, feed, resetSeq, sleep } from "./rig.js";
 
 const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => b.register("discord", connectorOffer);
 /** Real STT path (faked fetch), gap endpointing, a short step so a test needs ~0.5 s: 150 ms of silence closes an utterance. */
@@ -297,5 +297,178 @@ test("a seq gap does not reset the partial state: agreement carries across it an
     assert.deepEqual(r.partials().map((p) => [p.seq, p.text]), [[0, "hello there"], [1, "HELLO THERE MY"], [2, "HELLO THERE MY FRIENDS"]]);
     assert.equal(new Set(r.partials().map((p) => p.utteranceId)).size, 1);
     assert.equal(stt.calls.at(-1)!.ms, 520, "the 26 received frames, the lost ones not filled");
+  });
+});
+
+// ---- streaming engines (EARS-PART-016 to 022) and batch engines other than speaches
+// A scripted streaming session (rig.ts `fakeStreaming`) supplies the hypotheses; the test pulls them when it wants.
+
+const scfg = (over: Record<string, unknown> = {}) => cfg({ stt_engine: "nemotron", stt_gpu: false, partial_step_ms: 30, stt_timeout_ms: 300, ...over });
+const sreg = (streaming: ReturnType<typeof fakeStreaming>, extra?: (b: Parameters<typeof reg>[0]) => void) => ({ setup: (b: Parameters<typeof reg>[0]) => { reg(b); extra?.(b); }, streaming: streaming.engine });
+const audioMs = (s: { audio(): Buffer }) => s.audio().length / 32;
+/** Feed in the background; resolves when the last frame was fed. */
+const speak = (r: Awaited<ReturnType<typeof boot>>, n = 25) => feed(r.bus, n, { gapMs: 15 });
+/** Wait until the session of the utterance holds at least `ms` ms of audio, past `ears.min_speech_ms`. */
+const pastMin = async (s: ReturnType<typeof fakeStreaming>, ms = 140) => { await waitFor(() => s.sessions.length === 1 && audioMs(s.sessions[0]!) >= ms, "session with audio"); };
+
+// @spec EARS-PART-016, EARS-PART-006, EARS-PART-017
+test("streaming: each changed hypothesis becomes a speech.partial with the speaker fields, a rising seq and the id of the final; filtered like a final", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "hello there my friend" });
+  await run(stt, scfg({ drop_phrases: ["thanks for watching"] }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    const h = s.sessions[0]!;
+    h.hypothesis("hello"); await sleep(60);
+    h.hypothesis("hello there"); await sleep(60);
+    h.hypothesis("..."); await sleep(60);
+    h.hypothesis("Thanks for watching"); await sleep(60);
+    const t = await speaking;
+    await waitFor(() => r.heard().length === 1, "final");
+    assert.deepEqual(r.partials().map((p) => [p.seq, p.text]), [[0, "hello"], [1, "hello there"]]);
+    for (const p of r.partials()) {
+      assert.deepEqual([p.speaker, p.speakerId, p.source, p.utteranceId], ["U1", "u1", "discord", r.heard()[0]!.utteranceId]);
+      assert.ok(p.timing!.audioEndedAt! >= t.first && p.timing!.audioEndedAt! <= Date.now(), "audioEndedAt is when the last sent frame arrived");
+    }
+  }, sreg(s));
+});
+
+// @spec EARS-PART-017, EARS-PART-001
+test("streaming pacing: the first change at once, then at most one per ears.partial_step_ms, the latest unpublished change when the window ends", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "a b c" });
+  const times: number[] = [];
+  await run(stt, scfg({ partial_step_ms: 250 }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    const h = s.sessions[0]!;
+    const t0 = Date.now();
+    h.hypothesis("a");
+    await waitFor(() => r.partials().length === 1, "first at once");
+    assert.ok(times[0]! - t0 < 100, "no wait for the first change");
+    await sleep(20); h.hypothesis("a b");
+    await sleep(20); h.hypothesis("a b c");
+    await sleep(80);
+    assert.equal(r.partials().length, 1, "inside the window nothing more is published");
+    await waitFor(() => r.partials().length === 2, "trailing publish", 1500);
+    assert.deepEqual(r.partials().map((p) => p.text), ["a", "a b c"], "the latest change, not the one in between");
+    assert.ok(times[1]! - times[0]! >= 200, `one window apart (${times[1]! - times[0]!} ms)`);
+    await speaking;
+  }, sreg(s, (bus) => { const pub = bus.publish.bind(bus); (bus as unknown as { publish: unknown }).publish = async (t: string, d: unknown) => { if (t === "speech.partial") times.push(Date.now()); return (pub as (t: string, d: unknown) => Promise<string>)(t, d); }; }));
+});
+
+// @spec EARS-PART-018
+test("streaming: no speech.partial before the utterance has ears.min_speech_ms of audio", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "early words here" });
+  await run(stt, scfg({ min_speech_ms: 200 }), async (r) => {
+    const speaking = speak(r);
+    await waitFor(() => s.sessions.length === 1, "session");
+    s.sessions[0]!.hypothesis("early");
+    await sleep(50);
+    assert.ok(audioMs(s.sessions[0]!) < 200, "still under the minimum");
+    assert.equal(r.partials().length, 0);
+    await waitFor(() => audioMs(s.sessions[0]!) >= 260, "past the minimum");
+    s.sessions[0]!.hypothesis("early words");
+    await waitFor(() => r.partials().length >= 1, "partial after the minimum");
+    assert.equal(r.partials().at(-1)!.text, "early words");
+    await speaking;
+  }, sreg(s));
+});
+
+// @spec EARS-PART-019
+test("streaming: a partial only when the hypothesis differs from the last one published, and a hypothesis with fewer words is published", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "one two" });
+  await run(stt, scfg(), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    const h = s.sessions[0]!;
+    for (const t of ["one two three", "one two three", "one two"]) { h.hypothesis(t); await sleep(70); }
+    assert.deepEqual(r.partials().map((p) => p.text), ["one two three", "one two"]);
+    await speaking;
+  }, sreg(s));
+});
+
+// @spec EARS-PART-020, EARS-PART-009
+test("streaming: nothing is published for an utterance after its close, neither a hypothesis that arrives late nor a pending trailing publish", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "a b c" });
+  await run(stt, scfg({ partial_step_ms: 400 }), async (r) => {
+    const speaking = speak(r, 10);
+    await pastMin(s, 120);
+    const h = s.sessions[0]!;
+    h.hypothesis("a");
+    await waitFor(() => r.partials().length === 1, "first");
+    h.hypothesis("a b"); // waits for the end of the 400 ms window
+    await speaking;
+    await waitFor(() => r.heard().length === 1, "final");
+    h.hypothesis("a b c"); // after the close
+    await sleep(700);
+    assert.deepEqual(r.partials().map((p) => p.text), ["a"], "the pending change and the late hypothesis are discarded");
+  }, sreg(s));
+});
+
+// @spec EARS-PART-021, EARS-SES-010
+test("streaming: an utterance that has no session (the connect failed) publishes no partial, and its final comes from the batch engine", async () => {
+  const stt = fakeStt(() => "batch final");
+  const s = fakeStreaming({ open: () => { throw new Error("connect ECONNREFUSED"); } });
+  await run(stt, scfg(), async (r) => {
+    await speak(r);
+    await waitFor(() => r.heard().length === 1, "final");
+    assert.equal(r.heard()[0]!.text, "batch final");
+    assert.equal(r.partials().length, 0);
+  }, sreg(s));
+});
+
+// @spec EARS-PART-022, EARS-PART-012
+test("streaming: partials cost no extra STT call and ears.stt_gpu false logs no GPU warning", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "hello there" });
+  await run(stt, scfg({ stt_gpu: false }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    s.sessions[0]!.hypothesis("hello"); await sleep(60);
+    s.sessions[0]!.hypothesis("hello there"); await sleep(60);
+    await speaking;
+    await waitFor(() => r.heard().length === 1, "final");
+    assert.ok(r.partials().length >= 1);
+    assert.equal(stt.calls.length, 0, "no batch call for a partial or the final");
+    assert.ok(!r.log.msgs("warn").some((m) => /gpu/i.test(String(m))), "no GPU warning");
+  }, sreg(s));
+});
+
+// @spec EARS-PART-001
+test("streaming with ears.partials off: hypotheses publish no speech.partial", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ finish: () => "hello there" });
+  await run(stt, scfg({ partials: "off" }), async (r) => {
+    const speaking = speak(r, 40);
+    await pastMin(s);
+    s.sessions[0]!.hypothesis("hello"); await sleep(60);
+    s.sessions[0]!.hypothesis("hello there"); await sleep(60);
+    await speaking;
+    await waitFor(() => r.heard().length === 1, "final");
+    assert.equal(r.partials().length, 0);
+  }, sreg(s));
+});
+
+// @spec EARS-PART-004, EARS-PART-005, EARS-PART-006, EARS-ENG-006
+test("batch engine openai: partials re-read the utterance through the openai request with LocalAgreement", async () => {
+  const stt = fakeStt(AGREE);
+  await run(stt, cfg({ stt_engine: "openai", openai: { base_url: "https://api.example.com/v1", api_key: "sk-test" } }), async (r) => {
+    await feed(r.bus, 25, { gapMs: 15 });
+    await waitFor(() => r.heard().length === 1 && r.partials().length >= 1, "partial and final");
+    assert.deepEqual(r.partials().map((p) => p.text).slice(0, 2), ["hello there", "HELLO THERE MY"], "committed on two agreeing reads, in the later wording");
+    assert.ok(stt.calls.length >= 3);
+    assert.ok(stt.calls.every((c) => c.url === "https://api.example.com/v1/audio/transcriptions" && c.auth === "Bearer sk-test"));
+  });
+});
+
+// @spec EARS-PART-012
+test("a batch engine other than stub with ears.stt_gpu false logs the startup GPU warning; with the engine openai too", async () => {
+  const stt = fakeStt(AGREE);
+  await run(stt, cfg({ stt_engine: "openai", stt_gpu: false, openai: { base_url: "https://api.example.com/v1" } }), async (r) => {
+    assert.ok(r.log.msgs("warn").some((m) => /gpu/i.test(String(m)) && /partial/i.test(String(m))));
   });
 });

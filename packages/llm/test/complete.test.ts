@@ -139,8 +139,8 @@ test("chat(): a tool message or an assistant toolCalls is a TypeError before any
   // Claude and Bedrock take a stubbed transport that counts requests, so a rejected call that sends one is visible.
   let claudeRequests = 0;
   const stub = (async () => { claudeRequests++; throw new Error("no request expected"); }) as typeof fetch;
-  const anth = new llmApi.AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }), undefined, { fetch: stub });
-  const bed = new llmApi.BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }), undefined, { fetch: stub });
+  const anth = new llmApi.AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }), { fetch: stub });
+  const bed = new llmApi.BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }), { fetch: stub });
   const mock = new llmApi.MockProvider({ model: "m" });
   const toolMsg = [...hello, { role: "tool", callId: "1", name: "t", content: "r" }] as any;
   const asstCalls = [...hello, { role: "assistant", content: "", toolCalls: [{ id: "1", name: "t", arguments: {} }] }] as any;

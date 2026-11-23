@@ -394,3 +394,17 @@ test("audio switched off mid-clip, then a live voice.stop for that line: the cli
   assert.equal(clip(0).paused, true);
   assert.deepEqual(posts.slice(1), [{ event: "done", id: "L", seq: 0, interrupted: true, unsaidText: "A B" }]);
 });
+
+// @spec DASH-UI-051
+test("audio switched off mid-clip, then the page unloads: the playing clip's done and the line's final still go out, with keepalive", async () => {
+  const { audio, posts, utt, flush, unload, keep } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); await flush();
+  audio.disable();
+  unload.dispatchEvent(new Event("pagehide")); await flush();
+  assert.deepEqual(posts, [
+    { event: "playing", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 1, final: true },
+  ]);
+  assert.deepEqual([...keep].sort(), [1, 2]);
+});

@@ -154,19 +154,27 @@ export function createAudio(deps: AudioDeps): Audio {
    * The page takes no more of an open line: its `final`, once, for the first clause it will not play (DASH-UI-051). A line
    * whose clip is playing gets its `final` after that clip's `done`, so a line never reports `done` after `final`.
    */
+  /**
+   * Unload: the page is going, so the clip is not waited for. Its done and its line's final go now, both with keepalive;
+   * the clip's own end, if the browser still fires it, reports nothing.
+   */
+  function finishPlayingNow(p: Playing, opts: { keepalive: boolean } | undefined): void {
+    const l = p.item.line;
+    p.done = true;
+    current = null;
+    try { p.audio.pause(); } catch { /* the page is going */ }
+    post({ event: "done", id: l.id, seq: p.item.seq }, opts);
+    post({ event: "done", id: l.id, seq: p.item.seq + 1, final: true }, opts);
+    l.finalAfter = false;
+    endLine(l);
+  }
+
   function finishLine(l: Line, keepalive: boolean): void {
     if (l.ended || !l.open) return;
     const opts = keepalive ? { keepalive: true } : undefined;
     if (current && current.item.line === l) {
       if (!keepalive) { l.finalAfter = true; endLine(l); return; }
-      // Unload: the page is going, so the clip is not waited for; its done and the line's final go now.
-      const p = current;
-      p.done = true;
-      current = null;
-      try { p.audio.pause(); } catch { /* the page is going */ }
-      post({ event: "done", id: l.id, seq: p.item.seq }, opts);
-      post({ event: "done", id: l.id, seq: p.item.seq + 1, final: true }, opts);
-      endLine(l);
+      finishPlayingNow(current, opts);
       return;
     }
     post({ event: "done", id: l.id, seq: l.lastStarted + 1, final: true }, opts);
@@ -208,7 +216,7 @@ export function createAudio(deps: AudioDeps): Audio {
     post({ event: "done", id: l.id, seq: item.seq });
     if (l.finalAfter) { l.finalAfter = false; post({ event: "done", id: l.id, seq: item.seq + 1, final: true }); }
     else if (errored && item.seq === 0 && l.streamed && l.open) post({ event: "done", id: l.id, seq: item.seq + 1, final: true });
-    // A clause 0 that errored counts as not played: the line is skipped (DASH-UI-045).
+    // A clause 0 that errors ends its line: the line is skipped from then on, so no later clause plays (DASH-UI-045).
     if (errored && item.seq === 0) endLine(l);
     arm(l);
     if (!l.streamed || reachedThrough(l)) endLine(l);
@@ -238,7 +246,6 @@ export function createAudio(deps: AudioDeps): Audio {
     sync();
   }
 
-  /** A live `voice.stop` cuts the clip of a named line and reports the split, or reports the last clause of an open line (DASH-UI-048, 049). */
   /** Cuts the clip that is playing and reports the split (DASH-UI-048). */
   function cutCurrent(p: Playing): void {
     const l = p.item.line;
@@ -250,6 +257,7 @@ export function createAudio(deps: AudioDeps): Audio {
     post({ event: "done", id: l.id, seq: p.item.seq, interrupted: true, ...spokenFields(joinTexts([...l.spoken, spoken]), joinTexts([rest, ...queued])) });
   }
 
+  /** A live `voice.stop` cuts the clip of a named line and reports the split, or reports the last clause of an open line (DASH-UI-048, 049). */
   function stopLines(ids: string[] | undefined): void {
     const named = ids !== undefined && ids.length > 0 ? ids : undefined;
     // Audio switched off mid-clip finished the line but left its clip to play; the stop cuts that clip (DASH-UI-047).
@@ -322,7 +330,12 @@ export function createAudio(deps: AudioDeps): Audio {
     for (const l of [...lines.values()]) finishLine(l, keepalive);
   }
 
-  (deps.target ?? window).addEventListener("pagehide", () => { finishOpenLines(true); sync(); });
+  (deps.target ?? window).addEventListener("pagehide", () => {
+    // A line finished by audio off whose clip still plays has no open entry left to finish: finish its clip now.
+    if (current && current.item.line.finalAfter) finishPlayingNow(current, { keepalive: true });
+    finishOpenLines(true);
+    sync();
+  });
 
   return {
     state,

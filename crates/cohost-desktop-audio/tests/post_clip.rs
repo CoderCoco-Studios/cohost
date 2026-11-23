@@ -1,6 +1,7 @@
 //! The HTTP post against a local listener standing in for ears' `POST /audio`.
 use cohost_desktop_audio::post::{DEFAULT_URL, post_clip, resolve_token};
-use cohost_desktop_audio::retry::Backoff;
+use cohost_desktop_audio::retry::{Backoff, ClipQueue};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -75,18 +76,50 @@ fn the_default_url_is_ears_loopback_listener_tagged_desktop() {
     assert_eq!(DEFAULT_URL, "http://127.0.0.1:8765/audio?source=desktop");
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-021
 #[test]
-fn the_token_comes_from_the_flag_or_the_environment_and_is_absent_when_neither_is_set() {
-    assert_eq!(resolve_token(Some("a".into()), None).as_deref(), Some("a"));
+fn the_flag_wins_over_the_environment_and_an_empty_value_counts_as_unset() {
+    assert_eq!(resolve_token(Some("a".into()), Some("b".into())).as_deref(), Some("a"));
     assert_eq!(resolve_token(None, Some("b".into())).as_deref(), Some("b"));
+    assert_eq!(resolve_token(Some(String::new()), Some("b".into())).as_deref(), Some("b"));
+    assert_eq!(resolve_token(Some("a".into()), Some(String::new())).as_deref(), Some("a"));
+    assert_eq!(resolve_token(Some(String::new()), Some(String::new())), None);
     assert_eq!(resolve_token(None, None), None);
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-020
+#[tokio::test]
+async fn connection_failures_and_400_408_429_5xx_are_retried_other_refusals_are_dropped() {
+    for (status, retry) in [(400, true), (408, true), (429, true), (500, true), (503, true), (401, false), (404, false), (413, false), (415, false)] {
+        let (url, srv) = serve_once(status).await;
+        let err = post_clip(&url, None, &[0, 0]).await.unwrap_err();
+        srv.await.unwrap();
+        assert_eq!(err.is_retryable(), retry, "status {status}");
+    }
+    let dead = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/audio", dead.local_addr().unwrap());
+    drop(dead);
+    assert!(post_clip(&url, None, &[0, 0]).await.unwrap_err().is_retryable());
+}
+
+// @spec EARS-SRC-020
 #[test]
-fn retry_delay_increases_across_consecutive_failures() {
+fn retry_delay_starts_at_500_ms_doubles_stops_at_30_s_and_resets_after_a_delivery() {
     let mut b = Backoff::new();
-    let d: Vec<_> = (0..3).map(|_| b.next_delay()).collect();
-    assert!(d[0] < d[1] && d[1] < d[2], "{d:?}");
+    let ms: Vec<u128> = (0..9).map(|_| b.next_delay().as_millis()).collect();
+    assert_eq!(ms, [500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+    b.reset();
+    assert_eq!(b.next_delay(), Duration::from_millis(500));
+}
+
+// @spec EARS-SRC-020
+#[test]
+fn at_most_four_clips_wait_in_order_and_a_fifth_drops_the_oldest() {
+    let mut q = ClipQueue::new();
+    for n in 1..=4 {
+        assert_eq!(q.push(vec![n]), None);
+    }
+    assert_eq!(q.push(vec![5]), Some(vec![1]));
+    let order: Vec<_> = std::iter::from_fn(|| q.pop()).collect();
+    assert_eq!(order, [vec![2], vec![3], vec![4], vec![5]]);
 }

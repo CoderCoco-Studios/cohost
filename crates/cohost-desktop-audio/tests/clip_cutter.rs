@@ -1,6 +1,4 @@
-//! Clip cutting against a synthetic PCM feed; no audio device. The exact `--silence-ms` and `--max-clip-ms`
-//! boundary tick and the `--silence-level` scale are unspecified (see the issue #231 edge audit), so these tests
-//! stay clear of them.
+//! Clip cutting (EARS-SRC-017) against a synthetic PCM feed; no audio device.
 use cohost_desktop_audio::clip::{ClipConfig, ClipCutter};
 
 const RATE: usize = 16_000;
@@ -16,14 +14,13 @@ fn quiet(n_ms: usize) -> Vec<i16> {
     vec![0; ms(n_ms)]
 }
 fn cutter(silence_ms: u32, max_clip_ms: u32) -> ClipCutter {
-    // silence_level 0: a sample is audible when it is above zero in magnitude, so zeros are silence on any scale.
-    ClipCutter::new(ClipConfig { silence_ms, max_clip_ms, silence_level: 0 })
+    ClipCutter::new(ClipConfig { silence_ms, max_clip_ms, silence_level: 500 })
 }
 fn feed(c: &mut ClipCutter, pcm: &[i16], chunk: usize) -> Vec<Vec<i16>> {
     pcm.chunks(chunk).flat_map(|p| c.push(p)).collect()
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn a_feed_that_never_pauses_is_cut_at_max_clip_ms() {
     let mut c = cutter(300, 1000);
@@ -32,7 +29,7 @@ fn a_feed_that_never_pauses_is_cut_at_max_clip_ms() {
     assert!(clips.iter().all(|k| k.len() == ms(1000)));
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn an_all_silent_feed_posts_no_clip() {
     let mut c = cutter(300, 1000);
@@ -40,7 +37,7 @@ fn an_all_silent_feed_posts_no_clip() {
     assert!(c.finish().is_none());
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn speech_followed_by_silence_well_past_silence_ms_closes_one_clip_holding_the_speech() {
     let mut c = cutter(300, 10_000);
@@ -52,7 +49,7 @@ fn speech_followed_by_silence_well_past_silence_ms_closes_one_clip_holding_the_s
     assert_eq!(clips[0].iter().filter(|s| **s == LOUD).count(), ms(500));
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn a_pause_much_shorter_than_silence_ms_does_not_split_a_clip() {
     let mut c = cutter(300, 10_000);
@@ -63,7 +60,7 @@ fn a_pause_much_shorter_than_silence_ms_does_not_split_a_clip() {
     assert_eq!(feed(&mut c, &pcm, 160).len(), 1);
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn two_bursts_separated_by_well_over_silence_ms_are_two_clips() {
     let mut c = cutter(300, 10_000);
@@ -74,7 +71,7 @@ fn two_bursts_separated_by_well_over_silence_ms_are_two_clips() {
     assert_eq!(feed(&mut c, &pcm, 160).len(), 2);
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-017
 #[test]
 fn the_cut_does_not_depend_on_how_the_feed_is_chunked() {
     let mut pcm = loud(400);
@@ -83,4 +80,148 @@ fn the_cut_does_not_depend_on_how_the_feed_is_chunked() {
     let whole = feed(&mut cutter(300, 1000), &pcm, pcm.len());
     let small = feed(&mut cutter(300, 1000), &pcm, 97);
     assert_eq!(whole, small);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_defaults_are_700_ms_15_s_and_level_500() {
+    let d = ClipConfig::default();
+    assert_eq!((d.silence_ms, d.max_clip_ms, d.silence_level), (700, 15_000, 500));
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_silent_run_of_exactly_silence_ms_closes_the_clip_and_one_sample_less_does_not() {
+    let mut speech = loud(400);
+    let mut c = cutter(300, 10_000);
+    speech.extend(vec![0; ms(300) - 1]);
+    assert!(c.push(&speech).is_empty());
+    assert_eq!(c.push(&[0]).len(), 1);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_sample_at_the_level_is_silence_and_one_above_it_is_audible() {
+    let mut c = cutter(300, 10_000);
+    let mut at = vec![500_i16, -500];
+    at.extend(quiet(2000));
+    assert!(c.push(&at).is_empty());
+    let mut above = vec![501_i16];
+    above.extend(quiet(2000));
+    assert_eq!(c.push(&above).len(), 1);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_clip_is_padded_100_ms_each_side_of_the_audible_span_and_the_closing_silence_is_dropped() {
+    let mut c = cutter(300, 10_000);
+    let mut pcm = quiet(1000);
+    pcm.extend(loud(500));
+    pcm.extend(quiet(1000));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips.len(), 1);
+    assert_eq!(clips[0].len(), ms(100) + ms(500) + ms(100));
+    assert!(clips[0][..ms(100)].iter().all(|s| *s == 0));
+    assert_eq!(clips[0][ms(100)], LOUD);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_pad_is_silence_ms_when_that_is_shorter_than_100_ms() {
+    let mut c = cutter(40, 10_000);
+    let mut pcm = quiet(1000);
+    pcm.extend(loud(500));
+    pcm.extend(quiet(1000));
+    assert_eq!(feed(&mut c, &pcm, 160)[0].len(), ms(40) + ms(500) + ms(40));
+}
+
+// @spec EARS-SRC-019
+#[test]
+fn finish_returns_the_clip_held_when_the_feed_ends_cut_like_any_other() {
+    let mut c = cutter(300, 10_000);
+    let mut pcm = loud(400);
+    pcm.extend(quiet(100));
+    assert!(c.push(&pcm).is_empty());
+    assert_eq!(c.finish().unwrap().len(), ms(400) + ms(100));
+    assert!(c.finish().is_none());
+}
+
+// @spec EARS-SRC-019
+#[test]
+fn finish_with_only_silence_held_returns_nothing() {
+    let mut c = cutter(300, 10_000);
+    c.push(&quiet(200));
+    assert!(c.finish().is_none());
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_defaults_are_700_ms_15_s_and_level_500() {
+    let d = ClipConfig::default();
+    assert_eq!((d.silence_ms, d.max_clip_ms, d.silence_level), (700, 15_000, 500));
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_silent_run_of_exactly_silence_ms_closes_the_clip_and_one_sample_less_does_not() {
+    let mut c = cutter(300, 10_000);
+    let mut speech = loud(400);
+    speech.extend(vec![0; ms(300) - 1]);
+    assert!(c.push(&speech).is_empty());
+    assert_eq!(c.push(&[0]).len(), 1);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_sample_at_the_level_is_silence_and_one_above_it_is_audible() {
+    let mut c = cutter(300, 10_000);
+    let mut at = vec![500_i16, -500];
+    at.extend(quiet(2000));
+    assert!(c.push(&at).is_empty());
+    let mut above = vec![501_i16];
+    above.extend(quiet(2000));
+    assert_eq!(c.push(&above).len(), 1);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn a_clip_is_padded_100_ms_each_side_of_the_audible_span_and_the_closing_silence_is_dropped() {
+    let mut c = cutter(300, 10_000);
+    let mut pcm = quiet(1000);
+    pcm.extend(loud(500));
+    pcm.extend(quiet(1000));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips.len(), 1);
+    assert_eq!(clips[0].len(), ms(100) + ms(500) + ms(100));
+    assert!(clips[0][..ms(100)].iter().all(|s| *s == 0));
+    assert_eq!(clips[0][ms(100)], LOUD);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_pad_is_silence_ms_when_that_is_shorter_than_100_ms() {
+    let mut c = cutter(40, 10_000);
+    let mut pcm = quiet(1000);
+    pcm.extend(loud(500));
+    pcm.extend(quiet(1000));
+    assert_eq!(feed(&mut c, &pcm, 160)[0].len(), ms(40) + ms(500) + ms(40));
+}
+
+// @spec EARS-SRC-019
+#[test]
+fn finish_returns_the_clip_held_when_the_feed_ends_cut_like_any_other() {
+    let mut c = cutter(300, 10_000);
+    let mut pcm = loud(400);
+    pcm.extend(quiet(100));
+    assert!(c.push(&pcm).is_empty());
+    assert_eq!(c.finish().unwrap().len(), ms(400) + ms(100));
+    assert!(c.finish().is_none());
+}
+
+// @spec EARS-SRC-019
+#[test]
+fn finish_with_only_silence_held_returns_nothing() {
+    let mut c = cutter(300, 10_000);
+    c.push(&quiet(200));
+    assert!(c.finish().is_none());
 }

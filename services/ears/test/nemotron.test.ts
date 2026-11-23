@@ -237,3 +237,30 @@ test("ping(signal) is not ready when the server is unreachable, and ends when it
     assert.ok(Date.now() - t0 < 1000, "the probe ended on abort");
   } finally { hang.closeAllConnections(); hang.close(); }
 });
+
+// @spec EARS-NEM-005
+test("an empty utterance: committed with no completed event is an empty final, not a failure", async () => {
+  const srv = await nemotronServer({ transcript: () => null });
+  try {
+    const s = await connect(srv);
+    const failed = s.failed;
+    await s.push(pcm(640, 1));
+    const t0 = Date.now();
+    assert.equal(await s.finish(), "");
+    assert.ok(Date.now() - t0 < TIMEOUT, "resolved on committed, not at the bound");
+    assert.equal(await Promise.race([failed, sleep(30).then(() => "not failed")]), "not failed");
+  } finally { await srv.close(); }
+});
+
+// @spec EARS-NEM-005
+test("a completed event before the commit (server endpointing) is kept: the final joins the segments in order", async () => {
+  const srv = await nemotronServer({ transcript: () => "second part", endpointText: "first part" });
+  try {
+    const s = await connect(srv);
+    await s.push(pcm(640, 1));
+    await until(() => srv.binary().length === 1, "the first frame");
+    await sleep(30);
+    await s.push(pcm(640, 2));
+    assert.equal(await s.finish(), "first part second part");
+  } finally { await srv.close(); }
+});

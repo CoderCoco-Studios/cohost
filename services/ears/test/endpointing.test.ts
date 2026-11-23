@@ -231,7 +231,7 @@ test("a frame after an end-of-turn close starts a new utterance whose pre-roll h
     await waitFor(() => r.heard().length === 1, "first speech.heard");
     await feed(r.bus, 3, { fill: SILENCE });
     await feed(r.bus, 10, { fill: 81 });
-    await waitFor(() => s.sessions[1]?.pushed.length === 10, "the second utterance's frames at its own session");
+    await waitFor(() => s.sessions[1]?.pushed.length === 13, "the second utterance's frames at its own session");
     s.sessions[1]!.endOfTurn();
     await waitFor(() => r.heard().length === 2, "second speech.heard");
     assert.equal(s.stats.opens, 2, "a new session for the new utterance");

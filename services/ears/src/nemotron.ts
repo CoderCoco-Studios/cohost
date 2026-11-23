@@ -88,6 +88,8 @@ class NemotronSession implements SttSession {
   readonly failed: Promise<Error>;
   private signalFailed!: (err: Error) => void;
   private hypothesis = "";
+  /** The final segments the server has completed for this utterance, in order. */
+  private segments: string[] = [];
   private hypothesisCb: ((text: string) => void) | undefined;
   private endCb: (() => void) | undefined;
   /** Set once `finish()` has been called or the session ended on purpose. */
@@ -151,13 +153,20 @@ class NemotronSession implements SttSession {
         return;
       }
       case "conversation.item.input_audio_transcription.completed": {
-        // @spec EARS-NEM-005
-        if (!this.finishing) return;
-        const text = typeof ev.transcript === "string" ? ev.transcript : "";
-        this.end();
-        this.resolveFinal?.(text);
+        // @spec EARS-NEM-005: a completed event is a final segment; the server ends an utterance with a
+        // committed event, which follows the commit's own completed event when there is one. A completed event
+        // before the commit is a segment the server endpointed on, and the utterance continues.
+        const text = typeof ev.transcript === "string" ? ev.transcript.trim() : "";
+        if (text !== "") this.segments.push(text);
+        this.hypothesis = "";
         return;
       }
+      case "input_audio_buffer.committed":
+        // @spec EARS-NEM-005: an empty utterance has no completed event, so its final is the empty text
+        if (!this.finishing) return;
+        this.end();
+        this.resolveFinal?.(this.segments.join(" "));
+        return;
       case "error":
         this.fail(new Error(errorText(ev)));
         return;

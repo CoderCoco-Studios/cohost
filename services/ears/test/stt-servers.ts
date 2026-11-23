@@ -70,14 +70,19 @@ export interface NemotronServer extends Base {
 }
 
 /**
- * A NeMo-Speech.cpp realtime server. By default it sends `session.created` at once, answers `input_audio_buffer.commit` with a
- * `...completed` event whose transcript is `transcript(this)`, and answers `GET /ready` with `ready()` (200 or 503).
+ * A NeMo-Speech.cpp realtime server, as its realtime handler behaves (docs/api.md, server/http/http_server.cpp at 20999cc9): it
+ * sends `session.created` at once; on `input_audio_buffer.commit` it sends `...completed` with `transcript(this)` (or none when
+ * the transcript is `null`: an empty utterance has no alternatives), then `input_audio_buffer.committed`; a `completed` event is
+ * also sent mid-stream, before the commit, when `endpointText` is set (the server's endpointing on the first audio); it answers
+ * `GET /ready` with `ready()` (200 or 503).
  */
 export async function nemotronServer(o: {
   /** Delay before `session.created`; `false` never sends it. */
   created?: number | false;
   /** The final of a commit; `false` means never answer. */
-  transcript?: ((s: NemotronServer) => string) | false;
+  transcript?: ((s: NemotronServer) => string | null) | false;
+  /** A `completed` event sent once, on the first binary frame, before any commit (server endpointing). */
+  endpointText?: string;
   ready?: () => number;
   /** Runs at every connection after `session.created` was scheduled. */
   onConnection?: (s: NemotronServer, ws: WebSocket) => void;
@@ -104,13 +109,22 @@ export async function nemotronServer(o: {
   });
   b.wss.on("connection", (ws) => {
     if (o.created !== false) setTimeout(() => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "session.created", session: { id: "s1" } })); }, o.created ?? 0);
+    let endpointed = false;
     ws.on("message", (data, isBinary) => {
-      if (isBinary) { messages.push({ binary: true, bytes: Buffer.from(data as Buffer) }); return; }
+      if (isBinary) {
+        messages.push({ binary: true, bytes: Buffer.from(data as Buffer) });
+        if (o.endpointText !== undefined && !endpointed && ws.readyState === ws.OPEN) {
+          endpointed = true;
+          ws.send(JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", transcript: o.endpointText }));
+        }
+        return;
+      }
       const json = JSON.parse(data.toString()) as Record<string, unknown>;
       messages.push({ binary: false, json });
-      if (json.type === "input_audio_buffer.commit" && o.transcript !== false) {
+      if (json.type === "input_audio_buffer.commit" && o.transcript !== false && ws.readyState === ws.OPEN) {
         const transcript = (o.transcript ?? (() => "final text"))(s);
-        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", transcript }));
+        if (transcript !== null) ws.send(JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", transcript }));
+        ws.send(JSON.stringify({ type: "input_audio_buffer.committed" }));
       }
     });
     o.onConnection?.(s, ws);

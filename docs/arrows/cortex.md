@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 173 `[x]`, 111 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs not yet built (below), the early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL), and the open event, gating, prompt and saying specs. The LLD has open questions (a repeat on a mention).
+**PARTIAL.** The spec file holds 285 specs: 224 `[x]`, 60 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). Open: the early-reply specs (CTX-PROV, CTX-INTJ), CTX-GATE-001, CTX-EVT-001 and 009, CTX-SAY-006, CTX-START-002, and the tool specs and streamed-reply and prompt specs listed in `index.yaml`. The LLD has open questions (a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -18,7 +18,22 @@ Design: LLD § Viewer notes. `CTX-VIEWER-001` to `004` (familiarity line from me
 
 Design: LLD §§ The think pipeline, Streaming the reply, Critic, Repetition check. `services/cortex/src/clauses.ts` holds the pure parts: `readHead` (the leading `Name:`, `[emotion]` and `[gesture:name]`, decided at the first non-tag character, at 80 characters, or at the end), `cutClause` (boundaries, `clause_min_chars`/`clause_max_chars`, bracketed spans) and `cleanClause`. `cortex.ts` `readReply` reads `llm.stream` under an `AbortSignal`: with a `rules` critic each clause is checked as it arrives (critic on the first clause only, then repetition, then the mute and busy re-check) and published; with an `llm` or `http` critic the whole reply is read, criticised once and then cut. The first clause is `brain.say` (`more` unless it is the whole reply); later clauses are `brain.clause` with `seq` from 1; exactly one closing `brain.clause` (`last`, `through`, optional `cut`: `repeat`, `muted`, `busy`, `length`, `stopped`) closes each line that had `more`. `closeLine` aborts the stream before the closing event. `stop()` is async and closes an open line as `stopped`. The cortex's own `brain.clause` extends its working-memory line (`extendSelf`). `trackLlm` in `startup.ts` tracks `stream()` outcomes (CTX-HEALTH-003). A reply line's release record (`Pending`, `armValve`, `settle`) releases a streamed line by its players' completion, by the claim window and failure condition, or by the valve; released lines are kept in `retired` (bounded) until their closing clause reads back, so a `voice.failed` queued before the release still applies its mark and a late failure still judges who played (CTX-REL-016, CTX-FALL-009).
 
-Open in this area: CTX-STREAM-003, 004 (the first newline ends the reply; implemented, not yet flipped), 011 to 013 and 019 (ownership to be confirmed), 030.
+A round that offers no tools ends its text at the first newline and aborts the stream (CTX-STREAM-004); a round that offers tools is read to its end (see The tool loop).
+
+## The tool loop
+
+Design: LLD § The tool loop. Specs CTX-TOOL-001 to 041. `cortex.ts` `readReply` runs the rounds of one reply inside one streamed line; `offerFor` and `originOf` decide the offer; `prompt.ts` renders the `## Tools` block, the tool notice and quoted results.
+
+- **Offer.** The latest `tool.catalog` is used for three of its intervals; the origin comes from the focus kind (speech by source, guest for an unlisted source, chat, reminder, vision and idle). The origin allows the offered tools: any for speech, reads for reminder, read tools marked `chat` for chat and guest, none for vision and idle. The offer is fixed for the think. A round offering no tools passes no `tools` option; a round offering tools passes `maxTokens` as `tools.reply.max_tokens`.
+- **Rounds.** A round's text is published as clauses before its calls run; the calls become `tool.request`s with the reply's origin, the round, `listed` and `injected`. Reads of a round are published together and awaited together; a round with an acting call runs its calls one at a time. Each result returns as a `tool` message quoted with `quoteUntrusted(content, tools.max_result_chars)`; the assistant message of the round is appended unchanged. Calls past `tools.reply.max_calls` in one round, invalid calls and calls to a tool that is not offered are answered locally and not requested.
+- **Limits.** `tools.reply.max_rounds` rounds that ended in calls, or `tools.reply.budget_ms` since the first request, make the next round final: it keeps the same tools and answers its calls `No more tool calls.`. A second final round that calls again ends the reply `cut` `tools`, after what was said or after the built-in line.
+- **Waits.** A wait lasts `tools.timeout_ms` + 2000 ms, plus `tools.confirm_timeout_ms` for an acting tool other than `timer`; no answer in time is the error `The tool did not answer in time.`. The valve does not run during a wait; the end of a wait counts as progress. `brain.status` renews `waiting for <tool>` and `tool round <n>` every half valve interval. After `tools.reply.filler_after_ms` with no clause out, one filler line (`think` emotion, never the one used last) is spoken.
+- **Gates.** The mute and busy re-check runs at the start of each round and before each request. A mute, pause or `voice.stop` naming the line ends a wait; the requests already published are not cancelled and their late results are ignored.
+- **Failures.** A stream that fails before any clause, with no wait run, is a failed think. After a wait, the built-in line `Sorry, I couldn't find that out.` is spoken and the reply closes `failed`.
+- **Critics.** `rules` checks the first model clause with the critic and each later clause for repetition across rounds; the filler and the built-in line are not shown to the critic or the repetition check. `llm` and `http` collect the text of all rounds (spoken by none of it until the last round ends), criticise it once and publish it as one reply.
+- **Cut-off calls.** A round that offered tools and finished `length` runs none of its calls and ends the reply `cut` `length`; the heartbeat detail says a tool call was cut off until a later tool round is clean (CTX-HEALTH-009). `deps.tools` is `ok`, `down` or `n/a` from the catalog (CTX-HEALTH-008).
+- **Timing.** The first clause carries `toolStartedAt` when a request came before it, and `toolEndedAt` when the wait that held it back completed (CTX-SAY-009).
+- **Records.** No tool call or result is written to working memory or memory (CTX-TOOL-041).
 
 ## Decisions applied
 
@@ -69,6 +84,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - services/cortex/test/partial.test.ts
 - services/cortex/test/prompt.test.ts
 - services/cortex/test/startup.test.ts
+- services/cortex/test/tools.test.ts
 - services/cortex/test/timing.test.ts
 - services/cortex/test/transcript-stops.test.ts
 

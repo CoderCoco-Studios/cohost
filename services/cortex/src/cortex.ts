@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { BusEvent, Publisher, Timing } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
-import type { ChatEvent, ChatMessage, ChatProvider, ChatResult } from "@cohost/llm";
+import type { ChatEvent, ChatMessage, ChatProvider, ChatRequest, ChatResult, ToolCall } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
-import { normalizeKey, speakerLabel, viewerKey } from "@cohost/shared/untrusted";
+import { normalizeKey, quoteUntrusted, speakerLabel, viewerKey } from "@cohost/shared/untrusted";
 import { Context, propagatedFlags, type ContextEvent, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
@@ -20,6 +20,38 @@ export interface CortexDeps {
   loadPersonality: () => string;
   /** The service's heartbeat: a pause shows as its standing detail `paused` (CTX-HEALTH-005). */
   heartbeat?: Pick<Heartbeat, "setDetail">;
+}
+
+/** The line the cortex speaks while a tool answers and no clause is out (CTX-TOOL-031). */
+const SORRY = "Sorry, I couldn't find that out.";
+
+/** The heartbeat detail while a call is treated as cut off by the token cap (CTX-HEALTH-009). */
+const CUT_OFF_DETAIL = "a tool call was cut off by tools.reply.max_tokens";
+
+/** A tool of the catalog as the cortex reads it (BUS-EVT-046). */
+type ToolDef = BusEvent<"tool.catalog">["data"]["tools"][number];
+/** The outcome of a `tool.result` as cortex relays it (BUS-EVT-044). */
+type Result = BusEvent<"tool.result">["data"];
+/** Who asked for a reply's tools (CTX-TOOL-002). */
+type Origin = BusEvent<"tool.request">["data"]["origin"];
+/** How one request's wait ended: its result and when it arrived, no answer in time, or abandoned by a mute, pause or stop. */
+type WaitOutcome = { kind: "result"; result: Result; at: number } | { kind: "timeout" } | { kind: "abandoned" };
+
+// @spec CTX-TOOL-002
+/** The origin of a reply from its focus kind (injected or not), and whether the owner's source list names its speech source (CTX-TOOL-014). */
+function originOf(focus: Focus, owner: "all" | string[]): { origin: Origin; listed: boolean } {
+  const injected = focus.injected === true;
+  const kind = focus.focus?.kind;
+  if (kind === "speech") {
+    if (owner === "all") return { origin: "speech", listed: false };
+    const source = focus.focus?.source;
+    const named = source !== undefined && owner.includes(source);
+    return { origin: named ? "speech" : "guest", listed: named && !injected };
+  }
+  if (kind === "chat") return { origin: "chat", listed: false };
+  if (kind === "vision") return { origin: "vision", listed: false };
+  if (kind === "reminder") return { origin: "reminder", listed: false };
+  return { origin: "idle", listed: false };
 }
 
 /** Most viewer notes kept at once (CTX-VIEWER-002). */
@@ -106,6 +138,18 @@ interface Line {
   exited: boolean;
   /** `stop()` ended the line or the think: nothing more is published, and the think's end is not logged as a reply. */
   stopped: boolean;
+  /** Clauses counted toward `max_clauses` (CTX-TOOL-009): the filler and built-in line count under `rules` only. */
+  counted: number;
+  /** The clauses of the model's own text, for the repetition check across rounds; the filler and built-in line are not in it (CTX-TOOL-025). */
+  checked: string[];
+  /** The line's emotion and gesture are fixed by its first clause (CTX-TOOL-008). */
+  emotionFixed: boolean;
+  /** The critic has been asked about the first model clause (CTX-STREAM-012). */
+  criticAsked: boolean;
+  /** A tool wait has run in this reply (CTX-SAY-003, CTX-TOOL-031). */
+  waited: boolean;
+  /** A tool wait is running: the valve holds (CTX-TOOL-023). */
+  waiting: boolean;
 }
 
 /** Why a streamed line was closed short (`cut` of its closing `brain.clause`). */
@@ -149,9 +193,14 @@ interface Pending {
   marks: Mark[];
 }
 
+/** The tools a think offers and who asked for them (CTX-TOOL-001 to CTX-TOOL-003). */
+interface Offer { tools: ToolDef[]; origin: Origin; listed: boolean }
+
 /** What a think needs to read its reply and publish the line. */
-interface ReplyRequest {
+interface ReplyRequest extends Offer {
   focus: Focus;
+  /** The reply's `injected` flag (CTX-TOOL-014). */
+  injected: boolean;
   focusedAt?: number;
   /** When the think's LLM request began (`timing.llmStartedAt`). */
   t0: number;
@@ -188,6 +237,16 @@ export class Cortex {
   private glitch: { id: string; intended: string; fallback: string; partial?: boolean } | undefined;
   private pendingRecall = new Map<string, (m: Recalled) => void>();
   private pendingNotes = new Map<string, (p: People) => void>();
+  /** The latest `tool.catalog` and when it arrived (CTX-TOOL-001). */
+  private catalog?: { at: number; intervalMs: number; tools: ToolDef[] };
+  /** The results a running tool wait is waiting for, by request id (CTX-TOOL-021). */
+  private awaiting = new Map<string, (o: WaitOutcome) => void>();
+  /** The filler line used last (CTX-TOOL-024). */
+  private lastFiller?: string;
+  /** A call was cut off by the token cap and no later tool round has been clean (CTX-HEALTH-009). */
+  private cutOff = false;
+  /** The standing detail `control` sets (`paused`). */
+  private pausedDetail?: string;
 
   constructor(private d: CortexDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
@@ -205,7 +264,7 @@ export class Cortex {
       reload_personality: () => { this.personality = d.loadPersonality(); d.log.info("personality reloaded"); },
       // @spec CTX-CTRL-006, CTX-CTRL-007, CTX-INJ-002
       say: async (c) => { if (c.text) await this.say(c.text, "neutral", undefined, "operator", c.route ? { route: c.route } : {}); },
-    }, { log: d.log, heartbeat: d.heartbeat });
+    }, { log: d.log, heartbeat: { setDetail: (detail) => { this.pausedDetail = detail; this.publishDetail(); } } });
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
@@ -285,6 +344,8 @@ export class Cortex {
           ended = this.endSpeaking(id) || ended;
         }
         if (ended) await this.endedLine();
+        // A stop that names the reply's line, or names none, ends a tool wait too (CTX-TOOL-038); with no line out, it leaves the think alone.
+        if (this.line?.id !== undefined && (!ids || ids.includes(this.line.id))) this.abandonWait();
         break;
       }
       // A failed sink plays no more of its line. Its marks apply now, or once the closing clause is read back (CTX-REL-016).
@@ -359,6 +420,17 @@ export class Cortex {
       case "control":
         await this.control.handleAsync(ev); // a command addressed to another service changes nothing
         break;
+      // The latest catalog and when it came: current for three intervals (CTX-TOOL-001, CTX-HEALTH-008).
+      // @spec CTX-TOOL-001
+      case "tool.catalog": {
+        const d = ev.data as BusEvent<"tool.catalog">["data"];
+        this.catalog = { at: Date.now(), intervalMs: d.intervalMs, tools: d.tools };
+        break;
+      }
+      // @spec CTX-TOOL-021
+      case "tool.result":
+        this.onToolResult(ev.data as Result);
+        break;
     }
   }
 
@@ -396,10 +468,14 @@ export class Cortex {
       const chance = cfg.brain.cortex.fallback_ack_chance;
       const carried = chance > 0 ? this.glitch : undefined;
       const glitch: Glitch | undefined = carried && { intended: carried.intended, fallback: carried.fallback, chance, partial: carried.partial };
-      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch });
+      // The offer is fixed for the think (CTX-TOOL-004): the catalog is read once, here.
+      const offer = this.offerFor(focus);
+      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch, tools: offer.tools.length > 0 });
       const t0 = Date.now();
       await this.readReply(messages, {
+        ...offer,
         focus,
+        injected: focus.injected === true,
         focusedAt,
         t0,
         memories: memories.length,
@@ -470,6 +546,7 @@ export class Cortex {
    * `voice.stop` names them with `reason` and they are released. Operator, reflex and foreign lines are not reply lines.
    */
   private async stopOwnLines(reason: "muted" | "paused"): Promise<void> {
+    this.abandonWait(); // a tool wait ends with the mute or pause (CTX-TOOL-037)
     const ids = [...this.pending].filter(([, p]) => p.own !== undefined).map(([id]) => id);
     if (!ids.length) return;
     for (const id of ids) {
@@ -481,42 +558,67 @@ export class Cortex {
   }
 
   // @spec CTX-STREAM-002, CTX-STREAM-003, CTX-STREAM-004, CTX-STREAM-005, CTX-STREAM-012, CTX-STREAM-013, CTX-GATE-013
+  // @spec CTX-TOOL-006, CTX-TOOL-007, CTX-TOOL-008, CTX-TOOL-009, CTX-TOOL-010, CTX-TOOL-011, CTX-TOOL-015, CTX-TOOL-016, CTX-TOOL-017
+  // @spec CTX-TOOL-022, CTX-TOOL-023, CTX-TOOL-024, CTX-TOOL-027, CTX-TOOL-031, CTX-TOOL-036, CTX-TOOL-037, CTX-TOOL-038
   /**
-   * Reads one reply through `llm.stream` and publishes its line. A `rules` critic is asked about the first clause as it is cut
-   * and each clause is checked as it arrives; an `llm` or `http` critic is given the whole reply, checked once, then cut.
-   * A think that publishes no line ends through `noLine`.
+   * Reads one reply through `llm.stream`, round by round, and publishes its line. A round that offers tools is read to its end; its
+   * text is published as clauses before its calls run, each call's result goes back in a `tool` message, and the next round is asked
+   * with the history. A `rules` critic is asked about the first clause and checks each clause as it is cut; an `llm` or `http` critic
+   * is given the whole collected reply once, when the last round ends. A think that publishes no line ends through `noLine`.
    */
   private async readReply(messages: ChatMessage[], r: ReplyRequest): Promise<void> {
-    const { cfg, llm, critic, log } = this.d;
+    const { cfg, llm, critic, log, bus } = this.d;
     // @spec CTX-STREAM-033
     const { clause_min_chars: min, clause_max_chars: max, max_clauses: maxClauses } = cfg.brain.cortex;
+    const tcfg = cfg.tools.reply;
     const incremental = critic.kind === "rules";
-    const line: Line = { ctrl: new AbortController(), lastSeq: -1, lastProduced: -1, published: [], emotion: "neutral", closed: false, exited: false, stopped: false };
+    const offer = r.tools;
+    const offering = offer.length > 0;
+    const line: Line = {
+      ctrl: new AbortController(), lastSeq: -1, lastProduced: -1, published: [], emotion: "neutral", closed: false, exited: false, stopped: false,
+      counted: 0, checked: [], emotionFixed: false, criticAsked: false, waited: false, waiting: false,
+    };
     this.line = line;
-    const cursor = { at: 0 };
+    const convo: ChatMessage[] = [...messages];
+    const collected: string[] = [];
+    let raw = "";
+    let cursor = { at: 0 };
+    let literal = false;
+    let round = 0;
+    let roundsWithCalls = 0;
+    let finalCallRounds = 0;
+    let firstReqAt: number | undefined;
+    let lastWaitEnd: number | undefined;
+    let failed = false;
+    let fillerArmed = false;
+    let fillerTimer: ReturnType<typeof setTimeout> | undefined;
+    const budgetPassed = (): boolean => firstReqAt !== undefined && Date.now() - firstReqAt >= tcfg.budget_ms;
+    const counts = (kind: "normal" | "filler" | "builtin"): boolean => incremental || kind === "normal";
 
-    // One cut clause: the first is the brain.say, the rest brain.clause; `final` is the reply's last clause. Resolves false
-    // when the reply stops (the line closed or a no-line exit).
-    const emit = async (text: string, final: boolean, endedAt: number): Promise<boolean> => {
+    // One clause out. The first is the `brain.say`, the rest `brain.clause`s; `last` marks the reply's final clause. Resolves false when
+    // the reply stops (the line closed or a no-line exit). `filler` and `builtin` skip the critic and the repetition check (CTX-TOOL-025, CTX-TOOL-031).
+    const emit = async (text: string, last: boolean, endedAt: number, kind: "normal" | "filler" | "builtin" = "normal"): Promise<boolean> => {
       if (line.closed || line.exited) return false; // a line cortex has ended publishes nothing more
-      if (line.id === undefined) {
-        let t = text;
-        if (incremental) {
-          if (t.length < 2) { await this.noLine(line); return false; } // CTX-PROMPT-006
-          // @spec CTX-CRITIC-001, CTX-STREAM-016
-          const verdict = await critic.run({ text: t, emotion: line.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
-          line.criticEndedAt = Date.now();
-          if (!verdict.ok) { log.info({ note: verdict.note, text: t }, "critic vetoed"); await this.noLine(line); return false; } // CTX-CRITIC-002
-          if (verdict.text) {
-            // A rewrite is parsed like a reply; the critic's emotion tag and gesture are ignored, the model's gesture is kept.
-            t = parseReply(verdict.text).text;
-            log.info({ to: t }, "critic rewrote");
-            if (t.length < 2) { await this.noLine(line); return false; } // CTX-CRITIC-008
-          }
-          if (verdict.emotion) line.emotion = verdict.emotion;
-          // @spec CTX-REPEAT-010, CTX-REPEAT-011
-          if (this.repeatHit(t)) { await this.noLine(line); return false; }
+      let t = text;
+      if (kind === "normal" && incremental && !line.criticAsked) {
+        // @spec CTX-STREAM-012, CTX-TOOL-025
+        line.criticAsked = true;
+        if (t.length < 2) { await this.endOpen(line, "vetoed"); return false; } // CTX-PROMPT-006
+        // @spec CTX-CRITIC-001, CTX-STREAM-016
+        const verdict = await critic.run({ text: t, emotion: line.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+        line.criticEndedAt = Date.now();
+        if (!verdict.ok) { log.info({ note: verdict.note, text: t }, "critic vetoed"); await this.endOpen(line, "vetoed"); return false; } // CTX-CRITIC-002
+        if (verdict.text) {
+          // A rewrite is parsed like a reply; the critic's emotion tag and gesture are ignored, the model's gesture is kept.
+          t = parseReply(verdict.text).text;
+          log.info({ to: t }, "critic rewrote");
+          if (t.length < 2) { await this.endOpen(line, "vetoed"); return false; } // CTX-CRITIC-008
         }
+        if (verdict.emotion && line.id === undefined) line.emotion = verdict.emotion;
+      }
+      if (line.id === undefined) {
+        // @spec CTX-REPEAT-010, CTX-REPEAT-011
+        if (kind === "normal" && incremental && this.repeatHit(t)) { await this.endOpen(line); return false; }
         // @spec CTX-GATE-005, CTX-GATE-006
         if (this.control.muted || this.control.paused) { await this.noLine(line); return false; }
         if (this.voiceBusy()) { log.info({ text: t }, "dropped: something else spoke while thinking"); await this.noLine(line); return false; }
@@ -526,20 +628,27 @@ export class Cortex {
         line.lastSeq = 0;
         line.lastProduced = 0;
         line.published.push(t);
+        if (kind === "normal") line.checked.push(t);
+        if (counts(kind)) line.counted++;
+        const emotion: Emotion = kind === "filler" ? "think" : kind === "builtin" ? "confused" : line.emotion;
+        line.emotion = emotion;
+        line.emotionFixed = true;
         // pending from its brain.say until it is released (CTX-SAY-004); a streamed line is released by its players (CTX-REL-*)
-        this.startSpeaking(id, { line, streamed: !final });
-        // @spec CTX-SAY-007
+        this.startSpeaking(id, { line, streamed: !last });
+        // @spec CTX-SAY-007, CTX-SAY-008, CTX-SAY-009, CTX-SAY-010
         const timing: Timing = {
           ...(r.focusedAt === undefined ? {} : { focusedAt: r.focusedAt }),
           llmStartedAt: r.t0,
           llmEndedAt: endedAt,
-          ...(line.criticEndedAt === undefined ? {} : { criticEndedAt: line.criticEndedAt }),
+          ...(kind === "normal" && line.criticEndedAt !== undefined ? { criticEndedAt: line.criticEndedAt } : {}),
+          ...(firstReqAt === undefined ? {} : { toolStartedAt: firstReqAt }),
+          ...(lastWaitEnd === undefined ? {} : { toolEndedAt: lastWaitEnd }),
           ...r.focus.timing,
         };
-        // @spec CTX-SAY-001, CTX-STREAM-017, CTX-STREAM-019
-        await this.d.bus.publish("brain.say", {
-          id, text: t, emotion: line.emotion, gesture: line.gesture, reason: r.focus.reason,
-          ...propagatedFlags(r.focus), timing, ...(final ? {} : { more: true as const }),
+        // @spec CTX-SAY-001, CTX-STREAM-017, CTX-STREAM-019, CTX-INJ-001
+        await bus.publish("brain.say", {
+          id, text: t, emotion, gesture: kind === "normal" ? line.gesture : undefined, reason: r.focus.reason,
+          ...propagatedFlags(r.focus), timing, ...(last ? {} : { more: true as const }),
         }).catch((err) => {
           this.endSpeaking(id); // a line that never reached the bus is not pending
           throw err;
@@ -547,16 +656,16 @@ export class Cortex {
         r.onSaid();
         // @spec CTX-STREAM-018
         await this.status("speaking", t);
-        if (final) { line.closed = true; await this.settle(id); }
-        return !final;
+        if (last) { line.closed = true; await this.settle(id); }
+        return !last;
       }
 
       // A later clause: the length cut, the repetition check on the reply so far, the mute and busy re-check, then publish.
-      // @spec CTX-STREAM-024, CTX-STREAM-025
-      if (line.lastSeq + 1 >= maxClauses) { await this.closeLine(line, "length"); return false; }
-      // @spec CTX-STREAM-021, CTX-REPEAT-001, CTX-REPEAT-002
-      if (incremental && this.repeatHit([...line.published, text].join(" "), line.id)) { await this.closeLine(line, "repeat"); return false; }
-      // @spec CTX-STREAM-022, CTX-STREAM-023
+      // @spec CTX-STREAM-024, CTX-STREAM-025, CTX-TOOL-009
+      if (counts(kind) && line.counted >= maxClauses) { await this.closeLine(line, "length"); return false; }
+      // @spec CTX-STREAM-021, CTX-REPEAT-001, CTX-REPEAT-002, CTX-TOOL-035
+      if (kind === "normal" && incremental && this.repeatHit([...line.checked, t].join(" "), line.id)) { await this.closeLine(line, "repeat"); return false; }
+      // @spec CTX-STREAM-022, CTX-STREAM-023, CTX-TOOL-036
       if (this.control.muted || this.control.paused) { await this.closeLine(line, "muted"); return false; }
       if (this.voiceBusy(line.id)) { await this.closeLine(line, "busy"); return false; }
       const seq = line.lastSeq + 1;
@@ -565,123 +674,402 @@ export class Cortex {
       const wasOutstanding = p !== undefined && this.outstanding(p);
       line.lastSeq = seq;
       line.lastProduced = seq;
-      line.published.push(text);
+      line.published.push(t);
+      if (kind === "normal") line.checked.push(t);
+      if (counts(kind)) line.counted++;
       // @spec CTX-STREAM-020, CTX-STREAM-027
-      await this.d.bus.publish("brain.clause", { id: line.id, seq, text, ...(final ? { last: true as const, through: seq } : {}) });
+      await bus.publish("brain.clause", { id: line.id, seq, text: t, ...(last ? { last: true as const, through: seq } : {}) });
       if (p && this.pending.get(line.id) === p) this.armValve(line.id, p, !wasOutstanding);
-      if (final) { line.closed = true; await this.settle(line.id); }
-      return !final;
+      if (last) { line.closed = true; await this.settle(line.id); }
+      return !last;
     };
 
-    // Cut every clause the body allows; with `final` the rest is the last clause. Resolves false when the reply stopped.
-    const pump = async (body: string, final: boolean, endedAt: number): Promise<boolean> => {
+    // Cut every clause the body allows; with `cutTail` the rest is cut too, and `last` marks the reply's final clause. Resolves false when the reply stopped.
+    const pump = async (body: string, cutTail: boolean, last: boolean, endedAt: number, kind: "normal" | "filler" | "builtin" = "normal"): Promise<boolean> => {
       for (;;) {
         const rest = body.slice(cursor.at);
         if (!rest) return true;
-        const cut = cutClause(rest, min, max, final, literal);
+        const cut = cutClause(rest, min, max, cutTail, literal);
         if (!cut) return true;
         const piece = rest.slice(0, cut.end);
         cursor.at += cut.next;
         while (cursor.at < body.length && /\s/.test(body[cursor.at]!)) cursor.at++;
         const text = cleanClause(piece, literal);
         if (!hasWord(text)) continue; // CTX-STREAM-015
-        if (!(await emit(text, final && cursor.at >= body.length, incremental ? Date.now() : endedAt))) return false;
+        if (!(await emit(text, last && cursor.at >= body.length, incremental ? Date.now() : endedAt, kind))) return false;
       }
     };
 
-    let raw = "";
-    let head: Head | undefined;
-    let literal = false;
-    let finish: ChatResult["finish"] | undefined;
-    let streamErr: unknown;
-    // @spec CTX-PROMPT-008: the transcript the messages carry is checked against the provider stop strings by the transcript-stops test.
-    const stream = llm.stream(messages, { signal: line.ctrl.signal }); // CTX-STREAM-003
-    const it = stream[Symbol.asyncIterator]();
-    try {
+    /** A line closed or ended without a clause: the built-in line when a wait came before (CTX-TOOL-031), then the closing clause. */
+    const closeEmpty = async (cut: LineCut | undefined, said: boolean): Promise<void> => {
+      if (line.closed || line.exited) return;
+      // @spec CTX-TOOL-031, CTX-TOOL-029
+      const sorry = (cut === "tools" && line.id === undefined) || (line.waited && (cut === "failed" || (cut === undefined && !said)));
+      if (sorry && !(await emit(SORRY, false, Date.now(), "builtin"))) return;
+      if (line.closed || line.exited) return;
+      if (line.id !== undefined) await this.closeLine(line, cut);
+      else await this.noLine(line);
+    };
+
+    /** The hard stop after the final round made calls again (CTX-TOOL-029): what was said stands, or the built-in line is said first. */
+    const hardStop = async (): Promise<void> => {
+      if (incremental) await closeEmpty("tools", false);
+      else await endCollected("tools", false);
+    };
+
+    /** Heartbeat and log for a round the token cap cut off (CTX-TOOL-018, CTX-HEALTH-009). */
+    const cutOffWarning = (): void => {
+      log.warn({ reason: r.focus.reason }, "a tool call was cut off by tools.reply.max_tokens");
+      this.setCutOff(true);
+    };
+
+    /** Mute or busy re-check before a round or a request (CTX-TOOL-036): false when the reply has ended. */
+    const gate = async (): Promise<boolean> => {
+      if (this.control.muted || this.control.paused) { await this.endOpen(line, "muted"); return false; }
+      if (this.voiceBusy(line.id)) { await this.endOpen(line, "busy"); return false; }
+      return true;
+    };
+
+    /** The filler of CTX-TOOL-024: armed at the first request, fired while the wait holds and no clause is out. */
+    const armFiller = (): void => {
+      if (fillerArmed || tcfg.filler_lines.length === 0) return;
+      fillerArmed = true;
+      const delay = Math.max(0, tcfg.filler_after_ms - (Date.now() - (firstReqAt ?? Date.now())));
+      fillerTimer = setTimeout(() => {
+        if (!line.waiting || line.id !== undefined || line.closed || line.exited) return;
+        const text = this.pickFiller();
+        if (text === undefined) return;
+        void emit(text, false, Date.now(), "filler").then((ok) => { if (!ok) this.abandonWait(); }, (err) => log.error({ err }, "filler failed"));
+      }, delay);
+      fillerTimer.unref();
+    };
+
+    /** The calls of one round, in the order asked (CTX-TOOL-011 to CTX-TOOL-016, CTX-TOOL-027 to CTX-TOOL-028). False when the reply stopped. */
+    const runCalls = async (calls: ToolCall[], final: boolean): Promise<{ ok: boolean; msgs: ChatMessage[] }> => {
+      type Plan = { call: ToolCall; tool?: ToolDef; local?: string };
+      const plan: Plan[] = calls.map((call, i) => {
+        if (i >= tcfg.max_calls) return { call, local: "Too many calls in one turn." };
+        if (call.invalid !== undefined) return { call, local: "The call was not valid." };
+        const tool = offer.find((t) => t.name === call.name);
+        return tool ? { call, tool } : { call, local: "That tool is not available." };
+      });
+      const answers = new Map<string, { content: string; isError: boolean }>();
+      const asks = plan.filter((p): p is Plan & { tool: ToolDef } => p.tool !== undefined);
+      for (const p of plan) if (p.local !== undefined) answers.set(p.call.id, { content: p.local, isError: true });
+      const groups = asks.some((p) => p.tool.effect === "acts") ? asks.map((a) => [a]) : asks.length ? [asks] : [];
+      for (const group of groups) {
+        // @spec CTX-TOOL-028, CTX-TOOL-030
+        if (final || budgetPassed()) {
+          for (const p of group) answers.set(p.call.id, { content: "No more tool calls.", isError: true });
+          continue;
+        }
+        if (!(await gate())) return { ok: false, msgs: [] };
+        const waits = group.map((p) => {
+          const id = randomUUID();
+          // @spec CTX-TOOL-019
+          const bound = cfg.tools.timeout_ms + 2000 + (p.tool.effect === "acts" && p.tool.name !== "timer" ? cfg.tools.confirm_timeout_ms : 0);
+          return { p, id, outcome: this.awaitResult(id, bound) };
+        });
+        firstReqAt ??= Date.now();
+        armFiller();
+        line.waiting = true;
+        line.waited = true;
+        const p0 = line.id !== undefined ? this.pending.get(line.id) : undefined;
+        if (p0) clearTimeout(p0.timer); // CTX-TOOL-023: no valve runs for the line during a wait
+        // @spec CTX-TOOL-014, CTX-TOOL-015
+        for (const w of waits) {
+          await bus.publish("tool.request", {
+            id: w.id, tool: w.p.tool.name, arguments: w.p.call.arguments, origin: r.origin, round, listed: r.listed,
+            ...(r.injected ? { injected: true as const } : {}),
+          });
+        }
+        const names = group.map((p) => p.tool.name).join(", ");
+        const stopRenew = this.renew(line, `waiting for ${names}`); // @spec CTX-TOOL-022
+        await this.status(line.id !== undefined ? "speaking" : "thinking", `waiting for ${names}`).catch(() => {});
+        const outcomes = await Promise.all(waits.map((w) => w.outcome));
+        stopRenew();
+        line.waiting = false;
+        this.progress(); // CTX-TOOL-023: the end of the wait counts as progress
+        if (outcomes.some((o) => o.kind === "abandoned")) {
+          // CTX-TOOL-037, CTX-TOOL-038: a mute, pause or stop ended the wait; nothing more is requested.
+          if (!line.closed && !line.exited) { if (line.id !== undefined) await this.closeLine(line, "stopped"); else await this.noLine(line); }
+          return { ok: false, msgs: [] };
+        }
+        let lastAt = 0;
+        let complete = true;
+        waits.forEach((w, i) => {
+          const o = outcomes[i]!;
+          if (o.kind === "result") {
+            answers.set(w.p.call.id, { content: quoteUntrusted(o.result.content, cfg.tools.max_result_chars), isError: o.result.status !== "ok" });
+            lastAt = Math.max(lastAt, o.at);
+          } else {
+            answers.set(w.p.call.id, { content: "The tool did not answer in time.", isError: true }); // CTX-TOOL-019
+            complete = false;
+          }
+        });
+        lastWaitEnd = complete ? lastAt : undefined;
+      }
+      // @spec CTX-PROMPT-018: a result is quoted here, and the fixed messages above are not.
+      const msgs: ChatMessage[] = plan.map((p) => {
+        const a = answers.get(p.call.id) ?? { content: "No more tool calls.", isError: true };
+        return { role: "tool", callId: p.call.id, name: p.call.name, content: a.content, isError: a.isError };
+      });
+      return { ok: true, msgs };
+    };
+
+    /** One round: its stream read to the end (or to the first newline of a round without tools, which then stops). */
+    const readRound = async (msgs: ChatMessage[]): Promise<{ text: string; calls: ToolCall[]; finish?: ChatResult["finish"]; message?: ChatMessage & { role: "assistant" }; failed?: unknown; stopped: boolean }> => {
+      cursor = { at: 0 };
+      literal = false;
+      let text = "";
+      let head: Head | undefined;
+      let feeding = true;
+      let failed: unknown;
+      let stopped = false;
+      const streamed: ToolCall[] = [];
+      let finish: ChatResult["finish"] | undefined;
+      let message: (ChatMessage & { role: "assistant" }) | undefined;
+      let calls: ToolCall[] = [];
+      // @spec CTX-STREAM-003, CTX-TOOL-005
+      const opts: ChatRequest = {
+        signal: line.ctrl.signal,
+        ...(offering ? { tools: offer.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })), maxTokens: tcfg.max_tokens } : {}),
+      };
+      const it = llm.stream(msgs, opts)[Symbol.asyncIterator]();
       for (;;) {
         // Only reading the stream tolerates an abort: an error raised by publishing reaches the caller.
         let next: IteratorResult<ChatEvent>;
         try {
           next = await it.next();
         } catch (err) {
-          if (!line.ctrl.signal.aborted) streamErr = err;
+          if (!line.ctrl.signal.aborted) failed = err;
           break;
         }
         if (next.done) break;
         const ev = next.value;
-        if (ev.type === "done") { finish = ev.result.finish; continue; }
+        if (ev.type === "done") { finish = ev.result.finish; message = ev.result.message; calls = ev.result.toolCalls; continue; }
+        // @spec CTX-STREAM-003: a call event of a round that offers no tools is ignored
+        if (ev.type === "tool_call") { if (offering) streamed.push(ev.call); continue; }
         if (ev.type !== "text") continue;
-        if (line.ctrl.signal.aborted) break;
-        raw += ev.delta;
-        const trimmed = raw.trimStart();
+        if (line.ctrl.signal.aborted) { stopped = true; break; }
+        if (!feeding) continue; // CTX-TOOL-006: text after the first newline is discarded
+        text += ev.delta;
+        const trimmed = text.trimStart();
         const nl = trimmed.indexOf("\n");
-        const ended = nl >= 0; // CTX-STREAM-004: the first newline ends the reply
-        if (ended) raw = trimmed.slice(0, nl);
-        const h = readHead(raw, ended, cfg.cohost.name);
-        if (h) { head = h; literal = h.literal === true; line.emotion = h.emotion; line.gesture = h.gesture; }
-        if (ended) { line.ctrl.abort(); break; }
-        if (incremental && head && !(await pump(head.body, false, 0))) break;
+        const ended = nl >= 0; // CTX-STREAM-004: the first newline ends the reply's text
+        if (ended) { text = trimmed.slice(0, nl); feeding = false; }
+        const h = readHead(text, ended, cfg.cohost.name);
+        if (h) { head = h; literal = h.literal === true; if (!line.emotionFixed) { line.emotion = h.emotion; line.gesture = h.gesture; } }
+        if (ended && !offering) { line.ctrl.abort(); break; } // CTX-STREAM-004
+        if (incremental && head && !(await pump(head.body, false, false, 0))) { stopped = true; line.ctrl.abort(); break; }
       }
-      if (streamErr !== undefined) {
-        // A stream that fails before its first clause is the think's error (its catch below). After one, the line closes `failed`:
-        // no fallback line and no repair call (CTX-STREAM-031).
-        // @spec CTX-STREAM-031
-        if (line.id === undefined) throw streamErr;
-        log.warn({ err: streamErr, reason: r.focus.reason }, "the model stream failed after a clause; the line closes failed");
-        await this.closeLine(line, "failed");
-        return;
-      }
-      await it.return?.(undefined);
-      if (!line.closed && !line.exited) {
-        if (finish === "refusal") {
-          // @spec CTX-STREAM-032, CTX-GATE-012: a refusal ends the reply; its held tail is not published.
-          if (line.id !== undefined) await this.closeLine(line);
-          else await this.noLine(line);
-        } else if (incremental) {
-          head = readHead(raw, true, cfg.cohost.name) ?? { emotion: "neutral", body: "" };
-          literal = head.literal === true;
-          line.emotion = head.emotion;
-          line.gesture = head.gesture;
-          await pump(head.body, true, 0);
-        } else {
-          // @spec CTX-PROMPT-005, CTX-CRITIC-001, CTX-REPEAT-001, CTX-PROMPT-006
-          const inHand = Date.now();
-          const whole = parseReply(raw);
-          line.emotion = whole.emotion;
-          line.gesture = whole.gesture;
-          if (whole.text.length < 2) {
-            await this.noLine(line);
-          } else {
-            const verdict = await critic.run({ text: whole.text, emotion: whole.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
-            line.criticEndedAt = Date.now();
-            if (!verdict.ok) {
-              log.info({ note: verdict.note, text: whole.text }, "critic vetoed");
-              await this.noLine(line);
-            } else {
-              let text = whole.text;
-              if (verdict.text) { text = parseReply(verdict.text).text; log.info({ from: whole.text, to: text }, "critic rewrote"); }
-              if (verdict.emotion) line.emotion = verdict.emotion;
-              if (text.length < 2) await this.noLine(line); // CTX-CRITIC-008
-              else if (this.repeatHit(text)) await this.noLine(line);
-              else await pump(text, true, inHand);
-            }
+      await it.return?.(undefined).catch(() => {}); // ends the stream, so an abort is seen by the provider (CTX-STREAM-004)
+      if (!calls.length && streamed.length) calls = streamed;
+      return { text, calls, finish, message, failed, stopped };
+    };
+
+    /** The reply's end for a collected (`llm`/`http`) critic: criticise the whole reply once, check it, then cut and publish (CTX-TOOL-032). */
+    const endCollected = async (cut: LineCut | undefined, said: boolean): Promise<void> => {
+      if (line.closed || line.exited) return;
+      // Each round's text is one line; the tags later rounds carry leave gaps where they were, so the joined text is re-spaced.
+      const whole0 = parseReply(collected.filter((s) => s.length > 0).join(" "));
+      const whole = { ...whole0, text: whole0.text.replace(/\s{2,}/g, " ").trim() };
+      if (!line.emotionFixed) { line.emotion = whole.emotion; line.gesture = whole.gesture; }
+      if (whole.text.length < 2) { await closeEmpty(cut, said); return; } // CTX-PROMPT-006
+      // @spec CTX-CRITIC-001, CTX-TOOL-033
+      const verdict = await critic.run({ text: whole.text, emotion: whole.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+      line.criticEndedAt = Date.now();
+      if (!verdict.ok) { log.info({ note: verdict.note, text: whole.text }, "critic vetoed"); await this.endOpen(line, "vetoed"); return; } // CTX-CRITIC-002, CTX-TOOL-034
+      let text = whole.text;
+      if (verdict.text) { text = parseReply(verdict.text).text; log.info({ from: whole.text, to: text }, "critic rewrote"); }
+      if (verdict.emotion && !line.emotionFixed) line.emotion = verdict.emotion;
+      if (text.length < 2) { await closeEmpty(cut, said); return; } // CTX-CRITIC-008
+      if (this.repeatHit(text)) { await this.endOpen(line, "repeat"); return; }
+      const inHand = Date.now();
+      if (!(await pump(text, true, cut === undefined, inHand))) return;
+      if (line.closed || line.exited) return;
+      if (line.id === undefined) { await closeEmpty(cut, said); return; }
+      await this.closeLine(line, cut);
+    };
+
+    try {
+      for (;;) {
+        round++;
+        const final = round > 1 && (roundsWithCalls >= tcfg.max_rounds || budgetPassed() || finalCallRounds >= 1); // CTX-TOOL-027, CTX-TOOL-029
+        if (round > 1) {
+          // @spec CTX-TOOL-036
+          if (!(await gate())) return;
+          // @spec CTX-TOOL-022
+          await this.status(line.id !== undefined ? "speaking" : "thinking", `tool round ${round}`).catch(() => {});
+        }
+        const stopRenew = round > 1 ? this.renew(line, `tool round ${round}`) : undefined;
+        const said0 = line.published.length;
+        let out: Awaited<ReturnType<typeof readRound>>;
+        try {
+          out = await readRound(convo);
+        } finally {
+          stopRenew?.();
+        }
+        raw += out.text;
+        if (out.stopped || line.closed || line.exited) return;
+        // @spec CTX-CTRL-008, CTX-STREAM-031, CTX-TOOL-031, CTX-TOOL-040
+        if (out.failed !== undefined) {
+          if (!line.waited) {
+            if (line.id === undefined) throw out.failed; // a think that fails before its first clause is the think's error (CTX-STREAM-030)
+            log.warn({ err: out.failed, reason: r.focus.reason }, "the model stream failed after a clause; the line closes failed");
+            await this.closeLine(line, "failed");
+            return;
           }
+          log.warn({ err: out.failed, reason: r.focus.reason }, "the model stream failed after a tool wait");
+          await closeEmpty("failed", false);
+          return;
         }
-        // Nothing left to say: the line closes with an empty closing clause, or a think with no line takes its no-line exit.
-        if (!line.closed && !line.exited) {
-          if (line.id !== undefined) await this.closeLine(line);
-          else await this.noLine(line);
+        if (offering) {
+          // @spec CTX-TOOL-018, CTX-HEALTH-009
+          if (out.finish === "length") cutOffWarning();
+          else this.setCutOff(false);
         }
+        // Text of this round: a `rules` critic gets it clause by clause, an `llm` or `http` critic collects it.
+        const roundHead = readHead(out.text, true, cfg.cohost.name) ?? { emotion: "neutral" as Emotion, body: "" };
+        if (!line.emotionFixed && offering) { line.emotion = roundHead.emotion; line.gesture = roundHead.gesture; }
+        literal = roundHead.literal === true;
+        const lengthCut = offering && out.finish === "length"; // CTX-TOOL-017
+        const wantCalls = offering && !lengthCut && out.calls.length > 0;
+        if (!incremental) collected.push(out.text);
+        const roundSaid = (): boolean => line.published.length > said0;
+
+        if (!wantCalls) {
+          // The reply ends with this round.
+          // @spec CTX-STREAM-032, CTX-GATE-012: a refusal ends the reply; its held tail is not published.
+          if (out.finish === "refusal") { if (line.id !== undefined) await this.closeLine(line); else await this.noLine(line); return; }
+          if (incremental) {
+            const cut: LineCut | undefined = lengthCut ? "length" : undefined;
+            if (!(await pump(roundHead.body, true, cut === undefined, Date.now()))) return;
+            if (line.closed || line.exited) return;
+            await closeEmpty(cut, roundSaid());
+          } else {
+            await endCollected(lengthCut ? "length" : undefined, false);
+          }
+          return;
+        }
+
+        // The round asks for tools: its text first, then its calls.
+        if (incremental) {
+          if (!(await pump(roundHead.body, true, false, Date.now()))) return;
+          if (line.closed || line.exited) return;
+        }
+        if (final && finalCallRounds >= 1) { await hardStop(); return; } // CTX-TOOL-029
+        if (final) finalCallRounds++;
+        else roundsWithCalls++;
+        const res = await runCalls(out.calls, final);
+        if (!res.ok) return;
+        convo.push(out.message ?? { role: "assistant", content: out.text, toolCalls: out.calls }, ...res.msgs);
       }
-      if (!line.stopped) log.info({ ms: Date.now() - r.t0, reason: r.focus.reason, memories: r.memories }, "llm reply");
     } catch (err) {
+      failed = true;
       // A publish that failed is not a stopped stream: the line closes if it can, and the error reaches think()'s catch.
       if (line.id !== undefined && !line.closed) await this.closeLine(line).catch(() => {});
       throw err;
     } finally {
+      if (fillerTimer) clearTimeout(fillerTimer);
       this.line = undefined;
       log.debug({ raw }, "llm reply text"); // raw text can echo chat and is not yet through the critic
+      // Every reply that was read to its end, whatever line it published (or none), is logged once.
+      if (!line.stopped && !failed) log.info({ ms: Date.now() - r.t0, reason: r.focus.reason, memories: r.memories }, "llm reply");
     }
+  }
+
+  // @spec CTX-TOOL-001, CTX-TOOL-002, CTX-TOOL-003
+  /** The tools a think offers: the current catalog's offered tools that the reply's origin allows; none when the catalog is not current. */
+  private offerFor(focus: Focus): Offer {
+    const { origin, listed } = originOf(focus, this.d.cfg.tools.owner_sources);
+    if (!this.catalogCurrent()) return { tools: [], origin, listed };
+    const allows = (t: ToolDef): boolean => {
+      if (origin === "speech") return true;
+      if (origin === "reminder") return t.effect === "read";
+      if (origin === "chat" || origin === "guest") return t.chat && t.effect === "read";
+      return false; // vision and idle: no tool
+    };
+    return { tools: this.catalog!.tools.filter((t) => t.offered && allows(t)), origin, listed };
+  }
+
+  /** The latest catalog arrived within three of its intervals (CTX-TOOL-001). */
+  private catalogCurrent(): boolean {
+    return this.catalog !== undefined && Date.now() - this.catalog.at <= 3 * this.catalog.intervalMs;
+  }
+
+  // @spec CTX-HEALTH-008
+  /** `deps.tools`: `ok` while a current catalog offers a tool, `down` once a catalog that offered one is stale, `n/a` otherwise. */
+  toolsState(): "ok" | "down" | "n/a" {
+    const c = this.catalog;
+    if (c === undefined || !c.tools.some((t) => t.offered)) return "n/a";
+    return this.catalogCurrent() ? "ok" : "down";
+  }
+
+  // @spec CTX-TOOL-019, CTX-TOOL-021
+  /** A wait for one request's result: resolved by its `tool.result`, by the bound, or by an abandon. */
+  private awaitResult(id: string, bound: number): Promise<WaitOutcome> {
+    return new Promise<WaitOutcome>((resolve) => {
+      const done = (o: WaitOutcome): void => { clearTimeout(timer); this.awaiting.delete(id); resolve(o); };
+      const timer = setTimeout(() => done({ kind: "timeout" }), bound);
+      this.awaiting.set(id, done);
+    });
+  }
+
+  // @spec CTX-TOOL-021
+  /** A `tool.result` for an id a wait holds ends that wait; any other, or a second one, is ignored. */
+  private onToolResult(d: Result): void {
+    const done = this.awaiting.get(d.id);
+    if (!done) return;
+    done({ kind: "result", result: d, at: Date.now() });
+  }
+
+  // @spec CTX-TOOL-037, CTX-TOOL-038
+  /** Every running tool wait ends abandoned; its requests are not cancelled (CTX-TOOL-039). */
+  private abandonWait(): void {
+    for (const done of [...this.awaiting.values()]) done({ kind: "abandoned" });
+  }
+
+  // @spec CTX-TOOL-022
+  /** Publishes `detail` as a status every half of the valve interval for the line's state, until the returned stop is called. */
+  private renew(line: Line, detail: string): () => void {
+    const { cortex: c, salience: s } = this.d.cfg.brain;
+    const ms = Math.max(1, Math.floor((line.id !== undefined ? c.speaking_timeout_ms : s.thinking_timeout_ms) / 2));
+    const timer = setInterval(() => {
+      void this.status(line.id !== undefined ? "speaking" : "thinking", detail).catch((err) => this.d.log.error({ err }, "brain.status publish failed"));
+    }, ms);
+    timer.unref();
+    return () => clearInterval(timer);
+  }
+
+  /** A line that ends without a clause of its own: a line out is closed with `cut`; with none, the think ends without a line. */
+  private async endOpen(line: Line, cut?: LineCut): Promise<void> {
+    if (line.closed || line.exited) return;
+    if (line.id !== undefined) await this.closeLine(line, cut);
+    else await this.noLine(line);
+  }
+
+  // @spec CTX-TOOL-024
+  /** A filler line picked at random from `tools.reply.filler_lines`, never the one used last when the list holds another. */
+  private pickFiller(): string | undefined {
+    const lines = this.d.cfg.tools.reply.filler_lines;
+    if (lines.length === 0) return undefined;
+    const pool = lines.length > 1 ? lines.filter((l) => l !== this.lastFiller) : lines;
+    const pick = pool[Math.floor(Math.random() * pool.length)]!;
+    this.lastFiller = pick;
+    return pick;
+  }
+
+  // @spec CTX-HEALTH-009
+  /** Sets the cut-off flag and republishes the heartbeat detail, joined by `; ` to the paused detail. */
+  private setCutOff(on: boolean): void {
+    this.cutOff = on;
+    this.publishDetail();
+  }
+
+  private publishDetail(): void {
+    const detail = [this.pausedDetail, this.cutOff ? CUT_OFF_DETAIL : undefined].filter((x): x is string => x !== undefined).join("; ");
+    this.d.heartbeat?.setDetail(detail === "" ? undefined : detail);
   }
 
   /** The repetition check on `reply` against the recent lines; a hit is logged with its similarity and the line it matched (CTX-REPEAT-010). */
@@ -725,6 +1113,7 @@ export class Cortex {
   /** Service shutdown: release the valves, end a think that has published no clause, and close an open streamed line as `stopped`, once (CTX-STREAM-037). */
   // @spec CTX-STREAM-037
   async stop(): Promise<void> {
+    this.abandonWait();
     for (const id of [...this.pending.keys()]) this.endSpeaking(id);
     const line = this.line;
     if (!line) return;
@@ -817,6 +1206,7 @@ export class Cortex {
   private async onValve(id: string): Promise<void> {
     const p = this.pending.get(id);
     if (!p) return;
+    if (p.own?.line.waiting) return; // CTX-TOOL-023: no valve runs during a tool wait
     if (p.own?.streamed && !p.own.line.closed) await this.closeLine(p.own.line, "timeout");
     await this.release(id);
   }

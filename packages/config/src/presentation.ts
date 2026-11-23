@@ -383,7 +383,7 @@ const keys: Record<string, KeyPresentation> = {
   "tools.timer.max_minutes": { help: "The longest a timer may be set for, in minutes; a longer request is refused.", unit: "minutes" },
   "tools.stream_info.cache_ms": { help: "How long the stream's title and game are remembered before they are read again, so the co-host does not ask the platform on every reply.", unit: "ms" },
   "tools.reply.max_rounds": { help: "How many rounds of tool calls one reply may take before the co-host must answer with what it has." },
-  "tools.reply.max_calls": { help: "How many tool calls one reply may make in all, across its rounds." },
+  "tools.reply.max_calls": { help: "How many tool calls one round of a reply may make; the rest are answered with an error. Each round has its own count." },
   "tools.reply.budget_ms": { help: "How long one reply may spend on tool calls in all before the co-host answers without the rest of them.", unit: "ms" },
   "tools.reply.filler_after_ms": { help: "How long a tool call may run before the co-host says one of the filler lines, so viewers do not hear silence. 0 says one at once.", unit: "ms" },
   "tools.reply.max_tokens": { help: "The longest answer, in model tokens, that the model may write in one step of a reply that uses tools." },

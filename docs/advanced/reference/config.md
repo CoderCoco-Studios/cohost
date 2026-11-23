@@ -478,7 +478,7 @@ The MCP servers the co-host may call and the tools it may use. Nothing is enable
 | `tools.stream_info.cache_ms` | `30000` | How long the stream's title and game are remembered; 0 reads them every time |
 | `tools.reply` | map | The limits on the tool calls one reply may make |
 | `tools.reply.max_rounds` | `3` | Rounds of tool calls one reply may take (at least 1) |
-| `tools.reply.max_calls` | `3` | Tool calls one reply may make in all (at least 1) |
+| `tools.reply.max_calls` | `3` | Tool calls one round of a reply may make, per round: each round has its own count; the rest are answered with an error (at least 1) |
 | `tools.reply.budget_ms` | `30000` | Time one reply may spend on tool calls in all (at least 1 ms) |
 | `tools.reply.filler_after_ms` | `1500` | A call still running after this long gets a filler line; 0 says one at once |
 | `tools.reply.max_tokens` | `512` | The longest model answer, in tokens, for one tool-using step (at least 1) |

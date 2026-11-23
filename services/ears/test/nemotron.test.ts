@@ -88,19 +88,52 @@ test("each push is one binary 16 kHz PCM16 frame of the same bytes and length, w
 });
 
 // @spec EARS-NEM-004
-test("deltas build the hypothesis: extends_previous appends, otherwise the delta is the whole text", async () => {
+test("deltas build the hypothesis: a suffix is appended, a delta that starts with the hypothesis replaces it", async () => {
   const srv = await nemotronServer();
   try {
     const s = await connect(srv);
     const seen: string[] = [];
     s.onHypothesis((t) => seen.push(t));
-    const delta = (d: string, ext: boolean) => srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: d, extends_previous: ext });
-    delta("hello", false);
-    delta(" wor", true);
-    delta("ld", true);
-    delta("hello there", false);
-    await until(() => seen.length === 4, "four hypotheses");
-    assert.deepEqual(seen, ["hello", "hello wor", "hello world", "hello there"]);
+    const delta = (d: string) => srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: d });
+    delta("hello");              // the first transcript: the whole text
+    delta(" wor");              // a suffix of "hello wor"
+    delta("ld");                // a suffix of "hello world"
+    await until(() => seen.length === 3, "three hypotheses");
+    assert.deepEqual(seen, ["hello", "hello wor", "hello world"]);
+    delta("hello world!");      // a corrected whole transcript: it starts with the hypothesis "hello world"
+    await until(() => seen.length === 4, "the correction");
+    assert.equal(seen[3], "hello world!");
+    s.abort();
+  } finally { await srv.close(); }
+});
+
+// @spec EARS-NEM-004
+test("a corrected whole transcript that does not start with the hypothesis is appended, as the server's suffix", async () => {
+  const srv = await nemotronServer();
+  try {
+    const s = await connect(srv);
+    const seen: string[] = [];
+    s.onHypothesis((t) => seen.push(t));
+    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "turn on" });
+    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: " the lamp" });
+    await until(() => seen.length === 2, "two hypotheses");
+    assert.deepEqual(seen, ["turn on", "turn on the lamp"]);
+    s.abort();
+  } finally { await srv.close(); }
+});
+
+// @spec EARS-NEM-004
+test("known limit: a suffix that begins with the whole hypothesis is read as a correction and replaces it", async () => {
+  const srv = await nemotronServer();
+  try {
+    const s = await connect(srv);
+    const seen: string[] = [];
+    s.onHypothesis((t) => seen.push(t));
+    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "no" });
+    // the server's suffix for the transcript "no" + "nope" (no space): it begins with "no", so it is read as a whole text
+    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "nope" });
+    await until(() => seen.length === 2, "two hypotheses");
+    assert.deepEqual(seen, ["no", "nope"], "the limit: the suffix replaced the hypothesis instead of extending it");
     s.abort();
   } finally { await srv.close(); }
 });
@@ -123,7 +156,7 @@ test("the final is the completed event's transcript, not the last hypothesis", a
   const srv = await nemotronServer({ transcript: () => "from completed" });
   try {
     const s = await connect(srv);
-    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "from a delta", extends_previous: false });
+    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "from a delta" });
     await sleep(30);
     assert.equal(await s.finish(), "from completed");
   } finally { await srv.close(); }

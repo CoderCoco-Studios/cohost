@@ -147,8 +147,9 @@ class NemotronSession implements SttSession {
     switch (ev.type) {
       case "conversation.item.input_audio_transcription.delta": {
         const delta = typeof ev.delta === "string" ? ev.delta : "";
-        // @spec EARS-NEM-004
-        this.hypothesis = ev.extends_previous === true ? this.hypothesis + delta : delta;
+        // @spec EARS-NEM-004: a delta that starts with the hypothesis is the whole corrected text; any other is a suffix.
+        // A suffix that begins with the whole previous hypothesis is read as a replacement (the known limit).
+        this.hypothesis = this.hypothesis !== "" && delta.startsWith(this.hypothesis) ? delta : this.hypothesis + delta;
         this.hypothesisCb?.(this.hypothesis);
         return;
       }

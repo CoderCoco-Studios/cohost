@@ -231,6 +231,9 @@ The only region that calls the chat model.
 | `brain.cortex.speaking_timeout_ms` | `20000` | Stop waiting on a voice sink that never reports done |
 | `brain.cortex.fallback_ack_chance` | `0.25` | The base chance, 0 to 1, that she riffs on a line that failed to play. A nudge stated to the model, not an enforced rate |
 | `brain.cortex.repeat_similarity` | `0.8` | Stay silent rather than say a line this similar, 0 to 1, to a recent one. 0 turns the check off |
+| `brain.cortex.clause_min_chars` | `24` | The shortest piece of a streamed reply spoken on its own, in characters; at least 1 |
+| `brain.cortex.clause_max_chars` | `160` | The longest piece spoken as one clause, in characters; not below `clause_min_chars` |
+| `brain.cortex.max_clauses` | `8` | How many clauses one reply may be spoken in before the co-host stops there, 1 to 16 |
 | `brain.cortex.critic` | map | The hook. See [Brain hooks](../extend/hooks.md) |
 | `brain.cortex.critic.kind` | `rules` | `rules` (built in), `llm` (one chat call, JSON reply) or `http` (POST to your URL). A blank value means `rules` |
 | `brain.cortex.critic.url` | `""` | `http` only: the endpoint to POST to, for example `http://host.docker.internal:8900/critic`. Required when `kind` is `http` |

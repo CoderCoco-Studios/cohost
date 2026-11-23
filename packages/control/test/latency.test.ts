@@ -11,8 +11,8 @@ const T = 1_000_000;
 const FULL = { audioEndedAt: T, heardAt: T + 400, focusedAt: T + 1000, llmStartedAt: T + 1100, llmEndedAt: T + 2100, criticEndedAt: T + 2400 };
 function line(id: string, over: { timing?: Record<string, unknown>; say?: Record<string, unknown>; utt?: number | null; playing?: Array<[number, string]> } = {}): Ev[] {
   const out: Ev[] = [ev("brain.say", T + 2450, { id, text: "hi", emotion: "happy", timing: { ...FULL, ...over.timing }, ...over.say })];
-  if (over.utt !== null) out.push(ev("voice.utterance", T + (over.utt ?? 2950), { id }));
-  for (const [ts, sink] of over.playing ?? [[T + 3000, "discord"]]) out.push(ev("voice.playing", ts, { id, sink }));
+  if (over.utt !== null) out.push(ev("voice.utterance", T + (over.utt ?? 2950), { id, seq: 0 }));
+  for (const [ts, sink] of over.playing ?? [[T + 3000, "discord"]]) out.push(ev("voice.playing", ts, { id, seq: 0, sink }));
   return out;
 }
 
@@ -116,8 +116,8 @@ test("with no critic stamp the critic stage is empty and say starts at llmEndedA
   const { criticEndedAt: _drop, ...noCritic } = FULL;
   const h = rig([
     ev("brain.say", T + 2450, { id: "a", text: "hi", emotion: "happy", timing: noCritic }),
-    ev("voice.utterance", T + 2950, { id: "a" }),
-    ev("voice.playing", T + 3000, { id: "a", sink: "discord" }),
+    ev("voice.utterance", T + 2950, { id: "a", seq: 0 }),
+    ev("voice.playing", T + 3000, { id: "a", seq: 0, sink: "discord" }),
   ]);
   await executeCli(["latency"], h.w);
   assert.deepEqual(row(h.text(), "critic"), { n: "0", p50: "-", p95: "-" });
@@ -153,7 +153,7 @@ test("duplicates: the first brain.say per id and the earliest utterance and play
   const h = rig([
     ...line("a", { playing: [[T + 3000, "discord"], [T + 9000, "discord"]] }),
     ev("brain.say", T + 8000, { id: "a", text: "hi", emotion: "happy", timing: FULL }),
-    ev("voice.utterance", T + 8500, { id: "a" }),
+    ev("voice.utterance", T + 8500, { id: "a", seq: 0 }),
   ]);
   await executeCli(["latency"], h.w);
   assert.equal(row(h.text(), "total").n, "1");
@@ -231,8 +231,8 @@ const V = { capturedAt: T, describedAt: T + 800, focusedAt: T + 1000, llmStarted
 /** A fully stamped vision line: describe 800, salience 200, prep 100, llm 1000, critic 300, say 50, tts 500, sink 50 = total 3000. */
 const vline = (id: string, over: { timing?: Record<string, unknown>; say?: Record<string, unknown> } = {}): Ev[] => [
   ev("brain.say", T + 2450, { id, text: "hi", emotion: "happy", timing: { ...V, ...over.timing }, ...over.say }),
-  ev("voice.utterance", T + 2950, { id }),
-  ev("voice.playing", T + 3000, { id, sink: "discord" }),
+  ev("voice.utterance", T + 2950, { id, seq: 0 }),
+  ev("voice.playing", T + 3000, { id, seq: 0, sink: "discord" }),
 ];
 
 // @spec CTRL-LAT-011, CTRL-LAT-012, CTRL-LAT-013
@@ -272,9 +272,9 @@ test("a brain.say with audioEndedAt is a speech sample only; with capturedAt onl
 test("vision duplicates and join rules follow the speech path: first say, earliest utterance, real sink over virtual", async () => {
   const h = rig([
     ...vline("a"),
-    ev("voice.playing", T + 2960, { id: "a", sink: "virtual" }),
+    ev("voice.playing", T + 2960, { id: "a", seq: 0, sink: "virtual" }),
     ev("brain.say", T + 8000, { id: "a", text: "hi", emotion: "happy", timing: V }),
-    ev("voice.utterance", T + 8500, { id: "a" }),
+    ev("voice.utterance", T + 8500, { id: "a", seq: 0 }),
   ]);
   await executeCli(["latency"], h.w);
   assert.equal(row(h.vtext(), "total").n, "1");
@@ -311,4 +311,65 @@ test("no vision samples with speech samples present prints the vision no-sample 
   const h = rig(line("a"));
   assert.equal(await executeCli(["latency", "--count", "9"], h.w), 0);
   assert.deepEqual(visionOut(h.out), ["latency: no vision-path samples in the last 9 events"]);
+});
+
+/** A streamed line: the brain.say (clause 0) and, per clause, a voice.utterance and voice.playing events carrying `seq`. */
+function streamed(id: string, clauses: Array<{ seq: number; utt: number; playing: Array<[number, string]> }> = [
+  { seq: 0, utt: T + 2950, playing: [[T + 3000, "discord"]] },
+  { seq: 1, utt: T + 3500, playing: [[T + 5000, "discord"]] },
+  { seq: 2, utt: T + 4000, playing: [[T + 7000, "discord"]] },
+]): Ev[] {
+  const out: Ev[] = [ev("brain.say", T + 2450, { id, text: "first", more: true, emotion: "happy", timing: { ...FULL } })];
+  for (const c of clauses) {
+    out.push(ev("voice.utterance", c.utt, { id, seq: c.seq }));
+    for (const [ts, sink] of c.playing) out.push(ev("voice.playing", ts, { id, seq: c.seq, sink }));
+  }
+  out.push(ev("brain.clause", T + 3400, { id, seq: 1, text: "second" }), ev("brain.clause", T + 3900, { id, seq: 2, text: "third", last: true, through: 2 }));
+  return out;
+}
+
+// @spec CTRL-LAT-015
+test("a streamed line of several clauses is one sample, measured on clause 0", async () => {
+  const h = rig(streamed("s"));
+  assert.equal(await executeCli(["latency"], h.w), 0);
+  for (const s of STAGES) assert.equal(row(h.text(), s).n, "1", `${s}: one sample, not one per clause`);
+  assert.equal(row(h.text(), "tts").p50, "500", "tts: brain.say to the clause-0 utterance");
+  assert.equal(row(h.text(), "sink").p50, "50", "sink: clause-0 utterance to clause-0 playing");
+  assert.equal(row(h.text(), "total").p50, "3000", "total ends at the clause-0 playing, not at a later clause");
+});
+
+// @spec CTRL-LAT-015
+test("clause 0 joins the earliest non-virtual voice.playing with seq 0, else the earliest of seq 0; later clauses are ignored", async () => {
+  const real = rig(streamed("a", [
+    { seq: 1, utt: T + 2900, playing: [[T + 2900, "discord"]] },
+    { seq: 0, utt: T + 2950, playing: [[T + 2960, "virtual"], [T + 3100, "discord"], [T + 3050, "dashboard"]] },
+  ]));
+  await executeCli(["latency"], real.w);
+  assert.equal(row(real.text(), "total").p50, "3050", "earliest non-virtual seq 0, not the earlier virtual or the seq 1 playing");
+  const virt = rig(streamed("b", [
+    { seq: 0, utt: T + 2950, playing: [[T + 3100, "virtual"], [T + 2960, "virtual"]] },
+    { seq: 1, utt: T + 3000, playing: [[T + 3010, "discord"]] },
+  ]));
+  await executeCli(["latency"], virt.w);
+  assert.equal(row(virt.text(), "total").p50, "2960", "with only virtual playing for seq 0 the earliest of them");
+});
+
+// @spec CTRL-LAT-015
+test("a streamed line whose clause 0 has not played counts the stages it completed, whatever later clauses did", async () => {
+  const h = rig(streamed("c", [{ seq: 0, utt: T + 2950, playing: [] }, { seq: 1, utt: T + 3000, playing: [[T + 3100, "discord"]] }]));
+  await executeCli(["latency"], h.w);
+  assert.equal(row(h.text(), "tts").n, "1");
+  assert.equal(row(h.text(), "sink").n, "0", "no clause-0 playing: no sink stage from clause 1");
+  assert.equal(row(h.text(), "total").n, "0");
+});
+
+// @spec CTRL-LAT-016
+test("a streamed line's llm stage uses the llmEndedAt the brain.say carries; tts and sink are measured on clause 0", async () => {
+  const h = rig(streamed("d"));
+  await executeCli(["latency"], h.w);
+  assert.equal(row(h.text(), "llm").p50, "1000", "llmEndedAt - llmStartedAt from the brain.say timing");
+  const slow = rig(streamed("e", [{ seq: 0, utt: T + 3300, playing: [[T + 3900, "discord"]] }, { seq: 1, utt: T + 3400, playing: [[T + 4000, "discord"]] }]));
+  await executeCli(["latency"], slow.w);
+  assert.equal(row(slow.text(), "tts").p50, "850", "brain.say (T+2450) to the clause-0 utterance (T+3300)");
+  assert.equal(row(slow.text(), "sink").p50, "600", "clause-0 utterance to clause-0 playing");
 });

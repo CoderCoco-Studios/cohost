@@ -91,7 +91,7 @@ test("guard: a stuck utterance is replaced by a fallback clip, and a clip that s
     assert.deepEqual(played[1], wavToDiscordPcm(c.wav), "the clip is playing in a's place");
     assert.equal(bus.of("voice.done").length, 0, "the stop's idle did not end the clip");
     await waitFor(() => bus.of("voice.done").length === 1, "the stuck clip released");
-    assert.deepEqual(bus.of("voice.done"), [{ id: "a", sink: "discord" }]);
+    assert.deepEqual(bus.of("voice.done"), [{ id: "a", seq: 0, sink: "discord" }]);
     await waitFor(() => bus.of("voice.playing").some((e) => e.id === "b"), "b playing");
   } finally {
     p.close();
@@ -107,7 +107,7 @@ test("guard: a line that finishes in time disarms the watchdog", async () => {
     await new Promise((r) => setTimeout(r, 200));
     assert.deepEqual(stops, []);
     assert.equal(bus.of("voice.failed").length, 0);
-    assert.deepEqual(bus.of("voice.done"), [{ id: "a", sink: "discord" }]);
+    assert.deepEqual(bus.of("voice.done"), [{ id: "a", seq: 0, sink: "discord" }]);
   } finally {
     p.close();
   }

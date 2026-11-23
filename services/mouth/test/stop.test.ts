@@ -66,7 +66,7 @@ test("a stop without ids empties the queue and a stop with ids removes only thos
     await stopOf(out)({ ids: ["b"] });
     await stopOf(out)({ ids: ["c", "d"] });
     await settle();
-    assert.deepEqual(bus.of("voice.playing"), [{ id: "a", sink: "dryrun" }], "b, c and d never played");
+    assert.deepEqual(bus.of("voice.playing"), [{ id: "a", seq: 0, sink: "dryrun" }], "b, c and d never played");
     assert.deepEqual(bus.of("voice.failed"), []);
     assert.deepEqual(bus.of("voice.done"), [], "a is playing and was not named");
   } finally { out.close(); }
@@ -76,7 +76,7 @@ test("a stop without ids empties the queue and a stop with ids removes only thos
     void enqueue(all.out, "b"); void enqueue(all.out, "c");
     await stopOf(all.out)({});
     await settle();
-    assert.deepEqual(all.bus.of("voice.playing"), [{ id: "a", sink: "dryrun" }]);
+    assert.deepEqual(all.bus.of("voice.playing"), [{ id: "a", seq: 0, sink: "dryrun" }]);
     assert.deepEqual(all.bus.of("voice.done").map((d) => d.id), ["a"], "only the current item is reported, as interrupted");
   } finally { all.out.close(); }
 });
@@ -173,7 +173,7 @@ test("a stop naming no item the output holds changes nothing and publishes nothi
     await stopOf(out)({ ids: ["zzz"] });
     assert.deepEqual(bus.published.map((p) => p.type), ["voice.playing"]);
     await waitFor(() => bus.of("voice.done").length === 1, "a ends normally");
-    assert.deepEqual(bus.of("voice.done"), [{ id: "a", sink: "dryrun" }], "not interrupted");
+    assert.deepEqual(bus.of("voice.done"), [{ id: "a", seq: 0, sink: "dryrun" }], "not interrupted");
   } finally { out.close(); }
 });
 

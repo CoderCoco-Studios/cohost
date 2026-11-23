@@ -28,7 +28,7 @@ const cfg = (critic: Record<string, unknown>) => ConfigSchema.parse({
   dashboard: {},
 });
 const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/critic`;
-const line = { text: "hello chat", emotion: "happy" as const, reason: "engaged", transcript: "[chat] bob: hi" };
+const line = { text: "hello chat", emotion: "happy" as const, reason: "engaged", transcript: "[chat] bob: «hi»" };
 
 // @spec CTX-CRITIC-004
 test("critic rules: pass-through", async () => {

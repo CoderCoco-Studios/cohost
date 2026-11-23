@@ -159,7 +159,7 @@ export class Voice {
   /** Publish a virtual-sink event; a failure is logged and never escapes the timer callback. */
   private async publishVirtual(type: "voice.playing" | "voice.done", id: string, interrupted = false): Promise<void> { // @spec VOICE-SINK-009
     try {
-      await this.d.bus.publish(type, { id, sink: "virtual", ...(interrupted ? { interrupted: true as const } : {}) } as never);
+      await this.d.bus.publish(type, { id, seq: 0, sink: "virtual", ...(interrupted ? { interrupted: true as const } : {}) } as never);
     } catch (err) {
       this.d.log.warn({ err, id, type }, "virtual sink publish failed");
     }
@@ -266,7 +266,7 @@ export class Voice {
       this.put(id, wav);
       log.info({ id, ms: Date.now() - t0, durationMs: Math.round(info.durationMs), text }, "synthesized");
       await bus.publish("voice.utterance", {
-        id, text, emotion, gesture, ...(route ? { route } : {}), // @spec VOICE-UTT-004
+        id, seq: 0, text, emotion, gesture, ...(route ? { route } : {}), // @spec VOICE-UTT-004
         durationMs: Math.round(info.durationMs),
         envelopeHz: ENVELOPE_HZ,
         envelope: env,
@@ -295,7 +295,7 @@ export class Voice {
       if (this.cancelled.delete(id)) return; // @spec VOICE-UTT-003, VOICE-SINK-006
       log.error({ err, text }, "tts failed");
       // Let the brain continue even though nothing was said.
-      await bus.publish("voice.done", { id, sink: "error" });
+      await bus.publish("voice.done", { id, seq: 0, sink: "error" });
     }
   }
 

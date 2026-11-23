@@ -180,6 +180,9 @@ brain:
     speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
     fallback_ack_chance: 0.25  # base chance she riffs on a line that failed to play: a nudge stated to the model, not an enforced rate
     repeat_similarity: 0.8     # stay silent rather than say a line this similar (0..1) to a recent one; 0 turns it off
+    clause_min_chars: 24       # shortest piece of a long reply spoken on its own (at least 1)
+    clause_max_chars: 160      # longest piece spoken as one clause; not below clause_min_chars
+    max_clauses: 8             # most clauses one reply is spoken in before it stops (1..16)
     # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
     # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
     critic:

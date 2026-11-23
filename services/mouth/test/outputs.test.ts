@@ -32,10 +32,10 @@ test("file: writes each line's WAV under the directory (created on demand), clai
     assert.equal(files.length, 1);
     assert.match(files[0]!, /^\d+-\d+-u1\.wav$/);
     assert.ok(readFileSync(join(dir, files[0]!)).equals(body), "the WAV unchanged (MOUTH-SINK-001)");
-    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "u1", sink: "file" } }]);
+    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "file" } }]);
     await waitFor(() => bus.of("voice.done").length === 1, "voice.done");
     assert.ok(performance.now() - t0 >= 55, "released after the duration, not at once");
-    assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "file" }]);
+    assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "file" }]);
   } finally {
     out.close();
   }
@@ -107,14 +107,14 @@ test("http: claims the line, POSTs the WAV with its id and content type, and rel
     assert.equal(out.name, "http");
     assert.equal(out.isReady(), true);
     await out.playback.enqueue("u1", "http://voice/u1.wav");
-    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "u1", sink: "http" } }]);
+    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "http" } }]);
     await waitFor(() => calls.length === 1, "the POST");
     assert.equal(calls[0]!.url, "http://sink.test/ingest");
     assert.equal(calls[0]!.headers["content-type"], "audio/wav");
     assert.equal(calls[0]!.headers["x-cohost-utterance-id"], "u1");
     assert.ok(calls[0]!.body.equals(wav(40, 2)), "the WAV unchanged (MOUTH-SINK-001)");
     await waitFor(() => bus.of("voice.done").length === 1, "voice.done while the POST is pending");
-    assert.deepEqual(bus.of("voice.done"), [{ id: "u1", sink: "http" }]);
+    assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "http" }]);
   } finally {
     release();
     out.close();

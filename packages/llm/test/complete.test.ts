@@ -188,3 +188,56 @@ test("complete(): a failing request is made once; no retry or back-off", async (
   const dead = new OpenAICompatible(llmCfg({ openai: { base_url: "http://127.0.0.1:1/v1" } })) as any;
   await assert.rejects(dead.complete(hello), /fetch failed/);
 });
+
+/** The base URL of a port nothing listens on. */
+async function refusedUrl(): Promise<string> {
+  const s = http.createServer(); await new Promise<void>((r) => s.listen(0, r));
+  const port = (s.address() as { port: number }).port; await new Promise((r) => s.close(r));
+  return `http://127.0.0.1:${port}`;
+}
+
+// @spec LLM-ERR-008, LLM-ERR-001
+test("a refused connection on chat() and complete() throws a ChatError of kind connect with no status", async () => {
+  const url = await refusedUrl();
+  const providers = [
+    new Ollama(llmCfg({ provider: "ollama" }), url) as any,
+    new OpenAICompatible(llmCfg({ openai: { base_url: `${url}/v1` } })) as any,
+  ];
+  for (const p of providers) {
+    for (const call of [() => p.chat(hello), () => p.complete(hello)]) {
+      const err = await call().then(() => undefined, (e: unknown) => e) as any;
+      assert.ok(err instanceof llmApi.ChatError, p.name);
+      assert.equal(err.kind, "connect");
+      assert.equal(err.status, undefined);
+    }
+  }
+});
+
+// @spec LLM-ERR-006
+test("aborting the signal of chat() and complete() rejects with the caller's exact reason", async () => {
+  for (const p of [new Ollama(withTimeout(5000, { provider: "ollama" }), holeUrl) as any, new OpenAICompatible(withTimeout(5000, { openai: { base_url: `${holeUrl}/v1` } })) as any]) {
+    for (const call of ["chat", "complete"] as const) {
+      const ac = new AbortController();
+      const reason = new Error(`caller gave up on ${call}`);
+      const pending = p[call](hello, { signal: ac.signal });
+      ac.abort(reason);
+      await assert.rejects(pending, (e: unknown) => e === reason, `${p.name} ${call}`);
+    }
+  }
+});
+
+// @spec LLM-PING-007
+test("a failed chat() or complete() leaves lastError unchanged", async () => {
+  const b = await recorder(() => ({ status: 500, text: "boom" }));
+  const url = await refusedUrl();
+  for (const [p, label] of [
+    [new Ollama(llmCfg({ provider: "ollama" }), b.url) as any, "http"],
+    [new OpenAICompatible(llmCfg({ openai: { base_url: `${url}/v1` } })) as any, "connect"],
+  ] as const) {
+    p.lastError = "earlier ping failure";
+    for (const call of ["chat", "complete"] as const) {
+      await assert.rejects(p[call](hello), undefined, label);
+      assert.equal(p.lastError, "earlier ping failure", `${p.name} ${call}`);
+    }
+  }
+});

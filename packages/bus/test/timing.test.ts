@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventPayloads } from "../src/index.js";
 
-const MEMBERS = ["audioEndedAt", "heardAt", "capturedAt", "describedAt", "focusedAt", "llmStartedAt", "llmEndedAt", "criticEndedAt"] as const;
+const MEMBERS = ["audioEndedAt", "heardAt", "capturedAt", "describedAt", "focusedAt", "llmStartedAt", "llmEndedAt", "criticEndedAt", "toolStartedAt", "toolEndedAt"] as const;
 
 const bases = {
   "vision.summary": { text: "t" },

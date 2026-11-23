@@ -51,6 +51,7 @@ export const LineRoute = z.array(z.string());
  * received one (BUS-EVT-024, BUS-EVT-025). Every member is optional; the report that reads them is `cohostctl latency`.
  */
 const Stamp = z.number().int().nonnegative();
+// @spec BUS-EVT-024
 export const Timing = z.object({
   audioEndedAt: Stamp.optional(),
   heardAt: Stamp.optional(),
@@ -60,9 +61,32 @@ export const Timing = z.object({
   llmStartedAt: Stamp.optional(),
   llmEndedAt: Stamp.optional(),
   criticEndedAt: Stamp.optional(),
+  /** Early reply (cortex): the sentence's close, the confirmation of a provisional focus and the hold of a provisional think (BUS-EVT-024). */
+  closedAt: Stamp.optional(),
+  confirmedAt: Stamp.optional(),
+  heldAt: Stamp.optional(),
+  /** Tool wait (cortex): the first `tool.request` of the reply and the last result that held its first clause back. */
+  toolStartedAt: Stamp.optional(),
+  toolEndedAt: Stamp.optional(),
 });
 
 export type Timing = z.infer<typeof Timing>;
+
+/** The focus members of an `attention.focus`, reused on a confirm `attention.resolve` (BUS-EVT-010, BUS-EVT-057). */
+const FocusRef = z.object({
+  kind: z.enum(["chat", "speech", "vision", "reminder"]),
+  /** The listening source of a speech focus, kept unchanged (BUS-EVT-051). */
+  source: z.string().optional(),
+  who: z.string().optional(),
+  /** The chat source and the viewer's platform id, for chat focus (BUS-EVT-036). */
+  platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+  userId: z.string().optional(),
+  text: z.string(),
+  mention: z.boolean().default(false),
+});
+
+/** Why a withdrawn provisional focus was dropped (BUS-EVT-060). */
+const WITHDRAW_REASONS = ["resumed", "muted", "paused", "forgotten", "superseded", "timeout"] as const;
 
 /** A viewer named in a request: the display name, and the platform and platform id when the sender has them. */
 const viewerRef = z.object({
@@ -134,6 +158,11 @@ export const EventPayloads = {
     source: z.string().optional(),
     /** Ties the final to the `speech.partial`s of its utterance (BUS-EVT-027); absent on events written before the field and on direct injections. */
     utteranceId: z.string().optional(),
+    /** Early reply (BUS-EVT-054): the `seq` of the last `speech.early` of this utterance and its speech-to-text time, ms. */
+    earlySeq: z.number().int().nonnegative().optional(),
+    earlySttMs: z.number().int().nonnegative().optional(),
+    /** Set when the final arrived after the early reply it answers had already been started (BUS-EVT-054). */
+    earlyLate: z.literal(true).optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
@@ -150,8 +179,34 @@ export const EventPayloads = {
     timing: Timing.optional(),
   }),
 
+  /**
+   * A provisional transcript of a sentence still being spoken, published after `after_ms` of pause (early reply). Carries no
+   * injection flags: it is never a test input (BUS-EVT-059).
+   */
+  // @spec BUS-EVT-052, BUS-EVT-059
+  "speech.early": z.object({
+    speaker: z.string(),
+    speakerId: z.string().optional(),
+    source: z.string(),
+    text: z.string(),
+    utteranceId: z.string(),
+    seq: z.number().int().nonnegative(),
+    /** The speech-to-text time of this transcript, ms. */
+    sttMs: z.number().int().nonnegative(),
+    timing: Timing.optional(),
+  }),
+  /** Withdraws a `speech.early` whose sentence did not finish as it began (early reply); names it by `utteranceId` and `seq`. */
+  // @spec BUS-EVT-053, BUS-EVT-059
+  "speech.retracted": z.object({
+    speaker: z.string(),
+    speakerId: z.string().optional(),
+    source: z.string(),
+    utteranceId: z.string(),
+    seq: z.number().int().nonnegative(),
+  }),
+
   /** The brain decided to say something. Voice + avatar react to this. */
-  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023, BUS-EVT-024, BUS-EVT-037
+  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023, BUS-EVT-024, BUS-EVT-037, BUS-EVT-058
   "brain.say": z.object({
     id: z.string(),
     text: z.string(),
@@ -168,6 +223,8 @@ export const EventPayloads = {
     remember: z.boolean().optional(),
     /** The reply continues as `brain.clause` events of this line (BUS-EVT-037). */
     more: z.literal(true).optional(),
+    /** The reply was started on a sentence still being spoken and confirmed by an interjecting focus (BUS-EVT-058). */
+    interjected: z.literal(true).optional(),
   }),
 
   /**
@@ -203,31 +260,57 @@ export const EventPayloads = {
   // ---- brain regions talk to each other through these ----
 
   /** salience → cortex: something is worth responding to right now. */
-  // @spec BUS-EVT-010, BUS-EVT-005, BUS-EVT-024, BUS-EVT-036
+  // @spec BUS-EVT-010, BUS-EVT-005, BUS-EVT-024, BUS-EVT-036, BUS-EVT-055
   "attention.focus": z.object({
     /** "mentioned" | "engaged" | "idle chatter" ... free text for the dashboard. */
     reason: z.string(),
     score: z.number(),
     /** The single event most worth replying to, if any. */
-    focus: z
-      .object({
-        kind: z.enum(["chat", "speech", "vision", "reminder"]),
-        /** The listening source of a speech focus, kept unchanged (BUS-EVT-051). */
-        source: z.string().optional(),
-        who: z.string().optional(),
-        /** The chat source and the viewer's platform id, for chat focus (BUS-EVT-036). */
-        platform: z.enum(["twitch", "youtube", "discord"]).optional(),
-        userId: z.string().optional(),
-        text: z.string(),
-        mention: z.boolean().default(false),
-      })
-      .optional(),
+    focus: FocusRef.optional(),
+    /** A focus on a sentence still being spoken (early reply): not yet confirmed; `true` or absent (BUS-EVT-055). */
+    provisional: z.literal(true).optional(),
+    /** The early transcript's `seq` and the utterance it belongs to, so a later `attention.resolve` can name it (BUS-EVT-055). */
+    seq: z.number().int().nonnegative().optional(),
+    utteranceId: z.string().optional(),
     /** `audioEndedAt` and `heardAt` of focused speech, or `capturedAt` and `describedAt` of focused vision (SAL-FOCUS-006). */
     timing: Timing.optional(),
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
   }),
+
+  /**
+   * salience → cortex: the outcome of a provisional focus (early reply), named by `utteranceId` and `seq`. `confirm` releases
+   * the reply held for it and carries the focus members (BUS-EVT-057); `withdraw` drops it for one of the fixed reasons
+   * (BUS-EVT-060). Any other member is stripped (BUS-EVT-059).
+   */
+  // @spec BUS-EVT-056, BUS-EVT-057, BUS-EVT-060, BUS-EVT-024
+  "attention.resolve": z.discriminatedUnion("outcome", [
+    z.object({
+      utteranceId: z.string(),
+      seq: z.number().int().nonnegative(),
+      outcome: z.literal("confirm"),
+      /** The focus's own reason, as on `attention.focus`. */
+      reason: z.string().optional(),
+      /** Set when the confirmed focus interjected on the sentence (BUS-EVT-056). */
+      interjected: z.literal(true).optional(),
+      /** The focus members a confirm carries (BUS-EVT-057): `score` is optional, as the contract tests read it. */
+      score: z.number().optional(),
+      focus: FocusRef.optional(),
+      injected: z.boolean().optional(),
+      remember: z.boolean().optional(),
+      timing: Timing.optional(),
+    }),
+    z.object({
+      utteranceId: z.string(),
+      seq: z.number().int().nonnegative(),
+      outcome: z.literal("withdraw"),
+      /** Why the focus was dropped (BUS-EVT-060). */
+      reason: z.enum(WITHDRAW_REASONS).optional(),
+      interjected: z.literal(true).optional(),
+      timing: Timing.optional(),
+    }),
+  ]),
 
   /** affect → everyone: the co-host's running mood. Decays on its own. */
   // @spec BUS-EVT-003

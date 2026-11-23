@@ -12,7 +12,8 @@ type Sub = { opts: { group: string; types: readonly string[]; start?: string }; 
 const tags = (...names: string[]) => (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => { for (const n of names) b.register(n, connectorOffer.map((c) => ({ ...c, tag: n }))); };
 const cfg = (over: Record<string, unknown> = {}) => ({
   sources: ["desktop"], echo_suppress_sources: ["desktop"], echo_tail_ms: 300, stt_engine: "speaches", partials: "off", stt_gpu: true,
-  silence_ms: 120, min_speech_ms: 100, vad: { engine: "gap" }, ...over,
+  // CFG-SCH-105: ears.early.after_ms (default 250) must sit below silence_ms, so it is set here.
+  silence_ms: 120, early: { after_ms: 100 }, min_speech_ms: 100, vad: { engine: "gap" }, ...over,
 });
 const playing = (id: string, sink = "discord") => event("voice.playing", { id, seq: 0, sink });
 const done = (id: string, extra: Record<string, unknown> = {}) => event("voice.done", { id, seq: 0, sink: "discord", ...extra } as never);

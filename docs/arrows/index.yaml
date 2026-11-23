@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 218 [x], 13 [ ] (the early-reply settings CFG-SCH-102 to 112 are open gaps; CFG-SEC-018 waits on DASH-SECRET-014, CFG-PRES-014 on #208)."
+    next: "231 specs: 229 [x], 2 [ ] (CFG-SEC-018 waits on DASH-SECRET-014, CFG-PRES-014 on #208). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "214 specs: 198 [x], 11 [ ], 5 [D] (the early-reply specs BUS-EVT-052 to 060, and BUS-EVT-001 and BUS-EVT-024 revised, are open gaps)."
+    next: "214 specs: 209 [x], 0 [ ], 5 [D] (the early-reply events BUS-EVT-052 to 060, the 37-payload catalogue and the timing stamps of BUS-EVT-024 are built, #221)."
     drift: null
 
   model-backends:

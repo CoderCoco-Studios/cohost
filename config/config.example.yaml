@@ -85,6 +85,13 @@ brain:
     barge_in: false            # stop the voice when someone speaks over the co-host (off until live-tested)
     barge_in_sources: [discord] # sources whose speech may interrupt (http, dir or a connector tag); echo from others is not filtered here
     barge_in_min_words: 2      # words a line needs to interrupt ("mm-hm" does not)
+    interject: false           # answer a sentence while the speaker is still talking (off until live-tested)
+    interject_chance: 0.15     # chance an eligible sentence is answered while it is spoken, 0 to 1
+    interject_yield: true      # stop an interjection when the speaker carries on talking
+    interject_min_gap_ms: 120000 # shortest time between two interjections
+    interject_min_words: 4     # words a sentence needs before it may be interjected on
+    interject_followup_min_words: 3 # words a follow-up sentence needs before it may be interjected on
+    unresolved_limit_ms: 4000  # how long a provisional focus may wait to be confirmed or withdrawn
     cooldown_ms: 6000          # min gap between utterances
     thinking_timeout_ms: 60000 # stop treating the cortex as busy after this long without a reply
     idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context
@@ -187,6 +194,7 @@ brain:
     repeat_similarity: 0.8     # stay silent rather than say a line this similar (0..1) to a recent one; 0 turns it off
     clause_min_chars: 24       # shortest piece of a long reply spoken on its own (at least 1)
     clause_max_chars: 160      # longest piece spoken as one clause; not below clause_min_chars
+    hold_limit_ms: 5000        # longest a reply on a provisional sentence may hold its first words back
     max_clauses: 8             # most clauses one reply is spoken in before it stops (1..16)
     # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
     # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
@@ -283,6 +291,10 @@ ears:
     path: ""
     poll_ms: 1000
   silence_ms: 700              # end-of-utterance detection
+  early:                       # early reply: start on a provisional transcript after a short pause
+    enabled: false             # on = publish provisional transcripts; works with any stt_engine
+    after_ms: 250              # the pause before an early transcript, at least 100 and below silence_ms
+    max_per_utterance: 2       # early transcripts one sentence may produce, 1 to 5
   echo_suppress_sources: [desktop] # sources deaf while the co-host's voice plays (a loopback capture hears it); discord already filters its own
   echo_tail_ms: 1500           # keep them deaf this long after a line ends (room echo)
   vad:

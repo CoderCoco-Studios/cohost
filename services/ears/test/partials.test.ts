@@ -12,7 +12,8 @@ const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}
 /** Real STT path (faked fetch), gap endpointing, a short step so a test needs ~0.5 s: 150 ms of silence closes an utterance. */
 const cfg = (over: Record<string, unknown> = {}) => ({
   sources: ["discord"], stt_engine: "speaches", partials: "on", stt_gpu: true, partial_step_ms: 30,
-  silence_ms: 150, min_speech_ms: 100, vad: { engine: "gap" }, ...over,
+  // CFG-SCH-105: ears.early.after_ms (default 250) must sit below silence_ms, so it is set here.
+  silence_ms: 150, early: { after_ms: 100 }, min_speech_ms: 100, vad: { engine: "gap" }, ...over,
 });
 /** Scripted answers by call order; the last one repeats (so the final transcription gets it too). */
 const script = (...texts: string[]) => (c: { n: number }) => texts[Math.min(c.n, texts.length - 1)]!;

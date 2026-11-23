@@ -53,6 +53,14 @@ Both tokens are required together: the refresh token must be set whenever the ac
 
 The co-host does not write into Twitch chat today. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
 
+## What cohost forgets when a moderator removes chat
+
+The chat service reports what Twitch removes: a deleted line, a ban, a timeout, or a cleared chat. It publishes each as a `chat.removed` notice and ignores `chat.ignore_users` for it. Forgetting those lines, in the co-host's short-term window and in stored memory, arrives with #180–#183; until then the co-host still holds them.
+
+cohost never sends a delete, ban or timeout to Twitch. It only reports what Twitch did.
+
+Whether Twitch sends these removal notices to the anonymous, read-only connection has not been checked against a live channel yet. It is on the manual check list for #239.
+
 ## How you know it worked
 
 - The Services screen shows `chat` as `up` with mode `live`.

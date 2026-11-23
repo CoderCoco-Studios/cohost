@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { SECRET_PATHS, sectionSecrets, secretsPath, setSecretPaths, updateSecrets } from "@cohost/config";
+import { secretPathOf, sectionSecrets, secretsPath, setSecretPaths, updateSecrets } from "@cohost/config";
 import type { Logger } from "@cohost/config";
 import { bearerOk, type ServiceDef } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
@@ -84,7 +84,7 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
       return true;
     }
     const entries = Object.entries(values);
-    const unknown = entries.map(([p]) => p).filter((p) => !SECRET_PATHS.includes(p));
+    const unknown = entries.map(([p]) => p).filter((p) => secretPathOf(p) === undefined);
     if (unknown.length) { json(res, 404, { ...UNKNOWN, paths: unknown }); return true; }
     changes = [];
     for (const [p, v] of entries) {
@@ -95,7 +95,7 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
   } else {
     let path: string;
     try { path = decodeURIComponent(url.pathname.slice("/secrets/".length)); } catch { json(res, 404, UNKNOWN); return true; }
-    if (!SECRET_PATHS.includes(path)) { json(res, 404, UNKNOWN); return true; }
+    if (secretPathOf(path) === undefined) { json(res, 404, UNKNOWN); return true; }
     const parsed = parseObject(raw);
     if (!parsed || !("value" in parsed)) { json(res, 400, { ok: false, detail: "the body must be { value: <string | null> }" }); return true; }
     const c = checkValue(parsed["value"]);

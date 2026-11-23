@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 69 `[x]`, 98 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are counted per category in the coverage table below: the early-reply and interjection specs (SAL-PROV, SAL-INTJ), reminders (SAL-REM), the streamed-speech clause specs, and the open decision, scoring, focus and intake specs (the chat safety work). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 83 `[x]`, 84 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are counted per category in the coverage table below: the early-reply and interjection specs (SAL-PROV, SAL-INTJ), reminders (SAL-REM), the streamed-speech clause specs, and the open decision, scoring, focus and intake specs (the chat safety work). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -36,7 +36,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 62 `[x]`, 105 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 83 `[x]`, 84 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -80,8 +80,8 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
 | Intake | SAL-IN-001 to SAL-IN-009 | 5 | 0 | 4 |
-| Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 8 | 0 | 6 |
-| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 4 | 0 | 15 |
+| Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 14 | 0 | 0 |
+| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 12 | 0 | 7 |
 | Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 3 | 0 | 4 |
 | Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 7 | 1 | 2 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-008 | 8 | 0 | 0 |
@@ -94,7 +94,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 0 | 0 | 34 |
 | Interjection | SAL-INTJ-001 to SAL-INTJ-023 | 0 | 0 | 23 |
 
-**Summary:** 168 specs: 69 implemented, 98 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 168 specs: 83 implemented, 84 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -102,7 +102,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 2. **Spec wording matches code where the decision confirmed it.** SAL-FOCUS-003: the bus schema fills a missing `mention` with false (`packages/bus/src/events.ts`). SAL-DECIDE-005: a fully silent stream stays silent. SAL-BUSY-004: cortex `muted` is not busy. SAL-CTRL-006: mute and pause are not persisted.
 3. **A decision made before a mute, pause or busy cortex does not publish** (SAL-FOCUS-005). Its events stay unseen, with their scores cached. Only llm/http scorers open the window.
 4. **Restart skips the backlog.** `main.ts` names start mode `latest`, so the `salience` group moves to the tail on every start (SAL-IN-001).
-5. **Rule weights match the config defaults.** Mention 1.0, voice 0.9, question 0.55, mod/sub 0.35, screen 0.3, plain 0.15, threshold 0.6 are the values of `scoring.ts` and the schema defaults (`packages/config/src/schema.ts`; `config/config.example.yaml`), asserted in `services/salience/test/salience.test.ts`. The total is a sum over all unseen events (`Scheduler.decide`).
+5. **Rule weights match the config defaults.** Mention 1.0, voice 0.9, question 0.55, mod/sub 0.35, screen 0.3, plain 0.15, threshold 0.6 are the values of `scoring.ts` and the schema defaults (`packages/config/src/schema.ts`; `config/config.example.yaml`), asserted in `services/salience/test/salience.test.ts`. The total is a sum over the counted unseen events; the focus is the first counted event whose score is above 0 (SAL-DECIDE-002, SAL-DECIDE-014; `Scheduler.decide`).
 6. **Startup runs under the bootstrap and `ready` follows group creation** (SAL-HEALTH-001, SAL-HEALTH-003). `Bus.subscribe` has no readiness signal, so `salienceMain` awaits `bus.resetGroup("salience")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, commit `969f6d7` ("Fix review findings") or the 2026-11-01 owner decisions; two keep a partial `[inferred]` (why sum not max, the 0.1 threshold floor) and the 60 s valve default value is `[inferred]`.
 
@@ -110,7 +110,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 - Viewer identity and forgetting (design 2026-11-16, no code): the burst counter keys a viewer by platform and user id (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019), the focus carries them (SAL-FOCUS-003), and `chat.removed` is read and forgotten (SAL-IN-001, SAL-IN-008, SAL-IN-009, SAL-FOCUS-007).
 ### Must Fix
-Counting a burst once per viewer and per text, and the guarded `llm` scorer prompt, are specified and not built (SAL-DECIDE-002, SAL-DECIDE-009 to SAL-DECIDE-016, SAL-SCORE-009 to SAL-SCORE-014). The LLD has two open questions: repeated mentions across decisions, and several viewers named `unknown`.
+Counting a burst once (the walk, speech and vision always counting, discounted lines adding nothing and never the focus, reflexes untouched) and the guarded `llm` scorer prompt are built (SAL-DECIDE-002, -007, -009, -010, -013 to -016; SAL-SCORE-009 to -014). The counter call and the viewer and text comparison, SAL-DECIDE-011 and -012, are owned by #182 and stay open. The LLD has two open questions: repeated mentions across decisions, and several viewers named `unknown`.
 
 ### Should Fix
 None.

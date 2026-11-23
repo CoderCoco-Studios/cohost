@@ -2,9 +2,9 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { recordingLog, testConfig, waitFor } from "@cohost/testing";
-import { createChatFilter, type ChatUserInfo } from "../src/filter.js";
+import { createChatFilter, type ChatSender } from "../src/filter.js";
 import { fakeScript, FakeSource } from "../src/fake.js";
-import type { ChatSender, ChatSourceStartEnv } from "../src/source.js";
+import type { ChatSourceStartEnv } from "../src/source.js";
 
 const cfg = testConfig({ chat: { sources: ["fake"], ignore_users: ["nightbot"], ignore_prefixes: ["!"] } });
 const filters = { twitch: createChatFilter(cfg, "twitch"), youtube: createChatFilter(cfg, "youtube") };
@@ -17,8 +17,7 @@ function run(extra: { stdin?: PassThrough & { isTTY?: boolean } } = {}) {
   const env: ChatSourceStartEnv = {
     log: recordingLog().log,
     emit: (sender: ChatSender, text: string) => {
-      const platform = sender.platform ?? "twitch";
-      const ev = filters[platform](sender.login, text, { displayName: sender.displayName, userId: sender.userId, isMod: sender.isMod, isBroadcaster: false, isSubscriber: sender.isSubscriber } as ChatUserInfo);
+      const ev = filters[sender.platform ?? "twitch"](sender, text);
       if (ev) published.push(ev);
     },
     emitRemoval: () => {},

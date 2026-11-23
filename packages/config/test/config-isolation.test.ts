@@ -12,7 +12,7 @@ const MAP = {
   LLM_PROVIDER: "llm.provider", MEMORY_STORE: "brain.memory.store", MEMORY_EMBEDDER: "brain.memory.embedder", VOICE_ENGINE: "voice.engine",
   CHAT_SOURCES: "chat.sources", VISION_ENABLED: "vision.enabled", VISION_PROVIDER: "vision.provider", EARS_SOURCES: "ears.sources",
   EARS_STT_ENGINE: "ears.stt_engine", CONNECTIONS_DISCORD_ENABLED: "connections.discord.enabled", MOUTH_DISCORD_ENABLED: "mouth.outputs.discord.enabled",
-  MOUTH_DRYRUN_ENABLED: "mouth.outputs.dryrun.enabled", AVATAR_DRIVER: "avatar.driver",
+  MOUTH_DRYRUN_ENABLED: "mouth.outputs.dryrun.enabled", AVATAR_DRIVER: "avatar.driver", TOOLS_MODE: "tools.mode",
 } as const;
 
 function loadShipped(isolation?: Record<string, string>) {
@@ -24,14 +24,14 @@ function loadShipped(isolation?: Record<string, string>) {
 }
 
 // @spec CFG-ISO-006
-test("ISOLATION_OVERRIDES maps the thirteen override names to the keys they set, and the variable is COHOST_ISOLATION", () => {
+test("ISOLATION_OVERRIDES maps the fourteen override names to the keys they set, and the variable is COHOST_ISOLATION", () => {
   assert.deepEqual({ ...ISOLATION_OVERRIDES }, MAP);
-  assert.equal(Object.keys(ISOLATION_OVERRIDES).length, 13);
+  assert.equal(Object.keys(ISOLATION_OVERRIDES).length, 14);
   assert.equal(ISOLATION_ENV, "COHOST_ISOLATION");
 });
 
 // @spec CFG-ISO-004
-test("the shipped example writes each of the thirteen override keys as a literal holding its live default", () => {
+test("the shipped example writes each of the fourteen override keys as a literal holding its live default", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{/);
   const raw = parseYaml(text) as Record<string, unknown>;
@@ -40,7 +40,7 @@ test("the shipped example writes each of the thirteen override keys as a literal
     Object.values(MAP).map((p) => [p, at(p)]),
     [["llm.provider", "ollama"], ["brain.memory.store", "postgres"], ["brain.memory.embedder", "ollama"], ["voice.engine", "kokoro"], ["chat.sources", ["twitch"]],
       ["vision.enabled", false], ["vision.provider", "ollama"], ["ears.sources", ["discord"]], ["ears.stt_engine", "speaches"], ["connections.discord.enabled", true],
-      ["mouth.outputs.discord.enabled", true], ["mouth.outputs.dryrun.enabled", false], ["avatar.driver", "null"]],
+      ["mouth.outputs.discord.enabled", true], ["mouth.outputs.dryrun.enabled", false], ["avatar.driver", "null"], ["tools.mode", "live"]],
   );
   const { cfg } = loadShipped();
   assert.equal(cfg.llm.provider, "ollama");
@@ -56,6 +56,7 @@ test("the shipped example writes each of the thirteen override keys as a literal
   assert.equal(cfg.mouth.outputs.discord.enabled, true);
   assert.equal(cfg.mouth.outputs.dryrun.enabled, false);
   assert.equal(cfg.avatar.driver, "null");
+  assert.equal(cfg.tools.mode, "live");
 });
 
 // @spec CFG-ISO-005
@@ -84,7 +85,7 @@ test("COHOST_ISOLATION sets each entry at its key path, wins over the file, pars
   const { cfg } = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash", VOICE_ENGINE: "stub", CHAT_SOURCES: "[fake]", VISION_ENABLED: "true",
     VISION_PROVIDER: "stub", EARS_SOURCES: "[http, dir]", EARS_STT_ENGINE: "stub", CONNECTIONS_DISCORD_ENABLED: "false", MOUTH_DISCORD_ENABLED: "false",
-    MOUTH_DRYRUN_ENABLED: "true", AVATAR_DRIVER: "vmc",
+    MOUTH_DRYRUN_ENABLED: "true", AVATAR_DRIVER: "vmc", TOOLS_MODE: "mock",
   });
   assert.equal(cfg.llm.provider, "mock");
   assert.equal(cfg.brain.memory.store, "memory");
@@ -99,6 +100,7 @@ test("COHOST_ISOLATION sets each entry at its key path, wins over the file, pars
   assert.equal(cfg.mouth.outputs.discord.enabled, false);
   assert.equal(cfg.mouth.outputs.dryrun.enabled, true);
   assert.equal(cfg.avatar.driver, "vmc");
+  assert.equal(cfg.tools.mode, "mock");
   assert.deepEqual(earsSources(loadShipped({ EARS_SOURCES: "[]" }).cfg.ears), []);
   // an override of one key leaves every other key as the file has it
   assert.equal(loadShipped({ AVATAR_DRIVER: "null" }).cfg.llm.provider, "ollama");
@@ -166,6 +168,7 @@ test("variables and .env lines named like an override have no effect on the load
   assert.equal(cfg.avatar.driver, "null");
   assert.deepEqual(earsSources(cfg.ears), ["discord"]);
   assert.equal(cfg.vision.enabled, false);
+  assert.equal(cfg.tools.mode, "live");
 });
 
 // @spec CFG-ISO-010

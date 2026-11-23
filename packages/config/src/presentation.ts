@@ -23,7 +23,9 @@ export type Widget =
   | { type: "sources" }
   | { type: "textarea" }
   | { type: "model"; kind: ModelKind }
-  | { type: "options"; options: { value: string; label: string }[] };
+  | { type: "options"; options: { value: string; label: string }[] }
+  | { type: "mcp-servers" }
+  | { type: "tool-list" };
 
 /** One property of an array-of-objects key's item. */
 export interface ItemPresentation { help: string; label?: string; unit?: string }
@@ -54,7 +56,7 @@ export interface SectionPresentation {
 export const SECTION_PATHS: readonly string[] = [
   "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.affect", "brain.memory", "brain.cortex",
   "brain.input_limits", "viewer_text",
-  "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard", "network",
+  "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard", "network", "tools",
 ];
 
 const sections: Record<string, SectionPresentation> = {
@@ -76,6 +78,8 @@ const sections: Record<string, SectionPresentation> = {
   "avatar": { title: "Avatar", group: "Voice and body", about: "Which avatar app the co-host drives (VTube Studio or a VMC receiver) and how smoothly and lively it moves." },
   "connections": { title: "Discord", group: "System", about: "The Discord bot's server, voice channel and token, shared by hearing and speaking." },
   "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, and the size and lifetime limits of its test uploads." },
+  // @spec CFG-PRES-016
+  "tools": { title: "Tools", group: "Brain", about: "Which MCP servers the co-host may call and which of their tools it may use, with the limits on how long a call runs, how many run at once and how a reply uses them." },
   "network": { title: "Network", group: "System", about: "Which machines and address ranges count as your own network, so the co-host can tell what private data leaves it for a server outside your LAN." },
 };
 
@@ -99,7 +103,7 @@ const keys: Record<string, KeyPresentation> = {
   "cohost.timezone": { help: "The time zone the co-host is told the current date and time in, so what it says about the time or time of day matches yours.", widget: { type: "timezone" }, label: "Time zone" },
 
   // ---- llm
-  "llm.provider": { help: "Who writes the co-host's replies: ollama is a model on your own graphics card, openai is any OpenAI-compatible service, anthropic is Claude through the Claude API, bedrock is Claude through Amazon Bedrock, and mock gives canned offline replies for testing only. Memory search always uses local Ollama whatever you pick here." },
+  "llm.provider": { help: "Who writes the co-host's replies: ollama is a model on your own graphics card, openai is any OpenAI-compatible service, anthropic is Claude through the Claude API, bedrock is Claude through Amazon Bedrock, and mock gives canned offline replies for testing only. Memory search always uses local Ollama whatever you pick here.", sensitive: true },
   "llm.model": { help: "The model that writes the replies, named exactly as the chosen provider spells it (an Ollama tag like qwen2.5:7b, an OpenAI-style id, or a Claude id). A bigger model usually writes better lines but answers more slowly, which shows as a longer pause before the co-host speaks.", widget: { type: "model", kind: "chat" } },
   "llm.num_ctx": { help: "Ollama only: how much text, counted in tokens (a token is about three quarters of a word), the model can hold in mind at once, your prompt and its reply together. Higher lets it keep more chat history in view but uses more graphics memory; too low makes it forget the start of the conversation.", unit: "tokens", label: "Context window" },
   "llm.temperature": { help: "Ollama and OpenAI-compatible only: how adventurous the replies are, from 0 to 2. Lower is steadier and repeats itself more; higher is livelier and funnier but more likely to ramble or go off topic. Claude models do not use it." },
@@ -119,7 +123,7 @@ const keys: Record<string, KeyPresentation> = {
   // ---- vision
   "vision.enabled": { help: "Turns the co-host's eyes on. Off, the vision service stays idle and never touches OBS, so the co-host reacts to chat and speech only; on, it keeps an eye on your game and can comment on what happens." },
   "vision.model": { help: "The Ollama vision model that describes the screenshot. Ollama pulls it while the provider is ollama; leave it empty if no model describes the screen. A larger model describes better but takes longer on each look.", widget: { type: "model", kind: "vision" } },
-  "vision.provider": { help: "Which chat provider describes the screenshot: ollama asks a model on your graphics card, openai, anthropic and bedrock send it to a hosted service (their keys are in secrets.yaml), and stub replies with fixed text and calls no model, for testing the rest of the stack.", label: "Vision provider" },
+  "vision.provider": { help: "Which chat provider describes the screenshot: ollama asks a model on your graphics card, openai, anthropic and bedrock send it to a hosted service (their keys are in secrets.yaml), and stub replies with fixed text and calls no model, for testing the rest of the stack.", label: "Vision provider", sensitive: true },
   "vision.prompt": { help: "The instruction the vision model follows for each screenshot, which decides how the screen is described. Keep the rule to reply exactly SAME when nothing meaningful changed, or every look counts as a change and the co-host keeps reacting.", widget: { type: "textarea" } },
   "vision.temperature": { help: "How adventurous the screen descriptions are, from 0 to 2. Keep it low so the description stays factual; higher makes it more inventive and less reliable." },
   "vision.num_predict": { help: "The longest description the vision model may write, in tokens (about three quarters of a word each). Lower keeps descriptions to a short sentence; higher lets it say more but slows each look.", unit: "tokens", label: "Description length limit" },
@@ -174,6 +178,7 @@ const keys: Record<string, KeyPresentation> = {
   "brain.salience.cooldown_ms": { help: "The shortest pause after the co-host speaks before it may decide to speak again. Higher makes it quieter and gives viewers room to talk; lower lets it reply in quick succession.", unit: "ms" },
   "brain.salience.thinking_timeout_ms": { help: "If the co-host has been working on a reply this long without finishing, salience stops waiting for it and may start over. It is a safety net for a stuck model; raise it only if your model is very slow.", unit: "ms" },
   "brain.salience.idle_chatter_ms": { help: "If nothing has happened for this long and there is something new it has not yet commented on, the co-host speaks up unprompted. Lower makes it chattier in quiet moments; 0 turns idle chatter off.", unit: "ms", label: "Idle chatter after" },
+  "brain.salience.reminder_expiry_ms": { help: "How long after a reminder is due the co-host may still say it aloud. A reminder that comes up later than this is dropped rather than spoken late.", unit: "ms", label: "Reminder expiry" },
   "brain.salience.reply_on_mention": { help: "When on, a chat line that contains the co-host's name always gets an answer (it scores the maximum). Off, a mention counts like any other chat line and may be passed over." },
   "brain.salience.speak_threshold": { help: "How much recent activity it takes for the co-host to speak. Each new event is scored (with the built-in scoring: you speaking about 0.9, a question in chat about 0.55, plain chat about 0.15) and the scores add up until they reach this number. Higher makes the co-host quieter, lower makes it speak up more readily; a mention of its name always answers when reply_on_mention is on.", label: "Speak threshold" },
   "brain.salience.arousal_bias": { help: "How much an excited mood lowers the speak threshold, from 0 to 1. At 0 the mood has no effect on how often the co-host speaks; higher makes a lively co-host noticeably chattier." },
@@ -265,7 +270,7 @@ const keys: Record<string, KeyPresentation> = {
   }),
 
   // ---- voice
-  "voice.engine": { help: "kokoro speaks the replies with the Kokoro voice server; openai uses an OpenAI-compatible speech server; pocket uses a Pocket TTS server; stub makes silent clips of the right length and calls no voice server, for testing the rest of the stack.", label: "Speech engine" },
+  "voice.engine": { help: "kokoro speaks the replies with the Kokoro voice server; openai uses an OpenAI-compatible speech server; pocket uses a Pocket TTS server; stub makes silent clips of the right length and calls no voice server, for testing the rest of the stack.", label: "Speech engine", sensitive: true },
   "voice.voice": { help: "The voice the co-host speaks with. Kokoro takes a voice id or a blend such as af_bella(2)+af_sky, where the number is how much of that voice to mix in; the id starts with its language and gender, for example af for American female. Pocket takes a catalogue voice name or an http or https address of a voice file. OpenAI takes the name the server knows. Leave it empty for the engine's own default (af_heart for Kokoro, alba for Pocket).", widget: { type: "voice" } },
   "voice.timeout_ms": { help: "How long to wait for the speech server to send the first sound of a line, and for each gap in it, before giving up on that line. Raise it for a slow server or a first load.", unit: "ms" },
   "voice.openai.base_url": { help: "Only for engine openai: the web address of the OpenAI-compatible speech server, for example OpenAI itself or a server you run. The API key is sent to this address, so only point it somewhere you trust.", sensitive: true, label: "Base URL" },
@@ -321,8 +326,8 @@ const keys: Record<string, KeyPresentation> = {
   "ears.partial_step_ms": { help: "With partials on: how often a growing sentence is transcribed again. Lower shows early text sooner but makes more speech-to-text requests.", unit: "ms" },
   "ears.min_speech_ms": { help: "Audio shorter than this is thrown away as noise or a cough instead of being transcribed. Higher ignores more short sounds but may drop a short answer like \"yes\".", unit: "ms" },
   "ears.stt_model": { help: "The speech-to-text model, named as your speech-to-text server knows it. A larger model hears more accurately but is slower, which delays the co-host's answer.", widget: { type: "model", kind: "stt" }, label: "Speech-to-text model" },
-  "ears.stt_engine": { help: "speaches transcribes with a speech-to-text server; openai uses an OpenAI-compatible transcription server; nemotron and kyutai use their own streaming servers; stub gives every clip the same fixed text and needs no server, for testing the rest of the stack.", label: "Speech-to-text engine" },
-  "ears.stt_fallback_engine": { help: "The batch engine that transcribes whole clips the streaming engine above cannot handle (speaches or openai), or none for no fallback. It is used only while the streaming engine is nemotron or kyutai.", label: "Speech-to-text fallback" },
+  "ears.stt_engine": { help: "speaches transcribes with a speech-to-text server; openai uses an OpenAI-compatible transcription server; nemotron and kyutai use their own streaming servers; stub gives every clip the same fixed text and needs no server, for testing the rest of the stack.", label: "Speech-to-text engine", sensitive: true },
+  "ears.stt_fallback_engine": { help: "The batch engine that transcribes whole clips the streaming engine above cannot handle (speaches or openai), or none for no fallback. It is used only while the streaming engine is nemotron or kyutai.", label: "Speech-to-text fallback", sensitive: true },
   "ears.stt_timeout_ms": { help: "How long to wait for one transcription before giving up on it. Raise it for a slow server or a long sentence.", unit: "ms", label: "Transcription timeout" },
   "ears.max_stt_sessions": { help: "How many speech-to-text sessions may run at once. Higher hears more speakers together but needs more of the server.", label: "Speech-to-text sessions" },
   "ears.openai.base_url": { help: "Only for an openai speech-to-text engine or fallback: the web address of the OpenAI-compatible transcription server. Clips of speech are sent to this address, so only point it somewhere you trust. Empty leaves it down.", sensitive: true, label: "Base URL" },
@@ -335,8 +340,32 @@ const keys: Record<string, KeyPresentation> = {
   "ears.kyutai.end_of_turn_threshold": { help: "Only for kyutai with end-of-turn detection on: how sure the server must be that a sentence has ended, from above 0 to below 1. Higher waits for a clearer end; lower cuts in sooner.", label: "End-of-turn threshold" },
   "ears.drop_phrases": { help: "Transcripts that equal one of these lines are thrown away, ignoring capitals, spacing and punctuation at the ends. Use it for phrases the speech model invents out of silence, such as \"Thanks for watching!\". Empty drops nothing.", label: "Phrases to ignore" },
 
+  // ---- tools
+  "tools.mode": { help: "Whether the co-host's tools call the MCP servers you configured (live) or get canned results and call no server (mock, for testing). Live is the default; in mock mode no private data leaves this machine." },
+  "tools.timeout_ms": { help: "How long one call to a tool may take before it counts as failed, so the co-host goes on without its result.", unit: "ms" },
+  "tools.confirm_timeout_ms": { help: "How long the co-host waits for your answer to a request to confirm a tool that acts before it gives up and does not run the tool.", unit: "ms" },
+  "tools.max_result_chars": { help: "The longest result of a tool call that reaches the co-host's prompt; a longer result is cut short.", unit: "characters" },
+  "tools.max_concurrent": { help: "How many tool calls may run at once across all servers; further calls wait their turn. Raise it only if your servers are fast and can take parallel calls." },
+  "tools.catalog_ms": { help: "How often the list of tools each server offers is read again, so a tool a server adds or removes is picked up.", unit: "ms" },
+  "tools.max_tools_per_server": { help: "The most tools taken from one server's list; any beyond this are left out of the co-host's catalogue." },
+  "tools.max_tools": { help: "The most tools in the co-host's catalogue across all servers; any beyond this are left out." },
+  "tools.owner_sources": { help: "Which listening sources count as you speaking, so that only your requests may make the co-host act: all counts every source, or list the ones you trust, such as discord or desktop.", widget: { type: "sources" } },
+  // @spec CFG-PRES-017
+  "tools.servers": { help: "The MCP servers the co-host may call, each with a name, an http or https address and, if it needs one, a header and a token kept in secrets.yaml. Each call sends the prompt's tool arguments to that address, so only add servers you run or trust.", label: "MCP servers", sensitive: true, widget: { type: "mcp-servers" } },
+  "tools.servers.*.token": { help: "The credential sent to one MCP server, kept in secrets.yaml under that server's name. It is never shown again once saved; leave it empty for a server that needs none.", label: "Server token" },
+  "tools.allow": { help: "The tools the co-host may use, each named by its server, two underscores and its tool name. A tool is off unless an entry enables it; a tool may act on something or speak in chat, but not both.", label: "Allowed tools", sensitive: true, widget: { type: "tool-list" } },
+  "tools.timer.max_active": { help: "How many timers the co-host may have running at once; a further request is refused until one finishes." },
+  "tools.timer.max_minutes": { help: "The longest a timer may be set for, in minutes; a longer request is refused.", unit: "minutes" },
+  "tools.stream_info.cache_ms": { help: "How long the stream's title and game are remembered before they are read again, so the co-host does not ask the platform on every reply.", unit: "ms" },
+  "tools.reply.max_rounds": { help: "How many rounds of tool calls one reply may take before the co-host must answer with what it has." },
+  "tools.reply.max_calls": { help: "How many tool calls one reply may make in all, across its rounds." },
+  "tools.reply.budget_ms": { help: "How long one reply may spend on tool calls in all before the co-host answers without the rest of them.", unit: "ms" },
+  "tools.reply.filler_after_ms": { help: "How long a tool call may run before the co-host says one of the filler lines, so viewers do not hear silence. 0 says one at once.", unit: "ms" },
+  "tools.reply.max_tokens": { help: "The longest answer, in model tokens, that the model may write in one step of a reply that uses tools." },
+  "tools.reply.filler_lines": { help: "The lines the co-host may say while a tool runs, one picked at random. An empty list means it says none and waits in silence until the result is ready." },
+
   // ---- network
-  "network.lan": { help: "Machines and networks you trust as your own, one per line: a host name such as nas, a single address such as 203.0.113.7, a dot suffix such as .ts.net for every machine in that domain, or a range such as 100.64.0.0/10. Use it for machines the co-host reaches over a VPN that the rule would otherwise count as outside your network. Empty adds none.", label: "Your network" },
+  "network.lan": { help: "Machines and networks you trust as your own, one per line: a host name such as nas, a single address such as 203.0.113.7, a dot suffix such as .ts.net for every machine in that domain, or a range such as 100.64.0.0/10. Use it for machines the co-host reaches over a VPN that the rule would otherwise count as outside your network. Empty adds none.", label: "Your network", sensitive: true },
 
   // ---- mouth
   "mouth.outputs.discord.enabled": { help: "When on, the co-host's voice is played into the Discord voice channel. Off, nothing is played there." },
@@ -369,4 +398,5 @@ const keys: Record<string, KeyPresentation> = {
 };
 
 /** Every section's and key's presentation, keyed by declared section path and by dotted key path from the config root. */
+// @spec CFG-PRES-011, CFG-PRES-016, CFG-PRES-017
 export const PRESENTATION: { sections: Record<string, SectionPresentation>; keys: Record<string, KeyPresentation> } = { sections, keys };

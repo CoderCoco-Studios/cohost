@@ -102,10 +102,10 @@ test("an unchanged mood is republished after brain.affect.republish_ms, not befo
 test("with an llm/http appraiser a line shorter than short_line_chars (trimmed) is appraised inline, a mention never", async () => { // @spec AFF-HOOK-007
   const d = setup({ short_line_chars: 4 }, "http");
   try {
-    d.affect.onEvent(chat("abc")); // 3 characters: inline
-    d.affect.onEvent(chat("  ab   ")); // trims to 2: inline
+    d.affect.onEvent(chat("abc", { userId: "u1" })); // 3 characters: inline
+    d.affect.onEvent(chat("  ab   ", { userId: "u2" })); // trims to 2: inline
     assert.equal(d.sent.length, 0);
-    d.affect.onEvent(chat("abcd")); // exactly the cutoff: the module
+    d.affect.onEvent(chat("abcd", { userId: "u3" })); // exactly the cutoff: the module
     await d.affect.settled();
     assert.equal(d.sent.length, 1);
     assert.equal(d.sent[0]!.text, "abcd");
@@ -199,7 +199,7 @@ test("a restarted affect starts at the baseline mood and unpaused", () => { // @
   const first = setup({ baseline_valence: 0.15 });
   const second = setup({ baseline_valence: 0.15 });
   try {
-    for (let i = 0; i < 5; i++) first.affect.onEvent(chat("LOL POGGERS!!!"));
+    for (let i = 0; i < 5; i++) first.affect.onEvent(chat(`LOL POGGERS!!! ${i}`, { userId: `u${i}` }));
     first.affect.onEvent(event("control", { cmd: "pause" }));
     assert.ok(first.affect.mood.valence > 0.5);
     // the restart is a new instance: nothing carries over

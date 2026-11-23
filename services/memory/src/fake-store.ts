@@ -3,7 +3,7 @@ import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
 import type { ChatIds, ChatRemoval, Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
-  clamp01, effectiveStrength, isReadableViewer, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  checkedDiscordId, clamp01, effectiveStrength, isReadableViewer, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type DeletionRow, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -46,6 +46,8 @@ export class InMemoryStore implements MemoryBackend {
   // @spec MEM-FORGET-002, MEM-FORGET-003, MEM-FORGET-004, MEM-FORGET-005
   async forgetChat(r: ChatRemoval): Promise<void> {
     if (r.scope === "all") return;
+    // A removal names its key; without it no row matches, as a NULL column never equals anything in Postgres (MEM-FORGET-005).
+    if (r.scope === "message" ? !r.messageId : !r.userId) return;
     const hit = (row: Row): boolean => row.kind === "chat" && row.platform === r.platform
       && (r.scope === "message" ? row.messageId === r.messageId : row.userId === r.userId);
     this.rows = this.rows.filter((row) => !hit(row));
@@ -124,7 +126,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-VOICE-001
   async touchSpeaker(speakerId: string, display: string): Promise<ViewerRow> {
-    const id = speakerId.toLowerCase();
+    const id = checkedDiscordId(speakerId);
     const now = new Date(this.clock());
     const link = this.links.get(id);
     const linked = link && this.viewers.get(link.userKey);
@@ -148,7 +150,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-VOICE-005
   async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
-    const id = discordId.toLowerCase();
+    const id = checkedDiscordId(discordId);
     const want = target.trim();
     const byKey = this.viewers.get(want);
     const t = byKey && isReadableViewer(byKey) ? byKey
@@ -217,7 +219,7 @@ export class InMemoryStore implements MemoryBackend {
     let v = byKey && isReadableViewer(byKey) ? byKey
       : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === keyOrName.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!v) {
-      if (!regular) return undefined;
+      if (!regular || isViewerKey(keyOrName)) return undefined; // an owner placeholder is named by a display name, never a viewerKey
       // MEM-REG-003: a placeholder keyed by the lower-cased name.
       const key = keyOrName.toLowerCase();
       const now = new Date(this.clock());

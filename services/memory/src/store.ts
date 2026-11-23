@@ -4,7 +4,7 @@ import type { Embedder } from "@cohost/llm";
 import { tracked } from "@cohost/shared";
 import type { ReflectCursor } from "./cursor.js";
 import {
-  clamp01, effectiveStrength, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  checkedDiscordId, clamp01, effectiveStrength, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type Category, type DeletionRow, type Layer, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -434,7 +434,7 @@ export class MemoryStore implements MemoryBackend {
 
   // @spec MEM-VOICE-001
   async touchSpeaker(speakerId: string, display: string): Promise<ViewerRow> {
-    const id = speakerId.toLowerCase();
+    const id = checkedDiscordId(speakerId);
     const linked = await this.query<{ user_key: string }>(
       "UPDATE viewer_links SET discord_display = $2, updated_at = now() WHERE discord_id = $1 RETURNING user_key", [id, display]);
     if (linked.rows[0]) {
@@ -452,7 +452,7 @@ export class MemoryStore implements MemoryBackend {
 
   // @spec MEM-VOICE-005
   async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
-    const id = discordId.toLowerCase();
+    const id = checkedDiscordId(discordId);
     const want = target.trim();
     const voice = voiceKey(id);
     return this.tx(async (q) => {
@@ -530,7 +530,7 @@ export class MemoryStore implements MemoryBackend {
       [keyOrName, regular],
     );
     if (updated.rows.length) return this.toViewer(updated.rows[0]!);
-    if (!regular) return undefined;
+    if (!regular || isViewerKey(keyOrName)) return undefined; // an owner placeholder is named by a display name, never a viewerKey
     // MEM-REG-003: a placeholder keyed by the lower-cased name.
     const key = keyOrName.toLowerCase();
     const { rows } = await this.query<ViewerSql>(

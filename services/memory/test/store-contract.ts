@@ -13,8 +13,13 @@ import { viewerKey } from "@cohost/shared/untrusted";
 export const DAY = 86_400_000;
 export const T0 = new Date("2026-03-01T12:00:00Z").getTime();
 
+/** A stored memory row as the store holds it, read directly rather than through `recall` (which skips rows younger than two minutes on the database clock). */
+export interface StoredRow { kind: string; text: string; platform?: string; userId?: string; messageId?: string }
+
 export interface Harness {
   store: MemoryBackend;
+  /** The stored rows whose text contains `text`, read from the backing store (no recency cutoff, no similarity filter). */
+  memories(text: string): Promise<StoredRow[]>;
   /** Move the store's clock (and the caller's) forward. */
   advance(ms: number): void;
   now(): number;
@@ -496,10 +501,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   });
 
   // ---- Issue #180: viewers keyed by viewerKey, chat rows with platform / user id / message id, forgetting removals ----
-  const recallAll = async ({ store, advance }: Harness, query: string) => {
-    advance(3 * 60_000); // recall skips the last 2 minutes
-    return store.recall(query, 50);
-  };
+  const recallAll = (h: Harness, query: string) => h.memories(query);
 
   // @spec MEM-VIEWER-001, MEM-VIEWER-008, MEM-BACKEND-005
   t("a viewer key holding an id is kept as written: two ids differing only in case are two viewers counted separately", async ({ store }) => {
@@ -541,7 +543,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     const got = await recallAll(h, `ids ${w}`);
     const withIds = got.find((m) => m.text === `ids ${w}`)!;
     assert.deepEqual([withIds.platform, withIds.userId, withIds.messageId], ["youtube", `UC${w}`, `m${w}`]);
-    const bare = (await h.store.recall(`bare ${w}`, 50)).find((m) => m.text === `bare ${w}`)!;
+    const bare = (await h.memories(`bare ${w}`)).find((m) => m.text === `bare ${w}`)!;
     assert.deepEqual([bare.platform, bare.userId, bare.messageId], ["discord", undefined, undefined]);
   });
 
@@ -607,5 +609,31 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.forgetChat({ platform: "twitch", scope: "all" });
     assert.equal(JSON.stringify([await store.getViewer(key), await store.listNotes(key), await store.listDeletions(key)]), before);
     assert.deepEqual((await store.listNotes(key)).map((n) => n.id), [kept.id]);
+  });
+
+  // @spec MEM-FORGET-005
+  t("a message removal without a message id, or a user removal without a user id, deletes nothing (no NULL matches)", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    await h.store.remember("chat", `a${w}`, `no id kept ${w}`, { platform: "twitch", userId: `u${w}`, messageId: `m${w}` });
+    await h.store.forgetChat({ platform: "twitch", scope: "message" });
+    await h.store.forgetChat({ platform: "twitch", scope: "user" });
+    assert.equal((await recallAll(h, `no id kept ${w}`)).length, 1);
+  });
+
+  // @spec MEM-VOICE-001
+  t("a Discord id shaped like a viewerKey prefix is refused: it never names a voice key or a link", async ({ store }) => {
+    await assert.rejects(store.touchSpeaker("id:12345", "Mallory"), /viewerKey prefix/);
+    await assert.rejects(store.touchSpeaker("NAME:kit", "Mallory"), /viewerKey prefix/);
+    const chat = vkey("victim");
+    await store.touchViewer(chat, "Victim");
+    await assert.rejects(store.linkDiscord("name:kit", chat), /viewerKey prefix/);
+    assert.equal(await store.getViewer(chat).then((v) => v?.key), chat);
+  });
+
+  // @spec MEM-REG-003
+  t("an owner placeholder is never created under a viewerKey: setting the flag for one names no row", async ({ store }) => {
+    const key = vkey("ghost");
+    assert.equal(await store.setRegular(key, true), undefined);
+    assert.equal(await store.getViewer(key), undefined);
   });
 }

@@ -56,7 +56,15 @@ export interface ViewerRow {
 
 /** The viewer key of a Discord voice speaker with no link: `discord:<id>`, the id lower-cased (MEM-VOICE-001). */
 export const VOICE_PREFIX = "discord:";
-export const voiceKey = (discordId: string): string => VOICE_PREFIX + discordId.toLowerCase();
+/**
+ * A Discord id as a voice key takes it: lower-cased, and never shaped like a `viewerKey` prefix, so a speaker can never name a chat viewer's
+ * key (`discord:id:<n>` is a Discord chat viewer's key). Throws on such an id; the callers log or answer `failed` (MEM-VOICE-001).
+ */
+export const checkedDiscordId = (discordId: string): string => {
+  if (/^(id|name):/i.test(discordId)) throw new Error("a Discord id may not carry a viewerKey prefix (id: or name:)");
+  return discordId.toLowerCase();
+};
+export const voiceKey = (discordId: string): string => VOICE_PREFIX + checkedDiscordId(discordId);
 /** A voice viewer's key: the Discord prefix with no `id:` or `name:` part (MEM-VOICE-001, MEM-VIEWER-011). */
 export const isVoiceKey = (key: string): boolean => key.startsWith(VOICE_PREFIX) && !isViewerKey(key);
 // @spec MEM-VIEWER-011

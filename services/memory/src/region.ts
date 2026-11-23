@@ -29,7 +29,7 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus, clock = Date.now }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
-      // @spec MEM-WRITE-001, MEM-WRITE-006, MEM-WRITE-008, MEM-WRITE-009, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-007, MEM-VIEWER-008, MEM-VIEWER-009, MEM-REG-005
+      // @spec MEM-WRITE-001, MEM-WRITE-006, MEM-WRITE-008, MEM-WRITE-009, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-007, MEM-VIEWER-008, MEM-VIEWER-009, MEM-VIEWER-010, MEM-REG-005
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory

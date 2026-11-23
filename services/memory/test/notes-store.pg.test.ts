@@ -45,7 +45,24 @@ if (!url) {
     let now = T0;
     const store = open(new HashEmbedder(), () => now);
     if (!initialised) { await store.init(); initialised = true; } // idempotent; a second store needs no init because the schema exists
-    return { store, advance: (ms) => { now += ms; }, now: () => now };
+    return {
+      store,
+      advance: (ms) => { now += ms; },
+      now: () => now,
+      // Read straight from the table: `recall` skips rows younger than two minutes on the database clock, which this clock does not move.
+      memories: async (text) => {
+        const client = new pg.Client({ connectionString: url });
+        await client.connect();
+        try {
+          const { rows } = await client.query<{ kind: string; text: string; platform: string | null; user_id: string | null; message_id: string | null }>(
+            "SELECT kind, text, platform, user_id, message_id FROM memories WHERE strpos(text, $1) > 0 ORDER BY id", [text]);
+          return rows.map((r) => ({
+            kind: r.kind, text: r.text,
+            platform: r.platform ?? undefined, userId: r.user_id ?? undefined, messageId: r.message_id ?? undefined,
+          }));
+        } finally { await client.end(); }
+      },
+    };
   }, { regular_messages: REGULAR });
 
   /** A fixed-size embedder: every text maps to the same unit-ish vector of `dims` numbers. */

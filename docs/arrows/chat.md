@@ -67,9 +67,9 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 | Source selection | CHAT-PLAN-001 to CHAT-PLAN-015 | 1 | 0 | 14 | 5 |
 | Source contract | CHAT-SRC-001 to CHAT-SRC-009 | 0 | 0 | 9 | 0 |
 | Twitch connection | CHAT-TW-001 to CHAT-TW-018 | 8 | 0 | 10 | 10 |
-| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-014 | 1 | 0 | 13 | 7 |
+| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-014 (CHAT-FILT-010 no longer exists) | 1 | 0 | 12 | 7 |
 | Fake source | CHAT-FAKE-001 to CHAT-FAKE-009 | 5 | 0 | 4 | 6 |
-| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-014 | 4 | 0 | 8 | 8 |
+| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-012, CHAT-INJ-014 (CHAT-INJ-013 no longer exists) | 4 | 0 | 7 | 8 |
 | Health | CHAT-HEALTH-001 to CHAT-HEALTH-012 | 1 | 0 | 11 | 6 |
 | YouTube source | CHAT-YT-001 to CHAT-YT-068 | 0 | 0 | 68 | 0 |
 | Forgetting a removed message | CHAT-FORGET-001 to CHAT-FORGET-008 | 0 | 0 | 8 | 0 |

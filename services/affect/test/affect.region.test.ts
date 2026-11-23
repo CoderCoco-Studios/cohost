@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
 import { FakeBus, event, recordingLog, silentLog, testConfig, waitFor } from "@cohost/testing";
+import { boundText } from "@cohost/shared/untrusted";
 import { Affect } from "../src/affect.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "../src/appraise.js";
 
@@ -281,4 +282,182 @@ test("a failed affect.state publish is logged and affect keeps running", async (
     await new Promise((r) => setImmediate(r));
     assert.equal(bus.of("affect.state").length, 1, "the next publish went through");
   } finally { process.off("unhandledRejection", onUnhandled); }
+});
+
+// ---- bounded intake and counting chat once (AFF-IN-002, 003, 008..016)
+
+const WINDOW = 30_000; // brain.affect.count_window_ms default
+/** An Affect on the rules appraiser and a fake clock shared by the mood and the counter. */
+function counted(over: Record<string, unknown> = {}) {
+  const c = testConfig({ brain: { affect: { baseline_valence: 0, half_life_ms: 10_000_000, ...over } } });
+  const clock = fakeClock();
+  const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), c.llm, { rules: appraiseRules }, silentLog);
+  return { affect: new Affect({ cfg: c, bus: new FakeBus(), appraiser: mod, log: silentLog, now: clock.now }), clock };
+}
+/** A distinct viewer: its own platform user id and name, so only the text or an explicit repeat can collide. */
+const from = (n: string, text: string, extra: Record<string, unknown> = {}) => chat(text, { user: `viewer${n}`, userId: `id${n}`, ...extra });
+
+test("chat text and name are bounded before use: cause, queue and appraiser see the bounded values", () => { // @spec AFF-IN-008
+  const { affect, seen, next } = setup("http");
+  const text = "a great play ".repeat(60);
+  const user = "n".repeat(60);
+  affect.onEvent(chat(text, { user, userId: "u1" }));
+  assert.equal(seen[0]!.text, boundText(text, 500));
+  assert.equal(seen[0]!.who, boundText(user, 40));
+  next();
+  const empty = setup();
+  empty.affect.onEvent(chat("lol nice", { user: "", userId: "u2" }));
+  assert.equal(empty.affect.mood.cause, "chat: unknown", "a name that bounds to nothing is `unknown`");
+  const named = setup();
+  named.affect.onEvent(chat("lol nice", { user, userId: "u3" }));
+  assert.equal(named.affect.mood.cause, `chat: ${boundText(user, 40)}`);
+});
+
+test("speech text and speaker are bounded before use", () => { // @spec AFF-IN-009
+  const { affect, seen, next } = setup("http");
+  const text = "that was a great play ".repeat(80);
+  const speaker = "s".repeat(60);
+  affect.onEvent(event("speech.heard", { speaker, text, durationMs: 900 }));
+  assert.equal(seen[0]!.text, boundText(text, 1000));
+  assert.equal(seen[0]!.who, boundText(speaker, 40));
+  next();
+  const empty = setup();
+  empty.affect.onEvent(event("speech.heard", { speaker: "", text: "lol nice", durationMs: 900 }));
+  assert.equal(empty.affect.mood.cause, "voice: unknown");
+  const named = setup();
+  named.affect.onEvent(event("speech.heard", { speaker, text: "lol nice", durationMs: 900 }));
+  assert.equal(named.affect.mood.cause, `voice: ${boundText(speaker, 40)}`);
+});
+
+test("an admitted chat line is appraised as chat with its mention flag and cause chat: <user>; speech as speech with no mention boost", () => { // @spec AFF-IN-002, AFF-IN-003
+  const mention = setup("http");
+  mention.affect.onEvent(chat("hey Coco what a play", { mentionsCohost: true }));
+  assert.equal(mention.seen[0]!.source, "chat");
+  assert.equal(mention.seen[0]!.mention, true);
+  mention.next();
+  const speech = setup("http");
+  speech.affect.onEvent(event("speech.heard", { speaker: "Chris", text: "hey Coco what a play", durationMs: 900 }));
+  assert.equal(speech.seen[0]!.source, "speech");
+  assert.equal(speech.seen[0]!.mention, false);
+  speech.next();
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { user: "Zed", userId: "z" }));
+  assert.equal(affect.mood.cause, "chat: Zed");
+  affect.onEvent(event("speech.heard", { speaker: "Chris", text: "lol nice", durationMs: 900 }));
+  assert.equal(affect.mood.cause, "voice: Chris");
+});
+
+test("one viewer's burst moves the mood once per window; the window is brain.affect.count_window_ms", () => { // @spec AFF-IN-010, AFF-IN-012, AFF-IN-013
+  const { affect, clock } = counted();
+  affect.onEvent(chat("lol nice", { userId: "u1" }));
+  const a1 = affect.mood.arousal;
+  assert.ok(a1 > 0.1, "the first line moved the mood");
+  for (let i = 0; i < 5; i++) affect.onEvent(chat(`distinct line number ${i} lol`, { userId: "u1" }));
+  assert.equal(affect.mood.arousal, a1, "the burst moved nothing more");
+  clock.tick(WINDOW - 1);
+  affect.onEvent(chat("another one", { userId: "u1" }));
+  assert.ok(affect.mood.arousal <= a1, "still inside the window, still refused (decay only lowers it)");
+  const before = affect.mood.arousal;
+  clock.tick(1);
+  affect.onEvent(chat("window is over", { userId: "u1" }));
+  assert.ok(affect.mood.arousal > before + 0.02, "the window ended: the viewer counts again");
+
+  const short = counted({ count_window_ms: 1000 });
+  short.affect.onEvent(chat("lol nice", { userId: "u1" }));
+  const s1 = short.affect.mood.arousal;
+  short.clock.tick(1000);
+  short.affect.onEvent(chat("lol nice again", { userId: "u1" }));
+  assert.ok(short.affect.mood.arousal > s1 + 0.02, "the counter's window is the configured one, not a default");
+});
+
+test("a refused line does not extend the window: a viewer who keeps posting moves the mood once per window", () => { // @spec AFF-IN-013
+  const { affect, clock } = counted();
+  affect.onEvent(chat("lol nice", { userId: "u1" }));
+  clock.tick(20_000);
+  const mid = affect.mood.arousal;
+  affect.onEvent(chat("still here", { userId: "u1" })); // refused at +20 s
+  assert.equal(affect.mood.arousal, mid);
+  clock.tick(10_000); // +30 s from the admitted line, +10 s from the refused one
+  const before = affect.mood.arousal;
+  affect.onEvent(chat("and again", { userId: "u1" }));
+  assert.ok(affect.mood.arousal > before + 0.02, "counted once the first line's window ended");
+});
+
+test("one pasted text from many viewers moves the mood once per window", () => { // @spec AFF-IN-010, AFF-IN-012
+  const { affect, clock } = counted();
+  affect.onEvent(from("1", "SPAM THIS PASTA lol"));
+  const a1 = affect.mood.arousal;
+  for (let i = 2; i < 12; i++) affect.onEvent(from(String(i), "  spam this PASTA   lol "));
+  assert.equal(affect.mood.arousal, a1);
+  clock.tick(WINDOW);
+  const before = affect.mood.arousal;
+  affect.onEvent(from("20", "spam this pasta lol"));
+  assert.ok(affect.mood.arousal > before + 0.02, "the text counts again after the window");
+});
+
+test("a refused line is not appraised, gets no subscriber nudge, leaves the cause alone and records nothing", () => { // @spec AFF-IN-012, AFF-IN-013
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { user: "bob", userId: "u1" }));
+  const v = affect.mood.valence, a = affect.mood.arousal;
+  affect.onEvent(chat("ok", { user: "bob", userId: "u1", isSub: true }));
+  assert.equal(affect.mood.valence, v);
+  assert.equal(affect.mood.arousal, a);
+  assert.equal(affect.mood.cause, "chat: bob", "neither the line's cause nor `sub: bob`");
+  affect.onEvent(chat("lol nice", { user: "amy", userId: "u2", isSub: true }));
+  assert.equal(affect.mood.arousal, a, "the same text from another viewer is refused too, with no sub nudge");
+  assert.equal(affect.mood.cause, "chat: bob");
+});
+
+test("a subscriber's admitted line still gets the subscriber nudge", () => { // @spec AFF-IN-002, AFF-IN-012
+  const { affect } = counted();
+  affect.onEvent(chat("zzzz", { user: "bob", userId: "u1", isSub: true }));
+  assert.equal(affect.mood.cause, "sub: bob");
+});
+
+test("a mention is counted like any line: a repeat inside the window moves the mood once", () => { // @spec AFF-IN-014
+  const { affect } = counted();
+  affect.onEvent(chat("hey Coco", { userId: "u1", mentionsCohost: true }));
+  const a1 = affect.mood.arousal;
+  assert.ok(a1 > 0.3, "the mention moved arousal");
+  affect.onEvent(chat("hey Coco again", { userId: "u1", mentionsCohost: true }));
+  assert.equal(affect.mood.arousal, a1, "same viewer");
+  affect.onEvent(from("2", "hey Coco", { mentionsCohost: true }));
+  assert.equal(affect.mood.arousal, a1, "same text");
+});
+
+test("a mention in the queue path (llm/http) is refused like any line and never queued", async () => { // @spec AFF-IN-012, AFF-IN-014
+  const { affect, seen, next } = setup("http", fakeClock().now);
+  affect.onEvent(chat("hey Coco what a play", { userId: "u1", mentionsCohost: true }));
+  affect.onEvent(chat("hey Coco and another", { userId: "u1", mentionsCohost: true }));
+  next();
+  await new Promise((r) => setTimeout(r, 50));
+  const sent = seen.length;
+  next(); // let a wrongly queued second job finish rather than hang
+  await affect.settled();
+  assert.equal(sent, 1, "the refused mention was never queued");
+});
+
+test("speech never passes through the chat counter", () => { // @spec AFF-IN-015
+  const { affect } = counted();
+  const say = () => affect.onEvent(event("speech.heard", { speaker: "Chris", text: "this is great", durationMs: 900 }));
+  say();
+  const a1 = affect.mood.arousal;
+  say();
+  assert.ok(affect.mood.arousal > a1 + 0.1, "the same speaker and the same text move the mood each time");
+  const before = affect.mood.arousal;
+  affect.onEvent(chat("this is great", { user: "Chris", userId: "c" }));
+  assert.ok(affect.mood.arousal > before + 0.02, "speech recorded nothing: a chat line with the same text counts");
+});
+
+test("forget_context replaces the counter: the next line from a counted viewer is admitted", () => { // @spec AFF-IN-016
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { userId: "u1" }));
+  const a1 = affect.mood.arousal;
+  affect.onEvent(chat("lol nice", { userId: "u1" }));
+  assert.equal(affect.mood.arousal, a1, "counted before the reset");
+  affect.onEvent(event("control", { cmd: "forget_context" }));
+  assert.equal(affect.mood.cause, "reset");
+  affect.onEvent(chat("lol nice", { userId: "u1" }));
+  assert.equal(affect.mood.cause, "chat: bob", "the same viewer and text count again with no clock movement");
+  assert.ok(affect.mood.arousal > 0.12, "and move the mood from baseline");
 });

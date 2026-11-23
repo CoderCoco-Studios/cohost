@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FakeBus, event, silentLog } from "@cohost/testing";
-import { Eyes } from "../src/eyes.js";
+import { FakeBus, event, silentLog, testConfig } from "@cohost/testing";
+import { Eyes, createDescriber } from "../src/eyes.js";
 import { createInjectHandler } from "../src/inject.js";
+import { JPEG_BYTES, serveModel } from "./support.js";
 
 const run = async (h: { (ev: never): void; drain(): Promise<void> }, ev: unknown): Promise<void> => { h(ev as never); await h.drain(); };
 
@@ -154,4 +155,64 @@ test("an upload exactly at the limit is accepted", async () => {
   const t = setup("a menu", { bytes: Buffer.alloc(5), uploadMaxBytes: 5 });
   await run(t.handle, req());
   assert.equal(t.bus.of("inject.result")[0]!.ok, true);
+});
+
+/** The handler wired to the describer `vision.provider` selects, the way the service wires it. */
+function viaProvider(over: Record<string, unknown>) {
+  const bus = new FakeBus();
+  bus.takeUpload = async () => JPEG_BYTES;
+  const cfg = testConfig(over);
+  return { bus, handle: createInjectHandler({ bus, log: silentLog, describe: createDescriber(cfg) }) };
+}
+
+// @spec EYES-INJ-018
+test("an injected image is described through vision.provider: an OpenAI-compatible server gets the frame and its summary is published", async () => {
+  const m = await serveModel("A menu screen.");
+  const t = viaProvider({ llm: { openai: { base_url: m.url } }, vision: { enabled: false, provider: "openai", model: "vision-model" } });
+  await run(t.handle, req({ contentType: "image/jpeg" }));
+  assert.equal(m.seen.length, 1);
+  assert.equal(m.seen[0]!.url, "/chat/completions");
+  assert.equal(m.seen[0]!.body.model, "vision-model");
+  assert.deepEqual(t.bus.of("inject.result"), [{ id: "i1", ok: true, detail: "A menu screen." }]);
+  assert.deepEqual(t.bus.of("vision.summary"), [{ text: "A menu screen.", changed: true, injected: true, remember: false }]);
+});
+
+// @spec EYES-GAP-004, EYES-GAP-005
+test("an image injected while vision.model is blank answers ok:false `vision.model is not set`, publishes no summary, and the handler keeps answering", async () => {
+  const m = await serveModel();
+  const saved = process.env.OLLAMA_URL;
+  process.env.OLLAMA_URL = m.url;
+  try {
+    const t = viaProvider({ vision: { provider: "ollama", model: "" } });
+    await run(t.handle, req({ id: "i1" }));
+    await run(t.handle, req({ id: "i2" }));
+    assert.deepEqual(t.bus.of("inject.result"), [
+      { id: "i1", ok: false, detail: "vision.model is not set" },
+      { id: "i2", ok: false, detail: "vision.model is not set" },
+    ]);
+    assert.equal(t.bus.of("vision.summary").length, 0);
+    assert.deepEqual(m.seen, []);
+  } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
+});
+
+// @spec EYES-GAP-003, EYES-GAP-004
+test("an image injected while anthropic has no api key answers ok:false naming llm.claude.api_key", async () => {
+  const t = viaProvider({ vision: { provider: "anthropic", model: "claude-vision" } });
+  await run(t.handle, req());
+  const [r] = t.bus.of("inject.result");
+  assert.equal(r!.ok, false);
+  assert.match(r!.detail!, /llm\.claude\.api_key is not set/);
+  assert.equal(t.bus.of("vision.summary").length, 0);
+});
+
+// @spec EYES-PROV-007
+test("a 400 from the provider for the injected frame answers ok:false with the provider's error and publishes no summary", async () => {
+  const m = await serveModel();
+  m.state.status = 400;
+  const t = viaProvider({ llm: { openai: { base_url: m.url } }, vision: { provider: "openai", model: "vision-model" } });
+  await run(t.handle, req());
+  const [r] = t.bus.of("inject.result");
+  assert.equal(r!.ok, false);
+  assert.match(r!.detail!, /openai chat 400/);
+  assert.equal(t.bus.of("vision.summary").length, 0);
 });

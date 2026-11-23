@@ -46,6 +46,46 @@ export interface PartialData {
   timing: { audioEndedAt: number };
 }
 
+/** The payload of one `speech.early` (BUS-EVT-052). */
+export interface EarlyData {
+  speaker: string;
+  speakerId: string;
+  source: string;
+  text: string;
+  utteranceId: string;
+  seq: number;
+  sttMs: number;
+  timing: { audioEndedAt: number };
+}
+
+/** The payload of one `speech.retracted` (BUS-EVT-053). */
+export interface RetractedData {
+  speaker: string;
+  speakerId: string;
+  source: string;
+  utteranceId: string;
+  seq: number;
+}
+
+/** The four early counts since start, as the heartbeat reports them (EARS-EARLY-022, 023). */
+export interface EarlyCounts { published: number; retracted: number; reused: number; late: number }
+
+/** Early reply (EARS-EARLY-*) for the connector sources of a batch engine; absent where it is off, for a streaming engine, stub or echo-suppressed source. */
+export interface EarlyDeps {
+  /** `ears.early.after_ms`. */
+  afterMs: number;
+  /** `ears.early.max_per_utterance`. */
+  max: number;
+  /** `ears.min_speech_ms`: no snapshot for less audio than this, counted up to the last speech frame. */
+  minSpeechMs: number;
+  dropPhrases: readonly string[];
+  /** 16 kHz mono WAV -> text through the batch engine's request, which never moves `deps.stt` (EARS-EARLY-007), bounded by `ears.stt_timeout_ms`. */
+  transcribe: (wav: Buffer) => Promise<string>;
+  publish: (data: EarlyData) => Promise<void>;
+  publishRetracted: (data: RetractedData) => Promise<void>;
+  counts: EarlyCounts;
+}
+
 export interface ConnectorSourceDeps {
   /** The source tag, which is also the connector source's name. */
   name: string;
@@ -70,6 +110,8 @@ export interface ConnectorSourceDeps {
   stream?: { router: SttRouter; minSpeechMs: number };
   /** A streamed utterance's final → `speech.heard` through the word and drop-phrase checks (EARS-SES-004). */
   hearText?: (text: string, durationMs: number, meta: HeardMeta) => Promise<HearOutcome>;
+  /** Early reply; absent means no early snapshots (EARS-EARLY-*). */
+  early?: EarlyDeps;
 }
 
 export interface ConnectorSource extends CaptureAdapter {
@@ -99,6 +141,18 @@ interface Stream {
   /** The utterance closed while the connect was pending: its clip waits for the connect to settle (EARS-SES-004). */
   closeWith?: { clip: Clip; spk: string };
 }
+
+/** One early transcription in flight: `discard` is set when speech resumes or the cap closes the utterance (EARS-EARLY-014). */
+interface EarlyCall {
+  discard: boolean;
+  failed?: true;
+  text?: string;
+  /** Settles once the result is known and, when it is publishable and the utterance is still open, published. */
+  promise: Promise<void>;
+}
+
+/** A published early transcript not yet retracted or reused as the final (EARS-EARLY-013, 016). */
+interface Unresolved { seq: number; text: string; sttMs: number; audioEndedAt: number }
 
 interface Open {
   id: string;
@@ -133,6 +187,14 @@ interface Open {
   held?: string;
   /** Streamed partials of this utterance are published one after another (EARS-PART-014). */
   pubChain: Promise<void>;
+  /** Early reply: the timer of the next snapshot (gap measure), the snapshots taken (EARS-EARLY-004), the seq of the next published early transcript. */
+  earlyTimer?: ReturnType<typeof setTimeout>;
+  earlyCount: number;
+  earlySeq: number;
+  /** Speech has arrived since the last snapshot was taken (EARS-EARLY-026); true for a new utterance. */
+  pausedSince: boolean;
+  early?: EarlyCall;
+  unresolved?: Unresolved;
 }
 
 interface Speaker { detector?: SpeechDetector; open?: Open; ring: Buffer[]; ringAt: number[]; chain: Promise<void> }
@@ -155,6 +217,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     o.closed = true;
     clearTimeout(o.timer);
     clearTimeout(o.hypTimer);
+    clearTimeout(o.earlyTimer);
     if (o.steps) clearInterval(o.steps);
   };
 
@@ -175,6 +238,120 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       .catch((err) => d.log.error({ err: msg(err), source: d.name }, "ears connector source: hearing failed")));
   };
 
+  /** Publishes on the utterance's own chain, so an early, retracted or final event never overtakes an earlier one (EARS-EARLY-013). */
+  const chainPublish = (o: Open, fn: () => Promise<void>): void => {
+    o.pubChain = o.pubChain.then(fn).catch((err) => d.log.warn({ err: msg(err), source: d.name }, "early transcript publish failed"));
+    track(o.pubChain);
+  };
+
+  const retract = (o: Open, u: Unresolved): void => {
+    const ed = d.early!;
+    ed.counts.retracted++;
+    chainPublish(o, () => ed.publishRetracted({ speaker: o.name, speakerId: o.spk, source: d.name, utteranceId: o.id, seq: u.seq }));
+  };
+
+  // @spec EARS-EARLY-013, EARS-EARLY-014
+  /** A speech frame of the speaker arrived: an early call in flight is discarded, and an unresolved early transcript is retracted once. */
+  const resumed = (o: Open): void => {
+    o.pausedSince = true;
+    if (o.early) o.early.discard = true;
+    const u = o.unresolved;
+    if (u) {
+      o.unresolved = undefined;
+      retract(o, u);
+    }
+  };
+
+  // @spec EARS-EARLY-001, EARS-EARLY-002, EARS-EARLY-003, EARS-EARLY-004, EARS-EARLY-005, EARS-EARLY-006, EARS-EARLY-007, EARS-EARLY-012, EARS-EARLY-026
+  /** One early snapshot: the clip up to the last speech frame, transcribed through the batch request; a publishable result becomes the unresolved early transcript. */
+  const snapshot = (o: Open, pcm: Buffer, audioEndedAt: number): void => {
+    const ed = d.early!;
+    o.earlyCount++;
+    o.pausedSince = false;
+    const started = Date.now();
+    const call: EarlyCall = { discard: false, promise: Promise.resolve() };
+    o.early = call;
+    call.promise = (async () => {
+      let text: string | undefined;
+      try {
+        text = await ed.transcribe(wavWrap(pcm, IN_FORMAT.rate, IN_FORMAT.channels));
+      } catch (err) {
+        call.failed = true;
+        d.log.warn({ err: String(err), source: d.name }, "early transcription failed");
+      }
+      const sttMs = Date.now() - started;
+      if (o.early === call) o.early = undefined;
+      call.text = text;
+      if (call.failed || call.discard || o.closed) return;
+      const t = (text ?? "").trim();
+      if (!hasWordCharacter(t) || isDropPhrase(t, ed.dropPhrases)) return; // EARS-EARLY-006: nothing published, no seq taken
+      const seq = o.earlySeq++;
+      const u: Unresolved = { seq, text: t, sttMs, audioEndedAt };
+      o.unresolved = u;
+      chainPublish(o, async () => {
+        ed.counts.published++;
+        await ed.publish({ speaker: o.name, speakerId: o.spk, source: d.name, text: t, utteranceId: o.id, seq, sttMs, timing: { audioEndedAt } });
+      });
+    })();
+    track(call.promise);
+  };
+
+  // @spec EARS-EARLY-001, EARS-EARLY-002, EARS-EARLY-003, EARS-EARLY-004, EARS-EARLY-026
+  /** Takes the snapshot when the pause conditions hold: at least `min_speech_ms` of speech, no call or unresolved transcript, speech since the last snapshot, under the cap. */
+  const tryEarly = (o: Open): void => {
+    const ed = d.early;
+    if (!ed || o.closed || stopped || o.early || o.unresolved || !o.pausedSince || o.earlyCount >= ed.max) return;
+    const end = o.speechEnd;
+    const pcm = Buffer.concat(o.chunks.slice(0, end));
+    if (pcm.length < ed.minSpeechMs * BYTES_PER_MS) return;
+    snapshot(o, pcm, o.at[end - 1]!);
+  };
+
+  // @spec EARS-EARLY-001
+  /** Under the frame-gap measure (`gap`, no detector) the snapshot is due `after_ms` after the last frame, re-armed by each frame. Under `silero` it is taken on silence frames instead. */
+  const armEarly = (o: Open): void => {
+    if (!d.early || d.vad) return;
+    clearTimeout(o.earlyTimer);
+    o.earlyTimer = setTimeout(() => tryEarly(o), d.early.afterMs);
+  };
+
+  // @spec EARS-EARLY-016, EARS-EARLY-017, EARS-EARLY-018, EARS-EARLY-019, EARS-EARLY-021, EARS-EARLY-025
+  /** The close of an utterance with early reply on: the cap transcribes anew, an early call in flight is waited for, an unresolved transcript is reused, else the clip is transcribed. */
+  const finishEarly = (o: Open, clip: Clip, spk: string, cap: boolean): void => {
+    const ed = d.early!;
+    const h = o.early;
+    if (cap) {
+      // the cap close never waits for an early call: it is discarded, and an unresolved transcript is retracted first
+      if (h) h.discard = true;
+      const u = o.unresolved;
+      o.unresolved = undefined;
+      if (u) {
+        retract(o, u);
+        track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
+        return;
+      }
+      return hearClip(clip, spk, o.name, false);
+    }
+    const meta = { speaker: o.name, speakerId: spk, source: d.name, utteranceId: o.id, closedAt: clip.closedAt };
+    const dur = clip.pcm.length / BYTES_PER_MS;
+    if (h && !h.discard) {
+      ed.counts.late++;
+      track(h.promise.then(async () => {
+        if (h.failed) return hearClip(clip, spk, o.name, false);
+        await d.hearText?.(h.text ?? "", dur, { ...meta, audioEndedAt: clip.audioEndedAt, earlyLate: true });
+      }));
+      return;
+    }
+    const u = o.unresolved;
+    if (u) {
+      o.unresolved = undefined;
+      ed.counts.reused++;
+      track(o.pubChain.then(() => d.hearText?.(u.text, dur, { ...meta, audioEndedAt: u.audioEndedAt, earlySeq: u.seq, earlySttMs: u.sttMs })));
+      return;
+    }
+    hearClip(clip, spk, o.name, false);
+  };
+
   // @spec EARS-SES-004, EARS-SES-010, EARS-HLTH-003
   /** A live session at close: its final, bounded by the timeout, becomes `speech.heard`; when it does not arrive the clip goes to the batch engine. */
   const finalize = (o: Open, s: Stream, session: SttSession, clip: Clip, spk: string, durationMs: number): void => {
@@ -185,7 +362,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         releaseSlot(o);
         s.state = "done";
         st.router.sessionFinal();
-        await d.hearText?.(text, durationMs, { speaker: o.name, speakerId: spk, source: d.name, audioEndedAt: clip.audioEndedAt, utteranceId: o.id });
+        await d.hearText?.(text, durationMs, { speaker: o.name, speakerId: spk, source: d.name, audioEndedAt: clip.audioEndedAt, utteranceId: o.id, closedAt: clip.closedAt });
       },
       (err) => {
         session.abort();
@@ -212,9 +389,10 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
 
   /**
    * Close a speaker's open utterance and hand its clip on: to its session, or to transcription (EARS-VAD-003). The clip ends at
-   * the last speech frame, or at the last frame received when `toLastFrame` (an end-of-turn signal, EARS-KYU-010).
+   * the last speech frame, or at the last frame received when `toLastFrame` (an end-of-turn signal, EARS-KYU-010). `cap` marks
+   * a close by `ears.max_utterance_ms`.
    */
-  const close = (sp: Speaker, toLastFrame = false): void => {
+  const close = (sp: Speaker, toLastFrame = false, cap = false): void => {
     const o = sp.open;
     if (!o) return;
     stopSteps(o);
@@ -223,7 +401,8 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const spk = [...speakers.entries()].find(([, v]) => v === sp)![0];
     const end = toLastFrame ? o.chunks.length : Math.max(o.speechEnd, 1);
     const pcm = Buffer.concat(o.chunks.slice(0, end));
-    const clip: Clip = { pcm, ...IN_FORMAT, audioEndedAt: o.at[end - 1]!, utteranceId: o.id };
+    // @spec EARS-EARLY-020: every utterance ears closes itself is stamped with the close
+    const clip: Clip = { pcm, ...IN_FORMAT, audioEndedAt: o.at[end - 1]!, utteranceId: o.id, closedAt: Date.now() };
     const s = o.stream;
     if (s?.state === "live" && s.session) return closeLive(o, s, clip, spk);
     // A connect still pending is waited for: its session takes the close when it connects, and only its failure falls back.
@@ -231,6 +410,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       s.closeWith = { clip, spk };
       return;
     }
+    if (d.early) return finishEarly(o, clip, spk, cap);
     hearClip(clip, spk, o.name, s !== undefined);
   };
 
@@ -314,6 +494,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const o: Open = {
       id: randomUUID(), name, spk, chunks, at, bytes: chunks.reduce((n, c) => n + c.length, 0), speechEnd: chunks.length, silentBytes: 0,
       timer: setTimeout(() => close(sp), d.silenceMs), closed: false, inflight: false, publishedWords: 0, seq: 0, slot: false, pubChain: Promise.resolve(),
+      earlyCount: 0, earlySeq: 0, pausedSince: true,
     };
     if (d.partials) { o.steps = setInterval(() => step(spk, o), d.partials.stepMs); o.steps.unref(); }
     sp.open = o;
@@ -403,7 +584,8 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       sp.ring = []; sp.ringAt = [];
       const fresh = open(sp, spk, name, chunks, at);
       if (d.stream) startSession(sp, fresh);
-      if (d.maxUtteranceMs !== undefined && fresh.bytes >= d.maxUtteranceMs * BYTES_PER_MS) close(sp);
+      armEarly(fresh);
+      if (d.maxUtteranceMs !== undefined && fresh.bytes >= d.maxUtteranceMs * BYTES_PER_MS) close(sp, false, true);
       return;
     }
     clearTimeout(o.timer);
@@ -416,9 +598,12 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       if (r) r.catch((err: unknown) => os.fail?.(err));
     } else if (os?.state === "connecting" || os?.state === "starting") os.pending.push(pcm);
     if (o.held !== undefined) hypothesis(o, o.held);
-    if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; } else o.silentBytes += pcm.length;
-    if (d.maxUtteranceMs !== undefined && o.bytes >= d.maxUtteranceMs * BYTES_PER_MS) return close(sp);
+    if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; resumed(o); } else o.silentBytes += pcm.length;
+    if (d.maxUtteranceMs !== undefined && o.bytes >= d.maxUtteranceMs * BYTES_PER_MS) return close(sp, false, true);
     if (d.vad && o.silentBytes >= d.silenceMs * BYTES_PER_MS) return close(sp);
+    // @spec EARS-EARLY-001: under silero the pause is the received audio since the last speech frame
+    if (d.early && d.vad && !speech && o.silentBytes >= d.early.afterMs * BYTES_PER_MS) tryEarly(o);
+    armEarly(o);
     o.timer = setTimeout(() => close(sp), d.silenceMs); // the frame-gap rule (EARS-VAD-004)
   };
 

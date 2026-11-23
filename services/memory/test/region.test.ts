@@ -5,7 +5,7 @@ import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
 import { InMemoryStore } from "../src/fake-store.js";
 
-function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void } = {}) {
+function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void; cfg?: Record<string, unknown> } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
   const warnings: unknown[] = [];
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
@@ -24,7 +24,7 @@ function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: 
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
   };
   const bus = new FakeBus();
-  const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log, onBrainStatus: opts.onBrainStatus as never });
+  const onEvent = createMemoryHandler({ cfg: testConfig(opts.cfg), bus, store, log, onBrainStatus: opts.onBrainStatus as never });
   return { onEvent, bus, calls, warnings };
 }
 const chat = (extra: Record<string, unknown> = {}) =>
@@ -44,7 +44,7 @@ test("every chat line counts toward the viewer; only lines addressed to the co-h
 test("a mention announces the viewer (with regular, no notes text) before the (slow) embed + store", async () => {
   const { onEvent, bus, calls } = setup({ msgCount: 30, isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
-  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, regular: true }]);
+  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", platform: "twitch", userId: "123", isNew: false, msgCount: 30, regular: true }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
   assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco"]);
 });
@@ -213,4 +213,64 @@ test("a failed speaker touch logs a warning and the utterance is still remembere
   await onEvent(speech());
   assert.deepEqual(calls.map((c) => c.op), ["touchSpeaker", "remember"]);
   assert.equal(warnings.length, 1);
+});
+
+// ---- bounded intake (issue #170)
+
+const small = { viewer_text: { max_chars: 20, max_name_chars: 10 }, brain: { input_limits: { speech_max_chars: 30 } } };
+
+// @spec MEM-WRITE-001, MEM-WRITE-006
+test("a remembered chat line is bounded by viewer_text.max_chars before it is stored; unaddressed chat stores nothing", async () => {
+  const { onEvent, calls } = setup(undefined, [], { cfg: small });
+  const long = "x".repeat(200);
+  await onEvent(chat({ text: long })); // not addressed
+  assert.equal(calls.filter((c) => c.op === "remember").length, 0);
+  await onEvent(chat({ text: long, mentionsCohost: true }));
+  const stored = calls.find((c) => c.op === "remember")!.args[2] as string;
+  assert.equal([...stored].length, 20);
+  assert.ok(stored.endsWith("…"));
+  await onEvent(chat({ text: "line one\nline\ttwo ​", mentionsCohost: true }));
+  assert.equal(calls.filter((c) => c.op === "remember")[1]!.args[2], "line one line two");
+});
+
+// @spec MEM-WRITE-002, MEM-WRITE-007
+test("a remembered speech line is bounded by brain.input_limits.speech_max_chars, not the chat limit", async () => {
+  const { onEvent, calls } = setup(undefined, [], { cfg: small });
+  await onEvent(event("speech.heard", { speaker: "Chris", text: "y".repeat(200), durationMs: 5 }));
+  const stored = calls.find((c) => c.op === "remember")!.args[2] as string;
+  assert.equal([...stored].length, 30);
+  assert.ok(stored.endsWith("…"));
+});
+
+// @spec MEM-WRITE-008
+test("user and speaker names are bounded to viewer_text.max_name_chars, with unknown when nothing remains, before who, viewer display and memory.viewer", async () => {
+  const { onEvent, bus, calls } = setup(undefined, [], { cfg: small });
+  await onEvent(chat({ user: "AVeryLongViewerName", mentionsCohost: true }));
+  const bounded = calls.find((c) => c.op === "touchViewer")!.args[1] as string;
+  assert.equal([...bounded].length, 10);
+  assert.ok(bounded.endsWith("…"));
+  assert.equal(calls.find((c) => c.op === "remember")!.args[1], bounded);
+  assert.equal((bus.of("memory.viewer")[0] as { user: string }).user, bounded);
+  await onEvent(event("speech.heard", { speaker: "S".repeat(50), speakerId: "D1", text: "hello there", durationMs: 5 }));
+  assert.equal([...(calls.find((c) => c.op === "touchSpeaker")!.args[1] as string)].length, 10);
+  assert.equal([...(calls.filter((c) => c.op === "remember")[1]!.args[1] as string)].length, 10);
+  calls.length = 0;
+  await onEvent(chat({ user: " ​\n ", userId: "9", mentionsCohost: true }));
+  assert.equal(calls.find((c) => c.op === "touchViewer")!.args[1], "unknown");
+  assert.equal(calls.find((c) => c.op === "remember")!.args[1], "unknown");
+  await onEvent(event("speech.heard", { speaker: "​", text: "hello there", durationMs: 5 }));
+  assert.equal(calls.filter((c) => c.op === "remember")[1]!.args[1], "unknown");
+});
+
+// @spec MEM-VIEWER-007
+test("chat with no userId and user unknown creates no viewer row and no memory.viewer; the memory row is still written when it mentions the co-host", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(chat({ userId: undefined, user: "unknown", mentionsCohost: true }));
+  await onEvent(chat({ userId: undefined, user: "​", mentionsCohost: true })); // bounds to unknown
+  assert.equal(calls.filter((c) => c.op === "touchViewer").length, 0);
+  assert.equal(bus.of("memory.viewer").length, 0);
+  assert.equal(calls.filter((c) => c.op === "remember").length, 2);
+  await onEvent(chat({ userId: "42", user: "unknown", mentionsCohost: true })); // an id is enough
+  assert.equal(calls.filter((c) => c.op === "touchViewer").length, 1);
+  assert.equal(bus.of("memory.viewer").length, 1);
 });

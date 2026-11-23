@@ -231,3 +231,52 @@ test("the feed is a role=log region the keyboard can reach", () => {
   boot();
   assert.equal(log().getAttribute("tabindex"), "0");
 });
+
+const sayText = () => rows().filter((r) => r.getAttribute("aria-label")!.startsWith("Co-host")).map((r) => r.querySelector("p")!.textContent!);
+
+// @spec DASH-UI-038, DASH-UI-039, DASH-UI-002
+test("a streamed line is one Co-host row that grows with each clause in seq order, joined by one space; a brain.clause adds no row of its own", () => {
+  const app = boot();
+  frame(app, "brain.say", { id: "L", text: "Hello there.", emotion: "happy", more: true });
+  assert.equal(rows().length, 1);
+  frame(app, "brain.clause", { id: "L", seq: 1, text: "How are you?" });
+  frame(app, "brain.clause", { id: "L", seq: 2, text: "Fine." });
+  assert.equal(rows().length, 1);
+  assert.match(sayText()[0]!, /^Hello there\. How are you\? Fine\./);
+});
+
+// @spec DASH-UI-039
+test("an empty closing clause appends nothing, and a closing clause with text appends it", () => {
+  const app = boot();
+  frame(app, "brain.say", { id: "L", text: "A.", more: true });
+  frame(app, "brain.clause", { id: "L", seq: 1, text: "B." });
+  frame(app, "brain.clause", { id: "L", seq: 2, text: "", last: true, through: 1 });
+  assert.match(sayText()[0]!, /^A\. B\.(?! )/);
+  assert.equal(rows().length, 1);
+});
+
+// @spec DASH-UI-040
+test("a clause for a line with no row, a duplicate seq or a gap is dropped with no row, and a duplicate or out-of-order one logs a warning", (t) => {
+  const warn = t.mock.method(console, "warn", () => undefined);
+  const app = boot();
+  frame(app, "brain.clause", { id: "ghost", seq: 1, text: "orphan" });
+  assert.equal(rows().length, 0, "no row for a line the page has not seen");
+  frame(app, "brain.say", { id: "L", text: "A.", more: true });
+  frame(app, "brain.clause", { id: "L", seq: 1, text: "B." });
+  const afterOk = warn.mock.callCount();
+  frame(app, "brain.clause", { id: "L", seq: 1, text: "dup" });
+  frame(app, "brain.clause", { id: "L", seq: 3, text: "gap" });
+  assert.equal(rows().length, 1);
+  assert.equal(sayText()[0]!.includes("dup") || sayText()[0]!.includes("gap"), false);
+  assert.ok(warn.mock.callCount() >= afterOk + 2, "each dropped clause is warned about");
+  frame(app, "brain.clause", { id: "L", seq: 2, text: "C." });
+  assert.match(sayText()[0]!, /^A\. B\. C\./, "the line keeps growing from the last accepted seq");
+});
+
+// @spec DASH-UI-042
+test("each clause's voice.utterance gets its own Voice row", () => {
+  const app = boot();
+  for (const seq of [0, 1, 2]) frame(app, "voice.utterance", { id: "L", seq, durationMs: 100 });
+  const voice = rows().filter((r) => r.getAttribute("aria-label")!.startsWith("Voice"));
+  assert.equal(voice.length, 3);
+});

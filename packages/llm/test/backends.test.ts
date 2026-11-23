@@ -971,4 +971,310 @@ test("claude: the hostile environment changes nothing on complete() and stream()
   });
 });
 
+// ---- tool use and turn continuation on the Claude API and Bedrock (issue #163)
+
+const weatherTool = { name: "get_weather", description: "Weather for a city", parameters: { type: "object", properties: { city: { type: "string" } } } };
+const clockTool = { name: "get-time", description: "Current time", parameters: { type: "object", properties: {} } };
+/** The tool_use ids the recorded tool replies carry, by provider. */
+const TU_A: Record<ClaudeKind, string> = { anthropic: "toolu_01A", bedrock: "toolu_bdrk_01A" };
+const TU_B: Record<ClaudeKind, string> = { anthropic: "toolu_01B", bedrock: "toolu_bdrk_01B" };
+const THINKING = "The viewer asked about Oslo; check the weather.";
+const asked = (id: string, name = "get_weather", args: Record<string, unknown> = { city: "Oslo" }) => ({ id, name, arguments: args });
+
+/** Answers every request with the recorded `<provider>-<name>` (a `.sse` file streams, a `.json` file is one message). */
+async function toolBackend(kind: ClaudeKind, name: string) {
+  const file = `${kind}-${name}`;
+  return claudeBackend(({ res }) => (file.endsWith(".sse") ? sendSse(res, fixture(file)) : sendJson(res, file)));
+}
+/** Runs `complete()` or `stream()` against a recorded tool reply and returns the request, the result and the stream's events. */
+async function toolRun(kind: ClaudeKind, call: "complete" | "stream", name: string, history: any[] = user("hi"), req: Record<string, unknown> = { tools: [weatherTool] }) {
+  const b = await toolBackend(kind, call === "complete" ? `${name}.json` : `stream-${name}.sse`);
+  const p = claude(kind, b.fetch);
+  if (call === "complete") return { seen: b.seen, result: await p.complete(history, req), events: [] as any[] };
+  const events = await collect(p.stream(history, req));
+  assert.equal(events.at(-1).type, "done");
+  return { seen: b.seen, result: events.at(-1).result, events };
+}
+const bodyOf = (s: { body: Record<string, unknown> }): any => s.body;
+const sentMessages = (s: { body: Record<string, unknown> }): any[] => bodyOf(s).messages;
+
+// @spec LLM-TOOL-010, LLM-STOP-010
+test("claude and bedrock: tools go out as [{name, description, input_schema}] and no stop_sequences key is sent, from complete() and stream()", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const { seen } = await toolRun(kind, call, "tool-use", user("hi"), { tools: [weatherTool, clockTool] });
+      const body = bodyOf(seen[0]!);
+      assert.deepEqual(body.tools, [
+        { name: "get_weather", description: "Weather for a city", input_schema: weatherTool.parameters },
+        { name: "get-time", description: "Current time", input_schema: clockTool.parameters },
+      ], `${kind} ${call}`);
+      assert.equal("stop_sequences" in body, false, `${kind} ${call}: stop_sequences sent`);
+    }
+  }
+});
+
+// @spec LLM-STOP-019, LLM-TOOL-026
+test("claude and bedrock: tools [] is no tools: the reply stops are sent, no tools key goes out, and json:true does not fail", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const reply = await request(kind, call, user("hi"), { tools: [] });
+      assert.deepEqual(bodyOf(reply).stop_sequences, TRANSCRIPT_STOPS, `${kind} ${call}`);
+      assert.equal("tools" in bodyOf(reply), false, `${kind} ${call}: tools key sent`);
+      const json = await request(kind, call, user("hi"), { tools: [], json: true });
+      assert.equal("stop_sequences" in bodyOf(json), false, `${kind} ${call} json`);
+      assert.equal("tools" in bodyOf(json), false, `${kind} ${call} json: tools key sent`);
+    }
+  }
+});
+
+// @spec LLM-TOOL-011, LLM-TOOL-020, LLM-IF-018
+test("claude and bedrock: a tool_use block gives a call with the backend's id, name and input, and the reply finishes tool_calls, from complete() and stream()", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const { result } = await toolRun(kind, call, "tool-use");
+      assert.deepEqual(result.toolCalls, [asked(TU_A[kind])], `${kind} ${call}`);
+      assert.equal(result.finish, "tool_calls", `${kind} ${call}`);
+      assert.equal(result.text, "Let me look.", `${kind} ${call}`);
+      assert.equal(result.message.content, "Let me look.");
+      assert.deepEqual(result.message.toolCalls, result.toolCalls);
+    }
+  }
+});
+
+// @spec LLM-TOOL-011, LLM-TOOL-024, LLM-IF-018
+test("claude and bedrock: several tool_use blocks come back in the order the model asked, with the no-argument call's input {}", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const { result } = await toolRun(kind, call, "tool-use-two", user("hi"), { tools: [weatherTool, clockTool] });
+      assert.deepEqual(result.toolCalls, [asked(TU_A[kind]), asked(TU_B[kind], "get-time", {})], `${kind} ${call}`);
+      assert.equal(result.finish, "tool_calls");
+      assert.equal(result.text, "");
+    }
+  }
+});
+
+// @spec LLM-TOOL-021
+test("claude and bedrock: a model offered tools that asks for none returns its text with an empty toolCalls and no toolCalls on the message", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const b = await claudeBackend(({ res }) => answer(kind, call, res));
+      const p = claude(kind, b.fetch);
+      const r = call === "complete" ? await p.complete(user("hi"), { tools: [weatherTool] }) : (await collect(p.stream(user("hi"), { tools: [weatherTool] }))).at(-1).result;
+      assert.deepEqual(r.toolCalls, [], `${kind} ${call}`);
+      assert.equal("toolCalls" in r.message, false);
+      assert.equal(r.finish, "stop");
+      assert.ok(r.text.length > 0);
+    }
+  }
+});
+
+// @spec LLM-IF-018
+test("claude and bedrock: stop_reason tool_use maps to tool_calls, max_tokens to length and refusal to refusal (a refusal empties text and calls), from complete() and stream()", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      for (const [reason, finish] of [["tool_use", "tool_calls"], ["max_tokens", "length"], ["refusal", "refusal"]] as const) {
+        const file = call === "complete" ? `${kind}-tool-use-thinking.json` : `${kind}-stream-tool-use.sse`;
+        const body = fixture(file).replace(/"stop_reason": ?"tool_use"/, `"stop_reason": "${reason}"`);
+        const b = await claudeBackend(({ res }) => (call === "complete" ? (res.writeHead(200, { "content-type": "application/json" }), res.end(body)) : sendSse(res, body)));
+        const p = claude(kind, b.fetch);
+        const r = call === "complete" ? await p.complete(user("hi"), { tools: [weatherTool] }) : (await collect(p.stream(user("hi"), { tools: [weatherTool] }))).at(-1).result;
+        assert.equal(r.finish, finish, `${kind} ${call} ${reason}`);
+        if (reason === "refusal" && call === "complete") {
+          assert.equal(r.text, "");
+          assert.deepEqual(r.toolCalls, []);
+        }
+      }
+    }
+  }
+});
+
+// @spec LLM-TOOL-022, LLM-IF-018
+test("claude and bedrock: complete() drops the call the token cap cut off, keeps the completed one, and finishes length", async () => {
+  for (const kind of claudeKinds) {
+    const { result } = await toolRun(kind, "complete", "tool-use-max-tokens", user("hi"), { tools: [weatherTool, clockTool] });
+    assert.deepEqual(result.toolCalls, [asked(TU_A[kind])], kind);
+    assert.equal(result.finish, "length");
+  }
+});
+
+// @spec LLM-STREAM-030, LLM-TOOL-023, LLM-TOOL-022, LLM-STREAM-032, LLM-IF-018
+test("claude and bedrock: stream() never delivers a call the cap cut off; the completed call is delivered and done finishes length with the same calls", async () => {
+  for (const kind of claudeKinds) {
+    const { events, result } = await toolRun(kind, "stream", "tool-use-max-tokens", user("hi"), { tools: [weatherTool] });
+    const delivered = events.filter((e) => e.type === "tool_call").map((e) => e.call);
+    assert.deepEqual(delivered, [asked(TU_A[kind])], kind);
+    assert.deepEqual(result.toolCalls, delivered);
+    assert.equal(result.finish, "length");
+  }
+});
+
+// @spec LLM-STREAM-030, LLM-TOOL-011, LLM-TOOL-020, LLM-STREAM-032
+test("claude and bedrock: stream() assembles input_json_delta fragments and delivers the call as one tool_call after the text, immediately before done", async () => {
+  for (const kind of claudeKinds) {
+    const { events, result } = await toolRun(kind, "stream", "tool-use");
+    assert.deepEqual(events.map((e) => e.type), ["text", "tool_call", "done"], kind);
+    assert.equal(events[0].delta, "Let me look.");
+    assert.deepEqual(events[1].call, asked(TU_A[kind]));
+    assert.deepEqual(result.toolCalls, [events[1].call]);
+    assert.equal(result.finish, "tool_calls");
+    assert.equal(result.text, "Let me look.");
+  }
+});
+
+// @spec LLM-STREAM-030
+test("claude and bedrock: stream() holds a finished call until the final message delta has reported stop_reason", async () => {
+  for (const kind of claudeKinds) {
+    const all = fixture(`${kind}-stream-tool-use.sse`);
+    const cut = all.indexOf("event: message_delta");
+    assert.ok(cut > 0);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const b = await claudeBackend(async ({ res }) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(all.slice(0, cut)); // every block, including the whole tool_use block, but not the final delta
+      await gate;
+      res.end(all.slice(cut));
+    });
+    const it = claude(kind, b.fetch).stream(user("hi"), { tools: [weatherTool] })[Symbol.asyncIterator]();
+    const first = await it.next();
+    assert.equal(first.value.type, "text");
+    const pending = it.next();
+    const early = await Promise.race([pending.then(() => "event"), sleepMs(300).then(() => "held")]);
+    assert.equal(early, "held", `${kind}: an event arrived before stop_reason`);
+    release();
+    assert.equal((await pending).value.type, "tool_call");
+    assert.equal((await it.next()).value.type, "done");
+  }
+});
+
+// @spec LLM-STREAM-032, LLM-TOOL-024
+test("claude and bedrock: done.result.toolCalls equals the tool_call events, in order, for several calls", async () => {
+  for (const kind of claudeKinds) {
+    const { events, result } = await toolRun(kind, "stream", "tool-use-two", user("hi"), { tools: [weatherTool, clockTool] });
+    assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_call", "done"], kind);
+    assert.deepEqual(events.slice(0, 2).map((e) => e.call), [asked(TU_A[kind]), asked(TU_B[kind], "get-time", {})]);
+    assert.deepEqual(result.toolCalls, events.slice(0, 2).map((e) => e.call));
+  }
+});
+
+// @spec LLM-TOOL-016
+test("claude and bedrock: streamed input that is not a JSON object gives {} with invalid set to the raw text", async () => {
+  for (const kind of claudeKinds) {
+    const sse = fixture(`${kind}-stream-tool-use-two.sse`).replace('{\\"city\\": \\"Oslo\\"}', "[1, 2]");
+    assert.match(sse, /\[1, 2\]/);
+    const b = await claudeBackend(({ res }) => sendSse(res, sse));
+    const evs = await collect(claude(kind, b.fetch).stream(user("hi"), { tools: [weatherTool, clockTool] }));
+    assert.deepEqual(evs.find((e) => e.type === "tool_call").call, { id: TU_A[kind], name: "get_weather", arguments: {}, invalid: "[1, 2]" }, kind);
+  }
+});
+
+// @spec LLM-TOOL-014, LLM-TOOL-030
+test("claude and bedrock: result.message.continuation carries the provider name and keeps the thinking blocks and the calls, from complete() and stream()", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const { result } = await toolRun(kind, call, call === "complete" ? "tool-use-thinking" : "tool-use");
+      const c = result.message.continuation;
+      assert.equal(c.name, kind, `${kind} ${call}`);
+      const dump = JSON.stringify(c);
+      assert.ok(dump.includes(THINKING), `${kind} ${call}: thinking text missing from the continuation`);
+      assert.ok(dump.includes("fixture-signature"), `${kind} ${call}: thinking signature missing`);
+      assert.ok(dump.includes(TU_A[kind]), `${kind} ${call}: the call is missing`);
+    }
+  }
+});
+
+/** Appends the results of the model's calls to a history that holds the assistant message `r.message`. */
+const withResults = (r: any, ...results: any[]) => [...user("hi"), r.message, ...results];
+const rain = { role: "tool" as const, callId: "", name: "get_weather", content: "rain" };
+
+// @spec LLM-TOOL-013
+test("claude and bedrock: an assistant turn with calls is sent as its thinking blocks, then tool_use blocks, and no text block while content is empty", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const first = await toolRun(kind, call, "tool-use-two", user("hi"), { tools: [weatherTool, clockTool] });
+      const results = [{ ...rain, callId: TU_A[kind] }, { role: "tool" as const, callId: TU_B[kind], name: "get-time", content: "noon" }];
+      const b = await toolBackend(kind, "tool-use.json");
+      await claude(kind, b.fetch).complete(withResults(first.result, ...results), { tools: [weatherTool, clockTool] });
+      const sent = sentMessages(b.seen[0]!);
+      const asst = sent.find((m) => m.role === "assistant");
+      assert.deepEqual(asst.content.map((x: any) => x.type), ["thinking", "tool_use", "tool_use"], `${kind} ${call}`);
+      assert.equal(asst.content[0].thinking, THINKING);
+      assert.equal(asst.content[0].signature, "fixture-signature");
+      assert.deepEqual(asst.content.slice(1).map((x: any) => [x.id, x.name, x.input]), [[TU_A[kind], "get_weather", { city: "Oslo" }], [TU_B[kind], "get-time", {}]]);
+    }
+  }
+});
+
+// @spec LLM-TOOL-013
+test("claude and bedrock: an assistant turn with calls and non-empty content sends thinking, then one text block, then the tool_use blocks", async () => {
+  for (const kind of claudeKinds) {
+    const first = await toolRun(kind, "complete", "tool-use-thinking");
+    const message = { ...first.result.message, content: "Let me look." };
+    const b = await toolBackend(kind, "tool-use.json");
+    await claude(kind, b.fetch).complete([...user("hi"), message, { ...rain, callId: TU_A[kind] }], { tools: [weatherTool] });
+    const asst = sentMessages(b.seen[0]!).find((m) => m.role === "assistant");
+    assert.deepEqual(asst.content.map((x: any) => x.type), ["thinking", "text", "tool_use"], kind);
+    assert.equal(asst.content[1].text, "Let me look.");
+  }
+});
+
+// @spec LLM-TOOL-012, LLM-TOOL-025
+test("claude and bedrock: consecutive tool messages go out as tool_result blocks of one user turn, in the order given, each answering its own callId with is_error where set", async () => {
+  for (const kind of claudeKinds) {
+    for (const call of calls) {
+      const first = await toolRun(kind, call, "tool-use-two", user("hi"), { tools: [weatherTool, clockTool] });
+      // Results given in the opposite order to the calls: sent as given, each under the call its callId names.
+      const results = [
+        { role: "tool" as const, callId: TU_B[kind], name: "get-time", content: "boom", isError: true },
+        { role: "tool" as const, callId: TU_A[kind], name: "get_weather", content: "rain" },
+      ];
+      const b = await toolBackend(kind, "tool-use.json");
+      await claude(kind, b.fetch).complete(withResults(first.result, ...results), { tools: [weatherTool, clockTool] });
+      const sent = sentMessages(b.seen[0]!);
+      const turn = sent.at(-1);
+      assert.equal(turn.role, "user", `${kind} ${call}`);
+      assert.equal(sent.filter((m) => m.role === "user").length, 2, "the results share one user turn");
+      assert.deepEqual(turn.content.map((x: any) => x.type), ["tool_result", "tool_result"]);
+      assert.deepEqual(turn.content.map((x: any) => x.tool_use_id), [TU_B[kind], TU_A[kind]]);
+      assert.deepEqual(turn.content.map((x: any) => x.content), ["boom", "rain"]);
+      assert.equal(turn.content[0].is_error, true);
+      assert.notEqual(turn.content[1].is_error, true);
+    }
+  }
+});
+
+// @spec LLM-TOOL-017
+test("claude and bedrock: an assistant call with invalid goes back with input {} and the raw text never reaches the model", async () => {
+  for (const kind of claudeKinds) {
+    const bad = { id: TU_A[kind], name: "get_weather", arguments: {}, invalid: "{oops" };
+    const history = [...user("hi"), { role: "assistant" as const, content: "", toolCalls: [bad] },
+      { role: "tool" as const, callId: TU_A[kind], name: "get_weather", content: "arguments were not JSON", isError: true }];
+    const b = await toolBackend(kind, "tool-use.json");
+    await claude(kind, b.fetch).complete(history, { tools: [weatherTool] });
+    const asst = sentMessages(b.seen[0]!).find((m) => m.role === "assistant");
+    assert.deepEqual(asst.content.filter((x: any) => x.type === "tool_use").map((x: any) => x.input), [{}], kind);
+    assert.doesNotMatch(JSON.stringify(asst), /oops/);
+  }
+});
+
+// @spec LLM-TOOL-015, LLM-TOOL-030
+test("claude and bedrock: a continuation from the other Claude provider (or any other provider) is ignored: the turn goes out with no thinking blocks", async () => {
+  const other: Record<ClaudeKind, ClaudeKind> = { anthropic: "bedrock", bedrock: "anthropic" };
+  for (const kind of claudeKinds) {
+    const foreign = await toolRun(other[kind], "complete", "tool-use-thinking");
+    assert.equal(foreign.result.message.continuation.name, other[kind]);
+    const history = [...user("hi"), foreign.result.message, { ...rain, callId: TU_A[other[kind]] }];
+    const b = await toolBackend(kind, "tool-use.json");
+    await claude(kind, b.fetch).complete(history, { tools: [weatherTool] });
+    const asst = sentMessages(b.seen[0]!).find((m) => m.role === "assistant");
+    assert.deepEqual(asst.content.map((x: any) => x.type), ["tool_use"], `${kind} sent ${other[kind]}'s continuation`);
+    assert.doesNotMatch(JSON.stringify(sentMessages(b.seen[0]!)), /fixture-signature/);
+    // A continuation naming a provider that is not Claude is ignored the same way.
+    const ollama = { ...foreign.result.message, continuation: { name: "ollama", thinking: "x" } };
+    const b2 = await toolBackend(kind, "tool-use.json");
+    await claude(kind, b2.fetch).complete([...user("hi"), ollama, { ...rain, callId: TU_A[other[kind]] }], { tools: [weatherTool] });
+    assert.deepEqual(sentMessages(b2.seen[0]!).find((m) => m.role === "assistant").content.map((x: any) => x.type), ["tool_use"]);
+  }
+});
+
 after(() => { /* servers are closed per test in try/finally */ });

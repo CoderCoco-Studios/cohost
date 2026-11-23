@@ -1,0 +1,27 @@
+{
+  "id": "msg_01FixtureTool",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "The viewer asked about Oslo; check the weather.",
+      "signature": "fixture-signature"
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01A",
+      "name": "get_weather",
+      "input": {
+        "city": "Oslo"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 52,
+    "output_tokens": 38
+  }
+}

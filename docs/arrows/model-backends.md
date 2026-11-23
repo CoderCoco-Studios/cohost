@@ -53,20 +53,20 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test pointers |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-022 | 7 | 0 | 15 | 7 |
-| Errors | LLM-ERR-001 to LLM-ERR-009 | 2 | 0 | 7 | 2 |
-| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 16 | 0 | 6 | 16 |
+| Interface and factory | LLM-IF-001 to LLM-IF-022 | 11 | 0 | 11 | 11 |
+| Errors | LLM-ERR-001 to LLM-ERR-009 | 6 | 0 | 3 | 6 |
+| Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 20 | 0 | 2 | 20 |
 | Vision | LLM-VIS-001 to LLM-VIS-013 | 1 | 0 | 12 | 1 |
-| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 0 | 0 | 37 | 0 |
+| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 23 | 0 | 14 | 23 |
 | Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 0 | 0 | 30 | 0 |
-| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 9 | 0 | 10 | 9 |
+| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 12 | 0 | 7 | 12 |
 | Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-033 | 19 | 0 | 14 | 19 |
-| Health ping | LLM-PING-001 to LLM-PING-007 | 6 | 0 | 1 | 6 |
+| Health ping | LLM-PING-001 to LLM-PING-007 | 7 | 0 | 0 | 7 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-021 | 5 | 0 | 16 | 5 |
-| Example stub servers | LLM-EX-001 to LLM-EX-008 | 6 | 0 | 2 | 6 |
+| Example stub servers | LLM-EX-001 to LLM-EX-008 | 7 | 0 | 1 | 7 |
 
-**Summary:** 76 of 226 specs implemented; 0 deferred; 150 gaps. The gaps are the streamed reply, tool calls, image input on every provider, the `connect`, `stream` and `not_configured` kinds of `ChatError`, the mock's tool and failure markers, `complete()` on the Claude, Bedrock and mock providers, and LLM-VIS-002 and LLM-VIS-003.
+**Summary:** 116 of 226 specs implemented; 0 deferred; 110 gaps. The gaps are tool calls and the streamed tool-call and Claude lines, image input on every provider, the `not_configured` kind of `ChatError` on the Claude paths, the mock's tool and failure markers, `complete()` on the Claude, Bedrock and mock providers, and LLM-VIS-002 and LLM-VIS-003.
 
 ## Key Findings
 
@@ -84,7 +84,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 None.
 
 ### Should Fix
-- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE, LLM-PING-007, LLM-MOCK and LLM-EX-007, -008): `complete()` on `anthropic`, `bedrock` and `mock` (#159, #161), `stream()` (#160), tools (#162), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and `ChatError` kinds `connect`, `stream` and `not_configured`.
+- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE, LLM-MOCK and LLM-EX-008): `complete()` on `anthropic`, `bedrock` and `mock` (#159, #161), tools and streamed tool calls (#162), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and `ChatError` kinds `connect`, `stream` and `not_configured`.
 - `complete()` on Ollama and OpenAI-compatible accepts `ChatRequest.tools` and ignores them. Until #162 it must reject a non-empty `tools` with a `TypeError` or act on it; a silent drop is not acceptable once a caller passes tools.
 - Audit the stub model servers (LLM-EX-001..006), cited by the docs site's Extend pages.
 1. Fix the docs site's Choose a model page (`docs/guide/tune/model.md`): its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).

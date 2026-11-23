@@ -110,6 +110,20 @@ for (const s of stubs) {
     });
   });
 
+  // @spec LLM-EX-007
+  test(`the OpenAI-compatible provider streams ${s.name}'s single JSON answer as one text event then done`, { skip: s.skip }, async () => {
+    await withStub(s, async (port) => {
+      const cfg = ConfigSchema.shape.llm.parse({
+        provider: "openai", model: "stub", embed_model: "e", openai: { base_url: `http://127.0.0.1:${port}/v1`, api_key: "" },
+      });
+      const evs: any[] = [];
+      for await (const e of (createChatProvider(cfg) as any).stream([{ role: "user", content: "hi" }])) evs.push(e);
+      assert.deepEqual(evs.map((e) => e.type), ["text", "done"]);
+      assert.equal(evs[0].delta, REPLY);
+      assert.equal(evs[1].result.text, REPLY);
+    });
+  });
+
   // @spec LLM-EX-006
   test(`try.sh against ${s.name} prints the lines of try.expected.txt`, { skip: s.skip || (!has("curl") && "curl not installed") }, async () => {
     await withStub(s, async (port) => {

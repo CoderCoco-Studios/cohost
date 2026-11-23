@@ -1,6 +1,7 @@
-//! The example against a real Redis, with a stream prefix of its own (BUS-NAT-CI-002). Skips itself, printing why,
-//! when Redis is unreachable, as the crate's integration tests do. Needs only what the example's own manifest names:
-//! `cohost-bus`, `tokio` and `serde_json`.
+//! The example against a real Redis, with a stream prefix of its own (BUS-NAT-CI-002). With `REDIS_URL` unset it skips
+//! itself, printing why, when Redis is unreachable, as the crate's integration tests do. With `REDIS_URL` set (CI sets
+//! it job-wide next to its Redis service) an unreachable Redis fails the test instead, so a skipped round trip cannot
+//! pass silently. Needs only what the example's own manifest names: `cohost-bus`, `tokio` and `serde_json`.
 use cohost_bus::codec::parse_heartbeat;
 use cohost_bus::transport::{EntryFields, EventStream};
 use cohost_bus::{Transport, TransportOptions};
@@ -32,6 +33,13 @@ impl Lines {
     }
 }
 
+fn now_ms_f64() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as f64
+}
+
 fn redis_url() -> String {
     std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
 }
@@ -57,6 +65,10 @@ async fn fixture(name: &str, prefix: &str) -> Option<Transport> {
     match tokio::time::timeout(Duration::from_secs(2), t.server_time()).await {
         Ok(Ok(_)) => Some(t),
         _ => {
+            assert!(
+                std::env::var_os("REDIS_URL").is_none(),
+                "{name}: REDIS_URL is set but Redis is unreachable at {url}; refusing to skip the round trip"
+            );
             eprintln!("SKIP {name}: Redis unreachable at {url} (set REDIS_URL)");
             t.close().await;
             None
@@ -102,6 +114,7 @@ async fn heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat() {
     let out = Lines::default();
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let url = redis_url();
+    let ran_url = url.clone();
     let run_prefix = prefix.clone();
     let run_out = out.clone();
     let program = tokio::spawn(async move {
@@ -122,6 +135,10 @@ async fn heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat() {
     })
     .await;
     let pid = std::process::id() as i64;
+    assert!(
+        first.started_at > 0.0 && first.started_at <= now_ms_f64(),
+        "startedAt is epoch milliseconds"
+    );
     assert_eq!(first.service, "rust-example");
     assert_eq!(first.state, "ready");
     assert_eq!(first.mode, "live");
@@ -175,11 +192,13 @@ async fn heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat() {
         .unwrap();
     assert!(result.is_ok(), "{result:?}");
     assert!(
-        asked.elapsed() < Duration::from_secs(4),
-        "stopped within the read's block time plus one second"
+        asked.elapsed() < Duration::from_millis(2000),
+        "stopped within the read's block time (1000 ms) plus one second, 2000 ms; took {:?}",
+        asked.elapsed()
     );
     let all = heartbeats(&t).await;
     assert_eq!(all.last().expect("heartbeats").state, "stopping");
     assert_eq!(all.last().unwrap().instance, first.instance);
     t.close().await;
+    eprintln!("RAN round_trip against {ran_url}: heartbeat, two lines, stopping heartbeat");
 }

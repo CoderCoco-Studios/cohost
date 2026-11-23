@@ -60,11 +60,11 @@ impl Pulse {
             if let Some(v) = slot.borrow_mut().take() {
                 return Ok(v);
             }
-            if !matches!(self.mainloop.iterate(true), IterateResult::Success(_)) {
-                return Err("the PulseAudio mainloop failed".into());
-            }
             if matches!(self.context.get_state(), State::Failed | State::Terminated) {
                 return Err("the PulseAudio connection was lost".into());
+            }
+            if !matches!(self.mainloop.iterate(true), IterateResult::Success(_)) {
+                return Err("the PulseAudio mainloop failed".into());
             }
         }
     }

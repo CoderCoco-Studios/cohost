@@ -63,7 +63,7 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 
 - The Services screen of the [dashboard](../../guide/operate/dashboard.md) lists `rust-example` as `up`. When you press Ctrl-C its last heartbeat says `stopping`, and the row turns `down`.
 - Each event on the bus, including the ones other services publish, becomes one line in the program's terminal.
-- This runs the example's tests. They need Redis, and they choose a stream prefix of their own, so they never touch the `cohost` one. Without Redis they print `SKIP` and pass:
+- This runs the example's tests. They need Redis, and they choose a stream prefix of their own, so they never touch the `cohost` one. With `REDIS_URL` unset and no Redis on the default address they print `SKIP` and pass; with `REDIS_URL` set and Redis unreachable they fail:
 
   ```sh
   cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus
@@ -74,4 +74,4 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 - **`rust-example: ...` and exit status 1.** The program could not reach Redis, or the connection dropped. The message names the cause. Start Redis, or set `REDIS_URL`, and run it again.
 - **It runs but prints nothing.** The consumer group starts at the end of the stream, so it shows events published after it started. Publish one, as in step 6.
 - **The Services screen does not list it.** The dashboard reads the health stream under the prefix `cohost`, and the program uses that prefix. Check that both use the same Redis.
-- **The tests print `SKIP`.** Redis is not reachable at `REDIS_URL`, which is how the tests are meant to behave without it. Start Redis to run them for real.
+- **The tests print `SKIP`.** `REDIS_URL` is unset and nothing answers at `redis://127.0.0.1:6379`, which is how the tests behave without Redis. Start Redis to run them for real. If `REDIS_URL` is set and Redis is unreachable, they fail instead.

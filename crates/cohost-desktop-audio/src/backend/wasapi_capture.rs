@@ -150,7 +150,6 @@ impl WasapiCapture {
         capture
             .read_from_device_to_deque(&mut self.queue)
             .map_err(err)?;
-        // The crate zero-fills buffers flagged silent, so their bytes are already silence.
         let bytes: Vec<u8> = self.queue.drain(..).collect();
         match (sample_type, bits) {
             (SampleType::Float, _) => {

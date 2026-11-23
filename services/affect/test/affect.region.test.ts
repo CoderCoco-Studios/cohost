@@ -459,3 +459,124 @@ test("forget_context replaces the counter: the next line from a counted viewer i
   assert.equal(affect.mood.cause, "chat: bob", "the same viewer and text count again with no clock movement");
   assert.ok(affect.mood.arousal > 0.12, "and move the mood from baseline");
 });
+
+test("counting is keyed by platform and id: the same name on two platforms, or two ids on one platform, are two viewers; the same id under two names is one", () => { // @spec AFF-IN-011, AFF-IN-020
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { user: "sam", userId: "u1", platform: "twitch" }));
+  const a1 = affect.mood.arousal;
+  affect.onEvent(chat("lol great", { user: "sam", userId: "u1", platform: "youtube" }));
+  const a2 = affect.mood.arousal;
+  assert.ok(a2 > a1 + 0.02, "same name and id, other platform: a second viewer");
+  affect.onEvent(chat("lol pog", { user: "sam", userId: "u2", platform: "twitch" }));
+  const a3 = affect.mood.arousal;
+  assert.ok(a3 > a2 + 0.02, "same name and platform, other id: a second viewer");
+  affect.onEvent(chat("lol again", { user: "renamed", userId: "u1", platform: "twitch" }));
+  assert.equal(affect.mood.arousal, a3, "the id is the viewer, a display-name change is not a new one");
+});
+
+test("without a user id the viewer is the platform and the bounded, normalised name", () => { // @spec AFF-IN-011, AFF-IN-020
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { user: "Sam  Smith" }));
+  const a1 = affect.mood.arousal;
+  affect.onEvent(chat("lol other line", { user: "sam smith" }));
+  assert.equal(affect.mood.arousal, a1, "case and whitespace do not make a second viewer");
+  affect.onEvent(chat("lol yt line", { user: "sam smith", platform: "youtube" }));
+  assert.ok(affect.mood.arousal > a1 + 0.02, "another platform is another viewer");
+  const long = "n".repeat(40);
+  const b = counted();
+  b.affect.onEvent(chat("lol nice", { user: `${long}AAA` }));
+  const b1 = b.affect.mood.arousal;
+  b.affect.onEvent(chat("lol other line", { user: `${long}BBB` }));
+  assert.equal(b.affect.mood.arousal, b1, "names equal once bounded are one viewer");
+});
+
+/** Three lines on an llm/http appraiser: A starts at once, B and C wait; `seen` lists the lines the appraiser received. */
+function queued(extra: [Record<string, unknown>, Record<string, unknown>, Record<string, unknown>]) {
+  const s = setup("http");
+  s.affect.onEvent(chat("what a great play", { user: "a", userId: "ua", messageId: "ma", ...extra[0] }));
+  s.affect.onEvent(chat("love this game so much", { user: "b", userId: "ub", messageId: "mb", ...extra[1] }));
+  s.affect.onEvent(chat("another great one here", { user: "c", userId: "uc", messageId: "mc", ...extra[2] }));
+  assert.equal(s.seen.length, 1, "A is running, B and C wait");
+  return s;
+}
+const removed = (data: Record<string, unknown>) => event("chat.removed", { platform: "twitch", ...data });
+/** Lets the running job finish and the queue drain; the http stub answers one job per `next`. */
+async function drainAll(s: ReturnType<typeof queued>, _jobs?: number) {
+  // The answer travels through a Response body, so a fixed number of releases can miss a fetch not yet issued: keep
+  // releasing for a bounded number of turns (a late release of a spent waiter is harmless), then wait for the drain.
+  for (let i = 0; i < 30; i++) { s.next(); await new Promise((r) => setTimeout(r, 2)); }
+  await s.affect.settled();
+}
+
+test("chat.removed scope message drops the queued job of that platform and messageId only", async () => { // @spec AFF-IN-017
+  const s = queued([{}, {}, {}]);
+  s.affect.onEvent(removed({ scope: "message", messageId: "mb" }));
+  await drainAll(s, 3);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"], "B was never appraised, C was");
+
+  const other = queued([{}, {}, {}]);
+  other.affect.onEvent(removed({ platform: "discord", scope: "message", messageId: "mb" }));
+  await drainAll(other, 3);
+  assert.deepEqual(other.seen.map((x) => x.who), ["a", "b", "c"], "the same messageId on another platform covers nothing");
+});
+
+test("chat.removed scope user drops the queued jobs of that platform and userId only", async () => { // @spec AFF-IN-017
+  const s = queued([{}, {}, {}]);
+  s.affect.onEvent(removed({ scope: "user", userId: "ub" }));
+  await drainAll(s, 3);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"]);
+
+  const other = queued([{}, {}, {}]);
+  other.affect.onEvent(removed({ platform: "youtube", scope: "user", userId: "ub" }));
+  await drainAll(other, 3);
+  assert.deepEqual(other.seen.map((x) => x.who), ["a", "b", "c"], "the same userId on another platform covers nothing");
+});
+
+test("chat.removed scope all drops every queued job of that platform and none of another", async () => { // @spec AFF-IN-017
+  const s = queued([{}, { platform: "discord" }, {}]);
+  s.affect.onEvent(removed({ scope: "all" }));
+  await drainAll(s, 3);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a", "b"], "twitch C dropped, discord B kept");
+});
+
+test("a removal leaves the mood, its cause and the counter's keys unchanged", async () => { // @spec AFF-IN-018
+  const s = queued([{}, {}, {}]);
+  const { valence, arousal, cause } = s.affect.mood;
+  s.affect.onEvent(removed({ scope: "message", messageId: "mb" }));
+  s.affect.onEvent(removed({ scope: "user", userId: "uc" }));
+  assert.equal(s.affect.mood.valence, valence);
+  assert.equal(s.affect.mood.arousal, arousal);
+  assert.equal(s.affect.mood.cause, cause);
+  // The removed viewers' keys stay in the counter: their next line is refused, never queued.
+  s.affect.onEvent(chat("a brand new great line", { user: "b", userId: "ub" }));
+  s.affect.onEvent(chat("another brand new line", { user: "c", userId: "uc" }));
+  await drainAll(s, 3);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a"], "B and C were dropped, their later lines were refused");
+
+  // Inline (rules) appraisal: a removal moves nothing and the counter still refuses the removed viewer's line.
+  const { affect } = counted();
+  affect.onEvent(chat("lol nice", { userId: "u1", messageId: "m1" }));
+  const snap = { v: affect.mood.valence, a: affect.mood.arousal, c: affect.mood.cause };
+  affect.onEvent(removed({ scope: "message", messageId: "m1" }));
+  assert.deepEqual({ v: affect.mood.valence, a: affect.mood.arousal, c: affect.mood.cause }, snap);
+  affect.onEvent(chat("lol nice again", { userId: "u1" }));
+  assert.deepEqual({ v: affect.mood.valence, a: affect.mood.arousal, c: affect.mood.cause }, snap, "the counter kept the removed line's keys");
+});
+
+test("a removal does not bump the epoch: an uncovered queued job still applies", async () => { // @spec AFF-IN-018
+  const s = queued([{}, {}, {}]);
+  s.affect.onEvent(removed({ scope: "message", messageId: "mb" }));
+  await drainAll(s, 3);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"]);
+  assert.ok(near(s.affect.mood.valence, 0.2), "A and C both applied");
+});
+
+test("a removal that covers the running job lets it finish and apply", async () => { // @spec AFF-IN-019
+  const s = queued([{}, {}, {}]);
+  s.affect.onEvent(removed({ scope: "message", messageId: "ma" }));
+  s.next();
+  await waitFor(() => s.seen.length === 2 && near(s.affect.mood.valence, 0.1), "A applied and B sent");
+  assert.ok(near(s.affect.mood.valence, 0.1), "the running job applied despite its removal");
+  await drainAll(s, 2);
+  assert.deepEqual(s.seen.map((x) => x.who), ["a", "b", "c"], "only queued jobs are dropped");
+});

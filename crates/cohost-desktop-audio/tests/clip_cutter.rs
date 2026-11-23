@@ -135,7 +135,7 @@ fn the_pad_is_silence_ms_when_that_is_shorter_than_100_ms() {
     assert_eq!(feed(&mut c, &pcm, 160)[0].len(), ms(40) + ms(500) + ms(40));
 }
 
-// @spec EARS-SRC-019
+// @spec EARS-SRC-019, EARS-SRC-022
 #[test]
 fn finish_returns_the_clip_held_when_the_feed_ends_cut_like_any_other() {
     let mut c = cutter(300, 10_000);
@@ -146,10 +146,48 @@ fn finish_returns_the_clip_held_when_the_feed_ends_cut_like_any_other() {
     assert!(c.finish().is_none());
 }
 
-// @spec EARS-SRC-019
+// @spec EARS-SRC-019, EARS-SRC-022
 #[test]
 fn finish_with_only_silence_held_returns_nothing() {
     let mut c = cutter(300, 10_000);
     c.push(&quiet(200));
     assert!(c.finish().is_none());
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_leading_pad_takes_whatever_audio_is_available_at_the_start_of_the_feed() {
+    let mut c = cutter(300, 10_000);
+    let mut pcm = quiet(30);
+    pcm.extend(loud(500));
+    pcm.extend(quiet(1000));
+    assert_eq!(feed(&mut c, &pcm, 160)[0].len(), ms(30) + ms(500) + ms(100));
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_leading_pad_never_reaches_back_before_the_end_of_the_previous_clip() {
+    // silence_ms 100: the first clip's trailing pad takes the whole 100 ms gap, so the second has no leading pad.
+    let mut c = cutter(100, 10_000);
+    let mut pcm = loud(400);
+    pcm.extend(quiet(100));
+    pcm.extend(loud(400));
+    pcm.extend(quiet(1000));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips.len(), 2);
+    assert_eq!(clips[0].len(), ms(400) + ms(100));
+    assert_eq!(clips[1].len(), ms(400) + ms(100));
+    assert_eq!(clips[1][0], LOUD);
+}
+
+// @spec EARS-SRC-017
+#[test]
+fn the_leading_pad_counts_toward_max_clip_ms() {
+    let mut c = cutter(300, 1000);
+    let mut pcm = quiet(1000);
+    pcm.extend(loud(2000));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips[0].len(), ms(1000));
+    assert!(clips[0][..ms(100)].iter().all(|s| *s == 0));
+    assert_eq!(clips[0][ms(100)], LOUD);
 }

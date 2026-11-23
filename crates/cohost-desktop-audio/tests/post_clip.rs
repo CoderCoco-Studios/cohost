@@ -1,6 +1,6 @@
 //! The HTTP post against a local listener standing in for ears' `POST /audio`.
-use cohost_desktop_audio::post::{DEFAULT_URL, post_clip, resolve_token};
-use cohost_desktop_audio::retry::{Backoff, ClipQueue};
+use cohost_desktop_audio::post::{DEFAULT_URL, PostError, post_clip, resolve_token};
+use cohost_desktop_audio::retry::{Backoff, ClipQueue, Disposition, FailureLog, disposition};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -122,4 +122,27 @@ fn at_most_four_clips_wait_in_order_and_a_fifth_drops_the_oldest() {
     assert_eq!(q.push(vec![5]), Some(vec![1]));
     let order: Vec<_> = std::iter::from_fn(|| q.pop()).collect();
     assert_eq!(order, [vec![2], vec![3], vec![4], vec![5]]);
+}
+
+// @spec EARS-SRC-020
+#[test]
+fn a_failure_is_logged_when_first_seen_and_when_it_changes_not_while_it_repeats() {
+    let mut log = FailureLog::new();
+    assert!(log.observe(&PostError::Status(400)).unwrap().contains("400"));
+    assert_eq!(log.observe(&PostError::Status(400)), None);
+    assert!(log.observe(&PostError::Status(503)).unwrap().contains("503"));
+    assert!(log.observe(&PostError::Network("refused".into())).unwrap().contains("refused"));
+    log.clear();
+    assert!(log.observe(&PostError::Network("refused".into())).is_some());
+}
+
+// @spec EARS-SRC-020
+#[test]
+fn a_dropped_refusal_carries_a_log_line_with_its_status() {
+    match disposition(&PostError::Status(401)) {
+        Disposition::Drop(line) => assert!(line.contains("401"), "{line}"),
+        Disposition::Retry => panic!("401 must be dropped"),
+    }
+    assert!(matches!(disposition(&PostError::Status(400)), Disposition::Retry));
+    assert!(matches!(disposition(&PostError::Network("x".into())), Disposition::Retry));
 }

@@ -3,7 +3,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cohost_desktop_audio::registration::{Registrar, RegistrationConfig, RegistryStore};
+use cohost_desktop_audio::registration::{Registrar, RegistrationConfig, RegistryStore, detail_for};
+use cohost_desktop_audio::source::SourceChoice;
 
 #[derive(Debug, PartialEq)]
 enum Call {
@@ -16,6 +17,8 @@ struct Fake {
     calls: Mutex<Vec<Call>>,
     /// Writes that fail before the first success.
     failing: Mutex<u32>,
+    /// What a read of the helper's key returns.
+    held: Mutex<Option<String>>,
 }
 
 impl RegistryStore for Fake {
@@ -27,6 +30,9 @@ impl RegistryStore for Fake {
             return Err("redis unreachable".into());
         }
         Ok(())
+    }
+    async fn read_registration(&self, _id: &str) -> Result<Option<String>, String> {
+        Ok(self.held.lock().unwrap().clone())
     }
     async fn delete_registration(&self, id: &str) -> Result<(), String> {
         self.calls.lock().unwrap().push(Call::Delete { id: id.into() });
@@ -41,7 +47,7 @@ impl Fake {
 }
 
 fn config() -> RegistrationConfig {
-    RegistrationConfig::new(5_000, "0.1.0", "inst-1", "default sink monitor")
+    RegistrationConfig::new(5_000, "0.1.0", "inst-1", "default sink monitor", 1_700_000_000_000)
 }
 
 async fn settle() {
@@ -64,6 +70,7 @@ async fn the_registration_carries_kind_version_instance_pid_state_and_the_device
         assert_eq!(v["version"], "0.1.0");
         assert_eq!(v["instance"], "inst-1");
         assert_eq!(v["pid"], std::process::id());
+        assert_eq!(v["startedAt"], 1_700_000_000_000_u64);
         assert_eq!(v["state"], "ready");
         assert_eq!(v["detail"], "default sink monitor");
     }
@@ -146,4 +153,54 @@ async fn an_orderly_stop_deletes_the_registration_and_writes_no_more() {
     tokio::time::advance(Duration::from_millis(30_000)).await;
     settle().await;
     assert_eq!(store.calls.lock().unwrap().len(), before);
+}
+
+// @spec CONN-DESK-004
+#[test]
+fn the_detail_names_the_captured_device() {
+    assert_eq!(detail_for(&SourceChoice::DefaultMonitor), "default sink monitor");
+    assert_eq!(detail_for(&SourceChoice::Named("alsa_output.x.monitor".into())), "alsa_output.x.monitor");
+    assert_eq!(detail_for(&SourceChoice::DefaultRender), "default render device");
+}
+
+// @spec CONN-DESK-004
+#[tokio::test(start_paused = true)]
+async fn a_different_instance_under_the_key_stops_the_writes_and_the_stop_leaves_the_key() {
+    let store = Arc::new(Fake::default());
+    let reg = Registrar::start(store.clone(), config());
+    settle().await;
+    *store.held.lock().unwrap() = Some(r#"{"instance":"someone-else"}"#.into());
+    tokio::time::advance(Duration::from_millis(5_000)).await;
+    settle().await;
+    assert_eq!(store.writes(), 1);
+    reg.stop().await;
+    assert!(!store.calls.lock().unwrap().iter().any(|c| matches!(c, Call::Delete { .. })));
+}
+
+// @spec CONN-DESK-004
+#[tokio::test(start_paused = true)]
+async fn the_same_instance_under_the_key_keeps_the_writes_and_the_stop_deletes() {
+    let store = Arc::new(Fake::default());
+    let reg = Registrar::start(store.clone(), config());
+    settle().await;
+    *store.held.lock().unwrap() = Some(r#"{"instance":"inst-1"}"#.into());
+    tokio::time::advance(Duration::from_millis(5_000)).await;
+    settle().await;
+    assert_eq!(store.writes(), 2);
+    reg.stop().await;
+    assert!(store.calls.lock().unwrap().iter().any(|c| matches!(c, Call::Delete { .. })));
+}
+
+// @spec CONN-DESK-005
+#[tokio::test(start_paused = true)]
+async fn a_different_instance_found_while_retrying_ends_the_retries() {
+    let store = Arc::new(Fake { failing: Mutex::new(5), ..Fake::default() });
+    let reg = Registrar::start(store.clone(), config());
+    settle().await;
+    assert_eq!(store.writes(), 1);
+    *store.held.lock().unwrap() = Some(r#"{"instance":"someone-else"}"#.into());
+    tokio::time::advance(Duration::from_millis(30_000)).await;
+    settle().await;
+    assert_eq!(store.writes(), 1);
+    reg.stop().await;
 }

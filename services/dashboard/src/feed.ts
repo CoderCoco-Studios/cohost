@@ -30,6 +30,8 @@ export interface FeedDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Receives each `memory.viewers.reply` seen on the stream (the Viewers routes wait on these); the feed itself never forwards it. */
   onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void;
+  /** Receives the driver of each `avatar.state` seen on the stream: the renderer relay's state comes from it (DASH-AVR-020). */
+  onAvatarState?: (driver: string) => void;
 }
 
 /** The slice of the service logger the feed's failure handling uses. */
@@ -134,6 +136,7 @@ export function createFeed(d: FeedDeps) {
       void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId, readOutcome);
       void d.bus.tail((ev: BusEvent) => {
         if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
+        if (ev.type === "avatar.state") d.onAvatarState?.((ev as BusEvent<"avatar.state">).data.driver); // @spec DASH-AVR-020
         if (forwardable(ev)) for (const c of d.clients()) deliver(c, ev);
       }, "$", readOutcome);
       offChange = d.tracker.onChange(() => broadcast(servicesMessage(snapshot())));

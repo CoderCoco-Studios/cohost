@@ -149,7 +149,7 @@ export const tick = async (n = 20): Promise<void> => { for (let i = 0; i < n; i+
 
 // ---- the running dashboard ----
 
-class DashBus extends FakeBus {
+export class DashBus extends FakeBus {
   stop(): void {}
   async recent(): Promise<never[]> { return []; }
   async tail(): Promise<void> {}
@@ -185,6 +185,12 @@ export interface RigOpts {
   writeChunk?: ModelStore["writeChunk"];
   /** Delays every model listing (widens the race of DASH-AVR-028). */
   pause?: () => Promise<void>;
+  /** The bus the dashboard runs on (default a `DashBus`); the relay tests pass one that records and delivers avatar frames. */
+  bus?: DashBus;
+  /** Extra `dashboardService` dependencies (the relay's clock seam, `uiDir`); spread last. */
+  deps?: Record<string, unknown>;
+  /** The LAN listener's address (default loopback; `0.0.0.0` lets a test connect from a non-loopback address). */
+  lanHost?: string;
 }
 
 export interface Rig {
@@ -193,6 +199,7 @@ export interface Rig {
   /** `<dataDir>`, the model folder, the config directory and config.yaml. */
   data: string; models: string; cfgDir: string; cfgFile: string;
   rec: ReturnType<typeof recordingLog>;
+  bus: DashBus;
   auth: Record<string, string>;
   /** Fetch against the full surface / the LAN listener. */
   get: (path: string, headers?: Record<string, string>) => Promise<Res>;
@@ -221,7 +228,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const cfgDir = makeConfigDir(configText({ renderer }));
   Object.assign(process.env, { COHOST_DATA_DIR: data, CONFIG_DIR: cfgDir, COHOST_ENV_FILE: join(cfgDir, "no.env") });
   const port = await freePort(), lanPort = await freePort();
-  const bus = new DashBus();
+  const bus = o.bus ?? new DashBus();
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
   const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
@@ -240,7 +247,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
     const timer = setTimeout(() => fail(new Error(`no upload wrote its first chunk within ${ANSWER_CAP_MS} ms: its temporary file never opened`)), ANSWER_CAP_MS);
     openedWaiters.push(() => { clearTimeout(timer); ok(); });
   });
-  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: writeChunk, modelPause: o.pause });
+  const svc = dashboardService({ env, exit: () => {}, lanHost: o.lanHost ?? "127.0.0.1", attachStack: idleStack, writeModelChunk: writeChunk, modelPause: o.pause, ...o.deps } as never);
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard: { port, lan_port: lanPort, ...(o.maxBytes ? { models: { max_bytes: o.maxBytes } } : {}) }, renderer }),
@@ -252,7 +259,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const cfgFile = join(cfgDir, "config.yaml");
   const auth: Record<string, string> = o.control ? { authorization: `Bearer ${TOKEN}` } : {};
   return {
-    port, lanPort, data, models, cfgDir, cfgFile, rec, auth, stop,
+    port, lanPort, data, models, cfgDir, cfgFile, rec, bus, auth, stop,
     get: (path, headers) => send(port, "GET", path, { headers }),
     lan: (method, path, headers) => send(lanPort, method, path, { headers }),
     save: async (values, so = {}) => {

@@ -110,3 +110,38 @@ export function handleUi(dir: string, cohostName: string, req: http.IncomingMess
   }
   return serveFile(res, req, head, root, file);
 }
+
+/** The renderer page's Content-Security-Policy: its own script and style, `blob:` and `data:` images and fetches, nothing else (DASH-AVP-002). */
+// @spec DASH-AVP-002
+export const AVATAR_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' blob: data:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+/** The page `GET /avatar` answers while the renderer page is not built: loads nothing, names the command that builds it (DASH-AVP-001). */
+const AVATAR_NOT_BUILT = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Avatar renderer not built</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{background:#8882;padding:.1em .3em;border-radius:4px}</style></head>
+<body><h1>Avatar renderer not built</h1>
+<p>The avatar renderer page has not been built yet. Run <code>pnpm build</code> in the repository, then reload this page.</p></body></html>
+`;
+
+/** The not-built page loads nothing: its one style is inline, and no script, image or frame is allowed (DASH-AVP-001). */
+const AVATAR_NOT_BUILT_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'";
+
+/**
+ * `GET`/`HEAD /avatar`: the built `avatar.html`, read on each request, with the fixed Content-Security-Policy, or the 503
+ * 'not built' page when it is not a regular file. Served on both listeners (DASH-AVP-001, DASH-AVP-002).
+ */
+// @spec DASH-AVP-001, DASH-AVP-002
+export function handleAvatarPage(dir: string, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
+  if (url.pathname !== "/avatar") return false;
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  const head = req.method === "HEAD";
+  const file = join(resolve(dir), "avatar.html");
+  const type = "text/html; charset=utf-8";
+  if (!isFile(file)) {
+    send(res, head, 503, { "content-type": type, "cache-control": "no-store", "content-length": Buffer.byteLength(AVATAR_NOT_BUILT), "x-content-type-options": "nosniff", "content-security-policy": AVATAR_NOT_BUILT_CSP }, AVATAR_NOT_BUILT);
+    return true;
+  }
+  const body = readFileSync(file);
+  send(res, head, 200, { "content-type": type, "cache-control": "no-cache", "content-length": body.length, "content-security-policy": AVATAR_CSP, "x-content-type-options": "nosniff" }, body);
+  return true;
+}

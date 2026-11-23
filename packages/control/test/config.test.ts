@@ -43,3 +43,10 @@ test("bearerOk accepts only the exact token", () => {
   assert.equal(bearerOk(undefined, "s3cret"), false);
   assert.equal(bearerOk("Bearer x", ""), false);
 });
+
+// @spec DASH-AVR-031
+test("isLoopbackPeer takes a socket's remote address: ::1, 127.0.0.0/8 and their IPv4-mapped forms are loopback; a LAN address, mapped or not, is not", async () => {
+  const { isLoopbackPeer } = await import("../src/index.js");
+  for (const a of ["127.0.0.1", "127.9.9.9", "::1", "::ffff:127.0.0.1", "::FFFF:127.4.5.6"]) assert.equal(isLoopbackPeer(a), true, a);
+  for (const a of ["192.168.1.5", "::ffff:192.168.1.5", "::", "::ffff:0.0.0.0", "127.evil.example", "::ffff:10.0.0.1", "fe80::1", undefined]) assert.equal(isLoopbackPeer(a), false, String(a));
+});

@@ -21,12 +21,12 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
    ```yaml
    chat:
-     source: "twitch"
+     sources: [twitch]
      twitch:
        channel: "yourchannel"
    ```
 
-2. Check that `chat.sources` includes `twitch`. Listing `fake` makes chat a scripted fake instead of Twitch.
+2. Check that `chat.sources` lists `twitch`. Every source listed is read at once, so a `fake` in the list also plays scripted messages alongside Twitch.
 
 3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 

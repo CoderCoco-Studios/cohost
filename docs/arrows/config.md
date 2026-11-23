@@ -70,16 +70,16 @@ Orientation:
 | Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-007 | 7 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-015 | 14 | 0 | 1 |
-| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 9 | 0 | 5 |
+| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 10 | 0 | 4 |
 | Clause settings presentation | CFG-PRES-015 | 1 | 0 | 0 |
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 1 | 0 | 1 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 0 | 0 | 13 |
-| Schema | CFG-SCH-001 to CFG-SCH-071 | 38 | 0 | 33 |
+| Schema | CFG-SCH-001 to CFG-SCH-071 | 46 | 0 | 25 |
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-010 | 4 | 0 | 6 |
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
-| User-owned files | CFG-USR-001 to CFG-USR-019 (CFG-USR-005 does not exist) | 15 | 0 | 3 |
+| User-owned files | CFG-USR-001 to CFG-USR-019 (CFG-USR-005 does not exist) | 16 | 0 | 2 |
 
 **Summary:** 231 specs: 126 implemented, 105 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. The renderer settings (CFG-SCH-097 to -101, CFG-PRES-018 to -020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008, with CFG-PRES-005, -007, CFG-SCH-006 and CFG-ISO-005 revised for the `browser` driver and the `renderer` section) are specified and not built. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 

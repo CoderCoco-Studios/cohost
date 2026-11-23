@@ -62,7 +62,7 @@ chat:
   twitch:
     channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in secrets.yaml
   youtube:
-    video: ""                  # the YouTube video or live stream whose chat is read; the API key is youtube.api_key in secrets.yaml
+    video: ""                  # the YouTube video or live stream whose chat is read; its API key is the secret chat.youtube.api_key in secrets.yaml
     transport: stream          # stream | poll (blank is stream)
     poll_floor_ms: 12000       # transport poll: the shortest gap between two chat polls (at least 1000)
     recheck_ms: 120000         # how often the video is checked again for a live chat (at least 30000)

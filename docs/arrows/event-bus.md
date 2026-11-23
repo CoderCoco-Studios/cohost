@@ -67,7 +67,8 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Publish and envelope | BUS-STREAM-001 to 009 | 9 | 0 | 0 |
 | Connector audio streams | BUS-AUD-001, 002 | 2 | 0 | 0 |
 | Upload store | BUS-UPL-001 to 003 | 3 | 0 | 0 |
-| Event catalogue and schemas | BUS-EVT-001 to 032 (011 retired) | 25 | 6 | 0 |
+| Event catalogue and schemas | BUS-EVT-001 to 032 (011 retired) | 27 | 4 | 0 |
+| Chat removal | BUS-EVT-033 to 036 | 4 | 0 | 0 |
 | Streamed lines | BUS-EVT-037 to 042 (040 built, not flipped: #203) | 5 | 1 | 0 |
 | Consumer-group subscription | BUS-SUB-001 to 013 | 13 | 0 | 0 |
 | Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |

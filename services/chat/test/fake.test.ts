@@ -66,6 +66,9 @@ test("chatPlan: fake needs no channel; twitch without a channel idles (never exi
   assert.equal(plan({ sources: ["fake"], twitch: { channel: "" } }), "fake");
   assert.equal(plan({ sources: ["twitch"], twitch: { channel: "" } }), "idle");
   assert.equal(plan({ sources: ["twitch"], twitch: { channel: "#Chan" } }), "twitch");
+  assert.equal(plan({ sources: ["twitch", "fake"], twitch: { channel: "#Chan" } }), "fake", "fake wins while it is listed");
+  assert.equal(plan({ sources: [], twitch: { channel: "#Chan" } }), "idle", "an empty list does not connect");
+  assert.equal(plan({ sources: ["youtube"], twitch: { channel: "#Chan" } }), "idle", "youtube alone does not connect to Twitch");
 });
 
 // @spec CHAT-FAKE-005

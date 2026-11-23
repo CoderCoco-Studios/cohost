@@ -6,7 +6,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 81 `[x]`, 28 `[ ]`, 2 `[D]`.
 
-**AUDITED**: 92 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 6 gaps (the 19-unit manifest, `VISION_PROVIDER` preset, engine units and Launch profiles, engines design 2026-11-16: CTRL-MANIFEST-001, -003, -006, CTRL-STACK-018). The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
+**AUDITED**: 111 specs: 81 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 28 gaps: CTRL-HEALTH-005; CTRL-LAT-003 to 005 and 017 to 033 (the early-reply latency specs); CTRL-MANIFEST-001, -002, -003, -005, -006 (the 19-unit manifest, the `VISION_PROVIDER` preset, engine units and Launch profiles); CTRL-STACK-018, -019. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
 ## Orientation
 

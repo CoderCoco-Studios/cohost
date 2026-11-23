@@ -141,7 +141,7 @@ const keys: Record<string, KeyPresentation> = {
   "chat.youtube.transport": { help: "How the YouTube chat is read: stream keeps a live connection open, poll asks for new messages on a timer (use it when streaming stays unreliable). Blank means stream.", label: "YouTube transport" },
   "chat.youtube.poll_floor_ms": { help: "Only for transport poll: the shortest gap between two chat polls. Lower reads newer messages sooner but uses more of the API quota.", label: "Poll floor", unit: "ms" },
   "chat.youtube.recheck_ms": { help: "How often the video is checked again for a live chat when none was found. Lower notices a new stream sooner but uses more of the API quota.", label: "Recheck interval", unit: "ms" },
-  "chat.fake.interval_ms": { help: "Only for source fake: how long between one scripted message and the next. Lower makes a busier fake chat.", unit: "ms" },
+  "chat.fake.interval_ms": { help: "Only when fake is in chat.sources: how long between one scripted message and the next. Lower makes a busier fake chat.", unit: "ms" },
   "chat.twitch.channel": { help: "The Twitch channel whose chat the co-host reads, with or without the # sign.", label: "Twitch channel" },
   "chat.twitch.client_id": { help: "The client id of the Twitch application you registered for the co-host's account. It is stored in secrets.yaml and is never shown again once saved." },
   "chat.twitch.client_secret": { help: "The client secret of the Twitch application. It is stored in secrets.yaml and is never shown again once saved." },

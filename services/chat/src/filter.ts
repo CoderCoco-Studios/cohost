@@ -21,8 +21,11 @@ export function channelName(cfg: Config["chat"]): string {
  * What the service should do for this config: `fake` publishes scripted/stdin chat,
  * `twitch` connects, `idle` is twitch with no channel (stay up degraded; never exit).
  */
+// Interim until #177 starts each listed source: `fake` when listed; else `twitch` only when listed and a channel is set;
+// any other list (empty, or only `youtube`) idles rather than connecting to Twitch.
 export function chatPlan(cfg: Config["chat"]): "fake" | "twitch" | "idle" {
   if (cfg.sources.includes("fake")) return "fake";
+  if (!cfg.sources.includes("twitch")) return "idle";
   return channelName(cfg) ? "twitch" : "idle";
 }
 

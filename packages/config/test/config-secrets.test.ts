@@ -230,7 +230,7 @@ test("loadDotEnv still works beside secrets: a credential-looking variable in .e
 });
 
 // @spec CFG-USR-016
-test("the shipped secrets.example.yaml lists the eleven secret paths as empty strings with a comment each and loads with no warning", () => {
+test("the shipped secrets.example.yaml lists the secret paths as empty strings with a comment each and loads with no warning", () => {
   const text = readFileSync(join(repo, "config", "secrets.example.yaml"), "utf8");
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   copyFileSync(join(repo, "config", "secrets.example.yaml"), join(dir, "secrets.yaml"));
@@ -239,7 +239,7 @@ test("the shipped secrets.example.yaml lists the eleven secret paths as empty st
   const warnings = captureWarnings(() => { cfg = loadConfig(true); });
   assert.deepEqual(warnings, []);
   for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
-  // each of the eleven leaves is the empty string with a comment beside it or on the line above
+  // each leaf the example writes is the empty string with a comment beside it or on the line above (chat.youtube.api_key is not written there, CFG-USR-016)
   const lines = text.split("\n");
   const leafLines = lines.map((l, i) => ({ l, i })).filter(({ l }) => /^\s+[a-z_]+:\s*(""|'')/.test(l));
   assert.equal(leafLines.length, 11);

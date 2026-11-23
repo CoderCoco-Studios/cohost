@@ -576,9 +576,9 @@ test("recall and notes requests go out together and the think waits for both", a
   await cortex.onEvent(event("memory.recall.reply", { id: recall!.id, memories: [] }));
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(llm.calls.length, 0, "still waiting for the notes");
-  await cortex.onEvent(event("memory.notes.reply", { id: notes!.id, viewers: aliceNotes() }));
+  await cortex.onEvent(event("memory.notes.reply", { id: notes!.id, viewers: [{ user: "amy", regular: true, msgCount: 40, notes: [general("got a new puppy named Biscuit")] }] }));
   await thinking;
-  assert.match(llm.system, /- alice: «got a new puppy named Biscuit»/);
+  assert.match(llm.system, /- amy: «got a new puppy named Biscuit»/);
 });
 
 // @spec CTX-NOTES-002

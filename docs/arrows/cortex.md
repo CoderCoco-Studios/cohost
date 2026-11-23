@@ -4,7 +4,9 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 86 `[x]`, 198 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs, the early-reply specs and the chat safety work (below). The LLD has open questions (a stop while a think is in flight; a repeat on a mention).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 92 `[x]`, 192 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs, the early-reply specs and the chat safety work (below). The LLD has open questions (a stop while a think is in flight; a repeat on a mention).
+
+**Owner decision open: CTX-FORGET-003.** The think builds its prompt (transcript, `## People here`, familiarity note) after awaiting the recall and notes replies, not before the request goes out. So a `chat.removed` that lands while a think waits on recall does change that think's prompt. Only a removal after the prompt is built is excluded, and the test covers only that case. This is a gap against the literal "already took" wording of the spec; the spec stays `[ ]` until the owner decides whether to snapshot the transcript at think start.
 
 ## Spoken fallback line
 
@@ -12,7 +14,7 @@ Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by
 
 ## Viewer notes
 
-Design: LLD § Viewer notes. `CTX-VIEWER-001` to `003` (familiarity line from memory's `regular` flag) and `CTX-NOTES-001` to `008` (`fetchNotes` in `cortex.ts`, requested in parallel with recall under one deadline; `peopleBlock` in `prompt.ts`).
+Design: LLD § Viewer notes. `CTX-VIEWER-001` to `004` (familiarity line from memory's `regular` flag, keyed by `viewerKey`; a `memory.viewer` without `platform` makes no note) and `CTX-NOTES-001` to `011` (`notesViewers` and `fetchNotes` in `cortex.ts`, requested in parallel with recall under one deadline; `matchNotes` matches reply entries by platform and user id, else by name; `peopleBlock` in `prompt.ts`). `CTX-FORGET-001` to `002`: `chat.removed` calls `ctx.forget` and, for `scope: user`, deletes that viewer's familiarity note.
 
 ## Decisions applied
 

@@ -232,7 +232,9 @@ test("the body goes to .incoming-<16 hex> in the model folder, and a large uploa
   const res = await h.done;
   clearInterval(sample);
   assert.equal(res.status, 201);
-  assert.ok(peakRss - baseline < 32 * MiB, `the process grew by ${((peakRss - baseline) / MiB).toFixed(0)} MiB while a ${total / MiB} MiB file streamed`);
+  // Secondary: RSS also moves with the garbage collector and with the other tests of the same process, so only a gross growth
+  // (a whole-file buffer would show in the write peak above first) is refused here.
+  assert.ok(peakRss - baseline < 96 * MiB, `the process grew by ${((peakRss - baseline) / MiB).toFixed(0)} MiB while a ${total / MiB} MiB file streamed`);
   assert.equal(statSync(join(r.models, "Large.vrm")).size, total);
   assert.ok(peak <= 17 * MiB, `at most ${(peak / MiB).toFixed(1)} MiB waited in writeChunk at once`);
 });

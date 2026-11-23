@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { startListeners } from "../src/host.js";
 import { ModelStore } from "../src/models.js";
-import { model, MiB, rig } from "./models-rig.js";
+import { model, MiB, rig, send } from "./models-rig.js";
 
 // The transport under the model routes: a refusal before the body reads little of it (DASH-MDL-017), the full surface has no
 // request timeout (DASH-MDL-023), and a commit that finds its name taken leaves the stored file alone (DASH-MDL-028).
@@ -70,4 +70,51 @@ test("a commit whose name is taken answers exists and leaves the stored file alo
   assert.equal(readFileSync(join(dir, "Aiko.vrm"), "utf8"), "stored");
   assert.equal(await store.commit(tmp.path, join(dir, "Aiko.vrm"), true), "ok");
   assert.equal(readFileSync(join(dir, "Aiko.vrm"), "utf8"), "new");
+});
+
+// @spec DASH-MDL-004, DASH-MDL-021
+test("no model file stays open after a served, 304, HEAD or aborted download (a handle left to the garbage collector is an error in Node 24)", async (t) => {
+  const { readdirSync, readlinkSync } = await import("node:fs");
+  const openIn = (dir: string): string[] => {
+    const out: string[] = [];
+    for (const fd of readdirSync("/proc/self/fd")) {
+      try { const l = readlinkSync(`/proc/self/fd/${fd}`); if (l.startsWith(dir)) out.push(l); } catch { /* the descriptor closed meanwhile */ }
+    }
+    return out;
+  };
+  // Checked soon after each step: a leaked handle is closed by the garbage collector later, which hides it and raises the error.
+  const settle = () => new Promise((ok) => setTimeout(ok, 100));
+  const r = await rig(t, { seed: { "Big.vrm": model("big", 8 * MiB), "Aiko.vrm": model("a") }, renderer: { model: "Aiko.vrm" } });
+  const first = await r.get("/avatar/model");
+  assert.equal(first.status, 200);
+  await settle();
+  assert.deepEqual(openIn(r.models), [], "after a served model");
+  await r.get("/avatar/model", { "if-none-match": first.headers["etag"] as string });
+  await send(r.port, "HEAD", "/avatar/model");
+  await settle();
+  assert.deepEqual(openIn(r.models), [], "after a 304 and a HEAD");
+  // A download the client leaves after its first bytes.
+  await new Promise<void>((resolve) => {
+    const sock = net.connect(r.port, "127.0.0.1", () => sock.write("GET /avatar/models/Big.vrm HTTP/1.1\r\nhost: 127.0.0.1\r\n\r\n"));
+    sock.once("data", () => { sock.destroy(); resolve(); });
+  });
+  await settle();
+  assert.deepEqual(openIn(r.models), [], "after a download the client left");
+});
+
+// @spec DASH-MDL-021
+test("a client that drops an upload mid-body leaves no temporary file and no descriptor open", async (t) => {
+  const { readdirSync, readlinkSync } = await import("node:fs");
+  const r = await rig(t, {});
+  await new Promise<void>((resolve) => {
+    const sock = net.connect(r.port, "127.0.0.1", () => {
+      sock.write(`POST /avatar/models?name=Drop.vrm HTTP/1.1\r\nhost: 127.0.0.1\r\ncontent-length: ${8 * MiB}\r\n\r\n`);
+      sock.write(model("drop", 4096).subarray(0, 4096));
+      setTimeout(() => { sock.destroy(); resolve(); }, 100);
+    });
+  });
+  await new Promise((ok) => setTimeout(ok, 100));
+  const open = readdirSync("/proc/self/fd").filter((fd) => { try { return readlinkSync(`/proc/self/fd/${fd}`).startsWith(r.models); } catch { return false; } });
+  assert.deepEqual(open, [], "no descriptor into the model folder");
+  assert.deepEqual(r.ls(), [], "the dropped upload left no temporary file");
 });

@@ -77,6 +77,8 @@ async function serveFile(req: http.IncomingMessage, res: http.ServerResponse, s:
   if (req.method === "HEAD") { await fh.close(); res.end(); return; }
   const stream = fh.createReadStream({ autoClose: true });
   stream.on("error", () => res.destroy()); // a read error after the headers cuts the connection
+  // A client that leaves early must not leave the file open: the stream closes its handle with the response.
+  res.on("close", () => stream.destroy());
   stream.pipe(res);
 }
 

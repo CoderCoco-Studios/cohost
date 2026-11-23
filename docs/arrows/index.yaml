@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "74 specs: 51 [x], 22 [ ], 1 [D] (WM-TRANS-003 speech speaker labels, the unfinished-line specs WM-UNF, the streamed-speech clause specs, the platform and user id on the chat entry and forget WM-FORGET; WM-STACK-001 deferred)."
+    next: "74 specs: 52 [x], 21 [ ], 1 [D] (the unfinished-line specs WM-UNF, the streamed-speech clause specs, the platform and user id on the chat entry and forget WM-FORGET; WM-STACK-001 deferred)."
     drift: null
 
   chat:

@@ -214,7 +214,7 @@ export class Context {
             const quoted = quoteUntrusted(e.text, limits?.chatChars ?? Infinity);
             return `${LINE_TAG.chat} ${label}${e.isMod ? " (mod)" : ""}: ${quoted}`;
           }
-          case "speech": return `${LINE_TAG.speech} ${oneLine(e.speaker)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
+          case "speech": return `${LINE_TAG.speech} ${speakerLabel(e.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
             return e.fallback !== undefined

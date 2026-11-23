@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**PARTIAL**: 74 specs: 51 implemented (`[x]`), 22 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, the forgetting work, and WM-TRANS-003 (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL**: 74 specs: 52 implemented (`[x]`), 21 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, the forgetting work, and WM-TRANS-003 (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (74 specs: 51 `[x]`, 22 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (74 specs: 52 `[x]`, 21 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -51,16 +51,16 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Ingest | WM-PUSH-001 to WM-PUSH-025 | 18 | 0 | 7 | 20 |
 | Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
 | Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
-| Transcript | WM-TRANS-001 to WM-TRANS-015 | 12 | 0 | 3 | 14 |
+| Transcript | WM-TRANS-001 to WM-TRANS-015 | 13 | 0 | 2 | 14 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 74 specs: 51 implemented, 22 gaps, 1 deferred. The unfinished-line specs (WM-UNF, with WM-TRANS-003 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 74 specs: 52 implemented, 21 gaps, 1 deferred. The unfinished-line specs (WM-UNF) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
 1. **The stop-string contract** — this package joins lines with `"\n"`, so every entry after the first begins `"\n[chat]"`, `"\n[voice]"` or `"\n[screen]"`, exactly the `TRANSCRIPT_STOPS` in `packages/llm/src/index.ts`; Ollama/OpenAI add `"\n\n"`, Claude does not, `json: true` calls send none. The cortex primes the model with a closing `<name>:` and `parseReply` keeps only the first reply line. The self line is not a stop, by decision. This segment owns the tags (WM-TRANS-006) and exports them as `TRANSCRIPT_TAGS` (WM-TRANS-009); LLM-STOP-006 / LLM-STOP-007 derive the stops from the export; `services/cortex/test/transcript-stops.test.ts` checks the pair. Full write-up: model-backends LLD, "Stop sequences and the transcript coupling".
-2. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` to a space in speech, vision and self lines (`oneLine`, WM-TRANS-008, WM-TRANS-011), and chat lines render the label via `speakerLabel` and the text via `quoteUntrusted` from `@cohost/shared/untrusted` (WM-TRANS-002, WM-TRANS-014), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts`). Speech speakers are not run through `speakerLabel` yet (WM-TRANS-003 is an open gap, outside #168).
+2. **Transcript lines are one line each** — `transcript` flattens `\r`/`\n` to a space in speech text, vision and self lines (`oneLine`, WM-TRANS-008, WM-TRANS-011), and chat lines render the label via `speakerLabel` and the text via `quoteUntrusted` from `@cohost/shared/untrusted` (WM-TRANS-002, WM-TRANS-014), so bus text cannot forge a `[chat]`-style line; no bus text field is constrained to one line (`packages/bus/src/events.ts`). Speech speakers render through `speakerLabel` as well (WM-TRANS-003).
 3. **Injected events are indistinguishable from real ones in the prompt** — flags are retained on the entry but never rendered (intended, WM-TRANS-007).
 4. **Flag propagation lives here and is tested here** — `propagatedFlags` has unit tests in `context.test.ts` (undefined source, stray `remember`; WM-FLAG-003/004).
 5. **Two independent windows** — salience and cortex each keep their own `Context`, built by `Context.forBrain` (WM-WIN-005, WM-WIN-008); only cortex records own lines via `pushSelf`.
@@ -71,7 +71,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 - Platform, user id and forgetting (design 2026-11-16, no code): the chat entry carries `platform`, `userId` and `messageId` (WM-PUSH-001) and `forget` removes chat for a `chat.removed` (WM-FORGET-001 to WM-FORGET-006).
 ### Must Fix
-WM-TRANS-003 (speech speaker through `speakerLabel`, open gap outside #168) and the unfinished-line and streamed-speech specs (WM-UNF, WM-TRANS-010, WM-TRANS-015).
+The unfinished-line and streamed-speech specs (WM-UNF, WM-TRANS-010, WM-TRANS-015).
 
 ### Should Fix
 1. Add `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise propagation (other segments' files).

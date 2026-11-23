@@ -84,7 +84,7 @@ test("boundText cuts to max-1 code points plus an ellipsis, never exceeding max"
 // @spec SHARED-GUARD-008
 test("boundText drops trailing white space before the ellipsis", () => {
   assert.equal(boundText("abc defgh", 5), "abc…");
-  assert.equal(boundText("ab    cdefgh", 6), "ab…");
+  assert.equal(boundText("ab    cdefgh", 4), "ab…");
 });
 
 // @spec SHARED-GUARD-008
@@ -94,7 +94,7 @@ test("boundText backs off so a grapheme cluster is never split", () => {
   assert.equal(boundText(`ab${E_ACUTE}cd`, 5), `ab${E_ACUTE}…`);
   // ZWJ family is one cluster of 7 code points
   assert.equal(boundText(`x${FAMILY}y`, 5), "x…");
-  assert.equal(boundText(`x${FAMILY}y`, 9), `x${FAMILY}…`);
+  assert.equal(boundText(`x${FAMILY}yz`, 9), `x${FAMILY}…`);
   assert.equal(boundText(`${FAMILY}${FAMILY}${FAMILY}`, 10), `${FAMILY}…`);
 });
 

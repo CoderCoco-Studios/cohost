@@ -68,16 +68,17 @@ const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
 // @spec CTX-PROMPT-002, CTX-PROMPT-011, CTX-PROMPT-012, CTX-PROMPT-013
 /**
- * One recalled memory line: its date, its speaker as a label, and its text by kind. A chat memory is quoted; a speech or
- * self memory is bounded and not quoted. Any other kind keeps its text as stored.
+ * One recalled memory line: its date, its speaker as a label, and its text by kind. A speech or self memory is bounded and
+ * not quoted; every other kind (chat, and any kind added later) is quoted and bounded to viewer_text.max_chars, so no stored
+ * text can break the line or forge a heading.
  */
 function memoryLine(m: Recalled[number], cfg: Config): string {
   const date = new Date(m.ts).toISOString().slice(0, 10);
   const who = speakerLabel(m.who, cfg.viewer_text.max_name_chars);
   const text =
-    m.kind === "chat" ? quoteUntrusted(m.text, cfg.viewer_text.max_chars)
-      : m.kind === "speech" || m.kind === "self" ? boundText(m.text, cfg.brain.input_limits.speech_max_chars)
-        : m.text;
+    m.kind === "speech" || m.kind === "self"
+      ? boundText(m.text, cfg.brain.input_limits.speech_max_chars)
+      : quoteUntrusted(m.text, cfg.viewer_text.max_chars);
   return `- (${date}) ${who}: ${text}`;
 }
 

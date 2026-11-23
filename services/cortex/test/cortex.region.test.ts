@@ -827,7 +827,6 @@ test("repeat: brain.cortex.repeat_similarity 0 turns the check off", async () =>
   assert.equal(c.bus.of("brain.say").length, 2);
 });
 
-// @spec CTX-REPEAT-002
 test("repeat: a reflex line and an operator line are in the comparison set a later reply is checked against", async () => {
   const reflex = setup();
   await reflex.cortex.onEvent(event("brain.say", { id: "r1", text: SAME, emotion: "surprised", reason: "reflex: died" }, "salience"));
@@ -863,7 +862,7 @@ test("repeat: the check makes no call on a line that did not come from a think (
   assert.equal(selfLines(c).length, 2, "both reflex lines are recorded, none withheld");
 });
 
-// @spec CTX-REPEAT-001, CTX-REPEAT-012
+// @spec CTX-REPEAT-012
 test("repeat: a critic rewrite is checked too, so a rewrite into a repeat is withheld", async () => {
   const c = setup({ critic: (i) => (i.text === "hello" ? { ok: true, text: SAME } : { ok: true }) });
   c.llm.reply = () => `[happy] ${SAME}`;

@@ -82,7 +82,7 @@ test("isRepeat: a line with an empty heard text is left out of the check", () =>
   assert.equal(isRepeat(reply, [said(reply, { heard: "" }), said(reply)], T), true, "the other lines still count");
 });
 
-// @spec CTX-REPEAT-002, CTX-REPEAT-014
+// @spec CTX-REPEAT-014
 test("isRepeat: a reply is checked against every recent line; an empty window finds no repeat", () => {
   const reply = "see you all tomorrow night friends";
   assert.equal(isRepeat(reply, [said("one"), said("two"), said(reply)], T), true, "any line");

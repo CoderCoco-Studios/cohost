@@ -36,6 +36,7 @@ export const sidebar = [
         collapsed: false,
         items: [
           { text: 'Twitch chat', link: '/guide/connect/twitch' },
+          { text: 'YouTube chat', link: '/guide/connect/youtube' },
           { text: 'Discord', link: '/guide/connect/discord' },
           { text: 'OBS and the voice on stream', link: '/guide/connect/obs' },
           { text: 'Avatar', link: '/guide/connect/avatar' },

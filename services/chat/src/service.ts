@@ -12,7 +12,7 @@
 import type { Readable } from "node:stream";
 import type { Bus } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
-import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
+import { parseVideoValue, startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { channelName, createChatFilter, type ChatSender } from "./filter.js";
 import { chatHealth } from "./health.js";
 import { FakeSource } from "./fake.js";
@@ -191,7 +191,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
               createClient: deps.createClient, createAuth: deps.createAuth,
             });
           case "youtube":
-            return new YouTubeSource();
+            return new YouTubeSource({ videoId: parseVideoValue(cfg.chat.youtube.video.trim()) ?? "", youtube: cfg.chat.youtube });
         }
       };
 

@@ -5,7 +5,10 @@ packages:
 # Install scripts: pnpm 11+ runs none unless allowed here, and fails an install that meets a
 # dependency with an unlisted install script. Only esbuild (postinstall, validates its platform
 # binary) and onnxruntime-node (postinstall downloads GPU binaries, which cohost does not run)
-# have one; no other dependency declares preinstall, install or postinstall.
+# have one that cohost allows or denies on purpose. protobufjs (a dependency of @grpc/proto-loader)
+# has a postinstall that only prints a version-scheme warning; it is denied explicitly (false) so the
+# install stays quiet and runs no script. No dependency is allowed to run an install script it does not need.
 allowBuilds:
   esbuild: true
   onnxruntime-node: false
+  protobufjs: false

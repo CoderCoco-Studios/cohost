@@ -93,6 +93,20 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 - **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
 - **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `pnpm cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
 
+### The `youtube` chat source stops with a reason
+
+The `chat` log and the Services screen name the reason. Each one has one fix:
+
+- `chat.youtube.video is not a YouTube video URL or id`: the value names no video. Use the watch link or the video id, not a channel or handle.
+- `the API key was rejected` or `authentication failed`: the key is wrong or missing from `secrets.yaml`. Restart `chat` after you change it.
+- `live chat is disabled for this broadcast` or `the broadcast has ended`: the source stops and does not retry. Start a new broadcast, set its URL and restart `chat`.
+- `this chat refuses the API key`: the key works for the lookup but not for this chat. Check the key's project and its restrictions.
+- `video ... was not found`: private, deleted or mistyped. Check the URL.
+
+### The `youtube` source is `retrying` with the reason `quota`
+
+The daily YouTube Data API quota is spent. The source looks the broadcast up again every hour and resumes on its own. A larger `chat.youtube.poll_floor_ms` spends less.
+
 ## The co-host's behaviour
 
 ### It never speaks

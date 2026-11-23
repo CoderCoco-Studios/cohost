@@ -57,6 +57,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | Install | Try it with no accounts | `guide/install/first-run.md` | Mock mode from a clean checkout to a talking co-host on the dashboard, building the bus addon first; the WSL2 Docker note |
 | Install | Install for real | `guide/install/real-install.md` | `scripts/install.sh`, `.env`, `config.yaml`, `secrets.yaml`, the first real Launch, the model downloads |
 | Connect | Twitch chat | `guide/connect/twitch.md` | Reading a channel, the optional login, the token kept on the host |
+| Connect | YouTube chat | `guide/connect/youtube.md` | Reading a live broadcast with an API key, the polling floor and the quota |
 | Connect | Discord | `guide/connect/discord.md` | Creating and inviting the one bot, the `discord`, `ears` and `mouth` profiles, choosing the guild and channel, where its voice goes |
 | Connect | OBS and the voice on stream | `guide/connect/obs.md` | The sink Browser Source on the same PC and on a second PC, the screenshot sense (`eyes`) and obs-websocket |
 | Connect | Avatar | `guide/connect/avatar.md` | VTube Studio (2D) and VRM through a VMC app (3D), expressions |

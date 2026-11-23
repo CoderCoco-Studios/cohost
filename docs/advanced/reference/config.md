@@ -96,10 +96,10 @@ The `chat` service: chat in from the sources listed in `chat.sources`. The Twitc
 | `chat.twitch` | map | Settings for the `twitch` source (the credentials are `chat.twitch.*` keys of `secrets.yaml`); optional, every key defaults |
 | `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded` |
 | `chat.youtube` | map | Settings for the `youtube` source; optional, every key defaults |
-| `chat.youtube.video` | empty | The YouTube video or live stream whose chat is read: any string (a video id, a link or a handle). A value that names no video is a source gap, not a load failure |
+| `chat.youtube.video` | empty | The YouTube video or live stream whose chat is read: a video id, or a `watch`, `youtu.be`, `live`, `embed` or `live_chat` link. A channel or handle URL, a playlist or a search phrase names no video and is a source gap, not a load failure |
 | `chat.youtube.api_key` | empty | The YouTube Data API key. A secret: it is a `chat.youtube.api_key` key of `secrets.yaml`, never of `config.yaml` |
 | `chat.youtube.transport` | `stream` | `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`; any other value fails the load naming `chat.youtube.transport` |
-| `chat.youtube.poll_floor_ms` | `12000` | Transport `poll`: the shortest gap between two chat polls, in milliseconds. An integer of at least 1000 |
+| `chat.youtube.poll_floor_ms` | `12000` | The shortest gap between two chat polls, in milliseconds, for transport `poll` and for the polling fallback of transport `stream`. An integer of at least 1000 |
 | `chat.youtube.recheck_ms` | `120000` | How often the video is checked again for a live chat, in milliseconds. An integer of at least 30000 |
 | `chat.ignore_users` | `[]` (`nightbot`, `streamelements`, `moobot` in the example) | Usernames whose messages are dropped |
 | `chat.ignore_prefixes` | `["!"]` | Messages starting with any of these are dropped (bot commands) |

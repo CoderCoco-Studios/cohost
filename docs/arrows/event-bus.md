@@ -56,7 +56,6 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 
 **Key Components:**
 1. `events.ts`: `EventPayloads` zod registry of 37 payloads (36 event types and the heartbeat), all built; `EVENT_TYPES` is derived from it.
-2. `Bus` class in `index.ts`: `publish`, `publishHealth`, `subscribe` (consumer group), `tail`, `tailHealth`, `recent`, `recentHealth`, `resetGroup`, `stop`, plus uploads, registrations and frames.
 2. `Bus` class in `index.ts`: `publish`, `publishHealth`, `subscribe` (consumer group), `tail`, `tailHealth`, `recent`, `recentHealth`, `resetGroup`, `stop`, plus uploads, registrations, audio frames and the avatar-frame stream.
 3. `native.ts` and `crates/cohost-bus`, `crates/cohost-bus-node`: the events-path transport; `frames.ts`: the ioredis frame transport.
 4. `FakeBus`, `testConfig`, `event`, `runHeartbeat`, `waitFor`, `silentLog`, `recordingLog` in `@cohost/testing`: the test double and helpers.
@@ -98,7 +97,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 
 ## Work Required
 
-- YouTube chat and forgetting (design 2026-11-16, no code): `chat.removed` (BUS-EVT-033 to BUS-EVT-035), `messageId` on `chat.message` (BUS-EVT-002), platform and user id on `attention.focus` and `memory.viewer` (BUS-EVT-010, BUS-EVT-036), `viewers` on the notes request and reply (BUS-EVT-020).
+- `attention.resolve` (BUS-EVT-056 to 057) is a discriminated union, so it has no `.shape`. `services/dashboard/src/inject.ts` (`:91`) would not mark an injected confirm. No unit declares it as an input yet; #225 (cortex) must handle this before one does.
 ### Should Fix
 
 ### Deferred (`[D]`)

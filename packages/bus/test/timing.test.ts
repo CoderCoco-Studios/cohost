@@ -30,6 +30,7 @@ const EARLY_MEMBERS = ["closedAt", "confirmedAt", "heldAt"] as const;
 const earlyBases = {
   "speech.early": { speaker: "s", source: "discord", text: "t", utteranceId: "u-1", seq: 0, sttMs: 1 },
   "attention.resolve": { utteranceId: "u-1", seq: 0, outcome: "confirm" },
+  "vision.summary": { text: "t" },
   "speech.heard": { speaker: "s", text: "t", durationMs: 1 },
   "attention.focus": { reason: "mentioned", score: 1 },
   "brain.say": { id: "x", text: "t", emotion: "happy" },

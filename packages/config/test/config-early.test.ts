@@ -65,7 +65,10 @@ test("ears.early.after_ms equal to or above ears.silence_ms fails the load namin
 
 // @spec CFG-SCH-106
 test("ears.early.enabled true loads with every ears.stt_engine value", () => {
-  for (const engine of ["speaches", "openai", "nemotron", "kyutai", "stub", ""]) {
+  // The engines come from the schema itself, so a new engine is covered without editing this list.
+  const engines = (ConfigSchema.shape.ears.shape.stt_engine as unknown as { _zod: { def: { out: { options: string[] } } } })._zod.def.out.options;
+  assert.ok(engines.length >= 5, "the schema names the stt engines");
+  for (const engine of [...engines, ""]) {
     const r = ok({ ears: { stt_engine: engine, early: { enabled: true } } });
     assert.equal(r.ears.early.enabled, true, `stt_engine=${engine}`);
   }

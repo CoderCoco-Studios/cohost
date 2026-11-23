@@ -146,7 +146,7 @@ export const EventPayloads = {
   }),
 
   /** Someone spoke in Discord voice and it was transcribed. */
-  // @spec BUS-EVT-013, BUS-EVT-005, BUS-EVT-024
+  // @spec BUS-EVT-013, BUS-EVT-005, BUS-EVT-024, BUS-EVT-054
   "speech.heard": z.object({
     speaker: z.string(),
     speakerId: z.string().optional(),
@@ -282,7 +282,7 @@ export const EventPayloads = {
   /**
    * salience → cortex: the outcome of a provisional focus (early reply), named by `utteranceId` and `seq`. `confirm` releases
    * the reply held for it and carries the focus members (BUS-EVT-057); `withdraw` drops it for one of the fixed reasons
-   * (BUS-EVT-060). Any other member is stripped (BUS-EVT-059).
+   * (BUS-EVT-060). Any other member is stripped.
    */
   // @spec BUS-EVT-056, BUS-EVT-057, BUS-EVT-060, BUS-EVT-024
   "attention.resolve": z.discriminatedUnion("outcome", [

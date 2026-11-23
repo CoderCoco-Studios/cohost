@@ -350,7 +350,7 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.early.enabled` | `false` | Publish provisional transcripts while a sentence is still being spoken. Works with any `ears.stt_engine` |
 | `ears.early.after_ms` | `250` | The pause, in milliseconds, before an early transcript is published; at least 100 and below `ears.silence_ms` |
 | `ears.early.max_per_utterance` | `2` | How many early transcripts one sentence may produce, 1 to 5 |
-| `ears.silence_ms` | `700` | End-of-utterance detection |
+| `ears.silence_ms` | `700` | End-of-utterance detection. It must stay above `ears.early.after_ms` (default 250), even while early reply is off; lower both together |
 | `ears.echo_suppress_sources` | `[desktop]` | Sources that are deaf while the co-host's voice plays, because a loopback capture hears it |
 | `ears.echo_tail_ms` | `1500` | Keep them deaf this long after a line ends |
 | `ears.vad` | map | Voice activity detection for connector audio |

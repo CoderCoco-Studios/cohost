@@ -290,7 +290,7 @@ ears:
   dir:
     path: ""
     poll_ms: 1000
-  silence_ms: 700              # end-of-utterance detection
+  silence_ms: 700              # end-of-utterance detection; must stay above early.after_ms (default 250), even while early reply is off: lower both together
   early:                       # early reply: start on a provisional transcript after a short pause
     enabled: false             # on = publish provisional transcripts; works with any stt_engine
     after_ms: 250              # the pause before an early transcript, at least 100 and below silence_ms

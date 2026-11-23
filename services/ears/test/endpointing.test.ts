@@ -24,8 +24,8 @@ test("silero (the default): silence closes an utterance, the trailing silence is
     await feed(r.bus, 15, { fill: SILENCE });
     await feed(r.bus, 10, { fill: SPEECH });
     await waitFor(() => r.heard().length === 2, "two utterances");
-    // First: 10 speech frames, closing silence excluded. Second: 200 ms of pre-roll (the last 10 silence frames) + 10 speech frames.
-    // CFG-SCH-105: silence_ms is 101 (100 cannot load), so the close lands on the sixth 20 ms frame and 380 ms of the 400 ms silence is trailing.
+    // First: 10 speech frames (200 ms), closing silence excluded. Second: 180 ms of pre-roll + 10 speech frames (200 ms).
+    // CFG-SCH-105: silence_ms is 101 (100 cannot load), so it closes on the 6th of the 15 silence frames; the last 9 silence frames (180 ms) are the second utterance's pre-roll, so 180 + 200 = 380.
     assert.deepEqual(durations(r), [200, 380]);
   } finally { await r.stop(); }
 });

@@ -230,17 +230,18 @@ test("nothing draws a random number or checks the reply against the chance: the 
 });
 
 // @spec CTX-FALL-007
-test("voice.failed without a fallback changes neither working memory, the pending glitch nor the speaking state", async () => {
+test("voice.failed without a fallback records the line as heard by nobody and changes neither the pending glitch nor the speaking state", async () => {
   const s = setup();
   const id = await sayOne(s);
   await s.cortex.onEvent(failed(id));
-  const before = JSON.stringify(s.cortex.ctx.all());
   // a second line, still playing, fails without a fallback
   await s.cortex.onEvent(event("brain.say", { id: "p", text: "playing line", emotion: "happy", reason: "r" }, "salience"));
-  const mid = JSON.stringify(s.cortex.ctx.all());
+  const statuses = s.bus.of("brain.status").length;
   await s.cortex.onEvent(failed("p", null));
-  assert.equal(JSON.stringify(s.cortex.ctx.all()), mid);
-  assert.notEqual(before, mid);
+  const entry = s.cortex.ctx.all().find((e) => e.kind === "self" && e.id === "p") as { heard?: string; fallback?: string };
+  assert.equal(entry.heard, "", "heard by nobody");
+  assert.equal(entry.fallback, undefined);
+  assert.equal(s.bus.of("brain.status").length, statuses, "no status published");
   // still speaking: a think reports speaking and does not call the model
   const calls = s.llm.calls.length;
   await s.cortex.think(mention());
@@ -248,4 +249,53 @@ test("voice.failed without a fallback changes neither working memory, the pendin
   await doneFor(s.cortex, "p");
   await s.cortex.think(mention());
   assert.match(s.llm.system(), HINT); // glitch from the earlier line still pending
+});
+
+// ---- who played the line, failures without a fallback, the heard record (CTX-FALL-002, 003, 007, 009, CTX-EVT-012) ----
+
+const selfOf = (s: ReturnType<typeof setup>, id: string) => s.cortex.ctx.all().find((e) => e.kind === "self" && e.id === id) as { heard?: string; fallback?: string };
+const playing = (id: string, sink: string) => event("voice.playing", { id, seq: 0, sink });
+
+// @spec CTX-FALL-002, CTX-FALL-003, CTX-FALL-009
+test("a voice.failed with a fallback for a line another sink played marks nothing and keeps no glitch", async () => {
+  const s = setup();
+  s.llm.reply = () => "[happy] intended line";
+  await s.cortex.think(mention());
+  const say = s.bus.of("brain.say").at(-1)!;
+  await s.cortex.onEvent(event("brain.say", say, "cortex"));
+  await s.cortex.onEvent(playing(say.id, "other-output"));
+  await s.cortex.onEvent(failed(say.id));
+  assert.equal(selfOf(s, say.id).fallback, undefined);
+  assert.equal(selfOf(s, say.id).heard, undefined);
+  await doneFor(s.cortex, say.id);
+  await s.cortex.think(mention());
+  assert.doesNotMatch(s.llm.system(), HINT);
+});
+
+// @spec CTX-FALL-009
+test("a voice.failed without a fallback for a line another sink played records no heard text", async () => {
+  const s = setup();
+  s.llm.reply = () => "[happy] intended line";
+  await s.cortex.think(mention());
+  const say = s.bus.of("brain.say").at(-1)!;
+  await s.cortex.onEvent(event("brain.say", say, "cortex"));
+  await s.cortex.onEvent(playing(say.id, "other-output"));
+  await s.cortex.onEvent(failed(say.id, null));
+  assert.equal(selfOf(s, say.id).heard, undefined);
+});
+
+// @spec CTX-EVT-012
+test("a voice.done flagged neither interrupted nor final clears the heard record; a final or interrupted one does not", async () => {
+  const s = setup();
+  s.llm.reply = () => "[happy] intended line";
+  await s.cortex.think(mention());
+  const say = s.bus.of("brain.say").at(-1)!;
+  await s.cortex.onEvent(event("brain.say", say, "cortex"));
+  await s.cortex.onEvent(failed(say.id, null)); // heard by nobody
+  await s.cortex.onEvent(event("voice.done", { id: say.id, seq: 0, sink: "a", final: true }));
+  assert.equal(selfOf(s, say.id).heard, "", "a final done leaves the record");
+  await s.cortex.onEvent(event("voice.done", { id: say.id, seq: 0, sink: "b", interrupted: true, spokenText: "intended" }));
+  assert.equal(selfOf(s, say.id).heard, "intended", "an interrupted done records its own text");
+  await doneFor(s.cortex, say.id);
+  assert.equal(selfOf(s, say.id).heard, undefined, "the plain done clears it, though the line is no longer pending");
 });

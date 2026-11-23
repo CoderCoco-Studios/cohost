@@ -6,7 +6,7 @@ import { createMessageHandler, registerUserToken } from "../src/twitch.js";
 import { subscribeInject } from "@cohost/shared";
 
 const info: ChatUserInfo = { displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false };
-const toEvent = createChatFilter(testConfig());
+const toEvent = createChatFilter(testConfig(), "twitch");
 
 // @spec CHAT-TW-007
 test("a failed chat.message publish is logged and the next message is still handled", async () => {

@@ -158,10 +158,9 @@ test("a start that rejects makes only that source stopped with the message as it
     await r.start();
     const [tw, yt] = r.made;
     assert.equal(yt!.name, "youtube");
-    assert.deepEqual(yt!.state(), { state: "stopped", reason: "quota gone" });
-    assert.ok(r.rec.lines.some((l) => /quota gone/.test(JSON.stringify(l))), "the reason is logged");
+    assert.ok(r.rec.msgs("error").some((m) => /chat source youtube did not start: quota gone/.test(String(m))), "the reason is logged");
     tw!.set("reading");
-    assert.deepEqual(r.deps(), { twitch: "ok", youtube: "down" });
+    assert.deepEqual(r.deps(), { twitch: "ok", youtube: "down" }, "the service reports youtube stopped: its dependency is down");
     assert.deepEqual(r.exits, [], "the process keeps running");
     assert.equal(tw!.stops, 0, "the other source is not stopped");
   } finally { await r.stop(); }

@@ -219,12 +219,16 @@ test("the token store round-trips and rejects a file of the wrong shape", () => 
 });
 
 // @spec CHAT-TW-010
-test("a missing chat.twitch.refresh_token with the other credentials set is fatal at startup", async () => {
+test("a missing chat.twitch.refresh_token with the other credentials set rejects the twitch start: only that source stops, the process keeps running", async () => {
   const { refresh_token: _omit, ...partial } = creds;
   const r = rig(tw(partial));
-  await r.start();
-  assert.deepEqual(r.exits, [1]);
-  assert.ok(r.rec.lines.some((l) => l.msg === "fatal"));
+  try {
+    await r.start();
+    assert.deepEqual(r.exits, []);
+    assert.equal(r.clients.length, 0, "no client is built before the token is registered");
+    assert.ok(r.rec.msgs("error").some((m) => /chat\.twitch\.refresh_token/.test(String(m))));
+    assert.deepEqual(r.deps(), { twitch: "down", youtube: "n/a" });
+  } finally { await r.stop(); }
 });
 
 const ANON_CASES: [string, Record<string, string>][] = [
@@ -293,13 +297,13 @@ test("a disconnect logs a warning with manually and reason, and the twitch depen
     await r.start();
     const client = r.clients[0]!;
     client.connected[0]!();
-    assert.deepEqual(r.deps(), { twitch: "ok" });
+    assert.deepEqual(r.deps(), { twitch: "ok", youtube: "n/a" });
     const reason = new Error("socket reset");
     client.disconnected[0]!(true, reason);
     const line = r.rec.lines.find((l) => l.level === "warn" && l.msg === "twitch chat disconnected");
     assert.ok(line, "a warning is logged");
     assert.deepEqual(line.obj, { manually: true, reason });
-    assert.deepEqual(r.deps(), { twitch: "down" });
+    assert.deepEqual(r.deps(), { twitch: "down", youtube: "n/a" });
   } finally { await r.stop(); }
 });
 
@@ -334,14 +338,14 @@ test("inject.request is subscribed with group chat in the fake, idle and twitch 
 });
 
 // @spec CHAT-FAKE-006
-test("a rejecting fake publish warns 'fake chat publish failed' and the source keeps running", async () => {
+test("a rejecting fake publish warns 'chat.message publish failed' and the source keeps running", async () => {
   const stdin = new PassThrough();
   const r = rig({ chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin });
   try {
     await r.start();
     r.bus.fail = (t) => t === "chat.message";
     stdin.write("first\n");
-    await waitFor(() => r.rec.lines.some((l) => l.level === "warn" && l.msg === "fake chat publish failed"), "publish-failed warning");
+    await waitFor(() => r.rec.lines.some((l) => l.level === "warn" && l.msg === "chat.message publish failed"), "publish-failed warning");
     r.bus.fail = undefined;
     stdin.write("second\n");
     await waitFor(() => r.bus.of("chat.message").length === 1, "a later message still publishes");

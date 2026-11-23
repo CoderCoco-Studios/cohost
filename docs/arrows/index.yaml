@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "110 specs: 96 [x], 14 [ ] (SHARED-GUARD-003, -020, -021 and -025 to -030, the untrusted totality, counter admission, viewer key and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 98 [x], 12 [ ] (SHARED-GUARD-003, -020, -021 and -025 to -030, the untrusted totality, counter admission, viewer key and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
     drift: null
 
   module-contract:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "163 specs: 32 [x], 131 [ ] (YouTube chat source, source list and plan, forgetting removed messages, platform and user id on chat.message). Design 2026-11-16; no code."
+    next: "163 specs: 73 [x], 90 [ ] (YouTube reader CHAT-YT-001 to CHAT-YT-068 except 003 to 006, forgetting removed messages CHAT-FORGET-*, Twitch message ids and removals CHAT-TW-013 to CHAT-TW-018, the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005, CHAT-HEALTH-011, CHAT-FILT-012 to CHAT-FILT-014)."
     drift: null
 
   eyes:

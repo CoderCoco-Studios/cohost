@@ -43,6 +43,12 @@ fn start(sender: &Arc<Fake>) -> (Deliverer<Fake>, Logs) {
     (Deliverer::start(sender.clone(), move |line| sink.lock().unwrap().push(line)), logs)
 }
 
+/// True when the line has the number `n` as a whole word and the word `dropped` (either order).
+fn says_dropped(line: &str, n: usize) -> bool {
+    let words: Vec<&str> = line.split(|c: char| !c.is_alphanumeric()).collect();
+    words.contains(&n.to_string().as_str()) && words.contains(&"dropped")
+}
+
 async fn settle() {
     for _ in 0..50 {
         tokio::task::yield_now().await;
@@ -137,7 +143,7 @@ async fn dropped_counts_the_held_clip_whose_attempt_fails_and_every_waiting_clip
     let report = d.shutdown(Some(vec![9])).await;
     assert_eq!(report.dropped, 3);
     assert_eq!(*sender.attempts.lock().unwrap(), [vec![1], vec![9]]);
-    assert!(logs.lock().unwrap().iter().any(|l| l.contains('3') && l.contains("dropped")));
+    assert!(logs.lock().unwrap().iter().any(|l| says_dropped(l, 3)), "{:?}", logs.lock().unwrap());
 }
 
 // @spec EARS-SRC-022

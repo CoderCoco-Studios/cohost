@@ -86,7 +86,7 @@ test("appraiser llm: the prompt asks for both deltas within -0.5..0.5 and carrie
   assert.match(system!.content, /arousal_delta: -0\.5 \([^)]*\) \.\. 0\.5/);
   assert.doesNotMatch(system!.content, /0\.3/, "no narrower range left in the prompt");
   assert.equal(llmBody.max_tokens, 60);
-  assert.equal(user!.content, "Mood now: valence 0.25, arousal 0.50\n[chat, mentions co-host] bob: hey Coco");
+  assert.equal(user!.content, "Mood now: valence 0.25, arousal 0.50\n[chat, mentions co-host] bob: «hey Coco»"); // chat text quoted once (AFF-HOOK-011)
 });
 
 // ---- viewer text in the prompt (AFF-HOOK-010..014)

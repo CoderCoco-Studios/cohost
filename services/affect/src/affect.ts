@@ -2,6 +2,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
+import { boundText, createOnceCounter, UNKNOWN_NAME, viewerKey, type OnceCounter } from "@cohost/shared/untrusted";
 import { Mood } from "./mood.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "./appraise.js";
 
@@ -33,6 +34,8 @@ export class Affect {
   private lastPublished = "";
   private lastPublishedAt = -Infinity;
   private queue: { input: AppraiseInput; cause: string; epoch: number }[] = [];
+  /** Counts chat once per viewer and once per identical text inside `brain.affect.count_window_ms` (AFF-IN-010, AFF-IN-016). */
+  private counter: OnceCounter;
   private draining?: Promise<void>;
   /** `control` state (shared reader). Paused: events no longer nudge the mood, decay and publishing continue (AFF-CTRL-005). Its epoch is bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
   private readonly control: ReturnType<typeof controlFor>;
@@ -40,9 +43,11 @@ export class Affect {
   constructor(private d: AffectDeps) {
     this.now = d.now ?? (() => performance.now());
     this.mood = new Mood(d.cfg.brain.affect, this.now);
+    this.counter = this.newCounter(); // @spec AFF-IN-010
     this.control = controlFor("affect", {
       forget_context: () => { // @spec AFF-HOOK-008
         this.queue.length = 0;
+        this.counter = this.newCounter(); // @spec AFF-IN-016
         this.mood.reset("reset"); // @spec AFF-IN-007
       },
     }, { log: d.log, heartbeat: d.heartbeat });
@@ -53,15 +58,19 @@ export class Affect {
     const k = this.d.cfg.brain.affect;
     if (this.control.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
     switch (ev.type) {
-      case "chat.message": { // @spec AFF-IN-002
+      case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
-        this.appraise("chat", d.user, d.text, d.mentionsCohost);
-        if (d.isSub) mood.nudge(k.nudge_sub_valence, k.nudge_sub_arousal, `sub: ${d.user}`); // @spec AFF-IN-004
+        const { text, name } = this.boundViewer(d.text, d.user); // @spec AFF-IN-008
+        // Counted at receipt, before any job is queued; a refused line changes nothing (AFF-IN-011..013).
+        if (!this.counter.admit(viewerKey({ platform: d.platform, userId: d.userId, user: name }), text, this.now())) return; // @spec AFF-IN-011, AFF-IN-012, AFF-IN-013, AFF-IN-014
+        this.appraise("chat", name, text, d.mentionsCohost); // @spec AFF-IN-002
+        if (d.isSub) mood.nudge(k.nudge_sub_valence, k.nudge_sub_arousal, `sub: ${name}`); // @spec AFF-IN-004
         break;
       }
-      case "speech.heard": { // @spec AFF-IN-003
+      case "speech.heard": { // @spec AFF-IN-003, AFF-IN-015
         const d = ev.data as BusEvent<"speech.heard">["data"];
-        this.appraise("speech", d.speaker, d.text, false);
+        const text = boundText(d.text, this.d.cfg.brain.input_limits.speech_max_chars); // @spec AFF-IN-009
+        this.appraise("speech", this.boundName(d.speaker), text, false);
         break;
       }
       case "vision.summary": {
@@ -86,6 +95,20 @@ export class Affect {
   /** Resolves once queued llm/http appraisals have been applied. */
   async settled(): Promise<void> {
     while (this.draining) await this.draining;
+  }
+
+  private newCounter(): OnceCounter {
+    return createOnceCounter({ windowMs: this.d.cfg.brain.affect.count_window_ms });
+  }
+
+  /** A viewer's name and text bounded for every later use (AFF-IN-008). */
+  private boundViewer(rawText: string, rawUser: string): { text: string; name: string } {
+    return { text: boundText(rawText, this.d.cfg.viewer_text.max_chars), name: this.boundName(rawUser) };
+  }
+
+  /** A name bounded to `viewer_text.max_name_chars`, `unknown` when nothing remains (AFF-IN-008, AFF-IN-009). */
+  private boundName(raw: string): string {
+    return boundText(raw, this.d.cfg.viewer_text.max_name_chars) || UNKNOWN_NAME;
   }
 
   private appraise(source: "chat" | "speech", who: string, text: string, mention: boolean) {

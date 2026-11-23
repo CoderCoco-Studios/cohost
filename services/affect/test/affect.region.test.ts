@@ -124,8 +124,8 @@ test("mood decay measures elapsed time, not the wall clock: a clock stepped back
 
 test("llm/http kind: lines queue for the slow appraiser instead of blocking the handler", async () => { // @spec AFF-HOOK-005
   const { affect, seen, next } = setup("http");
-  affect.onEvent(chat("what a great play"));
-  affect.onEvent(chat("love this game"));
+  affect.onEvent(chat("what a great play", { userId: "u1" }));
+  affect.onEvent(chat("love this game", { userId: "u2" }));
   assert.equal(seen.length, 1, "one at a time");
   assert.equal(affect.mood.valence, 0, "nothing applied yet");
   next();
@@ -145,7 +145,7 @@ test("llm/http kind: a too-short line skips the model; a mention never does", as
   affect.onEvent(chat("gg"));
   assert.equal(seen.length, 0);
   assert.ok(affect.mood.valence > 0, "rules applied inline");
-  affect.onEvent(chat("hi", { mentionsCohost: true }));
+  affect.onEvent(chat("hi", { mentionsCohost: true, userId: "u2" }));
   assert.equal(seen.length, 1);
   next();
   await affect.settled();
@@ -153,7 +153,7 @@ test("llm/http kind: a too-short line skips the model; a mention never does", as
 
 test("llm/http kind: when appraisal falls behind, the oldest waiting lines are dropped", async () => { // @spec AFF-HOOK-006
   const { affect, seen, next } = setup("http");
-  for (let i = 0; i < 12; i++) affect.onEvent(chat(`line number ${i}`));
+  for (let i = 0; i < 12; i++) affect.onEvent(chat(`line number ${i}`, { userId: `u${i}` }));
   // #0 is in flight; of #1..#11 only the newest 8 are kept.
   for (let i = 0; i < 12 && seen.length <= 9; i++) { next(); await new Promise((r) => setImmediate(r)); }
   await affect.settled();
@@ -173,7 +173,7 @@ test("pause: events stop nudging the mood while paused; resume restores; other t
   assert.equal(affect.mood.valence, v1);
 
   affect.onEvent(event("control", { cmd: "resume" }));
-  affect.onEvent(chat("lol clutch"));
+  affect.onEvent(chat("lol clutch again", { userId: "u2" }));
   assert.ok(affect.mood.valence > v1);
 });
 
@@ -193,7 +193,7 @@ test("forget_context applies the pending decay first, so the mood lands exactly 
     const real = testConfig({ brain: { affect: { half_life_ms: 45_000 } } }); // baseline_valence 0.15, baseline_arousal 0.1
     const mod = new Module<AppraiseInput, AppraiseOutput>("a", ModuleSchema.parse({}), real.llm, { rules: appraiseRules }, silentLog);
     const affect = new Affect({ cfg: real, bus, appraiser: mod, log: silentLog, now: clock.now });
-    for (let i = 0; i < 5; i++) affect.onEvent(chat("LOL POGGERS!!!"));
+    for (let i = 0; i < 5; i++) affect.onEvent(chat(`LOL POGGERS!!! ${i}`, { userId: `u${i}` }));
     assert.ok(affect.mood.valence > 0.5 && affect.mood.arousal > 0.5, "a real peak");
     clock.tick(2_000); // the default publish interval: decay accrued since the last touch
     affect.onEvent(event("control", { cmd: "forget_context" }));
@@ -231,8 +231,8 @@ test("forget_context discards queued appraisals and the one in flight; pause dro
   // reset
   const r = setup("http");
   r.affect.onEvent(chat("what a great play"));   // in flight
-  r.affect.onEvent(chat("love this game"));      // queued
-  r.affect.onEvent(chat("another great one"));   // queued
+  r.affect.onEvent(chat("love this game", { userId: "u2" }));      // queued
+  r.affect.onEvent(chat("another great one", { userId: "u3" }));   // queued
   assert.equal(r.seen.length, 1);
   r.affect.onEvent(event("control", { cmd: "forget_context" }));
   r.next();                                       // the in-flight appraisal finishes after the reset
@@ -243,7 +243,7 @@ test("forget_context discards queued appraisals and the one in flight; pause dro
   // pause
   const p = setup("http");
   p.affect.onEvent(chat("what a great play"));
-  p.affect.onEvent(chat("love this game"));
+  p.affect.onEvent(chat("love this game", { userId: "u2" }));
   p.affect.onEvent(event("control", { cmd: "pause" }));
   p.next();
   await p.affect.settled();
@@ -253,7 +253,7 @@ test("forget_context discards queued appraisals and the one in flight; pause dro
   assert.equal(p.affect.mood.valence, 0, "and nothing from before the pause lands after resume");
 
   // new lines after the reset or resume are appraised normally
-  p.affect.onEvent(chat("fresh great line"));
+  p.affect.onEvent(chat("fresh great line", { userId: "u9" }));
   p.next();
   await p.affect.settled();
   assert.ok(near(p.affect.mood.valence, 0.1));

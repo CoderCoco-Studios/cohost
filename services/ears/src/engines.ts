@@ -1,10 +1,12 @@
 /**
  * The speech-to-text engine contract and its selection (EARS-ENG-*). A batch engine takes a whole clip (`speaches`,
  * `openai`, `stub`); a streaming engine takes frames as they arrive and opens one session per utterance (`nemotron`,
- * `kyutai`; their wire protocols are the adapters of #188). Every call an engine makes is bounded by `ears.stt_timeout_ms`.
+ * `kyutai`; their wire protocols are in `nemotron.ts` and `kyutai.ts`). Every call an engine makes is bounded by `ears.stt_timeout_ms`.
  */
 import { urls, type Config } from "@cohost/config";
 import { wavDurationMs } from "./audio.js";
+import { createKyutaiEngine } from "./kyutai.js";
+import { createNemotronEngine } from "./nemotron.js";
 
 export type EarsConfig = Config["ears"];
 
@@ -122,9 +124,11 @@ export function createBatchEngine(name: BatchSttEngine["name"], cfg: EarsConfig)
   };
 }
 
-/** A streaming engine name with no adapter built in this process; its session open is an outage. #188 builds the adapters. */
-function unbuiltStreaming(name: StreamingSttEngine["name"]): StreamingSttEngine {
-  return { kind: "streaming", name, open: async () => { throw new Error(`${name} streaming adapter is not built`); } };
+/** A WebSocket URL for a streaming server: `http` maps to `ws` and `https` to `wss`, and `path` follows the base's path. */
+export function wsUrl(base: string, path: string): string {
+  const u = new URL(base.replace(/\/+$/, "") + path);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  return u.toString();
 }
 
 export interface BuiltEngines {
@@ -142,8 +146,8 @@ export interface BuiltEngines {
 
 // @spec EARS-ENG-001, EARS-ENG-002, EARS-ENG-003, EARS-ENG-010, EARS-ENG-012
 /**
- * Builds the selected engine and the batch engine. A streaming engine is the `streaming` engine handed in (#188 builds
- * the real ones); without one the engine's sessions cannot open.
+ * Builds the selected engine and the batch engine. A streaming engine is the adapter of its name (`nemotron`, `kyutai`); a
+ * `streaming` engine handed in replaces it (tests).
  */
 export function buildEngines(cfg: EarsConfig, o: { streaming?: StreamingSttEngine } = {}): BuiltEngines {
   const name = cfg.stt_engine || "speaches";
@@ -153,7 +157,7 @@ export function buildEngines(cfg: EarsConfig, o: { streaming?: StreamingSttEngin
   }
   const url = name === "nemotron" ? cfg.nemotron.url : cfg.kyutai.url;
   const selectedGap = url === "" ? `ears.${name}.url is not set` : undefined;
-  const selected = o.streaming ?? unbuiltStreaming(name);
+  const selected = o.streaming ?? (name === "nemotron" ? createNemotronEngine(cfg) : createKyutaiEngine(cfg));
   const fallback = cfg.stt_fallback_engine || "speaches";
   const batch = fallback === "none" ? undefined : createBatchEngine(fallback, cfg);
   const gap = selectedGap ?? batch?.gap;

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wavWrap } from "@cohost/shared";
 import { waitFor } from "@cohost/testing";
-import { SILENCE, SPEECH, boot, connectorOffer, fakeVad, feed, frame, resetSeq, sleep } from "./rig.js";
+import { SILENCE, SPEECH, boot, connectorOffer, fakeStreaming, fakeVad, feed, frame, resetSeq, sleep } from "./rig.js";
 
 const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => b.register("discord", connectorOffer);
 /** Stub STT, 100 ms of silence closes an utterance, 100 ms is long enough to transcribe. The frame gap timer is long enough not to fire while frames are fed fast. */
@@ -179,5 +179,101 @@ test("a seq gap closes nothing and is not filled: the received frames are one ut
     await sleep(150);
     assert.equal(r.heard().length, 1);
     assert.deepEqual(durations(r), [200], "10 received frames, the 4 missing ones not filled");
+  } finally { await r.stop(); }
+});
+
+// ---------------------------------------------------------------------------------------- Kyutai end of turn (#188)
+// The adapter decides when to signal (kyutai.test.ts); these cases pin what ears does with a signal. A scripted kyutai session
+// fires it through `FakeSession.endOfTurn()` (rig.ts). The silence rule is 150 ms so a signal always beats it by design.
+const eotCfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "kyutai", silence_ms: 150, min_speech_ms: 100, stt_timeout_ms: 300, ...over });
+const eotRig = (over: Record<string, unknown> = {}) => {
+  const s = fakeStreaming({ name: "kyutai", finish: () => "closed early" });
+  return { s, boot: () => boot(eotCfg(over), { setup: reg, loadVad: fakeVad().load, streaming: s.engine }) };
+};
+
+// @spec EARS-KYU-010, EARS-VAD-003, EARS-HEAR-012
+test("an end-of-turn signal closes the utterance at once: the clip ends at the last frame received, audioEndedAt is that frame's arrival", async () => {
+  resetSeq();
+  const { s, boot: go } = eotRig({ silence_ms: 2000 });
+  const r = await go();
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH });
+    await feed(r.bus, 4, { fill: SILENCE });
+    await sleep(100);
+    const t = Date.now();
+    r.bus.feed("in", "discord", frame("u1", SILENCE)); // the last frame received: a silence frame after the last speech frame
+    await waitFor(() => s.sessions[0]?.pushed.length === 15, "all 15 frames at the session");
+    const arrived = Date.now();
+    await sleep(150); // the signal comes well after the last frame
+    const signalAt = Date.now();
+    s.sessions[0]!.endOfTurn();
+    await waitFor(() => r.heard().length === 1, "speech.heard", 1000);
+    assert.ok(Date.now() - signalAt < 500, "closed by the signal, not by the 2000 ms silence rule");
+    assert.equal(r.heard()[0]!.text, "closed early");
+    assert.equal(r.heard()[0]!.durationMs, 300, "10 speech + 5 silence frames: through the last frame received, not just the last speech frame");
+    assert.equal(s.sessions[0]!.finishCalls, 1);
+    const at = r.heard()[0]!.timing!.audioEndedAt!;
+    assert.ok(at >= t && at <= arrived, `audioEndedAt is the last frame's arrival (${at - t} ms after the mark), not the close at +${signalAt - t}`);
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-KYU-011
+test("a frame after an end-of-turn close starts a new utterance whose pre-roll holds only later frames and whose session gets no audio already sent", async () => {
+  resetSeq();
+  const { s, boot: go } = eotRig({ silence_ms: 2000 }); // only a signal closes an utterance within the test
+  const r = await go();
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH });
+    await waitFor(() => s.sessions[0]?.pushed.length === 10, "the first utterance's frames");
+    s.sessions[0]!.endOfTurn();
+    await waitFor(() => r.heard().length === 1, "first speech.heard");
+    await feed(r.bus, 3, { fill: SILENCE });
+    await feed(r.bus, 10, { fill: 81 });
+    await waitFor(() => s.sessions[1]?.pushed.length === 13, "the second utterance's frames at its own session");
+    s.sessions[1]!.endOfTurn();
+    await waitFor(() => r.heard().length === 2, "second speech.heard");
+    assert.equal(s.stats.opens, 2, "a new session for the new utterance");
+    const second = s.sessions[1]!.audio();
+    assert.ok(![...second].includes(SPEECH), "no byte of the first utterance's audio is sent again");
+    assert.equal(r.heard()[1]!.durationMs, 260, "3 silence frames that arrived after the close + 10 speech frames (the pre-roll holds no earlier frame)");
+    assert.notEqual(r.heard()[0]!.utteranceId, r.heard()[1]!.utteranceId);
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-KYU-012
+test("ears.max_utterance_ms reached first: the max-length close wins and a later signal does nothing", async () => {
+  resetSeq();
+  const { s, boot: go } = eotRig({ max_utterance_ms: 200, silence_ms: 2000 });
+  const r = await go();
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH }); // 200 ms: the length cap closes it
+    await waitFor(() => r.heard().length === 1, "the max-length close");
+    assert.equal(s.sessions[0]!.finishCalls, 1);
+    s.sessions[0]!.endOfTurn(); // too late
+    await feed(r.bus, 5, { fill: SPEECH }); // a new utterance; the stale signal must not close it
+    await sleep(120);
+    assert.equal(r.heard().length, 1, "the stale signal closed nothing");
+    assert.equal(s.sessions[0]!.finishCalls, 1, "no second finish()");
+    assert.equal(s.sessions[1]?.finishCalls ?? 0, 0, "the new utterance is still open");
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-KYU-010
+test("a signal after the utterance closed by silence does nothing", async () => {
+  resetSeq();
+  const { s, boot: go } = eotRig();
+  const r = await go();
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH });
+    await feed(r.bus, 10, { fill: SILENCE });
+    await waitFor(() => r.heard().length === 1, "the silence close");
+    s.sessions[0]!.endOfTurn();
+    await sleep(80);
+    assert.equal(r.heard().length, 1);
+    assert.equal(s.sessions[0]!.finishCalls, 1);
   } finally { await r.stop(); }
 });

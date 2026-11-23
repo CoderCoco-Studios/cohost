@@ -350,8 +350,8 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.kyutai` | map | The Kyutai speech-to-text server |
 | `ears.kyutai.url` | `http://stt-kyutai:8080` | The Kyutai STT server, for `stt_engine: kyutai`. Blank is a configuration gap |
 | `ears.kyutai.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
-| `ears.kyutai.end_of_turn` | `off` | `on` lets the server's end-of-turn detection close a sentence; `off` closes it on silence |
-| `ears.kyutai.end_of_turn_threshold` | `0.5` | The end-of-turn probability needed, above 0 and below 1 |
+| `ears.kyutai.end_of_turn` | `off` | `on` lets the server's end-of-turn signal close an utterance early, at the last frame received, at most once and only after a word; `off` leaves the close to ears' own endpointing. Ignored under `ears.vad.engine: gap` |
+| `ears.kyutai.end_of_turn_threshold` | `0.5` | The end-of-turn probability (the third `Step` probability) needed, above 0 and below 1 |
 | `ears.drop_phrases` | `[]` | Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped. They are Whisper's usual hallucinations on silence, such as `Thank you.` |
 
 ## `connections`

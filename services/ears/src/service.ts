@@ -26,7 +26,7 @@ export interface EarsServiceOptions {
   refreshMs?: number;
   /** Loads the speech-activity detector for `ears.vad.engine: silero` (default: `loadSilero`); tests pass a fake. */
   loadVad?: LoadVad;
-  /** The streaming engine `ears.stt_engine` names when it is `nemotron` or `kyutai` (EARS-ENG-001); the real adapters are #188. */
+  /** The streaming engine `ears.stt_engine` names when it is `nemotron` or `kyutai` (EARS-ENG-001); a test passes its own to replace the built adapter. */
   streamingEngine?: StreamingSttEngine;
   /** The re-probe period of EARS-HLTH-008 (default `STT_PING_INTERVAL_MS`). */
   pingIntervalMs?: number;

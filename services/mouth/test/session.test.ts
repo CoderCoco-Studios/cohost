@@ -4,9 +4,9 @@ import { FakeBus, event, recordingLog } from "@cohost/testing";
 import { MOUTH_LOOP_TYPES, createMouthHandler, subscribeMouth } from "../src/session.js";
 import { ClaimMemory } from "../src/fallback.js";
 
-const utterance = (id = "u1") => event("voice.utterance", { id, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
-const playingEv = (id: string, sink: string) => event("voice.playing", { id, sink });
-const failedEv = () => event("voice.failed", { id: "u1", sink: "discord", reason: "x" });
+const utterance = (id = "u1") => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
+const playingEv = (id: string, sink: string) => event("voice.playing", { id, seq: 0, sink });
+const failedEv = () => event("voice.failed", { id: "u1", seq: 0, sink: "discord", reason: "x" });
 const out = (name: string, ready: () => boolean, queued: [string, string, string][]) => ({
   name, isReady: ready, playback: { enqueue: async (id: string, url: string) => { queued.push([name, id, url]); } },
 });
@@ -68,7 +68,7 @@ test("the mouth group is created first, then subscribed with start mode latest, 
 
 // ---- per-line route (MOUTH-ROUTE-006 to MOUTH-ROUTE-008)
 
-const routed = (id: string, route: string[]) => event("voice.utterance", { id, text: "hi", emotion: "neutral", route, durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
+const routed = (id: string, route: string[]) => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", route, durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
 
 // @spec MOUTH-ROUTE-006
 test("a line with a route is queued only on the named, enabled, ready outputs; one without a route still goes to every ready output", async () => {

@@ -78,7 +78,7 @@ function section(samples: { say: BusEvent<"brain.say">; play?: BusEvent; utt?: B
  * per answer line (a `brain.say`), its stages from the stamps and the joined `voice.utterance` / `voice.playing`.
  */
 // @spec CTRL-LAT-003, CTRL-LAT-004, CTRL-LAT-005, CTRL-LAT-006, CTRL-LAT-007, CTRL-LAT-008
-// @spec CTRL-LAT-011, CTRL-LAT-012, CTRL-LAT-013, CTRL-LAT-014
+// @spec CTRL-LAT-011, CTRL-LAT-012, CTRL-LAT-013, CTRL-LAT-014, CTRL-LAT-015, CTRL-LAT-016
 export function latencyReport(events: readonly BusEvent[], count: number): string[] {
   const utterances = new Map<string, BusEvent[]>();
   const playing = new Map<string, BusEvent[]>();
@@ -88,6 +88,8 @@ export function latencyReport(events: readonly BusEvent[], count: number): strin
       const d = (e as BusEvent<"brain.say">).data;
       if (!said.has(d.id)) said.set(d.id, e as BusEvent<"brain.say">);
     } else if (e.type === "voice.utterance" || e.type === "voice.playing") {
+      // A streamed line is one sample measured on clause 0; later clauses' events are ignored (CTRL-LAT-015).
+      if ((e.data as { seq: number }).seq !== 0) continue;
       const m = e.type === "voice.utterance" ? utterances : playing;
       const id = (e.data as { id: string }).id;
       m.set(id, [...(m.get(id) ?? []), e]);

@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-18
+last_updated: 2026-11-22
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 109 [x], 122 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 114 [x], 117 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:
@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "213 specs: 144 [x], 64 [ ], 5 [D] (streamed-speech clause specs, the early-reply specs BUS-EVT-052 to 060 and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
+    next: "213 specs: 153 [x], 55 [ ], 5 [D] (streamed-speech clause specs, the early-reply specs BUS-EVT-052 to 060 and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
     drift: null
 
   model-backends:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 78 [x], 31 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
+    next: "111 specs: 80 [x], 29 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
     drift: null
 
   deployment:

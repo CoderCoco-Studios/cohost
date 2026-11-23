@@ -19,7 +19,7 @@ function boot(over: { open?: boolean; name?: string } = {}) {
 let seq = 0;
 const frame = (app: TestApp, type: string, data: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
   act(() => { app.socket().message({ id: `s${++seq}-0`, type, ts: 1, source: "t", data, ...extra }); });
-const utterance = (app: TestApp, id: string, extra: Record<string, unknown> = {}) => frame(app, "voice.utterance", { id, durationMs: 10 }, extra);
+const utterance = (app: TestApp, id: string, extra: Record<string, unknown> = {}) => frame(app, "voice.utterance", { id, seq: 0, durationMs: 10 }, extra);
 const tick = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 const sinkCalls = (app: TestApp) => app.fetch.callsTo("POST /sink").map((c) => JSON.parse(c.body!) as Record<string, unknown>);
 const line = () => screen.getByRole("status").textContent!;

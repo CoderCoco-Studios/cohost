@@ -44,10 +44,10 @@ test("dryrun: fetches the WAV, claims it under sink dryrun, waits its duration a
     const t0 = performance.now();
     await out.playback.enqueue("a", "http://voice/a.wav");
     assert.deepEqual(fetched, ["http://voice/a.wav"]);
-    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", sink: "dryrun" } }]);
+    assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", seq: 0, sink: "dryrun" } }]);
     await waitFor(() => bus.of("voice.done").length === 1, "voice.done");
     assert.ok(performance.now() - t0 >= 75, "waited the WAV's duration");
-    assert.deepEqual(bus.of("voice.done"), [{ id: "a", sink: "dryrun" }]);
+    assert.deepEqual(bus.of("voice.done"), [{ id: "a", seq: 0, sink: "dryrun" }]);
   } finally {
     out.close();
   }

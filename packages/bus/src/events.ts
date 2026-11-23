@@ -7,15 +7,22 @@ import { Emotion } from "@cohost/config";
  * these events — never directly to each other — so any piece can be swapped.
  */
 // @spec BUS-EVT-001
-/** What `voice.playing` and `voice.done` carry: the utterance and the sink that reports it. */
-const PlaybackReport = z.object({ id: z.string(), sink: z.string() });
+/** What `voice.playing` and `voice.done` carry: the utterance, the clause `seq` (0 for a line that is not streamed) and the sink that reports it. */
+const PlaybackReport = z.object({ id: z.string(), seq: z.number().int().nonnegative(), sink: z.string() });
 
-/** `voice.done` also reports an interrupted line (BUS-EVT-031): `spokenText` and `unsaidText` only make sense with `interrupted`. */
+/**
+ * `voice.done` also reports a line a `voice.stop` ended (BUS-EVT-031) and `final` (BUS-EVT-031): `spokenText` and
+ * `unsaidText` only make sense with `interrupted`.
+ */
 const PlaybackDone = PlaybackReport.extend({
   interrupted: z.literal(true).optional(),
+  final: z.literal(true).optional(),
   spokenText: z.string().optional(),
   unsaidText: z.string().optional(),
 }).refine((d) => d.interrupted === true || (d.spokenText === undefined && d.unsaidText === undefined), { message: "spokenText and unsaidText need interrupted" });
+
+/** Why a streamed reply ended before the model finished (event-bus design, Streamed lines); only with `last` (BUS-EVT-040). */
+const CLAUSE_CUTS = ["repeat", "muted", "busy", "failed", "length", "stopped", "timeout", "vetoed", "tools"] as const;
 
 /** `control.routing` (`set_routing`, read by mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
 export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean().optional(), gain_db: z.number().min(-40).max(12).optional() }).strict());
@@ -104,7 +111,7 @@ export const EventPayloads = {
   }),
 
   /** The brain decided to say something. Voice + avatar react to this. */
-  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023, BUS-EVT-024
+  // @spec BUS-EVT-014, BUS-EVT-005, BUS-EVT-023, BUS-EVT-024, BUS-EVT-037
   "brain.say": z.object({
     id: z.string(),
     text: z.string(),
@@ -119,6 +126,31 @@ export const EventPayloads = {
     /** Set by test injection; absent on real events. */
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
+    /** The reply continues as `brain.clause` events of this line (BUS-EVT-037). */
+    more: z.literal(true).optional(),
+  }),
+
+  /**
+   * One later clause of a streamed line (BUS-EVT-038..042). `seq` counts from 1 with clause 0 the `brain.say` text.
+   * The closing event (`last`) carries `through` (0..seq) and may carry empty `text` and a `cut`.
+   */
+  // @spec BUS-EVT-038, BUS-EVT-039, BUS-EVT-041, BUS-EVT-042
+  "brain.clause": z.object({
+    id: z.string(),
+    seq: z.number().int().min(1),
+    text: z.string(),
+    last: z.literal(true).optional(),
+    through: z.number().int().nonnegative().optional(),
+    cut: z.enum(CLAUSE_CUTS).optional(),
+  }).strict().superRefine((d, ctx) => {
+    if (d.last) {
+      if (d.through === undefined) ctx.addIssue({ code: "custom", path: ["through"], message: "through is required with last" });
+      else if (d.through > d.seq) ctx.addIssue({ code: "custom", path: ["through"], message: "through is above seq" });
+    } else {
+      if (d.through !== undefined) ctx.addIssue({ code: "custom", path: ["through"], message: "through needs last" });
+      if (d.cut !== undefined) ctx.addIssue({ code: "custom", path: ["cut"], message: "cut needs last" });
+      if (d.text === "") ctx.addIssue({ code: "custom", path: ["text"], message: "empty text is only on the closing event" });
+    }
   }),
 
   /** The brain's current state, for the dashboard. */
@@ -258,6 +290,8 @@ export const EventPayloads = {
   // @spec BUS-EVT-016, BUS-EVT-023
   "voice.utterance": z.object({
     id: z.string(),
+    /** The clause this audio is (0 for a line that is not streamed); `(id, seq)` names one audio file. */
+    seq: z.number().int().nonnegative(),
     text: z.string(),
     emotion: Emotion,
     gesture: z.string().optional(),
@@ -269,6 +303,8 @@ export const EventPayloads = {
     /** Path on the voice service, relative to its base URL: `/audio/<id>.wav`. */
     audioUrl: z.string(),
     sampleRate: z.number(),
+    /** Set on clause 0 of a streamed line, copied from its `brain.say` (BUS-EVT-016). */
+    more: z.literal(true).optional(),
   }),
 
   /** Playback of an utterance started somewhere (dashboard sink / Discord). Avatar syncs to this. */
@@ -289,6 +325,7 @@ export const EventPayloads = {
   // @spec BUS-EVT-022
   "voice.failed": z.object({
     id: z.string(),
+    seq: z.number().int().nonnegative(),
     sink: z.string(),
     reason: z.string(),
     fallback: z.object({ clip: z.string(), text: z.string() }).optional(),

@@ -29,14 +29,14 @@ test("playback: plays one utterance at a time, in order, reporting playing and d
   await p.enqueue("b", "http://voice/b.wav");
   assert.deepEqual(fetched, ["http://voice/a.wav"], "b waits for a");
   assert.deepEqual(played, [2400 * 2 * 4], "24k mono resampled to 48k stereo");
-  assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", sink: "discord" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", seq: 0, sink: "discord" } }]);
   await p.onIdle();
   assert.deepEqual(bus.published.slice(1), [
-    { type: "voice.done", data: { id: "a", sink: "discord" } },
-    { type: "voice.playing", data: { id: "b", sink: "discord" } },
+    { type: "voice.done", data: { id: "a", seq: 0, sink: "discord" } },
+    { type: "voice.playing", data: { id: "b", seq: 0, sink: "discord" } },
   ]);
   await p.onIdle();
-  assert.deepEqual(bus.published.at(-1), { type: "voice.done", data: { id: "b", sink: "discord" } });
+  assert.deepEqual(bus.published.at(-1), { type: "voice.done", data: { id: "b", seq: 0, sink: "discord" } });
   await p.onIdle(); // idle with nothing playing: no extra done
   assert.equal(bus.of("voice.done").length, 2);
 });
@@ -47,8 +47,8 @@ test("playback: a failed fetch is given up: one voice.failed with the error text
   await p.onIdle(); // nothing queued
   await Promise.all([p.enqueue("bad", "http://voice/bad.wav"), p.enqueue("good", "http://voice/good.wav")]);
   await waitFor(() => bus.of("voice.playing").length === 1);
-  assert.deepEqual(bus.of("voice.failed"), [{ id: "bad", sink: "discord", reason: "Error: fetch audio 404" }]);
-  assert.deepEqual(bus.of("voice.playing"), [{ id: "good", sink: "discord" }]);
+  assert.deepEqual(bus.of("voice.failed"), [{ id: "bad", seq: 0, sink: "discord", reason: "Error: fetch audio 404" }]);
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "good", seq: 0, sink: "discord" }]);
   assert.equal(bus.of("voice.done").length, 0, "the given-up line never played, so no done for it");
   assert.deepEqual(bus.types(), ["voice.failed", "voice.playing"], "the report precedes the next line");
   assert.deepEqual(rec.msgs("warn"), ["playback failed"]);
@@ -68,8 +68,8 @@ test("playback: a conversion failure and a player that throws are each given up 
   mode = "throw";
   await p.enqueue("b", "http://voice/b.wav");
   assert.deepEqual(bus.published, [
-    { type: "voice.failed", data: { id: "a", sink: "discord", reason: "Error: bad wav" } },
-    { type: "voice.failed", data: { id: "b", sink: "discord", reason: "Error: player exploded" } },
+    { type: "voice.failed", data: { id: "a", seq: 0, sink: "discord", reason: "Error: bad wav" } },
+    { type: "voice.failed", data: { id: "b", seq: 0, sink: "discord", reason: "Error: player exploded" } },
   ]);
   assert.deepEqual(rec.msgs("warn"), ["playback failed", "playback failed"]);
 });
@@ -129,8 +129,8 @@ test("fallback: a give-up plays one cached clip converted like an utterance, cla
   assert.deepEqual(played[0], wavToDiscordPcm(c.wav), "converted as in MOUTH-AUD-002");
   assert.deepEqual(fetched, ["http://voice/bad.wav"], "no network request to choose or play the clip");
   assert.deepEqual(bus.published, [
-    { type: "voice.playing", data: { id: "bad", sink: "discord" } },
-    { type: "voice.failed", data: { id: "bad", sink: "discord", reason: "Error: fetch audio 404", fallback: { clip: c.name, text: "Error: unable to play line." } } },
+    { type: "voice.playing", data: { id: "bad", seq: 0, sink: "discord" } },
+    { type: "voice.failed", data: { id: "bad", seq: 0, sink: "discord", reason: "Error: fetch audio 404", fallback: { clip: c.name, text: "Error: unable to play line." } } },
   ]);
 });
 
@@ -142,8 +142,8 @@ test("fallback: the given-up utterance stays current until the player is idle, t
   assert.equal(played.length, 1, "good waits for the fallback clip");
   await p.onIdle();
   assert.deepEqual(bus.published.slice(2), [
-    { type: "voice.done", data: { id: "bad", sink: "discord" } },
-    { type: "voice.playing", data: { id: "good", sink: "discord" } },
+    { type: "voice.done", data: { id: "bad", seq: 0, sink: "discord" } },
+    { type: "voice.playing", data: { id: "good", seq: 0, sink: "discord" } },
   ]);
   assert.equal(played.length, 2);
 });
@@ -153,7 +153,7 @@ test("fallback: with no clips the give-up is a silent skip, with voice.failed ca
   const { p, bus, played } = withFallback({ clips: [] });
   await Promise.all([p.enqueue("bad", "http://voice/bad.wav"), p.enqueue("good", "http://voice/good.wav")]);
   await waitFor(() => bus.of("voice.playing").length === 1);
-  assert.deepEqual(bus.of("voice.failed"), [{ id: "bad", sink: "discord", reason: "Error: fetch audio 404" }]);
+  assert.deepEqual(bus.of("voice.failed"), [{ id: "bad", seq: 0, sink: "discord", reason: "Error: fetch audio 404" }]);
   assert.equal(played.length, 1);
   assert.equal(bus.of("voice.done").length, 0);
 });
@@ -231,7 +231,7 @@ test("playback: a failed voice.done publish is logged and the next queued uttera
   await p.enqueue("b", "http://voice/b.wav");
   await p.onIdle(); // done(a) rejects: must not throw or leave a rejection behind
   assert.deepEqual(rec.msgs("warn"), ["voice.done publish failed"]);
-  assert.deepEqual(bus.of("voice.playing"), [{ id: "a", sink: "discord" }, { id: "b", sink: "discord" }]);
+  assert.deepEqual(bus.of("voice.playing"), [{ id: "a", seq: 0, sink: "discord" }, { id: "b", seq: 0, sink: "discord" }]);
 });
 
 // @spec MOUTH-PLAY-002, MOUTH-PLAY-005
@@ -270,9 +270,9 @@ test("routing: voice.playing, voice.done and voice.failed carry the output's own
   await o.p.onIdle();
   await o.p.enqueue("bad", "http://voice/bad.wav");
   assert.deepEqual(o.bus.published, [
-    { type: "voice.playing", data: { id: "a", sink: "speakers" } },
-    { type: "voice.done", data: { id: "a", sink: "speakers" } },
-    { type: "voice.failed", data: { id: "bad", sink: "speakers", reason: "Error: fetch audio 404" } },
+    { type: "voice.playing", data: { id: "a", seq: 0, sink: "speakers" } },
+    { type: "voice.done", data: { id: "a", seq: 0, sink: "speakers" } },
+    { type: "voice.failed", data: { id: "bad", seq: 0, sink: "speakers", reason: "Error: fetch audio 404" } },
   ]);
 });
 
@@ -329,7 +329,7 @@ test("routing: two outputs have independent queues, so a give-up or a stall on o
   await b.p.enqueue("u1", "http://voice/u1.wav"); // b plays at once, whatever a is doing
   assert.equal(a.played.length, 1, "a holds u2 behind its fallback clip");
   assert.equal(b.played.length, 1, "b played u1 immediately");
-  assert.deepEqual(bus.published.filter((e) => e.data.sink === "second"), [{ type: "voice.playing", data: { id: "u1", sink: "second" } }]);
+  assert.deepEqual(bus.published.filter((e) => e.data.sink === "second"), [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "second" } }]);
   await b.p.onIdle();
   assert.deepEqual(bus.of("voice.done").map((d) => d.sink), ["second"], "only b finished anything");
   await a.p.onIdle();
@@ -361,9 +361,9 @@ test("playback: an output whose play returns a promise reports voice.playing whe
   assert.equal(bus.published.length, 0, "no voice.playing before the first audio has gone out");
   release();
   await first;
-  assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", sink: "discord" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "a", seq: 0, sink: "discord" } }]);
   await p.onIdle();
   await p.enqueue("b", "http://voice/b.wav");
-  assert.deepEqual(bus.of("voice.failed"), [{ id: "b", sink: "discord", reason: "Error: first frame failed" }]);
+  assert.deepEqual(bus.of("voice.failed"), [{ id: "b", seq: 0, sink: "discord", reason: "Error: first frame failed" }]);
   assert.equal(bus.of("voice.playing").length, 1, "the rejected line never claimed playing");
 });

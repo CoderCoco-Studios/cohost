@@ -135,8 +135,8 @@ Design: [control-plane-design.md](control-plane-design.md) § Latency report. Th
 
 Design: LLD Latency report. The report measures the wait before the co-host starts speaking.
 
-- [ ] **CTRL-LAT-015**: When the report joins a streamed line, it shall join the `brain.say` to the `voice.utterance` with `seq` 0 and to the earliest non-virtual `voice.playing` with `seq` 0, or, when none has, the earliest `voice.playing` with `seq` 0, and shall ignore the events of later clauses, so that a line is one sample.
-- [ ] **CTRL-LAT-016**: When the report computes `llm` for a streamed line, it shall use the `llmEndedAt` the `brain.say` carries, and `tts` and `sink` shall be measured on clause 0.
+- [x] **CTRL-LAT-015**: When the report joins a streamed line, it shall join the `brain.say` to the `voice.utterance` with `seq` 0 and to the earliest non-virtual `voice.playing` with `seq` 0, or, when none has, the earliest `voice.playing` with `seq` 0, and shall ignore the events of later clauses, so that a line is one sample.
+- [x] **CTRL-LAT-016**: When the report computes `llm` for a streamed line, it shall use the `llmEndedAt` the `brain.say` carries, and `tts` and `sink` shall be measured on clause 0.
 - [ ] **CTRL-LAT-017**: When a sample's `brain.say` carries `toolStartedAt` and no `toolEndedAt`, the report shall compute no `tool` stage and leave `llm` as `llmStartedAt` to `llmEndedAt`.
 
 ## Early reply in the latency report (CTRL-LAT)

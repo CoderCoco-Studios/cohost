@@ -7,7 +7,7 @@ import { ConfigSchema, PRESENTATION, SECTION_PATHS, sectionKeyPaths } from "../s
 
 const baseCfg = () => ({
   cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
-  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {},
+  voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, dashboard: {}, ears: {},
 });
 const cortex = (c: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), brain: { cortex: c } });
 type Result = { success: boolean; error?: { issues: { path: PropertyKey[]; message: string }[] } };

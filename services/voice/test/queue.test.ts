@@ -66,7 +66,7 @@ test("a claim for an earlier line is read while a later line synthesizes, so no 
     await sayAndWait(voice, say("u1"));
     await voice.onEvent(say("u2")); // synthesis of u2 is held open
     await flush();
-    await voice.onEvent(event("voice.playing", { id: "u1", sink: "discord" })); // read during u2's synthesis
+    await voice.onEvent(event("voice.playing", { id: "u1", seq: 0, sink: "discord" })); // read during u2's synthesis
     mock.timers.tick(1500);
     await flush();
     assert.deepEqual(bus.of("voice.playing"), []); // u1 was claimed in time
@@ -170,6 +170,6 @@ test("a WAV the shared parser rejects (no fmt chunk) takes the tts failed path",
   const noFmt = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), Buffer.from("data"), Buffer.from([4, 0, 0, 0]), Buffer.alloc(4)]);
   const { voice, bus, rec } = setup(async () => noFmt);
   await sayAndWait(voice, say("u1"));
-  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", sink: "error" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error" } }]);
   assert.deepEqual(rec.msgs("error"), ["tts failed"]);
 });

@@ -37,11 +37,11 @@ test("a line is written to audio.out.discord in the sink's format: 20 ms frames 
     const t0 = Date.now();
     await r.out.playback.enqueue("u1", "http://voice/u1.wav");
     assert.equal(r.bus.frames.length > 0, true, "frames are written before voice.playing");
-    assert.deepEqual(r.at("voice.playing"), [{ id: "u1", sink: "discord" }]);
+    assert.deepEqual(r.at("voice.playing"), [{ id: "u1", seq: 0, sink: "discord" }]);
     assert.equal(r.at("voice.done").length, 0, "not done before its play time");
     await waitFor(() => r.at("voice.done").length === 1, "voice.done");
     assert.ok(Date.now() - t0 >= 90, `done at ${Date.now() - t0} ms for a 100 ms line`);
-    assert.deepEqual(r.at("voice.done"), [{ id: "u1", sink: "discord" }]);
+    assert.deepEqual(r.at("voice.done"), [{ id: "u1", seq: 0, sink: "discord" }]);
     const frames = r.bus.frames;
     assert.equal(frames.length, 5);
     assert.ok(frames.every((f) => f.dir === "out" && f.tag === "discord" && f.frame.rate === 48000 && f.frame.ch === 2 && f.frame.utt === "u1" && f.frame.pcm.length === 3840));
@@ -76,7 +76,7 @@ test("frame writes that fail after the first frame are skipped and logged: a war
   try {
     await r.out.playback.enqueue("u1", "http://voice/u1.wav");
     await waitFor(() => r.at("voice.done").length === 1, "voice.done");
-    assert.deepEqual(r.at("voice.done"), [{ id: "u1", sink: "discord" }], "the line ends normally, not as a give-up");
+    assert.deepEqual(r.at("voice.done"), [{ id: "u1", seq: 0, sink: "discord" }], "the line ends normally, not as a give-up");
     assert.equal(r.at("voice.failed").length, 0);
     assert.ok(t >= 7999 && t <= 8001, `the schedule still covers the line: ${t}`);
     const warns = r.rec.lines.filter((l) => l.level === "warn" && l.msg === "audio write failed").map((l) => l.obj as Record<string, unknown>);
@@ -148,7 +148,7 @@ test("if the sink stops being ready while a line is being written, the line's sc
     await waitFor(() => !r.out.isReady(), "sink gone");
     await waitFor(() => r.at("voice.done").length === 1, "done on schedule");
     assert.equal(r.at("voice.failed").length, 0);
-    assert.deepEqual(r.at("voice.done"), [{ id: "u1", sink: "discord" }]);
+    assert.deepEqual(r.at("voice.done"), [{ id: "u1", seq: 0, sink: "discord" }]);
   } finally { r.stop(); }
 });
 

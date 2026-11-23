@@ -43,13 +43,16 @@ export function createFileOutput({ bus, log, dir, maxFiles, fetchAudio }: FileOu
   const timed = createTimedPlayback({
     bus, log, sink: FILE, fetchAudio,
     // A throw (no directory, not writable) is a failed hand-over: the output gives up on the line.
-    deliver: (wav, id) => {
+    deliver: (wav, id, clause) => {
       mkdirSync(dir, { recursive: true });
-      const name = `${Date.now()}-${String(seq++).padStart(6, "0")}-${id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64)}.wav`;
+      const name = `${Date.now()}-${String(seq++).padStart(6, "0")}-${id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64)}-${clause}.wav`;
       writeFileSync(join(dir, name), wav);
       rotate();
     },
   });
 
-  return { name: FILE, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close };
+  return {
+    name: FILE, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close,
+    closeLine: timed.closeLine, refuse: timed.refuse,
+  };
 }

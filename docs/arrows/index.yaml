@@ -159,7 +159,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "58 specs: 51 [x], 6 [ ], 1 [D] (streamed-speech clause specs are open gaps). Open: the desktop capture helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 018, 019, 022 in ears). The Redis registration test runs in CI; CONN-DESK-001 and 004 flip once it is green."
+    next: "58 specs: 54 [x], 3 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 018, 019, 022 in ears). The Redis registration test runs in CI; CONN-DESK-001 and 004 flip once it is green."
     drift: null
 
   ears:
@@ -255,7 +255,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "101 specs: 64 [x], 36 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 84 specs: 83 [x], 1 [D]. No open gaps."
+    next: "101 specs: 100 [x], 0 [ ], 1 [D]."
     drift: null
 
   avatar:

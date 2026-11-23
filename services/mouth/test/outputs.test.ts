@@ -30,7 +30,7 @@ test("file: writes each line's WAV under the directory (created on demand), clai
     await out.playback.enqueue("u1", "http://voice/u1.wav");
     const files = readdirSync(dir);
     assert.equal(files.length, 1);
-    assert.match(files[0]!, /^\d+-\d+-u1\.wav$/);
+    assert.match(files[0]!, /^\d+-\d+-u1-0\.wav$/);
     assert.ok(readFileSync(join(dir, files[0]!)).equals(body), "the WAV unchanged (MOUTH-SINK-001)");
     assert.deepEqual(bus.published, [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "file" } }]);
     await waitFor(() => bus.of("voice.done").length === 1, "voice.done");
@@ -53,7 +53,7 @@ test("file: keeps only the newest max_files .wav files and touches nothing else"
     }
     const left = readdirSync(dir).sort();
     assert.equal(left.filter((f) => f.endsWith(".wav")).length, 2);
-    assert.deepEqual(left.filter((f) => f.endsWith(".wav")).map((f) => f.replace(/^\d+-\d+-/, "")), ["c.wav", "d.wav"], "the oldest were deleted");
+    assert.deepEqual(left.filter((f) => f.endsWith(".wav")).map((f) => f.replace(/^\d+-\d+-/, "")), ["c-0.wav", "d-0.wav"], "the oldest were deleted");
     assert.ok(left.includes("notes.txt"));
   } finally {
     out.close();

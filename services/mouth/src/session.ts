@@ -2,18 +2,22 @@ import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { OUTPUT_KINDS } from "./health.js";
 
-export type MouthEventType = "voice.utterance" | "voice.playing" | "voice.stop" | "control";
+export type MouthEventType = "voice.utterance" | "brain.clause" | "voice.playing" | "voice.stop" | "control";
 
 /** The types the one `mouth` loop reads in the `discord` and `local` plans; `control` is acted on only for `set_routing` (MOUTH-PLAY-008). */
 // @spec MOUTH-PLAY-001, MOUTH-PLAY-008, MOUTH-STOP-001
-export const MOUTH_LOOP_TYPES = ["voice.utterance", "voice.playing", "voice.stop", "control"] as const satisfies readonly MouthEventType[];
+export const MOUTH_LOOP_TYPES = ["voice.utterance", "brain.clause", "voice.playing", "voice.stop", "control"] as const satisfies readonly MouthEventType[];
 
 /** One enabled output as the loop sees it: a queue that is judged for readiness when an utterance arrives. */
 export interface MouthOutput {
   /** The output's name, which is also its sink name. */
   name: string;
   isReady(): boolean;
-  playback: { enqueue(id: string, url: string, utt?: { text: string; durationMs: number }): Promise<void> };
+  playback: { enqueue(id: string, url: string, utt?: { text: string; durationMs: number; seq: number; more?: true }): Promise<void> };
+  /** The closing `brain.clause` of line `id` (its `through`), for every output (MOUTH-CLAUSE-005). */
+  closeLine(id: string, through: number): void;
+  /** This output cannot take clause `seq` of line `id` (MOUTH-CLAUSE-008). */
+  refuse(id: string, seq: number): Promise<void>;
   /** Apply a `voice.stop` (MOUTH-STOP-002 to MOUTH-STOP-010). */
   stop(order: { ids?: string[] }): Promise<void>;
   /** Cancel the output's timers; for shutdown. */
@@ -28,7 +32,7 @@ export interface MouthHandlerDeps {
   /** Told the ids of a `route` that are not output kinds, so the heartbeat can say they were ignored (MOUTH-ROUTE-007). */
   onUnknownRoute?: (ids: string[]) => void;
   /** Which utterance ids real sinks claimed (the fallback line's memory, MOUTH-FALL-010). */
-  claims?: { seen(id: string): void; claim(id: string, sink: string): void };
+  claims?: { seen(id: string, seq: number): void; claim(id: string, sink: string, seq: number): void };
   /** Whether an output is switched on live (`set_routing`); an output switched off skips utterances like a disabled one. Default: all on. */
   enabled?: (name: string) => boolean;
   /** The shared `control` reader, given every `control` event on the loop; mouth's only handler is `set_routing`. */
@@ -58,14 +62,20 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
       }
       return;
     }
+    if (ev.type === "brain.clause") { // @spec MOUTH-PLAY-001, MOUTH-CLAUSE-005
+      const d = ev.data as BusEvent<"brain.clause">["data"];
+      if (d.last && d.through !== undefined) for (const output of outputs) output.closeLine(d.id, d.through);
+      return;
+    }
     if (ev.type === "voice.playing") {
       const d = ev.data as BusEvent<"voice.playing">["data"];
-      claims?.claim(d.id, d.sink);
+      claims?.claim(d.id, d.sink, d.seq);
       return;
     }
     if (ev.type !== "voice.utterance") return;
     const d = ev.data as BusEvent<"voice.utterance">["data"];
-    claims?.seen(d.id);
+    claims?.seen(d.id, d.seq);
+    const utt = { text: d.text, durationMs: d.durationMs, seq: d.seq, ...(d.more ? { more: true as const } : {}) };
     const route = d.route;
     if (route) {
       const unknown = route.filter((id) => !(OUTPUT_KINDS as readonly string[]).includes(id));
@@ -76,8 +86,8 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
       // A line that goes to no enabled output is completed here, so cortex is released and no fallback clip plays for it.
       if (!outputs.some((o) => route.includes(o.name) && (!enabled || enabled(o.name)))) {
         try {
-          await bus.publish("voice.playing", { id: d.id, seq: 0, sink: "mouth" });
-          await bus.publish("voice.done", { id: d.id, seq: 0, sink: "mouth" });
+          await bus.publish("voice.playing", { id: d.id, seq: d.seq, sink: "mouth" });
+          await bus.publish("voice.done", { id: d.id, seq: d.seq, sink: "mouth" });
         } catch (err) {
           log.warn({ err, id: d.id }, "publishing the completion of an unrouted line failed");
         }
@@ -86,12 +96,16 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
     }
     for (const output of outputs) {
       if (route && !route.includes(output.name)) continue;
-      if (enabled && !enabled(output.name)) continue;
-      if (!output.isReady()) {
-        log.debug({ id: d.id, output: output.name }, "output not connected: utterance skipped");
+      if (enabled && !enabled(output.name)) {
+        if (d.seq > 0) await output.refuse(d.id, d.seq); // a line open here ends at its next clause (MOUTH-LIVE-002)
         continue;
       }
-      void output.playback.enqueue(d.id, d.audioUrl, { text: d.text, durationMs: d.durationMs });
+      if (!output.isReady()) {
+        log.debug({ id: d.id, output: output.name }, "output not connected: utterance skipped");
+        if (d.seq > 0) await output.refuse(d.id, d.seq); // MOUTH-CLAUSE-008
+        continue;
+      }
+      void output.playback.enqueue(d.id, d.audioUrl, utt);
     }
   };
 }

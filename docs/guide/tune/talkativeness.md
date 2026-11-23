@@ -38,6 +38,8 @@ Even then it stays polite:
 
 Salience decides the moment a finished line of speech arrives (`trigger_on_speech` is on by default) and otherwise checks every `tick_ms` (1500).
 
+With early reply on (`ears.early.enabled`) and `trigger_on_speech` on, salience also looks at a sentence while it is still being spoken. If the early transcript, with whatever else is new, would earn a reply, the reply is prepared but not spoken until the matching final confirms it. The co-host may start thinking before the sentence ends. It is prepared only when the early speech itself is what it would answer; if an unseen chat mention would win, nothing is prepared and the final is answered as it would be without early reply. If the sentence changes or the streamer resumes, the prepared reply is withdrawn. A prepared reply waits at most `unresolved_limit_ms` (4000) before it is dropped, so a stalled one clears on its own. Mute, pause and `forget_context` withdraw it at once. Early transcripts are never added to the context, and an early transcript that a reflex answers is left to the final.
+
 ## Change the dials
 
 All of these live under `brain.salience` in `config/config.yaml`. The dashboard's **Settings** screen edits the same file: pick the section, change a value, press **Check**, then **Save**. It keeps your comments and never shows a saved secret. Settings apply when the services that read them restart, and after a save the page offers to restart them.

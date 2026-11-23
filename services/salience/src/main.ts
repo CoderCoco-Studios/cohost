@@ -32,10 +32,10 @@ export async function salienceMain(ctx: ServiceContext<SalienceBus>, env: Salien
   // The group must exist before `ready`: bus.subscribe only resolves when stopped, so it cannot be awaited.
   // resetGroup creates a missing group at `$` and moves an existing one there, the same as start mode `latest`.
   await bus.resetGroup("salience");
-  void bus.subscribe( // @spec SAL-IN-001
+  void bus.subscribe( // @spec SAL-IN-001, SAL-IN-007
     {
       group: "salience",
-      types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
+      types: ["chat.message", "chat.removed", "speech.heard", "speech.early", "speech.retracted", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
       start: "latest",
     },
     (ev) => salience.onEvent(ev),

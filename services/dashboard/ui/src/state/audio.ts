@@ -42,17 +42,17 @@ export interface AudioDeps {
 
 /** A line with no clause activity for this long ends on the page (DASH-UI-044). */
 export const LINE_IDLE_MS = 300_000;
+/** Ended line ids remembered, so a late clause or stop for one is still refused after its record is dropped. */
+const ENDED_LIMIT = 300;
 
-/** The page's view of one line (a `brain.say` id): what it has played, what it waits for, and whether it has ended. */
+/** The page's view of one line (a `brain.say` id) while it is live on the page. */
 interface Line {
   id: string;
-  /** Clause 0 has arrived on the page (it may be queued, played, or refused). */
+  /** Clause 0 has arrived on the page. */
   zeroSeen: boolean;
-  /** The page will not play this line: audio was off, it joined mid-line, or clause 0 came in the replay (DASH-UI-045). */
-  skipped: boolean;
-  /** The page is taking no more of this line's clauses and posts nothing more for it (DASH-UI-044). */
+  /** The page is taking no more of this line's clauses and posts nothing more for it, except its `final` (DASH-UI-044). */
   ended: boolean;
-  /** Open on the page from its own `playing` post (DASH-UI-043). */
+  /** Open on the page from its clause 0's own `playing` post (DASH-UI-043). */
   open: boolean;
   /** Clause 0 carried `more`. */
   streamed: boolean;
@@ -67,6 +67,8 @@ interface Line {
   /** A closing `brain.clause` arrived; clauses above `through` are not played. */
   closed: boolean;
   through: number;
+  /** Set when the line is finished while its clip plays: its `final` follows that clip's `done`. */
+  finalAfter: boolean;
   timer?: number;
 }
 
@@ -93,13 +95,18 @@ function splitWords(text: string, at: number, length: number): { spoken: string;
 
 const joinTexts = (parts: string[]): string => parts.filter((p) => p !== "").join(" ");
 
+const newLine = (id: string): Line => ({
+  id, zeroSeen: false, ended: false, open: false, streamed: false, received: new Set(), lastStarted: -1, finishedSeq: -1,
+  spoken: [], closed: false, through: 0, finalAfter: false,
+});
+
 /**
  * The browser audio sink (design: Audio). A live `voice.utterance` is one clause of a line: while audio is on, the
  * clauses play one at a time in arrival order from `/audio/<id>-<seq>.wav`, each posting `playing` when it starts and
  * `done` when it ends or errors. A line is open from its own clause 0 and ends by its closing `brain.clause` (DASH-UI-044),
- * a live `voice.stop`, its own `final`, or 300 s without clause activity. A `voice.stop` reports the interrupted split,
- * audio switched off or the page unloading reports `final`, and a refused `play()` turns audio off and reports `final`
- * (DASH-UI-011..014, 022, 043..053). The page keeps no state the feed cannot rebuild, and a replayed event is never played.
+ * a live `voice.stop`, its `final`, or 300 s without clause activity. A `voice.stop` reports the interrupted split; audio
+ * switched off or the page unloading reports `final` for each open line; a refused `play()` turns audio off and reports
+ * `final` only for a line that was open (DASH-UI-011..014, 022, 043..053). A replayed event is never played.
  */
 // @spec DASH-UI-011, DASH-UI-012, DASH-UI-013, DASH-UI-014, DASH-UI-022, DASH-UI-043, DASH-UI-044, DASH-UI-045, DASH-UI-046, DASH-UI-047, DASH-UI-048, DASH-UI-049, DASH-UI-050, DASH-UI-051, DASH-UI-052, DASH-UI-053
 export function createAudio(deps: AudioDeps): Audio {
@@ -107,19 +114,21 @@ export function createAudio(deps: AudioDeps): Audio {
   const setT = deps.setTimeout ?? ((fn, ms) => window.setTimeout(fn, ms));
   const clearT = deps.clearTimeout ?? ((id) => window.clearTimeout(id));
   const state = createStore<AudioState>({ enabled: deps.enabled ?? false, playing: null, queued: 0 });
+  /** Live lines only: an ended line is removed, and its id goes to `endedIds`. */
   const lines = new Map<string, Line>();
+  const endedIds = new Set<string>();
   let queue: Item[] = [];
   let current: Playing | null = null;
 
   const post = (report: SinkReport, opts?: { keepalive?: boolean }): void => { void deps.sink(report, opts).catch(() => undefined); };
   const sync = (): void => state.set((s) => ({ ...s, queued: queue.length, playing: current ? current.item.line.id : null }));
 
+  /** The line for an id: a live record, a stub for an ended id (never stored), or a new record. */
   const lineOf = (id: string): Line => {
-    let l = lines.get(id);
-    if (!l) {
-      l = { id, zeroSeen: false, skipped: false, ended: false, open: false, streamed: false, received: new Set(), lastStarted: -1, finishedSeq: -1, spoken: [], closed: false, through: 0 };
-      lines.set(id, l);
-    }
+    const live = lines.get(id);
+    if (live) return live;
+    const l = newLine(id);
+    if (endedIds.has(id)) l.ended = true; else lines.set(id, l);
     return l;
   };
 
@@ -134,17 +143,27 @@ export function createAudio(deps: AudioDeps): Audio {
   function endLine(l: Line): void {
     if (l.ended) return;
     l.ended = true;
-    l.open = false;
     disarm(l);
     queue = queue.filter((i) => i.line !== l);
+    if (lines.get(l.id) === l) lines.delete(l.id);
+    endedIds.add(l.id);
+    if (endedIds.size > ENDED_LIMIT) endedIds.delete(endedIds.values().next().value as string);
   }
 
-  /** Closing clause read and the last clause at or below `through` has finished (at once when it already has, DASH-UI-044). */
+  /**
+   * The page takes no more of an open line: its `final`, once, for the first clause it will not play (DASH-UI-051). A line
+   * whose clip is playing gets its `final` after that clip's `done`, so a line never reports `done` after `final`.
+   */
+  function finishLine(l: Line, keepalive: boolean): void {
+    if (l.ended || !l.open) return;
+    if (current && current.item.line === l) { l.finalAfter = true; endLine(l); return; }
+    post({ event: "done", id: l.id, seq: l.lastStarted + 1, final: true }, keepalive ? { keepalive: true } : undefined);
+    endLine(l);
+  }
+
+  /** Closing clause read and the clause through has finished, or a clause above it has started (DASH-UI-044). */
   function reachedThrough(l: Line): boolean {
-    if (!l.closed) return false;
-    let top = -1;
-    for (const s of l.received) if (s <= l.through && s > top) top = s;
-    return top >= 0 && l.finishedSeq >= top;
+    return l.closed && (l.finishedSeq >= l.through || l.lastStarted > l.through);
   }
 
   function start(item: Item): void {
@@ -153,31 +172,39 @@ export function createAudio(deps: AudioDeps): Audio {
     const p: Playing = { item, audio: a, done: false };
     current = p;
     line.lastStarted = Math.max(line.lastStarted, seq);
+    arm(line);
     a.onplay = () => {
       if (p.done) return;
-      line.open = true;
+      if (seq === 0) line.open = true; // a line opens only on its clause 0 (DASH-UI-043)
       post({ event: "playing", id: line.id, seq });
     };
-    a.onended = a.onerror = () => finishClip(p);
+    a.onended = () => finishClip(p, false);
+    a.onerror = () => finishClip(p, true);
     let started: Promise<void>;
     try { started = a.play(); } catch (err) { started = Promise.reject(err); }
     started.catch(() => refuse(p));
   }
 
-  function finishClip(p: Playing): void {
+  function finishClip(p: Playing, errored: boolean): void {
     if (p.done) return;
     p.done = true;
     const { item } = p;
     const l = item.line;
     if (current === p) current = null;
-    l.finishedSeq = Math.max(l.finishedSeq, item.seq);
-    l.spoken.push(item.text);
+    if (!errored) {
+      l.finishedSeq = Math.max(l.finishedSeq, item.seq);
+      l.spoken.push(item.text);
+    }
     post({ event: "done", id: l.id, seq: item.seq });
+    if (l.finalAfter) { l.finalAfter = false; post({ event: "done", id: l.id, seq: item.seq + 1, final: true }); }
+    // A clause 0 that errored counts as not played: the line is skipped (DASH-UI-045).
+    if (errored && item.seq === 0) endLine(l);
+    arm(l);
     if (!l.streamed || reachedThrough(l)) endLine(l);
     pump();
   }
 
-  /** The browser refused to start the clip: audio goes off, the line is dropped, and `final` is reported (DASH-UI-052). */
+  /** The browser refused to start the clip: audio goes off, the line is dropped, and open lines are finished (DASH-UI-052). */
   function refuse(p: Playing): void {
     if (p.done) return;
     p.done = true;
@@ -185,15 +212,16 @@ export function createAudio(deps: AudioDeps): Audio {
     const l = item.line;
     if (current === p) current = null;
     state.set((s) => ({ ...s, enabled: false }));
-    if (item.seq === 0 || l.open) post({ event: "done", id: l.id, seq: item.seq, final: true });
+    if (l.open) post({ event: "done", id: l.id, seq: item.seq, final: true });
     endLine(l);
+    finishOpenLines(false);
     sync();
   }
 
   function pump(): void {
     while (state.get().enabled && !current && queue.length > 0) {
       const item = queue.shift()!;
-      if (item.line.ended || item.line.skipped) continue;
+      if (item.line.ended) continue;
       start(item);
     }
     sync();
@@ -230,11 +258,13 @@ export function createAudio(deps: AudioDeps): Audio {
     const { id, seq } = d;
     if (typeof id !== "string" || typeof seq !== "number" || !Number.isInteger(seq) || seq < 0) return;
     const l = lineOf(id);
-    if (replay || !state.get().enabled) { l.skipped = true; disarm(l); return; } // DASH-UI-013, DASH-UI-014, DASH-UI-045
-    if (l.ended || l.skipped) return;
-    if (seq > 0 && !l.zeroSeen) { l.skipped = true; disarm(l); return; } // joined mid-line (DASH-UI-045)
+    if (l.ended) return;
+    // Audio off or a replayed clause: an open line is finished now; any other line is skipped (DASH-UI-013, 014, 045).
+    if (replay || !state.get().enabled) { if (l.open) finishLine(l, false); else endLine(l); return; }
+    if (seq > 0 && !l.zeroSeen) { endLine(l); return; } // joined mid-line (DASH-UI-045)
     if (seq === 0) { l.zeroSeen = true; l.streamed = d.more === true; }
     if (l.closed && seq > l.through) return; // above the closing clause's through (DASH-UI-044)
+    if (l.received.has(seq)) return; // a repeated clause plays once
     l.received.add(seq);
     queue.push({ line: l, seq, text: typeof d.text === "string" ? d.text : "" });
     arm(l);
@@ -265,13 +295,8 @@ export function createAudio(deps: AudioDeps): Audio {
     }
   });
 
-  /** Every open line is finished with `final`, once, for the first clause it will not play (DASH-UI-051). */
   function finishOpenLines(keepalive: boolean): void {
-    for (const l of lines.values()) {
-      if (!l.open || l.ended) continue;
-      post({ event: "done", id: l.id, seq: l.lastStarted + 1, final: true }, keepalive ? { keepalive: true } : undefined);
-      endLine(l);
-    }
+    for (const l of [...lines.values()]) finishLine(l, keepalive);
   }
 
   (deps.target ?? window).addEventListener("pagehide", () => { finishOpenLines(true); sync(); });

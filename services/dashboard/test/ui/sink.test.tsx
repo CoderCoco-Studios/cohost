@@ -70,7 +70,7 @@ test("whatever the feed carries, the sink page makes no request of its own", asy
 });
 
 // @spec DASH-UI-011, DASH-UI-012
-test("a live utterance is played from /audio/<id>.wav, posts playing then done to /sink, and shows Playing meanwhile", async () => {
+test("a live utterance is played from /audio/<id>-<seq>.wav, posts playing then done to /sink, and shows Playing meanwhile", async () => {
   const { app } = boot();
   utterance(app, "u1");
   await tick();
@@ -109,13 +109,13 @@ test("a replayed utterance and a repeated event id are never played again", asyn
 });
 
 // @spec DASH-UI-022, DASH-UI-052, DASH-UI-012
-test("when the browser refuses playback the refused clause is posted final, the view says audio is off with a button, and the queue plays after it is turned on", async () => {
+test("when the browser refuses playback nothing is posted for the never-opened line, the view says audio is off with a button, and the queue plays after it is turned on", async () => {
   const user = userEvent.setup();
   const { app } = boot();
   FakeAudio.refuse = true;
   utterance(app, "u1"); utterance(app, "u2");
   await tick();
-  assert.deepEqual(sinkCalls(app), [{ event: "done", id: "u1", seq: 0, final: true }], "clause 0 was refused: final releases voice at once (DASH-UI-052)");
+  assert.deepEqual(sinkCalls(app), [], "clause 0 was refused, so the line was never open and nothing is posted (DASH-UI-052)");
   assert.match(document.body.textContent!, /Audio off/);
   assert.match(line(), /1 waiting/);
   assert.match(document.body.textContent!, /turn audio on to play the lines that are waiting/i);

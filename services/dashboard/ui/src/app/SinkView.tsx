@@ -9,7 +9,7 @@ export const isSinkLocation = (search: string): boolean => new URLSearchParams(s
 
 /**
  * The audio sink view (`?sink=1`, the OBS Browser Source): the brand, the audio state and a one-line status, and nothing
- * else. Audio starts on without a click. It makes no request of its own: the `/ws` socket, `GET /audio/<id>.wav` and
+ * else. Audio starts on without a click. It makes no request of its own: the `/ws` socket, `GET /audio/<id>-<seq>.wav` and
  * `POST /sink` are all the LAN listener answers (DASH-UI-011).
  */
 // @spec DASH-UI-011, DASH-UI-012, DASH-UI-013, DASH-UI-014, DASH-UI-022

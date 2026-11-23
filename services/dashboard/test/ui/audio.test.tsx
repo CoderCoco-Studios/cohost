@@ -252,12 +252,90 @@ test("a refused clause of an open line turns audio off, drops only that line's q
 });
 
 // @spec DASH-UI-052, DASH-UI-022
-test("a refused clause 0 posts final even though the line was never open on the page, so voice releases the line at once", async () => {
+test("a refused clause 0 posts nothing, because the line was never open on the page", async () => {
   const { audio, posts, utt, flush } = setup({ enabled: true });
   FakeAudio.refuse = true;
   utt("L", 0, "A", { more: true }); utt("M", 0, "B");
   await flush();
   assert.equal(audio.state.get().enabled, false);
-  assert.deepEqual(posts, [{ event: "done", id: "L", seq: 0, final: true }]);
+  assert.deepEqual(posts, []);
   assert.equal(audio.state.get().queued, 1);
+});
+
+// @spec DASH-UI-044
+test("a closing clause read before its own clause does not end the line; the late clause plays and finishes it", async () => {
+  const { posts, utt, clause, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true });
+  await flush(); clip(0).end(); await flush();
+  clause("L", 1, "", { last: true, through: 1 });
+  utt("L", 1, "B");
+  await flush();
+  assert.deepEqual(srcs(), ["/audio/L-0.wav", "/audio/L-1.wav"]);
+  clip(1).end(); await flush();
+  assert.deepEqual(posts.at(-1), { event: "done", id: "L", seq: 1 });
+});
+
+// @spec DASH-UI-051
+test("a replayed clause of an open line ends it with final for the next clause, and a later live clause is dropped", async () => {
+  const { posts, utt, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true });
+  await flush(); clip(0).end(); await flush();
+  utt("L", 1, "B", { replay: true }); await flush();
+  assert.deepEqual(posts.at(-1), { event: "done", id: "L", seq: 1, final: true });
+  utt("L", 2, "C"); await flush();
+  assert.equal(srcs().length, 1);
+});
+
+// @spec DASH-UI-051
+test("switching audio off while a clip of an open line plays reports that clip's done, then final for the next clause", async () => {
+  const { audio, posts, utt, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); await flush();
+  audio.disable(); clip(0).end(); await flush();
+  assert.deepEqual(posts, [
+    { event: "playing", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 1, final: true },
+  ]);
+});
+
+// @spec DASH-UI-045
+test("a clause 0 that errors counts as not played: its line is skipped and its later clauses never play", async () => {
+  const { posts, utt, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); utt("L", 1, "B");
+  await flush();
+  clip(0).fail(); await flush();
+  assert.deepEqual(posts, [{ event: "playing", id: "L", seq: 0 }, { event: "done", id: "L", seq: 0 }]);
+  assert.deepEqual(srcs(), ["/audio/L-0.wav"]);
+});
+
+// @spec DASH-UI-012
+test("a repeated (line, seq) is ignored, so the clause plays once", async () => {
+  const { utt, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); utt("L", 0, "A again", { more: true });
+  await flush(); clip(0).end(); await flush();
+  assert.deepEqual(srcs(), ["/audio/L-0.wav"]);
+});
+
+// @spec DASH-UI-044
+test("the 300 s bound counts from the clip's start, not from when its clause arrived behind another clip", async () => {
+  const { posts, utt, stop, flush, clip, clock } = setup({ enabled: true });
+  utt("M", 0, "M0");
+  utt("L", 0, "A", { more: true });
+  await flush();
+  clock.tick(299_000);
+  clip(0).end(); await flush();
+  clock.tick(1_000);
+  stop(["L"]); await flush();
+  assert.deepEqual(posts.filter((p) => p.id === "L").at(-1), { event: "done", id: "L", seq: 0, interrupted: true, unsaidText: "A" });
+});
+
+// @spec DASH-UI-052, DASH-UI-051
+test("a refusal turns audio off and finishes every other open line with final, since nothing more plays", async () => {
+  const { audio, posts, utt, flush, clip } = setup({ enabled: true });
+  utt("B", 0, "b0", { more: true }); await flush(); clip(0).end(); await flush();
+  FakeAudio.refuse = true;
+  utt("A", 0, "a0"); await flush();
+  FakeAudio.refuse = false;
+  assert.equal(audio.state.get().enabled, false);
+  assert.deepEqual(posts.at(-1), { event: "done", id: "B", seq: 1, final: true });
 });

@@ -306,7 +306,7 @@ test("the sink view shows the brand, the audio state and a one-line status, with
 });
 
 // @spec DASH-UI-012, DASH-UI-011
-test("on the sink page an utterance is fetched from /audio/<id>.wav and reported through POST /sink only", async () => {
+test("on the sink page an utterance is fetched from /audio/<id>-<seq>.wav and reported through POST /sink only", async () => {
   const { FakeAudio } = await import("./helpers/fakes");
   FakeAudio.reset();
   const app = makeApp({ sink: true, createAudio: (src) => new FakeAudio(src) as unknown as HTMLAudioElement });

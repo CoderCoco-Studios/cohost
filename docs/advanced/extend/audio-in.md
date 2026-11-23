@@ -40,6 +40,8 @@ A clip is one `POST` to `/audio` with its bytes as the body. The `content-type` 
 
 A clip that was fine but produced no speech (for example, one that is too short) still answers 200, with `{"heard":false,"reason":"too-short"}`. A refused clip gets another status and a JSON `error`: 400 for audio that cannot be decoded or an unknown `source`, 401 for a missing or wrong token, 413 for a body over 25 MiB, 415 for a content type ears does not read, and 503 when the queue is full. ears resamples any rate and any number of channels itself, so conversion is only needed for formats it does not read.
 
+Whole clips always go to a batch speech-to-text engine: the selected one when it is batch (`speaches`, `openai`, `stub`), otherwise `ears.stt_fallback_engine`. A streaming engine (`nemotron`, `kyutai`) is never used for a clip you send. With a streaming engine selected and `ears.stt_fallback_engine: none`, there is no batch engine, and the clip is answered 502 with `{"heard":false,"reason":"stt-error","detail":"no batch STT engine"}`.
+
 ## Send a clip
 
 Each client shows the same call. In every one, the reply is printed, and the exit status is 0 only when ears answered 200.
@@ -108,4 +110,5 @@ The tests run each converter on a generated clip. A converter's test is skipped 
 - **400 with `unknown source`.** The `source` you gave is not an enabled connector source. Leave `--source` out for plain `http`.
 - **415, or 400 about the audio.** The file is not a 16-bit WAV. Convert it with one of the scripts above.
 - **`{"heard":false,"reason":"too-short"}`.** The clip holds less speech than ears will transcribe. Send a longer one.
+- **502 with `no batch STT engine`.** `ears.stt_engine` is a streaming engine and `ears.stt_fallback_engine` is `none`, so no batch engine can take the clip. Set the fallback to `speaches` or `openai`, or select a batch engine.
 - **A converter fails with "command not found".** Install `sox` or `ffmpeg`, or use the other script.

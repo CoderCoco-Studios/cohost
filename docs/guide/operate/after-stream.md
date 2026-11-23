@@ -68,7 +68,7 @@ It starts the database and [Ollama](../../start/glossary.md#ollama) if they are 
 
 Two places show what the co-host kept:
 
-- The **Viewers** screen on the dashboard lists each viewer's notes. Delete or correct any you disagree with. See [Memory and viewer notes](../tune/memory.md).
+- The **Viewers** screen on the dashboard lists each viewer's notes. Delete or correct any you disagree with. See [Memory and viewer notes](../tune/memory.md). When a platform removes a chat line, the co-host deletes its stored copy from memory; notes already made from that line stay, and you can delete them here.
 - The `## Learned` section of `config/personality.md` holds the bullets from reflection.
 
 ## How you know it worked

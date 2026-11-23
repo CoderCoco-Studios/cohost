@@ -4,7 +4,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
-**PARTIAL**: 173 specs: 138 implemented, 0 deferred, 35 gaps. The gaps are, from the YouTube chat design of 2026-11-16 (no code yet), viewer identity by platform and user id (MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-008 to MEM-VIEWER-011, MEM-SURF-001, MEM-SURF-002, MEM-SURF-004, MEM-SURF-006, MEM-SURF-007, MEM-VOICE-007, MEM-BACKEND-005), the platform, user id and message id kept on chat rows (MEM-WRITE-009, MEM-STORE-004) and forgetting removed chat (MEM-FORGET-001 to MEM-FORGET-007). The streamed-speech clause writes (MEM-WRITE-010 to MEM-WRITE-019) are open gaps too. Retention of YouTube viewers is an owner decision recorded in the LLD.
+**PARTIAL**: 173 specs: 159 implemented, 0 deferred, 14 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows and forgetting removed chat are implemented in the in-memory store and the region; the Postgres side (MEM-STORE-004, the `memories` columns and indexes, and the `chat` row and forget SQL in both stores) is written but unproven locally, because the Postgres tests skip without COHOST_TEST_DATABASE_URL. Existing dev `memories` tables without the new columns must be recreated. Open gaps: the streamed-speech clause writes (MEM-WRITE-010 to MEM-WRITE-019), MEM-STORE-004, and three pre-existing gaps (MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References
 
@@ -15,10 +15,12 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (173 specs: 138 `[x]`, 35 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+- docs/intent/memory/memory-specs.md (173 specs: 159 `[x]`, 14 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
 
 ### Choices
 - Chat lines have `«` and `»` replaced with straight quotes before bounding, so no hook payload carries those marks (MEM-CAPTURE-020). Speech lines are not changed.
+- Viewers are keyed by the shared `viewerKey` (SHARED-GUARD-025..027), never case-folded by id. Voice rows (`discord:<speakerId>`) are a separate namespace read by the voice rules; owner placeholders (MEM-REG-003) stay readable until claimed (MEM-VIEWER-011 readings, recorded in the LLD).
+- No Postgres migration: pre-alpha, so an existing dev `memories` table must be recreated to gain the chat columns.
 
 ### Code and tests
 - services/memory/src/ and services/memory/test/ (`@spec MEM-` annotations)
@@ -26,7 +28,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 ## Work Required
 
 ### Must Fix
-- Viewer identity by platform and user id, the `memories` columns and forgetting a removed message (listed above).
+- Verify MEM-STORE-004 and the Postgres `chat` row and forget SQL against a live database (COHOST_TEST_DATABASE_URL).
 
 ### Nice to Have
 None.

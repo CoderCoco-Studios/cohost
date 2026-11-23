@@ -1,7 +1,7 @@
 import type { BusEvent } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { Module, type ModuleImpl } from "@cohost/modules";
-import { boundText, quoteUntrusted, speakerLabel, UNKNOWN_NAME, untrustedNotice } from "@cohost/shared/untrusted";
+import { boundText, quoteUntrusted, speakerLabel, UNKNOWN_NAME, untrustedNotice, viewerKey } from "@cohost/shared/untrusted";
 import { notesHookConfig, notesHookLlm } from "./consolidator.js";
 import { intakeName, textLimits, type TextLimits } from "./limits.js";
 import {
@@ -141,7 +141,8 @@ export function createCaptureHandler(deps: CaptureDeps): (ev: BusEvent) => Promi
       // The marks are swapped for straight quotes, as quoteUntrusted does, so a chat line carries no « or » to any hook (MEM-CAPTURE-020).
       line = boundText(d.text.replace(/[«»]/g, '"'), lim.chatMax);
       origin = "chat";
-      key = (d.userId || who).toLowerCase();
+      // @spec MEM-VIEWER-008, MEM-VIEWER-009
+      key = viewerKey({ platform: d.platform, userId: d.userId, user: who });
     } else if (ev.type === "speech.heard") {
       // @spec MEM-VOICE-003
       const d = ev.data as BusEvent<"speech.heard">["data"];

@@ -57,7 +57,16 @@ export interface ViewerRow {
 /** The viewer key of a Discord voice speaker with no link: `discord:<id>`, the id lower-cased (MEM-VOICE-001). */
 export const VOICE_PREFIX = "discord:";
 export const voiceKey = (discordId: string): string => VOICE_PREFIX + discordId.toLowerCase();
-export const isVoiceKey = (key: string): boolean => key.startsWith(VOICE_PREFIX);
+/** A voice viewer's key: the Discord prefix with no `id:` or `name:` part (MEM-VOICE-001, MEM-VIEWER-011). */
+export const isVoiceKey = (key: string): boolean => key.startsWith(VOICE_PREFIX) && !isViewerKey(key);
+// @spec MEM-VIEWER-011
+/** A chat viewer's key in the shared `viewerKey` format (SHARED-GUARD-025..027). */
+export const isViewerKey = (key: string): boolean => /^[^:]+:(id|name):/.test(key);
+/**
+ * Whether a viewer lookup may read a row (MEM-VIEWER-011): a chat viewer in the `viewerKey` format, a voice viewer (MEM-VOICE-001,
+ * a separate namespace the voice rules read), or an owner placeholder (MEM-REG-003, keyed by its lower-cased name until chat claims it).
+ */
+export const isReadableViewer = (v: { key: string; placeholder: boolean }): boolean => v.placeholder || isViewerKey(v.key) || isVoiceKey(v.key);
 
 /** A Discord id the owner linked to a chat viewer, with the Discord display name last heard under it (MEM-VOICE-004). */
 export interface LinkRow {

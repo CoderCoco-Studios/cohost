@@ -1,9 +1,9 @@
 import type { Config } from "@cohost/config";
 import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
-import type { Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
+import type { ChatIds, ChatRemoval, Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
-  clamp01, effectiveStrength, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  clamp01, effectiveStrength, isReadableViewer, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type DeletionRow, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -37,8 +37,18 @@ export class InMemoryStore implements MemoryBackend {
   /** Nothing persists, so nothing is stored at another dimension. */
   async reembed(): Promise<ReembedResult> { return { dims: (await embedder.embed("hello")).length, tables: {} }; }
 
-  async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
-    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, embedding: await hashEmbed(`${who}: ${text}`) });
+  // @spec MEM-WRITE-009, MEM-BACKEND-005
+  async remember(kind: MemoryKind, who: string, text: string, ids: ChatIds = {}): Promise<void> {
+    const chat = { ...(ids.platform ? { platform: ids.platform } : {}), ...(ids.userId ? { userId: ids.userId } : {}), ...(ids.messageId ? { messageId: ids.messageId } : {}) };
+    this.rows.push({ id: this.rows.length + 1, ts: new Date(this.clock()), kind, who, text, ...chat, embedding: await hashEmbed(`${who}: ${text}`) });
+  }
+
+  // @spec MEM-FORGET-002, MEM-FORGET-003, MEM-FORGET-004, MEM-FORGET-005
+  async forgetChat(r: ChatRemoval): Promise<void> {
+    if (r.scope === "all") return;
+    const hit = (row: Row): boolean => row.kind === "chat" && row.platform === r.platform
+      && (r.scope === "message" ? row.messageId === r.messageId : row.userId === r.userId);
+    this.rows = this.rows.filter((row) => !hit(row));
   }
 
   // @spec MEM-BACKEND-004, MEM-RECALL-002, MEM-RECALL-004, MEM-RECALL-005
@@ -54,9 +64,9 @@ export class InMemoryStore implements MemoryBackend {
       .filter((m) => m.similarity >= this.cfg.min_similarity);
   }
 
-  // @spec MEM-BACKEND-005, MEM-REG-001, MEM-REG-004, MEM-REG-005
+  // @spec MEM-BACKEND-005, MEM-VIEWER-008, MEM-REG-001, MEM-REG-004, MEM-REG-005
   async touchViewer(userKey: string, display: string, opts: { isSub?: boolean } = {}): Promise<ViewerTouch> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     const now = new Date(this.clock());
     let v = this.viewers.get(key);
     if (!v) {
@@ -94,22 +104,22 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async getViewer(userKey: string): Promise<ViewerRow | undefined> {
-    const v = this.viewers.get(userKey.toLowerCase());
-    return v && { ...v };
+    const v = this.viewers.get(userKey);
+    return v && isReadableViewer(v) ? { ...v } : undefined;
   }
 
-  // @spec MEM-SURF-002, MEM-VOICE-007
+  // @spec MEM-SURF-006, MEM-VOICE-007, MEM-VIEWER-011
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const want = name.toLowerCase();
     const v = [...this.viewers.values()]
-      .filter((r) => r.display.toLowerCase() === want)
+      .filter((r) => isReadableViewer(r) && r.display.toLowerCase() === want)
       .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
     if (v) return { ...v };
     const alias = [...this.links.entries()]
       .filter(([, l]) => l.discordDisplay?.toLowerCase() === want && this.viewers.has(l.userKey))
       .sort(([ia, a], [ib, b]) => b.updatedAt - a.updatedAt || (ia < ib ? -1 : 1))[0];
     const linked = alias && this.viewers.get(alias[1].userKey);
-    return linked && { ...linked };
+    return linked && isReadableViewer(linked) ? { ...linked } : undefined;
   }
 
   // @spec MEM-VOICE-001
@@ -139,9 +149,10 @@ export class InMemoryStore implements MemoryBackend {
   // @spec MEM-VOICE-005
   async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
     const id = discordId.toLowerCase();
-    const want = target.trim().toLowerCase();
-    const t = this.viewers.get(want)
-      ?? [...this.viewers.values()].filter((r) => r.display.toLowerCase() === want).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+    const want = target.trim();
+    const byKey = this.viewers.get(want);
+    const t = byKey && isReadableViewer(byKey) ? byKey
+      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === want.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!t || isVoiceKey(t.key)) return undefined;
     const voice = this.viewers.get(voiceKey(id));
     let moved = 0;
@@ -166,7 +177,7 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async listLinks(userKey: string): Promise<LinkRow[]> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     return [...this.links.entries()]
       .filter(([, l]) => l.userKey === key)
       .sort(([ia, a], [ib, b]) => a.updatedAt - b.updatedAt || (ia < ib ? -1 : 1))
@@ -175,7 +186,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-CAPTURE-011, MEM-REG-004
   async ensureViewer(userKey: string, display: string): Promise<ViewerRow> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     let v = this.viewers.get(key);
     if (!v) {
       const placeholder = [...this.viewers.values()]
@@ -202,11 +213,13 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-REG-001, MEM-REG-003
   async setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined> {
-    const key = keyOrName.toLowerCase();
-    let v = this.viewers.get(key)
-      ?? [...this.viewers.values()].filter((r) => r.display.toLowerCase() === key).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+    const byKey = this.viewers.get(keyOrName);
+    let v = byKey && isReadableViewer(byKey) ? byKey
+      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === keyOrName.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!v) {
       if (!regular) return undefined;
+      // MEM-REG-003: a placeholder keyed by the lower-cased name.
+      const key = keyOrName.toLowerCase();
       const now = new Date(this.clock());
       v = { key, display: keyOrName, msgCount: 0, regularManual: true, isSub: false, placeholder: true, firstSeen: now, lastSeen: now, regular: true };
       this.viewers.set(key, v);
@@ -218,7 +231,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-NOTE-001, MEM-NOTE-004, MEM-NOTE-010
   async insertNote(n: NewNote): Promise<NoteRow> {
-    const userKey = n.userKey.toLowerCase();
+    const userKey = n.userKey;
     if (!this.viewers.has(userKey)) throw new Error(`no viewer row for ${userKey}`);
     const now = new Date(this.clock());
     const text = n.text.trim();
@@ -246,7 +259,7 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async listNotes(userKey: string): Promise<NoteRow[]> {
-    return [...this.notes.values()].filter((n) => n.userKey === userKey.toLowerCase()).sort((a, b) => a.id - b.id).map((n) => ({ ...n }));
+    return [...this.notes.values()].filter((n) => n.userKey === userKey).sort((a, b) => a.id - b.id).map((n) => ({ ...n }));
   }
 
   // @spec MEM-SURF-004
@@ -258,7 +271,7 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async listDeletions(userKey: string): Promise<DeletionRow[]> {
-    return this.deletions.filter((d) => d.userKey === userKey.toLowerCase()).map((d) => ({ ...d }));
+    return this.deletions.filter((d) => d.userKey === userKey).map((d) => ({ ...d }));
   }
 
   async deleteNote(id: number, reason?: string): Promise<boolean> {
@@ -279,7 +292,7 @@ export class InMemoryStore implements MemoryBackend {
     const counts = new Map<string, number>();
     for (const n of this.notes.values()) counts.set(n.userKey, (counts.get(n.userKey) ?? 0) + 1);
     return [...this.viewers.values()]
-      .filter((v) => !q || v.display.toLowerCase().includes(q))
+      .filter((v) => isReadableViewer(v) && (!q || v.display.toLowerCase().includes(q)))
       .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || a.key.localeCompare(b.key))
       .slice(0, opts.limit ?? 500)
       .map((v) => ({ ...v, noteCount: counts.get(v.key) ?? 0 }));
@@ -302,7 +315,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-ADMIN-005
   async clearNotes(userKey: string, reason?: string): Promise<number> {
-    const ids = [...this.notes.values()].filter((n) => n.userKey === userKey.toLowerCase()).sort((a, b) => a.id - b.id).map((n) => n.id);
+    const ids = [...this.notes.values()].filter((n) => n.userKey === userKey).sort((a, b) => a.id - b.id).map((n) => n.id);
     for (const id of ids) await this.deleteNote(id, reason);
     return ids.length;
   }
@@ -317,7 +330,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-CONSOL-007, MEM-CONSOL-008, MEM-NOTE-004
   async commitViewer(userKey: string, ops: NoteOp[]): Promise<void> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     const fresh = (id: number, version: number): NoteRow | undefined => {
       const n = this.notes.get(id);
       return n && n.userKey === key && n.version === version ? n : undefined;

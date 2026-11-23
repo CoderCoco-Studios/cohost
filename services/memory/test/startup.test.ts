@@ -136,7 +136,7 @@ test("note capture runs in a third consumer group, memory-notes, for chat.messag
   const t = setup({ capture: true });
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start]), [
-    ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume"],
+    ["memory", ["chat.message", "chat.removed", "speech.heard", "brain.say", "brain.status"], "resume"],
     ["memory-recall", ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], "resume"],
     ["memory-notes", ["chat.message", "speech.heard"], "resume"],
   ]);

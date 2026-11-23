@@ -22,20 +22,22 @@ export interface Harness {
 
 /** Fresh viewer key per test, so a shared database needs no cleanup. */
 export const uid = (name = "viewer"): string => `${name}-${randomUUID().slice(0, 8)}`;
+/** A fresh chat viewer key in the `viewerKey` format (MEM-VIEWER-008): `twitch:id:<unique id>`. */
+export const vkey = (name = "viewer"): string => viewerKey({ platform: "twitch", userId: uid(name) });
 
 export function registerStoreContract(label: string, make: () => Promise<Harness>, opts: { regular_messages: number }): void {
   const t = (name: string, fn: (h: Harness) => Promise<void>) => test(`${label}: ${name}`, async () => fn(await make()));
 
   // @spec MEM-REG-001, MEM-VIEWER-001
   t("regular is the owner's flag or a lifetime message count above regular_messages; counts never reset", async ({ store }) => {
-    const key = uid();
+    const key = vkey();
     let last = await store.touchViewer(key, "Bob");
     assert.deepEqual([last.msgCount, last.isNew, last.regular], [1, true, false]);
     for (let i = 2; i <= opts.regular_messages; i++) last = await store.touchViewer(key, "Bob");
     assert.equal(last.regular, false, "exactly regular_messages is not above it");
     last = await store.touchViewer(key, "Bob");
     assert.deepEqual([last.msgCount, last.isNew, last.regular], [opts.regular_messages + 1, false, true]);
-    const flagged = uid();
+    const flagged = vkey();
     assert.equal((await store.touchViewer(flagged, "Amy")).regular, false);
     assert.equal((await store.setRegular(flagged, true))?.regular, true);
     assert.equal((await store.touchViewer(flagged, "Amy")).regular, true);
@@ -45,7 +47,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-REG-005
   t("the subscriber flag follows the latest message and is stored only", async ({ store }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob", { isSub: true });
     assert.equal((await store.getViewer(key))!.isSub, true);
     await store.touchViewer(key, "Bob", { isSub: false });
@@ -63,12 +65,13 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
       [name.toLowerCase(), name, 0, true, true, true],
     );
     assert.equal(await store.setRegular(`Ghost${uid("")}`, false), undefined, "clearing an unknown name makes no row");
-    const key = uid();
-    await store.touchViewer(key, `Display${key}`);
-    const byName = await store.setRegular(`DISPLAY${key}`.toUpperCase(), true);
+    const key = vkey();
+    const shown = `Display${uid("")}`;
+    await store.touchViewer(key, shown);
+    const byName = await store.setRegular(shown.toUpperCase(), true);
     assert.equal(byName!.key, key, "found by case-insensitive display name");
     assert.equal(byName!.placeholder, false);
-    assert.equal((await store.setRegular(key.toUpperCase(), true))!.key, key, "found by key");
+    assert.equal((await store.setRegular(key, true))!.key, key, "found by key as written");
   });
 
   // @spec MEM-REG-004, MEM-REG-003
@@ -77,7 +80,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.setRegular(name, true);
     const placeholderKey = name.toLowerCase();
     const note = await store.insertNote({ userKey: placeholderKey, category: "general", text: "streams on tuesdays" });
-    const userId = `id-${uid("")}`;
+    const userId = vkey();
     const touch = await store.touchViewer(userId, name.toUpperCase(), { isSub: true });
     assert.deepEqual([touch.msgCount, touch.isNew, touch.regular], [1, true, true]);
     assert.equal(await store.getViewer(placeholderKey), undefined, "the placeholder key is gone");
@@ -86,7 +89,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.deepEqual((await store.listNotes(userId)).map((n) => n.id), [note.id], "notes follow the key");
     assert.deepEqual(await store.listNotes(placeholderKey), []);
     // a second viewer with the same name gets a fresh row: the placeholder is already claimed
-    const other = await store.touchViewer(`id-${uid("")}`, name);
+    const other = await store.touchViewer(vkey(), name);
     assert.equal(other.regular, false);
   });
 
@@ -94,7 +97,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   t("a chat line from a key that already has a row never takes a placeholder", async ({ store }) => {
     const name = `Taylor${uid("")}`;
     await store.setRegular(name, true);
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "someone else");
     await store.touchViewer(key, name); // display now matches the placeholder, but the key has a row
     assert.equal((await store.getViewer(name.toLowerCase()))!.placeholder, true);
@@ -102,7 +105,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-NOTE-001, MEM-NOTE-004, MEM-NOTE-010
   t("a note holds layer, category, hint, strength, mentions, dirty flag and version, and defaults a sensitive hint", async ({ store, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const n = await store.insertNote({ userKey: key, category: "general", text: "  just got a Steam Deck  " });
     assert.deepEqual(
@@ -121,8 +124,8 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-CAPTURE-011, MEM-VIEWER-001
   t("ensureViewer creates a missing row with msg_count 0 and leaves an existing row alone; the next chat line counts as the first", async ({ store }) => {
-    const key = uid();
-    const made = await store.ensureViewer(key.toUpperCase(), "Bob");
+    const key = vkey();
+    const made = await store.ensureViewer(key, "Bob");
     assert.deepEqual([made.key, made.display, made.msgCount, made.placeholder, made.regular], [key, "Bob", 0, false, false]);
     await store.ensureViewer(key, "Other");
     const same = (await store.getViewer(key))!;
@@ -138,7 +141,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     const name = `Quinn${uid("")}`;
     await store.setRegular(name, true);
     const note = await store.insertNote({ userKey: name.toLowerCase(), category: "general", text: "streams on fridays" });
-    const userId = `id-${uid("")}`;
+    const userId = vkey();
     const row = await store.ensureViewer(userId, name.toUpperCase());
     assert.deepEqual([row.key, row.msgCount, row.placeholder, row.regularManual], [userId, 0, false, true]);
     assert.equal(await store.getViewer(name.toLowerCase()), undefined);
@@ -149,7 +152,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-CAPTURE-005, MEM-CAPTURE-006
   t("embedText embeds with the store's own embedder, so a note's embedding is comparable and insertNote can reuse it", async ({ store }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const a = await store.embedText("plays Elden Ring every night");
     const b = await store.embedText("plays Elden Ring every night");
@@ -163,7 +166,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-NOTE-005, MEM-NOTE-004
   t("reinforcement lifts the effective strength by `reinforce` of the gap, restarts the clock, counts the mention and marks dirty", async ({ store, advance, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const n = await store.insertNote({ userKey: key, category: "general", text: "plays Elden Ring", dirty: false });
     advance(7 * DAY); // recent half-life: effective 0.5
@@ -175,7 +178,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-NOTE-001
   t("deleting a note records it with its effective strength and the trimmed reason, none when blank", async ({ store, advance }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const a = await store.insertNote({ userKey: key, category: "general", text: "likes cats" });
     const b = await store.insertNote({ userKey: key, category: "general", text: "likes dogs" });
@@ -192,7 +195,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-CONSOL-007, MEM-CONSOL-008, MEM-NOTE-004
   t("commitViewer applies each change only while the note's version is the one read; others stay as they are", async ({ store, advance, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const [a, b, c, d, e] = [
       await store.insertNote({ userKey: key, category: "general", text: "alpha note" }),
@@ -226,7 +229,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-CONSOL-006
   t("an update that absorbs merged members deletes them only when every member is unchanged", async ({ store }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const [a, b, c, d] = [
       await store.insertNote({ userKey: key, category: "general", text: "one" }),
@@ -245,7 +248,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-NOTE-010
   t("a rewrite into health or family gets the category's default hint", async ({ store }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const n = await store.insertNote({ userKey: key, category: "general", text: "has a cold" });
     await store.commitViewer(key, [{ kind: "update", id: n.id, version: n.version, set: { category: "health" } }]);
@@ -255,7 +258,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-CONSOL-001, MEM-CONSOL-004
   t("dirty notes are counted and their viewers listed", async ({ store }) => {
     const before = await store.dirtyNoteCount();
-    const k1 = uid("a"), k2 = uid("b"), k3 = uid("c");
+    const k1 = vkey("a"), k2 = vkey("b"), k3 = vkey("c");
     for (const k of [k1, k2, k3]) await store.touchViewer(k, k);
     await store.insertNote({ userKey: k1, category: "general", text: "one" });
     await store.insertNote({ userKey: k1, category: "general", text: "two" });
@@ -268,7 +271,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-CONSOL-016
   t("purging keeps deletions with a reason and recent soft deletions", async ({ store, advance, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const mk = async (text: string, reason?: string) => (await store.deleteNote((await store.insertNote({ userKey: key, category: "general", text })).id, reason));
     await mk("old soft");
@@ -297,7 +300,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-ADMIN-001
   t("listViewers orders by last seen, filters by a case-insensitive display substring, counts stored notes and honours the limit", async ({ store, advance }) => {
     const tag = uid("tag").replace(/-/g, "");
-    const [a, b, c] = [uid("a"), uid("b"), uid("c")];
+    const [a, b, c] = [vkey("a"), vkey("b"), vkey("c")];
     await store.touchViewer(a, `Alice${tag}`); advance(1000);
     await store.touchViewer(b, `bob${tag}`); advance(1000);
     await store.touchViewer(c, `Carol${tag}`); advance(1000);
@@ -316,7 +319,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-ADMIN-004, MEM-NOTE-004
   t("restoreDeletion recreates the note at its recorded strength from now, clean, and removes the record", async ({ store, advance, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const original = await store.insertNote({ userKey: key, layer: "core", category: "health", text: "has a cold", hint: "ask gently" });
     advance(10 * DAY);
@@ -340,7 +343,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-ADMIN-005
   t("clearNotes deletes every note of one viewer into restorable records with one reason and leaves the viewer untouched", async ({ store }) => {
-    const key = uid(), other = uid("other");
+    const key = vkey(), other = vkey("other");
     await store.touchViewer(key, "Bob");
     await store.touchViewer(other, "Amy");
     await store.setRegular(key, true);
@@ -361,8 +364,8 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-SURF-002
   t("a viewer is found by display name, case-insensitively, the most recently seen when several share it", async ({ store, advance }) => {
     const name = `Shared${uid("")}`;
-    const first = uid("first");
-    const second = uid("second");
+    const first = vkey("first");
+    const second = vkey("second");
     await store.touchViewer(first, name);
     advance(1000);
     await store.touchViewer(second, name.toUpperCase());
@@ -371,7 +374,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.touchViewer(first, name);
     assert.equal((await store.findViewerByDisplay(name))!.key, first);
     assert.equal(await store.findViewerByDisplay(`Nobody${uid("")}`), undefined);
-    const renamed = uid("renamed");
+    const renamed = vkey("renamed");
     await store.touchViewer(renamed, `Old${renamed}`);
     await store.touchViewer(renamed, `New${renamed}`);
     assert.equal(await store.findViewerByDisplay(`Old${renamed}`), undefined, "lookups use the current display");
@@ -394,7 +397,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
 
   // @spec MEM-SURF-004
   t("markSurfaced records the time on the named notes only", async ({ store, now }) => {
-    const key = uid();
+    const key = vkey();
     await store.touchViewer(key, "Bob");
     const a = await store.insertNote({ userKey: key, category: "health", text: "has a cold" });
     const b = await store.insertNote({ userKey: key, category: "general", text: "plays celeste" });
@@ -426,7 +429,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-VOICE-005, MEM-VOICE-004, MEM-VOICE-001
   t("linking moves the voice viewer's notes and deletions (dirty) to the chat viewer and later speech follows the link", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
-    const chat = uid("chat");
+    const chat = vkey("chat");
     await store.touchViewer(chat, "BobChat");
     await store.touchSpeaker(id, "bob_voice");
     const voice = `discord:${id}`;
@@ -449,7 +452,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-VOICE-005
   t("linking resolves the target by key or display name, replaces an earlier link, and refuses a missing or voice target", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
-    const a = uid("a"), b = uid("b");
+    const a = vkey("a"), b = vkey("b");
     await store.touchViewer(a, `Ann${id}`);
     await store.touchViewer(b, `Ben${id}`);
     assert.equal((await store.linkDiscord(id, `ann${id}`))!.viewer.key, a, "by display name");
@@ -465,7 +468,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-VOICE-006
   t("unlinking removes only the link: notes stay and the next utterance starts a fresh voice viewer", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
-    const chat = uid("chat");
+    const chat = vkey("chat");
     await store.touchViewer(chat, "Cy");
     await store.linkDiscord(id, chat);
     await store.insertNote({ userKey: chat, category: "general", text: "streams chess" });
@@ -480,14 +483,14 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-VOICE-007
   t("a name matching no display resolves through a linked id's Discord display name; a display match wins", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
-    const chat = uid("chat");
+    const chat = vkey("chat");
     await store.touchViewer(chat, `Dee${id}`);
     await store.linkDiscord(id, chat);
     await store.touchSpeaker(id, `DeeVoice${id}`);
     assert.equal((await store.findViewerByDisplay(`DEEVOICE${id}`))!.key, chat);
     assert.equal((await store.findViewerByDisplay(`dee${id}`))!.key, chat);
     assert.equal(await store.findViewerByDisplay(`nobody${id}`), undefined);
-    const other = uid("o");
+    const other = vkey("o");
     await store.touchViewer(other, `DeeVoice${id}`);
     assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches wins over a link alias");
   });
@@ -505,7 +508,8 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     const b = viewerKey({ platform: "youtube", userId: id.toLowerCase(), user: "Zed" });
     assert.notEqual(a, b);
     assert.deepEqual([(await store.touchViewer(a, "Zed")).msgCount, (await store.touchViewer(a, "Zed")).msgCount], [1, 2]);
-    assert.deepEqual([(await store.touchViewer(b, "Zed")).msgCount, (await store.touchViewer(b, "Zed")).isNew], [1, true]);
+    const first = await store.touchViewer(b, "Zed");
+    assert.deepEqual([first.msgCount, first.isNew], [1, true]);
     assert.equal((await store.getViewer(a))!.key, a, "the stored key is not case-folded");
     assert.equal((await store.getViewer(b))!.msgCount, 1);
   });

@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 138 [x], 35 [ ] (viewer identity by platform and user id, the platform and message id on chat rows, forgetting removed chat, and the streamed-speech clause writes MEM-WRITE-010 to 019). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 159 [x], 14 [ ] (MEM-STORE-004 Postgres columns, unproven locally; streamed-speech clause writes MEM-WRITE-010 to 019; MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:

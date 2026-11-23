@@ -10,7 +10,16 @@ import {
 
 export type MemoryKind = "chat" | "speech" | "self";
 
-export interface Memory {
+export type ChatPlatform = "twitch" | "youtube" | "discord";
+
+/** The chat ids a `chat` row records (MEM-WRITE-009); absent on every other kind. */
+export interface ChatIds {
+  platform?: ChatPlatform;
+  userId?: string;
+  messageId?: string;
+}
+
+export interface Memory extends ChatIds {
   id: number;
   ts: Date;
   kind: MemoryKind;
@@ -34,12 +43,17 @@ export interface MemoryBackend {
    * `tables` has one entry per migrated table with the rows embedded by this call, empty when nothing needed migrating.
    */
   reembed(onProgress?: (table: string, done: number) => void): Promise<ReembedResult>;
-  remember(kind: MemoryKind, who: string, text: string): Promise<void>;
+  remember(kind: MemoryKind, who: string, text: string, ids?: ChatIds): Promise<void>;
   recall(query: string, k?: number): Promise<Memory[]>;
-  /** Count one chat line for the viewer: upsert by lowercased key, keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
+  /**
+   * Delete the stored `chat` rows a removal names (MEM-FORGET-002..004): `message` by platform and message id, `user` by platform and user id,
+   * `all` nothing. Deletes nothing, and raises nothing, when no row matches (MEM-FORGET-005).
+   */
+  forgetChat(removal: ChatRemoval): Promise<void>;
+  /** Count one chat line for the viewer: upsert by `key` (a `viewerKey`, stored as given, MEM-VIEWER-008), keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
   touchViewer(userKey: string, display: string, opts?: { isSub?: boolean }): Promise<ViewerTouch>;
   getViewer(userKey: string): Promise<ViewerRow | undefined>;
-  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do (MEM-SURF-002). */
+  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do (MEM-SURF-006). Reads only rows MEM-VIEWER-011 allows. */
   findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
   /** The viewer's row, created with `msg_count` 0 when missing (claiming a matching placeholder like `touchViewer` does) and never counting a message: capture's way to write a note before the `memory` group has seen the line (MEM-CAPTURE-011). */
   ensureViewer(userKey: string, display: string): Promise<ViewerRow>;
@@ -97,6 +111,14 @@ export interface ReembedResult {
   tables: Record<string, number>;
 }
 
+/** A `chat.removed` as the store needs it (MEM-FORGET-002..004). */
+export interface ChatRemoval {
+  platform: ChatPlatform;
+  scope: "message" | "user" | "all";
+  messageId?: string;
+  userId?: string;
+}
+
 export interface ViewerTouch {
   msgCount: number;
   isNew: boolean;
@@ -146,6 +168,7 @@ export class MemoryStore implements MemoryBackend {
   }
 
   // @spec MEM-STORE-001
+  // @spec MEM-STORE-004
   async init(): Promise<void> {
     // Probe embedding size so the table matches whatever model is configured.
     this.dims = (await this.llm.embed("hello")).length;
@@ -157,9 +180,14 @@ export class MemoryStore implements MemoryBackend {
         kind TEXT NOT NULL,
         who TEXT NOT NULL,
         text TEXT NOT NULL,
-        embedding vector(${this.dims})
+        embedding vector(${this.dims}),
+        platform TEXT,
+        user_id TEXT,
+        message_id TEXT
       )`);
     await this.checkDimensions();
+    await this.query("CREATE INDEX IF NOT EXISTS memories_platform_message_idx ON memories (platform, message_id)");
+    await this.query("CREATE INDEX IF NOT EXISTS memories_platform_user_idx ON memories (platform, user_id)");
     await this.query(`
       CREATE TABLE IF NOT EXISTS viewers (
         user_key TEXT PRIMARY KEY,
@@ -314,12 +342,13 @@ export class MemoryStore implements MemoryBackend {
   }
 
   // @spec MEM-WRITE-004, MEM-WRITE-005
-  async remember(kind: MemoryKind, who: string, text: string): Promise<void> {
+  // @spec MEM-WRITE-009
+  async remember(kind: MemoryKind, who: string, text: string, ids: ChatIds = {}): Promise<void> {
     try {
       const emb = await this.llm.embed(`${who}: ${text}`);
       await this.query(
-        "INSERT INTO memories (kind, who, text, embedding) VALUES ($1,$2,$3,$4)",
-        [kind, who, text, toVector(emb)],
+        "INSERT INTO memories (kind, who, text, embedding, platform, user_id, message_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        [kind, who, text, toVector(emb), ids.platform ?? null, ids.userId ?? null, ids.messageId ?? null],
       );
     } catch (err) {
       this.log.warn({ err }, "remember failed");
@@ -331,24 +360,33 @@ export class MemoryStore implements MemoryBackend {
     if (k <= 0) return [];
     try {
       const emb = toVector(await this.llm.embed(query));
-      const { rows } = await this.query<Memory & { similarity: number }>(
-        `SELECT id, ts, kind, who, text, 1 - (embedding <=> $1) AS similarity
+      const { rows } = await this.query<MemoryRow & { similarity: number }>(
+        `SELECT id, ts, kind, who, text, platform, user_id, message_id, 1 - (embedding <=> $1) AS similarity
            FROM memories
           WHERE ts < now() - interval '2 minutes'
           ORDER BY embedding <=> $1
           LIMIT $2`,
         [emb, k],
       );
-      return rows.filter((r) => r.similarity >= this.cfg.min_similarity);
+      return rows.filter((r) => r.similarity >= this.cfg.min_similarity).map(memoryFromRow);
     } catch (err) {
       this.log.warn({ err }, "recall failed");
       return [];
     }
   }
 
-  // @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-REG-001, MEM-REG-004, MEM-REG-005
+  // @spec MEM-FORGET-002, MEM-FORGET-003, MEM-FORGET-004, MEM-FORGET-005
+  async forgetChat(r: ChatRemoval): Promise<void> {
+    if (r.scope === "message") {
+      await this.query("DELETE FROM memories WHERE kind = 'chat' AND platform = $1 AND message_id = $2", [r.platform, r.messageId]);
+    } else if (r.scope === "user") {
+      await this.query("DELETE FROM memories WHERE kind = 'chat' AND platform = $1 AND user_id = $2", [r.platform, r.userId]);
+    }
+  }
+
+  // @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-VIEWER-008, MEM-REG-001, MEM-REG-004, MEM-REG-005
   async touchViewer(userKey: string, display: string, opts: { isSub?: boolean } = {}): Promise<ViewerTouch> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     const isSub = opts.isSub ?? false;
     type Counted = { msg_count: number; regular_manual: boolean };
     // A placeholder the owner created before this viewer chatted is re-keyed to the viewer's key (only when that key has no row yet).
@@ -372,14 +410,14 @@ export class MemoryStore implements MemoryBackend {
   }
 
   async getViewer(userKey: string): Promise<ViewerRow | undefined> {
-    const { rows } = await this.query<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1`, [userKey.toLowerCase()]);
+    const { rows } = await this.query<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1 AND ${READABLE_VIEWER}`, [userKey]);
     return rows[0] && this.toViewer(rows[0]);
   }
 
   // @spec MEM-SURF-002, MEM-VOICE-007
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const { rows } = await this.query<ViewerSql>(
-      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) ORDER BY last_seen DESC, user_key LIMIT 1`,
+      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${READABLE_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`,
       [name],
     );
     if (rows[0]) return this.toViewer(rows[0]);
@@ -387,7 +425,7 @@ export class MemoryStore implements MemoryBackend {
     const alias = await this.query<ViewerSql>(
       `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}
          FROM viewer_links l JOIN viewers v ON v.user_key = l.user_key
-        WHERE lower(l.discord_display) = lower($1)
+        WHERE lower(l.discord_display) = lower($1) AND ${READABLE_VIEWER_V}
         ORDER BY l.updated_at DESC, l.discord_id LIMIT 1`,
       [name],
     );
@@ -415,12 +453,12 @@ export class MemoryStore implements MemoryBackend {
   // @spec MEM-VOICE-005
   async linkDiscord(discordId: string, target: string): Promise<LinkResult | undefined> {
     const id = discordId.toLowerCase();
-    const want = target.trim().toLowerCase();
+    const want = target.trim();
     const voice = voiceKey(id);
     return this.tx(async (q) => {
-      const byKey = await q<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1`, [want]);
+      const byKey = await q<ViewerSql>(`SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = $1 AND ${READABLE_VIEWER}`, [want]);
       const found = byKey.rows[0] ?? (await q<ViewerSql>(
-        `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = $1 ORDER BY last_seen DESC, user_key LIMIT 1`, [want])).rows[0];
+        `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${READABLE_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`, [want])).rows[0];
       if (!found || isVoiceKey(found.user_key)) return undefined;
       const voiceRow = (await q<{ display: string }>("SELECT display FROM viewers WHERE user_key = $1", [voice])).rows[0];
       let moved = 0;
@@ -449,13 +487,13 @@ export class MemoryStore implements MemoryBackend {
 
   async listLinks(userKey: string): Promise<LinkRow[]> {
     const { rows } = await this.query<{ discord_id: string; discord_display: string | null }>(
-      "SELECT discord_id, discord_display FROM viewer_links WHERE user_key = $1 ORDER BY updated_at, discord_id", [userKey.toLowerCase()]);
+      "SELECT discord_id, discord_display FROM viewer_links WHERE user_key = $1 ORDER BY updated_at, discord_id", [userKey]);
     return rows.map((r) => ({ discordId: r.discord_id, discordDisplay: r.discord_display }));
   }
 
   // @spec MEM-CAPTURE-011, MEM-REG-004
   async ensureViewer(userKey: string, display: string): Promise<ViewerRow> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     const existing = await this.getViewer(key);
     if (existing) return existing;
     const claimed = await this.query<ViewerSql>(
@@ -484,16 +522,17 @@ export class MemoryStore implements MemoryBackend {
 
   // @spec MEM-REG-001, MEM-REG-003
   async setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined> {
-    const key = keyOrName.toLowerCase();
     const updated = await this.query<ViewerSql>(
       `UPDATE viewers SET regular_manual = $2
-        WHERE user_key = COALESCE((SELECT user_key FROM viewers WHERE user_key = $1),
-                                  (SELECT user_key FROM viewers WHERE lower(display) = $1 ORDER BY last_seen DESC LIMIT 1))
+        WHERE user_key = COALESCE((SELECT user_key FROM viewers WHERE user_key = $1 AND ${READABLE_VIEWER}),
+                                  (SELECT user_key FROM viewers WHERE lower(display) = lower($1) AND ${READABLE_VIEWER} ORDER BY last_seen DESC LIMIT 1))
         RETURNING ${VIEWER_COLS}`,
-      [key, regular],
+      [keyOrName, regular],
     );
     if (updated.rows.length) return this.toViewer(updated.rows[0]!);
     if (!regular) return undefined;
+    // MEM-REG-003: a placeholder keyed by the lower-cased name.
+    const key = keyOrName.toLowerCase();
     const { rows } = await this.query<ViewerSql>(
       `INSERT INTO viewers (user_key, display, msg_count, regular_manual, placeholder) VALUES ($1,$2,0,true,true)
        ON CONFLICT (user_key) DO UPDATE SET regular_manual = true
@@ -537,7 +576,7 @@ export class MemoryStore implements MemoryBackend {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10)
        RETURNING ${NOTE_COLS}`,
       [
-        n.userKey.toLowerCase(), n.layer ?? "recent", n.category, text, withDefaultHint(n.category, n.hint) ?? null,
+        n.userKey, n.layer ?? "recent", n.category, text, withDefaultHint(n.category, n.hint) ?? null,
         clamp01(n.strength ?? 1), new Date(this.clock()), n.mentions ?? 1, n.dirty ?? true, embedding,
       ],
     );
@@ -562,7 +601,7 @@ export class MemoryStore implements MemoryBackend {
   }
 
   async listNotes(userKey: string): Promise<NoteRow[]> {
-    const { rows } = await this.query<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id`, [userKey.toLowerCase()]);
+    const { rows } = await this.query<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id`, [userKey]);
     return rows.map(toNote);
   }
 
@@ -576,7 +615,7 @@ export class MemoryStore implements MemoryBackend {
     const { rows } = await this.query<DeletionSql>(
       `SELECT id, user_key, layer, category, text, hint, strength, reason, deleted_at, embedding::text AS embedding
          FROM viewer_note_deletions WHERE user_key = $1 ORDER BY id`,
-      [userKey.toLowerCase()],
+      [userKey],
     );
     return rows.map((r) => ({
       id: Number(r.id), userKey: r.user_key, layer: r.layer, category: r.category, text: r.text, hint: r.hint,
@@ -605,7 +644,7 @@ export class MemoryStore implements MemoryBackend {
     const { rows } = await this.query<ViewerSql & { note_count: number }>(
       `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}, (SELECT count(*)::int FROM viewer_notes n WHERE n.user_key = v.user_key) AS note_count
          FROM viewers v
-        WHERE $1::text IS NULL OR strpos(lower(v.display), lower($1)) > 0
+        WHERE ($1::text IS NULL OR strpos(lower(v.display), lower($1)) > 0) AND ${READABLE_VIEWER_V}
         ORDER BY v.last_seen DESC, v.user_key
         LIMIT $2`,
       [q ? q : null, opts.limit ?? 500],
@@ -635,7 +674,7 @@ export class MemoryStore implements MemoryBackend {
   // @spec MEM-ADMIN-005
   async clearNotes(userKey: string, reason?: string): Promise<number> {
     return this.tx(async (q) => {
-      const { rows } = await q<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id FOR UPDATE`, [userKey.toLowerCase()]);
+      const { rows } = await q<NoteSql>(`SELECT ${NOTE_COLS} FROM viewer_notes WHERE user_key = $1 ORDER BY id FOR UPDATE`, [userKey]);
       for (const r of rows) {
         const n = toNote(r);
         await q("DELETE FROM viewer_notes WHERE id = $1", [n.id]);
@@ -661,7 +700,7 @@ export class MemoryStore implements MemoryBackend {
 
   // @spec MEM-CONSOL-007, MEM-CONSOL-008, MEM-NOTE-004
   async commitViewer(userKey: string, ops: NoteOp[]): Promise<void> {
-    const key = userKey.toLowerCase();
+    const key = userKey;
     // Rewritten text needs a new embedding; embed before the transaction so no connection waits on the model.
     const embeddings = new Map<number, string>();
     for (const op of ops) if (op.kind === "update" && op.set.text !== undefined) embeddings.set(op.id, toVector(await this.llm.embed(op.set.text.trim())));
@@ -766,6 +805,27 @@ const REEMBED_TABLES = [
 const CONSOLIDATION_LOCK = 7_431_900_601;
 
 const VIEWER_COLS = "user_key, display, msg_count, regular_manual, is_sub, placeholder, first_seen, last_seen";
+/** MEM-VIEWER-011: the rows a lookup may read (see `isReadableViewer` in notes.ts). */
+const READABLE_VIEWER = "(placeholder OR user_key ~ '^[^:]+:(id|name):' OR user_key LIKE 'discord:%')";
+const READABLE_VIEWER_V = "(v.placeholder OR v.user_key ~ '^[^:]+:(id|name):' OR v.user_key LIKE 'discord:%')";
+
+interface MemoryRow {
+  id: number;
+  ts: Date;
+  kind: MemoryKind;
+  who: string;
+  text: string;
+  platform: ChatPlatform | null;
+  user_id: string | null;
+  message_id: string | null;
+  similarity?: number;
+}
+
+/** A recalled row with its chat ids, and no id key at all when the row has none (MEM-WRITE-009). */
+function memoryFromRow(r: MemoryRow): Memory {
+  const { platform, user_id, message_id, ...rest } = r;
+  return { ...rest, ...(platform ? { platform } : {}), ...(user_id ? { userId: user_id } : {}), ...(message_id ? { messageId: message_id } : {}) };
+}
 interface ViewerSql {
   user_key: string; display: string; msg_count: number; regular_manual: boolean; is_sub: boolean; placeholder: boolean;
   first_seen: Date; last_seen: Date;

@@ -2,25 +2,39 @@ import type { BusEvent } from "@cohost/bus";
 import type { Config } from "@cohost/config";
 import type { MemoryBackend } from "./store.js";
 import { defaultHint, effectiveStrength, type NoteRow } from "./notes.js";
+import { viewerKey } from "@cohost/shared/untrusted";
 
 export type NotesReplyViewers = BusEvent<"memory.notes.reply">["data"]["viewers"];
+/** One `memory.notes.request` entry: a name, with the platform and id when the cortex knows them. */
+export type NotesEntry = BusEvent<"memory.notes.request">["data"]["viewers"][number];
 
 /** What surfacing needs from a store. */
-export type SurfaceStore = Pick<MemoryBackend, "findViewerByDisplay" | "listNotes" | "markSurfaced">;
+export type SurfaceStore = Pick<MemoryBackend, "findViewerByDisplay" | "getViewer" | "listNotes" | "markSurfaced">;
+
+/**
+ * The viewer row an entry names (MEM-SURF-002, MEM-SURF-006, MEM-SURF-007): by the `viewerKey` of its platform and id, by the
+ * `viewerKey` of its platform and name, or, with no platform, by display name (which also reaches a linked Discord id, MEM-VOICE-007).
+ */
+// @spec MEM-SURF-002, MEM-SURF-006, MEM-SURF-007, MEM-VOICE-007
+async function resolveEntry(store: SurfaceStore, e: NotesEntry) {
+  if (e.platform && e.userId) return store.getViewer(viewerKey({ platform: e.platform, userId: e.userId, user: e.user }));
+  if (e.platform) return store.getViewer(viewerKey({ platform: e.platform, user: e.user }));
+  return store.findViewerByDisplay(e.user);
+}
 
 const HOUR_MS = 3_600_000;
 const isSensitive = (n: Pick<NoteRow, "category">): boolean => n.category !== "general";
 
-// @spec MEM-SURF-001, MEM-SURF-002, MEM-SURF-003, MEM-SURF-004
+// @spec MEM-SURF-001, MEM-SURF-002, MEM-SURF-003, MEM-SURF-004, MEM-SURF-006, MEM-SURF-007
 /**
- * The notes the cortex gets for a reply: one entry per name that resolves to a viewer, in request order. The first
- * name is the viewer replied to; the rest are other viewers in the cortex's window. Throws when the store fails
+ * The notes the cortex gets for a reply: one entry per request entry that resolves to a viewer, in request order. The first
+ * entry is the viewer replied to; the rest are other viewers in the cortex's window. Throws when the store fails
  * (the region answers an empty list, MEM-SURF-005).
  */
 export async function buildNotesReply(
   store: SurfaceStore,
   cfg: Config["brain"]["memory"],
-  users: readonly string[],
+  entries: readonly NotesEntry[],
   now: number,
 ): Promise<NotesReplyViewers> {
   const n = cfg.notes;
@@ -28,8 +42,8 @@ export async function buildNotesReply(
   const seen = new Set<string>();
   const surfaced: number[] = [];
   let budget = n.max_notes_total;
-  for (const [i, name] of users.entries()) {
-    const viewer = await store.findViewerByDisplay(name);
+  for (const [i, entry] of entries.entries()) {
+    const viewer = await resolveEntry(store, entry);
     if (!viewer || seen.has(viewer.key)) continue; // unknown names are omitted; a viewer is listed once
     seen.add(viewer.key);
     const repliedTo = i === 0;
@@ -43,6 +57,8 @@ export async function buildNotesReply(
     for (const { row } of ranked) if (isSensitive(row)) surfaced.push(row.id);
     out.push({
       user: viewer.display,
+      ...(entry.platform ? { platform: entry.platform } : {}),
+      ...(entry.userId ? { userId: entry.userId } : {}),
       regular: viewer.regular,
       msgCount: viewer.msgCount,
       notes: ranked.map(({ row, strength }) => {

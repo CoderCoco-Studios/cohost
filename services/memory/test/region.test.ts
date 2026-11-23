@@ -147,7 +147,7 @@ test("brain.status is passed on so consolidation knows when the cortex is idle; 
 test("a viewers request is answered on the bus with the same id and the operation's data; a store failure with ok:false", async () => {
   const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } });
   const admin = new InMemoryStore(cfg.brain.memory);
-  await admin.touchViewer("1", "Alice");
+  await admin.touchViewer("twitch:id:1", "Alice");
   const bus = new FakeBus();
   const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
   const onEvent = createMemoryHandler({ cfg, bus, log, store: admin, admin });
@@ -155,7 +155,7 @@ test("a viewers request is answered on the bus with the same id and the operatio
   const [reply] = bus.of("memory.viewers.reply");
   assert.equal(reply!.id, "v-1");
   assert.equal(reply!.ok, true);
-  assert.deepEqual((reply!.data as { viewers: { key: string }[] }).viewers.map((v) => v.key), ["1"]);
+  assert.deepEqual((reply!.data as { viewers: { key: string }[] }).viewers.map((v) => v.key), ["twitch:id:1"]);
   admin.listViewers = async () => { throw new Error("db down"); };
   await onEvent(event("memory.viewers.request", { id: "v-2", op: "list" }));
   assert.deepEqual(bus.of("memory.viewers.reply")[1], { id: "v-2", ok: false, error: "failed", detail: "Error: db down" });
@@ -268,7 +268,7 @@ test("user and speaker names are bounded to viewer_text.max_name_chars, with unk
 test("an empty userId is no id: the viewer is keyed by the bounded name, never by an empty key", async () => {
   const { onEvent, calls } = setup();
   await onEvent(chat({ userId: "", user: "Bob", mentionsCohost: true }));
-  assert.equal(calls.find((c) => c.op === "touchViewer")!.args[0], "Bob");
+  assert.equal(calls.find((c) => c.op === "touchViewer")!.args[0], viewerKey({ platform: "twitch", user: "Bob" }));
 });
 
 // @spec MEM-VIEWER-007

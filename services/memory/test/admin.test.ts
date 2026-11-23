@@ -19,40 +19,40 @@ type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-ex
 // @spec MEM-ADMIN-001
 test("list: viewers newest first, filtered by display substring, with the owner flag and counts", async () => {
   const { store, ask, advance } = setup();
-  await store.touchViewer("1", "Alice"); advance(1000);
-  await store.touchViewer("2", "bob"); advance(1000);
-  await store.insertNote({ userKey: "1", category: "general", text: "likes cats" });
-  await store.setRegular("2", true);
+  await store.touchViewer("twitch:id:1", "Alice"); advance(1000);
+  await store.touchViewer("twitch:id:2", "bob"); advance(1000);
+  await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "likes cats" });
+  await store.setRegular("twitch:id:2", true);
   const all = await ask({ op: "list" });
   assert.equal(all.ok, true);
   assert.deepEqual((all.data as Data).viewers, [
-    { key: "2", display: "bob", regular: true, regularManual: true, msgCount: 1, noteCount: 0 },
-    { key: "1", display: "Alice", regular: false, regularManual: false, msgCount: 1, noteCount: 1 },
+    { key: "twitch:id:2", display: "bob", regular: true, regularManual: true, msgCount: 1, noteCount: 0 },
+    { key: "twitch:id:1", display: "Alice", regular: false, regularManual: false, msgCount: 1, noteCount: 1 },
   ]);
-  assert.deepEqual(((await ask({ op: "list", query: "ALI" })).data as Data).viewers.map((v: Data) => v.key), ["1"]);
+  assert.deepEqual(((await ask({ op: "list", query: "ALI" })).data as Data).viewers.map((v: Data) => v.key), ["twitch:id:1"]);
   assert.deepEqual(((await ask({ op: "list", query: "  " })).data as Data).viewers.length, 2, "a blank query lists everyone");
 });
 
 // @spec MEM-ADMIN-001
 test("list: at most 500 viewers", async () => {
   const { store, ask } = setup();
-  for (let i = 0; i < 502; i++) await store.touchViewer(`u${i}`, `User${i}`);
+  for (let i = 0; i < 502; i++) await store.touchViewer(`twitch:id:u${i}`, `User${i}`);
   assert.equal(((await ask({ op: "list" })).data as Data).viewers.length, 500);
 });
 
 // @spec MEM-ADMIN-002
 test("get: notes split into core and recent with effective strength, plus deletion records", async () => {
   const { store, ask, advance } = setup();
-  await store.touchViewer("1", "Alice");
-  const core = await store.insertNote({ userKey: "1", layer: "core", category: "family", text: "has a sister" });
-  await store.insertNote({ userKey: "1", layer: "recent", category: "general", text: "playing chess" });
-  const gone = await store.insertNote({ userKey: "1", category: "general", text: "hates mondays" });
+  await store.touchViewer("twitch:id:1", "Alice");
+  const core = await store.insertNote({ userKey: "twitch:id:1", layer: "core", category: "family", text: "has a sister" });
+  await store.insertNote({ userKey: "twitch:id:1", layer: "recent", category: "general", text: "playing chess" });
+  const gone = await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "hates mondays" });
   await store.deleteNote(gone.id, "off topic");
   advance(14 * DAY);
-  const r = await ask({ op: "get", key: "1" });
+  const r = await ask({ op: "get", key: "twitch:id:1" });
   assert.equal(r.ok, true);
   const d = r.data as Data;
-  assert.deepEqual([d.viewer.key, d.viewer.display, d.viewer.regular, d.viewer.regularManual, d.viewer.msgCount, d.viewer.noteCount], ["1", "Alice", false, false, 1, 2]);
+  assert.deepEqual([d.viewer.key, d.viewer.display, d.viewer.regular, d.viewer.regularManual, d.viewer.msgCount, d.viewer.noteCount], ["twitch:id:1", "Alice", false, false, 1, 2]);
   assert.deepEqual(d.core.map((n: Data) => [n.id, n.category, n.text, n.hint]), [[String(core.id), "family", "has a sister", "check in warmly and gently; never name or quote it"]]);
   assert.ok(d.core[0].strength > 0.8 && d.core[0].strength < 1, "core fades slowly: still strong after 14 days");
   assert.equal(d.recent.length, 1);
@@ -73,12 +73,12 @@ test("get: an unknown viewer is not_found", async () => {
 // @spec MEM-ADMIN-003
 test("delete_note: records the deletion with the trimmed reason, none when blank; an unknown or non-numeric id is not_found", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
-  const a = await store.insertNote({ userKey: "1", category: "general", text: "a" });
-  const b = await store.insertNote({ userKey: "1", category: "general", text: "b" });
+  await store.touchViewer("twitch:id:1", "Alice");
+  const a = await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "a" });
+  const b = await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "b" });
   assert.deepEqual(await ask({ op: "delete_note", noteId: String(a.id), reason: "  too personal " }), { ok: true, data: {} });
   assert.deepEqual(await ask({ op: "delete_note", noteId: String(b.id), reason: "   " }), { ok: true, data: {} });
-  assert.deepEqual((await store.listDeletions("1")).map((d) => d.reason), ["too personal", null]);
+  assert.deepEqual((await store.listDeletions("twitch:id:1")).map((d) => d.reason), ["too personal", null]);
   assert.equal((await ask({ op: "delete_note", noteId: String(a.id) })).error, "not_found");
   assert.equal((await ask({ op: "delete_note", noteId: "abc" })).error, "not_found");
 });
@@ -86,15 +86,15 @@ test("delete_note: records the deletion with the trimmed reason, none when blank
 // @spec MEM-ADMIN-004
 test("restore: the note comes back and the record is gone; an unknown record is not_found", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
-  const n = await store.insertNote({ userKey: "1", category: "general", text: "likes cats" });
+  await store.touchViewer("twitch:id:1", "Alice");
+  const n = await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "likes cats" });
   await store.deleteNote(n.id, "no");
-  const [rec] = await store.listDeletions("1");
+  const [rec] = await store.listDeletions("twitch:id:1");
   const r = await ask({ op: "restore", deletionId: String(rec!.id) });
   assert.equal(r.ok, true);
   assert.equal((r.data as Data).note.text, "likes cats");
-  assert.deepEqual((await store.listNotes("1")).map((x) => x.text), ["likes cats"]);
-  assert.deepEqual(await store.listDeletions("1"), []);
+  assert.deepEqual((await store.listNotes("twitch:id:1")).map((x) => x.text), ["likes cats"]);
+  assert.deepEqual(await store.listDeletions("twitch:id:1"), []);
   assert.equal((await ask({ op: "restore", deletionId: String(rec!.id) })).error, "not_found");
   assert.equal((await ask({ op: "restore", deletionId: "x" })).error, "not_found");
 });
@@ -102,13 +102,13 @@ test("restore: the note comes back and the record is gone; an unknown record is 
 // @spec MEM-ADMIN-005
 test("clear: every note becomes a deletion with the one reason; the flag and counts stay; unknown viewer is not_found", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
-  await store.setRegular("1", true);
-  await store.insertNote({ userKey: "1", category: "general", text: "a" });
-  await store.insertNote({ userKey: "1", category: "general", text: "b" });
-  assert.deepEqual(await ask({ op: "clear", key: "1", reason: "reset" }), { ok: true, data: { cleared: 2 } });
-  assert.deepEqual((await store.listDeletions("1")).map((d) => d.reason), ["reset", "reset"]);
-  const v = (await store.getViewer("1"))!;
+  await store.touchViewer("twitch:id:1", "Alice");
+  await store.setRegular("twitch:id:1", true);
+  await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "a" });
+  await store.insertNote({ userKey: "twitch:id:1", category: "general", text: "b" });
+  assert.deepEqual(await ask({ op: "clear", key: "twitch:id:1", reason: "reset" }), { ok: true, data: { cleared: 2 } });
+  assert.deepEqual((await store.listDeletions("twitch:id:1")).map((d) => d.reason), ["reset", "reset"]);
+  const v = (await store.getViewer("twitch:id:1"))!;
   assert.deepEqual([v.regularManual, v.msgCount], [true, 1]);
   assert.equal((await ask({ op: "clear", key: "ghost" })).error, "not_found");
 });
@@ -116,11 +116,11 @@ test("clear: every note becomes a deletion with the one reason; the flag and cou
 // @spec MEM-ADMIN-006
 test("set_regular: by key, by display name, and a placeholder for a name with no row; clearing an unknown name is not_found", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
-  const byKey = await ask({ op: "set_regular", key: "1", regular: true });
+  await store.touchViewer("twitch:id:1", "Alice");
+  const byKey = await ask({ op: "set_regular", key: "twitch:id:1", regular: true });
   assert.equal((byKey.data as Data).viewer.regularManual, true);
   const off = await ask({ op: "set_regular", name: "alice", regular: false });
-  assert.deepEqual([(off.data as Data).viewer.key, (off.data as Data).viewer.regularManual, (off.data as Data).viewer.regular], ["1", false, false]);
+  assert.deepEqual([(off.data as Data).viewer.key, (off.data as Data).viewer.regularManual, (off.data as Data).viewer.regular], ["twitch:id:1", false, false]);
   const made = await ask({ op: "set_regular", name: "Newcomer", regular: true });
   assert.deepEqual([(made.data as Data).viewer.key, (made.data as Data).viewer.msgCount, (made.data as Data).viewer.regular], ["newcomer", 0, true]);
   assert.equal((await ask({ op: "set_regular", name: "Ghost", regular: false })).error, "not_found");
@@ -139,15 +139,15 @@ test("a store failure is answered ok:false, error failed, with a detail", async 
 // @spec MEM-VOICE-009
 test("list and get mark a voice viewer with voice and discordId, and get lists the Discord ids linked to a chat viewer", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
+  await store.touchViewer("twitch:id:1", "Alice");
   await store.touchSpeaker("D9", "Vox");
   const list = ((await ask({ op: "list" })).data as Data).viewers as Data[];
   const voice = list.find((v) => v.key === "discord:d9")!;
   assert.deepEqual(voice, { key: "discord:d9", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 0, voice: true, discordId: "d9" });
-  assert.ok(!("voice" in list.find((v) => v.key === "1")!));
-  await store.linkDiscord("D5", "1");
+  assert.ok(!("voice" in list.find((v) => v.key === "twitch:id:1")!));
+  await store.linkDiscord("D5", "twitch:id:1");
   await store.touchSpeaker("D5", "AliceVoice");
-  const got = (await ask({ op: "get", key: "1" })).data as Data;
+  const got = (await ask({ op: "get", key: "twitch:id:1" })).data as Data;
   assert.deepEqual(got.links, [{ discordId: "d5", discordDisplay: "AliceVoice" }]);
   assert.ok(!("links" in ((await ask({ op: "get", key: "discord:d9" })).data as Data)));
   assert.equal(((await ask({ op: "get", key: "discord:d9" })).data as Data).viewer.voice, true);
@@ -173,26 +173,26 @@ test("a voice viewer's notes can be deleted with a reason, restored and cleared 
 // @spec MEM-VOICE-005
 test("link_discord moves the voice viewer's notes to a chat viewer found by key or name, and reports not_found otherwise", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
+  await store.touchViewer("twitch:id:1", "Alice");
   await store.touchSpeaker("D9", "Vox");
   await store.insertNote({ userKey: "discord:d9", category: "general", text: "plays chess" });
   const out = await ask({ op: "link_discord", discordId: "D9", name: "alice" });
   assert.equal(out.ok, true);
-  assert.equal((out.data as Data).viewer.key, "1");
+  assert.equal((out.data as Data).viewer.key, "twitch:id:1");
   assert.equal((out.data as Data).moved, 1);
-  assert.equal((await store.listNotes("1")).length, 1);
+  assert.equal((await store.listNotes("twitch:id:1")).length, 1);
   const missing = await ask({ op: "link_discord", discordId: "D9", key: "nobody" });
   assert.deepEqual([missing.ok, missing.error], [false, "not_found"]);
-  assert.equal((await ask({ op: "link_discord", discordId: "D8", key: "1" })).ok, true, "an id never heard can be linked in advance");
+  assert.equal((await ask({ op: "link_discord", discordId: "D8", key: "twitch:id:1" })).ok, true, "an id never heard can be linked in advance");
 });
 
 // @spec MEM-VOICE-006
 test("unlink_discord removes a link, and an unknown id is not_found", async () => {
   const { store, ask } = setup();
-  await store.touchViewer("1", "Alice");
-  await store.linkDiscord("D5", "1");
+  await store.touchViewer("twitch:id:1", "Alice");
+  await store.linkDiscord("D5", "twitch:id:1");
   assert.equal((await ask({ op: "unlink_discord", discordId: "D5" })).ok, true);
   const again = await ask({ op: "unlink_discord", discordId: "D5" });
   assert.deepEqual([again.ok, again.error], [false, "not_found"]);
-  assert.deepEqual(await store.listLinks("1"), []);
+  assert.deepEqual(await store.listLinks("twitch:id:1"), []);
 });

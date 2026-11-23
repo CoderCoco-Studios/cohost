@@ -117,6 +117,8 @@ export class StreamScript {
   private chunks: ({ chunk: StreamChunk } | { error: unknown } | { end: true })[] = [];
   private wake?: () => void;
   signal?: AbortSignal;
+  /** How many times the source closed the call (`return` on the iterator). */
+  returned = 0;
   private push(x: StreamScript["chunks"][number]) { this.chunks.push(x); this.wake?.(); }
   open() { this.push({ chunk: { type: "opened" } as StreamChunk }); return this; }
   respond(r: LiveChatListResponse) { this.push({ chunk: { type: "response", response: r } as StreamChunk }); return this; }
@@ -142,7 +144,7 @@ export class StreamScript {
               await new Promise<void>((res) => { self.wake = res; signal?.addEventListener("abort", () => res(), { once: true }); });
             }
           },
-          async return(): Promise<IteratorResult<StreamChunk>> { return { done: true, value: undefined }; },
+          async return(): Promise<IteratorResult<StreamChunk>> { self.returned += 1; return { done: true, value: undefined }; },
         };
       },
     };

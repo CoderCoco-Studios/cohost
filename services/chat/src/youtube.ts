@@ -108,6 +108,7 @@ export class YouTubeSource implements ChatSource {
   private delay = BACKOFF_START_MS;
   private lastInterval = 0;
   private responses = 0;
+  private firstCallLogged = false;
 
   constructor(opts: YouTubeSourceOptions) {
     this.videoId = opts.videoId;
@@ -202,8 +203,9 @@ export class YouTubeSource implements ChatSource {
       let began = false;
       let failure: unknown;
       this.spend(5);
+      this.noteFirstCall();
+      const it = this.transport.openStream({ chatId: this.chatId!, pageToken: openToken, signal: this.ac.signal })[Symbol.asyncIterator]();
       try {
-        const it = this.transport.openStream({ chatId: this.chatId!, pageToken: openToken, signal: this.ac.signal })[Symbol.asyncIterator]();
         for (;;) {
           const next = await it.next();
           if (this.stopped) return false;
@@ -220,6 +222,9 @@ export class YouTubeSource implements ChatSource {
       } catch (err) {
         if (this.stopped) return false;
         failure = err;
+      } finally {
+        // Closes the call and releases its abort listener on every exit: end, failure, offlineAt, chatEndedEvent, stop.
+        await it.return?.(undefined).catch(() => undefined);
       }
 
       if (failure === undefined) {
@@ -257,7 +262,7 @@ export class YouTubeSource implements ChatSource {
         await this.sleep(this.nextDelay());
         if (!(await this.resolve())) return false;
         continue;
-      } else if (f.kind === "pageToken" && this.pageToken !== undefined) {
+      } else if (f.kind === "pageToken" && openToken !== undefined) {
         this.pageToken = undefined;
         continue;
       }
@@ -296,11 +301,13 @@ export class YouTubeSource implements ChatSource {
     for (;;) {
       if (this.stopped) return;
       const floor = this.settings.poll_floor_ms;
-      const resumed = this.pageToken !== undefined;
+      const callToken = this.pageToken;
+      const resumed = callToken !== undefined;
       let wait: number;
       try {
         this.spend(5);
-        const r: LiveChatListResponse = await this.transport.poll({ chatId: this.chatId!, pageToken: this.pageToken, signal: this.ac.signal });
+        this.noteFirstCall();
+        const r: LiveChatListResponse = await this.transport.poll({ chatId: this.chatId!, pageToken: callToken, signal: this.ac.signal });
         if (this.stopped) return;
         this.resetBackoff();
         this.setState("reading");
@@ -328,7 +335,7 @@ export class YouTubeSource implements ChatSource {
           await this.sleep(d);
           if (!(await this.resolve())) return;
           wait = Math.max(floor, d);
-        } else if (f.kind === "pageToken" && this.pageToken !== undefined) {
+        } else if (f.kind === "pageToken" && callToken !== undefined) {
           this.pageToken = undefined;
           wait = 0;
         } else if (f.kind === "rateLimit") {
@@ -384,9 +391,9 @@ export class YouTubeSource implements ChatSource {
         coveredMessageIds.add(m.removal.messageId);
         coveredRemovals.add(m.removal);
       }
+      // A user removal (ban or timeout) suppresses its author's messages in this response but is still published.
       if (m.removal.scope === "user" && m.removal.userId !== undefined && messageAuthors.has(m.removal.userId)) {
         coveredAuthors.add(m.removal.userId);
-        coveredRemovals.add(m.removal);
       }
     }
 
@@ -442,7 +449,8 @@ export class YouTubeSource implements ChatSource {
     if (this.stopped && state !== "stopped") return;
     const changed = this.status.state !== state || this.status.reason !== reason;
     this.status = reason === undefined ? { state } : { state, reason };
-    if (changed) this.env?.onState(state, reason);
+    if (!changed) return;
+    this.env?.onState(state, reason);
     this.logTally();
   }
 
@@ -459,10 +467,15 @@ export class YouTubeSource implements ChatSource {
     this.ac.abort();
   }
 
-  /** Counts units as a call is made; the first call of a start logs the tally, so a new source's first line is current (CHAT-YT-030). */
   private spend(units: number): void {
     this.units += units;
-    if (this.status.state === "starting") this.logTally();
+  }
+
+  /** The first read call of a start logs the tally once, so a new source's first line is current (CHAT-YT-030). */
+  private noteFirstCall(): void {
+    if (this.firstCallLogged) return;
+    this.firstCallLogged = true;
+    this.logTally();
   }
 
   private logTally(): void {

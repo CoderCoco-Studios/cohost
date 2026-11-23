@@ -315,16 +315,17 @@ test("each poll response makes the source reading", async () => {
 // ---------------------------------------------------------------- quota
 
 // @spec CHAT-YT-030
-test("the tally counts 1 unit per lookup and 5 per poll, and logs it every ten minutes", async () => {
+test("the tally counts 1 unit per lookup and 5 per poll; lines at the first call, at a state change and every ten minutes", async () => {
   const r = pollRig();
   r.t.poll_(resp([]), resp([]));
   await r.start();
   await r.clock.advance(1000);
   const before = r.infos("youtube quota tally").length;
-  assert.ok(before >= 1, "logged at the state change");
-  assert.deepEqual(r.infos("youtube quota tally").at(-1), { units: 11, batches: 0 });
+  assert.equal(before, 2, "one line at the first poll call, one at the change to reading");
+  assert.deepEqual(r.infos("youtube quota tally").at(-1), { units: 6, batches: 0 }, "the second poll is spent but not yet logged: no state change");
   await r.clock.advance(10 * 60_000);
-  assert.equal(r.infos("youtube quota tally").length, before + 1, "one more line after ten minutes");
+  assert.equal(r.infos("youtube quota tally").length, before + 1, "one more line after ten minutes, and none for the poll that hangs");
+  assert.deepEqual(r.infos("youtube quota tally").at(-1), { units: 16, batches: 0 }, "lookup and three polls");
 });
 
 // @spec CHAT-YT-030
@@ -353,11 +354,11 @@ test("the tally is in memory only: a new source starts at zero and takes no acti
   const r = pollRig();
   r.t.pollForever = () => resp([]);
   await r.start();
-  await r.clock.advance(2050 * 1000);
+  await r.clock.advance(30 * 60_000 + 1000);
   const last = r.infos("youtube quota tally").at(-1) as { units: number };
-  assert.ok(last.units > 10_000, `the daily quota's worth of units is spent: ${last.units}`);
+  assert.ok(last.units > 9_000, `the tally at the half hour line: ${last.units}`);
   assert.equal(r.state(), "reading", "no action on the total");
-  assert.ok(r.t.of("poll").length > 2000);
+  assert.ok(r.t.of("poll").length > 1800, "polling goes on past the total, unchanged");
 
   const fresh = pollRig();
   await fresh.start();
@@ -647,11 +648,17 @@ test("a rejected page token is discarded and the source reads without one, with 
   assert.equal(polls[1]!.pageToken, "tok");
   assert.equal(polls[2]!.pageToken, undefined);
   assert.deepEqual(r.texts(), ["n"]);
+  // A failed call that carried no token is retrying (CHAT-YT-046): the reopen carries T1; a call that carried T1 and is rejected drops it.
   const stream = rig();
-  stream.t.lookup_(LIVE).stream_(new StreamScript().open().respond(resp([text("h", 0)], { nextPageToken: "T1" })).fail(grpcErr("INVALID_ARGUMENT")), new StreamScript().open());
+  stream.t.lookup_(LIVE).stream_(
+    new StreamScript().open().respond(resp([text("h", 0)], { nextPageToken: "T1" })).fail(grpcErr("INVALID_ARGUMENT")),
+    grpcErr("INVALID_ARGUMENT"),
+    new StreamScript().open(),
+  );
   await stream.start();
   await stream.clock.advance(1000);
-  assert.equal(stream.t.of("stream")[1]!.pageToken, undefined, "the stream reopens without the token");
+  assert.equal(stream.t.of("stream")[1]!.pageToken, "T1", "the call that carried no token is retrying: the next call carries T1");
+  assert.equal(stream.t.of("stream")[2]!.pageToken, undefined, "the rejected T1 is dropped and the reopen carries no token");
 });
 
 // @spec CHAT-YT-046
@@ -870,7 +877,7 @@ test("a tombstone or userBannedEvent in the first response is not reported", asy
 });
 
 // @spec CHAT-YT-067
-test("a message and a marker that covers it in one response are published as neither", async () => {
+test("a message removal and the message it covers in one response are published as neither; a ban is still published", async () => {
   const r = await afterHistory([text("h", 0)], [
     resp([text("m5", 5), text("m7", 5), tombstone("t1", "m5", 6)]),
     resp([tombstone("t2", "m8", 7), text("m8", 7)]),
@@ -883,8 +890,8 @@ test("a message and a marker that covers it in one response are published as nei
   assert.deepEqual(r.texts(), ["m7"], "a marker before its message covers it too");
   assert.deepEqual(r.removals, []);
   await next(r);
-  assert.deepEqual(r.texts(), ["m7", "u2"], "a ban covers its author's messages in the response");
-  assert.deepEqual(r.removals, []);
+  assert.deepEqual(r.texts(), ["m7", "u2"], "a ban suppresses its author's messages in the response");
+  assert.deepEqual(r.removals, [{ scope: "user", userId: "UCbad", reason: "banned" }], "and the ban itself is still published (M1)");
 });
 
 // @spec CHAT-YT-067, CHAT-YT-066
@@ -953,4 +960,103 @@ test("the source makes no call other than lookup, openStream and poll: nothing s
   await r.start();
   await r.clock.advance(HOUR);
   assert.deepEqual([...new Set(r.t.calls.map((c) => c.kind))].sort(), ["lookup", "stream"]);
+});
+
+// ---------------------------------------------------------------- stream path: backoff, quota token, close
+
+// @spec CHAT-YT-021
+test("once the stream has opened, five clean empty closes still never fall back to polling", async () => {
+  const r = rig();
+  r.t.lookup_(LIVE).stream_(new StreamScript().open().end(), ...Array.from({ length: 6 }, () => new StreamScript().end()));
+  r.t.pollForever = () => resp([]);
+  await r.start();
+  await r.clock.advance(10 * 60_000);
+  assert.ok(r.t.of("stream").length >= 7, `the stream keeps being reopened: ${r.t.of("stream").length}`);
+  assert.equal(r.t.of("poll").length, 0, "no poll, however many clean empty closes");
+});
+
+// @spec CHAT-YT-044
+test("a stream failure with liveChat disabled or FAILED_PRECONDITION waits the backoff before the lookup", async () => {
+  const r = rig();
+  r.t.lookup_(LIVE, { liveBroadcastContent: "live" }).stream_(grpcErr("FAILED_PRECONDITION"));
+  await r.start();
+  await r.clock.advance(999);
+  assert.equal(r.t.of("lookup").length, 1, "no lookup before the 1 s backoff");
+  await r.clock.advance(1);
+  assert.equal(r.t.of("lookup").length, 2, "the lookup at 1 s");
+  assert.equal(r.state(), "stopped");
+});
+
+// @spec CHAT-YT-045
+test("a stream NOT_FOUND waits the backoff before the lookup, and stops only when the broadcast has ended", async () => {
+  const ended = { liveBroadcastContent: "none" as const, actualEndTime: "2026-11-23T12:30:00Z" };
+  const r = rig();
+  r.t.lookup_(LIVE, ended).stream_(grpcErr("NOT_FOUND"));
+  await r.start();
+  await r.clock.advance(999);
+  assert.equal(r.t.of("lookup").length, 1);
+  await r.clock.advance(1);
+  assert.equal(r.t.of("lookup").length, 2);
+  assert.equal(r.state(), "stopped");
+  assert.match(r.reason()!, /broadcast has ended/);
+});
+
+// @spec CHAT-YT-068
+test("stream failures that trigger lookups are paced by the growing backoff, as on the poll path", async () => {
+  const r = rig();
+  r.t.lookup_(...Array.from({ length: 8 }, () => LIVE));
+  r.t.stream_(...Array.from({ length: 8 }, () => grpcErr("FAILED_PRECONDITION")));
+  await r.start();
+  await r.clock.advance(200_000);
+  const times = r.t.of("lookup").map((c) => c.at);
+  assert.ok(times.length >= 6, `${times.length} lookups`);
+  const gaps = times.slice(1).map((t, i) => t - times[i]!);
+  [1000, 2000, 4000, 8000, 16000].forEach((min, i) => assert.ok(gaps[i]! >= min, `gap ${i} is ${gaps[i]}, at least ${min}`));
+});
+
+// @spec CHAT-YT-033
+test("a stream that resumes after quota is opened with the token it held before the quota", async () => {
+  const r = rig();
+  r.t.lookup_(LIVE, LIVE).stream_(
+    new StreamScript().open().respond(resp([text("h", 0)], { nextPageToken: "T1" })).fail(grpcErr("RESOURCE_EXHAUSTED")),
+    new StreamScript().open().respond(resp([text("n", 20)])),
+  );
+  await r.start();
+  await r.clock.advance(HOUR + 1000);
+  const calls = r.t.of("stream");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1]!.pageToken, "T1", "the resume carries the last token");
+  assert.deepEqual(r.texts(), ["n"]);
+});
+
+// @spec CHAT-SRC-005
+test("the stream iterator is closed when a response says offlineAt, a chatEndedEvent arrives, or the source stops", async () => {
+  const off = rig();
+  const sOff = new StreamScript().open().respond(resp([], { offlineAt: "2026-11-23T13:00:00Z" }));
+  off.t.lookup_(LIVE).stream_(sOff);
+  await off.start();
+  assert.equal(off.state(), "stopped");
+  assert.equal(sOff.returned, 1, "offlineAt closes the call");
+
+  const ended = rig();
+  const sEnded = new StreamScript().open().respond(resp([chatEnded()]));
+  ended.t.lookup_(LIVE).stream_(sEnded);
+  await ended.start();
+  assert.equal(ended.state(), "stopped");
+  assert.equal(sEnded.returned, 1, "chatEndedEvent closes the call");
+
+  const stopped = rig();
+  const sOpen = new StreamScript().open();
+  stopped.t.lookup_(LIVE).stream_(sOpen);
+  await stopped.start();
+  stopped.src.stop();
+  await settle();
+  assert.equal(sOpen.returned, 1, "stop closes the call");
+});
+
+// @spec CHAT-FORGET-002
+test("a messageDeletedEvent removes its deleted message exactly as a tombstone does", async () => {
+  const r = await afterHistory([text("h", 0)], [resp([{ id: "d1", snippet: { type: "messageDeletedEvent", publishedAt: at(5), messageDeletedDetails: { deletedMessageId: "m3" } }, authorDetails: { channelId: "UCmod" } }])]);
+  await next(r);
+  assert.deepEqual(r.removals, [{ scope: "message", messageId: "m3" }]);
 });

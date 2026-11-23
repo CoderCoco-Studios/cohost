@@ -13,7 +13,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as loader from "@grpc/proto-loader";
 import { recordingLog, testConfig, waitFor } from "@cohost/testing";
 import {
-  createYouTubeTransport, STREAM_LIST_PROTO, YOUTUBE_REST_HOST, YOUTUBE_STREAM_TARGET, YouTubeApiError,
+  createYouTubeTransport, STREAM_CHANNEL_OPTIONS, STREAM_LIST_PROTO, streamCredentials, YOUTUBE_REST_HOST, YOUTUBE_STREAM_TARGET, YouTubeApiError,
   type LiveChatListResponse, type StreamChunk, type YouTubeTransport,
 } from "../src/youtube-transport.js";
 import { mapLiveChatItem } from "../src/youtube-map.js";
@@ -98,8 +98,8 @@ test("lookup is one GET of videos.list with parts liveStreamingDetails and snipp
     assert.equal(q.path, "/youtube/v3/videos");
     assert.equal(q.query.get("id"), VIDEO);
     assert.equal(q.query.get("part"), "liveStreamingDetails,snippet");
-    assert.equal(q.query.get("key"), KEY);
-    assert.deepEqual([...q.query.keys()].sort(), ["id", "key", "part"]);
+    assert.equal(q.headers["x-goog-api-key"], KEY, "the key travels in the header (CHAT-YT-001)");
+    assert.deepEqual([...q.query.keys()].sort(), ["id", "part"], "and never in the URL");
     assert.equal(q.headers.authorization, undefined, "no OAuth token");
     assert.deepEqual(item, { liveBroadcastContent: "live", activeLiveChatId: CHAT, scheduledStartTime: "2026-11-23T10:55:00Z" });
   });
@@ -145,7 +145,8 @@ test("poll is one GET of liveChatMessages.list with the chat id, parts snippet a
     const q = s.restRequests[0]!;
     assert.equal(q.method, "GET");
     assert.equal(q.path, "/youtube/v3/liveChat/messages");
-    assert.deepEqual(Object.fromEntries(q.query), { liveChatId: CHAT, part: "snippet,authorDetails", pageToken: "PREV", key: KEY });
+    assert.deepEqual(Object.fromEntries(q.query), { liveChatId: CHAT, part: "snippet,authorDetails", pageToken: "PREV" });
+    assert.equal(q.headers["x-goog-api-key"], KEY);
     assert.equal(q.headers.authorization, undefined);
     await s.transport().poll({ chatId: CHAT });
     assert.equal(s.restRequests[1]!.query.has("pageToken"), false, "no page token when there is none");
@@ -185,7 +186,9 @@ test("by default the REST calls go to https://www.googleapis.com and carry only 
     assert.equal(url.username + url.password, "");
     assert.equal(new Headers(init?.headers).has("authorization"), false);
     assert.equal(new Headers(init?.headers).has("cookie"), false);
-    assert.ok([...url.searchParams.values()].every((v) => [KEY, VIDEO, CHAT, "P", "liveStreamingDetails,snippet", "snippet,authorDetails"].includes(v)), "no other value leaves the host");
+    assert.ok(![...url.searchParams.values()].includes(KEY), "the key is not in the URL");
+    assert.equal(new Headers(init?.headers).get("x-goog-api-key"), KEY, "the key is sent as a header");
+    assert.ok([...url.searchParams.values()].every((v) => [VIDEO, CHAT, "P", "liveStreamingDetails,snippet", "snippet,authorDetails"].includes(v)), "no other value leaves the host");
   }
 });
 
@@ -445,4 +448,14 @@ test("end to end by polling: lookup and polls over HTTP, the floor between polls
       src.stop();
     }
   });
+});
+
+// @spec CHAT-YT-001, CHAT-YT-059
+test("the default stream channel is TLS, and the keepalive options are set on it", async () => {
+  const secure = (await streamCredentials(false)) as { _isSecure(): boolean };
+  const plain = (await streamCredentials(true)) as { _isSecure(): boolean };
+  assert.equal(secure._isSecure(), true, "the default is SSL credentials");
+  assert.equal(plain._isSecure(), false, "plaintext only when a test asks for it");
+  assert.equal(STREAM_CHANNEL_OPTIONS["grpc.keepalive_time_ms"], 60_000);
+  assert.equal(STREAM_CHANNEL_OPTIONS["grpc.keepalive_timeout_ms"], 20_000);
 });

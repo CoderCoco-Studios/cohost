@@ -37,8 +37,8 @@ function chatMessage(item: LiveChatItem, body: unknown): MapResult {
 
 /**
  * Maps one API `liveChatMessage` to what the source does with it. Text messages publish their text; a Super Chat publishes
- * only its own comment; notices and other types publish nothing; the two removal markers become removals (CHAT-YT-051..058,
- * CHAT-FORGET-002..004).
+ * only its own comment; notices and other types publish nothing; the removal markers become removals: a `tombstone` or a
+ * `messageDeletedEvent` removes its deleted message, a `userBannedEvent` removes its channel (CHAT-YT-051..058, CHAT-FORGET-002..004).
  */
 // @spec CHAT-YT-050, CHAT-YT-051, CHAT-YT-052, CHAT-YT-053, CHAT-YT-054, CHAT-YT-055, CHAT-YT-056, CHAT-YT-057, CHAT-YT-058, CHAT-FORGET-002, CHAT-FORGET-003, CHAT-FORGET-004
 export function mapLiveChatItem(item: LiveChatItem): MapResult {
@@ -49,7 +49,8 @@ export function mapLiveChatItem(item: LiveChatItem): MapResult {
       return chatMessage(item, snippet.textMessageDetails?.messageText);
     case "superChatEvent":
       return chatMessage(item, snippet.superChatDetails?.userComment);
-    case "tombstone": {
+    case "tombstone":
+    case "messageDeletedEvent": {
       const deleted = snippet.messageDeletedDetails?.deletedMessageId;
       if (typeof deleted !== "string" || deleted === "") return { kind: "unusable", type };
       return { kind: "removal", removal: { scope: "message", messageId: deleted }, markerId: item.id };

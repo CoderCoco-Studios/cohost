@@ -150,6 +150,13 @@ test("a tombstone with the deleted message's id is a message removal carrying it
   assert.deepEqual(r, { kind: "removal", removal: { scope: "message", messageId: "m9" }, markerId: "t1" });
 });
 
+// @spec CHAT-FORGET-002
+test("a messageDeletedEvent with the deleted message's id is a message removal, as a tombstone is", () => {
+  const item = { id: "d1", snippet: { type: "messageDeletedEvent", publishedAt: "2026-11-23T12:00:05Z", messageDeletedDetails: { deletedMessageId: "m9" } }, authorDetails: { channelId: "UCmod" } };
+  assert.deepEqual(mapLiveChatItem(item), { kind: "removal", removal: { scope: "message", messageId: "m9" }, markerId: "d1" });
+  assert.equal(mapLiveChatItem({ ...item, snippet: { type: "messageDeletedEvent" } }).kind, "unusable", "no id: nothing forgotten");
+});
+
 // @spec CHAT-FORGET-003
 test("a userBannedEvent is a user removal, banned for a permanent ban and timeout for a temporary one", () => {
   assert.deepEqual(mapLiveChatItem(banned("b1", "UCbad", "permanent")), { kind: "removal", removal: { scope: "user", userId: "UCbad", reason: "banned" }, markerId: "b1" });

@@ -69,7 +69,7 @@ The Services screen shows `youtube` as `reading`, and a message typed in the bro
 - `live chat is disabled for this broadcast` or `the broadcast has ended`: the source stops and does not retry. Start a new broadcast, set its URL and restart chat.
 - `retrying` with the reason `quota`: the daily quota is spent. It resumes on its own; a higher `poll_floor_ms` spends less.
 
-More cases are on the [troubleshooting page](../troubleshooting.md).
+More cases are on the [troubleshooting page](../troubleshooting.md#the-youtube-chat-source-stops-with-a-reason).
 
 ## Limits
 

@@ -89,6 +89,37 @@ function toApiItem(raw: Record<string, any>): LiveChatItem {
   return item;
 }
 
+/** Channel options for the stream: keepalive pings keep an idle stream's connection from being dropped silently. */
+export const STREAM_CHANNEL_OPTIONS = {
+  "grpc.keepalive_time_ms": 60_000,
+  "grpc.keepalive_timeout_ms": 20_000,
+} as const;
+
+interface StreamModule {
+  grpc: typeof import("@grpc/grpc-js");
+  Service: new (target: string, creds: unknown, options: object) => any;
+}
+
+let streamModule: Promise<StreamModule> | undefined;
+
+/** The gRPC library and the StreamList service class, loaded once from the vendored proto. */
+function loadStreamModule(): Promise<StreamModule> {
+  streamModule ??= (async () => {
+    const grpc = await import("@grpc/grpc-js");
+    const loader = await import("@grpc/proto-loader");
+    const definition = loader.loadSync(STREAM_LIST_PROTO, { keepCase: false, longs: String, enums: String, defaults: false, oneofs: false });
+    const pkg = grpc.loadPackageDefinition(definition) as unknown as { youtube: { api: { v3: { V3DataLiveChatMessageService: StreamModule["Service"] } } } };
+    return { grpc, Service: pkg.youtube.api.v3.V3DataLiveChatMessageService };
+  })();
+  return streamModule;
+}
+
+/** The channel credentials for the stream: TLS unless a test asks for plaintext to a local server. */
+export async function streamCredentials(insecure: boolean): Promise<unknown> {
+  const { grpc } = await loadStreamModule();
+  return insecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl();
+}
+
 /** Builds the transport: REST through `fetch` to www.googleapis.com, the stream through @grpc/grpc-js to youtube.googleapis.com. */
 // @spec CHAT-YT-001, CHAT-YT-002, CHAT-YT-007, CHAT-YT-015, CHAT-YT-026, CHAT-YT-029, CHAT-YT-059
 export function createYouTubeTransport(opts: YouTubeTransportOptions): YouTubeTransport {
@@ -98,8 +129,9 @@ export function createYouTubeTransport(opts: YouTubeTransportOptions): YouTubeTr
 
   async function getJson(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<any> {
     const url = new URL(`${restBase}${path}`);
-    for (const [k, v] of Object.entries({ ...params, key: opts.apiKey })) url.searchParams.set(k, v);
-    const res = await fetchImpl(url, { signal, headers: { accept: "application/json" } });
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    // The key travels in a header, never in the URL, so it cannot reach a log of the request line.
+    const res = await fetchImpl(url, { signal, headers: { accept: "application/json", "x-goog-api-key": opts.apiKey } });
     const body = await res.text();
     if (!res.ok) throw restError(res.status, body);
     return JSON.parse(body);
@@ -130,12 +162,8 @@ export function createYouTubeTransport(opts: YouTubeTransportOptions): YouTubeTr
   };
 
   async function* streamList(req: { chatId: string; pageToken?: string; signal?: AbortSignal }): AsyncGenerator<StreamChunk> {
-    const grpc = await import("@grpc/grpc-js");
-    const loader = await import("@grpc/proto-loader");
-    const definition = loader.loadSync(STREAM_LIST_PROTO, { keepCase: false, longs: String, enums: String, defaults: false, oneofs: false });
-    const pkg = grpc.loadPackageDefinition(definition) as unknown as { youtube: { api: { v3: { V3DataLiveChatMessageService: new (target: string, creds: unknown) => any } } } };
-    const Service = pkg.youtube.api.v3.V3DataLiveChatMessageService;
-    const client = new Service(streamTarget, opts.streamInsecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl());
+    const { grpc, Service } = await loadStreamModule();
+    const client = new Service(streamTarget, await streamCredentials(opts.streamInsecure === true), STREAM_CHANNEL_OPTIONS);
     const metadata = new grpc.Metadata();
     metadata.set("x-goog-api-key", opts.apiKey);
     const request: Record<string, unknown> = { liveChatId: req.chatId, part: ["snippet", "authorDetails"] };

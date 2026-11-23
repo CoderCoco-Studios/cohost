@@ -109,7 +109,7 @@ test("remember embeds 'who: text' and stores the vector as a pgvector literal", 
   await s.remember("chat", "bob", "I love speedruns");
   assert.deepEqual(embedded, ["bob: I love speedruns"]);
   assert.match(queries[0]!.sql, /^INSERT INTO memories/);
-  assert.deepEqual(queries[0]!.params, ["chat", "bob", "I love speedruns", "[0.5,-1,2]"]);
+  assert.deepEqual(queries[0]!.params, ["chat", "bob", "I love speedruns", "[0.5,-1,2]", null, null, null]);
 });
 
 // @spec MEM-WRITE-005
@@ -151,30 +151,30 @@ test("recall: k=0 skips the database, and failures return nothing instead of thr
 });
 
 // @spec MEM-VIEWER-001, MEM-VIEWER-003, MEM-REG-001, MEM-REG-005
-test("touchViewer keys viewers case-insensitively, flags first-timers, stores isSub and derives regular", async () => {
+test("touchViewer stores the viewerKey as given, never case-folded; flags first-timers, stores isSub and derives regular", async () => {
   let row: Record<string, unknown> = { msg_count: 1, regular_manual: false };
   const { s, queries } = store({ rows: (q) => (q.sql.startsWith("INSERT INTO viewers") ? [row] : []) });
-  assert.deepEqual(await s.touchViewer("BoB123", "Bob", { isSub: true }), { msgCount: 1, isNew: true, regular: false });
+  assert.deepEqual(await s.touchViewer("twitch:id:BoB123", "Bob", { isSub: true }), { msgCount: 1, isNew: true, regular: false });
   const insert = queries.find((q) => q.sql.startsWith("INSERT INTO viewers"))!;
-  assert.deepEqual(insert.params, ["bob123", "Bob", true]);
+  assert.deepEqual(insert.params, ["twitch:id:BoB123", "Bob", true]);
   assert.match(insert.sql, /ON CONFLICT \(user_key\) DO UPDATE .*msg_count = viewers\.msg_count \+ 1.*is_sub = EXCLUDED\.is_sub/);
   row = { msg_count: 2, regular_manual: false };
-  assert.equal((await s.touchViewer("bob123", "Bob")).isNew, false);
-  assert.equal((await s.touchViewer("bob123", "Bob")).regular, false);
+  assert.equal((await s.touchViewer("twitch:id:BoB123", "Bob")).isNew, false);
+  assert.equal((await s.touchViewer("twitch:id:BoB123", "Bob")).regular, false);
   row = { msg_count: 26, regular_manual: false }; // default threshold 25: above it
-  assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
+  assert.equal((await s.touchViewer("twitch:id:BoB123", "Bob")).regular, true);
   row = { msg_count: 2, regular_manual: true }; // the owner's flag
-  assert.equal((await s.touchViewer("bob123", "Bob")).regular, true);
+  assert.equal((await s.touchViewer("twitch:id:BoB123", "Bob")).regular, true);
 });
 
 // @spec MEM-REG-004
 test("touchViewer first tries to claim a placeholder with the same display for a key that has no row", async () => {
   const { s, queries } = store({ rows: (q) => (q.sql.startsWith("UPDATE viewers") ? [{ msg_count: 1, regular_manual: true }] : []) });
-  assert.deepEqual(await s.touchViewer("Id77", "Pat"), { msgCount: 1, isNew: true, regular: true });
+  assert.deepEqual(await s.touchViewer("twitch:id:Id77", "Pat"), { msgCount: 1, isNew: true, regular: true });
   assert.equal(queries.length, 1, "a claimed placeholder needs no upsert");
   assert.match(queries[0]!.sql, /SET user_key = \$1, display = \$2, placeholder = false, msg_count = msg_count \+ 1/);
   assert.match(queries[0]!.sql, /p\.placeholder AND lower\(p\.display\) = lower\(\$2\) AND NOT EXISTS \(SELECT 1 FROM viewers e WHERE e\.user_key = \$1\)/);
-  assert.deepEqual(queries[0]!.params, ["id77", "Pat", false]);
+  assert.deepEqual(queries[0]!.params, ["twitch:id:Id77", "Pat", false]);
 });
 
 // @spec MEM-STORE-003
@@ -270,7 +270,7 @@ test("the consolidation lock is a session advisory lock: taken, held while fn ru
 test("commitViewer runs in one transaction, locks the viewer's notes and writes only notes still at the version it read", async () => {
   const current = [{ id: "1", version: 2, category: "general", hint: null }, { id: "2", version: 1, category: "general", hint: null }, { id: "3", version: 1, category: "general", hint: null }];
   const { s, queries } = store({ rows: (q) => (q.sql.startsWith("SELECT id, version") ? current : []) });
-  await s.commitViewer("BOB", [
+  await s.commitViewer("twitch:id:BOB", [
     { kind: "update", id: 1, version: 2, set: { text: "new text", layer: "core" } },
     { kind: "update", id: 2, version: 9, set: { text: "stale" } }, // read at an older version
     { kind: "delete", id: 3, version: 1 },
@@ -280,7 +280,7 @@ test("commitViewer runs in one transaction, locks the viewer's notes and writes 
   assert.equal(sql[0], "BEGIN");
   assert.equal(sql.at(-1), "COMMIT");
   assert.match(sql[1]!, /^SELECT id, version, category, hint FROM viewer_notes WHERE user_key = \$1 FOR UPDATE$/);
-  assert.deepEqual(queries[1]!.params, ["bob"]);
+  assert.deepEqual(queries[1]!.params, ["twitch:id:BOB"]);
   const updates = queries.filter((q) => q.sql.startsWith("UPDATE viewer_notes SET layer"));
   assert.equal(updates.length, 1, "only the note at its read version is rewritten");
   assert.match(updates[0]!.sql, /dirty = false, version = version \+ 1 WHERE id = \$1 AND version = \$2/);
@@ -320,12 +320,12 @@ test("purging deletes only deletion records without a reason older than the cuto
 
 // @spec MEM-NOTE-001, MEM-NOTE-010
 test("insertNote embeds the text, defaults a sensitive hint and stores strength clamped to 0..1", async () => {
-  const row = { id: "1", user_key: "bob", layer: "recent", category: "health", text: "t", hint: "h", strength: 1, strength_at: new Date(), mentions: 1, dirty: true, version: 1, created_at: new Date(), last_surfaced_at: null, embedding: "[0.5,-1,2]" };
+  const row = { id: "1", user_key: "twitch:id:BOB", layer: "recent", category: "health", text: "t", hint: "h", strength: 1, strength_at: new Date(), mentions: 1, dirty: true, version: 1, created_at: new Date(), last_surfaced_at: null, embedding: "[0.5,-1,2]" };
   const { s, queries, embedded } = store({ rows: () => [row] });
-  const n = await s.insertNote({ userKey: "BOB", category: "health", text: " had surgery ", strength: 4 });
+  const n = await s.insertNote({ userKey: "twitch:id:BOB", category: "health", text: " had surgery ", strength: 4 });
   assert.deepEqual(embedded, ["had surgery"]);
   assert.match(queries[0]!.sql, /^INSERT INTO viewer_notes \(user_key, layer, category, text, hint, strength, strength_at, mentions, dirty, version, embedding\)/);
   const p = queries[0]!.params!;
-  assert.deepEqual([p[0], p[1], p[2], p[3], p[4], p[5], p[7], p[8], p[9]], ["bob", "recent", "health", "had surgery", "only if they bring it up; never quote it", 1, 1, true, "[0.5,-1,2]"]);
+  assert.deepEqual([p[0], p[1], p[2], p[3], p[4], p[5], p[7], p[8], p[9]], ["twitch:id:BOB", "recent", "health", "had surgery", "only if they bring it up; never quote it", 1, 1, true, "[0.5,-1,2]"]);
   assert.deepEqual(n.embedding, [0.5, -1, 2]);
 });

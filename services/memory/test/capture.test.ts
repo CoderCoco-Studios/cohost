@@ -102,12 +102,12 @@ test("a voice line reinforces a duplicate note and is dropped by a suppression r
 // @spec MEM-VOICE-003, MEM-VOICE-004
 test("a voice line from a linked id is captured onto the chat viewer, and the hook sees the chat display name", async () => {
   const t = setup();
-  await t.store.touchViewer("ID1", "BobChat");
-  await t.store.linkDiscord("D1", "ID1");
+  await t.store.touchViewer("twitch:id:ID1", "BobChat");
+  await t.store.linkDiscord("D1", "twitch:id:ID1");
   t.answer(() => general("adopted a puppy"));
   await t.onEvent(speech());
   assert.equal(t.inputs[0]!.viewer, "BobChat");
-  assert.equal((await t.store.listNotes("ID1")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:id:ID1")).length, 1);
   assert.equal(await t.store.getViewer("discord:d1"), undefined);
 });
 
@@ -136,7 +136,7 @@ test("a hook configured as rules costs nothing: no hook run and no store reads",
 // @spec MEM-CAPTURE-004
 test("the hook sees the viewer's display name, the line, their current note texts and only the reasons of reason-carrying deletions", async () => {
   const t = setup();
-  const key = "id1";
+  const key = "twitch:id:ID1";
   await t.store.ensureViewer(key, "Bob");
   await t.store.insertNote({ userKey: key, category: "general", text: "plays Hades" });
   const gone = await t.store.insertNote({ userKey: key, category: "general", text: "streams at night" });
@@ -226,24 +226,24 @@ test("a new note is stored recent at strength 1 with one mention, dirty, on a vi
   const t = setup();
   t.answer(() => general("just got a Steam Deck"));
   await t.onEvent(t.chat());
-  const viewer = (await t.store.getViewer("id1"))!;
+  const viewer = (await t.store.getViewer("twitch:id:ID1"))!;
   assert.deepEqual([viewer.display, viewer.msgCount], ["Bob", 0]);
-  const [n] = await t.store.listNotes("id1");
+  const [n] = await t.store.listNotes("twitch:id:ID1");
   assert.deepEqual([n!.layer, n!.category, n!.text, n!.strength, n!.mentions, n!.dirty, n!.version], ["recent", "general", "just got a Steam Deck", 1, 1, true, 1]);
   assert.deepEqual(n!.embedding, await t.store.embedText("just got a Steam Deck"), "embedded with the store's embedder");
   assert.equal(t.written(), 1);
-  const touch = await t.store.touchViewer("id1", "Bob"); // the memory group handles the same line afterwards
+  const touch = await t.store.touchViewer("twitch:id:ID1", "Bob"); // the memory group handles the same line afterwards
   assert.deepEqual([touch.msgCount, touch.isNew], [1, true]);
 });
 
 // @spec MEM-CAPTURE-011
-test("the line is keyed by userId, or by the user name when there is no id, lowercased", async () => {
+test("the line is keyed by its viewerKey: the userId as given, or the lowercased name when there is no id", async () => {
   const t = setup();
   t.answer(() => general("plays Hades"));
   await t.onEvent(t.chat({ userId: "AbC9" }));
   await t.onEvent(t.chat({ userId: undefined, user: "Zed" }));
-  assert.equal((await t.store.listNotes("abc9")).length, 1);
-  assert.equal((await t.store.listNotes("zed")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:id:AbC9")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:name:zed")).length, 1);
 });
 
 // @spec MEM-CAPTURE-011, MEM-REG-004
@@ -252,7 +252,7 @@ test("a note for a viewer the owner flagged before they chatted claims the place
   await t.store.setRegular("Bob", true);
   t.answer(() => general("plays Hades"));
   await t.onEvent(t.chat());
-  const v = (await t.store.getViewer("id1"))!;
+  const v = (await t.store.getViewer("twitch:id:ID1"))!;
   assert.deepEqual([v.regularManual, v.placeholder, v.msgCount], [true, false, 0]);
   assert.equal(await t.store.getViewer("bob"), undefined);
 });
@@ -265,7 +265,7 @@ test("a note whose normalised text equals an existing note reinforces it instead
   t.advance(7 * DAY);
   t.answer(() => general("plays hades!!"));
   await t.onEvent(t.chat());
-  const notes = await t.store.listNotes("id1");
+  const notes = await t.store.listNotes("twitch:id:ID1");
   assert.equal(notes.length, 1);
   assert.ok(Math.abs(notes[0]!.strength - 0.8) < 1e-9, "0.5 + 0.5 * 0.6");
   assert.deepEqual([notes[0]!.mentions, notes[0]!.dirty, notes[0]!.version], [2, true, 2]);
@@ -276,50 +276,50 @@ test("a note whose normalised text equals an existing note reinforces it instead
 // @spec MEM-CAPTURE-006
 test("a note similar to a viewer's reason-carrying deletion is discarded; another viewer's deletion does not suppress it", async () => {
   const t = setup();
-  await t.store.ensureViewer("id1", "Bob");
-  await t.store.ensureViewer("id2", "Amy");
-  const mine = await t.store.insertNote({ userKey: "id1", category: "general", text: "has a gambling problem" });
-  const theirs = await t.store.insertNote({ userKey: "id2", category: "general", text: "plays Hades" });
+  await t.store.ensureViewer("twitch:id:ID1", "Bob");
+  await t.store.ensureViewer("twitch:id:ID2", "Amy");
+  const mine = await t.store.insertNote({ userKey: "twitch:id:ID1", category: "general", text: "has a gambling problem" });
+  const theirs = await t.store.insertNote({ userKey: "twitch:id:ID2", category: "general", text: "plays Hades" });
   await t.store.deleteNote(mine.id, "do not remember gambling");
   await t.store.deleteNote(theirs.id, "private");
   t.answer(() => general("has a gambling problem"));
   await t.onEvent(t.chat());
-  assert.deepEqual(await t.store.listNotes("id1"), []);
+  assert.deepEqual(await t.store.listNotes("twitch:id:ID1"), []);
   assert.equal(t.written(), 0, "nothing was written, so the scheduler is not told");
   t.answer(() => general("plays Hades"));
   await t.onEvent(t.chat());
-  assert.equal((await t.store.listNotes("id1")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:id:ID1")).length, 1);
 });
 
 // @spec MEM-CAPTURE-007
 test("a note similar to a deletion without a reason comes back weak: a new recent note at returning_strength", async () => {
   const t = setup();
-  await t.store.ensureViewer("id1", "Bob");
-  const old = await t.store.insertNote({ userKey: "id1", category: "general", text: "plays Hades" });
+  await t.store.ensureViewer("twitch:id:ID1", "Bob");
+  const old = await t.store.insertNote({ userKey: "twitch:id:ID1", category: "general", text: "plays Hades" });
   await t.store.deleteNote(old.id);
   t.answer(() => general("plays Hades"));
   await t.onEvent(t.chat());
-  const [n] = await t.store.listNotes("id1");
+  const [n] = await t.store.listNotes("twitch:id:ID1");
   assert.deepEqual([n!.layer, n!.strength, n!.mentions, n!.dirty], ["recent", 0.3, 1, true]);
   const custom = setup({ notes: { returning_strength: 0.5 } });
-  await custom.store.ensureViewer("id1", "Bob");
-  const o2 = await custom.store.insertNote({ userKey: "id1", category: "general", text: "plays Hades" });
+  await custom.store.ensureViewer("twitch:id:ID1", "Bob");
+  const o2 = await custom.store.insertNote({ userKey: "twitch:id:ID1", category: "general", text: "plays Hades" });
   await custom.store.deleteNote(o2.id);
   custom.answer(() => general("plays Hades"));
   await custom.onEvent(custom.chat());
-  assert.equal((await custom.store.listNotes("id1"))[0]!.strength, 0.5);
+  assert.equal((await custom.store.listNotes("twitch:id:ID1"))[0]!.strength, 0.5);
 });
 
 // @spec MEM-CAPTURE-006, MEM-CAPTURE-007, MEM-CAPTURE-008
 test("suppression is checked before duplication, which is checked before a soft return", async () => {
   const t = setup();
-  await t.store.ensureViewer("id1", "Bob");
-  const live = await t.store.insertNote({ userKey: "id1", category: "general", text: "plays Hades" });
-  const dupe = await t.store.insertNote({ userKey: "id1", category: "general", text: "plays Hades" });
+  await t.store.ensureViewer("twitch:id:ID1", "Bob");
+  const live = await t.store.insertNote({ userKey: "twitch:id:ID1", category: "general", text: "plays Hades" });
+  const dupe = await t.store.insertNote({ userKey: "twitch:id:ID1", category: "general", text: "plays Hades" });
   await t.store.deleteNote(dupe.id); // a soft memory of the same text
   t.answer(() => general("plays Hades"));
   await t.onEvent(t.chat());
-  const notes = await t.store.listNotes("id1");
+  const notes = await t.store.listNotes("twitch:id:ID1");
   assert.deepEqual(notes.map((n) => [n.id, n.mentions]), [[live.id, 2]], "reinforced, not returned weak");
 });
 
@@ -343,9 +343,9 @@ test("a failing hook, embedding or store write logs a warning, stores nothing fo
   t.store.ensureViewer = ensure;
   assert.equal(t.lines.filter((l) => l.level === "warn").length, 4);
   assert.equal(t.written(), 0);
-  assert.deepEqual(await t.store.listNotes("id1"), []);
+  assert.deepEqual(await t.store.listNotes("twitch:id:ID1"), []);
   await t.onEvent(t.chat()); // the next line is handled normally
-  assert.equal((await t.store.listNotes("id1")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:id:ID1")).length, 1);
 });
 
 // @spec MEM-CAPTURE-010
@@ -353,7 +353,7 @@ test("a rules fallback answer is no note: nothing is stored", async () => {
   const t = setup();
   t.answer(() => ({ note: null }));
   await t.onEvent(t.chat());
-  assert.equal(await t.store.getViewer("id1"), undefined, "not even a viewer row");
+  assert.equal(await t.store.getViewer("twitch:id:ID1"), undefined, "not even a viewer row");
   assert.equal(t.written(), 0);
 });
 
@@ -366,7 +366,7 @@ test("a failure in the scheduler notification is logged and does not fail the li
     onNotesWritten: async () => { throw new Error("count boom"); },
   });
   await onEvent(t.chat());
-  assert.equal((await t.store.listNotes("id1")).length, 1);
+  assert.equal((await t.store.listNotes("twitch:id:ID1")).length, 1);
   assert.equal(lines.filter((l) => l.level === "warn").length, 1);
 });
 
@@ -375,7 +375,7 @@ test("a health or family note without a hint gets the category's default hint", 
   const t = setup();
   t.answer(() => ({ note: { category: "family", text: "lost their mother" } }));
   await t.onEvent(t.chat());
-  assert.equal((await t.store.listNotes("id1"))[0]!.hint, "check in warmly and gently; never name or quote it");
+  assert.equal((await t.store.listNotes("twitch:id:ID1"))[0]!.hint, "check in warmly and gently; never name or quote it");
 });
 
 // @spec MEM-CONSOL-001

@@ -4,7 +4,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { glb, model, modelOfSize, open, rig, send, tick, MiB, type Rig } from "./models-rig.js";
+import { waitFor } from "@cohost/testing";
+import { ANSWER_CAP_MS, glb, model, modelOfSize, open, rig, send, tick, MiB, type Rig } from "./models-rig.js";
 
 // POST /avatar/models: the gating, the check order, the streamed write, the head checks and the commit (DASH-MDL-015..032).
 
@@ -12,13 +13,18 @@ const up = (r: Rig, query: string, body: Buffer, o: { headers?: Record<string, s
   send(r.port, "POST", `/avatar/models${query}`, { headers: { ...r.auth, ...o.headers }, body, chunked: o.chunked });
 const incoming = (r: Rig): string[] => r.ls().filter((n) => n.startsWith(".incoming-"));
 const names = (r: Rig): string[] => r.ls().filter((n) => !n.startsWith(".incoming-"));
+/** The first bytes of an upload: the whole glTF head (well under 1 KiB) and a little of the BIN chunk, so the head is judged. */
+const HEAD_BYTES = 1024;
+/** Waits until the dropped upload's temporary file is gone; the server learns of the drop on its own schedule, so no event marks it. */
+const untilRemoved = (r: Rig, what: string): Promise<void> => waitFor(() => incoming(r).length === 0, `${what}: the temporary file removed`, ANSWER_CAP_MS);
 
 /** An upload held open mid-body: the head is sent, the rest never is, until the caller ends it. */
 async function hold(r: Rig, name: string, extra = ""): Promise<{ finish: (rest: Buffer) => Promise<Awaited<ReturnType<typeof open>["done"]>>; drop: () => void; whole: Buffer }> {
   const whole = model(name, 4096);
   const h = open(r.port, "POST", `/avatar/models?name=${name}.vrm${extra}`, { ...r.auth, "content-length": String(whole.length) });
-  h.write(whole.subarray(0, 100));
-  for (let i = 0; i < 200 && incoming(r).length === 0; i++) await tick(5);
+  const opened = r.tempOpened();
+  h.write(whole.subarray(0, HEAD_BYTES));
+  await opened;
   assert.equal(incoming(r).length, 1, "the upload has opened its temporary file");
   return { whole, finish: (rest) => { h.end(rest); return h.done; }, drop: () => h.destroy() };
 }
@@ -67,7 +73,7 @@ test("the checks run in order, each answering alone and reading no body byte aft
   const answers = async (query: string, headers: Record<string, string>, expected: number, why: string) => {
     const h = open(r.port, "POST", `/avatar/models${query}`, headers);
     h.write(Buffer.alloc(100, 1)); // a body that never finishes: the answer must come without it
-    const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), 3000))]);
+    const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), ANSWER_CAP_MS))]);
     h.destroy();
     assert.notEqual(res, null, `${why}: no answer without the rest of the body`);
     assert.equal(res!.status, expected, why);
@@ -86,7 +92,7 @@ test("the checks run in order, each answering alone and reading no body byte aft
   assert.equal("name" in c.json(), false);
   await answers("", { ...r.auth, "content-length": small }, 400, "name before slot");
   slot.drop();
-  for (let i = 0; i < 200 && incoming(r).length; i++) await tick(5);
+  await untilRemoved(r, "the dropped slot upload");
   const col = await answers("?name=aiko.vrm", { ...r.auth, "content-length": small }, 409, "collision");
   assert.equal(col.json().name, "Aiko.vrm");
 });
@@ -191,7 +197,7 @@ test("a body over dashboard.models.max_bytes is cut at the first byte over: 413,
   const chunk = Buffer.alloc(64 * 1024);
   let sent = 0;
   const pump = setInterval(() => { for (let i = 0; i < 8; i++) { h.write(chunk); sent += chunk.length; } }, 1);
-  const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), 5000))]);
+  const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), ANSWER_CAP_MS))]);
   clearInterval(pump);
   h.destroy();
   assert.notEqual(res, null, "answered while the body was still arriving");
@@ -218,14 +224,15 @@ test("the body goes to .incoming-<16 hex> in the model folder, and a large uploa
   const total = 48 * MiB;
   const whole = modelOfSize(total);
   const h = open(r.port, "POST", "/avatar/models?name=Large.vrm", { ...r.auth, "content-length": String(total) });
-  h.write(whole.subarray(0, 1024));
-  for (let i = 0; i < 200 && incoming(r).length === 0; i++) await tick(5);
+  const opened = r.tempOpened();
+  h.write(whole.subarray(0, HEAD_BYTES));
+  await opened;
   assert.match(incoming(r)[0] ?? "", /^\.incoming-[0-9a-f]{16}$/);
   const baseline = process.memoryUsage().rss;
   let peakRss = baseline;
   const sample = setInterval(() => { peakRss = Math.max(peakRss, process.memoryUsage().rss); }, 5);
   const piece = 256 * 1024;
-  for (let off = 1024; off < total; off += piece) {
+  for (let off = HEAD_BYTES; off < total; off += piece) {
     if (!h.write(whole.subarray(off, Math.min(total, off + piece)))) await new Promise((ok) => h.req.once("drain", ok));
   }
   h.end();
@@ -248,8 +255,9 @@ test("an upload that sends no byte for 30 s is aborted with 408, its temporary f
   let h!: ReturnType<typeof open>;
   try {
     h = open(r.port, "POST", "/avatar/models?name=Slow.vrm", { ...r.auth, "content-length": String(whole.length) });
-    h.write(whole.subarray(0, 100));
-    for (let i = 0; i < 200 && incoming(r).length === 0; i++) await tick(5);
+    const opened = r.tempOpened();
+    h.write(whole.subarray(0, HEAD_BYTES));
+    await opened;
     assert.equal(incoming(r).length, 1);
     mock.timers.tick(29_000);
     await tick(10);
@@ -286,7 +294,7 @@ test("a bad head is 400 JSON {ok:false, detail} as soon as it is read, the tempo
   for (const [why, head] of Object.entries(cases)) {
     const h = open(r.port, "POST", "/avatar/models?name=Bad.vrm", { ...r.auth });
     h.write(head.subarray(0, Math.min(head.length, 4 * MiB)));
-    const res = await Promise.race([h.done, new Promise<null>((o) => setTimeout(() => o(null), 3000))]);
+    const res = await Promise.race([h.done, new Promise<null>((o) => setTimeout(() => o(null), ANSWER_CAP_MS))]);
     h.destroy();
     assert.notEqual(res, null, `${why}: answered without the rest of the body`);
     assert.equal(res!.status, 400, why);
@@ -321,7 +329,7 @@ test("without replace=1 the file is hard-linked and a name that appeared meanwhi
   const r = await rig(t, {});
   const held = await hold(r, "Race");
   writeFileSync(join(r.models, "Race.vrm"), "taken by hand"); // the derived name appears while the body streams
-  const lost = await held.finish(held.whole.subarray(100));
+  const lost = await held.finish(held.whole.subarray(HEAD_BYTES));
   assert.equal(lost.status, 409);
   assert.equal(lost.json().name, "Race.vrm");
   assert.equal(readFileSync(join(r.models, "Race.vrm"), "utf8"), "taken by hand");
@@ -371,7 +379,7 @@ test("a client that drops the connection mid-upload leaves no temporary file and
   const r = await rig(t, {});
   const held = await hold(r, "Drop");
   held.drop();
-  for (let i = 0; i < 400 && incoming(r).length; i++) await tick(5);
+  await untilRemoved(r, "the dropped upload");
   assert.deepEqual(incoming(r), []);
   assert.equal((await up(r, "?name=After.vrm", model("after"))).status, 201);
 });
@@ -425,7 +433,7 @@ test("a header whose total length passes dashboard.models.max_bytes is refused 4
   const big = glb({ asset: { version: "2.0" }, extensionsUsed: ["VRMC_vrm"], extensions: { VRMC_vrm: {} } }, { bin: 2 * MiB });
   const h = open(r.port, "POST", "/avatar/models?name=Huge.vrm", r.auth);
   h.write(big.subarray(0, 512)); // the head only: the rest is never sent
-  const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), 3000))]);
+  const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), ANSWER_CAP_MS))]);
   h.destroy();
   assert.notEqual(res, null, "answered without the rest of the body");
   assert.equal(res!.status, 413);

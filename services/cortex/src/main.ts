@@ -5,7 +5,7 @@ import { createChatProvider as createChatProviderFor } from "@cohost/llm";
 import { hookHealth, pingHooks } from "@cohost/modules";
 import { createCritic as createCriticFor } from "./critic.js";
 import { Cortex } from "./cortex.js";
-import { cortexHealth } from "./health.js";
+import { NOMINAL_PING_DETAIL, cortexHealth } from "./health.js";
 import { startCortex, trackLlm, waitForLlm } from "./startup.js";
 
 /** What `main` needs from a Bus; tests pass a fake. */
@@ -23,6 +23,8 @@ interface LlmState {
   ok: boolean;
   /** A provider whose ping always answers true says nothing until a reply has been tried (CTX-HEALTH-004). */
   probed: boolean;
+  /** The tool catalog's state as the cortex reads it, once it is built (CTX-HEALTH-008). */
+  tools?: () => "ok" | "down" | "n/a";
 }
 
 /** Where `cortexMain` publishes the critic hook's health so the heartbeat, started earlier by the bootstrap, can read it. */
@@ -42,7 +44,11 @@ export async function cortexMain(ctx: ServiceContext<CortexBus>, llmState: LlmSt
   const critic = (env.createCritic ?? createCriticFor)(cfg, log); // @spec CTX-START-005
   hooks.current = hookHealth([critic]); // @spec CTX-HEALTH-006: the critic hook's dependency and mode, read by the heartbeat
   void pingHooks([critic], log); // @spec CTX-HEALTH-007
-  const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality: env.loadPersonality ?? loadPersonalityFile, heartbeat });
+  const cortex = new Cortex({
+    cfg, bus, llm, critic, log, loadPersonality: env.loadPersonality ?? loadPersonalityFile, heartbeat,
+    standingDetail: cfg.llm.provider === "bedrock" ? NOMINAL_PING_DETAIL : undefined,
+  });
+  llmState.tools = () => cortex.toolsState();
   onStop(() => cortex.stop());
 
   // @spec CTX-START-002
@@ -69,7 +75,7 @@ export function runCortex(env: CortexEnv = {}): Promise<void> { // @spec CTX-STA
     service: "cortex",
     health: (cfg: Config) => {
       llmState.probed = cfg.llm.provider !== "bedrock";
-      const base = cortexHealth(() => llmState.ok, cfg.llm.provider, () => llmState.probed, cfg.llm.provider === "bedrock");
+      const base = cortexHealth(() => llmState.ok, cfg.llm.provider, () => llmState.probed, cfg.llm.provider === "bedrock", () => llmState.tools?.() ?? "n/a");
       // Until main has built the critic only the model backend is reported; afterwards the hook adds its dependency and may set mode mock.
       return {
         ...base,

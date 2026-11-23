@@ -18,10 +18,10 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Tools and the catalog (TOOL-CAT)
 
-- [ ] **TOOL-CAT-001**: The service shall give the built-in tools the names `clock`, `stream_info`, `memory_lookup` and `timer`, and an MCP tool the name `<server>__<tool>` made of the server's name from `tools.servers` and the tool's own name.
+- [ ] **TOOL-CAT-001**: The service shall give the built-in tools the names `clock`, `stream_info`, `memory_lookup` and `timer`, and an MCP tool the name `<server>__<tool>` made of the server's name from `tools.servers` and the tool's own name. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-CAT-002**: If an MCP tool's server name or own name has a character outside `[A-Za-z0-9_-]`, or its qualified name is longer than 64 characters, or its argument schema serializes to more than 4000 characters, then the service shall not list the tool and shall count it in the server's `detail`.
 - [x] **TOOL-CAT-003**: When the service lists an MCP tool, it shall cut the tool's description to 400 characters and its title to 100.
-- [ ] **TOOL-CAT-004**: The service shall give `timer` the label `acts` and `clock`, `stream_info` and `memory_lookup` the label `read`.
+- [ ] **TOOL-CAT-004**: The service shall give `timer` the label `acts` and `clock`, `stream_info` and `memory_lookup` the label `read`. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-CAT-005**: When the service lists an MCP tool, it shall give it the label `read` for the annotation `readOnlyHint: true`, `acts` for `readOnlyHint: false` and `unlabelled` when the tool has no such annotation.
 - [x] **TOOL-CAT-006**: A tool shall be `offered` only while it is enabled in `tools.allow`, its server is `ok` or `mock` (or it is built in), its label is `read` or its `acts` mark is true, and, for an MCP tool outside mock mode, its definition matches its pinned hash (TOOL-PIN-004).
 - [x] **TOOL-CAT-007**: When a tool is not offered, the catalog shall give it a `reason`, the first that applies of `not_enabled`, `acts_not_allowed`, `not_approved`, `changed` and `server_down`, and shall give an offered tool no `reason`.
@@ -30,7 +30,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CAT-010**: The catalog shall list every configured server with its `name`, its `state` (`ok`, `down`, `auth` or `mock`), `external` and a `detail` sentence.
 - [x] **TOOL-CAT-011**: The service shall publish `tool.catalog` when it becomes ready, whenever the list of tools or the state of a server changes, and otherwise every `tools.catalog_ms` (default 30000), with `intervalMs` equal to `tools.catalog_ms`.
 - [x] **TOOL-CAT-012**: The catalog shall describe the marks of the `config.yaml` the service loaded when it started.
-- [ ] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`.
+- [ ] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-CAT-014**: When tools of a server are left out by a limit, the service shall not list them and shall state how many in that server's `detail`.
 - [x] **TOOL-CAT-015**: An entry of `tools.allow` that names no listed tool shall be offered to nothing.
 
@@ -59,7 +59,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-004**: While `tools.mode` is not `mock`, if the requested MCP tool has no recorded hash, then the service shall publish a `refused` result with reason `not_approved`, and if its hash differs, one with reason `definition_changed`.
 - [x] **TOOL-CALL-005**: If the requested MCP tool's server is `down` or `auth`, then the service shall publish a `refused` result with reason `server_down` without sending a request to the server.
 - [x] **TOOL-CALL-006**: If the origin does not allow the requested tool (TOOL-ORIG-002 to TOOL-ORIG-005), then the service shall publish a `refused` result with reason `origin_not_allowed`.
-- [ ] **TOOL-CALL-007**: If a built-in tool rejects a request's arguments, then the service shall publish a `refused` result with reason `invalid_arguments`.
+- [ ] **TOOL-CALL-007**: If a built-in tool rejects a request's arguments, then the service shall publish a `refused` result with reason `invalid_arguments`. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
 - [x] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
 - [x] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
@@ -69,7 +69,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
 - [x] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
 - [x] **TOOL-CALL-016**: When an MCP server flags a result as an error, the service shall publish an `error` result with reason `tool_error` and keep the server's text.
-- [ ] **TOOL-CALL-017**: When a tool fails for a reason of the service's own (a missing credential, no answer from the memory service), the service shall publish an `error` result with reason `unavailable`.
+- [ ] **TOOL-CALL-017**: When a tool fails for a reason of the service's own (a missing credential, no answer from the memory service), the service shall publish an `error` result with reason `unavailable`. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-CALL-018**: The `content` of a `refused`, `timeout` or `unavailable` result shall be a sentence the service wrote and no text from a server.
 - [x] **TOOL-CALL-019**: The `tool.result` shall carry `id`, `tool`, `status`, `reason` where one applies, `content`, `truncated` where set, `durationMs` from the moment the service read the request, and, in mock mode, `mock` true.
 - [x] **TOOL-CALL-020**: The service shall not retry a call.
@@ -159,8 +159,8 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-MOCK-002**: While `tools.mode` is `mock`, the state of every configured server in the catalog shall be `mock`.
 - [x] **TOOL-MOCK-003**: While `tools.mode` is `mock`, each `tools.allow` entry named `<server>__<tool>` for a configured server shall be a tool with the description `a mock tool`, an argument schema that accepts any object and the label of the entry's `effect` key, `read` when absent.
 - [x] **TOOL-MOCK-004**: While `tools.mode` is `mock`, a call to an MCP tool shall answer `mock <name> answered` followed by the arguments as JSON.
-- [ ] **TOOL-MOCK-005**: While `tools.mode` is `mock`, `clock` shall behave as in live mode, `stream_info` shall answer a live stream titled `Mock stream` with 42 viewers and one hour, and `memory_lookup` shall answer one fixed memory line.
-- [ ] **TOOL-MOCK-006**: While `tools.mode` is `mock`, `timer` shall keep its timers in the service's memory and publish `tool.timer` for each when it is due.
+- [ ] **TOOL-MOCK-005**: While `tools.mode` is `mock`, `clock` shall behave as in live mode, `stream_info` shall answer a live stream titled `Mock stream` with 42 viewers and one hour, and `memory_lookup` shall answer one fixed memory line. Open until the built-in tools land; owned by #207.
+- [ ] **TOOL-MOCK-006**: While `tools.mode` is `mock`, `timer` shall keep its timers in the service's memory and publish `tool.timer` for each when it is due. Open until the built-in tools land; owned by #207.
 - [x] **TOOL-MOCK-007**: While `tools.mode` is `mock`, every `tool.result` shall carry `mock` true.
 - [x] **TOOL-MOCK-008**: While `tools.mode` is `mock`, the service shall offer a mock tool only for an enabled entry and shall apply the marks, the origin rules, the call limit and the result limit as in live mode.
 

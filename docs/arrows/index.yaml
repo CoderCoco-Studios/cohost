@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "74 specs: 67 [x], 6 [ ], 1 [D] (the unfinished-line specs WM-UNF-001 to 006; WM-STACK-001 deferred)."
+    next: "74 specs: 73 [x], 0 [ ], 1 [D] (WM-STACK-001 deferred)."
     drift: null
 
   chat:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 160 [x], 33 [ ], 2 [D] (the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012, EARS-PART-009 and EARS-ECHO-002 (the audible-sink rule) are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
+    next: "195 specs: 188 [x], 5 [ ], 2 [D] (EARS-ECHO-002, the audible-sink rule, is open; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
     drift: null
 
   salience:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 173 [x], 111 [ ], 1 [D]. Open: streamed-reply CTX-STREAM-003, 004 (implemented, not yet flipped), 011 to 013, 019, 030; early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL); CTX-EVT-001, 009; prompt, saying and health specs."
+    next: "285 specs: 235 [x], 49 [ ], 1 [D]. The tool loop (#210) is built. Open: CTX-PROV-001 to 038; CTX-INTJ-001 to 006; CTX-EVT-001, 009; CTX-GATE-001; CTX-SAY-006; CTX-START-002."
     drift: null
 
   tools:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 84 [x], 25 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
+    next: "111 specs: 103 [x], 6 [ ], 2 [D]. Open gaps: CTRL-HEALTH-005, CTRL-LAT-017, CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
     drift: null
 
   deployment:

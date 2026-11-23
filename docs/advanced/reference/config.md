@@ -347,8 +347,8 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.dir.path` | empty | The directory to watch, created if missing. Empty means not configured, and `ears` idles as `degraded` |
 | `ears.dir.poll_ms` | `1000` | How often to look for new `.wav` files |
 | `ears.early` | map | Early reply: the co-host starts on a provisional transcript of a sentence still being spoken |
-| `ears.early.enabled` | `false` | Publish provisional transcripts while a sentence is still being spoken. Works with any `ears.stt_engine` |
-| `ears.early.after_ms` | `250` | The pause, in milliseconds, before an early transcript is published; at least 100 and below `ears.silence_ms` |
+| `ears.early.enabled` | `false` | Publish a provisional transcript (`speech.early`) of a connector utterance while the speaker is still talking. Needs a batch `ears.stt_engine` (`speaches`, `openai` or `stub`): with `nemotron` or `kyutai` it stays off and ears logs one warning. `http`, `dir`, injected audio and sources in `ears.echo_suppress_sources` take none |
+| `ears.early.after_ms` | `250` | The pause, in milliseconds, after which the provisional transcript of the utterance so far is taken and published; at least 100 and below `ears.silence_ms` |
 | `ears.early.max_per_utterance` | `2` | How many early transcripts one sentence may produce, 1 to 5 |
 | `ears.silence_ms` | `700` | End-of-utterance detection. It must stay above `ears.early.after_ms` (default 250), even while early reply is off; lower both together |
 | `ears.echo_suppress_sources` | `[desktop]` | Sources that are deaf while the co-host's voice plays, because a loopback capture hears it |
@@ -478,7 +478,7 @@ The MCP servers the co-host may call and the tools it may use. Nothing is enable
 | `tools.stream_info.cache_ms` | `30000` | How long the stream's title and game are remembered; 0 reads them every time |
 | `tools.reply` | map | The limits on the tool calls one reply may make |
 | `tools.reply.max_rounds` | `3` | Rounds of tool calls one reply may take (at least 1) |
-| `tools.reply.max_calls` | `3` | Tool calls one reply may make in all (at least 1) |
+| `tools.reply.max_calls` | `3` | Tool calls one round of a reply may make; each round has its own count, and the rest are answered with an error (at least 1) |
 | `tools.reply.budget_ms` | `30000` | Time one reply may spend on tool calls in all (at least 1 ms) |
 | `tools.reply.filler_after_ms` | `1500` | A call still running after this long gets a filler line; 0 says one at once |
 | `tools.reply.max_tokens` | `512` | The longest model answer, in tokens, for one tool-using step (at least 1) |

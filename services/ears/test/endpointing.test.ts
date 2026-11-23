@@ -280,3 +280,68 @@ test("a signal after the utterance closed by silence does nothing", async () => 
     assert.equal(s.sessions[0]!.finishCalls, 1);
   } finally { await r.stop(); }
 });
+
+// ---- closedAt (EARS-EARLY-020) and audioEndedAt (EARS-EARLY-021, EARS-HEAR-012) of a connector utterance
+
+// @spec EARS-EARLY-020, EARS-EARLY-021, EARS-HEAR-012
+test("silero: audioEndedAt is the last speech frame's arrival and closedAt is when the silence rule closed the utterance, whatever ears.early.enabled says", async () => {
+  resetSeq();
+  const r = await boot(cfg({ silence_ms: 300 }), { setup: reg, loadVad: fakeVad().load });
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH });
+    const lastSpeechAt = Date.now();
+    await feed(r.bus, 15, { fill: SILENCE, gapMs: 15 }); // 300 ms of silence audio, 225 ms of wall clock
+    await waitFor(() => r.heard().length === 1, "speech.heard");
+    const published = Date.now();
+    const t = r.heard()[0]!.timing!;
+    assert.ok(t.audioEndedAt! <= lastSpeechAt + 5, "the last speech frame, not a later silence frame");
+    assert.ok(t.closedAt !== undefined && t.closedAt >= lastSpeechAt + 150 && t.closedAt <= published, `closedAt ${String(t.closedAt)} is the close`);
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-EARLY-020
+test("gap: the frame-gap close stamps closedAt one silence_ms after the last frame", async () => {
+  resetSeq();
+  const r = await boot(cfg({ vad: { engine: "gap" }, silence_ms: 300 }), { setup: reg });
+  try {
+    await sleep(60);
+    const t = await feed(r.bus, 10, { fill: SPEECH });
+    await waitFor(() => r.heard().length === 1, "speech.heard");
+    const ts = r.heard()[0]!.timing!;
+    assert.ok(ts.closedAt! >= t.last + 290 && ts.closedAt! <= Date.now(), `closedAt ${String(ts.closedAt)}`);
+    assert.ok(ts.audioEndedAt! <= t.last + 5);
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-EARLY-020
+test("the length cap stamps closedAt on each utterance it closes", async () => {
+  resetSeq();
+  const r = await boot(cfg({ vad: { engine: "gap" }, max_utterance_ms: 200 }), { setup: reg });
+  try {
+    await sleep(60);
+    const before = Date.now();
+    await feed(r.bus, 25, { fill: SPEECH });
+    await waitFor(() => r.heard().length === 3, "three utterances");
+    for (const h of r.heard()) assert.ok(h.timing!.closedAt !== undefined && h.timing!.closedAt >= before && h.timing!.closedAt <= Date.now(), "closedAt");
+  } finally { await r.stop(); }
+});
+
+// @spec EARS-EARLY-020, EARS-KYU-010
+test("a Kyutai end of turn stamps closedAt at the signal while audioEndedAt stays the last frame received", async () => {
+  resetSeq();
+  const { s, boot: go } = eotRig({ silence_ms: 2000 });
+  const r = await go();
+  try {
+    await sleep(60);
+    await feed(r.bus, 10, { fill: SPEECH });
+    const lastFrameAt = Date.now();
+    await sleep(200);
+    const signalAt = Date.now();
+    s.sessions[0]!.endOfTurn();
+    await waitFor(() => r.heard().length === 1, "speech.heard", 1000);
+    const t = r.heard()[0]!.timing!;
+    assert.ok(t.audioEndedAt! <= lastFrameAt + 5);
+    assert.ok(t.closedAt! >= signalAt && t.closedAt! <= Date.now(), `closedAt ${String(t.closedAt)} is the signal (${signalAt})`);
+  } finally { await r.stop(); }
+});

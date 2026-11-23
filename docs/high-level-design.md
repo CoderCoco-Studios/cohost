@@ -911,7 +911,7 @@ as a test connector for a source tag and writes the same clip onto
 `audio.in.<tag>` as 16 kHz mono frames paced at real time, followed by silence,
 so ears endpoints it as it endpoints a person. `cohostctl latency` then reports
 `endpoint` and `stt` as separate stages for those samples, with and without
-`ears.early.enabled`, and counts early transcripts published, retracted, reused as the final, released from a prepared think and still running at the close.
+`ears.early.enabled`, and counts early transcripts published, retracted, reused as the final, released from a prepared think, interjections spoken and still running at the close.
 The `http` mode stays as the baseline of the stages after the close. Both are
 reported beside each other, and neither sets a budget.
 

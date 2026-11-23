@@ -30,3 +30,10 @@ fn silence_stays_silence_and_overload_clamps_to_the_i16_range() {
     let hot = to_16k_mono_i16(&vec![1.5_f32; 16_000], 16_000, 1);
     assert!(hot.iter().all(|s| *s == i16::MAX));
 }
+
+// @spec EARS-SRC-014
+#[test]
+fn negative_overload_clamps_to_i16_min() {
+    let cold = to_16k_mono_i16(&vec![-1.5_f32; 16_000], 16_000, 1);
+    assert!(cold.iter().all(|s| *s == i16::MIN));
+}

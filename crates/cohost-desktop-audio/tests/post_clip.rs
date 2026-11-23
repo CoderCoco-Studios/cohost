@@ -49,7 +49,7 @@ async fn posts_s16le_audio_l16_with_rate_and_channels_to_the_url() {
     assert!(!head.contains("authorization:"));
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-021
 #[tokio::test]
 async fn sends_the_bearer_token_when_one_is_given() {
     let (url, srv) = serve_once(200).await;
@@ -58,7 +58,7 @@ async fn sends_the_bearer_token_when_one_is_given() {
     assert!(head.contains("authorization: bearer s3cret"), "{head}");
 }
 
-// @spec EARS-SRC-015
+// @spec EARS-SRC-020
 #[tokio::test]
 async fn a_refusal_or_an_unreachable_listener_is_an_error() {
     let (url, srv) = serve_once(401).await;

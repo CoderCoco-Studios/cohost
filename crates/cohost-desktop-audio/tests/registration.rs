@@ -173,6 +173,7 @@ async fn a_different_instance_under_the_key_stops_the_writes_and_the_stop_leaves
     tokio::time::advance(Duration::from_millis(5_000)).await;
     settle().await;
     assert_eq!(store.writes(), 1);
+    assert!(reg.is_displaced());
     reg.stop().await;
     assert!(!store.calls.lock().unwrap().iter().any(|c| matches!(c, Call::Delete { .. })));
 }

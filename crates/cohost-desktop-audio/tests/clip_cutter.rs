@@ -191,3 +191,16 @@ fn the_leading_pad_counts_toward_max_clip_ms() {
     assert!(clips[0][..ms(100)].iter().all(|s| *s == 0));
     assert_eq!(clips[0][ms(100)], LOUD);
 }
+
+// @spec EARS-SRC-017
+#[test]
+fn the_clip_after_a_cap_cut_starts_at_the_next_sample_with_no_leading_pad() {
+    let mut c = cutter(300, 1000);
+    let mut pcm: Vec<i16> = vec![LOUD; ms(1000)];
+    pcm.extend(vec![LOUD + 1; ms(500)]);
+    pcm.extend(quiet(1000));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips[0].len(), ms(1000));
+    assert_eq!(clips[1][0], LOUD + 1);
+    assert_eq!(clips[1].len(), ms(500) + ms(100));
+}

@@ -41,6 +41,8 @@ export class Salience {
   private reflexLine = false;
   /** A barge-in has stopped the voice and no `brain.say` has arrived since (SAL-BARGE-010). */
   private barged = false;
+  /** The cortex's latest line (a `brain.say` that is neither reflex nor operator), whose playback renews `speaking` (SAL-BUSY-005). */
+  private cortexLine: { id: string; more: boolean } | undefined;
 
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
@@ -79,14 +81,27 @@ export class Salience {
         if (d.changed) await this.reflex("vision", d.text, entry); // @spec SAL-REFLEX-002
         break;
       }
-      case "brain.say": // @spec SAL-BUSY-003
+      case "brain.say": { // @spec SAL-BUSY-003, SAL-BUSY-005, SAL-BUSY-008
         // Whoever spoke (cortex, a reflex, the operator), the cooldown starts now.
+        const d = ev.data as BusEvent<"brain.say">["data"];
+        const reason = d.reason ?? "";
         this.scheduler.noteSpoke();
         this.cortexState = "speaking";
         this.cortexSince = this.now();
-        this.reflexLine = ((ev.data as BusEvent<"brain.say">["data"]).reason ?? "").startsWith("reflex:"); // @spec SAL-BARGE-006
+        this.reflexLine = reason.startsWith("reflex:"); // @spec SAL-BARGE-006
+        // The cortex's own line is the one neither reflex-prefixed nor `operator`; only it replaces the remembered line (SAL-BUSY-005).
+        if (!this.reflexLine && reason !== "operator") this.cortexLine = { id: d.id, more: d.more === true };
         this.barged = false; // @spec SAL-BARGE-010
         break;
+      }
+      // @spec SAL-BUSY-006, SAL-BUSY-007
+      // Playback of the remembered cortex line renews `speaking` from any sink while it carries `more`; anything else is ignored.
+      case "voice.playing":
+      case "voice.done": {
+        const d = ev.data as BusEvent<"voice.playing" | "voice.done">["data"];
+        if (this.cortexState === "speaking" && this.cortexLine?.more && d.id === this.cortexLine.id) this.cortexSince = this.now();
+        break;
+      }
       case "brain.status": { // @spec SAL-IN-005
         const d = ev.data as BusEvent<"brain.status">["data"];
         this.cortexState = d.state;

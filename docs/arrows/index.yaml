@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 47 [x], 14 [ ] (MOD-MAN-002, MOD-CFG-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
+    next: "61 specs: 48 [x], 13 [ ] (MOD-MAN-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 126 [x], 105 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 167 [x], 64 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:

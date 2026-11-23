@@ -133,7 +133,7 @@ test("the stub describer makes no request: injected bytes are counted, the look 
   const saved = process.env.OLLAMA_URL;
   process.env.OLLAMA_URL = "http://127.0.0.1:1";
   try {
-    const cfg = testConfig({ vision: { model: "v", engine: "stub" } });
+    const cfg = testConfig({ vision: { model: "v", provider: "stub" } });
     assert.equal(await createDescriber(cfg)(b64, ""), "stub vision: 5 bytes", "engine stub selects the stub, with no connection attempt");
     const bus = new FakeBus();
     const eyes = new Eyes({ bus, log: silentLog, screenshot: async () => b64, describe: createDescriber(cfg) });

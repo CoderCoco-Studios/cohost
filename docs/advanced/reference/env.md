@@ -90,7 +90,7 @@ The override names are labels inside that object, not environment variables: a p
 | `VOICE_ENGINE` | `voice.engine` | `stub` returns a silent WAV sized from the text |
 | `CHAT_SOURCES` | `chat.sources` | `[fake]` sends scripted or stdin messages with no channel |
 | `VISION_ENABLED` | `vision.enabled` | `false` makes `eyes` idle and never touch OBS |
-| `VISION_ENGINE` | `vision.engine` | `stub` answers with fixed text and no model |
+| `VISION_PROVIDER` | `vision.provider` | `stub` answers with fixed text and no model |
 | `EARS_SOURCES` | `ears.sources` | A list such as `[http, dir]` listens to those sources only; `[]` idles |
 | `EARS_STT_ENGINE` | `ears.stt_engine` | `stub` gives every clip a fixed transcript with no STT server |
 | `CONNECTIONS_DISCORD_ENABLED` | `connections.discord.enabled` | `false` makes the Discord [connector](../../start/glossary.md#connector) idle and hold no connection |

@@ -4,9 +4,9 @@ Chat sense: a list of sources (Twitch IRC, YouTube live chat, a fake source) in,
 
 ## Status
 
-Built: the source list `chat.sources` and its plan (`sourcePlan`: runnable or gap, with reasons), the `ChatSource` contract and its five-state vocabulary, several sources running at once with per-source state, the 30 s ready bound, per-source health (`mock`, `off`, `live`), the Twitch source (channel and credentials from `chat.twitch.*` and `secrets.yaml`), the fake source as a `ChatSource` (two platform shapes), test injection, the bounded chat sense, and `parseVideoValue` in `@cohost/shared` (the YouTube video value parser). Also built (#178): the Twitch path carries message id and user id to `chat.message`, Twitch message removals, bans, timeouts and clears publish `chat.removed` (`ChatSender` and the filter in `filter.ts`, the handlers in `twitch.ts`). Specified and not built: the YouTube reader (a placeholder source that fails at start with `not in this build yet`, until #179) and the YouTube removals (CHAT-FORGET-002 to 005, #179). Total 163 specs: 92 `[x]`, 71 `[ ]`, 0 `[D]`.
+Built: the source list `chat.sources` and its plan (`sourcePlan`: runnable or gap, with reasons), the `ChatSource` contract and its five-state vocabulary, several sources running at once with per-source state, the 30 s ready bound, per-source health (`mock`, `off`, `live`), the Twitch source (channel and credentials from `chat.twitch.*` and `secrets.yaml`), the fake source as a `ChatSource` (two platform shapes), test injection, the bounded chat sense, and `parseVideoValue` in `@cohost/shared` (the YouTube video value parser). Also built (#178): the Twitch path carries message id and user id to `chat.message` (`ChatSender` and the filter in `filter.ts`). The Twitch handlers for message removal, ban, timeout and clear (`twitch.ts`) are built and tested against the client library, and the service publishes them as `chat.removed`; CHAT-TW-014 to CHAT-TW-017 stay `[ ]` until the live check on #239 settles that Twitch sends them to an anonymous client. Specified and not built: the YouTube reader (a placeholder source that fails at start with `not in this build yet`, until #179), the YouTube removals (CHAT-FORGET-002 to 005) and the YouTube identifier list (CHAT-FILT-013), all #179. Consumers of `chat.removed` (forgetting) arrive with #180–#183. Total 163 specs: 87 `[x]`, 76 `[ ]`, 0 `[D]`.
 
-**PARTIAL**: 163 specs: 92 implemented, 0 deferred, 71 gaps (YouTube chat and its removals, #179, and the open source-contract lines, below).
+**PARTIAL**: 163 specs: 87 implemented, 0 deferred, 76 gaps (YouTube chat and its removals and identifiers, #179; the Twitch removals held for the live check, #239; the open source-contract lines, below).
 
 ## References
 
@@ -17,7 +17,7 @@ Built: the source list `chat.sources` and its plan (`sourcePlan`: runnable or ga
 - docs/intent/chat/chat-design.md
 
 ### EARS
-- docs/intent/chat/chat-specs.md (163 specs: 92 `[x]`, 71 `[ ]`, 0 `[D]`; prefix `CHAT`; facets `PLAN`, `SRC`, `TW`, `FILT`, `FAKE`, `INJ`, `HEALTH`, `YT` and `FORGET`)
+- docs/intent/chat/chat-specs.md (163 specs: 87 `[x]`, 76 `[ ]`, 0 `[D]`; prefix `CHAT`; facets `PLAN`, `SRC`, `TW`, `FILT`, `FAKE`, `INJ`, `HEALTH`, `YT` and `FORGET`)
 
 ### Tests
 Files with `@spec CHAT-` annotations:
@@ -81,7 +81,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 | YouTube source | CHAT-YT-001 to CHAT-YT-068 | 4 | 0 | 64 | 4 |
 | Forgetting a removed message | CHAT-FORGET-001 to CHAT-FORGET-008 | 0 | 0 | 8 | 0 |
 
-**Summary:** 92 of 163 specs implemented; 0 deferred; 71 open. Open and not yet provable here (the Twitch removal events reaching an anonymous client are unverified live, #239 manual list): CHAT-SRC-001 (the five states are typed in `source.ts`; not in #177's list, and the first issue that drives all five states from real sources owns the flip, #179), CHAT-SRC-005 (per-source stop cancels every timer and call: the fake proves it, the Twitch stop guard covers the start path, the YouTube reader is #179), CHAT-HEALTH-011 (a quiet YouTube chat keeps `reading`: needs the reader, #179). CHAT-YT-003..006 are implemented in the plan and the parser, not in a YouTube reader. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 87 of 163 specs implemented; 0 deferred; 76 open. CHAT-TW-014 to CHAT-TW-017 are held for the live check on #239, and CHAT-FILT-013 for #179. Open and not yet provable here (the Twitch removal events reaching an anonymous client are unverified live, #239 manual list): CHAT-SRC-001 (the five states are typed in `source.ts`; not in #177's list, and the first issue that drives all five states from real sources owns the flip, #179), CHAT-SRC-005 (per-source stop cancels every timer and call: the fake proves it, the Twitch stop guard covers the start path, the YouTube reader is #179), CHAT-HEALTH-011 (a quiet YouTube chat keeps `reading`: needs the reader, #179). CHAT-YT-003..006 are implemented in the plan and the parser, not in a YouTube reader. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

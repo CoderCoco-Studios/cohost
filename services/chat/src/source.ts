@@ -15,9 +15,8 @@ export interface ChatSourceStatus {
   reason?: string;
 }
 
-/** A removal a source reports; #178 publishes it as `chat.removed`. */
+/** A removal a source reports; the service publishes it as `chat.removed` with the source's platform. */
 export interface ChatRemoval {
-  platform: ChatPlatform;
   scope: "message" | "user" | "all";
   messageId?: string;
   userId?: string;

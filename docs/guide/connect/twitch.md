@@ -55,7 +55,7 @@ The co-host does not write into Twitch chat today. It reads chat and speaks. The
 
 ## What cohost forgets when a moderator removes chat
 
-When a moderator deletes a line, bans or times out a viewer, or clears the chat, cohost forgets what Twitch removed. A deleted line leaves the co-host's short-term window and its stored memory. A banned or timed-out viewer's lines leave both, and a timeout forgets like a ban. A cleared chat leaves the windows but deletes nothing from stored memory, because a cleared chat names no line or viewer. A removal ignores `chat.ignore_users`, so a removed viewer is still forgotten.
+The chat service reports what Twitch removes: a deleted line, a ban, a timeout, or a cleared chat. It publishes each as a `chat.removed` notice and ignores `chat.ignore_users` for it. Forgetting those lines, in the co-host's short-term window and in stored memory, arrives with #180–#183; until then the co-host still holds them.
 
 cohost never sends a delete, ban or timeout to Twitch. It only reports what Twitch did.
 

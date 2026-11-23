@@ -148,9 +148,9 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
       };
 
       // A removal is what the platform did: it is published as it is, and ignore lists never apply to it (CHAT-FORGET-006).
-      const publishRemoval = async (removal: ChatRemoval): Promise<void> => {
+      const publishRemoval = async (removal: ChatRemoval, platform: ChatPlatform): Promise<void> => {
         try {
-          await bus.publish("chat.removed", removal);
+          await bus.publish("chat.removed", { ...removal, platform });
         } catch (err) {
           log.warn({ err: String(err) }, "chat.removed publish failed");
         }
@@ -166,7 +166,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
         // @spec CHAT-FORGET-001, CHAT-FORGET-006
         emitRemoval: (removal) => {
           if (closed) return;
-          void publishRemoval(removal);
+          void publishRemoval(removal, defaultPlatform(name));
         },
         // @spec CHAT-SRC-002
         onState: (state: ChatSourceState, reason?: string) => {

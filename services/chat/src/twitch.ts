@@ -78,7 +78,8 @@ export type CreateAuth = (clientId: string, clientSecret: string) => Promise<Ref
 
 async function defaultCreateClient(opts: Parameters<CreateClient>[0]): Promise<ChatClientLike> {
   const { ChatClient } = await import("@twurple/chat");
-  return new ChatClient(opts) as unknown as ChatClientLike;
+  const client: ChatClientLike = new ChatClient(opts);
+  return client;
 }
 
 async function defaultCreateAuth(clientId: string, clientSecret: string): Promise<RefreshingAuthProvider> {
@@ -151,7 +152,7 @@ export class TwitchSource implements ChatSource {
     // Removals only listen: cohost forgets what the platform removed and sends nothing back (CHAT-FORGET-007).
     // @spec CHAT-TW-014, CHAT-FORGET-001
     client.onMessageRemove((_chan, messageId) => {
-      env.emitRemoval({ platform: "twitch", scope: "message", messageId });
+      env.emitRemoval({ scope: "message", messageId });
     });
     // @spec CHAT-TW-015, CHAT-TW-016, CHAT-TW-018, CHAT-FORGET-008
     const removeViewer = (user: string, targetUserId: string | null, reason: "banned" | "timeout") => {
@@ -159,13 +160,13 @@ export class TwitchSource implements ChatSource {
         env.log.warn({ channel, user, reason }, "twitch removal names no target user id; nothing forgotten");
         return;
       }
-      env.emitRemoval({ platform: "twitch", scope: "user", userId: targetUserId, reason });
+      env.emitRemoval({ scope: "user", userId: targetUserId, reason });
     };
     client.onBan((_chan, user, msg) => removeViewer(user, msg.targetUserId, "banned"));
     client.onTimeout((_chan, user, _duration, msg) => removeViewer(user, msg.targetUserId, "timeout"));
     // @spec CHAT-TW-017
     client.onChatClear(() => {
-      env.emitRemoval({ platform: "twitch", scope: "all", reason: "cleared" });
+      env.emitRemoval({ scope: "all", reason: "cleared" });
     });
     client.connect();
   }

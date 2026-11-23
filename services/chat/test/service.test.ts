@@ -440,7 +440,7 @@ test("any source's removal is published with that source's platform", async () =
   });
   try {
     await r.start();
-    hold.env.emitRemoval({ platform: "youtube", scope: "user", userId: "UCabc", reason: "banned" });
+    hold.env.emitRemoval({ scope: "user", userId: "UCabc", reason: "banned" });
     await waitFor(() => r.bus.of("chat.removed").length === 1, "chat.removed");
     assert.deepEqual(r.bus.of("chat.removed")[0], { platform: "youtube", scope: "user", userId: "UCabc", reason: "banned" });
   } finally { await r.stop(); }

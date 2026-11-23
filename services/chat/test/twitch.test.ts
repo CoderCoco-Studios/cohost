@@ -202,28 +202,28 @@ test("a disconnect makes the source retrying with a warning, and the library's r
 test("onMessageRemove reports a message removal naming the message id", async () => {
   const t = await startTwitch();
   t.handlers.onMessageRemove!("#chan", "gone-7", {});
-  assert.deepEqual(t.removals, [{ platform: "twitch", scope: "message", messageId: "gone-7" }]);
+  assert.deepEqual(t.removals, [{ scope: "message", messageId: "gone-7" }]);
 });
 
 // @spec CHAT-TW-015, CHAT-FORGET-001
 test("onBan reports a user removal with reason banned", async () => {
   const t = await startTwitch();
   t.handlers.onBan!("#chan", "troll", { targetUserId: "555" });
-  assert.deepEqual(t.removals, [{ platform: "twitch", scope: "user", userId: "555", reason: "banned" }]);
+  assert.deepEqual(t.removals, [{ scope: "user", userId: "555", reason: "banned" }]);
 });
 
 // @spec CHAT-TW-016, CHAT-FORGET-008
 test("onTimeout reports a user removal with reason timeout, as a ban does", async () => {
   const t = await startTwitch();
   t.handlers.onTimeout!("#chan", "troll", 600, { targetUserId: "555" });
-  assert.deepEqual(t.removals, [{ platform: "twitch", scope: "user", userId: "555", reason: "timeout" }]);
+  assert.deepEqual(t.removals, [{ scope: "user", userId: "555", reason: "timeout" }]);
 });
 
 // @spec CHAT-TW-017
 test("onChatClear reports a removal of everything, reason cleared, naming no message or viewer", async () => {
   const t = await startTwitch();
   t.handlers.onChatClear!("#chan", {});
-  assert.deepEqual(t.removals, [{ platform: "twitch", scope: "all", reason: "cleared" }]);
+  assert.deepEqual(t.removals, [{ scope: "all", reason: "cleared" }]);
 });
 
 // @spec CHAT-TW-018

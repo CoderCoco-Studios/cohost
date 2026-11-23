@@ -47,11 +47,11 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Window | WM-WIN-001 to WM-WIN-012 | 12 | 0 | 0 | 8 |
-| Ingest | WM-PUSH-001 to WM-PUSH-020 | 18 | 0 | 7 | 13 |
+| Window | WM-WIN-001 to WM-WIN-012 | 12 | 0 | 0 | 11 (WM-WIN-005 is annotated in the salience and cortex service tests) |
+| Ingest | WM-PUSH-001 to WM-PUSH-025 | 18 | 0 | 7 | 20 |
 | Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
 | Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
-| Transcript | WM-TRANS-001 to WM-TRANS-014 | 12 | 0 | 3 | 11 |
+| Transcript | WM-TRANS-001 to WM-TRANS-015 | 12 | 0 | 3 | 14 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 

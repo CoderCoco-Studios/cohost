@@ -183,6 +183,22 @@ test("a glitch whose own line the window still protects keeps its hint through a
   assert.match(s.llm.system(), HINT);
 });
 
+// @spec CTX-FALL-005
+test("a glitch whose line newer lines have evicted from the window is dropped, and stays dropped", async () => {
+  const s = setup();
+  const cap = s.cfg.brain.working_memory_events;
+  const own = s.cfg.brain.working_memory_own_lines;
+  const id = await sayOne(s);
+  await s.cortex.onEvent(failed(id));
+  for (let i = 0; i <= own; i++) await s.cortex.onEvent(event("brain.say", { id: `n${i}`, text: `newer ${i}`, emotion: "happy", reason: "r" }, "salience"));
+  for (let i = 0; i < cap; i++) await s.cortex.onEvent(event("chat.message", { platform: "twitch", user: "u", text: `m${i}`, isMod: false, isSub: false, mentionsCohost: false }));
+  assert.equal(s.cortex.ctx.hasSelf(id), false);
+  await s.cortex.think(mention());
+  assert.doesNotMatch(s.llm.system(), HINT);
+  await s.cortex.think(mention());
+  assert.doesNotMatch(s.llm.system(), HINT);
+});
+
 // @spec CTX-FALL-004
 test("with a base chance of 0 there is no hint line, but the transcript note stays and the glitch is not consumed", async () => {
   const s = setup({ chance: 0 });

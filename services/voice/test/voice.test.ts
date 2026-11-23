@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
-import { Voice, kokoroSynth } from "../src/voice.js";
+import { Voice } from "../src/voice.js";
+import { collect } from "../src/engine.js";
+import { createEngine } from "../src/engines.js";
 
 const say = (id: string, text = "hello chat") => event("brain.say", { id, text, emotion: "happy", gesture: "wave" });
 const halfSecond = wavWrap(Buffer.alloc(12000 * 2), 24000, 1); // 500 ms of silence @ 24k mono
@@ -119,7 +121,7 @@ test("only the newest 50 utterances are kept", async () => { // @spec VOICE-HTTP
   assert.equal(status("u50"), 200);
 });
 
-test("kokoroSynth asks the TTS container for a WAV in the configured voice and speed", async () => { // @spec VOICE-SYN-002, VOICE-SYN-003
+test("kokoro asks the TTS container for a WAV in the configured voice and speed", async () => { // @spec VOICE-SYN-002, VOICE-SYN-003
   mock.timers.reset();
   let body: Record<string, unknown> = {};
   let status = 200;
@@ -132,7 +134,8 @@ test("kokoroSynth asks the TTS container for a WAV in the configured voice and s
   await new Promise<void>((r) => server.listen(0, r));
   process.env.TTS_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const synth = kokoroSynth(testConfig({ voice: { voice: "af_bella", speed: 1.2 } }).voice);
+    const engine = createEngine(testConfig({ voice: { voice: "af_bella", speed: 1.2 } }).voice);
+    const synth = async (text: string) => collect(await engine.synthesize(text, { signal: new AbortController().signal }));
     assert.deepEqual(await synth("hi chat"), halfSecond);
     assert.deepEqual(body, { model: "kokoro", input: "hi chat", voice: "af_bella", speed: 1.2, response_format: "wav" });
     status = 503;

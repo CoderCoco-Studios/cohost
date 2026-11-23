@@ -8,7 +8,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import type { Logger } from "@cohost/config";
 import { parseWav, retryWithBackoff } from "@cohost/shared";
-import { TtsError } from "./voice.js";
+import { classifyFailure, type Synth, type TtsEngine } from "./engine.js";
 
 /** Bump when the clip format (naming, manifest shape, what a clip is) changes, so every set regenerates. */
 export const CLIP_FORMAT_VERSION = 1;
@@ -51,10 +51,15 @@ export function clipFingerprint({ lines, engine, settings }: FingerprintInputs):
   return createHash("sha256").update(json).digest("hex");
 }
 
-export interface ClipServiceDeps extends FingerprintInputs {
+export interface ClipServiceDeps {
   /** The clip store directory (`<dataDir()>/voice/fallback-clips`). */
   dir: string;
-  synth: (text: string) => Promise<Buffer>;
+  /** The phrases of `voice.fallback.lines`. */
+  lines: string[];
+  /** The engine the service's synthesis runs through; its name and `fingerprint()` decide the clips. */
+  engine: TtsEngine;
+  /** The health-tracked synthesis of that engine, shared with the lines (one gate). */
+  synth: Synth;
   log: Pick<Logger, "warn" | "info" | "debug">;
   now?: () => number;
 }
@@ -93,11 +98,13 @@ export class ClipService implements ClipRoutes {
   private wake: (() => void) | undefined;
   private now: () => number;
   private lines: string[];
+  /** Aborted by `stop`: a clip request in flight is cut at shutdown. */
+  private abort = new AbortController();
 
   constructor(private d: ClipServiceDeps) {
     this.now = d.now ?? Date.now;
     this.lines = d.lines.map((l) => l.trim());
-    this.fingerprint = clipFingerprint(d);
+    this.fingerprint = clipFingerprint({ lines: d.lines, engine: d.engine.name, settings: d.engine.fingerprint() }); // @spec VOICE-CLIP-001, VOICE-CLIP-013
   }
 
   manifest(): ServedManifest | undefined {
@@ -159,6 +166,7 @@ export class ClipService implements ClipRoutes {
 
   stop(): void {
     this.stopped = true;
+    this.abort.abort();
     clearTimeout(this.timer);
     this.wake?.();
     this.endCurrent?.();
@@ -174,23 +182,18 @@ export class ClipService implements ClipRoutes {
     await this.regenerate();
   }
 
-  /** Synthesize one phrase; `Unspeakable` for a 4xx, a reply that is not a 16-bit WAV, or a clip under 100 ms. Anything else throws. */
-  private async speak(index: number, text: string): Promise<{ wav: Buffer; durationMs: number }> {
+  /** Synthesize one phrase; `Unspeakable` for a line-specific failure (400, 422, zero frames) or a clip under 100 ms. Any outage throws. */
+  private async speak(index: number, text: string): Promise<{ wav: Buffer; durationMs: number }> { // @spec VOICE-CLIP-005, VOICE-CLIP-006, VOICE-CLIP-016
     let wav: Buffer;
     try {
-      wav = await this.d.synth(text);
+      wav = await this.d.synth(text, { priority: "clip", signal: this.abort.signal });
     } catch (err) {
-      if (err instanceof TtsError && err.status >= 400 && err.status < 500) throw new Unspeakable(String(err));
-      throw err; // connection error or 5xx: TTS is down
+      if (classifyFailure(err) === "line") throw new Unspeakable(String(err));
+      throw err; // an outage: the set is abandoned and retried later
     }
-    try {
-      const info = parseWav(wav);
-      if (info.bitsPerSample !== 16) throw new Error(`${info.bitsPerSample}-bit WAV`);
-      if (!(info.durationMs >= MIN_CLIP_MS)) throw new Error(`clip is ${Math.round(info.durationMs)} ms`);
-      return { wav, durationMs: Math.round(info.durationMs) };
-    } catch (err) {
-      throw new Unspeakable(`phrase ${index}: ${String(err)}`);
-    }
+    const info = parseWav(wav); // the engine hands over 16-bit WAV; anything else is an outage, not about the phrase
+    if (!(info.durationMs >= MIN_CLIP_MS)) throw new Unspeakable(`phrase ${index}: clip is ${Math.round(info.durationMs)} ms`);
+    return { wav, durationMs: Math.round(info.durationMs) };
   }
 
   /** Synthesize every phrase and commit the set (VOICE-CLIP-003, VOICE-CLIP-004, VOICE-CLIP-006, VOICE-CLIP-009, VOICE-CLIP-010). */

@@ -48,7 +48,7 @@ Voice synthesizes one clause with one engine request, so each clause has its own
 
 `onClause`, run by the drain task per clause (`brain.say` is clause 0, `brain.clause` carries `seq`):
 
-1. `wav = collect(await engine.synthesize(text, { signal }))`: the engine's audio gathered whole and wrapped as a 16-bit mono WAV with the shared `wavWrap` ([Audio format and duration](#audio-format-and-duration)).
+1. `wav = collect(await engine.synthesize(text, { signal, priority: "line", discarded }))`: the engine's audio gathered whole and wrapped as a 16-bit mono WAV with the shared `wavWrap` ([Audio format and duration](#audio-format-and-duration)).
 2. `info = parseWav(wav)`; `env = envelope(wav, info, 30)`.
 3. `put(id, seq, wav)` into the store, **before** announcing it.
 4. Publish `voice.utterance { id, seq, more?, text, emotion, gesture, route?, durationMs: round(info.durationMs), envelopeHz: 30, envelope, audioUrl: <PUBLIC>/audio/<id>-<seq>.wav, sampleRate }`. `text` is the clause. `more` is `true` on clause 0 of a line whose `brain.say` carried it and absent on every other utterance. `emotion` is the line's on every clause, so a sink or avatar can use any clause alone. `gesture` is on clause 0 only, so the gesture fires once per line. `route`, the optional list of mouth output ids the line is for, is copied from the `brain.say` onto every clause untouched and left out when the `brain.say` has none (VOICE-UTT-004); voice never reads it.
@@ -70,14 +70,23 @@ interface TtsEngine {
   readonly name: "kokoro" | "openai" | "pocket" | "stub";
   /** Most requests the server takes at once; voice never sends more. */
   readonly concurrency: number;
+  /** Set when the configuration is incomplete: every `synthesize` rejects with it (`tts not configured: <key> is not set`). */
+  readonly configError?: string;
+  /** Host of the server, for the egress note and the heartbeat detail. */
+  readonly destination?: string;
   /** Resolves when the server has accepted the request and the audio format is known. */
-  synthesize(text: string, opts: { signal: AbortSignal }): Promise<TtsAudio>;
-  /** Everything that decides how a line sounds; the fallback clip fingerprint hashes it. */
+  synthesize(text: string, opts: SynthesizeOpts): Promise<TtsAudio>;
+  /** Everything that decides how a line sounds; the fallback clip fingerprint hashes it. Never a credential. */
   fingerprint(): Record<string, unknown>;
   /** Optional readiness probe; absent where the server has no verified health route. */
   ping?(signal: AbortSignal): Promise<boolean>;
-  /** Host of the server, for the egress note and the heartbeat detail. */
-  readonly destination?: string;
+}
+interface SynthesizeOpts {
+  signal: AbortSignal;
+  /** A line (the default) or a fallback clip phrase; a line outranks a waiting phrase at the gate. */
+  priority?: "line" | "clip";
+  /** True once a `voice.stop` named the line: its outcome moves no health and is discarded. */
+  discarded?: () => boolean;
 }
 interface TtsAudio {
   format: { sampleRate: number; channels: 1; bitDepth: 16 };
@@ -307,7 +316,7 @@ Clip names are `NN-<first 8 hex of sha256>.wav`, so a changed clip changes its n
 
 ## Health
 
-`VoiceHealth` (`health.ts`): `service: "voice"`; every engine but `stub` gives mode `live` and the dependency `tts`, named for the role so it reads the same whichever engine serves it. `deps.tts` is `down` on an outage-class failure of a line or fallback-clip-phrase synthesis (the class of [The TTS engine contract](#the-tts-engine-contract)) and `ok` after the next success of either; a 400 or 422 or zero frames for one line, a line `voice.stop` ended and an unspeakable clip phrase leave it alone. An engine with a `ping` (`pocket`: `GET /health`, which answers only once the model has loaded) starts `down` until its first ping succeeds, which voice sends at start and again every 10 s while the dependency is `down`; a successful ping, like a successful synthesis, restores it. An engine without a ping and with complete configuration starts `ok` and is judged by the outcome of its last synthesis. An engine whose configuration is incomplete is `down` with the reason in the heartbeat detail. The detail otherwise names the engine and the host it talks to. `stub` gives mode `mock` and `tts: "n/a"`. `heartbeat.ready()` is called once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts`), so `ready` means voice can receive `brain.say`; a `down` `tts` does not hold it back (HLD tenet 5). `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. On SIGINT or SIGTERM the heartbeat publishes one `stopping` heartbeat, then the teardown registered with `runService` runs (stop the `Voice` region, abort engine requests, stop clip generation, close the HTTP server), then the bootstrap stops the bus (SHARED-BOOT-005).
+`VoiceHealth` (`health.ts`): `service: "voice"`; every engine but `stub` gives mode `live` and the dependency `tts`, named for the role so it reads the same whichever engine serves it. `deps.tts` is `down` on an outage-class failure of a line or fallback-clip-phrase synthesis (the class of [The TTS engine contract](#the-tts-engine-contract)) and `ok` after the next success of either; a 400 or 422 or zero frames for one line, a line `voice.stop` ended and an unspeakable clip phrase leave it alone. An engine with a `ping` (`pocket`: `GET /health`, which answers only once the model has loaded) starts `down` until its first ping succeeds, which voice sends at start and again every 10 s while the dependency is `down`; a successful ping, like a successful synthesis, restores it. An engine without a ping and with complete configuration starts `ok` and is judged by the outcome of its last synthesis. An engine whose configuration is incomplete is `down` with the reason in the heartbeat detail, and the published state is `degraded`, not `ready`. The detail otherwise names the engine and the host it talks to. `stub` gives mode `mock` and `tts: "n/a"`. Boot binds the heartbeat to `VoiceHealth` once the HTTP server is listening and the `voice` consumer group has been positioned (`boot.ts`), so `ready` means voice can receive `brain.say`; a `down` `tts` does not hold it back (HLD tenet 5). From then on the published state follows `deps.tts`: `ready` while it is `ok`, and `degraded` while it is `down`, with the detail `<engine> <host>: <reason>` (the reason is the configuration gap, or `tts is down`). The detail names the engine and host in both states, and a Pocket server is `degraded` from start until its first probe succeeds. `startHeartbeat` (owned by [control-plane](../control-plane/control-plane-design.md)) reports `degraded` while a dep is `down`. On SIGINT or SIGTERM the heartbeat publishes one `stopping` heartbeat, then the teardown registered with `runService` runs (stop the `Voice` region, abort engine requests, stop clip generation, close the HTTP server), then the bootstrap stops the bus (SHARED-BOOT-005).
 
 ## Shared WAV parsing
 

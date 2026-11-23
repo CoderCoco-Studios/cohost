@@ -1,65 +1,22 @@
 import type http from "node:http";
 import type { BusEvent, Publisher } from "@cohost/bus";
-import { urls, type Config, type Logger } from "@cohost/config";
-import { parseWav, wavWrap } from "@cohost/shared";
+import type { Logger } from "@cohost/config";
+import { parseWav } from "@cohost/shared";
 import { envelope } from "./wav.js";
 import type { ClipRoutes } from "./clips.js";
+import type { Synth } from "./engine.js";
 
 export const ENVELOPE_HZ = 30;
 
 export interface VoiceDeps {
   bus: Publisher;
   log: Logger;
-  /** text → WAV bytes. */
-  synth: (text: string) => Promise<Buffer>;
+  /** Text to a whole WAV, through the engine contract (`engine.ts`). */
+  synth: Synth;
   /** Base URL sinks fetch audio from. */
   publicUrl: string;
   /** The fallback clip store behind `/fallback/*`; absent (the stub engine) means those routes answer 404. */
   clips?: ClipRoutes;
-}
-
-/** A non-2xx reply from the TTS server; the message stays `tts <status>: <body>`. */
-export class TtsError extends Error {
-  constructor(readonly status: number, body: string) { super(`tts ${status}: ${body}`); this.name = "TtsError"; }
-}
-
-/**
- * Everything the Kokoro synthesizer sends to the TTS server except the text; the clip fingerprint hashes it (VOICE-CLIP-001).
- * Tuning knobs that are unset stay out so the server's own defaults apply.
- */
-export function kokoroRequestSettings(cfg: Pick<Config["voice"], "voice" | "speed" | "lang_code" | "volume_multiplier" | "normalization">): Record<string, unknown> { // @spec VOICE-SYN-009
-  const out: Record<string, unknown> = { model: "kokoro", voice: cfg.voice, speed: cfg.speed, response_format: "wav" };
-  if (cfg.lang_code !== undefined) out.lang_code = cfg.lang_code;
-  if (cfg.volume_multiplier !== undefined) out.volume_multiplier = cfg.volume_multiplier;
-  const norm = Object.fromEntries(Object.entries(cfg.normalization).filter(([, v]) => v !== undefined));
-  if (Object.keys(norm).length > 0) out.normalization_options = norm;
-  return out;
-}
-
-/** Calls the TTS container (Kokoro-FastAPI, OpenAI-compatible). */
-export function kokoroSynth(cfg: Config["voice"]): (text: string) => Promise<Buffer> { // @spec VOICE-SYN-002
-  return async (text) => {
-    const res = await fetch(`${urls.tts()}/v1/audio/speech`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...kokoroRequestSettings(cfg), input: text }),
-    });
-    if (!res.ok) throw new TtsError(res.status, await res.text()); // @spec VOICE-SYN-003
-    return Buffer.from(await res.arrayBuffer());
-  };
-}
-
-/** Stub timing: 60 ms of silence per character, never shorter than 400 ms. */
-export const STUB_MS_PER_CHAR = 60;
-export const STUB_MIN_MS = 400;
-
-/** `voice.engine: stub` — a silent mono PCM16 WAV sized from the text. No network. */
-export function stubSynth(cfg: Pick<Config["voice"], "sample_rate">): (text: string) => Promise<Buffer> { // @spec VOICE-STUB-001
-  return async (text) => {
-    const ms = Math.max(STUB_MIN_MS, text.length * STUB_MS_PER_CHAR);
-    const frames = Math.round((cfg.sample_rate * ms) / 1000);
-    return wavWrap(Buffer.alloc(frames * 2), cfg.sample_rate, 1); // zero-filled = silence
-  };
 }
 
 /** The path of a request target, without its query string; a target that does not parse matches no route. */
@@ -90,6 +47,8 @@ export class Voice {
   private queue: BusEvent<"brain.say">[] = [];
   private draining: Promise<void> | undefined;
   private stopped = false;
+  /** Aborted at shutdown only: a `voice.stop` never aborts an engine request (VOICE-ENG-014). */
+  private abort = new AbortController();
   /** Ids a `voice.stop` ended while their synthesis was running: the result is discarded (VOICE-STOP-004). */
   private cancelled = new Set<string>();
   /** Ids whose virtual `voice.playing` publish was in flight when a `voice.stop` named them (VOICE-STOP-010). */
@@ -108,8 +67,9 @@ export class Voice {
    * Shut the region down: drop queued lines, stop an in-flight line from publishing or arming timers, and clear the
    * claim-window and virtual-done timers so nothing is published after the bus has stopped.
    */
-  stop(): void { // @spec VOICE-SYN-008, VOICE-HLTH-005
+  stop(): void { // @spec VOICE-SYN-008, VOICE-HLTH-005, VOICE-ENG-015
     this.stopped = true;
+    this.abort.abort();
     this.queue.length = 0;
     for (const t of this.windows) clearTimeout(t);
     this.windows.clear();
@@ -258,10 +218,10 @@ export class Voice {
     const t0 = Date.now();
     this.synthesizing = id;
     try {
-      const wav = await this.d.synth(text);
+      const wav = await this.d.synth(text, { priority: "line", signal: this.abort.signal, discarded: () => this.stopped || this.cancelled.has(id) }); // @spec VOICE-ENG-001, VOICE-ENG-014
       if (this.stopped) { this.synthesizing = undefined; return; }
       if (this.cancelled.has(id)) { this.synthesizing = undefined; this.cancelled.delete(id); return; } // a voice.stop ended this line while it synthesized; @spec VOICE-STOP-004
-      const info = parseWav(wav); // @spec VOICE-ENV-005
+      const info = parseWav(wav); // @spec VOICE-ENV-005, VOICE-POC-005
       const env = envelope(wav, info, ENVELOPE_HZ);
       this.put(id, wav);
       log.info({ id, ms: Date.now() - t0, durationMs: Math.round(info.durationMs), text }, "synthesized");

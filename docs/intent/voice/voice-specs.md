@@ -5,7 +5,7 @@ Design: [voice-design.md](voice-design.md). Prefix `VOICE`. `[x]` = implemented,
 ## Synthesis
 
 - [ ] **VOICE-SYN-001**: When the voice service starts, it shall subscribe with consumer group `voice` and the event-bus `latest` start mode (BUS-SUB-010) to `brain.say`, `brain.clause`, `voice.playing`, `voice.failed` and `voice.stop`, reading events one at a time in stream order, so that the group is moved to the newest stream entry on every start and no `brain.say` published while voice was down is spoken. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/boot.test.ts -->
-- [ ] **VOICE-SYN-002**: When `voice.engine` is `kokoro` and a `brain.say` arrives, the voice service shall POST JSON `{model: "kokoro", input: <text>, voice: voice.voice, speed: voice.speed, response_format: "wav"}` to `<TTS_URL>/v1/audio/speech` and use the PCM that the shared WAV reader (VOICE-WAV-001 to VOICE-WAV-008) reads from the response body as the utterance audio. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/voice.test.ts -->
+- [x] **VOICE-SYN-002**: When `voice.engine` is `kokoro` and a `brain.say` arrives, the voice service shall POST JSON `{model: "kokoro", input: <text>, voice: voice.voice, speed: voice.speed, response_format: "wav"}` to `<TTS_URL>/v1/audio/speech` and use the PCM that the shared WAV reader (VOICE-WAV-001 to VOICE-WAV-008) reads from the response body as the utterance audio. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/voice.test.ts -->
 - [x] **VOICE-SYN-003**: If the TTS server returns a non-2xx status, then the voice service shall raise the error "tts <status>: <body>", which is handled as a synthesis failure. <!-- openspec: voice § Synthesis --> <!-- test: services/voice/test/voice.test.ts -->
 - [ ] **VOICE-SYN-004**: When a clause (a `brain.say`, which is clause 0, or a `brain.clause`) has been synthesized, the voice service shall store the WAV under the key `<id>-<seq>` before publishing `voice.utterance`. <!-- test: services/voice/test/voice.test.ts -->
 - [x] **VOICE-SYN-005**: The voice service shall synthesize every `brain.say` it reads, whatever its `reason`, `injected` or `remember` fields, and shall not subscribe to `control`: mute and pause are applied upstream by cortex and salience. <!-- test: services/voice/test/voice.test.ts --> <!-- test: services/voice/test/boot.test.ts (the subscribed types exclude `control`) -->
@@ -32,7 +32,7 @@ Design: [voice-design.md](voice-design.md). Prefix `VOICE`. `[x]` = implemented,
 
 Retired, numbers not reused: VOICE-ENV-001 and VOICE-ENV-002 (now shared-runtime SHARED-AUDIO-001 and SHARED-AUDIO-002).
 
-- [ ] **VOICE-ENV-005**: If an engine's server answers with audio the engine adapter rejects (VOICE-WAV-002 to VOICE-WAV-008), then the voice service shall fail the line on the `tts failed` path (VOICE-UTT-003); the voice service shall parse the WAV it assembles from an engine's audio with the shared `parseWav` (SHARED-AUDIO-001 to SHARED-AUDIO-003). <!-- test: services/voice/test/queue.test.ts -->
+- [x] **VOICE-ENV-005**: If an engine's server answers with audio the engine adapter rejects (VOICE-WAV-002 to VOICE-WAV-008), then the voice service shall fail the line on the `tts failed` path (VOICE-UTT-003); the voice service shall parse the WAV it assembles from an engine's audio with the shared `parseWav` (SHARED-AUDIO-001 to SHARED-AUDIO-003). <!-- test: services/voice/test/queue.test.ts -->
 - [x] **VOICE-ENV-003**: When computing a lip-sync envelope, the voice service shall emit one value per window of `floor(sampleRate / 30)` frames of the first channel (including a partial last window), each `min(1, (rms / 0.22) ^ 0.8)`, smoothed so each value is at least 0.6 times the previous one, rounded to 2 decimals. <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts --> <!-- test: services/voice/test/wav.test.ts -->
 - [x] **VOICE-ENV-004**: If a WAV is not 16-bit, then envelope extraction shall throw "unsupported bit depth <n>". <!-- openspec: voice § Envelope extraction --> <!-- test: services/voice/test/wav.test.ts -->
 
@@ -78,71 +78,71 @@ Design: LLD Lines and clauses, Decisions & Alternatives "Clause-chunked synthesi
 
 Design: LLD § The TTS engine contract.
 
-- [ ] **VOICE-ENG-001**: The voice service shall obtain the audio of every line and every fallback clip phrase from the engine `voice.engine` names (`kokoro`, `openai`, `pocket` or `stub`) through one contract that states the audio's sample rate and delivers 16-bit mono PCM in order.
-- [ ] **VOICE-ENG-002**: When the voice service takes an engine's audio whole, it shall gather the PCM chunks in order and wrap them as a 16-bit mono WAV at the engine's stated sample rate, with size fields computed from the bytes gathered.
-- [ ] **VOICE-ENG-003**: If an engine's audio holds zero frames, then the voice service shall fail the line on the `tts failed` path (VOICE-UTT-003).
-- [ ] **VOICE-ENG-004**: Where a response chunk splits a 16-bit frame, the engine adapter shall deliver only whole frames, in order.
+- [x] **VOICE-ENG-001**: The voice service shall obtain the audio of every line and every fallback clip phrase from the engine `voice.engine` names (`kokoro`, `openai`, `pocket` or `stub`) through one contract that states the audio's sample rate and delivers 16-bit mono PCM in order.
+- [x] **VOICE-ENG-002**: When the voice service takes an engine's audio whole, it shall gather the PCM chunks in order and wrap them as a 16-bit mono WAV at the engine's stated sample rate, with size fields computed from the bytes gathered.
+- [x] **VOICE-ENG-003**: If an engine's audio holds zero frames, then the voice service shall fail the line on the `tts failed` path (VOICE-UTT-003).
+- [x] **VOICE-ENG-004**: Where a response chunk splits a 16-bit frame, the engine adapter shall deliver only whole frames, in order.
 - [ ] **VOICE-ENG-005**: If a connection ends before an engine's audio ends, then the voice service shall fail the clause and shall use none of the audio received.
-- [ ] **VOICE-ENG-006**: If no audio byte has arrived within `voice.timeout_ms` (default 15000) of the voice service sending a TTS request, then the voice service shall abort the request, close its connection, free its place in the concurrency gate (VOICE-ENG-013) and fail the line with a timeout.
-- [ ] **VOICE-ENG-007**: If the gap between one audio chunk and the next exceeds `voice.timeout_ms`, then the voice service shall abort the request, close its connection, free its place in the concurrency gate (VOICE-ENG-013) and fail the line with a timeout.
-- [ ] **VOICE-ENG-008**: The voice service shall not count time spent waiting for the concurrency gate (VOICE-ENG-011) toward `voice.timeout_ms`.
-- [ ] **VOICE-ENG-009**: The voice service shall not count the bytes of a WAV header as audio when measuring the first-byte bound of VOICE-ENG-006.
-- [ ] **VOICE-ENG-010**: While audio chunks keep arriving within `voice.timeout_ms` of one another, the voice service shall not cut a response for its total length.
-- [ ] **VOICE-ENG-011**: The voice service shall send no more simultaneous TTS requests than the engine's concurrency, counting live lines and fallback clip phrases together: 2 for `kokoro`, 2 for `openai`, 1 for `pocket`.
-- [ ] **VOICE-ENG-012**: When live lines and fallback clip phrases wait for the concurrency gate, the voice service shall let a waiting line go before a waiting clip phrase.
-- [ ] **VOICE-ENG-013**: The voice service shall free a request's place in the concurrency gate only when its response has ended or its connection has closed, not at the moment it aborts the request; a request aborted by a timeout (VOICE-ENG-006, VOICE-ENG-007) frees its place when its connection has closed.
-- [ ] **VOICE-ENG-014**: When the voice service applies a `voice.stop` to a line whose synthesis is in progress, it shall not abort that line's TTS request, and the request shall hold its place in the concurrency gate until its response has ended.
-- [ ] **VOICE-ENG-015**: The voice service shall abort an engine request only when the voice service stops or the request times out (VOICE-ENG-006, VOICE-ENG-007), and shall not abort the request of a line that `voice.stop` ended.
-- [ ] **VOICE-ENG-016**: Where `voice.engine` is `kokoro`, `openai` or `pocket`, the voice service shall read the response body with the shared WAV reader (VOICE-WAV-001 to VOICE-WAV-008).
+- [x] **VOICE-ENG-006**: If no audio byte has arrived within `voice.timeout_ms` (default 15000) of the voice service sending a TTS request, then the voice service shall abort the request, close its connection, free its place in the concurrency gate (VOICE-ENG-013) and fail the line with a timeout.
+- [x] **VOICE-ENG-007**: If the gap between one audio chunk and the next exceeds `voice.timeout_ms`, then the voice service shall abort the request, close its connection, free its place in the concurrency gate (VOICE-ENG-013) and fail the line with a timeout.
+- [x] **VOICE-ENG-008**: The voice service shall not count time spent waiting for the concurrency gate (VOICE-ENG-011) toward `voice.timeout_ms`.
+- [x] **VOICE-ENG-009**: The voice service shall not count the bytes of a WAV header as audio when measuring the first-byte bound of VOICE-ENG-006.
+- [x] **VOICE-ENG-010**: While audio chunks keep arriving within `voice.timeout_ms` of one another, the voice service shall not cut a response for its total length.
+- [x] **VOICE-ENG-011**: The voice service shall send no more simultaneous TTS requests than the engine's concurrency, counting live lines and fallback clip phrases together: 2 for `kokoro`, 2 for `openai`, 1 for `pocket`.
+- [x] **VOICE-ENG-012**: When live lines and fallback clip phrases wait for the concurrency gate, the voice service shall let a waiting line go before a waiting clip phrase.
+- [x] **VOICE-ENG-013**: The voice service shall free a request's place in the concurrency gate only when its response has ended or its connection has closed, not at the moment it aborts the request; a request aborted by a timeout (VOICE-ENG-006, VOICE-ENG-007) frees its place when its connection has closed.
+- [x] **VOICE-ENG-014**: When the voice service applies a `voice.stop` to a line whose synthesis is in progress, it shall not abort that line's TTS request, and the request shall hold its place in the concurrency gate until its response has ended.
+- [x] **VOICE-ENG-015**: The voice service shall abort an engine request only when the voice service stops or the request times out (VOICE-ENG-006, VOICE-ENG-007), and shall not abort the request of a line that `voice.stop` ended.
+- [x] **VOICE-ENG-016**: Where `voice.engine` is `kokoro`, `openai` or `pocket`, the voice service shall read the response body with the shared WAV reader (VOICE-WAV-001 to VOICE-WAV-008).
 - [D] **VOICE-ENG-017**: Where a maintained Qwen3-TTS server with a stable API exists, the voice service shall provide an engine for it; the prerequisite is such a server, and a server that speaks the OpenAI speech route is already served by the `openai` engine.
 
 ## Shared WAV reader (WAV)
 
 Design: LLD § The TTS engine contract, Reading a WAV.
 
-- [ ] **VOICE-WAV-001**: When an engine adapter reads a WAV response, it shall walk the chunks from the `RIFF` header to the `data` chunk, reading the size of each chunk before `data` rounded up to an even number (the RIFF pad byte) and never reading the `RIFF` size or the `data` size.
-- [ ] **VOICE-WAV-002**: If the `fmt ` chunk's format tag is not 1 (PCM), then the engine adapter shall fail the line with `tts audio: unsupported format tag <n>`.
-- [ ] **VOICE-WAV-003**: If the `fmt ` chunk's bit depth is not 16, then the engine adapter shall fail the line with `tts audio: unsupported bit depth <n>`.
-- [ ] **VOICE-WAV-004**: If the `fmt ` chunk's channel count is not 1, then the engine adapter shall fail the line with `tts audio: unsupported channel count <n>`.
-- [ ] **VOICE-WAV-005**: If the `fmt ` chunk's sample rate is below 8000 or above 48000, then the engine adapter shall fail the line with `tts audio: unsupported sample rate <n>`.
-- [ ] **VOICE-WAV-006**: When the engine adapter reaches the `data` chunk header, it shall take every byte after it to the end of the response body as PCM and drop a trailing partial frame.
-- [ ] **VOICE-WAV-007**: If a response body is not a WAV file, then the engine adapter shall fail the line with `tts audio: not a WAV file`.
-- [ ] **VOICE-WAV-008**: If a WAV response has no `data` chunk, then the engine adapter shall fail the line with `tts audio: no data chunk`.
+- [x] **VOICE-WAV-001**: When an engine adapter reads a WAV response, it shall walk the chunks from the `RIFF` header to the `data` chunk, reading the size of each chunk before `data` rounded up to an even number (the RIFF pad byte) and never reading the `RIFF` size or the `data` size.
+- [x] **VOICE-WAV-002**: If the `fmt ` chunk's format tag is not 1 (PCM), then the engine adapter shall fail the line with `tts audio: unsupported format tag <n>`.
+- [x] **VOICE-WAV-003**: If the `fmt ` chunk's bit depth is not 16, then the engine adapter shall fail the line with `tts audio: unsupported bit depth <n>`.
+- [x] **VOICE-WAV-004**: If the `fmt ` chunk's channel count is not 1, then the engine adapter shall fail the line with `tts audio: unsupported channel count <n>`.
+- [x] **VOICE-WAV-005**: If the `fmt ` chunk's sample rate is below 8000 or above 48000, then the engine adapter shall fail the line with `tts audio: unsupported sample rate <n>`.
+- [x] **VOICE-WAV-006**: When the engine adapter reaches the `data` chunk header, it shall take every byte after it to the end of the response body as PCM and drop a trailing partial frame.
+- [x] **VOICE-WAV-007**: If a response body is not a WAV file, then the engine adapter shall fail the line with `tts audio: not a WAV file`.
+- [x] **VOICE-WAV-008**: If a WAV response has no `data` chunk, then the engine adapter shall fail the line with `tts audio: no data chunk`.
 
 ## Engines (KOK, OAI, POC)
 
 Design: LLD § The TTS engine contract, the engine table.
 
-- [ ] **VOICE-KOK-001**: Where `voice.engine` is `kokoro` and `voice.voice` is blank, the voice service shall send the voice `af_heart`.
-- [ ] **VOICE-OAI-001**: Where `voice.engine` is `openai`, when a `brain.say` arrives, the voice service shall POST JSON `{model: voice.openai.model, input: <text>, voice: voice.voice, speed: voice.speed, response_format: "wav"}` to `<voice.openai.base_url>/audio/speech`.
-- [ ] **VOICE-OAI-002**: Where `voice.engine` is `openai` and `voice.openai.api_key` is set, the voice service shall send `Authorization: Bearer <key>` with the request; where it is not set, the voice service shall send no `Authorization` header.
-- [ ] **VOICE-OAI-003**: Where `voice.engine` is `openai`, the voice service shall send TTS requests to no address other than `voice.openai.base_url`.
-- [ ] **VOICE-POC-001**: Where `voice.engine` is `pocket`, when a `brain.say` arrives, the voice service shall POST `multipart/form-data` with the fields `text` and `voice_url` (= `voice.voice`) to `<voice.pocket.url>/tts`, and shall send no `voice_wav` field.
-- [ ] **VOICE-POC-002**: Where `voice.engine` is `pocket` and `voice.voice` is blank, the voice service shall send the voice `alba`.
-- [ ] **VOICE-POC-003**: Where `voice.engine` is `pocket`, the voice service shall not send `voice.speed`.
-- [ ] **VOICE-POC-004**: Where `voice.engine` is `pocket`, the voice service shall keep every byte of audio after the WAV header, including silence the server appends, so that the utterance `durationMs` counts it.
-- [ ] **VOICE-POC-005**: Where `voice.engine` is `pocket`, the voice service shall compute the lip-sync envelope from the audio received and shall not trim its trailing silence.
-- [ ] **VOICE-POC-006**: Where `voice.engine` is `pocket`, if the server answers a line with a JSON body `{"detail": ...}` and a non-2xx status, then the voice service shall raise `tts <status>: <body>` with that body.
+- [x] **VOICE-KOK-001**: Where `voice.engine` is `kokoro` and `voice.voice` is blank, the voice service shall send the voice `af_heart`.
+- [x] **VOICE-OAI-001**: Where `voice.engine` is `openai`, when a `brain.say` arrives, the voice service shall POST JSON `{model: voice.openai.model, input: <text>, voice: voice.voice, speed: voice.speed, response_format: "wav"}` to `<voice.openai.base_url>/audio/speech`.
+- [x] **VOICE-OAI-002**: Where `voice.engine` is `openai` and `voice.openai.api_key` is set, the voice service shall send `Authorization: Bearer <key>` with the request; where it is not set, the voice service shall send no `Authorization` header.
+- [x] **VOICE-OAI-003**: Where `voice.engine` is `openai`, the voice service shall send TTS requests to no address other than `voice.openai.base_url`.
+- [x] **VOICE-POC-001**: Where `voice.engine` is `pocket`, when a `brain.say` arrives, the voice service shall POST `multipart/form-data` with the fields `text` and `voice_url` (= `voice.voice`) to `<voice.pocket.url>/tts`, and shall send no `voice_wav` field.
+- [x] **VOICE-POC-002**: Where `voice.engine` is `pocket` and `voice.voice` is blank, the voice service shall send the voice `alba`.
+- [x] **VOICE-POC-003**: Where `voice.engine` is `pocket`, the voice service shall not send `voice.speed`.
+- [x] **VOICE-POC-004**: Where `voice.engine` is `pocket`, the voice service shall keep every byte of audio after the WAV header, including silence the server appends, so that the utterance `durationMs` counts it.
+- [x] **VOICE-POC-005**: Where `voice.engine` is `pocket`, the voice service shall compute the lip-sync envelope from the audio received and shall not trim its trailing silence.
+- [x] **VOICE-POC-006**: Where `voice.engine` is `pocket`, if the server answers a line with a JSON body `{"detail": ...}` and a non-2xx status, then the voice service shall raise `tts <status>: <body>` with that body.
 
 ## Errors, outages and configuration gaps (ERR, GAP)
 
 Design: LLD § The TTS engine contract, Errors and Incomplete configuration.
 
-- [ ] **VOICE-ERR-001**: If a synthesis fails with a refused or dropped connection, a timeout, a 5xx, a 401, 403, 404 or 429, any other non-2xx status except 400 and 422, audio the engine adapter rejects, or incomplete engine configuration, then the voice service shall treat the failure as an outage.
-- [ ] **VOICE-ERR-002**: If a synthesis fails with a 400 or 422 for one line, then the voice service shall fail that line on the `tts failed` path and leave `deps.tts` unchanged.
-- [ ] **VOICE-ERR-003**: When a line that `voice.stop` ended fails or succeeds in synthesis, the voice service shall discard the result and leave `deps.tts` unchanged.
-- [ ] **VOICE-GAP-001**: Where `voice.engine` is `openai` and `voice.openai.base_url`, `voice.openai.model` or `voice.voice` is blank, the voice service shall start and reject every synthesis at once with `tts not configured: <key> is not set`, naming the blank key.
-- [ ] **VOICE-GAP-002**: Where `voice.engine` is `pocket` and `voice.pocket.url` is blank, the voice service shall start and reject every synthesis at once with `tts not configured: voice.pocket.url is not set`.
-- [ ] **VOICE-GAP-003**: While an engine's configuration is incomplete, the voice service shall report `deps.tts` `down` with the reason in the heartbeat detail.
-- [ ] **VOICE-GAP-004**: While an engine's configuration is incomplete, the voice service shall fail each line on the `tts failed` path (VOICE-UTT-003).
-- [ ] **VOICE-GAP-005**: While an engine's configuration is incomplete, the voice service shall still report `ready` once the HTTP server is listening and the consumer group is positioned.
+- [x] **VOICE-ERR-001**: If a synthesis fails with a refused or dropped connection, a timeout, a 5xx, a 401, 403, 404 or 429, any other non-2xx status except 400 and 422, audio the engine adapter rejects, or incomplete engine configuration, then the voice service shall treat the failure as an outage.
+- [x] **VOICE-ERR-002**: If a synthesis fails with a 400 or 422 for one line, then the voice service shall fail that line on the `tts failed` path and leave `deps.tts` unchanged.
+- [x] **VOICE-ERR-003**: When a line that `voice.stop` ended fails or succeeds in synthesis, the voice service shall discard the result and leave `deps.tts` unchanged.
+- [x] **VOICE-GAP-001**: Where `voice.engine` is `openai` and `voice.openai.base_url`, `voice.openai.model` or `voice.voice` is blank, the voice service shall start and reject every synthesis at once with `tts not configured: <key> is not set`, naming the blank key.
+- [x] **VOICE-GAP-002**: Where `voice.engine` is `pocket` and `voice.pocket.url` is blank, the voice service shall start and reject every synthesis at once with `tts not configured: voice.pocket.url is not set`.
+- [x] **VOICE-GAP-003**: While an engine's configuration is incomplete, the voice service shall report `deps.tts` `down` with the reason in the heartbeat detail.
+- [x] **VOICE-GAP-004**: While an engine's configuration is incomplete, the voice service shall fail each line on the `tts failed` path (VOICE-UTT-003).
+- [x] **VOICE-GAP-005**: While an engine's configuration is incomplete, the voice service shall start, and once the HTTP server is listening and the consumer group is positioned it shall report heartbeat state `degraded` (not `ready`, not `starting`) with `deps.tts` `down` and the reason in the detail.
 
 ## Egress (EGR)
 
 Design: LLD § Egress.
 
-- [ ] **VOICE-EGR-001**: Where the host of the engine's server is off the LAN by the egress rule (config, Egress destinations), the voice service shall log one warning at start naming the engine and the host.
-- [ ] **VOICE-EGR-002**: Where `voice.engine` is not `stub`, the voice service shall name the engine and the host it talks to in its heartbeat detail.
+- [x] **VOICE-EGR-001**: Where the host of the engine's server is off the LAN by the egress rule (config, Egress destinations), the voice service shall log one warning at start naming the engine and the host.
+- [x] **VOICE-EGR-002**: Where `voice.engine` is not `stub`, the voice service shall name the engine and the host it talks to in its heartbeat detail.
 
 ## Audio store and HTTP
 
@@ -159,35 +159,35 @@ Design: LLD § Egress.
 
 Design: LLD § Fallback Clips. "The clip store" is voice's own directory `<dataDir()>/voice/fallback-clips` (CFG-DIR-006, CFG-DIR-007). "The phrase list" is `voice.fallback.lines` (CFG-SCH-017). "The committed set" is the set the store's `manifest.json` names.
 
-- [ ] **VOICE-CLIP-001**: Where `voice.engine` is not `stub`, when the voice service starts it shall compute the clip fingerprint as the SHA-256 of a canonical JSON of the phrase list (in order, each phrase trimmed), `voice.engine`, the engine's fingerprint object (VOICE-CLIP-013) and a clip-format version number. <!-- test: services/voice/test/clips.test.ts -->
+- [x] **VOICE-CLIP-001**: Where `voice.engine` is not `stub`, when the voice service starts it shall compute the clip fingerprint as the SHA-256 of a canonical JSON of the phrase list (in order, each phrase trimmed), `voice.engine`, the engine's fingerprint object (VOICE-CLIP-013) and a clip-format version number. <!-- test: services/voice/test/clips.test.ts -->
 - [x] **VOICE-CLIP-002**: If the computed fingerprint equals the `fingerprint` in the clip store's `manifest.json` and every clip file the manifest lists exists and is not empty, then the voice service shall make no TTS request for fallback clips and leave the clip store unchanged. <!-- test: services/voice/test/clips.test.ts -->
-- [ ] **VOICE-CLIP-003**: When the computed fingerprint differs from the manifest's, or the clip store has no readable manifest, the voice service shall regenerate the clips after reporting `ready` and without awaiting the regeneration on its bus loop, synthesizing one phrase at a time in list order with the same engine call as an utterance, through the same concurrency gate (VOICE-ENG-011), and shall run at most one regeneration at a time. <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/boot.test.ts -->
+- [x] **VOICE-CLIP-003**: When the computed fingerprint differs from the manifest's, or the clip store has no readable manifest, the voice service shall regenerate the clips after reporting `ready` and without awaiting the regeneration on its bus loop, synthesizing one phrase at a time in list order with the same engine call as an utterance, through the same concurrency gate (VOICE-ENG-011), and shall run at most one regeneration at a time. <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/boot.test.ts -->
 - [x] **VOICE-CLIP-004**: When a regeneration has synthesized every phrase it keeps, the voice service shall write the clips into a new temporary directory inside the clip store, rename it to a new set directory `sets/<generatedAt>-<random suffix>` that no other regeneration uses, and then replace `manifest.json` by renaming a fully written temporary file over it, so that the committed set is always complete. <!-- test: services/voice/test/clips.test.ts -->
-- [ ] **VOICE-CLIP-005**: If a phrase's synthesis fails with an outage-class failure (VOICE-ERR-001), or writing the clip store fails, during a regeneration, then the voice service shall commit nothing, abandon that regeneration, leave `manifest.json` and the committed set unchanged, log a warning, and retry the regeneration after a delay starting at 60 s and doubling to a 15 min cap until one succeeds or voice stops. <!-- test: services/voice/test/clips.test.ts -->
-- [ ] **VOICE-CLIP-006**: If one phrase's synthesis fails with a 400 or 422, or the clip is shorter than 100 ms, then the voice service shall leave that phrase out of the set, log a warning naming the phrase's index, and continue with the remaining phrases; the committed manifest carries the computed fingerprint, so the skipped phrase is not retried until the fingerprint changes. <!-- test: services/voice/test/clips.test.ts -->
+- [x] **VOICE-CLIP-005**: If a phrase's synthesis fails with an outage-class failure (VOICE-ERR-001), or writing the clip store fails, during a regeneration, then the voice service shall commit nothing, abandon that regeneration, leave `manifest.json` and the committed set unchanged, log a warning, and retry the regeneration after a delay starting at 60 s and doubling to a 15 min cap until one succeeds or voice stops. <!-- test: services/voice/test/clips.test.ts -->
+- [x] **VOICE-CLIP-006**: If one phrase's synthesis fails with a 400 or 422, or the clip is shorter than 100 ms, then the voice service shall leave that phrase out of the set, log a warning naming the phrase's index, and continue with the remaining phrases; the committed manifest carries the computed fingerprint, so the skipped phrase is not retried until the fingerprint changes. <!-- test: services/voice/test/clips.test.ts -->
 - [x] **VOICE-CLIP-007**: When the voice service has committed a new manifest, it shall delete every set directory other than the committed set, and every temporary directory in the clip store older than one hour. <!-- test: services/voice/test/clips.test.ts -->
 - [x] **VOICE-CLIP-008**: Where `voice.engine` is `stub`, the voice service shall neither generate fallback clips nor create, modify or delete anything in the clip store, and shall answer `GET /fallback/manifest.json` and every `GET /fallback/<name>` with 404. <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/boot.test.ts -->
 - [x] **VOICE-CLIP-009**: The voice service shall write `manifest.json` as JSON holding `version`, `fingerprint`, `generatedAt` (epoch ms), `set` (the set directory relative to the clip store) and `clips`, a list in phrase order of `{name, text, durationMs, bytes, sha256}`, where `name` is `<index>-<first 8 hex characters of sha256>.wav` and `<index>` is the phrase's zero-based list index, zero-padded to at least two digits (more digits when the list has more than 100 phrases). <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/mouth-sync.test.ts -->
 - [x] **VOICE-CLIP-010**: When the phrase list is empty, the voice service shall commit a manifest whose `clips` list is empty, making no TTS request. <!-- test: services/voice/test/clips.test.ts -->
 - [x] **VOICE-CLIP-011**: When `GET /fallback/manifest.json` is requested and a set is committed and `voice.engine` is not `stub`, the voice service shall respond 200 with `content-type: application/json` and the committed manifest without its `set` field; when no set is committed, it shall respond 404. <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/mouth-sync.test.ts -->
 - [x] **VOICE-CLIP-012**: When `GET /fallback/<name>` is requested for a clip `name` listed in the committed manifest and `voice.engine` is not `stub`, the voice service shall respond 200 with `content-type: audio/wav`, `content-length` and the clip's bytes; for any other name it shall respond 404. <!-- test: services/voice/test/clips.test.ts --><!-- test: services/voice/test/mouth-sync.test.ts -->
-- [ ] **VOICE-CLIP-013**: The voice service shall build the engine's fingerprint object from the engine name, the server URL, the resolved voice (the engine's default where `voice.voice` is blank), the model where the engine has one, and every request setting the engine sends with its default resolved.
-- [ ] **VOICE-CLIP-014**: The voice service shall not put a credential in the engine's fingerprint object.
-- [ ] **VOICE-CLIP-015**: Where a Kokoro tuning knob is unset, the voice service shall leave it out of the engine's fingerprint object, as it leaves it out of the request.
-- [ ] **VOICE-CLIP-016**: If a phrase's synthesis fails with a 401, 403, 404 or 429, a timeout, a connection failure, a 5xx or an audio-format rejection, then the voice service shall not mark that phrase unspeakable.
+- [x] **VOICE-CLIP-013**: The voice service shall build the engine's fingerprint object from the engine name, the server URL, the resolved voice (the engine's default where `voice.voice` is blank), the model where the engine has one, and every request setting the engine sends with its default resolved.
+- [x] **VOICE-CLIP-014**: The voice service shall not put a credential in the engine's fingerprint object.
+- [x] **VOICE-CLIP-015**: Where a Kokoro tuning knob is unset, the voice service shall leave it out of the engine's fingerprint object, as it leaves it out of the request.
+- [x] **VOICE-CLIP-016**: If a phrase's synthesis fails with a 401, 403, 404 or 429, a timeout, a connection failure, a 5xx or an audio-format rejection, then the voice service shall not mark that phrase unspeakable.
 
 ## Health
 
-- [ ] **VOICE-HLTH-001**: When the voice service's HTTP server is listening and its consumer group has been positioned (so it can receive `brain.say`), it shall report heartbeat state `ready` with `service` `voice` and `deps` `{tts}` (mode `live` with every engine but `stub`), and shall not report `ready` before both conditions hold. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts --> <!-- test: services/voice/test/boot.test.ts -->
-- [ ] **VOICE-HLTH-002**: When a line or fallback-clip-phrase synthesis fails with an outage-class failure (VOICE-ERR-001), the voice service shall set `deps.tts` to `down` (heartbeat `degraded`) and set it back to `ok` when the next line or fallback-clip-phrase synthesis succeeds. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts -->
-- [ ] **VOICE-HLTH-003**: Where `voice.engine` is `stub`, the voice service shall report heartbeat mode `mock` with `deps.tts` `n/a` and state `ready`. <!-- openspec: voice § Isolation preset and mode --> <!-- test: services/voice/test/stub.test.ts -->
+- [x] **VOICE-HLTH-001**: When the voice service's HTTP server is listening and its consumer group has been positioned (so it can receive `brain.say`), it shall report heartbeat state `ready` (`degraded` while `deps.tts` is `down`, VOICE-HLTH-010) with `service` `voice` and `deps` `{tts}` (mode `live` with every engine but `stub`), and shall not report `ready` before both conditions hold. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts --> <!-- test: services/voice/test/boot.test.ts -->
+- [x] **VOICE-HLTH-002**: When a line or fallback-clip-phrase synthesis fails with an outage-class failure (VOICE-ERR-001), the voice service shall set `deps.tts` to `down` (heartbeat `degraded`) and set it back to `ok` when the next line or fallback-clip-phrase synthesis succeeds. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts -->
+- [x] **VOICE-HLTH-003**: Where `voice.engine` is `stub`, the voice service shall report heartbeat mode `mock` with `deps.tts` `n/a` and state `ready`. <!-- openspec: voice § Isolation preset and mode --> <!-- test: services/voice/test/stub.test.ts -->
 - [x] **VOICE-HLTH-004**: When the voice service receives SIGINT or SIGTERM, it shall publish one `stopping` heartbeat, close its HTTP server, stop the bus and exit with code 0. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts (the single stopping heartbeat) --> <!-- test: services/voice/test/boot.test.ts (server close and bus stop; signal handling and exit are injected) -->
 - [x] **VOICE-HLTH-005**: When the voice service stops, it shall clear every pending claim-window timer and virtual `voice.done` timer, so that no virtual `voice.playing` or `voice.done` is published afterwards. <!-- test: services/voice/test/queue.test.ts -->
-- [ ] **VOICE-HLTH-006**: If a synthesis fails with a 400 or 422 for one line, or the engine's audio holds zero frames (VOICE-ENG-003), or a line that `voice.stop` ended fails, or a fallback clip phrase is unspeakable, then the voice service shall leave `deps.tts` unchanged.
-- [ ] **VOICE-HLTH-007**: Where an engine has a readiness probe (`pocket`: `GET /health`), the voice service shall report `deps.tts` `down` from start until its first probe succeeds, probing at start and every 10 s while `deps.tts` is `down`.
-- [ ] **VOICE-HLTH-008**: When a probe succeeds while `deps.tts` is `down`, the voice service shall set `deps.tts` to `ok`.
-- [ ] **VOICE-HLTH-009**: Where an engine has no readiness probe and its configuration is complete, the voice service shall report `deps.tts` `ok` from start and judge it by the outcome of the last synthesis.
-- [ ] **VOICE-HLTH-010**: While `deps.tts` is `down`, the voice service shall still report `ready` once its HTTP server is listening and its consumer group is positioned.
+- [x] **VOICE-HLTH-006**: If a synthesis fails with a 400 or 422 for one line, or the engine's audio holds zero frames (VOICE-ENG-003), or a line that `voice.stop` ended fails, or a fallback clip phrase is unspeakable, then the voice service shall leave `deps.tts` unchanged.
+- [x] **VOICE-HLTH-007**: Where an engine has a readiness probe (`pocket`: `GET /health`), the voice service shall report `deps.tts` `down` from start until its first probe succeeds, probing at start and every 10 s while `deps.tts` is `down`.
+- [x] **VOICE-HLTH-008**: When a probe succeeds while `deps.tts` is `down`, the voice service shall set `deps.tts` to `ok`.
+- [x] **VOICE-HLTH-009**: Where an engine has no readiness probe and its configuration is complete, the voice service shall report `deps.tts` `ok` from start and judge it by the outcome of the last synthesis.
+- [x] **VOICE-HLTH-010**: While `deps.tts` is `down`, the voice service shall, once its HTTP server is listening and its consumer group is positioned, report heartbeat state `degraded` with the engine, the host and the reason in the detail; it never holds back that state change and never stays `starting`.
 
 ## Lines and clauses (CLAUSE)
 

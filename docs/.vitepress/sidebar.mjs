@@ -50,6 +50,7 @@ export const sidebar = [
           { text: 'Mood', link: '/guide/tune/mood' },
           { text: 'Memory and viewer notes', link: '/guide/tune/memory' },
           { text: 'Choose a model', link: '/guide/tune/model' },
+          { text: 'Choose a voice engine', link: '/guide/tune/voice-engine' },
         ],
       },
       {

@@ -235,7 +235,7 @@ arrows:
     drift: null
 
   voice:
-    status: AUDITED
+    status: PARTIAL
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -243,7 +243,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "147 specs: 35 [x], 111 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 69 specs: 67 [x], 2 [D] (VOICE-CHUNK-001, 002)."
+    next: "147 specs: 96 [x], 50 [ ], 1 [D] (the clause-chunked and streamed-speech specs VOICE-CHUNK-*, VOICE-CLAUSE-* and VOICE-ENG-005 are open, epic #192; the sink, stop, store and utterance gaps are listed in the segment arrow)."
     drift: null
 
   mouth:

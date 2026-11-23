@@ -5,7 +5,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { testConfig } from "@cohost/testing";
 import { ConfigSchema } from "@cohost/config";
-import { kokoroRequestSettings, kokoroSynth } from "../src/voice.js";
+import { collect } from "../src/engine.js";
+import { createEngine, kokoroRequestSettings } from "../src/engines.js";
+import { wavBytes, pcm } from "./tts-helpers.js";
+
+const synthKokoro = (voice: Record<string, unknown>) =>
+  async (text: string) => collect(await createEngine(testConfig({ voice }).voice).synthesize(text, { signal: new AbortController().signal }));
 
 const fixture = (name: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), "utf8"));
 const fields = fixture("kokoro-speech-fields.json") as { request: string[]; normalization_options: string[]; bounds: Record<string, number[]>; lang_codes: string[] };
@@ -24,15 +29,15 @@ test("set knobs reach the request as the recorded Kokoro-FastAPI body, unset one
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
     body = JSON.parse(raw);
-    res.end(Buffer.alloc(0));
+    res.end(wavBytes(pcm(2400)));
   });
   await new Promise<void>((r) => server.listen(0, r));
   const saved = process.env.TTS_URL;
   process.env.TTS_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    await kokoroSynth(testConfig({ voice: KNOBS }).voice)("hi chat");
+    await synthKokoro(KNOBS)("hi chat");
     assert.deepEqual(body, fixture("kokoro-speech-request.json"));
-    await kokoroSynth(testConfig({ voice: { normalization: {} } }).voice)("hi");
+    await synthKokoro({ normalization: {} })("hi");
     assert.deepEqual(Object.keys(body as object).sort(), ["input", "model", "response_format", "speed", "voice"]);
   } finally {
     server.close();

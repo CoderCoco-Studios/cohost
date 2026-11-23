@@ -131,6 +131,22 @@ test("ticks don't overlap: a slow scorer is asked once", async () => { // @spec 
   assert.equal(bus.of("attention.focus").length, 1);
 });
 
+const RAID = { match: "raid", say: ["Raid!"], emotion: "happy", cooldown_ms: 1000 };
+test("a flood ticked inside a reflex's cooldown leaves its next fire time alone", async () => { // @spec SAL-DECIDE-016
+  let t = 0;
+  const { s, bus } = setup({ reflexes: [RAID] }, {}, () => t);
+  await s.onEvent(chat("raid incoming")); // t=0: fires and starts the rule's cooldown
+  assert.equal(bus.of("brain.say").length, 1);
+  await s.onEvent(idle); // the cortex is idle again; only the rule's own cooldown gates the next fire
+  for (let i = 0; i < 20; i++) await s.onEvent(chat(`raid ${i}`)); // a flood, all inside that cooldown
+  t = 500;
+  await s.tick(); // the walk counts the flood (one viewer, one text family): no speak, no reflex state touched
+  assert.equal(bus.of("brain.say").length, 1, "no extra line while the rule is cooling");
+  t = 1001;
+  await s.onEvent(chat("raid again")); // the rule's own next fire time is unchanged
+  assert.equal(bus.of("brain.say").length, 2);
+});
+
 test("reflex: fires brain.say instantly and marks only its trigger seen", async () => { // @spec SAL-REFLEX-001, SAL-REFLEX-004
   const { s, bus } = setup({ reflexes: [DIED] });
   await s.onEvent(chat("hello"));

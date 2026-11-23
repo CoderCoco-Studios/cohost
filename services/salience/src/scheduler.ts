@@ -79,7 +79,7 @@ export class Scheduler {
     let score = 0; // @spec SAL-DECIDE-002
     let focus: ContextEvent | undefined;
     for (const { e, s } of ranked) {
-      if (e.kind === "chat" && !once.admit(viewerKey(e), e.text)) continue;
+      if (e.kind === "chat" && !once.admit(viewerKey(e), e.text)) continue; // @spec SAL-DECIDE-011, SAL-DECIDE-012
       score += s;
       if (!focus && s > 0) focus = e; // @spec SAL-DECIDE-014 (a zero-score event is never the focus)
     }

@@ -262,14 +262,3 @@ test("Scheduler: idle chatter reports every unseen event scored, counted or not"
   assert.equal(d.reason, "idle chatter");
   assert.equal(d.scored.length, 2);
 });
-
-test("Scheduler: counting reads and changes no reflex state", async () => { // @spec SAL-DECIDE-016
-  const reflexes = new Reflexes([{ match: "raid", on: ["chat"], say: ["Raid!"], emotion: "happy", cooldown_ms: 1000 }]);
-  const sch = new Scheduler(salienceCfg(), rulesScorer());
-  const ctx = new Context(40);
-  assert.ok(reflexes.test("chat", "raid incoming", 0)); // fires once
-  for (let i = 0; i < 20; i++) ctx.push(from("v1", `raid ${i}`)); // a flood
-  await sch.decide(ctx, false, false);
-  assert.equal(reflexes.test("chat", "raid again", 500), undefined, "still inside its own cooldown after a decision");
-  assert.ok(reflexes.test("chat", "raid again", 1001), "fires under its own cooldown only");
-});

@@ -43,6 +43,8 @@ export class Salience {
   private barged = false;
   /** The cortex's latest line (a `brain.say` that is neither reflex nor operator), whose playback renews `speaking` (SAL-BUSY-005). */
   private cortexLine: { id: string; more: boolean } | undefined;
+  /** Entries a `chat.removed` took out of the window. A decision whose focus is one of them publishes nothing (SAL-FOCUS-007). */
+  private readonly removed = new WeakSet<ContextEvent>();
 
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
@@ -64,6 +66,14 @@ export class Salience {
         const entry = this.ctx.push(ev);
         this.scheduler.noteActivity();
         await this.reflex("chat", d.text, entry);
+        break;
+      }
+      // A removal leaves the window whether or not salience is paused, so a paused line is not scored after resume.
+      case "chat.removed": { // @spec SAL-IN-008, SAL-IN-009
+        const before = this.ctx.all();
+        this.ctx.forget(ev.data as BusEvent<"chat.removed">["data"]);
+        const kept = new Set(this.ctx.all());
+        for (const e of before) if (!kept.has(e)) this.removed.add(e); // @spec SAL-FOCUS-007
         break;
       }
       case "speech.heard": { // @spec SAL-IN-002
@@ -203,6 +213,9 @@ export class Salience {
     if (!decision.speak) return;
     // A mute, pause or busy cortex may have arrived while the scorer ran: the decision is void then.
     if (this.control.muted || this.control.paused || this.busy()) return; // @spec SAL-FOCUS-005
+    // A chat.removed may have taken the focused line out of the window while the scorer ran: no focus, no seen marks, no thinking.
+    // Window eviction and forget_context do not void a decision, only a removal does (SAL-FOCUS-007).
+    if (decision.focus && this.removed.has(decision.focus)) return; // @spec SAL-FOCUS-007
     // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
     this.ctx.markSeenEvents(decision.scored); // @spec SAL-FOCUS-004
     // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.

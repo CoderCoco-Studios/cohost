@@ -262,3 +262,52 @@ test("Scheduler: idle chatter reports every unseen event scored, counted or not"
   assert.equal(d.reason, "idle chatter");
   assert.equal(d.scored.length, 2);
 });
+
+// ---- viewer keys (issue #182)
+
+test("Scheduler: the same name on two platforms, or one platform and two ids, is two viewers", async () => { // @spec SAL-DECIDE-017
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const across = new Context(20);
+  across.push(chat("one", { platform: "twitch", userId: "1", user: "Sam" }));
+  across.push(chat("two", { platform: "youtube", userId: "1", user: "Sam" }));
+  near((await sch.decide(across, false, false)).score, 0.3);
+  const ids = new Context(20);
+  ids.push(chat("one", { platform: "twitch", userId: "1", user: "Sam" }));
+  ids.push(chat("two", { platform: "twitch", userId: "2", user: "Sam" }));
+  near((await sch.decide(ids, false, false)).score, 0.3);
+  const nameOnly = new Context(20);
+  nameOnly.push(chat("one", { platform: "twitch", user: "Sam" }));
+  nameOnly.push(chat("two", { platform: "youtube", user: "Sam" }));
+  near((await sch.decide(nameOnly, false, false)).score, 0.3);
+});
+
+test("Scheduler: one platform and id with two display names is one viewer", async () => { // @spec SAL-DECIDE-018
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(chat("one", { platform: "twitch", userId: "1", user: "Sam" }));
+  ctx.push(chat("two", { platform: "twitch", userId: "1", user: "Samuel" }));
+  near((await sch.decide(ctx, false, false)).score, 0.15);
+});
+
+test("Scheduler: lines with no user id are one viewer only on one platform and one lowercased name", async () => { // @spec SAL-DECIDE-019
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const same = new Context(20);
+  same.push(chat("one", { platform: "twitch", user: "Sam" }));
+  same.push(chat("two", { platform: "twitch", user: "sam" }));
+  near((await sch.decide(same, false, false)).score, 0.15);
+  const differ = new Context(20);
+  differ.push(chat("one", { platform: "twitch", user: "Sam" }));
+  differ.push(chat("two", { platform: "twitch", user: "Pat" }));
+  differ.push(chat("three", { platform: "youtube", user: "Sam" }));
+  near((await sch.decide(differ, false, false)).score, 0.45);
+});
+
+test("Scheduler: counts through admit(viewerKey, text) of a once counter, viewers by key and texts by normalizeKey", async () => { // @spec SAL-DECIDE-011, SAL-DECIDE-012
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(chat("unrelated words", { platform: "twitch", userId: "1", user: "a" })); // viewer 1 repeats below, text is new
+  ctx.push(chat("hello world", { platform: "youtube", userId: "9", user: "b" })); // same text key, other viewer
+  ctx.push(chat("other", { platform: "twitch", userId: "1", user: "renamed" })); // same viewer key
+  ctx.push(chat("HELLO world", { platform: "twitch", userId: "5", user: "c" })); // walked first: counts, and takes the text
+  near((await sch.decide(ctx, false, false)).score, 0.3); // the youtube copy is a text repeat of "HELLO world"; the first line is a viewer repeat only
+});

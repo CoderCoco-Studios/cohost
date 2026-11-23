@@ -51,6 +51,10 @@ A container that [Docker](../../start/glossary.md#docker) keeps restarting befor
 
 A `—` in the column means no heartbeat has been seen.
 
+## Chat sources in the deps column
+
+`chat` reports one dependency per source it reads, `twitch` and `youtube`, and a source not listed in `chat.sources` shows `n/a`. A listed source is `ok` only while it is reading; while it waits for a broadcast, retries or has stopped (for example because `chat.twitch.channel` or the YouTube key is not set) it shows `down`, and the service shows `degraded` with the reasons as its detail. The mode is `mock` when `fake` is listed, `off` when `chat.sources` is empty, and `live` otherwise.
+
 ## The other columns
 
 - **deps** lists each dependency with `ok` or `down`. A dependency marked `n/a` is not applicable right now.

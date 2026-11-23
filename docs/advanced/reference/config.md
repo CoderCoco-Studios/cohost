@@ -67,8 +67,8 @@ The `eyes` service: OBS screenshots described by a vision model.
 | --- | --- | --- |
 | `vision` | map | The eyes service |
 | `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
-| `vision.model` | `qwen2.5vl:3b` | The vision model. Required while `enabled` is true |
-| `vision.engine` | `ollama` | `ollama` asks the vision model; `stub` answers with fixed text and no model |
+| `vision.model` | `qwen2.5vl:3b` | The vision model. Ollama pulls it while `provider` is `ollama`; blank means none, and eyes reports it down while `enabled` is true |
+| `vision.provider` | `ollama` | `ollama`, `openai`, `anthropic` or `bedrock` (hosted, with their keys in `secrets.yaml`), or `stub` for fixed text and no model |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |
@@ -265,8 +265,15 @@ The `voice` service: text to speech.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `voice` | map | The voice service |
-| `voice.engine` | `kokoro` | `kokoro`, or `stub` for a silent WAV sized from the text |
-| `voice.voice` | `af_heart` | A Kokoro voice id, or a mix such as `af_bella(2)+af_sky` |
+| `voice.engine` | `kokoro` | `kokoro`, `openai` (an OpenAI-compatible speech server), `pocket` (a Pocket speech server), or `stub` for a silent WAV sized from the text |
+| `voice.voice` | `af_heart` (`alba` under `pocket`) | Under `kokoro`, a voice id or a mix such as `af_bella(2)+af_sky`; under `pocket`, a catalogue name or an http(s) URL; under `openai`, any voice name. Blank takes the engine's own default, and stays blank under `openai` |
+| `voice.timeout_ms` | `15000` | The bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks |
+| `voice.openai.base_url` | `""` | The base URL of the OpenAI-compatible speech server, for `engine: openai`. Trailing slashes are dropped |
+| `voice.openai.model` | `""` | The speech model name the server takes, for `engine: openai` |
+| `voice.openai.api_key` | `""` | The server's API key. A secret, in `secrets.yaml` |
+| `voice.pocket` | map | The Pocket speech server |
+| `voice.pocket.url` | `http://tts-pocket:8000` | The Pocket speech server, for `engine: pocket`. Blank is a configuration gap |
+| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights. A secret, in `secrets.yaml` |
 | `voice.speed` | `1.05` | The pace multiplier, 0.25 to 4 |
 | `voice.sample_rate` | `24000` | The sample rate of the silence the stub engine returns. The Kokoro engine ignores it |
 | `voice.lang_code` | unset (commented out in the example) | The Kokoro language code: `a`, `b`, `e`, `f`, `h`, `i`, `j`, `p` or `z`. Blank derives it from the voice name |
@@ -330,7 +337,20 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.partial_step_ms` | `1000` | How often a growing partial transcription is made |
 | `ears.min_speech_ms` | `400` | The shortest speech worth transcribing |
 | `ears.stt_model` | `Systran/faster-whisper-small` | The model name sent to the STT server |
-| `ears.stt_engine` | `speaches` | `speaches`, or `stub` for a fixed transcript with no STT server |
+| `ears.stt_engine` | `speaches` | `speaches`, `openai`, `nemotron`, `kyutai`, or `stub` for a fixed transcript with no STT server |
+| `ears.stt_fallback_engine` | `speaches` | `speaches`, `openai` or `none`: the batch engine for whole clips a streaming engine (`nemotron`, `kyutai`) cannot serve |
+| `ears.stt_timeout_ms` | `20000` | The bound on one speech-to-text request |
+| `ears.max_stt_sessions` | `2` | How many speech-to-text sessions run at once (at least 1) |
+| `ears.openai.base_url` | `""` | The base URL of an OpenAI-compatible transcription server, for `openai`. Trailing slashes are dropped |
+| `ears.openai.api_key` | `""` | Its API key. A secret, in `secrets.yaml` |
+| `ears.nemotron` | map | The NVIDIA Nemotron speech-to-text server |
+| `ears.nemotron.url` | `http://stt-nemotron:8080` | The NVIDIA Nemotron STT server, for `stt_engine: nemotron`. Blank is a configuration gap |
+| `ears.nemotron.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.kyutai` | map | The Kyutai speech-to-text server |
+| `ears.kyutai.url` | `http://stt-kyutai:8080` | The Kyutai STT server, for `stt_engine: kyutai`. Blank is a configuration gap |
+| `ears.kyutai.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.kyutai.end_of_turn` | `off` | `on` lets the server's end-of-turn detection close a sentence; `off` closes it on silence |
+| `ears.kyutai.end_of_turn_threshold` | `0.5` | The end-of-turn probability needed, above 0 and below 1 |
 | `ears.drop_phrases` | `[]` | Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped. They are Whisper's usual hallucinations on silence, such as `Thank you.` |
 
 ## `connections`
@@ -387,9 +407,20 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |
 | `dashboard.inject.ttl_ms` | `300000` | How long an upload stays available to the service that asked for it |
 
+## `network`
+
+The machines that count as your own network, for the egress rule: which destinations of private data are on the LAN and which are off it.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `network` | unset | The optional network section |
+| `network.lan` | `[]` | Host names (`nas`), single addresses (`203.0.113.7`), dot suffixes (`.ts.net`) and CIDR ranges (`100.64.0.0/10`) counted as LAN. A bad entry fails naming `network.lan.<n>` |
+
+Private addresses, `localhost`, `host.docker.internal`, dotless names and `.local` names are on the LAN without an entry.
+
 ## Credentials (`secrets.yaml`)
 
-`config/secrets.yaml` holds exactly these eleven keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+`config/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
 
 | Key | Default | What it is |
 | --- | --- | --- |
@@ -403,4 +434,10 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `chat.twitch.client_secret` | `""` | The Twitch application's client secret |
 | `chat.twitch.access_token` | `""` | A user access token for the bot account. `chat` keeps its refreshed copy under the data directory |
 | `chat.twitch.refresh_token` | `""` | Its refresh token. Required whenever `access_token` is set |
+| `ears.openai.api_key` | `""` | The API key of the OpenAI-compatible transcription server |
+| `ears.nemotron.api_key` | `""` | The key of the Nemotron STT server, if it asks for one |
+| `ears.kyutai.api_key` | `""` | The key of the Kyutai STT server, if it asks for one |
+| `voice.openai.api_key` | `""` | The API key of the OpenAI-compatible speech server |
+| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights; only an owner who has accepted them needs it |
+| `chat.youtube.api_key` | `""` | The YouTube Data API key for the YouTube chat source |
 | `connections.discord.token` | `""` | The co-host's one Discord bot token, used only by the Discord connector. Invite the bot with Connect and Speak and enable the Server Members intent |

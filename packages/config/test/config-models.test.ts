@@ -22,7 +22,11 @@ test("ollamaModels requires llm.model, llm.embed_model and vision.model only whi
   assert.deepEqual(ollamaModels(cfg({ brain: { memory: { embedder: "hash" } } })).required, ["chat:1"]);
   assert.deepEqual(ollamaModels(cfg({ llm: { provider: "mock", model: "m", embed_model: "e" }, brain: { memory: { embedder: "hash" } } })).required, []);
   assert.deepEqual(ollamaModels(cfg({ vision: { model: "vlm:1", obs: {} } })).required, ["chat:1", "embed:1", "vlm:1"]);
-  assert.deepEqual(ollamaModels(cfg({ vision: { enabled: true, engine: "stub", model: "vlm:1", obs: {} } })).required, ["chat:1", "embed:1"], "the stub describer needs no model");
+  assert.deepEqual(ollamaModels(cfg({ vision: { enabled: true, provider: "stub", model: "vlm:1", obs: {} } })).required, ["chat:1", "embed:1"], "the stub describer needs no model");
+  for (const provider of ["openai", "anthropic", "bedrock"]) {
+    assert.deepEqual(ollamaModels(cfg({ vision: { provider, model: "vlm:1", obs: {} } })).required, ["chat:1", "embed:1"], `a hosted ${provider} describer pulls no model`);
+  }
+  assert.deepEqual(ollamaModels(cfg({ vision: { enabled: true, provider: "ollama", model: "", obs: {} } })).required, ["chat:1", "embed:1"], "a blank vision.model is no requirement");
   assert.deepEqual(ollamaModels(cfg({ vision: { model: "chat:1", obs: {} } })).required, ["chat:1", "embed:1"], "no duplicate");
 });
 

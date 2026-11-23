@@ -20,7 +20,7 @@ export const ISOLATION_OVERRIDES = {
   VOICE_ENGINE: "voice.engine",
   CHAT_SOURCES: "chat.sources",
   VISION_ENABLED: "vision.enabled",
-  VISION_ENGINE: "vision.engine",
+  VISION_PROVIDER: "vision.provider",
   EARS_SOURCES: "ears.sources",
   EARS_STT_ENGINE: "ears.stt_engine",
   CONNECTIONS_DISCORD_ENABLED: "connections.discord.enabled",

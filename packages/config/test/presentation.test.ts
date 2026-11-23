@@ -150,7 +150,8 @@ test("the widget assignments are fixed: timezone, voice, textarea, sources, lang
     if (k.endsWith(".llm.model")) return "small";
     return undefined;
   };
-  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k));
+  // voice.openai.model is a free-text TTS model name (CFG-SCH-059), not a model widget kind, so it is left out here.
+  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k) && k !== "voice.openai.model");
   assert.equal(modelKeys.length, 9);
   for (const k of modelKeys) assert.deepEqual(w(k), { type: "model", kind: expected(k) }, k);
   // And nothing else is a model widget.
@@ -191,20 +192,21 @@ test("each key's help is its JSON Schema description, and so is each property of
 });
 
 // @spec CFG-PRES-010, CFG-PRES-011
-test("sensitive marks exactly the twelve trust-boundary keys, the schema carries x-sensitive, and an unlisted url, host or base_url fails", () => {
-  const TWELVE = [
+test("sensitive marks exactly the seventeen trust-boundary keys, the schema carries x-sensitive, and an unlisted url, host or base_url fails", () => {
+  const SEVENTEEN = [
     "llm.openai.base_url", "vision.obs.host", "vision.obs.port", "avatar.vtube_studio.host", "avatar.vtube_studio.port", "mouth.outputs.http.url",
     "brain.salience.module.url", "brain.affect.module.url", "brain.cortex.critic.url", "brain.memory.notes.capture.url", "brain.memory.notes.consolidator.url",
     "dashboard.allowed_hosts",
+    "voice.openai.base_url", "voice.pocket.url", "ears.openai.base_url", "ears.nemotron.url", "ears.kyutai.url",
   ];
   const marked = Object.entries(PRESENTATION.keys).filter(([, e]) => e.sensitive !== undefined);
-  assert.deepEqual(marked.map(([k]) => k).sort(), [...TWELVE].sort());
+  assert.deepEqual(marked.map(([k]) => k).sort(), [...SEVENTEEN].sort());
   for (const [, e] of marked) assert.equal(e.sensitive, true);
-  for (const k of TWELVE) assert.equal(nodeOf(k)["x-sensitive"], true, `${k}: x-sensitive`);
-  for (const k of ALL_KEYS.filter((x) => !TWELVE.includes(x))) assert.equal(nodeOf(k)["x-sensitive"], undefined, `${k}: not sensitive`);
+  for (const k of SEVENTEEN) assert.equal(nodeOf(k)["x-sensitive"], true, `${k}: x-sensitive`);
+  for (const k of ALL_KEYS.filter((x) => !SEVENTEEN.includes(x))) assert.equal(nodeOf(k)["x-sensitive"], undefined, `${k}: not sensitive`);
   const NAMES_NO_DESTINATION = ["ears.http.host", "ears.dir.path", "avatar.vmc.host"];
   for (const k of ALL_KEYS.filter((x) => /(^|\.)(url|host|base_url)$/.test(x))) {
-    assert.ok(TWELVE.includes(k) || NAMES_NO_DESTINATION.includes(k), `${k} names a destination: mark it sensitive or list it as naming none`);
+    assert.ok(SEVENTEEN.includes(k) || NAMES_NO_DESTINATION.includes(k), `${k} names a destination: mark it sensitive or list it as naming none`);
   }
 });
 

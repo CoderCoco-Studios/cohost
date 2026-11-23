@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isLanEntry } from "./egress.js";
 
 // @spec CFG-SCH-007
 export const Emotion = z.enum([
@@ -13,14 +14,15 @@ const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
 
 /**
- * Dotted paths (from the config root) of the eleven keys that hold credentials. They live in `secrets.yaml` (the loader
- * merges them there and ignores any value `config.yaml` holds at one), the settings editor never shows or writes them,
- * and a section's `secrets` list is derived from this one list.
+ * Dotted paths (from the config root) of the seventeen wildcard-free keys that hold credentials (CFG-SEC-003). They live in
+ * `secrets.yaml` (the loader merges them there and ignores any value `config.yaml` holds at one), the settings editor never
+ * shows or writes them, and a section's `secrets` list is derived from this one list.
  */
 // @spec CFG-SEC-003, MOD-CFG-002
 export const SECRET_PATHS: readonly string[] = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
-  "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
+  "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
+  "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
   "chat.youtube.api_key", "connections.discord.token",
 ];
 export const EMOTIONS = Emotion.options;
@@ -72,8 +74,35 @@ const DISCORD_ID = z
   .string({ error: (iss) => (typeof iss.input === "number" ? "write the id in quotes: a YAML number cannot hold a 19-digit id without losing digits" : undefined) })
   .default("");
 
+/** An optional `http` or `https` URL: blank is allowed and stays blank (CFG-SCH-024). */
+/** An absolute `http` or `https` URL with a host (the form a request is sent to). */
+const isHttpUrl = (u: string): boolean => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol);
+const optionalUrl = (message: string) => z.string().refine((u) => u === "" || isHttpUrl(u), message);
+
 /** A DNS host name as `dashboard.allowed_hosts` lists it: labels of letters, digits and hyphens or underscores, dots between, optionally ending in a dot. */
 const HOST_NAME = /^[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?\.?$/;
+
+/** Pocket catalogue voice names: letters, digits, `_` and `-`. */
+const POCKET_VOICE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * The voice of `voice.engine`: blank resolves to the engine's own voice (`af_heart` under kokoro, `alba` under pocket; stub
+ * keeps Kokoro's default), a non-blank value must be in the engine's form, and openai takes any non-blank text.
+ */
+// @spec CFG-SCH-056, CFG-SCH-057, CFG-SCH-029
+function resolveVoice(engine: string, voice: string, ctx: z.RefinementCtx): string {
+  if (engine === "openai") return voice;
+  if (engine === "pocket") {
+    if (voice === "") return "alba";
+    if (POCKET_VOICE.test(voice) || isHttpUrl(voice)) return voice;
+    ctx.addIssue({ code: "custom", path: ["voice"], message: "must be a Pocket voice name (letters, digits, _ and -) or an http or https URL" });
+    return voice;
+  }
+  if (voice === "" || engine === "stub") return voice === "" ? "af_heart" : voice; // stub calls no voice server: any text
+  if (KOKORO_VOICE.test(voice)) return voice;
+  ctx.addIssue({ code: "custom", path: ["voice"], message: "must be a Kokoro voice name or mix, such as af_heart or af_bella(2)+af_sky" });
+  return voice;
+}
 
 export const ConfigSchema = z.object({
   cohost: z.object({
@@ -125,10 +154,10 @@ export const ConfigSchema = z.object({
   // @spec CFG-SCH-021
   vision: z.object({
     enabled: z.boolean().default(false),
-    /** Describer model id; required only while `enabled` (checked on the section below). */
-    model: z.string().default(""),
-    /** `stub` describes images with fixed text and no model call (isolated runs). */
-    engine: z.preprocess((v) => v || "ollama", z.enum(["ollama", "stub"])),
+    /** Describer model id; blank loads whatever `enabled` is (CFG-SCH-025), and eyes reports it as a down dependency. */
+    model: z.string().default(""), // @spec CFG-SCH-025
+    /** The chat provider that describes frames; `stub` describes images with fixed text and no model call (isolated runs). */
+    provider: z.preprocess((v) => v || "ollama", z.enum(["ollama", "openai", "anthropic", "bedrock", "stub"])), // @spec CFG-SCH-001
     /** System prompt of the describe call. It must keep the instruction to reply exactly SAME when nothing changed. */
     prompt: z.preprocess((v) => (typeof v === "string" && v.trim() ? v : undefined), z.string().default(DEFAULT_VISION_PROMPT)),
     temperature: z.number().min(0).max(2).default(0.2),
@@ -150,9 +179,6 @@ export const ConfigSchema = z.object({
       source: str("Game Capture"),
       width: z.number().int().positive().default(896),
     }),
-  }).superRefine((v, ctx) => {
-    // @spec CFG-SCH-025
-    if (v.enabled && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required while vision.enabled is true" });
   }),
   // @spec CFG-SCH-010
   chat: z.object({
@@ -345,11 +371,17 @@ export const ConfigSchema = z.object({
     max_chars: z.number().int().min(16).default(500),
     max_name_chars: z.number().int().min(8).default(40),
   }).prefault({}),
+  // @spec CFG-SCH-055, CFG-SCH-056, CFG-SCH-057, CFG-SCH-058, CFG-SCH-059, CFG-SCH-060, CFG-SCH-061, CFG-SCH-062
   voice: z.object({
-    /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
-    engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "stub"])),
-    /** A Kokoro voice id or a mix such as `af_bella(2)+af_sky`. */
-    voice: z.preprocess((v) => (v === "" ? undefined : v), z.string().regex(KOKORO_VOICE, "must be a Kokoro voice name or mix, such as af_heart or af_bella(2)+af_sky").default("af_heart")), // @spec CFG-SCH-029
+    /** `stub` returns silence sized from the text; no TTS call (isolated runs). `openai` and `pocket` call their own speech server. */
+    engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "openai", "pocket", "stub"])), // @spec CFG-SCH-055
+    /**
+     * The voice, checked in the form of `engine` and resolved after parse (`resolveVoice`): blank is the engine's own voice
+     * under kokoro and pocket, and stays blank under openai (CFG-SCH-056, CFG-SCH-057).
+     */
+    voice: z.string().default(""),
+    /** The bound on the wait for the first audio byte of a synthesis and on each gap between its chunks. */
+    timeout_ms: z.number().int().positive().default(15000), // @spec CFG-SCH-058
     /** Pace multiplier sent to Kokoro-FastAPI (its accepted range is 0.25 to 4). */
     speed: z.number().min(0.25).max(4).default(1.05), // @spec CFG-SCH-006
     /** Kokoro language code for text processing; blank leaves it to the first letter of the voice name. */
@@ -376,7 +408,22 @@ export const ConfigSchema = z.object({
         z.string().max(200).refine((s) => s.trim().length > 0, "must not be empty"),
       ).default([]), // @spec CFG-SCH-017
     }).prefault({}),
-  }),
+    /** The OpenAI-compatible speech server (`engine` openai). */
+    openai: z.object({
+      /** Empty or an http(s) URL; trailing slashes are dropped (CFG-SCH-060). */
+      base_url: optionalUrl("must be empty or an http or https URL").transform((u) => u.replace(/\/+$/, "")).default(""), // @spec CFG-SCH-059, CFG-SCH-060
+      model: z.string().default(""), // @spec CFG-SCH-059
+      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      api_key: z.string().default(""), // @spec CFG-SCH-059
+    }).prefault({}),
+    /** The Pocket TTS server (`engine` pocket). */
+    pocket: z.object({
+      /** Empty (a configuration gap, CFG-SCH-062) or an http(s) URL. */
+      url: optionalUrl("must be empty or an http or https URL").default("http://tts-pocket:8000"), // @spec CFG-SCH-061
+      /** A secret, from `secrets.yaml`: only an owner who has accepted the gated Pocket TTS weights needs it (CFG-SEC-003). */
+      hf_token: z.string().default(""), // @spec CFG-SCH-061
+    }).prefault({}),
+  }).transform((v, ctx) => ({ ...v, voice: resolveVoice(v.engine, v.voice, ctx) })),
   avatar: z.object({
     // A blank value means "no avatar app"; a non-empty unknown value still fails.
     driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])), // @spec AVATAR-DRV-004
@@ -435,9 +482,38 @@ export const ConfigSchema = z.object({
     partial_step_ms: z.number().int().positive().default(1000),
     min_speech_ms: z.number().int().positive().default(400),
     stt_model: str("Systran/faster-whisper-small"),
-    /** `stub` transcribes every clip to fixed text with no STT server (isolated runs); blank is `speaches`. */
+    /** The STT engine: `stub` transcribes every clip to fixed text with no STT server (isolated runs); blank is `speaches`. */
     // @spec CFG-SCH-022
-    stt_engine: z.preprocess((v) => v || "speaches", z.enum(["speaches", "stub"])),
+    stt_engine: z.preprocess((v) => v || "speaches", z.enum(["speaches", "openai", "nemotron", "kyutai", "stub"])),
+    /** The batch engine that transcribes whole clips and utterances a streaming engine cannot serve; `none` has none. */
+    stt_fallback_engine: z.preprocess((v) => v || "speaches", z.enum(["speaches", "openai", "none"])), // @spec CFG-SCH-063
+    /** The bound on one speech-to-text request. */
+    stt_timeout_ms: z.number().int().positive().default(20000), // @spec CFG-SCH-064
+    /** How many speech-to-text sessions may run at once. */
+    max_stt_sessions: z.number().int().min(1).default(2), // @spec CFG-SCH-064
+    /** The OpenAI-compatible transcription server (`stt_engine` or fallback openai). */
+    openai: z.object({
+      /** Empty or an http(s) URL; trailing slashes are dropped. */
+      base_url: optionalUrl("must be empty or an http or https URL").transform((u) => u.replace(/\/+$/, "")).default(""), // @spec CFG-SCH-065
+      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      api_key: z.string().default(""), // @spec CFG-SCH-065
+    }).prefault({}),
+    /** The NVIDIA Nemotron speech-to-text server. */
+    nemotron: z.object({
+      url: optionalUrl("must be empty or an http or https URL").default("http://stt-nemotron:8080"), // @spec CFG-SCH-066
+      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      api_key: z.string().default(""), // @spec CFG-SCH-066
+    }).prefault({}),
+    /** The Kyutai speech-to-text server, with its end-of-turn detection. */
+    kyutai: z.object({
+      url: optionalUrl("must be empty or an http or https URL").default("http://stt-kyutai:8080"), // @spec CFG-SCH-067
+      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      api_key: z.string().default(""), // @spec CFG-SCH-067
+      /** Whether the server's end-of-turn detection closes a sentence (`on`) or the silence gap does (`off`). */
+      end_of_turn: z.preprocess((v) => v || "off", z.enum(["on", "off"])), // @spec CFG-SCH-068
+      /** The end-of-turn probability needed to close a sentence: above 0 and below 1. */
+      end_of_turn_threshold: z.number().gt(0).lt(1).default(0.5), // @spec CFG-SCH-068
+    }).prefault(EMPTY_INPUT),
     /** Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped: Whisper's silence hallucinations. */
     // @spec EARS-HEAR-010
     drop_phrases: z.array(z.string()).default([]),
@@ -500,6 +576,12 @@ export const ConfigSchema = z.object({
       token: z.string().default(""),
     }).prefault({}),
   }).prefault({}),
+  /** The machines and networks that count as the LAN for the egress rule (CFG-EGR-011); the whole section is optional. */
+  // @spec CFG-SCH-071
+  network: z.object({
+    /** Host names, single addresses, dot suffixes and CIDR ranges. */
+    lan: z.array(z.string().refine(isLanEntry, "must be a host name, an IP address, a dot suffix such as .ts.net, or a CIDR range")).default([]),
+  }).optional(),
   // @spec CFG-SCH-038
   dashboard: z.object({
     /** The full surface's port; applies at the dashboard's next start. */

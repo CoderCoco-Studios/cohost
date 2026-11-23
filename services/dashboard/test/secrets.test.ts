@@ -115,9 +115,9 @@ test("a set stores the value trimmed at its config path, mode 0600, answers {ok,
 });
 
 // @spec DASH-SECRET-001
-test("each of the twelve secret paths can be set and cleared", async () => {
+test("each of the seventeen wildcard-free secret paths can be set and cleared", async () => {
   const t = await boot({ control: true });
-  assert.equal(SECRET_PATHS.length, 12);
+  assert.equal(SECRET_PATHS.length, 17); // CFG-SEC-003, wildcard-free paths only
   for (const p of SECRET_PATHS) {
     // the Bedrock pair is only ever changed together (DASH-SECRET-012)
     if (p === BR_ID || p === BR_SECRET) continue;

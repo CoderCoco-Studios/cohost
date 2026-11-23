@@ -4,7 +4,7 @@ import { testConfig } from "@cohost/testing";
 import { channelName, createChatFilter, mentionsCohost, type ChatUserInfo } from "../src/filter.js";
 
 const cfg = testConfig({ chat: { ignore_users: ["Nightbot"], ignore_prefixes: ["!", "#"] } });
-const filter = createChatFilter(cfg);
+const filter = createChatFilter(cfg, "twitch");
 const info = (over: Partial<ChatUserInfo> = {}): ChatUserInfo =>
   ({ displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false, ...over });
 
@@ -52,7 +52,7 @@ test("broadcaster counts as mod; subscriber flag and display-name fallback", () 
   assert.equal(m.user, "chris");
 });
 
-const bounded = createChatFilter(testConfig({ chat: { ignore_prefixes: ["!"] }, viewer_text: { max_chars: 16, max_name_chars: 8 } }));
+const bounded = createChatFilter(testConfig({ chat: { ignore_prefixes: ["!"] }, viewer_text: { max_chars: 16, max_name_chars: 8 } }), "twitch");
 
 // @spec CHAT-FILT-002, CHAT-FILT-003
 test("a prefix hidden behind whitespace or an invisible character still drops the line as a command", () => {

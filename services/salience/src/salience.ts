@@ -23,6 +23,10 @@ interface Held {
   timer?: ReturnType<typeof setTimeout>;
   /** Settles once the provisional focus is on the bus, `true` when it was published: a resolve is ordered behind it. */
   focused?: Promise<boolean>;
+  /** The cortex state and its clock before the focus, and the clock the focus set: restored if the focus never went out. */
+  prevState?: "idle" | "thinking" | "speaking" | "muted";
+  prevSince?: number;
+  since?: number;
 }
 
 /** The score of the last early transcript, kept for the final that may reuse it (SAL-PROV-007). */
@@ -126,6 +130,7 @@ export class Salience {
         // A final that answers the held provisional focus is confirmed or withdraws it first (SAL-PROV-013, SAL-PROV-015).
         const confirmed = entry !== undefined && (await this.resolveFinal(d, entry));
         const fired = await this.reflex("speech", d.text, entry);
+        if (fired) this.handledEarly(d.utteranceId); // a reflex marks the final seen: it is handled (SAL-PROV-034)
         if (!fired && !confirmed) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
         break;
       }
@@ -260,7 +265,7 @@ export class Salience {
       try {
         const decision = await this.scheduler.decide(this.ctx, false, false, this.arousal, undefined, transient); // @spec SAL-PROV-006
         this.earlyScore = { utteranceId: d.utteranceId, seq: d.seq, text: d.text, score: this.scheduler.scoreOf(transient) ?? 0 }; // @spec SAL-PROV-007
-        await this.provisional(d, decision, pass);
+        await this.provisional(d, decision, pass, transient);
       } finally {
         this.earlyInFlight = undefined;
         this.deciding = false;
@@ -277,19 +282,21 @@ export class Salience {
    * the idle timer alone (SAL-PROV-011).
    * @spec SAL-PROV-008, SAL-PROV-009, SAL-PROV-010, SAL-PROV-011, SAL-PROV-012, SAL-PROV-024, SAL-PROV-029
    */
-  private async provisional(d: EarlyData, decision: Decision, pass: EarlyPass): Promise<void> {
+  private async provisional(d: EarlyData, decision: Decision, pass: EarlyPass, transient: ContextEvent): Promise<void> {
     if (pass.retracted || pass.finalArrived) return; // @spec SAL-PROV-024
     if (this.control.muted || this.control.paused || this.busy()) return; // @spec SAL-PROV-009
     if (!decision.speak || decision.reason === "idle chatter") return; // @spec SAL-PROV-008, SAL-PROV-029
+    // Only when the early speech is the focus: an event that outranks it is answered on the final, as any decision would (SAL-PROV-010).
+    if (decision.focus !== transient) return; // @spec SAL-PROV-010
     const timing = d.timing?.audioEndedAt !== undefined
       ? { audioEndedAt: d.timing.audioEndedAt, ...(d.timing.closedAt !== undefined ? { closedAt: d.timing.closedAt } : {}) }
       : undefined;
     const h: Held = { utteranceId: d.utteranceId, seq: d.seq, reason: "engaged", score: decision.score, scored: decision.scored };
-    const prevState = this.cortexState;
-    const prevSince = this.cortexSince;
+    h.prevState = this.cortexState;
+    h.prevSince = this.cortexSince;
     this.held = h;
     this.cortexState = "thinking"; // @spec SAL-PROV-025
-    const since = this.cortexSince = this.now();
+    h.since = this.cortexSince = this.now();
     h.focused = this.d.bus.publish("attention.focus", {
       reason: h.reason,
       score: h.score,
@@ -302,17 +309,7 @@ export class Salience {
       this.d.log.error({ err }, "provisional focus publish failed");
       return false;
     });
-    if (!(await h.focused)) {
-      // Nothing reached the cortex: drop the record and roll the state back, as a failed focus is rolled back (SAL-HEALTH-002).
-      if (this.held === h) {
-        this.held = undefined;
-        if (this.cortexState === "thinking" && this.cortexSince === since) {
-          this.cortexState = prevState;
-          this.cortexSince = prevSince;
-        }
-      }
-      return;
-    }
+    if (!(await h.focused)) { this.dropUnsent(h); return; }
     // The limit counts from the publication (SAL-PROV-012); a resolve sent meanwhile has already dropped the record.
     if (this.held === h) h.timer = this.startLimit(h);
   }
@@ -371,8 +368,22 @@ export class Salience {
       await this.withdraw("resumed", h); // @spec SAL-PROV-015
       return false;
     }
+    // A confirm waits for its focus to be on the bus (SAL-PROV-013). A focus that never went out confirms nothing: the record is
+    // dropped and the final takes the ordinary path. A withdraw that landed meanwhile has already resolved the focus.
+    if (h.focused && !(await h.focused)) { this.dropUnsent(h); return false; }
+    if (this.held !== h) return false;
     await this.confirm(d, entry, h);
     return true;
+  }
+
+  /** A provisional focus that never reached the bus is dropped, and the cortex state it set is restored (SAL-HEALTH-002). */
+  private dropUnsent(h: Held): void {
+    if (this.held !== h) return;
+    this.held = undefined;
+    if (this.cortexState === "thinking" && this.cortexSince === h.since) {
+      this.cortexState = h.prevState ?? "idle";
+      this.cortexSince = h.prevSince ?? this.now();
+    }
   }
 
   /**
@@ -391,7 +402,6 @@ export class Salience {
       ? { audioEndedAt: d.timing.audioEndedAt, ...(d.timing.closedAt !== undefined ? { closedAt: d.timing.closedAt } : {}), heardAt: entry.ts }
       : undefined;
     try {
-      if (h.focused && !(await h.focused)) return; // the focus never went out: nothing to confirm (SAL-PROV-023)
       await this.d.bus.publish("attention.resolve", {
         utteranceId: h.utteranceId,
         seq: h.seq,
@@ -405,6 +415,11 @@ export class Salience {
     } catch (err) {
       this.d.log.error({ err }, "attention.resolve confirm publish failed");
     }
+  }
+
+  /** The final of an utterance is handled: the early score cached for it goes (SAL-PROV-034). */
+  private handledEarly(utteranceId: string | undefined): void {
+    if (utteranceId !== undefined && this.earlyScore?.utteranceId === utteranceId) this.earlyScore = undefined;
   }
 
   /** Gives a final whose early score is held that score, so it is not scored twice (SAL-PROV-007, SAL-PROV-034). */
@@ -488,6 +503,8 @@ export class Salience {
       let decision;
       try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal, claim); }
       finally { this.deciding = false; }
+      // A final scored by this decision is decided, with or without the early score adopted: its cached score goes (SAL-PROV-034).
+      for (const e of decision.scored) this.handledEarly(e.kind === "speech" ? this.speechInfo.get(e)?.utteranceId : undefined);
       await this.publishDecision(decision);
     } finally {
       if (claim) this.reminders.abortSpeak(claim.id); // a no-op once settled

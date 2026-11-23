@@ -119,6 +119,9 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 ## Work Required
 
+- #225 (cortex handling of a provisional focus) must land before ears publishes early transcripts: cortex would otherwise treat a provisional focus as an ordinary one and reply twice.
+- #226 must re-verify SAL-PROV-016 and the interjection clauses of SAL-TRIG-001 (they are built here as the non-interjection branch only).
+
 - Open LLD questions: repeated mentions across decisions, and several viewers named `unknown`.
 
 ### Must Fix

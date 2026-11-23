@@ -519,3 +519,99 @@ test("early: a withdraw sent while the provisional focus is still publishing is 
   assert.deepEqual(e.kinds(), ["attention.focus", "resolve:withdraw"], "the resolve follows its focus");
   assert.equal(resolves(e)[0]!.reason, "muted");
 });
+
+test("early: an unseen chat mention that outranks the early speech publishes no provisional focus, and the final answers the mention", async () => { // @spec SAL-PROV-010
+  const e = setup();
+  await e.s.onEvent(chat("hey Coco?", { mentionsCohost: true, user: "carol" }));
+  await e.s.onEvent(early("look at this one"));
+  await flush();
+  assert.equal(e.calls(), 1, "the early pass scored the mention and the early speech in one call");
+  assert.equal(focuses(e).length, 0, "the mention (1.0) outranks the early speech (0.9): no provisional focus");
+  assert.equal(resolves(e).length, 0);
+  assert.equal(e.s.ctx.unseen().length, 1, "the early pass marked nothing seen: the mention is still unseen");
+  await e.s.onEvent(heard("look at this one"));
+  await flush();
+  assert.equal(focuses(e).length, 1, "the final takes the ordinary path");
+  assert.equal(focuses(e)[0]!.focus?.kind, "chat", "the ordinary decision answers the mention");
+  assert.equal(focuses(e)[0]!.provisional, undefined);
+  assert.equal(resolves(e).length, 0);
+});
+
+test("early: the early speech is the provisional focus when every other unseen event scores lower", async () => { // @spec SAL-PROV-010
+  const e = setup();
+  await e.s.onEvent(chat("is this good?")); // a question scores 0.55, below the early speech's 0.9
+  await e.s.onEvent(early("look at this one"));
+  await flush();
+  const [f] = focuses(e);
+  assert.equal(f!.provisional, true);
+  assert.equal(f!.focus?.kind, "speech", "the speech is the focus, not the question");
+  assert.equal(f!.focus?.text, "look at this one");
+});
+
+test("early: a reflex rule still in its own cooldown does not hold the early pass back", async () => { // @spec SAL-PROV-004
+  const e = setup({ reflexes: [DIED] });
+  await e.s.onEvent(heard("you died")); // the rule fires on the final and starts its 600 s cooldown
+  await e.s.onEvent(event("brain.status", { state: "idle" }));
+  assert.equal(e.bus.of("brain.say").length, 1, "the reflex fired once");
+  await e.s.onEvent(early("you died again", { utteranceId: "u2" })); // a new utterance: u1 has a final
+  await flush();
+  const [f] = focuses(e);
+  assert.equal(f?.provisional, true, "the rule is cooling, so its match does not stop the provisional focus");
+  assert.equal(f?.focus?.text, "you died again");
+});
+
+test("early: a final handled by a reflex drops the early score of its utterance", async () => { // @spec SAL-PROV-034
+  const PLEASE = { match: "please", say: ["Sure."], emotion: "neutral", cooldown_ms: 0 };
+  const e = setup({ speak_threshold: 1.2, reflexes: [PLEASE] });
+  await e.s.onEvent(early("look at this one"));
+  await flush();
+  assert.equal(e.calls(), 1);
+  await e.s.onEvent(heard("look at this one and please", { earlySeq: 0 })); // the reflex answers this final and marks it seen
+  await flush();
+  assert.equal(e.bus.of("brain.say").length, 1, "the reflex fired on the final");
+  await e.s.onEvent(event("brain.status", { state: "idle" }));
+  await e.s.onEvent(heard("look at this one", { earlySeq: 0 }));
+  await flush();
+  assert.equal(e.calls(), 2, "the early score was dropped with the handled final: the same words are scored again");
+});
+
+test("early: a final decided without the early score adopted drops that score", async () => { // @spec SAL-PROV-034
+  const e = setup({ speak_threshold: 1.2 });
+  await e.s.onEvent(early("look at this one"));
+  await flush();
+  assert.equal(e.calls(), 1);
+  await e.s.onEvent(heard("look at this one that is long", { earlySeq: 0 })); // different words: not adopted, but decided
+  await flush();
+  assert.equal(e.calls(), 2, "the final was scored on its own");
+  await e.s.onEvent(heard("look at this one", { earlySeq: 0 }));
+  await flush();
+  assert.equal(e.calls(), 3, "the cached early score of the utterance went with the decided final");
+});
+
+test("early: a final that arrives while its provisional focus is publishing takes the ordinary path when that publish fails", async () => { // @spec SAL-PROV-013, SAL-PROV-023
+  const e = setup();
+  const realPublish = e.bus.publish.bind(e.bus) as typeof e.bus.publish;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstFocus = true;
+  e.bus.publish = (async (type: Parameters<typeof realPublish>[0], data: Parameters<typeof realPublish>[1]) => {
+    if (type === "attention.focus" && firstFocus) {
+      firstFocus = false;
+      await gate;
+      throw new Error("publish failed"); // the provisional focus never reaches the bus
+    }
+    return realPublish(type, data);
+  }) as typeof e.bus.publish;
+  await e.s.onEvent(early("look at this one"));
+  await flush(); // the scorer has returned; the provisional publish waits on the gate
+  const handled = e.s.onEvent(heard("look at this one")); // matches the held seq, while the focus is in flight (not awaited: it waits on the publish)
+  await flush();
+  release();
+  await handled;
+  await flush();
+  assert.equal(resolves(e).length, 0, "no confirm for a focus that never went out");
+  assert.equal(focuses(e).filter((f) => f.provisional).length, 0);
+  assert.equal(focuses(e).length, 1, "the final is decided on the ordinary path");
+  assert.equal(focuses(e)[0]!.focus?.text, "look at this one");
+  assert.equal(focuses(e)[0]!.provisional, undefined);
+});

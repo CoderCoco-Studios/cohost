@@ -65,7 +65,7 @@ test("the frame timer is unref'd so it cannot hold the process open, and stop cl
   }
 });
 
-test("lip-sync follows the envelope from when the sink starts playing, then closes", () => { // @spec AVATAR-ENG-005 // @spec AVATAR-ENG-005
+test("lip-sync follows the envelope from when the sink starts playing, then closes", () => { // @spec AVATAR-ENG-005
   make();
   engine.prepare(utterance());
   frames(1);

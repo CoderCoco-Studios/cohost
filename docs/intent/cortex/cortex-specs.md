@@ -205,7 +205,7 @@ Design: LLD § Fallback acknowledgement. "The base chance" is `brain.cortex.fall
 
 - [x] **CTX-FORGET-001**: When the cortex receives a `chat.removed`, it shall call `forget` of its working-memory `Context` with it.
 - [x] **CTX-FORGET-002**: When the cortex receives a `chat.removed` of `scope` `user`, it shall delete that viewer's familiarity note (CTX-VIEWER-001), found by `viewerKey` of the removal's `platform` and `userId`.
-- [ ] **CTX-FORGET-003**: When the cortex receives a `chat.removed` while a think is in flight, it shall let the think finish with the transcript, viewers and focus it already took.  <!-- gap: the prompt is built after the recall and notes await, so a removal during that wait does change this think's prompt; owner to decide. -->
+- [x] **CTX-FORGET-003**: When the cortex receives a `chat.removed` while a think is in flight, it shall not abort the think; the think keeps the focus and notes viewers it took at its start, and its transcript and familiarity note are read from the window and notes as they stand when its prompt is built. <!-- test: services/cortex/test/cortex.region.test.ts -->
 
 ## Startup and shutdown
 

@@ -61,8 +61,9 @@ function notesViewers(focus: Focus, events: readonly ContextEvent[]): ViewerRef[
 }
 
 /**
- * Keep the reply entries that name a requested viewer, each once and as that viewer's name. An entry carrying a platform
- * or user id matches on both; an entry carrying neither matches by name, and only when exactly one requested viewer has it.
+ * Keep the reply entries that name a requested viewer, each once and as that viewer's name. An entry with a platform
+ * matches on its full key (`refKey`: the user id, or the name when it has none); an entry with no platform matches by
+ * name, and only when exactly one requested viewer has that name. An entry with a user id but no platform matches nothing.
  */
 // @spec CTX-NOTES-011
 function matchNotes(people: People, requested: readonly ViewerRef[]): People {
@@ -70,9 +71,10 @@ function matchNotes(people: People, requested: readonly ViewerRef[]): People {
   const matched = new Set<number>();
   for (const entry of people) {
     let idx = -1;
-    if (entry.platform || entry.userId) {
-      idx = requested.findIndex((r) => r.platform === entry.platform && r.userId === entry.userId);
-    } else {
+    if (entry.platform) {
+      const key = refKey(entry);
+      idx = requested.findIndex((r) => refKey(r) === key);
+    } else if (!entry.userId) {
       const named = requested.flatMap((r, i) => (normalizeKey(r.user) === normalizeKey(entry.user) ? [i] : []));
       if (named.length === 1) idx = named[0]!;
     }

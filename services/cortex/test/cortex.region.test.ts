@@ -1085,3 +1085,58 @@ test("a removal during a think does not change that think's prompt", async () =>
   assert.match(llm.calls[0]![1]!.content, /about to vanish/);
   assert.match(llm.system, /sam is new here/);
 });
+
+// @spec CTX-NOTES-011
+test("two id-less viewers on one platform: each reply entry lands on its own name, never the other's", async () => {
+  const { cortex, llm } = setup({
+    notes: () => [
+      { user: "bob", platform: "twitch", regular: false, msgCount: 2, notes: [general("plays cello")] },
+      { user: "amy", platform: "twitch", regular: false, msgCount: 2, notes: [general("fixes bikes")] },
+    ],
+  });
+  await cortex.onEvent(sayAs("twitch", "amy"));
+  await cortex.onEvent(sayAs("twitch", "bob"));
+  await cortex.think(focusOf("amy", "twitch"));
+  assert.match(llm.system, /## People here\n- bob: «plays cello»\n- amy: «fixes bikes»\n/);
+});
+
+// @spec CTX-NOTES-011
+test("a reply entry naming a viewer nobody requested is dropped, and so is one with a user id but no platform", async () => {
+  const { cortex, llm } = setup({
+    notes: () => [
+      { user: "mallory", platform: "twitch", userId: "m9", regular: false, msgCount: 1, notes: [general("WRONG one")] },
+      { user: "amy", userId: "a1", regular: false, msgCount: 1, notes: [general("WRONG two")] },
+      { user: "amy", platform: "twitch", regular: false, msgCount: 2, notes: [general("fixes bikes")] },
+    ],
+  });
+  await cortex.onEvent(sayAs("twitch", "amy"));
+  await cortex.think(focusOf("amy", "twitch"));
+  assert.match(llm.system, /## People here\n- amy: «fixes bikes»\n/);
+  assert.doesNotMatch(llm.system, /mallory|WRONG/);
+});
+
+// @spec CTX-NOTES-011
+test("a name-only reply entry whose name two requested viewers share is dropped", async () => {
+  const { cortex, llm } = setup({
+    notes: () => [{ user: "sam", regular: false, msgCount: 2, notes: [general("plays cello")] }],
+  });
+  await cortex.onEvent(sayAs("twitch", "sam", "t1"));
+  await cortex.onEvent(sayAs("youtube", "sam", "y1"));
+  await cortex.think(focusOf("sam", "twitch", "t1"));
+  assert.doesNotMatch(llm.system, /plays cello/);
+});
+
+// @spec CTX-FORGET-003
+test("a removal during the recall wait does not abort the think; its prompt is built from the window and notes as they stand then", async () => {
+  const { cortex, bus, llm } = setup({ cfg: { brain: { memory: { recall_k: 4 }, cortex: { recall_timeout_ms: 5000 } } } });
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", userId: "t1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(sayAs("twitch", "sam", "t1", "about to vanish", "m1"));
+  const thinking = cortex.think(focusOf("sam", "twitch", "t1"));
+  await waitFor(() => bus.of("memory.recall.request").length === 1, "the recall request");
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "user", userId: "t1" }));
+  await cortex.onEvent(event("memory.recall.reply", { id: bus.of("memory.recall.request")[0]!.id, memories: [] }));
+  await thinking;
+  assert.equal(llm.calls.length, 1, "the think went on to its reply");
+  assert.doesNotMatch(llm.calls[0]![1]!.content, /about to vanish/);
+  assert.doesNotMatch(llm.system, /sam is new/);
+});

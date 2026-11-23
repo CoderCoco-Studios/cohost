@@ -32,7 +32,7 @@ A server's tools are listed but not used until you approve each one. In the dash
 
 - **read** means the server says the tool only reads. **acts** means the server says it changes something. **unlabelled** means the server did not say.
 - Turn a tool on with its **enabled** mark. An acting tool, and any tool the server did not label read-only, also needs its **acts** mark before the co-host may call it. The co-host then asks you to confirm each acting call before it runs.
-- Approving a tool records a fingerprint of its description, arguments and label. If the server later changes any of them, the tool is not offered until you approve it again. The co-host shows you the change first.
+- Approving a tool records a fingerprint of its name, title, description, arguments and label. If the server later changes any of them, the tool is not offered until you approve it again. The co-host shows you the change first.
 
 The description is the server's own text. Read it before you approve a tool.
 
@@ -56,7 +56,7 @@ A server's answer is untrusted. The co-host gives the model the text of the resu
 
 ## If it didn't
 
-- **The server shows as refused its credential.** The server answered 401 or 403. Check the token, and the header name if the server takes its token elsewhere. The co-host retries in the background, so a fixed token is picked up after the next retry.
+- **The server shows as refused its credential.** The server answered 401 or 403. Check the token, and the header name if the server takes its token elsewhere. The co-host reads the token once, when the `tools` service starts. After you change it, restart `tools`.
 - **The server shows as not connected.** The address is wrong, the server is down, or it did not answer within 10 seconds when connecting. Open the URL from the machine running cohost to check.
 - **A tool is listed but not offered.** It is not enabled, it acts without the acts mark, it is not approved yet, or its definition changed after you approved it.
 - **A tool's answer is an error.** The server reported an error for that call. The co-host shows the error and keeps the server connected.

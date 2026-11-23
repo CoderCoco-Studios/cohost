@@ -55,7 +55,7 @@ export async function toolsMain(
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const mode: Mode = cfg.tools.mode;
   const sources: ToolSource[] = mode === "mock" ? mockSources(cfg) : (env.createSources ?? ((c) => mcpSources(c, env.mcp)))(cfg);
-  // @spec TOOL-MCP-011: one start warning for each egress entry of a server that is off the LAN, naming the server and the host.
+  // @spec TOOL-MCP-007, TOOL-MCP-011: one start warning for each egress entry of a server that is off the LAN, naming the server and the host.
   if (mode === "live") {
     for (const e of egressDestinations(cfg)) {
       if (e.service === "tools" && e.offLan) log.warn({ server: e.engine.replace(/^mcp:/, ""), host: e.host }, "MCP server is off the LAN: its arguments leave this machine");

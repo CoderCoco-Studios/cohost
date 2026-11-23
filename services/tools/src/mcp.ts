@@ -6,9 +6,9 @@
  * detail or an error sentence: the text the owner and the model see is written here, and a result's content is the server's
  * only through the tool result itself.
  */
-import { retryWithBackoff, type RetryOptions } from "@cohost/shared";
-import type { Config } from "@cohost/config";
-import { serverExternal } from "./catalog.js";
+import { offLanHost, type Config } from "@cohost/config";
+import type { RetryOptions } from "@cohost/shared";
+import { SCHEMA_MAX } from "./catalog.js";
 import { SourceFailed, type SourceCallResult, type SourceContentPart, type SourceState, type SourceTool, type ToolSource } from "./source.js";
 
 /** The protocol version the client asks for at initialize. */
@@ -16,7 +16,7 @@ export const PROTOCOL_VERSION = "2025-06-18";
 
 /** The seam of the MCP client a test or the service's own wiring may set (`ToolsEnv.mcp`). */
 export interface McpEnv {
-  /** The shared backoff's options: a partial of `RetryOptions` (`baseMs`, `maxMs`, `sleep`). */
+  /** The backoff's options: a partial of `RetryOptions` (`baseMs`, `maxMs`, `sleep`). */
   retry?: Partial<RetryOptions>;
   /** How long one initialize or list request of a connection attempt may take before the attempt fails. */
   setupTimeoutMs?: number;
@@ -26,11 +26,15 @@ export interface McpEnv {
 const SETUP_TIMEOUT_MS = 10_000;
 const CANCEL_TIMEOUT_MS = 5_000;
 const DELETE_TIMEOUT_MS = 1_000;
+/** A connection that stays up this long resets the reconnect backoff; a shorter one counts as a failure. */
+const MIN_UP_MS = 10_000;
 /** The most bytes of one response body, and of one stream event that never ends (TOOL-MCP-012, TOOL-MCP-016). */
 const BODY_CAP = 1024 * 1024;
 /** The most pages of one tools/list (TOOL-MCP-015) and the most raw tool entries across them. */
 const MAX_PAGES = 50;
 const MAX_RAW_TOOLS = 10_000;
+/** The deepest a tool's argument schema may nest (TOOL-MCP-018). */
+const SCHEMA_DEPTH_MAX = 64;
 const SESSION_HEADER = "mcp-session-id";
 const DEFAULT_RETRY: RetryOptions = { baseMs: 1000, maxMs: 60_000 };
 
@@ -45,7 +49,7 @@ class Down extends Error {}
 class Refused extends Error {}
 /** A 3xx answer: an error for the request, never followed (TOOL-MCP-013). */
 class Redirected extends Error {}
-/** A response body over the cap (TOOL-MCP-012). */
+/** A response body or stream event over the cap (TOOL-MCP-012). */
 class TooLarge extends Error {}
 /** A JSON-RPC error answer (TOOL-CALL-012). */
 class RpcError extends Error {}
@@ -56,6 +60,9 @@ interface Conn {
   ctl: AbortController;
   timer?: ReturnType<typeof setInterval>;
   lostBy?: "down" | "auth";
+  /** A list is running; a notification that arrives meanwhile sets `dirty` and one more list runs after it (TOOL-MCP-004). */
+  relisting: boolean;
+  dirty: boolean;
   lost: Promise<void>;
   end: () => void;
 }
@@ -68,39 +75,68 @@ async function discard(res: Response): Promise<void> {
   await res.body?.cancel().catch(() => undefined);
 }
 
+/** The data of a `message` event block, or undefined for any other event (TOOL-MCP-022: an `endpoint` event is never read). */
+function messageOf(block: string): string | undefined {
+  let event = "message";
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  return (event === "message" || event === "") && data.length > 0 ? data.join("\n") : undefined;
+}
+
 /**
- * The data of each complete `message` event of a stream, in order. Only `message` events (and events with no name) are read:
- * a legacy `endpoint` event is never used to pick an address (TOOL-MCP-022). A body over `cap` bytes stops the read. A stream
- * (`streaming`) is open-ended, so only one unfinished event is capped, not the total.
+ * The data of each complete `message` event of a stream, in order, read in one pass. The body is read to the cap: a reply
+ * (`streaming` false) is capped in total, and an event that never ends is capped in any case; a GET stream (`streaming` true)
+ * is open-ended in total. Text is searched once, as it arrives, so a long event costs time linear in its size (TOOL-MCP-012).
  */
 // @spec TOOL-MCP-012, TOOL-MCP-022
-async function* eventData(res: Response, streaming: boolean): AsyncGenerator<string> {
+export async function* eventData(res: Response, streaming: boolean): AsyncGenerator<string> {
   const reader = res.body?.getReader();
   if (reader === undefined) return;
   const dec = new TextDecoder();
-  let buf = "";
   let total = 0;
+  let parts: string[] = [];
+  let size = 0;
+  let lastNL = false;
+  let held = "";
   try {
     for (;;) {
       let chunk: { done: boolean; value?: Uint8Array };
       try { chunk = await reader.read(); } catch { throw new Down(); }
       if (chunk.done) break;
       total += chunk.value!.byteLength;
-      if (!streaming && total > BODY_CAP) throw new TooLarge();
-      buf += dec.decode(chunk.value!, { stream: true });
-      let m: RegExpMatchArray | null;
-      while ((m = buf.match(/\r?\n\r?\n/)) !== null) {
-        const block = buf.slice(0, m.index ?? 0);
-        buf = buf.slice((m.index ?? 0) + m[0].length);
-        let event = "message";
-        const data: string[] = [];
-        for (const line of block.split(/\r?\n/)) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-        }
-        if ((event === "message" || event === "") && data.length > 0) yield data.join("\n");
+      if (!streaming && total > BODY_CAP) throw new TooLarge(); // a reply's total (TOOL-MCP-012)
+      let text = held + dec.decode(chunk.value!, { stream: true });
+      held = "";
+      if (text.endsWith("\r")) { held = "\r"; text = text.slice(0, -1); }
+      text = text.replace(/\r\n/g, "\n");
+      let pos = 0;
+      // a blank line can straddle two chunks: the newline at the end of the last one and the one at the start of this one
+      if (lastNL && text.startsWith("\n")) {
+        parts[parts.length - 1] = parts[parts.length - 1]!.slice(0, -1);
+        const d = messageOf(parts.join(""));
+        parts = []; size = 0;
+        if (d !== undefined) yield d;
+        pos = 1;
+        lastNL = false;
       }
-      if (streaming && buf.length > BODY_CAP) throw new TooLarge();
+      for (let k = text.indexOf("\n\n", pos); k >= 0; k = text.indexOf("\n\n", pos)) {
+        const piece = text.slice(pos, k);
+        parts.push(piece);
+        size += piece.length;
+        if (size > BODY_CAP) throw new TooLarge(); // one event that never ends (TOOL-MCP-012)
+        const d = messageOf(parts.join(""));
+        parts = []; size = 0;
+        if (d !== undefined) yield d;
+        pos = k + 2;
+      }
+      const rest = text.slice(pos);
+      parts.push(rest);
+      size += rest.length;
+      if (size > BODY_CAP) throw new TooLarge();
+      lastNL = rest.endsWith("\n");
     }
   } finally {
     await reader.cancel().catch(() => undefined);
@@ -127,10 +163,25 @@ async function readBody(res: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** Whether a schema is small enough to list and nests no deeper than the limit (TOOL-MCP-018). The depth is walked without recursion. */
+function schemaFits(schema: Record<string, unknown>): boolean {
+  let text: string;
+  try { text = JSON.stringify(schema) ?? ""; } catch { return false; }
+  if (text.length > SCHEMA_MAX) return false;
+  const stack: [unknown, number][] = [[schema, 1]];
+  while (stack.length > 0) {
+    const [v, depth] = stack.pop()!;
+    if (depth > SCHEMA_DEPTH_MAX) return false;
+    const kids = Array.isArray(v) ? v : v !== null && typeof v === "object" ? Object.values(v) : [];
+    for (const kid of kids) if (kid !== null && typeof kid === "object") stack.push([kid, depth + 1]);
+  }
+  return true;
+}
+
 /**
  * The tools of a list as the client keeps them. A name is taken once (the first definition wins), a schema that is not an
- * object leaves the tool out, a non-string title is dropped, a non-boolean `readOnlyHint` is no annotation, and a
- * non-string description is empty (TOOL-MCP-017 to TOOL-MCP-020). The catalog applies the rest of the rules to these.
+ * object or is too deep or too large leaves the tool out, a non-string title is dropped, a non-boolean `readOnlyHint` is no
+ * annotation, and a non-string description is empty (TOOL-MCP-017 to TOOL-MCP-020). The catalog applies the rest of the rules.
  */
 // @spec TOOL-MCP-017, TOOL-MCP-018, TOOL-MCP-019, TOOL-MCP-020
 export function toSourceTools(raw: readonly unknown[]): SourceTool[] {
@@ -140,7 +191,7 @@ export function toSourceTools(raw: readonly unknown[]): SourceTool[] {
     if (!isObj(item) || typeof item.name !== "string") continue;
     if (seen.has(item.name)) continue;
     seen.add(item.name);
-    if (!isObj(item.inputSchema)) continue;
+    if (!isObj(item.inputSchema) || !schemaFits(item.inputSchema)) continue;
     const hint = isObj(item.annotations) ? item.annotations.readOnlyHint : undefined;
     out.push({
       name: item.name,
@@ -182,9 +233,9 @@ function secretHeader(header: string, token: string): Record<string, string> {
 }
 
 /**
- * One configured server as a source of tools: one Streamable HTTP session at a time, reconnected with the shared backoff
- * when it drops (TOOL-MCP-001 to TOOL-MCP-004). It starts no process and reads no environment; the URL and the secret come
- * from `tools.servers.<name>`.
+ * One configured server as a source of tools: one Streamable HTTP session at a time, reconnected with backoff when it drops
+ * (TOOL-MCP-001 to TOOL-MCP-004). It starts no process and reads no environment; the URL and the secret come from
+ * `tools.servers.<name>`.
  */
 // @spec TOOL-MCP-001, TOOL-MCP-002, TOOL-MCP-003
 export class McpSource implements ToolSource {
@@ -206,6 +257,7 @@ export class McpSource implements ToolSource {
   private nextId = 0;
   private readonly listeners: (() => void)[] = [];
 
+  // @spec TOOL-MCP-007, TOOL-MCP-008
   constructor(name: string, entry: { url: string; header: string; token: string; external: boolean }, cfg: Config, env: McpEnv = {}) {
     this.name = name;
     this.url = entry.url;
@@ -216,9 +268,14 @@ export class McpSource implements ToolSource {
     this.retry = { ...DEFAULT_RETRY, ...env.retry };
     this.setupMs = env.setupTimeoutMs ?? SETUP_TIMEOUT_MS;
     this.catalogMs = cfg.tools.catalog_ms;
-    // TOOL-MCP-008: a plain http server off the LAN that is sent a secret is noted; the connection still goes ahead.
-    const plain = new URL(entry.url).protocol === "http:";
-    this.detail = plain && entry.token !== "" && serverExternal(entry, cfg.network?.lan ?? []) ? "credential sent without TLS" : undefined;
+    // TOOL-MCP-008: the note is about the host, not the `external` mark: a plain http secret to a host off the LAN is noted.
+    const url = new URL(entry.url);
+    const host = url.hostname;
+    const offLan = host === "" || offLanHost(host, cfg.network?.lan ?? []);
+    const notes: string[] = [];
+    if (!this.tokenOk) notes.push("credential has a control character, so it is not sent");
+    if (url.protocol === "http:" && entry.token !== "" && offLan) notes.push("credential sent without TLS");
+    this.detail = notes.length > 0 ? notes.join("; ") : undefined;
   }
 
   get state(): SourceState { return this.current; }
@@ -246,21 +303,45 @@ export class McpSource implements ToolSource {
     this.emit();
   }
 
-  /** Connects, waits until the connection is lost, and connects again, until the source is closed. */
+  /** The wait after the n-th consecutive failure: base, doubled, capped; none before the first (TOOL-MCP-003). */
+  private delayFor(n: number): number {
+    return n <= 0 ? 0 : Math.min(this.retry.maxMs, this.retry.baseMs * 2 ** Math.min(n - 1, 60));
+  }
+
+  /** Waits `ms` with the shared sleep (a test's fake when it gives one), ending at once when the source closes. */
+  private pause(ms: number): Promise<void> {
+    if (ms <= 0 || this.stopping) return Promise.resolve();
+    const stopped = new Promise<void>((r) => this.stopCtl.signal.addEventListener("abort", () => r(), { once: true }));
+    const wait = this.retry.sleep ? this.retry.sleep(ms) : new Promise<void>((r) => setTimeout(r, ms));
+    return Promise.race([wait, stopped]);
+  }
+
+  /**
+   * Connects, waits until the connection is lost, and connects again, until the source is closed. A failed attempt and a
+   * connection that did not stay up for `MIN_UP_MS` both count as failures, so a server that accepts and drops the connection
+   * is retried on the backoff, not in a loop. Only a connection that stayed up resets the count (TOOL-MCP-003).
+   */
+  // @spec TOOL-MCP-003
   private async supervise(): Promise<void> {
-    let delayFirst = false;
+    let failures = 0;
     while (!this.stopping) {
-      const conn: Conn | undefined = await retryWithBackoff(() => this.connect(), {
-        ...this.retry,
-        isStopped: () => this.stopping,
-        // After a refused credential the first retry waits one base delay, so `auth` shows until a reconnect succeeds.
-        firstDelayMs: delayFirst ? this.retry.baseMs : 0,
-        onFailure: (err) => { if (!this.stopping) this.setState(err instanceof Refused ? "auth" : "down"); },
-      });
-      if (conn === undefined) return;
-      delayFirst = false;
+      let conn: Conn;
+      try {
+        conn = await this.connect();
+      } catch (err) {
+        if (this.stopping) return;
+        failures++;
+        this.setState(err instanceof Refused ? "auth" : "down");
+        await this.pause(this.delayFor(failures));
+        continue;
+      }
+      const upSince = Date.now();
       await conn.lost;
-      delayFirst = conn.lostBy === "auth";
+      if (this.stopping) return;
+      failures = Date.now() - upSince >= MIN_UP_MS ? 0 : failures + 1;
+      // After a refused credential the first retry waits one base delay, so `auth` shows until a reconnect succeeds.
+      if (conn.lostBy === "auth") failures = Math.max(failures, 1);
+      await this.pause(this.delayFor(failures));
     }
   }
 
@@ -272,22 +353,29 @@ export class McpSource implements ToolSource {
     const init = await this.exchange({ id: ++this.nextId, method: "initialize", params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "cohost-tools", version: "1" } } }, undefined, signal);
     if (!isObj(init.result)) throw new Down();
     const session = init.session;
-    await this.notify("notifications/initialized", undefined, session, signal);
-    const tools = await this.listAll(session, signal);
-    const conn: Conn = this.newConn(session);
-    this.conn = conn;
-    this.tools = tools;
-    this.setState("ok");
-    this.emit();
-    this.openStream(conn);
-    conn.timer = setInterval(() => { void this.relist(conn); }, this.catalogMs); // TOOL-MCP-004
-    return conn;
+    try {
+      await this.notify("notifications/initialized", undefined, session, signal);
+      const tools = await this.listAll(session, signal);
+      if (this.stopping) throw new Down();
+      const conn = this.newConn(session);
+      this.conn = conn;
+      this.tools = tools;
+      this.setState("ok");
+      this.emit();
+      void this.runStream(conn);
+      conn.timer = setInterval(() => { void this.relist(conn); }, this.catalogMs); // TOOL-MCP-004
+      return conn;
+    } catch (err) {
+      // A session that initialized but did not list is closed on the server, so the next attempt starts clean.
+      if (session !== undefined) void this.deleteSession(session);
+      throw err;
+    }
   }
 
   private newConn(session: string | undefined): Conn {
     let end!: () => void;
     const lost = new Promise<void>((r) => { end = r; });
-    return { session, ctl: new AbortController(), lost, end };
+    return { session, ctl: new AbortController(), relisting: false, dirty: false, lost, end };
   }
 
   /** Ends a connection once: the stream and the timer stop, the state follows, and the supervisor reconnects. */
@@ -301,34 +389,49 @@ export class McpSource implements ToolSource {
     conn.end();
   }
 
+  /**
+   * Lists again on a notification or on the timer. One list runs at a time: a request that arrives meanwhile marks the list
+   * `dirty` and one more list runs after it, so a burst of notifications costs at most two lists (TOOL-MCP-004).
+   */
   // @spec TOOL-MCP-004, TOOL-MCP-003
   private async relist(conn: Conn): Promise<void> {
     if (conn.lostBy !== undefined || this.stopping) return;
-    const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
+    if (conn.relisting) { conn.dirty = true; return; }
+    conn.relisting = true;
     try {
-      const tools = await this.listAll(conn.session, signal);
-      if (conn.lostBy !== undefined) return;
-      if (JSON.stringify(tools) !== JSON.stringify(this.tools)) {
-        this.tools = tools;
-        this.emit();
-      }
-    } catch (err) {
-      this.lose(conn, err instanceof Refused ? "auth" : "down");
+      do {
+        conn.dirty = false;
+        const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
+        let tools: SourceTool[];
+        try {
+          tools = await this.listAll(conn.session, signal);
+        } catch (err) {
+          this.lose(conn, err instanceof Refused ? "auth" : "down");
+          return;
+        }
+        if (conn.lostBy !== undefined) return;
+        if (JSON.stringify(tools) !== JSON.stringify(this.tools)) {
+          this.tools = tools;
+          this.emit();
+        }
+      } while (conn.dirty && conn.lostBy === undefined);
+    } finally {
+      conn.relisting = false;
     }
   }
 
   /**
-   * Lists every page of tools/list. A page that is not a list, a cursor that is not a string, a cursor seen before, more than
-   * 50 pages or more than 10 000 entries is a failed list (TOOL-MCP-015); a response over 1 MiB fails it too, before any tool is
-   * taken (TOOL-MCP-016).
+   * Lists every page of tools/list. A page that is not a list, a cursor that is not a non-empty string, a repeated cursor, more
+   * than 50 pages or more than 10 000 entries is a failed list (TOOL-MCP-015); a response over 1 MiB fails it too, before any
+   * tool is taken (TOOL-MCP-016).
    */
   // @spec TOOL-MCP-015, TOOL-MCP-016
   private async listAll(session: string | undefined, signal: AbortSignal): Promise<SourceTool[]> {
     const raw: unknown[] = [];
     const cursors = new Set<string>();
     let cursor: string | undefined;
-    for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) throw new Down();
+    for (let page = 1; ; page++) {
+      if (page > MAX_PAGES) throw new Down();
       const result = await this.request("tools/list", cursor === undefined ? {} : { cursor }, session, signal);
       if (!isObj(result) || !Array.isArray(result.tools)) throw new Down();
       for (const t of result.tools) {
@@ -376,7 +479,8 @@ export class McpSource implements ToolSource {
     return isObj(v) && v.id === id ? v : undefined;
   }
 
-  /** The first event of an event-stream reply that answers this id; other messages in it are skipped. */
+  /** The first event of an event-stream reply that answers this id; other messages in it are skipped (TOOL-MCP-024). */
+  // @spec TOOL-MCP-024
   private async firstAnswer(res: Response, id: number): Promise<Record<string, unknown> | undefined> {
     for await (const data of eventData(res, false)) {
       let v: unknown;
@@ -398,7 +502,7 @@ export class McpSource implements ToolSource {
 
   /** The one place a request leaves: the configured URL only, no redirect followed, the secret header on it (TOOL-MCP-013). */
   // @spec TOOL-MCP-013, TOOL-MCP-005
-  private async send(method: "POST" | "GET" | "DELETE", body: string | undefined, session: string | undefined, signal: AbortSignal, accept: string): Promise<Response> {
+  private async send(method: "POST" | "GET", body: string | undefined, session: string | undefined, signal: AbortSignal, accept: string): Promise<Response> {
     const headers: Record<string, string> = { ...secretHeader(this.header, this.token), accept };
     if (body !== undefined) headers["content-type"] = "application/json";
     if (session !== undefined) headers[SESSION_HEADER] = session;
@@ -412,9 +516,14 @@ export class McpSource implements ToolSource {
 
   /** A notification: no id, no answer; the server answers 202 or any 2xx. */
   private async notify(method: string, params: unknown, session: string | undefined, signal: AbortSignal): Promise<void> {
+    await this.post(JSON.stringify({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) }), session, signal);
+  }
+
+  /** Posts one JSON-RPC message that expects no answer body, and checks its status. */
+  private async post(body: string, session: string | undefined, signal: AbortSignal): Promise<void> {
     const req = this.linked(signal);
     try {
-      const res = await this.send("POST", JSON.stringify({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) }), session, req.signal, "application/json, text/event-stream");
+      const res = await this.send("POST", body, session, req.signal, "application/json, text/event-stream");
       await this.checkStatus(res);
       await discard(res);
     } finally {
@@ -435,33 +544,74 @@ export class McpSource implements ToolSource {
   }
 
   /**
-   * The GET stream for server notifications (TOOL-MCP-004). A server that refuses it is fine: the list timer still runs. A
-   * `tools/list_changed` notification re-lists. A stream that ends or fails is a lost connection.
+   * Keeps the GET stream for server notifications open (TOOL-MCP-004). A stream that ends on its own is not a lost
+   * connection: a `ping` decides. If the server answers, the stream is reopened after a backoff that resets only after a
+   * stream stayed open for `MIN_UP_MS`; if it does not, the connection is lost (TOOL-MCP-003). A server that refuses the stream
+   * (405, or any non-stream answer) is fine: the list timer still runs.
    */
-  // @spec TOOL-MCP-004, TOOL-MCP-021
-  private openStream(conn: Conn): void {
-    void (async () => {
-      let res: Response;
-      try {
-        res = await this.send("GET", undefined, conn.session, conn.ctl.signal, "text/event-stream");
-      } catch {
-        this.lose(conn, "down");
-        return;
+  // @spec TOOL-MCP-003, TOOL-MCP-004, TOOL-MCP-026
+  private async runStream(conn: Conn): Promise<void> {
+    let fails = 0;
+    while (conn.lostBy === undefined && !this.stopping) {
+      const since = Date.now();
+      const ended = await this.streamOnce(conn);
+      if (!ended || conn.lostBy !== undefined || this.stopping) return;
+      if (!(await this.probe(conn))) { this.lose(conn, "down"); return; }
+      fails = Date.now() - since >= MIN_UP_MS ? 1 : fails + 1;
+      await this.pause(this.delayFor(fails));
+    }
+  }
+
+  /** One GET stream. Returns true when it ended (or failed) while the connection was open, false when it is not open. */
+  private async streamOnce(conn: Conn): Promise<boolean> {
+    let res: Response;
+    try {
+      res = await this.send("GET", undefined, conn.session, conn.ctl.signal, "text/event-stream");
+    } catch {
+      return true;
+    }
+    if (res.status === 401 || res.status === 403) { await discard(res); this.lose(conn, "auth"); return false; }
+    // A 404 is a session the server forgot: the connection is replaced on a new session (TOOL-MCP-026).
+    if (res.status === 404) { await discard(res); this.lose(conn, "down"); return false; }
+    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) { await discard(res); return false; }
+    try {
+      for await (const data of eventData(res, true)) {
+        let v: unknown;
+        try { v = JSON.parse(data); } catch { continue; }
+        if (!isObj(v)) continue;
+        if (v.method === "notifications/tools/list_changed") void this.relist(conn);
+        else if (typeof v.method === "string") this.answerServer(conn, v);
       }
-      if (res.status === 401 || res.status === 403) { await discard(res); this.lose(conn, "auth"); return; }
-      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) { await discard(res); return; }
-      try {
-        for await (const data of eventData(res, true)) {
-          let v: unknown;
-          try { v = JSON.parse(data); } catch { continue; }
-          // Server requests on the stream are not answered: the client declares no capability to answer them (TOOL-MCP-021).
-          if (isObj(v) && v.method === "notifications/tools/list_changed") void this.relist(conn);
-        }
-      } catch {
-        // a failed or over-long stream ends the connection below
-      }
-      this.lose(conn, "down");
-    })();
+    } catch {
+      // a failed or over-long stream ends here; the probe decides the connection
+    }
+    return true;
+  }
+
+  /** A `ping` decides whether a connection that lost its stream is still up. An error answer is still an answer. */
+  private async probe(conn: Conn): Promise<boolean> {
+    const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
+    try {
+      await this.exchange({ id: ++this.nextId, method: "ping" }, conn.session, signal);
+      return true;
+    } catch (err) {
+      if (err instanceof RpcError) return true;
+      if (err instanceof Refused) this.lose(conn, "auth");
+      return false;
+    }
+  }
+
+  /**
+   * A request the server sends the client is answered with a JSON-RPC error: the client declares no capability to answer it
+   * (TOOL-MCP-021). The answer is best-effort and nothing waits on it.
+   */
+  // @spec TOOL-MCP-021
+  private answerServer(conn: Conn, msg: Record<string, unknown>): void {
+    const id = msg.id;
+    if (typeof id !== "number" && typeof id !== "string") return;
+    const body = JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "method not supported" } });
+    const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(CANCEL_TIMEOUT_MS)]);
+    this.post(body, conn.session, signal).catch(() => undefined);
   }
 
   /**
@@ -501,6 +651,17 @@ export class McpSource implements ToolSource {
     this.notify("notifications/cancelled", { requestId, reason: "the call limit passed" }, conn.session, signal).catch(() => undefined);
   }
 
+  /** Closes a session with DELETE, to the configured URL only and with no redirect followed (TOOL-SVC-008). */
+  private async deleteSession(session: string): Promise<void> {
+    const res = await fetch(this.url, {
+      method: "DELETE",
+      headers: { ...secretHeader(this.header, this.token), [SESSION_HEADER]: session },
+      redirect: "manual",
+      signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
+    }).catch(() => undefined);
+    if (res !== undefined) await discard(res);
+  }
+
   /** Stops the source: the connection attempt, the stream and the timer end, and the session is closed when it can be (TOOL-SVC-008). */
   async close(): Promise<void> {
     this.stopping = true;
@@ -509,15 +670,7 @@ export class McpSource implements ToolSource {
     if (conn === undefined) return;
     const session = conn.session;
     this.lose(conn, "down");
-    if (session !== undefined) {
-      const res = await fetch(this.url, {
-        method: "DELETE",
-        headers: { ...secretHeader(this.header, this.token), [SESSION_HEADER]: session },
-        redirect: "manual",
-        signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
-      }).catch(() => undefined);
-      if (res !== undefined) await discard(res);
-    }
+    if (session !== undefined) await this.deleteSession(session);
   }
 }
 

@@ -149,9 +149,16 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
         left++;
         continue;
       }
+      // One tool whose definition cannot be read leaves the snapshot whole: it is left out and counted (TOOL-CAT-002).
+      let known: KnownTool;
+      try {
+        known = listTool(cfg, source, server, name, def, state, mode);
+      } catch {
+        left++;
+        continue;
+      }
       listed++;
       total++;
-      const known = listTool(cfg, source, server, name, def, state, mode);
       tools.push(known);
       byName.set(name, known);
     }

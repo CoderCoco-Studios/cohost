@@ -167,7 +167,9 @@ test("mock markers: read only from the last user message ([mock-tool] only from 
   assert.equal(r.finish, "stop", "tool message");
   assert.deepEqual(r.toolCalls, []);
   r = await p.complete([user("go [mock-tool say {}]"), { role: "system", content: "s" }], { tools });
-  assert.equal(r.toolCalls.length, 1, "last user message is the source");
+  assert.deepEqual(r.toolCalls, [], "a later non-user message: the last message must be the user message");
+  r = await p.complete([user("x"), { role: "assistant", content: "a" }, user("go [mock-tool say {}]")], { tools });
+  assert.equal(r.toolCalls.length, 1, "the user message is last: the marker counts");
   await assert.rejects(mockP().complete([user("[mock-fail-after 0]\n\nmore")]), ChatError);
   const ok = await mockP().complete([user("[mock-fail-after 0]"), { role: "assistant", content: "a" }, user("fine")]);
   assert.equal(ok.finish, "stop", "earlier fail-after ignored");

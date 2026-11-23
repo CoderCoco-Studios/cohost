@@ -61,6 +61,17 @@ COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' node --import tsx services/cortex/src
 
 `pnpm --filter @cohost/salience dev` does the same with file watching. Set `LOG_LEVEL=debug` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
 
+## Scripting the mock's replies
+
+With `llm.provider: mock`, two markers in a message drive the mock model's reply. Both act on `complete()` and `stream()`, the calls that cortex and the `tools` service make with tools; `chat()` ignores them and returns the ordinary `[happy] mock: <text>` reply. A marker is ordinary text, so an injected line that is the focus of a reply carries it through the whole run.
+
+| Marker | Where it is read | Effect |
+| --- | --- | --- |
+| `[mock-tool <name> <json>]` | the last paragraph (after the last blank line) of the last message, when that message is a user message | When `<name>` is one of the offered tools, the reply has no text and one call with id `mock_call_<n>` and the parsed arguments. Arguments that are not a JSON object give `{}` with the raw text as `invalid`. An unoffered name gives the plain reply. |
+| `[mock-fail-after <n>]` | the last user message, anywhere in it | `stream()` delivers `n` words and then fails with a `stream` error. `complete()` fails at once. When `n` is at or past the reply's word count, the call completes normally. |
+
+A `tool` message as the last message gets the reply `[happy] mock: <tool name> said <its content>` instead, and neither marker is read.
+
 ## What each service needs
 
 Each was started with only Redis available:

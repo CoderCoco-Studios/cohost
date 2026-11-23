@@ -243,6 +243,7 @@ services:  # @spec DEPLOY-COMPOSE-001
       tts: { condition: service_started }
       tts-pocket: { condition: service_started, required: false }
 
+  # @spec DEPLOY-COMPOSE-028
   avatar:
     <<: *ts-service
     build: { context: ., args: { SERVICE: avatar } }

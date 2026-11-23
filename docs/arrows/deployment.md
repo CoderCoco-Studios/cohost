@@ -74,7 +74,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-028 (no 016) | 27 | 21 | 0 | 6 |
+| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-028 (no 016) | 27 | 22 | 0 | 5 |
 | Speech engine servers | DEPLOY-ENG-001 to DEPLOY-ENG-020 | 20 | 18 | 0 | 2 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |

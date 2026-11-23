@@ -407,8 +407,8 @@ const keys: Record<string, KeyPresentation> = {
   "dashboard.allowed_hosts": { help: "Machine names the dashboard accepts when another PC opens it by name instead of by IP address, for example streampc in an OBS Browser Source address such as http://streampc:3001/?sink=1. One per line, name only: no http://, no port. Addresses such as 192.168.1.20 and localhost always work. It applies at the dashboard's next start. It decides which names may reach the dashboard from your network, so only list machines you control.", sensitive: true, label: "Allowed host names" },
   "dashboard.inject.max_image_bytes": { help: "The largest picture the dashboard's test panel accepts when you send the co-host an image. A bigger upload is refused.", unit: "bytes" },
   "dashboard.inject.max_audio_bytes": { help: "The largest audio clip the dashboard's test panel accepts when you send the co-host something to hear. A bigger upload is refused.", unit: "bytes" },
-  "dashboard.models.max_bytes": { help: "The largest .vrm model file the dashboard's model store accepts. A bigger upload is refused, and the limit is between 1 MiB and 1 GiB.", unit: "bytes", label: "Model file size limit" },
   "dashboard.inject.ttl_ms": { help: "How long an uploaded test image or clip stays available for the service that asked for it; after that it is discarded. Raise it if a slow service needs longer to fetch it.", unit: "ms", label: "Upload lifetime" },
+  "dashboard.models.max_bytes": { help: "The largest .vrm model file the dashboard's model store accepts. A bigger upload is refused, and the limit is between 1 MiB and 1 GiB.", unit: "bytes", label: "Model file size limit" },
 };
 
 /** Every section's and key's presentation, keyed by declared section path and by dotted key path from the config root. */

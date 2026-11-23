@@ -314,10 +314,11 @@ The `avatar` service.
 
 ## `renderer`
 
-The browser renderer's model and framing, read when `avatar.driver` is `browser`. A running renderer applies a saved change without a restart. The section is optional: an absent key takes its default.
+The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. Selecting `browser` fails at start until the browser driver exists (#215), and a saved change reaches a running renderer without a restart once the live push lands (#216).
 
-| Key | Default | Meaning |
-|---|---|---|
+| Key | Default | What it does |
+| --- | --- | --- |
+| `renderer` | map | The browser renderer's model and framing |
 | `renderer.model` | `""` | A `.vrm` file name from the dashboard's model store: a letter or digit first, then letters, digits, spaces, dots, underscores or hyphens, ending in `.vrm`, at most 80 characters. Empty draws the built-in placeholder model |
 | `renderer.zoom` | `1` | Camera distance, `0.5` to `3` |
 | `renderer.offset_y` | `0` | Vertical framing offset, `-1.5` to `1.5` |

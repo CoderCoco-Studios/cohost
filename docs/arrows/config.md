@@ -39,7 +39,6 @@ Orientation:
 - packages/config/test/editor.test.ts
 - packages/config/test/config-tools.test.ts (CFG-SCH-075 to CFG-SCH-096, CFG-USR-020)
 - packages/config/test/config-renderer.test.ts (CFG-SCH-006, CFG-SCH-097 to CFG-SCH-101, CFG-ISO-005, CFG-ISO-011, CFG-USR-021, CFG-LOAD-008)
-- packages/config/test/compose-avatar.test.ts (DEPLOY-COMPOSE-028)
 - packages/config/test/config-secrets.test.ts (CFG-SEC-016 to CFG-SEC-018, CFG-USR-016)
 - services/dashboard/test/viewers.test.ts (CFG-ENV-009)
 - services/voice/test/kokoro-request.test.ts (CFG-SCH-029)
@@ -72,7 +71,7 @@ Orientation:
 |----------|----------|-------------|----------|------|
 | Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 |
 | Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
-| Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-007 | 7 | 0 | 0 |
+| Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-008 | 8 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-018 | 17 | 0 | 1 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-014 | 13 | 0 | 1 |
 | Renderer presentation | CFG-PRES-018 to CFG-PRES-020 | 2 | 0 | 1 |
@@ -88,7 +87,8 @@ Orientation:
 | Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-011 | 11 | 0 | 0 |
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
-| User-owned files | CFG-USR-001 to CFG-USR-020 (CFG-USR-005 does not exist) | 19 | 0 | 0 |
+| User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
+| Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 0 | 0 | 11 |
 
 **Summary:** 231 specs: 217 implemented, 14 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. CFG-PRES-019 (the `live` clause of `sectionJsonSchema`) is a gap: the field name is not yet ruled, so `live` is served on `sectionPresentation` and `GET /config/schema` only. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 

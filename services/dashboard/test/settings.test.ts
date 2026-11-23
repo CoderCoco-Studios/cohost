@@ -51,7 +51,7 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.equal(r.status, 200);
   const { sections } = (await r.json()) as { sections: { path: string; services: string[]; schema: any; secrets: string[] }[] };
   const declared = [...new Set(SERVICE_MANIFEST.flatMap((s) => s.config))];
-  assert.deepEqual(sections.map((s) => s.path).sort(), [...declared, "dashboard", "renderer"].sort());
+  assert.deepEqual(sections.map((s) => s.path), [...declared, "dashboard", "renderer"]);
   assert.deepEqual(sections.find((s) => s.path === "renderer")!.services, []);
   assert.deepEqual(sections.find((s) => s.path === "renderer")!.secrets, []);
   const llm = sections.find((s) => s.path === "llm")!;

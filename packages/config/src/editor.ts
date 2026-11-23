@@ -172,7 +172,7 @@ export interface SectionPresentationJoined extends SectionPresentation {
  * `keys`, a map from each key's relative name (the names `readSection` uses) to its `{ help, label?, unit?, widget?, items?,
  * sensitive? }`. A key without an entry is left out, so the page falls back to deriving a label from the path.
  */
-// @spec MOD-CFG-019, MOD-CFG-020, MOD-CFG-021, CFG-PRES-010
+// @spec MOD-CFG-019, MOD-CFG-020, MOD-CFG-021, MOD-CFG-022, CFG-PRES-010
 export function sectionPresentation(section: string): SectionPresentationJoined {
   const leaves = leavesOf(section);
   const head = PRESENTATION.sections[section];

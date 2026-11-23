@@ -66,6 +66,10 @@ export class Salience {
         await this.reflex("chat", d.text, entry);
         break;
       }
+      // A removal leaves the window whether or not salience is paused, so a paused line is not scored after resume.
+      case "chat.removed": // @spec SAL-IN-008, SAL-IN-009
+        this.ctx.forget(ev.data as BusEvent<"chat.removed">["data"]);
+        break;
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
         const entry = this.ctx.push(ev);
@@ -203,6 +207,8 @@ export class Salience {
     if (!decision.speak) return;
     // A mute, pause or busy cortex may have arrived while the scorer ran: the decision is void then.
     if (this.control.muted || this.control.paused || this.busy()) return; // @spec SAL-FOCUS-005
+    // A chat.removed may have taken the focused line out of the window while the scorer ran: no focus, no seen marks, no thinking.
+    if (decision.focus && !this.ctx.all().includes(decision.focus)) return; // @spec SAL-FOCUS-007
     // Only what was scored: anything that arrived while an llm/http scorer was running stays unseen.
     this.ctx.markSeenEvents(decision.scored); // @spec SAL-FOCUS-004
     // Optimistically treat the cortex as busy until it reports; stops double-firing on the next tick.

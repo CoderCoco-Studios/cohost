@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 63 [x], 163 [ ]. Open: the revised contract (complete(), stream(), tool calls, image input on every provider, one ChatError type, the mock markers): LLM-IF-005 to -019, LLM-ERR, LLM-STREAM, LLM-TOOL the new complete()/stream() lines of LLM-CHAT, LLM-VIS, LLM-STOP, LLM-CLAUDE and LLM-MOCK, and LLM-VIS-002, -003. The 63 [x] lines are not covered by the last audit."
+    next: "226 specs: 81 [x], 145 [ ]. Open: stream(), tool calls, image input on every provider, complete() on Claude and Bedrock, the ChatError kinds connect, stream and not_configured, the mock markers: LLM-IF-008 to -010, -013, -016 to -021, LLM-ERR-001 to -004, -006, -008, -009, LLM-CHAT-014, -016 to -018, -020, -022, LLM-STOP-008 to -010, -012, -014 to -019, LLM-STREAM, LLM-TOOL, LLM-CLAUDE and LLM-MOCK gap lines, LLM-VIS-002, -003. The 81 [x] lines are not covered by the last audit."
     drift: null
 
   region-hooks:

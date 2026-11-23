@@ -21,12 +21,29 @@ import { MockProvider, HashEmbedder } from "./mock.js";
 export type { Config };
 export { MockProvider, HashEmbedder };
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-  /** Base64 images for a vision model; only the Ollama provider sends them with the message (LLM-VIS-001); the others drop them (LLM-VIS-002, LLM-VIS-003). */
-  images?: string[];
+/** A tool the model may call. Offered by `complete()` and `stream()` once tool calls land (#162). */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  /** JSON Schema, `type` "object". */
+  parameters: object;
 }
+/** A tool call the model asked for. `arguments` is always a parsed object; `invalid` holds the raw text when it was not one. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  invalid?: string;
+}
+/** The closed set of messages a history may hold, by role. */
+export type ChatMessage =
+  | { role: "system"; content: string }
+  /** Base64 images for a vision model; only the Ollama provider sends them with the message (LLM-VIS-001); the others drop them (LLM-VIS-002, LLM-VIS-003). */
+  | { role: "user"; content: string; images?: string[] }
+  /** `toolCalls` is present only when the model asked for tools; `continuation` is opaque to callers. */
+  | { role: "assistant"; content: string; toolCalls?: ToolCall[]; continuation?: unknown }
+  /** One tool's result, answering the call with `callId`. */
+  | { role: "tool"; callId: string; name: string; content: string; isError?: boolean };
 export interface ChatOptions {
   maxTokens?: number;
   temperature?: number;
@@ -38,6 +55,34 @@ export interface ChatOptions {
   json?: boolean;
   /** Abort the in-flight request (hook timeouts). */
   signal?: AbortSignal;
+}
+export interface ChatRequest extends ChatOptions {
+  /** Offered to the model. `complete()` does not act on them yet (#162). */
+  tools?: ToolSpec[];
+}
+/** The outcome of a non-streamed reply. */
+export interface ChatResult {
+  /** Trimmed; "" when the model said nothing or only asked for tools. */
+  text: string;
+  /** In the order the model asked. */
+  toolCalls: ToolCall[];
+  finish: "stop" | "length" | "tool_calls" | "refusal";
+  /** The assistant message to append to the history; `toolCalls` is absent when the model asked for none. */
+  message: ChatMessage & { role: "assistant" };
+}
+/** Streamed reply events. Declared here so the contract is whole; no provider streams yet (#160). */
+export type ChatEvent =
+  | { type: "text"; delta: string }
+  | { type: "tool_call"; call: ToolCall }
+  | { type: "done"; result: ChatResult };
+
+/** Every failure a provider raises from a call that reaches the network (LLM-ERR-001). */
+export class ChatError extends Error {
+  constructor(
+    readonly kind: "http" | "connect" | "stream" | "not_configured",
+    message: string,
+    readonly status?: number,
+  ) { super(message); this.name = "ChatError"; }
 }
 
 export interface ChatProvider { // @spec LLM-IF-001
@@ -62,6 +107,22 @@ const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 /** The caller's signal when it passed one (it wins), otherwise `llm.timeout_ms` (CFG-SCH-013). */
 const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(cfg.timeout_ms); // @spec LLM-CHAT-008
 
+/**
+ * The result of a reply that asked for no tools: the trimmed text, an empty text when the backend sent none, and an assistant
+ * message with no `toolCalls` key (LLM-IF-022).
+ */
+function textResult(content: string | null | undefined, finish: ChatResult["finish"]): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-IF-014, LLM-IF-015, LLM-CHAT-007
+  const text = (content ?? "").trim();
+  return { text, toolCalls: [], finish, message: { role: "assistant", content: text } };
+}
+
+/** `chat()` offers no tools, so a history that holds a tool result or a tool call is a caller's programming error (LLM-IF-012). */
+function assertTextHistory(messages: ChatMessage[]): void { // @spec LLM-IF-012
+  if (messages.some((m) => m.role === "tool" || (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0))) {
+    throw new TypeError("chat() takes a text-only history: a tool message or an assistant toolCalls needs complete()");
+  }
+}
+
 /** The one logger method a provider uses. */
 export type ProviderLog = Pick<Logger, "warn">;
 
@@ -74,12 +135,16 @@ class ImageDropper {
   private warned = false;
   constructor(private provider: string, private log?: ProviderLog) {}
   strip(messages: ChatMessage[]): ChatMessage[] {
-    if (!messages.some((m) => m.images?.length)) return messages;
+    if (!messages.some((m) => m.role === "user" && m.images?.length)) return messages;
     if (!this.warned) {
       this.warned = true;
       (this.log ??= createLogger("llm")).warn({ provider: this.provider }, "this provider does not support images; images on messages are dropped");
     }
-    return messages.map(({ images: _images, ...rest }) => rest);
+    return messages.map((m) => {
+      if (m.role !== "user" || !m.images) return m;
+      const { images: _images, ...rest } = m;
+      return rest;
+    });
   }
 }
 
@@ -102,7 +167,8 @@ export class Ollama implements ChatProvider, Embedder {
   lastError?: string;
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001
+  /** The one non-streamed `/api/chat` request that `chat()` and `complete()` both send. */
+  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ message?: { content?: string | null }; done_reason?: string }> { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001, LLM-CHAT-011, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-011
     const res = await fetch(`${this.base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -121,9 +187,18 @@ export class Ollama implements ChatProvider, Embedder {
       }),
       signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
-    if (!res.ok) throw new Error(`ollama chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
-    const json = (await res.json()) as { message?: { content?: string } };
-    return (json.message?.content ?? "").trim(); // @spec LLM-CHAT-007, LLM-IF-004
+    if (!res.ok) throw new ChatError("http", `ollama chat ${res.status}: ${await res.text()}`, res.status); // @spec LLM-CHAT-005, LLM-ERR-007
+    return (await res.json()) as { message?: { content?: string | null }; done_reason?: string };
+  }
+
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
+    assertTextHistory(messages);
+    return (await this.complete(messages, opts)).text;
+  }
+
+  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-014, LLM-IF-015
+    const json = await this.send(messages, req);
+    return textResult(json.message?.content, json.done_reason === "length" ? "length" : "stop");
   }
 
   async embed(text: string): Promise<number[]> { // @spec LLM-EMBED-001, LLM-EMBED-002
@@ -173,7 +248,8 @@ export class OpenAICompatible implements ChatProvider {
     return h;
   }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006
+  /** The one non-streamed `/chat/completions` request that `chat()` and `complete()` both send. */
+  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ choices?: { message?: { content?: string | null }; finish_reason?: string | null }[] }> { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006, LLM-CHAT-012, LLM-CHAT-013, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-013
     const res = await fetch(`${this.base}/chat/completions`, {
       method: "POST",
       headers: this.headers(),
@@ -187,9 +263,19 @@ export class OpenAICompatible implements ChatProvider {
       }),
       signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
-    if (!res.ok) throw new Error(`${this.name} chat ${res.status}: ${await res.text()}`); // @spec LLM-CHAT-005
-    const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
-    return (json.choices?.[0]?.message?.content ?? "").trim(); // @spec LLM-CHAT-007, LLM-IF-004
+    if (!res.ok) throw new ChatError("http", `${this.name} chat ${res.status}: ${await res.text()}`, res.status); // @spec LLM-CHAT-005, LLM-ERR-007
+    return (await res.json()) as { choices?: { message?: { content?: string | null }; finish_reason?: string | null }[] };
+  }
+
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
+    assertTextHistory(messages);
+    return (await this.complete(messages, opts)).text;
+  }
+
+  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-014, LLM-IF-015
+    const json = await this.send(messages, req);
+    const choice = json.choices?.[0];
+    return textResult(choice?.message?.content, choice?.finish_reason === "length" ? "length" : "stop");
   }
 
   async ping(): Promise<boolean> { // @spec LLM-PING-002, LLM-PING-005

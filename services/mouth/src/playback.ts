@@ -96,6 +96,8 @@ interface Item { id: string; seq: number; url: string; line: LineRec; clause: Cl
 export class Playback {
   private queue: Item[] = [];
   private lines = new Map<string, LineRec>();
+  /** A closing `through` that arrived before its line's clause 0 (newest `REMEMBERED_LINES` ids), applied when clause 0 arrives (MOUTH-CLAUSE-005). */
+  private pendingThrough = new Map<string, number>();
   private current: Item | undefined;
   /** `voice.playing` has been published for the current item (so a `voice.stop` ends it with a `voice.done`). */
   private playing = false;
@@ -124,10 +126,12 @@ export class Playback {
     let line: LineRec | undefined;
     if (seq === 0) {
       line = this.newLine(id, utt?.more === true);
+      const pending = this.pendingThrough.get(id);
+      if (pending !== undefined) { line.through = pending; this.pendingThrough.delete(id); }
     } else {
       line = this.lines.get(id);
       if (!line || line.ended) return Promise.resolve();
-      if (now - line.lastActivity >= (this.d.lineIdleMs ?? LINE_IDLE_MS)) { this.endLine(line); return Promise.resolve(); }
+      if (this.expired(line)) { this.endLine(line); return Promise.resolve(); }
       if (line.through !== undefined && seq > line.through) return Promise.resolve();
     }
     line.lastActivity = now;
@@ -148,7 +152,15 @@ export class Playback {
    */
   closeLine(id: string, through: number): void {
     const line = this.lines.get(id);
-    if (!line || line.ended) return;
+    if (!line) {
+      // The closing event beat clause 0: keep it for the line (MOUTH-CLAUSE-005).
+      this.pendingThrough.delete(id);
+      this.pendingThrough.set(id, through);
+      while (this.pendingThrough.size > REMEMBERED_LINES) this.pendingThrough.delete(this.pendingThrough.keys().next().value!);
+      return;
+    }
+    if (line.ended) return;
+    if (this.expired(line)) { this.endLine(line); return; }
     line.through = through;
     for (const q of this.queue) if (q.line === line && q.seq > through) q.clause.state = "dropped";
     this.queue = this.queue.filter((q) => q.line !== line || q.seq <= through);
@@ -163,6 +175,7 @@ export class Playback {
   async refuse(id: string, seq: number): Promise<void> {
     const line = this.lines.get(id);
     if (!line || line.ended) return;
+    if (this.expired(line)) { this.endLine(line); return; }
     const wasOpen = line.open && line.streamed;
     this.endLine(line);
     if (wasOpen) await this.publish("voice.done", { id, seq, sink: this.d.sink, final: true });
@@ -178,6 +191,8 @@ export class Playback {
     const named = (id: string): boolean => !order.ids || order.ids.includes(id);
     const cur = this.current;
     const curNamed = cur !== undefined && named(cur.id);
+    // A line idle past the bound ends here without a report (MOUTH-CLAUSE-005); the current clause's line keeps its clock.
+    for (const line of this.lines.values()) if (!line.ended && line !== cur?.line && this.expired(line)) this.endLine(line);
     const targets = new Set<LineRec>();
     for (const line of this.lines.values()) if (!line.ended && named(line.id)) targets.add(line);
     if (curNamed) targets.add(cur!.line);
@@ -185,13 +200,19 @@ export class Playback {
     const elapsed = this.playing ? this.nowMs() - this.playingSince : 0;
     const reports: { id: string; seq: number; split?: { spokenText: string; unsaidText: string } }[] = [];
     for (const line of targets) {
-      const isCur = curNamed && cur!.line === line;
-      if (isCur && !this.playing) continue; // the fetch in flight is abandoned silently; no clause of the line is reported (MOUTH-CLAUSE-015)
-      if (!isCur && line.ended) continue;
+      const playingHere = curNamed && this.playing && cur!.line === line;
+      if (playingHere) {
+        const split = this.d.spoken && !this.clipPlaying ? this.split(line, cur, elapsed) : undefined;
+        reports.push({ id: line.id, seq: cur!.seq, ...(split ? { split } : {}) });
+        continue;
+      }
+      // No clause is playing: an open line with a played clause is between clauses (MOUTH-CLAUSE-014). A clause still being
+      // fetched is not current, so it is unsaid text, not a reason to report nothing.
+      if (line.ended || !line.open) continue;
       const done = line.clauses.filter((c) => c.state === "done");
-      if (!isCur && done.length === 0) continue;
-      const split = this.d.spoken && !(isCur && this.clipPlaying) ? this.split(line, isCur ? cur : undefined, elapsed) : undefined;
-      reports.push({ id: line.id, seq: isCur ? cur!.seq : done[done.length - 1]!.seq, ...(split ? { split } : {}) });
+      if (done.length === 0) continue;
+      const split = this.d.spoken ? this.split(line, undefined, elapsed) : undefined;
+      reports.push({ id: line.id, seq: done[done.length - 1]!.seq, ...(split ? { split } : {}) });
     }
     for (const line of targets) this.endLine(line);
 
@@ -316,6 +337,7 @@ export class Playback {
     let next: Item | undefined;
     while (this.queue.length > 0) {
       const cand = this.queue.shift()!;
+      if (!cand.line.ended && this.expired(cand.line)) this.endLine(cand.line);
       if (!this.takes(cand)) { cand.clause.state = "dropped"; continue; }
       next = cand;
       break;
@@ -343,6 +365,11 @@ export class Playback {
     next.line.lastActivity = this.playingSince;
     if (next.seq === 0) next.line.open = true;
     await this.publish("voice.playing", { id: next.id, seq: next.seq, sink: this.d.sink });
+  }
+
+  /** No clause activity on the line for the idle bound (MOUTH-CLAUSE-005). */
+  private expired(line: LineRec): boolean {
+    return this.nowMs() - line.lastActivity >= (this.d.lineIdleMs ?? LINE_IDLE_MS);
   }
 
   /** Whether a queued or fetched clause may still play: its line has not ended and it is within the closing `through`. */
@@ -374,8 +401,11 @@ export class Playback {
   private makeRoom(): void {
     const victim = this.queue.find((q) => !q.line.open) ?? this.queue[0];
     if (!victim) return;
+    const wasOpen = victim.line.open;
     this.endLine(victim.line);
     this.d.log.warn({ id: victim.id, output: this.d.sink }, "queue full: dropped oldest queued utterance");
+    // An open line that loses its oldest queued clause ends here: `final` releases its claim promptly (MOUTH-CLAUSE-012).
+    if (wasOpen) void this.publish("voice.done", { id: victim.id, seq: victim.seq, sink: this.d.sink, final: true });
   }
 
   /** The current item was stopped before it started playing (MOUTH-STOP-010), or its line ended while it was fetched: forget it, stopping the player if it had begun. */
@@ -443,7 +473,7 @@ export class Playback {
       const fraction = cur.clause.durationMs > 0 ? elapsed / cur.clause.durationMs : 1;
       ({ spokenText: prefix, unsaidText: rest } = spokenSplit(cur.clause.text, fraction));
     }
-    const queued = line.clauses.filter((c) => c.state === "queued").map((c) => c.text);
+    const queued = line.clauses.filter((c) => c.state === "queued" || (c.state === "current" && c !== cur?.clause)).map((c) => c.text);
     return {
       spokenText: [...played, prefix].filter((s) => s !== "").join(" "),
       unsaidText: [rest, ...queued].filter((s) => s !== "").join(" "),

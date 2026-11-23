@@ -213,3 +213,36 @@ test("when every queued line is open on the output, the oldest queued clause is 
   assert.deepEqual(bus.of("voice.failed"), []);
   assert.deepEqual(bus.of("voice.playing").map((e) => e.seq), [0]);
 });
+
+// @spec MOUTH-CLAUSE-005
+test("a closing brain.clause that arrives before clause 0 applies to the line when clause 0 arrives", async () => {
+  const { p, bus, fetched } = rig();
+  line(p).closeLine("a", 0);
+  await line(p).enqueue("a", url("a", 0), C("One.", 0, true));
+  await p.onIdle();
+  await line(p).enqueue("a", url("a", 1), C("Two.", 1));
+  assert.deepEqual(fetched, [url("a", 0)], "clause 1 is above through: skipped");
+  assert.deepEqual(events(bus), ["voice.playing:0", "voice.done:0"]);
+});
+
+// @spec MOUTH-CLAUSE-005
+test("a line idle past the bound ends silently on refuse and on stop: no final done and no interrupted done", async () => {
+  const { p, bus } = rig(() => false, { lineIdleMs: 60 });
+  await line(p).enqueue("a", url("a", 0), C("One.", 0, true));
+  await p.onIdle();
+  await new Promise((r) => setTimeout(r, 120));
+  await line(p).refuse("a", 1);
+  await p.stop({ ids: ["a"] });
+  assert.deepEqual(events(bus), ["voice.playing:0", "voice.done:0"]);
+});
+
+// @spec MOUTH-PLAY-012, MOUTH-CLAUSE-012
+test("a full queue whose every queued line is open publishes a final done for the clause it drops", async () => {
+  const { p, bus } = rig(() => false, { maxQueue: 2 });
+  await line(p).enqueue("x", url("x", 0), C("One.", 0, true));
+  void line(p).enqueue("x", url("x", 1), C("Two.", 1));
+  void line(p).enqueue("x", url("x", 2), C("Three.", 2));
+  void line(p).enqueue("x", url("x", 3), C("Four.", 3));
+  await p.onIdle();
+  assert.deepEqual(bus.of("voice.done").filter((d) => (d as { final?: boolean }).final), [{ id: "x", seq: 1, sink: "discord", final: true }]);
+});

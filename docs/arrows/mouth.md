@@ -41,7 +41,7 @@ MOUTH-STOP-001 to MOUTH-STOP-010 flush queues, stop the line and report it inter
 - docs/intent/mouth/mouth-specs.md (101 specs: 100 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
-- services/mouth/test/{audio,connector-output,dryrun,fallback,guard,health,mouth,no-discord,outputs,playback,routing,session,stop}.test.ts
+- services/mouth/test/{audio,clause-outputs,clause-routing,clause-stop,clauses,connector-output,dryrun,fallback,guard,health,mouth,no-discord,outputs,playback,routing,session,stop}.test.ts
 
 ### Code
 - services/mouth/src/{index,mouth,session,routing,playback,fallback,clips,audio,health,timed}.ts

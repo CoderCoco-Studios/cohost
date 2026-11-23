@@ -85,8 +85,8 @@ test("a stop ends the line: its queued clauses and a clause read after the stop 
   } finally { out.close(); }
 });
 
-// @spec MOUTH-CLAUSE-015, MOUTH-STOP-008
-test("a stop publishes no done for a line that ended, was never opened, or whose clause is still being fetched", async () => {
+// @spec MOUTH-CLAUSE-014, MOUTH-CLAUSE-015, MOUTH-STOP-008
+test("a stop reports an open line whose next clause is still being fetched as between clauses, and publishes nothing for a line that ended or was never opened", async () => {
   const slow = deferred();
   const { out, bus } = dry({ "a-0": 10, "c-0": 10 }, { gate: (u) => (u.includes("a-1") ? slow.gate : Promise.resolve()) });
   try {
@@ -97,7 +97,10 @@ test("a stop publishes no done for a line that ended, was never opened, or whose
     await out.stop({ ids: ["a"] });
     slow.release();
     await settle();
-    assert.equal(bus.of("voice.done").filter((d) => (d as { interrupted?: boolean }).interrupted).length, 0, "the fetching clause is abandoned silently");
+    // Clause 0 played and the line is open: the fetching clause is abandoned and is unsaid text of the last played clause.
+    assert.deepEqual(bus.of("voice.done").filter((d) => (d as { interrupted?: boolean }).interrupted), [
+      { id: "a", seq: 0, sink: "dryrun", interrupted: true, spokenText: "One.", unsaidText: "Two." },
+    ]);
     const before = bus.published.length;
     await out.stop({ ids: ["a", "never-routed"] }); // a is ended now, the other id was never here
     await out.stop({});

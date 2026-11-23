@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 50 [x], 11 [ ] (MOD-MAN-002, -003, -005, -008, -010; MOD-CFG-001, -021, -022; MOD-TEST-005, -007, -008)."
+    next: "61 specs: 51 [x], 10 [ ] (MOD-MAN-002, -003, -005, -010; MOD-CFG-001, -021, -022; MOD-TEST-005, -007, -008)."
     drift: null
 
 
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 96 [x], 13 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-COMPOSE-001, -004, -019, -021, -026 to -028; DEPLOY-LIC-005 to -007; DEPLOY-REPO-001)."
+    next: "109 specs: 97 [x], 12 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-COMPOSE-001, -019, -021, -026 to -028; DEPLOY-LIC-005 to -007; DEPLOY-REPO-001)."
     drift: null
 
   docs-site:

@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "163 specs: 73 [x], 90 [ ] (YouTube reader CHAT-YT-001 to CHAT-YT-068 except 003 to 006, forgetting removed messages CHAT-FORGET-*, Twitch message ids and removals CHAT-TW-013 to CHAT-TW-018, the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005, CHAT-HEALTH-011, CHAT-FILT-012 to CHAT-FILT-014)."
+    next: "163 specs: 87 [x], 76 [ ] (the YouTube reader CHAT-YT-*, the YouTube removals CHAT-FORGET-002 to 005 and the YouTube identifiers CHAT-FILT-013, all #179; the Twitch removals CHAT-TW-014 to 017 held for the live check on #239; the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005; CHAT-HEALTH-011)."
     drift: null
 
   eyes:

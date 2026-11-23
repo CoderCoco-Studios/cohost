@@ -1,21 +1,34 @@
 import type { AuthProvider, RefreshingAuthProvider } from "@twurple/auth";
 import type { EventInput, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
-import type { ChatUserInfo } from "./filter.js";
+import type { ChatSender } from "./filter.js";
 import type { ChatSource, ChatSourceStartEnv, ChatSourceState, ChatSourceStatus } from "./source.js";
 import { loadStoredToken, saveStoredToken, type StoredToken } from "./token-store.js";
 
-/** The part of `@twurple/chat`'s `ChatClient` the source uses. */
+/** The sender fields twurple's `ChatUser` gives the source. */
+export interface TwitchUserInfo {
+  displayName: string;
+  userId: string;
+  isMod: boolean;
+  isBroadcaster: boolean;
+  isSubscriber: boolean;
+}
+
+/** The part of `@twurple/chat`'s `ChatClient` the source uses: its message, removal and connection events, and connect/quit. */
 export interface ChatClientLike {
   onConnect(cb: () => void): unknown;
   onDisconnect(cb: (manually: boolean, reason?: Error) => void): unknown;
-  onMessage(cb: (channel: string, user: string, text: string, msg: { userInfo: ChatUserInfo }) => void): unknown;
+  onMessage(cb: (channel: string, user: string, text: string, msg: { id: string; userInfo: TwitchUserInfo }) => void): unknown;
+  onMessageRemove(cb: (channel: string, messageId: string, msg: unknown) => void): unknown;
+  onBan(cb: (channel: string, user: string, msg: { targetUserId: string | null }) => void): unknown;
+  onTimeout(cb: (channel: string, user: string, duration: number, msg: { targetUserId: string | null }) => void): unknown;
+  onChatClear(cb: (channel: string, msg: unknown) => void): unknown;
   connect(): unknown;
   quit(): unknown;
 }
 
 export interface MessageDeps {
-  toEvent: (user: string, text: string, info: ChatUserInfo) => EventInput<"chat.message"> | undefined;
+  toEvent: (sender: ChatSender, text: string, messageId?: string) => EventInput<"chat.message"> | undefined;
   bus: Publisher;
   log: Logger;
 }
@@ -23,8 +36,8 @@ export interface MessageDeps {
 // @spec CHAT-TW-008, CHAT-TW-007
 /** Filter a line, publish it as `chat.message`, and survive a failed publish. */
 export function createMessageHandler({ toEvent, bus, log }: MessageDeps) {
-  return async (user: string, text: string, info: ChatUserInfo): Promise<void> => {
-    const ev = toEvent(user, text, info);
+  return async (sender: ChatSender, text: string, messageId?: string): Promise<void> => {
+    const ev = toEvent(sender, text, messageId);
     if (!ev) return;
     try {
       await bus.publish("chat.message", ev);
@@ -65,7 +78,8 @@ export type CreateAuth = (clientId: string, clientSecret: string) => Promise<Ref
 
 async function defaultCreateClient(opts: Parameters<CreateClient>[0]): Promise<ChatClientLike> {
   const { ChatClient } = await import("@twurple/chat");
-  return new ChatClient(opts) as unknown as ChatClientLike;
+  const client: ChatClientLike = new ChatClient(opts);
+  return client;
 }
 
 async function defaultCreateAuth(clientId: string, clientSecret: string): Promise<RefreshingAuthProvider> {
@@ -125,9 +139,34 @@ export class TwitchSource implements ChatSource {
       setState("retrying");
       env.log.warn({ manually, reason }, "twitch chat disconnected");
     });
+    // @spec CHAT-TW-013, CHAT-FILT-012
     client.onMessage((_chan, user, text, msg) => {
       const u = msg.userInfo;
-      env.emit({ login: user, displayName: u.displayName, userId: u.userId, isMod: u.isMod, isBroadcaster: u.isBroadcaster, isSubscriber: u.isSubscriber, platform: "twitch" }, text);
+      // The broadcaster counts as a moderator; the ignore identifiers are the login and the display name.
+      env.emit({
+        displayName: u.displayName, login: user, userId: u.userId, isMod: u.isMod || u.isBroadcaster, isSub: u.isSubscriber,
+        ignoreIdentifiers: [user, u.displayName],
+      }, text, msg.id);
+    });
+
+    // Removals only listen: cohost forgets what the platform removed and sends nothing back (CHAT-FORGET-007).
+    // @spec CHAT-TW-014, CHAT-FORGET-001
+    client.onMessageRemove((_chan, messageId) => {
+      env.emitRemoval({ scope: "message", messageId });
+    });
+    // @spec CHAT-TW-015, CHAT-TW-016, CHAT-TW-018, CHAT-FORGET-008
+    const removeViewer = (user: string, targetUserId: string | null, reason: "banned" | "timeout") => {
+      if (!targetUserId) {
+        env.log.warn({ channel, user, reason }, "twitch removal names no target user id; nothing forgotten");
+        return;
+      }
+      env.emitRemoval({ scope: "user", userId: targetUserId, reason });
+    };
+    client.onBan((_chan, user, msg) => removeViewer(user, msg.targetUserId, "banned"));
+    client.onTimeout((_chan, user, _duration, msg) => removeViewer(user, msg.targetUserId, "timeout"));
+    // @spec CHAT-TW-017
+    client.onChatClear(() => {
+      env.emitRemoval({ scope: "all", reason: "cleared" });
     });
     client.connect();
   }

@@ -289,6 +289,10 @@ importers:
         version: link:../shared
 
   packages/working-memory:
+    dependencies:
+      '@cohost/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@cohost/bus':
         specifier: workspace:*

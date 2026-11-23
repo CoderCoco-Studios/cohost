@@ -50,7 +50,7 @@ const srcFiles = (): string[] => ["packages", "services"].flatMap((top) => readd
 // @spec BUS-NAT-API-001
 test("Bus has the constructor and every member the API lists, and stop() returns a Promise<void>", async () => {
   const { bus } = busWith(new FakeTransport());
-  const members = ["publish", "publishHealth", "subscribe", "tail", "tailHealth", "recent", "recentHealth", "resetGroup", "serverTime", "putUpload", "takeUpload", "connectorKey", "audioStream", "writeRegistration", "readRegistration", "deleteRegistration", "listConnectors", "publishFrame", "tailAudio", "stop"];
+  const members = ["publish", "publishHealth", "subscribe", "tail", "tailHealth", "recent", "recentHealth", "resetGroup", "serverTime", "putUpload", "takeUpload", "connectorKey", "audioStream", "writeRegistration", "readRegistration", "deleteRegistration", "listConnectors", "publishFrame", "tailAudio", "avatarFramesStream", "publishAvatarFrame", "tailAvatarFrames", "stop"];
   for (const m of members) assert.equal(typeof (bus as never as Record<string, unknown>)[m], "function", m);
   assert.equal(typeof bus.consumer, "string");
   assert.equal(Bus.length >= 1, true);

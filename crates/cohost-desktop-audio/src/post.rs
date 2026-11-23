@@ -272,3 +272,15 @@ async fn read_status(stream: &mut TcpStream) -> Result<u16, PostError> {
         ))),
     }
 }
+
+/// The HTTP sender the delivery loop uses: one clip per [`post_clip`] call.
+pub struct HttpSender {
+    pub url: String,
+    pub token: Option<String>,
+}
+
+impl crate::deliver::ClipSender for HttpSender {
+    async fn send(&self, clip: &[i16]) -> Result<(), PostError> {
+        post_clip(&self.url, self.token.as_deref(), clip).await
+    }
+}

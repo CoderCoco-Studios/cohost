@@ -124,6 +124,11 @@ impl<S: RegistryStore> Registrar<S> {
         }
     }
 
+    /// The displaced flag, shareable with the capture loop.
+    pub fn displaced_flag(&self) -> Arc<AtomicBool> {
+        self.displaced.clone()
+    }
+
     /// True once another instance has taken the key; the helper then stops writing.
     // @spec CONN-DESK-004
     pub fn is_displaced(&self) -> bool {

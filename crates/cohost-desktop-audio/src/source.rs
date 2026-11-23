@@ -121,4 +121,8 @@ pub trait Capture {
     fn open(&mut self, choice: &SourceChoice) -> Result<Format, String>;
     /// Appends the next interleaved `f32` frames to `out`.
     fn read(&mut self, out: &mut Vec<f32>) -> Result<(), String>;
+    /// A device event since the last call, if any. Called between reads.
+    fn event(&mut self) -> Option<DeviceEvent> {
+        None
+    }
 }

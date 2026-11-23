@@ -5,8 +5,16 @@ edition = "2024"
 publish = false
 
 [dependencies]
+cohost-bus = { version = "0.1.0", path = "../cohost-bus" }
 serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "io-util"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "net", "sync", "io-util", "signal"] }
 
 [dev-dependencies]
 tokio = { version = "1.54.1", features = ["test-util"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libpulse-binding = "2.30.1"
+libpulse-simple-binding = "2.29.0"
+
+[target."cfg(windows)".dependencies]
+wasapi = "0.27.0"

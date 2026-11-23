@@ -190,7 +190,7 @@ When the owner has enabled tools, the model may ask for one in the middle of a r
 
 **Rounds.** A round is one `llm.stream` call. Round 1 takes the two messages of `buildMessages`; a later round appends the previous round's assistant message unchanged (`result.message`) and one `tool` message for each call, in the order of the calls. Rounds run one after another, so at most one model call is in flight (One thought at a time). Reading a round is Streaming the reply, with four differences:
 
-- *Read to the end.* A round that offers tools does not stop at the first newline. The provider delivers calls after the text (model-backends LLM-STREAM-012) and sends no stop sequences when tools are offered, so cortex reads to the end of the stream, discards the text after the first newline and keeps the calls; `llm.max_tokens` bounds what is read.
+- *Read to the end.* A round that offers tools does not stop at the first newline. The provider delivers calls after the text (model-backends LLM-STREAM-012) and sends no stop sequences when tools are offered, so cortex reads to the end of the stream, discards the text after the first newline and keeps the calls; `tools.reply.max_tokens` bounds what is read (CTX-TOOL-005).
 - *Text before a call is spoken.* The clause rule, the checks and the publishing apply as for any reply. When a round ends in calls, the text still in the buffer is cut as a clause whatever its length and goes through the checks: whatever the co-host has to say before the wait is said before it.
 - *One set of tags.* The line's emotion and gesture are decided once, from the first text of the reply; the leading tags of a later round are removed with the other bracketed text.
 - *One numbering.* Clause numbers continue across rounds and `max_clauses` counts every clause of the reply, the filler and the built-in line included. A round that reaches it ends the reply cut `length`, and the calls of that round are not run.
@@ -237,10 +237,10 @@ When the owner has enabled tools, the model may ask for one in the middle of a r
 | Wait | Bound | Exit |
 |---|---|---|
 | One call, inside `tools` | `tools.timeout_ms`, 10 s | a `timeout` result |
-| cortex's wait for a result | `tools.timeout_ms` plus 2 s | treated as a timeout |
+| cortex's wait for a result | `tools.timeout_ms` plus 2 s, plus `tools.confirm_timeout_ms` (20 s) for an acting tool other than `timer` | treated as a timeout |
 | No clause spoken yet | `tools.reply.filler_after_ms`, 1.5 s | one filler line |
 | Calls in one round | `tools.reply.max_calls`, 3 | the rest answered with an error |
-| One call, confirmation included | `tools.timeout_ms`, 10 s | `refused` (`unconfirmed`) or `timeout` |
+| One call, confirmation included | `tools.confirm_timeout_ms` plus `tools.timeout_ms`, 30 s | `refused` (`unconfirmed`) or `timeout` |
 | Rounds that end in calls | `tools.reply.max_rounds`, 3 | the final round: calls answered locally |
 | Calls over one reply | `tools.reply.budget_ms`, 30 s from the first request, plus one call | the final round |
 | The final round | one more round, then stop | the reply ends with what was said, or the built-in line |

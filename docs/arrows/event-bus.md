@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 162 `[x]`, 46 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code, and every `[x]` spec carries an `@spec` annotation in code or a test (recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 162 `[x]`, 46 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 162 `[x]` specs, 147 have an `@spec` annotation in a test and 15 do not (listed under Work Required; recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -96,3 +96,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 
 ### Deferred (`[D]`)
 - BUS-NAT-GATE-001, 004, 005, 006 (merge gate): a one-time procedure; the measured events-path result is recorded in LLD § Measurement gate. BUS-NAT-RS-009 (add a Rust codec type with its fixtures): a procedure for future work, with no Rust service yet.
+
+### `[x]` specs with no annotated test
+
+BUS-STREAM-002, BUS-EVT-012, 014, 015, 019, BUS-SUB-006, BUS-NAT-ERR-001, BUS-NAT-RS-008, BUS-TEST-001, 002, 005, 007, 008, 009, 010. Their code matches the spec; a schema or behaviour test per spec would close each.

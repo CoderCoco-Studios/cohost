@@ -1,12 +1,12 @@
 // The avatar-frame stream on the frames path: the facade's publishAvatarFrame / tailAvatarFrames on a scripted
 // FrameTransport, and the ioredis frame transport's appendAvatarFrame / readAvatarFrames (BUS-AVF-001, -003 to -010,
 // BUS-NAT-FRM-005, BUS-STOP-001). Tests that need Redis skip when none answers; the connection tests use a plain TCP
-// server or a closed port and need none. The avatar members are untyped here so the file compiles before they exist.
+// server or a closed port and need none.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import { Redis } from "ioredis";
-import type { Frame, FrameTransport } from "../src/index.js";
+import { Bus, type AvatarFrame, type Frame, type FrameTransport } from "../src/index.js";
 import { createFrameTransport } from "../src/frames.js";
 import { FakeTransport, FakeFrameTransport, busWith, until, within, tick } from "./native-helpers.js";
 
@@ -22,19 +22,12 @@ let n = 0;
 
 const rejectsWith = (code: string) => (e: { code?: string }) => e.code === code;
 const audio = (): Frame => ({ epoch: 1, seq: 0, rate: 16000, ch: 1, pcm: Buffer.alloc(4) });
-const avFrame = (over: Record<string, unknown> = {}) => ({
+// Intentionally invalid values go through `over`, so the helper itself is untyped beyond the frame shape.
+const avFrame = (over: Record<string, unknown> = {}): AvatarFrame => ({
   mouthOpen: 0.5, mouthSmile: 0.25, headX: 10, headY: -10, headZ: 0, eyeX: 0.1, eyeY: -0.1, blink: 0,
   emotion: "happy", intensity: 0.8, expression: "", ...over,
-});
-type AvReader = { readAvatarFrames(from: string, ms: number): Promise<{ id: string; frame: unknown }[] | null>; close(): void };
-const av = (b: unknown) => b as {
-  avatarFramesStream(): string;
-  publishAvatarFrame(f: unknown): Promise<void>;
-  tailAvatarFrames(h: (f: unknown) => void): () => void;
-  stop(): Promise<void>;
-};
-const avT = (t: unknown) => t as { appendAvatarFrame(f: unknown): Promise<string>; openReader(): AvReader };
-const calls = (f: FakeFrameTransport, m: string) => f.calls.filter((c) => (c.method as string) === m);
+}) as AvatarFrame;
+const calls = (f: FakeFrameTransport, m: string) => f.calls.filter((c) => c.method === m);
 
 /** A frame transport and a raw connection on a scratch prefix, cleaned up whatever the body does. */
 async function scratch(body: (s: { t: FrameTransport; raw: Redis; prefix: string }) => Promise<void>): Promise<void> {
@@ -56,8 +49,8 @@ async function scratch(body: (s: { t: FrameTransport; raw: Redis; prefix: string
 // @spec BUS-AVF-004
 test("publishAvatarFrame rejects BUS_INVALID for a frame that fails the schema, without calling the frame transport", async () => {
   const { bus, frames } = busWith(new FakeTransport());
-  const bad = [avFrame({ mouthOpen: 1.5 }), avFrame({ headX: NaN }), avFrame({ emotion: "ecstatic" }), avFrame({ expression: "x".repeat(65) }), avFrame({ extra: 1 }), { ...avFrame(), blink: undefined }, null, "frame"];
-  for (const f of bad) await assert.rejects(av(bus).publishAvatarFrame(f), rejectsWith("BUS_INVALID"), JSON.stringify(f));
+  const bad: unknown[] = [avFrame({ mouthOpen: 1.5 }), avFrame({ headX: NaN }), avFrame({ emotion: "ecstatic" }), avFrame({ expression: "x".repeat(65) }), avFrame({ extra: 1 }), { ...avFrame(), blink: undefined }, null, "frame"];
+  for (const f of bad) await assert.rejects(bus.publishAvatarFrame(f as never), rejectsWith("BUS_INVALID"), JSON.stringify(f));
   assert.equal(calls(frames, "appendAvatarFrame").length, 0, "nothing written");
   await bus.stop();
 });
@@ -67,7 +60,7 @@ test("publishAvatarFrame hands a valid frame to the frame transport's appendAvat
   const events = new FakeTransport();
   const { bus, frames } = busWith(events);
   const f = avFrame();
-  await av(bus).publishAvatarFrame(f);
+  await bus.publishAvatarFrame(f);
   const sent = calls(frames, "appendAvatarFrame");
   assert.equal(sent.length, 1);
   assert.deepEqual(sent[0]!.args[0], f);
@@ -80,7 +73,7 @@ test("publishAvatarFrame hands a valid frame to the frame transport's appendAvat
 test("avatarFramesStream() is <prefix>:avatar.frames on the Bus's prefix, and Bus.publish neither writes nor trims it", async () => {
   const events = new FakeTransport();
   const { bus, frames } = busWith(events, { streamPrefix: "p1" });
-  assert.equal(av(bus).avatarFramesStream(), "p1:avatar.frames");
+  assert.equal(bus.avatarFramesStream(), "p1:avatar.frames");
   await bus.publish("control", { cmd: "mute" } as never);
   assert.equal(calls(frames, "appendAvatarFrame").length, 0);
   assert.ok(!JSON.stringify(events.calls).includes("avatar.frames"), "no events-transport call names the avatar stream");
@@ -90,10 +83,10 @@ test("avatarFramesStream() is <prefix>:avatar.frames on the Bus's prefix, and Bu
 // @spec BUS-AVF-007
 test("tailAvatarFrames reads from $ with BLOCK 5000, advances from the last id, hands decoded frames in stream order, and its stop function closes the reader", async () => {
   const f1 = avFrame({ mouthOpen: 0.1 }), f2 = avFrame({ mouthOpen: 0.2 }), f3 = avFrame({ mouthOpen: 0.3 });
-  const frames = new FakeFrameTransport().on("readAvatarFrames" as never, () => [{ id: "1-0", frame: f1 }, { id: "2-0", frame: f2 }], () => null, () => [{ id: "3-0", frame: f3 }]);
+  const frames = new FakeFrameTransport().on("readAvatarFrames", () => [{ id: "1-0", frame: f1 }, { id: "2-0", frame: f2 }], () => null, () => [{ id: "3-0", frame: f3 }]);
   const { bus } = busWith(new FakeTransport(), {}, undefined, frames);
   const got: unknown[] = [];
-  const stop = av(bus).tailAvatarFrames((f) => { got.push(f); });
+  const stop = bus.tailAvatarFrames((f) => { got.push(f); });
   assert.equal(typeof stop, "function", "returns a stop function");
   await until(() => calls(frames, "readAvatarFrames").length >= 4, "four reads");
   const reads = calls(frames, "readAvatarFrames");
@@ -114,8 +107,8 @@ test("tailAvatarFrames reads from $ with BLOCK 5000, advances from the last id, 
 // @spec BUS-AVF-007, BUS-STOP-001
 test("two tailAvatarFrames loops each get a reader of their own, and Bus.stop() closes both readers and the frame transport without a log line", async () => {
   const { bus, frames, l } = busWith(new FakeTransport());
-  av(bus).tailAvatarFrames(() => {});
-  av(bus).tailAvatarFrames(() => {});
+  bus.tailAvatarFrames(() => {});
+  bus.tailAvatarFrames(() => {});
   await until(() => calls(frames, "readAvatarFrames").length === 2, "both reading");
   assert.equal(frames.of("openReader").length, 2);
   await within(bus.stop(), 1000, "stop");
@@ -128,7 +121,7 @@ test("two tailAvatarFrames loops each get a reader of their own, and Bus.stop() 
 test("after stop(), publishAvatarFrame rejects BUS_CLOSED", async () => {
   const { bus } = busWith(new FakeTransport());
   await bus.stop();
-  await assert.rejects(av(bus).publishAvatarFrame(avFrame()), rejectsWith("BUS_CLOSED"));
+  await assert.rejects(bus.publishAvatarFrame(avFrame()), rejectsWith("BUS_CLOSED"));
 });
 
 // ---------------------------------------------------------------- ioredis frame transport
@@ -137,12 +130,12 @@ test("after stop(), publishAvatarFrame rejects BUS_CLOSED", async () => {
 test("with Redis down, appendAvatarFrame rejects BUS_CONNECTION, later calls reject at once with nothing queued, and after close() it rejects BUS_CLOSED", async () => {
   const t = createFrameTransport("redis://127.0.0.1:1", { prefix: "p", failFast: false });
   try {
-    await assert.rejects(avT(t).appendAvatarFrame(avFrame()), rejectsWith("BUS_CONNECTION"));
+    await assert.rejects(t.appendAvatarFrame(avFrame()), rejectsWith("BUS_CONNECTION"));
     const t1 = performance.now();
-    for (let i = 0; i < 5; i++) await assert.rejects(avT(t).appendAvatarFrame(avFrame({ mouthOpen: i / 10 })), rejectsWith("BUS_CONNECTION"));
+    for (let i = 0; i < 5; i++) await assert.rejects(t.appendAvatarFrame(avFrame({ mouthOpen: i / 10 })), rejectsWith("BUS_CONNECTION"));
     assert.ok(performance.now() - t1 < 100, `five rejections took ${performance.now() - t1} ms`);
   } finally { await t.close(); }
-  await assert.rejects(avT(t).appendAvatarFrame(avFrame()), rejectsWith("BUS_CLOSED"));
+  await assert.rejects(t.appendAvatarFrame(avFrame()), rejectsWith("BUS_CLOSED"));
 });
 
 // @spec BUS-NAT-FRM-005, BUS-AVF-010
@@ -155,13 +148,13 @@ test("avatar frames mixed with audio frames: no connection until the first appen
   try {
     await tick(150);
     assert.equal(sockets.length, 0, "constructing the transport opens nothing");
-    void avT(t).appendAvatarFrame(avFrame()).catch(() => {});
+    void t.appendAvatarFrame(avFrame()).catch(() => {});
     await until(() => sockets.length === 1, "publish connection at the first appendAvatarFrame");
     void t.appendFrame("in", "t", audio()).catch(() => {});
-    void avT(t).appendAvatarFrame(avFrame({ blink: 1 })).catch(() => {});
+    void t.appendAvatarFrame(avFrame({ blink: 1 })).catch(() => {});
     await tick(150);
     assert.equal(sockets.length, 1, "audio and avatar frames share the one publish connection");
-    const reader = avT(t).openReader();
+    const reader = t.openReader();
     await tick(100);
     assert.equal(sockets.length, 1, "openReader opens nothing");
     void reader.readAvatarFrames("$", 100).catch(() => {});
@@ -179,7 +172,7 @@ test("appendAvatarFrame XADDs exactly ts and data, resolves to the entry id, cap
     const key = `${prefix}:avatar.frames`;
     const f = avFrame({ mouthOpen: 0.123 });
     const before = Date.now();
-    const id = await avT(t).appendAvatarFrame(f);
+    const id = await t.appendAvatarFrame(f);
     assert.match(id, /^\d+-\d+$/);
     const entries = await raw.xrange(key, "-", "+");
     assert.equal(entries.length, 1);
@@ -191,7 +184,7 @@ test("appendAvatarFrame XADDs exactly ts and data, resolves to the entry id, cap
     assert.deepEqual(JSON.parse(fields[3]!), f);
     const ttl = await raw.pttl(key);
     assert.ok(ttl > 9000 && ttl <= 10000, `PEXPIRE 10000 renewed on the write, pttl ${ttl}`);
-    for (let i = 0; i < 600; i++) await avT(t).appendAvatarFrame(avFrame({ mouthOpen: (i % 10) / 10 }));
+    for (let i = 0; i < 600; i++) await t.appendAvatarFrame(avFrame({ mouthOpen: (i % 10) / 10 }));
     const len = await raw.xlen(key);
     assert.ok(len >= 120 && len <= 250, `MAXLEN ~ 120 trims on the producer's write, length ${len}`);
   });
@@ -201,8 +194,8 @@ test("appendAvatarFrame XADDs exactly ts and data, resolves to the entry id, cap
 test("a reader reads from $ without replay, drops entries that do not decode, returns null on timeout and never writes or trims the stream", needsRedis, async () => {
   await scratch(async ({ t, raw, prefix }) => {
     const key = `${prefix}:avatar.frames`;
-    await avT(t).appendAvatarFrame(avFrame({ mouthOpen: 0.9 })); // before the reader: not replayed from $
-    const reader = avT(t).openReader();
+    await t.appendAvatarFrame(avFrame({ mouthOpen: 0.9 })); // before the reader: not replayed from $
+    const reader = t.openReader();
     assert.equal(await reader.readAvatarFrames("$", 100), null, "null on timeout; the earlier entry is not replayed");
     const pending = reader.readAvatarFrames("$", 2000);
     await tick(100);
@@ -214,7 +207,7 @@ test("a reader reads from $ without replay, drops entries that do not decode, re
     const len = await raw.xlen(key);
     const rest = await reader.readAvatarFrames(got.at(-1)?.id ?? "0", 300);
     const all = [...got, ...(rest ?? [])];
-    assert.deepEqual(all.map((e) => (e.frame as { mouthOpen: number }).mouthOpen), [0.4], "only the decodable entry is delivered");
+    assert.deepEqual(all.map((e) => e.frame.mouthOpen), [0.4], "only the decodable entry is delivered");
     assert.ok(all.every((e) => /^\d+-\d+$/.test(e.id)));
     assert.equal(await raw.xlen(key), len, "a reader neither writes nor trims");
     reader.close();
@@ -226,12 +219,12 @@ test("a frame published through a Bus is tailed by another Bus's tailAvatarFrame
   const { Bus } = await import("../src/index.js");
   const prefix = `cohost-test:${process.pid}:${Date.now()}:af${n++}`;
   const raw = new Redis(url);
-  const producer = av(new Bus("p", undefined, url, { streamPrefix: prefix }));
-  const consumer = av(new Bus("c", undefined, url, { streamPrefix: prefix }));
+  const producer = new Bus("p", undefined, url, { streamPrefix: prefix });
+  const consumer = new Bus("c", undefined, url, { streamPrefix: prefix });
   try {
     await producer.publishAvatarFrame(avFrame({ mouthOpen: 0.9 })); // before the tail: not replayed
-    const got: { mouthOpen: number }[] = [];
-    const stop = consumer.tailAvatarFrames((f) => { got.push(f as { mouthOpen: number }); });
+    const got: AvatarFrame[] = [];
+    const stop = consumer.tailAvatarFrames((f) => { got.push(f); });
     await tick(300);
     for (const m of [0.1, 0.2, 0.3]) await producer.publishAvatarFrame(avFrame({ mouthOpen: m }));
     await until(() => got.length === 3, "three frames tailed", 2000);

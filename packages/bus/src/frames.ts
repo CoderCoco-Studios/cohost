@@ -84,7 +84,7 @@ class IoredisFrameTransport implements FrameTransport {
     return this.write(audioStreamName(this.prefix, dir, tag), AUDIO_MAXLEN[dir], () => encodeFrame(frame), AUDIO_STREAM_TTL_MS);
   }
 
-  // @spec BUS-AVF-005, BUS-AVF-009, BUS-AVF-010
+  // @spec BUS-AVF-003, BUS-AVF-005, BUS-AVF-009, BUS-AVF-010
   appendAvatarFrame(frame: AvatarFrame): Promise<string> {
     return this.write(avatarFramesStream(this.prefix), AVATAR_FRAMES_MAXLEN, () => ["ts", String(Date.now()), "data", JSON.stringify(frame)], AVATAR_FRAMES_TTL_MS);
   }

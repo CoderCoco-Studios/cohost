@@ -2,7 +2,7 @@
 // BUS-STOP-001). Until the facade runs on `BusOptions.transport` (Phase 6) every test here fails at the first assertion.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Bus, BusEvent, EventType } from "../src/index.js";
+import type { AvatarFrame, Bus, BusEvent, EventType } from "../src/index.js";
 import { FakeTransport, FakeFrameTransport, rawEntry, groupRead, busError, withBus, withBus2, busWith, until, within, tick, run } from "./native-helpers.js";
 
 const empty = () => groupRead(null);
@@ -230,12 +230,12 @@ test("a failing read of subscribe, tail, tailHealth or tailAudio logs exactly on
 
 // @spec BUS-NAT-CONN-002, BUS-AVF-012
 test("a failing read of tailAvatarFrames logs exactly one warn, waits min(cap, base*2^(n-1)), then reads again from $ and not from the last id", async () => {
-  const frame = { mouthOpen: 0.1, mouthSmile: 0, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, emotion: "neutral", intensity: 0, expression: "" };
+  const frame: AvatarFrame = { mouthOpen: 0.1, mouthSmile: 0, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, emotion: "neutral", intensity: 0, expression: "" };
   const ok = () => [{ id: "7-0", frame }];
-  const frames = new FakeFrameTransport().on("readAvatarFrames" as never, ok, down(), down(), down(), () => null, down());
+  const frames = new FakeFrameTransport().on("readAvatarFrames", ok, down(), down(), down(), () => null, down());
   await withBus2(new FakeTransport(), frames, { retryBaseMs: 20, retryMaxMs: 60 }, async ({ bus, l }) => {
-    (bus as unknown as { tailAvatarFrames(h: () => void): () => void }).tailAvatarFrames(() => {});
-    const reads = () => frames.calls.filter((c) => (c.method as string) === "readAvatarFrames");
+    bus.tailAvatarFrames(() => {});
+    const reads = () => frames.calls.filter((c) => c.method === "readAvatarFrames");
     await until(() => reads().length >= 7, "all scripted reads");
     const warns = l.at("warn");
     assert.equal(warns.length, 4, "one warn per failure");
@@ -251,8 +251,8 @@ test("a failing read of tailAvatarFrames logs exactly one warn, waits min(cap, b
 test("after stop(), a tailAvatarFrames read that rejects ends the loop without a log line or a rethrow", async () => {
   const frames = new FakeFrameTransport();
   await withBus2(new FakeTransport(), frames, {}, async ({ bus, l }) => {
-    (bus as unknown as { tailAvatarFrames(h: () => void): () => void }).tailAvatarFrames(() => {});
-    await until(() => frames.calls.some((c) => (c.method as string) === "readAvatarFrames"), "a blocked read");
+    bus.tailAvatarFrames(() => {});
+    await until(() => frames.calls.some((c) => c.method === "readAvatarFrames"), "a blocked read");
     await within(bus.stop(), 1000, "stop");
     await tick(50);
     assert.deepEqual([...l.at("warn"), ...l.at("error")], [], "no log line");

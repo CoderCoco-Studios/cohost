@@ -4,10 +4,10 @@ import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
 import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-memory";
-import { Scheduler } from "./scheduler.js";
+import { Scheduler, type Decision } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
-import { Reminders, type TimerEvent } from "./reminders.js";
+import { Reminders, type Reminder, type TimerEvent } from "./reminders.js";
 
 export interface SalienceDeps {
   cfg: Config;
@@ -94,8 +94,8 @@ export class Salience {
       }
       // A timer is never chat, speech or vision: it is held as a reminder, and it starts no decision pass (SAL-REM-007).
       case "tool.timer": { // @spec SAL-REM-001, SAL-REM-002, SAL-REM-003, SAL-REM-007
-        this.reminders.arrive(ev.data as TimerEvent);
-        await this.expireReminders(); // a reminder that arrives already past the expiry is republished as missed now
+        // Expired reminders (the held ones, and an arrival already past the expiry) are republished as missed now, not spoken.
+        for (const r of this.reminders.arrive(ev.data as TimerEvent, Date.now())) await this.republishMissed(r);
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
@@ -226,12 +226,15 @@ export class Salience {
    * @spec SAL-REM-003
    */
   private async expireReminders(): Promise<void> {
-    for (const r of this.reminders.takeExpired(Date.now())) {
-      try {
-        await this.d.bus.publish("tool.timer", { id: r.id, note: r.note, setAt: r.setAt, dueAt: r.dueAt, missed: true });
-      } catch (err) {
-        this.d.log.error({ err, id: r.id }, "missed timer republish failed");
-      }
+    for (const r of this.reminders.takeExpired(Date.now())) await this.republishMissed(r);
+  }
+
+  /** Republishes one expired reminder as `tool.timer` with `missed`. A failure is logged and the reminder stays dropped (no retry). */
+  private async republishMissed(r: Reminder): Promise<void> {
+    try {
+      await this.d.bus.publish("tool.timer", { id: r.id, note: r.note, setAt: r.setAt, dueAt: r.dueAt, missed: true });
+    } catch (err) {
+      this.d.log.error({ err, id: r.id }, "missed timer republish failed");
     }
   }
 
@@ -239,9 +242,22 @@ export class Salience {
     if (this.control.paused || this.deciding) return; // an llm/http scorer can take longer than a tick; @spec SAL-FOCUS-002, SAL-CTRL-002
     this.deciding = true;
     this.rerun = false; // this pass sees everything that has arrived so far
-    let decision;
-    try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal, this.reminders.due(Date.now())); } // @spec SAL-REM-006
-    finally { this.deciding = false; }
+    // The due reminder is claimed now, synchronously, so no expiry sweep of a later tick can republish it while this pass is in
+    // flight (SAL-REM-003). The claim is released on every path that does not settle it (SAL-HEALTH-002).
+    const claim = this.reminders.due(Date.now()); // @spec SAL-REM-006
+    if (claim) this.reminders.beginSpeak(claim.id); // @spec SAL-REM-005
+    try {
+      let decision;
+      try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal, claim); }
+      finally { this.deciding = false; }
+      await this.publishDecision(decision);
+    } finally {
+      if (claim) this.reminders.abortSpeak(claim.id); // a no-op once settled
+    }
+  }
+
+  /** Publishes the focus of a decision that speaks, under the gates the pass just ran (SAL-FOCUS-005, SAL-FOCUS-007). */
+  private async publishDecision(decision: Decision): Promise<void> {
     if (!decision.speak) return;
     // A mute, pause or busy cortex may have arrived while the scorer ran: the decision is void then.
     if (this.control.muted || this.control.paused || this.busy()) return; // @spec SAL-FOCUS-005

@@ -283,3 +283,71 @@ test("a speech focus passes on the source of the speech.heard", async () => {
   await h.s.tick();
   assert.deepEqual(focuses(h)[0]!.focus, { kind: "speech", who: "Chris", text: "look at this", source: "discord", mention: false });
 });
+
+// @spec SAL-REM-001, SAL-REM-003
+test("a full list and an arrival already past the expiry: exactly one missed republish, and the list is unchanged", async () => {
+  const h = setup({ timer: { max_active: 2 } });
+  await h.s.onEvent(timer("a", -1000, "a"));
+  await h.s.onEvent(timer("b", -2000, "b"));
+  await h.s.onEvent(timer("old", -(EXPIRY + 1), "stale"));
+  assert.deepEqual(missedTimers(h), [{ id: "old", note: "stale", setAt: WALL - 600_000, dueAt: WALL - (EXPIRY + 1), missed: true }]);
+  await h.s.tick();
+  await h.s.onEvent(idle);
+  await h.s.tick();
+  await h.s.onEvent(idle);
+  await h.s.tick();
+  assert.deepEqual(focuses(h).map((f) => f.focus!.text), ["b", "a"], "a and b were not evicted by the stale arrival");
+  assert.equal(missedTimers(h).length, 1, "republished once");
+});
+
+// @spec SAL-REM-001, SAL-REM-003
+test("a held reminder gone stale since the last tick is republished as missed, not evicted by an overflowing arrival", async () => {
+  const h = setup({ timer: { max_active: 2 } });
+  await h.s.onEvent(timer("s", -1000, "stale soon"));
+  await h.s.onEvent(timer("x", 1000, "x"));
+  h.advance(EXPIRY); // s is now past the expiry; x is not yet due
+  await h.s.onEvent(timer("y", EXPIRY - 1000, "y")); // fresh, the list is full
+  assert.deepEqual(missedTimers(h), [{ id: "s", note: "stale soon", setAt: WALL - 600_000, dueAt: WALL - 1000, missed: true }]);
+  await h.s.tick();
+  await h.s.onEvent(idle);
+  await h.s.tick();
+  await h.s.onEvent(idle);
+  await h.s.tick();
+  assert.deepEqual(focuses(h).map((f) => f.focus!.text), ["x", "y"], "the bound dropped nothing that was still fresh");
+  assert.equal(missedTimers(h).length, 1, "s was never spoken");
+});
+
+// @spec SAL-REM-003, SAL-REM-005
+test("a reminder whose focus publish is in flight is not republished as missed when it expires meanwhile", async () => {
+  const h = setup();
+  await h.s.onEvent(timer("t1", -1000, "tea"));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const real = h.bus.publish.bind(h.bus);
+  h.bus.publish = (async (type: never, data: never) => {
+    if (type === "attention.focus") await gate;
+    return real(type, data);
+  }) as typeof h.bus.publish;
+  const running = h.s.tick();
+  h.advance(EXPIRY + 1000); // the reminder is now past its expiry, but its publish is in flight
+  await h.s.tick();
+  release();
+  await running;
+  assert.equal(focuses(h).length, 1, "spoken once");
+  assert.equal(focuses(h)[0]!.focus!.text, "tea");
+  assert.equal(missedTimers(h).length, 0, "and not also republished as missed");
+});
+
+// @spec SAL-REM-003, SAL-REM-004
+test("a reminder held while paused that ages past the expiry is republished as missed and never spoken", async () => {
+  const h = setup();
+  await h.s.onEvent(event("control", { cmd: "pause" }));
+  await h.s.onEvent(timer("t1", -1000, "stale while paused"));
+  await h.s.tick();
+  h.advance(EXPIRY);
+  await h.s.tick();
+  await h.s.onEvent(event("control", { cmd: "resume" }));
+  await h.s.tick();
+  assert.equal(focuses(h).length, 0, "never spoken");
+  assert.deepEqual(missedTimers(h), [{ id: "t1", note: "stale while paused", setAt: WALL - 600_000, dueAt: WALL - 1000, missed: true }]);
+});

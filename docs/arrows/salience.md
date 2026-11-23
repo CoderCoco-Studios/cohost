@@ -23,9 +23,11 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 11. **R3** `ready` timing → after consumer-group creation. Specs: SAL-HEALTH-001 reworded.
 12. **P7** Mute ownership (project-level) → only salience and cortex see mute/pause; LLD Decisions row added.
 
-## Barge-in and echo gate
+## Reminders
 
 SAL-REM-001 to SAL-REM-008 are `[x]`: due timer reminders (`Reminders` in `reminders.ts`) are held apart from working memory, published as one `attention.focus` of kind `reminder` per pass after the gates and before `nothing new`, expired ones are republished as `missed` and never spoken, and nothing is kept across a restart. Their clock is the host wall clock (`Date.now()`); the cooldown and busy valves keep the monotonic one.
+
+## Barge-in and echo gate
 
 SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, reflex lines that never interrupt, and barge-in across a streamed line whose playback renews `speaking` (SAL-BUSY-005 to 008). SAL-BARGE-001 is revised by the early-reply work and stays a gap. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
 
@@ -110,7 +112,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 5. **Rule weights match the config defaults.** Mention 1.0, voice 0.9, question 0.55, mod/sub 0.35, screen 0.3, plain 0.15, threshold 0.6 are the values of `scoring.ts` and the schema defaults (`packages/config/src/schema.ts`; `config/config.example.yaml`), asserted in `services/salience/test/salience.test.ts`. The total is a sum over the counted unseen events; the focus is the first counted event whose score is above 0 (SAL-DECIDE-002, SAL-DECIDE-014; `Scheduler.decide`).
 6. **Startup runs under the bootstrap and `ready` follows group creation** (SAL-HEALTH-001, SAL-HEALTH-003). `Bus.subscribe` has no readiness signal, so `salienceMain` awaits `bus.resetGroup("salience")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, commit `969f6d7` ("Fix review findings") or the 2026-11-01 owner decisions; two keep a partial `[inferred]` (why sum not max, the 0.1 threshold floor) and the 60 s valve default value is `[inferred]`.
-8. **Reminders run on the wall clock, gates decide only speech.** `Reminders.takeExpired` and `due` compare `dueAt` with `Date.now()`; an expired reminder is republished as `missed` on arrival and on every tick, whatever the gates, and is never spoken (SAL-REM-003). A failed `missed` republish is logged and the reminder dropped. A `tool.timer` arriving while paused is held in the list and decided after resume.
+8. **Reminders run on the wall clock, gates decide only speech.** `Reminders.takeExpired` and `due` compare `dueAt` with `Date.now()`; an expired reminder is republished as `missed` on arrival and on every tick, whatever the gates, and is never spoken (SAL-REM-003). A failed `missed` republish is logged and the reminder dropped (no retry; the LLD's Decisions table records the rejected re-hold). A reminder whose focus publish is in flight is never expired, so it is not spoken and republished as missed. A `tool.timer` arriving while paused is held in the list and decided after resume.
 9. **`chat.removed` is forgotten in `onEvent`, which has no pause gate** (SAL-IN-008, SAL-IN-009). The removed entries are recorded, so a decision whose focus is one of them publishes nothing (SAL-FOCUS-007). The burst counter keys viewers by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019).
 
 ## Work Required

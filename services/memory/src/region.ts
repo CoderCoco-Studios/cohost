@@ -128,9 +128,11 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
       // @spec MEM-WRITE-003, MEM-WRITE-010
       case "brain.say": {
         const d = ev.data as BusEvent<"brain.say">["data"];
+        const existing = open.get(d.id);
+        if (existing) existing.lastRead = clock(); // a read of an open line counts toward its idle bound (MEM-WRITE-015)
         if (d.more) {
           // A streamed line opens now and is written when it closes (MEM-WRITE-013..015).
-          if (open.has(d.id)) {
+          if (existing) {
             log.warn({ id: d.id }, "a streamed line opened twice; the second opening is dropped");
             break;
           }
@@ -147,12 +149,12 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
         const d = ev.data as BusEvent<"brain.clause">["data"];
         const line = open.get(d.id);
         if (!line) break; // no open line (not opened, closed, or lost at a restart): dropped (MEM-WRITE-012, MEM-WRITE-017)
+        line.lastRead = clock(); // every read of the open line counts, dropped or not (MEM-WRITE-015)
         if (d.seq !== line.lastSeq + 1) {
           log.warn({ id: d.id, seq: d.seq, expected: line.lastSeq + 1 }, "streamed clause out of order; dropped");
           break;
         }
         line.lastSeq = d.seq;
-        line.lastRead = clock();
         if (d.text !== "") line.text = line.text === "" ? d.text : `${line.text} ${d.text}`;
         if (d.last) await closeLine(d.id);
         break;

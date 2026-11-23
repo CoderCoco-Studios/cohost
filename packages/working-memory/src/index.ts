@@ -77,8 +77,8 @@ export class Context {
   private held: ContextEvent[] | undefined;
   /** Each `self` event's clauses in `seq` order (clause 0 the `pushSelf` text); the event's text is these joined by one space. */
   private readonly clauses = new WeakMap<SelfEntry, string[]>(); // @spec WM-PUSH-024
-  /** The `seq` a `markFallback` with a `seq` above 0 named: the first clause the audience did not hear. */
-  private readonly fallbackFrom = new WeakMap<SelfEntry, number>(); // @spec WM-PUSH-025
+  /** A `markFallback` with a `seq` above 0: the clause index it named (unclamped) and the fallback text it was given. */
+  private readonly fallbackFrom = new WeakMap<SelfEntry, { from: number; tail: string }>(); // @spec WM-PUSH-025
   private readonly ownLines: number;
   private readonly limits: ContextLimits | undefined;
 
@@ -186,19 +186,19 @@ export class Context {
   /**
    * Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window.
    * With no `seq` or `seq` 0 the whole line is the fallback. With `seq` above 0 the fallback is the clauses before `seq`
-   * followed by `fallbackText`; a `seq` above the clause count is clamped to it.
+   * followed by `fallbackText`. `seq` is kept as given: clauses that arrive later are part of the rendered head or
+   * rest by their index (WM-TRANS-015), so a `seq` past the clauses held now is not clamped.
    */
   markFallback(id: string, fallbackText: string, seq = 0): boolean { // @spec WM-PUSH-008, WM-PUSH-025
     const e = this.selfById(id);
     if (!e) return false;
     const held = this.clauses.get(e)!;
-    const from = Math.min(seq, held.length);
-    if (from <= 0) {
+    if (seq <= 0) {
       e.fallback = fallbackText;
       this.fallbackFrom.delete(e);
     } else {
-      e.fallback = [...held.slice(0, from), fallbackText].join(" ");
-      this.fallbackFrom.set(e, from);
+      e.fallback = [...held.slice(0, seq), fallbackText].join(" ");
+      this.fallbackFrom.set(e, { from: seq, tail: fallbackText });
     }
     return true;
   }
@@ -288,10 +288,13 @@ export class Context {
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
             if (e.fallback === undefined) return `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
-            const from = this.fallbackFrom.get(e);
-            if (from !== undefined) { // @spec WM-TRANS-015
-              const rest = this.clauses.get(e)!.slice(from).join(" ");
-              return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [the rest of your line "${oneLine(rest)}" failed to play; this came out instead]`;
+            const marked = this.fallbackFrom.get(e);
+            if (marked !== undefined) { // @spec WM-TRANS-015
+              // Rendered from the clauses now held, so clauses that arrived after the mark land in the right part.
+              const held = this.clauses.get(e)!;
+              const head = [...held.slice(0, marked.from), marked.tail].join(" ");
+              const rest = held.slice(marked.from).join(" ");
+              return `${cohostName}: [${e.emotion}] ${oneLine(head)} [the rest of your line "${oneLine(rest)}" failed to play; this came out instead]`;
             }
             return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`;
         }

@@ -139,3 +139,16 @@ test("transcript: a whole-line fallback on a streamed line quotes every clause, 
   ctx.markFallback("a", "oops", 0);
   assert.equal(ctx.transcript("Coco"), note);
 });
+
+// @spec WM-PUSH-025, WM-TRANS-015
+test("a markFallback seq past the clauses held is kept, and clauses that arrive later render on the right side of it", () => {
+  const ctx = new Context(10);
+  ctx.pushSelf("c0", "happy", 1000, "a");
+  ctx.extendSelf("a", 1, "c1");
+  assert.equal(ctx.markFallback("a", "fb", 3), true);
+  assert.equal(ctx.transcript("Coco"), 'Coco: [happy] c0 c1 fb [the rest of your line "" failed to play; this came out instead]');
+  assert.equal(ctx.extendSelf("a", 2, "c2"), true);
+  assert.equal(ctx.transcript("Coco"), 'Coco: [happy] c0 c1 c2 fb [the rest of your line "" failed to play; this came out instead]');
+  assert.equal(ctx.extendSelf("a", 3, "c3"), true);
+  assert.equal(ctx.transcript("Coco"), 'Coco: [happy] c0 c1 c2 fb [the rest of your line "c3" failed to play; this came out instead]');
+});

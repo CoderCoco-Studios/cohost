@@ -447,9 +447,33 @@ test("300 s after the last say or clause read for an open line, the line is writ
   await onEvent(clause("a", 1, "Next."));
   t.mock.timers.tick(200_000); // 400 s from the say, 200 s from the clause
   assert.deepEqual(selfRows(calls), []);
+  const clears = t.mock.method(globalThis, "clearInterval");
   t.mock.timers.tick(100_001);
   await new Promise<void>((r) => setImmediate(r));
   assert.deepEqual(selfRows(calls), [["self", "Coco", "Slow one. Next."]]);
+  assert.equal(clears.mock.callCount() >= 1, true, "the sweep interval is cleared once no line is open");
+  // the closed line writes nothing more: a late clause and an idle status are dropped, and time passing adds no row
+  await onEvent(clause("a", 2, "late"));
+  await onEvent(status("idle"));
+  t.mock.timers.tick(600_000);
+  await new Promise<void>((r) => setImmediate(r));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Slow one. Next."]]);
+  await (onEvent as Stoppable).stop?.();
+});
+
+// @spec MEM-WRITE-015
+test("a dropped out-of-order clause still counts as a read of its open line for the 300 s bound", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  const { onEvent, calls, warnings } = setup();
+  await onEvent(say("a", "Held.", { more: true }));
+  t.mock.timers.tick(200_000);
+  await onEvent(clause("a", 5, "skipped ahead")); // out of order: dropped, but it is a read
+  t.mock.timers.tick(200_000); // 400 s from the say, 200 s from the dropped clause
+  assert.deepEqual(selfRows(calls), []);
+  assert.equal(warnings.length, 1);
+  t.mock.timers.tick(100_001);
+  await new Promise<void>((r) => setImmediate(r));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Held."]]);
   await (onEvent as Stoppable).stop?.();
 });
 

@@ -20,6 +20,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
 - packages/working-memory/test/fallback.test.ts
+- packages/working-memory/test/extend.test.ts (streamed lines: extendSelf, markFallback with a seq, later-clause transcript note)
 - packages/working-memory/test/package.test.ts
 - packages/working-memory/test/timing.test.ts
 - packages/working-memory/test/window.test.ts

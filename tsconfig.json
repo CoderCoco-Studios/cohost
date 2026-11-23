@@ -11,6 +11,7 @@
     { "path": "packages/testing" },
     { "path": "services/chat" },
     { "path": "services/salience" },
+    { "path": "services/tools" },
     { "path": "services/affect" },
     { "path": "services/memory" },
     { "path": "services/cortex" },

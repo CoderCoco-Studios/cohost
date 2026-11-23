@@ -60,6 +60,7 @@ A segment is the territory of one low-level design: the design, its specs, and t
 | Brain | [affect](segments/affect) | `services/affect` |
 | Brain | [memory](segments/memory) | `services/memory` |
 | Brain | [cortex](segments/cortex) | `services/cortex` |
+| Brain | [tools](segments/tools) | `services/tools` |
 | Body | [voice](segments/voice) | `services/voice` |
 | Body | [mouth](segments/mouth) | `services/mouth` |
 | Body | [avatar](segments/avatar) | `services/avatar` |

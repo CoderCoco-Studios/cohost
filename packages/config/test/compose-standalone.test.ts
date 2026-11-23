@@ -42,9 +42,15 @@ test("app services get no DASHBOARD_URL (uploads reach eyes and ears over Redis)
   }
 });
 
-/** The application services: one per `services/` directory except the host-run dashboard. */
+/**
+ * Service directories that have no Compose service yet. `tools` (services/tools, #205) is added to docker-compose.yml and the
+ * manifest by #208, which removes it from this list; until then these compose checks would find a directory with no service.
+ */
+const UNCOMPOSED_UNTIL_208 = ["tools"];
+
+/** The application services: one per `services/` directory except the host-run dashboard and the uncomposed ones above. */
 const appServices = readdirSync(root("services"), { withFileTypes: true })
-  .filter((d) => d.isDirectory() && d.name !== "dashboard")
+  .filter((d) => d.isDirectory() && d.name !== "dashboard" && !UNCOMPOSED_UNTIL_208.includes(d.name))
   .map((d) => d.name)
   .sort();
 const IN_NETWORK = {

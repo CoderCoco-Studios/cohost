@@ -223,15 +223,15 @@ arrows:
     drift: null
 
   tools:
-    status: MAPPED
+    status: PARTIAL
     parent: null
-    sampled: 2026-11-18
+    sampled: 2026-11-23
     audited: null
     audited_sha: null
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "108 specs: 0 [x], 108 [ ] (the segment is designed and specified, not built). The cascade lines in the segments listed in tools.md are written; build the service, then audit."
+    next: "112 specs: 65 [x], 47 [ ]. Open: the MCP client TOOL-MCP-001..013 (#206), the MCP parts of TOOL-CALL-011 and TOOL-CALL-012 (cancellation notification, session failure; #206), TOOL-PIN-002 and TOOL-PIN-005; the built-in tools TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER, the built-in halves of TOOL-CAT-001, TOOL-CAT-004, TOOL-CAT-013, TOOL-CALL-007, TOOL-CALL-017 and mock TOOL-MOCK-005/006 (#207)."
     drift: null
 
   voice:

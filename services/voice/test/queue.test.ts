@@ -24,7 +24,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 const deferred = () => { let release!: () => void; const gate = new Promise<void>((r) => { release = r; }); return { gate, release }; };
 const httpStatus = (voice: Voice, id: string) => {
   let code = 0;
-  voice.handle({ method: "GET", url: `/audio/${id}.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
+  voice.handle({ method: "GET", url: `/audio/${id}-0.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
   return code;
 };
 
@@ -127,10 +127,10 @@ test("re-synthesizing a stored id replaces its audio and makes it the newest, so
   await sayAndWait(voice, say("a"));
   await sayAndWait(voice, say("b"));
   await sayAndWait(voice, say("a")); // reuse
-  for (let i = 0; i < 48; i++) await sayAndWait(voice, say(`n${i}`)); // 50 distinct ids: a, b, n0..n47
+  for (let i = 0; i < 98; i++) await sayAndWait(voice, say(`n${i}`)); // 100 distinct ids: a, b, n0..n97
   assert.equal(httpStatus(voice, "a"), 200);
   assert.equal(httpStatus(voice, "b"), 200);
-  await sayAndWait(voice, say("z")); // the 51st distinct id evicts the oldest, which is b (a was refreshed)
+  await sayAndWait(voice, say("z")); // the 101st distinct id evicts the oldest, which is b (a was refreshed)
   assert.equal(httpStatus(voice, "b"), 404);
   assert.equal(httpStatus(voice, "a"), 200);
   assert.equal(httpStatus(voice, "z"), 200);
@@ -145,19 +145,19 @@ test("HTTP: GET and HEAD only, and the path is matched without its query string"
   await new Promise<void>((r) => server.listen(0, r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const q = await fetch(`${base}/audio/abc.wav?t=1`);
+    const q = await fetch(`${base}/audio/abc-0.wav?t=1`);
     assert.equal(q.status, 200);
     assert.deepEqual(Buffer.from(await q.arrayBuffer()), halfSecond);
     assert.equal((await fetch(`${base}/audio/nope.wav?t=1`)).status, 404);
     assert.equal(await (await fetch(`${base}/health?probe=1`)).text(), "ok");
-    const head = await fetch(`${base}/audio/abc.wav`, { method: "HEAD" });
+    const head = await fetch(`${base}/audio/abc-0.wav`, { method: "HEAD" });
     assert.equal(head.status, 200);
     assert.equal(head.headers.get("content-type"), "audio/wav");
     assert.equal(head.headers.get("content-length"), String(halfSecond.length));
     assert.equal((await head.arrayBuffer()).byteLength, 0);
     assert.equal((await fetch(`${base}/health`, { method: "HEAD" })).status, 200);
     for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
-      const r = await fetch(`${base}/audio/abc.wav`, { method });
+      const r = await fetch(`${base}/audio/abc-0.wav`, { method });
       assert.equal(r.status, 405, method);
       assert.equal(r.headers.get("allow"), "GET, HEAD");
     }
@@ -170,6 +170,6 @@ test("a WAV the shared parser rejects (no fmt chunk) takes the tts failed path",
   const noFmt = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), Buffer.from("data"), Buffer.from([4, 0, 0, 0]), Buffer.alloc(4)]);
   const { voice, bus, rec } = setup(async () => noFmt);
   await sayAndWait(voice, say("u1"));
-  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error", final: true } }]);
   assert.deepEqual(rec.msgs("error"), ["tts failed"]);
 });

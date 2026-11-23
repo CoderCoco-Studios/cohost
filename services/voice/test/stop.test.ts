@@ -30,7 +30,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 const deferred = () => { let release!: () => void; const gate = new Promise<void>((r) => { release = r; }); return { gate, release }; };
 const httpStatus = (voice: Voice, id: string) => {
   let code = 0;
-  voice.handle({ method: "GET", url: `/audio/${id}.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
+  voice.handle({ method: "GET", url: `/audio/${id}-0.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
   return code;
 };
 async function sayAndWait(voice: Voice, id: string, text?: string) { await voice.onEvent(say(id, text)); await voice.whenIdle(); }
@@ -111,7 +111,7 @@ test("a voice.stop inside the claim window clears its timer: no virtual playing 
 });
 
 // @spec VOICE-STOP-006
-test("a voice.stop after the virtual playing clears the done timer and publishes voice.done interrupted, with no spoken text", async () => {
+test("a voice.stop after the virtual playing clears the done timer and publishes voice.done interrupted with the spoken/unsaid split", async () => {
   const { voice, bus } = setup();
   await sayAndWait(voice, "u1");
   mock.timers.tick(1500);
@@ -119,7 +119,7 @@ test("a voice.stop after the virtual playing clears the done timer and publishes
   assert.deepEqual(bus.of("voice.playing"), [{ id: "u1", seq: 0, sink: "virtual" }]);
   await voice.onEvent(stop());
   await flush();
-  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", interrupted: true }]);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", interrupted: true, spokenText: "", unsaidText: "hello chat" }]);
   mock.timers.tick(60_000);
   await flush();
   assert.equal(bus.of("voice.done").length, 1, "the cleared timer publishes no second done");
@@ -210,7 +210,7 @@ test("a voice.stop while the virtual voice.playing publish is in flight ends the
   await voice.onEvent(stop(["u1"]));
   bus.release();
   await flush();
-  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", interrupted: true }]);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", interrupted: true, spokenText: "", unsaidText: "hello chat" }]);
   mock.timers.tick(60_000);
   await flush();
   assert.equal(bus.of("voice.done").length, 1, "no second, timed done");

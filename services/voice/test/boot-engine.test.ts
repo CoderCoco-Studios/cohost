@@ -126,7 +126,7 @@ test("an incomplete engine configuration starts voice, publishes degraded with t
 
     await t.bus.subscribed[0]!.handler(event("brain.say", { id: "u1", text: "hello", emotion: "happy", gesture: "wave" }) as never);
     await waitFor(() => t.bus.of("voice.done").length === 1, "the line fails at once", 3000);
-    assert.deepEqual(t.bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "error" }], reason);
+    assert.deepEqual(t.bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "error", final: true }], reason);
     assert.deepEqual(t.bus.of("voice.utterance"), []);
     assert.ok(t.rec.msgs("error").includes("tts failed"), reason);
   }

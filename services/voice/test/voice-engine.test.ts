@@ -76,7 +76,7 @@ test("audio an adapter rejects, or audio of zero frames, fails the line on the `
       const { voice, bus, rec } = setup(synthOf(openaiAt(s)));
       await voice.onEvent(say("u1"));
       await voice.whenIdle();
-      assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error" } }], what);
+      assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error", final: true } }], what);
       assert.deepEqual(rec.msgs("error"), ["tts failed"], what);
     } finally { await s.close(); }
   }

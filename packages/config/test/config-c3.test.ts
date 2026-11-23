@@ -171,7 +171,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
   for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
 });
 
-// @spec CFG-USR-015
+// @spec CFG-USR-015, CFG-USR-021
 test("the shipped example writes the former per-machine values as literals, holds no placeholder and no secret key", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{/);
@@ -182,7 +182,7 @@ test("the shipped example writes the former per-machine values as literals, hold
   assert.equal(cfg.avatar.vtube_studio.plugin_developer, "cohost");
   assert.equal(cfg.ears.stt_model, "Systran/faster-whisper-small");
   assert.equal(cfg.llm.bedrock.region, "");
-  assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 }, models: { max_bytes: 104857600 } });
   const has = (path: string): boolean => path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), cfg) !== undefined;
   for (const p of SECRET_PATHS) assert.equal(has(p), false, `${p} belongs in secrets.yaml`);
 });

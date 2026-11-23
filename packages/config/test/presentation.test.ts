@@ -50,7 +50,7 @@ test("every declared section has a one-line title, group and about", () => {
 // @spec CFG-PRES-003
 test("a section's page names another declared section", () => {
   const pages = Object.entries(PRESENTATION.sections).filter(([, e]) => e.page !== undefined);
-  assert.deepEqual(pages.map(([s, e]) => [s, e.page]), [["brain.working_memory_events", "brain.memory"], ["brain.working_memory_own_lines", "brain.memory"]]);
+  assert.deepEqual(pages.map(([s, e]) => [s, e.page]), [["brain.working_memory_events", "brain.memory"], ["brain.working_memory_own_lines", "brain.memory"], ["renderer", "avatar"]]);
   for (const [s, e] of pages) {
     assert.ok(SECTION_LIST.includes(e.page!), `${s}: page ${e.page} is not a declared section`);
     assert.notEqual(e.page, s);
@@ -134,7 +134,7 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
   }
 });
 
-// @spec CFG-PRES-006
+// @spec CFG-PRES-006, CFG-PRES-020
 test("the widget assignments are fixed: timezone, voice, textarea, sources, lang_code options and the model kinds", () => {
   const w = (k: string) => PRESENTATION.keys[k]?.widget;
   assert.deepEqual(w("cohost.timezone"), { type: "timezone" });
@@ -154,7 +154,7 @@ test("the widget assignments are fixed: timezone, voice, textarea, sources, lang
     return undefined;
   };
   // voice.openai.model is a free-text TTS model name (CFG-SCH-059), not a model widget kind, so it is left out here.
-  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k) && k !== "voice.openai.model");
+  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k) && k !== "voice.openai.model" && k !== "renderer.model");
   assert.equal(modelKeys.length, 9);
   for (const k of modelKeys) assert.deepEqual(w(k), { type: "model", kind: expected(k) }, k);
   // And nothing else is a model widget.

@@ -706,12 +706,12 @@ test("vision.obs, avatar.vtube_studio and avatar.vmc are required objects whose 
   assert.equal(ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: { host: "10.0.0.2", port: 9 }, vmc: { host: "h", port: 1 } } }).avatar.vtube_studio.host, "10.0.0.2");
 });
 
-// @spec CFG-SCH-038
+// @spec CFG-SCH-038, CFG-SCH-100
 test("dashboard.port and lan_port are ports 1 to 65535 defaulting to 3000 and 3001, inject limits default, and equal ports fail on dashboard.lan_port", () => {
   const dash = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), dashboard: v });
-  assert.deepEqual(dash({}).data!.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 } });
+  assert.deepEqual(dash({}).data!.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 }, models: { max_bytes: 104857600 } });
   assert.deepEqual(dash({ inject: {} }).data!.dashboard.inject, { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 });
-  assert.deepEqual(dash({ port: 8080, lan_port: 8081, inject: { ttl_ms: 1000 } }).data!.dashboard, { port: 8080, lan_port: 8081, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 1000 } });
+  assert.deepEqual(dash({ port: 8080, lan_port: 8081, inject: { ttl_ms: 1000 } }).data!.dashboard, { port: 8080, lan_port: 8081, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 1000 }, models: { max_bytes: 104857600 } });
   for (const [k, v] of [["port", 0], ["port", 65536], ["port", 1.5], ["lan_port", 0], ["lan_port", 70000]] as const) {
     const r = dash({ [k]: v });
     assert.ok(!r.success && r.error.issues.some((i) => i.path.join(".") === `dashboard.${k}`), `${k}=${v}`);

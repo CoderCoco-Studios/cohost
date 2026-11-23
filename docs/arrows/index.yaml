@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "213 specs: 144 [x], 64 [ ], 5 [D] (streamed-speech clause specs, the early-reply specs BUS-EVT-052 to 060 and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
+    next: "213 specs: 162 [x], 46 [ ], 5 [D] (streamed-speech clause specs and the early-reply specs BUS-EVT-052 to 060 are open gaps)."
     drift: null
 
   model-backends:

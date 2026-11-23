@@ -3,7 +3,8 @@ import { urls, type Logger } from "@cohost/config";
 import type { AckError, BusReader, RawEntry, BusTransport, TransportFactory, FrameTransport, FrameTransportFactory, FrameReader } from "./transport.js";
 import { EventPayloads, type BusEvent, type EventInput, type EventType } from "./events.js";
 import { HEALTH_MAXLEN, connectorKey, createNativeTransport } from "./native.js";
-import { audioStreamName, createFrameTransport } from "./frames.js";
+import { audioStreamName, avatarFramesStream, createFrameTransport } from "./frames.js";
+import { AvatarFrameSchema, type AvatarFrame } from "./avatar-frame.js";
 import {
   LEASE_INTERVALS, MAX_FRAME_BYTES, parseRegistration,
   type AudioDirection, type DecodedFrame, type Frame, type Registration,
@@ -13,6 +14,7 @@ export * from "./events.js";
 export * from "./connector.js";
 export * from "./registrar.js";
 export * from "./transport.js";
+export * from "./avatar-frame.js";
 
 export const STREAM = "cohost:events";
 /** Heartbeats live on their own capped stream so they never evict domain events. */
@@ -206,6 +208,64 @@ export class Bus {
         }
       }
     } finally { closeQuietly(reader); }
+  }
+
+  /** The avatar-frame stream's name for this instance's prefix; built by `avatarFramesStream` in frames.ts (BUS-AVF-001). */
+  // @spec BUS-AVF-001, BUS-NAT-API-001
+  avatarFramesStream(): string { return avatarFramesStream(this.prefix); }
+
+  /**
+   * Validate one avatar frame and write it to the avatar-frame stream on the frames publish connection. A frame the
+   * schema refuses rejects `BUS_INVALID` and writes nothing; no frame is queued while Redis is down (BUS-AVF-009).
+   */
+  // @spec BUS-AVF-004, BUS-AVF-009, BUS-AVF-010, BUS-NAT-API-003
+  async publishAvatarFrame(frame: AvatarFrame): Promise<void> {
+    const parsed = AvatarFrameSchema.safeParse(frame);
+    if (!parsed.success) throw Object.assign(new Error(`avatar frame refused: ${parsed.error.message}`), { code: "BUS_INVALID" });
+    await this.frames.appendAvatarFrame(parsed.data);
+  }
+
+  /**
+   * Live read of the avatar-frame stream: a loop of `readAvatarFrames` from `$`, handing each decoded frame to `handler`
+   * in stream order. Returns a function that ends the loop and closes its reader; `stop()` ends it too (BUS-AVF-007).
+   */
+  // @spec BUS-AVF-007, BUS-AVF-012, BUS-NAT-API-003, BUS-STOP-001
+  tailAvatarFrames(handler: (frame: AvatarFrame, id: string) => void): () => void {
+    let ended = false;
+    let closed = false;
+    let reader: FrameReader | undefined;
+    try { reader = this.frames.openReader(); } catch (err) {
+      if (!this.stopped) throw err;
+      ended = true;
+    }
+    const close = () => { if (!closed && reader) { closed = true; closeQuietly(reader); } };
+    if (reader) void this.avatarLoop(reader, () => ended || this.stopped, close, handler);
+    return () => { ended = true; close(); };
+  }
+
+  /** The loop of `tailAvatarFrames`. A failed read is logged, backed off, and read again from `$` (BUS-AVF-012). */
+  private async avatarLoop(reader: FrameReader, ended: () => boolean, close: () => void, handler: (frame: AvatarFrame, id: string) => void): Promise<void> {
+    let last = "$";
+    let failures = 0;
+    try {
+      while (!ended()) {
+        let rows;
+        try {
+          rows = await reader.readAvatarFrames(last, 5000);
+        } catch (err) {
+          if (ended()) break;
+          await this.backoff(err, ++failures, "tailAvatarFrames read failed");
+          last = "$";
+          continue;
+        }
+        failures = 0;
+        if (!rows) continue;
+        for (const row of rows) {
+          last = row.id;
+          this.guard(() => handler(row.frame, row.id), "avatar-frames", row.id);
+        }
+      }
+    } finally { close(); }
   }
 
   /** Publish a heartbeat to `cohost:health` (validated; never touches `cohost:events`). */

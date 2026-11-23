@@ -56,7 +56,7 @@ const bob = { user: "bob", regular: false, msgCount: 2, notes: [{ layer: "recent
 // @spec CTX-NOTES-004, CTX-NOTES-005, CTX-NOTES-009
 test("buildMessages: a People here block lists each viewer in reply order with general notes as facts and hints as guidance", () => {
   const s = system({ people: [alice, bob] });
-  const block = s.slice(s.indexOf("## People here"), s.indexOf("## Output"));
+  const block = s.slice(s.indexOf("## People here"), s.indexOf(notice));
   assert.equal(
     block.trim(),
     [
@@ -143,7 +143,7 @@ const mem = (over: Record<string, unknown>) => ({ ts: Date.UTC(2026, 0, 2, 12), 
 /** The lines of the `## Things you remember` block, header excluded. */
 const memLines = (memories: unknown[]) => {
   const s = system({ memories: memories as never });
-  return s.slice(s.indexOf("## Things you remember"), s.indexOf("## Output")).trim().split("\n").slice(1).filter(Boolean).filter((l) => l.startsWith("- ("));
+  return s.slice(s.indexOf("## Things you remember"), s.search(/^## Output/m)).trim().split("\n").slice(1).filter(Boolean).filter((l) => l.startsWith("- ("));
 };
 const notice = untrustedNotice("what a viewer wrote in chat, or what is remembered about a viewer");
 const general = (text: string) => ({ layer: "recent" as const, category: "general" as const, text, strength: 0.8 });

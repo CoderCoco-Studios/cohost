@@ -688,13 +688,26 @@ test("note text never reaches logs at info or above, nor any brain.status detail
 // ---- issue 173: safe prompts, critic rewrite flow, repetition check, heard text ----
 
 const SAME = "see you all tomorrow night friends";
-const finish = async (c: ReturnType<typeof setup>) =>
-  c.cortex.onEvent(event("voice.done", { id: c.bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+/** FakeBus does not loop a published event back, so replay each new `brain.say` to the cortex as the real bus would. */
+const echoed = new WeakMap<object, number>();
+const echoNew = async (c: ReturnType<typeof setup>) => {
+  const say = c.bus.of("brain.say");
+  for (let i = echoed.get(c) ?? 0; i < say.length; i++) {
+    const { id, ...rest } = say[i]!;
+    await c.cortex.onEvent(event("brain.say", { id, ...rest }, "cortex"));
+  }
+  echoed.set(c, say.length);
+};
+const thinkE = async (c: ReturnType<typeof setup>) => { await c.cortex.think(mention()); await echoNew(c); };
+const finish = async (c: ReturnType<typeof setup>) => {
+  await echoNew(c);
+  await c.cortex.onEvent(event("voice.done", { id: c.bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+};
 const selfLines = (c: ReturnType<typeof setup>) => c.cortex.ctx.all().filter((e) => e.kind === "self");
 
 // @spec CTX-VIEWER-001, CTX-VIEWER-004
 test("viewer note: the viewer's name is written as speakerLabel, in the new-here and the regular note", async () => {
-  const { cortex, llm } = setup();
+  const { cortex, llm, bus } = setup();
   const odd = "ev[il]: «x»";
   await cortex.onEvent(event("memory.viewer", { user: odd, isNew: true, msgCount: 1, regular: false }));
   await cortex.think(mention(odd));
@@ -703,7 +716,7 @@ test("viewer note: the viewer's name is written as speakerLabel, in the new-here
 
   const long = "n".repeat(100);
   await cortex.onEvent(event("memory.viewer", { user: long, isNew: false, msgCount: 40, regular: true }));
-  await cortex.onEvent(event("voice.done", { id: "none", seq: 0, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
   await cortex.think(mention(long));
   assert.match(llm.system, new RegExp(`- n{39}… is a regular \\(40 messages\\)\\.`));
 });
@@ -738,7 +751,7 @@ test("critic rewrite: the critic's [gesture:...] is stripped, and a model reply 
 
 // @spec CTX-CRITIC-008, CTX-CRITIC-007
 test("critic rewrite: a replacement under two characters once parsed says nothing and ends the think", async () => {
-  for (const text of ["x", "[sad] k", "«»", "\nhello there"]) {
+  for (const text of ["x", "[sad] k", "«»", "k\nhello there, a longer second line"]) { // first line only: the second is never read
     const c = setup({ critic: () => ({ ok: true, text }) });
     await c.cortex.think(mention());
     assert.equal(c.bus.of("brain.say").length, 0, JSON.stringify(text));
@@ -780,10 +793,10 @@ test("think: the prompt sent to the model carries the notice and a quoted, bound
 test("repeat: the first reply is said (no self line, no hit); an identical second reply is withheld with no further LLM request", async () => {
   const c = setup();
   c.llm.reply = () => `[happy] ${SAME}`;
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 1, "an empty window finds no hit");
   await finish(c);
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 1, "the repeat is not published");
   assert.equal(c.llm.calls.length, 2, "one request per think: no retry for the repeat");
   assert.deepEqual(c.statuses(), ["thinking", "speaking", "idle", "thinking", "idle"]);
@@ -793,13 +806,13 @@ test("repeat: the first reply is said (no self line, no hit); an identical secon
 test("repeat: a near-identical reply at or above brain.cortex.repeat_similarity is withheld; a different one is said", async () => {
   const c = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { repeat_similarity: 0.6 } } } });
   c.llm.reply = () => "[happy] see you all tomorrow night friends";
-  await c.cortex.think(mention());
+  await thinkE(c);
   await finish(c);
   c.llm.reply = () => "[happy] see you all tomorrow evening friends"; // 5 shared of 7 distinct = 0.71
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 1);
   c.llm.reply = () => "[happy] totally unrelated thought about cheese";
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 2);
   assert.equal(c.bus.of("brain.say")[1]!.text, "totally unrelated thought about cheese");
 });
@@ -808,9 +821,9 @@ test("repeat: a near-identical reply at or above brain.cortex.repeat_similarity 
 test("repeat: brain.cortex.repeat_similarity 0 turns the check off", async () => {
   const c = setup({ cfg: { brain: { memory: { recall_k: 0 }, cortex: { repeat_similarity: 0 } } } });
   c.llm.reply = () => `[happy] ${SAME}`;
-  await c.cortex.think(mention());
+  await thinkE(c);
   await finish(c);
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 2);
 });
 
@@ -820,14 +833,14 @@ test("repeat: a reflex line and an operator line are in the comparison set a lat
   await reflex.cortex.onEvent(event("brain.say", { id: "r1", text: SAME, emotion: "surprised", reason: "reflex: died" }, "salience"));
   await reflex.cortex.onEvent(event("voice.done", { id: "r1", seq: 0, sink: "x" }));
   reflex.llm.reply = () => `[happy] ${SAME}`;
-  await reflex.cortex.think(mention());
+  await thinkE(reflex);
   assert.equal(reflex.bus.of("brain.say").length, 0, "repeats the reflex line");
 
   const op = setup();
   await op.cortex.onEvent(event("control", { cmd: "say", text: SAME }));
-  await op.cortex.onEvent(event("voice.done", { id: op.bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
+  await finish(op);
   op.llm.reply = () => `[happy] ${SAME}`;
-  await op.cortex.think(mention());
+  await thinkE(op);
   assert.equal(op.bus.of("brain.say").length, 1, "repeats the operator line");
 });
 
@@ -854,10 +867,10 @@ test("repeat: the check makes no call on a line that did not come from a think (
 test("repeat: a critic rewrite is checked too, so a rewrite into a repeat is withheld", async () => {
   const c = setup({ critic: (i) => (i.text === "hello" ? { ok: true, text: SAME } : { ok: true }) });
   c.llm.reply = () => `[happy] ${SAME}`;
-  await c.cortex.think(mention());
+  await thinkE(c);
   await finish(c);
   c.llm.reply = () => "[happy] hello";
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 1);
 });
 
@@ -870,10 +883,10 @@ test("repeat: a recent line counts as what was heard, else its fallback, else as
   await c.cortex.onEvent(event("brain.say", { id: "a", text: meant, emotion: "happy" }, "cortex"));
   c.cortex.ctx.markHeard("a", heardText);
   c.llm.reply = () => `[happy] ${heardText}`;
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 0, "equals what was heard");
   c.llm.reply = () => `[happy] ${meant}`;
-  await c.cortex.think(mention());
+  await thinkE(c);
   assert.equal(c.bus.of("brain.say").length, 1, "the meant text was not heard, so it is not a repeat");
 
   // fallback replaces the text
@@ -900,7 +913,7 @@ test("an interrupted voice.done with spokenText records it as the heard text of 
   await c.cortex.onEvent(event("voice.done", { id: "r1", seq: 0, sink: "x", interrupted: true, spokenText: "a long line" }));
   const line = selfLines(c)[0]!;
   assert.equal(line.kind === "self" && line.heard, "a long line");
-  assert.deepEqual(c.statuses(), ["speaking", "idle"]);
+  assert.deepEqual(c.statuses(), ["idle"]);
 });
 
 // @spec CTX-EVT-011

@@ -44,6 +44,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Work Required
 
-- Viewer identity (design 2026-11-16, no code): `viewerKey` and the counter's exact viewer key (SHARED-GUARD-020, SHARED-GUARD-021, SHARED-GUARD-025 to SHARED-GUARD-027); `untrustedToolNotice` and the totality rule (SHARED-GUARD-003, SHARED-GUARD-028 to SHARED-GUARD-030).
+- Viewer identity: `viewerKey` has no code (SHARED-GUARD-025 to SHARED-GUARD-027). The counter's `admit` is built to support SHARED-GUARD-022 and SHARED-GUARD-023; its verification of SHARED-GUARD-020 and SHARED-GUARD-021, including that a refusal records nothing, belongs to #174.
+- Untrusted guard totality and tool notice: the totality rule (SHARED-GUARD-003) and `untrustedToolNotice` (SHARED-GUARD-028 to SHARED-GUARD-030) belong to #202.
 ### Must Fix
 None outstanding for the untrusted text guard's built surface (SHARED-GUARD-001, 002, 004 to 019, 022 to 024).

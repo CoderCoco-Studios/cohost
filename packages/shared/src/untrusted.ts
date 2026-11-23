@@ -20,7 +20,7 @@ const LINE_BREAKS = /[\t\n\u000B\u000C\r\u0085]/g;
  * the C0 and C1 ranges here cover only what is left of them.
  */
 const REMOVED =
-  /[\u0000-\u0008\u000E-\u001F\u007F-\u0084\u0086-\u009F­؜​‎‏‪-‮⁠-⁤⁦-⁩﻿\u{E0000}-\u{E007F}]/gu;
+  /[\u0000-\u0008\u000E-\u001F\u007F-\u0084\u0086-\u009F\u00AD\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/gu;
 /** SHARED-GUARD-007: any run of Unicode white space. */
 const WHITE_SPACE_RUN = /\s+/g;
 const TRAILING_SPACE = /\s+$/;
@@ -36,11 +36,14 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  */
 // @spec SHARED-GUARD-004, SHARED-GUARD-005, SHARED-GUARD-006, SHARED-GUARD-007, SHARED-GUARD-008, SHARED-GUARD-009, SHARED-GUARD-010, SHARED-GUARD-024
 export function boundText(raw: string, max: number): string {
+  // Fail closed: a bound that is not at least 1 (NaN, zero, negative) admits no text at all.
+  if (!(max >= 1)) return "";
+  const limit = Math.floor(max);
   const flat = raw.replace(LINE_BREAKS, " ").replace(REMOVED, "").replace(WHITE_SPACE_RUN, " ").trim();
   const codePoints = [...flat];
-  if (codePoints.length <= max) return flat;
+  if (codePoints.length <= limit) return flat;
 
-  const keep = Math.max(0, max - 1);
+  const keep = limit - 1;
   // Code-point offsets at which a grapheme cluster starts or ends, from the start of `flat`.
   let cut = 0;
   let offset = 0;

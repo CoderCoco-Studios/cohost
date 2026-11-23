@@ -15,8 +15,8 @@ import {
 
 const cp = (s: string) => [...s].length;
 const BIG = 10_000;
-const FAMILY = "\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}"; // 7 code points, 1 grapheme
-const E_ACUTE = "é"; // 2 code points, 1 grapheme
+const FAMILY = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}"; // 7 code points, 1 grapheme
+const E_ACUTE = "e\u0301"; // 2 code points, 1 grapheme
 
 // @spec SHARED-GUARD-001
 test("the shared package exports the ./untrusted subpath beside the main entry and ./discord-voice", () => {
@@ -50,13 +50,13 @@ test("boundText removes the listed control, bidi, zero-width, soft-hyphen, BOM a
 
 // @spec SHARED-GUARD-006
 test("boundText keeps ZWJ and ZWNJ, so emoji sequences survive", () => {
-  assert.equal(boundText(`a‍b‌c`, BIG), "a‍b‌c");
+  assert.equal(boundText(`a\u200Db\u200Cc`, BIG), "a\u200Db\u200Cc");
   assert.equal(boundText(FAMILY, BIG), FAMILY);
 });
 
 // @spec SHARED-GUARD-007
 test("boundText collapses every Unicode white-space run to one space and trims both ends", () => {
-  assert.equal(boundText("  a    b　c  ", BIG), "a b c");
+  assert.equal(boundText("  a \u00A0\u2003 b\u3000c  ", BIG), "a b c");
   assert.equal(boundText("   ", BIG), "");
   assert.equal(boundText("\n\t a \r\n", BIG), "a");
 });
@@ -64,11 +64,11 @@ test("boundText collapses every Unicode white-space run to one space and trims b
 // @spec SHARED-GUARD-024
 test("boundText step order: spaces, removal, collapse and trim, then cut", () => {
   // removal happens before collapse: a removed char between spaces leaves one space, not two
-  assert.equal(boundText("a ​ b", BIG), "a b");
+  assert.equal(boundText("a \u200B b", BIG), "a b");
   // newline turns into a space before removal, so it still separates words
-  assert.equal(boundText("a\n​b", BIG), "a b");
+  assert.equal(boundText("a\n\u200Bb", BIG), "a b");
   // collapse and trim happen before the cut: leading/inner junk does not count toward max
-  assert.equal(boundText("   ​​ hello   ", 5), "hello");
+  assert.equal(boundText("   \u200B\u200B hello   ", 5), "hello");
   assert.equal(boundText("a\n\n\n\n\n\n\nb", 3), "a b");
 });
 
@@ -98,6 +98,17 @@ test("boundText backs off so a grapheme cluster is never split", () => {
   assert.equal(boundText(`${FAMILY}${FAMILY}${FAMILY}`, 10), `${FAMILY}…`);
 });
 
+// @spec SHARED-GUARD-008
+test("boundText fails closed when max is NaN, zero or negative, and floors a fractional max", () => {
+  for (const max of [NaN, 0, -3]) {
+    assert.equal(boundText("abc", max), "", `max=${max}`);
+    assert.equal(boundText("", max), "", `max=${max} empty`);
+  }
+  assert.equal(boundText("abcdef", 2.7), "a…"); // floored to 2
+  assert.equal(boundText("abc", 0.5), "");
+  assert.ok(cp(boundText("a".repeat(500), 2.9)) <= 2.9);
+});
+
 // @spec SHARED-GUARD-009
 test("boundText returns the ellipsis alone when no whole cluster fits", () => {
   assert.equal(boundText(`${FAMILY}abc`, 3), "…");
@@ -109,13 +120,13 @@ test("boundText returns the ellipsis alone when no whole cluster fits", () => {
 // @spec SHARED-GUARD-010
 test("boundText is idempotent over a hostile corpus for several max values", () => {
   const corpus = [
-    "", " ", "plain", "a\r\nb\tc", "\u0085x\u0085", "‮evil‬", "tag\u{E0041}\u{E0042}s",
+    "", " ", "plain", "a\r\nb\tc", "\u0085x\u0085", "\u202Eevil\u202C", "tag\u{E0041}\u{E0042}s",
     FAMILY, FAMILY.repeat(4), `${E_ACUTE}${E_ACUTE}${E_ACUTE}`, "a".repeat(300), "word ".repeat(80),
-    `ab ${FAMILY} cd`, "‍a‌", "…", "a…b…", "x ​  y", "\u{1F600}".repeat(50),
-    "é́́ é", "   lead and trail   ",
+    `ab ${FAMILY} cd`, "\u200Da\u200C", "…", "a…b…", "x \u200B  y", "\u{1F600}".repeat(50),
+    "e\u0301\u0301\u0301 e\u0301", "   lead and trail   ",
   ];
   // deterministic pseudo-random strings from a hostile alphabet
-  const alphabet = ["a", "b", " ", "\n", "​", "‍", "́", "\u{1F468}", "\u{1F469}", "…", "‮", "­", "z"];
+  const alphabet = ["a", "b", " ", "\n", "\u200B", "\u200D", "\u0301", "\u{1F468}", "\u{1F469}", "…", "\u202E", "\u00AD", "z"];
   let seed = 12345;
   const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff);
   for (let i = 0; i < 300; i++) {
@@ -164,7 +175,7 @@ test("speakerLabel turns [ ] ( ) : « » into spaces, then bounds", () => {
 
 // @spec SHARED-GUARD-014
 test("speakerLabel returns unknown for an empty result at any max, never shortened", () => {
-  for (const raw of ["", "   ", "[]()::«»", "​‮"]) {
+  for (const raw of ["", "   ", "[]()::«»", "\u200B\u202E"]) {
     for (const max of [2, 3, 5, 64]) assert.equal(speakerLabel(raw, max), "unknown", `${JSON.stringify(raw)} max=${max}`);
   }
 });

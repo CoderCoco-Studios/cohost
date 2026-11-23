@@ -4,7 +4,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
-**PARTIAL**: 173 specs: 159 implemented, 0 deferred, 14 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows and forgetting removed chat are implemented in the in-memory store and the region; the Postgres side (MEM-STORE-004, the `memories` columns and indexes, and the `chat` row and forget SQL in both stores) is written but unproven locally, because the Postgres tests skip without COHOST_TEST_DATABASE_URL. Existing dev `memories` tables without the new columns must be recreated. Open gaps: the streamed-speech clause writes (MEM-WRITE-010 to MEM-WRITE-019), MEM-STORE-004, and three pre-existing gaps (MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). Retention of YouTube viewers is an owner decision recorded in the LLD.
+**PARTIAL**: 173 specs: 160 implemented, 0 deferred, 13 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Open gaps: the streamed-speech clause writes (MEM-WRITE-010 to MEM-WRITE-019) and three pre-existing gaps (MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References
 
@@ -15,7 +15,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (173 specs: 159 `[x]`, 14 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+- docs/intent/memory/memory-specs.md (173 specs: 160 `[x]`, 13 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
 
 ### Choices
 - Chat lines have `«` and `»` replaced with straight quotes before bounding, so no hook payload carries those marks (MEM-CAPTURE-020). Speech lines are not changed.
@@ -28,7 +28,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 ## Work Required
 
 ### Must Fix
-- Verify MEM-STORE-004 and the Postgres `chat` row and forget SQL against a live database (COHOST_TEST_DATABASE_URL).
+None.
 
 ### Nice to Have
 None.

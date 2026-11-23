@@ -195,6 +195,8 @@ When the owner has enabled tools, the model may ask for one in the middle of a r
 - *One set of tags.* The line's emotion and gesture are decided once, from the first text of the reply; the leading tags of a later round are removed with the other bracketed text.
 - *One numbering.* Clause numbers continue across rounds and `max_clauses` counts every clause of the reply, the filler and the built-in line included. A round that reaches it ends the reply cut `length`, and the calls of that round are not run.
 
+**Cut-off calls.** The provider gives no flag for a call it dropped at the token cap, so cortex treats a round that offered tools and finished `length` as a cut-off call: it runs none of the round's calls, logs a warning and sets the heartbeat detail (CTX-TOOL-018, CTX-HEALTH-009). The detail clears when a later round that offered tools finishes without `length`. This is a heuristic: a `length` finish with no call in it is treated the same way.
+
 **Calls.** A round that ends with finish `tool_calls` hands cortex calls, taken in the order the model asked, up to `tools.reply.max_calls` (default 3).
 
 - cortex answers a call itself, with an error `tool` message and no request, when its arguments are `invalid`, when its name was not offered, or when it is beyond the maximum.

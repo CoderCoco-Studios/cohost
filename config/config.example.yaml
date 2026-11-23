@@ -389,7 +389,7 @@ tools:
     cache_ms: 30000            # how long the stream's title and game are remembered (ms; 0 reads them every time)
   reply:
     max_rounds: 3              # rounds of tool calls one reply may take (at least 1)
-    max_calls: 3               # tool calls one reply may make in all (at least 1)
+    max_calls: 3               # tool calls one round of a reply may make; each round has its own count (at least 1)
     budget_ms: 30000           # time one reply may spend on tool calls in all (ms)
     filler_after_ms: 1500      # a call still running after this long gets a filler line; 0 says one at once (ms)
     max_tokens: 512            # the longest model answer, in tokens, for one tool-using step (at least 1)

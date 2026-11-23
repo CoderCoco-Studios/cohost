@@ -1,4 +1,4 @@
-import { type HeartbeatSpec } from "@cohost/shared";
+import type { Heartbeat, HeartbeatSpec } from "@cohost/shared";
 import { classifyFailure, collect, type Synth, type TtsEngine } from "./engine.js";
 
 /** While `tts` is down and the engine has a probe, the probe runs this often (VOICE-HLTH-007). */
@@ -8,6 +8,8 @@ export const PROBE_MS = 10_000;
  * voice depends on its TTS server, named `tts` whichever engine serves it. `stub` has no dependency (`n/a`, mode `mock`).
  * An engine with a probe starts `down` until a probe succeeds; an incomplete configuration starts `down` with its reason;
  * any other engine starts `ok` and follows the outcome of its own synthesis (VOICE-HLTH-001 to VOICE-HLTH-010).
+ * Once bound to the heartbeat, the published state follows `tts`: `ready` while it is ok, and `degraded` with the engine,
+ * the host and the reason while it is down (VOICE-EGR-002, VOICE-GAP-003).
  */
 export class VoiceHealth {
   private tts: "ok" | "down";
@@ -15,18 +17,25 @@ export class VoiceHealth {
   private timer: NodeJS.Timeout | undefined;
   private stopped = false;
   private abort = new AbortController();
+  private hb: Heartbeat | undefined;
+  private label: string;
   readonly spec: HeartbeatSpec;
 
   constructor(private engine: TtsEngine) { // @spec VOICE-HLTH-001, VOICE-HLTH-003, VOICE-HLTH-009, VOICE-EGR-002
     this.tts = engine.configError || engine.ping ? "down" : "ok";
-    const label = engine.destination ? `${engine.name} ${engine.destination}` : engine.name;
+    this.label = engine.destination ? `${engine.name} ${engine.destination}` : engine.name;
     this.spec = engine.name === "stub"
-      ? { service: "voice", mode: "mock", deps: () => ({ tts: "n/a" }), detail: label }
-      : {
-        service: "voice", mode: "live", deps: () => ({ tts: this.tts }), detail: label,
-        // the reason an incomplete configuration gives, shown in the heartbeat while tts is down (VOICE-GAP-003)
-        reason: () => (this.engine.configError && this.tts === "down" ? `${label}: ${this.engine.configError}` : undefined),
-      };
+      ? { service: "voice", mode: "mock", deps: () => ({ tts: "n/a" }), detail: this.label }
+      : { service: "voice", mode: "live", deps: () => ({ tts: this.tts }), detail: this.label };
+  }
+
+  /**
+   * Hand voice the running heartbeat once it is ready: the state is set from `tts` now and moves with it from here on.
+   * Called once, by boot, in place of a plain `ready()`.
+   */
+  bind(hb: Heartbeat): void { // @spec VOICE-HLTH-001, VOICE-HLTH-010
+    this.hb = hb;
+    this.sync();
   }
 
   /**
@@ -54,7 +63,7 @@ export class VoiceHealth {
     let ok = false;
     try { ok = await engine.ping(this.abort.signal); } catch { ok = false; } // a throwing probe is a failed one
     if (this.stopped) return;
-    if (ok) this.tts = "ok";
+    if (ok) this.set(true);
     this.scheduleProbe();
   }
 
@@ -64,8 +73,17 @@ export class VoiceHealth {
   }
 
   private set(ok: boolean): void {
+    const was = this.tts;
     this.tts = ok ? "ok" : "down";
     if (!ok) this.scheduleProbe();
+    if (was !== this.tts) this.sync();
+  }
+
+  /** Move the bound heartbeat to match `tts`. */
+  private sync(): void {
+    if (!this.hb) return;
+    if (this.tts === "ok") this.hb.ready();
+    else this.hb.degraded(`${this.label}: ${this.engine.configError ?? "tts is down"}`);
   }
 
   /**

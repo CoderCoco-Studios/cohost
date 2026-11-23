@@ -99,6 +99,9 @@ test("a pocket server that is not up keeps tts down while voice still becomes re
   await waitFor(() => t.bus.health.length >= 2, "a heartbeat after starting");
   assert.notEqual(last(t.bus).state, "starting");
   assert.deepEqual(last(t.bus).deps, { tts: "down" });
+  assert.equal(last(t.bus).state, "degraded");
+  assert.match(String(last(t.bus).detail), /pocket/, "the engine is named while tts is down");
+  assert.match(String(last(t.bus).detail), /127\.0\.0\.1/, "and the host it talks to");
   assert.deepEqual(t.exits, []);
 });
 
@@ -117,7 +120,8 @@ test("an incomplete engine configuration starts voice, reports tts down with the
     await waitFor(() => t.bus.health.length >= 2, "a heartbeat after starting");
     const hb = last(t.bus);
     assert.deepEqual(hb.deps, { tts: "down" }, reason);
-    assert.notEqual(hb.state, "starting", `${reason}: readiness reached`);
+    assert.equal(hb.state, "degraded", `${reason}: readiness reached, published degraded`);
+    assert.match(String(hb.detail), new RegExp(String(voice.engine)), `${reason}: names the engine while down`);
     assert.match(String(hb.detail), new RegExp(reason.replace(/\./g, "\\.")), `${reason}: in the heartbeat detail`);
     assert.deepEqual(t.exits, [], "voice started");
 

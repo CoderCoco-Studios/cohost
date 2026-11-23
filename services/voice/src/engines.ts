@@ -4,7 +4,7 @@
  * every request goes through the engine's gate and is bounded by `voice.timeout_ms` (VOICE-ENG-006 to VOICE-ENG-010).
  */
 import { randomBytes } from "node:crypto";
-import { urls, type Config } from "@cohost/config";
+import { CREDENTIAL_QUERY_NAMES, urls, type Config } from "@cohost/config";
 import { TtsError, TtsGate, type SynthesizeOpts, type TtsAudio, type TtsEngine } from "./engine.js";
 import { readWavStream } from "./wav-reader.js";
 
@@ -39,6 +39,22 @@ export function createEngine(cfg: VoiceCfg): TtsEngine { // @spec VOICE-ENG-001
 
 interface Transport { gate: TtsGate; timeoutMs: number }
 
+/**
+ * A server URL with the parts a credential can hide in removed: user info and credential-named query parameters. The
+ * fingerprint hashes this form, so a rotated key never regenerates the clips (VOICE-CLIP-014).
+ */
+export function redactedUrl(url: string): string { // @spec VOICE-CLIP-014
+  let u: URL;
+  try { u = new URL(url); } catch { return url; }
+  const credentialKeys = [...u.searchParams.keys()].filter((k) => CREDENTIAL_QUERY_NAMES.includes(k));
+  if (!u.username && !u.password && credentialKeys.length === 0) return url;
+  u.username = "";
+  u.password = "";
+  for (const k of credentialKeys) u.searchParams.delete(k);
+  if (u.search === "?") u.search = "";
+  return u.href;
+}
+
 const hostOf = (url: string): string | undefined => { try { return new URL(url).host; } catch { return undefined; } };
 
 const timeoutError = (ms: number) => Object.assign(new Error(`tts timed out after ${ms} ms`), { name: "TimeoutError" });
@@ -49,7 +65,7 @@ const timeoutError = (ms: number) => Object.assign(new Error(`tts timed out afte
  * place is freed only when the response has ended or its connection has closed (VOICE-ENG-013).
  */
 async function speak(t: Transport, o: SynthesizeOpts, send: (signal: AbortSignal) => Promise<Response>): Promise<TtsAudio> { // @spec VOICE-ENG-006, VOICE-ENG-007, VOICE-ENG-008, VOICE-ENG-009, VOICE-ENG-010, VOICE-ENG-013, VOICE-ENG-016
-  const release = await t.gate.acquire(o.priority ?? "line"); // @spec VOICE-ENG-012
+  const release = await t.gate.acquire(o.priority ?? "line", o.signal); // @spec VOICE-ENG-012
   const ac = new AbortController();
   let timedOut = false;
   let timer: NodeJS.Timeout | undefined;
@@ -80,13 +96,17 @@ async function speak(t: Transport, o: SynthesizeOpts, send: (signal: AbortSignal
     }
   }
 
+  let res: Response | undefined;
   try {
     arm();
-    const res = await send(ac.signal);
+    res = await send(ac.signal);
     if (!res.ok) throw new TtsError(res.status, await res.text()); // @spec VOICE-POC-006
     const audio = await readWavStream(res.body ?? (async function* () { /* an empty body */ })(), { onPcm: arm });
     return { format: audio.format, chunks: relay(audio.chunks) };
   } catch (err) {
+    // The connection is closed before the place is freed, so the next request never meets a half-read one.
+    ac.abort(err);
+    await res?.body?.cancel().catch(() => undefined);
     throw failure(err);
   }
 }
@@ -111,13 +131,13 @@ function kokoroEngine(cfg: VoiceCfg): TtsEngine {
       body: JSON.stringify({ ...kokoroRequestSettings(cfg), input: text }),
       signal,
     })),
-    fingerprint: () => ({ name: "kokoro", url: urls.tts(), ...kokoroRequestSettings(cfg) }), // @spec VOICE-CLIP-013, VOICE-CLIP-014, VOICE-CLIP-015
+    fingerprint: () => ({ name: "kokoro", url: redactedUrl(urls.tts()), ...kokoroRequestSettings(cfg) }), // @spec VOICE-CLIP-013, VOICE-CLIP-014, VOICE-CLIP-015
   };
 }
 
 function openaiEngine(cfg: VoiceCfg): TtsEngine { // @spec VOICE-OAI-003
   const o = cfg.openai;
-  const fingerprint = { name: "openai", url: o.base_url, voice: cfg.voice, model: o.model, speed: cfg.speed };
+  const fingerprint = { name: "openai", url: redactedUrl(o.base_url), voice: cfg.voice, model: o.model, speed: cfg.speed };
   if (!o.base_url) return gap("openai", "tts not configured: voice.openai.base_url is not set", fingerprint);
   if (!o.model) return gap("openai", "tts not configured: voice.openai.model is not set", fingerprint, hostOf(o.base_url));
   if (!cfg.voice) return gap("openai", "tts not configured: voice.voice is not set", fingerprint, hostOf(o.base_url));
@@ -149,7 +169,7 @@ function multipart(fields: Record<string, string>): { type: string; body: Buffer
 function pocketEngine(cfg: VoiceCfg): TtsEngine { // @spec VOICE-POC-004
   const url = cfg.pocket.url.replace(/\/+$/, "");
   const voice = cfg.voice;
-  const fingerprint = { name: "pocket", url, voice };
+  const fingerprint = { name: "pocket", url: redactedUrl(url), voice };
   if (!url) return gap("pocket", "tts not configured: voice.pocket.url is not set", fingerprint);
   const t: Transport = { gate: new TtsGate(1), timeoutMs: cfg.timeout_ms };
   return {
@@ -163,7 +183,8 @@ function pocketEngine(cfg: VoiceCfg): TtsEngine { // @spec VOICE-POC-004
     // @spec VOICE-HLTH-007
     ping: async (signal) => {
       try {
-        const res = await fetch(`${url}/health`, { signal });
+        // A probe that hangs counts as a failed one after the engine's own timeout (VOICE-HLTH-008).
+        const res = await fetch(`${url}/health`, { signal: AbortSignal.any([signal, AbortSignal.timeout(cfg.timeout_ms)]) });
         await res.text().catch(() => undefined);
         return res.ok;
       } catch { return false; }

@@ -261,7 +261,7 @@ The longest text a viewer may hand to a prompt. Longer text is cut to the limit.
 
 ## `voice`
 
-The `voice` service: text to speech.
+The `voice` service: text to speech. Which engine to choose, and what each sends over the network, is in [Choose a voice engine](../../guide/tune/voice-engine.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |

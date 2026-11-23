@@ -72,7 +72,7 @@ export async function runVoice(boot: VoiceBoot = {}): Promise<void> { // @spec V
 
       // Ready means "can receive brain.say": the group exists at the newest entry before the loop reads.
       await bus.resetGroup("voice");
-      heartbeat.ready(); // @spec VOICE-HLTH-001
+      h.bind(heartbeat); // @spec VOICE-HLTH-001, VOICE-GAP-005
       void clips?.start(); // in the background, after ready: a brain.say never waits on clip generation (VOICE-CLIP-003)
       log.info({ port, public: publicUrl, voice: cfg.voice.voice }, "voice online");
 

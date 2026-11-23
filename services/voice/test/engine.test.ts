@@ -101,3 +101,19 @@ test("a place is held until its release is called, and releasing twice frees onl
   await tick();
   assert.equal(third, true);
 });
+
+// @spec VOICE-ENG-013
+test("a waiter whose signal aborts leaves the queue and rejects; the place goes to the next waiter", async () => {
+  const gate = new TtsGate(1);
+  const hold = await gate.acquire("line");
+  const waiting = new AbortController();
+  const gone = gate.acquire("line", waiting.signal).then(() => "granted", (e: unknown) => e);
+  let next = false;
+  const after = gate.acquire("clip").then((release) => { next = true; return release; });
+  waiting.abort(new Error("stopped"));
+  assert.equal(((await gone) as Error).message, "stopped");
+  hold();
+  const release = await after;
+  assert.equal(next, true, "the next waiter gets the freed place");
+  release();
+});

@@ -4,7 +4,7 @@ import { parseWav } from "@cohost/shared";
 import { testConfig, waitFor } from "@cohost/testing";
 import { collect, TtsError, type TtsEngine } from "../src/engine.js";
 import { createEngine } from "../src/engines.js";
-import { fakeServer, pcm, sendWav, sleep, streamedHeader, type FakeServer } from "./tts-helpers.js";
+import { fakeServer, pcm, sendWav, sleep, streamedHeader, wavBytes, type FakeServer } from "./tts-helpers.js";
 
 const voiceCfg = (voice: Record<string, unknown>) => testConfig({ voice }).voice;
 const openai = (server: FakeServer, over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
@@ -360,4 +360,31 @@ test("an unset Kokoro tuning knob is left out of the fingerprint, as it is left 
   assert.equal(tuned.lang_code, "b");
   assert.equal(tuned.volume_multiplier, 1.5);
   assert.deepEqual(tuned.normalization_options, { remove_emoji: true });
+});
+
+// @spec VOICE-CLIP-014
+test("the openai fingerprint carries no user info or credential-named query parameter, and a rotated one does not change it", () => {
+  const cfg = (base_url: string) => createEngine(voiceCfg({ engine: "openai", voice: "nova", openai: { base_url, model: "tts-1" } })).fingerprint();
+  const clean = cfg("https://speech.example.com/v1");
+  const dirty = cfg("https://svc:hunter2@speech.example.com/v1?token=abc&model=x");
+  assert.equal(dirty.url, "https://speech.example.com/v1?model=x");
+  assert.equal(JSON.stringify(dirty).includes("hunter2"), false);
+  assert.equal(JSON.stringify(dirty).includes("abc"), false);
+  assert.deepEqual(cfg("https://other:pw@speech.example.com/v1").url, clean.url);
+});
+
+// @spec VOICE-ENG-011
+test("rejected audio closes its connection before the place is freed: the next request is sent only after that close", async () => {
+  const s = await fakeServer((_req, res, n) => {
+    if (n === 1) { res.writeHead(200); res.write(wavBytes(Buffer.alloc(0), { bits: 8 })); return; } // a reply that is not 16-bit, left open
+    streamed(res, 100);
+  });
+  try {
+    const e = pocket(s);
+    const first = await say(e, "bad").then(() => undefined, (err: unknown) => err);
+    assert.equal((first as Error).message, "tts audio: unsupported bit depth 8");
+    await say(e, "good");
+    assert.ok(s.events.indexOf("close:1") >= 0 && s.events.indexOf("close:1") < s.events.indexOf("start:2"), s.events.join(" "));
+    assert.equal(s.maxInflight, 1);
+  } finally { await s.close(); }
 });

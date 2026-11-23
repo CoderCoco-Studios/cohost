@@ -65,6 +65,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | Tune | Mood | `guide/tune/mood.md` | What the mood is, how it decays, what it changes |
 | Tune | Memory and viewer notes | `guide/tune/memory.md` | What it remembers, regulars, viewer notes and the Viewers page, forgetting |
 | Tune | Choose a model | `guide/tune/model.md` | Local Ollama sizes, a rented GPU box, the Claude API, Amazon Bedrock, mixing |
+| Tune | Choose a voice engine | `guide/tune/voice-engine.md` | Kokoro, Pocket TTS, an OpenAI-compatible server and stub: trade-offs, where the text goes, recipes |
 | Operate | Dashboard tour | `guide/operate/dashboard.md` | Every screen and control, the Access dialog, the keyboard shortcuts, the test side sheet |
 | Operate | Service health | `guide/operate/health.md` | Reading the Services screen: up, degraded, off, mock; the live state of each service when the dashboard serves the page |
 | Operate | Starting and stopping | `guide/operate/start-stop.md` | Launch, Stop, Rebuild, one service at a time, `cohostctl` |

@@ -76,8 +76,6 @@ export interface HeartbeatOptions {
   deps: Record<string, DepStatus> | (() => Record<string, DepStatus>);
   /** Standing note shown while no explicit `degraded(detail)` or dependency-down detail applies. */
   detail?: string;
-  /** Replaces the generic `dependency down: ...` note while a dependency is down, when it returns a reason; undefined keeps the note. */
-  reason?: () => string | undefined;
   intervalMs?: number;
   log?: Logger;
   /** Monotonic millisecond clock for the publish-failure warning rate limit (default `performance.now`). */
@@ -85,7 +83,7 @@ export interface HeartbeatOptions {
 }
 
 /** The service-specific part of the options; what each service's health.ts exports. */
-export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps" | "detail" | "reason">;
+export type HeartbeatSpec = Pick<HeartbeatOptions, "service" | "mode" | "deps" | "detail">;
 
 /**
  * Wrap an async call so its outcome feeds a dependency status:
@@ -142,8 +140,7 @@ export function startHeartbeat(bus: HealthPublisher, opts: HeartbeatOptions): He
     const deps = typeof opts.deps === "function" ? opts.deps() : opts.deps;
     const down = Object.entries(deps).filter(([, v]) => v === "down").map(([k]) => k);
     const state = base === "ready" && down.length ? "degraded" : base;
-    const downNote = state === "degraded" && base === "ready" ? (opts.reason?.() ?? `dependency down: ${down.join(", ")}`) : undefined;
-    const d = detail ?? downNote ?? standing;
+    const d = detail ?? (state === "degraded" && base === "ready" ? `dependency down: ${down.join(", ")}` : undefined) ?? standing;
     return {
       service: opts.service,
       instance: bus.consumer,

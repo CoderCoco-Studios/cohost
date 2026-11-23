@@ -75,13 +75,13 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 **Key Components:**
 1. `index.ts`: supplies the real setup (config, `Bus`, `VOICE_PORT` 8700, `urls.voice()`) to `runVoice`.
 2. `boot.ts`: `runVoice`: heartbeat, HTTP server, consumer-group positioning, `ready`, one bus loop on `brain.say`, `voice.playing`, `voice.failed` and `voice.stop` (`latest`); a startup failure after the configuration loads, or a rejecting subscription, logs `fatal` and exits 1.
-3. `voice.ts`: `Voice` class: internal synthesis queue, store (50 newest), `voice.utterance`, claimed set (pruned with the store), 1.5 s virtual sink with a cancellable virtual done, error release, stop handling, HTTP handler; HTTP handler; it takes a `Synth` and aborts nothing on `voice.stop` (only at shutdown).
+3. `voice.ts`: `Voice` class: internal synthesis queue, store (50 newest), `voice.utterance`, claimed set (pruned with the store), 1.5 s virtual sink with a cancellable virtual done, error release, stop handling and the HTTP handler; it takes a `Synth` and aborts nothing on `voice.stop` (only at shutdown).
 4. `clips.ts`: `ClipService`, the fallback clips.
 5. `wav.ts`: the 30 Hz mouth envelope; `parseWav` comes from `@cohost/shared` (`packages/shared/src/audio.ts`, shared with ears and mouth), as does `wavWrap`, which `collect` uses.
    - `engine.ts`: the `TtsEngine` contract, `TtsAudio`, `Synth`, `TtsError`, `classifyFailure` (line or outage), `collect` (whole audio as a WAV, zero frames rejected) and `TtsGate` (the shared concurrency gate, lines before clip phrases).
    - `engines.ts`: `createEngine(cfg.voice)` for `kokoro`, `openai`, `pocket` and `stub`; each request is bounded by `voice.timeout_ms` and holds its gate place until the response ends or its connection closes. Incomplete configuration gives a gap engine.
    - `wav-reader.ts`: `readWavStream`, the streaming WAV reader the HTTP adapters share.
-6. `health.ts`: `VoiceHealth(engine)`: dependency `tts` (modes `live` / `mock`, `n/a` for stub); `track` classifies each synthesis outcome; a Pocket-style probe (`ping`) starts it down and runs every 10 s while down; the heartbeat `reason` names an incomplete configuration (`VOICE-HLTH-001` to `010`).
+6. `health.ts`: `VoiceHealth(engine)`: dependency `tts` (modes `live` / `mock`, `n/a` for stub); `track` classifies each synthesis outcome; a Pocket-style probe (`ping`, bounded by `voice.timeout_ms`) starts it down and runs every 10 s while down. Once `bind`-ed to the heartbeat, the state is `ready` while `tts` is ok and `degraded` with the engine, host and reason (`VOICE-HLTH-001` to `010`).
 7. Consumers and peers of the protocol: mouth (`discord` sink and clip consumer), dashboard (`dashboard` sink, `/audio/*` proxy), cortex (released by `voice.done`), avatar (lip-sync on `voice.playing`).
 
 ## Spec Coverage
@@ -113,7 +113,7 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 2. **WAV parser and writer are shared.** `parseWav` and `wavWrap` live in `@cohost/shared`; voice uses both (`collect` in `engine.ts` wraps an engine's PCM with `wavWrap`, SHARED-AUDIO-004, and `parseWav` checks the assembled WAV), and ears' and mouth's `readWavHeader` adapt `parseWav`. Voice's own streaming reader (`wav-reader.ts`) is the one the adapters share.
 3. **Port 8700 is published on loopback only.** Compose sets `VOICE_URL=http://voice:8700` for the TS services and publishes `127.0.0.1:8700` for the host-run dashboard (DEPLOY-COMPOSE-007); `urls.voice()` defaults to loopback; browser and OBS sinks go through the dashboard proxy. VOICE-UTT-002 is authoritative for the `audioUrl` base.
 4. **WAV handling is narrow.** Only 16-bit mono PCM at 8000 to 48000 Hz reaches the pipeline; the shared reader names every other format (`VOICE-WAV-*`), and the envelope reads the first channel only.
-5. **Shared heartbeat hook.** `startHeartbeat` (`packages/shared/src/lifecycle.ts`) gained an optional `reason` getter, read only while a dependency is down. Without it the heartbeat reports the generic `dependency down` note, so an incomplete voice configuration (`VOICE-GAP-003`) could not name its reason. No other service sets it.
+5. **Heartbeat detail while down.** voice publishes `degraded` with the engine, host and reason through the existing `heartbeat.degraded(detail)` call, the same pattern connector-discord uses. No shared code changed.
 
 ## Work Required
 

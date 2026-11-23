@@ -1,9 +1,10 @@
 import { test, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
-import { runHeartbeat } from "@cohost/testing";
+import { runHeartbeat, testConfig } from "@cohost/testing";
 import { TtsError } from "../src/engine.js";
+import { createEngine } from "../src/engines.js";
 import { VoiceHealth } from "../src/health.js";
-import { audioOf, fakeEngine, pcm } from "./tts-helpers.js";
+import { audioOf, fakeEngine, fakeServer, pcm } from "./tts-helpers.js";
 
 afterEach(() => mock.timers.reset());
 
@@ -163,4 +164,28 @@ test("a failing or throwing probe leaves tts down and does not stop the probing"
   assert.equal(pings, 2);
   assert.deepEqual(deps(h), { tts: "down" });
   h.stop();
+});
+
+const realSleep = async (ms: number) => { const t0 = Date.now(); while (Date.now() - t0 < ms) await new Promise<void>((r) => setImmediate(r)); };
+const realUntil = async (cond: () => boolean, ms = 3000) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error("timed out"); await new Promise<void>((r) => setImmediate(r)); } };
+
+// @spec VOICE-HLTH-008
+test("a probe that hangs counts as failed after the engine's timeout, and probing goes on every 10 s", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const s = await fakeServer(() => { /* /health never answers */ });
+  try {
+    const engine = createEngine(testConfig({ voice: { engine: "pocket", timeout_ms: 100, pocket: { url: s.url } } }).voice);
+    const h = new VoiceHealth(engine);
+    h.startProbe(engine);
+    await realUntil(() => s.requests.length === 1);
+    await realSleep(200); // the probe times out in real time
+    assert.deepEqual(deps(h), { tts: "down" });
+    mock.timers.tick(10_000);
+    await realUntil(() => s.requests.length === 2);
+    await realSleep(200);
+    mock.timers.tick(10_000);
+    await realUntil(() => s.requests.length === 3);
+    assert.deepEqual(s.requests.map((r) => `${r.method} ${r.url}`), ["GET /health", "GET /health", "GET /health"]);
+    h.stop();
+  } finally { await s.close(); }
 });

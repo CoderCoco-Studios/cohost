@@ -87,9 +87,14 @@ export class TtsGate { // @spec VOICE-ENG-011, VOICE-ENG-012, VOICE-ENG-013
 
   constructor(private limit: number) {}
 
-  acquire(priority: Priority): Promise<() => void> {
-    return new Promise((resolve) => {
+  /** Wait for a place. A waiter whose `signal` aborts leaves the queue and rejects; it never holds a place. */
+  acquire(priority: Priority, signal?: AbortSignal): Promise<() => void> { // @spec VOICE-ENG-013
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason); return; }
+      const queue = priority === "line" ? this.lines : this.clips;
       const grant = () => {
+        signal?.removeEventListener("abort", onAbort);
+        if (signal?.aborted) { reject(signal.reason); this.next(); return; }
         this.held++;
         let released = false;
         resolve(() => {
@@ -99,8 +104,16 @@ export class TtsGate { // @spec VOICE-ENG-011, VOICE-ENG-012, VOICE-ENG-013
           this.next();
         });
       };
+      const onAbort = () => {
+        const i = queue.indexOf(grant);
+        if (i >= 0) queue.splice(i, 1);
+        reject(signal!.reason);
+      };
       if (this.held < this.limit && this.lines.length + this.clips.length === 0) grant();
-      else (priority === "line" ? this.lines : this.clips).push(grant);
+      else {
+        queue.push(grant);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      }
     });
   }
 

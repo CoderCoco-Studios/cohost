@@ -646,7 +646,8 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   assert.match(text, /mouth:[\s\S]*fallback:\s*\n\s*min_interval_ms:\s*20000\b/);
   // @spec CFG-SCH-018
   const earsBlock = text.match(/^ears:\n((?:[ \t]+.*\n|\n)*)/m)![1]!;
-  assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
+  // CFG-SCH-018: no `fallback` key (the spoken fallback lives under voice). CFG-SCH-063 adds `stt_fallback_engine`, a different key.
+  assert.doesNotMatch(earsBlock, /^ {2}fallback:/m, "the ears block carries no fallback key");
   assert.equal("fallback" in cfg.ears, false);
 });
 

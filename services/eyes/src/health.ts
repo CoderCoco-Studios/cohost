@@ -4,7 +4,7 @@ import { tracked, type HeartbeatSpec } from "@cohost/shared";
 /** eyes: `off` (deps n/a) when vision is disabled; otherwise obs follows the websocket and ollama the last describe call. The stub engine reports mode `mock` and ollama `n/a`. */
 export class EyesHealth {
   private ollama: "ok" | "down" = "ok";
-  constructor(private enabled: boolean, private obsConnected: () => boolean, private engine: "ollama" | "stub" = "ollama") {}
+  constructor(private enabled: boolean, private obsConnected: () => boolean, private engine: "ollama" | "openai" | "anthropic" | "bedrock" | "stub" = "ollama") {}
 
   readonly spec: HeartbeatSpec = {
     service: "eyes",

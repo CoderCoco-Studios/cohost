@@ -57,8 +57,8 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
-  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
-  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets, ["http.token"]);
+  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets.slice().sort(), ["openai.api_key", "pocket.hf_token"]); // CFG-SCH-059, CFG-SCH-061
+  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
   assert.ok(SECRET_PATHS.length >= 2);
 });
 

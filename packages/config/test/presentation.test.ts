@@ -80,7 +80,8 @@ test("an entry for a section or key that the schema does not define fails, and t
 
 // @spec CFG-PRES-007
 test("the declared sections are the sections the control plane's manifest declares plus dashboard", () => {
-  const declared = new Set<string>(["dashboard", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
+  // `network` is host-run too: the dashboard's egress view reads it (CFG-EGR-001), as it reads the dashboard section.
+  const declared = new Set<string>(["dashboard", "network", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
   assert.deepEqual([...declared].sort(), [...SECTION_LIST].sort());
 });
 
@@ -150,7 +151,8 @@ test("the widget assignments are fixed: timezone, voice, textarea, sources, lang
     if (k.endsWith(".llm.model")) return "small";
     return undefined;
   };
-  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k));
+  // voice.openai.model is a free-text TTS model name (CFG-SCH-059), not a model widget kind, so it is left out here.
+  const modelKeys = ALL_KEYS.filter((k) => /(^|\.)(model|embed_model|stt_model)$/.test(k) && k !== "voice.openai.model");
   assert.equal(modelKeys.length, 9);
   for (const k of modelKeys) assert.deepEqual(w(k), { type: "model", kind: expected(k) }, k);
   // And nothing else is a model widget.
@@ -196,6 +198,7 @@ test("sensitive marks exactly the twelve trust-boundary keys, the schema carries
     "llm.openai.base_url", "vision.obs.host", "vision.obs.port", "avatar.vtube_studio.host", "avatar.vtube_studio.port", "mouth.outputs.http.url",
     "brain.salience.module.url", "brain.affect.module.url", "brain.cortex.critic.url", "brain.memory.notes.capture.url", "brain.memory.notes.consolidator.url",
     "dashboard.allowed_hosts",
+    "voice.openai.base_url", "voice.pocket.url", "ears.openai.base_url", "ears.nemotron.url", "ears.kyutai.url",
   ];
   const marked = Object.entries(PRESENTATION.keys).filter(([, e]) => e.sensitive !== undefined);
   assert.deepEqual(marked.map(([k]) => k).sort(), [...TWELVE].sort());

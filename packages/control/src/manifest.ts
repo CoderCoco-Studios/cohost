@@ -86,7 +86,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
     config: ["avatar"], uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
   }),
   svc("eyes", {
-    groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_ENGINE: "stub" },
+    groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
     config: ["vision"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {

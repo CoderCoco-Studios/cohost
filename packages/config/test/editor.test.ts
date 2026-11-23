@@ -66,8 +66,9 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 test("exactly the marked keys are secret: SECRET_PATHS (the seventeen without the tools wildcard), each section's secrets and the schema marks agree", () => {
   assert.deepEqual([...SECRET_PATHS].sort(), [
     "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
-    "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
+    "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key",
     "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
+    "voice.openai.api_key", "voice.pocket.hf_token",
   ]);
   assert.deepEqual(sectionSecrets("ears").sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
@@ -258,8 +259,9 @@ test("the edited file must pass the loader's pipeline; a file already invalid ac
   // the schema's own cross-key rule runs too
   const v = applySection(FIXTURE, "vision", { enabled: true });
   assert.ok(v.ok); // model is "m"
+  // CFG-SCH-025: a blank vision.model loads whether vision is enabled or not (eyes reports it down, not the loader)
   const noModel = applySection(FIXTURE.replace('model: "m"', 'model: ""'), "vision", { enabled: true });
-  assert.equal(noModel.ok, false);
+  assert.equal(noModel.ok, true);
 });
 
 // @spec MOD-CFG-009, MOD-CFG-012

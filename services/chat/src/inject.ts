@@ -26,9 +26,10 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
       text: async (r) => {
         const text = boundText(r.text ?? "", max_chars);
         if (!text) return { ok: false, detail: "blank text" };
+        const user = boundText(r.meta?.user ?? "", max_name_chars) || "injected_viewer";
         await d.bus.publish("chat.message", {
           platform: r.meta?.platform ?? "twitch",
-          user: boundText(r.meta?.user ?? "", max_name_chars) || "injected_viewer",
+          user,
           text,
           isMod: r.meta?.isMod ?? false,
           isSub: r.meta?.isSub ?? false,
@@ -36,7 +37,7 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
           injected: true,
           remember: r.remember,
         });
-        d.log.info({ id: r.id, user: r.meta?.user }, "injected chat message");
+        d.log.info({ id: r.id, user }, "injected chat message");
         return {};
       },
     },

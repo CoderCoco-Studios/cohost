@@ -87,7 +87,7 @@ test("other target publishes nothing; wrong kind for chat is ok:false", async ()
 // @spec CHAT-INJ-004
 test("text blank after the bound (invisible characters only) gets ok:false with a detail", async () => {
   const { bus, handle } = setup();
-  await run(handle, req({ text: "​⁠ \u0007" }));
+  await run(handle, req({ text: "\u200b\u2060 \u0007" }));
   assert.equal(bus.of("chat.message").length, 0);
   const [res] = bus.of("inject.result");
   assert.equal(res!.ok, false);
@@ -114,7 +114,7 @@ test("injected text is bounded like real chat", async () => {
 test("injected user is bounded; injected_viewer when meta.user is absent or bounds to nothing", async () => {
   const { bus, handle } = setup();
   await run(handle, req({ id: "a", meta: { user: "x".repeat(30) } }));
-  await run(handle, req({ id: "b", meta: { user: "​" } }));
+  await run(handle, req({ id: "b", meta: { user: "\u200b" } }));
   await run(handle, req({ id: "c", meta: { user: "" } }));
   await run(handle, req({ id: "d" }));
   const users = bus.of("chat.message").map((m) => m.user);
@@ -125,7 +125,7 @@ test("injected user is bounded; injected_viewer when meta.user is absent or boun
 test("injected mention is computed on the bounded text", async () => {
   const { bus, handle } = setup();
   await run(handle, req({ id: "a", text: `${"x ".repeat(10)}coco` }));
-  await run(handle, req({ id: "b", text: "co​co hi" }));
+  await run(handle, req({ id: "b", text: "co\u200bco hi" }));
   const [a, b] = bus.of("chat.message");
   assert.equal(a!.mentionsCohost, false);
   assert.equal(b!.mentionsCohost, true);

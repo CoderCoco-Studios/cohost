@@ -64,17 +64,17 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Source selection | CHAT-PLAN-001 to CHAT-PLAN-015 | 1 | 0 | 14 | 5 |
+| Source selection | CHAT-PLAN-001 to CHAT-PLAN-015 | 1 | 0 | 14 | 6 |
 | Source contract | CHAT-SRC-001 to CHAT-SRC-009 | 0 | 0 | 9 | 0 |
-| Twitch connection | CHAT-TW-001 to CHAT-TW-018 | 8 | 0 | 10 | 10 |
-| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-014 (CHAT-FILT-010 no longer exists) | 8 | 0 | 5 | 7 |
+| Twitch connection | CHAT-TW-001 to CHAT-TW-018 | 8 | 0 | 10 | 12 |
+| Filtering and payload | CHAT-FILT-001 to CHAT-FILT-014 (CHAT-FILT-010 no longer exists) | 8 | 0 | 5 | 10 |
 | Fake source | CHAT-FAKE-001 to CHAT-FAKE-009 | 5 | 0 | 4 | 6 |
-| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-012, CHAT-INJ-014 (CHAT-INJ-013 no longer exists) | 9 | 0 | 2 | 8 |
+| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-012, CHAT-INJ-014 (CHAT-INJ-013 no longer exists) | 9 | 0 | 2 | 10 |
 | Health | CHAT-HEALTH-001 to CHAT-HEALTH-012 | 1 | 0 | 11 | 6 |
 | YouTube source | CHAT-YT-001 to CHAT-YT-068 | 0 | 0 | 68 | 0 |
 | Forgetting a removed message | CHAT-FORGET-001 to CHAT-FORGET-008 | 0 | 0 | 8 | 0 |
 
-**Summary:** 32 of 163 specs implemented; 0 deferred; 131 open. 42 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 32 of 163 specs implemented; 0 deferred; 131 open. 50 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

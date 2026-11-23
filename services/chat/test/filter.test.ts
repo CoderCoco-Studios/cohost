@@ -57,14 +57,14 @@ const bounded = createChatFilter(testConfig({ chat: { ignore_prefixes: ["!"] }, 
 // @spec CHAT-FILT-002, CHAT-FILT-003
 test("a prefix hidden behind whitespace or an invisible character still drops the line as a command", () => {
   assert.equal(filter("bob", " !cmd", info()), undefined);
-  assert.equal(filter("bob", "​!cmd", info()), undefined);
-  assert.equal(filter("bob", "​ ⁠!cmd", info()), undefined);
+  assert.equal(filter("bob", "\u200b!cmd", info()), undefined);
+  assert.equal(filter("bob", "\u200b \u2060!cmd", info()), undefined);
 });
 
 // @spec CHAT-FILT-004
 test("a line of only control and invisible characters publishes nothing", () => {
   assert.equal(filter("bob", "\u200b\u2060\u0007 \u00ad", info()), undefined);
-  assert.equal(filter("bob", "\n​\n", info()), undefined);
+  assert.equal(filter("bob", "\n\u200b\n", info()), undefined);
 });
 
 // @spec CHAT-FILT-008
@@ -72,15 +72,15 @@ test("text is bounded to viewer_text.max_chars and cut with an ellipsis", () => 
   const m = bounded("bob", "a".repeat(40), info())!;
   assert.equal([...m.text].length, 16);
   assert.equal(m.text, `${"a".repeat(15)}…`);
-  assert.equal(bounded("bob", "ab​cd", info())!.text, "abcd");
+  assert.equal(bounded("bob", "ab\u200bcd", info())!.text, "abcd");
 });
 
 // @spec CHAT-FILT-009
 test("user is the first non-empty bounded display name or login, else unknown", () => {
-  assert.equal(bounded("bobby", "hi", info({ displayName: "​" }))!.user, "bobby");
-  assert.equal(bounded("bobby", "hi", info({ displayName: "Bob​" }))!.user, "Bob");
+  assert.equal(bounded("bobby", "hi", info({ displayName: "\u200b" }))!.user, "bobby");
+  assert.equal(bounded("bobby", "hi", info({ displayName: "Bob\u200b" }))!.user, "Bob");
   assert.equal(bounded("bobby", "hi", info({ displayName: "x".repeat(30) }))!.user, `${"x".repeat(7)}…`);
-  assert.equal(bounded("​", "hi", info({ displayName: "" }))!.user, "unknown");
+  assert.equal(bounded("\u200b", "hi", info({ displayName: "" }))!.user, "unknown");
   assert.equal(bounded("y".repeat(30), "hi", info({ displayName: "" }))!.user, `${"y".repeat(7)}…`);
 });
 
@@ -89,7 +89,7 @@ test("a co-host name past the cut is not a mention; one inside the cut is", () =
   assert.equal(bounded("bob", `${"x ".repeat(10)}coco`, info())!.mentionsCohost, false);
   assert.equal(bounded("bob", "hi cocoa", info())!.mentionsCohost, true);
   assert.equal(bounded("bob", "@coco_fan", info())!.mentionsCohost, true);
-  assert.equal(bounded("bob", "co​co", info())!.mentionsCohost, true); // judged on the bounded text
+  assert.equal(bounded("bob", "co\u200bco", info())!.mentionsCohost, true); // judged on the bounded text
 });
 
 // @spec CHAT-FILT-011

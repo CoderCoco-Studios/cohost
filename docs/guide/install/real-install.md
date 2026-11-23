@@ -85,6 +85,8 @@ COMPOSE_PROFILES=discord,ears,mouth
 
 Add `eyes` to the list when you turn on vision. You can also start one by hand: `docker compose --profile ears up -d`.
 
+The optional speech engine servers have their own profiles: `pocket` (the Pocket voice engine, `voice.engine: pocket`), `nemotron` and `kyutai` (the streaming transcription servers, `ears.stt_engine: nemotron` or `kyutai`). Add the ones you use to `COMPOSE_PROFILES`, select the engine in `config/config.yaml`, and press Launch. Each is built from source on its first use, which takes minutes.
+
 ## A graphics card
 
 If the installer found an NVIDIA card it set `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in `.env`, which adds the GPU overlay. You do not need to do anything else.

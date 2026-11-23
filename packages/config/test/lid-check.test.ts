@@ -135,3 +135,104 @@ test("a Dockerfile rust: tag that differs from rust-toolchain.toml fails; a matc
   assert.equal(bad.code, 1);
   assert.match(bad.err, /Dockerfile:1: rust:1\.98\.0 does not match the 1\.99\.1 channel/);
 });
+
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+// @spec DEPLOY-CI-010
+test("a Compose build context that is a Git URL fails unless its ref is a full 40-character commit SHA, naming the file and line", () => {
+  const compose = (ctx: string) => `services:\n  a:\n    build:\n      context: ${ctx}\n`;
+  for (const ctx of ["https://github.com/o/r.git#v4.0.1", "https://github.com/o/r.git#main", "https://github.com/o/r.git", `https://github.com/o/r.git#${SHA.slice(0, 12)}`, `https://github.com/o/r.git#${SHA}0`, `https://github.com/o/r.git#${SHA.toUpperCase()}`]) {
+    const r = run({ "docker-compose.yml": compose(ctx) });
+    assert.equal(r.code, 1, ctx);
+    assert.match(r.err, /docker-compose\.yml:4: .*full commit SHA/, ctx);
+  }
+  const short = run({ "docker-compose.yml": "services:\n  a:\n    build: https://github.com/o/r.git#main\n" });
+  assert.equal(short.code, 1, "the short `build: <url>` form is judged too");
+  assert.match(short.err, /docker-compose\.yml:3: /);
+  for (const ok of [`https://github.com/o/r.git#${SHA}`, `https://github.com/o/r.git#${SHA}:sub/dir`, ".", "docker/stt-kyutai"]) {
+    const r = run({ "docker-compose.yml": compose(ok) });
+    assert.equal(r.code, 0, `${ok}: ${r.err}`);
+  }
+  assert.equal(run({ "docker-compose.yml": `services:\n  a:\n    build:\n      context: https://github.com/o/r.git#${SHA}   # v4.0.1\n` }).code, 0, "a trailing tag comment is not part of the ref");
+  assert.equal(run({}, repoRoot).code, 0, "the repository's own Compose files pass");
+});
+
+const dockerfile = (...l: string[]) => ({ "docker/x/Dockerfile": l.join("\n") + "\n" });
+
+// @spec DEPLOY-CI-011
+test("a cargo install in a Dockerfile under docker/ fails without an exact =x.y.z version or without --locked, naming file and line", () => {
+  for (const line of ["RUN cargo install moshi-server --locked", "RUN cargo install moshi-server --version ^0.6 --locked", "RUN cargo install moshi-server --version 0.6.4", "RUN cargo install moshi-server --version =0.6.4"]) {
+    const r = run(dockerfile("FROM nvidia/cuda:12.8.1-devel-ubuntu24.04", line));
+    assert.equal(r.code, 1, line);
+    assert.match(r.err, /docker\/x\/Dockerfile:2: /, line);
+  }
+  for (const line of ["RUN cargo install moshi-server --version =0.6.4 --locked", "RUN cargo install --locked --version =0.6.4 moshi-server"]) {
+    const r = run(dockerfile("FROM nvidia/cuda:12.8.1-devel-ubuntu24.04", line));
+    assert.equal(r.code, 0, `${line}: ${r.err}`);
+  }
+});
+
+// @spec DEPLOY-CI-011
+test("a FROM in a Dockerfile under docker/ fails when its tag is missing, latest or not an exact version; stage names and exact tags pass", () => {
+  for (const from of ["FROM ubuntu", "FROM ubuntu:latest", "FROM ubuntu:24.04", "FROM nvidia/cuda:12.8-devel", "FROM nvidia/cuda:latest-devel", "FROM ubuntu:noble"]) {
+    const r = run(dockerfile(from));
+    assert.equal(r.code, 1, from);
+    assert.match(r.err, /docker\/x\/Dockerfile:1: /, from);
+  }
+  const ok = run(dockerfile("FROM nvidia/cuda:12.8.1-devel-ubuntu24.04 AS build", "FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04", "FROM build AS final"));
+  assert.equal(ok.code, 0, ok.err);
+  assert.equal(run({ Dockerfile: "FROM ubuntu:24.04\n" }).code, 0, "a Dockerfile outside docker/ is not judged by this rule");
+});
+
+// @spec DEPLOY-CI-011
+test("a git clone or an ADD of a Git URL under docker/ fails unless its source is a full 40-character commit SHA, naming file and line", () => {
+  const bad = [
+    "RUN git clone https://github.com/o/r.git /src",
+    "RUN git clone --branch v0.3.0 https://github.com/o/r.git /src",
+    `RUN git clone https://github.com/o/r.git /src && git -C /src checkout ${SHA.slice(0, 12)}`,
+    "ADD https://github.com/o/r.git#v0.3.0 /src",
+    "ADD https://github.com/o/r.git /src",
+    `ADD https://github.com/o/r.git#${SHA.slice(0, 7)} /src`,
+  ];
+  for (const line of bad) {
+    const r = run(dockerfile("FROM ubuntu:24.04.1", line));
+    assert.equal(r.code, 1, line);
+    assert.match(r.err, /docker\/x\/Dockerfile:2: /, line);
+  }
+  const good = [
+    `RUN git clone https://github.com/o/r.git /src && git -C /src checkout ${SHA}`,
+    `ADD https://github.com/o/r.git#${SHA} /src`,
+  ];
+  for (const line of good) {
+    const r = run(dockerfile("FROM ubuntu:24.04.1", line));
+    assert.equal(r.code, 0, `${line}: ${r.err}`);
+  }
+  assert.equal(run({ Dockerfile: "FROM ubuntu:24.04.1\nRUN git clone https://github.com/o/r.git /src\n" }).code, 0, "outside docker/ is not judged");
+  assert.equal(run({}, repoRoot).code, 0, "the repository's own Dockerfiles pass, docker/stt-nemotron/Dockerfile included");
+});
+
+// @spec DEPLOY-CI-010
+test("a quoted Git build context is judged as its unquoted value: a short ref fails, a full SHA passes", () => {
+  const compose = (ctx: string) => `services:\n  a:\n    build:\n      context: ${ctx}\n`;
+  const bad = run({ "docker-compose.yml": compose(`"https://github.com/o/r.git#main"`) });
+  assert.equal(bad.code, 1, "a quoted ref that is a branch fails");
+  assert.match(bad.err, /docker-compose\.yml:4: /);
+  assert.equal(run({ "docker-compose.yml": compose(`'https://github.com/o/r.git#${SHA}'`) }).code, 0, "a single-quoted full SHA passes");
+});
+
+// @spec DEPLOY-CI-011
+test("a git clone's ref is the SHA it checks out: a full SHA elsewhere on the line, with no checkout of it, fails", () => {
+  const r = run(dockerfile("FROM ubuntu:24.04.1", `RUN echo ${SHA} && git clone https://github.com/o/r.git /src`));
+  assert.equal(r.code, 1, "the SHA is not a checkout target");
+  assert.match(r.err, /docker\/x\/Dockerfile:2: /);
+  assert.equal(run(dockerfile("FROM ubuntu:24.04.1", `RUN git clone https://github.com/o/r.git /src && git -C /src checkout ${SHA}`)).code, 0);
+});
+
+// @spec DEPLOY-CI-011
+test("a FROM pinned by a sha256 digest passes without a tag; a digest that is not 64 hex characters falls back to the tag rule", () => {
+  const digest = "sha256:" + "ab".repeat(32);
+  assert.equal(run(dockerfile(`FROM ubuntu@${digest}`)).code, 0, "a full digest is a full pin");
+  const short = run(dockerfile("FROM ubuntu@sha256:abc"));
+  assert.equal(short.code, 1, "a short digest is not a pin");
+  assert.match(short.err, /docker\/x\/Dockerfile:1: /);
+});

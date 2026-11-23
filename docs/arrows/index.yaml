@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 48 [x], 13 [ ] (MOD-MAN-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
+    next: "61 specs: 51 [x], 10 [ ] (MOD-MAN-002, -003, -005, -010; MOD-CFG-001, -021, -022; MOD-TEST-005, -007, -008)."
     drift: null
 
 
@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 200 [x], 26 [ ]. Built: mock complete() and stream() with the tool and failure markers (LLM-MOCK-006..021, VIS-006); complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field); complete() and stream() on the Claude API and Bedrock for text (one request builder, SDK streaming under the shared clocks, refusal, fallbacks on complete() only, http/connect/stream/not_configured errors; #161); tool calls on Ollama and OpenAI-compatible (definitions, calls with ids, results, argument rules, finish mapping, streamed calls after the text and before done); ChatError kinds http, connect, stream, not_configured. Open: IF-018; STREAM-030, -032; STOP-010, -019; TOOL-010..015, -017, -020, -025, -030 (Claude tools, #163); VIS-002..005, -007..013 (#164)."
+    next: "227 specs: 216 [x], 11 [ ]. Built: mock complete() and stream() with the tool and failure markers (LLM-MOCK-006..021, VIS-006); complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field); complete() and stream() on the Claude API and Bedrock for text (one request builder, SDK streaming under the shared clocks, refusal, fallbacks on complete() only, http/connect/stream/not_configured errors; #161); tool calls on Ollama and OpenAI-compatible (definitions, calls with ids, results, argument rules, finish mapping, streamed calls after the text and before done); tool calls on the Claude API and Bedrock (tool definitions, tool_use calls, tool_result turns, thinking continuation named by provider, cut-off calls dropped, streamed input_json_delta assembly; #163); ChatError kinds http, connect, stream, not_configured. Open: VIS-002..005, -007..013 (#164)."
     drift: null
 
   region-hooks:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 161 [x], 32 [ ], 2 [D] (the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
+    next: "195 specs: 160 [x], 33 [ ], 2 [D] (the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012, EARS-PART-009 and EARS-ECHO-002 (the audible-sink rule) are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
     drift: null
 
   salience:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 172 [x], 1 [ ] (MEM-RECALL-007). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 170 [x], 3 [ ] (MEM-RECALL-007, MEM-SURF-006, MEM-VOICE-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -235,15 +235,15 @@ arrows:
     drift: null
 
   voice:
-    status: PARTIAL
+    status: MAPPED
     parent: null
-    sampled: 2026-10-31
+    sampled: 2026-11-23
     audited: 2026-11-14
     audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "147 specs: 96 [x], 50 [ ], 1 [D] (the clause-chunked and streamed-speech specs VOICE-CHUNK-*, VOICE-CLAUSE-* and VOICE-ENG-005 are open, epic #192; the sink, stop, store and utterance gaps are listed in the segment arrow)."
+    next: "147 specs: 146 [x], 0 [ ], 1 [D] (clause-by-clause synthesis and arbitration, issue #195, implemented since the last audit). AUDITED pass pending: audited_sha predates the change."
     drift: null
 
   mouth:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 81 [x], 28 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-003 (the VISION_PROVIDER preset), CTRL-MANIFEST-001 and -006 (the 19-unit manifest and engine units), CTRL-STACK-018 (Launch with engine profiles)."
+    next: "111 specs: 84 [x], 25 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 73 [x], 36 [ ] (speech engine servers: DEPLOY-ENG-*, DEPLOY-CI-010, -011, DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008; the avatar renderer: DEPLOY-COMPOSE-028, DEPLOY-LIC-005 to -007)."
+    next: "109 specs: 97 [x], 12 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-COMPOSE-001, -019, -021, -026 to -028; DEPLOY-LIC-005 to -007; DEPLOY-REPO-001)."
     drift: null
 
   docs-site:

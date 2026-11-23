@@ -34,8 +34,9 @@ test("the tracker's known list and the CLI's list are the manifest's application
 // @spec CTRL-MANIFEST-002, CTRL-MANIFEST-003
 test("flags and defaults match the spec", () => {
   assert.equal(findService("dashboard"), undefined);
-  assert.equal(SERVICE_MANIFEST.length, 16);
-  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id), ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]);
+  assert.equal(SERVICE_MANIFEST.length, 19);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(0, 16), ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(16).sort(), ["stt-kyutai", "stt-nemotron", "tts-pocket"]);
   assert.equal(findService("cortex")!.pnpmFilter, "@cohost/cortex");
   assert.equal(findService("redis")!.pnpmFilter, undefined);
   assert.equal(findService("redis")!.infra, true);
@@ -57,6 +58,22 @@ test("flags and defaults match the spec", () => {
   assert.deepEqual(findService("mouth")!.isolatedEnv, { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" });
   assert.deepEqual(findService("ears")!.isolatedEnv, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });
   assert.deepEqual(findService("eyes")!.isolatedEnv, { VISION_ENABLED: "false", VISION_PROVIDER: "stub" });
+});
+
+// @spec CTRL-MANIFEST-006
+test("tts-pocket, stt-nemotron and stt-kyutai are compose-only units with no consumer group, mode resume, an empty isolation preset and no infra flag", () => {
+  for (const id of ["tts-pocket", "stt-nemotron", "stt-kyutai"]) {
+    const u = findService(id)!;
+    assert.ok(u, `${id} is in the manifest`);
+    assert.equal(u.composeName, id);
+    assert.equal(u.pnpmFilter, undefined, `${id} is compose-only`);
+    assert.deepEqual(u.groups, [], `${id} owns no consumer group`);
+    assert.equal(u.defaultMode, "resume", id);
+    assert.deepEqual(u.isolatedEnv, {}, `${id} has an empty isolation preset`);
+    assert.equal(u.infra, false, `${id} is not infra`);
+    assert.deepEqual([u.config, u.uses, u.pause, u.test], [[], [], false, { inputs: [], observe: [] }], `${id} carries empty declarations`);
+  }
+  assert.ok(!appServiceIds().some((id) => id.includes("pocket") || id.includes("nemotron") || id.includes("kyutai")), "none is an application unit");
 });
 
 // @spec CTRL-MANIFEST-004

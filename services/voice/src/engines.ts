@@ -102,7 +102,7 @@ async function speak(t: Transport, o: SynthesizeOpts, send: (signal: AbortSignal
     res = await send(ac.signal);
     if (!res.ok) throw new TtsError(res.status, await res.text()); // @spec VOICE-POC-006
     const audio = await readWavStream(res.body ?? (async function* () { /* an empty body */ })(), { onPcm: arm });
-    return { format: audio.format, chunks: relay(audio.chunks) };
+    return { format: audio.format, chunks: relay(audio.chunks) }; // @spec VOICE-ENG-005 (a connection cut mid-body errors the read; collect then rejects and keeps none of it)
   } catch (err) {
     // The connection is closed before the place is freed, so the next request never meets a half-read one.
     ac.abort(err);

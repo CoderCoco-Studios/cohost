@@ -51,7 +51,7 @@ const svc = (
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
-// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
@@ -109,6 +109,11 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   compose("ollama"),
   compose("tts"),
   compose("stt"),
+  // The optional speech engine servers (profiles pocket, nemotron, kyutai): compose-only units that no unit uses or requires,
+  // so a profile that is not enabled never annotates voice or ears (CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014).
+  compose("tts-pocket"),
+  compose("stt-nemotron"),
+  compose("stt-kyutai"),
 ];
 
 /** The public face of a unit, as `GET /services/manifest` lists it: no argv material, no compose or pnpm names. */

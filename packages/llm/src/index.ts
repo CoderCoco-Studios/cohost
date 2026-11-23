@@ -22,7 +22,7 @@ import { assertTextHistory } from "./history.js";
 export type { Config };
 export { MockProvider, HashEmbedder };
 
-/** A tool the model may call. Offered by `complete()` and `stream()` once tool calls land (#162). */
+/** A tool the model may call. Offered by `complete()` and `stream()`; `chat()` offers none. */
 export interface ToolSpec {
   name: string;
   description: string;
@@ -58,7 +58,7 @@ export interface ChatOptions {
   signal?: AbortSignal;
 }
 export interface ChatRequest extends ChatOptions {
-  /** Offered to the model. `complete()` does not act on them yet (#162). */
+  /** Offered to the model by `complete()` and `stream()`; with `json: true` it is a `TypeError` (LLM-TOOL-002). */
   tools?: ToolSpec[];
 }
 /** The outcome of a non-streamed reply. */
@@ -71,7 +71,7 @@ export interface ChatResult {
   /** The assistant message to append to the history; `toolCalls` is absent when the model asked for none. */
   message: ChatMessage & { role: "assistant" };
 }
-/** Streamed reply events, from `stream()`. Ollama and OpenAI-compatible stream text; `tool_call` events land with #162. */
+/** Streamed reply events, from `stream()`: text as it arrives, then the calls once the reply's end is known, then `done`. */
 export type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "tool_call"; call: ToolCall }
@@ -108,15 +108,6 @@ const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 /** The caller's signal when it passed one (it wins), otherwise `llm.timeout_ms` (CFG-SCH-013). */
 const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(cfg.timeout_ms); // @spec LLM-CHAT-008
 
-/**
- * The result of a reply that asked for no tools: the trimmed text, an empty text when the backend sent none, and an assistant
- * message with no `toolCalls` key (LLM-IF-022).
- */
-function textResult(content: string | null | undefined, finish: ChatResult["finish"]): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-IF-014, LLM-IF-015, LLM-CHAT-007
-  const text = (content ?? "").trim();
-  return { text, toolCalls: [], finish, message: { role: "assistant", content: text } };
-}
-
 /** The one logger method a provider uses. */
 export type ProviderLog = Pick<Logger, "warn">;
 
@@ -152,25 +143,170 @@ export function createChatProvider(cfg: Config["llm"], log?: ProviderLog): ChatP
   }
 }
 
+// ---- tool rules shared by the providers that carry tools (#162)
+
+/** The tool names the backends accept (LLM-TOOL-001). */
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * The checks every `complete()` and `stream()` runs before any request is sent: a tool name outside the pattern, and `json: true`
+ * with non-empty `tools`, are `TypeError`s (LLM-TOOL-001, LLM-TOOL-002).
+ */
+function checkRequest(req: ChatRequest): void { // @spec LLM-TOOL-001, LLM-TOOL-002
+  for (const t of req.tools ?? []) {
+    if (!TOOL_NAME.test(t.name)) throw new TypeError(`tool name ${JSON.stringify(t.name)} must match [A-Za-z0-9_-]{1,64}`);
+  }
+  if (req.json && (req.tools?.length ?? 0) > 0) throw new TypeError("json: true cannot be combined with tools: a reply is either JSON or tool calls");
+}
+
+/** Whether a request offers tools; `tools: []` offers none (LLM-TOOL-026). */
+const hasTools = (req: ChatRequest): boolean => (req.tools?.length ?? 0) > 0;
+
+/** The `tools` a request sends, as `{type: "function", function}` (LLM-TOOL-003, LLM-TOOL-006); undefined is left out of the body. */
+function wireTools(req: ChatRequest): object[] | undefined { // @spec LLM-TOOL-003, LLM-TOOL-006, LLM-TOOL-026
+  return hasTools(req)
+    ? req.tools!.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }))
+    : undefined;
+}
+
+/** The stop list a request sends: none for a JSON reply or a reply that offers tools (LLM-STOP-008, LLM-STOP-009, LLM-STOP-019). */
+const stopsFor = (req: ChatRequest): string[] | undefined => (req.json || hasTools(req) ? undefined : REPLY_STOPS); // @spec LLM-STOP-008, LLM-STOP-009, LLM-STOP-019
+
+/**
+ * The arguments a backend sent, as an object (LLM-TOOL-016, LLM-TOOL-029). A string is parsed; a blank string is `{}`; anything
+ * that is not a JSON object is `{}` with `invalid` holding the raw text.
+ */
+function parseArguments(raw: unknown): { arguments: Record<string, unknown>; invalid?: string } { // @spec LLM-TOOL-016, LLM-TOOL-029
+  if (raw === undefined) return { arguments: {} };
+  if (typeof raw === "string") {
+    if (raw.trim() === "") return { arguments: {} };
+    try { return asObject(JSON.parse(raw)) ?? { arguments: {}, invalid: raw }; } catch { return { arguments: {}, invalid: raw }; }
+  }
+  return asObject(raw) ?? { arguments: {}, invalid: JSON.stringify(raw) };
+}
+const asObject = (v: unknown): { arguments: Record<string, unknown> } | undefined =>
+  typeof v === "object" && v !== null && !Array.isArray(v) ? { arguments: v as Record<string, unknown> } : undefined;
+
+/** Arguments that begin but never finish as JSON: what the token cap leaves of a call it cut off (LLM-TOOL-022). */
+function cutOff(raw: unknown): boolean {
+  if (typeof raw !== "string" || raw.trim() === "") return false;
+  try { JSON.parse(raw); return false; } catch { return true; }
+}
+
+/** A tool call as a backend sent it: whole (Ollama, or a single JSON body), or one fragment of the call at `index` (OpenAI streams). */
+/** `fragment` marks a piece of a streamed call (OpenAI deltas), which may continue the last call when it has no index or id. */
+interface WireCall { index?: number; id?: string; name?: string; args?: unknown; fragment?: boolean }
+
+/**
+ * Collects a reply's calls and builds them in the order the model asked (LLM-TOOL-024). Fragments of one call join by `index`
+ * (LLM-TOOL-007). A fragment with no index joins the call that has its id; a fragment with neither index nor id continues the
+ * last call; any other unindexed call takes the next free position. A call the cap cut off (`capped`, and `dropCut` for backends
+ * whose cap can cut arguments) is dropped (LLM-TOOL-022). A call with no backend id gets `call_<position>`, unique within the reply.
+ */
+class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOOL-024
+  private calls = new Map<number, { id?: string; name?: string; args?: unknown }>();
+  private last: number | undefined;
+  add(c: WireCall): void {
+    let i = c.index;
+    if (i === undefined && c.id !== undefined) {
+      for (const [k, v] of this.calls) if (v.id === c.id) { i = k; break; }
+    }
+    i ??= c.fragment && c.id === undefined && this.last !== undefined ? this.last : Math.max(-1, ...this.calls.keys()) + 1;
+    this.last = i;
+    const cur = this.calls.get(i) ?? {};
+    if (c.id !== undefined) cur.id = c.id;
+    if (c.name !== undefined) cur.name ??= c.name;
+    if (typeof c.args === "string") cur.args = (typeof cur.args === "string" ? cur.args : "") + c.args;
+    else if (c.args !== undefined) cur.args = c.args;
+    this.calls.set(i, cur);
+  }
+  build(capped: boolean, dropCut: boolean): ToolCall[] {
+    const out: ToolCall[] = [];
+    for (const i of [...this.calls.keys()].sort((a, b) => a - b)) {
+      const c = this.calls.get(i)!;
+      // A call the cap cut before its arguments began (no arguments, or blank) is incomplete too.
+      const unbegun = c.args === undefined || (typeof c.args === "string" && c.args.trim() === "");
+      if (capped && dropCut && (unbegun || cutOff(c.args))) continue;
+      out.push({ id: c.id ?? `call_${i}`, name: c.name ?? "", ...parseArguments(c.args) });
+    }
+    return out;
+  }
+}
+
+/**
+ * The finish of a reply (LLM-IF-013 to LLM-IF-016): the token cap beats everything; a reply that asked for tools, or holds
+ * calls, is `tool_calls`; anything else is `stop`.
+ */
+function finishOf(capped: boolean, asked: boolean, calls: ToolCall[]): ChatResult["finish"] { // @spec LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016
+  return capped ? "length" : asked || calls.length > 0 ? "tool_calls" : "stop";
+}
+
+/** The result of a reply: trimmed text (LLM-IF-006), the calls in order, and the assistant message to append (LLM-IF-007, LLM-IF-022). */
+function resultOf(content: string | null | undefined, finish: ChatResult["finish"], toolCalls: ToolCall[]): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-CHAT-007, LLM-TOOL-021
+  const text = (content ?? "").trim();
+  return { text, toolCalls, finish, message: { role: "assistant", content: text, ...(toolCalls.length ? { toolCalls } : {}) } };
+}
+
+/** Ollama's history: a result is `{role: "tool", tool_name, content}`; a call goes back with its arguments as an object (LLM-TOOL-005, LLM-TOOL-017, LLM-TOOL-028). */
+function ollamaMessages(messages: ChatMessage[]): object[] { // @spec LLM-TOOL-005, LLM-TOOL-017, LLM-TOOL-018, LLM-TOOL-019, LLM-TOOL-028
+  return messages.map((m) => {
+    if (m.role === "tool") return { role: "tool", tool_name: m.name, content: m.content };
+    if (m.role === "assistant" && m.toolCalls?.length) {
+      return { role: "assistant", content: m.content, tool_calls: m.toolCalls.map((c) => ({ function: { name: c.name, arguments: c.invalid !== undefined ? {} : c.arguments } })) };
+    }
+    if (m.role === "user" && m.images !== undefined) return { role: "user", content: m.content, images: m.images };
+    return { role: m.role, content: m.content };
+  });
+}
+
+/** OpenAI's history: a result is `{role: "tool", tool_call_id, content}`; calls go back with JSON-string arguments and `null` content when empty (LLM-TOOL-008, LLM-TOOL-009, LLM-TOOL-027). */
+function openaiMessages(messages: ChatMessage[]): object[] { // @spec LLM-TOOL-008, LLM-TOOL-009, LLM-TOOL-017, LLM-TOOL-018, LLM-TOOL-019, LLM-TOOL-025, LLM-TOOL-027
+  return messages.map((m) => {
+    if (m.role === "tool") return { role: "tool", tool_call_id: m.callId, content: m.content };
+    if (m.role === "assistant" && m.toolCalls?.length) {
+      return {
+        role: "assistant",
+        content: m.content === "" ? null : m.content,
+        tool_calls: m.toolCalls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.invalid !== undefined ? {} : c.arguments) } })),
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+}
+
+/** OpenAI's `tool_calls` of a whole message or choice, by position (LLM-TOOL-007, LLM-TOOL-020). */
+function openaiCalls(list: any[] | undefined): WireCall[] {
+  return (list ?? []).map((c, i) => ({ index: i, id: c?.id, name: c?.function?.name, args: c?.function?.arguments }));
+}
+
+/** Ollama's `message.tool_calls`, whole, in order (LLM-TOOL-004). */
+function ollamaCalls(list: any[] | undefined): WireCall[] {
+  return (list ?? []).map((c) => ({ name: c?.function?.name, args: c?.function?.arguments }));
+}
+
 // ---------------------------------------------------------------------------
 
-/** One backend event as a provider's framing reads it. `end` is the backend closing its reply before a final event. */
+/** One backend event as a provider's framing reads it. `final` is the backend's last event, with the cap and tool flags; `end` is the backend closing its reply before a final event; `whole` starts a reply that arrives as one JSON document (LLM-STREAM-029). */
 type WireEvent =
   | { kind: "content"; text: string }
+  | { kind: "call"; call: WireCall }
   | { kind: "keepalive" }
-  | { kind: "final"; finish: ChatResult["finish"] }
-  | { kind: "end" };
+  | { kind: "final"; capped: boolean; asked: boolean }
+  | { kind: "end" }
+  | { kind: "whole" };
 
 /** What a provider adds to the shared streamed-reply machinery: the request, its framing, and its single-body reading. */
 interface StreamPlan {
   name: string;
   timeoutMs: number;
+  /** Whether the token cap can cut a call's arguments on this backend, so the cut call is dropped (LLM-TOOL-022). */
+  dropCut: boolean;
   /** Synchronous; a throw here is a programming error and surfaces unwrapped (LLM-IF-021). */
   request(): { url: string; init: RequestInit };
   /** One line of the framed body (blank lines included); a bad line throws `ChatError` of kind `stream`. */
   line(line: string): WireEvent[];
   /** A backend that ignored `stream:true` and answered one JSON document (LLM-STREAM-029). */
-  whole(json: any): { text: string | null | undefined; finish: ChatResult["finish"] };
+  whole(json: any): { text: string | null | undefined; capped: boolean; asked: boolean; calls: WireCall[] };
 }
 
 /** Holds back whitespace so no delta starts a reply with it or ends the reply with it (LLM-STREAM-009 to LLM-STREAM-011). */
@@ -216,16 +352,22 @@ const timeoutError = (ms: number): Error => {
   return err;
 };
 
+/** A single JSON document that arrived on a stream, parsed (LLM-STREAM-029). */
+function parseWhole(name: string, text: string): unknown {
+  try { return JSON.parse(text); } catch { throw streamError(name, "the single JSON body is not JSON"); }
+}
+
 /**
  * The streamed call every streaming provider runs. Nothing runs until the first read (LLM-IF-008), and a failure of any kind
  * surfaces from that read (LLM-IF-021). Two clocks, each `timeoutMs`, run only while a read is pending (LLM-STREAM-034,
- * LLM-STREAM-035): the first-output clock from the request until the backend sends content (keepalives do not stop it,
- * LLM-STREAM-015), and the between-events clock after that, which any backend event restarts (LLM-STREAM-016). The caller's
- * signal adds a way to cancel and never replaces either clock (LLM-STREAM-018). Abort by the caller rethrows the caller's
- * reason (LLM-STREAM-026, LLM-ERR-006). Failures after the response began are `stream` (LLM-STREAM-021).
+ * LLM-STREAM-035): the first-output clock from the request until the backend sends content or a call fragment (keepalives do not
+ * stop it, LLM-STREAM-015), and the between-events clock after that, which any backend event restarts (LLM-STREAM-016). The caller's
+ * signal adds a way to cancel and never replaces either clock (LLM-STREAM-018). Abort by the caller rethrows the caller's reason
+ * (LLM-STREAM-026, LLM-ERR-006). Failures after the response began are `stream` (LLM-STREAM-021). Calls are delivered once the
+ * backend has reported how the reply ended, after the text and before `done` (LLM-STREAM-012).
  */
-async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-IF-009, LLM-IF-010, LLM-IF-021
-  assertTextHistory(messages);
+async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: ChatRequest): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-IF-009, LLM-IF-010, LLM-IF-021, LLM-STREAM-012, LLM-STREAM-032
+  checkRequest(opts); // @spec LLM-TOOL-001, LLM-TOOL-002
   const { url, init } = plan.request(); // @spec LLM-STREAM-001, LLM-STREAM-004, LLM-STREAM-014, LLM-STOP-012, LLM-STOP-014, LLM-STOP-018
   const caller = opts.signal;
   const ac = new AbortController();
@@ -242,6 +384,8 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   let mark = firstStart;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const trimmer = new TextTrimmer();
+  const calls = new CallAssembler();
 
   /** Runs one pending step under the clock, and maps what it throws. */
   const clocked = async <T>(step: () => Promise<T>): Promise<T> => {
@@ -288,34 +432,57 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       throw new ChatError("http", `${plan.name} chat ${res.status}: ${body}`, res.status); // @spec LLM-STREAM-020, LLM-ERR-004, LLM-CHAT-020
     }
     if (!res.body) throw streamError(plan.name, "the response had no body");
-    const trimmer = new TextTrimmer();
-    let finish: ChatResult["finish"] | undefined;
 
+    let capped = false;
+    let asked = false;
+    let finished = false;
+    /** The whole reply as one document, when the backend sent one rather than a stream (LLM-STREAM-029). */
+    let whole: { value: any } | undefined;
     if ((res.headers.get("content-type") ?? "").startsWith("application/json")) { // @spec LLM-STREAM-029
-      const text = await clocked(() => res.text());
-      let json: unknown;
-      try { json = JSON.parse(text); } catch { throw streamError(plan.name, "the single JSON body is not JSON"); }
-      const one = plan.whole(json);
-      sawOutput = true;
-      const delta = trimmer.push(one.text ?? "");
-      if (delta) { yield { type: "text", delta }; throwIfAborted(); }
-      finish = one.finish;
+      whole = { value: parseWhole(plan.name, await clocked(() => res.text())) };
     } else {
+      let wholeText: string | undefined;
       outer: for await (const line of lines(res.body)) { // @spec LLM-STREAM-002, LLM-STREAM-005
+        if (wholeText !== undefined) { wholeText += `\n${line}`; continue; } // @spec LLM-STREAM-029
         for (const ev of plan.line(line)) {
+          if (ev.kind === "whole") {
+            // A single JSON body is the whole reply only when no stream event came before it (keepalives may).
+            if (sawOutput) throw streamError(plan.name, "a JSON object arrived after stream events");
+            wholeText = line;
+            break;
+          } // @spec LLM-STREAM-029
           if (ev.kind === "keepalive") { mark = Date.now(); continue; }
           if (ev.kind === "end") throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-037, LLM-STREAM-022
           sawOutput = true;
-          if (ev.kind === "final") { finish = ev.finish; break outer; } // @spec LLM-STREAM-036
+          if (ev.kind === "final") { capped = ev.capped; asked = ev.asked; finished = true; break outer; } // @spec LLM-STREAM-036, LLM-IF-016, LLM-IF-017, LLM-IF-019
+          if (ev.kind === "call") { calls.add(ev.call); mark = Date.now(); continue; } // @spec LLM-STREAM-003, LLM-STREAM-006
           const delta = trimmer.push(ev.text);
           mark = Date.now();
           if (delta) { yield { type: "text", delta }; mark = Date.now(); throwIfAborted(); } // @spec LLM-STREAM-010, LLM-STREAM-026
         }
       }
+      if (wholeText !== undefined) whole = { value: parseWhole(plan.name, wholeText) }; // @spec LLM-STREAM-029
     }
-    if (!finish) throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-022
+    if (whole !== undefined && whole.value?.error !== undefined) throw backendError(plan.name, whole.value.error); // @spec LLM-STREAM-023
+    if (whole !== undefined) {
+      const one = plan.whole(whole.value); // @spec LLM-STREAM-029
+      sawOutput = true;
+      const delta = trimmer.push(one.text ?? "");
+      if (delta) { yield { type: "text", delta }; throwIfAborted(); }
+      for (const c of one.calls) calls.add(c);
+      capped = one.capped;
+      asked = one.asked;
+      finished = true;
+    }
+    if (!finished) throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-022
     throwIfAborted(); // @spec LLM-STREAM-026
-    yield { type: "done", result: textResult(trimmer.raw, finish) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028
+    const toolCalls = calls.build(capped, plan.dropCut); // @spec LLM-TOOL-022, LLM-TOOL-023, LLM-STREAM-012
+    for (const call of toolCalls) {
+      throwIfAborted();
+      yield { type: "tool_call", call }; // @spec LLM-STREAM-003, LLM-STREAM-006, LLM-STREAM-012, LLM-STREAM-032
+      throwIfAborted(); // @spec LLM-STREAM-026
+    }
+    yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls), toolCalls) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028
   } finally {
     clearTimeout(timer);
     caller?.removeEventListener("abort", onCallerAbort);
@@ -324,29 +491,42 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   }
 }
 
-/** Ollama's framing: one JSON object per line; `content` is text and `done: true` is the final line (LLM-STREAM-002). */
-function ollamaLine(line: string): WireEvent[] {
+/** Ollama's framing: one JSON object per line; `content` is text, `message.tool_calls` are calls, and `done: true` is the final line (LLM-STREAM-002, LLM-STREAM-003). */
+function ollamaLine(line: string): WireEvent[] { // @spec LLM-STREAM-002, LLM-STREAM-003
   if (!line.trim()) return [];
   const j = parseChunk("ollama", line);
   if (j?.error !== undefined) throw backendError("ollama", j.error); // @spec LLM-STREAM-023
+  const evs: WireEvent[] = [];
   const content = j?.message?.content;
-  const evs: WireEvent[] = [typeof content === "string" && content !== "" ? { kind: "content", text: content } : { kind: "keepalive" }];
-  if (j?.done) evs.push({ kind: "final", finish: j.done_reason === "length" ? "length" : "stop" });
+  if (typeof content === "string" && content !== "") evs.push({ kind: "content", text: content });
+  for (const call of ollamaCalls(j?.message?.tool_calls)) evs.push({ kind: "call", call });
+  if (evs.length === 0) evs.push({ kind: "keepalive" });
+  if (j?.done) evs.push({ kind: "final", capped: j.done_reason === "length", asked: false });
   return evs;
 }
 
-/** OpenAI-compatible framing: SSE. `data:` chunks carry `delta.content` and the `finish_reason` chunk is final; `[DONE]` before it ends the reply without one (LLM-STREAM-004, LLM-STREAM-037). Comments and other fields are keepalives. */
-function openaiLine(line: string): WireEvent[] {
+/** OpenAI-compatible framing: SSE. `data:` chunks carry `delta.content` and `delta.tool_calls` fragments, and the `finish_reason` chunk is final; `[DONE]` before it ends the reply without one (LLM-STREAM-004, LLM-STREAM-006, LLM-STREAM-037). A line that starts with `{` is a single JSON body (LLM-STREAM-029). Comments and other fields are keepalives. */
+function openaiLine(line: string): WireEvent[] { // @spec LLM-STREAM-004, LLM-STREAM-005, LLM-STREAM-006, LLM-STREAM-029
   if (!line.trim()) return [];
+  if (line.trimStart().startsWith("{")) { // @spec LLM-STREAM-029
+    // A raw JSON line: an `error` field is the backend's failure; otherwise it starts a single-body reply (streamReply decides).
+    try { const j = JSON.parse(line); if (j?.error !== undefined) throw backendError("openai", j.error); } catch (e) { if (e instanceof ChatError) throw e; }
+    return [{ kind: "whole" }];
+  }
   if (!line.startsWith("data:")) return [{ kind: "keepalive" }];
   const payload = line.slice(5).trim();
   if (payload === "[DONE]") return [{ kind: "end" }];
   const chunk = parseChunk("openai", payload);
   if (chunk?.error !== undefined) throw backendError("openai", chunk.error); // @spec LLM-STREAM-023
   const choice = chunk?.choices?.[0];
+  const evs: WireEvent[] = [];
   const content = choice?.delta?.content;
-  const evs: WireEvent[] = [typeof content === "string" && content !== "" ? { kind: "content", text: content } : { kind: "keepalive" }];
-  if (choice?.finish_reason) evs.push({ kind: "final", finish: choice.finish_reason === "length" ? "length" : "stop" });
+  if (typeof content === "string" && content !== "") evs.push({ kind: "content", text: content });
+  for (const c of choice?.delta?.tool_calls ?? []) {
+    evs.push({ kind: "call", call: { index: c?.index, id: c?.id, name: c?.function?.name, args: c?.function?.arguments, fragment: true } }); // @spec LLM-TOOL-007
+  }
+  if (evs.length === 0) evs.push({ kind: "keepalive" });
+  if (choice?.finish_reason) evs.push({ kind: "final", capped: choice.finish_reason === "length", asked: choice.finish_reason === "tool_calls" });
   return evs;
 }
 
@@ -368,24 +548,25 @@ export class Ollama implements ChatProvider, Embedder {
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
   /** The `/api/chat` body that `chat()`, `complete()` and `stream()` send; `streaming` sets `stream` (LLM-STREAM-001). */
-  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001, LLM-CHAT-011, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-011, LLM-CHAT-016, LLM-CHAT-022
+  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001, LLM-CHAT-011, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-011, LLM-CHAT-016, LLM-CHAT-022, LLM-TOOL-003
     return JSON.stringify({
       model: this.cfg.model,
-      messages,
+      messages: ollamaMessages(messages),
       stream: streaming,
       keep_alive: "24h",
       ...(opts.json ? { format: "json" } : {}), // @spec LLM-CHAT-010
+      tools: wireTools(opts),
       options: {
         temperature: opts.temperature ?? this.cfg.temperature,
         num_ctx: this.cfg.num_ctx,
         num_predict: opts.maxTokens ?? this.cfg.max_tokens,
-        ...(opts.json ? {} : { stop: REPLY_STOPS }), // @spec LLM-STOP-001, LLM-STOP-003, LLM-STOP-012
+        stop: stopsFor(opts), // @spec LLM-STOP-001, LLM-STOP-003, LLM-STOP-012
       },
     });
   }
 
   /** The one non-streamed `/api/chat` request that `chat()` and `complete()` both send. */
-  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ message?: { content?: string | null }; done_reason?: string }> { // @spec LLM-CHAT-001
+  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ message?: { content?: string | null; tool_calls?: any[] }; done_reason?: string }> { // @spec LLM-CHAT-001
     const res = await sendRequest(this.name, `${this.base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -393,30 +574,36 @@ export class Ollama implements ChatProvider, Embedder {
       signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
     if (!res.ok) throw new ChatError("http", `ollama chat ${res.status}: ${await res.text()}`, res.status); // @spec LLM-CHAT-005, LLM-ERR-007
-    return (await res.json()) as { message?: { content?: string | null }; done_reason?: string };
+    return (await res.json()) as { message?: { content?: string | null; tool_calls?: any[] }; done_reason?: string };
   }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
     assertTextHistory(messages);
-    return (await this.complete(messages, opts)).text;
+    return (await this.complete(messages, { ...opts, tools: undefined })).text;
   }
 
-  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-014, LLM-IF-015
+  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016, LLM-IF-019, LLM-TOOL-004, LLM-TOOL-024, LLM-TOOL-001, LLM-TOOL-002
+    checkRequest(req);
     const json = await this.send(messages, req);
-    return textResult(json.message?.content, json.done_reason === "length" ? "length" : "stop");
+    const capped = json.done_reason === "length";
+    const calls = new CallAssembler();
+    for (const c of ollamaCalls(json.message?.tool_calls)) calls.add(c);
+    const toolCalls = calls.build(capped, false);
+    return resultOf(json.message?.content, finishOf(capped, false, toolCalls), toolCalls);
   }
 
   /** A streamed reply (LLM-IF-008): nothing is sent until the first read. */
-  stream(messages: ChatMessage[], opts: ChatOptions = {}): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-STREAM-001, LLM-STREAM-002
+  stream(messages: ChatMessage[], opts: ChatRequest = {}): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-STREAM-001, LLM-STREAM-002
     return streamReply({
       name: this.name,
       timeoutMs: this.cfg.timeout_ms,
+      dropCut: false,
       request: () => ({
         url: `${this.base}/api/chat`,
         init: { method: "POST", headers: { "content-type": "application/json" }, body: this.body(messages, opts, true) },
       }),
       line: ollamaLine,
-      whole: (j) => ({ text: j?.message?.content, finish: j?.done_reason === "length" ? "length" : "stop" }),
+      whole: (j) => ({ text: j?.message?.content, capped: j?.done_reason === "length", asked: false, calls: ollamaCalls(j?.message?.tool_calls) }),
     }, messages, opts);
   }
 
@@ -468,19 +655,21 @@ export class OpenAICompatible implements ChatProvider {
   }
 
   /** The `/chat/completions` body that `chat()`, `complete()` and `stream()` send; `streaming` sets `stream` (LLM-STREAM-004). */
-  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006, LLM-CHAT-012, LLM-CHAT-013, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-013, LLM-CHAT-022, LLM-CHAT-016
+  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006, LLM-CHAT-012, LLM-CHAT-013, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-013, LLM-CHAT-022, LLM-CHAT-016, LLM-TOOL-006
     return JSON.stringify({
       model: this.cfg.model,
-      messages: this.images.strip(messages), // @spec LLM-VIS-002, LLM-VIS-003
+      messages: openaiMessages(this.images.strip(messages)), // @spec LLM-VIS-002, LLM-VIS-003
       stream: streaming,
       temperature: opts.temperature ?? this.cfg.temperature,
       max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
-      ...(opts.json ? { response_format: { type: "json_object" } } : { stop: REPLY_STOPS }), // @spec LLM-STOP-002, LLM-STOP-003, LLM-CHAT-010, LLM-STOP-014, LLM-STOP-018
+      tools: wireTools(opts),
+      ...(opts.json ? { response_format: { type: "json_object" } } : {}), // @spec LLM-CHAT-010
+      stop: stopsFor(opts), // @spec LLM-STOP-002, LLM-STOP-003, LLM-STOP-014, LLM-STOP-018
     });
   }
 
   /** The one non-streamed `/chat/completions` request that `chat()` and `complete()` both send. */
-  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ choices?: { message?: { content?: string | null }; finish_reason?: string | null }[] }> { // @spec LLM-CHAT-002
+  private async send(messages: ChatMessage[], opts: ChatRequest): Promise<{ choices?: { message?: { content?: string | null; tool_calls?: any[] }; finish_reason?: string | null }[] }> { // @spec LLM-CHAT-002
     const res = await sendRequest(this.name, `${this.base}/chat/completions`, {
       method: "POST",
       headers: this.headers(),
@@ -488,31 +677,40 @@ export class OpenAICompatible implements ChatProvider {
       signal: requestSignal(this.cfg, opts.signal), // @spec LLM-CHAT-008
     });
     if (!res.ok) throw new ChatError("http", `${this.name} chat ${res.status}: ${await res.text()}`, res.status); // @spec LLM-CHAT-005, LLM-ERR-007
-    return (await res.json()) as { choices?: { message?: { content?: string | null }; finish_reason?: string | null }[] };
+    return (await res.json()) as { choices?: { message?: { content?: string | null; tool_calls?: any[] }; finish_reason?: string | null }[] };
   }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
     assertTextHistory(messages);
-    return (await this.complete(messages, opts)).text;
+    return (await this.complete(messages, { ...opts, tools: undefined })).text;
   }
 
-  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-014, LLM-IF-015
+  async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016, LLM-IF-017, LLM-TOOL-007, LLM-TOOL-020, LLM-TOOL-024, LLM-TOOL-022, LLM-TOOL-001, LLM-TOOL-002
+    checkRequest(req);
     const json = await this.send(messages, req);
     const choice = json.choices?.[0];
-    return textResult(choice?.message?.content, choice?.finish_reason === "length" ? "length" : "stop");
+    const capped = choice?.finish_reason === "length";
+    const calls = new CallAssembler();
+    for (const c of openaiCalls(choice?.message?.tool_calls)) calls.add(c);
+    const toolCalls = calls.build(capped, true);
+    return resultOf(choice?.message?.content, finishOf(capped, choice?.finish_reason === "tool_calls", toolCalls), toolCalls);
   }
 
   /** A streamed reply (LLM-IF-008): nothing is sent until the first read. */
-  stream(messages: ChatMessage[], opts: ChatOptions = {}): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-STREAM-004, LLM-STREAM-005, LLM-CHAT-014
+  stream(messages: ChatMessage[], opts: ChatRequest = {}): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-STREAM-004, LLM-STREAM-005, LLM-CHAT-014, LLM-STREAM-006
     return streamReply({
       name: this.name,
       timeoutMs: this.cfg.timeout_ms,
+      dropCut: true,
       request: () => ({
         url: `${this.base}/chat/completions`,
         init: { method: "POST", headers: this.headers(), body: this.body(messages, opts, true) },
       }),
       line: openaiLine,
-      whole: (j) => ({ text: j?.choices?.[0]?.message?.content, finish: j?.choices?.[0]?.finish_reason === "length" ? "length" : "stop" }),
+      whole: (j) => {
+        const choice = j?.choices?.[0];
+        return { text: choice?.message?.content, capped: choice?.finish_reason === "length", asked: choice?.finish_reason === "tool_calls", calls: openaiCalls(choice?.message?.tool_calls) };
+      },
     }, messages, opts);
   }
 

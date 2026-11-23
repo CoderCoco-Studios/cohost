@@ -124,6 +124,19 @@ for (const s of stubs) {
     });
   });
 
+  // @spec LLM-EX-008
+  test(`the OpenAI-compatible provider offered tools gets ${s.name}'s text and no tool call`, { skip: s.skip }, async () => {
+    await withStub(s, async (port) => {
+      const cfg = ConfigSchema.shape.llm.parse({
+        provider: "openai", model: "stub", embed_model: "e", openai: { base_url: `http://127.0.0.1:${port}/v1`, api_key: "" },
+      });
+      const tools = [{ name: "get_weather", description: "Weather", parameters: { type: "object", properties: {} } }];
+      const r = await (createChatProvider(cfg) as any).complete([{ role: "user", content: "hi" }], { tools });
+      assert.equal(r.text, REPLY);
+      assert.deepEqual(r.toolCalls, []);
+    });
+  });
+
   // @spec LLM-EX-006
   test(`try.sh against ${s.name} prints the lines of try.expected.txt`, { skip: s.skip || (!has("curl") && "curl not installed") }, async () => {
     await withStub(s, async (port) => {

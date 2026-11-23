@@ -3,6 +3,7 @@
  * Deterministic and dependency-free: same input, same output. Opt-in only, never a default.
  */
 import type { ChatMessage, ChatOptions, ChatProvider, Embedder } from "./index.js";
+import { assertTextHistory } from "./history.js";
 
 /** Echo-style provider: `[happy] mock: <last user message>`, in the tag format the cortex parses. */
 export class MockProvider implements ChatProvider { // @spec LLM-MOCK-004
@@ -11,7 +12,8 @@ export class MockProvider implements ChatProvider { // @spec LLM-MOCK-004
   lastError?: string;
   constructor(cfg: { model: string }) { this.model = cfg.model; }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-MOCK-001
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-MOCK-001, LLM-IF-011, LLM-IF-012
+    assertTextHistory(messages);
     if (opts.signal?.aborted) throw new Error("mock chat aborted"); // @spec LLM-MOCK-003
     // Hooks (module.kind: llm) parse JSON; {} is valid and makes them fall back to their rules.
     if (opts.json) return "{}"; // @spec LLM-MOCK-002, HOOK-FALLBACK-006

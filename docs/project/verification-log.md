@@ -202,3 +202,17 @@ Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main
 - The avatar driver was run against a UDP socket in a test, not against an avatar app. The three registration edits the page describes were not made and run.
 - The service example's three-file module registration (folder, manifest entry, Compose service) was described from the existing services and not built.
 - The model-server page's `llm` settings were checked against the provider code and the stub, not against vLLM, llama.cpp or OpenRouter.
+
+## Rust bus example round trip against Redis (2026-11-23)
+
+Run in CI (`test.yml`, job `test`, which has a Redis service and a job-wide `REDIS_URL`) on pull request 247, issue 229.
+
+| Check | How | Result |
+| --- | --- | --- |
+| Round trip | `cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture`, in its own `test.yml` step | GitHub Actions run 45095337667: `RAN round_trip against redis://127.0.0.1:6379`, the test `heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat ... ok`, no `SKIP` line. |
+| Same, at head `65aeab0` | the same step | Run 45096011116: `test` job passed. |
+| Hardened guard, head `e961447` | the same step with `pipefail` and an explicit `exit 1` on a `SKIP` line | Run 45096715521: `RAN round_trip against redis://127.0.0.1:6379` in that step and again under `pnpm test`; `test` job passed. |
+| Skip guard | the test run with `REDIS_URL=redis://127.0.0.1:1` locally | The test fails ("refusing to skip the round trip") rather than skipping. |
+| Under `pnpm test` | `example-rust-bus.test.ts` with `REDIS_URL` set | Passed in the same runs: it requires the `RAN` line and no `SKIP`. |
+
+BUS-NAT-EX-002 to 005 are verified by these runs.

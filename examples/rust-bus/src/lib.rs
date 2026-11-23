@@ -2,7 +2,7 @@
 //! `cohost-bus` gives: it publishes its own heartbeat, and it reads the events stream by envelope.
 
 use cohost_bus::codec::{Heartbeat, parse_heartbeat};
-use cohost_bus::transport::{EntryFields, EventStream};
+use cohost_bus::transport::{EntryFields, EventStream, RawEntry};
 use cohost_bus::{BusError, Transport, TransportOptions};
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -55,6 +55,17 @@ async fn beat(transport: &Transport, started_at: u64, state: &str) -> Result<(),
     Ok(())
 }
 // #endregion heartbeat
+
+// #region line
+/// One output line, from the envelope fields only (`?` for an absent one).
+fn line_for(entry: &RawEntry) -> String {
+    format!(
+        "{} from {}\n",
+        entry.r#type.as_deref().unwrap_or("?"),
+        entry.source.as_deref().unwrap_or("?")
+    )
+}
+// #endregion line
 
 // #region run
 /// Runs until `stop` completes: a heartbeat at once and every 5 s, and one line `<type> from <source>` on `out` for
@@ -109,11 +120,7 @@ async fn serve(
             .await?;
         for entry in read.entries.unwrap_or_default() {
             // The envelope only: the `data` payload is never decoded, because only a type with a codec may be.
-            let line = format!(
-                "{} from {}\n",
-                entry.r#type.as_deref().unwrap_or("?"),
-                entry.source.as_deref().unwrap_or("?")
-            );
+            let line = line_for(&entry);
             out.write_all(line.as_bytes())
                 .and_then(|()| out.flush())
                 .map_err(|e| BusError::internal(e.to_string()))?;
@@ -126,3 +133,20 @@ async fn serve(
     Ok(())
 }
 // #endregion run
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @spec BUS-NAT-EX-003
+    #[test]
+    fn a_line_is_type_from_source_with_a_question_mark_for_an_absent_field() {
+        let full = RawEntry {
+            r#type: Some("brain.say".into()),
+            source: Some("cortex".into()),
+            ..RawEntry::default()
+        };
+        assert_eq!(line_for(&full), "brain.say from cortex\n");
+        assert_eq!(line_for(&RawEntry::default()), "? from ?\n");
+    }
+}

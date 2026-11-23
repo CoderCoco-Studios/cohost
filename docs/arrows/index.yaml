@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 89 [x], 104 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022)."
+    next: "195 specs: 91 [x], 102 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022)."
     drift: null
 
   salience:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "168 specs: 62 [x], 105 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
+    next: "168 specs: 69 [x], 98 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
     drift: null
 
   affect:

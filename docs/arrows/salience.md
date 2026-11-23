@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 103 specs: 71 `[x]`, 31 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 69 `[x]`, 98 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the chat safety work (below). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -25,7 +25,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 
 ## Barge-in and echo gate
 
-SAL-BARGE-001 to SAL-BARGE-011 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, and reflex lines that never interrupt. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, reflex lines that never interrupt, and barge-in across a streamed line whose playback renews `speaking` (SAL-BUSY-005 to 008). SAL-BARGE-001 is revised by the early-reply work and stays a gap. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
 
 ## References
 
@@ -84,14 +84,14 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-016 | 6 | 0 | 10 |
 | Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-006 | 6 | 0 | 0 |
 | Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 9 | 1 | 0 |
-| Busy Gating | SAL-BUSY-001 to SAL-BUSY-004 | 4 | 0 | 0 |
+| Busy Gating | SAL-BUSY-001 to SAL-BUSY-008 | 8 | 0 | 0 |
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 |
 | Control | SAL-CTRL-001 to SAL-CTRL-007 | 7 | 0 | 0 |
 | Injection Flags | SAL-INJ-001 to SAL-INJ-004 | 4 | 0 | 0 |
-| Barge-in | SAL-BARGE-001 to SAL-BARGE-011 | 11 | 0 | 0 |
+| Barge-in | SAL-BARGE-001 to SAL-BARGE-012 | 11 | 0 | 1 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 
-**Summary:** 168 specs: 62 implemented, 105 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 168 specs: 69 implemented, 98 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

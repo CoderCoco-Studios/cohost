@@ -196,9 +196,23 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-SINK-002
       if (req.method === "POST" && url.pathname === "/sink") {
-        const { event, id } = JSON.parse(await readText(req)) as { event?: unknown; id: string };
+        const body = JSON.parse(await readText(req)) as { event?: unknown; id: string; seq?: unknown; interrupted?: unknown; final?: unknown; spokenText?: unknown; unsaidText?: unknown };
+        const { event, id } = body;
         if (event !== "playing" && event !== "done") { res.writeHead(400); res.end("event must be 'playing' or 'done'"); return; } // @spec DASH-SINK-003
-        await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, seq: 0, sink: "dashboard" });
+        // @spec DASH-SINK-005
+        const seq = body.seq;
+        if (typeof seq !== "number" || !Number.isInteger(seq) || seq < 0) { res.writeHead(400); res.end("seq must be a non-negative integer"); return; }
+        if (event === "playing") await d.bus.publish("voice.playing", { id, seq, sink: "dashboard" }); // @spec DASH-SINK-002
+        else {
+          // @spec DASH-SINK-002, DASH-SINK-006, DASH-SINK-007
+          const extra = {
+            ...(body.interrupted !== undefined ? { interrupted: body.interrupted } : {}),
+            ...(body.spokenText !== undefined ? { spokenText: body.spokenText } : {}),
+            ...(body.unsaidText !== undefined ? { unsaidText: body.unsaidText } : {}),
+            ...(body.final !== undefined ? { final: body.final } : {}),
+          };
+          await d.bus.publish("voice.done", { id, seq, sink: "dashboard", ...extra } as never);
+        }
         res.writeHead(204); res.end();
         return;
       }

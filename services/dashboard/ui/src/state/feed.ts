@@ -2,6 +2,7 @@ import { createStore, type Store } from "./store";
 import type { FeedEvent, ServiceHealth, StackSnapshot } from "./types";
 
 /** The event types that get a row in the Activity feed (DASH-UI-002); every other type is dropped from the log. */
+// @spec DASH-UI-042
 export const FEED_TYPES: ReadonlySet<string> = new Set([
   "chat.message", "brain.say", "vision.summary", "speech.heard", "brain.status", "control", "service.lifecycle",
   "inject.request", "inject.result", "voice.utterance", "voice.playing", "voice.done",
@@ -31,6 +32,13 @@ export interface FeedState {
   latest: Record<string, FeedEvent>;
   /** The latest `mute` or `unmute` control event seen, live or replayed; unmuted until one is seen (DASH-UI-005). */
   muted: boolean;
+  /** Each co-host line's row: the latest accepted clause `seq` and the row's text (`brain.say` text plus its clauses), by line id, at most `LOG_LIMIT` lines. */
+  lines: Record<string, LineRow>;
+}
+
+export interface LineRow {
+  seq: number;
+  text: string;
 }
 
 /** A listener receives every event once, with `replay` true for the connect replay (never play or act on those). */
@@ -58,7 +66,31 @@ export function feedUrl(loc: Pick<Location, "protocol" | "host"> = location): st
   return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/ws`;
 }
 
-const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, events: [], latest: {}, muted: false });
+const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, events: [], latest: {}, muted: false, lines: {} });
+
+/** The line rows after one `brain.say` or `brain.clause` (DASH-UI-038..040); undefined when the event changes no row. */
+// @spec DASH-UI-038, DASH-UI-039, DASH-UI-040
+function nextLines(lines: Record<string, LineRow>, ev: FeedEvent): Record<string, LineRow> | undefined {
+  const d = (ev.data ?? {}) as { id?: unknown; seq?: unknown; text?: unknown };
+  if (typeof d.id !== "string") return undefined;
+  const text = typeof d.text === "string" ? d.text : "";
+  if (ev.type === "brain.say") return withLine(lines, d.id, { seq: 0, text });
+  const row = lines[d.id];
+  if (!row) return undefined; // no row for this line (trimmed, or joined mid-line): dropped silently
+  if (d.seq !== row.seq + 1) {
+    console.warn(`dropped brain.clause for line ${d.id}: seq ${String(d.seq)} after ${row.seq}`);
+    return undefined;
+  }
+  return withLine(lines, d.id, { seq: d.seq as number, text: [row.text, text].filter((t) => t !== "").join(" ") });
+}
+
+/** Sets one line's row, keeping at most `LOG_LIMIT` lines (the oldest go first). */
+function withLine(lines: Record<string, LineRow>, id: string, row: LineRow): Record<string, LineRow> {
+  const next = { ...lines, [id]: row };
+  const keys = Object.keys(next);
+  for (const k of keys.slice(0, Math.max(0, keys.length - LOG_LIMIT))) delete next[k];
+  return next;
+}
 
 /**
  * The `/ws` connection as a store (DASH-UI-001). Parses each frame defensively, routes the `services` and `stack`
@@ -88,10 +120,11 @@ export function createFeed(deps: FeedDeps): Feed {
   function onEvent(ev: FeedEvent): void {
     if (typeof ev.id !== "string" || !remember(ev.id)) return;
     const replay = ev.replay === true;
+    const lines = ev.type === "brain.say" || ev.type === "brain.clause" ? nextLines(state.get().lines, ev) : undefined;
     state.set((s) => {
       const events = FEED_TYPES.has(ev.type) ? [...s.events, ev].slice(-LOG_LIMIT) : s.events;
       const cmd = ev.type === "control" ? (ev.data as { cmd?: string }).cmd : undefined;
-      return { ...s, events, latest: { ...s.latest, [ev.type]: ev }, muted: cmd === "mute" ? true : cmd === "unmute" ? false : s.muted };
+      return { ...s, events, latest: { ...s.latest, [ev.type]: ev }, muted: cmd === "mute" ? true : cmd === "unmute" ? false : s.muted, ...(lines ? { lines } : {}) };
     });
     for (const l of [...listeners]) l(ev, replay);
   }

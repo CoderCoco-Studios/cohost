@@ -163,9 +163,10 @@ test("a live voice.stop naming a line drops its queued and later clauses, stops 
   const before = posts.length;
   stop(["L"]); await flush();
   assert.equal(clip(1).paused, true);
-  assert.deepEqual(posts.slice(before), [{ event: "done", id: "L", seq: 1, interrupted: true, spokenText: "A. one two", unsaidText: "three four C." }]);
+  assert.deepEqual(posts.slice(before).filter((p) => p.id === "L"), [{ event: "done", id: "L", seq: 1, interrupted: true, spokenText: "A. one two", unsaidText: "three four C." }]);
   utt("L", 3, "late"); await flush();
   assert.equal(srcs().includes("/audio/L-3.wav"), false);
+  assert.deepEqual(posts.slice(before).filter((p) => p.id === "M"), [{ event: "playing", id: "M", seq: 0 }]);
   assert.equal(srcs().at(-1), "/audio/M-0.wav");
 });
 
@@ -251,12 +252,12 @@ test("a refused clause of an open line turns audio off, drops only that line's q
 });
 
 // @spec DASH-UI-052, DASH-UI-022
-test("a refused clause 0 posts nothing, because the line was never open on the page", async () => {
+test("a refused clause 0 posts final even though the line was never open on the page, so voice releases the line at once", async () => {
   const { audio, posts, utt, flush } = setup({ enabled: true });
   FakeAudio.refuse = true;
   utt("L", 0, "A", { more: true }); utt("M", 0, "B");
   await flush();
   assert.equal(audio.state.get().enabled, false);
-  assert.deepEqual(posts, []);
+  assert.deepEqual(posts, [{ event: "done", id: "L", seq: 0, final: true }]);
   assert.equal(audio.state.get().queued, 1);
 });

@@ -1,4 +1,5 @@
 import type { Access } from "./access";
+import type { SinkReport } from "./audio";
 import type { ControlInfo, ServiceHealth, StackActionKind, StackSnapshot, TokenKind, UnitDescriptor } from "./types";
 
 /**
@@ -24,6 +25,8 @@ export interface RequestOptions {
   /** Content type of a raw body (an uploaded image or audio file); a JSON or text body sets its own. */
   contentType?: string;
   signal?: AbortSignal;
+  /** Let the request outlive the page (the sink's unload report, DASH-UI-051). */
+  keepalive?: boolean;
 }
 
 export interface Api {
@@ -43,7 +46,7 @@ export interface Api {
   /** `POST /stack/(launch|stop|restart|consolidate|rebuild)`. */
   stackAction(kind: StackActionKind, action: string): Promise<ApiResult<{ ok: true; action: StackActionKind }>>;
   /** `POST /sink`, the audio sink's playing/done report (no token). */
-  sink(event: "playing" | "done", id: string): Promise<ApiResult<undefined>>;
+  sink(report: SinkReport, opts?: { keepalive?: boolean }): Promise<ApiResult<undefined>>;
 }
 
 export interface ApiDeps {
@@ -85,7 +88,7 @@ export function createApi(deps: ApiDeps): Api {
     }
     if (token) headers.authorization = `Bearer ${token}`;
     let res: Response;
-    try { res = await doFetch(path, { method, headers, body: payload, signal: opts.signal }); }
+    try { res = await doFetch(path, { method, headers, body: payload, signal: opts.signal, keepalive: opts.keepalive }); }
     catch (err) { return { ok: false, status: 0, detail: err instanceof Error ? err.message : String(err), network: true }; }
     const { data, detail } = await parse(res);
     if (res.ok) return { ok: true, status: res.status, data: data as T };
@@ -122,7 +125,7 @@ export function createApi(deps: ApiDeps): Api {
     control: (body, action) => request("POST", "/control", body, { auth: "control", action }),
     lifecycle: (id, op, body, action) => request("POST", `/services/${encodeURIComponent(id)}/${op}`, body, { auth: "control", action }),
     stackAction: (kind, action) => request("POST", `/stack/${kind}`, undefined, { auth: "control", action }),
-    sink: (event, id) => request("POST", "/sink", { event, id }),
+    sink: (report, opts) => request("POST", "/sink", report, { keepalive: opts?.keepalive }),
   };
   return api;
 }

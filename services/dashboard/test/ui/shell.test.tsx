@@ -314,9 +314,9 @@ test("on the sink page an utterance is fetched from /audio/<id>.wav and reported
   location.hash = "";
   renderApp(<App sink />, app);
   act(() => { app.socket().open(); });
-  frame(app, { id: "3-0", type: "voice.utterance", ts: 1, source: "voice", data: { id: "u9" } });
+  frame(app, { id: "3-0", type: "voice.utterance", ts: 1, source: "voice", data: { id: "u9", seq: 0 } });
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  assert.equal(FakeAudio.instances[0]!.src, "/audio/u9.wav");
+  assert.equal(FakeAudio.instances[0]!.src, "/audio/u9-0.wav");
   assert.deepEqual(app.fetch.calls.map((c) => `${c.method} ${c.path}`), ["POST /sink"]);
 });
 

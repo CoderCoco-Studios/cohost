@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "416 specs: 219 [x], 197 [ ] (streamed-speech clause specs and the avatar renderer are open gaps)."
+    next: "416 specs: 243 [x], 173 [ ] (the avatar renderer, DASH-UI-041 clause cut suffix and DASH-UI-002 are open gaps)."
     drift: null
 
   control-plane:

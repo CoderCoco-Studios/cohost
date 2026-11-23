@@ -34,7 +34,7 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * the cut. A cut keeps the first `max - 1` code points, backed off to a grapheme boundary, drops trailing
  * white space and appends `…`; if no whole cluster fits, the result is `…` alone (SHARED-GUARD-009).
  */
-// @spec SHARED-GUARD-004, SHARED-GUARD-005, SHARED-GUARD-006, SHARED-GUARD-007, SHARED-GUARD-008, SHARED-GUARD-009, SHARED-GUARD-010, SHARED-GUARD-024
+// @spec SHARED-GUARD-004, SHARED-GUARD-005, SHARED-GUARD-006, SHARED-GUARD-007, SHARED-GUARD-008, SHARED-GUARD-009, SHARED-GUARD-010, SHARED-GUARD-024, SHARED-GUARD-031
 export function boundText(raw: string, max: number): string {
   // Fail closed: a bound that is not at least 1 (NaN, zero, negative) admits no text at all.
   if (!(max >= 1)) return "";

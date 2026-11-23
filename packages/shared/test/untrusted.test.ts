@@ -98,7 +98,7 @@ test("boundText backs off so a grapheme cluster is never split", () => {
   assert.equal(boundText(`${FAMILY}${FAMILY}${FAMILY}`, 10), `${FAMILY}…`);
 });
 
-// @spec SHARED-GUARD-008
+// @spec SHARED-GUARD-031
 test("boundText fails closed when max is NaN, zero or negative, and floors a fractional max", () => {
   for (const max of [NaN, 0, -3]) {
     assert.equal(boundText("abc", max), "", `max=${max}`);

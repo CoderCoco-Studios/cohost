@@ -105,6 +105,14 @@ On another PC, load it from the LAN port with the AI PC's **IP address**, `http:
 
 A streamed reply plays clause by clause in this browser, and the feed shows it as one **Co-host** row that grows as the clauses arrive, with one **Voice** row per clause. A `voice.stop` (a barge-in, for example) cuts the clip that is playing and reports how much was said; a browser that refuses to start a clip turns **Audio on** back to **Audio off** and says so.
 
+## Avatar models
+
+The browser renderer draws a `.vrm` model from the dashboard's model store, a folder in the data directory: `data/dashboard/avatar-models/` (under `COHOST_DATA_DIR` when that is set). Copy a model in there and it is listed the next time the list is read. A file is listed only when its name follows the rule of `renderer.model` (at most 80 characters: letters, digits, spaces, `_`, `.` and `-`, starting with a letter or digit, ending in a lower-case `.vrm`) and its head is a [VRM](../../start/glossary.md#vrm) file the renderer can load; a file that fails the head check is listed with an error and cannot be selected. Links in the folder are never followed.
+
+Choose the model in `renderer.model` (blank draws the built-in placeholder). A save that names a model not in the store, or one listed with an error, is refused, and a save takes effect at once without a restart. The largest file the store accepts is `dashboard.models.max_bytes` (default 100 MiB, between 1 MiB and 1 GiB). The store holds at most 20 models and 2 GiB in all; a model that is applied cannot be deleted until another is selected.
+
+The model is served to anyone who can reach the LAN listener, without a token, so keep that listener off networks you do not trust if the model is under a licence that forbids redistribution. The terms a model carries are its author's; cohost enforces none of them.
+
 ## Keyboard shortcuts
 
 Press `?` anywhere to see this list.

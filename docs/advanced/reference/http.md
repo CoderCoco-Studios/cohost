@@ -80,6 +80,20 @@ The secret routes are served on the full dashboard only, never on the second lis
 
 The two `GET /options/...` routes are served on the full dashboard only. They fetch the addresses `TTS_URL` and `OLLAMA_URL` name (nothing in the request changes them), read at most 1 MiB, wait at most 3 seconds, never cache, and answer `502 {"ok": false, "detail": "..."}` naming the cause (unreachable, a non-2xx status, no answer in time, too large, or a body of the wrong shape) when the server is down or answers badly.
 
+## Dashboard: avatar models
+
+The model store holds the `.vrm` files the browser renderer draws. Its files live in the dashboard's data folder, `dashboard/avatar-models/`, and the store lists only regular files whose names follow the `renderer.model` grammar (at most 80 characters, letters, digits, space, `_`, `.` and `-`, starting with a letter or digit, ending in a lower-case `.vrm`). Names compare without regard to ASCII case.
+
+| Route | Auth | What it does |
+| --- | --- | --- |
+| `GET /avatar/model`, `HEAD /avatar/model` | none | The applied model's file, `model/gltf-binary`, with `etag: W/"<size hex>-<modified ms hex>"`, `cache-control: no-cache` and `x-content-type-options: nosniff`; `304` when `If-None-Match` names the etag or is `*`. `404 {"ok": false, "detail"}` when no model is applied or its file is gone. Served on both listeners |
+| `GET /avatar/models` | none | `200` with `cache-control: no-store` and `{models, active, maxBytes, maxModels, maxTotalBytes}`: the stored models sorted by name, each `{name, bytes, modified, active, vrm, title, authors, license, usage, expressions}` or, for a file whose head fails the checks, the same with `error`. `active` is the applied model's name or null. `maxModels` is 20 and `maxTotalBytes` 2147483648. Full surface only |
+| `GET /avatar/models/<name>`, `HEAD /avatar/models/<name>` | none | One listed model without an `error`, served as `/avatar/model` serves the applied one. `404` for a name outside the grammar, an unknown name or a model with an `error`. Full surface only |
+| `POST /avatar/models?name=<name>[&replace=1]` | token where `CONTROL_ENABLED=1`; a foreign `Origin` is `403` | Stores the request body, a glTF binary [VRM](../../start/glossary.md#vrm). The name is the last path segment of `name`, reduced to the grammar (`.vrm` removed, other characters as `_`, the stem cut to 76 characters). `201 {"ok": true, "model": <entry>}`. `409` when the name is stored (without `replace=1`; the answer names it), when 20 models are stored or the total would pass 2 GiB, or when another upload is running. `413` when `Content-Length` or the body passes `dashboard.models.max_bytes`. `400` when the head is not a VRM (magic, version 2, JSON chunk first and at most 16 MiB, `VRMC_vrm` or `VRM` in `extensionsUsed`, a supported `extensionsRequired`, no Draco, KTX2 or meshopt compression, no external buffer or image) or the length differs from the header's. `408` when no byte arrives for 30 s. `507` on a full disk, `500` on other write failures. The body is streamed to a temporary `.incoming-*` file that is linked or renamed into place and removed on every failure. Full surface only |
+| `DELETE /avatar/models/<name>` | token where `CONTROL_ENABLED=1`; a foreign `Origin` is `403` | Removes one stored model: `200 {"ok": true}`. `404` for a name outside the grammar or no stored model of that name, `409 {"ok": false, "detail"}` for the applied model, which stays. Full surface only |
+
+A `PUT /config/renderer` (dry run included) that would leave `renderer.model` naming no stored model that loads answers `400` with an issue on `renderer.model`. A successful save sets the applied model at once, with no restart. Uploading a stored model changes no setting; replacing the applied model's file changes what `/avatar/model` serves, under a new etag.
+
 ## Dashboard: test inputs
 
 All inject routes need the token while control is on. Each answers `202 {"id": "..."}`, or `409` when the service the input is for is not running (`service not running: <unit>`).

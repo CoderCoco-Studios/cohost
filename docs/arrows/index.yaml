@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "416 specs: 253 [x], 163 [ ] (the avatar renderer, the tools settings, DASH-UI-002, DASH-UI-041 and DASH-UI-054 are open gaps)."
+    next: "416 specs: 297 [x], 119 [ ] (the avatar renderer relay, page and settings, the tools settings, DASH-UI-002, DASH-UI-041 and DASH-UI-054 are open gaps)."
     drift: null
 
   control-plane:

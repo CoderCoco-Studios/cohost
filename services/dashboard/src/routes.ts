@@ -3,12 +3,15 @@ import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import { ConfigSchema, ensureFromExample, urls, type Logger } from "@cohost/config";
 import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
+import { AppliedView } from "./applied.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
 import { handleUi, locateUiDir } from "./static.js";
 import { handleOptions, type OptionsDeps } from "./options.js";
 import { handleEgress } from "./egress.js";
 import { handleMouthRouting } from "./routing.js";
+import { handleModels, type ModelRoutes } from "./model-routes.js";
+import { ModelStore, modelsDir } from "./models.js";
 import { handleSecrets } from "./secrets.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
@@ -53,6 +56,8 @@ export interface DashboardDeps {
   stack: StackService;
   /** The built docs site (`docs/.vitepress/dist`). Defaults to the one under the workspace root; tests pin it. */
   docsDir?: string;
+  /** The avatar model store, the applied view and `dashboard.models.max_bytes`. Defaults to the data dir's store and an empty view. */
+  models?: { store: ModelStore; applied: AppliedView; maxBytes: number };
 }
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
@@ -72,6 +77,11 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       return true;
     },
   };
+  const applied = d.models?.applied ?? new AppliedView(d.log);
+  const store = d.models?.store ?? new ModelStore(modelsDir());
+  const modelRoutes: ModelRoutes = {
+    store, applied, maxBytes: d.models?.maxBytes ?? ConfigSchema.shape.dashboard.parse({}).models.max_bytes, token: d.control?.token, slot: { busy: false },
+  };
   const settings = {
     file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
     write: d.configWrite ?? defaultWrite,
@@ -80,6 +90,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     controlMode: !!d.control,
     controlToken: d.control?.token ?? d.controlToken,
     body: readText,
+    models: { store, applied },
   };
   const secrets = { token: settings.controlToken, file: d.secretsFile, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
   const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
@@ -103,6 +114,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-VIEWERS-001, DASH-VIEWERS-002, DASH-VIEWERS-003, DASH-VIEWERS-004, DASH-VIEWERS-005, DASH-VIEWERS-006, DASH-VIEWERS-007, DASH-VIEWERS-008, DASH-VIEWERS-009
       if (await handleViewers(viewers, req, res, url)) return;
+      // @spec DASH-MDL-004, DASH-MDL-008, DASH-MDL-009, DASH-MDL-010, DASH-MDL-015, DASH-MDL-033
+      if (await handleModels(modelRoutes, req, res, url)) return;
       // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003

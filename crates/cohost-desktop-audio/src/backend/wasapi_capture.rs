@@ -35,6 +35,8 @@ pub struct WasapiCapture {
     device_id: Option<String>,
     queue: VecDeque<u8>,
     last_poll: Instant,
+    /// Set after a read error, so the next event check polls at once.
+    poll_now: bool,
 }
 
 impl WasapiCapture {
@@ -46,6 +48,7 @@ impl WasapiCapture {
             device_id: None,
             queue: VecDeque::new(),
             last_poll: Instant::now(),
+            poll_now: false,
         }
     }
 }
@@ -108,6 +111,29 @@ impl Capture for WasapiCapture {
     }
 
     fn read(&mut self, out: &mut Vec<f32>) -> Result<(), String> {
+        let result = self.read_packets(out);
+        if result.is_err() {
+            self.poll_now = true;
+        }
+        result
+    }
+
+    fn event(&mut self) -> Option<DeviceEvent> {
+        if !self.poll_now && self.last_poll.elapsed() < POLL_DEFAULT {
+            return None;
+        }
+        self.poll_now = false;
+        self.last_poll = Instant::now();
+        let opened = self.device_id.clone()?;
+        match default_render_id() {
+            Ok(now) if now != opened => Some(DeviceEvent::DefaultChanged),
+            _ => None,
+        }
+    }
+}
+
+impl WasapiCapture {
+    fn read_packets(&mut self, out: &mut Vec<f32>) -> Result<(), String> {
         let capture = self.capture.as_ref().ok_or("the capture is not open")?;
         let (sample_type, bits) = self.sample.as_ref().ok_or("the capture is not open")?;
         let deadline = Instant::now() + READ_WAIT;
@@ -120,16 +146,12 @@ impl Capture for WasapiCapture {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        let info = capture
+        // The crate zero-fills buffers flagged silent, so their bytes are already silence.
+        capture
             .read_from_device_to_deque(&mut self.queue)
             .map_err(err)?;
+        // The crate zero-fills buffers flagged silent, so their bytes are already silence.
         let bytes: Vec<u8> = self.queue.drain(..).collect();
-        if info.flags.silent {
-            // The buffer is flagged silent: its contents are not audio.
-            let frames = bytes.len() / (usize::from(*bits) / 8);
-            out.extend(std::iter::repeat_n(0.0, frames));
-            return Ok(());
-        }
         match (sample_type, bits) {
             (SampleType::Float, _) => {
                 let (frames, _) = bytes.as_chunks::<4>();
@@ -145,18 +167,6 @@ impl Capture for WasapiCapture {
             }
         }
         Ok(())
-    }
-
-    fn event(&mut self) -> Option<DeviceEvent> {
-        if self.last_poll.elapsed() < POLL_DEFAULT {
-            return None;
-        }
-        self.last_poll = Instant::now();
-        let opened = self.device_id.clone()?;
-        match default_render_id() {
-            Ok(now) if now != opened => Some(DeviceEvent::DefaultChanged),
-            _ => None,
-        }
     }
 }
 

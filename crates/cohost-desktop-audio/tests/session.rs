@@ -20,6 +20,8 @@ enum Step {
     /// Sets the stop flag and returns no samples.
     Stop(Arc<AtomicBool>),
     Fail(String),
+    /// A read error after which the capture reports a device event.
+    FailWith(String, DeviceEvent),
 }
 
 #[derive(Default)]
@@ -54,6 +56,10 @@ impl Capture for Scripted {
                 Ok(())
             }
             Some(Step::Fail(m)) => Err(m),
+            Some(Step::FailWith(m, event)) => {
+                self.pending = Some(event);
+                Err(m)
+            }
         }
     }
     fn event(&mut self) -> Option<DeviceEvent> {
@@ -233,4 +239,40 @@ async fn a_device_error_event_fails_the_run_with_its_message() {
     let out = run(&mut c, &SourceChoice::DefaultRender, false, &rec);
     assert_eq!(out.reason, StopReason::DeviceFailure);
     assert!(out.message.unwrap().contains("unplugged"));
+}
+
+// @spec EARS-SRC-019
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_read_error_with_a_changed_default_reopens_instead_of_failing() {
+    let mut c = Scripted {
+        steps: VecDeque::from([
+            Step::Samples(tone(500), None),
+            Step::FailWith("device gone".into(), DeviceEvent::DefaultChanged),
+            Step::Samples(tone(500), None),
+            Step::Samples(silence(1000), None),
+            Step::Fail("end of test".into()),
+        ]),
+        ..Scripted::default()
+    };
+    let rec = Arc::new(Recorder::default());
+    let out = run(&mut c, &SourceChoice::DefaultMonitor, false, &rec);
+    settle().await;
+    assert_eq!(c.opens, 1);
+    assert_eq!(out.reason, StopReason::DeviceFailure);
+    assert!(out.message.unwrap().contains("end of test"));
+    assert_eq!(rec.0.lock().unwrap().len(), 2);
+}
+
+// @spec EARS-SRC-019
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_read_error_with_an_unchanged_default_is_a_device_failure() {
+    let mut c = Scripted {
+        steps: VecDeque::from([Step::Fail("device gone".into())]),
+        ..Scripted::default()
+    };
+    let rec = Arc::new(Recorder::default());
+    let out = run(&mut c, &SourceChoice::DefaultMonitor, false, &rec);
+    assert_eq!(c.opens, 0);
+    assert_eq!(out.reason, StopReason::DeviceFailure);
+    assert!(out.message.unwrap().contains("device gone"));
 }

@@ -17,9 +17,12 @@ use crate::source::select_source;
 
 /// The registration is rewritten every 5 s (CONN-DESK-004).
 const INTERVAL_MS: u64 = 5_000;
-/// Exit status for a source that cannot be chosen or a device that cannot be opened.
+/// Exit status for a `--device` value that does not name a usable source. Nothing was captured.
 const EXIT_USAGE: i32 = 2;
+/// Exit status for a device, runtime or thread failure.
 const EXIT_FAILURE: i32 = 1;
+/// Exit status when a second stop signal arrives while the first one is still stopping.
+const EXIT_FORCED: i32 = 130;
 
 fn log(line: &str) {
     eprintln!("cohost-desktop-audio: {line}");
@@ -43,27 +46,54 @@ pub fn run(opts: Options) -> i32 {
     runtime.block_on(run_async(opts))
 }
 
-async fn wait_for_stop_signal() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        match (
-            signal(SignalKind::interrupt()),
-            signal(SignalKind::terminate()),
-        ) {
-            (Ok(mut int), Ok(mut term)) => {
-                tokio::select! {
-                    _ = int.recv() => {}
-                    _ = term.recv() => {}
-                }
-            }
-            _ => std::future::pending::<()>().await,
-        }
+/// The stop-signal streams. They are created before the run starts, so a signal arriving later is
+/// not lost.
+#[cfg(unix)]
+type StopSignals = (tokio::signal::unix::Signal, tokio::signal::unix::Signal);
+#[cfg(windows)]
+type StopSignals = tokio::signal::windows::CtrlC;
+
+#[cfg(unix)]
+fn stop_signals() -> std::io::Result<StopSignals> {
+    use tokio::signal::unix::{SignalKind, signal};
+    Ok((
+        signal(SignalKind::interrupt())?,
+        signal(SignalKind::terminate())?,
+    ))
+}
+
+#[cfg(windows)]
+fn stop_signals() -> std::io::Result<StopSignals> {
+    tokio::signal::windows::ctrl_c()
+}
+
+/// Waits for the next SIGINT or SIGTERM (Ctrl+C on Windows).
+#[cfg(unix)]
+async fn next_stop_signal(streams: &mut StopSignals) {
+    tokio::select! {
+        _ = streams.0.recv() => {}
+        _ = streams.1.recv() => {}
     }
-    #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
-    }
+}
+
+#[cfg(windows)]
+async fn next_stop_signal(streams: &mut StopSignals) {
+    let _ = streams.recv().await;
+}
+
+/// Watches for stop signals. The first one asks the capture to stop, so the stop runs as
+/// EARS-SRC-022 says. A second one exits at once with a non-zero status, so an operator can
+/// force-quit a stop that is taking too long; it skips the stop's last delivery attempt and the
+/// registration delete, so the key is left to its lease.
+fn watch_stop_signals(mut signals: StopSignals, flag: Arc<AtomicBool>) {
+    tokio::spawn(async move {
+        next_stop_signal(&mut signals).await;
+        log("stopping; a second stop signal exits at once");
+        flag.store(true, Ordering::SeqCst);
+        next_stop_signal(&mut signals).await;
+        log("second stop signal: exiting without finishing the stop");
+        std::process::exit(EXIT_FORCED);
+    });
 }
 
 async fn run_async(opts: Options) -> i32 {
@@ -88,12 +118,12 @@ async fn run_async(opts: Options) -> i32 {
     };
 
     let stop_flag = Arc::new(AtomicBool::new(false));
-    {
-        let flag = stop_flag.clone();
-        tokio::spawn(async move {
-            wait_for_stop_signal().await;
-            flag.store(true, Ordering::SeqCst);
-        });
+    match stop_signals() {
+        Ok(signals) => watch_stop_signals(signals, stop_flag.clone()),
+        Err(e) => {
+            log(&format!("could not listen for stop signals: {e}"));
+            return EXIT_FAILURE;
+        }
     }
 
     let started_ms = SystemTime::now()
@@ -143,6 +173,8 @@ async fn run_async(opts: Options) -> i32 {
     )
     .await;
 
+    // If the capture thread panicked, this returns without a registration delete: the key is left
+    // to its 15 s lease, and the clips still queued are lost.
     let (outcome, deliverer, registrar) = match joined {
         Ok(Ok(parts)) => parts,
         Ok(Err(e)) => {

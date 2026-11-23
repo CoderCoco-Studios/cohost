@@ -36,7 +36,7 @@ impl Pulse {
         let mut context =
             Context::new(&mainloop, APP).ok_or("could not create the PulseAudio context")?;
         context
-            .connect(None, FlagSet::NOFLAGS, None)
+            .connect(None, FlagSet::NOAUTOSPAWN, None)
             .map_err(|e| format!("could not connect to PulseAudio: {e}"))?;
         loop {
             if !matches!(mainloop.iterate(true), IterateResult::Success(_)) {
@@ -53,7 +53,8 @@ impl Pulse {
         Ok(Self { context, mainloop })
     }
 
-    /// Runs the mainloop until the callback fills `slot`.
+    /// Runs the mainloop until the callback fills `slot`. A server that dies while we wait ends the
+    /// wait with an error, so the capture thread cannot hang on a callback that never comes.
     fn wait<T>(&mut self, slot: &Rc<RefCell<Option<T>>>) -> Result<T, String> {
         loop {
             if let Some(v) = slot.borrow_mut().take() {
@@ -61,6 +62,9 @@ impl Pulse {
             }
             if !matches!(self.mainloop.iterate(true), IterateResult::Success(_)) {
                 return Err("the PulseAudio mainloop failed".into());
+            }
+            if matches!(self.context.get_state(), State::Failed | State::Terminated) {
+                return Err("the PulseAudio connection was lost".into());
             }
         }
     }
@@ -156,6 +160,7 @@ impl Capture for PulseCapture {
             }
         };
         let spec = Spec {
+            // Native-endian float: `read` decodes with from_ne_bytes to match.
             format: PaFormat::FLOAT32NE,
             channels: CHANNELS,
             rate: RATE,
@@ -192,7 +197,7 @@ impl Capture for PulseCapture {
             .read(&mut self.buf)
             .map_err(|e| format!("reading the source failed: {e}"))?;
         let (frames, _) = self.buf.as_chunks::<4>();
-        out.extend(frames.iter().map(|b| f32::from_le_bytes(*b)));
+        out.extend(frames.iter().map(|b| f32::from_ne_bytes(*b)));
         Ok(())
     }
 

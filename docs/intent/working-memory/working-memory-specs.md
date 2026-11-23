@@ -19,7 +19,7 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 
 ## Ingest
 
-- [ ] **WM-PUSH-001**: When `push` is given a `chat.message` bus event, the system shall append an unseen `chat` context event holding the bus event's `ts`, its `user` and `text` as bounded on intake (WM-PUSH-014, WM-PUSH-015), its `platform`, `userId` (when present) and `messageId` (when present) unchanged, `isMod`, `isSub`, and `mention` taken from `mentionsCohost`. <!-- test: packages/working-memory/test/context.test.ts (ts is masked in the assertion) --> <!-- openspec: working-memory § Ingesting bus events -->
+- [x] **WM-PUSH-001**: When `push` is given a `chat.message` bus event, the system shall append an unseen `chat` context event holding the bus event's `ts`, its `user` and `text` as bounded on intake (WM-PUSH-014, WM-PUSH-015), its `platform`, `userId` (when present) and `messageId` (when present) unchanged, `isMod`, `isSub`, and `mention` taken from `mentionsCohost`. <!-- test: packages/working-memory/test/context.test.ts (ts is masked in the assertion) --> <!-- openspec: working-memory § Ingesting bus events -->
 - [x] **WM-PUSH-002**: When `push` is given a `speech.heard` bus event, the system shall append an unseen `speech` context event holding the bus event's `ts`, its `speaker` and `text` as bounded on intake (WM-PUSH-016, WM-PUSH-017). <!-- test: packages/working-memory/test/context.test.ts (ts is masked in the assertion) --> <!-- openspec: working-memory § Ingesting bus events -->
 - [x] **WM-PUSH-003**: When `push` is given a bus event of any type other than `chat.message`, `vision.summary` or `speech.heard` (for example `brain.say` or `affect.state`), the system shall leave the window unchanged. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Ingesting bus events -->
 - [x] **WM-PUSH-004**: When `push` is given a `vision.summary` bus event, the system shall set `lastVision` to its text as bounded on intake (WM-PUSH-018), remove every earlier `vision` context event from the window, and append a single `vision` context event carrying the bus event's `ts`, `changed` and that bounded text, so the window holds at most one vision entry. <!-- test: packages/working-memory/test/context.test.ts --> <!-- openspec: working-memory § Single vision entry -->
@@ -42,12 +42,12 @@ Design: [working-memory-design.md](working-memory-design.md). Prefix `WM`. `[x]`
 
 ## Forgetting a removed message (FORGET)
 
-- [ ] **WM-FORGET-001**: When `forget` is called with a removal of `scope` `message`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform` and whose `messageId` equals its `messageId`, and return the number removed.
-- [ ] **WM-FORGET-002**: When `forget` is called with a removal of `scope` `user`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform` and whose `userId` equals its `userId`, and shall not remove a `chat` event that has no `userId`.
-- [ ] **WM-FORGET-003**: When `forget` is called with a removal of `scope` `all`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform`.
-- [ ] **WM-FORGET-004**: When `forget` is called, the `Context` shall leave every `speech`, `vision` and `self` event and every `chat` event of another platform in the window unchanged.
-- [ ] **WM-FORGET-005**: When `forget` removes a `chat` event, the `Context` shall also drop it from the arrivals record of `holdArrivals`, so it is neither returned by `all()` or `unseen()` nor marked seen later.
-- [ ] **WM-FORGET-006**: When `forget` is called with a removal that matches no `chat` event, the `Context` shall change nothing and return 0.
+- [x] **WM-FORGET-001**: When `forget` is called with a removal of `scope` `message`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform` and whose `messageId` equals its `messageId`, and return the number removed.
+- [x] **WM-FORGET-002**: When `forget` is called with a removal of `scope` `user`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform` and whose `userId` equals its `userId`, and shall not remove a `chat` event that has no `userId`.
+- [x] **WM-FORGET-003**: When `forget` is called with a removal of `scope` `all`, the `Context` shall remove every `chat` event whose `platform` equals the removal's `platform`.
+- [x] **WM-FORGET-004**: When `forget` is called, the `Context` shall leave every `speech`, `vision` and `self` event and every `chat` event of another platform in the window unchanged.
+- [x] **WM-FORGET-005**: When `forget` removes a `chat` event, the `Context` shall also drop it from the arrivals record of `holdArrivals`, so it is neither returned by `all()` or `unseen()` nor marked seen later.
+- [x] **WM-FORGET-006**: When `forget` is called with a removal that matches no `chat` event, the `Context` shall change nothing and return 0.
 
 ## Seen tracking
 

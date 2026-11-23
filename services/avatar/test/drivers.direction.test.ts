@@ -7,7 +7,7 @@ import { VmcDriver } from "../src/drivers/vmc.js";
 import { NEUTRAL, type DriverContext } from "../src/types.js";
 
 const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
-const ctx = (): DriverContext => ({ log, stateDir: "/tmp", expressions: {}, gestures: {} });
+const ctx = (): DriverContext => ({ log, stateDir: "/tmp", expressions: {}, gestures: {}, frames: { publishAvatarFrame: async () => {} } });
 
 /** The head quaternion `[x, y, z, w]` a VMC driver sends for one parameter set. */
 async function headQuat(p: Partial<typeof NEUTRAL>): Promise<[number, number, number, number]> {

@@ -186,9 +186,9 @@ test("the driver context carries frames, the bus client's publishAvatarFrame, be
   const c = t.driver.ctx as unknown as { frames: unknown; log: unknown; expressions: unknown; gestures: unknown; stateDir: string };
   assert.ok(c.log && c.expressions && c.gestures && c.stateDir === "/state");
   const frame = { mouthOpen: 0, mouthSmile: 0, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, emotion: "neutral", intensity: 0, expression: "" };
-  const frames = c.frames as { publishAvatarFrame?: (f: unknown) => Promise<unknown> } & ((f: unknown) => Promise<unknown>);
-  assert.ok(frames, "frames is in the context");
-  await (typeof frames.publishAvatarFrame === "function" ? frames.publishAvatarFrame(frame) : frames(frame));
+  const frames = c.frames as { publishAvatarFrame: (f: unknown) => Promise<unknown> };
+  assert.equal(typeof frames.publishAvatarFrame, "function", "frames is the bus client's avatar-frame writer object");
+  await frames.publishAvatarFrame(frame);
   assert.deepEqual(t.bus.avatarFrames, [frame], "a write through frames reaches the bus client's publishAvatarFrame");
 });
 

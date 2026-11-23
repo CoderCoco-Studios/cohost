@@ -21,7 +21,7 @@ function setup(over: Partial<DriverContext> = {}) {
   const w = writer();
   const warnings: { msg: unknown; obj: unknown }[] = [];
   const log = { warn: (obj: unknown, msg?: unknown) => warnings.push({ obj, msg }), info() {}, error() {}, debug() {} } as never;
-  const ctx = { log, stateDir: "/tmp", expressions: {}, gestures: {}, frames: Object.assign((f: AvatarFrame) => w.write(f), { publishAvatarFrame: w.write }), ...over } as unknown as DriverContext;
+  const ctx = { log, stateDir: "/tmp", expressions: {}, gestures: {}, frames: { publishAvatarFrame: w.write }, ...over } as unknown as DriverContext;
   return { w, ctx, warnings };
 }
 const tick = () => new Promise((r) => setImmediate(r));
@@ -33,7 +33,7 @@ test("the browser driver is named browser", () => {
 
 // @spec AVATAR-BRW-003
 test("connect opens nothing, resolves at once and never rejects, even without a reachable bus", async () => {
-  const { ctx } = setup({ frames: Object.assign(() => Promise.reject(new Error("redis down")), { publishAvatarFrame: () => Promise.reject(new Error("redis down")) }) as never });
+  const { ctx } = setup({ frames: { publishAvatarFrame: () => Promise.reject(new Error("redis down")) } as never });
   const d = new BrowserDriver();
   assert.equal(await Promise.race([d.connect(ctx).then(() => "done"), tick().then(() => "slow")]), "done");
 });
@@ -159,7 +159,7 @@ test("a failed write logs avatar frame publish failed at most once every 10 s on
 
 // @spec AVATAR-BRW-009
 test("a write that rejects without a handler never becomes an unhandled rejection", async () => {
-  const { ctx } = setup({ frames: Object.assign(() => Promise.reject(new Error("down")), { publishAvatarFrame: () => Promise.reject(new Error("down")) }) as never });
+  const { ctx } = setup({ frames: { publishAvatarFrame: () => Promise.reject(new Error("down")) } as never });
   const uncaught: unknown[] = [];
   const on = (e: unknown) => { uncaught.push(e); };
   process.on("unhandledRejection", on);

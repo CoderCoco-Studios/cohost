@@ -11,6 +11,7 @@ export interface AvatarParams {
   mouthSmile: number;
   // Directions are as a viewer of the stream sees the face (avatar design, Direction of the angles); a driver signs
   // each value for its app to match.
+  // @spec AVATAR-DIR-001, AVATAR-DIR-002, AVATAR-DIR-003, AVATAR-DIR-004, AVATAR-DIR-005
   headX: number;   // yaw, -30..30: positive turns the face toward the viewer's left (AVATAR-DIR-001)
   headY: number;   // pitch: positive tips the face down, chin toward the chest (AVATAR-DIR-002)
   headZ: number;   // roll: positive tilts the top of the head toward the viewer's right (AVATAR-DIR-003)
@@ -27,8 +28,8 @@ export interface DriverContext {
   gestures: Record<string, string>;
   /** Directory the driver may persist small state in (auth tokens etc.). */
   stateDir: string;
-  /** The bus client's avatar-frame writer, used only by the browser driver (AVATAR-BRW-002); absent in tests of other drivers. */
-  frames?: Pick<Bus, "publishAvatarFrame">;
+  /** The bus client's avatar-frame writer (AVATAR-BRW-002). Every driver receives it; only the browser driver writes frames. */
+  frames: Pick<Bus, "publishAvatarFrame">;
 }
 
 /**

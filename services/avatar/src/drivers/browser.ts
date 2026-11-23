@@ -29,7 +29,8 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000 + 0;
 
 export class BrowserDriver implements AvatarDriver { // @spec AVATAR-BRW-001
   readonly name = "browser";
-  private frames?: NonNullable<DriverContext["frames"]>;
+  private frames!: DriverContext["frames"];
+  private open = false; // true from connect until disconnect
   private log?: DriverContext["log"];
   private expressions: Record<string, string> = {};
   private emotion: Emotion = "neutral";
@@ -40,17 +41,18 @@ export class BrowserDriver implements AvatarDriver { // @spec AVATAR-BRW-001
 
   async connect(ctx: DriverContext): Promise<void> { // @spec AVATAR-BRW-003
     this.frames = ctx.frames;
+    this.open = true;
     this.log = ctx.log;
     this.expressions = ctx.expressions;
   }
 
-  async disconnect(): Promise<void> { this.frames = undefined; } // @spec AVATAR-BRW-012
+  async disconnect(): Promise<void> { this.open = false; } // @spec AVATAR-BRW-012
 
   /** True from construction; false from a failed write until the next successful one (AVATAR-BRW-010). */
-  connected(): boolean { return !this.failed; }
+  connected(): boolean { return !this.failed; } // @spec AVATAR-BRW-010
 
   setParams(p: AvatarParams): void { // @spec AVATAR-BRW-004, AVATAR-BRW-008
-    if (!this.frames || this.writing) return; // one write in flight: this frame is dropped, not queued
+    if (!this.open || this.writing) return; // after disconnect: nothing; one write in flight: this frame is dropped, not queued
     const frame: AvatarFrame = {
       mouthOpen: r3(p.mouthOpen), mouthSmile: r3(p.mouthSmile),
       headX: r3(p.headX), headY: r3(p.headY), headZ: r3(p.headZ),
@@ -69,7 +71,7 @@ export class BrowserDriver implements AvatarDriver { // @spec AVATAR-BRW-001
   /** Does nothing: gesture timing belongs to the Engine, and a VRM has no hotkeys (AVATAR-BRW-011). */
   trigger(_gesture: string): void { /* no-op */ } // @spec AVATAR-BRW-011
 
-  private write(frames: NonNullable<DriverContext["frames"]>, frame: AvatarFrame): void {
+  private write(frames: DriverContext["frames"], frame: AvatarFrame): void { // @spec AVATAR-BRW-008, AVATAR-BRW-010
     this.writing = true;
     let pending: Promise<unknown>;
     try { pending = frames.publishAvatarFrame(frame); } catch (err) { pending = Promise.reject(err); }
@@ -80,7 +82,7 @@ export class BrowserDriver implements AvatarDriver { // @spec AVATAR-BRW-001
   }
 
   /** Logs a failed write at most once every 10 s; the driver keeps running (AVATAR-BRW-009). */
-  private warn(err: unknown): void {
+  private warn(err: unknown): void { // @spec AVATAR-BRW-009
     const now = performance.now();
     if (now - this.warnedAt < WARN_INTERVAL_MS) return;
     this.warnedAt = now;

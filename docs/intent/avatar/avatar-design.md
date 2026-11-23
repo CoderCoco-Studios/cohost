@@ -80,7 +80,7 @@ Per-frame pipeline (`engine.ts`):
 
 ## Drivers
 
-The contract: `name`, `connect(ctx)`, `disconnect()`, `connected()`, `setParams(p)` (every frame), `setExpression(emotion, intensity)` (on change), `trigger(gesture)` (fire and forget). `DriverContext` carries a logger, the emotion-to-app-name map, the gesture map, a `stateDir` for small persisted state and `frames`, the bus client's avatar-frame writer (`Pick<Bus, "publishAvatarFrame">`), which only the browser driver uses and which other drivers may ignore (`types.ts`). A driver that cannot do something (VMC has no gestures) ignores the call; there is no capability declaration (AVATAR-DRV-001).
+The contract: `name`, `connect(ctx)`, `disconnect()`, `connected()`, `setParams(p)` (every frame), `setExpression(emotion, intensity)` (on change), `trigger(gesture)` (fire and forget). `DriverContext` carries a logger, the emotion-to-app-name map, the gesture map, a `stateDir` for small persisted state and `frames`, the bus client's avatar-frame writer (`Pick<Bus, "publishAvatarFrame">`). Every driver receives `frames`; only the browser driver writes to it (`types.ts`). A driver that cannot do something (VMC has no gestures) ignores the call; there is no capability declaration (AVATAR-DRV-001).
 
 Selection is by `cfg.avatar.driver` (`drivers/index.ts`). The config schema restricts the value to `vtube-studio | vmc | browser | null` with default `null` (`packages/config/src/schema.ts`), and `loadConfig` throws on an invalid value (`packages/config/src/index.ts`). An unknown driver is a configuration error that fails fast; the factory has no fallback for other names (AVATAR-DRV-003, AVATAR-DRV-004). An unset or empty `avatar.driver` selects `null`, so a config without avatar settings still loads; the config side (the literal `"null"` in the example YAML, a blank-safe driver value, defaults for `vtube_studio.port` and `vmc.port`) is owned by [config](../config/config-design.md).
 
@@ -186,7 +186,7 @@ The browser driver gives a VRM model drawn in a web page the same face every oth
 Files in segment:
 - `services/avatar/src/index.ts`, `boot.ts`, `state.ts`, `engine.ts`, `types.ts`, `health.ts`
 - `services/avatar/src/drivers/index.ts`, `null.ts`, `vmc.ts`, `vtube-studio.ts`, `browser.ts`
-- `services/avatar/test/boot.test.ts`, `state.test.ts`, `engine.test.ts`, `drivers.test.ts`, `drivers.vts.test.ts`, `health.test.ts`, `typecheck.test.ts`, `contract.test.ts`
+- `services/avatar/test/boot.test.ts`, `state.test.ts`, `engine.test.ts`, `drivers.test.ts`, `drivers.direction.test.ts`, `drivers.vts.test.ts`, `browser.test.ts`, `health.test.ts`, `typecheck.test.ts`, `contract.test.ts`
 - `services/avatar/package.json`, `services/avatar/tsconfig.json`, `services/avatar/test/tsconfig.json`
 - `config/expressions.example.yaml`
 - `examples/avatar-driver/udp-json.ts`, `examples/avatar-driver/README.md`, `services/avatar/test/example-driver.test.ts`; the docs site's Add an avatar driver page (`docs/advanced/extend/avatar-driver.md`) imports the driver

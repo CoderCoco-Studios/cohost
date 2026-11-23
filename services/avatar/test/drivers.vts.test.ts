@@ -14,7 +14,7 @@ const logs = { warn: [] as unknown[], error: [] as unknown[] };
 const log = { warn: (o: unknown) => logs.warn.push(o), error: (o: unknown) => logs.error.push(o), info() {}, debug() {} } as never;
 const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
   log, stateDir: mkdtempSync(join(tmpdir(), "cohost-avatar-vts-")),
-  expressions: { happy: "Smile", confused: "NoSuchHotkey" }, gestures: {}, ...over,
+  expressions: { happy: "Smile", confused: "NoSuchHotkey" }, gestures: {}, frames: { publishAvatarFrame: async () => {} }, ...over,
 });
 async function waitFor(cond: () => boolean, what: string, ms = 3000) {
   const t0 = performance.now();

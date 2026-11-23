@@ -4,7 +4,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, the browser renderer, or n
 
 ## Status
 
-Total 91 specs: 90 `[x]`, 1 `[ ]`, 0 `[D]`. The one gap is AVATAR-VTS-018, the VTube Studio parameter signs, which needs a manual check against a real Live2D model (no test). The VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` ([decision](../decisions/config-in-one-place.md); AVATAR-VTS-017). The example driver (AVATAR-EX-001 to AVATAR-EX-004) is implemented and tested, and cited by the docs site's Extend pages.
+Total 91 specs: 90 `[x]`, 1 `[ ]`, 0 `[D]`. The one gap is AVATAR-VTS-018, the VTube Studio parameter signs, which needs a manual check against a real Live2D model (no test). AVATAR-DIR-001 to AVATAR-DIR-005 are `[x]` as definition-only specs: their tests (`drivers.direction.test.ts`) pin the VMC head quaternion and the comments that state the directions. They do not verify a consumer; the real consumers are checked by AVATAR-VTS-018 and the Live-screen preview and renderer page (#218). The VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` ([decision](../decisions/config-in-one-place.md); AVATAR-VTS-017). The example driver (AVATAR-EX-001 to AVATAR-EX-004) is implemented and tested, and cited by the docs site's Extend pages.
 
 The `browser` driver writes one frame per Engine tick to the avatar-frame stream (AVATAR-BRW-*); its frame contents, expression block, health meaning and the page's share of animation are in the LLD's browser section, and the stream, relay and renderer page are in the event-bus (BUS-AVF-*) and dashboard (DASH-AVR-*, DASH-MDL-*, DASH-AVP-*, DASH-AVS-*) specs.
 

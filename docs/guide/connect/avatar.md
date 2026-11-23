@@ -98,6 +98,10 @@ Under `browser` in `config/expressions.yaml`, each emotion names the VRM express
 
 The browser driver ignores `gestures`, because a VRM has no hotkeys.
 
+::: aside
+The renderer page that draws the model lands with #216 to #218. Remove this note when they merge.
+:::
+
 ## Getting the avatar into OBS
 
 The avatar app shows the model in its own window. To put it on stream, capture that window in [OBS](../../start/glossary.md#obs) as you would any other, if OBS runs on the same PC. If the avatar app runs on the AI PC and OBS runs on a second PC, send the avatar to OBS over NDI instead. [OBS and the voice on stream](obs.md) covers the other half, the voice.

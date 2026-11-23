@@ -20,6 +20,7 @@ const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
   log, stateDir: mkdtempSync(join(tmpdir(), "cohost-avatar-")),
   expressions: { happy: "Smile", sad: "Sad", smug: "smug.exp3.json" },
   gestures: { wave: "WAVE" },
+  frames: { publishAvatarFrame: async () => {} },
   ...over,
 });
 async function waitFor(cond: () => boolean, what: string, ms = 2000) {

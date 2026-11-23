@@ -131,6 +131,22 @@ test("each of the seventeen wildcard-free secret paths can be set and cleared", 
   assert.deepEqual(t.values(), { [BR_ID]: "id", [BR_SECRET]: "sec" });
 });
 
+// @spec DASH-SECRET-001
+test("the engine secrets (ears openai/nemotron/kyutai keys, voice openai key, pocket hf_token) are secret paths of GET /config/schema and PUT /secrets/:path stores each trimmed", async () => {
+  const engine = ["ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token"];
+  const t = await boot({ control: true });
+  const schema = (await (await t.get("/config/schema")).json()) as { sections: { path: string; secrets?: string[] }[] };
+  const advertised = schema.sections.flatMap((s) => (s.secrets ?? []).map((n) => `${s.path}.${n}`));
+  for (const p of engine) {
+    assert.ok(advertised.includes(p), `${p} is declared by a schema section`);
+    const r = await t.put(`/secrets/${p}`, { value: `  v-${p}\n` }, TOKEN);
+    assert.equal(r.status, 200, p);
+    assert.equal(((await r.json()) as { set: boolean }).set, true);
+    assert.equal(t.values()[p], `v-${p}`);
+  }
+  assert.equal(t.configText(), EXAMPLE, "config.yaml is untouched");
+});
+
 // @spec DASH-SECRET-002, DASH-SECRET-007
 test("a clear empties the value, keeps the key and every other secret, and every read reports it not set", async () => {
   const t = await boot({ control: true, secrets: `# mine\nllm:\n  openai:\n    api_key: sk-old\n  claude:\n    api_key: sk-claude\n` });

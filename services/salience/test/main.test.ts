@@ -58,7 +58,7 @@ test("main: subscribes in start mode latest and signals ready only after the con
   assert.deepEqual(bus.calls, ["resetGroup:salience", "subscribe:salience"]);
   assert.deepEqual(bus.subscribed[0], {
     group: "salience",
-    types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
+    types: ["chat.message", "chat.removed", "speech.heard", "speech.early", "speech.retracted", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
     start: "latest",
   });
   for (const fn of shutdown) await fn();
@@ -117,6 +117,16 @@ test("main: the heartbeat reports mode mock and a hook dependency when the score
   const ready = bus.health.find((h) => h.state === "ready")!;
   assert.equal(ready.mode, "mock");
   assert.ok("hook.salience.scorer" in (ready.deps ?? {}));
+  for (const fn of shutdown) await fn();
+});
+
+test("main: salience subscribes to speech.early and speech.retracted and never to speech.partial", async () => { // @spec SAL-IN-001, SAL-IN-007
+  const bus = new GroupBus();
+  const { env: e, shutdown } = env(bus);
+  await runSalience({ ...e, log: recordingLog().log });
+  const types = (bus.subscribed[0]!.types ?? []) as readonly string[];
+  assert.ok(types.includes("speech.early") && types.includes("speech.retracted"));
+  assert.ok(!types.includes("speech.partial"));
   for (const fn of shutdown) await fn();
 });
 

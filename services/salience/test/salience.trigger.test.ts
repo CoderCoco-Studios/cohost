@@ -71,6 +71,21 @@ test("trigger: only speech.heard starts a decision", async () => { // @spec SAL-
   assert.equal(passes() - before, 1, "a speech.heard starts exactly one pass");
 });
 
+test("trigger: a speech.retracted, and a speech.early with trigger_on_speech false, start no decision", async () => { // @spec SAL-TRIG-002, SAL-IN-007
+  const { s, bus, passes } = setup({ trigger_on_speech: false });
+  await s.onEvent(event("speech.early", { speaker: "Chris", source: "http", text: "look at this", utteranceId: "u1", seq: 0, sttMs: 100 }));
+  await s.onEvent(event("speech.retracted", { speaker: "Chris", source: "http", utteranceId: "u1", seq: 0 }));
+  await flush();
+  assert.equal(passes(), 0);
+  assert.equal(bus.of("attention.focus").length, 0);
+  assert.equal(s.ctx.all().length, 0, "neither is entered into the Context");
+  // With the trigger on, an early transcript is no ordinary trigger decision: it never enters the window or marks anything.
+  const on = setup();
+  await on.s.onEvent(event("speech.early", { speaker: "Chris", source: "http", text: "look at this", utteranceId: "u1", seq: 0, sttMs: 100 }));
+  await flush();
+  assert.equal(on.s.ctx.all().length, 0);
+});
+
 test("trigger: a line a reflex answered starts no decision", async () => { // @spec SAL-TRIG-003
   const { s, bus } = setup({ reflexes: [DIED] });
   const tick = mock.method(s, "tick");

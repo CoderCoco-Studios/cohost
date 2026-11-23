@@ -36,6 +36,31 @@ test("a speech focus with no timing, and a chat or vision focus, publish no timi
   assert.equal(chat.bus.of("attention.focus")[0]!.timing, undefined);
 });
 
+// @spec SAL-FOCUS-006
+test("a speech focus also carries closedAt when the heard event has one, unaltered, and none without audioEndedAt", async () => {
+  const { s, bus } = setup();
+  const heard = event("speech.heard", { speaker: "Chris", text: "look at this", durationMs: 900, timing: { audioEndedAt: 123456, closedAt: 123000 } });
+  await s.onEvent(heard);
+  await s.tick();
+  assert.deepEqual(bus.of("attention.focus")[0]!.timing, { audioEndedAt: 123456, closedAt: 123000, heardAt: heard.ts });
+
+  const bare = setup();
+  await bare.s.onEvent(event("speech.heard", { speaker: "Chris", text: "look at this", durationMs: 900, timing: { closedAt: 123000 } }));
+  await bare.s.tick();
+  assert.equal(bare.bus.of("attention.focus")[0]!.timing, undefined);
+});
+
+// @spec SAL-PROV-028
+test("an ordinary speech focus carries the utteranceId of its speech.heard", async () => {
+  const { s, bus } = setup();
+  await s.onEvent(event("speech.heard", { speaker: "Chris", text: "look at this", durationMs: 900, utteranceId: "u7" }));
+  await s.tick();
+  const [focus] = bus.of("attention.focus");
+  assert.equal(focus!.utteranceId, "u7");
+  assert.equal(focus!.provisional, undefined);
+  assert.equal(focus!.seq, undefined);
+});
+
 // @spec SAL-IN-007
 test("a speech.partial handed to salience becomes no focus (the subscription list itself is asserted exactly in main.test.ts)", async () => {
   const { s, bus } = setup();

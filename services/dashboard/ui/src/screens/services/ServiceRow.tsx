@@ -9,6 +9,7 @@ import { useAction, useApi, useFeed, useFeedClock } from "../../state/hooks";
 import { needsAttention } from "../../state/derive";
 import type { ApiResult } from "../../state/api";
 import type { ServiceHealth, UnitDescriptor } from "../../state/types";
+import { egressNote, type EgressEntry } from "../../state/egress";
 import { lastSeen, unitTest, whyOf } from "./model";
 
 type Op = "start" | "restart" | "stop";
@@ -34,6 +35,8 @@ export interface RowProps {
   /** The isolation overrides the unit's container runs with, as `NAME=value, ...`; empty when none. */
   isolatedBy: string;
   onTest: (id: string) => void;
+  /** The off-LAN destinations of this service's entries in `GET /egress`; empty when none. */
+  egress: EgressEntry[];
 }
 
 /** A 2xx whose body says `ok: false` is a failure. */
@@ -46,8 +49,8 @@ function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiRes
  * One service row, keyed by the service name by its parent so it is patched in place (DASH-UI-007): the status, the plain
  * why, the last-seen text, and, for a manifest unit, its actions with per-action feedback (DASH-UI-008, DASH-UI-015).
  */
-// @spec DASH-UI-007, DASH-UI-008, DASH-UI-035, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
-export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked, isolatedBy, onTest }: RowProps) {
+// @spec DASH-UI-007, DASH-UI-008, DASH-UI-035, DASH-UI-037, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
+export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked, isolatedBy, onTest, egress }: RowProps) {
   const api = useApi();
   const act = useAction();
   const [dialog, setDialog] = useState<Op | null>(null);
@@ -84,7 +87,9 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
           {(s.needs ?? []).map((n) => <span key={n.service} className="needs small muted">{`needs ${n.service} (${n.state})`}</span>)}
         </div>
       </td>
-      <td data-label="Why">{why.lead ? <span className="small">{why.lead}</span> : null}{why.lead && why.rest ? " " : ""}{why.rest ? <span className="small muted">{why.rest}</span> : null}</td>
+      <td data-label="Why">{why.lead ? <span className="small">{why.lead}</span> : null}{why.lead && why.rest ? " " : ""}{why.rest ? <span className="small muted">{why.rest}</span> : null}
+        {egress.map((e, i) => { const note = egressNote(e); return note ? <p key={i} className="egress-note small muted">{note}</p> : null; })}
+      </td>
       <td data-label="Last seen">
         <span className="svc-age">{id === "dashboard" ? "now" : <Age s={s} />}</span>
         <span className="svc-restarts small muted">{`${s.restarts} ${s.restarts === 1 ? "restart" : "restarts"}${s.containerRestarts ? ` · container restarted ${s.containerRestarts}` : ""}`}</span>

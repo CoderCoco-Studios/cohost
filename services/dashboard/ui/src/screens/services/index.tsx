@@ -5,6 +5,7 @@ import { PageHeading } from "../../components/PageHeading";
 import { EmptyState, ErrorState, LoadingState } from "../../components/StateBlocks";
 import { useApi, useFeed } from "../../state/hooks";
 import { attentionCount } from "../../state/derive";
+import { useEgress, type EgressEntry } from "../../state/egress";
 import type { ControlInfo, UnitDescriptor } from "../../state/types";
 import { blockReason, sortServices } from "./model";
 import { ServiceRow } from "./ServiceRow";
@@ -54,6 +55,12 @@ export function Screen(_props: ScreenProps) {
   const attention = attentionCount(services);
   const overrides = useMemo(() => new Map((stack?.services ?? []).map((c) => [c.service, Object.entries(c.overrides ?? {}).map(([k, v]) => `${k}=${v}`).join(", ")])), [stack]);
   const onTest = useCallback((id: string) => setTesting(id), []);
+  const egress = useEgress();
+  const egressBy = useMemo(() => {
+    const by = new Map<string, EgressEntry[]>();
+    for (const e of egress) if (e.offLan) by.set(e.service, [...(by.get(e.service) ?? []), e]);
+    return by;
+  }, [egress]);
   const sheetUnit = testing && load.status === "ready" ? load.units.get(testing) : undefined;
 
   return (
@@ -75,7 +82,7 @@ export function Screen(_props: ScreenProps) {
                 <thead><tr><th scope="col">Service</th><th scope="col">State</th><th scope="col">Why</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr></thead>
                 <tbody>
                   {rows!.map((s) => (
-                    <ServiceRow key={s.service} s={s} unit={load.units.get(s.service)} controlOn={controlOn} blocked={blocked} isolatedBy={overrides.get(s.service) ?? ""} onTest={onTest} />
+                    <ServiceRow key={s.service} s={s} unit={load.units.get(s.service)} controlOn={controlOn} blocked={blocked} isolatedBy={overrides.get(s.service) ?? ""} onTest={onTest} egress={egressBy.get(s.service) ?? []} />
                   ))}
                 </tbody>
               </table>

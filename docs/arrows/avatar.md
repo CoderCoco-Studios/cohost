@@ -4,7 +4,7 @@ Animates an avatar app (VTube Studio, a VMC receiver, the browser renderer, or n
 
 ## Status
 
-Total 91 specs: 57 `[x]`, 34 `[ ]`, 0 `[D]`. The gaps are AVATAR-BUS-003 to AVATAR-BUS-005 and AVATAR-BUS-009, AVATAR-ENG-002 to AVATAR-ENG-004 and AVATAR-ENG-007 (the streamed-speech clause specs, among them), AVATAR-ENG-019 to AVATAR-ENG-021, AVATAR-DRV-002 to AVATAR-DRV-004 (the driver set now includes `browser`), AVATAR-VMC-007, AVATAR-VTS-018, AVATAR-DIR-001 to AVATAR-DIR-005 and AVATAR-BRW-001 to AVATAR-BRW-013. The VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` ([decision](../decisions/config-in-one-place.md); AVATAR-VTS-017). The example driver (AVATAR-EX-001 to AVATAR-EX-004) is implemented and tested, and cited by the docs site's Extend pages.
+Total 91 specs: 68 `[x]`, 23 `[ ]`, 0 `[D]`. The gaps are AVATAR-DRV-002 to AVATAR-DRV-004 (the driver set now includes `browser`), AVATAR-VMC-007, AVATAR-VTS-018, AVATAR-DIR-001 to AVATAR-DIR-005 and AVATAR-BRW-001 to AVATAR-BRW-013. The VTube Studio plugin developer is the literal `avatar.vtube_studio.plugin_developer` ([decision](../decisions/config-in-one-place.md); AVATAR-VTS-017). The example driver (AVATAR-EX-001 to AVATAR-EX-004) is implemented and tested, and cited by the docs site's Extend pages.
 
 The `browser` driver is specified (AVATAR-BRW-*) and not built: its frame contents, expression block, health meaning and the page's share of animation are in the LLD's browser section, and the stream, relay and renderer page are in the event-bus (BUS-AVF-*) and dashboard (DASH-AVR-*, DASH-MDL-*, DASH-AVP-*, DASH-AVS-*) specs.
 
@@ -66,8 +66,8 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-009 | 5 | 0 | 4 | 5 |
-| Animation engine | AVATAR-ENG-001 to AVATAR-ENG-021 | 14 | 0 | 7 | 14 |
+| Bus wiring | AVATAR-BUS-001 to AVATAR-BUS-009 | 9 | 0 | 0 | 9 |
+| Animation engine | AVATAR-ENG-001 to AVATAR-ENG-021 | 21 | 0 | 0 | 21 |
 | Driver contract and selection | AVATAR-DRV-001 to AVATAR-DRV-007 | 4 | 0 | 3 | 4 |
 | VTube Studio driver | AVATAR-VTS-001 to AVATAR-VTS-018 | 17 | 0 | 1 | 17 |
 | VMC driver | AVATAR-VMC-001 to AVATAR-VMC-007 | 6 | 0 | 1 | 6 |
@@ -78,7 +78,7 @@ Also: services/avatar/src/index.ts, services/avatar/package.json, services/avata
 | Development | AVATAR-DEV-001 | 1 | 0 | 0 | 1 |
 | Example driver | AVATAR-EX-001 to AVATAR-EX-004 | 4 | 0 | 0 | 4 |
 
-**Summary:** 91 specs: 57 implemented, 34 gaps, 0 deferred. The gaps are the streamed-speech clause specs, the driver-set revisions and the browser driver. `node scripts/lid-check.mjs` finds no reverse orphans. The Test-annotated column counts specs that name a test (`<!-- test: ... -->`).
+**Summary:** 91 specs: 68 implemented, 23 gaps, 0 deferred. The gaps are the driver-set revisions, the parameter directions and the browser driver. `node scripts/lid-check.mjs` finds no reverse orphans. The Test-annotated column counts specs that name a test (`<!-- test: ... -->`).
 
 ## Key Findings
 

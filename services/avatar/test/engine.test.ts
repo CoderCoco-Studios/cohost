@@ -293,6 +293,7 @@ test("a second play of the same clause restarts its envelope from that moment", 
 // @spec AVATAR-ENG-019
 test("play extends the emotion hold to the later of the current end and durationMs + 4000 from now, never shortening it", () => {
   make();
+  engine.setMood("sad"); // a non-neutral resting face: the expiry falls back to it at intensity 0.5
   engine.setEmotion("angry", 20_000); // a long hold already in force
   engine.prepare(utterance({ durationMs: 300, emotion: "happy" }));
   engine.play("u1", 0); // 4300 ms would shorten the 20 s hold: keeps 20 s

@@ -97,16 +97,15 @@ test("a pocket server that is not up keeps tts down while voice still becomes re
   void runVoice(t.b);
   await waitFor(() => t.bus.subscribed.length === 1, "subscription: ready is not held back by a down tts");
   await waitFor(() => t.bus.health.length >= 2, "a heartbeat after starting");
-  assert.notEqual(last(t.bus).state, "starting");
+  assert.equal(last(t.bus).state, "degraded", "published degraded, not ready and not starting");
   assert.deepEqual(last(t.bus).deps, { tts: "down" });
-  assert.equal(last(t.bus).state, "degraded");
   assert.match(String(last(t.bus).detail), /pocket/, "the engine is named while tts is down");
   assert.match(String(last(t.bus).detail), /127\.0\.0\.1/, "and the host it talks to");
   assert.deepEqual(t.exits, []);
 });
 
 // @spec VOICE-GAP-001, VOICE-GAP-002, VOICE-GAP-003, VOICE-GAP-004, VOICE-GAP-005
-test("an incomplete engine configuration starts voice, reports tts down with the reason, still reaches readiness, and fails each line on the tts failed path", async (ctx) => {
+test("an incomplete engine configuration starts voice, publishes degraded with tts down and the reason in the detail, and fails each line on the tts failed path", async (ctx) => {
   const cases: [Record<string, unknown>, string][] = [
     [{ engine: "openai", voice: "nova", openai: { base_url: "", model: "m" } }, "voice.openai.base_url is not set"],
     [{ engine: "openai", voice: "nova", openai: { base_url: "https://x.example.com/v1", model: "" } }, "voice.openai.model is not set"],

@@ -135,7 +135,7 @@ Design: LLD § The TTS engine contract, Errors and Incomplete configuration.
 - [x] **VOICE-GAP-002**: Where `voice.engine` is `pocket` and `voice.pocket.url` is blank, the voice service shall start and reject every synthesis at once with `tts not configured: voice.pocket.url is not set`.
 - [x] **VOICE-GAP-003**: While an engine's configuration is incomplete, the voice service shall report `deps.tts` `down` with the reason in the heartbeat detail.
 - [x] **VOICE-GAP-004**: While an engine's configuration is incomplete, the voice service shall fail each line on the `tts failed` path (VOICE-UTT-003).
-- [x] **VOICE-GAP-005**: While an engine's configuration is incomplete, the voice service shall still report `ready` once the HTTP server is listening and the consumer group is positioned.
+- [x] **VOICE-GAP-005**: While an engine's configuration is incomplete, the voice service shall start, and once the HTTP server is listening and the consumer group is positioned it shall report heartbeat state `degraded` (not `ready`, not `starting`) with `deps.tts` `down` and the reason in the detail.
 
 ## Egress (EGR)
 
@@ -178,7 +178,7 @@ Design: LLD § Fallback Clips. "The clip store" is voice's own directory `<dataD
 
 ## Health
 
-- [x] **VOICE-HLTH-001**: When the voice service's HTTP server is listening and its consumer group has been positioned (so it can receive `brain.say`), it shall report heartbeat state `ready` with `service` `voice` and `deps` `{tts}` (mode `live` with every engine but `stub`), and shall not report `ready` before both conditions hold. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts --> <!-- test: services/voice/test/boot.test.ts -->
+- [x] **VOICE-HLTH-001**: When the voice service's HTTP server is listening and its consumer group has been positioned (so it can receive `brain.say`), it shall report heartbeat state `ready` (`degraded` while `deps.tts` is `down`, VOICE-HLTH-010) with `service` `voice` and `deps` `{tts}` (mode `live` with every engine but `stub`), and shall not report `ready` before both conditions hold. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts --> <!-- test: services/voice/test/boot.test.ts -->
 - [x] **VOICE-HLTH-002**: When a line or fallback-clip-phrase synthesis fails with an outage-class failure (VOICE-ERR-001), the voice service shall set `deps.tts` to `down` (heartbeat `degraded`) and set it back to `ok` when the next line or fallback-clip-phrase synthesis succeeds. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts -->
 - [x] **VOICE-HLTH-003**: Where `voice.engine` is `stub`, the voice service shall report heartbeat mode `mock` with `deps.tts` `n/a` and state `ready`. <!-- openspec: voice § Isolation preset and mode --> <!-- test: services/voice/test/stub.test.ts -->
 - [x] **VOICE-HLTH-004**: When the voice service receives SIGINT or SIGTERM, it shall publish one `stopping` heartbeat, close its HTTP server, stop the bus and exit with code 0. <!-- openspec: voice § Heartbeat (add-service-health) --> <!-- test: services/voice/test/health.test.ts (the single stopping heartbeat) --> <!-- test: services/voice/test/boot.test.ts (server close and bus stop; signal handling and exit are injected) -->
@@ -187,7 +187,7 @@ Design: LLD § Fallback Clips. "The clip store" is voice's own directory `<dataD
 - [x] **VOICE-HLTH-007**: Where an engine has a readiness probe (`pocket`: `GET /health`), the voice service shall report `deps.tts` `down` from start until its first probe succeeds, probing at start and every 10 s while `deps.tts` is `down`.
 - [x] **VOICE-HLTH-008**: When a probe succeeds while `deps.tts` is `down`, the voice service shall set `deps.tts` to `ok`.
 - [x] **VOICE-HLTH-009**: Where an engine has no readiness probe and its configuration is complete, the voice service shall report `deps.tts` `ok` from start and judge it by the outcome of the last synthesis.
-- [x] **VOICE-HLTH-010**: While `deps.tts` is `down`, the voice service shall still report `ready` once its HTTP server is listening and its consumer group is positioned.
+- [x] **VOICE-HLTH-010**: While `deps.tts` is `down`, the voice service shall, once its HTTP server is listening and its consumer group is positioned, report heartbeat state `degraded` with the engine, the host and the reason in the detail; it never holds back that state change and never stays `starting`.
 
 ## Lines and clauses (CLAUSE)
 

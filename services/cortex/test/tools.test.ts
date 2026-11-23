@@ -294,7 +294,8 @@ for (const c of OFFERS) {
     }
     assert.deepEqual(opts.tools!.map((t) => t.name).sort(), [...c.offered].sort());
     assert.deepEqual(Object.keys(opts).sort(), ["maxTokens", "signal", "tools"], "no option other than tools, maxTokens and signal");
-    assert.equal(opts.maxTokens, 300);
+    // The guest case sets no tools.reply.max_tokens, so the default applies (CTX-TOOL-005).
+    assert.equal(opts.maxTokens, c.name === "guest" ? s.cfg.tools.reply.max_tokens : 300);
     assert.deepEqual(Object.keys(opts.tools![0]!).sort(), ["description", "name", "parameters"]);
   });
 }
@@ -459,7 +460,7 @@ test("an invalid call and a call to a tool that was not offered are answered loc
   assert.equal(msgs[1]!.content, "The call was not valid.");
   assert.equal(msgs[1]!.isError, true);
   assert.equal(msgs[2]!.content, "That tool is not available.");
-  assert.equal(msgs[3]!.content, "That tool is not available.", "an unoffered tool of the catalog is not available either");
+  assert.equal(msgs[3]!.content, "Too many calls in one turn.", "the fourth call is beyond max_calls (3): CTX-TOOL-011 answers it so, unoffered tool or not");
   assert.equal(msgs[3]!.isError, true);
 });
 
@@ -782,7 +783,7 @@ test("once budget_ms has passed since the first request the next round is final,
   await think(s, [{ text: "[happy] Checking.", calls: [call("c1")] }, { calls: [call("c2")] }, { text: "[happy] Here is what I know." }]);
   assert.equal(s.bus.requests.length, 1, "round 2 was the final round: its call got no request");
   assert.equal(s.toolMsgs(1)[0]!.content, quoteUntrusted("real answer", s.cfg.tools.max_result_chars), "the running call finished with its own result");
-  assert.equal(s.toolMsgs(2)[0]!.content, "No more tool calls.");
+  assert.equal(s.toolMsgs(2).at(-1)!.content, "No more tool calls.", "the history is cumulative: the last tool message is round 2's answer");
   assert.ok(s.llm.opts.every((o) => o?.tools !== undefined));
 });
 
@@ -877,7 +878,7 @@ test("the built-in line goes through the mute and busy re-check and is not compa
 // @spec CTX-STREAM-031
 test("a stream that fails after a clause in a round that offers tools closes the line failed with no fallback line", async () => {
   const s = await ready();
-  await think(s, [{ text: "[happy] Let me check on that.", fail: new Error("stream broke") }]);
+  await think(s, [{ text: "[happy] Let me check on that. I", fail: new Error("stream broke") }]);
   assert.deepEqual(sayTexts(s), ["Let me check on that."]);
   assert.deepEqual([s.closing()!.cut, s.closing()!.through], ["failed", 0]);
   assert.equal(s.clauses().length, 1, "only the closing clause");

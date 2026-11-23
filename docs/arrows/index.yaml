@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 224 [x], 60 [ ], 1 [D]. Tool loop (#210) flipped 51. Open: CTX-TOOL-003, 004, 005, 011, 012, 013, 027, 028, 030 and CTX-STREAM-003, CTX-PROMPT-018 (test-vs-spec, see cortex.md); CTX-PROV-001 to 038; CTX-INTJ-001 to 006; CTX-EVT-001, 009; CTX-GATE-001; CTX-SAY-006; CTX-START-002."
+    next: "285 specs: 235 [x], 49 [ ], 1 [D]. The tool loop (#210) is built. Open: CTX-PROV-001 to 038; CTX-INTJ-001 to 006; CTX-EVT-001, 009; CTX-GATE-001; CTX-SAY-006; CTX-START-002."
     drift: null
 
   tools:

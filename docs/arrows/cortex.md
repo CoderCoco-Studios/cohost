@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 86 `[x]`, 198 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs, the early-reply specs and the chat safety work (below). The LLD has open questions (a stop while a think is in flight; a repeat on a mention).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 93 `[x]`, 191 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs, the early-reply specs and the chat safety work (below). The LLD has open questions (a stop while a think is in flight; a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -12,7 +12,7 @@ Design: LLD § Fallback acknowledgement. The transcript marks a line replaced by
 
 ## Viewer notes
 
-Design: LLD § Viewer notes. `CTX-VIEWER-001` to `003` (familiarity line from memory's `regular` flag) and `CTX-NOTES-001` to `008` (`fetchNotes` in `cortex.ts`, requested in parallel with recall under one deadline; `peopleBlock` in `prompt.ts`).
+Design: LLD § Viewer notes. `CTX-VIEWER-001` to `004` (familiarity line from memory's `regular` flag, keyed by `viewerKey`; a `memory.viewer` without `platform` makes no note) and `CTX-NOTES-001` to `011` (`notesViewers` and `fetchNotes` in `cortex.ts`, requested in parallel with recall under one deadline; `matchNotes` matches reply entries by platform and user id, else by name; `peopleBlock` in `prompt.ts`). `CTX-FORGET-001` to `003`: `chat.removed` calls `ctx.forget` and, for `scope: user`, deletes that viewer's familiarity note; the think in flight is not aborted and builds its prompt, after the recall and notes replies, from the window and notes as they then stand.
 
 ## Decisions applied
 
@@ -45,7 +45,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 86 `[x]`, 198 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 93 `[x]`, 191 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -105,7 +105,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Health | CTX-HEALTH-001 to CTX-HEALTH-007 | 7 | 0 | 0 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 11 | 0 | 4 |
 
-**Summary:** 285 specs: 86 implemented, 198 gaps, 1 deferred. The early-reply specs (CTX-PROV, CTX-INTJ, with CTX-EVT-001 revised and CTX-GATE-001, CTX-SAY-006, CTX-EVT-009 and CTX-START-002 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 285 specs: 93 implemented, 191 gaps, 1 deferred. The early-reply specs (CTX-PROV, CTX-INTJ, with CTX-EVT-001 revised and CTX-GATE-001, CTX-SAY-006, CTX-EVT-009 and CTX-START-002 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -122,7 +122,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 ## Work Required
 
-- Viewer identity and forgetting (design 2026-11-16, no code): viewer notes and the notes request are keyed by platform and user id (CTX-VIEWER-002, CTX-VIEWER-003, CTX-NOTES-001, CTX-NOTES-011) and `chat.removed` is read and forgotten (CTX-EVT-001, CTX-FORGET-001 to CTX-FORGET-003).
+- Viewer identity and forgetting: viewer notes and the notes request are keyed by platform and user id (CTX-VIEWER-002, CTX-VIEWER-003, CTX-NOTES-001, CTX-NOTES-011) and `chat.removed` is read and forgotten (CTX-FORGET-001 to CTX-FORGET-003).
 ### Must Fix
 Not built: the repetition trigger on clauses and the streamed-line exception (CTX-REPEAT-001, CTX-REPEAT-002), the repetition log of similarity and matching line and the viewer-note and glitch carry-over on a withheld repeat (CTX-REPEAT-010, CTX-REPEAT-011), the no-line exit status (CTX-GATE-012, cited by CTX-PROMPT-006, CTX-CRITIC-002, CTX-CRITIC-008), and CTX-EVT-005, CTX-EVT-012, CTX-FALL-007. The LLD has three open questions: a stop during a think, streamed replies and the checks after parsing, and a repeat on a mention.
 

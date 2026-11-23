@@ -63,24 +63,27 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 });
 
 // @spec MOD-CFG-002
-test("exactly the marked keys are secret: SECRET_PATHS (the seventeen without the tools wildcard), each section's secrets and the schema marks agree", () => {
+test("exactly the marked keys are secret: SECRET_PATHS (the seventeen and the tools wildcard), each section's secrets and the schema marks agree", () => {
   assert.deepEqual([...SECRET_PATHS].sort(), [
     "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
     "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key",
-    "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
-    "voice.openai.api_key", "voice.pocket.hf_token",
+    "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "tools.servers.*.token",
+    "vision.obs.password", "voice.openai.api_key", "voice.pocket.hf_token",
   ]);
   assert.deepEqual(sectionSecrets("ears").sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
   assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
   assert.deepEqual(sectionSecrets("voice").sort(), ["openai.api_key", "pocket.hf_token"]);
+  assert.deepEqual(sectionSecrets("tools"), ["servers.*.token"]);
   const marked: string[] = [];
   const walk = (s: any, path: string[]) => {
     if (s["x-secret"]) marked.push(path.join("."));
     for (const [k, v] of Object.entries<any>(s.properties ?? {})) walk(v, [...path, k]);
+    // a map's entries (tools.servers) are walked as one `*` segment
+    if (s.additionalProperties && typeof s.additionalProperties === "object") walk(s.additionalProperties, [...path, "*"]);
   };
-  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard"]) walk(sectionJsonSchema(sec), [sec]);
+  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard", "tools"]) walk(sectionJsonSchema(sec), [sec]);
   assert.deepEqual(marked.sort(), [...SECRET_PATHS].sort());
 });
 

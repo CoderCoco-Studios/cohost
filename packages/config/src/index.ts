@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import pino from "pino";
 import { writeFileAtomic } from "./atomic.js";
-import { ExpressionMapSchema, type Config, type ExpressionMap } from "./schema.js";
+import { ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, type Config, type ExpressionMap } from "./schema.js";
 import { parseConfigText, unknownKeys, decodeIsolation, ISOLATION_ENV, type ConfigIssue } from "./pipeline.js";
 import { loadSecrets } from "./secrets.js";
 
@@ -97,17 +97,19 @@ export function loadDotEnv(file = dotEnvPath()): void {
   }
 }
 
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010
+// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
   const file = ensureFromExample("config.yaml", "config.example.yaml");
   const secretsFile = secretsPath();
   const secrets = loadSecrets(secretsFile);
-  if (secrets.ignored.length > 0) diag().warn(`[config] ${secretsFile}: ignoring keys that are not secret keys: ${secrets.ignored.join(", ")}`);
   if (secrets.loose) diag().warn(`[config] ${secretsFile} can be read by other users; run: chmod 600 ${secretsFile}`);
   const overrides = decodeIsolation(process.env[ISOLATION_ENV]);
   const parsed = parseConfigText(readFileSync(file, "utf8"), secrets.values, overrides);
+  // One warning for every secrets.yaml path that is not merged: a non-secret key, or a token for a server config.yaml lacks (CFG-SEC-017).
+  const notMerged = [...secrets.ignored, ...parsed.unmergedSecrets];
+  if (notMerged.length > 0) diag().warn(`[config] ${secretsFile}: ignoring keys that are not secret keys: ${notMerged.join(", ")}`);
   if (!parsed.ok) {
     const applied = Object.keys(overrides);
     throw new Error(`Invalid ${file}:\n${formatIssues(parsed.issues)}` + (applied.length ? `\n\n(${ISOLATION_ENV} overrides applied: ${applied.join(", ")})` : ""));
@@ -115,6 +117,11 @@ export function loadConfig(force = false): Config {
   if (parsed.ignoredSecrets.length > 0) diag().warn(`[config] ${file}: ignoring values at secret keys: ${parsed.ignoredSecrets.join(", ")}; credentials belong in ${secretsFile}`);
   const stray = unknownKeys(parsed.raw, parsed.config);
   if (stray.length > 0) diag().warn(`[config] ${file}: ignoring unknown keys: ${stray.join(", ")}`);
+  // A credential in a query string is sent to the server on every call; the warning names the parameter, never its value (CFG-SCH-086).
+  for (const [name, server] of Object.entries(parsed.config.tools.servers)) {
+    const names = [...new Set([...new URL(server.url).searchParams.keys()].filter((k) => CREDENTIAL_QUERY_NAMES.includes(k)))];
+    if (names.length > 0) diag().warn(`[config] ${file}: tools.servers.${name}.url has a query parameter that looks like a credential (${names.join(", ")}); its value is not shown: put the credential in tools.servers.${name}.token`);
+  }
   cached = parsed.config;
   return cached;
 }

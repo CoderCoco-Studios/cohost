@@ -1,6 +1,7 @@
 import type { Readable } from "node:stream";
 import { createInterface, type Interface } from "node:readline";
-import type { ChatSender, ChatSource, ChatSourceStartEnv, ChatSourceStatus } from "./source.js";
+import type { ChatSender } from "./filter.js";
+import type { ChatSource, ChatSourceStartEnv, ChatSourceStatus } from "./source.js";
 
 /** Scripted chat for `chat.sources` `fake`; a mix of mentions, questions and filtered lines. */
 export function fakeScript(cohostName: string): { user: string; text: string }[] {
@@ -23,12 +24,12 @@ export interface FakeSourceOptions {
 
 /** fake_viewer2 chats on youtube, the other fake viewers on twitch; every fake viewer's userId is its name. */
 const fakeSender = (user: string): ChatSender => ({
-  login: user,
   displayName: user,
+  login: user,
   userId: user,
   isMod: false,
-  isSubscriber: false,
-  isBroadcaster: false,
+  isSub: false,
+  ignoreIdentifiers: [user],
   platform: user === "fake_viewer2" ? "youtube" : "twitch",
 });
 

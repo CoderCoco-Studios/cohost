@@ -3,14 +3,16 @@
  * through `runService` with fakes. `index.ts` only hands this to `runService`.
  */
 import { ConnectorRegistry, type Bus, type BusEvent } from "@cohost/bus";
-import { earsSources, type Config } from "@cohost/config";
+import { earsSources, egressDestinations, type Config } from "@cohost/config";
 import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
-import { EarsHealth, earsPlan } from "./health.js";
+import { EarsHealth, earsPlan, sttInfoOf } from "./health.js";
+import { buildEngines, type BuiltEngines, type StreamingSttEngine } from "./engines.js";
+import { SttRouter } from "./stt.js";
 import { createDirCapture } from "./capture-dir.js";
 import { createHttpCapture } from "./capture-http.js";
 import type { CaptureAdapter, HearClip } from "./capture.js";
 import { createConnectorSource, type ConnectorSource } from "./connector-source.js";
-import { Hearing, sttTranscriber, stubTranscriber } from "./hearing.js";
+import { Hearing } from "./hearing.js";
 import { createInjectHandler } from "./inject.js";
 import { EchoGate } from "./echo.js";
 import { EARS_ECHO_LOOP_TYPES, EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "./session.js";
@@ -24,6 +26,10 @@ export interface EarsServiceOptions {
   refreshMs?: number;
   /** Loads the speech-activity detector for `ears.vad.engine: silero` (default: `loadSilero`); tests pass a fake. */
   loadVad?: LoadVad;
+  /** The streaming engine `ears.stt_engine` names when it is `nemotron` or `kyutai` (EARS-ENG-001); the real adapters are #188. */
+  streamingEngine?: StreamingSttEngine;
+  /** The re-probe period of EARS-HLTH-008 (default `STT_PING_INTERVAL_MS`). */
+  pingIntervalMs?: number;
 }
 
 export function createEarsService(opts: EarsServiceOptions = {}): {
@@ -31,6 +37,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
   main(ctx: ServiceContext<Bus>): Promise<void>;
 } {
   let health: EarsHealth | undefined;
+  let built: BuiltEngines | undefined;
   /** Adapters by source name, and why a source is down (start failure). */
   const adapters = new Map<string, CaptureAdapter>();
   const failed = new Map<string, string>();
@@ -39,7 +46,8 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
 
   return {
     health(cfg) {
-      health = new EarsHealth(planOf(cfg), cfg.ears.stt_engine === "stub", statusOf);
+      built = buildEngines(cfg.ears, opts.streamingEngine ? { streaming: opts.streamingEngine } : {});
+      health = new EarsHealth(planOf(cfg), cfg.ears.stt_engine === "stub", statusOf, sttInfoOf(built));
       return health.spec;
     },
 
@@ -48,15 +56,26 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       const plan = planOf(cfg);
       const stub = cfg.ears.stt_engine === "stub";
       const h = health!;
+      const engines = built ?? buildEngines(cfg.ears, opts.streamingEngine ? { streaming: opts.streamingEngine } : {});
+      const streaming = engines.selected.kind === "streaming";
       // @spec EARS-PART-011, EARS-PART-012
       const partialsOn = cfg.ears.partials === "on" && !stub;
       if (cfg.ears.partials === "on" && stub) log.warn("ears.partials is on but ears.stt_engine is stub: no speech.partial is published with the stub engine");
-      if (partialsOn && !cfg.ears.stt_gpu) log.warn("ears.partials is on and ears.stt_gpu is false: partial transcription may not keep up on a speech-to-text backend that is not on a GPU");
+      if (partialsOn && !streaming && !cfg.ears.stt_gpu) log.warn("ears.partials is on and ears.stt_gpu is false: partial transcription may not keep up on a speech-to-text backend that is not on a GPU");
       // @spec EARS-STUB-002
       if (stub) log.warn("ears.stt_engine is stub: transcripts are fixed text (stub transcript), nothing is sent to the STT service");
-      const transcribe = h.track(stub ? stubTranscriber() : sttTranscriber(cfg.ears));
-      // Injected clips only need the transcriber, so this works whatever the sources.
-      const onInject = createInjectHandler({ bus, log, transcribe });
+      // @spec EARS-HLTH-010
+      for (const e of egressDestinations(cfg).filter((x) => x.service === "ears" && x.offLan)) {
+        log.warn(`ears sends speech to ${e.engine} at ${e.host}, which is off the LAN`);
+      }
+      const rt = new SttRouter({
+        built: engines, health: h, log, timeoutMs: cfg.ears.stt_timeout_ms, maxSessions: cfg.ears.max_stt_sessions,
+        ...(opts.pingIntervalMs === undefined ? {} : { pingIntervalMs: opts.pingIntervalMs }),
+      });
+      rt.start();
+      onStop(() => rt.stop());
+      // Injected clips only need the batch engine, so this works whatever the sources.
+      const onInject = createInjectHandler({ bus, log, transcribe: (audio, hint) => rt.transcribe(audio, hint ? { contentType: hint.contentType } : {}) });
 
       // @spec EARS-START-003, EARS-INJ-009, EARS-START-006
       // inject.request is consumed once, before any source starts, and stays up whatever the sources do.
@@ -87,7 +106,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       for (const g of gaps) log.error(g.gap!);
 
       // @spec EARS-SRC-007
-      const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe, ...(gate ? { echo: { gate, sources: gated } } : {}) });
+      const hearing = new Hearing({ cfg: cfg.ears, bus, log, transcribe: (wav, fallback) => rt.transcribe(wav, { fallback }), ...(gate ? { echo: { gate, sources: gated } } : {}) });
       const hear: HearClip = (clip, speaker, source, speakerId) => hearing.heardClip(clip, speaker, source, speakerId);
 
       // The registry is read once before any source starts, so a connector already present is seen at start.
@@ -113,14 +132,19 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
           adapters.set("dir", createDirCapture({ path: cfg.ears.dir.path, pollMs: cfg.ears.dir.poll_ms, hear, log }));
         } else {
           // @spec EARS-VAD-001, EARS-VAD-005, EARS-PART-001, EARS-PART-002
+          const echoGated = gated.has(src.name);
           const cs = createConnectorSource({
             name: src.name, bus, registry, hear, log, silenceMs: cfg.ears.silence_ms, listener, maxUtteranceMs: cfg.ears.max_utterance_ms,
-            ...(gate && gated.has(src.name) ? { echoBlocked: (at: number) => gate.blocks(at) } : {}),
+            ...(gate && echoGated ? { echoBlocked: (at: number) => gate.blocks(at) } : {}),
             ...(cfg.ears.vad.engine === "silero" ? { vad: { threshold: cfg.ears.vad.threshold, load: opts.loadVad ?? loadSilero } } : {}),
             ...(partialsOn ? { partials: {
               stepMs: cfg.ears.partial_step_ms, minSpeechMs: cfg.ears.min_speech_ms, dropPhrases: cfg.ears.drop_phrases,
-              transcribe: sttTranscriber(cfg.ears), publish: async (data) => { await bus.publish("speech.partial", data); },
+              transcribe: (wav: Buffer) => rt.partial(wav), publish: async (data) => { await bus.publish("speech.partial", data); },
             } } : {}),
+            streaming,
+            // @spec EARS-SES-005: an echo-suppressed source never opens a session
+            ...(rt.stream && !echoGated ? { stream: { router: rt, minSpeechMs: cfg.ears.min_speech_ms } } : {}),
+            hearText: (text, durationMs, meta) => hearing.heardText(text, durationMs, meta),
           });
           sources.set(src.name, cs);
           adapters.set(src.name, cs);
@@ -129,25 +153,32 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
 
       const statsText = (): string => [...sources.entries()].map(([n, s]) => `${n} ${s.stats()}`).join("; ");
       const detailOf = (name: string): string => failed.get(name) ?? sources.get(name)?.detail() ?? "";
-      /** One heartbeat state from every source: degraded while any enabled source is down, ready once all are up. */
+      /**
+       * One heartbeat state from every source and the speech-to-text engine: degraded while any enabled source or `deps.stt`
+       * is down, ready once all are up. The detail names the engine and its host (EARS-HLTH-009).
+       */
       let reported = "";
       const refresh = (): void => {
         const down = plan.sources.filter((s) => s.gap !== undefined || statusOf(s.name) === "down");
-        if (down.length === 0) {
-          heartbeat.setDetail(statsText() || undefined);
+        const sttDetail = h.sttDetail();
+        const sttPart = [h.sttSummary(), sttDetail].filter((x) => x !== undefined).join(": ");
+        if (down.length === 0 && sttDetail === undefined) {
+          heartbeat.setDetail([statsText(), sttPart].filter((x) => x !== "").join("; ") || undefined);
           if (reported !== "ready") { reported = "ready"; heartbeat.ready(); }
           return;
         }
         const reasons = down.map((s) => s.gap ?? detailOf(s.name)).filter((d) => d !== "");
-        const text = reasons.join("; ");
+        const text = [...reasons, sttPart].filter((x) => x !== "").join("; ");
         if (reported !== `degraded:${text}`) { reported = `degraded:${text}`; heartbeat.degraded(text || undefined); }
       };
+      h.changed = refresh;
       const unwatch = registry.on(refresh);
-      const refreshTimer = setInterval(() => { if (sources.size > 0) refresh(); }, opts.refreshMs ?? 1000);
+      const refreshTimer = setInterval(refresh, opts.refreshMs ?? 1000);
       refreshTimer.unref();
 
       // One shutdown step, first in reverse order: every source stops on its own (the clip in flight finishes), then the bus.
       onStop(async () => {
+        h.changed = undefined;
         clearInterval(refreshTimer);
         unwatch();
         registry.stop();

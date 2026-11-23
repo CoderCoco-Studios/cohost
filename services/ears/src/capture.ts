@@ -13,12 +13,14 @@ export interface Clip {
   audioEndedAt?: number;
   /** Minted when the utterance opened (connector source); `Hearing` mints one for a whole clip (EARS-PART-003). */
   utteranceId?: string;
+  /** A live utterance whose streaming session could not serve it, sent to the batch engine as its fallback (EARS-SES-010). */
+  fallback?: boolean;
 }
 
 /** What `Hearing.heardClip` did: published a transcript, or the reason it published nothing. */
 export type HearOutcome =
   | { heard: true; text: string }
-  | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "stt-error" | "echo" };
+  | { heard: false; reason: "too-short" | "empty" | "drop-phrase" | "echo" | "stt-error" | "no-batch-engine" };
 
 /** The sink every adapter feeds: one clip, one speaker name, the name of the source it came from and, when the source tells speakers apart, the speaker's id. */
 export type HearClip = (clip: Clip, speaker: string, source?: string, speakerId?: string) => Promise<HearOutcome>;

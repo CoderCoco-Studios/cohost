@@ -4,7 +4,8 @@ import http from "node:http";
 import { FakeBus, recordingLog, testConfig } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { readWavHeader } from "../src/audio.js";
-import { Hearing, sttTranscriber } from "../src/hearing.js";
+import { Hearing } from "../src/hearing.js";
+import { createBatchEngine } from "../src/engines.js";
 
 // ---- hearing
 
@@ -62,7 +63,7 @@ test("sttTranscriber posts the WAV as OpenAI-style multipart form data", async (
   after(() => server.close());
   process.env.STT_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const wav = wavWrap(Buffer.alloc(320), 16000, 1);
-  assert.equal(await sttTranscriber(testConfig({ ears: { stt_model: "whisper-x" } }).ears)(wav), "hello there");
+  assert.equal(await createBatchEngine("speaches", testConfig({ ears: { stt_model: "whisper-x" } }).ears).transcribe(wav), "hello there");
   assert.equal(path, "/v1/audio/transcriptions");
   assert.equal(form!.get("model"), "whisper-x");
   assert.equal(form!.get("language"), "en");

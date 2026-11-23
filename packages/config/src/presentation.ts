@@ -25,7 +25,11 @@ export type Widget =
   | { type: "model"; kind: ModelKind }
   | { type: "options"; options: { value: string; label: string }[] }
   | { type: "mcp-servers" }
-  | { type: "tool-list" };
+  | { type: "tool-list" }
+  /** The `.vrm` models in the dashboard's model store, chosen by name. */
+  | { type: "avatar-model" }
+  /** A number between the key's schema minimum and maximum, moved by a slider. */
+  | { type: "slider" };
 
 /** One property of an array-of-objects key's item. */
 export interface ItemPresentation { help: string; label?: string; unit?: string }
@@ -50,13 +54,15 @@ export interface SectionPresentation {
   about: string;
   /** Another section whose screen shows this one. */
   page?: string;
+  /** Only `renderer`: its keys apply to a running unit without a restart (CFG-LOAD-008). */
+  live?: true;
 }
 
 /** The declared sections, in screen order: each top-level key of `ConfigSchema` except `brain`, plus the seven brain parts. */
 export const SECTION_PATHS: readonly string[] = [
   "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.affect", "brain.memory", "brain.cortex",
   "brain.input_limits", "viewer_text",
-  "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard", "network", "tools",
+  "chat", "vision", "ears", "voice", "mouth", "avatar", "renderer", "connections", "dashboard", "network", "tools",
 ];
 
 const sections: Record<string, SectionPresentation> = {
@@ -75,9 +81,11 @@ const sections: Record<string, SectionPresentation> = {
   "ears": { title: "Hearing", group: "Senses", about: "Where the co-host's audio comes from and how it is cut into sentences and turned into text." },
   "voice": { title: "Voice", group: "Voice and body", about: "The co-host's speaking voice, pace and text clean-up, and the lines it says aloud when speech fails." },
   "mouth": { title: "Speech output", group: "Voice and body", about: "Where the co-host's spoken audio is sent (the Discord voice channel, a folder, a web address), how loud it is, and how often a fallback line may play." },
-  "avatar": { title: "Avatar", group: "Voice and body", about: "Which avatar app the co-host drives (VTube Studio or a VMC receiver) and how smoothly and lively it moves." },
+  "avatar": { title: "Avatar", group: "Voice and body", about: "Which avatar app the co-host drives (VTube Studio, a VMC receiver, or the browser renderer) and how smoothly and lively it moves." },
+  // @spec CFG-PRES-018
+  "renderer": { title: "Avatar renderer", group: "Voice and body", about: "The model and framing the browser renderer draws the avatar with: which .vrm file it loads, how close the camera is, how far it sits above or below centre, and which way the model faces. Applies to a running renderer without a restart.", page: "avatar", live: true },
   "connections": { title: "Discord", group: "System", about: "The Discord bot's server, voice channel and token, shared by hearing and speaking." },
-  "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, and the size and lifetime limits of its test uploads." },
+  "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, the size and lifetime limits of its test uploads, and the size limit of its avatar model files." },
   // @spec CFG-PRES-016
   "tools": { title: "Tools", group: "Brain", about: "Which MCP servers the co-host may call and which of their tools it may use, with the limits on how long a call runs, how many run at once and how a reply uses them." },
   "network": { title: "Network", group: "System", about: "Which machines and address ranges count as your own network, so the co-host can tell what private data leaves it for a server outside your LAN." },
@@ -297,7 +305,12 @@ const keys: Record<string, KeyPresentation> = {
   "voice.fallback.lines": { help: "Lines the co-host says aloud when a reply fails to play; one is picked at random. The voice service turns each into a clip at its next start, so edits apply after a restart. An empty list turns the feature off, and each line is at most 200 characters.", label: "Fallback lines" },
 
   // ---- avatar
-  "avatar.driver": { help: "Which avatar app the co-host drives: vtube-studio talks to VTube Studio, vmc sends to a VMC receiver, and null means no avatar app, so the co-host is dashboard-only." },
+  "avatar.driver": { help: "Which avatar app the co-host drives: vtube-studio talks to VTube Studio, vmc sends to a VMC receiver, browser draws the avatar in the browser renderer, and null means no avatar app, so the co-host is dashboard-only." },
+  // @spec CFG-PRES-020
+  "renderer.model": { help: "The .vrm model file the browser renderer loads from the model store on the dashboard, chosen by name. Leave it empty to draw the built-in placeholder model.", widget: { type: "avatar-model" }, label: "Model" },
+  "renderer.zoom": { help: "How close the camera is to the model: 1 is the default framing, higher is closer and lower pulls back. It takes 0.5 to 3.", label: "Zoom" },
+  "renderer.offset_y": { help: "Moves the model up or down in the frame: 0 is centred, a positive value raises it and a negative value lowers it. It takes -1.5 to 1.5.", label: "Vertical offset" },
+  "renderer.turn": { help: "Turns the model left or right in degrees: 0 faces the camera, and the range is -90 to 90.", unit: "deg", widget: { type: "slider" }, label: "Turn" },
   "avatar.fps": { help: "How many times per second the avatar's pose is updated. Higher looks smoother but sends more updates to the avatar app.", unit: "fps", label: "Update rate" },
   "avatar.smoothing": { help: "How quickly the avatar's head, eyes and expression move toward their target, from 0 to 1. Higher is snappier and more abrupt; lower is slower and more floaty." },
   "avatar.idle_motion": { help: "When on, the avatar's head and eyes drift gently while the co-host is idle, and a bit more while it talks, so it never looks frozen. Off keeps it still apart from blinking and speaking." },
@@ -394,6 +407,7 @@ const keys: Record<string, KeyPresentation> = {
   "dashboard.allowed_hosts": { help: "Machine names the dashboard accepts when another PC opens it by name instead of by IP address, for example streampc in an OBS Browser Source address such as http://streampc:3001/?sink=1. One per line, name only: no http://, no port. Addresses such as 192.168.1.20 and localhost always work. It applies at the dashboard's next start. It decides which names may reach the dashboard from your network, so only list machines you control.", sensitive: true, label: "Allowed host names" },
   "dashboard.inject.max_image_bytes": { help: "The largest picture the dashboard's test panel accepts when you send the co-host an image. A bigger upload is refused.", unit: "bytes" },
   "dashboard.inject.max_audio_bytes": { help: "The largest audio clip the dashboard's test panel accepts when you send the co-host something to hear. A bigger upload is refused.", unit: "bytes" },
+  "dashboard.models.max_bytes": { help: "The largest .vrm model file the dashboard's model store accepts. A bigger upload is refused, and the limit is between 1 MiB and 1 GiB.", unit: "bytes", label: "Model file size limit" },
   "dashboard.inject.ttl_ms": { help: "How long an uploaded test image or clip stays available for the service that asked for it; after that it is discarded. Raise it if a slow service needs longer to fetch it.", unit: "ms", label: "Upload lifetime" },
 };
 

@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 231 specs: 203 implemented, 0 deferred, 28 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 231 specs: 217 implemented, 0 deferred, 14 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 203 `[x]`, 28 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 217 `[x]`, 14 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -38,6 +38,8 @@ Orientation:
 - packages/config/test/config-salience-trigger.test.ts
 - packages/config/test/editor.test.ts
 - packages/config/test/config-tools.test.ts (CFG-SCH-075 to CFG-SCH-096, CFG-USR-020)
+- packages/config/test/config-renderer.test.ts (CFG-SCH-006, CFG-SCH-097 to CFG-SCH-101, CFG-ISO-005, CFG-ISO-011, CFG-USR-021, CFG-LOAD-008)
+- packages/config/test/compose-avatar.test.ts (DEPLOY-COMPOSE-028)
 - packages/config/test/config-secrets.test.ts (CFG-SEC-016 to CFG-SEC-018, CFG-USR-016)
 - services/dashboard/test/viewers.test.ts (CFG-ENV-009)
 - services/voice/test/kokoro-request.test.ts (CFG-SCH-029)
@@ -72,21 +74,23 @@ Orientation:
 | Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-007 | 7 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-018 | 17 | 0 | 1 |
-| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 11 | 0 | 3 |
+| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 13 | 0 | 1 |
+| Renderer presentation | CFG-PRES-018 to CFG-PRES-020 | 2 | 0 | 1 |
 | Tools presentation | CFG-PRES-016 to CFG-PRES-017 | 2 | 0 | 0 |
 | Clause settings presentation | CFG-PRES-015 | 1 | 0 | 0 |
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 2 | 0 | 0 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 13 | 0 | 0 |
 | Tools egress | CFG-EGR-014 to CFG-EGR-016 | 3 | 0 | 0 |
-| Schema | CFG-SCH-001 to CFG-SCH-071 | 70 | 0 | 1 |
+| Schema | CFG-SCH-001 to CFG-SCH-071 | 71 | 0 | 0 |
+| Renderer section | CFG-SCH-097 to CFG-SCH-101 | 5 | 0 | 0 |
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Tools section and reminder expiry | CFG-SCH-075 to CFG-SCH-096 | 22 | 0 | 0 |
-| Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-010 | 9 | 0 | 1 |
+| Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-011 | 11 | 0 | 0 |
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-020 (CFG-USR-005 does not exist) | 19 | 0 | 0 |
 
-**Summary:** 231 specs: 203 implemented, 28 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. The renderer settings (CFG-SCH-097 to -101, CFG-PRES-018 to -020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008, with CFG-PRES-005, -007, CFG-SCH-006 and CFG-ISO-005 revised for the `browser` driver and the `renderer` section) are specified and not built. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 231 specs: 217 implemented, 14 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. CFG-PRES-019 (the `live` clause of `sectionJsonSchema`) is a gap: the field name is not yet ruled, so `live` is served on `sectionPresentation` and `GET /config/schema` only. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

@@ -4,6 +4,7 @@ import { event, recordingLog, testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
 import { createCaptureHandler } from "../src/capture.js";
 import { buildNotesReply } from "../src/surface.js";
+import { viewerKey } from "@cohost/shared/untrusted";
 import { DAY, T0 } from "./store-contract.js";
 
 function setup(notesCfg: Record<string, unknown> = {}) {
@@ -193,3 +194,92 @@ test("a linked speaker's notes surface under the Discord name they speak under",
   assert.deepEqual(out.map((v) => [v.user, v.notes.length]), [["BobChat", 1]]);
 });
 
+
+// ---- Issue #180: viewers resolved by platform and id (entries are `{user, platform?, userId?}`) ----
+type Entry = { user: string; platform?: "twitch" | "youtube" | "discord"; userId?: string };
+const askEntries = (s: ReturnType<typeof setup>, entries: Entry[]) => buildNotesReply(s.store, s.cfg, entries as never, s.now());
+
+// @spec MEM-SURF-002, MEM-VIEWER-010
+test("an entry with platform and userId resolves only to the row of that key; a same-named viewer on another platform never answers", async () => {
+  const s = setup();
+  const tw = viewerKey({ platform: "twitch", userId: "111", user: "Sam" });
+  const yt = viewerKey({ platform: "youtube", userId: "UCsam", user: "Sam" });
+  await viewer(s.store, tw, "Sam");
+  await viewer(s.store, yt, "Sam");
+  await note(s.store, tw, "twitch sam plays celeste");
+  await note(s.store, yt, "youtube sam likes tea");
+  const out = await askEntries(s, [{ user: "Sam", platform: "youtube", userId: "UCsam" }]);
+  assert.deepEqual(out.map((v) => v.notes.map((n) => n.text)), [["youtube sam likes tea"]]);
+  assert.deepEqual(await askEntries(s, [{ user: "Sam", platform: "twitch", userId: "999" }]), [], "no row for that key: omitted, though a display name matches");
+  assert.deepEqual(await askEntries(s, [{ user: "Sam", platform: "youtube", userId: "ucsam" }]), [], "an id is never case-folded");
+});
+
+// @spec MEM-SURF-001
+test("each reply entry echoes the platform and userId of the request entry it answers", async () => {
+  const s = setup();
+  await viewer(s.store, viewerKey({ platform: "twitch", userId: "111", user: "Sam" }), "Sam");
+  await viewer(s.store, viewerKey({ platform: "discord", user: "Kit" }), "Kit");
+  const out = await askEntries(s, [{ user: "Sam", platform: "twitch", userId: "111" }, { user: "Kit", platform: "discord" }]);
+  assert.deepEqual(
+    out.map((v) => [v.user, (v as { platform?: string }).platform, (v as { userId?: string }).userId]),
+    [["Sam", "twitch", "111"], ["Kit", "discord", undefined]],
+  );
+});
+
+// @spec MEM-SURF-007
+test("an entry with a platform and no userId resolves by the name key of that platform and never by display name", async () => {
+  const s = setup();
+  await viewer(s.store, viewerKey({ platform: "twitch", user: "Kit" }), "Kit");
+  await viewer(s.store, viewerKey({ platform: "youtube", userId: "UCkit", user: "Kit" }), "Kit", 3);
+  const out = await askEntries(s, [{ user: "KIT", platform: "twitch" }]);
+  assert.deepEqual(out.map((v) => [v.user, v.msgCount]), [["Kit", 1]], "the twitch name-key row, not the id-keyed youtube row");
+  assert.deepEqual(await askEntries(s, [{ user: "Kit", platform: "discord" }]), [], "no name-key row on that platform");
+});
+
+// @spec MEM-SURF-006
+test("an entry with no platform resolves by display name, case-insensitively, to the latest last_seen", async () => {
+  const s = setup();
+  const a = viewerKey({ platform: "twitch", userId: "1", user: "Sam" });
+  const b = viewerKey({ platform: "youtube", userId: "UCb", user: "Sam" });
+  await viewer(s.store, a, "Sam");
+  s.advance(1000);
+  await viewer(s.store, b, "sam");
+  await note(s.store, a, "older sam");
+  await note(s.store, b, "newer sam");
+  const out = await askEntries(s, [{ user: "SAM" }]);
+  assert.deepEqual(out.map((v) => v.notes.map((n) => n.text)), [["newer sam"]]);
+});
+
+// @spec MEM-VIEWER-011
+test("a row keyed in any other format is never read: a display-name entry does not find it", async () => {
+  const s = setup();
+  await viewer(s.store, "legacy-key", "Old");
+  assert.deepEqual(await askEntries(s, [{ user: "Old" }]), []);
+});
+
+// @spec MEM-VOICE-007
+test("an entry with no platform and no display match resolves through the linked Discord id's discord_display", async () => {
+  const s = setup();
+  const chatKey = viewerKey({ platform: "twitch", userId: "42", user: "Dana" });
+  await viewer(s.store, chatKey, "Dana");
+  await s.store.linkDiscord("555", chatKey);
+  await s.store.touchSpeaker("555", "DanaOnVoice");
+  await note(s.store, chatKey, "streams late");
+  const out = await askEntries(s, [{ user: "danaonvoice" }]);
+  assert.deepEqual(out.map((v) => [v.user, v.notes.map((n) => n.text)]), [["Dana", ["streams late"]]]);
+  assert.deepEqual(await askEntries(s, [{ user: "danaonvoice", platform: "twitch" }]), [], "the fallback is only for an entry with no platform");
+});
+
+// @spec MEM-SURF-004
+test("sensitive notes stay hint-only and for the first entry only when entries carry platform and id", async () => {
+  const s = setup();
+  const a = viewerKey({ platform: "twitch", userId: "1", user: "Alice" });
+  const b = viewerKey({ platform: "twitch", userId: "2", user: "Bob" });
+  await viewer(s.store, a, "Alice");
+  await viewer(s.store, b, "Bob");
+  await s.store.insertNote({ userKey: a, category: "health", text: "has flu" });
+  await s.store.insertNote({ userKey: b, category: "health", text: "has cough" });
+  const out = await askEntries(s, [{ user: "Alice", platform: "twitch", userId: "1" }, { user: "Bob", platform: "twitch", userId: "2" }]);
+  assert.deepEqual(out.map((v) => v.notes.map((n) => "text" in n)), [[false], []]);
+  assert.doesNotMatch(JSON.stringify(out), /flu|cough/);
+});

@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { MemoryBackend } from "../src/store.js";
 import { cosine } from "../src/notes.js";
+import { viewerKey } from "@cohost/shared/untrusted";
 
 export const DAY = 86_400_000;
 export const T0 = new Date("2026-03-01T12:00:00Z").getTime();
@@ -489,5 +490,118 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     const other = uid("o");
     await store.touchViewer(other, `DeeVoice${id}`);
     assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches wins over a link alias");
+  });
+
+  // ---- Issue #180: viewers keyed by viewerKey, chat rows with platform / user id / message id, forgetting removals ----
+  const recallAll = async ({ store, advance }: Harness, query: string) => {
+    advance(3 * 60_000); // recall skips the last 2 minutes
+    return store.recall(query, 50);
+  };
+
+  // @spec MEM-VIEWER-001, MEM-VIEWER-008, MEM-BACKEND-005
+  t("a viewer key holding an id is kept as written: two ids differing only in case are two viewers counted separately", async ({ store }) => {
+    const id = uid("UCid").replace(/-/g, "");
+    const a = viewerKey({ platform: "youtube", userId: id, user: "Zed" });
+    const b = viewerKey({ platform: "youtube", userId: id.toLowerCase(), user: "Zed" });
+    assert.notEqual(a, b);
+    assert.deepEqual([(await store.touchViewer(a, "Zed")).msgCount, (await store.touchViewer(a, "Zed")).msgCount], [1, 2]);
+    assert.deepEqual([(await store.touchViewer(b, "Zed")).msgCount, (await store.touchViewer(b, "Zed")).isNew], [1, true]);
+    assert.equal((await store.getViewer(a))!.key, a, "the stored key is not case-folded");
+    assert.equal((await store.getViewer(b))!.msgCount, 1);
+  });
+
+  // @spec MEM-VIEWER-009, MEM-VIEWER-010, MEM-BACKEND-005
+  t("the same name on two platforms is two viewers, each with its own notes", async ({ store }) => {
+    const name = uid("Sam");
+    const tw = viewerKey({ platform: "twitch", userId: `${uid("")}1`, user: name });
+    const yt = viewerKey({ platform: "youtube", userId: `UC${uid("")}`, user: name });
+    const twName = viewerKey({ platform: "twitch", user: name.toUpperCase() });
+    const ytName = viewerKey({ platform: "youtube", user: name });
+    await store.touchViewer(tw, name);
+    await store.touchViewer(yt, name);
+    await store.touchViewer(twName, name);
+    await store.touchViewer(ytName, name);
+    const n = await store.insertNote({ userKey: yt, category: "general", text: "only youtube" });
+    assert.deepEqual((await store.listNotes(yt)).map((x) => x.id), [n.id]);
+    assert.deepEqual(await store.listNotes(tw), []);
+    assert.equal((await store.getViewer(twName))!.msgCount, 1);
+    assert.equal((await store.getViewer(ytName))!.msgCount, 1);
+    assert.notEqual(twName, ytName);
+  });
+
+  // @spec MEM-WRITE-009, MEM-STORE-004, MEM-BACKEND-005
+  t("a chat row records its platform, user id and message id; a row without ids records none", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    await h.store.remember("chat", `bob${w}`, `ids ${w}`, { platform: "youtube", userId: `UC${w}`, messageId: `m${w}` });
+    await h.store.remember("chat", `amy${w}`, `bare ${w}`, { platform: "discord" });
+    const got = await recallAll(h, `ids ${w}`);
+    const withIds = got.find((m) => m.text === `ids ${w}`)!;
+    assert.deepEqual([withIds.platform, withIds.userId, withIds.messageId], ["youtube", `UC${w}`, `m${w}`]);
+    const bare = (await h.store.recall(`bare ${w}`, 50)).find((m) => m.text === `bare ${w}`)!;
+    assert.deepEqual([bare.platform, bare.userId, bare.messageId], ["discord", undefined, undefined]);
+  });
+
+  // @spec MEM-FORGET-002
+  t("a message removal deletes the chat rows with that platform and message id, and no other", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    const ids = (messageId: string, platform = "twitch") => ({ platform, userId: `u${w}`, messageId });
+    await h.store.remember("chat", `a${w}`, `gone ${w}`, ids(`m1${w}`));
+    await h.store.remember("chat", `a${w}`, `kept same-platform ${w}`, ids(`m2${w}`));
+    await h.store.remember("chat", `a${w}`, `kept other-platform ${w}`, ids(`m1${w}`, "youtube"));
+    await h.store.remember("speech", `a${w}`, `kept speech ${w}`, ids(`m1${w}`));
+    await h.store.forgetChat({ platform: "twitch", scope: "message", messageId: `m1${w}` });
+    const texts = (await recallAll(h, `${w}`)).map((m) => m.text);
+    assert.ok(!texts.includes(`gone ${w}`));
+    assert.ok(texts.includes(`kept same-platform ${w}`) && texts.includes(`kept other-platform ${w}`) && texts.includes(`kept speech ${w}`), texts.join("|"));
+  });
+
+  // @spec MEM-FORGET-003
+  t("a user removal deletes the chat rows with that platform and user id, and no other", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    await h.store.remember("chat", `a${w}`, `gone one ${w}`, { platform: "youtube", userId: `UC${w}`, messageId: `m1${w}` });
+    await h.store.remember("chat", `a${w}`, `gone two ${w}`, { platform: "youtube", userId: `UC${w}`, messageId: `m2${w}` });
+    await h.store.remember("chat", `a${w}`, `kept other user ${w}`, { platform: "youtube", userId: `UCother${w}` });
+    await h.store.remember("chat", `a${w}`, `kept other platform ${w}`, { platform: "twitch", userId: `UC${w}` });
+    await h.store.remember("chat", `a${w}`, `kept no ids ${w}`);
+    await h.store.forgetChat({ platform: "youtube", scope: "user", userId: `UC${w}` });
+    const texts = (await recallAll(h, `${w}`)).map((m) => m.text).sort();
+    assert.deepEqual(texts, [`kept no ids ${w}`, `kept other platform ${w}`, `kept other user ${w}`].sort());
+  });
+
+  // @spec MEM-FORGET-004
+  t("an all-scope removal deletes no stored row", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    await h.store.remember("chat", `a${w}`, `stays ${w}`, { platform: "twitch", userId: `u${w}`, messageId: `m${w}` });
+    await h.store.forgetChat({ platform: "twitch", scope: "all" });
+    assert.ok((await recallAll(h, `stays ${w}`)).some((m) => m.text === `stays ${w}`));
+  });
+
+  // @spec MEM-FORGET-005
+  t("a removal matching no row changes nothing and does not throw", async (h) => {
+    const w = uid("w").replace(/-/g, "");
+    await h.store.remember("chat", `a${w}`, `stays ${w}`, { platform: "twitch", userId: `u${w}`, messageId: `m${w}` });
+    await h.store.forgetChat({ platform: "twitch", scope: "message", messageId: `nope${w}` });
+    await h.store.forgetChat({ platform: "twitch", scope: "user", userId: `nope${w}` });
+    assert.ok((await recallAll(h, `stays ${w}`)).some((m) => m.text === `stays ${w}`));
+  });
+
+  // @spec MEM-FORGET-007
+  t("a removal leaves viewer rows, counts, flags, notes and deletion records unchanged", async (h) => {
+    const { store } = h;
+    const key = viewerKey({ platform: "twitch", userId: uid("u"), user: "Rae" });
+    await store.touchViewer(key, "Rae", { isSub: true });
+    await store.touchViewer(key, "Rae");
+    await store.setRegular(key, true);
+    const kept = await store.insertNote({ userKey: key, category: "general", text: "likes tea" });
+    const deleted = await store.insertNote({ userKey: key, category: "general", text: "was deleted" });
+    await store.deleteNote(deleted.id);
+    const userId = key.split(":").slice(2).join(":");
+    await store.remember("chat", "Rae", `rae line ${userId}`, { platform: "twitch", userId, messageId: `m-${userId}` });
+    const before = JSON.stringify([await store.getViewer(key), await store.listNotes(key), await store.listDeletions(key)]);
+    await store.forgetChat({ platform: "twitch", scope: "user", userId });
+    await store.forgetChat({ platform: "twitch", scope: "message", messageId: `m-${userId}` });
+    await store.forgetChat({ platform: "twitch", scope: "all" });
+    assert.equal(JSON.stringify([await store.getViewer(key), await store.listNotes(key), await store.listDeletions(key)]), before);
+    assert.deepEqual((await store.listNotes(key)).map((n) => n.id), [kept.id]);
   });
 }

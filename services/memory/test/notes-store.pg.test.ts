@@ -51,6 +51,20 @@ if (!url) {
   /** A fixed-size embedder: every text maps to the same unit-ish vector of `dims` numbers. */
   const sized = (dims: number): Embedder => ({ embed: async () => new Array<number>(dims).fill(1 / Math.sqrt(dims)) }) as Embedder;
 
+  // @spec MEM-STORE-004
+  test("MemoryStore (postgres): memories has nullable text platform, user_id, message_id and the two lookup indexes", async () => {
+    await open(new HashEmbedder()).init();
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    try {
+      const cols = (await client.query("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'memories' AND column_name IN ('platform','user_id','message_id') ORDER BY column_name")).rows;
+      assert.deepEqual(cols, ["message_id", "platform", "user_id"].map((column_name) => ({ column_name, data_type: "text", is_nullable: "YES" })));
+      const defs = (await client.query("SELECT indexdef FROM pg_indexes WHERE tablename = 'memories'")).rows.map((r: { indexdef: string }) => r.indexdef.replace(/\s+/g, " "));
+      assert.ok(defs.some((d) => /\(platform, message_id\)/.test(d)), "index on (platform, message_id)");
+      assert.ok(defs.some((d) => /\(platform, user_id\)/.test(d)), "index on (platform, user_id)");
+    } finally { await client.end(); }
+  });
+
   // @spec MEM-REFLECT-011
   test("MemoryStore (postgres): connect finds the tables the service created, without any embedder", async () => {
     const seed = open(new HashEmbedder());

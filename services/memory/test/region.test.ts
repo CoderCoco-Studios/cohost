@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
+import { viewerKey } from "@cohost/shared/untrusted";
 import { InMemoryStore } from "../src/fake-store.js";
 
-function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; onBrainStatus?: (s: string) => void; cfg?: Record<string, unknown> } = {}) {
+function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: Memory[] = [], opts: { touchFails?: boolean; forgetFails?: boolean; onBrainStatus?: (s: string) => void; cfg?: Record<string, unknown> } = {}) {
   const calls: { op: string; args: unknown[] }[] = [];
   const warnings: unknown[] = [];
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
@@ -20,7 +21,8 @@ function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: 
       if (opts.touchFails) throw new Error("db down");
       return {} as never;
     },
-    remember: async (...args: [MemoryKind, string, string]) => { calls.push({ op: "remember", args }); },
+    remember: async (...args: unknown[]) => { calls.push({ op: "remember", args }); },
+    forgetChat: async (...args: unknown[]) => { calls.push({ op: "forgetChat", args }); if (opts.forgetFails) throw new Error("db down"); },
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
   };
   const bus = new FakeBus();
@@ -34,19 +36,19 @@ const chat = (extra: Record<string, unknown> = {}) =>
 test("every chat line counts toward the viewer; only lines addressed to the co-host are remembered", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat());
-  assert.deepEqual(calls, [{ op: "touchViewer", args: ["123", "Bob", { isSub: false }] }]);
+  assert.deepEqual(calls, [{ op: "touchViewer", args: [viewerKey({ platform: "twitch", userId: "123", user: "Bob" }), "Bob", { isSub: false }] }]);
   assert.equal(bus.published.length, 0);
   await onEvent(chat({ userId: undefined })); // no platform id: key by name
-  assert.deepEqual(calls[1], { op: "touchViewer", args: ["Bob", "Bob", { isSub: false }] });
+  assert.deepEqual(calls[1], { op: "touchViewer", args: [viewerKey({ platform: "twitch", user: "Bob" }), "Bob", { isSub: false }] });
 });
 
 // @spec MEM-WRITE-001, MEM-VIEWER-002
 test("a mention announces the viewer (with regular, no notes text) before the (slow) embed + store", async () => {
   const { onEvent, bus, calls } = setup({ msgCount: 30, isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
-  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, regular: true }]);
+  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", platform: "twitch", userId: "123", isNew: false, msgCount: 30, regular: true }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
-  assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco"]);
+  assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco", { platform: "twitch", userId: "123", messageId: undefined }]);
 });
 
 // @spec MEM-WRITE-002, MEM-WRITE-003
@@ -280,4 +282,50 @@ test("chat with no userId and user unknown creates no viewer row and no memory.v
   await onEvent(chat({ userId: "42", user: "unknown", mentionsCohost: true })); // an id is enough
   assert.equal(calls.filter((c) => c.op === "touchViewer").length, 1);
   assert.equal(bus.of("memory.viewer").length, 1);
+});
+
+// @spec MEM-WRITE-009, MEM-VIEWER-002
+test("a remembered chat line carries platform, userId and messageId; memory.viewer carries platform and no userId when the line has none", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(chat({ mentionsCohost: true, platform: "youtube", userId: "UCabc", messageId: "m-9" }));
+  assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco", { platform: "youtube", userId: "UCabc", messageId: "m-9" }]);
+  assert.deepEqual(calls[0]!.args[0], viewerKey({ platform: "youtube", userId: "UCabc", user: "Bob" }), "an id is never case-folded");
+  await onEvent(chat({ mentionsCohost: true, userId: undefined }));
+  const last = bus.of("memory.viewer").at(-1)!;
+  assert.equal(last.platform, "twitch");
+  assert.equal("userId" in last, false);
+});
+
+// @spec MEM-VIEWER-008, MEM-VIEWER-009
+test("the viewer key comes from the shared viewerKey of platform, userId and the bounded user", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(chat({ platform: "youtube", user: "  Zed  ", userId: "UCmixedCase" }));
+  await onEvent(chat({ platform: "discord", user: "KIT", userId: undefined }));
+  assert.deepEqual(calls.map((c) => c.args[0]), [
+    viewerKey({ platform: "youtube", userId: "UCmixedCase", user: "Zed" }),
+    viewerKey({ platform: "discord", user: "kit" }),
+  ]);
+});
+
+// @spec MEM-FORGET-002, MEM-FORGET-003, MEM-FORGET-004, MEM-FORGET-007
+test("chat.removed asks the store to forget by the event's scope and touches no viewer", async () => {
+  const { onEvent, bus, calls } = setup();
+  await onEvent(event("chat.removed", { platform: "twitch", scope: "message", messageId: "m1" }));
+  await onEvent(event("chat.removed", { platform: "youtube", scope: "user", userId: "UCx", reason: "ban" }));
+  await onEvent(event("chat.removed", { platform: "twitch", scope: "all" }));
+  assert.deepEqual(calls.map((c) => [c.op, (c.args[0] as { platform: string; scope: string }).platform, (c.args[0] as { scope: string }).scope]), [
+    ["forgetChat", "twitch", "message"], ["forgetChat", "youtube", "user"], ["forgetChat", "twitch", "all"],
+  ]);
+  assert.equal((calls[0]!.args[0] as { messageId?: string }).messageId, "m1");
+  assert.equal((calls[1]!.args[0] as { userId?: string }).userId, "UCx");
+  assert.equal(bus.published.length, 0);
+});
+
+// @spec MEM-FORGET-006
+test("a failed delete logs a warning and the next event is still handled", async () => {
+  const { onEvent, calls, warnings } = setup(undefined, [], { forgetFails: true });
+  await onEvent(event("chat.removed", { platform: "twitch", scope: "message", messageId: "m1" }));
+  assert.equal(warnings.length, 1);
+  await onEvent(chat({ mentionsCohost: true }));
+  assert.deepEqual(calls.map((c) => c.op), ["forgetChat", "touchViewer", "remember"]);
 });

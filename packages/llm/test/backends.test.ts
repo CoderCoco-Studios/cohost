@@ -930,16 +930,19 @@ test("claude: an aborted signal passed to complete() cancels the call with the c
   }
 });
 
-// @spec LLM-CHAT-018, LLM-CLAUDE-020
-test("claude: with no signal complete() is bounded by llm.timeout_ms, so a black-holed backend fails the call after at most two retries", async () => {
-  await Promise.all(claudeKinds.map(async (kind) => {
+// @spec LLM-CHAT-018, LLM-ERR-005
+test("claude: with no signal complete() is bounded by llm.timeout_ms: a black-holed backend fails once with TimeoutError, within 1.5x the timeout, with one request and no SDK retry", async () => {
+  for (const kind of claudeKinds) {
     const b = await claudeBackend(async () => { await sleepMs(30_000); });
+    const timeout = 150;
     const started = Date.now();
-    const err = await failure(claude(kind, b.fetch, { timeout_ms: 150 }).complete(user("hi")));
-    assert.ok(err, `${kind}: the call failed`);
-    assert.ok(Date.now() - started < 12_000, `${kind}: bounded`);
-    assert.ok(b.seen.length >= 1 && b.seen.length <= 3, `${kind}: ${b.seen.length} requests`);
-  }));
+    const err = await failure(claude(kind, b.fetch, { timeout_ms: timeout }).complete(user("hi")));
+    const elapsed = Date.now() - started;
+    assert.equal(err?.name, "TimeoutError", kind);
+    assert.equal(err instanceof ChatError, false, `${kind}: a timeout is not a ChatError`);
+    assert.ok(elapsed < timeout * 1.5, `${kind}: failed after ${elapsed} ms`);
+    assert.equal(b.seen.length, 1, `${kind}: one request, not retried on a timeout`);
+  }
 });
 
 // @spec LLM-CLAUDE-019, LLM-CLAUDE-022, LLM-CLAUDE-032

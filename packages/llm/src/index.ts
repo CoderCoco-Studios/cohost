@@ -799,13 +799,22 @@ abstract class ClaudeBase implements ChatProvider {
     return (await this.complete(allMessages, opts)).text;
   }
 
-  async complete(allMessages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-CLAUDE-010, LLM-CLAUDE-020, LLM-CLAUDE-021, LLM-CLAUDE-031, LLM-CLAUDE-033, LLM-CHAT-017, LLM-CHAT-018, LLM-ERR-003, LLM-ERR-002, LLM-ERR-009
+  async complete(allMessages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-CLAUDE-010, LLM-CLAUDE-020, LLM-CLAUDE-021, LLM-CLAUDE-031, LLM-CLAUDE-033, LLM-CHAT-017, LLM-ERR-003, LLM-ERR-002, LLM-ERR-009
     checkRequest(req); // @spec LLM-TOOL-001, LLM-TOOL-002
     const client = this.client;
     if (!client) throw new ChatError("not_configured", this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
     const params = this.params(allMessages, req, false);
-    // The caller's signal when it passed one; otherwise the SDK's own timeout from llm.timeout_ms (LLM-CHAT-018).
-    const res = await sdkCall(this.name, req.signal, () => client.beta.messages.create(params, req.signal ? { signal: req.signal } : { timeout: this.cfg.timeout_ms })); // @spec LLM-CHAT-006, LLM-CHAT-008
+    // The caller's signal when it passed one; otherwise llm.timeout_ms, as the Ollama and OpenAI-compatible providers bound theirs.
+    // A timeout is one request the SDK does not retry, and it rejects with the TimeoutError of LLM-ERR-005 (LLM-CHAT-018).
+    const caller = req.signal;
+    const signal = caller ?? AbortSignal.timeout(this.cfg.timeout_ms); // @spec LLM-CHAT-006, LLM-CHAT-008, LLM-CHAT-018
+    let res: Anthropic.Beta.BetaMessage;
+    try {
+      res = await client.beta.messages.create(params, { signal });
+    } catch (e) {
+      if (!caller && signal.aborted) throw timeoutError(this.cfg.timeout_ms); // @spec LLM-ERR-005
+      throw sdkFailure(this.name, e, caller);
+    }
     if (res.stop_reason === "refusal") return resultOf("", "refusal", []); // @spec LLM-CLAUDE-006, LLM-CLAUDE-021
     const text = res.content // @spec LLM-CLAUDE-005, LLM-CLAUDE-031, LLM-IF-004, LLM-STREAM-013
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")

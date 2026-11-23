@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 116 [x], 110 [ ]. Built: complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field), ChatError kinds http, connect, stream. Open: IF-005..007, IF-013..020; ERR-002, -003, -009; CHAT-017, -018; STOP-008..010, -015..017, -019; STREAM-003, -006..008, -012, -013, -017, -021, -027, -029..033 (029 has its text part; tool_call events are #162); CLAUDE-020..033; MOCK-006..021; VIS-002..013; TOOL-001..030; EX-008."
+    next: "226 specs: 147 [x], 79 [ ]. Built: complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field); tool calls on both (definitions, calls with ids, results, argument rules, finish mapping, streamed calls after the text and before done); ChatError kinds http, connect, stream. Open: IF-005..007, IF-018, IF-020; ERR-002, -003, -009; CHAT-017, -018; STOP-010, -015..017, -019; STREAM-007, -008, -013, -017, -021, -027, -030..033; TOOL-010..015, -017, -020, -025, -030; CLAUDE-020..033; MOCK-006..021; VIS-002..013."
     drift: null
 
   region-hooks:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "165 specs: 20 [x], 145 [ ] (YouTube chat source, source list and plan, forgetting removed messages, chat safety). Design 2026-11-16; no code."
+    next: "163 specs: 20 [x], 143 [ ] (YouTube chat source, source list and plan, forgetting removed messages, chat safety). Design 2026-11-16; no code."
     drift: null
 
   eyes:
@@ -159,7 +159,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "56 specs: 54 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-015)."
+    next: "58 specs: 54 [x], 3 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 018, 019, 022 in ears). The Redis registration test runs in CI; CONN-DESK-001 and 004 flip once it is green."
     drift: null
 
   ears:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "188 specs: 84 [x], 102 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Notes (the counts above are current): 100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015)."
+    next: "195 specs: 89 [x], 104 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022)."
     drift: null
 
   salience:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 50 [x], 234 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Notes (the counts above are current): 128 specs: 74 [x], 53 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit; viewer identity by platform and user id; forgetting removed chat), 1 [D] (CTX-REPLAN-001)."
+    next: "285 specs: 86 [x], 198 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Open in the chat-safety work: the repetition trigger on clauses and the streamed-line exception (CTX-REPEAT-001, 002), the repetition log (CTX-REPEAT-010, 011), the no-line exit status (CTX-GATE-012), and CTX-EVT-005, CTX-EVT-012, CTX-FALL-007; viewer identity by platform and user id; forgetting removed chat."
     drift: null
 
   tools:
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "417 specs: 219 [x], 198 [ ] (streamed-speech clause specs and the avatar renderer are open gaps)."
+    next: "416 specs: 219 [x], 197 [ ] (streamed-speech clause specs and the avatar renderer are open gaps)."
     drift: null
 
   control-plane:

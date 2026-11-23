@@ -190,7 +190,7 @@ When the owner has enabled tools, the model may ask for one in the middle of a r
 
 **Rounds.** A round is one `llm.stream` call. Round 1 takes the two messages of `buildMessages`; a later round appends the previous round's assistant message unchanged (`result.message`) and one `tool` message for each call, in the order of the calls. Rounds run one after another, so at most one model call is in flight (One thought at a time). Reading a round is Streaming the reply, with four differences:
 
-- *Read to the end.* A round that offers tools does not stop at the first newline. The provider delivers calls after the text (model-backends LLM-STREAM-012) and sends no stop sequences when tools are offered, so cortex reads to the end of the stream, discards the text after the first newline and keeps the calls; `llm.max_tokens` bounds what is read.
+- *Read to the end.* A round that offers tools does not stop at the first newline. The provider delivers calls after the text (model-backends LLM-STREAM-012) and sends no stop sequences when tools are offered, so cortex reads to the end of the stream, discards the text after the first newline and keeps the calls; `tools.reply.max_tokens` bounds what is read (CTX-TOOL-005).
 - *Text before a call is spoken.* The clause rule, the checks and the publishing apply as for any reply. When a round ends in calls, the text still in the buffer is cut as a clause whatever its length and goes through the checks: whatever the co-host has to say before the wait is said before it.
 - *One set of tags.* The line's emotion and gesture are decided once, from the first text of the reply; the leading tags of a later round are removed with the other bracketed text.
 - *One numbering.* Clause numbers continue across rounds and `max_clauses` counts every clause of the reply, the filler and the built-in line included. A round that reaches it ends the reply cut `length`, and the calls of that round are not run.
@@ -237,10 +237,10 @@ When the owner has enabled tools, the model may ask for one in the middle of a r
 | Wait | Bound | Exit |
 |---|---|---|
 | One call, inside `tools` | `tools.timeout_ms`, 10 s | a `timeout` result |
-| cortex's wait for a result | `tools.timeout_ms` plus 2 s | treated as a timeout |
+| cortex's wait for a result | `tools.timeout_ms` plus 2 s, plus `tools.confirm_timeout_ms` (20 s) for an acting tool other than `timer` | treated as a timeout |
 | No clause spoken yet | `tools.reply.filler_after_ms`, 1.5 s | one filler line |
 | Calls in one round | `tools.reply.max_calls`, 3 | the rest answered with an error |
-| One call, confirmation included | `tools.timeout_ms`, 10 s | `refused` (`unconfirmed`) or `timeout` |
+| One call, confirmation included | `tools.confirm_timeout_ms` plus `tools.timeout_ms`, 30 s | `refused` (`unconfirmed`) or `timeout` |
 | Rounds that end in calls | `tools.reply.max_rounds`, 3 | the final round: calls answered locally |
 | Calls over one reply | `tools.reply.budget_ms`, 30 s from the first request, plus one call | the final round |
 | The final round | one more round, then stop | the reply ends with what was said, or the built-in line |
@@ -294,7 +294,7 @@ Where ears publishes early transcripts and salience decides to speak on one, cor
 
 **The hold limit.** `brain.cortex.hold_limit_ms` (default 5000) bounds how long a think may be held. It runs from the start of the provisional think and covers only the hold before the confirm: any release clears it, a confirm or an interjected confirm alike, and from then the ordinary think's limits apply. It is the time limit HLD tenet 3 asks of every wait and covers a lost `attention.resolve` or a stopped salience. When the limit ends a held think cortex publishes `brain.status` `idle` (by the No-line exit rule), which salience takes as any `idle`; a confirm that arrives afterwards is an ordinary focus. An ordinary focus with the same `utteranceId` and text as a held think is treated as its confirm.
 
-**What may end a provisional think.** One list: a withdrawal; a `mute`; a `pause`; `forget_context`; the hold limit; cortex publishing a line of its own (an operator `say`; a reflex relay, if cortex makes one); or replacement by an ordinary focus. A `voice.stop` never does, and a provisional think never causes an ordinary focus to be declined as busy. Ending it aborts the model stream through the think's `signal`, drops the held clauses, clears the timer and the thinking flag, and publishes the status of the No-line exit (`muted` when muted or paused, else `speaking` while any line is pending or playing, else `idle`); a replacement publishes no `idle` and no other status of its own, and the ordinary think that replaces it publishes `thinking` at its start as any think does (CTX-SAY-002). Nothing was published, so no closing event is owed.
+**What may end a provisional think.** One list: a withdrawal; a `mute`; a `pause`; `forget_context`; the hold limit; cortex publishing a line of its own (an operator `say`, CTX-PROV-027); or replacement by an ordinary focus. A `voice.stop` never does, and a provisional think never causes an ordinary focus to be declined as busy. Ending it aborts the model stream through the think's `signal`, drops the held clauses, clears the timer and the thinking flag, and publishes the status of the No-line exit (`muted` when muted or paused, else `speaking` while any line is pending or playing, else `idle`); a replacement publishes no `idle` and no other status of its own, and the ordinary think that replaces it publishes `thinking` at its start as any think does (CTX-SAY-002). Nothing was published, so no closing event is owed.
 
 **One think at a time.** A held provisional think is a think in flight: a `voice.done` or the speaking valve ends a line during a hold without publishing `idle` (CTX-EVT-005, CTX-GATE-009). A provisional `attention.focus` that arrives while the cortex holds a provisional think or has an ordinary think in flight is ignored: it is not taken as ordinary and nothing is published. Only a focus that is not provisional replaces a held think.
 

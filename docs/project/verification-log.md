@@ -196,9 +196,22 @@ Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main
 
 ### Not checked
 
-- The Rust bus example at run time was not run on that machine (no Redis); it later ran in CI against Redis (BUS-NAT-EX-002 to 005, PR #247).
+- The Rust bus example at run time: its heartbeat, consumer group, `<type> from <source>` lines and the `stopping` heartbeat (BUS-NAT-EX-002 to 005) need Redis and have not run. Those specs stay open; CI's `test.yml` provides Redis.
 - `to-wav-ffmpeg.sh` (EARS-EX-007's `ffmpeg` half): the test skips where `ffmpeg` is absent.
 - No page was walked end to end on a real stack. The dashboard Services tab was not viewed with the example service, the Rust program, the avatar driver or a hook server running, so what the pages say about the Services tab comes from reading `packages/control/src/health.ts`, `packages/modules/src/index.ts` and `services/dashboard/public/index.html`: a running service shows as `up` or `degraded`, a stopped one as `down`, and a hook shows as `hook.<name>` in the deps column only for the kinds `http` and `llm`.
 - The avatar driver was run against a UDP socket in a test, not against an avatar app. The three registration edits the page describes were not made and run.
 - The service example's three-file module registration (folder, manifest entry, Compose service) was described from the existing services and not built.
 - The model-server page's `llm` settings were checked against the provider code and the stub, not against vLLM, llama.cpp or OpenRouter.
+
+## Rust bus example round trip against Redis (2026-11-23)
+
+Run in CI (`test.yml`, job `test`, which has a Redis service and a job-wide `REDIS_URL`) on pull request 247, issue 229.
+
+| Check | How | Result |
+| --- | --- | --- |
+| Round trip | `cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture`, in its own `test.yml` step | GitHub Actions run 45095337667: `RAN round_trip against redis://127.0.0.1:6379`, the test `heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat ... ok`, no `SKIP` line. |
+| Same, at head `65aeab0` | the same step | Run 45096011116: `test` job passed. |
+| Skip guard | the test run with `REDIS_URL=redis://127.0.0.1:1` locally | The test fails ("refusing to skip the round trip") rather than skipping. |
+| Under `pnpm test` | `example-rust-bus.test.ts` with `REDIS_URL` set | Passed in the same runs: it requires the `RAN` line and no `SKIP`. |
+
+BUS-NAT-EX-002 to 005 are verified by these runs.

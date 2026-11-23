@@ -66,8 +66,10 @@ jobs:
       - run: cargo test --workspace
       - name: Rust bus example round trip (must run, not skip)
         # REDIS_URL is set, so the test itself fails if Redis is unreachable; this also fails on a SKIP line and requires the RAN line.
+        shell: bash
         run: |
+          set -eo pipefail
           cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture 2>&1 | tee round-trip.log
-          ! grep -q '^SKIP ' round-trip.log
+          if grep -q '^SKIP ' round-trip.log; then echo "the round trip was skipped"; exit 1; fi
           grep -q '^RAN round_trip against ' round-trip.log
       - run: pnpm test

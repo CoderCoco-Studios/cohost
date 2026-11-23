@@ -192,8 +192,9 @@ async fn heartbeats_reads_by_envelope_and_stops_with_a_stopping_heartbeat() {
         .unwrap();
     assert!(result.is_ok(), "{result:?}");
     assert!(
-        asked.elapsed() < Duration::from_secs(4),
-        "stopped within the read's block time plus one second"
+        asked.elapsed() < Duration::from_millis(2000),
+        "stopped within the read's block time (1000 ms) plus one second, 2000 ms; took {:?}",
+        asked.elapsed()
     );
     let all = heartbeats(&t).await;
     assert_eq!(all.last().expect("heartbeats").state, "stopping");

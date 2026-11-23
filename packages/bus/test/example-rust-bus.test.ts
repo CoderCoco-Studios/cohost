@@ -43,9 +43,10 @@ test("the example's own tests pass (the round trip skips itself without Redis)",
     cwd: root, encoding: "utf8", timeout: 570_000,
   });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal([...r.stdout.matchAll(/test result: ok\. 1 passed/g)].length, 2, "the unit test and the round trip each pass");
+  assert.match(r.stdout, /test result: ok\. [1-9]\d* passed; 0 failed/);
+  assert.doesNotMatch(r.stdout, /[1-9]\d* failed/);
   // With REDIS_URL set (CI) the round trip must have run: a skip is a failure, never a silent pass.
-  if (process.env["REDIS_URL"]) {
+  if ("REDIS_URL" in process.env) {
     assert.doesNotMatch(r.stderr, /SKIP /, "the round trip was skipped although REDIS_URL is set");
     assert.match(r.stderr, /RAN round_trip against /, "the round trip ran against Redis");
   }

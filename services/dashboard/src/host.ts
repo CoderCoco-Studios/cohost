@@ -12,11 +12,11 @@ export function resolvePorts(dashboard: { port: number; lan_port: number }): { p
 }
 
 /** What the LAN listener serves: the sink page with its bundle, its audio and the health check. */
-// @spec DASH-HOST-002
+// @spec DASH-HOST-002, DASH-MDL-008
 export function lanAllows(method: string, pathname: string): boolean {
   if (pathname === "/health") return true;
   if (method === "GET" && (pathname === "/" || pathname.startsWith("/audio/"))) return true;
-  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
+  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || pathname === "/avatar/model" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
   return method === "POST" && pathname === "/sink";
 }
 

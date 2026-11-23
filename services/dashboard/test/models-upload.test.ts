@@ -336,7 +336,16 @@ test("a stored upload is 201 {ok:true, model} with the list entry; a write failu
 });
 
 // @spec DASH-MDL-029
-test("a full disk is 507 {ok:false, detail}", { skip: "ENOSPC cannot be produced through the HTTP surface; the implementation's write seam is asserted by its own test once its shape exists (see the report)" }, () => {});
+test("a full disk is 507 {ok:false, detail} and the temporary file is removed", async (t) => {
+  // The write seam fails the first chunk with ENOSPC, the error a full disk gives: the head is good, so the write is reached.
+  const r = await rig(t, { writeChunk: async () => { throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }); } });
+  const res = await up(r, "?name=Full.vrm", model("f"));
+  assert.equal(res.status, 507);
+  assert.equal(res.json().ok, false);
+  assert.match(res.json().detail, /ENOSPC/);
+  assert.deepEqual(incoming(r), []);
+  assert.deepEqual(r.ls(), []);
+});
 
 // @spec DASH-MDL-030
 test("a client that drops the connection mid-upload leaves no temporary file and frees the slot", async (t) => {

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
 import type { StackService, StackOps } from "../src/stack.js";
+import type { ModelStore } from "../src/models.js";
 import { dashboardService } from "../src/service.js";
 import { configDir as makeConfigDir, configText } from "./config-fixture.js";
 
@@ -174,6 +175,8 @@ export interface RigOpts {
   seed?: Record<string, Buffer>;
   /** Whether to create the (empty) model folder before start. */
   folder?: boolean;
+  /** Replaces the write of each upload chunk (the disk-full seam of DASH-MDL-029). */
+  writeChunk?: ModelStore["writeChunk"];
 }
 
 export interface Rig {
@@ -209,7 +212,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
   const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
-  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack });
+  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: o.writeChunk });
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard: { port, lan_port: lanPort, ...(o.maxBytes ? { models: { max_bytes: o.maxBytes } } : {}) }, renderer }),

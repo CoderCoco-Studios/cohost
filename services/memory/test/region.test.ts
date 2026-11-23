@@ -263,6 +263,13 @@ test("user and speaker names are bounded to viewer_text.max_name_chars, with unk
 });
 
 // @spec MEM-VIEWER-007
+test("an empty userId is no id: the viewer is keyed by the bounded name, never by an empty key", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(chat({ userId: "", user: "Bob", mentionsCohost: true }));
+  assert.equal(calls.find((c) => c.op === "touchViewer")!.args[0], "Bob");
+});
+
+// @spec MEM-VIEWER-007
 test("chat with no userId and user unknown creates no viewer row and no memory.viewer; the memory row is still written when it mentions the co-host", async () => {
   const { onEvent, bus, calls } = setup();
   await onEvent(chat({ userId: undefined, user: "unknown", mentionsCohost: true }));

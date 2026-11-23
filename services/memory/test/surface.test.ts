@@ -155,7 +155,7 @@ test("a failing store makes buildNotesReply throw so the region handler can answ
 test("a viewer on their first message gets a note captured and surfaced: regular status gates neither", async () => {
   const { store, cfg, ask } = setup();
   const onEvent = createCaptureHandler({
-    cfg, store, log: recordingLog().log,
+    cfg, full: testConfig(), store, log: recordingLog().log,
     hook: { kind: "llm", run: async () => ({ note: { category: "general", text: "just got a Steam Deck" } }) },
   });
   await onEvent(event("chat.message", { platform: "twitch", user: "Newbie", userId: "n1", text: "just got a Steam Deck!", isMod: false, isSub: false, mentionsCohost: false }));

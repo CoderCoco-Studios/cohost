@@ -4,8 +4,12 @@ import { recordingLog, testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
 import { runConsolidation, type Consolidator } from "../src/consolidation.js";
 import { quoteUntrusted, speakerLabel, untrustedNotice } from "@cohost/shared/untrusted";
-import { consolidatorImpl, createConsolidatorHook, notesHookLlm, type ConsolidatorInput, type ConsolidatorOutput } from "../src/consolidator.js";
+import { consolidatorImplFor, createConsolidatorHook, notesHookLlm, type ConsolidatorInput, type ConsolidatorOutput } from "../src/consolidator.js";
+import { textLimits } from "../src/limits.js";
 import { DAY, T0 } from "./store-contract.js";
+
+/** The consolidator implementation under the test config's limits. */
+const consolidatorImpl = consolidatorImplFor(textLimits(testConfig()));
 
 function setup(over: Record<string, unknown> = {}) {
   let now = T0;

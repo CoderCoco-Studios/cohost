@@ -4,23 +4,28 @@ import { event, recordingLog, testConfig } from "@cohost/testing";
 import { InMemoryStore } from "../src/fake-store.js";
 import { ConsolidationScheduler } from "../src/scheduler.js";
 import {
-  captureImpl, createCaptureHandler, createCaptureHook, normaliseNoteText, validateCapture,
+  captureImplFor, createCaptureHandler, createCaptureHook, normaliseNoteText, validateCapture,
   type CaptureHook, type CaptureInput, type CaptureOutput,
 } from "../src/capture.js";
+import { textLimits } from "../src/limits.js";
 import { mentionsForbiddenTopic } from "../src/notes.js";
 import { quoteUntrusted, speakerLabel, untrustedNotice } from "@cohost/shared/untrusted";
 import { DAY, T0 } from "./store-contract.js";
 
+/** The capture implementation under the test config's limits. */
+const captureImpl = captureImplFor(textLimits(testConfig()));
+
 function setup(over: { notes?: Record<string, unknown>; kind?: "rules" | "llm" } = {}) {
   let now = T0;
-  const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash", notes: over.notes ?? {} } } }).brain.memory;
+  const full = testConfig({ brain: { memory: { store: "memory", embedder: "hash", notes: over.notes ?? {} } } });
+  const cfg = full.brain.memory;
   const store = new InMemoryStore(cfg, () => now);
   const { log, lines } = recordingLog();
   const inputs: CaptureInput[] = [];
   let answer: (i: CaptureInput) => CaptureOutput | Promise<CaptureOutput> = () => ({ note: null });
   const hook: CaptureHook = { kind: over.kind ?? "llm", run: async (i) => { inputs.push(i); return answer(i); } };
   let written = 0;
-  const onEvent = createCaptureHandler({ cfg, store, hook, log, onNotesWritten: async () => { written++; } });
+  const onEvent = createCaptureHandler({ cfg, full, store, hook, log, onNotesWritten: async () => { written++; } });
   const chat = (extra: Record<string, unknown> = {}) =>
     event("chat.message", { platform: "twitch", user: "Bob", userId: "ID1", text: "just got a Steam Deck!", isMod: false, isSub: false, mentionsCohost: false, ...extra });
   return {
@@ -123,7 +128,7 @@ test("a hook configured as rules costs nothing: no hook run and no store reads",
   const t = setup({ kind: "rules" });
   const reads: string[] = [];
   const store = new Proxy(t.store, { get: (o, k) => { reads.push(String(k)); return (o as never)[k]; } });
-  const onEvent = createCaptureHandler({ cfg: t.cfg, store, hook: { kind: "rules", run: async () => { throw new Error("must not run"); } }, log: recordingLog().log });
+  const onEvent = createCaptureHandler({ cfg: t.cfg, full: testConfig(), store, hook: { kind: "rules", run: async () => { throw new Error("must not run"); } }, log: recordingLog().log });
   await onEvent(t.chat());
   assert.deepEqual(reads, []);
 });
@@ -185,7 +190,7 @@ test("politics, money and subscriber status are never stored, whatever category 
 test("the shipped prompt tells the model never to note politics, money or subscriber status, and carries the hook input", () => {
   const sys = captureImpl.llm!.system.toLowerCase();
   for (const word of ["politic", "money", "subscriber", "null"]) assert.ok(sys.includes(word), word);
-  const user = captureImpl.llm!.user({ viewer: "Bob", line: "hi there friend", notes: ["likes owls"], suppressionReasons: ["too personal"] });
+  const user = captureImpl.llm!.user({ viewer: "Bob", line: "hi there friend", origin: "chat", notes: ["likes owls"], suppressionReasons: ["too personal"] });
   for (const part of ["Bob", "hi there friend", "likes owls", "too personal"]) assert.ok(user.includes(part), part);
 });
 
@@ -193,7 +198,7 @@ test("the shipped prompt tells the model never to note politics, money or subscr
 test("the capture hook is a region-hooks Module on its own slot whose rules implementation returns no note", async () => {
   const hook = createCaptureHook(testConfig(), recordingLog().log);
   assert.equal(hook.kind, "rules");
-  assert.deepEqual(await hook.run({ viewer: "Bob", line: "just got a Steam Deck", notes: [], suppressionReasons: [] }), { note: null });
+  assert.deepEqual(await hook.run({ viewer: "Bob", line: "just got a Steam Deck", origin: "chat", notes: [], suppressionReasons: [] }), { note: null });
   const llm = createCaptureHook(testConfig({ llm: { provider: "mock", model: "m" }, brain: { memory: { notes: { capture: { kind: "llm" } } } } }), recordingLog().log);
   assert.equal(llm.kind, "llm");
 });
@@ -357,7 +362,7 @@ test("a failure in the scheduler notification is logged and does not fail the li
   const t = setup();
   const { log, lines } = recordingLog();
   const onEvent = createCaptureHandler({
-    cfg: t.cfg, store: t.store, hook: { kind: "llm", run: async () => general("plays Hades") }, log,
+    cfg: t.cfg, full: testConfig(), store: t.store, hook: { kind: "llm", run: async () => general("plays Hades") }, log,
     onNotesWritten: async () => { throw new Error("count boom"); },
   });
   await onEvent(t.chat());
@@ -384,7 +389,7 @@ test("captured notes reach dirty_threshold and the scheduler starts one pass", a
     runPass: async () => { passes++; release(); return { status: "completed", viewers: 0, notes: 0 }; },
   });
   const onEvent = createCaptureHandler({
-    cfg: t.cfg, store: t.store, hook: { kind: "llm", run: async (i) => general(`note about ${i.line}`) }, log: recordingLog().log,
+    cfg: t.cfg, full: testConfig(), store: t.store, hook: { kind: "llm", run: async (i) => general(`note about ${i.line}`) }, log: recordingLog().log,
     onNotesWritten: () => scheduler.notifyDirty(),
   });
   await onEvent(t.chat({ text: "playing Hades now" }));
@@ -404,7 +409,7 @@ function setupLimited(over: Parameters<typeof setup>[0] = {}) {
   const full = testConfig({ ...limits, brain: { ...limits.brain, memory: { store: "memory", embedder: "hash", notes: over.notes ?? {} } } });
   const inputs: CaptureInput[] = [];
   const hook: CaptureHook = { kind: over.kind ?? "llm", run: async (i) => { inputs.push(i); return { note: null }; } };
-  const onEvent = createCaptureHandler({ cfg: full.brain.memory, store: base.store, hook, log: recordingLog().log, full } as never);
+  const onEvent = createCaptureHandler({ cfg: full.brain.memory, store: base.store, hook, log: recordingLog().log, full });
   return { ...base, inputs, onEvent };
 }
 
@@ -474,6 +479,12 @@ test("a speech line reaches the llm prompt bounded and not quoted", () => {
   const user = captureImpl.llm!.user({ viewer: "Chris", line: "I just adopted a puppy", origin: "speech", notes: [], suppressionReasons: [] } as CaptureInput);
   assert.ok(user.includes("I just adopted a puppy"));
   assert.ok(!user.includes("«"));
+});
+
+// @spec MEM-CAPTURE-016
+test("a line whose origin is not speech is quoted in the llm prompt, so an unknown origin never reads as speech", () => {
+  const user = captureImpl.llm!.user({ viewer: "Bob", line: "a « b", origin: "bogus", notes: [], suppressionReasons: [] } as unknown as CaptureInput);
+  assert.ok(user.includes(quoteUntrusted("a « b", 500)));
 });
 
 // @spec MEM-CAPTURE-004

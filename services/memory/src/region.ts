@@ -40,7 +40,7 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
         // A nameless viewer with no id is no viewer: no row and no announcement (the memory row is still written when addressed).
         const nameless = !d.userId && user === UNKNOWN_NAME;
         // @spec MEM-VIEWER-006
-        const v = nameless ? undefined : await store.touchViewer(d.userId ?? user, user, { isSub: d.isSub }).catch((err) => {
+        const v = nameless ? undefined : await store.touchViewer(d.userId || user, user, { isSub: d.isSub }).catch((err) => {
           log.warn({ err: String(err), user }, "viewer upsert failed; no memory.viewer for this message");
           return undefined;
         });

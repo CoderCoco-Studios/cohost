@@ -70,7 +70,7 @@ ${untrustedNotice("what a viewer typed in chat")} A note describes what the line
 Answer with one JSON object: {"note":null} or {"note":{"category":"general","text":"...","hint":"..."}} (hint only when needed).`;
 
 // @spec MEM-CAPTURE-003, MEM-CAPTURE-004, MEM-CAPTURE-014, MEM-CAPTURE-015, MEM-CAPTURE-016, MEM-CAPTURE-017, MEM-CAPTURE-018, MEM-CAPTURE-019, MEM-CAPTURE-020
-/** The capture hook's implementation, its prompts bounded by `lim` (the config's limits; the schema defaults when none are given). */
+/** The capture hook's implementation, its prompts bounded by `lim` (the config's limits). */
 export function captureImplFor(lim: TextLimits): ModuleImpl<CaptureInput, CaptureOutput> {
   return {
     rules: () => ({ note: null }),
@@ -79,9 +79,9 @@ export function captureImplFor(lim: TextLimits): ModuleImpl<CaptureInput, Captur
       maxTokens: 150,
       user: (input) => [
         `Viewer: ${speakerLabel(input.viewer, lim.nameMax)}`,
-        input.origin === "chat"
-          ? `Chat line: ${quoteUntrusted(input.line, lim.chatMax)}`
-          : `Speech line: ${boundText(input.line, lim.speechMax)}`,
+        input.origin === "speech"
+          ? `Speech line: ${boundText(input.line, lim.speechMax)}`
+          : `Chat line: ${quoteUntrusted(input.line, lim.chatMax)}`,
         ...(input.notes.length ? ["Notes already kept about this viewer:", ...input.notes.map((t) => `- ${quoteUntrusted(t, lim.chatMax)}`)] : []),
         ...(input.suppressionReasons.length ? ["The owner deleted earlier notes for these reasons:", ...input.suppressionReasons.map((r) => `- ${r}`)] : []),
       ].join("\n"),
@@ -91,9 +91,6 @@ export function captureImplFor(lim: TextLimits): ModuleImpl<CaptureInput, Captur
     http: { validate: (raw) => validateCapture(raw) },
   };
 }
-
-/** The capture implementation under the schema defaults. */
-export const captureImpl = captureImplFor(textLimits());
 
 // @spec MEM-CAPTURE-003, MEM-NOTE-011, MEM-NOTE-012
 /** `memory.capture`: its own model slot, configured by `brain.memory.notes.capture` (never the cortex's), on local ollama unless the hook names a provider. */
@@ -113,8 +110,8 @@ export interface CaptureDeps {
   store: Pick<MemoryBackend, "getViewer" | "ensureViewer" | "touchSpeaker" | "embedText" | "listNotes" | "listDeletions" | "insertNote" | "reinforceNote">;
   hook: CaptureHook;
   log: Logger;
-  /** The config the text bounds come from (`viewer_text`, `brain.input_limits`); absent means the schema defaults. */
-  full?: Config;
+  /** The config the text bounds come from (`viewer_text`, `brain.input_limits`). */
+  full: Config;
   /** Called after a note was inserted or reinforced: lets the consolidation scheduler count dirty notes (MEM-CONSOL-001). */
   onNotesWritten?: () => Promise<void>;
 }
@@ -144,7 +141,7 @@ export function createCaptureHandler(deps: CaptureDeps): (ev: BusEvent) => Promi
       // The marks are swapped for straight quotes, as quoteUntrusted does, so a chat line carries no « or » to any hook (MEM-CAPTURE-020).
       line = boundText(d.text.replace(/[«»]/g, '"'), lim.chatMax);
       origin = "chat";
-      key = (d.userId ?? who).toLowerCase();
+      key = (d.userId || who).toLowerCase();
     } else if (ev.type === "speech.heard") {
       // @spec MEM-VOICE-003
       const d = ev.data as BusEvent<"speech.heard">["data"];

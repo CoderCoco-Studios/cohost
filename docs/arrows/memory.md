@@ -17,6 +17,9 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 ### EARS
 - docs/intent/memory/memory-specs.md (173 specs: 138 `[x]`, 35 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
 
+### Choices
+- Chat lines have `«` and `»` replaced with straight quotes before bounding, so no hook payload carries those marks (MEM-CAPTURE-020). Speech lines are not changed.
+
 ### Code and tests
 - services/memory/src/ and services/memory/test/ (`@spec MEM-` annotations)
 

@@ -92,7 +92,7 @@ ${untrustedNotice("what a viewer typed in chat")} Facts may be learned from the 
 Answer with one JSON object: {"ops":[...]}.`;
 
 // @spec MEM-CONSOL-005, MEM-CONSOL-018, MEM-CONSOL-019
-/** The consolidator's implementation, its prompt bounded by `lim` (the config's limits; the schema defaults when none are given). */
+/** The consolidator's implementation, its prompt bounded by `lim` (the config's limits). */
 export function consolidatorImplFor(lim: TextLimits): ModuleImpl<ConsolidatorInput, ConsolidatorOutput> {
   return {
     rules: () => ({ ops: [] }),
@@ -111,8 +111,6 @@ export function consolidatorImplFor(lim: TextLimits): ModuleImpl<ConsolidatorInp
   };
 }
 
-/** The consolidator implementation under the schema defaults. */
-export const consolidatorImpl = consolidatorImplFor(textLimits());
 
 // @spec MEM-NOTE-011
 /**

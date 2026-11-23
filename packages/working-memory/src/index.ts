@@ -26,9 +26,18 @@ export function propagatedFlags(src: object | undefined): InjectionFlags { // @s
  */
 type TaggedEvent = { [K in EventType]: BusEvent<K> }[EventType];
 
-/** `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). */
+/** The platform a chat message or removal came from, as the bus names it. */
+export type ChatPlatform = BusEvent<"chat.message">["data"]["platform"];
+
+/** A `chat.removed` bus event's payload: what `Context.forget` removes. */
+export type ChatRemoval = BusEvent<"chat.removed">["data"];
+
+/**
+ * `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). A chat entry holds
+ * `platform` always and `userId` and `messageId` only when the bus event carried them (WM-PUSH-001).
+ */
 export type ContextEvent =
-  | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
+  | ({ kind: "chat"; eventId: string; ts: number; platform: ChatPlatform; userId?: string; messageId?: string; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
   | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
   | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
@@ -115,7 +124,7 @@ export class Context {
     switch (ev.type) {
       case "chat.message": { // @spec WM-PUSH-001, WM-PUSH-010
         const d = ev.data;
-        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, user: nameOf(d.user, limits?.nameChars), text: bounded(d.text, limits?.chatChars), mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
+        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, platform: d.platform, ...(d.userId !== undefined ? { userId: d.userId } : {}), ...(d.messageId !== undefined ? { messageId: d.messageId } : {}), user: nameOf(d.user, limits?.nameChars), text: bounded(d.text, limits?.chatChars), mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
         break;
       }
       case "vision.summary": { // @spec WM-PUSH-004, WM-PUSH-005
@@ -173,6 +182,26 @@ export class Context {
   /** Whether a `self` event with this id is still in the window. */
   hasSelf(id: string): boolean { // @spec WM-WIN-007
     return this.events.some((e) => e.kind === "self" && e.id === id);
+  }
+
+  /**
+   * Remove the chat entries a `chat.removed` names (WM-FORGET-001..003): `message` by `messageId`, `user` by `userId`
+   * (an entry with no `userId` never matches), `all` every entry; always only this removal's platform. A removed entry
+   * also leaves the arrivals record, so it is never marked seen later (WM-FORGET-005). Returns how many were removed.
+   */
+  forget(removal: ChatRemoval): number { // @spec WM-FORGET-001, WM-FORGET-002, WM-FORGET-003, WM-FORGET-004, WM-FORGET-005, WM-FORGET-006
+    const matches = (e: ContextEvent): boolean => {
+      if (e.kind !== "chat" || e.platform !== removal.platform) return false;
+      switch (removal.scope) {
+        case "message": return e.messageId !== undefined && e.messageId === removal.messageId;
+        case "user": return e.userId !== undefined && e.userId === removal.userId;
+        case "all": return true;
+      }
+    };
+    const before = this.events.length;
+    this.events = this.events.filter((e) => !matches(e));
+    if (this.held) this.held = this.held.filter((e) => !matches(e));
+    return before - this.events.length;
   }
 
   unseen(): ContextEvent[] { // @spec WM-SEEN-001

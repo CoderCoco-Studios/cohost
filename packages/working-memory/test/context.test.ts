@@ -102,7 +102,7 @@ test("markSeenEvents ignores events that are no longer (or never were) in the wi
   ctx.push(chat("old"));
   const old = ctx.last()!;
   ctx.push(chat("new")); // trims "old"
-  ctx.markSeenEvents([old, { kind: "chat", ts: 0, eventId: "never-pushed", user: "x", text: "stranger", mention: false, isMod: false, isSub: false, seen: false }]);
+  ctx.markSeenEvents([old, { kind: "chat", ts: 0, eventId: "never-pushed", platform: "twitch", user: "x", text: "stranger", mention: false, isMod: false, isSub: false, seen: false }]);
   assert.deepEqual(ctx.unseen().map((e) => e.text), ["new"]);
 });
 

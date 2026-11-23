@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**PARTIAL**: 74 specs: 52 implemented (`[x]`), 21 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, the forgetting work, and WM-TRANS-003 (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL**: 74 specs: 59 implemented (`[x]`), 14 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, and WM-TRANS-003 (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (74 specs: 52 `[x]`, 21 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (74 specs: 59 `[x]`, 14 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)
@@ -48,14 +48,15 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
 | Window | WM-WIN-001 to WM-WIN-012 | 12 | 0 | 0 | 11 (WM-WIN-005 is annotated in the salience and cortex service tests) |
-| Ingest | WM-PUSH-001 to WM-PUSH-025 | 18 | 0 | 7 | 20 |
+| Ingest | WM-PUSH-001 to WM-PUSH-025 | 19 | 0 | 6 | 20 |
 | Seen tracking | WM-SEEN-001 to WM-SEEN-004 | 4 | 0 | 0 | 4 |
 | Package | WM-PKG-001 | 1 | 0 | 0 | 1 |
 | Transcript | WM-TRANS-001 to WM-TRANS-015 | 13 | 0 | 2 | 14 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
+| Forgetting | WM-FORGET-001 to WM-FORGET-006 | 6 | 0 | 0 | 6 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 74 specs: 52 implemented, 21 gaps, 1 deferred. The unfinished-line specs (WM-UNF) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 74 specs: 59 implemented, 14 gaps, 1 deferred. The unfinished-line specs (WM-UNF) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -69,7 +70,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Work Required
 
-- Platform, user id and forgetting (design 2026-11-16, no code): the chat entry carries `platform`, `userId` and `messageId` (WM-PUSH-001) and `forget` removes chat for a `chat.removed` (WM-FORGET-001 to WM-FORGET-006).
+- Platform, user id and forgetting: the chat entry carries `platform`, `userId` (when present) and `messageId` (when present) (WM-PUSH-001), and `forget` removes chat for a `chat.removed` (WM-FORGET-001 to WM-FORGET-006), returning the count removed. Consumers that call `forget` and key viewers by `viewerKey` are other segments' work.
 ### Must Fix
 The unfinished-line and streamed-speech specs (WM-UNF, WM-TRANS-010, WM-TRANS-015).
 

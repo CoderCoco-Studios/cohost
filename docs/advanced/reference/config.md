@@ -105,7 +105,7 @@ The four [brain regions](../../start/glossary.md#brain-region), which only talk 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `brain` | map | The brain |
-| `brain.working_memory_events` | `24` | Recent events each region keeps as its working memory and prompt window |
+| `brain.working_memory_events` | `24` | Recent events each region keeps as its working memory and prompt window. Must stay above `brain.working_memory_own_lines` (default 4) |
 | `brain.working_memory_own_lines` | `4` | How many of the co-host's own recent lines the window never drops, so a flood of chat cannot push them out. An integer of at least 1 that must be less than `brain.working_memory_events`; otherwise the file fails to load |
 
 ## `brain.input_limits`

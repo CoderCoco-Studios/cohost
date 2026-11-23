@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { glb, model, open, rig, send, tick, type Rig } from "./models-rig.js";
+import { glb, model, open, rig, send, type Rig } from "./models-rig.js";
 import { configText } from "./config-fixture.js";
 
 // DELETE /avatar/models/<name> (DASH-MDL-033..036), the renderer save check (DASH-MDL-037) and the applied view
@@ -27,8 +27,9 @@ test("DELETE is a 404 on the LAN listener and checks Host, Origin, token, name, 
   // an upload holding the one slot, and a body of any size on the DELETE, change nothing
   const whole = model("slot", 4096);
   const h = open(r.port, "POST", "/avatar/models?name=Slot.vrm", { ...r.auth, "content-length": String(whole.length) });
-  h.write(whole.subarray(0, 64));
-  for (let i = 0; i < 200 && !r.ls().some((n) => n.startsWith(".incoming-")); i++) await tick(5);
+  const opened = r.tempOpened();
+  h.write(whole.subarray(0, 1024));
+  await opened;
   const res = await send(r.port, "DELETE", "/avatar/models/Aiko.vrm", { headers: r.auth, body: Buffer.alloc(2 * 1024 * 1024) });
   assert.equal(res.status, 200, "no upload-slot or size check applies");
   h.destroy();

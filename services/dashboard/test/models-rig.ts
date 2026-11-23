@@ -4,6 +4,7 @@
 import http from "node:http";
 import net from "node:net";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
@@ -15,6 +16,11 @@ import { configDir as makeConfigDir, configText } from "./config-fixture.js";
 
 export const MiB = 1024 * 1024;
 export const TOKEN = "tok";
+/**
+ * The longest a test waits for an answer or an event that should come at once. It only bounds a failing run: a passing one
+ * returns as soon as the event happens, however loaded the machine is.
+ */
+export const ANSWER_CAP_MS = 15_000;
 
 // ---- glTF binary fixtures ----
 
@@ -175,7 +181,7 @@ export interface RigOpts {
   seed?: Record<string, Buffer>;
   /** Whether to create the (empty) model folder before start. */
   folder?: boolean;
-  /** Replaces the write of each upload chunk (the disk-full seam of DASH-MDL-029). */
+  /** Replaces the write of each upload chunk (the disk-full seam of DASH-MDL-029); the rig still counts the chunks it sees. */
   writeChunk?: ModelStore["writeChunk"];
   /** Delays every model listing (widens the race of DASH-AVR-028). */
   pause?: () => Promise<void>;
@@ -195,6 +201,11 @@ export interface Rig {
   save: (values: Record<string, unknown>, o?: { dryRun?: boolean; etag?: string }) => Promise<Res>;
   /** The names in the model folder (empty when it does not exist). */
   ls: () => string[];
+  /**
+   * Resolves when the next upload writes its first chunk, which is after its temporary file exists. Call it BEFORE sending
+   * the bytes that start the upload; the upload's head must be whole in the first 1 KiB sent, so that a chunk is written.
+   */
+  tempOpened: () => Promise<void>;
   stop: () => Promise<void>;
 }
 
@@ -214,7 +225,22 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
   const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
-  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: o.writeChunk, modelPause: o.pause });
+  // The write seam: the first chunk of each upload's file handle marks that its temporary file exists (see Rig.tempOpened).
+  const writeAll = o.writeChunk ?? (async (fh: FileHandle, c: Buffer): Promise<void> => {
+    let off = 0;
+    while (off < c.length) off += (await fh.write(c, off, c.length - off)).bytesWritten;
+  });
+  const seen = new WeakSet<FileHandle>();
+  const openedWaiters: (() => void)[] = [];
+  const writeChunk: ModelStore["writeChunk"] = async (fh, c) => {
+    if (!seen.has(fh)) { seen.add(fh); for (const w of openedWaiters.splice(0)) w(); }
+    return writeAll(fh, c);
+  };
+  const tempOpened = (): Promise<void> => new Promise<void>((ok, fail) => {
+    const timer = setTimeout(() => fail(new Error(`no upload wrote its first chunk within ${ANSWER_CAP_MS} ms: its temporary file never opened`)), ANSWER_CAP_MS);
+    openedWaiters.push(() => { clearTimeout(timer); ok(); });
+  });
+  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: writeChunk, modelPause: o.pause });
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard: { port, lan_port: lanPort, ...(o.maxBytes ? { models: { max_bytes: o.maxBytes } } : {}) }, renderer }),
@@ -235,6 +261,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
       return send(port, "PUT", `/config/renderer${so.dryRun ? "?dryRun=1" : ""}`, { headers: auth, body: JSON.stringify({ etag, values }) });
     },
     ls: () => (existsSync(models) ? readdirSync(models).sort() : []),
+    tempOpened,
   };
 }
 

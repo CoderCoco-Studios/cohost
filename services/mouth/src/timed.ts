@@ -15,8 +15,8 @@ export interface TimedDeps {
   sink: string;
   fallback?: PlaybackDeps["fallback"];
   fetchAudio?: (url: string) => Promise<Buffer>;
-  /** Take the WAV of utterance `id`; a throw is a failed hand-over (MOUTH-PLAY-005). Absent: the WAV goes nowhere. */
-  deliver?: (wav: Buffer, id: string) => void;
+  /** Take the WAV of clause `seq` of line `id`; a throw is a failed hand-over (MOUTH-PLAY-005). Absent: the WAV goes nowhere. */
+  deliver?: (wav: Buffer, id: string, seq: number) => void;
   /** Report `spokenText` / `unsaidText` for an interrupted line (the `dryrun` output only, MOUTH-STOP-005). */
   spoken?: boolean;
   /** Millisecond clock for that estimate (default `performance.now`). */
@@ -27,6 +27,8 @@ export interface TimedPlayback {
   playback: Playback;
   /** Cancel the pending release timer and the watchdog; for shutdown. */
   close(): void;
+  closeLine(id: string, through: number): void;
+  refuse(id: string, seq: number): Promise<void>;
 }
 
 // @spec MOUTH-DRY-002, MOUTH-FILE-001, MOUTH-HTTP-001
@@ -39,8 +41,8 @@ export function createTimedPlayback({ bus, log, sink, fallback, fetchAudio = htt
     // The WAV itself is the "audio": checked by parseWav, read for its duration, delivered as synthesized.
     prepare: (wav) => { parseWav(wav); return wav; },
     durationOf: (wav) => parseWav(wav).durationMs,
-    play: (wav, id) => {
-      deliver?.(wav, id);
+    play: (wav, id, seq) => {
+      deliver?.(wav, id, seq);
       clearTimeout(timer);
       timer = setTimeout(() => void box.playback!.onIdle(), parseWav(wav).durationMs);
     },
@@ -55,5 +57,7 @@ export function createTimedPlayback({ bus, log, sink, fallback, fetchAudio = htt
       timer = undefined;
       playback.close();
     },
+    closeLine: (id, through) => playback.closeLine(id, through),
+    refuse: (id, seq) => playback.refuse(id, seq),
   };
 }

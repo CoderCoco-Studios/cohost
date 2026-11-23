@@ -353,16 +353,16 @@ The `mouth` service: where her voice goes. Each key under `mouth.outputs` is one
 | `mouth.outputs.dryrun` | map | A test output that accepts each line, plays nothing and reports `voice.done` |
 | `mouth.outputs.dryrun.enabled` | `false` | Turn it on |
 | `mouth.outputs.dryrun.fail_every` | `0` | 0 never fails; N fails every Nth line, to exercise the fallback path |
-| `mouth.outputs.file` | map | Appends each line's WAV to a folder under the data directory |
+| `mouth.outputs.file` | map | Appends each clause's WAV to a folder under the data directory, named `<epoch-ms>-<n>-<id>-<seq>.wav` |
 | `mouth.outputs.file.enabled` | `false` | Turn it on |
 | `mouth.outputs.file.dir` | `mouth/outputs` | The folder, relative to the data directory. No absolute path and no `..` |
 | `mouth.outputs.file.max_files` | `100` | The newest this many files are kept |
-| `mouth.outputs.http` | map | POSTs each line's WAV (`audio/wav`) to a URL |
+| `mouth.outputs.http` | map | POSTs each clause's WAV (`audio/wav`, headers `x-cohost-utterance-id` and `x-cohost-clause`) to a URL |
 | `mouth.outputs.http.enabled` | `false` | Turn it on |
 | `mouth.outputs.http.url` | empty | An `http` or `https` URL. Empty while enabled leaves the output down |
 | `mouth.outputs.http.timeout_ms` | `5000` | Timeout per attempt |
 | `mouth.outputs.http.retries` | `3` | Attempts after the first, with backoff |
-| `mouth.outputs.http.max_queue` | `20` | Undelivered lines held; the oldest is dropped past this |
+| `mouth.outputs.http.max_queue` | `20` | Undelivered clauses held; the oldest is dropped past this |
 | `mouth.fallback` | map | The spoken fallback line |
 | `mouth.fallback.min_interval_ms` | `20000` | At most one fallback line per this long on an output when many lines fail at once |
 

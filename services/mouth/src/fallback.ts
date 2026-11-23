@@ -12,33 +12,35 @@ const REMEMBERED_IDS = 50;
 const NOT_REAL_SINKS = new Set(["virtual", "error"]);
 
 /**
- * mouth's memory of `voice.playing` claims for the newest 50 utterance ids, from the one `mouth` loop. One memory serves
- * every output (MOUTH-FALL-010); each output's `FallbackLine` excludes its own sink name when it reads it.
+ * mouth's memory of `voice.playing` claims for the newest 50 lines (by line id), per clause, from the one `mouth` loop. One memory
+ * serves every output (MOUTH-FALL-010); each output's `FallbackLine` excludes its own sink name when it reads it.
  */
 export class ClaimMemory {
-  private claims = new Map<string, Set<string>>();
+  private claims = new Map<string, Map<number, Set<string>>>();
 
-  private remember(id: string): Set<string> {
-    let sinks = this.claims.get(id);
-    if (!sinks) {
-      sinks = new Set();
-      this.claims.set(id, sinks);
+  private remember(id: string, seq: number): Set<string> {
+    let clauses = this.claims.get(id);
+    if (!clauses) {
+      clauses = new Map();
+      this.claims.set(id, clauses);
       if (this.claims.size > REMEMBERED_IDS) this.claims.delete(this.claims.keys().next().value!);
     }
+    let sinks = clauses.get(seq);
+    if (!sinks) clauses.set(seq, (sinks = new Set()));
     return sinks;
   }
 
-  /** A `voice.utterance` mouth read. */
-  seen(id: string): void { this.remember(id); } // @spec MOUTH-FALL-010
+  /** A `voice.utterance` mouth read: clause `seq` of line `id`. */
+  seen(id: string, seq = 0): void { this.remember(id, seq); } // @spec MOUTH-FALL-010
 
-  /** A `voice.playing` mouth read: `sink` claimed `id`. Virtual and error claims are not real sinks and are not kept. */
-  claim(id: string, sink: string): void { // @spec MOUTH-FALL-010
+  /** A `voice.playing` mouth read: `sink` claimed clause `seq` of `id`. Virtual and error claims are not real sinks and are not kept. */
+  claim(id: string, sink: string, seq = 0): void { // @spec MOUTH-FALL-010
     if (NOT_REAL_SINKS.has(sink)) return;
-    this.remember(id).add(sink);
+    this.remember(id, seq).add(sink);
   }
 
-  /** The real sinks that claimed `id` so far. */
-  claimedBy(id: string): ReadonlySet<string> { return this.claims.get(id) ?? new Set(); }
+  /** The real sinks that claimed clause `seq` of `id` so far. */
+  claimedBy(id: string, seq = 0): ReadonlySet<string> { return this.claims.get(id)?.get(seq) ?? new Set(); }
 }
 
 // ---- choosing a clip
@@ -78,9 +80,9 @@ export class FallbackLine {
     return this.d.cache.clips.filter((c) => !this.bad.has(c.name));
   }
 
-  /** The clip to say in place of `id`, or none (claimed elsewhere, storm limit, nothing eligible). */
-  pick(id: string): FallbackClip | undefined { // @spec MOUTH-FALL-004, MOUTH-FALL-005, MOUTH-FALL-006, MOUTH-FALL-007, MOUTH-FALL-009
-    for (const sink of this.d.claims.claimedBy(id)) if (sink !== this.d.sink) return undefined;
+  /** The clip to say in place of clause `seq` of line `id`, or none (claimed elsewhere, storm limit, nothing eligible). */
+  pick(id: string, seq = 0): FallbackClip | undefined { // @spec MOUTH-FALL-004, MOUTH-FALL-005, MOUTH-FALL-006, MOUTH-FALL-007, MOUTH-FALL-009
+    for (const sink of this.d.claims.claimedBy(id, seq)) if (sink !== this.d.sink) return undefined;
     if (this.lastStartedAt !== undefined && this.now() - this.lastStartedAt < this.d.minIntervalMs) return undefined;
     const eligible = this.eligible();
     const fresh = eligible.filter((c) => c.text !== this.lastText);

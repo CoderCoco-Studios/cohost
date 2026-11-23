@@ -159,7 +159,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "56 specs: 51 [x], 4 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-015)."
+    next: "56 specs: 54 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-015)."
     drift: null
 
   ears:
@@ -255,7 +255,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "101 specs: 64 [x], 36 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 84 specs: 83 [x], 1 [D]. No open gaps."
+    next: "101 specs: 100 [x], 0 [ ], 1 [D]."
     drift: null
 
   avatar:

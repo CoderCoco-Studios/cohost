@@ -80,7 +80,7 @@ test("http: past max_queue undelivered clauses the oldest clause is dropped with
     await waitFor(() => bus.of("voice.done").length === 4, "all four clauses done");
     assert.deepEqual(bus.of("voice.playing").map((p) => p.seq), [0, 1, 2, 3], "no effect on the reports");
     await new Promise((r) => setTimeout(r, 30));
-    assert.deepEqual(calls.map((c) => c.headers["x-cohost-clause"]), ["0", "2", "3"], "clause 1, the oldest undelivered one, was dropped");
+    assert.deepEqual(calls.map((c) => c.headers["x-cohost-clause"]), ["0", "3"], "clauses 1 and 2 were dropped as each newer one arrived: the oldest undelivered one goes");
   } finally { release(); out.close(); }
 });
 

@@ -29,7 +29,7 @@ cohost is built so that any piece can be swapped, because pieces only meet on th
 | Receive the co-host's voice somewhere else | The `http` output of `mouth` | An HTTP endpoint that accepts `audio/wav` | Each spoken line `POST`ed to your URL, with retries and a bounded queue |
 | Carry audio between cohost and an outside system | A [connector](../../start/glossary.md#connector), described in [Connector protocol](connector-protocol.md) | TypeScript on `@cohost/bus` | Audio in or out of a Discord channel or a capture helper. There is no connector SDK outside TypeScript |
 
-The voice-out route is set up with `mouth.outputs.http.enabled` and `mouth.outputs.http.url`: `mouth` sends each spoken line with `Content-Type: audio/wav` and the line's id in an `x-cohost-utterance-id` header, retries with backoff up to `mouth.outputs.http.retries`, and drops the oldest queued line past `mouth.outputs.http.max_queue`.
+The voice-out route is set up with `mouth.outputs.http.enabled` and `mouth.outputs.http.url`: `mouth` sends each spoken clause of a line as its own `POST` with `Content-Type: audio/wav`, the line's id in an `x-cohost-utterance-id` header and the clause's `seq` in an `x-cohost-clause` header, retries with backoff up to `mouth.outputs.http.retries`, and drops the oldest undelivered clause past `mouth.outputs.http.max_queue`.
 
 ## What a service gets
 

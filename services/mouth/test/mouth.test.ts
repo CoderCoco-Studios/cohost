@@ -64,7 +64,7 @@ test("the local plan runs the dryrun output with no Discord: group mouth at late
   try {
     await r.done;
     assert.deepEqual(r.calls, ["reset:mouth", "subscribe", "clips.start"], "no Discord module loaded, subscription before the clip refresh");
-    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "voice.playing", "voice.stop", "control"], start: "latest" });
+    assert.deepEqual(r.subs[0]!.opts, { group: "mouth", types: ["voice.utterance", "brain.clause", "voice.playing", "voice.stop", "control"], start: "latest" });
     await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
     assert.equal(r.lastHealth().mode, "mock");
     assert.equal(r.lastHealth().deps.dryrun, "ok");
@@ -97,7 +97,7 @@ test("a discord output with no connector: mouth runs and subscribes, deps.discor
     await waitFor(() => r.lastHealth().deps.discord === "ok" && r.lastHealth().state === "ready", "discord ok and ready");
     await r.subs[0]!.handler(utterance("u2"));
     await waitFor(() => r.bus.of("voice.done").filter((d) => d.sink === "discord").length === 1, "the discord sink played u2");
-    assert.ok(r.bus.frames.length > 0 && r.bus.frames.every((f) => f.dir === "out" && f.tag === "discord" && f.frame.utt === "u2"));
+    assert.ok(r.bus.frames.length > 0 && r.bus.frames.every((f) => f.dir === "out" && f.tag === "discord" && f.frame.utt === "u2-0"));
   } finally {
     await r.stop();
   }

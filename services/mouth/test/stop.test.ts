@@ -304,7 +304,7 @@ test("discord: after the flush frame no frame of the stopped line follows, and l
     assert.ok(at > 0, "a flush frame was written");
     const after = frames.slice(at + 1);
     assert.ok(after.length > 0, "the next line wrote frames");
-    assert.ok(after.every((f) => f.utt === "u2"), "no frame of u1 after its flush; later frames belong to u2");
+    assert.ok(after.every((f) => f.utt === "u2-0"), "no frame of u1 after its flush; later frames belong to u2");
   } finally { r.close(); }
 });
 

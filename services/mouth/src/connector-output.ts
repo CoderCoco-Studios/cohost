@@ -62,7 +62,7 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
     bus: d.bus, log: d.log, sink: d.tag, gainDb: d.gainDb, fallback: d.fallback, fetchAudio: d.fetchAudio ?? httpAudio,
     spoken: true, now, // elapsed counts from the first frame written (MOUTH-STOP-005)
     // The player is the frame writer: this resolves once the first frame is out and rejects when it cannot go out.
-    play: (pcm, id) => {
+    play: (pcm, id, seq) => {
       const offer = d.registry.offer("audio-out", d.tag);
       if (!offer) return Promise.reject(new Error(`sink ${d.tag} is not registered`));
       const mine = ++line;
@@ -83,9 +83,9 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
         writeUtterance(
           {
             write, sequencer, format: offer.cap.format, now, sleep, abort: () => abandoned || mine !== line || closed,
-            onWriteError: (err, f) => { if (!abandoned) warnWriteFailed(err, f.utt); },
+            onWriteError: (err) => { if (!abandoned) warnWriteFailed(err, id); }, // the warning names the line, not its clause key
           },
-          { utt: id, pcm, from: { rate: 48_000, channels: 2 } },
+          { utt: `${id}-${seq}`, pcm, from: { rate: 48_000, channels: 2 } }, // the clause key (CONN-AUD-005)
         ).then(async () => {
           if (abandoned) return;
           // The last frame's play time is the line's start plus its length; the writer runs up to a lead ahead of that.
@@ -97,6 +97,7 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
     },
     // The watchdog's and a `voice.stop`'s way out of a line: abort the frame writer first, then, where the sink obeys it, write one
     // flush frame so the connector cuts what it already holds (MOUTH-STOP-004). It ends no item itself.
+    // @spec CONN-AUD-008
     stop: async (id) => {
       line++;
       const offer = d.registry.offer("audio-out", d.tag);
@@ -114,6 +115,8 @@ export function createConnectorOutput(d: ConnectorOutputDeps): ConnectorOutput {
     isReady: () => d.registry.ready("audio-out", d.tag) !== undefined,
     playback,
     stop: (o) => playback.stop(o),
+    closeLine: (id, through) => playback.closeLine(id, through),
+    refuse: (id, seq) => playback.refuse(id, seq),
     close: () => { closed = true; line++; playback.close(); },
   };
 }

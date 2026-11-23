@@ -110,7 +110,7 @@ Design: [deployment-design.md](deployment-design.md) § Speech engine servers. V
 - [x] **DEPLOY-CI-009**: When `scripts/lid-check.mjs` runs, it shall also fail, naming the file and line, for a workflow `uses:` reference that is not an exact `vX.Y.Z` tag or a full commit SHA, for one action pinned to two different refs across the workflows, and for a workflow or Compose `image:` whose tag is missing, `latest` or not an exact `x.y.z` version (a `${VAR:-default}` is judged by its default). <!-- test: packages/config/test/lid-check.test.ts -->
 
 - [ ] **DEPLOY-CI-010**: When `scripts/lid-check.mjs` runs, it shall also fail, naming the file and line, for a Compose `build:` context that is a Git URL whose ref is not a full commit SHA.
-- [ ] **DEPLOY-CI-011**: When `scripts/lid-check.mjs` runs, it shall also fail, naming the file and line, for a `cargo install` in a Dockerfile under `docker/` that lacks an exact `=x.y.z` version or `--locked`, and for a `FROM` in such a Dockerfile whose tag is missing, `latest` or not an exact version.
+- [ ] **DEPLOY-CI-011**: When `scripts/lid-check.mjs` runs, it shall also fail, naming the file and line, for a `cargo install` in a Dockerfile under `docker/` that lacks an exact `=x.y.z` version or `--locked`, for a `FROM` in such a Dockerfile whose tag is missing, `latest` or not an exact version, and for a `git clone` or an `ADD` of a Git URL in such a Dockerfile whose source is not a full 40-character commit SHA.
 
 ## Licensing and contribution
 

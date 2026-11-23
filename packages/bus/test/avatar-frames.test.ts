@@ -216,7 +216,6 @@ test("a reader reads from $ without replay, drops entries that do not decode, re
 
 // @spec BUS-AVF-007, BUS-AVF-010
 test("a frame published through a Bus is tailed by another Bus's tailAvatarFrames from $, in order, and nothing from before the call is replayed", needsRedis, async () => {
-  const { Bus } = await import("../src/index.js");
   const prefix = `cohost-test:${process.pid}:${Date.now()}:af${n++}`;
   const raw = new Redis(url);
   const producer = new Bus("p", undefined, url, { streamPrefix: prefix });

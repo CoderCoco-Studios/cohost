@@ -1,5 +1,5 @@
 // Read loops on a scripted BusTransport: acks, drain, backoff, stop (BUS-NAT-ACK-*, CONN-*, ERR-*, amended BUS-SUB-008/009,
-// BUS-STOP-001). Until the facade runs on `BusOptions.transport` (Phase 6) every test here fails at the first assertion.
+// BUS-STOP-001).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AvatarFrame, Bus, BusEvent, EventType } from "../src/index.js";

@@ -135,7 +135,6 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 
 ### Must Fix
 1. Audit pass: compare the arbitration, store and HTTP code with the spec file (the status is MAPPED).
-2. `services/voice/test/stub.test.ts` still expects `audioUrl` `/audio/<id>.wav` for the stub engine; VOICE-UTT-002 now says `/audio/<id>-<seq>.wav`.
 
 ### Should Fix
 1. Add an event-bus "subscribed" hook so `ready` does not need the duplicate `resetGroup` call (event-bus segment).

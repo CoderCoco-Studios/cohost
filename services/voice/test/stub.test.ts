@@ -44,7 +44,7 @@ test("stub: brain.say publishes a real voice.utterance and never calls fetch", a
     const [u] = bus.of("voice.utterance");
     assert.equal(u!.durationMs, 3000);
     assert.equal(u!.sampleRate, 24000);
-    assert.equal(u!.audioUrl, "http://voice:8700/audio/s1.wav");
+    assert.equal(u!.audioUrl, "http://voice:8700/audio/s1-0.wav");
     assert.ok(u!.envelope.every((v) => v === 0));
     assert.equal(u!.envelope.length, 90);
     assert.equal(calls, 0);

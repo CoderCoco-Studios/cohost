@@ -21,6 +21,8 @@ pub trait ClipSender: Send + Sync + 'static {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeliveryReport {
     pub dropped: usize,
+    /// True when the delivery task panicked; the clips it held or queued are counted as dropped.
+    pub worker_panicked: bool,
 }
 
 struct Shared {
@@ -84,7 +86,7 @@ impl<S: ClipSender> Deliverer<S> {
     pub async fn shutdown(self, held: Option<Vec<i16>>) -> DeliveryReport {
         self.shared.stopping.store(true, Ordering::SeqCst);
         self.shared.stop.notify_one();
-        let _ = self.task.await;
+        let worker_panicked = matches!(self.task.await, Err(e) if e.is_panic());
         let mut dropped = 0;
         if let Some(clip) = held
             && let Err(err) = self.sender.send(&clip).await
@@ -96,11 +98,17 @@ impl<S: ClipSender> Deliverer<S> {
             });
         }
         dropped += self.shared.queue.lock().unwrap().discard();
+        if worker_panicked {
+            self.shared.log("the delivery task panicked".into());
+        }
         if dropped > 0 {
             self.shared
                 .log(format!("dropped {dropped} undelivered clip(s) at exit"));
         }
-        DeliveryReport { dropped }
+        DeliveryReport {
+            dropped,
+            worker_panicked,
+        }
     }
 }
 

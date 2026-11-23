@@ -197,3 +197,20 @@ async fn exit_with_nothing_held_or_waiting_makes_no_attempt() {
     assert_eq!(report.dropped, 0);
     assert!(sender.attempts.lock().unwrap().is_empty());
 }
+
+struct Panicking;
+impl ClipSender for Panicking {
+    async fn send(&self, _clip: &[i16]) -> Result<(), PostError> {
+        panic!("sender exploded")
+    }
+}
+
+// @spec EARS-SRC-022
+#[tokio::test(start_paused = true)]
+async fn a_panic_in_the_delivery_task_is_reported_by_shutdown() {
+    let d = Deliverer::start(Arc::new(Panicking), |_| {});
+    d.enqueue(vec![1]);
+    settle().await;
+    let report = d.shutdown(None).await;
+    assert!(report.worker_panicked);
+}

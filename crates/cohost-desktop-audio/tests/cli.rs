@@ -112,3 +112,81 @@ fn device_is_optional() {
 fn an_unknown_flag_is_an_error() {
     assert!(Options::parse(&["--nope"], &[]).is_err());
 }
+
+#[test]
+fn a_zero_clip_length_is_rejected() {
+    assert!(Options::parse(&["--silence-ms", "0"], &[]).is_err());
+    assert!(Options::parse(&["--max-clip-ms", "0"], &[]).is_err());
+}
+
+#[test]
+fn clip_lengths_and_the_silence_level_have_upper_bounds() {
+    assert!(Options::parse(&["--silence-ms", "10000"], &[]).is_ok());
+    assert!(Options::parse(&["--silence-ms", "10001"], &[]).is_err());
+    assert!(Options::parse(&["--max-clip-ms", "60000"], &[]).is_ok());
+    assert!(Options::parse(&["--max-clip-ms", "60001"], &[]).is_err());
+    assert!(Options::parse(&["--silence-level", "32767"], &[]).is_ok());
+    assert!(Options::parse(&["--silence-level", "32768"], &[]).is_err());
+}
+
+#[test]
+fn an_empty_prefix_is_rejected() {
+    assert!(Options::parse(&["--prefix", ""], &[]).is_err());
+}
+
+#[test]
+fn a_token_with_a_line_break_is_rejected_from_the_flag_or_the_environment() {
+    assert!(Options::parse(&["--token", "a\r\nX-Evil: 1"], &[]).is_err());
+    assert!(Options::parse(&[], &[("EARS_HTTP_TOKEN", "a\nb")]).is_err());
+}
+
+#[test]
+fn a_url_must_be_http_with_a_host_and_a_valid_port() {
+    for bad in [
+        "ftp://h/x",
+        "https://h/x",
+        "http:///x",
+        "http://h:0/x",
+        "http://h:99999/x",
+        "http://h:abc/x",
+        "http://u@h/x",
+        "http://[::1/x",
+    ] {
+        assert!(
+            Options::parse(&["--url", bad], &[]).is_err(),
+            "{bad} accepted"
+        );
+    }
+    assert!(Options::parse(&["--url", "http://[::1]:8765/audio?source=desktop"], &[]).is_ok());
+}
+
+#[test]
+fn a_non_loopback_url_with_a_token_warns() {
+    let warned = Options::parse(
+        &["--url", "http://192.168.1.5:8765/audio", "--token", "t"],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(warned.warnings.len(), 1);
+    assert!(
+        Options::parse(&["--url", "http://192.168.1.5:8765/audio"], &[])
+            .unwrap()
+            .warnings
+            .is_empty()
+    );
+    assert!(
+        Options::parse(&["--token", "t"], &[])
+            .unwrap()
+            .warnings
+            .is_empty()
+    );
+    assert!(
+        Options::parse(
+            &["--url", "http://localhost:8765/audio", "--token", "t"],
+            &[]
+        )
+        .unwrap()
+        .warnings
+        .is_empty()
+    );
+}

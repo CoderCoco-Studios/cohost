@@ -27,6 +27,8 @@ struct Fake {
     failing: Mutex<u32>,
     /// What a read of the helper's key returns.
     held: Mutex<Option<String>>,
+    /// Makes reads fail.
+    read_error: Mutex<bool>,
 }
 
 impl RegistryStore for Fake {
@@ -44,6 +46,9 @@ impl RegistryStore for Fake {
         Ok(())
     }
     async fn read_registration(&self, _id: &str) -> Result<Option<String>, String> {
+        if *self.read_error.lock().unwrap() {
+            return Err("redis unreachable".into());
+        }
         Ok(self.held.lock().unwrap().clone())
     }
     async fn delete_registration(&self, id: &str) -> Result<(), String> {
@@ -269,4 +274,40 @@ async fn a_different_instance_found_while_retrying_ends_the_retries() {
     settle().await;
     assert_eq!(store.writes(), 1);
     reg.stop().await;
+}
+
+// @spec CONN-DESK-004
+#[tokio::test(start_paused = true)]
+async fn stop_leaves_a_key_another_instance_took_after_the_last_rewrite() {
+    let store = Arc::new(Fake::default());
+    let reg = Registrar::start(store.clone(), config());
+    settle().await;
+    *store.held.lock().unwrap() = Some(r#"{"instance":"someone-else"}"#.into());
+    assert_eq!(reg.stop().await, None);
+    assert!(
+        !store
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, Call::Delete { .. }))
+    );
+}
+
+// @spec CONN-DESK-004
+#[tokio::test(start_paused = true)]
+async fn stop_does_not_delete_a_key_it_cannot_read() {
+    let store = Arc::new(Fake::default());
+    let reg = Registrar::start(store.clone(), config());
+    settle().await;
+    *store.read_error.lock().unwrap() = true;
+    assert!(reg.stop().await.is_some());
+    assert!(
+        !store
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, Call::Delete { .. }))
+    );
 }

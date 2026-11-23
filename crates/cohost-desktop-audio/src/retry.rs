@@ -132,6 +132,6 @@ pub fn disposition(err: &PostError) -> Disposition {
     if err.is_retryable() {
         Disposition::Retry
     } else {
-        Disposition::Drop(format!("ears refused a clip ({err}), dropped it"))
+        Disposition::Drop(format!("dropped a clip: {err}"))
     }
 }

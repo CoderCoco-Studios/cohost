@@ -211,3 +211,14 @@ fn the_clip_after_a_cap_cut_starts_at_the_next_sample_with_no_leading_pad() {
     assert_eq!(clips[1][0], LOUD + 1);
     assert_eq!(clips[1].len(), ms(500) + ms(100));
 }
+
+// @spec EARS-SRC-017
+#[test]
+fn a_silence_run_ending_on_the_cap_sample_still_trims_the_closing_silence() {
+    let mut c = cutter(300, 1000);
+    let mut pcm = loud(700);
+    pcm.extend(quiet(300));
+    let clips = feed(&mut c, &pcm, 160);
+    assert_eq!(clips.len(), 1);
+    assert_eq!(clips[0].len(), ms(700) + ms(100));
+}

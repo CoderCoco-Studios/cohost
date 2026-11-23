@@ -101,6 +101,7 @@ pub fn detail_for(choice: &SourceChoice) -> String {
 /// registration is `ready`.
 pub struct Registrar<S: RegistryStore> {
     store: Arc<S>,
+    instance: String,
     displaced: Arc<AtomicBool>,
     stop_tx: oneshot::Sender<()>,
     task: JoinHandle<()>,
@@ -112,9 +113,11 @@ impl<S: RegistryStore> Registrar<S> {
     pub fn start(store: Arc<S>, cfg: RegistrationConfig) -> Self {
         let displaced = Arc::new(AtomicBool::new(false));
         let (stop_tx, stop_rx) = oneshot::channel();
+        let instance = cfg.instance.clone();
         let task = tokio::spawn(run(store.clone(), cfg, displaced.clone(), stop_rx));
         Self {
             store,
+            instance,
             displaced,
             stop_tx,
             task,
@@ -127,19 +130,29 @@ impl<S: RegistryStore> Registrar<S> {
         self.displaced.load(Ordering::SeqCst)
     }
 
-    /// Stops the writes and deletes the key, unless the helper was displaced. Returns the delete
-    /// error when the delete failed.
-    // @spec CONN-DESK-001, CONN-DESK-004
+    /// Stops the writes, then deletes the key only if it is absent or still this instance's, as
+    /// read just before the delete (packages/bus registrar). A key another instance took after the
+    /// last rewrite is left alone. Returns why the key was not deleted, or the delete error.
+    // @spec CONN-DESK-004
     pub async fn stop(self) -> Option<String> {
         let Self {
             store,
-            displaced,
+            instance,
             stop_tx,
             task,
+            ..
         } = self;
         let _ = stop_tx.send(());
         let _ = task.await;
-        if displaced.load(Ordering::SeqCst) {
+        let held = match store.read_registration(CONNECTOR_ID).await {
+            Ok(held) => held,
+            Err(e) => {
+                return Some(format!(
+                    "registration not deleted: could not read the key ({e})"
+                ));
+            }
+        };
+        if held.is_some_and(|h| holds_other_instance(&h, &instance)) {
             return None;
         }
         store.delete_registration(CONNECTOR_ID).await.err()

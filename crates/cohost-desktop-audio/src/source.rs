@@ -111,7 +111,11 @@ pub struct Format {
 
 /// A platform capture back end (PulseAudio/PipeWire on Linux, WASAPI loopback on Windows). The
 /// implementations are not part of the pure core; the core feeds their output to
-/// [`crate::pcm::to_16k_mono_i16`].
+/// [`crate::pcm::Resampler`].
+///
+/// Both methods block: a back end waits on the audio device. Run the capture loop on a blocking
+/// thread (`tokio::task::spawn_blocking` or a dedicated thread), never on the async runtime that
+/// posts clips.
 pub trait Capture {
     /// Opens `choice` and reports the format of the frames `read` returns.
     fn open(&mut self, choice: &SourceChoice) -> Result<Format, String>;

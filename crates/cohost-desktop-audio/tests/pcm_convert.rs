@@ -41,3 +41,49 @@ fn negative_overload_clamps_to_i16_min() {
     let cold = to_16k_mono_i16(&vec![-1.5_f32; 16_000], 16_000, 1);
     assert!(cold.iter().all(|s| *s == i16::MIN));
 }
+
+use cohost_desktop_audio::pcm::Resampler;
+
+fn tone(freq: f32, rate: u32, n: usize) -> Vec<f32> {
+    (0..n)
+        .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / rate as f32).sin() * 0.5)
+        .collect()
+}
+
+// @spec EARS-SRC-014
+#[test]
+fn chunk_boundaries_do_not_change_the_output() {
+    let stereo: Vec<f32> = tone(1000.0, 48_000, 48_000)
+        .iter()
+        .flat_map(|s| [*s, *s * 0.5])
+        .collect();
+    let whole = to_16k_mono_i16(&stereo, 48_000, 2);
+    let mut r = Resampler::new(48_000, 2);
+    let mut streamed = Vec::new();
+    for chunk in stereo.chunks(333) {
+        streamed.extend(r.push(chunk));
+    }
+    streamed.extend(r.finish());
+    assert_eq!(streamed, whole);
+}
+
+// @spec EARS-SRC-014
+#[test]
+fn a_tone_above_the_output_nyquist_is_attenuated_and_a_tone_below_it_passes() {
+    let peak = |v: &[i16]| {
+        v[1000..v.len() - 1000]
+            .iter()
+            .map(|s| i32::from(*s).abs())
+            .max()
+            .unwrap()
+    };
+    let alias = to_16k_mono_i16(&tone(12_000.0, 48_000, 48_000), 48_000, 1);
+    let pass = to_16k_mono_i16(&tone(1_000.0, 48_000, 48_000), 48_000, 1);
+    // Full scale of the 0.5 tone is 16384; the 12 kHz tone must sit more than 34 dB down.
+    assert!(peak(&alias) < 16_384 / 50, "alias peak {}", peak(&alias));
+    assert!(
+        (peak(&pass) - 16_384).abs() < 16_384 / 50,
+        "passband peak {}",
+        peak(&pass)
+    );
+}

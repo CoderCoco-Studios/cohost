@@ -112,13 +112,15 @@ impl ClipCutter {
         } else {
             open.silent_run += 1;
         }
+        // Silence is checked first: when the closing silence and the cap land on the same sample,
+        // the closing silence is still trimmed to the trailing pad.
+        if open.silent_run >= self.silence_n {
+            return self.open.take().map(|o| self.close_on_silence(o));
+        }
         if open.samples.len() >= self.max_n {
             // The cap cut holds exactly `max_n` samples and the next clip starts after it, with no leading pad.
             self.idle.clear();
             return self.open.take().map(|o| o.samples);
-        }
-        if open.silent_run >= self.silence_n {
-            return self.open.take().map(|o| self.close_on_silence(o));
         }
         None
     }

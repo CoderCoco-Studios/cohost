@@ -201,3 +201,62 @@ fn a_dropped_refusal_carries_a_log_line_with_its_status() {
         Disposition::Retry
     ));
 }
+
+use cohost_desktop_audio::post::{PostTimeouts, parse_http_target, post_clip_timed};
+
+// @spec EARS-SRC-020
+#[tokio::test]
+async fn a_response_that_never_comes_is_not_retried() {
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/audio", l.local_addr().unwrap());
+    let h = tokio::spawn(async move {
+        let (mut s, _) = l.accept().await.unwrap();
+        let mut seen = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while !seen.windows(4).any(|w| w == b"\r\n\r\n")
+            || seen.len() < seen.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 6
+        {
+            let n = s.read(&mut chunk).await.unwrap();
+            assert!(n > 0);
+            seen.extend_from_slice(&chunk[..n]);
+        }
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+    let t = PostTimeouts {
+        connect: Duration::from_secs(2),
+        send: Duration::from_secs(2),
+        response: Duration::from_millis(200),
+    };
+    let err = post_clip_timed(&url, None, &[1], &t).await.unwrap_err();
+    assert_eq!(err, PostError::NoResponse);
+    assert!(!err.is_retryable());
+    h.abort();
+}
+
+// @spec EARS-SRC-015
+#[test]
+fn http_targets_default_to_port_80_and_accept_bracketed_ipv6() {
+    let t = parse_http_target("http://[::1]/audio?source=desktop").unwrap();
+    assert_eq!(t.connect_addr, "[::1]:80");
+    assert_eq!(t.path, "/audio?source=desktop");
+    assert!(t.is_loopback());
+    assert_eq!(
+        parse_http_target("http://localhost:8765")
+            .unwrap()
+            .connect_addr,
+        "localhost:8765"
+    );
+    assert!(
+        !parse_http_target("http://192.168.1.5/x")
+            .unwrap()
+            .is_loopback()
+    );
+}
+
+// @spec EARS-SRC-015
+#[tokio::test]
+async fn an_invalid_url_is_not_retryable() {
+    let err = post_clip("https://h/x", None, &[1]).await.unwrap_err();
+    assert!(matches!(err, PostError::InvalidUrl(_)));
+    assert!(!err.is_retryable());
+}

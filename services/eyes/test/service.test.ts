@@ -404,3 +404,35 @@ test("the stub provider names no destination: no egress warning and no host in t
     assert.ok(heartbeats(r.bus).every((h) => !/:\/\/|127\.0\.0\.1|api\./.test(h.detail ?? "")));
   } finally { await r.stop(); }
 });
+
+// @spec EYES-GAP-006, EYES-GAP-005
+test("enabled, bedrock with a region and only the access key: eyes stays up, deps.vision is down with the model layer's reason, and injection answers ok:false", async () => {
+  const llm = { bedrock: { region: "us-east-1", access_key_id: "AKIA" } };
+  const r = rig({ enabled: true, provider: "bedrock", model: "claude-vision", llm }, {}, new JpegObs());
+  try {
+    await r.start();
+    await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down" && /must be set together/.test(h.detail ?? "")), "down with the reason", 4000);
+    inject(r);
+    await waitFor(() => results(r).length === 1, "inject.result");
+    assert.equal(results(r)[0]!.ok, false);
+    assert.match(results(r)[0]!.detail!, /must be set together/);
+    assert.deepEqual(r.exits, []);
+  } finally { await r.stop(); }
+});
+
+// @spec EYES-PROV-007, EYES-HEALTH-003
+test("enabled with openai: an injected BMP is a frame fault, answers ok:false, and deps.vision never goes down", async () => {
+  const m = await serveModel();
+  const r = rig({ enabled: true, provider: "openai", model: "vision-model", llm: { openai: { base_url: m.url } } }, {}, new IdleObs());
+  try {
+    await r.start();
+    r.bus.takeUpload = async () => Buffer.from("BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00", "latin1");
+    r.bus.handler!(event("inject.request", { id: "i1", target: "eyes", kind: "image", uploadId: UP, contentType: "image/bmp", remember: false }) as never);
+    await waitFor(() => results(r).length === 1, "inject.result");
+    assert.equal(results(r)[0]!.ok, false);
+    assert.match(results(r)[0]!.detail!, /not JPEG, PNG, GIF or WebP/);
+    await settle(1300);
+    assert.ok(heartbeats(r.bus).every((h) => h.deps?.vision !== "down"));
+    assert.deepEqual(m.seen, []);
+  } finally { await r.stop(); }
+});

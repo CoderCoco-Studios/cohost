@@ -123,3 +123,22 @@ test("every provider reports mode live while enabled and off while disabled, wit
     assert.deepEqual(off.deps, { obs: "n/a", vision: "n/a" }, provider);
   }
 });
+
+// @spec EYES-PROV-007, EYES-PROV-006
+test("a TypeError from the model layer for one frame (image data in no supported format) leaves deps.vision as it was", async () => {
+  const bad = new TypeError("image data is not JPEG, PNG, GIF or WebP");
+  const ok = new EyesHealth(true, () => true, "openai");
+  await fail(ok, bad);
+  assert.equal(await visionOf(ok), "ok");
+  const down = new EyesHealth(true, () => true, "openai");
+  await fail(down, new ChatError("http", "openai chat 503: x", 503));
+  await fail(down, bad);
+  assert.equal(await visionOf(down), "down");
+});
+
+// @spec EYES-GAP-002, EYES-GAP-003
+test("a configuration gap starts deps.vision down", async () => {
+  const h = new EyesHealth(true, () => true, "anthropic", { gap: "the anthropic provider is not configured: llm.claude.api_key is not set" });
+  const hb = (await runHeartbeat(h.spec))[1]!;
+  assert.equal(hb.deps!.vision, "down");
+});

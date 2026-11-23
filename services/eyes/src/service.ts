@@ -16,7 +16,8 @@
 import type { Bus } from "@cohost/bus";
 import type { Config } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
-import { Eyes, createDescriber, startEyes, stripDataUrl, type Describe } from "./eyes.js";
+import { Eyes, createDescriber, describerLabel, startEyes, stripDataUrl, visionGap, type Describe } from "./eyes.js";
+import { egressDestinations } from "@cohost/config";
 import { EyesHealth } from "./health.js";
 import { createInjectHandler } from "./inject.js";
 import { createObsLink, stopEyes, type ObsLike } from "./obs.js";
@@ -52,7 +53,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
   return {
     // @spec EYES-HEALTH-001, EYES-HEALTH-002, EYES-STUB-002
     health(cfg) {
-      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.provider);
+      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.provider, { label: describerLabel(cfg), gap: visionGap(cfg) });
       return health.spec;
     },
 
@@ -61,8 +62,17 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
       let stopped = false;
       const fatal = (err: unknown): void => { log.error({ err }, "fatal"); (deps.exit ?? process.exit)(1); };
 
+      // @spec EYES-GAP-002, EYES-GAP-003, EYES-HEALTH-003
+      // A gap keeps the service up with `vision` down; the reason is the heartbeat detail while
+      // enabled. `ready()` clears a detail, so the reason is set again after each ready (OBS connect).
+      const gap = cfg.vision.enabled ? visionGap(cfg) : undefined;
+      const label = describerLabel(cfg);
+      const gapDetail = gap ? (label ? `${label}: ${gap}` : gap) : undefined;
+      if (gapDetail) heartbeat.degraded(gapDetail);
+      const linkHeartbeat = { degraded: (d: string) => heartbeat.degraded(d), ready: () => (gapDetail ? heartbeat.degraded(gapDetail) : heartbeat.ready()) };
+
       // @spec EYES-OBS-001, EYES-OBS-002, EYES-OBS-003, EYES-OBS-004, EYES-HEALTH-005, EYES-HEALTH-006
-      const link = createObsLink({ obs, url: `ws://${host}:${port}`, password, log, heartbeat, sleep: deps.sleep });
+      const link = createObsLink({ obs, url: `ws://${host}:${port}`, password, log, heartbeat: linkHeartbeat, sleep: deps.sleep });
 
       // @spec EYES-OBS-006
       async function screenshot(): Promise<string> {
@@ -77,6 +87,10 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
       }
 
       if (cfg.vision.provider === "stub") log.warn("vision.provider is stub: descriptions are fixed text, no model is called (mode mock)");
+      // @spec EYES-EGR-001, EYES-EGR-002, EYES-EGR-003
+      for (const e of egressDestinations(cfg).filter((x) => x.service === "eyes" && x.offLan)) {
+        log.warn(`eyes sends frames to ${e.engine}${e.host ? ` at ${e.host}` : ""}, which is off the LAN`);
+      }
       // @spec EYES-HEALTH-003
       const describe = health!.track((deps.createDescriber ?? createDescriber)(cfg));
       const eyes = new Eyes({ bus, log, screenshot, describe, now });
@@ -92,12 +106,15 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
         }),
       });
 
-      // @spec EYES-LOOK-003, EYES-LOOK-004, EYES-LOOK-005, EYES-OBS-005
+      // A blank vision.model is a gap the look loop does not work through: no describe call at all (EYES-GAP-001).
+      const modelBlank = cfg.vision.provider !== "stub" && !cfg.vision.model;
+
+      // @spec EYES-LOOK-003, EYES-LOOK-004, EYES-LOOK-005, EYES-OBS-005, EYES-GAP-001
       async function loop(): Promise<void> {
         while (!stopped) {
           const t0 = now();
           try {
-            if (obs.identified) await eyes.look();
+            if (obs.identified && !modelBlank) await eyes.look();
           } catch (err) {
             log.warn({ err: String(err) }, "look failed");
             if (!obs.identified) await link.connect();

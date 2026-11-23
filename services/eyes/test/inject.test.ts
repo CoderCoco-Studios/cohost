@@ -216,3 +216,23 @@ test("a 400 from the provider for the injected frame answers ok:false with the p
   assert.match(r!.detail!, /openai chat 400/);
   assert.equal(t.bus.of("vision.summary").length, 0);
 });
+
+// @spec EYES-PROV-007, EYES-INJ-018
+test("an injected BMP or PDF answers ok:false with the model layer's message, publishes no summary, and the handler keeps answering", async () => {
+  const bmp = Buffer.from("BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00", "latin1");
+  const pdf = Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", "latin1");
+  const m = await serveModel();
+  const bus = new FakeBus();
+  let next = bmp;
+  bus.takeUpload = async () => next;
+  const handle = createInjectHandler({ bus, log: silentLog, describe: createDescriber(testConfig({ llm: { openai: { base_url: m.url } }, vision: { provider: "openai", model: "vision-model" } })) });
+  await run(handle, req({ id: "i1" }));
+  next = pdf;
+  await run(handle, req({ id: "i2" }));
+  assert.deepEqual(bus.of("inject.result"), [
+    { id: "i1", ok: false, detail: "image data is not JPEG, PNG, GIF or WebP" },
+    { id: "i2", ok: false, detail: "image data is not JPEG, PNG, GIF or WebP" },
+  ]);
+  assert.equal(bus.of("vision.summary").length, 0);
+  assert.deepEqual(m.seen, []);
+});

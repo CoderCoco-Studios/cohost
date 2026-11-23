@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, silentLog, testConfig } from "@cohost/testing";
 import { parseConfigText } from "@cohost/config";
-import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber } from "../src/eyes.js";
+import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber, visionGap } from "../src/eyes.js";
 import { JPEG_B64, serveModel } from "./support.js";
 
 function setup(replies: string[]) {
@@ -290,4 +290,38 @@ test("anthropic and bedrock without their credentials fail each describe at once
     await assert.rejects(createDescriber(cfg)(JPEG_B64, ""), want, provider);
     assert.ok(performance.now() - t0 < 1000, "at once");
   }
+});
+
+// @spec EYES-PROV-007, EYES-DESC-001
+test("a BMP or PDF frame is refused by every hosted provider with a TypeError before any request, so it is a frame fault, not an outage", async () => {
+  const m = await serveModel();
+  const bmp = Buffer.from("BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00", "latin1").toString("base64");
+  const pdf = Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", "latin1").toString("base64");
+  const keyed = { claude: { api_key: "sk-test" }, bedrock: { region: "us-east-1", access_key_id: "AKIA", secret_access_key: "s" } };
+  for (const [provider, llm] of [["openai", { openai: { base_url: m.url } }], ["anthropic", keyed], ["bedrock", keyed]] as const) {
+    const describe = createDescriber(testConfig({ llm, vision: { provider, model: "vision-model" } }));
+    for (const img of [bmp, pdf]) {
+      await assert.rejects(describe(img, ""), (err) => err instanceof TypeError, provider);
+    }
+  }
+  assert.deepEqual(m.seen, []);
+});
+
+// @spec EYES-DESC-006
+test("a provider that ignores the abort signal does not stall the describer: its timer rejects the call at vision.timeout_ms", async () => {
+  const chat = { name: "x", model: "v", chat: () => new Promise<string>(() => {}) };
+  const cfg = testConfig({ vision: { provider: "openai", model: "v", timeout_ms: 50 } });
+  const t0 = performance.now();
+  await assert.rejects(modelDescriber(cfg.vision, cfg.llm, chat as never)(JPEG_B64, ""), /did not answer within 50 ms/);
+  assert.ok(performance.now() - t0 < 2000);
+});
+
+// @spec EYES-GAP-006
+test("bedrock with a region and only one of the key pair is a gap: createDescriber does not throw, each describe fails at once with the model layer's message, and nothing is sent", async () => {
+  const cfg = testConfig({ llm: { bedrock: { region: "us-east-1", access_key_id: "AKIA" } }, vision: { provider: "bedrock", model: "claude-vision" } });
+  const describe = createDescriber(cfg);
+  const t0 = performance.now();
+  await assert.rejects(describe(JPEG_B64, ""), /must be set together: only one of them is set/);
+  assert.ok(performance.now() - t0 < 1000, "at once");
+  assert.equal(visionGap(cfg), "llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set");
 });

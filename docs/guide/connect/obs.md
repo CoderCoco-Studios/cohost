@@ -101,7 +101,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
    docker compose --profile eyes up -d
    ```
 
-   The vision model (`vision.model` in `config/config.yaml`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers.
+   With the default `vision.provider: ollama`, the vision model (`vision.model` in `config/config.yaml`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers. If `vision.provider` names a hosted provider, the screenshots leave your machine for it instead; see [Pictures for the vision model](../tune/model.md#pictures-for-the-vision-model).
 
 ## How you know it worked
 

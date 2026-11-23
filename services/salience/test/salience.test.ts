@@ -223,7 +223,7 @@ test("Scheduler: speech and vision always count, repeated text included", async 
   const ctx = new Context(20);
   ctx.push(from("v1", "hi"));
   ctx.push(vision("screen changed"));
-  ctx.push(vision("screen changed"));
+  ctx.push(vision("screen changed again"));
   ctx.push(speech("hi"));
   ctx.push(speech("hi"));
   near((await sch.decide(ctx, false, false)).score, 0.15 + 0.3 + 0.3 + 0.9 + 0.9);

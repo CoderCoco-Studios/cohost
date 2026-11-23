@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 50 [x], 234 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Notes (the counts above are current): 128 specs: 74 [x], 53 [ ] (chat safety: repetition check, guarded prompt, parsed critic rewrite, no-line exit; viewer identity by platform and user id; forgetting removed chat), 1 [D] (CTX-REPLAN-001)."
+    next: "285 specs: 86 [x], 198 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Open in the chat-safety work: the repetition trigger on clauses and the streamed-line exception (CTX-REPEAT-001, 002), the repetition log (CTX-REPEAT-010, 011), the no-line exit status (CTX-GATE-012); viewer identity by platform and user id; forgetting removed chat."
     drift: null
 
   tools:

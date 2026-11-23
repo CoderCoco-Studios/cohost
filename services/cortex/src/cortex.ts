@@ -4,9 +4,11 @@ import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
+import { speakerLabel } from "@cohost/shared/untrusted";
 import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
+import { isRepeat, type RecentLine } from "./repeat.js";
 
 export interface CortexDeps {
   cfg: Config;
@@ -81,6 +83,9 @@ export class Cortex {
       // @spec CTX-EVT-005
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
+        // What the audience heard of an interrupted line, recorded whether or not the line is still pending (CTX-EVT-011, CTX-GATE-011).
+        // @spec CTX-EVT-011, CTX-GATE-011
+        if (d.interrupted && d.spokenText !== undefined) this.ctx.markHeard(d.id, d.spokenText);
         if (this.endSpeaking(d.id) && this.pending.size === 0) await this.status(this.control.muted || this.control.paused ? "muted" : "idle");
         break;
       }
@@ -126,10 +131,12 @@ export class Cortex {
       case "memory.viewer": {
         const d = ev.data as BusEvent<"memory.viewer">["data"];
         // Memory decides who is a regular (the owner's flag or its message threshold); no notes text rides here.
+        // @spec CTX-VIEWER-001, CTX-VIEWER-004
+        const name = speakerLabel(d.user, this.d.cfg.viewer_text.max_name_chars);
         const note = d.isNew
-          ? `${d.user} is new here (first message).`
+          ? `${name} is new here (first message).`
           : d.regular
-            ? `${d.user} is a regular (${d.msgCount} messages).`
+            ? `${name} is a regular (${d.msgCount} messages).`
             : undefined;
         const key = d.user.toLowerCase();
         this.viewerNotes.delete(key);
@@ -200,8 +207,18 @@ export class Cortex {
       const verdict = await critic.run({ text, emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
       const criticEndedAt = Date.now();
       if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await this.status("idle"); return; }
-      if (verdict.text) { log.info({ from: text, to: verdict.text }, "critic rewrote"); text = verdict.text; }
+      // A rewrite is parsed like a reply; the critic's emotion tag and gesture are ignored, the model's gesture is kept (CTX-CRITIC-007, 009, 012).
+      // @spec CTX-CRITIC-003, CTX-CRITIC-007, CTX-CRITIC-008, CTX-CRITIC-009, CTX-CRITIC-012
+      if (verdict.text) {
+        const rewritten = parseReply(verdict.text).text;
+        log.info({ from: text, to: rewritten }, "critic rewrote");
+        text = rewritten;
+        if (text.length < 2) { await this.status("idle"); return; } // CTX-GATE-012
+      }
       if (verdict.emotion) emotion = verdict.emotion;
+      // Whole-line repetition check: the clause trigger (CTX-REPEAT-001) is not built yet. Only a think's line is checked.
+      // @spec CTX-REPEAT-012, CTX-REPEAT-013, CTX-REPEAT-014
+      if (isRepeat(text, this.recentSelf(), cfg.brain.cortex.repeat_similarity)) { log.info({ text }, "repeat withheld"); await this.status("idle"); return; }
       // A reflex or operator line may have started while we were thinking; don't talk over it.
       // @spec CTX-GATE-005
       if (this.control.muted || this.control.paused) { await this.status("muted"); return; }
@@ -220,6 +237,13 @@ export class Cortex {
     } finally {
       this.thinking = false;
     }
+  }
+
+  /** The co-host's recent `self` lines as the repetition check reads them (CTX-REPEAT-002). */
+  private recentSelf(): RecentLine[] {
+    const lines: RecentLine[] = [];
+    for (const e of this.ctx.all()) if (e.kind === "self") lines.push({ text: e.text, heard: e.heard, fallback: e.fallback });
+    return lines;
   }
 
   /** `status` for paths with nothing else to do: a failed publish is logged, never raised (CTX-GATE-008). */

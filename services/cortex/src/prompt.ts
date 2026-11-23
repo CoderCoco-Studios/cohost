@@ -2,13 +2,14 @@ import { EMOTIONS, type Config, type Emotion } from "@cohost/config";
 import type { BusEvent } from "@cohost/bus";
 import type { ChatMessage } from "@cohost/llm";
 import type { Context } from "@cohost/working-memory";
+import { boundText, quoteUntrusted, speakerLabel, untrustedNotice } from "@cohost/shared/untrusted";
 
 export type Focus = BusEvent<"attention.focus">["data"];
 export type Recalled = BusEvent<"memory.recall.reply">["data"]["memories"];
 export type Mood = BusEvent<"affect.state">["data"];
 export type People = BusEvent<"memory.notes.reply">["data"]["viewers"];
 
-// @spec CTX-PROMPT-001, CTX-PROMPT-002
+// @spec CTX-PROMPT-001, CTX-PROMPT-002, CTX-PROMPT-009, CTX-PROMPT-010
 export function buildMessages(opts: {
   cfg: Config;
   personality: string;
@@ -26,9 +27,7 @@ export function buildMessages(opts: {
   const now = new Date().toLocaleString("en-US", { timeZone: cfg.cohost.timezone });
 
   const memBlock = memories.length
-    ? `\n## Things you remember (older, may be from past streams)\n${memories
-        .map((m) => `- (${new Date(m.ts).toISOString().slice(0, 10)}) ${m.who}: ${m.text}`)
-        .join("\n")}\n`
+    ? `\n## Things you remember (older, may be from past streams)\n${memories.map((m) => memoryLine(m, cfg)).join("\n")}\n`
     : "";
 
   const system = [
@@ -39,16 +38,16 @@ export function buildMessages(opts: {
     mood ? `- Your current mood: ${describeMood(mood)}` : "",
     viewerNote ? `- ${viewerNote}` : "",
     glitch ? glitchLine(glitch) : "",
-    peopleBlock(people),
+    peopleBlock(people, cfg.viewer_text),
     memBlock,
-    `## Output\nReply with ONE short spoken line, starting with an emotion tag from: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}. ` +
+    `${untrustedNotice("what a viewer wrote in chat, or what is remembered about a viewer")}\n## Output\nReply with ONE short spoken line, starting with an emotion tag from: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}. ` +
       `Optionally add [gesture:name] after the tag. No other brackets, no quotes, no narration.`,
   ]
     .filter(Boolean)
     .join("\n");
 
   const transcript = ctx.transcript(cfg.cohost.name);
-  const nudge = describeFocus(focus, cfg.cohost.name);
+  const nudge = describeFocus(focus, cfg.cohost.name, cfg.viewer_text.max_name_chars);
 
   return [
     { role: "system", content: system },
@@ -67,18 +66,33 @@ function glitchLine(g: Glitch): string {
 
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
-// @spec CTX-NOTES-004, CTX-NOTES-005, CTX-NOTES-006
+// @spec CTX-PROMPT-002, CTX-PROMPT-011, CTX-PROMPT-012, CTX-PROMPT-013
 /**
- * The `## People here` block: each viewer in reply order, `general` notes as plain facts, and a handling hint
- * (never any text) for each `health` or `family` note. Subscriber status and other money detail are not read.
- * Every field is flattened to one line so a note cannot forge a heading or a line of its own.
+ * One recalled memory line: its date, its speaker as a label, and its text by kind. A chat memory is quoted; a speech or
+ * self memory is bounded and not quoted. Any other kind keeps its text as stored.
  */
-function peopleBlock(people: People): string {
+function memoryLine(m: Recalled[number], cfg: Config): string {
+  const date = new Date(m.ts).toISOString().slice(0, 10);
+  const who = speakerLabel(m.who, cfg.viewer_text.max_name_chars);
+  const text =
+    m.kind === "chat" ? quoteUntrusted(m.text, cfg.viewer_text.max_chars)
+      : m.kind === "speech" || m.kind === "self" ? boundText(m.text, cfg.brain.input_limits.speech_max_chars)
+        : m.text;
+  return `- (${date}) ${who}: ${text}`;
+}
+
+// @spec CTX-NOTES-004, CTX-NOTES-005, CTX-NOTES-006, CTX-NOTES-009, CTX-NOTES-010
+/**
+ * The `## People here` block: each viewer in reply order, named as a label; `general` notes as quoted facts; and a handling
+ * hint (never any text) for each `health` or `family` note. Subscriber status and other money detail are not read.
+ * Facts are quoted and bounded and hints bounded, so no note can forge a heading or a line of its own.
+ */
+function peopleBlock(people: People, limits: { max_name_chars: number; max_chars: number }): string {
   if (!people.length) return "";
   const entries = people.map((v) => {
-    const facts = v.notes.filter((n) => n.category === "general" && n.text).map((n) => oneLine(n.text!));
-    const head = `- ${oneLine(v.user)}${facts.length ? `: ${facts.join("; ")}` : ""}`;
-    const hints = v.notes.filter((n) => n.category !== "general" && n.hint).map((n) => `  - handle gently: ${oneLine(n.hint!)}`);
+    const facts = v.notes.filter((n) => n.category === "general" && n.text).map((n) => quoteUntrusted(n.text!, limits.max_chars));
+    const head = `- ${speakerLabel(v.user, limits.max_name_chars)}${facts.length ? `: ${facts.join("; ")}` : ""}`;
+    const hints = v.notes.filter((n) => n.category !== "general" && n.hint).map((n) => `  - handle gently: ${boundText(n.hint!, limits.max_chars)}`);
     return [head, ...hints].join("\n");
   });
   return `\n## People here\n${entries.join("\n")}\n`;
@@ -92,13 +106,13 @@ function describeMood(m: Mood): string {
   return `${feel}, ${energy} (${m.mood}). Let it colour the line, don't announce it.`;
 }
 
-// @spec CTX-PROMPT-004
-function describeFocus(d: Focus, name: string): string {
+// @spec CTX-PROMPT-004, CTX-PROMPT-014
+function describeFocus(d: Focus, name: string, nameChars: number): string {
   const f = d.focus;
   if (d.reason === "idle chatter") return `It's been quiet. Say something natural about what's going on, or don't force it — a short aside is fine. ${name}:`;
   if (!f) return `${name}:`;
-  if (f.kind === "chat" && f.mention) return `${f.who} is talking to you. Answer them directly. ${name}:`;
-  if (f.kind === "speech") return `${f.who} just said that out loud. React like you're in the room. ${name}:`;
+  if (f.kind === "chat" && f.mention) return `${speakerLabel(f.who ?? "", nameChars)} is talking to you. Answer them directly. ${name}:`;
+  if (f.kind === "speech") return `${speakerLabel(f.who ?? "", nameChars)} just said that out loud. React like you're in the room. ${name}:`;
   if (f.kind === "chat") return `Respond to the chat above if there's something worth saying. ${name}:`;
   if (f.kind === "vision") return `Something changed on screen. Comment only if it's interesting. ${name}:`;
   return `${name}:`;
@@ -106,9 +120,10 @@ function describeFocus(d: Focus, name: string): string {
 
 const TAG = /^\s*\[(\w+)\]\s*(?:\[gesture:([\w-]+)\]\s*)?/i;
 
-// @spec CTX-PROMPT-005
+// @spec CTX-PROMPT-005, CTX-PROMPT-015
 export function parseReply(raw: string): { text: string; emotion: Emotion; gesture?: string } {
-  let text = (raw.trim().split("\n")[0] ?? "").replace(/^[\w ]{1,20}:\s*(?=\[)/, "");
+  // The « and » quote marks are never spoken: they are stripped before the tag is read and from the text after it.
+  let text = (raw.trim().split("\n")[0] ?? "").replace(/[«»]/g, "").replace(/^[\w ]{1,20}:\s*(?=\[)/, "");
   let tagged = "neutral";
   let gesture: string | undefined;
   const m = TAG.exec(text);

@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "168 specs: 69 [x], 98 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
+    next: "168 specs: 83 [x], 84 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Counting a burst once and the guarded scorer prompt are built (#172); SAL-DECIDE-011 and -012 are owned by #182. 1 [D] is SAL-TRIG-010."
     drift: null
 
   affect:

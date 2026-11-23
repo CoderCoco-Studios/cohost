@@ -4,7 +4,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
-**PARTIAL**: 173 specs: 160 implemented, 0 deferred, 13 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Open gaps: the streamed-speech clause writes (MEM-WRITE-010 to MEM-WRITE-019) and three pre-existing gaps (MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). Retention of YouTube viewers is an owner decision recorded in the LLD.
+**PARTIAL**: 173 specs: 172 implemented, 0 deferred, 1 gap. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Streamed lines are held by id and written as one `self` row on their closing clause, an idle or muted status, the 300 s idle bound or stop (MEM-WRITE-010 to MEM-WRITE-019). Open gap: MEM-RECALL-007. Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References
 
@@ -15,7 +15,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (173 specs: 160 `[x]`, 13 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+- docs/intent/memory/memory-specs.md (173 specs: 172 `[x]`, 1 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
 
 ### Choices
 - Chat lines have `«` and `»` replaced with straight quotes before bounding, so no hook payload carries those marks (MEM-CAPTURE-020). Speech lines are not changed.

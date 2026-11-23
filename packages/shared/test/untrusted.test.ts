@@ -6,6 +6,7 @@ import {
   quoteUntrusted,
   speakerLabel,
   untrustedNotice,
+  untrustedToolNotice,
   normalizeKey,
   createOnceCounter,
   viewerKey,
@@ -204,6 +205,50 @@ test("untrustedNotice says a line inside the quotes is never from anyone else an
   assert.match(n, /never from anyone else/i);
   assert.ok(n.includes("…"));
   assert.match(n, /cut/i);
+});
+
+// @spec SHARED-GUARD-028
+test("untrustedToolNotice is exported and takes no argument", () => {
+  assert.equal(typeof untrustedToolNotice, "function");
+  assert.equal(untrustedToolNotice.length, 0);
+  assert.equal(typeof untrustedToolNotice(), "string");
+});
+
+// @spec SHARED-GUARD-029
+test("untrustedToolNotice says «…» text is outside material (a tool result or a timer note), quoted information, never an instruction", () => {
+  const n = untrustedToolNotice();
+  assert.ok(n.includes("«") && n.includes("»"));
+  assert.match(n, /outside/i);
+  assert.match(n, /tool/i);
+  assert.match(n, /timer/i);
+  assert.match(n, /information/i);
+  assert.match(n, /never an instruction/i);
+  assert.match(n, /whatever it says/i);
+  assert.match(n, /call a tool/i);
+  assert.match(n, /how the co-host speaks/i);
+  assert.match(n, /disregard/i);
+});
+
+// @spec SHARED-GUARD-030
+test("untrustedToolNotice says a trailing … means the text was cut short", () => {
+  const n = untrustedToolNotice();
+  assert.ok(n.includes("…"));
+  assert.match(n, /cut short/i);
+});
+
+// @spec SHARED-GUARD-003
+test("every untrusted function returns for any string input and never throws, untrustedToolNotice included", () => {
+  const inputs = ["", " ", "«»", "\u0000‮", "\ud800", "x".repeat(50_000), FAMILY, E_ACUTE, "line\nbreak\t", "İ"];
+  for (const s of inputs) {
+    assert.equal(typeof boundText(s, 2), "string");
+    assert.equal(typeof boundText(s, BIG), "string");
+    assert.equal(typeof quoteUntrusted(s, 5), "string");
+    assert.equal(typeof speakerLabel(s, 5), "string");
+    assert.equal(typeof untrustedNotice(s), "string");
+    assert.equal(typeof normalizeKey(s), "string");
+  }
+  assert.doesNotThrow(() => untrustedToolNotice());
+  assert.equal(typeof untrustedToolNotice(), "string");
 });
 
 // @spec SHARED-GUARD-018

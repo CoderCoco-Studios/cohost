@@ -5,10 +5,10 @@ import { createInjectHandler } from "../src/inject.js";
 
 const run = async (h: { (ev: never): void; drain(): Promise<void> }, ev: unknown): Promise<void> => { h(ev as never); await h.drain(); };
 
-const cfg = testConfig({ chat: { ignore_users: ["nightbot"], ignore_prefixes: ["!"] } });
+const cfg = testConfig({ chat: { ignore_users: ["nightbot"], ignore_prefixes: ["!"] }, viewer_text: { max_chars: 16, max_name_chars: 8 } });
 function setup(now?: () => number) {
   const bus = new FakeBus();
-  const handle = createInjectHandler({ bus, log: recordingLog().log, cohostName: cfg.cohost.name, now });
+  const handle = createInjectHandler({ bus, log: recordingLog().log, cohostName: cfg.cohost.name, viewerText: cfg.viewer_text, now });
   return { bus, handle };
 }
 // @spec CHAT-INJ-010
@@ -82,6 +82,53 @@ test("other target publishes nothing; wrong kind for chat is ok:false", async ()
   assert.equal(bus.published.length, 0);
   await run(handle, req({ kind: "audio" }));
   assert.equal(bus.of("inject.result")[0]!.ok, false);
+});
+
+// @spec CHAT-INJ-004
+test("text blank after the bound (invisible characters only) gets ok:false with a detail", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ text: "\u200b\u2060 \u0007" }));
+  assert.equal(bus.of("chat.message").length, 0);
+  const [res] = bus.of("inject.result");
+  assert.equal(res!.ok, false);
+  assert.ok(res!.detail);
+});
+
+// @spec CHAT-INJ-005
+test("a valid injection carries injected, remember, platform and flags, and no userId", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ remember: true, meta: { platform: "youtube", user: "bob", isMod: true, isSub: true } }));
+  const [m] = bus.of("chat.message");
+  assert.deepEqual(m, { platform: "youtube", user: "bob", text: "hi", isMod: true, isSub: true, mentionsCohost: false, injected: true, remember: true });
+  assert.equal("userId" in m!, false);
+});
+
+// @spec CHAT-INJ-011
+test("injected text is bounded like real chat", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ text: "a".repeat(40) }));
+  assert.equal(bus.of("chat.message")[0]!.text, `${"a".repeat(15)}…`);
+});
+
+// @spec CHAT-INJ-012
+test("injected user is bounded; injected_viewer when meta.user is absent or bounds to nothing", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ id: "a", meta: { user: "x".repeat(30) } }));
+  await run(handle, req({ id: "b", meta: { user: "\u200b" } }));
+  await run(handle, req({ id: "c", meta: { user: "" } }));
+  await run(handle, req({ id: "d" }));
+  const users = bus.of("chat.message").map((m) => m.user);
+  assert.deepEqual(users, [`${"x".repeat(7)}…`, "injected_viewer", "injected_viewer", "injected_viewer"]);
+});
+
+// @spec CHAT-INJ-007
+test("injected mention is computed on the bounded text", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ id: "a", text: `${"x ".repeat(10)}coco` }));
+  await run(handle, req({ id: "b", text: "co\u200bco hi" }));
+  const [a, b] = bus.of("chat.message");
+  assert.equal(a!.mentionsCohost, false);
+  assert.equal(b!.mentionsCohost, true);
 });
 
 // @spec CHAT-INJ-008

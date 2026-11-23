@@ -71,7 +71,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
       // @spec CHAT-INJ-001, CHAT-INJ-009, CHAT-INJ-010
       await subscribeInject({
         bus, group: "chat", log, exit: deps.exit,
-        handler: createInjectHandler({ bus, log, cohostName: cfg.cohost.name }),
+        handler: createInjectHandler({ bus, log, cohostName: cfg.cohost.name, viewerText: cfg.viewer_text }),
       });
 
       if (plan === "fake") {

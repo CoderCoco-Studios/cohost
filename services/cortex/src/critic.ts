@@ -1,5 +1,6 @@
 import { Module, type ModuleImpl } from "@cohost/modules";
 import { EMOTIONS, type Config, type Emotion, type Logger } from "@cohost/config";
+import { untrustedNotice } from "@cohost/shared/untrusted";
 
 /** A reply the cortex is about to say, before it goes to the voice. */
 export interface CriticInput {
@@ -23,7 +24,7 @@ function validate(raw: unknown): CriticOutput | undefined {
   return out;
 }
 
-// @spec CTX-CRITIC-004, CTX-CRITIC-006
+// @spec CTX-CRITIC-004, CTX-CRITIC-006, CTX-CRITIC-010, CTX-CRITIC-011, CTX-CRITIC-013
 /**
  * Inhibition. The built-in rule is pass-through; an llm or http critic can
  * veto or rewrite a line before anyone hears it.
@@ -36,7 +37,8 @@ export function createCritic(cfg: Config, log: Logger): Module<CriticInput, Crit
         `You are the inner editor of ${cfg.cohost.name}, an AI co-host on ${cfg.cohost.streamer}'s live stream. ` +
         `You see a line ${cfg.cohost.name} is about to say out loud. Block it if it is hateful, doxxes anyone, breaks character, ` +
         `narrates instead of speaking, repeats something said moments ago, or is longer than one short spoken line. ` +
-        `If a small edit fixes it, return the fixed line. Reply with JSON only: {"ok":true} or {"ok":true,"text":"fixed line"} or {"ok":false,"note":"why"}.`,
+        `If a small edit fixes it, return the fixed line. Reply with JSON only: {"ok":true} or {"ok":true,"text":"fixed line"} or {"ok":false,"note":"why"}. ` +
+        untrustedNotice("what a viewer typed in chat"),
       user: (i) => `## Recent transcript\n${i.transcript || "(quiet)"}\n\n## About to say (${i.emotion}, because: ${i.reason})\n${i.text}`,
       maxTokens: 160,
       validate,

@@ -187,7 +187,7 @@ arrows:
     drift: null
 
   affect:
-    status: OK
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14

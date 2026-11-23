@@ -4,7 +4,7 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**OK** (date and commit in `index.yaml`). The spec file holds 57 specs: 57 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 57 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
 
 ## Decisions applied
 

@@ -500,43 +500,58 @@ function queued(extra: [Record<string, unknown>, Record<string, unknown>, Record
   return s;
 }
 const removed = (data: Record<string, unknown>) => event("chat.removed", { platform: "twitch", ...data });
-/** Lets the running job finish and the queue drain; the http stub answers one job per `next`. */
-async function drainAll(s: ReturnType<typeof queued>, _jobs?: number) {
-  // The answer travels through a Response body, so a fixed number of releases can miss a fetch not yet issued: keep
-  // releasing for a bounded number of turns (a late release of a spent waiter is harmless), then wait for the drain.
-  for (let i = 0; i < 30; i++) { s.next(); await new Promise((r) => setTimeout(r, 2)); }
-  await s.affect.settled();
+/** Lets the running job finish and the queue drain: releases the http stub until `settled()` resolves, failing after 5 s. */
+async function drainAll(s: ReturnType<typeof queued>) {
+  let done = false;
+  const settled = s.affect.settled().then(() => { done = true; });
+  const deadline = Date.now() + 5_000;
+  // The answer travels through a Response body, so a release can land before the fetch is issued: keep releasing until the drain ends.
+  while (!done) {
+    if (Date.now() > deadline) throw new Error("the queue did not drain");
+    s.next();
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  await settled;
 }
 
 test("chat.removed scope message drops the queued job of that platform and messageId only", async () => { // @spec AFF-IN-017
   const s = queued([{}, {}, {}]);
   s.affect.onEvent(removed({ scope: "message", messageId: "mb" }));
-  await drainAll(s, 3);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"], "B was never appraised, C was");
 
   const other = queued([{}, {}, {}]);
   other.affect.onEvent(removed({ platform: "discord", scope: "message", messageId: "mb" }));
-  await drainAll(other, 3);
+  await drainAll(other);
   assert.deepEqual(other.seen.map((x) => x.who), ["a", "b", "c"], "the same messageId on another platform covers nothing");
 });
 
 test("chat.removed scope user drops the queued jobs of that platform and userId only", async () => { // @spec AFF-IN-017
   const s = queued([{}, {}, {}]);
   s.affect.onEvent(removed({ scope: "user", userId: "ub" }));
-  await drainAll(s, 3);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"]);
 
   const other = queued([{}, {}, {}]);
   other.affect.onEvent(removed({ platform: "youtube", scope: "user", userId: "ub" }));
-  await drainAll(other, 3);
+  await drainAll(other);
   assert.deepEqual(other.seen.map((x) => x.who), ["a", "b", "c"], "the same userId on another platform covers nothing");
 });
 
 test("chat.removed scope all drops every queued job of that platform and none of another", async () => { // @spec AFF-IN-017
   const s = queued([{}, { platform: "discord" }, {}]);
   s.affect.onEvent(removed({ scope: "all" }));
-  await drainAll(s, 3);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a", "b"], "twitch C dropped, discord B kept");
+});
+
+test("chat.removed never drops a queued speech job: speech carries no viewer to cover, even with scope all", async () => { // @spec AFF-IN-017
+  const s = queued([{}, {}, {}]);
+  s.affect.onEvent(event("speech.heard", { speaker: "Chris", text: "love this game so much", durationMs: 900 }));
+  s.affect.onEvent(removed({ scope: "all" }));
+  await drainAll(s);
+  assert.deepEqual(s.seen.map((x) => x.source), ["chat", "speech"], "the twitch chat jobs B and C were dropped; the queued speech line was still appraised");
+  assert.equal(s.seen[1]?.who, "Chris");
 });
 
 test("a removal leaves the mood, its cause and the counter's keys unchanged", async () => { // @spec AFF-IN-018
@@ -550,7 +565,7 @@ test("a removal leaves the mood, its cause and the counter's keys unchanged", as
   // The removed viewers' keys stay in the counter: their next line is refused, never queued.
   s.affect.onEvent(chat("a brand new great line", { user: "b", userId: "ub" }));
   s.affect.onEvent(chat("another brand new line", { user: "c", userId: "uc" }));
-  await drainAll(s, 3);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a"], "B and C were dropped, their later lines were refused");
 
   // Inline (rules) appraisal: a removal moves nothing and the counter still refuses the removed viewer's line.
@@ -566,7 +581,7 @@ test("a removal leaves the mood, its cause and the counter's keys unchanged", as
 test("a removal does not bump the epoch: an uncovered queued job still applies", async () => { // @spec AFF-IN-018
   const s = queued([{}, {}, {}]);
   s.affect.onEvent(removed({ scope: "message", messageId: "mb" }));
-  await drainAll(s, 3);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a", "c"]);
   assert.ok(near(s.affect.mood.valence, 0.2), "A and C both applied");
 });
@@ -577,6 +592,6 @@ test("a removal that covers the running job lets it finish and apply", async () 
   s.next();
   await waitFor(() => s.seen.length === 2 && near(s.affect.mood.valence, 0.1), "A applied and B sent");
   assert.ok(near(s.affect.mood.valence, 0.1), "the running job applied despite its removal");
-  await drainAll(s, 2);
+  await drainAll(s);
   assert.deepEqual(s.seen.map((x) => x.who), ["a", "b", "c"], "only queued jobs are dropped");
 });

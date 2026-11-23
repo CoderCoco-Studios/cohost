@@ -178,6 +178,14 @@ export const ConfigSchema = z.object({
   brain: z.object({
     /** Recent events each region keeps as its working memory / prompt window. */
     working_memory_events: z.number().int().positive().default(24),
+    /** How many of the co-host's own recent lines the window never evicts; less than `working_memory_events` (the refinement below). */
+    working_memory_own_lines: z.number().int().min(1).default(4), // @spec CFG-SCH-045
+    /** The longest speech transcript and screen description a consumer takes in. The minimum keeps the truncation mark from being the whole text. */
+    // @spec CFG-SCH-044
+    input_limits: z.object({
+      speech_max_chars: z.number().int().min(16).default(1000),
+      vision_max_chars: z.number().int().min(16).default(500),
+    }).prefault({}),
     salience: z.object({
       /** The poll: a decision pass every `tick_ms`, the fallback for the speech trigger and the only starter for chat, vision and idle chatter. */
       tick_ms: z.number().int().positive().default(1500),
@@ -232,6 +240,8 @@ export const ConfigSchema = z.object({
       republish_ms: z.number().int().positive().default(15000),
       /** With an llm/http appraiser, a line shorter than this (trimmed, no mention) is appraised by the rules inline. */
       short_line_chars: z.number().int().nonnegative().default(4),
+      /** How long a viewer, and a text, once counted toward the mood, are not counted again. */
+      count_window_ms: z.number().int().positive().default(30000), // @spec CFG-SCH-047
       /** Mood nudges per event, as magnitudes 0..1: a sub's chat line, a changed screen, the co-host's own emotional line. */
       nudge_sub_valence: z.number().min(0).max(1).default(0.05),
       nudge_sub_arousal: z.number().min(0).max(1).default(0.05),
@@ -284,10 +294,28 @@ export const ConfigSchema = z.object({
       speaking_timeout_ms: z.number().int().positive().default(20000),
       /** Base chance, stated to the model as a nudge, that she riffs on a spoken line that failed to play. Never enforced. */
       fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
+      /** The cortex stays silent rather than say a line this similar (0..1) to a recent one of its own; 0 turns the check off. */
+      repeat_similarity: z.number().min(0).max(1).default(0.8), // @spec CFG-SCH-046
       /** Inhibition: a check on each reply before it's spoken. rules = pass-through. */
       critic: ModuleSchema,
     }).prefault({}),
+  }).superRefine((v, ctx) => {
+    // @spec CFG-SCH-045
+    // The issue sits on the key, so the loader names `brain.working_memory_own_lines` and not the parent object.
+    if (v.working_memory_own_lines >= v.working_memory_events) {
+      ctx.addIssue({ code: "custom", path: ["working_memory_own_lines"], message: `must be less than brain.working_memory_events (${v.working_memory_events}): the window has to keep room for events other than the co-host's own lines` });
+    }
   }),
+  /**
+   * The longest chat message and viewer name a consumer takes in or renders. The whole section is optional. The minimums
+   * keep the truncation mark from being the whole text.
+   */
+  // @spec CFG-SCH-042, CFG-SCH-043
+  viewer_text: z.object({
+    /** 500 is Twitch's own message limit. */
+    max_chars: z.number().int().min(16).default(500),
+    max_name_chars: z.number().int().min(8).default(40),
+  }).prefault({}),
   voice: z.object({
     /** `stub` returns silence sized from the text; no TTS call (isolated runs). */
     engine: z.preprocess((v) => v || "kokoro", z.enum(["kokoro", "stub"])),

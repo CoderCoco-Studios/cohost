@@ -123,7 +123,7 @@ test("pause is reported in the heartbeat detail and cleared by resume", async ()
 });
 
 test("the cortex window is sized by brain.working_memory_events", async () => { // @spec WM-WIN-005
-  const { cortex } = setup({ brain: { working_memory_events: 3, memory: { recall_k: 0 } } });
+  const { cortex } = setup({ brain: { working_memory_events: 3, working_memory_own_lines: 2, memory: { recall_k: 0 } } });
   for (const t of ["a", "b", "c", "d", "e"]) {
     await cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: t, isMod: false, isSub: false, mentionsCohost: false }));
   }

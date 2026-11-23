@@ -841,3 +841,81 @@ test("dashboard.allowed_hosts is a list of host names, empty by default; a schem
   }
   assert.ok(!dash({ allowed_hosts: "streampc" }).success, "a string is not a list");
 });
+
+/** The dotted paths of the issues a parse reports. */
+const issuePaths = (r: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }): string[] => (r.error?.issues ?? []).map((i) => i.path.join("."));
+
+// @spec CFG-SCH-042
+test("viewer_text is optional: absent, empty or partly set it defaults max_chars to 500 and max_name_chars to 40", () => {
+  assert.deepEqual(ConfigSchema.parse(baseCfg()).viewer_text, { max_chars: 500, max_name_chars: 40 });
+  assert.deepEqual(ConfigSchema.parse({ ...baseCfg(), viewer_text: {} }).viewer_text, { max_chars: 500, max_name_chars: 40 });
+  assert.deepEqual(ConfigSchema.parse({ ...baseCfg(), viewer_text: { max_chars: 200 } }).viewer_text, { max_chars: 200, max_name_chars: 40 });
+  assert.deepEqual(ConfigSchema.parse({ ...baseCfg(), viewer_text: { max_name_chars: 25 } }).viewer_text, { max_chars: 500, max_name_chars: 25 });
+});
+
+// @spec CFG-SCH-043
+test("viewer_text.max_chars is an integer of at least 16 and max_name_chars of at least 8; the loader names the key of a smaller value", () => {
+  const vt = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), viewer_text: v });
+  assert.equal(vt({ max_chars: 16, max_name_chars: 8 }).success, true);
+  assert.deepEqual(issuePaths(vt({ max_chars: 15 })), ["viewer_text.max_chars"]);
+  assert.deepEqual(issuePaths(vt({ max_name_chars: 7 })), ["viewer_text.max_name_chars"]);
+  assert.deepEqual(issuePaths(vt({ max_chars: 100.5 })), ["viewer_text.max_chars"]);
+  assert.deepEqual(issuePaths(vt({ max_name_chars: 8.5 })), ["viewer_text.max_name_chars"]);
+  sandbox({ "config.yaml": `${minimalYaml}viewer_text: { max_chars: 15 }\n` });
+  assert.throws(() => loadConfig(true), /viewer_text\.max_chars:/);
+  sandbox({ "config.yaml": `${minimalYaml}viewer_text: { max_name_chars: 7 }\n` });
+  assert.throws(() => loadConfig(true), /viewer_text\.max_name_chars:/);
+});
+
+// @spec CFG-SCH-044
+test("brain.input_limits defaults speech_max_chars to 1000 and vision_max_chars to 500, and rejects a value under 16 naming the key", () => {
+  const brain = (b: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: b });
+  assert.deepEqual(ConfigSchema.parse(baseCfg()).brain.input_limits, { speech_max_chars: 1000, vision_max_chars: 500 });
+  assert.deepEqual(brain({ input_limits: {} }).data!.brain.input_limits, { speech_max_chars: 1000, vision_max_chars: 500 });
+  assert.deepEqual(brain({ input_limits: { vision_max_chars: 16 } }).data!.brain.input_limits, { speech_max_chars: 1000, vision_max_chars: 16 });
+  for (const k of ["speech_max_chars", "vision_max_chars"]) {
+    assert.equal(brain({ input_limits: { [k]: 16 } }).success, true, `${k} at 16`);
+    for (const v of [15, 0, 20.5]) assert.deepEqual(issuePaths(brain({ input_limits: { [k]: v } })), [`brain.input_limits.${k}`], `${k}=${v}`);
+  }
+  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { input_limits: { speech_max_chars: 15 } }") });
+  assert.throws(() => loadConfig(true), /brain\.input_limits\.speech_max_chars:/);
+  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { input_limits: { vision_max_chars: 15 } }") });
+  assert.throws(() => loadConfig(true), /brain\.input_limits\.vision_max_chars:/);
+});
+
+// @spec CFG-SCH-045
+test("brain.working_memory_own_lines defaults to 4, is an integer of at least 1, and must be less than working_memory_events, failing on its own key", () => {
+  const brain = (b: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: b });
+  assert.equal(ConfigSchema.parse(baseCfg()).brain.working_memory_own_lines, 4);
+  assert.equal(brain({ working_memory_own_lines: 1 }).success, true);
+  assert.equal(brain({ working_memory_own_lines: 23 }).success, true); // one less than the default 24 events
+  for (const v of [0, -1, 2.5]) assert.deepEqual(issuePaths(brain({ working_memory_own_lines: v })), ["brain.working_memory_own_lines"], `own_lines=${v}`);
+  // The cross-field rule: equal or greater fails, and the issue is on the key, not on `brain`.
+  for (const b of [{ working_memory_own_lines: 24 }, { working_memory_own_lines: 30 }, { working_memory_events: 8, working_memory_own_lines: 8 }, { working_memory_events: 4 }]) {
+    const r = brain(b);
+    assert.deepEqual(issuePaths(r), ["brain.working_memory_own_lines"], JSON.stringify(b));
+    assert.match(r.error!.issues[0]!.message, /less than brain\.working_memory_events/);
+  }
+  assert.equal(brain({ working_memory_events: 5 }).success, true); // the default 4 own lines fit under 5
+  assert.equal(brain({ working_memory_events: 3, working_memory_own_lines: 2 }).success, true);
+  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { working_memory_events: 6, working_memory_own_lines: 6 }") });
+  assert.throws(() => loadConfig(true), /brain\.working_memory_own_lines:/);
+});
+
+// @spec CFG-SCH-046
+test("brain.cortex.repeat_similarity defaults to 0.8 and is a number from 0 to 1 inclusive; 0 (the check off) is accepted", () => {
+  const cortex = (c: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { cortex: c } });
+  assert.equal(ConfigSchema.parse(baseCfg()).brain.cortex.repeat_similarity, 0.8);
+  assert.equal(cortex({ repeat_similarity: 0 }).data!.brain.cortex.repeat_similarity, 0);
+  assert.equal(cortex({ repeat_similarity: 1 }).success, true);
+  assert.equal(cortex({ repeat_similarity: 0.35 }).success, true);
+  for (const v of [-0.1, 1.1]) assert.deepEqual(issuePaths(cortex({ repeat_similarity: v })), ["brain.cortex.repeat_similarity"], `repeat_similarity=${v}`);
+});
+
+// @spec CFG-SCH-047
+test("brain.affect.count_window_ms defaults to 30000 and is a positive integer", () => {
+  const affect = (a: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { affect: a } });
+  assert.equal(ConfigSchema.parse(baseCfg()).brain.affect.count_window_ms, 30000);
+  assert.equal(affect({ count_window_ms: 1 }).success, true);
+  for (const v of [0, -5, 1.5]) assert.deepEqual(issuePaths(affect({ count_window_ms: v })), ["brain.affect.count_window_ms"], `count_window_ms=${v}`);
+});

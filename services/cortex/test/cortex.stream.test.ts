@@ -179,8 +179,8 @@ test("an unknown emotion tag is neutral and a gesture is kept as given", async (
   assert.deepEqual([say!.emotion, say!.gesture, say!.text], ["neutral", "shrug", "Hello everyone,"]);
 });
 
-// @spec CTX-STREAM-005, CTX-STREAM-006
-test("80 characters with a [ still open: emotion neutral, no gesture, and the reply goes on from the start of the buffer", async () => {
+// @spec CTX-STREAM-005, CTX-STREAM-006, CTX-STREAM-010
+test("80 characters with a [ still open: emotion neutral, no gesture, and the bracket text is kept as ordinary reply text", async () => {
   const s = setup();
   const open = "[this bracket runs on and on without closing for well over eighty characters of text";
   assert.ok(open.length > 80);
@@ -189,7 +189,10 @@ test("80 characters with a [ still open: emotion neutral, no gesture, and the re
   assert.ok(say, "the reply is not lost");
   assert.equal(say!.emotion, "neutral");
   assert.equal(say!.gesture, undefined);
-  assert.match(say!.text + clauseTexts(s).join(" "), /real words/);
+  const all = [say!.text, ...clauseTexts(s)];
+  assert.match(all.join(" "), /^\[this bracket runs/, "the leading [ is kept");
+  assert.match(all.join(" "), /ends\] and then real words/, "the closing ] after the 80 characters is kept too");
+  assert.ok(all.every((t) => t.length <= 60), "the length cut still works with the open bracket at index 0");
 });
 
 // @spec CTX-STREAM-008
@@ -395,6 +398,18 @@ test("llm critic: the repetition check runs once, on the whole reply, before any
   assert.equal(s.bus.of("brain.clause").length, 0);
 });
 
+// @spec CTX-REPEAT-010
+test("a repeat withheld logs its similarity and the line it matched", async () => {
+  const s = setup({ cfg: { repeat_similarity: 0.9 } });
+  s.cortex.ctx.pushSelf("the quick brown fox jumps over the lazy dog", "neutral", Date.now(), "old");
+  await run(s, ["[happy] the quick brown fox jumps over the lazy dog"]);
+  assert.equal(s.bus.of("brain.say").length, 0);
+  const log = s.rec.lines.find((l) => l.msg === "repeat withheld")!;
+  assert.ok(log, "the withheld repeat is logged");
+  assert.equal((log.obj as { score: number }).score, 1);
+  assert.equal((log.obj as { match: string }).match, "the quick brown fox jumps over the lazy dog");
+});
+
 // @spec CTX-REPEAT-010, CTX-REPEAT-011, CTX-GATE-012
 test("a repeat on the first clause is the no-line exit and keeps the viewer note for the next think", async () => {
   const s = setup();
@@ -575,18 +590,20 @@ test("a critic veto and a failed re-check end the think with the same status rul
 // @spec CTX-STREAM-032, CTX-GATE-012
 test("finish refusal with nothing published ends the think without a line", async () => {
   const s = setup();
-  await run(s, [], "refusal");
+  await run(s, ["[happy] I was going to say"], "refusal");
   assert.equal(s.bus.of("brain.say").length, 0);
+  assert.equal(s.bus.of("brain.clause").length, 0);
   assert.equal(s.statuses().at(-1), "idle");
   assert.equal(s.llm.calls.length, 1, "the reply was read from llm.stream");
 });
 
 // @spec CTX-STREAM-032
-test("finish refusal after a clause was published closes the reply normally", async () => {
+test("finish refusal after a clause was published closes the reply normally, without publishing the held tail", async () => {
   const s = setup();
   await run(s, ["[happy] First clause is here, and then the model stops."], "refusal");
   assert.equal(s.bus.of("brain.say")[0]!.text, "First clause is here,");
-  assert.deepEqual(s.closings().map((c) => [c.text, c.cut, c.through]), [["and then the model stops.", undefined, 1]]);
+  assert.deepEqual(s.line().map((e) => e.text), ["First clause is here,", ""]);
+  assert.deepEqual(s.closings().map((c) => [c.text, c.cut, c.through, c.seq]), [["", undefined, 0, 1]]);
 });
 
 // ---- the think in flight (CTX-GATE-010) ----
@@ -683,6 +700,20 @@ test("stop() closes a streamed line whose reply had not closed with cut stopped,
 });
 
 // @spec CTX-STREAM-037
+test("stop() before the first clause: the think is ended and no brain.say follows", async () => {
+  const s = setup();
+  const g = gate();
+  s.llm.plans.push({ steps: [{ gate: g.promise }, "[happy] Hello there everyone, welcome in."] });
+  const thinking = s.cortex.think(mention());
+  await waitFor(() => s.llm.calls.length === 1, "stream");
+  await s.cortex.stop();
+  g.open();
+  await thinking;
+  assert.equal(s.bus.of("brain.say").length, 0, "no brain.say after stop()");
+  assert.equal(s.bus.of("brain.clause").length, 0);
+});
+
+// @spec CTX-STREAM-037
 test("stop() publishes nothing for a line whose reply already closed or that had no more", async () => {
   const s = setup();
   await run(s, ["[happy] Just one short line here."]);
@@ -694,4 +725,24 @@ test("stop() publishes nothing for a line whose reply already closed or that had
   const before = t.bus.of("brain.clause").length;
   await t.cortex.stop();
   assert.equal(t.bus.of("brain.clause").length, before);
+});
+
+// @spec CTX-GATE-001, CTX-SAY-003
+test("a publish that fails while a reply is read is logged and ends the think with idle, not swallowed", async () => {
+  const s = setup();
+  const realPublish = s.bus.publish.bind(s.bus);
+  s.bus.publish = (async (type: EventType, data: EventInput<EventType>) => {
+    if (type === "brain.say") throw new Error("bus down");
+    return realPublish(type, data);
+  }) as typeof s.bus.publish;
+  await run(s, ["[happy] Hello there everyone, welcome.\nmore"]);
+  assert.ok(s.rec.lines.some((l) => l.level === "error" && l.msg === "think failed"), "the failed publish is logged");
+  assert.equal(s.statuses().at(-1), "idle");
+});
+
+// @spec CTX-STREAM-033
+test("a Name: prefix is stripped only when it is the co-host's own name; another word followed by a colon is kept", async () => {
+  const s = setup();
+  await run(s, ["[happy] Hi there: nice to see everyone, welcome in."]);
+  assert.equal(s.bus.of("brain.say")[0]!.text, "Hi there: nice to see everyone,");
 });

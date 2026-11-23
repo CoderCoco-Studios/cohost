@@ -19,7 +19,14 @@ export interface Head {
   emotion: Emotion;
   gesture?: string;
   body: string;
+  /**
+   * The reply opens with a `[` that is still unclosed when the tag hold ends: it is ordinary reply text, and so are
+   * the brackets after it for the rest of the reply (CTX-STREAM-006).
+   */
+  literal?: true;
 }
+
+const escapeRe = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function asEmotion(tag: string): Emotion {
   return EMOTIONS.find((e) => e === tag.toLowerCase()) ?? "neutral";
@@ -31,11 +38,13 @@ function asEmotion(tag: string): Emotion {
  * optional `Name:` and tags begins with something that is not a tag, when a bracket that is not a tag closes, or when
  * `final` or the tag hold's length is reached. `raw` is the reply's first line so far.
  */
-export function readHead(raw: string, final: boolean): Head | undefined {
+export function readHead(raw: string, final: boolean, cohostName?: string): Head | undefined {
   let s = raw.replace(/[«»]/g, "").replace(/^\s+/, "");
   const force = final || s.length >= TAG_HOLD_CHARS;
   if (!force && /^[\w ]{0,20}(:\s*)?$/.test(s)) return undefined; // could still become `Name:` followed by a tag
-  const name = NAME_BEFORE_TAG.exec(s);
+  // With the co-host's name, only that exact `Name:` is stripped; without it the generic prefix is read (predates #196).
+  const nameRe = cohostName ? new RegExp(`^${escapeRe(cohostName)}:\\s*(?=\\[)`, "i") : NAME_BEFORE_TAG;
+  const name = nameRe.exec(s);
   if (name) s = s.slice(name[0].length);
   if (s.startsWith("[")) {
     const m = TAG.exec(s);
@@ -45,9 +54,10 @@ export function readHead(raw: string, final: boolean): Head | undefined {
       return { emotion: asEmotion(m[1] ?? ""), ...(m[2] ? { gesture: m[2].toLowerCase() } : {}), body: rest };
     }
     if (!force && !s.includes("]")) return undefined;
-    return { emotion: "neutral", body: s };
+    return { emotion: "neutral", body: s, ...(s.includes("]") ? {} : { literal: true as const }) };
   }
-  return { emotion: "neutral", body: s.replace(/^\w+:\s*/, "") };
+  const bodyName = cohostName ? new RegExp(`^${escapeRe(cohostName)}:\\s*`, "i") : /^\w+:\s*/;
+  return { emotion: "neutral", body: s.replace(bodyName, "") };
 }
 
 /** Where a clause ends in the buffer: `end` is the clause's last index (exclusive), `next` where the rest begins. */
@@ -61,13 +71,13 @@ export interface Cut { end: number; next: number }
  * Characters inside a bracketed span do not count toward the boundary or the length, except that an unclosed bracket's
  * characters count while it stays open, so a long open bracket still cuts (CTX-STREAM-010).
  */
-export function cutClause(buf: string, min: number, max: number, final: boolean): Cut | undefined {
+export function cutClause(buf: string, min: number, max: number, final: boolean, literal = false): Cut | undefined {
   let vis = 0;
   let lastWs = -1;
   let open = -1;
   for (let i = 0; i < buf.length; i++) {
     const c = buf[i]!;
-    if (c === "[" && open < 0) {
+    if (c === "[" && open < 0 && !literal) {
       const close = buf.indexOf("]", i + 1);
       if (close >= 0) { i = close; continue; } // a closed span is invisible
       if (!final) open = i; // an unclosed bracket is text only once the reply has ended
@@ -98,9 +108,9 @@ export function cutClause(buf: string, min: number, max: number, final: boolean)
 
 // @spec CTX-STREAM-014, CTX-STREAM-015
 /** A clause as it is spoken: bracketed spans, `«` and `»` and surrounding quotes removed, whitespace collapsed. */
-export function cleanClause(raw: string): string {
+export function cleanClause(raw: string, literal = false): string {
   return raw
-    .replace(/\[[^\]]*\]/g, "")
+    .replace(literal ? /^$/ : /\[[^\]]*\]/g, "")
     .replace(/[«»]/g, "")
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
     .replace(/\s+/g, " ")

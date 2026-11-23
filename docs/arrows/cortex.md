@@ -102,7 +102,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Think gating | CTX-GATE-001 to CTX-GATE-013 | 10 | 0 | 3 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-004 | 4 | 0 | 0 |
-| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-010 | 10 | 0 | 0 |
+| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-011 | 11 | 0 | 0 |
 | Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-020 | 13 | 0 | 7 |
 | Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-012 | 4 | 0 | 8 |
 | Critic | CTX-CRITIC-001 to CTX-CRITIC-013 | 13 | 0 | 0 |
@@ -125,8 +125,8 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 2. **Speaking release is published** — `startSpeaking` in `cortex.ts` arms a timer that publishes `idle`/`muted` when `speaking_timeout_ms` elapses without `voice.done`; `voiceBusy()` keeps the lazy check.
 3. **Readiness follows the group** — `startCortex` in `startup.ts` awaits `Bus.resetGroup("cortex")` before it subscribes at start mode `latest` and reports `ready`.
 4. **`deps.llm` follows replies** — `trackLlm` in `startup.ts` wraps `llm.chat` in `tracked()` and `llm.stream` in `trackStream` (an abort or an abandoned stream is ok); `main.ts` owns `llmOk` and `llmProbed`.
-5. **Viewer notes are consumed after the say** — `say()` calls `onPublished` once `brain.say` is out; a newer note is never deleted by an older reply.
-6. **Raw LLM text is `debug` only** (`cortex.ts`).
+5. **Viewer notes are consumed after the say** — `readReply` calls its `onSaid` once the first clause's `brain.say` is out; a newer note is never deleted by an older reply.
+6. **Raw LLM text is `debug` only**, logged once per think in `readReply`'s `finally`; the `llm reply` info line is logged only when the reply was not stopped (`cortex.ts`).
 7. **Tag/stop contract is pinned** — `transcript-stops.test.ts` captures the stop list the Ollama and OpenAI-compatible providers send (`TRANSCRIPT_STOPS` is not exported) and checks it against `TRANSCRIPT_TAGS` and the rendered transcript.
 8. **`forget_context` relies on `Context.clear`** — the cortex calls `ctx.clear()`, which also resets `lastVision` (working-memory).
 9. **Own-vs-other `brain.say` depends on the bus source string** — `ev.source !== "cortex"` in `cortex.ts` ties behaviour to `new Bus("cortex")` built by the bootstrap.

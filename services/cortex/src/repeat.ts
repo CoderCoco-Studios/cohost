@@ -23,32 +23,42 @@ function wordSet(line: string): Set<string> {
 }
 
 // @spec CTX-REPEAT-006, CTX-REPEAT-007, CTX-REPEAT-008
-/** Whether two word sets count as a repeat at this threshold. */
-function alike(a: Set<string>, b: Set<string>, threshold: number): boolean {
-  if (a.size === 0 && b.size === 0) return false;
+/** The similarity of two word sets: 1 for a short line that matches word for word, else the shared share of the union. */
+function similarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
   if (a.size < 3 || b.size < 3) {
-    if (a.size === 0 || a.size !== b.size) return false;
-    for (const w of a) if (!b.has(w)) return false;
-    return true;
+    if (a.size !== b.size) return 0;
+    for (const w of a) if (!b.has(w)) return 0;
+    return 1;
   }
   let shared = 0;
   for (const w of a) if (b.has(w)) shared++;
-  const union = a.size + b.size - shared;
-  return shared / union >= threshold;
+  return shared / (a.size + b.size - shared);
 }
+
+/** A repeat: how alike the reply is to the recent line it matched, and that line's text. */
+export interface RepeatMatch { score: number; said: string }
 
 // @spec CTX-REPEAT-003, CTX-REPEAT-004, CTX-REPEAT-009, CTX-REPEAT-014, CTX-REPEAT-015
 /**
- * True when `reply` repeats one of `recent`. A recent line is compared by its heard text, else its fallback text, else its
- * text; a heard text that is empty leaves the line out. A threshold of 0 (or anything not above 0) runs no check.
+ * The most alike recent line at or above `threshold`, or undefined. A recent line is compared by its heard text, else its
+ * fallback text, else its text; a heard text that is empty leaves the line out. A threshold of 0 (or anything not above 0)
+ * runs no check.
  */
-export function isRepeat(reply: string, recent: readonly RecentLine[], threshold: number): boolean {
-  if (!(threshold > 0)) return false;
+export function repeatMatch(reply: string, recent: readonly RecentLine[], threshold: number): RepeatMatch | undefined {
+  if (!(threshold > 0)) return undefined;
   const replySet = wordSet(reply);
+  let best: RepeatMatch | undefined;
   for (const line of recent) {
     if (line.heard === "") continue;
     const said = line.heard ?? line.fallback ?? line.text;
-    if (alike(replySet, wordSet(said), threshold)) return true;
+    const score = similarity(replySet, wordSet(said));
+    if (score >= threshold && (best === undefined || score > best.score)) best = { score, said };
   }
-  return false;
+  return best;
+}
+
+/** True when `reply` repeats one of `recent` (see `repeatMatch`). */
+export function isRepeat(reply: string, recent: readonly RecentLine[], threshold: number): boolean {
+  return repeatMatch(reply, recent, threshold) !== undefined;
 }

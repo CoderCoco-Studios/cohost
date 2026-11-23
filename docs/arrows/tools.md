@@ -6,6 +6,8 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 
 **PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 112 specs: 65 `[x]`, 47 `[ ]`. The MCP client (#206) and the built-in tools (#207) are not built yet; no live MCP server has been run against the service.
 
+`tools` has no Compose service or manifest unit yet: #208 adds them. Until then `packages/config/test/compose-standalone.test.ts` exempts it by name (`UNCOMPOSED_UNTIL_208`), and #208 removes that exemption.
+
 ## References
 
 ### HLD

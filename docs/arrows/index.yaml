@@ -159,7 +159,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "56 specs: 51 [x], 4 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 55 specs: 53 [x], 1 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, with EARS-SRC-015)."
+    next: "58 specs: 51 [x], 6 [ ], 1 [D] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 58 specs: 51 [x], 6 [ ], 1 [D]. Open: the desktop capture helper (CONN-DESK-001, 004, 005, with EARS-SRC-015, 017 to 023)."
     drift: null
 
   ears:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "188 specs: 84 [x], 102 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Notes (the counts above are current): 100 specs: 96 [x], 2 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015)."
+    next: "195 specs: 84 [x], 109 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Notes (the counts above are current): 195 specs: 84 [x], 109 [ ], 2 [D]. Open: the desktop capture helper (EARS-SRC-014, 015, 017 to 023)."
     drift: null
 
   salience:

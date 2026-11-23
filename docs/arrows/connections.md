@@ -6,7 +6,7 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 55 specs: 53 `[x]`, 1 `[ ]` (CONN-DESK-001, the desktop helper), 1 `[D]`.
 
-**PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 55 specs, 53 implemented, 1 gap (`[ ]`, the desktop helper's registration, CONN-DESK-001), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001; EARS-SRC-014, 015 in ears) and the live verification of chunk 5.
+**PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 58 specs, 51 implemented, 6 gaps (`[ ]`: three streamed-speech clause specs and the desktop helper's registration, CONN-DESK-001, 004, 005), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 015, 017 to 023 in ears) and the live verification of chunk 5.
 
 ## Cross-segment cascade
 
@@ -91,4 +91,4 @@ Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 | Failure isolation | CONN-ISO-001 to 003 | 3 | 3 `[x]` |
 | Test injection | CONN-INJ-001 to 006 | 6 | 6 `[x]` |
 | Health | CONN-HLTH-001, 002 | 2 | 2 `[x]` |
-| Desktop audio helper | CONN-DESK-001 to 003 | 3 | 1 `[x]`, 1 `[ ]`, 1 `[D]` |
+| Desktop audio helper | CONN-DESK-001 to 005 | 5 | 1 `[x]`, 3 `[ ]`, 1 `[D]` |

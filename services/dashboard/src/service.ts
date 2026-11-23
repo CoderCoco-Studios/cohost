@@ -26,6 +26,8 @@ export interface DashboardDeps {
   attachStack?: (stack: StackService) => void;
   /** Writes one chunk of an upload to its temporary file; default the file system. Tests inject a failing one (DASH-MDL-029). */
   writeModelChunk?: ModelStore["writeChunk"];
+  /** Awaited at the start of each model listing; tests inject a delay to widen a race (DASH-AVR-028). */
+  modelPause?: () => Promise<void>;
 }
 
 /**
@@ -62,7 +64,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
       const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
       // @spec DASH-MDL-031, DASH-AVR-023
-      const store = new ModelStore(modelsDir(), deps.writeModelChunk);
+      const store = new ModelStore(modelsDir(), deps.writeModelChunk, deps.modelPause);
       await store.sweep();
       const applied = new AppliedView(log);
       const r = cfg.renderer;

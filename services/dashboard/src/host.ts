@@ -195,7 +195,8 @@ function listen(server: http.Server, host: string | undefined, port: number, lab
 export async function startListeners(o: ListenerOptions): Promise<Listeners | undefined> {
   const loopback = isLoopback(o.bind);
   const allowedHosts = o.allowedHosts ?? [];
-  const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
+  // No request timeout on the full surface: an upload's own 30 s idle limit (DASH-MDL-023) is the only cut on a slow body that keeps moving.
+  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
   const lan = http.createServer(lanHandler(o.handler, allowedHosts));
   // @spec DASH-HOST-008, DASH-HOST-009
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);

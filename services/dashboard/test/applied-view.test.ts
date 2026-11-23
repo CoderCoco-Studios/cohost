@@ -66,6 +66,20 @@ test("a model that is blank or loadable raises no issue; any other names the ren
   assert.match(modelIssue(stored, "Ghost.vrm") ?? "", /renderer\.model/);
 });
 
+// @spec DASH-AVR-021
+test("a listener that throws is logged and skipped: the change is kept, the other listeners still run, and no caller sees the throw", () => {
+  const logged: unknown[] = [];
+  const v = new AppliedView({ warn: (...a: unknown[]) => { logged.push(a); } } as never);
+  const seen: number[] = [];
+  v.onChange(() => { throw new Error("broken relay"); });
+  v.onChange((s) => seen.push(s.zoom));
+  assert.doesNotThrow(() => v.apply({ ...framing, zoom: 2 }, stored));
+  assert.doesNotThrow(() => v.refresh(stored));
+  assert.equal(v.get().zoom, 2);
+  assert.deepEqual(seen, [2]);
+  assert.equal(logged.length, 1);
+});
+
 // @spec DASH-AVR-028
 test("the lock runs one job at a time, in the order they were asked for, and a failed job does not hold it", async () => {
   const m = new Mutex();

@@ -14,6 +14,8 @@ export const MODEL_NAME_MAX = 80;
 export const JSON_CHUNK_MAX = 16 * 1024 * 1024;
 /** The metadata strings are cut at this many characters (DASH-MDL-013). */
 const TEXT_MAX = 500;
+/** The most expression names a model may list (DASH-MDL-013). */
+const EXPRESSIONS_MAX = 256;
 /** The longest stem a derived name keeps: 76 characters and `.vrm` make the 80 of the grammar. */
 const MODEL_STEM_MAX = MODEL_NAME_MAX - 4;
 const INCOMING = ".incoming-";
@@ -74,7 +76,17 @@ export type HeadVerdict =
   | { ok: true; total: number; meta: Meta };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const cut = (s: string): string => Array.from(s).slice(0, TEXT_MAX).join("");
+/** The first 500 code points of a string, walked and stopped at the limit (DASH-MDL-013). */
+const cut = (s: string): string => {
+  let out = "";
+  let n = 0;
+  for (const ch of s) {
+    if (n === TEXT_MAX) break;
+    out += ch;
+    n++;
+  }
+  return out;
+};
 const text = (v: unknown): string | null => (typeof v === "string" ? cut(v) : null);
 const eqIC = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 const byNameIC = (a: { name: string }, b: { name: string }): number => {
@@ -186,13 +198,16 @@ export function describe(json: Record<string, unknown>, vrm: "0" | "1", exts: Re
 function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.flatMap((s) => (typeof s === "string" ? [cut(s)] : [])) : [];
 }
-const unique = (xs: string[]): string[] => [...new Set(xs)].sort();
+/** Expression names are sorted, de-duplicated and capped at 256 (DASH-MDL-013). */
+const unique = (xs: string[]): string[] => [...new Set(xs)].sort().slice(0, EXPRESSIONS_MAX);
 
-const READ_FLAGS = constants.O_RDONLY | NOFOLLOW;
+/** Opened without following a link and without blocking on a FIFO or device (DASH-MDL-002). */
+export const READ_FLAGS = constants.O_RDONLY | NOFOLLOW | (constants.O_NONBLOCK ?? 0);
 /** The bytes a head needs, read from a regular file one step at a time (never more than its declared JSON chunk). */
 async function judgeFile(path: string, size: number): Promise<HeadVerdict> {
   const fh = await open(path, READ_FLAGS);
   try {
+    if (!(await fh.stat()).isFile()) return { error: "the entry is not a regular file" };
     let buf = Buffer.alloc(0);
     for (;;) {
       const v = judgeHead(buf);
@@ -216,6 +231,8 @@ export class ModelStore {
     readonly dir: string,
     /** Writes one chunk of an upload's body to its temporary file. Tests inject a failing one (DASH-MDL-029). */
     readonly writeChunk: (fh: FileHandle, chunk: Buffer) => Promise<void> = defaultWriteChunk,
+    /** Awaited at the start of every listing: a test injects a delay here to widen a race. */
+    private readonly pause: () => Promise<void> = async () => undefined,
   ) {}
 
   /** Removes every `.incoming-*` file left by an earlier run (DASH-MDL-031). Creates nothing. */
@@ -229,6 +246,7 @@ export class ModelStore {
   /** The folder's entries that are regular files with a grammar name (DASH-MDL-002), sorted, with their head checks (DASH-MDL-011, DASH-MDL-014). */
   // @spec DASH-MDL-002, DASH-MDL-003, DASH-MDL-011, DASH-MDL-014
   async stored(): Promise<Stored[]> {
+    await this.pause();
     const out: Stored[] = [];
     for (const name of await this.names()) {
       if (!modelNameOk(name)) continue;
@@ -241,7 +259,8 @@ export class ModelStore {
       const version = `${bytes.toString(16)}-${modified.toString(16)}`;
       let c = this.cache.get(name);
       if (!c || c.size !== bytes || c.mtimeMs !== modified) {
-        const v = await judgeFile(path, bytes).catch((err: NodeJS.ErrnoException) => ({ error: err.message }) as HeadVerdict);
+        // Only the error code leaves the store: a message can carry the folder's absolute path.
+        const v = await judgeFile(path, bytes).catch((err: NodeJS.ErrnoException) => ({ error: `the file cannot be read (${err.code ?? "unknown error"})` }) as HeadVerdict);
         c = "ok" in v ? { size: bytes, mtimeMs: modified, meta: v.meta } : { size: bytes, mtimeMs: modified, error: "error" in v ? v.error : "the head is not readable" };
         this.cache.set(name, c);
       }

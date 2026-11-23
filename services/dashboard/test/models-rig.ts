@@ -177,6 +177,8 @@ export interface RigOpts {
   folder?: boolean;
   /** Replaces the write of each upload chunk (the disk-full seam of DASH-MDL-029). */
   writeChunk?: ModelStore["writeChunk"];
+  /** Delays every model listing (widens the race of DASH-AVR-028). */
+  pause?: () => Promise<void>;
 }
 
 export interface Rig {
@@ -212,7 +214,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
   const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
-  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: o.writeChunk });
+  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack, writeModelChunk: o.writeChunk, modelPause: o.pause });
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard: { port, lan_port: lanPort, ...(o.maxBytes ? { models: { max_bytes: o.maxBytes } } : {}) }, renderer }),

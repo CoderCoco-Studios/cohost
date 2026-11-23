@@ -1,6 +1,8 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, readdirSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { glb, model, modelOfSize, open, rig, send, tick, MiB, type Rig } from "./models-rig.js";
 
@@ -200,7 +202,19 @@ test("a body over dashboard.models.max_bytes is cut at the first byte over: 413,
 
 // @spec DASH-MDL-022
 test("the body goes to .incoming-<16 hex> in the model folder, and a large upload is not held in memory", async (t) => {
-  const r = await rig(t, { maxBytes: 80 * MiB });
+  // The write seam counts the bytes waiting in writeChunk: at most the head and one body chunk (DASH-MDL-022).
+  let inflight = 0;
+  let peak = 0;
+  const r = await rig(t, {
+    maxBytes: 80 * MiB,
+    writeChunk: async (fh, c) => {
+      inflight += c.length;
+      peak = Math.max(peak, inflight);
+      try {
+        for (let off = 0; off < c.length;) off += (await fh.write(c, off, c.length - off)).bytesWritten;
+      } finally { inflight -= c.length; }
+    },
+  });
   const total = 48 * MiB;
   const whole = modelOfSize(total);
   const h = open(r.port, "POST", "/avatar/models?name=Large.vrm", { ...r.auth, "content-length": String(total) });
@@ -208,8 +222,8 @@ test("the body goes to .incoming-<16 hex> in the model folder, and a large uploa
   for (let i = 0; i < 200 && incoming(r).length === 0; i++) await tick(5);
   assert.match(incoming(r)[0] ?? "", /^\.incoming-[0-9a-f]{16}$/);
   const baseline = process.memoryUsage().rss;
-  let peak = baseline;
-  const sample = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 5);
+  let peakRss = baseline;
+  const sample = setInterval(() => { peakRss = Math.max(peakRss, process.memoryUsage().rss); }, 5);
   const piece = 256 * 1024;
   for (let off = 1024; off < total; off += piece) {
     if (!h.write(whole.subarray(off, Math.min(total, off + piece)))) await new Promise((ok) => h.req.once("drain", ok));
@@ -218,8 +232,9 @@ test("the body goes to .incoming-<16 hex> in the model folder, and a large uploa
   const res = await h.done;
   clearInterval(sample);
   assert.equal(res.status, 201);
-  assert.ok(peak - baseline < 32 * MiB, `the process grew by ${((peak - baseline) / MiB).toFixed(0)} MiB while a ${total / MiB} MiB file streamed`);
+  assert.ok(peakRss - baseline < 32 * MiB, `the process grew by ${((peakRss - baseline) / MiB).toFixed(0)} MiB while a ${total / MiB} MiB file streamed`);
   assert.equal(statSync(join(r.models, "Large.vrm")).size, total);
+  assert.ok(peak <= 17 * MiB, `at most ${(peak / MiB).toFixed(1)} MiB waited in writeChunk at once`);
 });
 
 // @spec DASH-MDL-023
@@ -333,7 +348,7 @@ test("a stored upload is 201 {ok:true, model} with the list entry; a write failu
   const fail = await up(r, "?name=Other.vrm", model("o"));
   assert.equal(fail.status, 500);
   assert.equal(fail.json().ok, false);
-  assert.match(fail.json().detail, /EACCES|permission/i, "the error text is carried");
+  assert.equal(fail.json().detail, "EACCES", "the error code is carried, not the path");
   assert.deepEqual(incoming(r), []);
 });
 
@@ -382,4 +397,35 @@ test("the upload body is not capped at 64 KiB while the JSON and text routes sti
   const ctl = (n: number) => { const head = '{"cmd":"mute","pad":"'; const tail = '"}'; return send(r.port, "POST", "/control", { body: head + "x".repeat(n - head.length - tail.length) + tail }); };
   assert.equal((await ctl(64 * 1024)).status, 204);
   assert.equal((await ctl(64 * 1024 + 1)).status, 413);
+});
+
+// @spec DASH-MDL-028, DASH-MDL-019
+test("a directory, a symbolic link and an upper-case .VRM entry holding the derived name are a 409 naming it, never a 500", async (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "mdl-clash-"));
+  writeFileSync(join(outside, "target.vrm"), model("t"));
+  const r = await rig(t, { folder: true, seed: { "Up.VRM": model("upper") } });
+  mkdirSync(join(r.models, "Dir.vrm"));
+  symlinkSync(join(outside, "target.vrm"), join(r.models, "Link.vrm"));
+  for (const [query, derived] of [["Dir.vrm", "Dir.vrm"], ["Link.vrm", "Link.vrm"], ["up.vrm", "up.vrm"]] as const) {
+    const res = await up(r, `?name=${query}`, model(query));
+    assert.equal(res.status, 409, `${query}: ${res.text}`);
+    assert.equal(res.json().ok, false);
+    assert.equal(res.json().name, derived, query);
+    assert.deepEqual(incoming(r), [], `${query}: temporary file removed`);
+  }
+  assert.deepEqual(r.ls(), ["Dir.vrm", "Link.vrm", "Up.VRM"], "nothing was written or replaced");
+  assert.equal(readFileSync(join(r.models, "Up.VRM")).equals(model("upper")), true);
+});
+
+// @spec DASH-MDL-021
+test("a header whose total length passes dashboard.models.max_bytes is refused 413 as soon as the head is read", async (t) => {
+  const r = await rig(t, { maxBytes: MiB });
+  const big = glb({ asset: { version: "2.0" }, extensionsUsed: ["VRMC_vrm"], extensions: { VRMC_vrm: {} } }, { bin: 2 * MiB });
+  const h = open(r.port, "POST", "/avatar/models?name=Huge.vrm", r.auth);
+  h.write(big.subarray(0, 512)); // the head only: the rest is never sent
+  const res = await Promise.race([h.done, new Promise<null>((ok) => setTimeout(() => ok(null), 3000))]);
+  h.destroy();
+  assert.notEqual(res, null, "answered without the rest of the body");
+  assert.equal(res!.status, 413);
+  assert.deepEqual(r.ls(), []);
 });

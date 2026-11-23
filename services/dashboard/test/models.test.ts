@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { glb, model, rig, send, texts, vrm0, vrm1, MiB } from "./models-rig.js";
@@ -284,4 +284,44 @@ test("a file in the folder is listed with an error when its head fails the uploa
   const by = Object.fromEntries((await r.get("/avatar/models")).json().models.map((m: { name: string }) => [m.name, m]));
   for (const n of Object.keys(bad)) assert.equal(typeof by[n]?.error, "string", `${n} is listed with an error`);
   for (const n of Object.keys(good)) assert.equal("error" in by[n], false, `${n} is listed without an error`);
+});
+
+// @spec DASH-MDL-013
+test("a metadata string is cut at 500 code points without splitting a surrogate pair, and the expression names are capped at 256", async (t) => {
+  const r = await rig(t, {
+    seed: {
+      "Emoji.vrm": vrm1({ meta: { name: "\u{1F600}".repeat(600), authors: ["x".repeat(2_000_000)] } }),
+      "Many.vrm": vrm1({ expressions: { custom: Array.from({ length: 300 }, (_, i) => `e${String(i).padStart(3, "0")}`) } }),
+    },
+  });
+  const by = Object.fromEntries((await r.get("/avatar/models")).json().models.map((m: { name: string }) => [m.name, m]));
+  const title = by["Emoji.vrm"].title as string;
+  assert.equal(Array.from(title).length, 500, "500 code points");
+  assert.doesNotMatch(title, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/, "no lone high surrogate at the cut");
+  assert.equal(Array.from(by["Emoji.vrm"].authors[0] as string).length, 500);
+  assert.equal(by["Many.vrm"].expressions.length, 256);
+  assert.deepEqual(by["Many.vrm"].expressions, Array.from({ length: 300 }, (_, i) => `e${String(i).padStart(3, "0")}`).slice(0, 256));
+});
+
+// @spec DASH-MDL-002, DASH-MDL-014
+test("a FIFO in the folder is neither listed nor opened: the listing returns at once", async (t) => {
+  const { execFileSync } = await import("node:child_process");
+  const r = await rig(t, { folder: true, seed: { "Ok.vrm": model("ok") } });
+  execFileSync("mkfifo", [join(r.models, "Pipe.vrm")]);
+  const started = Date.now();
+  const list = (await r.get("/avatar/models")).json();
+  assert.ok(Date.now() - started < 2000, "no read blocked on the FIFO");
+  assert.deepEqual(list.models.map((m: { name: string }) => m.name), ["Ok.vrm"]);
+});
+
+// @spec DASH-MDL-014
+test("a file the server cannot read is listed with an error that names the error code only, never a path", async (t) => {
+  if (process.getuid?.() === 0) return; // root reads a 000 file
+  const r = await rig(t, { seed: { "Locked.vrm": model("locked") } });
+  chmodSync(join(r.models, "Locked.vrm"), 0o000);
+  utimesSync(join(r.models, "Locked.vrm"), 1_700_000_000, 1_700_000_100); // the metadata cache is keyed by size and mtime
+  t.after(() => chmodSync(join(r.models, "Locked.vrm"), 0o644));
+  const entry = (await r.get("/avatar/models")).json().models[0];
+  assert.equal(entry.error, "the file cannot be read (EACCES)");
+  assert.doesNotMatch(entry.error, /\//, "no path");
 });

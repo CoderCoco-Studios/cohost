@@ -182,7 +182,8 @@ test("an upload that replaces the applied model's file serves the new bytes unde
 
 // @spec DASH-AVR-028
 test("a delete and a save that selects the same model never both succeed", async (t) => {
-  const r = await rig(t, { seed: { "Keep.vrm": model("keep") }, renderer: { model: "Keep.vrm" } });
+  // Every model listing waits 25 ms, so a delete and a save overlap unless the applied view's lock orders them.
+  const r = await rig(t, { seed: { "Keep.vrm": model("keep") }, renderer: { model: "Keep.vrm" }, pause: () => new Promise((ok) => setTimeout(ok, 25)) });
   const outcomes = new Set<string>();
   for (let i = 0; i < 25; i++) {
     const name = `Pick${i}.vrm`;
@@ -190,13 +191,14 @@ test("a delete and a save that selects the same model never both succeed", async
     const [sel, rm] = await Promise.all([r.save({ model: name }), del(r, name)]);
     outcomes.add(`${sel.status}/${rm.status}`);
     assert.ok((sel.status === 200 && rm.status === 409) || (sel.status === 400 && rm.status === 200), `save ${sel.status}, delete ${rm.status}`);
+    assert.equal(sel.status === 200 && rm.status === 200, false, "both succeeded: the save selected a file the delete removed");
     const applied = (await r.get("/avatar/models")).json().active;
     assert.equal(applied === name, sel.status === 200);
     if (sel.status === 200) assert.ok(r.ls().includes(name), "the selected file is still there");
     await r.save({ model: "Keep.vrm" });
     await del(r, name);
   }
-  assert.ok(outcomes.size >= 1);
+  assert.ok(outcomes.size > 0);
 });
 
 // @spec DASH-AVR-029

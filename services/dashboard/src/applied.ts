@@ -82,9 +82,12 @@ export class AppliedView {
     if (m && m.version !== cur.version) this.set({ ...this.state, model: { name: m.name, version: m.version } });
   }
 
+  // A listener that throws is logged and skipped: the change is already committed, so no caller sees its failure (DASH-AVR-021).
   private set(next: Applied): void {
     this.state = next;
     const snap = this.get();
-    for (const fn of this.listeners) fn(snap);
+    for (const fn of this.listeners) {
+      try { fn(snap); } catch (err) { this.log?.warn({ err }, "an applied-view listener failed; the change is kept"); }
+    }
   }
 }

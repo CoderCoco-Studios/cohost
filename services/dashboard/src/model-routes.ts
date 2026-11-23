@@ -1,16 +1,14 @@
 import http from "node:http";
-import { constants } from "node:fs";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { bearerOk } from "@cohost/control";
 import { AppliedView } from "./applied.js";
 import {
-  derivedName, findStored, judgeHead, MODEL_MAX_COUNT, MODEL_MAX_TOTAL_BYTES, modelNameOk, ModelStore, sameModel, type Stored,
+  derivedName, findStored, judgeHead, MODEL_MAX_COUNT, MODEL_MAX_TOTAL_BYTES, modelNameOk, ModelStore, READ_FLAGS, sameModel, type Stored,
 } from "./models.js";
 
 /** The idle limit of an upload: 30 s without a byte aborts it with 408 (DASH-MDL-023). */
 export const UPLOAD_IDLE_MS = 30_000;
-const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const MODELS_PREFIX = "/avatar/models/";
 
 /** What the model routes need: the store, the applied view, the cap and the token gate (`CONTROL_ENABLED=1`). */
@@ -29,11 +27,6 @@ export interface ModelRoutes {
 const send = (res: http.ServerResponse, status: number, value: unknown, extra: Record<string, string> = {}): void => {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...extra });
   res.end(JSON.stringify(value));
-};
-
-const unauthorized = (res: http.ServerResponse): void => {
-  res.writeHead(401, { "www-authenticate": "Bearer" });
-  res.end("unauthorized");
 };
 
 const notFound = (res: http.ServerResponse, detail: string): void => send(res, 404, { ok: false, detail });
@@ -66,7 +59,7 @@ function notModified(req: http.IncomingMessage, etag: string): boolean {
 // @spec DASH-MDL-004, DASH-MDL-005, DASH-MDL-007
 async function serveFile(req: http.IncomingMessage, res: http.ServerResponse, s: Stored): Promise<void> {
   let fh: FileHandle;
-  try { fh = await open(s.path, constants.O_RDONLY | NOFOLLOW); } catch { return notFound(res, "the model file is not there"); }
+  try { fh = await open(s.path, READ_FLAGS); } catch { return notFound(res, "the model file is not there"); }
   let st;
   try { st = await fh.stat({ bigint: true }); } catch { await fh.close(); return notFound(res, "the model file is not there"); }
   if (!st.isFile()) { await fh.close(); return notFound(res, "the model file is not there"); }
@@ -117,31 +110,39 @@ async function serveNamed(m: ModelRoutes, req: http.IncomingMessage, res: http.S
 const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => m.token !== undefined && !bearerOk(req.headers.authorization, m.token);
 
 /**
- * Answers a request whose body is not read to its end, and closes its connection (DASH-MDL-021, DASH-MDL-023, DASH-MDL-024).
- * The answer is written to the socket as it is, with `connection: close`, and the socket ended after it. Node's own response
- * path would destroy the socket as soon as the FIN is out, and a socket closed with unread input is reset, which can cost the
- * client the answer; so the rest of the input is drained, and the socket is destroyed after a grace period or once the client
- * has closed its end.
+ * Answers a request and closes its connection, writing the answer to the socket as it is (`connection: close`) and ending the
+ * socket after it. Node's own response path would destroy the socket as soon as the FIN is out, and a socket closed with unread
+ * input is reset, which can cost the client the answer. A refusal before the body (`drain: false`) reads no body byte: the
+ * socket is paused, so the server takes in no more than the socket buffers hold. A stop in the middle of a body (`drain: true`)
+ * drains the rest of the input for at most 2 s, then destroys the socket (or at once when the client has closed its end).
  */
-// @spec DASH-MDL-021, DASH-MDL-023, DASH-MDL-024
-function stopped(req: http.IncomingMessage, status: number, detail: string): void {
+// @spec DASH-MDL-017, DASH-MDL-021, DASH-MDL-023, DASH-MDL-024
+function stopped(req: http.IncomingMessage, status: number, value: object, o: { headers?: Record<string, string>; drain: boolean }): void {
   const sock = req.socket;
-  const body = JSON.stringify({ ok: false, detail });
+  const body = JSON.stringify(value);
+  const extra = Object.entries(o.headers ?? {}).map(([k, v]) => `${k}: ${v}\r\n`).join("");
   sock.write(
-    `HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? "Error"}\r\ncontent-type: application/json\r\ncache-control: no-store\r\n` +
+    `HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? "Error"}\r\ncontent-type: application/json\r\ncache-control: no-store\r\n${extra}` +
     `connection: close\r\ncontent-length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
   );
   sock.end();
-  req.resume();
+  if (o.drain) req.resume();
   const t = setTimeout(() => sock.destroy(), 2000);
   t.unref?.();
   sock.once("close", () => clearTimeout(t));
 }
 
-/** Answers a failed write or an upload that could not start: `507` for a full disk, `500` otherwise, with the error text (DASH-MDL-029). */
+/** A refusal before the body: the body is not read (DASH-MDL-017). */
+const refuse = (req: http.IncomingMessage, status: number, value: object, headers?: Record<string, string>): void =>
+  stopped(req, status, value, { drain: false, ...(headers ? { headers } : {}) });
+
+/** The 401 of a gated route, answered before the body. */
+const unauthorized = (req: http.IncomingMessage): void => refuse(req, 401, { ok: false, detail: "the control token is missing or wrong" }, { "www-authenticate": "Bearer" });
+
+/** Answers a failed write or an upload that could not start: `507` for a full disk, `500` otherwise, with the error code only (DASH-MDL-029). */
 function failure(req: http.IncomingMessage, err: unknown): void {
-  const e = err as NodeJS.ErrnoException;
-  stopped(req, e?.code === "ENOSPC" ? 507 : 500, e?.message ?? String(err));
+  const code = (err as NodeJS.ErrnoException)?.code;
+  stopped(req, code === "ENOSPC" ? 507 : 500, { ok: false, detail: code ?? "the write failed" }, { drain: true });
 }
 
 type Body = { kind: "done"; total: number } | { kind: "stop"; status: number; detail: string } | { kind: "failed"; err: unknown } | { kind: "gone" };
@@ -200,7 +201,6 @@ function streamBody(req: http.IncomingMessage, o: { open: () => Promise<Temp>; m
       received += chunk.length;
       openOnce();
       if (received > o.maxBytes) return finish({ kind: "stop", status: 413, detail: `the file is over ${o.maxBytes} bytes, dashboard.models.max_bytes` });
-      if (o.declared !== undefined && received > o.declared) return finish({ kind: "stop", status: 400, detail: "the body is longer than its Content-Length" });
       if (headTotal !== undefined) return flush(chunk);
       pending.push(chunk);
       pendingLen += chunk.length;
@@ -211,6 +211,7 @@ function streamBody(req: http.IncomingMessage, o: { open: () => Promise<Temp>; m
       const v = judgeHead(buf);
       if ("need" in v) { need = v.need; pending = [buf]; pendingLen = buf.length; return; }
       if ("error" in v) return finish({ kind: "stop", status: 400, detail: v.error });
+      if (v.total > o.maxBytes) return finish({ kind: "stop", status: 413, detail: `the header says ${v.total} bytes, over dashboard.models.max_bytes` });
       headTotal = v.total;
       flush(buf);
     });
@@ -251,27 +252,27 @@ async function commitUpload(m: ModelRoutes, tmp: string, name: string, replace: 
 /** `POST /avatar/models?name=`: checks, streamed write, head checks, length check and commit (DASH-MDL-015 to DASH-MDL-032). */
 // @spec DASH-MDL-015, DASH-MDL-016, DASH-MDL-017, DASH-MDL-018, DASH-MDL-019, DASH-MDL-020, DASH-MDL-029, DASH-HTTP-015
 async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
-  if (unauthorizedIfNeeded(m, req)) return unauthorized(res);
+  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
   const cl = req.headers["content-length"];
   const declared = cl === undefined ? undefined : Number(cl);
-  if (declared !== undefined && (!Number.isSafeInteger(declared) || declared < 0)) return stopped(req, 400, "Content-Length is not a byte count");
-  if (declared !== undefined && declared > m.maxBytes) return stopped(req, 413, `the file is over ${m.maxBytes} bytes, dashboard.models.max_bytes`);
+  if (declared !== undefined && (!Number.isSafeInteger(declared) || declared < 0)) return refuse(req, 400, { ok: false, detail: "Content-Length is not a byte count" });
+  if (declared !== undefined && declared > m.maxBytes) return refuse(req, 413, { ok: false, detail: `the file is over ${m.maxBytes} bytes, dashboard.models.max_bytes` });
   const query = url.searchParams.get("name");
-  if (!query) return send(res, 400, { ok: false, detail: "the name query is required" });
+  if (!query) return refuse(req, 400, { ok: false, detail: "the name query is required" });
   const name = derivedName(query);
-  if (!modelNameOk(name)) return send(res, 400, { ok: false, detail: "the name cannot be stored" });
+  if (!modelNameOk(name)) return refuse(req, 400, { ok: false, detail: "the name cannot be stored" });
   const replace = url.searchParams.get("replace") === "1";
-  if (m.slot.busy) return send(res, 409, { ok: false, detail: "another upload is running" });
+  if (m.slot.busy) return refuse(req, 409, { ok: false, detail: "another upload is running" });
 
   m.slot.busy = true;
   try {
     const pre = await m.store.stored();
     const existing = findStored(pre, name);
-    if (existing && !replace) return send(res, 409, { ok: false, detail: "a model of that name is stored; replace=1 replaces it", name: existing.name });
+    if (existing && !replace) return refuse(req, 409, { ok: false, detail: "a model of that name is stored; replace=1 replaces it", name: existing.name });
     const others = pre.reduce((t, s) => t + s.bytes, 0) - (existing?.bytes ?? 0);
-    if (!existing && pre.length >= MODEL_MAX_COUNT) return send(res, 409, { ok: false, detail: `${MODEL_MAX_COUNT} models are stored, the most the store holds; delete one first` });
+    if (!existing && pre.length >= MODEL_MAX_COUNT) return refuse(req, 409, { ok: false, detail: `${MODEL_MAX_COUNT} models are stored, the most the store holds; delete one first` });
     if ((declared !== undefined && others + declared > MODEL_MAX_TOTAL_BYTES) || others > MODEL_MAX_TOTAL_BYTES) {
-      return send(res, 409, { ok: false, detail: `the stored models would total more than ${MODEL_MAX_TOTAL_BYTES} bytes; delete one first` });
+      return refuse(req, 409, { ok: false, detail: `the stored models would total more than ${MODEL_MAX_TOTAL_BYTES} bytes; delete one first` });
     }
 
     let tmp: Temp | undefined;
@@ -287,7 +288,7 @@ async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.Serve
       maxBytes: m.maxBytes, declared, idleMs: m.idleMs ?? UPLOAD_IDLE_MS, write: m.store.writeChunk,
     });
     if (got.kind === "gone") { await release(); return; }
-    if (got.kind === "stop") { await release(); return stopped(req, got.status, got.detail); }
+    if (got.kind === "stop") { await release(); return stopped(req, got.status, { ok: false, detail: got.detail }, { drain: true }); }
     if (got.kind === "failed") { await release(); return failure(req, got.err); }
 
     try {
@@ -307,7 +308,7 @@ async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.Serve
 /** `DELETE /avatar/models/<name>`: the name, then the applied model, under the lock (DASH-MDL-033 to DASH-MDL-036). */
 // @spec DASH-MDL-033, DASH-MDL-034, DASH-MDL-035, DASH-MDL-036, DASH-AVR-028
 async function remove(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, raw: string): Promise<void> {
-  if (unauthorizedIfNeeded(m, req)) return unauthorized(res);
+  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
   const name = decodeName(raw);
   if (name === undefined) return notFound(res, "no stored model has that name");
   await m.applied.lock.run(async () => {

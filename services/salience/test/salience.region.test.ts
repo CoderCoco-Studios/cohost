@@ -472,3 +472,44 @@ test("cooldown and idle-chatter timer are measured from the brain.say only: play
   await h.s.tick();
   assert.equal(h.bus.of("attention.focus").length, 1, "cooldown over: it ran from the say");
 });
+
+// @spec SAL-BUSY-005, SAL-BUSY-006
+test("busy: a later cortex line without more replaces the remembered line, so the earlier line's playback no longer renews", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  await s.onEvent(cortexSay("M", false));
+  advance(80);
+  await s.onEvent(playing("L", 1)); // L is no longer the cortex's line
+  advance(30); // 110 ms from the say of M, valve 100
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1, "L's playback did not renew the speaking state");
+});
+
+// @spec SAL-BUSY-005
+test("busy: a brain.say with no reason counts as the cortex line, so its playback renews", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(event("brain.say", { id: "L", text: "one", emotion: "happy", more: true }));
+  advance(80);
+  await s.onEvent(playing("L", 1));
+  advance(80); // 160 ms from the say, 80 from the renewal
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "still busy: the reasonless say was remembered as the cortex line");
+});
+
+// @spec SAL-BUSY-008
+test("idle chatter: playback events restart neither the idle timer nor the cooldown, which run from the brain.say", async () => {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 0, idle_chatter_ms: 100 }, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 100 }, cortex: { speaking_timeout_ms: 20 } } }, () => t);
+  await h.s.onEvent(chat("plain")); // an unseen event below the threshold; the scorer's idle timer runs from the last activity
+  t += 5;
+  await h.s.onEvent(cortexSay("L")); // the say starts the idle timer and the cooldown
+  t += 80;
+  await h.s.onEvent(playing("L", 1)); // renews the speaking state (valve 20: not busy at 110 ms) but not the idle timer
+  await h.s.onEvent(done("L", 1));
+  t += 25; // 105 ms since the say, 25 since the playback events
+  await h.s.tick();
+  assert.equal(h.bus.of("attention.focus").length, 1, "idle chatter fired: the idle timer ran from the say");
+  assert.equal(h.bus.of("attention.focus")[0]!.reason, "idle chatter");
+});

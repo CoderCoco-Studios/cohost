@@ -99,12 +99,12 @@ export function normalizeKey(raw: string): string {
 }
 
 /**
- * The one identity of a chat viewer (SHARED-GUARD-025..027): `<platform>:<userId>` with the id exactly as given, or,
+ * The one identity of a chat viewer (SHARED-GUARD-025..027): `<platform>:id:<userId>` with the id exactly as given, or,
  * with no id, `<platform>:name:<normalizeKey(user)>`. The platform is passed through unchanged, never validated.
  */
 // @spec SHARED-GUARD-025, SHARED-GUARD-026, SHARED-GUARD-027
 export function viewerKey(viewer: { platform: string; userId?: string; user: string }): string {
-  return viewer.userId ? `${viewer.platform}:${viewer.userId}` : `${viewer.platform}:name:${normalizeKey(viewer.user)}`;
+  return viewer.userId ? `${viewer.platform}:id:${viewer.userId}` : `${viewer.platform}:name:${normalizeKey(viewer.user)}`;
 }
 
 export interface OnceCounterOptions {

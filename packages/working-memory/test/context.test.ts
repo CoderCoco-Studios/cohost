@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BusEvent } from "@cohost/bus";
-import { Context, propagatedFlags, TRANSCRIPT_TAGS, type ContextEvent } from "../src/index.js";
+import { Context, propagatedFlags, TRANSCRIPT_TAGS, type ChatRemoval, type ContextEvent } from "../src/index.js";
 
 let ts = 1000;
 const ev = (type: string, data: Record<string, unknown>) => ({ id: `e${ts}`, type, ts: ts++, source: "t", data }) as unknown as BusEvent;
@@ -372,7 +372,6 @@ test("push keeps platform, userId and messageId unchanged on the chat entry, and
   assert.equal("messageId" in bare, false);
 });
 
-const removal = (r: Record<string, unknown>) => r as unknown as Parameters<Context["forget"]>[0];
 const label = (e: ContextEvent) => (e.kind === "self" ? `self:${e.text}` : e.text);
 
 // @spec WM-FORGET-001
@@ -381,7 +380,7 @@ test("forget scope message removes the chat entries of that platform with that m
   ctx.push(chat("a", { messageId: "m1" }));
   ctx.push(chat("b", { messageId: "m2" }));
   ctx.push(chat("c", { messageId: "m1", platform: "youtube" }));
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "message", messageId: "m1" })), 1);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "message", messageId: "m1" }), 1);
   assert.deepEqual(ctx.all().map(label), ["b", "c"]);
   assert.equal(ctx.unseen().length, 2);
 });
@@ -394,7 +393,7 @@ test("forget scope user removes that platform's chat entries by userId and never
   ctx.push(chat("noid"));
   ctx.push(chat("c", { userId: "u1", platform: "youtube" }));
   ctx.push(chat("d", { userId: "U1" }));
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "user", userId: "u1" })), 1);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "user", userId: "u1" }), 1);
   assert.deepEqual(ctx.all().map(label), ["b", "noid", "c", "d"]);
 });
 
@@ -404,7 +403,7 @@ test("forget scope all removes every chat entry of the platform", () => {
   ctx.push(chat("a", { userId: "u1" }));
   ctx.push(chat("noid"));
   ctx.push(chat("c", { platform: "youtube" }));
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "all" })), 2);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "all" }), 2);
   assert.deepEqual(ctx.all().map(label), ["c"]);
 });
 
@@ -417,7 +416,7 @@ test("forget leaves speech, vision, self and other-platform chat entries unchang
   ctx.push(chat("yt", { platform: "youtube" }));
   ctx.push(chat("tw"));
   const before = ctx.all().filter((e) => e.kind !== "chat" || e.platform === "youtube");
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "all" })), 1);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "all" }), 1);
   assert.deepEqual(ctx.all(), before);
 });
 
@@ -427,7 +426,7 @@ test("forget drops a removed entry from the arrivals record so releaseArrivals n
   ctx.holdArrivals();
   ctx.push(chat("keep", { messageId: "k" }));
   ctx.push(chat("gone", { messageId: "g" }));
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "message", messageId: "g" })), 1);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "message", messageId: "g" }), 1);
   assert.deepEqual(ctx.all().map(label), ["keep"]);
   assert.deepEqual(ctx.unseen().map(label), ["keep"]);
   ctx.releaseArrivals();
@@ -440,9 +439,21 @@ test("forget with a removal that matches nothing returns 0 and changes nothing",
   const ctx = new Context(20);
   ctx.push(chat("a", { messageId: "m1", userId: "u1" }));
   const before = ctx.all();
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "message", messageId: "nope" })), 0);
-  assert.equal(ctx.forget(removal({ platform: "twitch", scope: "user", userId: "nobody" })), 0);
-  assert.equal(ctx.forget(removal({ platform: "discord", scope: "all" })), 0);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "message", messageId: "nope" }), 0);
+  assert.equal(ctx.forget({ platform: "twitch", scope: "user", userId: "nobody" }), 0);
+  assert.equal(ctx.forget({ platform: "discord", scope: "all" }), 0);
   assert.deepEqual(ctx.all(), before);
-  assert.equal(new Context(5).forget(removal({ platform: "twitch", scope: "all" })), 0);
+  assert.equal(new Context(5).forget({ platform: "twitch", scope: "all" }), 0);
+});
+
+// @spec WM-FORGET-006
+test("forget with an empty id matches nothing, even an entry that carries the same empty id", () => {
+  const ctx = new Context(20);
+  ctx.push(chat("a", { messageId: "", userId: "" }));
+  const before = ctx.all();
+  const emptyMessage: ChatRemoval = { platform: "twitch", scope: "message", messageId: "" };
+  const emptyUser: ChatRemoval = { platform: "twitch", scope: "user", userId: "" };
+  assert.equal(ctx.forget(emptyMessage), 0);
+  assert.equal(ctx.forget(emptyUser), 0);
+  assert.deepEqual(ctx.all(), before);
 });

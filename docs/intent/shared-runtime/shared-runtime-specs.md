@@ -134,7 +134,7 @@ The session's only user is the Discord connector ([connections](../connections/c
 - [x] **SHARED-GUARD-022**: Where `createOnceCounter` is given `windowMs`, a recorded key shall count as recorded only while `at` is less than `windowMs` after the time it was recorded; where it is given no `windowMs`, a recorded key shall never expire.
 - [x] **SHARED-GUARD-023**: Where more keys of one kind (viewer or text) are recorded than `capacity` (default 256), the `createOnceCounter` shall drop the oldest recorded key of that kind first.
 - [x] **SHARED-GUARD-024**: When `boundText` is called, it shall apply its steps in this order: the turning into spaces (SHARED-GUARD-004), the removal (SHARED-GUARD-005), the collapsing and trimming (SHARED-GUARD-007), then the cut (SHARED-GUARD-008).
-- [x] **SHARED-GUARD-025**: When `viewerKey({platform, userId, user})` is called with a non-empty `userId`, it shall return `<platform>:<userId>` with the `userId` exactly as given.
+- [x] **SHARED-GUARD-025**: When `viewerKey({platform, userId, user})` is called with a non-empty `userId`, it shall return `<platform>:id:<userId>` with the `userId` exactly as given.
 - [x] **SHARED-GUARD-026**: When `viewerKey({platform, user})` is called with no `userId` or an empty one, it shall return `<platform>:name:<normalizeKey(user)>`.
 - [x] **SHARED-GUARD-027**: The `viewerKey` function shall not change the letter case of a `userId`, so two ids that differ only in case give two keys.
 - [ ] **SHARED-GUARD-028**: The `@cohost/shared/untrusted` module shall export `untrustedToolNotice()`, taking no argument.

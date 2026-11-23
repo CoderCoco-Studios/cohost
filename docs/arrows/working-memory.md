@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**PARTIAL**: 74 specs: 59 implemented (`[x]`), 14 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, and WM-TRANS-003 (below). Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL**: 74 specs: 59 implemented (`[x]`), 14 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line and streamed-speech work, and WM-PUSH-008, WM-PUSH-021–025, WM-TRANS-010, WM-TRANS-015. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -54,6 +54,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Transcript | WM-TRANS-001 to WM-TRANS-015 | 13 | 0 | 2 | 14 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Forgetting | WM-FORGET-001 to WM-FORGET-006 | 6 | 0 | 0 | 6 |
+| Unfinished lines | WM-UNF-001 to WM-UNF-006 | 0 | 0 | 6 | 0 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
 **Summary:** 74 specs: 59 implemented, 14 gaps, 1 deferred. The unfinished-line specs (WM-UNF) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.

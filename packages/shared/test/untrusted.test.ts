@@ -260,9 +260,9 @@ test("createOnceCounter: the default capacity is 256 per kind", () => {
 });
 
 // @spec SHARED-GUARD-025
-test("viewerKey: a non-empty userId gives <platform>:<userId> exactly as given", () => {
-  assert.equal(viewerKey({ platform: "twitch", userId: "12345", user: "Alice" }), "twitch:12345");
-  assert.equal(viewerKey({ platform: "youtube", userId: "UCabcDEF", user: "Alice" }), "youtube:UCabcDEF");
+test("viewerKey: a non-empty userId gives <platform>:id:<userId> exactly as given", () => {
+  assert.equal(viewerKey({ platform: "twitch", userId: "12345", user: "Alice" }), "twitch:id:12345");
+  assert.equal(viewerKey({ platform: "youtube", userId: "UCabcDEF", user: "Alice" }), "youtube:id:UCabcDEF");
 });
 
 // @spec SHARED-GUARD-026
@@ -283,8 +283,8 @@ test("viewerKey: the display name never enters a key that has a userId, and plat
 test("viewerKey: two ids that differ only in case give two keys", () => {
   const a = viewerKey({ platform: "youtube", userId: "UCabc", user: "x" });
   const b = viewerKey({ platform: "youtube", userId: "UCABC", user: "x" });
-  assert.equal(a, "youtube:UCabc");
-  assert.equal(b, "youtube:UCABC");
+  assert.equal(a, "youtube:id:UCabc");
+  assert.equal(b, "youtube:id:UCABC");
   assert.notEqual(a, b);
 });
 
@@ -303,4 +303,13 @@ test("createOnceCounter.admit: false when the key or the normalised text was rec
   assert.equal(c.admit("twitch:1", "new text", 10), false); // same key
   assert.equal(c.admit("twitch:2", "hello world", 10), false); // same text by normalizeKey
   assert.equal(c.admit("twitch:2", "new text", 20), true); // the refusals recorded nothing
+});
+
+// @spec SHARED-GUARD-025, SHARED-GUARD-026
+test("viewerKey: a userId and a display name never collide, so a viewer named like an id keeps its own key", () => {
+  const withId = viewerKey({ platform: "twitch", userId: "name:bob", user: "x" });
+  const byName = viewerKey({ platform: "twitch", user: "bob" });
+  assert.equal(withId, "twitch:id:name:bob");
+  assert.equal(byName, "twitch:name:bob");
+  assert.notEqual(withId, byName);
 });

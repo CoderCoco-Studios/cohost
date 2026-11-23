@@ -193,8 +193,9 @@ export class Context {
     const matches = (e: ContextEvent): boolean => {
       if (e.kind !== "chat" || e.platform !== removal.platform) return false;
       switch (removal.scope) {
-        case "message": return e.messageId !== undefined && e.messageId === removal.messageId;
-        case "user": return e.userId !== undefined && e.userId === removal.userId;
+        // An empty id names nothing: an unvalidated removal with "" matches no entry (WM-FORGET-006).
+        case "message": return !!removal.messageId && e.messageId === removal.messageId;
+        case "user": return !!removal.userId && e.userId === removal.userId;
         case "all": return true;
       }
     };

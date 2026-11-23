@@ -75,7 +75,7 @@ test("Scheduler: muted, busy, cooldown, threshold, focus, mark-seen cycle", asyn
   assert.equal(d.speak, true);
   assert.equal(d.reason, "mentioned");
   assert.equal(d.focus?.kind, "chat");
-  assert.ok(Math.abs(d.score - 1.15) < 1e-9);
+  assert.ok(Math.abs(d.score - 1.0) < 1e-9); // "just chatting" is the same viewer: discounted
   ctx.markSeen();
   sch.noteSpoke();
   assert.equal((await sch.decide(ctx, false, false)).reason, "cooldown");
@@ -86,7 +86,7 @@ test("Scheduler: arousal lowers the threshold; idle chatter fires after quiet", 
   const ctx = new Context(10);
   ctx.push(chat("plain"));
   ctx.push(chat("plain"));
-  ctx.push(chat("plain")); // 0.45 total
+  ctx.push(chat("plain")); // one viewer, one text: 0.15 total
   assert.equal((await sch.decide(ctx, false, false, 0)).speak, false);
   assert.equal((await sch.decide(ctx, false, false, 1)).speak, true); // threshold 0.6 - 0.5 = 0.1
 
@@ -231,13 +231,13 @@ test("Scheduler: speech and vision always count, repeated text included", async 
 test("Scheduler: a discounted line adds nothing, is never the focus, and is reported scored", async () => { // @spec SAL-DECIDE-007, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015
   const sch = new Scheduler(salienceCfg(), rulesScorer());
   const ctx = new Context(20);
-  ctx.push(from("v1", "why?")); // 0.55
-  ctx.push(from("v1", "ok")); // 0.15, same viewer: discounted
+  ctx.push(from("v1", "why?")); // 0.55, same text as v2's line: discounted by text
   ctx.push(from("v2", "why?")); // 0.55, later than v1's equal line so walked first and counted
+  ctx.push(from("v2", "ok")); // 0.15, same viewer as the counted line: discounted
   const d = await sch.decide(ctx, false, false);
   near(d.score, 0.55);
   assert.equal(d.scored.length, 3);
-  assert.equal(d.focus, ctx.unseen()[2]);
+  assert.equal(d.focus, ctx.unseen()[1]);
   ctx.markSeenEvents(d.scored);
   assert.equal(ctx.unseen().length, 0);
   ctx.push(from("v1", "another")); // a new burst once marked seen

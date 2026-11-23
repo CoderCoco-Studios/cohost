@@ -32,7 +32,7 @@ test("tick: a mention publishes attention.focus naming who and what", async () =
   await s.tick();
   const [focus] = bus.of("attention.focus");
   assert.equal(focus!.reason, "mentioned");
-  assert.ok(Math.abs(focus!.score - 1.15) < 1e-9);
+  assert.ok(Math.abs(focus!.score - 1.0) < 1e-9); // "plain" is the same viewer: discounted
   assert.deepEqual(focus!.focus, { kind: "chat", who: "bob", text: "hey Coco?", mention: true });
   assert.equal(s.ctx.unseen().length, 0, "what was scored is now seen");
 });
@@ -110,7 +110,7 @@ test("mute / unmute / forget_context", async () => { // @spec SAL-CTRL-004, SAL-
 
 test("an excited mood lowers the bar to speak", async () => { // @spec SAL-IN-004, SAL-DECIDE-003
   const { s, bus } = setup({ speak_threshold: 0.6, arousal_bias: 0.5 });
-  for (const t of ["a", "b", "c"]) await s.onEvent(chat(t)); // 0.45
+  for (const t of ["a", "b", "c"]) await s.onEvent(chat(t)); // one viewer: 0.15
   await s.tick();
   assert.equal(bus.of("attention.focus").length, 0);
   await s.onEvent(event("affect.state", { valence: 0.5, arousal: 1, mood: "laugh" }));

@@ -145,8 +145,12 @@ interface Stream {
 /** One early transcription in flight: `discard` is set when speech resumes or the cap closes the utterance (EARS-EARLY-014). */
 interface EarlyCall {
   discard: boolean;
+  /** The result is in the utterance's publish chain (EARLY-013). */
+  publishing?: boolean;
   failed?: true;
   text?: string;
+  /** The early transcript this call published, once it did. */
+  published?: Unresolved;
   /** Settles once the result is known and, when it is publishable and the utterance is still open, published. */
   promise: Promise<void>;
 }
@@ -193,6 +197,8 @@ interface Open {
   earlySeq: number;
   /** Speech has arrived since the last snapshot was taken (EARS-EARLY-026); true for a new utterance. */
   pausedSince: boolean;
+  /** Epoch ms of the last frame classified as speech: the pause's clock (EARS-EARLY-001). */
+  lastSpeechAt: number;
   early?: EarlyCall;
   unresolved?: Unresolved;
 }
@@ -238,20 +244,23 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       .catch((err) => d.log.error({ err: msg(err), source: d.name }, "ears connector source: hearing failed")));
   };
 
-  /** Publishes on the utterance's own chain, so an early, retracted or final event never overtakes an earlier one (EARS-EARLY-013). */
-  const chainPublish = (o: Open, fn: () => Promise<void>): void => {
-    o.pubChain = o.pubChain.then(fn).catch((err) => d.log.warn({ err: msg(err), source: d.name }, "early transcript publish failed"));
+  /** Runs `fn` after everything already queued on the utterance's publish chain, so no event of the utterance overtakes an earlier one (EARS-EARLY-013, EARS-PART-014). */
+  const publishOrdered = <T>(o: Open, fn: () => Promise<T>): Promise<T> => {
+    const p = o.pubChain.then(fn);
+    o.pubChain = p.then(() => undefined, (err) => d.log.warn({ err: msg(err), source: d.name }, "speech publish failed"));
     track(o.pubChain);
+    return p;
   };
 
   const retract = (o: Open, u: Unresolved): void => {
     const ed = d.early!;
     ed.counts.retracted++;
-    chainPublish(o, () => ed.publishRetracted({ speaker: o.name, speakerId: o.spk, source: d.name, utteranceId: o.id, seq: u.seq }));
+    // @spec EARS-EARLY-024
+    void publishOrdered(o, () => ed.publishRetracted({ speaker: o.name, speakerId: o.spk, source: d.name, utteranceId: o.id, seq: u.seq })).catch(() => undefined);
   };
 
-  // @spec EARS-EARLY-013, EARS-EARLY-014
-  /** A speech frame of the speaker arrived: an early call in flight is discarded, and an unresolved early transcript is retracted once. */
+  // @spec EARS-EARLY-013, EARS-EARLY-014, EARS-EARLY-015
+  /** A speech frame of the speaker arrived: an early call in flight is discarded, and an unresolved early transcript is retracted once; the utterance stays open. */
   const resumed = (o: Open): void => {
     o.pausedSince = true;
     if (o.early) o.early.discard = true;
@@ -262,14 +271,20 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     }
   };
 
-  // @spec EARS-EARLY-001, EARS-EARLY-002, EARS-EARLY-003, EARS-EARLY-004, EARS-EARLY-005, EARS-EARLY-006, EARS-EARLY-007, EARS-EARLY-012, EARS-EARLY-026
-  /** One early snapshot: the clip up to the last speech frame, transcribed through the batch request; a publishable result becomes the unresolved early transcript. */
+  /** Whether the pause of `ears.early.after_ms` is due: wall-clock since the last speech frame, or under silero the silence received since it. */
+  const pauseDue = (o: Open): boolean => {
+    const ed = d.early!;
+    return Date.now() - o.lastSpeechAt >= ed.afterMs || (d.vad !== undefined && o.silentBytes >= ed.afterMs * BYTES_PER_MS);
+  };
+
+  // @spec EARS-EARLY-001, EARS-EARLY-002, EARS-EARLY-003, EARS-EARLY-004, EARS-EARLY-005, EARS-EARLY-006, EARS-EARLY-007, EARS-EARLY-012, EARS-EARLY-023, EARS-EARLY-024, EARS-EARLY-026
+  /** One early snapshot: the clip up to the last speech frame, transcribed through the batch request; a publishable result is published in order and becomes the unresolved early transcript. */
   const snapshot = (o: Open, pcm: Buffer, audioEndedAt: number): void => {
     const ed = d.early!;
     o.earlyCount++;
     o.pausedSince = false;
     const started = Date.now();
-    const call: EarlyCall = { discard: false, promise: Promise.resolve() };
+    const call: EarlyCall = { discard: false, publishing: false, promise: Promise.resolve() };
     o.early = call;
     call.promise = (async () => {
       let text: string | undefined;
@@ -280,18 +295,33 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         d.log.warn({ err: String(err), source: d.name }, "early transcription failed");
       }
       const sttMs = Date.now() - started;
-      if (o.early === call) o.early = undefined;
       call.text = text;
-      if (call.failed || call.discard || o.closed) return;
       const t = (text ?? "").trim();
-      if (!hasWordCharacter(t) || isDropPhrase(t, ed.dropPhrases)) return; // EARS-EARLY-006: nothing published, no seq taken
-      const seq = o.earlySeq++;
-      const u: Unresolved = { seq, text: t, sttMs, audioEndedAt };
-      o.unresolved = u;
-      chainPublish(o, async () => {
-        ed.counts.published++;
-        await ed.publish({ speaker: o.name, speakerId: o.spk, source: d.name, text: t, utteranceId: o.id, seq, sttMs, timing: { audioEndedAt } });
-      });
+      // EARLY-006: an empty, wordless or dropped result publishes nothing and takes no seq
+      if (!call.failed && hasWordCharacter(t) && !isDropPhrase(t, ed.dropPhrases)) {
+        call.publishing = true;
+        const u = await publishOrdered(o, async () => {
+          if (call.discard || o.closed) return undefined; // EARLY-014: resumed or closed before the publish
+          const seq = o.earlySeq;
+          try {
+            await ed.publish({ speaker: o.name, speakerId: o.spk, source: d.name, text: t, utteranceId: o.id, seq, sttMs, timing: { audioEndedAt } });
+          } catch (err) {
+            d.log.warn({ err: String(err), source: d.name }, "speech.early publish failed");
+            return undefined; // not published: no seq taken, nothing reusable
+          }
+          o.earlySeq = seq + 1;
+          ed.counts.published++;
+          return { seq, text: t, sttMs, audioEndedAt };
+        });
+        if (u) {
+          call.published = u;
+          if (call.discard) retract(o, u);
+          else if (!o.closed) o.unresolved = u;
+        }
+      }
+      if (o.early === call) o.early = undefined;
+      // a call that settles while the utterance is open takes the snapshot the pause still owes (the gap timer fired while it ran)
+      if (!o.closed && pauseDue(o)) tryEarly(o);
     })();
     track(call.promise);
   };
@@ -308,35 +338,47 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
   };
 
   // @spec EARS-EARLY-001
-  /** Under the frame-gap measure (`gap`, no detector) the snapshot is due `after_ms` after the last frame, re-armed by each frame. Under `silero` it is taken on silence frames instead. */
+  /** Re-armed by each speech frame: the snapshot is due `after_ms` of wall-clock time after the last speech frame, the frame-gap rule's measure (EARS-VAD-004). */
   const armEarly = (o: Open): void => {
-    if (!d.early || d.vad) return;
+    if (!d.early) return;
     clearTimeout(o.earlyTimer);
     o.earlyTimer = setTimeout(() => tryEarly(o), d.early.afterMs);
   };
 
-  // @spec EARS-EARLY-016, EARS-EARLY-017, EARS-EARLY-018, EARS-EARLY-019, EARS-EARLY-021, EARS-EARLY-025
-  /** The close of an utterance with early reply on: the cap transcribes anew, an early call in flight is waited for, an unresolved transcript is reused, else the clip is transcribed. */
+  // @spec EARS-EARLY-016, EARS-EARLY-017, EARS-EARLY-018, EARS-EARLY-019, EARS-EARLY-021, EARS-EARLY-023, EARS-EARLY-025
+  /** The close of an utterance with early reply on. A call in flight at the close counts late; the cap transcribes anew without waiting for it; a discarded call is not waited for; a waited-for call decides the final. */
   const finishEarly = (o: Open, clip: Clip, spk: string, cap: boolean): void => {
     const ed = d.early!;
     const h = o.early;
+    // EARS-EARLY-023: late whatever the outcome, discarded or capped included
+    if (h) ed.counts.late++;
+    const meta = { speaker: o.name, speakerId: spk, source: d.name, utteranceId: o.id, closedAt: clip.closedAt };
+    const dur = clip.pcm.length / BYTES_PER_MS;
     if (cap) {
-      // the cap close never waits for an early call: it is discarded, and an unresolved transcript is retracted first
+      // EARLY-025: retract an unresolved transcript first, discard a call in flight, transcribe the whole clip anew
       if (h) h.discard = true;
+      if (h?.publishing) return void track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
       const u = o.unresolved;
       o.unresolved = undefined;
       if (u) {
         retract(o, u);
-        track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
-        return;
+        return void track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
       }
       return hearClip(clip, spk, o.name, false);
     }
-    const meta = { speaker: o.name, speakerId: spk, source: d.name, utteranceId: o.id, closedAt: clip.closedAt };
-    const dur = clip.pcm.length / BYTES_PER_MS;
-    if (h && !h.discard) {
-      ed.counts.late++;
+    if (h && h.discard) {
+      // a discarded call is neither waited for nor late-published: the clip is transcribed anew
+      if (h.publishing) return void track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
+      return void track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
+    }
+    if (h) {
+      // EARLY-018, 019: wait for the call; a publish that landed reuses its transcript, a failure falls back, a result is the late final
       track(h.promise.then(async () => {
+        if (h.published) {
+          ed.counts.reused++;
+          await d.hearText?.(h.published.text, dur, { ...meta, audioEndedAt: h.published.audioEndedAt, earlySeq: h.published.seq, earlySttMs: h.published.sttMs });
+          return;
+        }
         if (h.failed) return hearClip(clip, spk, o.name, false);
         await d.hearText?.(h.text ?? "", dur, { ...meta, audioEndedAt: clip.audioEndedAt, earlyLate: true });
       }));
@@ -344,6 +386,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     }
     const u = o.unresolved;
     if (u) {
+      // EARLY-016, 017: reuse the unretracted early transcript as the final, with no second call
       o.unresolved = undefined;
       ed.counts.reused++;
       track(o.pubChain.then(() => d.hearText?.(u.text, dur, { ...meta, audioEndedAt: u.audioEndedAt, earlySeq: u.seq, earlySttMs: u.sttMs })));
@@ -480,13 +523,17 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       if (k <= o.publishedWords) return;
       const committed = words.slice(0, k).join(" ");
       if (!hasWordCharacter(committed) || isDropPhrase(committed, pd.dropPhrases)) return;
-      try {
-        await pd.publish({ speaker: o.name, speakerId: spk, source: d.name, text: committed, utteranceId: o.id, seq: o.seq, timing: { audioEndedAt } });
-        o.seq++;
-        o.publishedWords = k;
-      } catch (err) {
-        d.log.warn({ err: String(err), source: d.name }, "speech.partial publish failed");
-      }
+      // queued on the utterance's publish chain, so it cannot overtake an early or retracted event (EARS-EARLY-013)
+      void publishOrdered(o, async () => {
+        if (o.closed || k <= o.publishedWords) return;
+        try {
+          await pd.publish({ speaker: o.name, speakerId: spk, source: d.name, text: committed, utteranceId: o.id, seq: o.seq, timing: { audioEndedAt } });
+          o.seq++;
+          o.publishedWords = k;
+        } catch (err) {
+          d.log.warn({ err: String(err), source: d.name }, "speech.partial publish failed");
+        }
+      }).catch(() => undefined);
     })();
   };
 
@@ -494,7 +541,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const o: Open = {
       id: randomUUID(), name, spk, chunks, at, bytes: chunks.reduce((n, c) => n + c.length, 0), speechEnd: chunks.length, silentBytes: 0,
       timer: setTimeout(() => close(sp), d.silenceMs), closed: false, inflight: false, publishedWords: 0, seq: 0, slot: false, pubChain: Promise.resolve(),
-      earlyCount: 0, earlySeq: 0, pausedSince: true,
+      earlyCount: 0, earlySeq: 0, pausedSince: true, lastSpeechAt: Date.now(),
     };
     if (d.partials) { o.steps = setInterval(() => step(spk, o), d.partials.stepMs); o.steps.unref(); }
     sp.open = o;
@@ -598,12 +645,11 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       if (r) r.catch((err: unknown) => os.fail?.(err));
     } else if (os?.state === "connecting" || os?.state === "starting") os.pending.push(pcm);
     if (o.held !== undefined) hypothesis(o, o.held);
-    if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; resumed(o); } else o.silentBytes += pcm.length;
+    if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; o.lastSpeechAt = now; resumed(o); armEarly(o); } else o.silentBytes += pcm.length;
     if (d.maxUtteranceMs !== undefined && o.bytes >= d.maxUtteranceMs * BYTES_PER_MS) return close(sp, false, true);
     if (d.vad && o.silentBytes >= d.silenceMs * BYTES_PER_MS) return close(sp);
     // @spec EARS-EARLY-001: under silero the pause is the received audio since the last speech frame
     if (d.early && d.vad && !speech && o.silentBytes >= d.early.afterMs * BYTES_PER_MS) tryEarly(o);
-    armEarly(o);
     o.timer = setTimeout(() => close(sp), d.silenceMs); // the frame-gap rule (EARS-VAD-004)
   };
 
@@ -682,7 +728,8 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         }
       }
       speakers.clear();
-      await Promise.allSettled([...inflight]);
+      // a late fallback or a cap path can start new tracked work while these settle, so wait until none is left
+      while (inflight.size > 0) await Promise.allSettled([...inflight]);
     },
   };
 }

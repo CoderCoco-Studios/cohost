@@ -370,3 +370,159 @@ test("a close by max_utterance_ms transcribes the whole clip anew with neither e
     assert.equal(stt.calls.at(-1)!.ms, 400, "the whole clip");
   });
 });
+
+const wrapPublish = (r: Rig, fn: (type: string, data: unknown, next: () => Promise<unknown>) => Promise<unknown>) => {
+  const bus = r.bus as unknown as { publish: (t: string, d: unknown) => Promise<unknown> };
+  const orig = bus.publish.bind(bus);
+  bus.publish = (t, d) => fn(t, d, () => orig(t, d));
+};
+
+// @spec EARS-EARLY-001
+test("silero: when the frames stop after speech, the pause is still measured in wall-clock time from the last speech frame and the snapshot is taken", async () => {
+  const stt = fakeStt(() => "hello there");
+  await run(stt, cfg({ vad: { engine: "silero" } }), async (r) => {
+    await say(r, 10, { fill: SPEECH });
+    await waitFor(() => r.early().length === 1, "speech.early with no frame after the speech", 1500);
+    assert.equal(stt.calls[0]!.ms, 200);
+    await waitFor(() => r.heard().length === 1, "speech.heard", 2000);
+    assert.equal(r.heard()[0]!.earlySeq, 0);
+  }, { loadVad: fakeVad().load });
+});
+
+// @spec EARS-EARLY-025
+test("silero cap with an unresolved early transcript: the cap reached on silence frames publishes speech.retracted first, then transcribes the clip anew", async () => {
+  const stt = fakeStt((c) => (c.n === 0 ? "early words" : "full words"));
+  await run(stt, cfg({ vad: { engine: "silero" }, max_utterance_ms: 400, silence_ms: 600 }), async (r) => {
+    await say(r, 10, { fill: SPEECH });
+    await waitFor(() => r.early().length === 1, "speech.early", 1500);
+    await say(r, 10, { fill: SILENCE }); // 200 ms of silence: the buffer reaches the 400 ms cap
+    await waitFor(() => r.heard().length === 1, "speech.heard", 2000);
+    const h = r.heard()[0]!;
+    assert.equal(r.retracted().length, 1);
+    assert.deepEqual([h.text, h.durationMs, h.earlySeq, h.earlyLate], ["full words", 200, undefined, undefined]);
+    assert.equal(stt.calls.at(-1)!.ms, 200, "the clip up to the last speech frame, transcribed anew");
+    assert.ok(types(r).indexOf("speech.retracted") < types(r).indexOf("speech.heard"), "retracted before the final");
+  }, { loadVad: fakeVad().load });
+});
+
+// @spec EARS-EARLY-025, EARS-EARLY-023, EARS-EARLY-014
+test("silero cap with an early call in flight: the cap discards it without waiting, transcribes the clip anew, counts it late and never publishes its result", async () => {
+  const stt = fakeStt(async (c) => { if (c.n === 0) { await sleep(450); return "early words"; } return "full words"; });
+  await run(stt, cfg({ vad: { engine: "silero" }, max_utterance_ms: 400, silence_ms: 600 }), async (r) => {
+    await say(r, 10, { fill: SPEECH });
+    await snapshotTaken(stt);
+    await say(r, 10, { fill: SILENCE });
+    await waitFor(() => r.heard().length === 1, "speech.heard without waiting for the call", 300);
+    assert.equal(r.heard()[0]!.text, "full words");
+    assert.equal(stt.calls.length, 2);
+    await waitFor(() => detail(r).includes(COUNTS(0, 0, 0, 1)), "late counted");
+    await sleep(400);
+    assert.equal(r.early().length, 0, "the discarded result is never published");
+    assert.equal(r.heard().length, 1);
+  }, { loadVad: fakeVad().load });
+});
+
+// @spec EARS-ENG-001, EARS-EARLY-001
+test("stub is a batch engine: early reply publishes the stub transcript of the snapshot, with no network call", async () => {
+  const stt = fakeStt(() => "unused");
+  await run(stt, cfg({ stt_engine: "stub" }), async (r) => {
+    await say(r);
+    await waitFor(() => r.early().length === 1, "speech.early under the stub engine", 1500);
+    assert.equal(r.early()[0]!.text, "stub transcript (200 ms)");
+    await waitFor(() => r.heard().length === 1, "speech.heard");
+    assert.equal(r.heard()[0]!.earlySeq, 0);
+    assert.equal(stt.calls.length, 0);
+  });
+});
+
+// @spec EARS-EARLY-013, EARS-PART-014
+test("a speech.partial is published through the utterance's publish chain: a slow partial publish is published before the early transcript and its retraction", async () => {
+  const stt = fakeStt(() => "hello there");
+  await run(stt, cfg({ partials: "on", partial_step_ms: 30, silence_ms: 1000 }, { max_per_utterance: 1 }), async (r) => {
+    wrapPublish(r, async (t, d, next) => { if (t === "speech.partial") await sleep(150); return next(); });
+    await say(r);
+    await waitFor(() => r.early().length === 1, "speech.early", 2000);
+    await sleep(300);
+    await say(r, 5); // the speaker resumes
+    await waitFor(() => r.retracted().length === 1, "speech.retracted", 2000);
+    const order = types(r);
+    const iE = order.indexOf("speech.early"), iR = order.indexOf("speech.retracted");
+    assert.ok(iE < iR);
+    assert.ok(order.slice(iE, iR).every((t) => t !== "speech.partial"), "no partial between the early transcript and its retraction");
+  });
+});
+
+// @spec EARS-EARLY-012, EARS-EARLY-016
+test("an early transcript whose speech.early publish fails is not reused: no earlySeq, no published count, and the final is transcribed anew", async () => {
+  const stt = fakeStt((c) => (c.n === 0 ? "early words" : "final words"));
+  await run(stt, cfg(), async (r) => {
+    let failed = false;
+    wrapPublish(r, async (t, _d, next) => { if (t === "speech.early" && !failed) { failed = true; throw new Error("bus down"); } return next(); });
+    await say(r);
+    await waitFor(() => r.heard().length === 1, "speech.heard", 2000);
+    assert.deepEqual([r.heard()[0]!.text, r.heard()[0]!.earlySeq], ["final words", undefined]);
+    assert.equal(stt.calls.length, 2);
+    assert.equal(r.early().length, 0);
+    await waitFor(() => detail(r).includes(COUNTS(0, 0, 0, 0)), "no count for the failed publish");
+  });
+});
+
+// @spec EARS-EARLY-023, EARS-EARLY-014
+test("speech resumes while the early call is in flight and the utterance closes before it settles: the close transcribes anew without waiting and counts late", async () => {
+  const stt = fakeStt(async (c) => { if (c.n === 0) { await sleep(450); return "stale words"; } return "final words"; });
+  await run(stt, cfg({}, { max_per_utterance: 1 }), async (r) => {
+    await say(r);
+    await snapshotTaken(stt);
+    await sleep(100);
+    await say(r, 5); // discards the call in flight
+    await waitFor(() => r.heard().length === 1, "speech.heard", 1500);
+    assert.equal(r.heard()[0]!.text, "final words");
+    assert.equal(stt.calls.length, 2);
+    assert.equal(r.early().length, 0);
+    await waitFor(() => detail(r).includes(COUNTS(0, 0, 0, 1)), "late counted");
+  });
+});
+
+// @spec EARS-EARLY-026, EARS-EARLY-001
+test("a discarded early call that settles while the utterance is open takes the snapshot the pause still owes, because the gap timer fired while it ran", async () => {
+  const stt = fakeStt(async (c) => { if (c.n === 0) { await sleep(300); return "stale words"; } return "fresh words"; });
+  await run(stt, cfg({ silence_ms: 500 }, { max_per_utterance: 2 }), async (r) => {
+    await say(r);
+    await snapshotTaken(stt);
+    await sleep(50);
+    await say(r, 5); // resumes while call 0 runs
+    await waitFor(() => r.early().length === 1, "speech.early after the discarded call settles", 1500);
+    assert.equal(r.early()[0]!.text, "fresh words");
+    assert.equal(r.early()[0]!.seq, 0);
+    await waitFor(() => r.heard().length === 1, "speech.heard", 2000);
+    assert.equal(r.heard()[0]!.earlySeq, 0);
+    assert.equal(stt.calls.length, 2);
+  });
+});
+
+// @spec EARS-EARLY-019
+test("stop waits for a fallback final started by a close that was waiting for an early call: the final is published before stop returns", async () => {
+  const stt = fakeStt(async (c) => { if (c.n === 0) { await sleep(450); throw new Error("stt 500"); } return "final words"; });
+  resetSeq();
+  const r = await boot(cfg(), { setup: reg });
+  try {
+    await sleep(60);
+    await say(r);
+    await snapshotTaken(stt);
+    await sleep(350); // the utterance has closed and waits for the early call, which has not failed yet
+    await r.stop();
+    assert.equal(r.heard().length, 1, "the fallback final was published before stop returned");
+    assert.equal(r.heard()[0]!.text, "final words");
+  } finally { stt.restore(); }
+});
+
+// @spec EARS-EARLY-011, EARS-EARLY-022
+test("the early counts are in the heartbeat detail while the source is down too", async () => {
+  resetSeq();
+  const r = await boot(cfg(), {});
+  try {
+    await sleep(60);
+    await waitFor(() => detail(r).includes(COUNTS(0, 0, 0, 0)), "counts in the degraded detail", 1000);
+    assert.match(detail(r), /connector not connected/);
+  } finally { await r.stop(); }
+});

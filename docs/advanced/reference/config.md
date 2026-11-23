@@ -347,7 +347,7 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.dir.path` | empty | The directory to watch, created if missing. Empty means not configured, and `ears` idles as `degraded` |
 | `ears.dir.poll_ms` | `1000` | How often to look for new `.wav` files |
 | `ears.early` | map | Early reply: the co-host starts on a provisional transcript of a sentence still being spoken |
-| `ears.early.enabled` | `false` | Publish a provisional transcript (`speech.early`) of a connector utterance while the speaker is still talking. Needs a batch `ears.stt_engine` (`speaches` or `openai`): with `nemotron` or `kyutai` it stays off and ears logs one warning; `stub` publishes none. `http`, `dir`, injected audio and sources in `ears.echo_suppress_sources` take none |
+| `ears.early.enabled` | `false` | Publish a provisional transcript (`speech.early`) of a connector utterance while the speaker is still talking. Needs a batch `ears.stt_engine` (`speaches`, `openai` or `stub`): with `nemotron` or `kyutai` it stays off and ears logs one warning. `http`, `dir`, injected audio and sources in `ears.echo_suppress_sources` take none |
 | `ears.early.after_ms` | `250` | The pause, in milliseconds, after which the provisional transcript of the utterance so far is taken and published; at least 100 and below `ears.silence_ms` |
 | `ears.early.max_per_utterance` | `2` | How many early transcripts one sentence may produce, 1 to 5 |
 | `ears.silence_ms` | `700` | End-of-utterance detection. It must stay above `ears.early.after_ms` (default 250), even while early reply is off; lower both together |

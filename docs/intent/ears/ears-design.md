@@ -195,7 +195,7 @@ An utterance closes when `ears.silence_ms` (default 700) of silence has passed s
 
 **The early snapshot.** For each open utterance, ears takes an early snapshot, a transcription of the audio so far that leaves the utterance open (unlike a close, which ends it), when all of these hold:
 
-- `ears.early.after_ms` (default 250, at least 100 and always below `ears.silence_ms`, so a wait is left) has passed since the last speech frame, by the same measure as the close: received audio since the last frame classified as speech under `silero`, or the frame gap under `gap`;
+- `ears.early.after_ms` (default 250, at least 100 and always below `ears.silence_ms`, so a wait is left) has passed in wall-clock time since the speaker's last frame classified as speech (`silero`) or since the speaker's last frame (`gap`), as the close's frame-gap rule measures it; under `silero` the silence audio received since that frame also takes the snapshot once it reaches `after_ms`;
 - the utterance has at least `ears.min_speech_ms` of audio, as a final needs;
 - no early transcription of this utterance is in flight, and no published early transcript of it is unresolved;
 - a frame classified as speech (any frame under `gap`) has arrived since the last early snapshot of this utterance was taken, whether that snapshot published, was filtered or failed, so there is at most one snapshot per pause;

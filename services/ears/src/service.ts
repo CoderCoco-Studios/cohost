@@ -67,8 +67,8 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       // @spec EARS-EARLY-009, EARS-EARLY-010
       const earlyOn = cfg.ears.early.enabled;
       if (earlyOn && streaming) log.warn(`ears.early.enabled is on but ears.stt_engine is ${engines.selected.name}, a streaming engine: early reply is off, because that engine ends utterances itself`);
-      if (earlyOn && stub) log.warn("ears.early.enabled is on but ears.stt_engine is stub: no speech.early is published with the stub engine");
-      const earlyActive = earlyOn && !streaming && !stub;
+      // stub is a batch engine (EARS-ENG-001), so early reply runs with it like any batch engine
+      const earlyActive = earlyOn && !streaming;
       const earlyCounts: EarlyCounts = { published: 0, retracted: 0, reused: 0, late: 0 };
       // @spec EARS-HLTH-010
       if (plan.sources.length > 0) {
@@ -171,7 +171,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       const statsText = (): string => [...sources.entries()].map(([n, s]) => `${n} ${s.stats()}`).join("; ");
       // @spec EARS-EARLY-011, EARS-EARLY-022
       const earlyText = (): string => {
-        if (!earlyOn || stub) return "";
+        if (!earlyOn) return "";
         if (streaming) return "early reply off: streaming engine";
         return `early: ${earlyCounts.published} published, ${earlyCounts.retracted} retracted, ${earlyCounts.reused} reused, ${earlyCounts.late} late`;
       };
@@ -191,7 +191,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
           return;
         }
         const reasons = down.map((s) => s.gap ?? detailOf(s.name)).filter((d) => d !== "");
-        const text = [...reasons, sttPart].filter((x) => x !== "").join("; ");
+        const text = [...reasons, earlyText(), sttPart].filter((x) => x !== "").join("; ");
         if (reported !== `degraded:${text}`) { reported = `degraded:${text}`; heartbeat.degraded(text || undefined); }
       };
       h.changed = refresh;

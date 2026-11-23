@@ -4,9 +4,9 @@ Chat sense: a list of sources (Twitch IRC, YouTube live chat, a fake source) in,
 
 ## Status
 
-Built: the Twitch source (channel and credentials from `chat.twitch.*` keys and `secrets.yaml`), the fake source, test injection, and the bounded chat sense (bounded text and names, the login and `unknown` fallback, the mention test on bounded text, the same bound for injected chat). Specified and not built: the source list `chat.sources` and its plan, the YouTube source, the shared source contract and state vocabulary, platform and user id on `chat.message`, and forgetting removed messages (`chat.removed`). Total 163 specs: 32 `[x]`, 131 `[ ]`, 0 `[D]`.
+Built: the source list `chat.sources` and its plan (`sourcePlan`: runnable or gap, with reasons), the `ChatSource` contract and its five-state vocabulary, several sources running at once with per-source state, the 30 s ready bound, per-source health (`mock`, `off`, `live`), the Twitch source (channel and credentials from `chat.twitch.*` and `secrets.yaml`), the fake source as a `ChatSource` (two platform shapes), test injection, the bounded chat sense, and `parseVideoValue` in `@cohost/shared` (the YouTube video value parser). Specified and not built: the YouTube reader (a placeholder source that fails at start with `not in this build yet`, until #179), platform and user id on `chat.message` from the Twitch path, and forgetting removed messages (`chat.removed`, #178). Total 163 specs: 73 `[x]`, 90 `[ ]`, 0 `[D]`.
 
-**PARTIAL**: 163 specs: 32 implemented, 0 deferred, 131 gaps (YouTube chat and forgetting, platform and user id, below).
+**PARTIAL**: 163 specs: 73 implemented, 0 deferred, 90 gaps (YouTube chat and forgetting, Twitch message ids and removals, below).
 
 ## References
 
@@ -17,7 +17,7 @@ Built: the Twitch source (channel and credentials from `chat.twitch.*` keys and 
 - docs/intent/chat/chat-design.md
 
 ### EARS
-- docs/intent/chat/chat-specs.md (163 specs: 32 `[x]`, 131 `[ ]`, 0 `[D]`; prefix `CHAT`; facets `PLAN`, `SRC`, `TW`, `FILT`, `FAKE`, `INJ`, `HEALTH`, `YT` and `FORGET`)
+- docs/intent/chat/chat-specs.md (163 specs: 73 `[x]`, 90 `[ ]`, 0 `[D]`; prefix `CHAT`; facets `PLAN`, `SRC`, `TW`, `FILT`, `FAKE`, `INJ`, `HEALTH`, `YT` and `FORGET`)
 
 ### Tests
 Files with `@spec CHAT-` annotations:
@@ -25,8 +25,11 @@ Files with `@spec CHAT-` annotations:
 - services/chat/test/fake.test.ts
 - services/chat/test/inject.test.ts
 - services/chat/test/health.test.ts
+- services/chat/test/plan.test.ts
 - services/chat/test/service.test.ts
+- services/chat/test/sources.test.ts
 - services/chat/test/twitch.test.ts
+- packages/shared/test/youtube-video.test.ts (CHAT-YT-004 to CHAT-YT-006 through `parseVideoValue`)
 
 Also in the segment: services/chat/test/contract.test.ts (no `@spec` annotation).
 
@@ -40,6 +43,10 @@ Files with `@spec CHAT-` annotations:
 - services/chat/src/health.ts
 - services/chat/src/twitch.ts
 - services/chat/src/token-store.ts
+- services/chat/src/plan.ts
+- services/chat/src/source.ts
+- services/chat/src/youtube.ts
+- packages/shared/src/video.ts (`parseVideoValue`)
 
 Also: services/chat/package.json, services/chat/tsconfig.json. `subscribeInject` lives in packages/shared/src/inject.ts.
 
@@ -49,14 +56,14 @@ Also: services/chat/package.json, services/chat/tsconfig.json. `subscribeInject`
 
 **Key Components:**
 1. `index.ts`: hands `chatService` to the shared `runService` bootstrap.
-   `service.ts`: `chatService`: wiring: computes the plan for `chat.sources` (each source runnable or a gap; `off`; idle when none runs), starts each source behind the `ChatSource` contract, starts the heartbeat. Establishes the `inject.request` subscription (`subscribeInject` from `@cohost/shared`) before any source starts. Tested by `service.test.ts` through injected dependencies.
-2. `filter.ts`: pure `createChatFilter`, `channelName`, `sourcePlan`; ignore lists, whitespace cleanup, mention flag, payload shape, platform from the source.
-2a. (designed, not built) `source.ts`, `youtube.ts`, `youtube-video.ts`, `youtube-map.ts` and the YouTube transport module.
-3. `fake.ts`: `startFakeSource`: stdin lines or a cycled 6-line script through the same filter.
+   `service.ts`: `chatService`: computes the plan (`plan.ts`), starts each runnable source behind the `ChatSource` contract, tracks each listed source's state for the heartbeat, signals `ready` once every listed source has a first outcome or at 30 s (injected clock), runs the idle plan when every listed source is a gap, and stops every built source on shutdown. Establishes the `inject.request` subscription (`subscribeInject` from `@cohost/shared`) before any source starts. Tested by `service.test.ts` and `sources.test.ts` through injected dependencies.
+2. `filter.ts`: pure `createChatFilter(cfg, platform)`, `channelName`; ignore lists, whitespace cleanup, mention flag, payload shape. `plan.ts`: pure `sourcePlan`, the one place the YouTube settings are checked (api key, video through `parseVideoValue`).
+2a. (designed, not built) the YouTube reader: `youtube-map.ts` and the YouTube transport module. `youtube.ts` is the placeholder source until then.
+3. `fake.ts`: `FakeSource`, a `ChatSource`: stdin lines or a cycled 6-line script through the same filter; `fake_viewer2` is on `youtube`, the rest on `twitch`.
 4. `twitch.ts`: `createMessageHandler` (filter, publish, log a failed publish) and `registerUserToken` (awaited token registration) for the Twitch path.
 5. `token-store.ts`: persists and reloads the refreshed Twitch token (`<dataDir()>/chat/twitch-token.json`).
 6. `inject.ts`: `createInjectHandler` for `inject.request` (target `chat`, kind `text`); bypasses the ignore rules.
-7. `health.ts`: `chatHealth` heartbeat spec (mode `off`/`mock`/`live`, one dependency per source: `twitch`, `youtube`).
+7. `health.ts`: `chatHealth(listed, states)` heartbeat spec: mode `off`/`mock`/`live` fixed by the listed sources; `twitch` and `youtube` dependencies `ok` only while that source is `reading`, `n/a` when not listed.
 
 Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`. Consumed by `salience`, `affect`, `memory`, `dashboard`.
 
@@ -64,33 +71,33 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Source selection | CHAT-PLAN-001 to CHAT-PLAN-015 | 1 | 0 | 14 | 6 |
-| Source contract | CHAT-SRC-001 to CHAT-SRC-009 | 0 | 0 | 9 | 0 |
+| Source selection | CHAT-PLAN-001 to CHAT-PLAN-015 | 15 | 0 | 0 | 15 |
+| Source contract | CHAT-SRC-001 to CHAT-SRC-009 | 7 | 0 | 2 | 8 |
 | Twitch connection | CHAT-TW-001 to CHAT-TW-018 | 8 | 0 | 10 | 12 |
 | Filtering and payload | CHAT-FILT-001 to CHAT-FILT-014 (CHAT-FILT-010 no longer exists) | 8 | 0 | 5 | 10 |
-| Fake source | CHAT-FAKE-001 to CHAT-FAKE-009 | 5 | 0 | 4 | 6 |
-| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-012, CHAT-INJ-014 (CHAT-INJ-013 no longer exists) | 9 | 0 | 2 | 10 |
-| Health | CHAT-HEALTH-001 to CHAT-HEALTH-012 | 1 | 0 | 11 | 6 |
-| YouTube source | CHAT-YT-001 to CHAT-YT-068 | 0 | 0 | 68 | 0 |
+| Fake source | CHAT-FAKE-001 to CHAT-FAKE-009 | 9 | 0 | 0 | 9 |
+| Test injection | CHAT-INJ-001, CHAT-INJ-004 to CHAT-INJ-012, CHAT-INJ-014 (CHAT-INJ-013 no longer exists) | 11 | 0 | 0 | 11 |
+| Health | CHAT-HEALTH-001 to CHAT-HEALTH-012 | 11 | 0 | 1 | 12 |
+| YouTube source | CHAT-YT-001 to CHAT-YT-068 | 4 | 0 | 64 | 4 |
 | Forgetting a removed message | CHAT-FORGET-001 to CHAT-FORGET-008 | 0 | 0 | 8 | 0 |
 
-**Summary:** 32 of 163 specs implemented; 0 deferred; 131 open. 50 carry a test `@spec` annotation. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 73 of 163 specs implemented; 0 deferred; 90 open. 81 carry a test `@spec` annotation. Open and not yet provable here: CHAT-SRC-001 (the five states are typed in `source.ts`; not in #177's list, and the first issue that drives all five states from real sources owns the flip, #179), CHAT-SRC-005 (per-source stop cancels every timer and call: the fake proves it, the Twitch stop guard covers the start path, the YouTube reader is #179), CHAT-HEALTH-011 (a quiet YouTube chat keeps `reading`: needs the reader, #179). CHAT-YT-003..006 are implemented in the plan and the parser, not in a YouTube reader. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
-1. **CHAT-HEALTH-006 states the `live` / `down` heartbeat** for a missing Twitch channel, revised for the source list (the shipped `services/chat/src/health.ts` still reports `twitch` only).
-2. **CHAT-TW-008** covers the Twitch `onMessage` to filter to publish path (`createMessageHandler`, `services/chat/src/twitch.ts`).
-3. **Auth registration is awaited.** `registerUserToken` (`twitch.ts`) finishes `addUserForToken` before `buildAuth` returns, and a failure surfaces as `fatal`. A refreshed token is persisted and preferred over `.env` while its recorded `.env` refresh token is current (CHAT-TW-006, CHAT-TW-011, CHAT-TW-012).
-4. **A failed publish on the live path is logged and the next message is handled** (CHAT-TW-007). The `inject.request` subscription is created before any plan runs, with start mode `latest` (CHAT-INJ-009); read failures are retried inside the bus.
-5. **Reconnect is the library default.** `onDisconnect` only flips `connected` and logs; `@twurple/chat` reconnects and `onConnect` re-signals `ready` (CHAT-TW-009, tested in `service.test.ts`).
-6. **Filter.** Substring mention match is deliberate (`services/chat/test/filter.test.ts`); `ignore_prefixes` is matched against the bounded text (CHAT-FILT-003); the shipped filter still hard-codes `"twitch"` also for fake chat; the design carries the platform from the source (CHAT-FILT-005).
-7. **Credentials serve a deferred goal.** The `service.ts` header says credentials are for typing in chat later; nothing calls `say` and the scope is read-only `["chat"]`. The path stays.
+1. **CHAT-HEALTH-006 is implemented.** `chatHealth` reports `twitch` down when the channel is not set, and `live` mode when `fake` is not listed (`services/chat/src/health.ts`).
+2. **CHAT-TW-008** covers the Twitch `onMessage` to filter to publish path (`createMessageHandler`, `services/chat/src/twitch.ts`); the Twitch source (`TwitchSource`) emits each line through the same handler.
+3. **Auth registration is awaited.** `registerUserToken` (`twitch.ts`) finishes `addUserForToken` before the client is built. A missing refresh token rejects the Twitch start (CHAT-TW-010): only the Twitch source stops, with the error as its reason, and the process keeps running. A refreshed token is persisted and the refresh is logged.
+4. **A failed publish on the live path is logged and the next message is handled** (CHAT-TW-007, CHAT-SRC-008). The `inject.request` subscription is created before any plan runs, with start mode `latest` (CHAT-INJ-009, CHAT-PLAN-015).
+5. **Reconnect is the library default.** `TwitchSource` reports `retrying` on disconnect and `reading` on connect; a change to a ready service publishes at once (CHAT-TW-009, `sources.test.ts`).
+6. **Filter.** Substring mention match is deliberate (`services/chat/test/filter.test.ts`); `ignore_prefixes` is matched against the bounded text (CHAT-FILT-003). The shipped filter still matches `ignore_users` against the login only (CHAT-FILT-012, CHAT-FILT-013).
+7. **Credentials serve a deferred goal.** The credential path is kept for typing in chat later (`chat-design.md`, Decisions: anonymous vs authenticated IRC); nothing calls `say` and the scope is read-only `["chat"]`. The path stays.
 
 ## Work Required
 
 ### Must Fix
-- The source list and plan, the source contract and its state vocabulary, the 30 s ready bound (CHAT-PLAN-001 to CHAT-PLAN-015, CHAT-SRC-001 to CHAT-SRC-009, CHAT-HEALTH-002 to CHAT-HEALTH-011).
-- The YouTube source: settings, video value, lookup, stream and polling, history, errors, mapping, quota (CHAT-YT-001 to CHAT-YT-067).
+- The source contract's open lines (CHAT-SRC-001, CHAT-SRC-005) and the quiet-chat health line (CHAT-HEALTH-011), which need the YouTube reader (#179) and the Twitch wrapper's stop guarantee.
+- The YouTube source: API key and settings (CHAT-YT-001, CHAT-YT-002), lookup, stream and polling, history, errors, mapping, quota (CHAT-YT-007 to CHAT-YT-068).
 - Platform, `userId` and `messageId` on `chat.message`, and `chat.removed` from Twitch and YouTube (CHAT-TW-013 to CHAT-TW-018, CHAT-FILT-012 to CHAT-FILT-014, CHAT-FORGET-001 to CHAT-FORGET-008).
 
 ### Nice to Have

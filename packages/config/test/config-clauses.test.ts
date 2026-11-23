@@ -42,6 +42,7 @@ test("brain.cortex.clause_max_chars defaults to 160 and is an integer not below 
     assert.ok(namesKey(cortex({ clause_max_chars: bad }), "brain.cortex.clause_max_chars"), `clause_max_chars=${String(bad)} (min 24) names the key`);
   }
   assert.ok(namesKey(cortex({ clause_min_chars: 80, clause_max_chars: 79 }), "brain.cortex.clause_max_chars"), "below an explicit minimum names the key");
+  assert.ok(namesKey(cortex({ clause_min_chars: 200 }), "brain.cortex.clause_max_chars"), "min 200 with the default max 160 is rejected, naming clause_max_chars");
 });
 
 // @spec CFG-SCH-074

@@ -46,7 +46,7 @@ pnpm cohostctl restart cortex --mode fresh
 | `start <service> [--mode resume\|fresh] [--isolated]` | Starts one service. `fresh` resets its [consumer groups](../../start/glossary.md#consumer-group) so it ignores [events](../../start/glossary.md#event) published while it was away, and `resume` keeps its place. `--isolated` sets the isolation presets and also starts the services it needs |
 | `stop <service>` | Stops one service. Takes no options |
 | `restart <service> [--mode resume\|fresh] [--isolated]` | Stops and starts one service |
-| `latency [--count N]` | Per-stage p50 and p95 latency of the speech and vision paths, from the last N events on the [bus](../../start/glossary.md#bus) (default 5000). Read-only |
+| `latency [--count N]` | Per-stage p50 and p95 latency of the speech and vision paths, from the last N events on the [bus](../../start/glossary.md#bus) (default 5000). Read-only. A streamed reply is one sample: `tts`, `sink` and `total` are measured on its clause 0 (the earliest non-virtual `voice.playing` with `seq` 0, else the earliest one with `seq` 0), and `llm` ends at the `brain.say`'s `llmEndedAt` |
 | `consolidate` | The viewer-note consolidation one-shot. Works with the stack down. Exit 0 ok, 1 failed |
 | `reembed` | Re-embeds stored memory vectors after an embedder change. Stop `memory` first. Exit 0 ok, 1 failed |
 | `launch` | Builds the images, brings the whole stack up and waits until it is ready |

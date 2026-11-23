@@ -92,6 +92,15 @@ test("brain.clause requires through (0 up to its seq) with last and rejects it w
   assert.equal(clause({ ...c, through: 1 }), false, "through without last");
 });
 
+// @spec BUS-EVT-040
+test("brain.clause accepts cut only with one of the nine reasons, and only together with last", () => {
+  const clause = (v: unknown) => ok("brain.clause" as never, v);
+  const cuts = ["repeat", "muted", "busy", "failed", "length", "stopped", "timeout", "vetoed", "tools"];
+  for (const cut of cuts) assert.equal(clause({ id: "1", seq: 2, text: "x", last: true, through: 1, cut }), true, `cut ${cut}`);
+  assert.equal(clause({ id: "1", seq: 2, text: "x", last: true, through: 1, cut: "bogus" }), false, "an unknown cut is rejected");
+  assert.equal(clause({ id: "1", seq: 2, text: "x", cut: "repeat" }), false, "cut without last is rejected");
+});
+
 // @spec BUS-EVT-041
 test("brain.clause accepts empty text only on the closing event", () => {
   const clause = (v: unknown) => ok("brain.clause" as never, v);

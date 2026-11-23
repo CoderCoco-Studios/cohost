@@ -134,7 +134,7 @@ export const EventPayloads = {
    * One later clause of a streamed line (BUS-EVT-038..042). `seq` counts from 1 with clause 0 the `brain.say` text.
    * The closing event (`last`) carries `through` (0..seq) and may carry empty `text` and a `cut`.
    */
-  // @spec BUS-EVT-038, BUS-EVT-039, BUS-EVT-041, BUS-EVT-042
+  // @spec BUS-EVT-038, BUS-EVT-039, BUS-EVT-040, BUS-EVT-041, BUS-EVT-042
   "brain.clause": z.object({
     id: z.string(),
     seq: z.number().int().min(1),
@@ -300,7 +300,10 @@ export const EventPayloads = {
     durationMs: z.number(),
     envelopeHz: z.number(),
     envelope: z.array(z.number()),
-    /** Path on the voice service, relative to its base URL: `/audio/<id>.wav`. */
+    /**
+     * Path on the voice service, relative to its base URL. The design names `/audio/<id>-<seq>.wav`; the voice service
+     * still serves `/audio/<id>.wav` until the voice issue of the streamed-speech epic lands.
+     */
     audioUrl: z.string(),
     sampleRate: z.number(),
     /** Set on clause 0 of a streamed line, copied from its `brain.say` (BUS-EVT-016). */

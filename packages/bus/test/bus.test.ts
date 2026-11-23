@@ -359,6 +359,7 @@ test("voice.playing and voice.done require id, seq and sink; only voice.done acc
   }
   assert.ok(EventPayloads["voice.playing"].safeParse({ id: "u1", seq: 0, sink: "discord" }).success);
   assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1", sink: "discord" }).success, false, "seq is required");
+  assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1", seq: 0 }).success, false, "sink is required");
   const withInterrupt = { id: "u1", seq: 0, sink: "discord", interrupted: true };
   const playing = EventPayloads["voice.playing"].safeParse(withInterrupt);
   assert.ok(!playing.success || !("interrupted" in playing.data), "voice.playing accepts none of the BUS-EVT-031 members");

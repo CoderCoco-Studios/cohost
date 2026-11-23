@@ -2,6 +2,7 @@ import type { Config } from "@cohost/config";
 import type { Context, ContextEvent } from "@cohost/working-memory";
 import type { Module } from "@cohost/modules";
 import { toScoreInput, type ScoreInput, type ScoreOutput } from "./scoring.js";
+import type { Reminder } from "./reminders.js";
 import { createOnceCounter, viewerKey } from "@cohost/shared/untrusted";
 
 export interface Decision {
@@ -12,6 +13,8 @@ export interface Decision {
   focus?: ContextEvent;
   /** Exactly the events this decision scored; mark only these seen. */
   scored: ContextEvent[];
+  /** The due timer reminder this decision speaks, when the reason is `reminder` (SAL-REM-005). */
+  reminder?: Reminder;
 }
 
 /**
@@ -52,11 +55,16 @@ export class Scheduler {
     this.lastActivity = this.now();
   }
 
-  async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0): Promise<Decision> {
+  /**
+   * `reminder` is the due timer reminder, if any. It is spoken ahead of unseen events and without calling the scorer
+   * (SAL-REM-005, SAL-REM-006).
+   */
+  async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0, reminder?: Reminder): Promise<Decision> {
     const now = this.now();
     if (muted) return { speak: false, reason: "muted", score: 0, scored: [] }; // @spec SAL-DECIDE-001, SAL-CTRL-004
     if (busy) return { speak: false, reason: "cortex busy", score: 0, scored: [] };
     if (this.cooling()) return { speak: false, reason: "cooldown", score: 0, scored: [] }; // @spec SAL-DECIDE-001
+    if (reminder) return { speak: true, reason: "reminder", score: 1, reminder, scored: [] }; // @spec SAL-DECIDE-001, SAL-REM-005, SAL-REM-006
 
     const unseen = ctx.unseen().filter((e) => e.kind !== "self"); // @spec SAL-DECIDE-007
     if (unseen.length === 0) return { speak: false, reason: "nothing new", score: 0, scored: [] }; // @spec SAL-DECIDE-005

@@ -163,7 +163,7 @@ When to speak, and reflexes. The region scores unseen events at a poll every `ti
 | `brain.salience.reflexes[].emotion` | `surprised` | The emotion the line is said with |
 | `brain.salience.reflexes[].gesture` | none | An optional avatar gesture |
 | `brain.salience.reflexes[].cooldown_ms` | `30000` | This reflex's own cooldown |
-| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped |
+| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped, republished as `missed` and never spoken |
 
 ## `brain.affect`
 

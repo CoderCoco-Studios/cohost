@@ -32,7 +32,7 @@ Design: LLD § Lines and clauses, Sink Arbitration Protocol. `VOICE-CHUNK-001` a
 - A clause that fails ends the line with `voice.done` `sink: error` `final: true`; earlier clauses keep playing. A `voice.failed` for a streamed line releases it with a `final` done (`VOICE-SINK-011`, `012`).
 - `voice.stop` drops queued and in-flight clauses, and publishes one interrupted virtual done with `spokenText` and `unsaidText` when a virtual clause is playing or open between clauses (`VOICE-STOP-006`, `010`, `VOICE-CLAUSE-026`).
 - A line with no clause activity for 300 s ends at the next sweep (`VOICE-CLAUSE-012`); the sweep is an unref'd interval armed while lines exist and cleared on stop.
-- Evicted line records still synthesize their queued clauses but arm no timers, so the store bound never strands a clause.
+- The line-record bound (50) evicts an ended record first, else the oldest. An evicted record still synthesizes its queued clauses and keeps its running timers, so its virtual done is not lost; it takes no new window or virtual clause, and its later clauses are dropped as unknown.
 - Not covered here: producing the clauses (`#196`) and the real sinks that play them (`#198`, `#199`).
 
 

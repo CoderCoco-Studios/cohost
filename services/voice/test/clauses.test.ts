@@ -777,3 +777,110 @@ test("a line ends after 300 s with no clause activity, and any clause activity r
   await voice.whenIdle();
   assert.deepEqual(calls, ["c0", "c1", "c2", "c3"], "after 900 s of silence the line is over");
 });
+
+// ---- review round 1
+
+/** A bus that holds the publish of one event type while `hold` is set, until released. */
+class GatedBus extends FakeBus {
+  hold = false;
+  private g = deferred();
+  constructor(private gated: string) { super(); }
+  release() { this.g.release(); }
+  override async publish(type: never, data: never): Promise<string> {
+    if (this.hold && (type as string) === this.gated) await this.g.gate;
+    return super.publish(type, data);
+  }
+}
+
+// @spec VOICE-CLAUSE-012
+test("a clause arriving 300 s after the line's last activity is dropped and the line ends", async () => {
+  const { voice, calls } = rig();
+  await voice.onEvent(sayMore("L", "c0"));
+  await voice.whenIdle();
+  await voice.onEvent(playing("L", 0, "discord")); // claimed: no virtual clause play refreshes the bound
+  mock.timers.tick(300_001);
+  await voice.onEvent(clause("L", 1, "late"));
+  await voice.whenIdle();
+  assert.deepEqual(calls, ["c0"]);
+});
+
+// @spec VOICE-CLAUSE-012
+test("a clause 299 s after the line's last activity is accepted and refreshes the bound", async () => {
+  const { voice, calls } = rig();
+  await voice.onEvent(sayMore("L", "c0"));
+  await voice.whenIdle();
+  await voice.onEvent(playing("L", 0, "discord"));
+  mock.timers.tick(299_000);
+  await voice.onEvent(clause("L", 1, "c1"));
+  await voice.whenIdle();
+  assert.deepEqual(calls, ["c0", "c1"]);
+});
+
+// @spec VOICE-CLAUSE-025, VOICE-STOP-006
+test("a stop while a clause's utterance publish is in flight counts that clause as unsaid", async () => {
+  const bus = new GatedBus("voice.utterance");
+  const { voice } = rig({ one: 500, two: 300 }, bus);
+  await voice.onEvent(sayMore("L", "one"));
+  await voice.whenIdle();
+  mock.timers.tick(1500);
+  await flush();
+  bus.hold = true;
+  await voice.onEvent(clause("L", 1, "two"));
+  await flush();
+  await voice.onEvent(stop());
+  await flush();
+  assert.deepEqual(bus.of("voice.done").at(-1), { id: "L", seq: 0, sink: "virtual", interrupted: true, spokenText: "", unsaidText: "one two" });
+  bus.release();
+  await flush();
+  assert.deepEqual(seqs(bus, "voice.playing"), [0], "clause 1 never plays virtually");
+});
+
+// @spec VOICE-CLAUSE-001
+test("a line with a live virtual timer is not lost to newer lines: its virtual done still arrives", async () => {
+  const { voice, bus } = rig({ a0: 500 });
+  await voice.onEvent(sayMore("A", "a0"));
+  await voice.whenIdle();
+  mock.timers.tick(1500);
+  await flush();
+  for (let i = 0; i < 60; i++) await voice.onEvent(sayOne(`n${i}`, "x"));
+  await voice.whenIdle();
+  await flush();
+  mock.timers.tick(500);
+  await flush();
+  assert.deepEqual(bus.of("voice.done").filter((d) => d.id === "A"), [{ id: "A", seq: 0, sink: "virtual" }]);
+});
+
+// @spec VOICE-CLAUSE-019
+test("the next clause's virtual voice.playing waits until the previous virtual voice.done has resolved", async () => {
+  const bus = new GatedBus("voice.done");
+  const { voice } = rig({ one: 500, two: 300, three: 200 }, bus);
+  await voice.onEvent(sayMore("L", "one"));
+  await voice.onEvent(clause("L", 1, "two"));
+  await voice.whenIdle();
+  mock.timers.tick(1500);
+  await flush();
+  bus.hold = true;
+  mock.timers.tick(500); // virtual done 0 is published but held
+  await flush();
+  await voice.onEvent(clause("L", 2, "three")); // a publish that would start clause 1
+  await voice.whenIdle();
+  await flush();
+  assert.deepEqual(seqs(bus, "voice.playing"), [0], "clause 1 waits for the done of clause 0");
+  bus.release();
+  await flush();
+  assert.deepEqual(seqs(bus, "voice.playing"), [0, 1]);
+});
+
+// @spec VOICE-CLAUSE-010, VOICE-STOP-004
+test("a re-used id discards the clause still in synthesis for the replaced line: nothing of it is stored or published", async () => {
+  const { voice, bus, calls, hold } = rig();
+  const g = hold("old");
+  await voice.onEvent(sayOne("u1", "old"));
+  await flush();
+  await voice.onEvent(sayOne("u1", "new"));
+  g.release();
+  await voice.whenIdle();
+  assert.deepEqual(bus.of("voice.utterance").map((u) => u.text), ["new"]);
+  assert.deepEqual((await body(voice, "/audio/u1-0.wav")).bytes, wavMs(500));
+  assert.deepEqual(calls, ["old", "new"]);
+});

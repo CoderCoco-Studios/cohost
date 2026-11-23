@@ -237,7 +237,7 @@ arrows:
   voice:
     status: MAPPED
     parent: null
-    sampled: 2026-10-31
+    sampled: 2026-11-23
     audited: 2026-11-14
     audited_sha: cb06bf3
     blocks: []

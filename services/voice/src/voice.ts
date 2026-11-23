@@ -92,6 +92,8 @@ interface Line {
   /** The last seq the virtual player finished (its virtual `voice.done` published). */
   vLast?: number;
   playing?: Playing;
+  /** The previous virtual `voice.done` is being published; the next clause waits for it (VOICE-CLAUSE-019). */
+  doneInFlight: boolean;
 }
 
 /** A clause on the synthesis queue, or in synthesis. */
@@ -193,7 +195,7 @@ export class Voice {
       id: d.id, streamed, emotion: d.emotion, gesture: d.gesture, route: d.route,
       lastSeq: 0, closed: !streamed, through: streamed ? undefined : 0,
       ended: false, evicted: false, playLimit: Number.POSITIVE_INFINITY, claimed: false, lastActive: Date.now(),
-      clauses: new Map(), virtual: false, vNext: 0,
+      clauses: new Map(), virtual: false, vNext: 0, doneInFlight: false,
     };
     this.open(line);
     this.enqueue({ line, seq: 0, text: d.text, cancelled: false });
@@ -209,8 +211,14 @@ export class Voice {
       this.d.log.warn({ id: d.id, seq: d.seq }, "clause for a line voice holds no record of");
       return;
     }
-    line.lastActive = Date.now();
     if (line.ended) return; // VOICE-CLAUSE-011
+    const now = Date.now();
+    if (now - line.lastActive >= IDLE_MS) { // VOICE-CLAUSE-012: a line idle for 300 s ends before this clause
+      this.endLine(line, this.limitOf(line));
+      this.d.log.warn({ id: d.id, seq: d.seq }, "line idle past 300 s: clause dropped");
+      return;
+    }
+    line.lastActive = now;
     if (line.closed || d.seq !== line.lastSeq + 1) { // VOICE-CLAUSE-013
       this.d.log.warn({ id: d.id, seq: d.seq, expected: line.lastSeq + 1 }, "clause out of sequence or after the closing event");
       return;
@@ -251,25 +259,40 @@ export class Voice {
     }
   }
 
-  /** Adds a line's record, replacing one with the same id and evicting the oldest past the limit. */
+  /**
+   * Adds a line's record, replacing one with the same id. Past the limit an ended record goes first, else the oldest; an evicted
+   * record keeps its timers, so its virtual done still arrives, but takes no new window or virtual clause (VOICE-CLAUSE-001).
+   */
   private open(line: Line): void {
     const old = this.lines.get(line.id);
     if (old) this.retire(old);
     this.lines.delete(line.id);
     this.lines.set(line.id, line);
     while (this.lines.size > LINE_LIMIT) {
-      const [id, oldest] = this.lines.entries().next().value as [string, Line];
-      this.lines.delete(id);
-      this.silence(oldest);
-      oldest.evicted = true;
+      const victim = this.evictable(line);
+      if (!victim) break;
+      this.lines.delete(victim.id);
+      victim.evicted = true;
     }
   }
 
-  /** A record replaced by a `brain.say` with the same id: it is ended, so nothing more is published for it. */
+  /** The record to evict: the oldest ended one, else the oldest one; never the record just opened. */
+  private evictable(keep: Line): Line | undefined {
+    let oldest: Line | undefined;
+    for (const line of this.lines.values()) {
+      if (line === keep) continue;
+      if (line.ended) return line;
+      oldest ??= line;
+    }
+    return oldest;
+  }
+
+  /** A record replaced by a `brain.say` with the same id: it is ended, and its clause in synthesis is discarded (VOICE-STOP-004). */
   private retire(line: Line): void {
     this.silence(line);
     line.ended = true;
     line.playLimit = 0;
+    if (this.current?.line === line) this.current.cancelled = true;
   }
 
   /** Clears a record's timers and virtual player; its queued clauses are left to the queue. */
@@ -322,7 +345,6 @@ export class Voice {
     this.current = job;
     try {
       const wav = await this.d.synth(text, { priority: "line", signal: this.abort.signal, discarded: () => this.stopped || job.cancelled }); // @spec VOICE-ENG-001, VOICE-ENG-014
-      this.current = undefined;
       if (this.stopped || job.cancelled) return; // VOICE-STOP-004
       const info = parseWav(wav); // @spec VOICE-ENV-005, VOICE-POC-005
       const env = envelope(wav, info, ENVELOPE_HZ);
@@ -401,7 +423,7 @@ export class Voice {
 
   /** The virtual player plays the next clause once the previous virtual done was published and that clause is published (VOICE-CLAUSE-019). */
   private playNext(line: Line): void { // @spec VOICE-CLAUSE-009, VOICE-CLAUSE-012, VOICE-CLAUSE-019
-    if (this.stopped || !line.virtual || line.playing) return;
+    if (this.stopped || !line.virtual || line.playing || line.doneInFlight) return;
     const limit = line.ended ? line.playLimit : line.closed ? (line.through ?? 0) + 1 : Number.POSITIVE_INFINITY;
     if (line.vNext >= limit) {
       if (!line.ended) this.endLine(line, limit); // closed and played through (VOICE-CLAUSE-012)
@@ -416,6 +438,7 @@ export class Voice {
     const p: Playing = { seq, durationMs: clause.durationMs, publishing: true, startedAt: 0 };
     line.playing = p;
     line.vNext = seq + 1;
+    line.lastActive = Date.now();
     await this.publishVirtual("voice.playing", { id: line.id, seq });
     if (this.stopped || line.playing !== p) return;
     p.publishing = false;
@@ -450,7 +473,10 @@ export class Voice {
     line.vLast = p.seq;
     // A closed line that has played through its `through` is over at once, so a give-up reported meanwhile changes nothing.
     if (line.closed && line.vNext >= (line.through ?? 0) + 1) this.endLine(line, (line.through ?? 0) + 1); // @spec VOICE-CLAUSE-012
+    line.lastActive = Date.now();
+    line.doneInFlight = true;
     await this.publishVirtual("voice.done", { id: line.id, seq: p.seq });
+    line.doneInFlight = false;
     this.playNext(line);
   }
 

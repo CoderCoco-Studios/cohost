@@ -14,17 +14,40 @@ const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
 
 /**
- * Dotted paths (from the config root) of the seventeen wildcard-free keys that hold credentials (CFG-SEC-003). They live in
- * `secrets.yaml` (the loader merges them there and ignores any value `config.yaml` holds at one), the settings editor never
- * shows or writes them, and a section's `secrets` list is derived from this one list.
+ * Dotted paths (from the config root) of the credentials (CFG-SEC-003): the seventeen wildcard-free keys and
+ * `tools.servers.*.token`, where one `*` segment matches exactly one key of the map `config.yaml` holds there (CFG-SEC-016).
+ * They live in `secrets.yaml` (the loader merges them there and ignores any value `config.yaml` holds at one), the settings
+ * editor never shows or writes them, and a section's `secrets` list is derived from this one list.
  */
-// @spec CFG-SEC-003, MOD-CFG-002
+// @spec CFG-SEC-003, CFG-SEC-016, MOD-CFG-002
 export const SECRET_PATHS: readonly string[] = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
   "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
   "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
-  "chat.youtube.api_key", "connections.discord.token",
+  "chat.youtube.api_key", "connections.discord.token", "tools.servers.*.token",
 ];
+
+/** Whether a dotted path matches a secret path: a `*` segment matches one non-empty key, and the segment counts are equal. */
+// @spec CFG-SEC-016
+export function secretPathMatches(path: string, pattern: string): boolean {
+  const a = path.split(".");
+  const b = pattern.split(".");
+  return a.length === b.length && b.every((seg, i) => (seg === "*" ? a[i] !== "" : seg === a[i]));
+}
+
+/** The secret path (CFG-SEC-003) a dotted path matches, or undefined when it is not a credential. */
+// @spec CFG-SEC-016
+export const secretPathOf = (path: string): string | undefined => SECRET_PATHS.find((p) => secretPathMatches(path, p));
+
+/** Whether a dotted path is a proper prefix of some secret path, so a mapping may sit there (`llm`, `tools.servers`, ...). */
+export function isSecretPrefix(path: string): boolean {
+  const a = path.split(".");
+  return SECRET_PATHS.some((p) => {
+    const b = p.split(".");
+    return b.length > a.length && a.every((seg, i) => b[i] === "*" ? seg !== "" : b[i] === seg);
+  });
+}
+
 export const EMOTIONS = Emotion.options;
 
 /**
@@ -103,6 +126,103 @@ function resolveVoice(engine: string, voice: string, ctx: z.RefinementCtx): stri
   ctx.addIssue({ code: "custom", path: ["voice"], message: "must be a Kokoro voice name or mix, such as af_heart or af_bella(2)+af_sky" });
   return voice;
 }
+
+/** A `tools.servers` key: the server's name, which carries no `_` so that `__` can separate a server from its tool (CFG-SCH-083). */
+const SERVER_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+/** A `tools.allow` key: a tool's name as the catalogue spells it (CFG-SCH-089). */
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** An HTTP header name (RFC 9110 token characters); blank is allowed and means `Authorization` (CFG-SCH-087). */
+const HTTP_HEADER = /^(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+)?$/;
+/** Query parameter names that suggest a credential; a server URL holding one loads with a warning (CFG-SCH-086). */
+export const CREDENTIAL_QUERY_NAMES: readonly string[] = ["key", "token", "api_key", "apikey", "secret", "auth", "password", "access_token"];
+
+/**
+ * An MCP server URL: http or https, with no user name or password (CFG-SCH-084, CFG-SCH-085). The message never quotes the
+ * value, which may hold a host name the owner does not want in a log.
+ */
+const isServerUrl = (u: string): boolean => {
+  try {
+    const url = new URL(u);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
+};
+
+const TOOL_FILLER_LINES = ["Let me check.", "Hold on, let me look.", "One sec, checking.", "Hang on, looking that up.", "Give me a moment.", "Let me see."];
+
+/** A `tools.servers` entry (CFG-SCH-084 to CFG-SCH-088). */
+// @spec CFG-SCH-084, CFG-SCH-085, CFG-SCH-087, CFG-SCH-088
+const ToolServerSchema = z.object({
+  url: z.string().refine(isServerUrl, "must be an http or https URL with no user name or password"),
+  /** A blank header means `Authorization` (TOOL-MCP-005). */
+  header: z.string().regex(HTTP_HEADER, "must be a valid HTTP header name, or blank for Authorization").default(""),
+  /** The credential, a secret (CFG-SEC-016): merged from `secrets.yaml` at `tools.servers.<name>.token`. */
+  token: z.string().default(""),
+  /** True forces the server off the LAN whatever its host (CFG-EGR-015). */
+  external: z.boolean().default(false),
+});
+
+/** A `tools.allow` entry (CFG-SCH-090, CFG-SCH-091): a tool is enabled only when an entry names it. */
+// @spec CFG-SCH-090, CFG-SCH-091
+const ToolAllowSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    acts: z.boolean().default(false),
+    chat: z.boolean().default(false),
+    confirm: z.boolean().default(true),
+    hash: z.string().default(""),
+    effect: z.enum(["read", "acts", "unlabelled"]).default("read"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.acts && v.chat) ctx.addIssue({ code: "custom", message: "acts and chat cannot both be true: a tool either acts or speaks in chat" });
+  });
+
+/** `tools.owner_sources`: the word `all`, or a list of `ears.sources` names (CFG-SCH-082). */
+// @spec CFG-SCH-082
+const OwnerSourcesSchema = z.any().optional().transform((v, ctx): "all" | string[] => {
+  if (v === undefined || v === "all") return "all";
+  const list = z.array(z.string().regex(EARS_SOURCE_TAG, "must be all or a list of source names matching [a-z][a-z0-9-]{0,31}")).safeParse(v);
+  if (list.success) return list.data;
+  if (Array.isArray(v)) for (const issue of list.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  else ctx.addIssue({ code: "custom", message: "must be all or a list of source names" });
+  return z.NEVER;
+});
+
+/** The `tools` section: MCP servers, the allow list and the reply limits (CFG-SCH-075 to CFG-SCH-095). */
+// @spec CFG-SCH-075, CFG-SCH-076, CFG-SCH-077, CFG-SCH-078, CFG-SCH-079, CFG-SCH-080, CFG-SCH-081, CFG-SCH-082, CFG-SCH-083, CFG-SCH-089, CFG-SCH-092, CFG-SCH-093, CFG-SCH-094, CFG-SCH-095
+const ToolsSchema = z
+  .object({
+    /** Blank is live; `mock` runs the tools with canned results and no server (CFG-SCH-076). */
+    mode: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["live", "mock"]).default("live")),
+    timeout_ms: z.number().int().positive().default(10000),
+    confirm_timeout_ms: z.number().int().positive().default(20000),
+    max_result_chars: z.number().int().min(64).default(1500),
+    max_concurrent: z.number().int().min(1).default(4),
+    catalog_ms: z.number().int().min(5000).default(30000),
+    max_tools_per_server: z.number().int().min(1).default(32),
+    max_tools: z.number().int().min(1).default(64),
+    owner_sources: OwnerSourcesSchema,
+    servers: z.record(z.string().regex(SERVER_NAME, "must be a lower-case name: a letter, then letters, digits or hyphens, at most 32 characters"), ToolServerSchema).default({}),
+    allow: z.record(z.string().regex(TOOL_NAME, "must be a tool name of letters, digits, _ and -, at most 64 characters"), ToolAllowSchema).default({}),
+    timer: z.object({
+      max_active: z.number().int().min(1).default(5),
+      max_minutes: z.number().int().min(1).default(120),
+    }).prefault({}),
+    stream_info: z.object({
+      cache_ms: z.number().int().nonnegative().default(30000),
+    }).prefault({}),
+    reply: z.object({
+      max_rounds: z.number().int().min(1).default(3),
+      max_calls: z.number().int().min(1).default(3),
+      budget_ms: z.number().int().min(1).default(30000),
+      filler_after_ms: z.number().int().nonnegative().default(1500),
+      max_tokens: z.number().int().min(1).default(512),
+      /** Lines spoken while a tool runs; an empty list says none. */
+      filler_lines: z.array(z.string().min(1).max(200)).default(TOOL_FILLER_LINES),
+    }).prefault({}),
+  })
+  .prefault(EMPTY_INPUT);
 
 export const ConfigSchema = z.object({
   cohost: z.object({
@@ -248,6 +368,8 @@ export const ConfigSchema = z.object({
       thinking_timeout_ms: z.number().int().positive().default(60000),
       idle_chatter_ms: z.number().int().nonnegative().default(90000),
       reply_on_mention: z.boolean().default(true),
+      /** How long past its `dueAt` a timer may still be spoken (SAL-REM-003). */
+      reminder_expiry_ms: z.number().int().positive().default(1800000), // @spec CFG-SCH-096
       /** Summed event score needed to speak. */
       speak_threshold: z.number().min(0).default(0.6),
       /** How much a high-arousal mood lowers the threshold (0 = ignore mood). */
@@ -582,6 +704,8 @@ export const ConfigSchema = z.object({
     /** Host names, single addresses, dot suffixes and CIDR ranges. */
     lan: z.array(z.string().refine(isLanEntry, "must be a host name, an IP address, a dot suffix such as .ts.net, or a CIDR range")).default([]),
   }).optional(),
+  /** MCP servers and tool permissions (CFG-SCH-075); no tool is enabled unless `tools.allow` names it. */
+  tools: ToolsSchema,
   // @spec CFG-SCH-038
   dashboard: z.object({
     /** The full surface's port; applies at the dashboard's next start. */

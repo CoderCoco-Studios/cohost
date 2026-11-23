@@ -27,7 +27,7 @@ function setup(over: Record<string, unknown> = {}) {
   return { cfg, bus, llm, cortex, details, statuses: () => bus.of("brain.status").map((s) => s.state) };
 }
 const mention = (who = "bob", text = "hey Coco, how are you?") =>
-  ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, text, mention: true } });
+  ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, platform: "twitch" as const, text, mention: true } });
 const operatorSay = (text: string) => event("control", { cmd: "say", text });
 
 // ---- D1: an operator say over a pending line
@@ -88,7 +88,7 @@ test("with recall_k 0 no recall request is published, even with a vision line to
 
 test("viewer notes are capped at 50: the oldest note is evicted first", async () => { // @spec CTX-VIEWER-002
   const { cortex, llm, bus } = setup();
-  for (let i = 0; i <= 50; i++) await cortex.onEvent(event("memory.viewer", { user: `user${i}`, isNew: true, msgCount: 1, regular: false }));
+  for (let i = 0; i <= 50; i++) await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: `user${i}`, isNew: true, msgCount: 1, regular: false }));
   const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
   await cortex.think(mention("user0")); // 51 notes were stored: the first is gone
   assert.doesNotMatch(llm.system, /user0 is new here/);
@@ -137,4 +137,16 @@ test("an operator say carries its route onto the brain.say unchanged; without on
   const [routed, plain] = bus.of("brain.say");
   assert.deepEqual(routed!.route, ["file"]);
   assert.equal("route" in plain!, false);
+});
+
+// @spec CTX-VIEWER-002
+test("viewer notes keyed by platform and userId: the 50-note cap evicts the oldest across platforms", async () => {
+  const { cortex, llm, bus } = setup();
+  const focus = (n: number) => ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who: "sam", platform: "youtube" as const, userId: `u${n}`, text: "hey Coco", mention: true } });
+  for (let i = 0; i <= 50; i++) await cortex.onEvent(event("memory.viewer", { platform: "youtube", userId: `u${i}`, user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.think(focus(0)); // 51 notes were stored under one name: the first is gone
+  assert.doesNotMatch(llm.system, /sam is new here/);
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+  await cortex.think(focus(1));
+  assert.match(llm.system, /sam is new here/);
 });

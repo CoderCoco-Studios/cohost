@@ -2,6 +2,7 @@ import type { Config } from "@cohost/config";
 import type { Context, ContextEvent } from "@cohost/working-memory";
 import type { Module } from "@cohost/modules";
 import { toScoreInput, type ScoreInput, type ScoreOutput } from "./scoring.js";
+import { createOnceCounter, viewerKey } from "@cohost/shared/untrusted";
 
 export interface Decision {
   speak: boolean;
@@ -67,14 +68,21 @@ export class Scheduler {
       const { scores: fs } = await this.scorer.run(toScoreInput(fresh, arousal)); // @spec SAL-SCORE-005
       fresh.forEach((e, i) => this.scoreCache.set(e, fs[i] ?? 0));
     }
+    // The walk (SAL-DECIDE-009): highest cached score first; equal scores go to the later window event. A chat
+    // line counts only if its viewer and text are new to this decision (SAL-DECIDE-011, -012); speech and vision
+    // always count (SAL-DECIDE-010). Only counted events add to the total or can be the focus (SAL-DECIDE-013).
+    // @spec SAL-DECIDE-002, SAL-DECIDE-007, SAL-DECIDE-009, SAL-DECIDE-010, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015, SAL-DECIDE-016
+    const ranked = unseen
+      .map((e, i) => ({ e, i, s: this.scoreCache.get(e) ?? 0 }))
+      .sort((a, b) => b.s - a.s || b.i - a.i);
+    const once = createOnceCounter();
     let score = 0; // @spec SAL-DECIDE-002
     let focus: ContextEvent | undefined;
-    let focusScore = 0;
-    unseen.forEach((e) => {
-      const s = this.scoreCache.get(e) ?? 0;
+    for (const { e, s } of ranked) {
+      if (e.kind === "chat" && !once.admit(viewerKey(e), e.text)) continue; // @spec SAL-DECIDE-011, SAL-DECIDE-012
       score += s;
-      if (s > focusScore) { focusScore = s; focus = e; }
-    });
+      if (!focus && s > 0) focus = e; // @spec SAL-DECIDE-014 (a zero-score event is never the focus)
+    }
 
     const threshold = Math.max(0.1, this.cfg.speak_threshold - this.cfg.arousal_bias * arousal); // @spec SAL-DECIDE-003
     if (score >= threshold) {

@@ -8,7 +8,8 @@ import { PassThrough } from "node:stream";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
 import { chatService, type ChatServiceDeps } from "../src/service.js";
-import type { ChatSource, ChatSourceName, ChatSourceStartEnv, ChatSourceStatus, ChatSender } from "../src/source.js";
+import type { ChatSource, ChatSourceName, ChatSourceStartEnv, ChatSourceStatus } from "../src/source.js";
+import type { ChatSender } from "../src/filter.js";
 
 class SvcBus extends FakeBus {
   async resetGroup(): Promise<void> {}
@@ -37,7 +38,11 @@ class StubSource implements ChatSource {
   set(state: ChatSourceStatus["state"], reason?: string): void { this.status = { state, reason }; this.env.onState(state, reason); }
 }
 
-const sender = (over: Partial<ChatSender> = {}): ChatSender => ({ login: "bob", displayName: "Bob", userId: "u1", isMod: false, isSubscriber: false, isBroadcaster: false, ...over });
+/** A sender as a source builds it: the ignore identifiers are the login and the display name. */
+const sender = (over: { login?: string; displayName?: string; userId?: string; isMod?: boolean; isSub?: boolean } = {}): ChatSender => {
+  const base = { login: "bob", displayName: "Bob", userId: "u1", isMod: false, isSub: false, ...over };
+  return { ...base, ignoreIdentifiers: [base.login, base.displayName] };
+};
 
 interface Clock { calls: { ms: number; fire: () => void; cleared: boolean }[] }
 

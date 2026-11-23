@@ -127,7 +127,7 @@ None.
 ## References
 
 Code (`services/affect/`): `src/index.ts`, `src/main.ts`, `src/affect.ts`, `src/mood.ts`, `src/appraise.ts`, `src/health.ts`, `package.json`, `tsconfig.json`.
-Tests: `test/affect.test.ts` (rules, label, Mood decay, emoji), `test/affect.region.test.ts` (Affect class: nudges, reset, publish gating, queue, pause), `test/appraiser.test.ts` (http appraiser validation), `test/health.test.ts`, `test/main.test.ts` (startup wiring against a fake bus), `test/affect.dispositions.test.ts` (exact deltas, label boundaries, publish while paused, control), `test/contract.test.ts`.
+Tests: `test/affect.test.ts` (rules, label, Mood decay, emoji), `test/affect.region.test.ts` (Affect class: nudges, reset, publish gating, queue, pause), `test/appraiser.test.ts` (http appraiser validation; llm prompt rendering, AFF-HOOK-009 to AFF-HOOK-014), `test/health.test.ts`, `test/main.test.ts` (startup wiring against a fake bus), `test/affect.dispositions.test.ts` (exact deltas, label boundaries, publish while paused, control), `test/contract.test.ts`.
 
 Segments depended on:
 - event-bus (BUS): `Bus`, `Publisher`, `onShutdown`; consumes `chat.message`, `speech.heard`, `vision.summary`, `brain.say`, `control`; produces `affect.state`.

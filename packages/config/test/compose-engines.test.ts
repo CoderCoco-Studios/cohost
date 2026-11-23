@@ -198,7 +198,7 @@ test("tts-pocket's entrypoint is docker/tts-pocket/entrypoint.sh, mounted read-o
   assert.ok(mount, "the script is bind-mounted");
   const [, target, mode] = mount.split(":");
   assert.equal(mode, "ro");
-  assert.equal(joined(POCKET.entrypoint).trim(), target, "entrypoint: names the mounted path");
+  assert.deepEqual(POCKET.entrypoint, ["/bin/sh", target], "entrypoint: the shell runs the mounted script, so no exec bit or line ending is needed");
   assert.ok(existsSync(root("docker/tts-pocket/entrypoint.sh")));
 });
 

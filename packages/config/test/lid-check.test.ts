@@ -210,3 +210,29 @@ test("a git clone or an ADD of a Git URL under docker/ fails unless its source i
   assert.equal(run({ Dockerfile: "FROM ubuntu:24.04.1\nRUN git clone https://github.com/o/r.git /src\n" }).code, 0, "outside docker/ is not judged");
   assert.equal(run({}, repoRoot).code, 0, "the repository's own Dockerfiles pass, docker/stt-nemotron/Dockerfile included");
 });
+
+// @spec DEPLOY-CI-010
+test("a quoted Git build context is judged as its unquoted value: a short ref fails, a full SHA passes", () => {
+  const compose = (ctx: string) => `services:\n  a:\n    build:\n      context: ${ctx}\n`;
+  const bad = run({ "docker-compose.yml": compose(`"https://github.com/o/r.git#main"`) });
+  assert.equal(bad.code, 1, "a quoted ref that is a branch fails");
+  assert.match(bad.err, /docker-compose\.yml:4: /);
+  assert.equal(run({ "docker-compose.yml": compose(`'https://github.com/o/r.git#${SHA}'`) }).code, 0, "a single-quoted full SHA passes");
+});
+
+// @spec DEPLOY-CI-011
+test("a git clone's ref is the SHA it checks out: a full SHA elsewhere on the line, with no checkout of it, fails", () => {
+  const r = run(dockerfile("FROM ubuntu:24.04.1", `RUN echo ${SHA} && git clone https://github.com/o/r.git /src`));
+  assert.equal(r.code, 1, "the SHA is not a checkout target");
+  assert.match(r.err, /docker\/x\/Dockerfile:2: /);
+  assert.equal(run(dockerfile("FROM ubuntu:24.04.1", `RUN git clone https://github.com/o/r.git /src && git -C /src checkout ${SHA}`)).code, 0);
+});
+
+// @spec DEPLOY-CI-011
+test("a FROM pinned by a sha256 digest passes without a tag; a digest that is not 64 hex characters falls back to the tag rule", () => {
+  const digest = "sha256:" + "ab".repeat(32);
+  assert.equal(run(dockerfile(`FROM ubuntu@${digest}`)).code, 0, "a full digest is a full pin");
+  const short = run(dockerfile("FROM ubuntu@sha256:abc"));
+  assert.equal(short.code, 1, "a short digest is not a pin");
+  assert.match(short.err, /docker\/x\/Dockerfile:1: /);
+});

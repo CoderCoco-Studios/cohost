@@ -6,9 +6,14 @@
 
 FROM nvidia/cuda:12.8.2-devel-ubuntu24.04
 
+# GPU architectures for the CUDA kernels: 120 is the Blackwell (RTX 50-series) target. There is no GPU at image build time, so
+# GGML_NATIVE is OFF, as the upstream Dockerfile sets it.
+ARG CUDA_ARCH=120
+
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl git cmake ninja-build pkg-config build-essential python3 \
+       libsentencepiece-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # NeMo-Speech.cpp v0.3.0, pinned to the commit the tag names
@@ -16,7 +21,7 @@ RUN git clone https://github.com/NVIDIA/NeMo-Speech.cpp.git /src && git -C /src 
 
 WORKDIR /src
 RUN git submodule update --init --recursive
-RUN scripts/configure.sh cuda-server && cmake --build --preset cuda-server
+RUN scripts/configure.sh cuda-server -DGGML_NATIVE=OFF -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} && cmake --build --preset cuda-server
 RUN cmake --install build/cuda-server --prefix /opt/nemo-speech
 
 ENV PATH=/opt/nemo-speech/bin:${PATH}

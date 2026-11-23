@@ -30,7 +30,7 @@ function harness(o: { psJson?: string; psQ?: string | Error; inspect?: string | 
     return { stdout: "", stderr: "" };
   };
   const stack = new StackController({
-    exec, cwd: "/root", env: {}, onPath: (n) => n === "docker",
+    exec, cwd: "/root", env: {}, onPath: (n) => n === "docker", readPocketConfig: () => ({ token: "", engine: "kokoro" }),
     onPhase: (k, p) => phases.push([k, p]), now: () => t, sleep: async (ms) => { t += ms; },
   });
   return { stack, calls, phases };

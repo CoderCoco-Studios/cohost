@@ -5,9 +5,14 @@
 
 FROM nvidia/cuda:12.8.2-devel-ubuntu24.04
 
+# bindgen_cuda (a build dependency of the CUDA kernels) reads the GPU compute capability from this variable instead of running
+# nvidia-smi, which is absent at image build time. 120 is the RTX 50-series (Blackwell) capability.
+ARG CUDA_COMPUTE_CAP=120
+ENV CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP}
+
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl build-essential pkg-config libssl-dev \
+    && apt-get install -y --no-install-recommends ca-certificates curl build-essential pkg-config libssl-dev python3 python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust 1.100.0, the stable channel's version on 2026-11-23, minimal profile

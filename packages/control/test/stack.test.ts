@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   StackController, ServiceController, stackState,
   type ExecFile, type ContainerStatus, type Runtime, type StackStatus,
@@ -34,12 +33,14 @@ function harness(o: { psAnswers?: Array<string | Error>; upFail?: string; stopFa
     if (args[1] === "stop" && o.stopFail) throw Object.assign(new Error("exit 1"), { stderr: o.stopFail });
     return { stdout: "", stderr: "" };
   };
+  const cwd = mkdtempSync(join(tmpdir(), "cohost-stack-")); // a writable workspace: the Pocket token file goes under it
   const stack = new StackController({
-    exec, cwd: "/root", env: { BASE: "1" }, onPath: (n) => n === "docker",
+    exec, cwd, env: { BASE: "1" }, onPath: (n) => n === "docker",
     onPhase: (k, p) => phases.push([k, p]),
     now: () => t, sleep: async (ms) => { sleeps.push(ms); t += ms; },
+    readPocketConfig: () => ({ token: "", engine: "kokoro" }), // the config loader is never read here
   });
-  return { stack, calls, phases, sleeps, now: () => t };
+  return { stack, calls, phases, sleeps, now: () => t, cwd };
 }
 
 const daemonDown = () => Object.assign(new Error("exit 1"), { stderr: "daemon gone" });
@@ -58,7 +59,7 @@ test("status: fixed argv, 10 s timeout, workspace cwd, base env; parses a JSON a
     { service: "redis", status: "running", health: "healthy" },
     { service: "models", status: "exited", exitCode: 3 },
   ] });
-  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "ps", "--all", "--format", "json"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 10_000 }]);
+  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "ps", "--all", "--format", "json"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: h.cwd, timeoutMs: 10_000 }]);
 });
 
 // @spec CTRL-STACK-008
@@ -85,7 +86,7 @@ test("status: a failing command, a timeout or unparsable output is docker unavai
 test("launch: reports compose-build, runs up -d --build --remove-orphans with a 30 minute timeout, then waits", async () => {
   const h = harness({ psAnswers: [ps(ready)] });
   assert.equal((await h.stack.launch()).ok, true);
-  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 30 * 60_000 });
+  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: h.cwd, timeoutMs: 30 * 60_000 });
   assert.deepEqual(h.phases, [["launch", "compose-build"], ["launch", "waiting"]]);
 });
 
@@ -156,7 +157,7 @@ test("launch: a one-shot that exited non-zero is appended to detail, ok unchange
 test("stopAll: reports stopping, runs docker compose stop with 300 s, never down", async () => {
   const h = harness();
   assert.deepEqual(await h.stack.stopAll(), { ok: true });
-  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "stop"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: "/root", timeoutMs: 300_000 }]);
+  assert.deepEqual(h.calls, [{ file: "docker", args: ["compose", "stop"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: h.cwd, timeoutMs: 300_000 }]);
   assert.deepEqual(h.phases, [["stop", "stopping"]]);
   assert.deepEqual(await harness({ stopFail: "boom" }).stack.stopAll(), { ok: false, detail: "boom" });
 });
@@ -277,7 +278,7 @@ test("every docker compose call sets COHOST_ISOLATION to the empty string, whate
     const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env }); return { stdout: args[1] === "ps" ? ps([]) : "", stderr: "" }; };
     const stack = new StackController({
       exec, cwd: "/root", env: { COHOST_ISOLATION: '{"AVATAR_DRIVER":"null"}', WSLENV: "PATH/l" }, onPath: (n) => n === bin,
-      now: () => 0, sleep: async () => {},
+      now: () => 0, sleep: async () => {}, readPocketConfig: () => ({ token: "", engine: "kokoro" }),
     });
     await stack.status();
     await stack.launch();
@@ -295,95 +296,137 @@ test("every docker compose call sets COHOST_ISOLATION to the empty string, whate
 // @spec CTRL-STACK-018
 test("launch: enabled engine profiles add no argument: the command is the same with COMPOSE_PROFILES naming pocket, nemotron and kyutai, or none of them", async () => {
   const argv = ["compose", "up", "-d", "--build", "--remove-orphans"];
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-")); // the token file goes under the workspace root, so a writable one
   for (const profiles of [undefined, "pocket", "nemotron,kyutai", "discord,ears,pocket,nemotron,kyutai"]) {
     const calls: Call[] = [];
     const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env, cwd: opts.cwd, timeoutMs: opts.timeoutMs }); return { stdout: args[1] === "ps" ? ps(ready) : "", stderr: "" }; };
     const env: NodeJS.ProcessEnv = { BASE: "1", ...(profiles ? { COMPOSE_PROFILES: profiles } : {}) };
-    const stack = new StackController({ exec, cwd: "/root", env, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {} });
+    const stack = new StackController({ exec, cwd: dir, env, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {}, readPocketConfig: () => ({ token: "", engine: "kokoro" }) });
     assert.equal((await stack.launch()).ok, true);
     const up = calls.find((c) => c.args[1] === "up")!;
     assert.deepEqual([up.file, ...up.args], ["docker", ...argv], `COMPOSE_PROFILES=${profiles}`);
     assert.equal(up.env.COMPOSE_PROFILES, profiles, "the variable reaches Compose unchanged, which selects the profiles");
     assert.ok(!calls.some((c) => c.args.includes("--profile")), "no --profile argument is added");
   }
+  rmSync(dir, { recursive: true, force: true });
 });
 
-/** A throwaway workspace whose config/ holds the example config and, when `secrets` is given, a secrets.yaml. */
-function workspace(secrets?: string) {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
-  const repo = fileURLToPath(new URL("../../../", import.meta.url));
-  mkdirSync(join(dir, "config"));
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config", "config.yaml"));
-  if (secrets !== undefined) writeFileSync(join(dir, "config", "secrets.yaml"), secrets, { mode: 0o600 });
-  return dir;
-}
-
-/** Launches in `dir`, recording whether the token file and its directory existed at the moment `docker compose up` ran. */
-async function launchIn(dir: string) {
-  const saw: { dir: boolean; file: boolean; content?: string; order: string[] } = { dir: false, file: false, order: [] };
+/**
+ * Launches in the throwaway workspace `dir`. The Pocket reader is stubbed: it returns `token` and `engine`, or throws
+ * `readError`. `blockDir` puts a file where `data/` must be, so the token directory cannot be created.
+ */
+async function launchIn(dir: string, opts: { token?: string; engine?: string; readError?: string; blockDir?: boolean } = {}) {
+  const saw: { dir: boolean; file: boolean; content?: string; mode?: number; order: string[] } = { dir: false, file: false, order: [] };
   const secretDir = join(dir, "data", "tts-pocket-secret");
   const exec: ExecFile = async (_file, args) => {
     saw.order.push(args[1]!);
     if (args[1] === "up") {
       saw.dir = existsSync(secretDir) && statSync(secretDir).isDirectory();
       saw.file = existsSync(join(secretDir, "hf_token"));
-      if (saw.file) saw.content = readFileSync(join(secretDir, "hf_token"), "utf8");
+      if (saw.file) {
+        saw.content = readFileSync(join(secretDir, "hf_token"), "utf8");
+        saw.mode = statSync(join(secretDir, "hf_token")).mode & 0o777;
+      }
     }
     return { stdout: args[1] === "ps" ? ps(ready) : "", stderr: "" };
   };
-  const before = process.env.CONFIG_DIR;
-  process.env.CONFIG_DIR = join(dir, "config");
-  try {
-    const stack = new StackController({ exec, cwd: dir, env: { BASE: "1" }, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {} });
-    const r = await stack.launch();
-    return { r, saw, secretDir };
-  } finally {
-    if (before === undefined) delete process.env.CONFIG_DIR; else process.env.CONFIG_DIR = before;
-  }
+  const readPocketConfig = () => {
+    if (opts.readError !== undefined) throw new Error(opts.readError);
+    return { token: opts.token ?? "", engine: opts.engine ?? "kokoro" };
+  };
+  if (opts.blockDir) writeFileSync(join(dir, "data"), "not a directory");
+  const stack = new StackController({ exec, cwd: dir, env: { BASE: "1" }, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {}, readPocketConfig });
+  const r = await stack.launch();
+  return { r, saw, secretDir };
 }
 
 // @spec CTRL-STACK-019
-test("launch: writes voice.pocket.hf_token to data/tts-pocket-secret/hf_token, directory created first, before docker compose up, and no other secret to a file", async () => {
-  const dir = workspace('voice:\n  pocket:\n    hf_token: "hf_abc123"\nllm:\n  openai:\n    api_key: "sk-other-secret"\n');
+test("launch: writes the Pocket token to data/tts-pocket-secret/hf_token under the workspace root, directory created first, before docker compose up, and no other file under data/", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
   try {
-    const { r, saw, secretDir } = await launchIn(dir);
+    const { r, saw, secretDir } = await launchIn(dir, { token: "hf_abc123", engine: "pocket" });
     assert.equal(r.ok, true, r.detail);
     assert.ok(saw.dir, "the directory existed when up ran");
     assert.equal(saw.content, "hf_abc123", "the file holds only the token");
     assert.ok(saw.order.indexOf("up") >= 0);
     assert.equal(readFileSync(join(secretDir, "hf_token"), "utf8"), "hf_abc123");
-    for (const f of ["data/tts-pocket-secret/hf_token"]) assert.ok(existsSync(join(dir, f)));
     const written = new Set<string>();
     const walk = (d: string, rel = ""): void => { for (const n of readdirSync(d)) { const p = join(d, n); statSync(p).isDirectory() ? walk(p, `${rel}${n}/`) : written.add(`${rel}${n}`); } };
     walk(join(dir, "data"));
     assert.deepEqual([...written], ["tts-pocket-secret/hf_token"], "no other secret is written to a file under data/");
-    assert.doesNotMatch(readFileSync(join(secretDir, "hf_token"), "utf8"), /sk-other-secret/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 // @spec CTRL-STACK-019
-test("launch: rewrites the token file on every launch, and leaves it absent (directory still created) when the token is blank, removing a stale one", async () => {
-  const dir = workspace('voice:\n  pocket:\n    hf_token: "first"\n');
+test("launch: the token file is mode 0600 and rewritten on every launch", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
   try {
-    assert.equal((await launchIn(dir)).saw.content, "first");
-    writeFileSync(join(dir, "config", "secrets.yaml"), 'voice:\n  pocket:\n    hf_token: "second"\n', { mode: 0o600 });
-    assert.equal((await launchIn(dir)).saw.content, "second", "rewritten on every launch");
-    writeFileSync(join(dir, "config", "secrets.yaml"), 'voice:\n  pocket:\n    hf_token: ""\n', { mode: 0o600 });
-    const blank = await launchIn(dir);
-    assert.equal(blank.r.ok, true, blank.r.detail);
-    assert.ok(blank.saw.dir, "the directory is created even with no token");
-    assert.equal(blank.saw.file, false, "a blank token leaves the file absent, so a stale one is removed");
+    const first = await launchIn(dir, { token: "first" });
+    assert.equal(first.saw.content, "first");
+    assert.equal(first.saw.mode, 0o600, "mode 0600 on creation");
+    const second = await launchIn(dir, { token: "second" });
+    assert.equal(second.saw.content, "second", "rewritten on every launch");
+    assert.equal(second.saw.mode, 0o600, "mode 0600 after a rewrite");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  const none = workspace();
+});
+
+// @spec CTRL-STACK-019
+test("launch: a blank or whitespace-only token leaves the file absent, removing a stale one, and the directory is still created", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
   try {
-    const r = await launchIn(none);
-    assert.equal(r.saw.dir, true, "no secrets.yaml at all: the directory exists");
-    assert.equal(r.saw.file, false);
+    assert.equal((await launchIn(dir, { token: "stale" })).saw.file, true);
+    for (const token of ["", "   \n\t "]) {
+      const blank = await launchIn(dir, { token });
+      assert.equal(blank.r.ok, true, blank.r.detail);
+      assert.ok(blank.saw.dir, "the directory is created even with no token");
+      assert.equal(blank.saw.file, false, `token ${JSON.stringify(token)} leaves the file absent`);
+    }
   } finally {
-    rmSync(none, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// @spec CTRL-STACK-019
+test("launch: when the pocket engine is selected and the token file cannot be written, Launch fails before up", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
+  try {
+    const { r, saw } = await launchIn(dir, { token: "hf_abc", engine: "pocket", blockDir: true });
+    assert.equal(r.ok, false);
+    assert.match(r.detail!, /^cannot write the tts-pocket token file: /);
+    assert.deepEqual(saw.order, [], "docker compose up never ran");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// @spec CTRL-STACK-019
+test("launch: an unreadable config proceeds with a warning and removes a stale token file, the pocket engine not being known", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
+  try {
+    assert.equal((await launchIn(dir, { token: "stale" })).saw.file, true);
+    const { r, saw } = await launchIn(dir, { readError: "bad secrets.yaml\nmore" });
+    assert.equal(r.ok, true, r.detail);
+    assert.equal(r.detail, "cannot read voice.pocket.hf_token: bad secrets.yaml", "the warning is reported");
+    assert.ok(saw.order.includes("up"));
+    assert.equal(saw.file, false, "the stale token is removed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// @spec CTRL-STACK-019
+test("launch: a blocked token directory with the kokoro engine selected warns and proceeds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
+  try {
+    const { r, saw } = await launchIn(dir, { token: "hf_abc", blockDir: true });
+    assert.equal(r.ok, true, r.detail);
+    assert.match(r.detail!, /^cannot write the tts-pocket token file: /);
+    assert.ok(saw.order.includes("up"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

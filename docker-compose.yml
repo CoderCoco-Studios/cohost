@@ -115,7 +115,7 @@ services:  # @spec DEPLOY-COMPOSE-001
   # Each is built from a pinned source and runs behind its own profile; the owner enables it in COMPOSE_PROFILES in .env and
   # selects it in config.yaml. Each caches its weights under /root/.cache, in its own volume. None is an application service:
   # no SERVICE build argument, no x-ts-service anchor, no ./config mount, no env_file. Engine servers publish on loopback only.
-  tts-pocket:  # @spec DEPLOY-ENG-001, DEPLOY-ENG-004, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012, DEPLOY-ENG-014
+  tts-pocket:  # @spec DEPLOY-ENG-001, DEPLOY-ENG-004, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012, DEPLOY-ENG-014, DEPLOY-ENG-015, DEPLOY-ENG-019
     image: cohost-tts-pocket:4.0.1
     build:
       context: https://github.com/kyutai-labs/pocket-tts.git#a922b912dfa366975294afb568d815b305acde5d   # tag v4.0.1
@@ -123,7 +123,7 @@ services:  # @spec DEPLOY-COMPOSE-001
     restart: unless-stopped
     # The entrypoint exports the Pocket token for this server alone (DEPLOY-ENG-014, DEPLOY-ENG-019); the command is the
     # upstream image's own ENTRYPOINT and CMD, which the cohost entrypoint replaces.
-    entrypoint: /cohost/entrypoint.sh
+    entrypoint: ["/bin/sh", "/cohost/entrypoint.sh"]
     command: ["uv", "run", "pocket-tts", "serve", "--host", "0.0.0.0", "--port", "8000"]
     ports: ["127.0.0.1:8881:8000"]
     volumes:

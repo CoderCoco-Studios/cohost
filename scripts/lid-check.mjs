@@ -99,6 +99,8 @@ export function checkToolchain(root, files) {
 
 const GIT_URL = /^(?:https?:\/\/|git:\/\/|ssh:\/\/|git@)/;
 const FULL_SHA_TEXT = /^[0-9a-f]{40}$/;
+const CHECKOUT_SHA = /\bgit\b[^&;|]*\bcheckout\s+[0-9a-f]{40}(?![0-9a-f])/;
+const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
 const EXACT_VERSION_TAG = /^\d+\.\d+\.\d+(?:[-.][\w.-]*)?$/;
 const COMPOSE_FILE = /^docker-compose[^/]*\.ya?ml$/;
 const DOCKERFILE = /^docker\/(?:[^/]+\/)*Dockerfile$/;
@@ -116,9 +118,11 @@ export function checkBuildContexts(root, files) {
     readFileSync(join(root, f), "utf8").split("\n").forEach((raw, i) => {
       const text = raw.replace(/\s+#.*$/, "");
       const build = /\b(?:context|build)\s*:\s*([^\s,}\]]+)/.exec(text);
-      if (!build || !GIT_URL.test(build[1])) return;
-      if (!FULL_SHA_TEXT.test(gitRef(build[1]))) {
-        problems.push(`${f}:${i + 1}: Git build context ${build[1]} does not name a full commit SHA after its #`);
+      if (!build) return;
+      const value = build[1].replace(/^["']|["']$/g, ""); // a quoted value is the same value
+      if (!GIT_URL.test(value)) return;
+      if (!FULL_SHA_TEXT.test(gitRef(value))) {
+        problems.push(`${f}:${i + 1}: Git build context ${value} does not name a full commit SHA after its #`);
       }
     });
   }
@@ -136,7 +140,8 @@ export function checkDockerfiles(root, files) {
       const from = /^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/i.exec(raw);
       if (from) {
         const image = from[1];
-        if (!stages.has(image.toLowerCase()) && image.toLowerCase() !== "scratch") {
+        // A digest (`image@sha256:<64 hex>`) is a full pin on its own; otherwise the tag must be an exact version.
+        if (!stages.has(image.toLowerCase()) && image.toLowerCase() !== "scratch" && !DIGEST_PIN.test(image)) {
           const name = image.slice(image.lastIndexOf("/") + 1);
           const tag = name.includes(":") ? name.slice(name.indexOf(":") + 1) : undefined;
           if (tag === undefined || /^latest/i.test(tag) || !EXACT_VERSION_TAG.test(tag)) {
@@ -148,8 +153,9 @@ export function checkDockerfiles(root, files) {
       if (/\bcargo\s+install\b/.test(raw) && (!/\s--locked(?=\s|$)/.test(raw) || !/\s--version\s+=\d+\.\d+\.\d+(?=\s|$)/.test(raw))) {
         problems.push(`${where}: cargo install must pin an exact version as =x.y.z and pass --locked`);
       }
-      if (/\bgit\s+clone\b/.test(raw) && !/\b[0-9a-f]{40}\b/.test(raw)) {
-        problems.push(`${where}: git clone is not pinned to a full commit SHA`);
+      // The clone's ref is the commit it checks out: a full SHA as the argument of `git ... checkout`, not any 40-hex text.
+      if (/\bgit\s+clone\b/.test(raw) && !CHECKOUT_SHA.test(raw)) {
+        problems.push(`${where}: git clone is not pinned to a full commit SHA checked out by git checkout`);
       }
       const add = /^\s*ADD\s+(\S+)/.exec(raw);
       if (add && GIT_URL.test(add[1]) && /\.git(?:#|$)/.test(add[1]) && !FULL_SHA_TEXT.test(gitRef(add[1]))) {

@@ -44,6 +44,15 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
    docker compose run --rm consolidate
    ```
 
+## Optional: the speech engine servers
+
+Run these after step 7 with the `pocket` profile, or `nemotron` or `kyutai`, enabled in `COMPOSE_PROFILES` and selected in `config/config.yaml`. The first build of an enabled profile takes minutes.
+
+| Check | You should see |
+| --- | --- |
+| Press **Launch** while the engine is still downloading its weights (first start, or a cleared cache) and it has not passed its healthcheck within the 180 s readiness wait | Launch reports the engine not ready by name (for example `tts-pocket (running, starting)`). Nothing is stopped or restarted: `docker compose ps` still shows the container, and it turns `healthy` when the download ends (DEPLOY-ENG-018). |
+| The same window | `voice` (for `pocket`) or `ears` (for `nemotron` or `kyutai`) is `up` and reports `deps.tts` or `deps.stt` `down` until the engine serves; neither is restarted (DEPLOY-ENG-020). |
+
 ## How you know it worked
 
 - Step 3: every service on the Services screen shows `up`, and the **Stack** card shows the infrastructure containers running.

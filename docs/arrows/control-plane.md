@@ -4,7 +4,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 81 `[x]`, 28 `[ ]`, 2 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 84 `[x]`, 25 `[ ]`, 2 `[D]`.
 
 **AUDITED**: 111 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 25 gaps: CTRL-HEALTH-005; CTRL-LAT-003 to 005 and 017 to 033 (the early-reply latency specs); CTRL-MANIFEST-001, -002, -003, -005 (the 19-unit manifest and the `VISION_PROVIDER` preset). The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 81 `[x]`, 28 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 84 `[x]`, 25 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts

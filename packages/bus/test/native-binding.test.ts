@@ -60,6 +60,21 @@ test("connectorKey is built by the crate (synchronously) and audioStream by the 
   await b.stop();
 });
 
+// @spec BUS-NAT-RS-006, BUS-AVF-001, BUS-AVF-006
+test("the avatar-frame stream name is built by avatarFramesStream in frames.ts only: not by the crate, the binding, index.ts or constants.json", async () => {
+  const frames = await import("../src/frames.js") as Record<string, unknown>;
+  assert.equal(typeof frames.avatarFramesStream, "function", "frames.ts exports avatarFramesStream");
+  assert.equal((frames.avatarFramesStream as (p: string) => string)("p1"), "p1:avatar.frames");
+  assert.equal((frames.avatarFramesStream as (p: string) => string)("cohost"), "cohost:avatar.frames");
+  assert.ok(!("avatarFramesStream" in native), "the binding builds no avatar stream name");
+  assert.equal((bus as Record<string, unknown>).AVATAR_FRAMES_MAXLEN, 120);
+  assert.equal((bus as Record<string, unknown>).AVATAR_FRAMES_TTL_MS, 10000);
+  const read = (u: string) => readFileSync(new URL(u, import.meta.url), "utf8");
+  assert.ok(!/avatar/i.test(read("../fixtures/contract/constants.json")), "constants.json does not hold the avatar stream");
+  assert.ok(!/avatar\.frames/.test(read("../src/index.ts")), "index.ts builds no stream name");
+  assert.ok(!/avatar/i.test(read("../../../crates/cohost-bus/src/keys.rs")), "the crate builds no avatar stream name");
+});
+
 // @spec BUS-NAT-API-010, BUS-NAT-FRM-007
 test("native.ts is the only file that imports the addon, and the frames path never calls it", () => {
   for (const f of ["frames.ts", "connector.ts", "index.ts", "transport.ts", "registrar.ts"]) {

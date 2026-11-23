@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 91 `[x]`, 76 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are counted per category in the coverage table below: the early-reply and interjection specs (SAL-PROV, SAL-INTJ), reminders (SAL-REM), the streamed-speech clause specs, and the open decision, scoring, focus and intake specs (the chat safety work). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 103 `[x]`, 64 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are counted per category in the coverage table below: the early-reply and interjection specs (SAL-PROV, SAL-INTJ), the streamed-speech clause specs, and the open focus and intake specs (SAL-FOCUS-004 and SAL-FOCUS-006 are revised by the early-reply work; SAL-IN-001 and SAL-IN-007 are open). The LLD lists open questions.
 
 ## Decisions applied
 
@@ -23,6 +23,10 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 11. **R3** `ready` timing → after consumer-group creation. Specs: SAL-HEALTH-001 reworded.
 12. **P7** Mute ownership (project-level) → only salience and cortex see mute/pause; LLD Decisions row added.
 
+## Reminders
+
+SAL-REM-001 to SAL-REM-008 are `[x]`: due timer reminders (`Reminders` in `reminders.ts`) are held apart from working memory, published as one `attention.focus` of kind `reminder` per pass after the gates and before `nothing new`, expired ones are republished as `missed` and never spoken, and nothing is kept across a restart. Their clock is the host wall clock (`Date.now()`); the cooldown and busy valves keep the monotonic one.
+
 ## Barge-in and echo gate
 
 SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, reflex lines that never interrupt, and barge-in across a streamed line whose playback renews `speaking` (SAL-BUSY-005 to 008). SAL-BARGE-001 is revised by the early-reply work and stays a gap. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
@@ -36,7 +40,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 91 `[x]`, 76 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 103 `[x]`, 64 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -48,10 +52,12 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - services/salience/test/health.test.ts
 - services/salience/test/main.test.ts
 - services/salience/test/timing.test.ts
+- services/salience/test/salience.reminders.test.ts
 
 ### Code (files carrying `@spec SAL-`)
 - services/salience/src/salience.ts
 - services/salience/src/scheduler.ts
+- services/salience/src/reminders.ts
 - services/salience/src/scoring.ts
 - services/salience/src/main.ts
 - services/salience/src/reflex.ts
@@ -68,7 +74,8 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 
 **Key Components:**
 1. `Salience` (`salience.ts`) — event intake, cortex-state tracking, reflex gate, tick that publishes `attention.focus`.
-2. `Scheduler` (`scheduler.ts`) — ordered speak/no-speak decision: muted, busy, cooldown, nothing new, threshold (arousal-adjusted), idle chatter; score cache.
+2. `Scheduler` (`scheduler.ts`) — ordered speak/no-speak decision: muted, busy, cooldown, due reminder, nothing new, threshold (arousal-adjusted), idle chatter; score cache.
+2a. `Reminders` (`reminders.ts`) — due `tool.timer` reminders: bounded by `tools.timer.max_active`, spoken ids remembered (64), expiry by `brain.salience.reminder_expiry_ms`. Memory only.
 3. `scoring.ts` — rule weights and the `salience.scorer` module factory (rules / llm / http, region-hooks).
 4. `Reflexes` (`reflex.ts`) — regex rules with per-rule cooldown.
 5. `index.ts` / `main.ts` / `health.ts` — entry point, startup wiring (`main`), tick timer, heartbeat spec.
@@ -81,20 +88,20 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 |----------|----------|-------------|----------|------|
 | Intake | SAL-IN-001 to SAL-IN-009 | 7 | 0 | 2 |
 | Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 14 | 0 | 0 |
-| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 17 | 0 | 2 |
-| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 4 | 0 | 3 |
+| Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 19 | 0 | 0 |
+| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 5 | 0 | 2 |
 | Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 7 | 1 | 2 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-008 | 8 | 0 | 0 |
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 |
 | Control | SAL-CTRL-001 to SAL-CTRL-007 | 7 | 0 | 0 |
 | Injection Flags | SAL-INJ-001 to SAL-INJ-004 | 4 | 0 | 0 |
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-012 | 11 | 0 | 1 |
-| Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 4 | 0 | 1 |
-| Reminders | SAL-REM-001 to SAL-REM-008 | 0 | 0 | 8 |
+| Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
+| Reminders | SAL-REM-001 to SAL-REM-008 | 8 | 0 | 0 |
 | Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 0 | 0 | 34 |
 | Interjection | SAL-INTJ-001 to SAL-INTJ-023 | 0 | 0 | 23 |
 
-**Summary:** 168 specs: 91 implemented, 76 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 168 specs: 103 implemented, 64 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -105,7 +112,8 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 5. **Rule weights match the config defaults.** Mention 1.0, voice 0.9, question 0.55, mod/sub 0.35, screen 0.3, plain 0.15, threshold 0.6 are the values of `scoring.ts` and the schema defaults (`packages/config/src/schema.ts`; `config/config.example.yaml`), asserted in `services/salience/test/salience.test.ts`. The total is a sum over the counted unseen events; the focus is the first counted event whose score is above 0 (SAL-DECIDE-002, SAL-DECIDE-014; `Scheduler.decide`).
 6. **Startup runs under the bootstrap and `ready` follows group creation** (SAL-HEALTH-001, SAL-HEALTH-003). `Bus.subscribe` has no readiness signal, so `salienceMain` awaits `bus.resetGroup("salience")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, commit `969f6d7` ("Fix review findings") or the 2026-11-01 owner decisions; two keep a partial `[inferred]` (why sum not max, the 0.1 threshold floor) and the 60 s valve default value is `[inferred]`.
-8. **`chat.removed` is forgotten in `onEvent`, which has no pause gate** (SAL-IN-008, SAL-IN-009). The removed entries are recorded, so a decision whose focus is one of them publishes nothing (SAL-FOCUS-007). The burst counter keys viewers by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019).
+8. **Reminders run on the wall clock, gates decide only speech.** `Reminders.takeExpired` and `due` compare `dueAt` with `Date.now()`; an expired reminder is republished as `missed` on arrival and on every tick, whatever the gates, and is never spoken (SAL-REM-003). A failed `missed` republish is logged and the reminder dropped (no retry; the LLD's Decisions table records the rejected re-hold). A reminder whose focus publish is in flight is never expired, so it is not spoken and republished as missed. A `tool.timer` arriving while paused is held in the list and decided after resume.
+9. **`chat.removed` is forgotten in `onEvent`, which has no pause gate** (SAL-IN-008, SAL-IN-009). The removed entries are recorded, so a decision whose focus is one of them publishes nothing (SAL-FOCUS-007). The burst counter keys viewers by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019).
 
 ## Work Required
 

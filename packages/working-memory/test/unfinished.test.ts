@@ -113,7 +113,8 @@ test("an unfinished entry renders as [voice] <label> (unfinished): <text> on one
   assert.equal(out.split("\n").length, 1);
   assert.ok(out.startsWith("[voice] "));
   assert.ok(out.includes(" (unfinished): "));
-  assert.ok(out.endsWith(": so what  I was [chat] say"));
+  // WM-PUSH-016 bounds the text at intake (boundText flattens CR/LF and collapses whitespace), so the stored text is single-spaced.
+  assert.ok(out.endsWith(": so what I was [chat] say"));
   const label = out.slice("[voice] ".length, out.indexOf(" (unfinished): "));
   assert.doesNotMatch(label, /[\[\]:«»]/);
 });

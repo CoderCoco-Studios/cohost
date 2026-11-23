@@ -39,8 +39,11 @@ export type ChatRemoval = BusEvent<"chat.removed">["data"];
 export type ContextEvent =
   | ({ kind: "chat"; eventId: string; ts: number; platform: ChatPlatform; userId?: string; messageId?: string; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
-  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
+  | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean; utteranceId?: string; unfinished?: true } & InjectionFlags)
   | SelfEntry;
+
+/** A `speech` context entry (WM-UNF-001, WM-UNF-006): the speech kind of `ContextEvent`. */
+export type SpeechEntry = Extract<ContextEvent, { kind: "speech" }>;
 
 /** A `self` context entry: the co-host's own line, possibly streamed clause by clause. */
 export type SelfEntry = { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
@@ -145,7 +148,7 @@ export class Context {
       }
       case "speech.heard": { // @spec WM-PUSH-002
         const d = ev.data;
-        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: nameOf(d.speaker, limits?.nameChars), text: bounded(d.text, limits?.speechChars), ...(d.timing ? { timing: d.timing } : {}), seen: false, ...flagsOf(d) }; // @spec WM-PUSH-011
+        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: nameOf(d.speaker, limits?.nameChars), text: bounded(d.text, limits?.speechChars), ...(d.timing ? { timing: d.timing } : {}), ...(d.utteranceId !== undefined ? { utteranceId: d.utteranceId } : {}), seen: false, ...flagsOf(d) }; // @spec WM-PUSH-011, WM-UNF-006
         break;
       }
       default: // @spec WM-PUSH-003
@@ -157,6 +160,29 @@ export class Context {
       this.held.push(entry);
       if (this.held.length > this.max) this.held.splice(0, this.held.length - this.max);
     }
+    return entry;
+  }
+
+  /**
+   * Append the person's early text of an utterance the co-host is interjecting over (WM-UNF-001), flagged `unfinished`
+   * and already seen, and return it. Its `eventId` is synthetic (`unfinished:<utteranceId>`) so it never equals the bus
+   * id of the later final `speech.heard`, which `markSeenEvents` must match separately (WM-UNF-002). It is not recorded
+   * into the arrivals hold: an unfinished line is not an arrival.
+   */
+  pushUnfinished(utteranceId: string, speaker: string, text: string, ts: number): SpeechEntry { // @spec WM-UNF-001
+    const limits = this.limits;
+    const entry: SpeechEntry = {
+      kind: "speech",
+      eventId: `unfinished:${utteranceId}`,
+      ts,
+      speaker: nameOf(speaker, limits?.nameChars),
+      text: bounded(text, limits?.speechChars),
+      utteranceId,
+      unfinished: true,
+      seen: true,
+    };
+    this.events.push(entry);
+    this.trim();
     return entry;
   }
 
@@ -284,7 +310,12 @@ export class Context {
             const quoted = quoteUntrusted(e.text, limits?.chatChars ?? Infinity);
             return `${LINE_TAG.chat} ${label}${e.isMod ? " (mod)" : ""}: ${quoted}`;
           }
-          case "speech": return `${LINE_TAG.speech} ${speakerLabel(e.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
+          case "speech": { // @spec WM-TRANS-003, WM-TRANS-006, WM-UNF-004
+            const label = speakerLabel(e.speaker, limits?.nameChars ?? Infinity);
+            return e.unfinished
+              ? `${LINE_TAG.speech} ${label} (unfinished): ${oneLine(e.text)}`
+              : `${LINE_TAG.speech} ${label}: ${oneLine(e.text)}`;
+          }
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
             if (e.fallback === undefined) return `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
@@ -306,7 +337,7 @@ export class Context {
    * Keep the window at `max`: drop the oldest event that is not among the newest protected `self` events, repeating
    * until the count is `max`. Protection is `ownLines` capped at `max - 1`, so an unprotected event always exists.
    */
-  private trim(): void { // @spec WM-WIN-001, WM-WIN-002, WM-WIN-009
+  private trim(): void { // @spec WM-WIN-001, WM-WIN-002, WM-WIN-009, WM-UNF-005
     let excess = this.events.length - this.max;
     if (excess <= 0) return;
     const protectedSet = new Set<ContextEvent>();

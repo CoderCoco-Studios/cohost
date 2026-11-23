@@ -4,7 +4,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 ## Status
 
-**PARTIAL**: 74 specs: 67 implemented (`[x]`), 6 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions; the gaps are the unfinished-line work (WM-UNF-001 to 006). The streamed-line specs (extendSelf, markFallback with a `seq`, the later-clause transcript note) are implemented. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
+**PARTIAL**: 74 specs: 73 implemented (`[x]`), 0 gaps (`[ ]`), 1 deferred (`[D]`: WM-STACK-001, the interrupted-thought stack of the deferred dynamic-speech ideal). The LLD has no open questions. The unfinished line (WM-UNF-001 to 006) and the streamed-line specs (extendSelf, markFallback with a `seq`, the later-clause transcript note) are implemented. Design: the LLD's Fallback lines section and the HLD's Barge-in and echo gate protocol and Future / ideal state sections.
 
 ## References
 
@@ -39,7 +39,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 **Purpose:** Give salience (should I respond?) and cortex (what do I say?) the same bounded view of what has just happened, and render it as the transcript text used in the LLM prompt.
 
 **Key Components:**
-1. `Context` — count-bounded array of `ContextEvent` (`chat`, `vision`, `speech`, `self`) with `push`, `pushSelf`, `extendSelf`, `markFallback`, `unseen`, `markSeenEvents`, `markSeen`, `last`, `clear`, `all`, `transcript`, and the public `lastVision`.
+1. `Context` — count-bounded array of `ContextEvent` (`chat`, `vision`, `speech`, `self`) with `push`, `pushUnfinished`, `pushSelf`, `extendSelf`, `markFallback`, `unseen`, `markSeenEvents`, `markSeen`, `last`, `clear`, `all`, `transcript`, and the public `lastVision`.
 2. `InjectionFlags` / `flagsOf` — retain `injected` and `remember` on stored perception events.
 3. `TRANSCRIPT_TAGS` — the exported tag list (`[chat]`, `[voice]`, `[screen]`) that `transcript` renders and the LLM layer derives its stops from.
 4. `propagatedFlags(src)` — copies the flags onto derived bus events only when the source is injected.
@@ -55,10 +55,10 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 | Transcript | WM-TRANS-001 to WM-TRANS-015 | 15 | 0 | 0 | 15 |
 | Injection flags | WM-FLAG-001 to WM-FLAG-004 | 4 | 0 | 0 | 4 |
 | Forgetting | WM-FORGET-001 to WM-FORGET-006 | 6 | 0 | 0 | 6 |
-| Unfinished lines | WM-UNF-001 to WM-UNF-006 | 0 | 0 | 6 | 0 |
+| Unfinished lines | WM-UNF-001 to WM-UNF-006 | 6 | 0 | 0 | 6 |
 | Interrupted thoughts | WM-STACK-001 | 0 | 1 | 0 | 0 |
 
-**Summary:** 74 specs: 67 implemented, 6 gaps, 1 deferred. The unfinished-line specs (WM-UNF) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 74 specs: 73 implemented, 0 gaps, 1 deferred. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -74,7 +74,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 
 - Platform, user id and forgetting: the chat entry carries `platform`, `userId` (when present) and `messageId` (when present) (WM-PUSH-001), and `forget` removes chat for a `chat.removed` (WM-FORGET-001 to WM-FORGET-006), returning the count removed. Consumers that call `forget` and key viewers by `viewerKey` are other segments' work.
 ### Must Fix
-The unfinished-line specs (WM-UNF-001 to 006).
+None.
 
 ### Should Fix
 1. Add `@spec WM-FLAG-003` / `WM-FLAG-004` to the salience and cortex region tests that exercise propagation (other segments' files).

@@ -44,7 +44,7 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
-| `voice.utterance` | `voice` | `avatar`, `mouth` | `id`, `seq` (0 for a line that is not streamed), `more` (optional, `true` on clause 0 of a streamed line), `text`, `emotion`, `gesture` (optional), `route` (optional, copied from `brain.say`), `durationMs`, `envelopeHz`, `envelope[]` (mouth-open level per frame, 0 to 1), `audioUrl` (`/audio/<id>.wav` on the voice service), `sampleRate` |
+| `voice.utterance` | `voice` | `avatar`, `mouth` | `id`, `seq` (0 for a line that is not streamed), `more` (optional, `true` on clause 0 of a streamed line), `text`, `emotion`, `gesture` (optional), `route` (optional, copied from `brain.say`), `durationMs`, `envelopeHz`, `envelope[]` (mouth-open level per frame, 0 to 1), `audioUrl` (`/audio/<id>-<seq>.wav` on the voice service, one WAV per clause), `sampleRate` |
 | `voice.playing` | A [sink](../../start/glossary.md#sink): `mouth`, the dashboard sink page | `voice`, `avatar`, `mouth`, `ears` (to ignore its own echo) | `id`, `seq`, `sink` |
 | `voice.done` | A sink, or `voice` itself when synthesis fails (sink `error`) | `avatar`, `cortex`, `ears` | `id`, `seq`, `sink`, `final` (optional, `true` when the sink will play no more of the line), and for an interrupted line `interrupted` (true), `spokenText` and `unsaidText` |
 | `voice.failed` | A sink | `voice`, `cortex` | `id`, `seq`, `sink`, `reason`, `fallback` (optional: `clip`, `text`, present exactly when a fallback clip plays for this id) |

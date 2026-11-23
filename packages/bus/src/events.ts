@@ -335,8 +335,7 @@ export const EventPayloads = {
     envelopeHz: z.number(),
     envelope: z.array(z.number()),
     /**
-     * Path on the voice service, relative to its base URL. The design names `/audio/<id>-<seq>.wav`; the voice service
-     * still serves `/audio/<id>.wav` until the voice issue of the streamed-speech epic lands.
+     * Path on the voice service, relative to its base URL: `/audio/<id>-<seq>.wav`, one WAV per clause.
      */
     audioUrl: z.string(),
     sampleRate: z.number(),

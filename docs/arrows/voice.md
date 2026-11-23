@@ -4,7 +4,7 @@
 
 ## Status
 
-**PARTIAL**: 147 specs: 96 implemented, 50 gaps, 1 deferred (`VOICE-ENG-017`, Qwen3-TTS). The TTS engine contract, the `kokoro`, `openai`, `pocket` and `stub` adapters, the shared WAV reader, the first-byte and gap bounds, the concurrency gate, the error classes, the configuration gaps, the `tts` dependency with the Pocket probe, the engine fingerprint and the egress warning are implemented (#186). Open: clause-chunked and streamed speech (`VOICE-CHUNK-*`, `VOICE-CLAUSE-*`, `VOICE-ENG-005`: epic #192) and the sink, stop, store and utterance gaps in Spec Coverage.
+**MAPPED**: 147 specs: 146 implemented, 0 gaps, 1 deferred (`VOICE-ENG-017`, Qwen3-TTS). The TTS engine contract, the `kokoro`, `openai`, `pocket` and `stub` adapters, the shared WAV reader, the first-byte and gap bounds, the concurrency gate, the error classes, the configuration gaps, the `tts` dependency with the Pocket probe, the engine fingerprint and the egress warning are implemented (#186). Clause-by-clause synthesis and streamed arbitration (`VOICE-CHUNK-*`, `VOICE-CLAUSE-*`, `VOICE-ENG-005`, epic #192, issue #195) are implemented. The status stays MAPPED until an audit pass compares the new arbitration and store code with the specs.
 
 ## Listening and speaking split
 
@@ -14,13 +14,28 @@ voice's arbitration protocol, events and clip routes serve [mouth](mouth.md): it
 
 Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice reads `voice.failed` and releases cortex early when nothing plays; it generates the fallback clips from `voice.fallback.lines`, regenerating when a fingerprint of the phrases and voice settings changes, with an atomic manifest swap, and serves the set over HTTP for mouth to cache.
 
-- `VOICE-SINK-010` to `013`: voice reads `voice.failed` and releases cortex early when nothing plays.
+- `VOICE-SINK-010` to `013`: voice reads `voice.failed` and releases cortex early when nothing plays, per clause (`VOICE-SINK-011` to `012` with the line's virtual player).
 - `VOICE-CLIP-001` to `016`: `services/voice/src/clips.ts` (`ClipService`: fingerprint, startup check, background regeneration, atomic set swap, retry, cleanup) and the `/fallback/*` routes in `Voice.handle`. The stub engine builds no clip service, so it never touches the store and answers 404.
 - Kokoro tuning knobs: `VOICE-SYN-009` and `CFG-SCH-029`, verified against Kokoro-FastAPI `v0.10.0`.
 
 ## Barge-in and echo gate
 
-`VOICE-STOP-001` to `VOICE-STOP-010` obey `voice.stop`; `VOICE-CHUNK-001` and `VOICE-CHUNK-002` are `[D]` (clause-chunked synthesis and streaming input). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+`VOICE-STOP-001` to `VOICE-STOP-010` obey `voice.stop`, and `VOICE-CLAUSE-024` to `026` extend it to streamed lines (the spoken/unsaid split). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+
+## Clause-by-clause synthesis
+
+Design: LLD § Lines and clauses, Sink Arbitration Protocol. `VOICE-CHUNK-001` and `002`, `VOICE-CLAUSE-001` to `026`, `VOICE-SYN-001`, `004`, `008`, `VOICE-UTT-001` to `003`, `VOICE-HTTP-001` to `003`, `007`, `008`, `VOICE-ENG-005`.
+
+- `brain.say` with `more` opens a line record (newest 50); `brain.clause` joins the same FIFO queue as `brain.say` and is synthesized clause by clause, one engine request each (`services/voice/src/voice.ts`, `Voice.say`, `Voice.read`, `Voice.synthesize`).
+- Each clause is stored under `<id>-<seq>` (newest 100 clauses) and announced with its own `voice.utterance`; `more` and `gesture` ride clause 0 only; `audioUrl` is `<urls.voice()>/audio/<id>-<seq>.wav`.
+- The claim window opens with clause 0 only; the virtual player then plays published clauses in order, one `voice.playing` and `voice.done` each, with the same `seq`. A real claim on a streamed line ends the virtual player with an interrupted done for the clause playing, or for the last one played between clauses.
+- A clause that fails ends the line with `voice.done` `sink: error` `final: true`; earlier clauses keep playing. A `voice.failed` for a streamed line releases it with a `final` done (`VOICE-SINK-011`, `012`).
+- `voice.stop` drops queued and in-flight clauses, and publishes one interrupted virtual done with `spokenText` and `unsaidText` when a virtual clause is playing or open between clauses (`VOICE-STOP-006`, `010`, `VOICE-CLAUSE-026`).
+- A line with no clause activity for 300 s ends at the next sweep (`VOICE-CLAUSE-012`); the sweep is an unref'd interval armed while lines exist and cleared on stop.
+- Evicted line records still synthesize their queued clauses but arm no timers, so the store bound never strands a clause.
+- Not covered here: producing the clauses (`#196`) and the real sinks that play them (`#198`, `#199`).
+
+
 
 ## References
 
@@ -31,11 +46,12 @@ Design: LLD § Sink Arbitration Protocol rule 8 and § Fallback Clips. voice rea
 - docs/intent/voice/voice-design.md (documents the full Sink Arbitration Protocol)
 
 ### EARS
-- docs/intent/voice/voice-specs.md (147 specs: 96 `[x]`, 50 `[ ]`, 1 `[D]`; prefix `VOICE`)
+- docs/intent/voice/voice-specs.md (147 specs: 146 `[x]`, 0 `[ ]`, 1 `[D]`; prefix `VOICE`)
 
 ### Tests
 Files with `@spec VOICE-` annotations:
 - services/voice/test/voice.test.ts
+- services/voice/test/clauses.test.ts
 - services/voice/test/queue.test.ts
 - services/voice/test/stop.test.ts
 - services/voice/test/boot.test.ts
@@ -74,8 +90,8 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 
 **Key Components:**
 1. `index.ts`: supplies the real setup (config, `Bus`, `VOICE_PORT` 8700, `urls.voice()`) to `runVoice`.
-2. `boot.ts`: `runVoice`: heartbeat, HTTP server, consumer-group positioning, `ready`, one bus loop on `brain.say`, `voice.playing`, `voice.failed` and `voice.stop` (`latest`); a startup failure after the configuration loads, or a rejecting subscription, logs `fatal` and exits 1.
-3. `voice.ts`: `Voice` class: internal synthesis queue, store (50 newest), `voice.utterance`, claimed set (pruned with the store), 1.5 s virtual sink with a cancellable virtual done, error release, stop handling and the HTTP handler; it takes a `Synth` and aborts nothing on `voice.stop` (only at shutdown).
+2. `boot.ts`: `runVoice`: heartbeat, HTTP server, consumer-group positioning, `ready`, one bus loop on `brain.say`, `brain.clause`, `voice.playing`, `voice.failed` and `voice.stop` (`latest`); a startup failure after the configuration loads, or a rejecting subscription, logs `fatal` and exits 1.
+3. `voice.ts`: `Voice` class: internal synthesis queue (one clause at a time), store (100 newest clauses under `<id>-<seq>`), `voice.utterance` per clause, line records (50 newest), claimed keys (pruned with the store), the per-line 1.5 s claim window and virtual player, error release, stop handling, the 300 s sweep and the HTTP handler; it takes a `Synth` and aborts nothing on `voice.stop` (only at shutdown).
 4. `clips.ts`: `ClipService`, the fallback clips.
 5. `wav.ts`: the 30 Hz mouth envelope; `parseWav` comes from `@cohost/shared` (`packages/shared/src/audio.ts`, shared with ears and mouth), as does `wavWrap`, which `collect` uses.
    - `engine.ts`: the `TtsEngine` contract, `TtsAudio`, `Synth`, `TtsError`, `classifyFailure` (line or outage), `collect` (whole audio as a WAV, zero frames rejected) and `TtsGate` (the shared concurrency gate, lines before clip phrases).
@@ -88,24 +104,24 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test-annotated |
 |----------|----------|-------------|----------|------|----------------|
-| Synthesis | VOICE-SYN-001 to VOICE-SYN-009 | 6 | 0 | 3 | 9 |
+| Synthesis | VOICE-SYN-001 to VOICE-SYN-009 | 9 | 0 | 0 | 9 |
 | Stub engine | VOICE-STUB-001 to VOICE-STUB-003 | 3 | 0 | 0 | 3 |
-| Utterance publication | VOICE-UTT-001 to VOICE-UTT-004 | 1 | 0 | 3 | 4 |
+| Utterance publication | VOICE-UTT-001 to VOICE-UTT-004 | 4 | 0 | 0 | 4 |
 | WAV and lip-sync envelope | VOICE-ENV-003 to VOICE-ENV-005 | 3 | 0 | 0 | 3 |
-| Sink arbitration | VOICE-SINK-001 to VOICE-SINK-013 | 3 | 0 | 10 | 13 |
-| Stopping a line | VOICE-STOP-001 to VOICE-STOP-010 | 8 | 0 | 2 | 10 |
-| Clause-chunked synthesis | VOICE-CHUNK-001 to VOICE-CHUNK-002 | 0 | 0 | 2 | 0 |
-| Audio store and HTTP | VOICE-HTTP-001 to VOICE-HTTP-008 | 3 | 0 | 5 | 8 |
+| Sink arbitration | VOICE-SINK-001 to VOICE-SINK-013 | 13 | 0 | 0 | 13 |
+| Stopping a line | VOICE-STOP-001 to VOICE-STOP-010 | 10 | 0 | 0 | 10 |
+| Clause-chunked synthesis | VOICE-CHUNK-001 to VOICE-CHUNK-002 | 2 | 0 | 0 | 2 |
+| Audio store and HTTP | VOICE-HTTP-001 to VOICE-HTTP-008 | 8 | 0 | 0 | 8 |
 | Fallback clips | VOICE-CLIP-001 to VOICE-CLIP-016 | 16 | 0 | 0 | 16 |
 | Health | VOICE-HLTH-001 to VOICE-HLTH-010 | 10 | 0 | 0 | 10 |
-| TTS engine contract | VOICE-ENG-001 to VOICE-ENG-017 | 15 | 1 | 1 | 15 |
+| TTS engine contract | VOICE-ENG-001 to VOICE-ENG-017 | 16 | 1 | 0 | 16 |
 | Shared WAV reader | VOICE-WAV-001 to VOICE-WAV-008 | 8 | 0 | 0 | 8 |
 | Engines | VOICE-KOK-001, VOICE-OAI-001 to VOICE-OAI-003, VOICE-POC-001 to VOICE-POC-006 | 10 | 0 | 0 | 10 |
 | Errors and configuration gaps | VOICE-ERR-001 to VOICE-ERR-003, VOICE-GAP-001 to VOICE-GAP-005 | 8 | 0 | 0 | 8 |
 | Egress | VOICE-EGR-001, VOICE-EGR-002 | 2 | 0 | 0 | 2 |
-| Clause and streamed speech | VOICE-CLAUSE-* | 0 | 0 | 24 | 0 |
+| Clause and streamed speech | VOICE-CLAUSE-001 to VOICE-CLAUSE-026 (no 022, 023) | 24 | 0 | 0 | 24 |
 
-**Summary:** 147 specs: 96 implemented, 50 gaps, 1 deferred. The gaps are the clause-chunked and streamed-speech specs (`VOICE-CHUNK-*`, `VOICE-CLAUSE-*`, `VOICE-ENG-005`) and the sink, stop, store and utterance specs listed above.
+**Summary:** 147 specs: 146 implemented, 0 gaps, 1 deferred (`VOICE-ENG-017`). Test-annotated counts the spec IDs carrying a `@spec` annotation in `services/voice/test/`; `VOICE-ENG-017` has none because it is deferred.
 
 ## Key Findings
 
@@ -118,7 +134,8 @@ Also: services/voice/src/index.ts, services/voice/package.json, services/voice/t
 ## Work Required
 
 ### Must Fix
-1. Clause-chunked and streamed speech (`VOICE-CHUNK-001`, `-002`, `VOICE-CLAUSE-*`) and `VOICE-ENG-005` (a connection ending before the audio does): epic #192.
+1. Audit pass: compare the arbitration, store and HTTP code with the spec file (the status is MAPPED).
+2. `services/voice/test/stub.test.ts` still expects `audioUrl` `/audio/<id>.wav` for the stub engine; VOICE-UTT-002 now says `/audio/<id>-<seq>.wav`.
 
 ### Should Fix
 1. Add an event-bus "subscribed" hook so `ready` does not need the duplicate `resetGroup` call (event-bus segment).

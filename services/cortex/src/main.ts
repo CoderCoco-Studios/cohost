@@ -5,7 +5,7 @@ import { createChatProvider as createChatProviderFor } from "@cohost/llm";
 import { hookHealth, pingHooks } from "@cohost/modules";
 import { createCritic as createCriticFor } from "./critic.js";
 import { Cortex } from "./cortex.js";
-import { cortexHealth } from "./health.js";
+import { NOMINAL_PING_DETAIL, cortexHealth } from "./health.js";
 import { startCortex, trackLlm, waitForLlm } from "./startup.js";
 
 /** What `main` needs from a Bus; tests pass a fake. */
@@ -44,7 +44,10 @@ export async function cortexMain(ctx: ServiceContext<CortexBus>, llmState: LlmSt
   const critic = (env.createCritic ?? createCriticFor)(cfg, log); // @spec CTX-START-005
   hooks.current = hookHealth([critic]); // @spec CTX-HEALTH-006: the critic hook's dependency and mode, read by the heartbeat
   void pingHooks([critic], log); // @spec CTX-HEALTH-007
-  const cortex = new Cortex({ cfg, bus, llm, critic, log, loadPersonality: env.loadPersonality ?? loadPersonalityFile, heartbeat });
+  const cortex = new Cortex({
+    cfg, bus, llm, critic, log, loadPersonality: env.loadPersonality ?? loadPersonalityFile, heartbeat,
+    standingDetail: cfg.llm.provider === "bedrock" ? NOMINAL_PING_DETAIL : undefined,
+  });
   llmState.tools = () => cortex.toolsState();
   onStop(() => cortex.stop());
 

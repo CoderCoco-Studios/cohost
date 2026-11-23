@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**PARTIAL.** The spec file holds 285 specs: 235 `[x]`, 49 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The tool loop (CTX-TOOL, CTX-PROMPT-016 to 020, CTX-STREAM-003 to 031, CTX-SAY-003, 008 to 010, CTX-INJ-001, CTX-HEALTH-008 and 009) is `[x]`. Open: the early-reply specs (CTX-PROV, CTX-INTJ), CTX-GATE-001, CTX-EVT-001 and 009, CTX-SAY-006, CTX-START-002. The LLD has open questions (a repeat on a mention).
+**PARTIAL.** The spec file holds 285 specs: 235 `[x]`, 49 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The tool loop (CTX-TOOL, CTX-PROMPT-016 to 020, CTX-STREAM-003, 004, 011 to 013, 019, 030 and 031, CTX-SAY-003, 008 to 010, CTX-INJ-001, CTX-HEALTH-008 and 009) is `[x]`. Open: the early-reply specs (CTX-PROV, CTX-INTJ), CTX-GATE-001, CTX-EVT-001 and 009, CTX-SAY-006, CTX-START-002. The LLD has open questions (a repeat on a mention).
 
 ## Spoken fallback line
 

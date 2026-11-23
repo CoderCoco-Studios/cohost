@@ -20,6 +20,8 @@ export interface CortexDeps {
   loadPersonality: () => string;
   /** The service's heartbeat: a pause shows as its standing detail `paused` (CTX-HEALTH-005). */
   heartbeat?: Pick<Heartbeat, "setDetail">;
+  /** A detail that stands whatever the pause or tool state (the unprobed-ping note, CTX-HEALTH-004); composed with the others. */
+  standingDetail?: string;
 }
 
 /** The line the cortex speaks while a tool answers and no clause is out (CTX-TOOL-031). */
@@ -580,7 +582,7 @@ export class Cortex {
     };
     this.line = line;
     const convo: ChatMessage[] = [...messages];
-    const collected: string[] = [];
+    const collected: ReturnType<typeof parseReply>[] = [];
     let raw = "";
     let cursor = { at: 0 };
     let literal = false;
@@ -746,21 +748,22 @@ export class Cortex {
 
     /** The calls of one round, in the order asked (CTX-TOOL-011 to CTX-TOOL-016, CTX-TOOL-027 to CTX-TOOL-028). False when the reply stopped. */
     const runCalls = async (calls: ToolCall[], final: boolean): Promise<{ ok: boolean; msgs: ChatMessage[] }> => {
-      type Plan = { call: ToolCall; tool?: ToolDef; local?: string };
+      // Answers are keyed by the call's position in the round, never by its id: a backend may repeat or leave out ids.
+      type Plan = { i: number; call: ToolCall; tool?: ToolDef; local?: string };
       const plan: Plan[] = calls.map((call, i) => {
-        if (i >= tcfg.max_calls) return { call, local: "Too many calls in one turn." };
-        if (call.invalid !== undefined) return { call, local: "The call was not valid." };
+        if (i >= tcfg.max_calls) return { i, call, local: "Too many calls in one turn." }; // @spec CTX-TOOL-011
+        if (call.invalid !== undefined) return { i, call, local: "The call was not valid." }; // @spec CTX-TOOL-012
         const tool = offer.find((t) => t.name === call.name);
-        return tool ? { call, tool } : { call, local: "That tool is not available." };
+        return tool ? { i, call, tool } : { i, call, local: "That tool is not available." }; // @spec CTX-TOOL-013
       });
-      const answers = new Map<string, { content: string; isError: boolean }>();
+      const answers = new Map<number, { content: string; isError: boolean }>();
       const asks = plan.filter((p): p is Plan & { tool: ToolDef } => p.tool !== undefined);
-      for (const p of plan) if (p.local !== undefined) answers.set(p.call.id, { content: p.local, isError: true });
+      for (const p of plan) if (p.local !== undefined) answers.set(p.i, { content: p.local, isError: true });
       const groups = asks.some((p) => p.tool.effect === "acts") ? asks.map((a) => [a]) : asks.length ? [asks] : [];
       for (const group of groups) {
         // @spec CTX-TOOL-028, CTX-TOOL-030
         if (final || budgetPassed()) {
-          for (const p of group) answers.set(p.call.id, { content: "No more tool calls.", isError: true });
+          for (const p of group) answers.set(p.i, { content: "No more tool calls.", isError: true });
           continue;
         }
         if (!(await gate())) return { ok: false, msgs: [] };
@@ -776,20 +779,27 @@ export class Cortex {
         line.waited = true;
         const p0 = line.id !== undefined ? this.pending.get(line.id) : undefined;
         if (p0) clearTimeout(p0.timer); // CTX-TOOL-023: no valve runs for the line during a wait
-        // @spec CTX-TOOL-014, CTX-TOOL-015
-        for (const w of waits) {
-          await bus.publish("tool.request", {
-            id: w.id, tool: w.p.tool.name, arguments: w.p.call.arguments, origin: r.origin, round, listed: r.listed,
-            ...(r.injected ? { injected: true as const } : {}),
-          });
-        }
         const names = group.map((p) => p.tool.name).join(", ");
-        const stopRenew = this.renew(line, `waiting for ${names}`); // @spec CTX-TOOL-022
-        await this.status(line.id !== undefined ? "speaking" : "thinking", `waiting for ${names}`).catch(() => {});
-        const outcomes = await Promise.all(waits.map((w) => w.outcome));
-        stopRenew();
-        line.waiting = false;
-        this.progress(); // CTX-TOOL-023: the end of the wait counts as progress
+        let stopRenew: (() => void) | undefined;
+        let outcomes: WaitOutcome[];
+        try {
+          // @spec CTX-TOOL-014, CTX-TOOL-015
+          for (const w of waits) {
+            await bus.publish("tool.request", {
+              id: w.id, tool: w.p.tool.name, arguments: w.p.call.arguments, origin: r.origin, round, listed: r.listed,
+              ...(r.injected ? { injected: true as const } : {}),
+            });
+          }
+          stopRenew = this.renew(line, `waiting for ${names}`); // @spec CTX-TOOL-022
+          await this.status(line.id !== undefined ? "speaking" : "thinking", `waiting for ${names}`).catch(() => {});
+          outcomes = await Promise.all(waits.map((w) => w.outcome));
+        } finally {
+          // A failed publish must not leave the valve held: the wait ends, and the line's valve is re-armed (CTX-TOOL-023).
+          stopRenew?.();
+          for (const w of waits) this.awaiting.delete(w.id);
+          line.waiting = false;
+          this.progress();
+        }
         if (outcomes.some((o) => o.kind === "abandoned")) {
           // CTX-TOOL-037, CTX-TOOL-038: a mute, pause or stop ended the wait; nothing more is requested.
           if (!line.closed && !line.exited) { if (line.id !== undefined) await this.closeLine(line, "stopped"); else await this.noLine(line); }
@@ -800,10 +810,10 @@ export class Cortex {
         waits.forEach((w, i) => {
           const o = outcomes[i]!;
           if (o.kind === "result") {
-            answers.set(w.p.call.id, { content: quoteUntrusted(o.result.content, cfg.tools.max_result_chars), isError: o.result.status !== "ok" });
+            answers.set(w.p.i, { content: quoteUntrusted(o.result.content, cfg.tools.max_result_chars), isError: o.result.status !== "ok" }); // @spec CTX-PROMPT-018, CTX-TOOL-020
             lastAt = Math.max(lastAt, o.at);
           } else {
-            answers.set(w.p.call.id, { content: "The tool did not answer in time.", isError: true }); // CTX-TOOL-019
+            answers.set(w.p.i, { content: "The tool did not answer in time.", isError: true }); // CTX-TOOL-019
             complete = false;
           }
         });
@@ -811,7 +821,7 @@ export class Cortex {
       }
       // @spec CTX-PROMPT-018: a result is quoted here, and the fixed messages above are not.
       const msgs: ChatMessage[] = plan.map((p) => {
-        const a = answers.get(p.call.id) ?? { content: "No more tool calls.", isError: true };
+        const a = answers.get(p.i) ?? { content: "No more tool calls.", isError: true };
         return { role: "tool", callId: p.call.id, name: p.call.name, content: a.content, isError: a.isError };
       });
       return { ok: true, msgs };
@@ -871,9 +881,13 @@ export class Cortex {
     /** The reply's end for a collected (`llm`/`http`) critic: criticise the whole reply once, check it, then cut and publish (CTX-TOOL-032). */
     const endCollected = async (cut: LineCut | undefined, said: boolean): Promise<void> => {
       if (line.closed || line.exited) return;
-      // Each round's text is one line; the tags later rounds carry leave gaps where they were, so the joined text is re-spaced.
-      const whole0 = parseReply(collected.filter((s) => s.length > 0).join(" "));
-      const whole = { ...whole0, text: whole0.text.replace(/\s{2,}/g, " ").trim() };
+      // The emotion and gesture are the first spoken round's; the text is the spoken rounds joined by single spaces.
+      const spoken = collected.filter((c) => c.text.length > 0);
+      const whole = {
+        text: spoken.map((c) => c.text).join(" ").replace(/\s{2,}/g, " ").trim(),
+        emotion: spoken[0]?.emotion ?? ("neutral" as Emotion),
+        gesture: spoken[0]?.gesture,
+      };
       if (!line.emotionFixed) { line.emotion = whole.emotion; line.gesture = whole.gesture; }
       if (whole.text.length < 2) { await closeEmpty(cut, said); return; } // CTX-PROMPT-006
       // @spec CTX-CRITIC-001, CTX-TOOL-033
@@ -935,7 +949,8 @@ export class Cortex {
         literal = roundHead.literal === true;
         const lengthCut = offering && out.finish === "length"; // CTX-TOOL-017
         const wantCalls = offering && !lengthCut && out.calls.length > 0;
-        if (!incremental) collected.push(out.text);
+        // @spec CTX-TOOL-032: an llm or http critic gets each round parsed on its own, so no later round's `Name:` or tag is spoken.
+        if (!incremental) collected.push(parseReply(out.text));
         const roundSaid = (): boolean => line.published.length > said0;
 
         if (!wantCalls) {
@@ -957,6 +972,8 @@ export class Cortex {
         if (incremental) {
           if (!(await pump(roundHead.body, true, false, Date.now()))) return;
           if (line.closed || line.exited) return;
+          // @spec CTX-TOOL-009: a round that reaches max_clauses ends the reply and runs none of its calls.
+          if (line.counted >= maxClauses) { await this.endOpen(line, "length"); return; }
         }
         if (final && finalCallRounds >= 1) { await hardStop(); return; } // CTX-TOOL-029
         if (final) finalCallRounds++;
@@ -1012,6 +1029,7 @@ export class Cortex {
     return new Promise<WaitOutcome>((resolve) => {
       const done = (o: WaitOutcome): void => { clearTimeout(timer); this.awaiting.delete(id); resolve(o); };
       const timer = setTimeout(() => done({ kind: "timeout" }), bound);
+      timer.unref(); // a wait never holds the process up
       this.awaiting.set(id, done);
     });
   }
@@ -1063,12 +1081,15 @@ export class Cortex {
   // @spec CTX-HEALTH-009
   /** Sets the cut-off flag and republishes the heartbeat detail, joined by `; ` to the paused detail. */
   private setCutOff(on: boolean): void {
+    if (this.cutOff === on) return; // an unchanged flag publishes nothing
     this.cutOff = on;
     this.publishDetail();
   }
 
+  /** The standing detail: the base note, the pause and the cut-off call, joined by `; ` (CTX-HEALTH-009). */
   private publishDetail(): void {
-    const detail = [this.pausedDetail, this.cutOff ? CUT_OFF_DETAIL : undefined].filter((x): x is string => x !== undefined).join("; ");
+    const detail = [this.d.standingDetail, this.pausedDetail, this.cutOff ? CUT_OFF_DETAIL : undefined]
+      .filter((x): x is string => x !== undefined && x !== "").join("; ");
     this.d.heartbeat?.setDetail(detail === "" ? undefined : detail);
   }
 
@@ -1120,7 +1141,6 @@ export class Cortex {
     line.stopped = true;
     if (line.id === undefined) { line.exited = true; line.ctrl.abort(); return; } // nothing published: no brain.say after stop
     await this.closeLine(line, "stopped").catch((err) => this.d.log.error({ err }, "closing the streamed line failed"));
-
   }
 
   /** A line ended (its release, its valve or a stop); false when it was not pending. Clears its timers and keeps it as retired. */

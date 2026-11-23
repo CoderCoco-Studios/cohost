@@ -145,6 +145,8 @@ interface SetupOpts {
   /** The catalog delivered before the test starts: none for `null`. Defaults to one read tool, `clock`. */
   catalog?: ToolDef[] | null;
   intervalMs?: number;
+  /** The standing heartbeat note that stands whatever the pause or tool state (CTX-HEALTH-004). */
+  standingDetail?: string;
 }
 function setup(o: SetupOpts = {}) {
   const kind = o.kind ?? "rules";
@@ -169,7 +171,7 @@ function setup(o: SetupOpts = {}) {
     ? new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: run as never }, silentLog)
     : ({ kind, run } as unknown as Module<CriticInput, CriticOutput>);
   const details: (string | undefined)[] = [];
-  const cortex = new Cortex({ cfg, bus, llm, critic, log: rec.log, loadPersonality: () => "You are Coco.", heartbeat: { setDetail: (d: string | undefined) => { details.push(d); } } as never });
+  const cortex = new Cortex({ cfg, bus, llm, critic, log: rec.log, loadPersonality: () => "You are Coco.", standingDetail: o.standingDetail, heartbeat: { setDetail: (d: string | undefined) => { details.push(d); } } as never });
   bus.cortex = cortex;
   bus.auto = () => ({ content: "it is noon" });
   const s = {
@@ -269,11 +271,11 @@ test("an injected speech focus is judged by the source it names, is never listed
 });
 
 const CAT = [
-  tool("lookup", { chat: true }), tool("clock"), actingTool("send"), actingTool("timer"),
+  tool("lookup", { chat: true }), tool("clock"), actingTool("send"), actingTool("timer"), actingTool("post", { chat: true }),
   tool("hidden", { chat: true, offered: false, reason: "not_enabled" }),
 ];
 const OFFERS: { name: string; focus: FocusInput; offered: string[] }[] = [
-  { name: "speech", focus: speech(), offered: ["lookup", "clock", "send", "timer"] },
+  { name: "speech", focus: speech(), offered: ["lookup", "clock", "send", "timer", "post"] },
   { name: "guest", focus: speech({ source: "mic" }), offered: ["lookup"] },
   { name: "chat", focus: chatFocus(), offered: ["lookup"] },
   { name: "reminder", focus: reminderFocus(), offered: ["lookup", "clock"] },
@@ -1254,3 +1256,117 @@ test("the heartbeat reports deps.tools and a down tools dependency makes the ser
     assert.equal(hbs[1]!.state, state === "down" ? "degraded" : "ready");
   }
 });
+
+// ---- security review: exact limit, per-round max_calls, offers, ids, publish failure, critic rounds, heartbeat ----
+
+// @spec CTX-TOOL-009
+test("a round whose text reaches max_clauses exactly runs none of its calls and ends the reply length", async () => {
+  const s = await ready({ cortex: { max_clauses: 2 } });
+  await think(s, [{ text: "[happy] Let me check. Here we go now.", calls: [call("c1")] }, { text: "[happy] Done." }]);
+  assert.equal(s.bus.requests.length, 0, "the round's call did not run");
+  assert.equal(s.llm.calls.length, 1);
+  assert.deepEqual(sayTexts(s), ["Let me check."]);
+  assert.equal(s.clauses()[0]!.text, "Here we go now.");
+  assert.equal(s.closing()!.cut, "length");
+});
+
+// @spec CTX-TOOL-011
+test("max_calls applies to each round: three calls in round 1 keep two, one call in round 2 is requested", async () => {
+  const s = await ready({ tools: { reply: { max_calls: 2, filler_after_ms: 60_000 } } });
+  await think(s, [
+    { text: "[happy] Checking.", calls: [call("c1"), call("c2"), call("c3")] },
+    { calls: [call("c4")] },
+    { text: "[happy] Done." },
+  ]);
+  assert.equal(s.bus.requests.length, 3, "two requests in round 1, one in round 2");
+  assert.equal(s.toolMsgs(1).find((m) => m.callId === "c3")!.content, "Too many calls in one turn.");
+  assert.equal(s.toolMsgs(2).at(-1)!.content, quoteUntrusted("it is noon", s.cfg.tools.max_result_chars));
+});
+
+// @spec CTX-TOOL-013, CTX-TOOL-002
+test("a tool in the catalog that the origin is not offered gets That tool is not available. and no request", async () => {
+  const s = await ready({ catalog: [tool("lookup", { chat: true }), tool("clock")] });
+  await think(s, [{ text: "[happy] Checking.", calls: [call("c1", "clock")] }, { text: "[happy] Done." }], chatFocus());
+  assert.equal(s.bus.requests.length, 0);
+  assert.equal(s.toolMsgs(1)[0]!.content, "That tool is not available.");
+});
+
+// @spec CTX-TOOL-013, CTX-TOOL-003
+test("a chat origin that names an acting tool in the catalog gets That tool is not available. and no request", async () => {
+  const s = await ready({ catalog: CAT });
+  await think(s, [{ text: "[happy] Posting.", calls: [call("c1", "post")] }, { text: "[happy] Done." }], chatFocus());
+  assert.equal(s.bus.requests.length, 0, "an acting tool is never offered to chat");
+  assert.equal(s.toolMsgs(1)[0]!.content, "That tool is not available.");
+});
+
+// @spec CTX-TOOL-012, CTX-TOOL-013, CTX-TOOL-011
+test("answers are keyed by call position: repeated or empty ids each get their own result, and a call beyond max_calls reusing an id is Too many", async () => {
+  const s = await ready({ catalog: [tool("clock"), tool("weather")] });
+  s.bus.auto = (req) => ({ content: req.tool === "clock" ? "CLOCK" : "WEATHER" });
+  await think(s, [
+    { text: "[happy] Checking.", calls: [call("0", "clock"), call("0", "weather"), call("0", "clock"), call("", "weather")] },
+    { text: "[happy] Done." },
+  ]);
+  const max = s.cfg.tools.max_result_chars;
+  assert.deepEqual(s.toolMsgs(1).map((m) => m.content), [
+    quoteUntrusted("CLOCK", max), quoteUntrusted("WEATHER", max), quoteUntrusted("CLOCK", max), "Too many calls in one turn.",
+  ]);
+  assert.equal(s.bus.requests.length, 3);
+});
+
+// @spec CTX-TOOL-023, CTX-TOOL-014
+test("a tool.request publish that throws does not hold the valve: the line releases on its own", async () => {
+  const s = await ready({ cortex: { speaking_timeout_ms: 80 } });
+  const publish = s.bus.publish.bind(s.bus);
+  (s.bus as unknown as { publish: unknown }).publish = async (type: string, data: unknown) => {
+    if (type === "tool.request") throw new Error("bus down");
+    return publish(type as never, data as never);
+  };
+  await think(s, [{ text: "[happy] Let me check on that.", calls: [call("c1")] }, { text: "[happy] It is noon." }]);
+  await sleep(250);
+  assert.equal(s.says().length, 1, "the clause before the call was out");
+  assert.equal(s.statuses().at(-1)!.state, "idle", "the valve released the line and the status is idle");
+});
+
+// @spec CTX-TOOL-032
+test("under an llm critic a later round's leading Name: and tag are not spoken", async () => {
+  const s = await ready({ kind: "llm" });
+  await think(s, [{ text: "[happy] Let me check that for you.", calls: [call("c1")] }, { text: "Coco: [sad] It is noon now." }]);
+  assert.equal(s.criticCalls.length, 1);
+  assert.equal(s.criticCalls[0]!.text, "Let me check that for you. It is noon now.");
+  assert.equal(s.criticCalls[0]!.emotion, "happy", "the emotion is the first spoken round's");
+});
+
+// @spec CTX-HEALTH-009, CTX-HEALTH-004
+test("the heartbeat detail composes the standing note, the pause and the cut-off call with '; ', and clearing the cut-off keeps the note", async () => {
+  const cut = "a tool call was cut off by tools.reply.max_tokens";
+  const s = await ready({ standingDetail: "llm dependency not probed" });
+  await think(s, [{ text: "[happy] Cut off", finish: "length" }]);
+  assert.equal(s.details.at(-1), `llm dependency not probed; ${cut}`);
+  await s.cortex.onEvent(event("control", { cmd: "pause" }));
+  assert.equal(s.details.at(-1), `llm dependency not probed; paused; ${cut}`);
+  await s.cortex.onEvent(event("control", { cmd: "resume" }));
+  assert.equal(s.details.at(-1), `llm dependency not probed; ${cut}`);
+  await endLine(s, s.says()[0]!.id);
+  await think(s, [{ text: "[happy] Checking.", calls: [call("c1")] }, { text: "[happy] It is noon." }]);
+  assert.equal(s.details.at(-1), "llm dependency not probed", "a clean later round clears the cut-off and keeps the note");
+});
+
+// @spec CTX-TOOL-036
+test("a mute that lands as a wait ends, before a later round is asked for, ends the think without a line", async () => {
+  const s = await ready();
+  s.bus.auto = undefined;
+  s.llm.rounds.push({ calls: [call("c1")] }, { text: "[happy] It is noon." });
+  const thinking = s.cortex.think(speech());
+  await waitFor(() => s.bus.requests.length === 1, "the request");
+  const req = s.bus.requests[0]!;
+  // The result lands and the mute is applied in the same tick, so the mute is read at the start of round 2.
+  const delivered = s.cortex.onEvent(event("tool.result", { id: req.id, tool: req.tool, status: "ok", content: "it is noon", durationMs: 1 }, "tools"));
+  void s.cortex.onEvent(event("control", { cmd: "mute" }));
+  await delivered;
+  await thinking;
+  assert.equal(s.llm.calls.length, 1, "no round 2 under a mute");
+  assert.equal(s.says().length, 0);
+  assert.equal(s.statuses().at(-1)!.state, "muted");
+});
+

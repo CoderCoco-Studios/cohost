@@ -211,7 +211,8 @@ test("a think that ends while its line is pending publishes no status; a done du
   g.open();
   await thinking;
   assert.equal(s.closings().length, 1);
-  assert.equal(idles(s), 1, "the reply closed with every player complete: one idle");
+  assert.equal(idles(s), 0, "the reply closed but clause 1 is not completed by the player: the line stays pending");
+  assert.ok(await busy(s), "the line is still pending");
 });
 
 // @spec CTX-REL-010

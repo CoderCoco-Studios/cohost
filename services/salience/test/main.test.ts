@@ -41,7 +41,7 @@ function env(bus: GroupBus, over: Record<string, unknown> = {}) {
 }
 const states = (bus: GroupBus) => bus.health.map((h) => h.state);
 
-test("main: subscribes in start mode latest and signals ready only after the consumer group exists", async () => { // @spec SAL-IN-001, SAL-HEALTH-001
+test("main: subscribes in start mode latest and signals ready only after the consumer group exists", async () => { // @spec SAL-IN-001, SAL-IN-008, SAL-HEALTH-001
   const bus = new GroupBus();
   let open!: () => void;
   bus.gate = new Promise<void>((r) => (open = r));
@@ -58,7 +58,7 @@ test("main: subscribes in start mode latest and signals ready only after the con
   assert.deepEqual(bus.calls, ["resetGroup:salience", "subscribe:salience"]);
   assert.deepEqual(bus.subscribed[0], {
     group: "salience",
-    types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "control"],
+    types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "control"],
     start: "latest",
   });
   for (const fn of shutdown) await fn();

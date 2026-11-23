@@ -529,3 +529,71 @@ test("idle chatter: playback events restart neither the idle timer nor the coold
   assert.equal(h.bus.of("attention.focus").length, 1, "idle chatter fired: the idle timer ran from the say");
   assert.equal(h.bus.of("attention.focus")[0]!.reason, "idle chatter");
 });
+
+// ---- chat.removed and viewer keys (issue #182)
+
+const removed = (data: Record<string, unknown>) => event("chat.removed", { platform: "twitch", scope: "message", ...data });
+const mention = (messageId: string, extra: Record<string, unknown> = {}) =>
+  chat("hey Coco?", { mentionsCohost: true, userId: "u1", messageId, ...extra });
+const texts = (s: Salience) => s.ctx.all().map((e) => (e as { text: string }).text);
+
+test("chat.removed takes the removed line out of the window so it counts toward no decision", async () => { // @spec SAL-IN-008
+  const { s, bus } = setup();
+  await s.onEvent(mention("m1"));
+  await s.onEvent(removed({ scope: "message", messageId: "m1" }));
+  assert.equal(s.ctx.all().length, 0);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0);
+});
+
+test("chat.removed by user and by all forget the matching lines of that platform", async () => { // @spec SAL-IN-008
+  const { s } = setup();
+  await s.onEvent(chat("a", { userId: "u1", messageId: "a" }));
+  await s.onEvent(chat("b", { userId: "u2", messageId: "b" }));
+  await s.onEvent(removed({ scope: "user", userId: "u1" }));
+  assert.deepEqual(texts(s), ["b"]);
+  await s.onEvent(removed({ scope: "all" }));
+  assert.equal(s.ctx.all().length, 0);
+});
+
+test("chat.removed received while paused is still applied: the line is not scored after resume", async () => { // @spec SAL-IN-009
+  const { s, bus } = setup();
+  await s.onEvent(mention("m1"));
+  await s.onEvent(event("control", { cmd: "pause" }));
+  await s.onEvent(removed({ scope: "message", messageId: "m1" }));
+  assert.equal(s.ctx.all().length, 0, "forgotten while paused");
+  await s.onEvent(event("control", { cmd: "resume" }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0);
+});
+
+test("a focused line removed while the scorer runs publishes no focus, leaves events unseen and does not mark the cortex thinking", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  await s.onEvent(chat("plain from another", { userId: "u2", messageId: "m2" }));
+  const running = s.tick();
+  await s.onEvent(removed({ scope: "message", messageId: "m1" })); // the focus leaves while the scorer is awaited
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 0);
+  assert.deepEqual(s.ctx.unseen().map((e) => (e as { text: string }).text), ["plain from another"], "the decision's other events stay unseen");
+  setGate(undefined);
+  await s.onEvent(mention("m3", { userId: "u3" }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1, "not thinking, so the next decision publishes");
+});
+
+test("a removal of a line that is not the focus leaves the decision standing", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  await s.onEvent(chat("plain from another", { userId: "u2", messageId: "m2" }));
+  const running = s.tick();
+  await s.onEvent(removed({ scope: "message", messageId: "m2" }));
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 1);
+});

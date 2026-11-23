@@ -5,7 +5,7 @@ import { testConfig, waitFor } from "@cohost/testing";
 import { chatPlan, createChatFilter } from "../src/filter.js";
 import { fakeScript, startFakeSource } from "../src/fake.js";
 
-const cfg = testConfig({ chat: { source: "fake", ignore_users: ["nightbot"], ignore_prefixes: ["!"] } });
+const cfg = testConfig({ chat: { sources: ["fake"], ignore_users: ["nightbot"], ignore_prefixes: ["!"] } });
 
 function run(extra: { stdin?: PassThrough & { isTTY?: boolean } } = {}) {
   const published: { user: string; text: string; platform: string; mentionsCohost: boolean }[] = [];
@@ -63,9 +63,9 @@ test("a TTY stdin disables the script entirely", () => {
 // @spec CHAT-PLAN-001, CHAT-PLAN-002, CHAT-PLAN-003
 test("chatPlan: fake needs no channel; twitch without a channel idles (never exits); twitch with one connects", () => {
   const plan = (over: Record<string, unknown>) => chatPlan(testConfig({ chat: over }).chat);
-  assert.equal(plan({ source: "fake", twitch: { channel: "" } }), "fake");
-  assert.equal(plan({ source: "twitch", twitch: { channel: "" } }), "idle");
-  assert.equal(plan({ source: "twitch", twitch: { channel: "#Chan" } }), "twitch");
+  assert.equal(plan({ sources: ["fake"], twitch: { channel: "" } }), "fake");
+  assert.equal(plan({ sources: ["twitch"], twitch: { channel: "" } }), "idle");
+  assert.equal(plan({ sources: ["twitch"], twitch: { channel: "#Chan" } }), "twitch");
 });
 
 // @spec CHAT-FAKE-005

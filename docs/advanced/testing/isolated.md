@@ -23,7 +23,7 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `cortex`, and the `salience`, `affect` and notes [hooks](../../start/glossary.md#hook) that inherit its model | `LLM_PROVIDER=mock` (`llm.provider`) | Deterministic echo replies and hash [embeddings](../../start/glossary.md#embedding) (`mock`) |
 | `memory` | `MEMORY_STORE=memory` and `MEMORY_EMBEDDER=hash` (`brain.memory.store`, `brain.memory.embedder`) | An in-process store with offline embeddings, lost on exit (`mock`). Needs no [Postgres](../../start/glossary.md#postgres) and no [Ollama](../../start/glossary.md#ollama) |
 | `voice` | `VOICE_ENGINE=stub` (`voice.engine`) | A silent WAV of 60 ms per character (400 ms minimum), no [TTS](../../start/glossary.md#tts) call (`mock`) |
-| `chat` | `CHAT_SOURCE=fake` (`chat.source`) | Scripted or stdin messages, no Twitch (`mock`) |
+| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages, no Twitch (`mock`) |
 | `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`) and still accepts injected chat |
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
 | `eyes` | `VISION_ENGINE=stub` (`vision.engine`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
@@ -110,7 +110,7 @@ export REDIS_URL=redis://localhost:6379
 COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' pnpm --filter @cohost/cortex exec tsx src/index.ts &
 pnpm --filter @cohost/salience exec tsx src/index.ts &
 pnpm --filter @cohost/affect exec tsx src/index.ts &
-COHOST_ISOLATION='{"CHAT_SOURCE":"fake"}' pnpm --filter @cohost/chat exec tsx src/index.ts &
+COHOST_ISOLATION='{"CHAT_SOURCES":"[fake]"}' pnpm --filter @cohost/chat exec tsx src/index.ts &
 COHOST_ISOLATION='{"VOICE_ENGINE":"stub"}' pnpm --filter @cohost/voice exec tsx src/index.ts &
 ```
 

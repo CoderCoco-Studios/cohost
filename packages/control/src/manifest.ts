@@ -54,7 +54,7 @@ const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName"
 // @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
-    groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" },
+    groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
     config: ["chat", "viewer_text"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {

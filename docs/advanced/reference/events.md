@@ -17,7 +17,8 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
-| `chat.message` | `chat`, the dashboard (bus-level injection) | `salience`, `affect`, `cortex`, `memory` | `platform` (`twitch`, `youtube` or `discord`), `user`, `userId` (optional), `text`, `isMod` (false), `isSub` (false), `mentionsCohost` (false), `injected`, `remember` |
+| `chat.message` | `chat`, the dashboard (bus-level injection) | `salience`, `affect`, `cortex`, `memory` | `platform` (`twitch`, `youtube` or `discord`), `user`, `userId` (optional), `messageId` (optional, the platform id a later `chat.removed` names), `text`, `isMod` (false), `isSub` (false), `mentionsCohost` (false), `injected`, `remember` |
+| `chat.removed` | A chat source that removes messages | None yet | `platform` (`twitch`, `youtube` or `discord`), `scope` (`message`, `user` or `all`), `messageId` (required for `message`), `userId` (required for `user`), `reason` (optional) |
 | `vision.summary` | `eyes`, the dashboard | `salience`, `affect`, `cortex` | `text`, `changed` (true when materially different from the last summary), `timing` (optional), `injected`, `remember` |
 | `speech.heard` | `ears`, the dashboard | `salience`, `affect`, `cortex`, `memory` | `speaker`, `speakerId` (optional), `text`, `durationMs`, `timing` (optional), `source` (the listening source: a [connector](../../start/glossary.md#connector) tag, `http` or `dir`), `utteranceId` (ties the final to its partials), `injected`, `remember` |
 | `speech.partial` | `ears` | The dashboard feed | `speaker`, `speakerId` (optional), `source`, `text` (the words firmed up so far), `utteranceId`, `seq`, `timing` (optional). A later partial replaces it and `speech.heard` ends it |
@@ -26,16 +27,16 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
-| `attention.focus` | `salience` | `cortex` | `reason` (free text, such as `mentioned`), `score`, `focus` (optional: `kind` of `chat`, `speech` or `vision`, `who`, `text`, `mention`), `timing`, `injected`, `remember` |
+| `attention.focus` | `salience` | `cortex` | `reason` (free text, such as `mentioned`), `score`, `focus` (optional: `kind` of `chat`, `speech` or `vision`, `who`, `platform` and `userId` (optional), `text`, `mention`), `timing`, `injected`, `remember` |
 | `affect.state` | `affect` | `salience`, `cortex`, `avatar` | `valence` (-1 to 1), `arousal` (0 to 1), `mood` (the nearest emotion), `cause` (optional) |
 | `brain.say` | `cortex`, `salience` (a [reflex](../../start/glossary.md#reflex)), the dashboard (unit-level injection) | `voice`, `avatar`, `affect`, `salience`, `cortex`, `memory` | `id`, `text`, `emotion`, `gesture` (optional), `reason` (optional), `route` (optional: the mouth outputs this line is for; absent means every enabled output), `more` (optional, `true` when later clauses follow as `brain.clause` events), `timing`, `injected`, `remember` |
 | `brain.clause` | `cortex` | `voice`, `mouth`, `memory`, `cortex`, `dashboard` | `id` (the line's `brain.say` id), `seq` (1 or more, counting from the `brain.say` text as clause 0), `text` (empty only on the closing event), `last` (optional, `true` on the closing event), `through` (required with `last`: the last `seq` sinks should expect audio for), `cut` (optional, only with `last`: why the reply ended early) |
 | `brain.status` | `cortex` | `salience`, `memory` | `state` (`idle`, `thinking`, `speaking` or `muted`), `detail` (optional) |
 | `memory.recall.request` | `cortex` | `memory` | `id`, `query`, `k` (optional) |
 | `memory.recall.reply` | `memory` | `cortex` | `id`, `memories[]`: `ts`, `kind` (`chat`, `speech`, `self` or `note`), `who`, `text`, `similarity` (optional). An empty list is a valid answer |
-| `memory.viewer` | `memory` | `cortex` | `user`, `isNew`, `msgCount`, `regular`. Carries no note text |
-| `memory.notes.request` | `cortex` | `memory` | `id`, `users[]` (at least one; the first is the viewer being replied to) |
-| `memory.notes.reply` | `memory` | `cortex` | `id`, `viewers[]`: `user`, `regular`, `msgCount`, `notes[]` of `layer` (`core` or `recent`), `category` (`general`, `health` or `family`), `text` (absent for health and family notes), `hint`, `strength`. Never forwarded to the dashboard's browser feed |
+| `memory.viewer` | `memory` | `cortex` | `user`, `platform` and `userId` (optional), `isNew`, `msgCount`, `regular`. Carries no note text |
+| `memory.notes.request` | `cortex` | `memory` | `id`, `viewers[]` (at least one; each `user`, with `platform` and `userId` optional; the first is the viewer being replied to) |
+| `memory.notes.reply` | `memory` | `cortex` | `id`, `viewers[]`: `user`, `platform` and `userId` (optional), `regular`, `msgCount`, `notes[]` of `layer` (`core` or `recent`), `category` (`general`, `health` or `family`), `text` (absent for health and family notes), `hint`, `strength`. Never forwarded to the dashboard's browser feed |
 | `memory.viewers.request` | The dashboard | `memory` | `id` and an `op`: `list` (optional `query`), `get` (`key`), `delete_note` (`noteId`, optional `reason`), `restore` (`deletionId`), `clear` (`key`, optional `reason`), `set_regular` (`regular` and a `key` or `name`), `link_discord` (`discordId` and a `key` or `name`) or `unlink_discord` (`discordId`). Never forwarded to the browser feed |
 | `memory.viewers.reply` | `memory` | The dashboard | `id`, `ok`, `error` (optional: `not_found` or `failed`), `detail` (optional), `data` (the operation's result) |
 

@@ -22,7 +22,7 @@ export function channelName(cfg: Config["chat"]): string {
  * `twitch` connects, `idle` is twitch with no channel (stay up degraded; never exit).
  */
 export function chatPlan(cfg: Config["chat"]): "fake" | "twitch" | "idle" {
-  if (cfg.source === "fake") return "fake";
+  if (cfg.sources.includes("fake")) return "fake";
   return channelName(cfg) ? "twitch" : "idle";
 }
 

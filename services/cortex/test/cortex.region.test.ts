@@ -521,7 +521,7 @@ test("notes request: the replied-to viewer first, then the distinct chat users i
   await cortex.onEvent(event("speech.heard", { speaker: "Chris", text: "hello", durationMs: 100 })); // voice is not a viewer
   await cortex.think(mention("bob"));
   const [req] = bus.of("memory.notes.request");
-  assert.deepEqual(req!.users, ["bob", "AMY", "cat"]);
+  assert.deepEqual(req!.viewers.map((v) => v.user), ["bob", "AMY", "cat"]);
   assert.ok(req!.id.length > 0);
 });
 
@@ -534,7 +534,7 @@ test("notes request: no focus who means the window users alone; an empty list sk
   const { cortex, bus } = setup();
   await cortex.onEvent(say("amy"));
   await cortex.think({ reason: "idle chatter", score: 0 });
-  assert.deepEqual(bus.of("memory.notes.request")[0]!.users, ["amy"]);
+  assert.deepEqual(bus.of("memory.notes.request")[0]!.viewers.map((v) => v.user), ["amy"]);
   await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.think(mention("amy"));
   const ids = bus.of("memory.notes.request").map((r) => r.id);

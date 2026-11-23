@@ -8,20 +8,20 @@ import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./help
 isolateEnv();
 
 const mode = (f: string): number => statSync(f).mode & 0o777;
-const ELEVEN = [
+const TWELVE = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
-  "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "connections.discord.token",
+  "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
 ];
 const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>((x, k) => (x as Record<string, unknown> | undefined)?.[k], o);
 
 // @spec CFG-SEC-003, CFG-SCH-039
-test("SECRET_PATHS lists exactly the eleven credentials, and each is a schema key that defaults to the empty string", () => {
-  assert.deepEqual([...SECRET_PATHS].sort(), [...ELEVEN].sort());
+test("SECRET_PATHS lists exactly the twelve credentials, and each is a schema key that defaults to the empty string", () => {
+  assert.deepEqual([...SECRET_PATHS].sort(), [...TWELVE].sort());
   const cfg = ConfigSchema.parse({
     cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
   });
-  for (const p of ELEVEN) assert.equal(getPath(cfg, p), "", p);
+  for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
 });
 
 // @spec CFG-SEC-001
@@ -31,7 +31,7 @@ test("secretsPath is secrets.yaml in the config directory; with no file every se
   let cfg!: ReturnType<typeof loadConfig>;
   const warnings = captureWarnings(() => { cfg = loadConfig(true); });
   assert.deepEqual(warnings, []);
-  for (const p of ELEVEN) assert.equal(getPath(cfg, p), "", p);
+  for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
   assert.equal(existsSync(join(dir, "secrets.yaml")), false);
 });
 
@@ -226,7 +226,7 @@ test("loadDotEnv still works beside secrets: a credential-looking variable in .e
   const dir = sandbox({ "config.yaml": MINIMAL_YAML, ".env": "LLM_API_KEY=from-env\nANTHROPIC_API_KEY=from-env\nDISCORD_TOKEN=from-env\nOBS_PASSWORD=from-env\nTWITCH_CLIENT_ID=from-env\n" });
   loadDotEnv(join(dir, "..", ".env"));
   const cfg = loadConfig(true);
-  for (const p of ELEVEN) assert.equal(getPath(cfg, p), "", p);
+  for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
 });
 
 // @spec CFG-USR-016
@@ -238,7 +238,7 @@ test("the shipped secrets.example.yaml lists the eleven secret paths as empty st
   let cfg!: ReturnType<typeof loadConfig>;
   const warnings = captureWarnings(() => { cfg = loadConfig(true); });
   assert.deepEqual(warnings, []);
-  for (const p of ELEVEN) assert.equal(getPath(cfg, p), "", p);
+  for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
   // each of the eleven leaves is the empty string with a comment beside it or on the line above
   const lines = text.split("\n");
   const leafLines = lines.map((l, i) => ({ l, i })).filter(({ l }) => /^\s+[a-z_]+:\s*(""|'')/.test(l));
@@ -303,7 +303,7 @@ test("chat.youtube.api_key is a secret path (owned by CFG-SEC-003): listed, defa
     voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
   });
   assert.equal(getPath(cfg, "chat.youtube.api_key"), "");
-  sandbox({ "secrets.yaml": "chat:\n  youtube:\n    api_key: yt-key\n" });
+  sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": "chat:\n  youtube:\n    api_key: yt-key\n" });
   assert.equal(loadConfig(true).chat.youtube.api_key, "yt-key");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assert.equal((sectionJsonSchema("chat") as any).properties.youtube.properties.api_key["x-secret"], true);

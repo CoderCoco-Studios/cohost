@@ -13,7 +13,7 @@ export interface InjectDeps {
 /**
  * Handles `inject.request` for chat through the shared inject handler (target `chat`, the one kind `text`): the text
  * is published as an injected `chat.message`, as a viewer. `chat.ignore_users` / `chat.ignore_prefixes` are deliberately
- * NOT applied (a dropped test is useless), and nothing here depends on `chat.source` or a Twitch connection.
+ * NOT applied (a dropped test is useless), and nothing here depends on `chat.sources` or a Twitch connection.
  */
 export function createInjectHandler(d: InjectDeps): InjectHandler {
   const name = d.cohostName.toLowerCase();

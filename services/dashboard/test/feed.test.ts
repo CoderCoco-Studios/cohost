@@ -132,7 +132,7 @@ test("viewer-notes events never reach /ws: not in the connect replay, not live, 
   const t = setup();
   const ws = new Sock(); t.socks.add(ws);
   const notes = () => [
-    event("memory.notes.request", { id: "n", users: ["bob"] }),
+    event("memory.notes.request", { id: "n", viewers: [{ user: "bob" }] }),
     event("memory.notes.reply", { id: "n", viewers: [{ user: "Bob", regular: true, msgCount: 9, notes: [{ layer: "core", category: "health", hint: "gently", strength: 1 }] }] }),
     { ...event("brain.status", { state: "idle" }), type: "memory.viewers.request" } as unknown as BusEvent,
     { ...event("brain.status", { state: "idle" }), type: "memory.viewers.reply" } as unknown as BusEvent,

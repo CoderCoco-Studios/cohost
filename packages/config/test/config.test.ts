@@ -246,11 +246,11 @@ test("new keys default to live backends when omitted; bad enum values are reject
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: {}, dashboard: {}, brain: {} };
   const ok = ConfigSchema.parse(base);
-  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
-    ["kokoro", "postgres", "ollama", "twitch", ["discord"], true]);
-  const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
+  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.sources, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
+    ["kokoro", "postgres", "ollama", ["twitch"], ["discord"], true]);
+  const bad = ConfigSchema.safeParse({ ...base, chat: { sources: ["irc"], twitch: {} } });
   assert.equal(bad.success, false);
-  assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
+  assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".").startsWith("chat.sources")));
   assert.equal(ConfigSchema.safeParse({ ...base, ears: { sources: ["X"] } }).success, false);
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
@@ -689,11 +689,11 @@ test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir
 });
 
 // @spec CFG-SCH-010, CFG-SCH-037
-test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required objects whose hosts and ports default", () => {
+test("vision.obs, avatar.vtube_studio and avatar.vmc are required objects whose hosts and ports default; chat.twitch is optional", () => {
   assert.equal(ConfigSchema.safeParse(baseCfg()).success, true);
   const without = (mutate: (c: ReturnType<typeof baseCfg>) => void) => { const c = baseCfg(); mutate(c); return ConfigSchema.safeParse(c).success; };
   assert.equal(without((c) => { delete (c.vision as Record<string, unknown>).obs; }), false, "vision.obs");
-  assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), false, "chat.twitch");
+  assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), true, "chat.twitch is optional (CFG-SCH-054)");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vtube_studio; }), false, "avatar.vtube_studio");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vmc; }), false, "avatar.vmc");
   const c = ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: {}, vmc: {} } });
@@ -752,7 +752,7 @@ test("a backend-selection value that is blank takes the live default", () => {
   });
   for (const v of ["", null, undefined]) {
     const c = blanks(v);
-    assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"], String(v));
+    assert.deepEqual([c.llm.provider, c.chat.sources, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", ["twitch"], "kokoro", "postgres", "ollama"], String(v));
   }
   // a key written as an empty string in the file is the same case
   const text = [
@@ -768,8 +768,8 @@ test("a backend-selection value that is blank takes the live default", () => {
   const parsed = parseConfigText(text);
   assert.ok(parsed.ok, JSON.stringify(parsed.ok ? [] : parsed.issues));
   const c = parsed.config;
-  assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"]);
-  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), chat: { source: "bogus", twitch: {} } }).success, false, "a non-blank unknown value still fails");
+  assert.deepEqual([c.llm.provider, c.chat.sources, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", ["twitch"], "kokoro", "postgres", "ollama"]);
+  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), chat: { sources: ["bogus"], twitch: {} } }).success, false, "a non-blank unknown value still fails");
 });
 
 // @spec CFG-SCH-002

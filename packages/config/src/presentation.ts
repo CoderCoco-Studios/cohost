@@ -68,7 +68,7 @@ const sections: Record<string, SectionPresentation> = {
   "brain.cortex": { title: "Replies", group: "Brain", about: "How a reply is produced: how long the co-host waits for memory and for the voice, how it reacts to a line that failed to play, and the optional editor that checks a reply before it is spoken." },
   "brain.input_limits": { title: "Text limits", group: "Brain", about: "How long a spoken transcript or a screen description may be before it reaches a prompt; anything longer is cut short." },
   "viewer_text": { title: "Viewer text", group: "Brain", about: "How long a chat message and a viewer's name may be before they reach a prompt; anything longer is cut short." },
-  "chat": { title: "Twitch chat", group: "Senses", about: "Which Twitch channel the co-host reads, the Twitch account it reads it with, and which users and commands it ignores." },
+  "chat": { title: "Chat", group: "Senses", about: "Which chat sources the co-host reads (Twitch, YouTube, fake), the Twitch channel and account, the YouTube video, and which users and commands it ignores." },
   "vision": { title: "Vision", group: "Senses", about: "Whether the co-host looks at your game through OBS, which model describes the screen, how often, and how the description is worded." },
   "ears": { title: "Hearing", group: "Senses", about: "Where the co-host's audio comes from and how it is cut into sentences and turned into text." },
   "voice": { title: "Voice", group: "Voice and body", about: "The co-host's speaking voice, pace and text clean-up, and the lines it says aloud when speech fails." },
@@ -134,7 +134,13 @@ const keys: Record<string, KeyPresentation> = {
   "vision.obs.width": { help: "The width, in pixels, the screenshot is shrunk to before the vision model sees it. Smaller is faster; larger keeps more detail but slows each look.", unit: "px", label: "Screenshot width" },
 
   // ---- chat
-  "chat.source": { help: "twitch reads a real Twitch channel; fake plays scripted messages with no Twitch connection, handy for trying the co-host out.", label: "Chat source" },
+  // @spec CFG-PRES-006
+  "chat.sources": { help: "Where the co-host reads chat from: twitch (a Twitch channel), youtube (a YouTube live chat) and fake (scripted messages with no channel, handy for trying the co-host out). Every source listed is read at once; empty turns chat off.", label: "Chat sources", widget: { type: "sources" } },
+  "chat.youtube.video": { help: "The YouTube video or live stream whose chat the co-host reads: a video id, a link, or a channel handle. Leave empty when YouTube is not in the sources.", label: "YouTube video" },
+  "chat.youtube.api_key": { help: "The YouTube Data API key the co-host reads the live chat with. It is stored in secrets.yaml and is never shown again once saved." },
+  "chat.youtube.transport": { help: "How the YouTube chat is read: stream keeps a live connection open, poll asks for new messages on a timer (use it when streaming stays unreliable). Blank means stream.", label: "YouTube transport" },
+  "chat.youtube.poll_floor_ms": { help: "Only for transport poll: the shortest gap between two chat polls. Lower reads newer messages sooner but uses more of the API quota.", label: "Poll floor", unit: "ms" },
+  "chat.youtube.recheck_ms": { help: "How often the video is checked again for a live chat when none was found. Lower notices a new stream sooner but uses more of the API quota.", label: "Recheck interval", unit: "ms" },
   "chat.fake.interval_ms": { help: "Only for source fake: how long between one scripted message and the next. Lower makes a busier fake chat.", unit: "ms" },
   "chat.twitch.channel": { help: "The Twitch channel whose chat the co-host reads, with or without the # sign.", label: "Twitch channel" },
   "chat.twitch.client_id": { help: "The client id of the Twitch application you registered for the co-host's account. It is stored in secrets.yaml and is never shown again once saved." },

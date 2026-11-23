@@ -28,7 +28,7 @@ The pattern: run the services from [One service on its own](isolated.md) with ev
 | `ears` | The Discord [connector](../../start/glossary.md#connector) and an [STT](../../start/glossary.md#stt) container ([faster-whisper](../../start/glossary.md#whisper)) | STT is GPU-friendly | An isolated start of `ears` (`ears.stt_engine: stub`) with audio injected from the dashboard, or a hand-published `speech.heard`; the `http` and `dir` sources need no account |
 | `mouth` | The Discord connector's [sink](../../start/glossary.md#sink) and `voice` | No | An isolated start of `mouth` (`mouth.outputs.dryrun.enabled: true` with `mouth.outputs.discord.enabled: false`). The dashboard's `?sink=1` page is a second, independent sink |
 | `connector-discord` | The one Discord bot (`connections.discord.token` in `config/secrets.yaml`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
-| `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.source: fake`), or a hand-published `chat.message` |
+| `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.sources: [fake]`), or a hand-published `chat.message` |
 | `avatar` | [VTube Studio](../../start/glossary.md#vtube-studio) or a [VMC](../../start/glossary.md#vmc) receiver | No; the app renders | An isolated start of `avatar` (`avatar.driver: "null"`, also the default in `config.example.yaml`) |
 
 To test the service itself, rely on its unit tests; the network and hardware edge is the only part they do not cover.
@@ -96,7 +96,7 @@ docker compose exec ollama ollama ps
 docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar
 ```
 
-Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or `chat.source: fake`.
+Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
 
 ## Twitch
 

@@ -180,9 +180,9 @@ test("memory.notes.request is answered with the same id; a store error answers a
   const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
   const bus = new FakeBus();
   const onEvent = createMemoryHandler({ cfg: testConfig(), bus, store, log });
-  await onEvent(event("memory.notes.request", { id: "n1", users: ["alice"] }));
+  await onEvent(event("memory.notes.request", { id: "n1", viewers: [{ user: "alice" }] }));
   assert.deepEqual(bus.of("memory.notes.reply"), [{ id: "n1", viewers: [{ user: "Alice", regular: true, msgCount: 40, notes: [] }] }]);
-  await onEvent(event("memory.notes.request", { id: "n2", users: ["Boom"] }));
+  await onEvent(event("memory.notes.request", { id: "n2", viewers: [{ user: "Boom" }] }));
   assert.deepEqual(bus.of("memory.notes.reply")[1], { id: "n2", viewers: [] });
   assert.equal(warnings.length, 1);
   assert.doesNotMatch(JSON.stringify(warnings), /Boom|Alice/, "no names or note text in the warning");

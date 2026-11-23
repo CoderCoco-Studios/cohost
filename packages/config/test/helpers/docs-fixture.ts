@@ -153,13 +153,13 @@ export function baseFiles(): Record<string, string> {
   ];
   const envNames = [
     "DASHBOARD_PORT", "DASHBOARD_LAN_PORT", "COMPOSE_PROFILES", "LLM_PROVIDER", "MEMORY_STORE", "MEMORY_EMBEDDER", "VOICE_ENGINE",
-    "CHAT_SOURCE", "6379", "11434", "3000", "3001",
+    "CHAT_SOURCES", "6379", "11434", "3000", "3001",
   ];
   return {
     "package.json": JSON.stringify({ scripts: { dashboard: "x", build: "x", test: "x" }, devDependencies: { "beautiful-mermaid": "1.1.3", vitepress: "1.6.4" } }),
     ".env.example": [
       "DASHBOARD_PORT=3000", "DASHBOARD_LAN_PORT=3001", "# COMPOSE_PROFILES=discord", "LLM_PROVIDER=ollama", "MEMORY_STORE=postgres",
-      "MEMORY_EMBEDDER=ollama", "VOICE_ENGINE=kokoro", "CHAT_SOURCE=twitch", "# a prose comment, not a variable", "",
+      "MEMORY_EMBEDDER=ollama", "VOICE_ENGINE=kokoro", "CHAT_SOURCES=[twitch]", "# a prose comment, not a variable", "",
     ].join("\n"),
     "docker-compose.yml": `services:\n  redis:\n    ports: ["127.0.0.1:6379:6379"]\n  models:\n    ports: ["127.0.0.1:\${OLLAMA_PORT:-11434}:11434"]\n`,
     "config/config.example.yaml": `llm:\n  provider: x\n  openai:\n    base_url: y\nmouth:\n  outputs:\n    discord:\n      gain_db: 1\n  list:\n    - a: 1\n      b: 2\n`,

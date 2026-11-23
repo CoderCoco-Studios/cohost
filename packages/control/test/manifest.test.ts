@@ -77,7 +77,7 @@ test("the known list is the eleven app services, mouth and connector-discord amo
 // @spec CTRL-MANIFEST-003
 test("the isolation presets are exactly the specified ones; every other unit has none", () => {
   const expected: Record<string, Record<string, string>> = {
-    chat: { CHAT_SOURCE: "fake" },
+    chat: { CHAT_SOURCES: "[fake]" },
     memory: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
     cortex: { LLM_PROVIDER: "mock" },
     voice: { VOICE_ENGINE: "stub" },

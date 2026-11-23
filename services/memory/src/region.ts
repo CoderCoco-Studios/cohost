@@ -88,7 +88,7 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
       // @spec MEM-SURF-001, MEM-SURF-005
       case "memory.notes.request": {
         const d = ev.data as BusEvent<"memory.notes.request">["data"];
-        const viewers = await buildNotesReply(store, cfg.brain.memory, d.users, clock()).catch((err) => {
+        const viewers = await buildNotesReply(store, cfg.brain.memory, d.viewers.map((v) => v.user), clock()).catch((err) => {
           // Neither the names nor any note text go in the log.
           log.warn({ err: String(err) }, "reading viewer notes failed; answering with none");
           return [];

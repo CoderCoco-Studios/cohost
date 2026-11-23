@@ -24,7 +24,7 @@ Every service that talks to the outside world is a publisher and subscriber of [
 | Any bus event | `node --import tsx scripts/dev/bus-pub.ts <type> '<json>'` | A zod-validated publish with source `dev-pub` | Redis only |
 | Operator controls | `POST /control` with `say`, `mute`, `unmute`, `forget_context`, `reload_personality`, `pause` or `resume`, and an optional `target` | The `control` event | Redis and the dashboard |
 | A unit's declared input | The **Test** side panel on a service's row on the **Services** screen, or `POST /inject/event` with `{ unit, type, data }` | One bus event the service declares as an input, refused when that service is not running | The service running |
-| Stub backends | An isolated start of the unit (the **Isolated** switch in the **Start** dialog, or `pnpm cohostctl start <service> --isolated`), or the real keys `vision.engine: stub`, `ears.stt_engine: stub`, `voice.engine: stub`, `llm.provider: mock`, `chat.source: fake`, `mouth.outputs.dryrun.enabled: true` | The service's own code with the outside call replaced | Nothing outside |
+| Stub backends | An isolated start of the unit (the **Isolated** switch in the **Start** dialog, or `pnpm cohostctl start <service> --isolated`), or the real keys `vision.engine: stub`, `ears.stt_engine: stub`, `voice.engine: stub`, `llm.provider: mock`, `chat.sources: [fake]`, `mouth.outputs.dryrun.enabled: true` | The service's own code with the outside call replaced | Nothing outside |
 
 Injected events carry `injected: true`, so they are easy to tell apart on the feed. `remember` (off by default) decides whether `memory` keeps them. An injected `brain.say` is a test input only through `POST /inject/event`; the dashboard's `say` control is the operator's.
 

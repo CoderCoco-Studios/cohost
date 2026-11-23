@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "74 specs: 31 [x], 42 [ ], 1 [D] (streamed-speech clause specs and the unfinished-line specs WM-UNF are open gaps). Notes (the counts above are current): 62 specs: 33 [x], 28 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard; platform and user id on the chat entry; forget), 1 [D] (WM-STACK-001)."
+    next: "74 specs: 52 [x], 21 [ ], 1 [D] (the unfinished-line specs WM-UNF, the streamed-speech clause specs, the platform and user id on the chat entry and forget WM-FORGET; WM-STACK-001 deferred)."
     drift: null
 
   chat:

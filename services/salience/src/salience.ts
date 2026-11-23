@@ -43,7 +43,7 @@ export class Salience {
   private barged = false;
 
   constructor(private d: SalienceDeps) {
-    this.ctx = Context.forBrain(d.cfg.brain);
+    this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
     this.now = d.now ?? (() => performance.now());
     this.cortexSince = this.now();
     this.control = controlFor("salience", {

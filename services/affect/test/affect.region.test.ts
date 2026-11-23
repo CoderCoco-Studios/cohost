@@ -429,12 +429,10 @@ test("a mention in the queue path (llm/http) is refused like any line and never 
   const { affect, seen, next } = setup("http", fakeClock().now);
   affect.onEvent(chat("hey Coco what a play", { userId: "u1", mentionsCohost: true }));
   affect.onEvent(chat("hey Coco and another", { userId: "u1", mentionsCohost: true }));
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); // give a wrongly queued job every chance to start
+  assert.equal(seen.length, 1, "the refused mention was never queued");
   next();
-  await new Promise((r) => setTimeout(r, 50));
-  const sent = seen.length;
-  next(); // let a wrongly queued second job finish rather than hang
   await affect.settled();
-  assert.equal(sent, 1, "the refused mention was never queued");
 });
 
 test("speech never passes through the chat counter", () => { // @spec AFF-IN-015

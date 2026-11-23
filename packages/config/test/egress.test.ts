@@ -140,6 +140,23 @@ test("a host equal to a network.lan host entry (any case), ending a suffix entry
   assert.equal(offLan("nas.example.com", []), true);
 });
 
+// @spec CFG-EGR-011, CFG-EGR-012
+test("a trailing dot on a host or a list entry is ignored, and a dot suffix or a name never matches an IP literal", () => {
+  assert.equal(offLan("box.tail1234.ts.net.", [".ts.net"]), false, "trailing dot on the host");
+  assert.equal(offLan("nas.example.com.", ["nas.example.com"]), false, "trailing dot on the host only");
+  assert.equal(offLan("nas.example.com", ["nas.example.com."]), false, "trailing dot on the entry only");
+  assert.equal(offLan("203.0.113.5", [".113.5"]), true, "a suffix entry is not matched against an IPv4 address");
+  assert.equal(offLan("[2001:db8::5]", ["::5"]), true, "a name-form entry is not matched against an IPv6 address");
+});
+
+// @spec CFG-EGR-001
+test("a destination whose URL has no host (localhost:1234/v1) gets its raw value as host and is off the LAN, without throwing", () => {
+  const c = cfg({ voice: { engine: "openai", voice: "v", openai: { base_url: "https://api.openai.com/v1", model: "m" } } });
+  c.voice.openai.base_url = "localhost:1234/v1";
+  const e = egressDestinations(c).find((x) => x.service === "voice")!;
+  assert.deepEqual([e.host, e.offLan], ["localhost:1234/v1", true]);
+});
+
 // @spec CFG-EGR-012
 test("a host name is judged by its form alone: nothing is resolved, so a public name is off the LAN unless network.lan lists it", () => {
   const lookup = mock.method(dns, "lookup");

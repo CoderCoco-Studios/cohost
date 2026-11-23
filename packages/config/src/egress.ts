@@ -76,7 +76,7 @@ function parseRange(entry: string): { network: Ip; prefix: number } | undefined 
  */
 // @spec CFG-SCH-071
 export function isLanEntry(entry: string): boolean {
-  if (entry.startsWith(".")) return HOST_NAME.test(entry.slice(1)) && !entry.endsWith(".");
+  if (entry.startsWith(".")) return HOST_NAME.test(entry.slice(1));
   if (entry.includes("/")) return parseRange(entry) !== undefined;
   return parseIp(entry) !== undefined || HOST_NAME.test(entry);
 }
@@ -84,8 +84,18 @@ export function isLanEntry(entry: string): boolean {
 /** The v4 or v6 address a host names, judged with URL brackets removed; `undefined` for a name. */
 const addressOf = (host: string): Ip | undefined => parseIp(host.replace(/^\[|\]$/g, ""));
 
-/** The host of a URL without its port, and with the brackets of an IPv6 literal removed. */
-const hostOf = (url: string): string => new URL(url).hostname.replace(/^\[|\]$/g, "");
+/**
+ * The host of a URL without its port and with the brackets of an IPv6 literal removed; `undefined` when the value does not
+ * parse or names no host (`localhost:1234/v1` parses with a scheme and an empty host).
+ */
+const hostOf = (url: string): string | undefined => {
+  if (!URL.canParse(url)) return undefined;
+  const h = new URL(url).hostname.replace(/^\[|\]$/g, "");
+  return h === "" ? undefined : h;
+};
+
+/** A host or entry without one trailing dot (`nas.example.com.` is `nas.example.com`). */
+const noTrailingDot = (s: string): string => (s.endsWith(".") ? s.slice(0, -1) : s);
 
 /**
  * Whether a host lies off the LAN (CFG-EGR-008 to CFG-EGR-012). `network.lan` entries win: an exact host, a dot suffix or a
@@ -93,13 +103,14 @@ const hostOf = (url: string): string => new URL(url).hostname.replace(/^\[|\]$/g
  */
 // @spec CFG-EGR-008, CFG-EGR-009, CFG-EGR-010, CFG-EGR-011, CFG-EGR-012
 export function offLanHost(host: string, lan: readonly string[]): boolean {
-  const lower = host.toLowerCase();
+  const lower = noTrailingDot(host.toLowerCase());
   const ip = addressOf(host);
   const judged = ip ? unmap(ip) : undefined;
   for (const entry of lan) {
-    const e = entry.toLowerCase();
+    const e = noTrailingDot(entry.toLowerCase());
     if (e.startsWith(".")) {
-      if (lower.endsWith(e)) return false;
+      // a suffix matches names only: an address never ends with a dot suffix
+      if (!judged && lower.endsWith(e)) return false;
       continue;
     }
     const range = parseRange(entry);
@@ -107,7 +118,8 @@ export function offLanHost(host: string, lan: readonly string[]): boolean {
       if (judged && inside(judged, range.network, range.prefix)) return false;
       continue;
     }
-    if (lower === e) return false;
+    // a name entry matches names only; an address entry is compared as an address below
+    if (!judged && lower === e) return false;
     const entryIp = parseIp(entry);
     if (entryIp && judged && entryIp.family === judged.family && entryIp.value === judged.value) return false;
   }
@@ -138,7 +150,8 @@ export function egressDestinations(config: Config): EgressEntry[] {
   const add = (service: EgressEntry["service"], data: EgressEntry["data"], engine: string, url: string | undefined) => {
     if (url === undefined || url === "") return;
     const host = hostOf(url);
-    out.push({ service, data, engine, host, offLan: offLanHost(host, lan) });
+    // no usable host: the raw value is kept as the host and the destination counts as off the LAN
+    out.push({ service, data, engine, host: host ?? url, offLan: host === undefined ? true : offLanHost(host, lan) });
   };
   const hosted = (service: EgressEntry["service"], data: EgressEntry["data"], provider: string) =>
     out.push({ service, data, engine: provider, hosted: provider, offLan: true });

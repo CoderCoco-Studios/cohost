@@ -79,7 +79,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("voice", {
     groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" },
-    config: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
+    config: ["voice", "network"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
   }),
   svc("avatar", {
     groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" },
@@ -87,11 +87,11 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("eyes", {
     groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
-    config: ["vision"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
+    config: ["vision", "network"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    config: ["ears", "network"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },

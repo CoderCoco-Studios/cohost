@@ -58,6 +58,20 @@ test("voice.voice is checked in the form of the selected engine and a violation 
   assert.equal(ok({ voice: { engine: "openai", voice: "ash (warm) + 2" } }).voice.voice, "ash (warm) + 2", "openai takes any non-blank text");
 });
 
+// @spec CFG-SCH-029, CFG-ISO-001
+test("the stub engine takes any voice text, since it calls no voice server, and a blank stub voice is af_heart", () => {
+  assert.equal(ok({ voice: { engine: "stub", voice: "http://x" } }).voice.voice, "http://x");
+  assert.equal(ok({ voice: { engine: "stub", voice: "af_bella(2)+af_sky" } }).voice.voice, "af_bella(2)+af_sky");
+  assert.equal(ok({ voice: { engine: "stub", voice: "" } }).voice.voice, "af_heart");
+});
+
+// @spec CFG-SCH-060, CFG-SCH-061
+test("a URL option must parse as an absolute http or https URL: a scheme-less host:port form or an empty host fails", () => {
+  for (const bad of ["localhost:1234/v1", "http://"]) rejects({ voice: { openai: { base_url: bad } } }, "voice.openai.base_url");
+  rejects({ voice: { pocket: { url: "localhost:8000" } } }, "voice.pocket.url");
+  assert.equal(ok({ voice: { pocket: { url: "http://tts-pocket:8000" } } }).voice.pocket.url, "http://tts-pocket:8000");
+});
+
 // @spec CFG-SCH-058
 test("voice.timeout_ms is a positive integer defaulting to 15000", () => {
   assert.equal(ok().voice.timeout_ms, 15000);

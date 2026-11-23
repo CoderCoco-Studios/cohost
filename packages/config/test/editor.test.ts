@@ -256,7 +256,10 @@ test("the edited file must pass the loader's pipeline; a file already invalid ac
   assert.ok((still as any).issues.some((i: any) => i.path === "cohost.name"));
   const fixed = applySection(broken, "cohost", { name: "Fixed" });
   assert.ok(fixed.ok);
-  // the schema's own cross-key rule runs too
+  // the engine-by-voice rule runs too: a Kokoro mix is not a Pocket voice (CFG-SCH-057)
+  const mix = applySection(FIXTURE, "voice", { engine: "pocket", voice: "af_bella(2)+af_sky" });
+  assert.equal(mix.ok, false);
+  assert.ok(applySection(FIXTURE, "voice", { engine: "pocket", voice: "marius" }).ok);
   const v = applySection(FIXTURE, "vision", { enabled: true });
   assert.ok(v.ok); // model is "m"
   // CFG-SCH-025: a blank vision.model loads whether vision is enabled or not (eyes reports it down, not the loader)

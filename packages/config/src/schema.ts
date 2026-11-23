@@ -75,8 +75,9 @@ const DISCORD_ID = z
   .default("");
 
 /** An optional `http` or `https` URL: blank is allowed and stays blank (CFG-SCH-024). */
-const HTTP_URL = /^https?:\/\/\S+$/;
-const optionalUrl = (message: string) => z.string().refine((u) => u === "" || HTTP_URL.test(u), message);
+/** An absolute `http` or `https` URL with a host (the form a request is sent to). */
+const isHttpUrl = (u: string): boolean => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol);
+const optionalUrl = (message: string) => z.string().refine((u) => u === "" || isHttpUrl(u), message);
 
 /** A DNS host name as `dashboard.allowed_hosts` lists it: labels of letters, digits and hyphens or underscores, dots between, optionally ending in a dot. */
 const HOST_NAME = /^[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?\.?$/;
@@ -93,11 +94,11 @@ function resolveVoice(engine: string, voice: string, ctx: z.RefinementCtx): stri
   if (engine === "openai") return voice;
   if (engine === "pocket") {
     if (voice === "") return "alba";
-    if (POCKET_VOICE.test(voice) || HTTP_URL.test(voice)) return voice;
+    if (POCKET_VOICE.test(voice) || isHttpUrl(voice)) return voice;
     ctx.addIssue({ code: "custom", path: ["voice"], message: "must be a Pocket voice name (letters, digits, _ and -) or an http or https URL" });
     return voice;
   }
-  if (voice === "") return "af_heart";
+  if (voice === "" || engine === "stub") return voice === "" ? "af_heart" : voice; // stub calls no voice server: any text
   if (KOKORO_VOICE.test(voice)) return voice;
   ctx.addIssue({ code: "custom", path: ["voice"], message: "must be a Kokoro voice name or mix, such as af_heart or af_bella(2)+af_sky" });
   return voice;

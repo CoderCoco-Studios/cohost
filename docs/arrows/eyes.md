@@ -4,7 +4,7 @@ Visual sense: OBS screenshot -> vision model through a chat provider that takes 
 
 ## Status
 
-**DRIFTED**: 63 specs: 38 implemented, 25 gaps, 0 deferred. The code builds an Ollama-only describer from `vision.provider` and names its dependency `ollama`; `vision.provider`, the provider construction, hosted choice, configuration gaps, outage classes, egress notes and the `vision` dependency are specified and not built. Six earlier lines are revised and re-marked as gaps (`EYES-DESC-001`, `-006`, `EYES-STUB-001`, `-002`, `EYES-HEALTH-001`, `-003`).
+**DRIFTED**: 63 specs: 38 implemented, 25 gaps, 0 deferred. The code builds the Ollama describer whatever `vision.provider` selects (only `stub` changes it) and names its dependency `ollama`; the provider construction, hosted choice, configuration gaps, outage classes, egress notes and the `vision` dependency are specified and not built. Six earlier lines are revised and re-marked as gaps (`EYES-DESC-001`, `-006`, `EYES-STUB-001`, `-002`, `EYES-HEALTH-001`, `-003`).
 
 ## References
 

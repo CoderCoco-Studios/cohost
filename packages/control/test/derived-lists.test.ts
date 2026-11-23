@@ -43,8 +43,8 @@ test("every declared section is a path of ConfigSchema, and every section Config
   const declared = new Set(units.flatMap((u) => u.config));
   const sections = shapeKeys(ConfigSchema).flatMap((k) => (k === "brain" ? shapeKeys(schemaAt("brain")).map((c) => `brain.${c}`) : [k]));
   assert.ok(sections.length >= 10, `read ${sections.join(", ")}`);
-  // `dashboard` is host-run, not a unit. `network` is read by the dashboard's egress view (CFG-EGR-001, #191), so it has no unit either.
-  const hostRun = new Set(["dashboard", "network"]);
+  // `dashboard` is host-run, not a unit: the one section no unit declares.
+  const hostRun = new Set(["dashboard"]);
   for (const sec of sections) assert.ok(declared.has(sec) || hostRun.has(sec), `section ${sec} is declared by no unit`);
 });
 

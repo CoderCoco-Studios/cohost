@@ -92,21 +92,24 @@ test("a fully stamped line: nine stages with the right durations, summing to tot
   const want: Record<string, number> = { stt: 400, salience: 600, prep: 100, llm: 1000, critic: 300, say: 50, tts: 500, sink: 50, total: 3000 };
   for (const s of STAGES) assert.deepEqual(row(h.text(), s), { n: "1", p50: String(want[s]), p95: String(want[s]) }, s);
   // @spec CTRL-LAT-005
-  assert.deepEqual(h.out.slice(0, 11), [
+  assert.deepEqual(h.out.slice(0, 14), [
     "speech path",
     "stage        n     p50     p95",
+    "endpoint     0       -       -",
     "stt          1     400     400",
     "salience     1     600     600",
     "prep         1     100     100",
     "llm          1    1000    1000",
+    "tool         0       -       -",
     "critic       1     300     300",
     "say          1      50      50",
     "tts          1     500     500",
     "sink         1      50      50",
     "total        1    3000    3000",
+    "think        0       -       -",
   ]);
-  assert.equal(h.out[11], "", "blank line between the sections");
-  assert.equal(h.out[12], "vision path");
+  assert.equal(h.out[14], "", "blank line between the sections");
+  assert.equal(h.out[15], "vision path");
   const sum = STAGES.filter((s) => s !== "total").reduce((a, s) => a + want[s]!, 0);
   assert.equal(sum, want.total, "fixture: stages are contiguous");
 });
@@ -205,11 +208,11 @@ test("a negative duration is left out of the statistics and counted after the st
   const bad = rig([...line("a"), ...line("b", { timing: { heardAt: T - 50 } })]);
   await executeCli(["latency"], bad.w);
   assert.deepEqual(row(bad.text(), "stt"), { n: "1", p50: "400", p95: "400" });
-  assert.equal(speechOut(bad.out).length, 11, "header, nine stage rows, the omitted line");
-  assert.equal(speechOut(bad.out)[10], "omitted (negative duration): stt 1");
+  assert.equal(speechOut(bad.out).length, 14, "header, twelve stage rows, the omitted line");
+  assert.equal(speechOut(bad.out)[13], "omitted (negative duration): stt 1");
   const two = rig([...line("a"), ...line("b", { timing: { heardAt: T - 50, llmStartedAt: T + 3000 } })]);
   await executeCli(["latency"], two.w);
-  assert.equal(speechOut(two.out)[10], "omitted (negative duration): stt 1, llm 1", "stages in report order, separated by comma and space");
+  assert.equal(speechOut(two.out)[13], "omitted (negative duration): stt 1, llm 1", "stages in report order, separated by comma and space");
   const clean = rig(line("a"));
   await executeCli(["latency"], clean.w);
   assert.doesNotMatch(clean.text(), /omitted|negative|skew/i);

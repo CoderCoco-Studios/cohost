@@ -6,33 +6,33 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Service and wiring (TOOL-SVC)
 
-- [ ] **TOOL-SVC-001**: When the service starts, it shall run on `runService` with the service name `tools` and subscribe in consumer group `tools`, start mode `latest`, to exactly `tool.request`, `tool.answer`, `memory.recall.reply` and `inject.request`.
-- [ ] **TOOL-SVC-002**: The service shall publish only `tool.result`, `tool.catalog`, `tool.confirm`, `tool.timer`, `memory.recall.request` and `inject.result`, and shall publish no `brain.say`, `brain.clause` or `attention.focus`.
-- [ ] **TOOL-SVC-003**: The service shall not subscribe to `control`.
-- [ ] **TOOL-SVC-004**: When the `tools` consumer group exists, the service shall report `ready` without waiting for any MCP server, and shall afterwards report the state `degraded` while any dependency is `down` and `ready` otherwise.
-- [ ] **TOOL-SVC-005**: The heartbeat mode shall be `mock` while `tools.mode` is `mock` and `live` otherwise.
-- [ ] **TOOL-SVC-006**: The heartbeat detail shall be the parts `<n> tools offered`, `no tools enabled` (when no tool is enabled), `<name> down` or `<name> refused its credential` for each server whose dependency is `down` (the second for an `auth` server) and `off LAN: <names>` for the external servers, joined by `; ` in that order, and shall name no URL.
-- [ ] **TOOL-SVC-007**: When the service reads a `tool.request` that passed validation, it shall publish exactly one `tool.result` with the same `id`, including for a request it refuses.
-- [ ] **TOOL-SVC-008**: When the service stops, it shall publish a `refused` `tool.result` of reason `shutdown` for each call in flight and each pending confirmation, then close its MCP sessions and its bus connection, and shall leave pending timers in Redis.
-- [ ] **TOOL-SVC-009**: When a call ends, the service shall log the tool name, the origin, the status and the duration at `info`, and shall log no argument, no result text, no secret and no userinfo or query string of a server URL at any level.
+- [x] **TOOL-SVC-001**: When the service starts, it shall run on `runService` with the service name `tools` and subscribe in consumer group `tools`, start mode `latest`, to exactly `tool.request`, `tool.answer`, `memory.recall.reply` and `inject.request`.
+- [x] **TOOL-SVC-002**: The service shall publish only `tool.result`, `tool.catalog`, `tool.confirm`, `tool.timer`, `memory.recall.request` and `inject.result`, and shall publish no `brain.say`, `brain.clause` or `attention.focus`.
+- [x] **TOOL-SVC-003**: The service shall not subscribe to `control`.
+- [x] **TOOL-SVC-004**: When the `tools` consumer group exists, the service shall report `ready` without waiting for any MCP server, and shall afterwards report the state `degraded` while any dependency is `down` and `ready` otherwise.
+- [x] **TOOL-SVC-005**: The heartbeat mode shall be `mock` while `tools.mode` is `mock` and `live` otherwise.
+- [x] **TOOL-SVC-006**: The heartbeat detail shall be the parts `<n> tools offered`, `no tools enabled` (when no tool is enabled), `<name> down` or `<name> refused its credential` for each server whose dependency is `down` (the second for an `auth` server) and `off LAN: <names>` for the external servers, joined by `; ` in that order, and shall name no URL.
+- [x] **TOOL-SVC-007**: When the service reads a `tool.request` that passed validation, it shall publish exactly one `tool.result` with the same `id`, including for a request it refuses.
+- [x] **TOOL-SVC-008**: When the service stops, it shall publish a `refused` `tool.result` of reason `shutdown` for each call in flight and each pending confirmation, then close its MCP sessions and its bus connection, and shall leave pending timers in Redis.
+- [x] **TOOL-SVC-009**: When a call ends, the service shall log the tool name, the origin, the status and the duration at `info`, and shall log no argument, no result text, no secret and no userinfo or query string of a server URL at any level.
 
 ## Tools and the catalog (TOOL-CAT)
 
 - [ ] **TOOL-CAT-001**: The service shall give the built-in tools the names `clock`, `stream_info`, `memory_lookup` and `timer`, and an MCP tool the name `<server>__<tool>` made of the server's name from `tools.servers` and the tool's own name.
-- [ ] **TOOL-CAT-002**: If an MCP tool's server name or own name has a character outside `[A-Za-z0-9_-]`, or its qualified name is longer than 64 characters, or its argument schema serializes to more than 4000 characters, then the service shall not list the tool and shall count it in the server's `detail`.
-- [ ] **TOOL-CAT-003**: When the service lists an MCP tool, it shall cut the tool's description to 400 characters and its title to 100.
+- [x] **TOOL-CAT-002**: If an MCP tool's server name or own name has a character outside `[A-Za-z0-9_-]`, or its qualified name is longer than 64 characters, or its argument schema serializes to more than 4000 characters, then the service shall not list the tool and shall count it in the server's `detail`.
+- [x] **TOOL-CAT-003**: When the service lists an MCP tool, it shall cut the tool's description to 400 characters and its title to 100.
 - [ ] **TOOL-CAT-004**: The service shall give `timer` the label `acts` and `clock`, `stream_info` and `memory_lookup` the label `read`.
-- [ ] **TOOL-CAT-005**: When the service lists an MCP tool, it shall give it the label `read` for the annotation `readOnlyHint: true`, `acts` for `readOnlyHint: false` and `unlabelled` when the tool has no such annotation.
-- [ ] **TOOL-CAT-006**: A tool shall be `offered` only while it is enabled in `tools.allow`, its server is `ok` or `mock` (or it is built in), its label is `read` or its `acts` mark is true, and, for an MCP tool outside mock mode, its definition matches its pinned hash (TOOL-PIN-004).
-- [ ] **TOOL-CAT-007**: When a tool is not offered, the catalog shall give it a `reason`, the first that applies of `not_enabled`, `acts_not_allowed`, `not_approved`, `changed` and `server_down`, and shall give an offered tool no `reason`.
-- [ ] **TOOL-CAT-008**: The catalog shall give each tool the `effect` `acts` when its label is not `read` or its `acts` mark is true and `read` otherwise, and every rule of this segment that depends on effect shall use that value.
-- [ ] **TOOL-CAT-009**: The catalog shall list every tool the service knows with its `name`, `server` (absent for a built-in tool), `title` when the server gives one, `description`, `parameters`, `label`, `effect`, the marks `enabled`, `acts`, `chat` and `confirm`, `hash` for an MCP tool, `offered` and `reason`.
-- [ ] **TOOL-CAT-010**: The catalog shall list every configured server with its `name`, its `state` (`ok`, `down`, `auth` or `mock`), `external` and a `detail` sentence.
-- [ ] **TOOL-CAT-011**: The service shall publish `tool.catalog` when it becomes ready, whenever the list of tools or the state of a server changes, and otherwise every `tools.catalog_ms` (default 30000), with `intervalMs` equal to `tools.catalog_ms`.
-- [ ] **TOOL-CAT-012**: The catalog shall describe the marks of the `config.yaml` the service loaded when it started.
+- [x] **TOOL-CAT-005**: When the service lists an MCP tool, it shall give it the label `read` for the annotation `readOnlyHint: true`, `acts` for `readOnlyHint: false` and `unlabelled` when the tool has no such annotation.
+- [x] **TOOL-CAT-006**: A tool shall be `offered` only while it is enabled in `tools.allow`, its server is `ok` or `mock` (or it is built in), its label is `read` or its `acts` mark is true, and, for an MCP tool outside mock mode, its definition matches its pinned hash (TOOL-PIN-004).
+- [x] **TOOL-CAT-007**: When a tool is not offered, the catalog shall give it a `reason`, the first that applies of `not_enabled`, `acts_not_allowed`, `not_approved`, `changed` and `server_down`, and shall give an offered tool no `reason`.
+- [x] **TOOL-CAT-008**: The catalog shall give each tool the `effect` `acts` when its label is not `read` or its `acts` mark is true and `read` otherwise, and every rule of this segment that depends on effect shall use that value.
+- [x] **TOOL-CAT-009**: The catalog shall list every tool the service knows with its `name`, `server` (absent for a built-in tool), `title` when the server gives one, `description`, `parameters`, `label`, `effect`, the marks `enabled`, `acts`, `chat` and `confirm`, `hash` for an MCP tool, `offered` and `reason`.
+- [x] **TOOL-CAT-010**: The catalog shall list every configured server with its `name`, its `state` (`ok`, `down`, `auth` or `mock`), `external` and a `detail` sentence.
+- [x] **TOOL-CAT-011**: The service shall publish `tool.catalog` when it becomes ready, whenever the list of tools or the state of a server changes, and otherwise every `tools.catalog_ms` (default 30000), with `intervalMs` equal to `tools.catalog_ms`.
+- [x] **TOOL-CAT-012**: The catalog shall describe the marks of the `config.yaml` the service loaded when it started.
 - [ ] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`.
-- [ ] **TOOL-CAT-014**: When tools of a server are left out by a limit, the service shall not list them and shall state how many in that server's `detail`.
-- [ ] **TOOL-CAT-015**: An entry of `tools.allow` that names no listed tool shall be offered to nothing.
+- [x] **TOOL-CAT-014**: When tools of a server are left out by a limit, the service shall not list them and shall state how many in that server's `detail`.
+- [x] **TOOL-CAT-015**: An entry of `tools.allow` that names no listed tool shall be offered to nothing.
 
 ## Pinned definitions (TOOL-PIN)
 
@@ -44,46 +44,47 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Who can cause a call (TOOL-ORIG)
 
-- [ ] **TOOL-ORIG-001**: When the service reads a `tool.request`, it shall take the origin, the round and `listed` from the request and shall not derive them.
-- [ ] **TOOL-ORIG-002**: Where the origin is `speech` or `dashboard`, the service shall allow any offered tool.
-- [ ] **TOOL-ORIG-003**: Where the origin is `reminder`, the service shall allow an offered tool only when its effect is `read`, so never `timer`.
-- [ ] **TOOL-ORIG-004**: Where the origin is `chat` or `guest`, the service shall allow an offered tool only when its `chat` mark is true and its effect is `read`.
-- [ ] **TOOL-ORIG-005**: Where the origin is `vision` or `idle`, the service shall allow no tool.
-- [ ] **TOOL-ORIG-006**: The service shall check the origin against its own catalog whatever tools cortex offered.
+- [x] **TOOL-ORIG-001**: When the service reads a `tool.request`, it shall take the origin, the round and `listed` from the request and shall not derive them.
+- [x] **TOOL-ORIG-002**: Where the origin is `speech` or `dashboard`, the service shall allow any offered tool.
+- [x] **TOOL-ORIG-003**: Where the origin is `reminder`, the service shall allow an offered tool only when its effect is `read`, so never `timer`.
+- [x] **TOOL-ORIG-004**: Where the origin is `chat` or `guest`, the service shall allow an offered tool only when its `chat` mark is true and its effect is `read`.
+- [x] **TOOL-ORIG-005**: Where the origin is `vision` or `idle`, the service shall allow no tool.
+- [x] **TOOL-ORIG-006**: The service shall check the origin against its own catalog whatever tools cortex offered.
 
 ## The call pipeline (TOOL-CALL)
 
-- [ ] **TOOL-CALL-001**: When the service reads a `tool.request`, it shall run these steps in this order: look up, admit, confirm, call, shape, publish, and the first refusal of the look-up that applies, in the order `unknown_tool`, `not_enabled`, `acts_not_allowed`, `not_approved`, `definition_changed`, `server_down`, `origin_not_allowed`, `invalid_arguments`, shall end the request.
-- [ ] **TOOL-CALL-002**: If the requested tool is not in the catalog, then the service shall publish a `refused` result with reason `unknown_tool`, and for a tool in the catalog that is not enabled one with reason `not_enabled`.
-- [ ] **TOOL-CALL-003**: If the requested tool is enabled and its label is not `read` and its `acts` mark is not true, then the service shall publish a `refused` result with reason `acts_not_allowed`.
-- [ ] **TOOL-CALL-004**: While `tools.mode` is not `mock`, if the requested MCP tool has no recorded hash, then the service shall publish a `refused` result with reason `not_approved`, and if its hash differs, one with reason `definition_changed`.
-- [ ] **TOOL-CALL-005**: If the requested MCP tool's server is `down` or `auth`, then the service shall publish a `refused` result with reason `server_down` without sending a request to the server.
-- [ ] **TOOL-CALL-006**: If the origin does not allow the requested tool (TOOL-ORIG-002 to TOOL-ORIG-005), then the service shall publish a `refused` result with reason `origin_not_allowed`.
+- [x] **TOOL-CALL-001**: When the service reads a `tool.request`, it shall run these steps in this order: look up, admit, confirm, call, shape, publish, and the first refusal of the look-up that applies, in the order `unknown_tool`, `not_enabled`, `acts_not_allowed`, `not_approved`, `definition_changed`, `server_down`, `origin_not_allowed`, `invalid_arguments`, shall end the request.
+- [x] **TOOL-CALL-002**: If the requested tool is not in the catalog, then the service shall publish a `refused` result with reason `unknown_tool`, and for a tool in the catalog that is not enabled one with reason `not_enabled`.
+- [x] **TOOL-CALL-003**: If the requested tool is enabled and its label is not `read` and its `acts` mark is not true, then the service shall publish a `refused` result with reason `acts_not_allowed`.
+- [x] **TOOL-CALL-004**: While `tools.mode` is not `mock`, if the requested MCP tool has no recorded hash, then the service shall publish a `refused` result with reason `not_approved`, and if its hash differs, one with reason `definition_changed`.
+- [x] **TOOL-CALL-005**: If the requested MCP tool's server is `down` or `auth`, then the service shall publish a `refused` result with reason `server_down` without sending a request to the server.
+- [x] **TOOL-CALL-006**: If the origin does not allow the requested tool (TOOL-ORIG-002 to TOOL-ORIG-005), then the service shall publish a `refused` result with reason `origin_not_allowed`.
 - [ ] **TOOL-CALL-007**: If a built-in tool rejects a request's arguments, then the service shall publish a `refused` result with reason `invalid_arguments`.
-- [ ] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
-- [ ] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
-- [ ] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
-- [ ] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
-- [ ] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
-- [ ] **TOOL-CALL-013**: When an MCP result has text parts, the service shall join them with newlines as the result text, followed by a bracketed note naming the type of each part that is not text, in order.
-- [ ] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
-- [ ] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
-- [ ] **TOOL-CALL-016**: When an MCP server flags a result as an error, the service shall publish an `error` result with reason `tool_error` and keep the server's text.
+- [x] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
+- [x] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
+- [x] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
+- [x] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
+- [x] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
+- [x] **TOOL-CALL-013**: When an MCP result has text parts, the service shall join them with newlines as the result text, followed by one bracket pair per part that is not text, joined by a space and set after the text with a space, naming the part's type as `image`, `audio` or `resource`, and as `other` for any other type the server gives, never the server's own string.
+- [x] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
+- [x] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
+- [x] **TOOL-CALL-016**: When an MCP server flags a result as an error, the service shall publish an `error` result with reason `tool_error` and keep the server's text.
 - [ ] **TOOL-CALL-017**: When a tool fails for a reason of the service's own (a missing credential, no answer from the memory service), the service shall publish an `error` result with reason `unavailable`.
-- [ ] **TOOL-CALL-018**: The `content` of a `refused`, `timeout` or `unavailable` result shall be a sentence the service wrote and no text from a server.
-- [ ] **TOOL-CALL-019**: The `tool.result` shall carry `id`, `tool`, `status`, `reason` where one applies, `content`, `truncated` where set, `durationMs` from the moment the service read the request, and, in mock mode, `mock` true.
-- [ ] **TOOL-CALL-020**: The service shall not retry a call.
+- [x] **TOOL-CALL-018**: The `content` of a `refused`, `timeout` or `unavailable` result shall be a sentence the service wrote and no text from a server.
+- [x] **TOOL-CALL-019**: The `tool.result` shall carry `id`, `tool`, `status`, `reason` where one applies, `content`, `truncated` where set, `durationMs` from the moment the service read the request, and, in mock mode, `mock` true.
+- [x] **TOOL-CALL-020**: The service shall not retry a call.
+- [x] **TOOL-CALL-021**: A call whose arguments serialize to more than 64 KiB (65536 UTF-8 bytes) shall be refused with reason `invalid_arguments` and shall not reach the server.
 
 ## Confirming an acting call (TOOL-CONF)
 
-- [ ] **TOOL-CONF-001**: When a request whose tool has the effect `acts` and is not the built-in `timer` has passed the look-up and admission, the service shall publish `tool.confirm` with the request's `id`, the tool, its arguments, the origin and `expiresAt`, unless TOOL-CONF-006 applies, and shall publish it for a request that carries `injected` whatever its `confirm` mark and `listed`.
-- [ ] **TOOL-CONF-002**: The `expiresAt` of a `tool.confirm` shall be the moment the service read the request plus `tools.confirm_timeout_ms` (default 20000), in epoch milliseconds.
-- [ ] **TOOL-CONF-003**: When a `tool.answer` with `allow` true arrives for a pending call, the service shall send the call and start the call limit then.
-- [ ] **TOOL-CONF-004**: When a `tool.answer` with `allow` false arrives for a pending call, the service shall publish a `refused` result with reason `denied`.
-- [ ] **TOOL-CONF-005**: If no `tool.answer` arrives for a pending call by its `expiresAt`, then the service shall publish a `refused` result with reason `unconfirmed` and never a `timeout` result.
-- [ ] **TOOL-CONF-006**: Where the tool's `confirm` mark is false, the request's round is 1, and its origin is `dashboard` or is `speech` with `listed` true and no `injected`, the service shall run the call without publishing `tool.confirm`.
-- [ ] **TOOL-CONF-007**: The service shall accept a `tool.answer` only for a call that is pending and shall accept one answer per call, and shall ignore an answer for an unknown, finished or already answered `id` or one that arrives after `expiresAt`.
-- [ ] **TOOL-CONF-008**: While `tools.mode` is `mock`, the service shall run a call that would wait for a confirmation at once, without publishing `tool.confirm`.
+- [x] **TOOL-CONF-001**: When a request whose tool has the effect `acts` and is not the built-in `timer` has passed the look-up and admission, the service shall publish `tool.confirm` with the request's `id`, the tool, its arguments, the origin and `expiresAt`, unless TOOL-CONF-006 applies, and shall publish it for a request that carries `injected` whatever its `confirm` mark and `listed`.
+- [x] **TOOL-CONF-002**: The `expiresAt` of a `tool.confirm` shall be the moment the service read the request plus `tools.confirm_timeout_ms` (default 20000), in epoch milliseconds.
+- [x] **TOOL-CONF-003**: When a `tool.answer` with `allow` true arrives for a pending call, the service shall send the call and start the call limit then.
+- [x] **TOOL-CONF-004**: When a `tool.answer` with `allow` false arrives for a pending call, the service shall publish a `refused` result with reason `denied`.
+- [x] **TOOL-CONF-005**: If no `tool.answer` arrives for a pending call by its `expiresAt`, then the service shall publish a `refused` result with reason `unconfirmed` and never a `timeout` result.
+- [x] **TOOL-CONF-006**: Where the tool's `confirm` mark is false, the request's round is 1, it carries no `injected`, and its origin is `dashboard` or is `speech` with `listed` true, the service shall run the call without publishing `tool.confirm`.
+- [x] **TOOL-CONF-007**: The service shall accept a `tool.answer` only for a call that is pending and shall accept one answer per call, and shall ignore an answer for an unknown, finished or already answered `id` or one that arrives after `expiresAt`.
+- [x] **TOOL-CONF-008**: While `tools.mode` is `mock`, the service shall run a call that would wait for a confirmation at once, without publishing `tool.confirm`.
 
 ## MCP servers (TOOL-MCP)
 
@@ -98,6 +99,8 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [ ] **TOOL-MCP-009**: The service shall mark a server `external` when its host is off the LAN by the LAN rule or when `tools.servers.<name>.external` is `true`.
 - [ ] **TOOL-MCP-010**: While a server has at least one enabled tool, the heartbeat shall carry the dependency `mcp.<name>` as `ok` while the server is connected, `down` while it is not and `n/a` in mock mode, and shall carry no dependency for a server with no enabled tool.
 - [ ] **TOOL-MCP-011**: When the service starts in live mode, it shall log one warning for each egress entry of `tools` whose `offLan` is true, naming the server and the host.
+- [ ] **TOOL-MCP-012**: When an MCP server's response is longer than 1 MiB, the service shall cut it to 1 MiB before shaping, drop the excess and add a note to the result saying so.
+- [ ] **TOOL-MCP-013**: The service shall follow no redirect on the MCP transport: a 3xx answer is an error for that call, and the secret header is sent only to the configured URL.
 
 ## Built-in tool: clock (TOOL-CLOCK)
 
@@ -136,17 +139,17 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Mock mode (TOOL-MOCK)
 
-- [ ] **TOOL-MOCK-001**: While `tools.mode` is `mock`, the service shall open no connection to an MCP server or a platform, publish no `memory.recall.request` and use no Redis key other than the bus stream and its own consumer group.
-- [ ] **TOOL-MOCK-002**: While `tools.mode` is `mock`, the state of every configured server in the catalog shall be `mock`.
-- [ ] **TOOL-MOCK-003**: While `tools.mode` is `mock`, each `tools.allow` entry named `<server>__<tool>` for a configured server shall be a tool with the description `a mock tool`, an argument schema that accepts any object and the label of the entry's `effect` key, `read` when absent.
-- [ ] **TOOL-MOCK-004**: While `tools.mode` is `mock`, a call to an MCP tool shall answer `mock <name> answered` followed by the arguments as JSON.
+- [x] **TOOL-MOCK-001**: While `tools.mode` is `mock`, the service shall open no connection to an MCP server or a platform, publish no `memory.recall.request` and use no Redis key other than the bus stream and its own consumer group.
+- [x] **TOOL-MOCK-002**: While `tools.mode` is `mock`, the state of every configured server in the catalog shall be `mock`.
+- [x] **TOOL-MOCK-003**: While `tools.mode` is `mock`, each `tools.allow` entry named `<server>__<tool>` for a configured server shall be a tool with the description `a mock tool`, an argument schema that accepts any object and the label of the entry's `effect` key, `read` when absent.
+- [x] **TOOL-MOCK-004**: While `tools.mode` is `mock`, a call to an MCP tool shall answer `mock <name> answered` followed by the arguments as JSON.
 - [ ] **TOOL-MOCK-005**: While `tools.mode` is `mock`, `clock` shall behave as in live mode, `stream_info` shall answer a live stream titled `Mock stream` with 42 viewers and one hour, and `memory_lookup` shall answer one fixed memory line.
 - [ ] **TOOL-MOCK-006**: While `tools.mode` is `mock`, `timer` shall keep its timers in the service's memory and publish `tool.timer` for each when it is due.
-- [ ] **TOOL-MOCK-007**: While `tools.mode` is `mock`, every `tool.result` shall carry `mock` true.
-- [ ] **TOOL-MOCK-008**: While `tools.mode` is `mock`, the service shall offer a mock tool only for an enabled entry and shall apply the marks, the origin rules, the call limit and the result limit as in live mode.
+- [x] **TOOL-MOCK-007**: While `tools.mode` is `mock`, every `tool.result` shall carry `mock` true.
+- [x] **TOOL-MOCK-008**: While `tools.mode` is `mock`, the service shall offer a mock tool only for an enabled entry and shall apply the marks, the origin rules, the call limit and the result limit as in live mode.
 
 ## Test injection (TOOL-INJ)
 
-- [ ] **TOOL-INJ-001**: When an `inject.request` with target `tools` and kind `text` arrives, the service shall read its text as the JSON `{"tool", "arguments"}` and run the call through the pipeline with origin `dashboard`, round 1 and `listed` false.
-- [ ] **TOOL-INJ-002**: When an injected call has produced a `tool.result`, the service shall answer `inject.result` with `ok` true and a `detail` giving the status and the duration, whatever the status.
-- [ ] **TOOL-INJ-003**: If the text of an injection for `tools` is not that JSON, then the service shall answer `inject.result` with `ok` false and a `detail` naming the problem and shall publish no `tool.result`.
+- [x] **TOOL-INJ-001**: When an `inject.request` with target `tools` and kind `text` arrives, the service shall read its text as the JSON `{"tool", "arguments"}` and run the call through the pipeline with origin `dashboard`, round 1, `listed` false and `injected` true.
+- [x] **TOOL-INJ-002**: When an injected call has produced a `tool.result`, the service shall answer `inject.result` with `ok` true and a `detail` giving the status and the duration, whatever the status.
+- [x] **TOOL-INJ-003**: If the text of an injection for `tools` is not that JSON, then the service shall answer `inject.result` with `ok` false and a `detail` naming the problem and shall publish no `tool.result`.

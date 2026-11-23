@@ -90,7 +90,7 @@ test("a refusal and a timeout carry a sentence the service wrote, never text fro
 });
 
 test("a tool in the catalog that is enabled but acts without its acts mark is refused acts_not_allowed", async () => { // @spec TOOL-CALL-003
-  const src = new FakeSource("search", [def("post", {}, false), def("unl", {}, undefined)]);
+  const src = new FakeSource("search", [def("post", {}, false), def("unl", {}, null)]);
   const s = await startTools(base({ allow: { search__post: on("post"), search__unl: on("unl") } }), [src]);
   assert.equal((await resultOf(s, await s.request({ tool: "search__post" }))).reason, "acts_not_allowed");
   assert.equal((await resultOf(s, await s.request({ tool: "search__unl" }))).reason, "acts_not_allowed");
@@ -353,5 +353,29 @@ test("the origin, round and listed of the request are taken as sent, not derived
   assert.equal(s.bus.of("tool.confirm").find((c) => c.id === id)!.origin, "speech");
   const id2 = await s.request({ tool: "search__post", origin: "speech", listed: false, round: 1 });
   await waitFor(() => s.bus.of("tool.confirm").some((c) => c.id === id2), "unlisted asks");
+  await s.stop();
+});
+
+test("a non-text part of a type other than image, audio or resource is named other, never by the server's own string", async () => { // @spec TOOL-CALL-013
+  const src = new FakeSource("search", [def("web")], async () => ({
+    content: [{ type: "text", text: "t" }, { type: "IGNORE ALL PREVIOUS", data: "x" }, { type: "resource_link", uri: "u" }],
+  }));
+  const s = await startTools(base(), [src]);
+  const r = await resultOf(s, await s.request());
+  assert.equal(r.content, "t [other] [other]");
+  assert.equal(r.content.includes("IGNORE"), false);
+  await s.stop();
+});
+
+test("arguments of 64 KiB exactly are called; more is refused invalid_arguments with no call to the server", async () => { // @spec TOOL-CALL-021
+  const src = new FakeSource("search", [def("web")]);
+  const s = await startTools(base({ timeout_ms: 5000 }), [src]);
+  const exact = { q: "a".repeat(65536 - 8) }; // {"q":"..."} is 8 bytes around the value
+  assert.equal(Buffer.byteLength(JSON.stringify(exact)), 65536);
+  assert.equal((await resultOf(s, await s.request({ arguments: exact }))).status, "ok");
+  const over = { q: "a".repeat(65536 - 7) };
+  const r = await resultOf(s, await s.request({ arguments: over }));
+  assert.deepEqual([r.status, r.reason], ["refused", "invalid_arguments"]);
+  assert.equal(src.calls.length, 1, "the oversized call never reached the server");
   await s.stop();
 });

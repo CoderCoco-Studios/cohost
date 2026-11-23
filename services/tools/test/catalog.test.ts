@@ -47,7 +47,7 @@ test("a listed MCP tool's description is cut to 400 characters and its title to 
 });
 
 test("an MCP tool's label follows readOnlyHint: true is read, false is acts, absent is unlabelled", async () => { // @spec TOOL-CAT-005
-  const src = new FakeSource("search", [def("r", {}, true), def("a", {}, false), def("u", {}, undefined)]);
+  const src = new FakeSource("search", [def("r", {}, true), def("a", {}, false), def("u", {}, null)]);
   const s = await startTools({ servers: { search }, allow: {} }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
   assert.deepEqual(["r", "a", "u"].map((n) => s.entry(`search__${n}`).label), ["read", "acts", "unlabelled"]);
@@ -55,7 +55,7 @@ test("an MCP tool's label follows readOnlyHint: true is read, false is acts, abs
 });
 
 test("effect is acts when the label is not read or the acts mark is set, and read otherwise", async () => { // @spec TOOL-CAT-008
-  const src = new FakeSource("search", [def("r", {}, true), def("a", {}, false), def("u", {}, undefined), def("marked", {}, true)]);
+  const src = new FakeSource("search", [def("r", {}, true), def("a", {}, false), def("u", {}, null), def("marked", {}, true)]);
   const s = await startTools({ servers: { search }, allow: { search__marked: on("marked", { acts: true }) } }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
   assert.deepEqual(["r", "a", "u", "marked"].map((n) => s.entry(`search__${n}`).effect), ["read", "acts", "acts", "acts"]);

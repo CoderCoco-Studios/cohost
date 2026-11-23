@@ -21,7 +21,7 @@ test("it publishes only tool.result, tool.catalog, tool.confirm, tool.timer, mem
   const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }) }, confirm_timeout_ms: 40 }), [src]);
   await resultOf(s, await s.request({ arguments: { text: "say hello" } }));
   await resultOf(s, await s.request({ tool: "search__post" })); // confirm, then unconfirmed
-  await s.send("inject.request", { id: "i1", target: "tools", kind: "text", text: JSON.stringify({ tool: "search__web", arguments: {} }) } as never);
+  await s.send("inject.request", { id: "i1", target: "tools", kind: "text", text: JSON.stringify({ tool: "search__web", arguments: {} }), remember: false } as never);
   await waitFor(() => s.bus.of("inject.result").length === 1, "inject.result");
   const allowed = new Set(["tool.result", "tool.catalog", "tool.confirm", "tool.timer", "memory.recall.request", "inject.result"]);
   assert.deepEqual([...new Set(s.bus.types())].filter((t) => !allowed.has(t)), []);
@@ -96,7 +96,7 @@ test("the log of a refused or failed call also carries only tool, origin, status
 
 // ---- test injection
 
-const inject = (text: string, id = "inj-1") => ({ id, target: "tools", kind: "text", text }) as never;
+const inject = (text: string, id = "inj-1") => ({ id, target: "tools", kind: "text", text, remember: false }) as never;
 
 test("an inject.request to tools runs {tool, arguments} through the pipeline as origin dashboard, round 1, listed false", async () => { // @spec TOOL-INJ-001
   const src = new FakeSource("search", [def("web"), def("post", {}, false)]);
@@ -163,8 +163,17 @@ test("text that is not the JSON {tool, arguments} is answered ok false with a de
 
 test("an inject.request for another target is ignored", async () => { // @spec TOOL-INJ-001
   const s = await startTools(live(), [new FakeSource("search", [def("web")])]);
-  await s.send("inject.request", { id: "x", target: "chat", kind: "text", text: JSON.stringify({ tool: "search__web", arguments: {} }) } as never);
+  await s.send("inject.request", { id: "x", target: "chat", kind: "text", text: JSON.stringify({ tool: "search__web", arguments: {} }), remember: false } as never);
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(s.results().length + s.bus.of("inject.result").length, 0);
+  await s.stop();
+});
+
+test("an inject-driven acting call asks for confirmation even when its confirm mark is false", async () => { // @spec TOOL-INJ-001, TOOL-CONF-006
+  const src = new FakeSource("search", [def("post", {}, false)]);
+  const s = await startTools(live({ allow: { search__post: on("post", { acts: true, confirm: false }) }, confirm_timeout_ms: 5000 }), [src]);
+  await s.send("inject.request", inject(JSON.stringify({ tool: "search__post", arguments: {} }), "cf"));
+  await waitFor(() => s.bus.of("tool.confirm").length === 1, "tool.confirm");
+  assert.equal(src.calls.length, 0, "not run before the owner allows it");
   await s.stop();
 });

@@ -8,6 +8,7 @@
  *   which builds the live tool sources from the config. It is not called in mock mode (no connection is opened).
  * - `../src/source.js` exports the types `ToolSource`, `SourceTool` and `SourceCallResult` used below.
  */
+import { after } from "node:test";
 import { event, FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { EventType, Handler, SubscribeOptions } from "@cohost/bus";
 import { runTools, type ToolsBus } from "../src/main.js";
@@ -57,9 +58,13 @@ export class FakeSource implements ToolSource {
   async close(): Promise<void> { this.closed = true; this.onClose(); }
 }
 
-/** A source definition: the server's own tool name, `hint` as its `readOnlyHint` annotation, and the hash the source computes. */
-export function def(own: string, over: Partial<SourceTool> = {}, hint: boolean | undefined = true): SourceTool {
-  return { name: own, description: `desc of ${own}`, parameters: { type: "object" }, readOnlyHint: hint, hash: `h-${own}`, ...over };
+/**
+ * A source definition: the server's own tool name, `hint` as its `readOnlyHint` annotation, and the hash the source computes.
+ * `null` as `hint` means the server gives no annotation (label `unlabelled`); `undefined` is not a value here (a default parameter would
+ * take it for `true`).
+ */
+export function def(own: string, over: Partial<SourceTool> = {}, hint: boolean | null = true): SourceTool {
+  return { name: own, description: `desc of ${own}`, parameters: { type: "object" }, readOnlyHint: hint ?? undefined, hash: `h-${own}`, ...over };
 }
 export const text = (t: string): SourceCallResult => ({ content: [{ type: "text", text: t }] });
 /** A call that never answers until the abort signal fires, then rejects as an aborted fetch does. */
@@ -93,6 +98,10 @@ export interface Started {
   cfgLoads: number;
 }
 
+/** Every service a test started and did not stop: stopped after the file's tests, so a failing test cannot keep the runner alive. */
+const started: Started[] = [];
+after(async () => { for (const s of started) await s.stop(); });
+
 let seq = 0;
 /** Starts the service on a ToolsFakeBus with `tools` as the config section and `extra` as other sections. */
 export async function startTools(
@@ -102,6 +111,7 @@ export async function startTools(
   bus: ToolsFakeBus = new ToolsFakeBus(),
 ): Promise<Started> {
   const shutdown: (() => void | Promise<void>)[] = [];
+  let stopped = false;
   const exits: number[] = [];
   const log = recordingLog();
   const s: Started = {
@@ -116,7 +126,11 @@ export async function startTools(
     results: () => bus.of("tool.result") as never,
     catalogs: () => bus.of("tool.catalog") as never,
     entry: (name) => s.catalogs().at(-1)!.tools.find((t) => t.name === name),
-    stop: async () => { for (const fn of [...shutdown].reverse()) await fn(); },
+    stop: async () => {
+      if (stopped) return;
+      stopped = true;
+      for (const fn of [...shutdown].reverse()) await fn();
+    },
   };
   await runTools({
     loadConfig: () => { s.cfgLoads++; return testConfig({ ...extra, tools }); },
@@ -126,6 +140,7 @@ export async function startTools(
     log: log.log,
     createSources: () => { s.sourcesBuilt++; return sources; },
   } as never);
+  started.push(s);
   return s;
 }
 

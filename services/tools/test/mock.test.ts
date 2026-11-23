@@ -68,7 +68,8 @@ test("in mock mode every tool.result carries mock true: ok, refused and error al
     await s.request({ origin: "idle" }),
   ];
   for (const id of ids) assert.equal((await resultOf(s, id)).mock, true, id);
-  assert.deepEqual(s.results().map((r) => r.status), ["ok", "refused", "refused", "refused"]);
+  const statusOf = (id: string) => s.results().find((r) => r.id === id)!.status;
+  assert.deepEqual(ids.map(statusOf), ["ok", "refused", "refused", "refused"], "statuses per request id");
   await s.stop();
 });
 

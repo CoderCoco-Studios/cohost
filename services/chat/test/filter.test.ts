@@ -63,7 +63,7 @@ test("a prefix hidden behind whitespace or an invisible character still drops th
 
 // @spec CHAT-FILT-004
 test("a line of only control and invisible characters publishes nothing", () => {
-  assert.equal(filter("bob", "​‍⁠\u0007 ­", info()), undefined);
+  assert.equal(filter("bob", "\u200b\u2060\u0007 \u00ad", info()), undefined);
   assert.equal(filter("bob", "\n​\n", info()), undefined);
 });
 

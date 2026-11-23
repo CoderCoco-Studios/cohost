@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "163 specs: 20 [x], 143 [ ] (YouTube chat source, source list and plan, forgetting removed messages, chat safety). Design 2026-11-16; no code."
+    next: "163 specs: 32 [x], 131 [ ] (YouTube chat source, source list and plan, forgetting removed messages, platform and user id on chat.message). Design 2026-11-16; no code."
     drift: null
 
   eyes:

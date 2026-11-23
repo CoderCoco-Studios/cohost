@@ -51,6 +51,9 @@ jobs:
       - name: Install the pinned Rust toolchain
         # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.
         run: rustup show active-toolchain || rustup toolchain install
+      # EARS-SRC-023: the desktop audio helper's Linux back end links libpulse (found through pkg-config).
+      - name: Install the desktop audio helper's Linux build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config
       - uses: actions/cache@v6.1.0
         with:
           path: |
@@ -64,6 +67,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # EARS-SRC-023: compile the helper's Windows back end; the target comes from rust-toolchain.toml.
+      - run: cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio
       - name: Rust bus example round trip (must run, not skip)
         # REDIS_URL is set, so the test itself fails if Redis is unreachable; this also fails on a SKIP line and requires the RAN line.
         shell: bash

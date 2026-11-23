@@ -42,6 +42,7 @@ export async function memoryMain(ctx: ServiceContext<MemoryBus>, health: MemoryH
   // Live note capture: its own small model (never the cortex's), in its own consumer group; new dirty notes feed the scheduler.
   const onCaptureEvent = createCaptureHandler({
     cfg: cfg.brain.memory,
+    full: cfg,
     store,
     hook: capture,
     log,

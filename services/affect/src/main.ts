@@ -33,7 +33,7 @@ export async function affectMain(ctx: ServiceContext<AffectBus>, env: AffectEnv 
   // resetGroup creates a missing group at `$` and moves an existing one there, the same as start mode `latest`.
   await bus.resetGroup("affect");
   void bus.subscribe( // @spec AFF-IN-001
-    { group: "affect", types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "control"], start: "latest" },
+    { group: "affect", types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "control"], start: "latest" },
     (ev) => affect.onEvent(ev),
   ).catch((err) => { log.error({ err }, "fatal"); exit(1); });
   const timer = setInterval(() => affect.publish(), cfg.brain.affect.publish_ms); // @spec AFF-PUB-001

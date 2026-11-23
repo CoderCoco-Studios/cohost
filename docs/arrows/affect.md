@@ -4,7 +4,7 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 51 implemented, 0 deferred, 6 gaps (AFF-IN-001, AFF-IN-011, AFF-IN-017 to AFF-IN-020, below). The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 57 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
 
 ## Decisions applied
 
@@ -34,7 +34,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (57 specs, prefix `AFF`: 51 `[x]`, 6 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (57 specs, prefix `AFF`: 57 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec AFF-`)
 - services/affect/test/affect.region.test.ts
@@ -73,7 +73,7 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event Intake | AFF-IN-001 to AFF-IN-020 | 14 | 0 | 6 |
+| Event Intake | AFF-IN-001 to AFF-IN-020 | 20 | 0 | 0 |
 | Mood Model | AFF-MOOD-001 to AFF-MOOD-006 | 6 | 0 | 0 |
 | Rule Appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 |
 | Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-014 | 14 | 0 | 0 |
@@ -81,7 +81,7 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 | Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 |
 | Health and Lifecycle | AFF-HEALTH-001 to AFF-HEALTH-004 | 4 | 0 | 0 |
 
-**Summary:** 57 specs: 51 implemented, 0 deferred, 6 gaps.
+**Summary:** 57 specs: 57 implemented, 0 deferred, 0 gaps.
 
 ## Key Findings
 
@@ -92,10 +92,10 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 5. **Restart skips the backlog.** `main.ts` names start mode `latest`, so the `affect` group moves to the tail on every start (AFF-IN-001).
 6. **Startup runs under the bootstrap and `ready` follows group creation** (AFF-HEALTH-001, AFF-HEALTH-002). `Bus.subscribe` has no readiness signal, so `affectMain` awaits `bus.resetGroup("affect")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, a test assertion, commit `969f6d7` or the 2026-11-01 owner decisions; three keep a partial `[inferred]` (queue cap 8, publish-key precision and 15 s period) and one stays `[inferred]` (lazy decay).
+8. **A removal drops only queued chat.** `chat.removed` filters the queue by `platform` and `messageId`, `userId` or `all` (AFF-IN-017). Mood, cause, counter keys and the epoch are untouched (AFF-IN-018), and a running job finishes (AFF-IN-019). Viewer identity is the shared `viewerKey` at receipt (AFF-IN-011, AFF-IN-020).
 
 ## Work Required
 
-- Viewer identity and forgetting: the receipt call AFF-IN-011 (owned for its flip by #183) and the platform-id key of AFF-IN-020 (epic #174); queued appraisals of removed chat are dropped (AFF-IN-017 to AFF-IN-019).
 ### Must Fix
 None from the chat-safety work: bounded intake, chat counted once per window, and the guarded appraiser prompt are built (AFF-IN-002 to AFF-IN-016, AFF-HOOK-010 to AFF-HOOK-014).
 

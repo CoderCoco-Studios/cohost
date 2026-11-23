@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
+import { event, FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import type { Handler, SubscribeOptions, EventType } from "@cohost/bus";
 import { runMemory, type MemoryBus } from "../src/main.js";
 import { InMemoryStore } from "../src/fake-store.js";
@@ -8,9 +8,12 @@ import { InMemoryStore } from "../src/fake-store.js";
 /** A FakeBus whose subscriptions report their group ready and stay open until stop(). */
 class GroupBus extends FakeBus {
   subscribed: SubscribeOptions<EventType>[] = [];
+  /** The handler each consumer group was subscribed with, by group name. */
+  handlers = new Map<string, Handler<EventType>>();
   stopped = false;
-  async subscribe<T extends EventType>(opts: SubscribeOptions<T>, _handler: Handler<T>): Promise<void> {
+  async subscribe<T extends EventType>(opts: SubscribeOptions<T>, handler: Handler<T>): Promise<void> {
     this.subscribed.push(opts as SubscribeOptions<EventType>);
+    this.handlers.set(opts.group, handler as Handler<EventType>);
     queueMicrotask(() => opts.onReady?.());
     return new Promise<void>(() => {});
   }
@@ -63,6 +66,28 @@ test("shutdown stops the bus and then closes the store", async () => {
     assert.equal(order.filter((x) => x === "store.close").length, 1);
     assert.ok(order.indexOf("bus.stop") < order.indexOf("store.close"), `the bus stops before the store closes: ${order.join(", ")}`);
   } finally { closeStore.mock.restore(); }
+});
+
+// @spec MEM-WRITE-016, MEM-START-006
+test("shutdown stops the bus, writes the open streamed line, then closes the store", async () => {
+  const bus = new GroupBus();
+  const order: string[] = [];
+  bus.stop = () => { bus.stopped = true; order.push("bus.stop"); };
+  const remember = mock.method(InMemoryStore.prototype, "remember", async (...args: unknown[]) => { order.push(`store.remember ${JSON.stringify(args.slice(0, 3))}`); });
+  const closeStore = mock.method(InMemoryStore.prototype, "close", async () => { order.push("store.close"); });
+  try {
+    const { env: e, shutdown } = env(bus);
+    await runMemory({ ...e, log: recordingLog().log });
+    const onMemory = bus.handlers.get("memory")!;
+    await onMemory(event("brain.say", { id: "open", text: "Still talking.", emotion: "happy", more: true }));
+    await onMemory(event("brain.clause", { id: "open", seq: 1, text: "Mid-line." }));
+    assert.equal(remember.mock.callCount(), 0, "an open line is not written before shutdown");
+    for (const fn of shutdown) await fn();
+    const written = order.filter((x) => x.startsWith("store.remember"));
+    assert.deepEqual(written, [`store.remember ${JSON.stringify(["self", "Coco", "Still talking. Mid-line."])}`]);
+    assert.ok(order.indexOf("bus.stop") < order.indexOf(written[0]!), `the bus stops before the open line is written: ${order.join(", ")}`);
+    assert.ok(order.indexOf(written[0]!) < order.indexOf("store.close"), `the open line is written before the store closes: ${order.join(", ")}`);
+  } finally { remember.mock.restore(); closeStore.mock.restore(); }
 });
 
 // @spec MEM-START-006

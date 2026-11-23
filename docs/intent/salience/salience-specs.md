@@ -11,8 +11,8 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-IN-005**: When salience receives a `brain.status` event, it shall record the reported state and the time received for busy detection. <!-- openspec: salience § Busy detection --> <!-- test: services/salience/test/salience.region.test.ts -->
 - [x] **SAL-IN-006**: Until salience has received an `affect.state` event it shall use arousal 0, and until it has received a `brain.status` or `brain.say` event it shall treat the cortex as `idle`. <!-- test: services/salience/test/salience.dispositions.test.ts -->
 - [ ] **SAL-IN-007**: The salience service shall not subscribe to `speech.partial`, and a `speech.partial` shall never enter its `Context`, reset its idle timer, match a reflex or become the focus of an `attention.focus`: `speech.heard` is the only event salience records as speech and scores as heard, and a `speech.early` starts only the provisional pass of SAL-PROV-001.
-- [ ] **SAL-IN-008**: When salience receives a `chat.removed` event, it shall call `forget` of its working-memory `Context` with it, so the removed chat leaves the window.
-- [ ] **SAL-IN-009**: While salience is paused, it shall still call `forget` for a received `chat.removed`, so a line removed during a pause is not scored after `resume`.
+- [x] **SAL-IN-008**: When salience receives a `chat.removed` event, it shall call `forget` of its working-memory `Context` with it, so the removed chat leaves the window.
+- [x] **SAL-IN-009**: While salience is paused, it shall still call `forget` for a received `chat.removed`, so a line removed during a pause is not scored after `resume`.
 
 ## Scoring (SCORE)
 
@@ -43,15 +43,15 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [x] **SAL-DECIDE-008**: When the scheduler decides to speak because the total score reached the threshold, it shall give reason `mentioned` only if the focus is a chat mention and `brain.salience.reply_on_mention` is true, and reason `engaged` otherwise. <!-- test: services/salience/test/salience.region.test.ts -->
 - [x] **SAL-DECIDE-009**: When the scheduler counts events for a decision, it shall take the unseen non-`self` events in order of cached score, highest first, and among equal scores the later event in working-memory window order first.
 - [x] **SAL-DECIDE-010**: When the scheduler counts events for a decision, it shall count every speech and vision event.
-- [ ] **SAL-DECIDE-011**: When the scheduler counts events for a decision, it shall count a chat event only if `admit(viewerKey, text)` of a `createOnceCounter` created without `windowMs` for that decision returns true, with `viewerKey` the `@cohost/shared/untrusted` `viewerKey` of the event's `platform`, `userId` and `user`, and `text` its text, in the order of SAL-DECIDE-009.
-- [ ] **SAL-DECIDE-012**: The scheduler shall compare viewers for a decision with the `@cohost/shared/untrusted` `viewerKey` (platform and user id) and texts with `normalizeKey`, so that two chat lines are from the same viewer when their keys are equal and have the same text when their text keys are equal.
+- [x] **SAL-DECIDE-011**: When the scheduler counts events for a decision, it shall count a chat event only if `admit(viewerKey, text)` of a `createOnceCounter` created without `windowMs` for that decision returns true, with `viewerKey` the `@cohost/shared/untrusted` `viewerKey` of the event's `platform`, `userId` and `user`, and `text` its text, in the order of SAL-DECIDE-009.
+- [x] **SAL-DECIDE-012**: The scheduler shall compare viewers for a decision with the `@cohost/shared/untrusted` `viewerKey` (platform and user id) and texts with `normalizeKey`, so that two chat lines are from the same viewer when their keys are equal and have the same text when their text keys are equal.
 - [x] **SAL-DECIDE-013**: When a chat event is not counted for a decision, the scheduler shall add nothing for it to the total score and shall not choose it as the focus.
 - [x] **SAL-DECIDE-014**: When the scheduler counts events for a decision, it shall choose as the focus the first counted event in the order of SAL-DECIDE-009 whose score is above 0, and no focus when none is.
 - [x] **SAL-DECIDE-015**: When a decision to speak is made, the scheduler shall report every unseen event of that decision as `scored`, including the chat events that were not counted.
 - [x] **SAL-DECIDE-016**: While the scheduler counts events, it shall neither read nor change any reflex state, so that a reflex fires under its own cooldown and the shared busy and cooldown gates alone.
-- [ ] **SAL-DECIDE-017**: When two chat events in a decision have the same display name but different platforms, or the same platform and different user ids, the scheduler shall treat them as two viewers.
-- [ ] **SAL-DECIDE-018**: When two chat events in a decision have the same platform and user id but different display names, the scheduler shall treat them as one viewer.
-- [ ] **SAL-DECIDE-019**: When two chat events in a decision have no user id, the scheduler shall treat them as one viewer only when they have the same platform and the same lowercased name.
+- [x] **SAL-DECIDE-017**: When two chat events in a decision have the same display name but different platforms, or the same platform and different user ids, the scheduler shall treat them as two viewers.
+- [x] **SAL-DECIDE-018**: When two chat events in a decision have the same platform and user id but different display names, the scheduler shall treat them as one viewer.
+- [x] **SAL-DECIDE-019**: When two chat events in a decision have no user id, the scheduler shall treat them as one viewer only when they have the same platform and the same lowercased name.
 
 ## Focus Publication (FOCUS)
 
@@ -61,7 +61,7 @@ Prefix `SAL`. Design: [salience-design.md](salience-design.md). Code: `services/
 - [ ] **SAL-FOCUS-004**: When salience publishes `attention.focus`, it shall, except for a provisional focus (SAL-PROV-011), mark only the scored events seen and treat the cortex as `thinking` until a new `brain.status` or valve expiry. <!-- openspec: salience § Publishing attention.focus --> <!-- test: services/salience/test/salience.region.test.ts -->
 - [x] **SAL-FOCUS-005**: When a scheduler decision to speak returns from the scorer, salience shall re-check muted, paused and cortex busy, and if any of them now holds it shall publish no `attention.focus` for that decision. <!-- test: services/salience/test/salience.region.test.ts --> <!-- test: services/salience/test/salience.region.test.ts -->
 - [ ] **SAL-FOCUS-006**: When the focus of a speak decision is a `speech` event that carries `timing.audioEndedAt`, salience shall publish `attention.focus` with `timing` holding that `audioEndedAt`, that `closedAt` when the event carries one, and `heardAt` set to the `ts` of that event's `speech.heard` envelope; when the focus is a `vision` event that carries `timing.capturedAt` and `timing.describedAt`, salience shall publish `attention.focus` with `timing` holding those two stamps; for a focus of any other kind, or a speech or vision event without those stamps, it shall publish no `timing`; it shall not alter any stamp it copies.
-- [ ] **SAL-FOCUS-007**: When a scheduler decision to speak returns from the scorer and a `chat.removed` has taken the focused chat event out of the window meanwhile, salience shall publish no `attention.focus` for that decision, shall leave that decision's events unseen and shall not mark the cortex `thinking`.
+- [x] **SAL-FOCUS-007**: When a scheduler decision to speak returns from the scorer and a `chat.removed` has taken the focused chat event out of the window meanwhile, salience shall publish no `attention.focus` for that decision, shall leave that decision's events unseen and shall not mark the cortex `thinking`.
 
 ## Speech Trigger (TRIG)
 

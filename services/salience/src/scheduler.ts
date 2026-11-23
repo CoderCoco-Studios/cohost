@@ -71,6 +71,8 @@ export class Scheduler {
     // The walk (SAL-DECIDE-009): highest cached score first; equal scores go to the later window event. A chat
     // line counts only if its viewer and text are new to this decision (SAL-DECIDE-011, -012); speech and vision
     // always count (SAL-DECIDE-010). Only counted events add to the total or can be the focus (SAL-DECIDE-013).
+    // Viewers are keyed by viewerKey (platform and user id, else platform and lowercased name), so renames do not split a viewer
+    // and the same name on two platforms does not merge one. @spec SAL-DECIDE-017, SAL-DECIDE-018, SAL-DECIDE-019
     // @spec SAL-DECIDE-002, SAL-DECIDE-007, SAL-DECIDE-009, SAL-DECIDE-010, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015, SAL-DECIDE-016
     const ranked = unseen
       .map((e, i) => ({ e, i, s: this.scoreCache.get(e) ?? 0 }))

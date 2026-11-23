@@ -82,8 +82,8 @@ const make = (kind: Kind | "ollama", url: string): any => {
   switch (kind) {
     case "openai": return new OpenAICompatible(llmCfg({ openai: { base_url: `${url}/v1` } }));
     case "ollama": return new Ollama(llmCfg({ provider: "ollama" }), url);
-    case "anthropic": return new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" } }), undefined, { fetch: fetchImpl });
-    case "bedrock": return new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: CONFIGURED }), undefined, { fetch: fetchImpl });
+    case "anthropic": return new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" } }), { fetch: fetchImpl });
+    case "bedrock": return new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: CONFIGURED }), { fetch: fetchImpl });
   }
 };
 

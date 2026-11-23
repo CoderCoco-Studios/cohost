@@ -15,7 +15,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
-import { createLogger, urls, type Config, type Logger } from "@cohost/config";
+import { urls, type Config } from "@cohost/config";
 import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 import { MockProvider, HashEmbedder } from "./mock.js";
 import { assertTextHistory } from "./history.js";
@@ -40,7 +40,7 @@ export interface ToolCall {
 /** The closed set of messages a history may hold, by role. */
 export type ChatMessage =
   | { role: "system"; content: string }
-  /** Base64 images for a vision model; only the Ollama provider sends them with the message (LLM-VIS-001); the others drop them (LLM-VIS-002, LLM-VIS-003). */
+  /** Bare base64 images for a vision model, each sent in its vendor's form; the media type is sniffed from the bytes (LLM-VIS-001..005). */
   | { role: "user"; content: string; images?: string[] }
   /** `toolCalls` is present only when the model asked for tools; `continuation` is opaque to callers and is read only by the provider named in its `name` (LLM-TOOL-014, LLM-TOOL-015). */
   | { role: "assistant"; content: string; toolCalls?: ToolCall[]; continuation?: unknown }
@@ -113,37 +113,35 @@ const REPLY_STOPS = ["\n\n", ...TRANSCRIPT_STOPS]; // @spec LLM-STOP-005
 /** The caller's signal when it passed one (it wins), otherwise `llm.timeout_ms` (CFG-SCH-013). */
 const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal => caller ?? AbortSignal.timeout(cfg.timeout_ms); // @spec LLM-CHAT-008
 
-/** The one logger method a provider uses. */
-export type ProviderLog = Pick<Logger, "warn">;
+/**
+ * The media types a vision input may carry. Images are sent as bare base64; the type is read from the decoded leading bytes, since
+ * no caller names it (LLM-VIS-004).
+ */
+type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
- * Removes `images` from messages for a provider that cannot send them, and warns the first time it does so (one warning per
- * provider instance, not per call).
+ * The media type of one base64 image, from its first 12 decoded bytes (enough for WebP's `RIFF....WEBP`). Data that is not base64, or
+ * is none of JPEG, PNG, GIF or WebP, is a caller's programming error: a `TypeError`, raised before any request (LLM-VIS-005).
  */
-// @spec LLM-VIS-003
-class ImageDropper {
-  private warned = false;
-  constructor(private provider: string, private log?: ProviderLog) {}
-  strip(messages: ChatMessage[]): ChatMessage[] {
-    if (!messages.some((m) => m.role === "user" && m.images?.length)) return messages;
-    if (!this.warned) {
-      this.warned = true;
-      (this.log ??= createLogger("llm")).warn({ provider: this.provider }, "this provider does not support images; images on messages are dropped");
-    }
-    return messages.map((m) => {
-      if (m.role !== "user" || !m.images) return m;
-      const { images: _images, ...rest } = m;
-      return rest;
-    });
-  }
+function sniffImage(data: string): ImageMediaType { // @spec LLM-VIS-004, LLM-VIS-005
+  if (!BASE64.test(data)) throw new TypeError("image data is not base64");
+  const head = Buffer.from(data.slice(0, 16), "base64");
+  const at = (offset: number, text: string): boolean => head.subarray(offset, offset + text.length).toString("latin1") === text;
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  if (head.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return "image/png";
+  if (at(0, "GIF8")) return "image/gif";
+  if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
+  throw new TypeError("image data is not JPEG, PNG, GIF or WebP");
 }
 
-export function createChatProvider(cfg: Config["llm"], log?: ProviderLog): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
+export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
   switch (cfg.provider) {
     case "ollama": return new Ollama(cfg);
-    case "openai": return new OpenAICompatible(cfg, log);
-    case "anthropic": return new AnthropicProvider(cfg, log);
-    case "bedrock": return new BedrockProvider(cfg, log);
+    case "openai": return new OpenAICompatible(cfg);
+    case "anthropic": return new AnthropicProvider(cfg);
+    case "bedrock": return new BedrockProvider(cfg);
     case "mock": return new MockProvider(cfg);
   }
 }
@@ -256,9 +254,14 @@ function ollamaMessages(messages: ChatMessage[]): object[] { // @spec LLM-TOOL-0
 }
 
 /** OpenAI's history: a result is `{role: "tool", tool_call_id, content}`; calls go back with JSON-string arguments and `null` content when empty (LLM-TOOL-008, LLM-TOOL-009, LLM-TOOL-027). */
-function openaiMessages(messages: ChatMessage[]): object[] { // @spec LLM-TOOL-008, LLM-TOOL-009, LLM-TOOL-017, LLM-TOOL-018, LLM-TOOL-019, LLM-TOOL-025, LLM-TOOL-027
+function openaiMessages(messages: ChatMessage[]): object[] { // @spec LLM-VIS-002, LLM-VIS-007, LLM-TOOL-008, LLM-TOOL-009, LLM-TOOL-017, LLM-TOOL-018, LLM-TOOL-019, LLM-TOOL-025, LLM-TOOL-027
   return messages.map((m) => {
     if (m.role === "tool") return { role: "tool", tool_call_id: m.callId, content: m.content };
+    // A user turn with images is one text part (omitted when empty) then one data-URL image part per image (LLM-VIS-002); without images it stays a string (LLM-VIS-007).
+    if (m.role === "user" && m.images?.length) {
+      const text = m.content === "" ? [] : [{ type: "text", text: m.content }];
+      return { role: "user", content: [...text, ...m.images.map((data) => ({ type: "image_url", image_url: { url: `data:${sniffImage(data)};base64,${data}` } }))] };
+    }
     if (m.role === "assistant" && m.toolCalls?.length) {
       return {
         role: "assistant",
@@ -581,7 +584,7 @@ export class Ollama implements ChatProvider, Embedder {
   constructor(private cfg: Config["llm"], private base = urls.ollama()) { this.model = cfg.model; }
 
   /** The `/api/chat` body that `chat()`, `complete()` and `stream()` send; `streaming` sets `stream` (LLM-STREAM-001). */
-  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001, LLM-CHAT-011, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-011, LLM-CHAT-016, LLM-CHAT-022, LLM-TOOL-003
+  private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-001, LLM-CHAT-004, LLM-CHAT-006, LLM-VIS-001, LLM-VIS-008, LLM-VIS-009, LLM-CHAT-011, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-011, LLM-CHAT-016, LLM-CHAT-022, LLM-TOOL-003
     return JSON.stringify({
       model: this.cfg.model,
       messages: ollamaMessages(messages),
@@ -671,11 +674,9 @@ export class OpenAICompatible implements ChatProvider {
   readonly model: string;
   lastError?: string;
   private base: string;
-  private images: ImageDropper;
-  constructor(private cfg: Config["llm"], log?: ProviderLog) {
+  constructor(private cfg: Config["llm"]) {
     this.model = cfg.model;
     this.base = cfg.openai.base_url.replace(/\/+$/, "");
-    this.images = new ImageDropper(this.name, log);
   }
 
   private headers(): Record<string, string> { // @spec LLM-CHAT-003
@@ -688,7 +689,7 @@ export class OpenAICompatible implements ChatProvider {
   private body(messages: ChatMessage[], opts: ChatRequest, streaming: boolean): string { // @spec LLM-CHAT-002, LLM-CHAT-004, LLM-CHAT-006, LLM-CHAT-012, LLM-CHAT-013, LLM-CHAT-015, LLM-CHAT-019, LLM-CHAT-021, LLM-STOP-013, LLM-CHAT-022, LLM-CHAT-016, LLM-TOOL-006
     return JSON.stringify({
       model: this.cfg.model,
-      messages: openaiMessages(this.images.strip(messages)), // @spec LLM-VIS-002, LLM-VIS-003
+      messages: openaiMessages(messages), // @spec LLM-VIS-002, LLM-VIS-007, LLM-VIS-010, LLM-VIS-011
       stream: streaming,
       temperature: opts.temperature ?? this.cfg.temperature,
       max_tokens: opts.maxTokens ?? this.cfg.max_tokens,
@@ -764,6 +765,16 @@ const CLAUDE_MIN_MAX_TOKENS = 1;
 /** Retries the SDK makes of a failed Claude request (the SDK's own default, stated so the spec pins it). */
 const CLAUDE_MAX_RETRIES = 2;
 
+/**
+ * A user turn as Claude content: plain text, or with images one base64 `image` block per image before the text block (LLM-VIS-003).
+ * An empty text is omitted; `images: []` stays plain text (LLM-VIS-013).
+ */
+function claudeUserContent(m: Extract<ChatMessage, { role: "user" }>): string | Anthropic.ContentBlockParam[] { // @spec LLM-VIS-003, LLM-VIS-012, LLM-VIS-013
+  if (!m.images?.length) return m.content;
+  const images = m.images.map((data): Anthropic.ImageBlockParam => ({ type: "image", source: { type: "base64", media_type: sniffImage(data), data } }));
+  return m.content === "" ? images : [...images, { type: "text", text: m.content }];
+}
+
 /** What a test may replace in a Claude provider: the SDK's `fetch`, so a request is recorded and served locally instead of leaving the process. */
 export interface ClaudeDeps { fetch?: typeof fetch }
 
@@ -777,11 +788,8 @@ abstract class ClaudeBase implements ChatProvider {
   protected abstract notConfigured(): string;
   protected abstract serverFallbacks: boolean;
 
-  private images: ImageDropper;
-
-  constructor(protected cfg: Config["llm"], provider: string, log?: ProviderLog) {
+  constructor(protected cfg: Config["llm"]) {
     this.model = cfg.model;
-    this.images = new ImageDropper(provider, log);
   }
 
   /**
@@ -789,9 +797,8 @@ abstract class ClaudeBase implements ChatProvider {
    * temperature (LLM-CLAUDE-023 to LLM-CLAUDE-030). Fallbacks go on a non-streamed anthropic request only (LLM-CLAUDE-007, LLM-CLAUDE-022).
    */
   private params(allMessages: ChatMessage[], req: ChatRequest, streaming: boolean): Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "stream"> { // @spec LLM-CLAUDE-023, LLM-CLAUDE-024, LLM-CLAUDE-025, LLM-CLAUDE-026, LLM-CLAUDE-027, LLM-CLAUDE-028, LLM-CLAUDE-029, LLM-CLAUDE-030
-    const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
-    const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
-    const turns = this.turns(messages);
+    const system = allMessages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
+    const turns = this.turns(allMessages);
     if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" }); // @spec LLM-CLAUDE-002
 
     // The caller's budget is honoured (thinking shares it; hooks run at low effort), down to the API's minimum of 1.
@@ -829,7 +836,7 @@ abstract class ClaudeBase implements ChatProvider {
         continue;
       }
       resultsOpen = false;
-      if (m.role === "user") out.push({ role: "user", content: m.content });
+      if (m.role === "user") out.push({ role: "user", content: claudeUserContent(m) });
       else out.push({ role: "assistant", content: this.assistantContent(m) });
     }
     return out;
@@ -1077,8 +1084,8 @@ export class AnthropicProvider extends ClaudeBase {
   readonly name = "anthropic";
   protected client: Anthropic | undefined;
   protected serverFallbacks: boolean;
-  constructor(cfg: Config["llm"], log?: ProviderLog, deps: ClaudeDeps = {}) {
-    super(cfg, "anthropic", log);
+  constructor(cfg: Config["llm"], deps: ClaudeDeps = {}) {
+    super(cfg);
     // Credential, endpoint and headers come from config alone (LLM-CLAUDE-019). Construction runs with every ANTHROPIC_* and AWS_*
     // variable masked, which stops the SDK reading ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_PROFILE,
     // ANTHROPIC_CUSTOM_HEADERS and the rest; the explicit `apiKey`, `baseURL` and `authToken: null` are then the only sources. The
@@ -1115,8 +1122,8 @@ export class BedrockProvider extends ClaudeBase {
   readonly name = "bedrock";
   protected client: AnthropicBedrockMantle | undefined;
   protected serverFallbacks = false; // @spec LLM-CLAUDE-008
-  constructor(cfg: Config["llm"], log?: ProviderLog, deps: ClaudeDeps = {}) {
-    super(cfg, "bedrock", log);
+  constructor(cfg: Config["llm"], deps: ClaudeDeps = {}) {
+    super(cfg);
     const { region, access_key_id: accessKey, secret_access_key: secretKey } = cfg.bedrock;
     if (!!accessKey !== !!secretKey) {
       throw new Error("llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set"); // @spec LLM-CLAUDE-016

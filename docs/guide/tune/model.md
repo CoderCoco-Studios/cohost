@@ -145,6 +145,18 @@ Both keys must be set together. With only one set, the services that build the m
 
 Server-side fallbacks are not offered on Bedrock; if a safety check declines a reply, the co-host says nothing that turn. Bedrock models other than Claude (Llama, Mistral) are not covered by this provider.
 
+## Pictures for the vision model
+
+The [OBS](../connect/obs.md) screenshots that the `eyes` service describes go to the provider that `vision.provider` names, which is set separately from `llm.provider`. Each provider takes the picture in its own form:
+
+| `vision.provider` | Takes pictures |
+| --- | --- |
+| `ollama` | Yes, the local vision model (`vision.model`, default `qwen2.5vl:3b`). |
+| `openai` | Yes, if the server serves a model that takes images. |
+| `anthropic`, `bedrock` | Yes, if the Claude model you name takes images. |
+
+A model that takes no images fails each describe call with an error, and eyes marks `vision` down. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. A screenshot sent to a hosted provider leaves your machine, the same as the chat text does.
+
 ## Mix models
 
 The brain's [hooks](../../start/glossary.md#hook) can each use a different model from the main one. A popular combination is a big hosted model for what the co-host says and a small local one, such as a 3-billion-parameter model, for the quick judgement calls (`brain.salience.module.llm`, `brain.affect.module.llm`, `brain.cortex.critic.llm`). The [Brain hooks page](../../advanced/extend/hooks.md) shows how.

@@ -147,15 +147,18 @@ Server-side fallbacks are not offered on Bedrock; if a safety check declines a r
 
 ## Pictures for the vision model
 
-The [OBS](../connect/obs.md) screenshots that the `eyes` service describes are sent to a vision model. Today the describer always uses the local Ollama model (`vision.model`, default `qwen2.5vl:3b`), and `vision.provider` is not yet wired to the other providers, so nothing leaves your machine for pictures. Wiring `vision.provider` to hosted providers is planned with epic #184; once it lands, these providers can take frames, each in its own picture form:
+The [OBS](../connect/obs.md) screenshots that the `eyes` service describes go to the chat provider named by `vision.provider`, using the model you name in `vision.model`:
 
-| Provider | Takes pictures |
+| `vision.provider` | Where the picture goes |
 | --- | --- |
-| `ollama` | Yes, the local vision model. |
-| `openai` | Yes, if the server serves a model that takes images. |
-| `anthropic`, `bedrock` | Yes, if the Claude model you name takes images. |
+| `ollama` (default) | Your Ollama server at `OLLAMA_URL`. On your machine or your LAN, nothing leaves it; a URL off the LAN sends the pictures off it. |
+| `openai` | The OpenAI-compatible server at `llm.openai.base_url`. The default is the hosted `https://api.openai.com/v1`, so the picture leaves your machine; a server on your LAN keeps it there. |
+| `anthropic`, `bedrock` | The hosted Claude API or Amazon Bedrock, with the keys from `secrets.yaml`. The picture leaves your machine. |
+| `stub` | Nowhere: fixed text, no model. |
 
-A model that takes no images fails each describe call with an error, and eyes marks `vision` down. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. When hosted providers are wired, a screenshot sent to one leaves your machine, the same as the chat text does.
+Each provider takes pictures in its own form. A model that takes no images fails the describe call with an error. A 400 or 422 from the provider reports that one frame as failed and leaves `vision` as it was; any other error marks `vision` down until a later describe succeeds. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. For `openai`, `anthropic` and `bedrock`, bytes that are not a JPEG, PNG, GIF or WebP, such as a BMP or a PDF injected from the dashboard, are refused before anything is sent; `ollama` passes the bytes through unchecked.
+
+When frames leave the LAN, eyes logs one warning at start that names the provider and, for `openai`, the host. Its [heartbeat](../../start/glossary.md#heartbeat) detail names the same destination. A blank `vision.model`, or a hosted provider without its keys, keeps eyes running with `vision` down and the reason in the detail; it describes nothing until you fix the setting.
 
 ## Mix models
 

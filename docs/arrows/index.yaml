@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "110 specs: 107 [x], 3 [ ] (SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 110 [x], 0 [ ], 0 [D] (the untrusted tool notice and the head-rotation module are built)."
     drift: null
 
   module-contract:

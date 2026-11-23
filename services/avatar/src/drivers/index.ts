@@ -1,5 +1,6 @@
 import type { Config } from "@cohost/config";
 import type { AvatarDriver } from "../types.js";
+import { BrowserDriver } from "./browser.js";
 import { NullDriver } from "./null.js";
 import { VTubeStudioDriver } from "./vtube-studio.js";
 import { VmcDriver } from "./vmc.js";
@@ -20,10 +21,9 @@ export function createDriver(cfg: Config["avatar"]): AvatarDriver { // @spec AVA
       });
     case "vmc":
       return new VmcDriver({ host: cfg.vmc.host, port: cfg.vmc.port });
+    case "browser":
+      return new BrowserDriver(); // @spec AVATAR-BRW-001
     case "null":
       return new NullDriver();
-    case "browser":
-      // The browser driver lands with #215; until then a browser selection fails loudly instead of drawing nothing.
-      throw new Error("avatar.driver browser is not built yet (#215)");
   }
 }

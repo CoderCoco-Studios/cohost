@@ -5,6 +5,8 @@
 #               The driver resolves names to ids at connect time. Leave a key out to skip it.
 # vmc:          values are VRM blendshape (expression) names sent as /VMC/Ext/Blend/Val.
 #               Standard VRM 0.x presets: Neutral Joy Angry Sorrow Fun Surprised Blink etc.
+# browser:      values are VRM expression names (VRM 1.0 presets: happy angry sad relaxed surprised, or the model's own
+#               names). An emotion left out takes the built-in default; an empty string means no expression. At most 64 characters.
 
 vtube-studio:
   neutral: "Expr Neutral"
@@ -31,4 +33,17 @@ vmc:
   angry: "Angry"
   confused: "Sorrow"
   think: "Neutral"
+  gestures: {}
+
+# @spec AVATAR-BRW-013
+browser:
+  happy: "happy"
+  laugh: "happy"
+  surprised: "surprised"
+  smug: "relaxed"
+  sad: "sad"
+  angry: "angry"
+  confused: "sad"
+  think: ""
+  neutral: ""
   gestures: {}

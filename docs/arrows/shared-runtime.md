@@ -4,7 +4,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Status
 
-**AUDITED** for the specs marked `[x]`; the head-rotation module is open work. Spec file: 110 specs, 107 `[x]`, 3 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, (at the `discord-voice` subpath) `createDiscordVoiceSession`, (at the `untrusted` subpath) the untrusted text guard's `boundText`, `quoteUntrusted`, `speakerLabel`, `untrustedNotice`, `normalizeKey`, `createOnceCounter` and `untrustedToolNotice`, and (at the package root) `parseVideoValue`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
+**AUDITED** for the specs marked `[x]`. Spec file: 110 specs, 110 `[x]`, 0 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, (at the `discord-voice` subpath) `createDiscordVoiceSession`, (at the `untrusted` subpath) the untrusted text guard's `boundText`, `quoteUntrusted`, `speakerLabel`, `untrustedNotice`, `normalizeKey`, `createOnceCounter` and `untrustedToolNotice`, and (at the package root) `parseVideoValue`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
 
 ## Spec Coverage
 
@@ -21,9 +21,9 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Behaviour that stays in a service | SHARED-BOUND-001 to SHARED-BOUND-002 | 2 | 0 | 0 | 2 |
 | Untrusted text guard | SHARED-GUARD-001 to SHARED-GUARD-031 | 31 | 0 | 0 | 31 |
 | Video value | SHARED-VID-001 to SHARED-VID-002 | 2 | 0 | 0 | 2 |
-| Head rotation | SHARED-ROT-001 to SHARED-ROT-003 | 0 | 0 | 3 | 0 |
+| Head rotation | SHARED-ROT-001 to SHARED-ROT-003 | 3 | 0 | 0 | 3 |
 
-**Summary:** 107 of 110 specs `[x]`; 3 `[ ]` (the head-rotation module, SHARED-ROT-001 to -003); 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 110 of 110 specs `[x]`; 0 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## References
 
@@ -34,7 +34,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (110 specs: 107 `[x]`, 3 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (110 specs: 110 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec SHARED-` annotations)
 - packages/shared/test/: audio, boot, boundary, control-routing, control, discord-voice, idle, inject-handler, lifecycle, retry, shutdown, untrusted, wav (`*.test.ts`)

@@ -1,6 +1,7 @@
 import type { Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
-import { createChatProvider, type ChatProvider } from "@cohost/llm";
+import { createChatProvider, notConfiguredReason, type ChatProvider } from "@cohost/llm";
+import { egressDestinations } from "@cohost/config";
 
 export interface EyesDeps {
   bus: Publisher;
@@ -21,9 +22,6 @@ export function stripDataUrl(imageData: string): string {
   return imageData.replace(/^data:image\/\w+;base64,/, "");
 }
 
-/** True for the error a request rejects with when its abort signal fires on a timeout. */
-export const isTimeout = (err: unknown): boolean => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
-
 // @spec EYES-LOOK-002, EYES-INJ-008
 /**
  * A clear `SAME`: empty, or the word `SAME` in any case with nothing after it but punctuation or whitespace.
@@ -33,26 +31,41 @@ export const isSame = (text: string): boolean => /^(same[\s.!]*)?$/i.test(text.t
 
 export type Describe = EyesDeps["describe"];
 
+/** The chat provider `vision.provider` names; the stub has none, and `createDescriber` never asks for one. */
+function chatOf(cfg: Config["vision"], llm: Config["llm"]): ChatProvider {
+  if (cfg.provider === "stub") throw new Error("the stub provider has no chat provider: createDescriber selects stubDescriber");
+  return createChatProvider({ ...llm, provider: cfg.provider, model: cfg.model });
+}
+
 // @spec EYES-DESC-001, EYES-DESC-002, EYES-DESC-003, EYES-DESC-004, EYES-DESC-005, EYES-DESC-006
 /**
- * Ask the vision model through the `ollama` provider of `@cohost/llm`, with `vision.model` and the `vision.*` options;
- * a call unanswered after `vision.timeout_ms` is aborted and throws.
+ * Ask the vision model through the chat provider `vision.provider` names, with `vision.model` and the `vision.*` options.
+ * The describer owns the `vision.timeout_ms` timer: a call unanswered after that long rejects and the request is aborted,
+ * even when the provider ignores the signal (the race below), so no provider can stall the look loop.
  */
-export function modelDescriber(cfg: Config["vision"], llm: Config["llm"], provider: ChatProvider = createChatProvider({ ...llm, provider: "ollama", model: cfg.model })): Describe {
+export function modelDescriber(cfg: Config["vision"], llm: Config["llm"], provider?: ChatProvider): Describe {
+  const chat = provider ?? chatOf(cfg, llm);
   return async (b64, previous) => {
     // A ref'd timer, not `AbortSignal.timeout`: that one is unref'd, so on Node 22 a request that never answers lets
     // the event loop drain before the abort fires.
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(new DOMException("The operation timed out.", "TimeoutError")), cfg.timeout_ms);
+    let timer: NodeJS.Timeout | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error(`vision model did not answer within ${cfg.timeout_ms} ms`);
+        ctl.abort(err);
+        reject(err);
+      }, cfg.timeout_ms);
+    });
     try {
-      const reply = await provider.chat([
-        { role: "system", content: cfg.prompt },
-        { role: "user", content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?", images: [b64] },
-      ], { temperature: cfg.temperature, maxTokens: cfg.num_predict, signal: ctl.signal });
+      const reply = await Promise.race([
+        chat.chat([
+          { role: "system", content: cfg.prompt },
+          { role: "user", content: previous ? `Previous description: ${previous}\nWhat is happening now?` : "What is happening now?", images: [b64] },
+        ], { temperature: cfg.temperature, maxTokens: cfg.num_predict, signal: ctl.signal }),
+        expired,
+      ]);
       return reply.trim().split("\n")[0] ?? "";
-    } catch (err) {
-      if (isTimeout(err)) throw new Error(`vision model did not answer within ${cfg.timeout_ms} ms`);
-      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -68,9 +81,50 @@ export function stubDescriber(): Describe {
   return async (b64, previous) => (previous ? "SAME" : `stub vision: ${Buffer.from(b64, "base64").length} bytes`);
 }
 
-/** The describer `vision.provider` selects. */
-export function createDescriber(cfg: Config): Describe {
-  return cfg.vision.provider === "stub" ? stubDescriber() : modelDescriber(cfg.vision, cfg.llm);
+/** The provider a start builds, or the gap that keeps it from describing; undefined for the stub, which builds none. */
+export type VisionBuild = { provider: ChatProvider } | { gap: string };
+
+// @spec EYES-GAP-001, EYES-GAP-003, EYES-GAP-006
+/**
+ * Build the chat provider `vision.provider` names, or the configuration gap that keeps it from describing: a blank `vision.model`,
+ * a hosted provider without its credentials, or a provider the model layer refuses to construct (a bedrock key pair only partly
+ * set, LLM-CLAUDE-016). A gap is not a load failure: the service stays up and reports the reason. Built once per start.
+ */
+export function buildVisionProvider(cfg: Config): VisionBuild | undefined {
+  const { provider, model } = cfg.vision;
+  if (provider === "stub") return undefined;
+  if (!model) return { gap: "vision.model is not set" };
+  try {
+    const chat = createChatProvider({ ...cfg.llm, provider, model });
+    const missing = provider === "anthropic" || provider === "bedrock" ? notConfiguredReason(cfg.llm, provider) : undefined;
+    return missing ? { gap: missing } : { provider: chat };
+  } catch (err) {
+    return { gap: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The describer `vision.provider` selects. A stub is `stubDescriber`; a gap describes by failing at once with its reason (EYES-GAP-001, EYES-GAP-004). */
+// @spec EYES-PROV-001, EYES-PROV-002, EYES-PROV-003, EYES-GAP-001, EYES-GAP-003, EYES-GAP-004
+export function createDescriber(cfg: Config, built: VisionBuild | undefined = buildVisionProvider(cfg)): Describe {
+  if (!built) return stubDescriber();
+  if ("gap" in built) {
+    const reason = built.gap;
+    return async () => { throw new Error(reason); };
+  }
+  return modelDescriber(cfg.vision, cfg.llm, built.provider);
+}
+
+// @spec EYES-EGR-001, EYES-EGR-002, EYES-EGR-003, EYES-EGR-004, EYES-STUB-002
+/** The heartbeat detail naming the frames' destination: `openai at api.openai.com`, or the provider alone for a hosted one; undefined for the stub. */
+export function describerLabel(cfg: Config): string | undefined {
+  const dest = egressDestinations(cfg).find((e) => e.service === "eyes");
+  if (!dest) return undefined;
+  return dest.host ? `${dest.engine} at ${dest.host}` : dest.engine;
+}
+
+/** The configuration gap of a build, or undefined when the describer can describe. */
+export function gapOf(built: VisionBuild | undefined): string | undefined {
+  return built && "gap" in built ? built.gap : undefined;
 }
 
 /** One look at the screen; publishes `vision.summary` only when the model saw a change. */

@@ -67,13 +67,13 @@ The `eyes` service: OBS screenshots described by a vision model.
 | --- | --- | --- |
 | `vision` | map | The eyes service |
 | `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
-| `vision.model` | `qwen2.5vl:3b` | The vision model. Ollama pulls it while `provider` is `ollama`; blank means none, and eyes reports it down while `enabled` is true |
-| `vision.provider` | `ollama` | `ollama`, `openai`, `anthropic` or `bedrock` (hosted, with their keys in `secrets.yaml`), or `stub` for fixed text and no model |
+| `vision.model` | `qwen2.5vl:3b` | The vision model the describer asks. Ollama pulls it while `provider` is `ollama`. Blank is a configuration gap: eyes stays up, makes no describe call, and reports `vision` down with `vision.model is not set` while `enabled` is true |
+| `vision.provider` | `ollama` | The chat provider that describes frames: `ollama` (your Ollama server, `OLLAMA_URL`), `openai` (the OpenAI-compatible server at `llm.openai.base_url`, which defaults to the hosted `https://api.openai.com/v1`), `anthropic` or `bedrock` (hosted, with the `llm.claude.*` and `llm.bedrock.*` keys), or `stub` for fixed text and no model. Frames leave the LAN for `anthropic`, `bedrock`, and an off-LAN `openai` or `ollama` URL; eyes logs one warning at start. Sensitive: changing it needs the control token |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |
 | `vision.jpeg_quality` | `70` | JPEG quality of the OBS screenshot, 1 to 100 |
-| `vision.timeout_ms` | `30000` | Give up on a describe call after this long |
+| `vision.timeout_ms` | `30000` | Give up on a describe call after this long, whatever the provider |
 | `vision.upload_timeout_ms` | `10000` | Injected uploads: timeout for reading the image from Redis |
 | `vision.upload_max_bytes` | `8388608` | Injected uploads: the largest image accepted (8 MiB) |
 | `vision.prompt` | built-in prompt (commented out in the example) | The system prompt of the describe call. Blank uses the built-in one. Keep its rule to reply exactly `SAME` when nothing changed, or every reply counts as a change |
@@ -314,7 +314,7 @@ The `avatar` service.
 
 ## `renderer`
 
-The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. Selecting `browser` fails at start until the browser driver exists (#215), and a saved change reaches a running renderer without a restart once the live push lands (#216).
+The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. A saved change reaches a running renderer without a restart once the live push lands (#216).
 
 | Key | Default | What it does |
 | --- | --- | --- |

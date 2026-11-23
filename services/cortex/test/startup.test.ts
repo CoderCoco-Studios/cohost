@@ -64,18 +64,49 @@ test("trackLlm: every chat outcome feeds the dependency: failure down, success o
   assert.deepEqual([llm.name, llm.model, llm.lastError, llm.pingIsNominal, await llm.ping()], ["fake", "m", "boom", true, true]);
 });
 
-test("trackLlm: complete() and stream() pass through to the provider untracked", async () => {
+test("trackLlm: complete() passes through to the provider untracked", async () => {
   const seen: boolean[] = [];
   const result = { text: "x", toolCalls: [], finish: "stop", message: { role: "assistant", content: "x" } };
-  const fake = {
-    ...llmWith(async () => "ok"),
-    complete: async () => result,
-    stream: async function* () { yield { type: "text", delta: "x" }; },
-  } as unknown as ChatProvider;
+  const fake = { ...llmWith(async () => "ok"), complete: async () => result } as unknown as ChatProvider;
   const llm = trackLlm(fake, (ok) => seen.push(ok));
   assert.equal(await llm.complete!([]), result);
-  const events: unknown[] = [];
-  for await (const e of llm.stream!([])) events.push(e);
-  assert.deepEqual(events, [{ type: "text", delta: "x" }]);
   assert.deepEqual(seen, []);
+});
+
+const streamWith = (stream: (m: unknown[], o?: { signal?: AbortSignal }) => AsyncGenerator<unknown>): ChatProvider =>
+  ({ ...llmWith(async () => "ok"), stream } as unknown as ChatProvider);
+
+// @spec CTX-HEALTH-003
+test("trackLlm: a stream that ends is ok, a stream that throws is down, and the events pass through unchanged", async () => {
+  const seen: boolean[] = [];
+  let fail = true;
+  const llm = trackLlm(streamWith(async function* () {
+    yield { type: "text", delta: "x" };
+    if (fail) throw new Error("stream broke");
+    yield { type: "done", result: {} };
+  }), (ok) => seen.push(ok));
+  const events: unknown[] = [];
+  await assert.rejects((async () => { for await (const e of llm.stream!([])) events.push(e); })(), /stream broke/);
+  assert.deepEqual(events, [{ type: "text", delta: "x" }]);
+  assert.deepEqual(seen, [false]);
+  fail = false;
+  const again: unknown[] = [];
+  for await (const e of llm.stream!([])) again.push(e);
+  assert.deepEqual(again, [{ type: "text", delta: "x" }, { type: "done", result: {} }]);
+  assert.deepEqual(seen, [false, true], "ok again after recovery");
+});
+
+// @spec CTX-HEALTH-003
+test("trackLlm: a stream the consumer abandons, or that stops because cortex aborted it, counts as ok", async () => {
+  const seen: boolean[] = [];
+  const llm = trackLlm(streamWith(async function* (_m, o) {
+    yield { type: "text", delta: "a" };
+    yield { type: "text", delta: "b" };
+    if (o?.signal?.aborted) throw o.signal.reason;
+  }), (ok) => seen.push(ok));
+  for await (const _ of llm.stream!([])) break; // cortex stops reading
+  assert.deepEqual(seen, [true]);
+  const ctl = new AbortController();
+  await assert.rejects((async () => { for await (const _ of llm.stream!([], { signal: ctl.signal })) ctl.abort(new Error("aborted by cortex")); })(), /aborted by cortex/);
+  assert.deepEqual(seen, [true, true], "a thrown error after cortex aborted is not a failure");
 });

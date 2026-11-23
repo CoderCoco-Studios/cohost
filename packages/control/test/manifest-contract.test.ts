@@ -81,3 +81,16 @@ test("every name in a unit's isolatedEnv is an isolation override of the config 
   // TEMPORARY (#204): TOOLS_MODE is used by the `tools` unit, which arrives with #208; until then it is the one override no unit names.
   assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).filter((n) => n !== "TOOLS_MODE").sort());
 });
+
+// @spec MOD-MAN-013
+test("no unit lists tts-pocket, stt-nemotron or stt-kyutai among its uses or requires, so a profile that is not enabled never annotates voice or ears", () => {
+  for (const id of ["tts-pocket", "stt-nemotron", "stt-kyutai"]) {
+    assert.ok(findService(id), `${id} is in the manifest`);
+    for (const s of SERVICE_MANIFEST) {
+      assert.ok(!s.uses.includes(id), `${s.id} uses ${id}`);
+      assert.ok(!(s.requires ?? []).includes(id), `${s.id} requires ${id}`);
+    }
+  }
+  assert.deepEqual(findService("voice")!.uses, []);
+  assert.deepEqual(findService("ears")!.uses, []);
+});

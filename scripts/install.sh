@@ -247,6 +247,9 @@ ${port_note:+${port_note}
      # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
      # the one Discord bot is connections.discord.token in config/secrets.yaml, used by the Discord connector;
      # ears and mouth need no token
+  5. optional speech engines: to use the pocket TTS (voice.engine: pocket) or a streaming STT server (ears.stt_engine:
+     nemotron or kyutai), add pocket, nemotron or kyutai to COMPOSE_PROFILES in .env (for example COMPOSE_PROFILES=pocket,nemotron),
+     select it in config/config.yaml, then press Launch again. The first build of an enabled profile takes minutes; later launches reuse it.
 
 Dev loop without Docker for the TS services:
   docker compose up -d redis postgres ollama tts stt   # infra only

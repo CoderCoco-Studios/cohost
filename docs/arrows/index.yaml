@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 48 [x], 13 [ ] (MOD-MAN-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
+    next: "61 specs: 51 [x], 10 [ ] (MOD-MAN-002, -003, -005, -010; MOD-CFG-001, -021, -022; MOD-TEST-005, -007, -008)."
     drift: null
 
 
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 81 [x], 28 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-003 (the VISION_PROVIDER preset), CTRL-MANIFEST-001 and -006 (the 19-unit manifest and engine units), CTRL-STACK-018 (Launch with engine profiles)."
+    next: "111 specs: 84 [x], 25 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 73 [x], 36 [ ] (speech engine servers: DEPLOY-ENG-*, DEPLOY-CI-010, -011, DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008; the avatar renderer: DEPLOY-COMPOSE-028, DEPLOY-LIC-005 to -007)."
+    next: "109 specs: 97 [x], 12 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-COMPOSE-001, -019, -021, -026 to -028; DEPLOY-LIC-005 to -007; DEPLOY-REPO-001)."
     drift: null
 
   docs-site:

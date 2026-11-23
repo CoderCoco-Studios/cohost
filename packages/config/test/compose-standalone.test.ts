@@ -28,7 +28,7 @@ const names = Object.keys(compose.services).sort();
 test("compose defines infra, one-shots and one app service per services/ directory except dashboard, and no dashboard", () => {
   assert.deepEqual(
     names,
-    ["affect", "avatar", "chat", "connector-discord", "consolidate", "cortex", "ears", "eyes", "memory", "models", "mouth", "ollama", "postgres", "redis", "reembed", "salience", "stt", "tts", "voice"],
+    ["affect", "avatar", "chat", "connector-discord", "consolidate", "cortex", "ears", "eyes", "memory", "models", "mouth", "ollama", "postgres", "redis", "reembed", "salience", "stt", "stt-kyutai", "stt-nemotron", "tts", "tts-pocket", "voice"],
   );
   assert.equal(compose.services.dashboard, undefined);
 });
@@ -101,7 +101,7 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
   const all = Object.entries(compose.services).flatMap(([n, s]) => (s.ports ?? []).map((p) => [n, p] as const));
   for (const [n, p] of all) assert.match(p, /^127\.0\.0\.1:/, `${n} publishes ${p}`);
   assert.deepEqual(compose.services.voice!.ports, ["127.0.0.1:8700:8700"]);
-  assert.deepEqual(all.map(([n]) => n).sort(), ["ollama", "postgres", "redis", "stt", "tts", "voice"]);
+  assert.deepEqual(all.map(([n]) => n).sort(), ["ollama", "postgres", "redis", "stt", "stt-kyutai", "stt-nemotron", "tts", "tts-pocket", "voice"]); // the engine servers publish on loopback too (DEPLOY-ENG-008)
 });
 
 // @spec DEPLOY-HOST-002

@@ -8,6 +8,9 @@
  *   - a `Dockerfile` `FROM rust:<version>-...` that differs from the channel `rust-toolchain.toml` pins (DEPLOY-IMG-001);
  *   - a workflow `uses:` ref that is not an exact `vX.Y.Z` tag or a full commit SHA, one action pinned to two different refs
  *     across workflows, or a workflow or Compose `image:` whose tag is missing, `latest` or not an exact `x.y.z` version (DEPLOY-CI-009);
+ *   - a Compose `build:` context that is a Git URL whose ref after `#` is not a full commit SHA (DEPLOY-CI-010);
+ *   - under `docker/`, a `cargo install` without an exact `=x.y.z` version or without `--locked`, a `FROM` whose tag is
+ *     missing, `latest` or not an exact version, and a `git clone` or an `ADD` of a Git URL not pinned to a full commit SHA (DEPLOY-CI-011);
  * Exits 1 when there is any offence, 0 otherwise. Needs only Node.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -94,6 +97,75 @@ export function checkToolchain(root, files) {
   return problems;
 }
 
+const GIT_URL = /^(?:https?:\/\/|git:\/\/|ssh:\/\/|git@)/;
+const FULL_SHA_TEXT = /^[0-9a-f]{40}$/;
+const CHECKOUT_SHA = /\bgit\b[^&;|]*\bcheckout\s+[0-9a-f]{40}(?![0-9a-f])/;
+const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
+const EXACT_VERSION_TAG = /^\d+\.\d+\.\d+(?:[-.][\w.-]*)?$/;
+const COMPOSE_FILE = /^docker-compose[^/]*\.ya?ml$/;
+const DOCKERFILE = /^docker\/(?:[^/]+\/)*Dockerfile$/;
+
+/** The ref of a Git URL (the text after `#`, up to a `:subdir`), or an empty string when the URL has no fragment. */
+function gitRef(url) {
+  const hash = url.indexOf("#");
+  return hash < 0 ? "" : url.slice(hash + 1).split(":")[0];
+}
+
+// @spec DEPLOY-CI-010
+export function checkBuildContexts(root, files) {
+  const problems = [];
+  for (const f of files.filter((x) => COMPOSE_FILE.test(x))) {
+    readFileSync(join(root, f), "utf8").split("\n").forEach((raw, i) => {
+      const text = raw.replace(/\s+#.*$/, "");
+      const build = /\b(?:context|build)\s*:\s*([^\s,}\]]+)/.exec(text);
+      if (!build) return;
+      const value = build[1].replace(/^["']|["']$/g, ""); // a quoted value is the same value
+      if (!GIT_URL.test(value)) return;
+      if (!FULL_SHA_TEXT.test(gitRef(value))) {
+        problems.push(`${f}:${i + 1}: Git build context ${value} does not name a full commit SHA after its #`);
+      }
+    });
+  }
+  return problems;
+}
+
+// @spec DEPLOY-CI-011
+export function checkDockerfiles(root, files) {
+  const problems = [];
+  for (const f of files.filter((x) => DOCKERFILE.test(x))) {
+    const stages = new Set();
+    readFileSync(join(root, f), "utf8").split("\n").forEach((raw, i) => {
+      if (raw.trimStart().startsWith("#")) return;
+      const where = `${f}:${i + 1}`;
+      const from = /^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/i.exec(raw);
+      if (from) {
+        const image = from[1];
+        // A digest (`image@sha256:<64 hex>`) is a full pin on its own; otherwise the tag must be an exact version.
+        if (!stages.has(image.toLowerCase()) && image.toLowerCase() !== "scratch" && !DIGEST_PIN.test(image)) {
+          const name = image.slice(image.lastIndexOf("/") + 1);
+          const tag = name.includes(":") ? name.slice(name.indexOf(":") + 1) : undefined;
+          if (tag === undefined || /^latest/i.test(tag) || !EXACT_VERSION_TAG.test(tag)) {
+            problems.push(`${where}: FROM ${image} is not pinned to an exact version tag`);
+          }
+        }
+        if (from[2]) stages.add(from[2].toLowerCase());
+      }
+      if (/\bcargo\s+install\b/.test(raw) && (!/\s--locked(?=\s|$)/.test(raw) || !/\s--version\s+=\d+\.\d+\.\d+(?=\s|$)/.test(raw))) {
+        problems.push(`${where}: cargo install must pin an exact version as =x.y.z and pass --locked`);
+      }
+      // The clone's ref is the commit it checks out: a full SHA as the argument of `git ... checkout`, not any 40-hex text.
+      if (/\bgit\s+clone\b/.test(raw) && !CHECKOUT_SHA.test(raw)) {
+        problems.push(`${where}: git clone is not pinned to a full commit SHA checked out by git checkout`);
+      }
+      const add = /^\s*ADD\s+(\S+)/.exec(raw);
+      if (add && GIT_URL.test(add[1]) && /\.git(?:#|$)/.test(add[1]) && !FULL_SHA_TEXT.test(gitRef(add[1]))) {
+        problems.push(`${where}: ADD of a Git URL is not pinned to a full commit SHA after its #`);
+      }
+    });
+  }
+  return problems;
+}
+
 // @spec DEPLOY-CI-006
 export function check(root) {
   const files = walk(root);
@@ -134,7 +206,7 @@ export function check(root) {
       }
     });
   }
-  problems.push(...checkPins(root, files), ...checkToolchain(root, files));
+  problems.push(...checkPins(root, files), ...checkToolchain(root, files), ...checkBuildContexts(root, files), ...checkDockerfiles(root, files));
   return { problems, defined: defined.size };
 }
 

@@ -575,7 +575,7 @@ after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 
 After the owner changes the embedder to one with another vector size, `init` refuses the
 existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
-`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `jobs` profile, or
+`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `tools` profile, or
 `cohostctl reembed`) is the way forward; run it with the memory service stopped.
 
 - `runReembed` (`reembed-run.ts`) takes the consolidation lock (`MEM-REEMBED-004`), calls

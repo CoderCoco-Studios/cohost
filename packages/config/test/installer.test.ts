@@ -132,6 +132,21 @@ test("next steps say pnpm dashboard, build the URL from the dashboard.port the c
 });
 
 // @spec DEPLOY-INST-008
+test("next steps name the engine profiles pocket, nemotron and kyutai, the engine key each is selected by, and the first-build warning", () => {
+  const o = nextSteps(MINIMAL_YAML).stdout;
+  const at = o.search(/\bpocket\b/);
+  assert.ok(at >= 0, "the engine profiles step exists");
+  const step = o.slice(at - 200 > 0 ? at - 200 : 0);
+  for (const profile of ["pocket", "nemotron", "kyutai"]) assert.match(step, new RegExp(`\\b${profile}\\b`), profile);
+  assert.match(step, /COMPOSE_PROFILES/, "enabled in COMPOSE_PROFILES");
+  assert.match(step, /voice\.engine/, "pocket is selected by voice.engine");
+  assert.match(step, /ears\.stt_engine/, "nemotron and kyutai are selected by ears.stt_engine");
+  assert.match(step, /first build[^\n]*(minutes|several)|(minutes|several)[^\n]*first build/i, "the first build of an enabled profile takes minutes");
+  assert.match(o, /docker compose --profile eyes --profile ears --profile mouth --profile discord up -d/, "the optional profiles step is kept");
+  assert.doesNotMatch(o, /^\s*\d\. docker compose up -d\b/m);
+});
+
+// @spec DEPLOY-INST-008
 test("when the loader fails the first error line goes to stderr and the URL has no port; the installer still finishes", () => {
   const bad = nextSteps(MINIMAL_YAML.replace("name: Coco", "name: ''"));
   assert.equal(bad.status, 0);

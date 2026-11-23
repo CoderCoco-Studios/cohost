@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-22
+last_updated: 2026-11-23
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -187,7 +187,7 @@ arrows:
     drift: null
 
   affect:
-    status: PARTIAL
+    status: OK
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -195,7 +195,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "57 specs: 51 [x], 6 [ ] (AFF-IN-001 start mode; AFF-IN-011 receipt call, flipped by #183; AFF-IN-017 to AFF-IN-020: dropping queued removed chat and viewer identity)."
+    next: "57 specs: 57 [x], 0 [ ], 0 [D]. Viewer identity (AFF-IN-011, AFF-IN-020) and removal handling (AFF-IN-001, AFF-IN-017 to AFF-IN-019) landed with #183."
     drift: null
 
   memory:

@@ -4,7 +4,7 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 55 specs: 53 `[x]`, 1 `[ ]` (CONN-DESK-001, the desktop helper), 1 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 58 specs: 51 `[x]`, 6 `[ ]` (CONN-DESK-001, 004 and 005 for the desktop helper, plus three streamed-speech clause specs), 1 `[D]`.
 
 **PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 58 specs, 51 implemented, 6 gaps (`[ ]`: three streamed-speech clause specs and the desktop helper's registration, CONN-DESK-001, 004, 005), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 015, 017 to 023 in ears) and the live verification of chunk 5.
 

@@ -4,7 +4,7 @@ The operator's web UI and HTTP/WebSocket API: the React UI (live feed, controls,
 
 ## Status
 
-**MAPPED.** 416 specs: 296 implemented, 120 gaps, 0 deferred. The gaps include DASH-UI-002, the streamed-line specs DASH-UI-041 and DASH-UI-054, the tools settings, the avatar renderer's relay, page and settings, and DASH-MDL-021 (its test contradicts DASH-MDL-024; see Coverage notes). The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH, DOCS) were audited on 2026-11-14; the React UI specs (DASH-UI, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route and allow-list edits they needed (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-HOST-008 to DASH-HOST-010) are implemented and tested under `services/dashboard/test/ui/` and `services/dashboard/test/`, and were not covered by the 2026-11-14 audit. DASH-DOCS-013, 014, 015 and 016 are docs-page content with no test: the docs build (`pnpm docs:build`) checks the pages' links and facts, and the statements were read against the code. Specs with no test annotation are listed under Coverage notes. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 416 specs: 297 implemented, 119 gaps, 0 deferred. The gaps include DASH-UI-002, the streamed-line specs DASH-UI-041 and DASH-UI-054, the tools settings, the avatar renderer's relay, page and settings. The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH, DOCS) were audited on 2026-11-14; the React UI specs (DASH-UI, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route and allow-list edits they needed (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-HOST-008 to DASH-HOST-010) are implemented and tested under `services/dashboard/test/ui/` and `services/dashboard/test/`, and were not covered by the 2026-11-14 audit. DASH-DOCS-013, 014, 015 and 016 are docs-page content with no test: the docs build (`pnpm docs:build`) checks the pages' links and facts, and the statements were read against the code. Specs with no test annotation are listed under Coverage notes. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 **Egress marks.** `GET /egress` answers the engine and chat-model destinations of the saved config (DASH-EGR-001 to 004), the Services screen marks the rows that leave the LAN and the Settings screen repeats the note beside the engine keys (DASH-UI-037, DASH-SET-034); `GET /options/voices` is a Kokoro list only (DASH-OPT-001, DASH-OPT-005).
 
@@ -24,7 +24,7 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (416 specs, prefix `DASH`: 296 `[x]`, 120 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (416 specs, prefix `DASH`: 297 `[x]`, 119 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -89,14 +89,12 @@ Orientation:
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 | Tools settings and confirmation | DASH-TOOL-001 to DASH-TOOL-025 | 0 | 0 | 25 |
 | Avatar renderer: applied view and relay | DASH-AVR-001 to DASH-AVR-030 (022, 025 absent) | 6 | 0 | 22 |
-| Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 36 | 0 | 1 |
+| Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 37 | 0 | 0 |
 | Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-037 | 0 | 0 | 37 |
 | Avatar renderer: settings and visibility | DASH-AVS-001 to DASH-AVS-011 | 0 | 0 | 11 |
 
-**Summary:** 416 specs: 296 implemented, 120 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL except 021, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The rest of the avatar renderer (the relay DASH-AVR-001 to 021 and 030, the page DASH-AVP, the settings DASH-AVS, DASH-BUILD-009 to -011, with DASH-HOST-002, DASH-BUILD-001, -007, DASH-CTRL-005, DASH-SET-002, DASH-SET-018 and DASH-HTTP-010, -016 revised for it) is specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented except DASH-UI-041, and DASH-UI-002 and DASH-UI-054 are open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 416 specs: 297 implemented, 119 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL-001 to 037, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The rest of the avatar renderer (the relay DASH-AVR-001 to 021 and 030, the page DASH-AVP, the settings DASH-AVS, DASH-BUILD-009 to -011, with DASH-HOST-002, DASH-BUILD-001, -007, DASH-CTRL-005, DASH-SET-002, DASH-SET-018 and DASH-HTTP-010, -016 revised for it) is specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented except DASH-UI-041, and DASH-UI-002 and DASH-UI-054 are open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
-
-DASH-MDL-021 is open. Its test (`models-upload.test.ts`, "a body over dashboard.models.max_bytes is cut at the first byte over") sends an endless body whose first bytes are a valid head followed by zeros, and expects `413`; DASH-MDL-024 refuses a head whose JSON chunk does not parse as soon as it is read, so the implementation answers `400`. The spec and the test disagree; the test is left unchanged until the owner rules.
 
 Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`) and DASH-DOCS-013 to 016 (docs-page content, checked by the docs build). Manual checks for what an emulated DOM cannot cover (autoplay, OBS, 320 px layout, keyboard and screen-reader passes) are listed in the LLD's Manual verification and on the docs site's Single-PC checklist (`docs/advanced/testing/single-pc.md`).

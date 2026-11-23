@@ -183,7 +183,9 @@ test("a body over dashboard.models.max_bytes is cut at the first byte over: 413,
   assert.deepEqual(incoming(r), []);
   // An endless body is cut: the server answers 413 while the client is still sending.
   const h = open(r.port, "POST", "/avatar/models?name=Endless.vrm", {});
-  h.write(model("endless", 0).subarray(0, 100));
+  // The head declares a JSON chunk of 2 MiB, so no head is judged before the cap: the zeros after the first 100 bytes are never parsed.
+  const endless = glb({ asset: { version: "2.0" }, extensionsUsed: ["VRMC_vrm"], extensions: { VRMC_vrm: {} } }, { bin: 0, jsonLen: 2 * MiB });
+  h.write(endless.subarray(0, 100));
   const chunk = Buffer.alloc(64 * 1024);
   let sent = 0;
   const pump = setInterval(() => { for (let i = 0; i < 8; i++) { h.write(chunk); sent += chunk.length; } }, 1);

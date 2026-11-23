@@ -168,12 +168,13 @@ function streamBody(req: http.IncomingMessage, o: { open: () => Promise<Temp>; m
     let headTotal: number | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    // The answer waits for the pending file open and writes, so the caller's cleanup sees the temporary file.
     const finish = (b: Body): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       req.pause();
-      resolve(b);
+      chain.then(() => resolve(b), () => resolve(b));
     };
     const idle = (): void => {
       clearTimeout(timer);

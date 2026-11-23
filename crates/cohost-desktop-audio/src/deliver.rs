@@ -3,7 +3,7 @@
 
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use tokio::sync::Notify;
@@ -30,12 +30,19 @@ struct Shared {
     wake: Notify,
     stop: Notify,
     stopping: AtomicBool,
+    /// Set while a clip is in its request, so a panic during the request can be counted.
+    in_flight: AtomicBool,
     sink: Box<dyn Fn(String) + Send + Sync>,
 }
 
 impl Shared {
     fn log(&self, line: String) {
         (self.sink)(line);
+    }
+
+    /// The queue, read through a poisoned lock too: a panic elsewhere must not stop the exit.
+    fn queue(&self) -> MutexGuard<'_, ClipQueue> {
+        self.queue.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -57,6 +64,7 @@ impl<S: ClipSender> Deliverer<S> {
             wake: Notify::new(),
             stop: Notify::new(),
             stopping: AtomicBool::new(false),
+            in_flight: AtomicBool::new(false),
             sink: Box::new(log),
         });
         let task = tokio::spawn(run(sender.clone(), shared.clone()));
@@ -71,7 +79,7 @@ impl<S: ClipSender> Deliverer<S> {
     /// is dropped and logged.
     // @spec EARS-SRC-020
     pub fn enqueue(&self, clip: Vec<i16>) -> Option<Vec<i16>> {
-        let dropped = self.shared.queue.lock().unwrap().push(clip);
+        let dropped = self.shared.queue().push(clip);
         if dropped.is_some() {
             self.shared
                 .log("dropped the oldest waiting clip: the queue was full".into());
@@ -87,7 +95,9 @@ impl<S: ClipSender> Deliverer<S> {
         self.shared.stopping.store(true, Ordering::SeqCst);
         self.shared.stop.notify_one();
         let worker_panicked = matches!(self.task.await, Err(e) if e.is_panic());
-        let mut dropped = 0;
+        // A panic during a request loses that clip: it was neither delivered nor queued.
+        let mut dropped =
+            usize::from(worker_panicked && self.shared.in_flight.load(Ordering::SeqCst));
         if let Some(clip) = held
             && let Err(err) = self.sender.send(&clip).await
         {
@@ -97,7 +107,7 @@ impl<S: ClipSender> Deliverer<S> {
                 Disposition::Retry => format!("final delivery attempt failed ({err})"),
             });
         }
-        dropped += self.shared.queue.lock().unwrap().discard();
+        dropped += self.shared.queue().discard();
         if worker_panicked {
             self.shared.log("the delivery task panicked".into());
         }
@@ -116,7 +126,7 @@ async fn run<S: ClipSender>(sender: Arc<S>, shared: Arc<Shared>) {
     let mut backoff = Backoff::new();
     let mut failures = FailureLog::new();
     while !shared.stopping.load(Ordering::SeqCst) {
-        let next = shared.queue.lock().unwrap().pop();
+        let next = shared.queue().pop();
         let Some(clip) = next else {
             tokio::select! {
                 () = shared.wake.notified() => {}
@@ -124,7 +134,10 @@ async fn run<S: ClipSender>(sender: Arc<S>, shared: Arc<Shared>) {
             }
             continue;
         };
-        match sender.send(&clip).await {
+        shared.in_flight.store(true, Ordering::SeqCst);
+        let result = sender.send(&clip).await;
+        shared.in_flight.store(false, Ordering::SeqCst);
+        match result {
             Ok(()) => {
                 backoff.reset();
                 failures.clear();
@@ -136,7 +149,7 @@ async fn run<S: ClipSender>(sender: Arc<S>, shared: Arc<Shared>) {
                         shared.log(line);
                     }
                     // The clip waits out its retry delay still counted among the waiting clips.
-                    let overflow = shared.queue.lock().unwrap().push_front(clip);
+                    let overflow = shared.queue().push_front(clip);
                     if overflow.is_some() {
                         shared.log("dropped the oldest waiting clip: the queue was full".into());
                     }

@@ -294,3 +294,40 @@ async fn a_connection_closed_before_the_status_line_after_a_complete_send_is_ret
     h.await.unwrap();
     assert!(err.is_retryable(), "{err}");
 }
+
+// @spec EARS-SRC-015
+#[test]
+fn only_an_address_in_a_loopback_range_or_localhost_is_loopback() {
+    assert!(
+        !parse_http_target("http://127.example.com/x")
+            .unwrap()
+            .is_loopback()
+    );
+    assert!(
+        parse_http_target("http://127.0.0.2:8765/x")
+            .unwrap()
+            .is_loopback()
+    );
+    assert!(
+        parse_http_target("http://LOCALHOST/x")
+            .unwrap()
+            .is_loopback()
+    );
+}
+
+// @spec EARS-SRC-015
+#[test]
+fn a_colon_in_the_host_must_be_bracketed_and_the_path_takes_no_space_hash_or_control_character() {
+    for bad in [
+        "http://::1/x",
+        "http://a:b:80/x",
+        "http://h/a b",
+        "http://h/a#frag",
+        "http://h/a\rX",
+        "http://h/a\tb",
+        "http://[::1]x/",
+    ] {
+        assert!(parse_http_target(bad).is_err(), "{bad:?} accepted");
+    }
+    assert!(parse_http_target("http://[::1]:8765/audio?source=desktop").is_ok());
+}

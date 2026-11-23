@@ -213,4 +213,6 @@ async fn a_panic_in_the_delivery_task_is_reported_by_shutdown() {
     settle().await;
     let report = d.shutdown(None).await;
     assert!(report.worker_panicked);
+    // The clip in the request when the task panicked was not delivered.
+    assert_eq!(report.dropped, 1);
 }

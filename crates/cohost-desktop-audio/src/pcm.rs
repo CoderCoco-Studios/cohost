@@ -13,6 +13,12 @@ const OUT_RATE: u64 = 16_000;
 const HALF: i64 = 32;
 /// The passband edge as a fraction of the output rate's Nyquist-limited band.
 const PASSBAND: f64 = 0.45;
+/// Taps per output sample.
+const TAPS: usize = (2 * HALF) as usize;
+
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
 
 /// Streaming converter from interleaved `f32` frames to 16 kHz mono `i16`.
 pub struct Resampler {
@@ -30,6 +36,12 @@ pub struct Resampler {
     /// Index of the next output sample.
     next_out: u64,
     cutoff: f64,
+    /// Filter weights per fractional phase, `TAPS` per phase, before normalisation.
+    weights: Vec<f64>,
+    /// The sum of each phase's weights.
+    norms: Vec<f64>,
+    /// Phase count: `OUT_RATE / gcd(rate, OUT_RATE)`. Output phases repeat with this period.
+    step: u64,
 }
 
 impl Resampler {
@@ -41,7 +53,9 @@ impl Resampler {
         } else {
             PASSBAND * (rate.min(OUT_RATE) as f64) / rate as f64
         };
-        Self {
+        let step = if rate == 0 { 1 } else { gcd(rate, OUT_RATE) };
+        let phases = (OUT_RATE / step) as usize;
+        let mut this = Self {
             rate,
             channels: usize::from(channels.max(1)),
             pending: Vec::new(),
@@ -52,15 +66,35 @@ impl Resampler {
             total_in: 0,
             next_out: 0,
             cutoff,
+            weights: Vec::new(),
+            norms: Vec::new(),
+            step,
+        };
+        if rate > 0 {
+            for p in 0..phases {
+                let frac = (p as u64 * step) as f64 / OUT_RATE as f64;
+                let mut norm = 0.0;
+                for t in 0..TAPS {
+                    // Tap t reads input sample `int - HALF + 1 + t` for an output at `int + frac`.
+                    let x = frac + (HALF - 1 - t as i64) as f64;
+                    let w = this.weight(x);
+                    this.weights.push(w);
+                    norm += w;
+                }
+                this.norms.push(norm);
+            }
         }
+        this
     }
 
-    /// Integer part and fractional phase of output `k`'s input position.
-    fn position(&self, k: u64) -> (i64, f64) {
-        let num = k * self.rate;
-        let int = (num / OUT_RATE) as i64;
-        let frac = (num % OUT_RATE) as f64 / OUT_RATE as f64;
-        (int, frac)
+    /// Integer part of output `k`'s input position.
+    fn position(&self, k: u64) -> i64 {
+        (k * self.rate / OUT_RATE) as i64
+    }
+
+    /// Index of output `k`'s fractional phase in the weight table.
+    fn phase(&self, k: u64) -> usize {
+        ((k * self.rate % OUT_RATE) / self.step) as usize
     }
 
     /// The mono input sample at absolute index `j`. Before the start and after the end the edge
@@ -94,14 +128,14 @@ impl Resampler {
 
     /// Output sample `k`: the filtered input at its position, normalised to unity DC gain.
     fn output(&self, k: u64) -> f32 {
-        let (int, frac) = self.position(k);
+        let int = self.position(k);
+        let p = self.phase(k);
+        let row = &self.weights[p * TAPS..(p + 1) * TAPS];
         let mut acc = 0.0;
-        let mut norm = 0.0;
-        for j in (int - HALF + 1)..=(int + HALF) {
-            let w = self.weight(frac + (int - j) as f64);
-            acc += w * self.sample(j);
-            norm += w;
+        for (t, w) in row.iter().enumerate() {
+            acc += w * self.sample(int - HALF + 1 + t as i64);
         }
+        let norm = self.norms[p];
         let v = if norm == 0.0 { 0.0 } else { acc / norm };
         (v * 32_768.0)
             .round()
@@ -130,7 +164,7 @@ impl Resampler {
 
         let mut out = Vec::new();
         loop {
-            let (int, _) = self.position(self.next_out);
+            let int = self.position(self.next_out);
             if int + HALF >= self.total_in {
                 break;
             }
@@ -147,7 +181,7 @@ impl Resampler {
             return Vec::new();
         }
         let mut out = Vec::new();
-        while self.position(self.next_out).0 < self.total_in {
+        while self.position(self.next_out) < self.total_in {
             out.push(self.output(self.next_out) as i16);
             self.next_out += 1;
         }
@@ -156,7 +190,7 @@ impl Resampler {
 
     /// Drops input no later output can reach.
     fn trim(&mut self) {
-        let keep_from = self.position(self.next_out).0 - HALF + 1;
+        let keep_from = self.position(self.next_out) - HALF + 1;
         while self.base < keep_from && !self.hist.is_empty() {
             self.hist.pop_front();
             self.base += 1;

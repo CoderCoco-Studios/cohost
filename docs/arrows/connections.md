@@ -50,7 +50,7 @@ CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 a
 - docs/intent/connections/decisions/connector-protocol.md
 
 ### EARS
-- docs/intent/connections/connections-specs.md (56 specs: 51 `[x]`, 4 `[ ]`, 1 `[D]`)
+- docs/intent/connections/connections-specs.md (58 specs: 51 `[x]`, 6 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/bus/test/{connector,native-api,native-integration,native-loops}.test.ts

@@ -4,6 +4,7 @@
 //! through an HTTP client crate.
 
 use std::fmt;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -94,8 +95,11 @@ pub struct HttpTarget {
 }
 
 impl HttpTarget {
+    /// True for `localhost` and for an address in a loopback range (`127.0.0.0/8`, `::1`).
+    // @spec EARS-SRC-015
     pub fn is_loopback(&self) -> bool {
-        self.host == "localhost" || self.host == "::1" || self.host.starts_with("127.")
+        self.host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+            || self.host.eq_ignore_ascii_case("localhost")
     }
 }
 
@@ -103,6 +107,9 @@ impl HttpTarget {
 /// host, a port outside 1 to 65535 and any other scheme are errors.
 // @spec EARS-SRC-015
 pub fn parse_http_target(url: &str) -> Result<HttpTarget, String> {
+    if url.chars().any(|c| c == ' ' || c.is_control()) {
+        return Err(format!("{url:?} contains a space or a control character"));
+    }
     let rest = url
         .strip_prefix("http://")
         .ok_or_else(|| format!("{url} must start with http://"))?;
@@ -110,6 +117,9 @@ pub fn parse_http_target(url: &str) -> Result<HttpTarget, String> {
     let (authority, tail) = rest.split_at(cut);
     if authority.contains('@') {
         return Err(format!("{url} must not carry user information"));
+    }
+    if tail.contains('#') {
+        return Err(format!("{url} must not carry a fragment"));
     }
     let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
         let (host, after) = bracketed
@@ -124,10 +134,16 @@ pub fn parse_http_target(url: &str) -> Result<HttpTarget, String> {
         };
         (host, port)
     } else {
-        match authority.rsplit_once(':') {
+        let (host, port) = match authority.rsplit_once(':') {
             Some((h, p)) => (h, Some(p)),
             None => (authority, None),
+        };
+        if host.contains(':') {
+            return Err(format!(
+                "{url} has a colon in the host: bracket an IPv6 address"
+            ));
         }
+        (host, port)
     };
     if host.is_empty() {
         return Err(format!("{url} has no host"));

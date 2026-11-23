@@ -35,12 +35,12 @@ test("extendSelf changes nothing and returns false for an unknown id, a duplicat
   assert.equal(ctx.extendSelf("a", 1, ""), false);
   assert.equal(ctx.extendSelf("a", 1, "two"), true);
   assert.equal(ctx.extendSelf("a", 1, "dup"), false);
-  assert.equal(ctx.extendSelf("a", 3, "skip"), false);
+  assert.equal(ctx.extendSelf("a", 4, "skip"), false);
   assert.equal(ctx.extendSelf("a", 2, "three"), true);
   assert.equal(ctx.extendSelf("a", 1, "late"), false);
   assert.equal(selfOf(ctx, "a").text, "one two three");
-  assert.equal(ctx.extendSelf("a", 4, ""), false); // a refused empty clause does not advance seq
-  assert.equal(ctx.extendSelf("a", 4, "four"), true);
+  assert.equal(ctx.extendSelf("a", 3, ""), false); // a refused empty clause does not advance seq
+  assert.equal(ctx.extendSelf("a", 3, "four"), true);
 });
 
 // @spec WM-PUSH-022

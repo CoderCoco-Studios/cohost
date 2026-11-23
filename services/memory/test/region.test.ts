@@ -404,6 +404,10 @@ test("a closing line shorter than two characters writes no row and still closes 
   await onEvent(clause("a", 2, "late"));
   await onEvent(status("idle"));
   assert.deepEqual(selfRows(calls), []);
+  // positive control: a line of two characters is written
+  await onEvent(say("b", "ok", { more: true }));
+  await onEvent(closing("b", 1));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "ok"]]);
 });
 
 // @spec MEM-WRITE-014
@@ -471,6 +475,10 @@ test("a fresh handler holds no open line: clauses replayed for a line open at a 
   await restarted.onEvent(status("idle"));
   assert.deepEqual(selfRows(restarted.calls), []);
   assert.deepEqual(selfRows(first.calls), []);
+  // positive control: the restarted handler still holds and writes a line opened after the restart
+  await restarted.onEvent(say("b", "Fresh.", { more: true }));
+  await restarted.onEvent(closing("b", 1, "Line."));
+  assert.deepEqual(selfRows(restarted.calls), [["self", "Coco", "Fresh. Line."]]);
 });
 
 // @spec MEM-WRITE-019
@@ -484,6 +492,10 @@ test("an injected, not-remembered line writes no row for the line or its clauses
   await onEvent(say("c", "Injected three.", { more: true, injected: true }));
   await (onEvent as Stoppable).stop?.();
   assert.deepEqual(selfRows(calls), []);
+  // positive control: a real (not injected) streamed line on the same handler is written
+  await onEvent(say("d", "Real one.", { more: true }));
+  await onEvent(closing("d", 1, "Yes."));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Real one. Yes."]]);
 });
 
 // @spec MEM-WRITE-019

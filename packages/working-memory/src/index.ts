@@ -40,7 +40,10 @@ export type ContextEvent =
   | ({ kind: "chat"; eventId: string; ts: number; platform: ChatPlatform; userId?: string; messageId?: string; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
   | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
-  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
+  | SelfEntry;
+
+/** A `self` context entry: the co-host's own line, possibly streamed clause by clause. */
+export type SelfEntry = { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
 
 /**
  * The character limits a window bounds text to on intake and renders with. Absent (a directly constructed `Context`)
@@ -72,6 +75,10 @@ export class Context {
 
   /** Entries `push` returned since `holdArrivals`; `undefined` when not holding. */
   private held: ContextEvent[] | undefined;
+  /** Each `self` event's clauses in `seq` order (clause 0 the `pushSelf` text); the event's text is these joined by one space. */
+  private readonly clauses = new WeakMap<SelfEntry, string[]>(); // @spec WM-PUSH-024
+  /** The `seq` a `markFallback` with a `seq` above 0 named: the first clause the audience did not hear. */
+  private readonly fallbackFrom = new WeakMap<SelfEntry, number>(); // @spec WM-PUSH-025
   private readonly ownLines: number;
   private readonly limits: ContextLimits | undefined;
 
@@ -155,16 +162,49 @@ export class Context {
 
   /** Append the co-host's own line; `ts` is the bus `ts` of the `brain.say` it came from, so every kind shares the publisher's clock. */
   pushSelf(text: string, emotion: Emotion, ts: number, id?: string): void { // @spec WM-PUSH-006, WM-PUSH-007
-    this.events.push({ kind: "self", ts, text, emotion, seen: true, ...(id !== undefined ? { id } : {}) });
+    const entry: SelfEntry = { kind: "self", ts, text, emotion, seen: true, ...(id !== undefined ? { id } : {}) };
+    this.clauses.set(entry, [text]);
+    this.events.push(entry);
     this.trim();
   }
 
-  /** Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window. */
-  markFallback(id: string, fallbackText: string): boolean { // @spec WM-PUSH-008
-    const e = this.events.find((x) => x.kind === "self" && x.id === id);
-    if (!e || e.kind !== "self") return false;
-    e.fallback = fallbackText;
+  /**
+   * Append clause `seq` to the `self` event with this id, separated by one space; false (and no change) when no such
+   * event is in the window, `seq` is not one more than the last clause it holds, or `text` is empty. Leaves the
+   * event's position, `seen`, `fallback`, `heard` and `emotion` as they are.
+   */
+  extendSelf(id: string, seq: number, text: string): boolean { // @spec WM-PUSH-021, WM-PUSH-022, WM-PUSH-023, WM-PUSH-024
+    const e = this.selfById(id);
+    if (!e || text === "") return false;
+    const held = this.clauses.get(e)!;
+    if (seq !== held.length) return false;
+    held.push(text);
+    e.text = held.join(" ");
     return true;
+  }
+
+  /**
+   * Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window.
+   * With no `seq` or `seq` 0 the whole line is the fallback. With `seq` above 0 the fallback is the clauses before `seq`
+   * followed by `fallbackText`; a `seq` above the clause count is clamped to it.
+   */
+  markFallback(id: string, fallbackText: string, seq = 0): boolean { // @spec WM-PUSH-008, WM-PUSH-025
+    const e = this.selfById(id);
+    if (!e) return false;
+    const held = this.clauses.get(e)!;
+    const from = Math.min(seq, held.length);
+    if (from <= 0) {
+      e.fallback = fallbackText;
+      this.fallbackFrom.delete(e);
+    } else {
+      e.fallback = [...held.slice(0, from), fallbackText].join(" ");
+      this.fallbackFrom.set(e, from);
+    }
+    return true;
+  }
+
+  private selfById(id: string): SelfEntry | undefined {
+    return this.events.find((x): x is SelfEntry => x.kind === "self" && x.id === id);
   }
 
   /**
@@ -247,9 +287,13 @@ export class Context {
           case "speech": return `${LINE_TAG.speech} ${speakerLabel(e.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
-            return e.fallback !== undefined
-              ? `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`
-              : `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
+            if (e.fallback === undefined) return `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
+            const from = this.fallbackFrom.get(e);
+            if (from !== undefined) { // @spec WM-TRANS-015
+              const rest = this.clauses.get(e)!.slice(from).join(" ");
+              return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [the rest of your line "${oneLine(rest)}" failed to play; this came out instead]`;
+            }
+            return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`;
         }
       })
       .join("\n");

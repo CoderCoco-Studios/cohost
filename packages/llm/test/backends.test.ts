@@ -900,6 +900,17 @@ test("claude: a connection that fails before any reply is a ChatError of kind co
   await Promise.all(jobs);
 });
 
+// @spec LLM-ERR-001, LLM-ERR-009
+test("claude: every failure of a request before its reply is a ChatError, a body the SDK cannot read included", async () => {
+  for (const kind of claudeKinds) {
+    const b = await claudeBackend(({ res }) => { res.writeHead(200, { "content-type": "application/json" }); res.end("not json"); });
+    const e = await failure(claude(kind, b.fetch).complete(user("hi")));
+    assert.ok(e instanceof ChatError, `${kind}: ${String(e)}`);
+    assert.equal(e.kind, "connect", kind);
+    assert.equal(e.status, undefined, kind);
+  }
+});
+
 // @spec LLM-CHAT-017, LLM-CLAUDE-033
 test("claude: an aborted signal passed to complete() cancels the call with the caller's reason, before and during the request", async () => {
   for (const kind of claudeKinds) {

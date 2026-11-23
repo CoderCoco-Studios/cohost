@@ -865,9 +865,9 @@ function pinnedFetch(base: typeof fetch | undefined, credential: (headers: Heade
 }
 
 /**
- * Maps an SDK failure from a Claude request before its reply began: an HTTP status is `http` with that status (LLM-ERR-002); a
- * connection that never got a response, timeouts included, is `connect` with no status (LLM-ERR-009). A caller's abort (or the
- * stream's clock, which aborts the same signal) passes its reason through.
+ * Maps an SDK failure from a Claude request before its reply began: an HTTP status is `http` with that status (LLM-ERR-002); every
+ * other failure is `connect` with no status (LLM-ERR-009), so a caller only ever sees a ChatError (LLM-ERR-001). A caller's abort (or
+ * the stream's clock, which aborts the same signal) passes its reason through.
  */
 function sdkFailure(name: string, e: unknown, signal?: AbortSignal): unknown { // @spec LLM-ERR-002, LLM-ERR-009
   if (signal?.aborted) return signal.reason;
@@ -877,7 +877,9 @@ function sdkFailure(name: string, e: unknown, signal?: AbortSignal): unknown { /
     return new ChatError("connect", `cannot reach ${name}: ${String(err?.message)}`);
   }
   if (typeof err?.status === "number") return new ChatError("http", `${name} chat ${err.status}: ${String(err.message)}`, err.status);
-  return e;
+  // Any other failure of a request that got no usable answer is a connection failure (LLM-ERR-001): the SDK's connection errors and
+  // timeouts, and the errors it raises for a body it cannot use.
+  return new ChatError("connect", `${name} request failed before its reply: ${String(err?.message ?? e)}`);
 }
 
 /** Awaits one SDK request, mapping its failure with `sdkFailure`. */

@@ -68,7 +68,10 @@ export async function startCortex(o: StartCortexOptions): Promise<void> {
 }
 
 // @spec CTX-HEALTH-003
-/** The provider with every `chat` outcome reported to `set` (ok after a reply, not ok after a failure). */
+/**
+ * The provider as cortex's dependency health sees it: every `chat` outcome is reported to `set` (ok after a reply, not ok after a
+ * failure, CTX-HEALTH-003). `complete()` and `stream()` pass through untracked; health tracking for them belongs to its own issue.
+ */
 export function trackLlm(llm: ChatProvider, set: (ok: boolean) => void): ChatProvider {
   return {
     get name() { return llm.name; },
@@ -76,19 +79,8 @@ export function trackLlm(llm: ChatProvider, set: (ok: boolean) => void): ChatPro
     get lastError() { return llm.lastError; },
     get pingIsNominal() { return llm.pingIsNominal; },
     chat: tracked((m, opts) => llm.chat(m, opts), set),
-    complete: tracked((m, req) => llm.complete(m, req), set),
-    stream: (m, opts) => outcomes(llm.stream(m, opts), set),
+    complete: (m, req) => llm.complete(m, req),
+    stream: (m, opts) => llm.stream(m, opts),
     ping: () => llm.ping(),
   };
-}
-
-/** A streamed reply whose outcome feeds the dependency: ok once it ends, not ok when it throws. */
-async function* outcomes<T>(events: AsyncIterable<T>, set: (ok: boolean) => void): AsyncGenerator<T> {
-  try {
-    for await (const ev of events) yield ev;
-  } catch (err) {
-    set(false);
-    throw err;
-  }
-  set(true);
 }

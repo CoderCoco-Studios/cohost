@@ -56,7 +56,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test pointers |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-022 | 21 | 0 | 1 | 20 |
+| Interface and factory | LLM-IF-001 to LLM-IF-022 | 21 | 0 | 1 | 21 |
 | Errors | LLM-ERR-001 to LLM-ERR-009 | 9 | 0 | 0 | 9 |
 | Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 22 | 0 | 0 | 22 |
 | Vision | LLM-VIS-001 to LLM-VIS-013 | 2 | 0 | 11 | 2 |

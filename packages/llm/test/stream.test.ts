@@ -1,12 +1,11 @@
-// Streamed replies on Ollama and OpenAI-compatible (issue #160). `stream()` does not exist yet, so providers are read
-// through `any`; every test here fails until the shared stream machinery lands.
+// Streamed replies on Ollama, OpenAI-compatible, and (issue #161) the Claude API and Bedrock through the real SDK clients.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { getEventListeners } from "node:events";
 import net from "node:net";
 import { ConfigSchema } from "@cohost/config";
-import { OpenAICompatible, Ollama, ChatError } from "../src/index.js";
+import { AnthropicProvider, BedrockProvider, OpenAICompatible, Ollama, ChatError } from "../src/index.js";
 
 const TIMEOUT = 200; // llm.timeout_ms for the timeout tests
 const llmCfg = (over: Record<string, unknown> = {}) =>
@@ -436,4 +435,117 @@ test("a backend error inside the stream throws a ChatError of kind stream carryi
   assert.ok(e2 instanceof ChatError);
   assert.equal(e2.kind, "stream");
   assert.match(e2.message, /rate limited/);
+});
+
+// ---- the Claude API and Bedrock through the SDK's streaming request (issue #161)
+
+type ClaudeKind = "anthropic" | "bedrock";
+const claudeKinds: ClaudeKind[] = ["anthropic", "bedrock"];
+const CONFIGURED = { region: "eu-west-2", access_key_id: "AKIACONFIG", secret_access_key: "config-secret" };
+const ev = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+const cStart = ev("message_start", { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "m", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } });
+const cBlock = ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+const cText = (t: string) => ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } });
+const cThink = (t: string) => ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: t } });
+const cEnd = (reason = "end_turn") =>
+  ev("message_delta", { type: "message_delta", delta: { stop_reason: reason, stop_sequence: null }, usage: { output_tokens: 3 } }) + ev("message_stop", { type: "message_stop" });
+
+/** The real Claude or Bedrock provider, its SDK `fetch` pointed at the local server (the SDK's own URLs keep their paths). */
+const claudeMake = (kind: ClaudeKind, url: string, over: Record<string, unknown> = {}): any => {
+  const fetchImpl = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url);
+    return fetch(`${url}${u.pathname}${u.search}`, init);
+  }) as typeof fetch;
+  return kind === "anthropic"
+    ? new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" }, ...over }), undefined, { fetch: fetchImpl })
+    : new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: CONFIGURED, ...over }), undefined, { fetch: fetchImpl });
+};
+
+// @spec LLM-IF-010, LLM-STREAM-007
+test("claude/bedrock: ending a stream() loop early closes the SDK stream, quietly", async () => {
+  for (const kind of claudeKinds) {
+    let closed = false;
+    const b = await serve(async (o) => {
+      o.write(cStart + cBlock + cText("one "));
+      o.closed.then(() => { closed = true; });
+      await Promise.race([o.closed, sleep(2000)]);
+    });
+    for await (const e of claudeMake(kind, b.url, { timeout_ms: 5000 }).stream(hello)) if (e.type === "text") break;
+    await sleep(200);
+    assert.equal(closed, true, `${kind}: the connection was closed after the break`);
+  }
+});
+
+// @spec LLM-STREAM-026, LLM-ERR-006
+test("claude/bedrock: aborting the caller's signal mid-stream throws the caller's reason and never done", async () => {
+  for (const kind of claudeKinds) {
+    const b = await serve(async (o) => {
+      o.write(cStart + cBlock + cText("one "));
+      await Promise.race([o.closed, sleep(1000)]);
+      try { o.write(cText("two ") + cEnd()); o.end(); } catch { /* the caller has gone */ }
+    });
+    const ac = new AbortController();
+    const reason = new Error("caller stopped");
+    const seen: any[] = [];
+    let err: unknown;
+    try {
+      for await (const e of claudeMake(kind, b.url, { timeout_ms: 5000 }).stream(hello, { signal: ac.signal })) {
+        seen.push(e);
+        if (e.type === "text") ac.abort(reason);
+      }
+    } catch (e) { err = e; }
+    assert.equal(err, reason, kind);
+    assert.equal(seen.some((e) => e.type === "done"), false, kind);
+  }
+});
+
+// @spec LLM-STREAM-016, LLM-STREAM-008
+test("claude/bedrock: after the first output, thinking deltas restart the between-events clock; a silence of llm.timeout_ms throws TimeoutError", async () => {
+  for (const kind of claudeKinds) {
+    const alive = await serve(async (o) => {
+      o.write(cStart + cBlock + cText("hi"));
+      for (let i = 0; i < 8; i++) { await sleep(60); o.write(cThink("hmm ")); }
+      o.write(cText(" there") + cEnd());
+      o.end();
+    });
+    const evs = await collect(claudeMake(kind, alive.url).stream(hello));
+    assert.equal(textOf(evs), "hi there", kind);
+    assert.equal(evs.at(-1).type, "done", kind);
+
+    const silent = await serve(async (o) => {
+      o.write(cStart + cBlock + cText("hi"));
+      await Promise.race([o.closed, sleep(1000)]);
+      try { o.end(); } catch { /* the caller has gone */ }
+    });
+    const err = await failure(claudeMake(kind, silent.url).stream(hello));
+    assert.equal(err?.name, "TimeoutError", kind);
+    assert.equal(err instanceof ChatError, false, kind);
+  }
+});
+
+// @spec LLM-STREAM-009, LLM-STREAM-010, LLM-STREAM-011
+test("claude/bedrock: whitespace is held back: no reply starts with whitespace, no delta ends with it, and the deltas join to done.text", async () => {
+  for (const kind of claudeKinds) {
+    const b = await serve((o) => { o.write(cStart + cBlock + cText("  ") + cText("[happy] Hi") + cText(" ") + cText("there  ") + cEnd()); o.end(); });
+    const evs = await collect(claudeMake(kind, b.url).stream(hello));
+    const deltas: string[] = evs.filter((e) => e.type === "text").map((e) => e.delta);
+    assert.equal(deltas.length > 0, true, kind);
+    assert.doesNotMatch(deltas[0]!, /^\s/, `${kind}: the reply does not start with whitespace`);
+    for (const d of deltas) assert.doesNotMatch(d, /\s$/, `${kind}: no delta ends with held-back whitespace`);
+    assert.equal(textOf(evs), "[happy] Hi there", kind);
+    assert.equal(evs.at(-1).result.text, textOf(evs), kind);
+  }
+});
+
+// @spec LLM-STREAM-022, LLM-STREAM-024
+test("claude/bedrock: a body that ends before message_delta throws a ChatError of kind stream and delivers no done", async () => {
+  for (const kind of claudeKinds) {
+    const b = await serve((o) => { o.write(cStart + cBlock + cText("hi")); o.end(); });
+    const seen: any[] = [];
+    let err: any;
+    try { for await (const e of claudeMake(kind, b.url).stream(hello)) seen.push(e); } catch (e) { err = e; }
+    assert.ok(err instanceof ChatError, `${kind}: ${String(err)}`);
+    assert.equal(err.kind, "stream", kind);
+    assert.equal(seen.some((e) => e.type === "done"), false, kind);
+  }
 });

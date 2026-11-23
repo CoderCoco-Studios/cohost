@@ -123,6 +123,9 @@ const AVATAR_NOT_BUILT = `<!doctype html>
 <p>The avatar renderer page has not been built yet. Run <code>pnpm build</code> in the repository, then reload this page.</p></body></html>
 `;
 
+/** The not-built page loads nothing: its one style is inline, and no script, image or frame is allowed (DASH-AVP-001). */
+const AVATAR_NOT_BUILT_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'";
+
 /**
  * `GET`/`HEAD /avatar`: the built `avatar.html`, read on each request, with the fixed Content-Security-Policy, or the 503
  * 'not built' page when it is not a regular file. Served on both listeners (DASH-AVP-001, DASH-AVP-002).
@@ -135,7 +138,7 @@ export function handleAvatarPage(dir: string, req: http.IncomingMessage, res: ht
   const file = join(resolve(dir), "avatar.html");
   const type = "text/html; charset=utf-8";
   if (!isFile(file)) {
-    send(res, head, 503, { "content-type": type, "cache-control": "no-store", "content-length": Buffer.byteLength(AVATAR_NOT_BUILT) }, AVATAR_NOT_BUILT);
+    send(res, head, 503, { "content-type": type, "cache-control": "no-store", "content-length": Buffer.byteLength(AVATAR_NOT_BUILT), "x-content-type-options": "nosniff", "content-security-policy": AVATAR_NOT_BUILT_CSP }, AVATAR_NOT_BUILT);
     return true;
   }
   const body = readFileSync(file);

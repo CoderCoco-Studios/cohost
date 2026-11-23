@@ -120,6 +120,22 @@ export function parseReport(raw: unknown): { state: string; detail: string } | u
 
 const RETRY_503 = "HTTP/1.1 503 Service Unavailable\r\nretry-after: 5\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
 
+/**
+ * Answers a refused upgrade with `response` and frees the raw socket once it is written. An error on the socket (a reset
+ * while the response is written) is absorbed and destroys it, so no refusal can raise an uncaught exception.
+ */
+// @spec DASH-AVR-002, DASH-AVR-003
+export function refuseUpgrade(socket: Duplex, response: string): void {
+  socket.on("error", () => socket.destroy());
+  socket.once("finish", () => socket.destroy());
+  socket.end(response);
+}
+
+/** A peer address as the caps compare it: lower-cased, with an IPv4-mapped `::ffff:` prefix removed (DASH-AVR-032). */
+export function addressKey(addr: string | undefined): string | undefined {
+  return addr === undefined ? undefined : addr.toLowerCase().replace(/^::ffff:/, "");
+}
+
 /** Drops the timestamps older than the rate window, so a list never grows past the window (DASH-AVR-019). */
 function prune(times: number[], t: number): void {
   let i = 0;
@@ -159,6 +175,8 @@ export function createAvatarRelay(d: RelayDeps): AvatarRelay {
   let avatarState: { driver: string; at: number } | undefined;
   let lastStatus: Status = { state: "waiting", driver: null };
   let lastWarnAt = -Infinity;
+  /** Timers that terminate an over-rate socket whose close handshake stalls (DASH-AVR-033). */
+  const closing = new Set<unknown>();
 
   // @spec DASH-AVR-021
   const unsubscribe = d.applied.onChange((snap) => {
@@ -284,6 +302,8 @@ export function createAvatarRelay(d: RelayDeps): AvatarRelay {
     if (s.inbound.length > MESSAGES_PER_SECOND) {
       cleanup(s);
       s.ws.close(1008, "too many messages");
+      const h: unknown = clock.setTimeout(() => { closing.delete(h); s.ws.terminate(); }, 1000);
+      closing.add(h);
       return;
     }
     // Only a loopback socket speaks, and only with a model report (DASH-AVR-015, DASH-AVR-016).
@@ -314,9 +334,10 @@ export function createAvatarRelay(d: RelayDeps): AvatarRelay {
     upgrade(req, socket, head, listener) {
       let preview = false;
       try { preview = listener === "full" && new URL(req.url ?? "/", "http://x").searchParams.get("preview") === "1"; } catch { /* no query */ }
-      const address = req.socket.remoteAddress;
-      const loopback = isLoopbackPeer(address);
-      if (stopped || refused(preview, listener, loopback, address)) { socket.end(RETRY_503); return; }
+      const raw = req.socket.remoteAddress;
+      const address = addressKey(raw);
+      const loopback = isLoopbackPeer(raw);
+      if (stopped || refused(preview, listener, loopback, address)) { refuseUpgrade(socket, RETRY_503); return; }
       wss.handleUpgrade(req, socket, head, (ws) => accept(ws, { listener, preview, address, loopback }));
     },
 
@@ -348,6 +369,8 @@ export function createAvatarRelay(d: RelayDeps): AvatarRelay {
       stopped = true;
       unsubscribe();
       clock.clearInterval(tick);
+      for (const h of closing) clock.clearTimeout(h);
+      closing.clear();
       for (const s of [...socks]) drop(s);
       stopReader();
       wss.close();

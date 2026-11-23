@@ -4,7 +4,7 @@ import type { Duplex } from "node:stream";
 import type { WebSocketServer } from "ws";
 import type { Logger } from "@cohost/config";
 import { isLoopback } from "@cohost/control";
-import type { AvatarRelay, Listener } from "./avatar-relay.js";
+import { refuseUpgrade, type AvatarRelay, type Listener } from "./avatar-relay.js";
 
 /** The full-surface port and the LAN listener's port: `dashboard.port` and `dashboard.lan_port` of the loaded config, and nothing else. */
 // @spec DASH-HTTP-009, DASH-HOST-001
@@ -175,11 +175,12 @@ export interface Listeners {
 // @spec DASH-AVR-001, DASH-AVR-002, DASH-HOST-002
 function attachUpgrade(server: http.Server, wss: WebSocketServer, listener: Listener, avatar: Pick<AvatarRelay, "upgrade"> | undefined, guard?: (req: http.IncomingMessage) => boolean): void {
   server.on("upgrade", (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    socket.on("error", () => socket.destroy()); // a reset on a raw upgrade socket must not be an uncaught exception
     let pathname = "";
     try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { /* refused below */ }
-    if (guard && !guard(req)) { socket.end("HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
+    if (guard && !guard(req)) { refuseUpgrade(socket, "HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
     if (pathname === "/avatar/ws" && avatar) { avatar.upgrade(req, socket, head, listener); return; }
-    if (pathname !== "/ws") { socket.end("HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
+    if (pathname !== "/ws") { refuseUpgrade(socket, "HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
 }

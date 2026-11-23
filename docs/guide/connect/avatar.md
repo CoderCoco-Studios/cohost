@@ -80,7 +80,9 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
 
 With `avatar.driver: "browser"` the service needs no app and no port. It writes the face's state (mouth, head, gaze, blink, emotion) on every tick to the avatar-frame stream, and the dashboard relays it to the renderer page, which draws the model. Nothing is opened on the [container](../../start/glossary.md#container) that runs the avatar service, and the model file never reaches it.
 
-The dashboard tells the owner's own renderer pages from remote ones by the address they connect from: a page from this machine (`127.0.0.1`, `::1` or their IPv4-mapped forms) may report its model state, which the owner then sees, and a page from another machine may only draw. A router, port forward or proxy that makes a remote client arrive from this machine makes it look local and defeats that check, so do not put one in front of the dashboard's LAN port (3001). The check adds no setting.
+The dashboard tells the owner's own renderer pages from remote ones by the address they connect from: a page from this machine (any `127.x.y.z` address, `::1`, or `::ffff:127.x.y.z`) may report its model state, which the owner then sees, and a page from another machine may only draw. A router, port forward or proxy that makes a remote client arrive from this machine makes it look local and defeats that check, so do not put one in front of the dashboard's LAN port (3001). The check adds no setting.
+
+On Windows with [WSL2](../../start/glossary.md#wsl2) there are two ways a forward does this. A `netsh interface portproxy` rule that listens on `localhost:3001` makes every LAN client arrive at the dashboard as `127.0.0.1`, so any of them can send model reports that the owner sees. A portproxy that targets the WSL VM's IP address makes every LAN page arrive from one address, so they all count against the two-page cap for a non-loopback address and only two can draw. Create no portproxy rule for the dashboard's ports.
 
 ```yaml
 avatar:

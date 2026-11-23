@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "110 specs: 103 [x], 7 [ ] (SHARED-GUARD-003 and -028 to -030, the untrusted totality and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 106 [x], 4 [ ] (SHARED-GUARD-003 and -028 to -030, the untrusted totality and tool notice)."
     drift: null
 
   module-contract:
@@ -267,7 +267,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "91 specs: 68 [x], 23 [ ], 0 [D] (the driver-set revisions AVATAR-DRV-002 to 004, AVATAR-VMC-007, AVATAR-VTS-018, the parameter directions AVATAR-DIR-001 to 005 and the browser driver AVATAR-BRW-001 to 013 are open gaps)."
+    next: "91 specs: 90 [x], 1 [ ], 0 [D] (AVATAR-VTS-018, the VTube Studio parameter signs, needs a manual check on a real Live2D model)."
     drift: null
 
   dashboard:

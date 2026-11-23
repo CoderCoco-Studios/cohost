@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { testConfig } from "@cohost/testing";
 import { createDriver } from "../src/drivers/index.js";
+import { BrowserDriver } from "../src/drivers/browser.js";
 import { NullDriver } from "../src/drivers/null.js";
 import { VmcDriver } from "../src/drivers/vmc.js";
 import { VTubeStudioDriver } from "../src/drivers/vtube-studio.js";
@@ -19,6 +20,7 @@ const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
   log, stateDir: mkdtempSync(join(tmpdir(), "cohost-avatar-")),
   expressions: { happy: "Smile", sad: "Sad", smug: "smug.exp3.json" },
   gestures: { wave: "WAVE" },
+  frames: { publishAvatarFrame: async () => {} },
   ...over,
 });
 async function waitFor(cond: () => boolean, what: string, ms = 2000) {
@@ -34,12 +36,15 @@ test("createDriver picks the driver named in config", () => { // @spec AVATAR-DR
   assert.ok(createDriver(cfg("vtube-studio")) instanceof VTubeStudioDriver);
   assert.ok(createDriver(cfg("vmc")) instanceof VmcDriver);
   assert.ok(createDriver(cfg("null")) instanceof NullDriver);
-  // the browser driver lands with #215: until then a browser selection fails at start instead of drawing nothing
-  assert.throws(() => createDriver(cfg("browser")), /browser/);
+  const browser = createDriver(cfg("browser")); // @spec AVATAR-BRW-001, AVATAR-DRV-003
+  assert.ok(browser instanceof BrowserDriver);
+  assert.equal(browser.name, "browser");
+  // the browser driver takes no host, port or plugin setting: a config without those blocks still builds it
+  assert.ok(createDriver({ driver: "browser" } as never) instanceof BrowserDriver);
 });
 
 // @spec AVATAR-DRV-003
-test("createDriver has no fallback: a name outside vtube-studio, vmc and null yields no driver", () => {
+test("createDriver has no fallback: a name outside vtube-studio, vmc, browser and null yields no driver", () => {
   const cfg = { driver: "vseeface", vtube_studio: {}, vmc: {} } as never; // config validation rejects this before any service starts
   assert.equal(createDriver(cfg), undefined);
 });

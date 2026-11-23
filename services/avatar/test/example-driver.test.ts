@@ -15,7 +15,7 @@ const { UdpJsonDriver } = (await import(pathToFileURL(file).href)) as {
 const warnings: unknown[][] = [];
 const log = { warn: (...a: unknown[]) => warnings.push(a), info() {}, error() {}, debug() {} } as never;
 const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
-  log, stateDir: "/tmp", expressions: { happy: "Smile", sad: "" }, gestures: { wave: "WAVE" }, ...over,
+  log, stateDir: "/tmp", expressions: { happy: "Smile", sad: "" }, gestures: { wave: "WAVE" }, frames: { publishAvatarFrame: async () => {} }, ...over,
 });
 
 /** A UDP listener on an ephemeral loopback port that keeps the JSON each datagram holds. */

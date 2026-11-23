@@ -8,7 +8,7 @@ import { createDriver as createDriverFor } from "./drivers/index.js";
 import type { AvatarDriver } from "./types.js";
 
 /** What boot needs from a Bus (a fake in tests). */
-export type AvatarBus = Pick<Bus, "publish" | "publishHealth" | "consumer" | "resetGroup" | "subscribe" | "stop">;
+export type AvatarBus = Pick<Bus, "publish" | "publishHealth" | "consumer" | "resetGroup" | "subscribe" | "stop" | "publishAvatarFrame">;
 
 /** The process-level collaborators of the service, replaceable so a test runs it without Redis, an avatar app or signals. */
 export type AvatarEnv = Pick<RunServiceOptions<AvatarBus>, "loadConfig" | "createBus" | "onShutdown" | "exit" | "log" | "stopTimeoutMs"> & {
@@ -44,7 +44,7 @@ export async function avatarMain(ctx: ServiceContext<AvatarBus>, driverRef: { cu
   onStop(async () => { engine.stop(); await driver.disconnect(); }); // @spec AVATAR-HEALTH-004
 
   // Not awaited: a first VTube Studio pairing can wait for the operator, and the face must animate meanwhile.
-  driver.connect({ log, expressions, gestures, stateDir: env.stateDir ?? configDir() }).catch(fatal); // @spec AVATAR-DRV-006, AVATAR-VTS-002
+  driver.connect({ log, expressions, gestures, stateDir: env.stateDir ?? configDir(), frames: bus }).catch(fatal); // @spec AVATAR-DRV-006, AVATAR-VTS-002, AVATAR-BRW-002
   engine.start();
 
   // Ready means "can receive events": the group exists at the newest entry before the loop reads.

@@ -5,7 +5,7 @@ prefix: LLM
 
 # model-backends
 
-Status: the `chat()` path, the pings, the embedders, the mock's text replies and the example stubs are built and audited (the `[x]` lines of [model-backends-specs.md](model-backends-specs.md)); on Ollama and OpenAI-compatible the result contract (the `ChatMessage` union, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`), `ChatError` with kind `http`, and `complete()` are built, and `chat()` is `complete()` reduced to text. Not yet built: `complete()` on the Claude, Bedrock and mock providers, `stream()`, tool calls, image input on every provider, the `connect`, `stream` and `not_configured` kinds of `ChatError`, and the mock's tool and failure markers (the `[ ]` lines of the specs file). Describes the intended design. See [high-level-design](../../high-level-design.md).
+Status: the `chat()` path, the pings, the embedders, the mock's text replies and the example stubs are built and audited (the `[x]` lines of [model-backends-specs.md](model-backends-specs.md)); on Ollama and OpenAI-compatible the result contract (the `ChatMessage` union, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`), `ChatError` with kind `http`, and `complete()` are built, and `chat()` is `complete()` reduced to text. Not yet built: `complete()` on the Claude and Bedrock providers, `stream()` on the Claude and Bedrock providers, tool calls on the Claude and Bedrock providers, image input on every provider, and the `connect`, `stream` and `not_configured` kinds of `ChatError` on the Claude paths (the `[ ]` lines of the specs file). Describes the intended design. See [high-level-design](../../high-level-design.md).
 
 ## Context and Design Philosophy
 

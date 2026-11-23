@@ -276,7 +276,7 @@ The limits are `viewer_text.max_chars` and `viewer_text.max_name_chars` ([config
 
 ## Fake Source (`fake.ts`)
 
-The `fake` source is a `ChatSource` (its state is `ok` as soon as it starts, so the service is `ready` at once). `startFakeSource({ toEvent, publish, cohostName, intervalMs, stdin, onError })` returns a stop function (`fake.ts`). It is the stand-in for both platforms: an isolated stack lists only `fake` (HLD tenet 6), and the lines it emits exercise the same filter and the same two platform shapes the real sources produce.
+The `fake` source is a `ChatSource` (its state is `reading` as soon as it starts, so the service is `ready` at once). `startFakeSource({ toEvent, publish, cohostName, intervalMs, stdin, onError })` returns a stop function (`fake.ts`). It is the stand-in for both platforms: an isolated stack lists only `fake` (HLD tenet 6), and the lines it emits exercise the same filter and the same two platform shapes the real sources produce.
 
 - Every emitted line goes through `toEvent` (the real filter), so `ignore_users`, `ignore_prefixes` and whitespace rules apply. Users are synthetic (`fake_viewer1..3`) and all flag fields are false (`fake.ts`). `fake_viewer1` and `fake_viewer3` are on `twitch` with a `userId` equal to the username; `fake_viewer2` is on `youtube` with the `userId` `fake_viewer2`, so the YouTube shape (its platform beside its id) reaches the brain and the dashboard with no account and no network.
 - If `stdin` is supplied, a `readline` interface turns each line into a message from `fake_viewer1` and sets `stdinSeen`.

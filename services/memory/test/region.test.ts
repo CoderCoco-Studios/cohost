@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { BusEvent } from "@cohost/bus";
 import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
 import type { Memory, MemoryKind } from "../src/store.js";
@@ -328,4 +329,167 @@ test("a failed delete logs a warning and the next event is still handled", async
   assert.equal(warnings.length, 1);
   await onEvent(chat({ mentionsCohost: true }));
   assert.deepEqual(calls.map((c) => c.op), ["forgetChat", "touchViewer", "remember"]);
+});
+
+// ---- streamed lines (MEM-WRITE-003, 010..019) ----
+type Stoppable = ((ev: BusEvent) => Promise<void>) & { stop?: () => Promise<void> };
+const say = (id: string, text: string, extra: Record<string, unknown> = {}) => event("brain.say", { id, text, emotion: "happy", ...extra });
+const clause = (id: string, seq: number, text: string, extra: Record<string, unknown> = {}) => event("brain.clause", { id, seq, text, ...extra });
+const closing = (id: string, seq: number, text = "", through = seq) => clause(id, seq, text, { last: true, through });
+const status = (state: "idle" | "muted" | "thinking" | "speaking") => event("brain.status", { state });
+const selfRows = (calls: { op: string; args: unknown[] }[]) => calls.filter((c) => c.op === "remember").map((c) => c.args);
+
+// @spec MEM-WRITE-003
+test("a brain.say without more is stored at once, even while another line is open", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("s", "streamed", { more: true }));
+  await onEvent(say("p", "whole line"));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "whole line"]]);
+});
+
+// @spec MEM-WRITE-010, MEM-WRITE-011, MEM-WRITE-013
+test("a line with more writes nothing until its closing clause, then one self row of the clauses joined by a space", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "One.", { more: true }));
+  await onEvent(clause("a", 1, "Two."));
+  await onEvent(clause("a", 2, "Three."));
+  assert.deepEqual(selfRows(calls), []);
+  await onEvent(closing("a", 3, "Four."));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "One. Two. Three. Four."]]);
+  await onEvent(clause("a", 4, "after close")); // the line is closed: dropped
+  assert.equal(selfRows(calls).length, 1);
+});
+
+// @spec MEM-WRITE-010
+test("more than one line may be open at once, each keyed by its id", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "A one.", { more: true }));
+  await onEvent(say("b", "B one.", { more: true }));
+  await onEvent(clause("a", 1, "A two."));
+  await onEvent(clause("b", 1, "B two."));
+  await onEvent(closing("b", 2));
+  await onEvent(closing("a", 2));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "B one. B two."], ["self", "Coco", "A one. A two."]]);
+});
+
+// @spec MEM-WRITE-012
+test("an empty closing clause appends nothing but still writes the line", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Only part.", { more: true }));
+  await onEvent(closing("a", 1, "", 0));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Only part."]]);
+});
+
+// @spec MEM-WRITE-012
+test("a clause for an unknown line is dropped; a duplicate or out-of-order seq is dropped with a warning", async () => {
+  const { onEvent, calls, warnings } = setup();
+  await onEvent(clause("ghost", 1, "orphan"));
+  await onEvent(closing("ghost", 2, "orphan"));
+  assert.deepEqual(selfRows(calls), []);
+  await onEvent(say("a", "One.", { more: true }));
+  await onEvent(clause("a", 1, "Two."));
+  const before = warnings.length;
+  await onEvent(clause("a", 1, "dup"));
+  await onEvent(clause("a", 3, "gap"));
+  assert.equal(warnings.length, before + 2);
+  await onEvent(closing("a", 2, "Three."));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "One. Two. Three."]]);
+});
+
+// @spec MEM-WRITE-013
+test("a closing line shorter than two characters writes no row and still closes the line", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "k", { more: true }));
+  await onEvent(closing("a", 1));
+  await onEvent(clause("a", 2, "late"));
+  await onEvent(status("idle"));
+  assert.deepEqual(selfRows(calls), []);
+});
+
+// @spec MEM-WRITE-014
+test("a brain.status of idle or muted writes and closes every open line", async () => {
+  for (const state of ["idle", "muted"] as const) {
+    const { onEvent, calls } = setup();
+    await onEvent(say("a", "A line.", { more: true }));
+    await onEvent(say("b", "B line.", { more: true }));
+    await onEvent(clause("b", 1, "More."));
+    await onEvent(status(state));
+    assert.deepEqual(selfRows(calls), [["self", "Coco", "A line."], ["self", "Coco", "B line. More."]]);
+    await onEvent(clause("a", 1, "late")); // closed: dropped
+    await onEvent(status("idle"));
+    assert.equal(selfRows(calls).length, 2);
+  }
+});
+
+// @spec MEM-WRITE-018
+test("another line's say and a thinking or speaking status close nothing and drop no later clause", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Open one.", { more: true }));
+  await onEvent(status("thinking"));
+  await onEvent(say("op", "operator line"));
+  await onEvent(status("speaking"));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "operator line"]]);
+  await onEvent(clause("a", 1, "Still going."));
+  await onEvent(closing("a", 2));
+  assert.deepEqual(selfRows(calls).at(-1), ["self", "Coco", "Open one. Still going."]);
+});
+
+// @spec MEM-WRITE-015
+test("300 s after the last say or clause read for an open line, the line is written and closed", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Slow one.", { more: true }));
+  t.mock.timers.tick(200_000);
+  await onEvent(clause("a", 1, "Next."));
+  t.mock.timers.tick(200_000); // 400 s from the say, 200 s from the clause
+  assert.deepEqual(selfRows(calls), []);
+  t.mock.timers.tick(100_001);
+  await new Promise<void>((r) => setImmediate(r));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Slow one. Next."]]);
+  await (onEvent as Stoppable).stop?.();
+});
+
+// @spec MEM-WRITE-016
+test("stopping the handler writes every open line", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Open A.", { more: true }));
+  await onEvent(say("b", "Open B.", { more: true }));
+  await onEvent(clause("b", 1, "More."));
+  const stoppable = onEvent as Stoppable;
+  assert.equal(typeof stoppable.stop, "function", "createMemoryHandler's result carries stop()");
+  await stoppable.stop!();
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Open A."], ["self", "Coco", "Open B. More."]]);
+});
+
+// @spec MEM-WRITE-017
+test("a fresh handler holds no open line: clauses replayed for a line open at a restart are dropped", async () => {
+  const first = setup();
+  await first.onEvent(say("a", "Lost.", { more: true }));
+  const restarted = setup();
+  await restarted.onEvent(clause("a", 1, "replayed"));
+  await restarted.onEvent(closing("a", 2, "replayed"));
+  await restarted.onEvent(status("idle"));
+  assert.deepEqual(selfRows(restarted.calls), []);
+  assert.deepEqual(selfRows(first.calls), []);
+});
+
+// @spec MEM-WRITE-019
+test("an injected, not-remembered line writes no row for the line or its clauses, on every close path", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Injected one.", { more: true, injected: true }));
+  await onEvent(clause("a", 1, "More."));
+  await onEvent(closing("a", 2));
+  await onEvent(say("b", "Injected two.", { more: true, injected: true, remember: false }));
+  await onEvent(status("idle"));
+  await onEvent(say("c", "Injected three.", { more: true, injected: true }));
+  await (onEvent as Stoppable).stop?.();
+  assert.deepEqual(selfRows(calls), []);
+});
+
+// @spec MEM-WRITE-019
+test("an injected line that is remembered is written like a real one", async () => {
+  const { onEvent, calls } = setup();
+  await onEvent(say("a", "Kept.", { more: true, injected: true, remember: true }));
+  await onEvent(closing("a", 1, "Yes."));
+  assert.deepEqual(selfRows(calls), [["self", "Coco", "Kept. Yes."]]);
 });

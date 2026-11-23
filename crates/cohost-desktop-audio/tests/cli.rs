@@ -113,12 +113,14 @@ fn an_unknown_flag_is_an_error() {
     assert!(Options::parse(&["--nope"], &[]).is_err());
 }
 
+// @spec EARS-SRC-017
 #[test]
 fn a_zero_clip_length_is_rejected() {
     assert!(Options::parse(&["--silence-ms", "0"], &[]).is_err());
     assert!(Options::parse(&["--max-clip-ms", "0"], &[]).is_err());
 }
 
+// @spec EARS-SRC-017
 #[test]
 fn clip_lengths_and_the_silence_level_have_upper_bounds() {
     assert!(Options::parse(&["--silence-ms", "10000"], &[]).is_ok());
@@ -129,17 +131,20 @@ fn clip_lengths_and_the_silence_level_have_upper_bounds() {
     assert!(Options::parse(&["--silence-level", "32768"], &[]).is_err());
 }
 
+// @spec EARS-SRC-015
 #[test]
 fn an_empty_prefix_is_rejected() {
     assert!(Options::parse(&["--prefix", ""], &[]).is_err());
 }
 
+// @spec EARS-SRC-021
 #[test]
 fn a_token_with_a_line_break_is_rejected_from_the_flag_or_the_environment() {
     assert!(Options::parse(&["--token", "a\r\nX-Evil: 1"], &[]).is_err());
     assert!(Options::parse(&[], &[("EARS_HTTP_TOKEN", "a\nb")]).is_err());
 }
 
+// @spec EARS-SRC-015
 #[test]
 fn a_url_must_be_http_with_a_host_and_a_valid_port() {
     for bad in [
@@ -160,6 +165,7 @@ fn a_url_must_be_http_with_a_host_and_a_valid_port() {
     assert!(Options::parse(&["--url", "http://[::1]:8765/audio?source=desktop"], &[]).is_ok());
 }
 
+// @spec EARS-SRC-015
 #[test]
 fn a_non_loopback_url_with_a_token_warns() {
     let warned = Options::parse(

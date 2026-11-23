@@ -260,3 +260,37 @@ async fn an_invalid_url_is_not_retryable() {
     assert!(matches!(err, PostError::InvalidUrl(_)));
     assert!(!err.is_retryable());
 }
+
+// @spec EARS-SRC-020
+#[test]
+fn the_default_timeouts_are_5_s_to_connect_10_s_to_send_and_120_s_for_a_response() {
+    let t = PostTimeouts::default();
+    assert_eq!(
+        (t.connect.as_secs(), t.send.as_secs(), t.response.as_secs()),
+        (5, 10, 120)
+    );
+}
+
+// @spec EARS-SRC-020
+#[tokio::test]
+async fn a_connection_closed_before_the_status_line_after_a_complete_send_is_retried() {
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/audio", l.local_addr().unwrap());
+    let h = tokio::spawn(async move {
+        let (mut s, _) = l.accept().await.unwrap();
+        let mut seen = Vec::new();
+        let mut chunk = [0u8; 4096];
+        // 2 body bytes follow the head for a one-sample clip.
+        while !seen.windows(4).any(|w| w == b"\r\n\r\n")
+            || seen.len() < seen.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 6
+        {
+            let n = s.read(&mut chunk).await.unwrap();
+            assert!(n > 0);
+            seen.extend_from_slice(&chunk[..n]);
+        }
+        drop(s);
+    });
+    let err = post_clip(&url, None, &[1]).await.unwrap_err();
+    h.await.unwrap();
+    assert!(err.is_retryable(), "{err}");
+}

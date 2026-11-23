@@ -76,6 +76,19 @@ export function trackLlm(llm: ChatProvider, set: (ok: boolean) => void): ChatPro
     get lastError() { return llm.lastError; },
     get pingIsNominal() { return llm.pingIsNominal; },
     chat: tracked((m, opts) => llm.chat(m, opts), set),
+    complete: tracked((m, req) => llm.complete(m, req), set),
+    stream: (m, opts) => outcomes(llm.stream(m, opts), set),
     ping: () => llm.ping(),
   };
+}
+
+/** A streamed reply whose outcome feeds the dependency: ok once it ends, not ok when it throws. */
+async function* outcomes<T>(events: AsyncIterable<T>, set: (ok: boolean) => void): AsyncGenerator<T> {
+  try {
+    for await (const ev of events) yield ev;
+  } catch (err) {
+    set(false);
+    throw err;
+  }
+  set(true);
 }

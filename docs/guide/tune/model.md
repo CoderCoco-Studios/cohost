@@ -119,7 +119,7 @@ The `claude` keys tune how Claude answers:
 | --- | --- |
 | `effort` | How hard it thinks. `low` suits one-line replies. |
 | `max_tokens` | A cap on thinking and the reply together, so leave it roomier than the 120 used for local models. |
-| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only. |
+| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only, and only for a reply that is not streamed: a streamed reply is never retried, because its text may already be spoken. |
 
 ## Claude through Amazon Bedrock
 
@@ -143,7 +143,7 @@ llm:
 
 Both keys must be set together. With only one set, the services that build the model client (cortex, memory, [salience](../../start/glossary.md#salience) and [affect](../../start/glossary.md#affect)) refuse to start, so setting just one is an incomplete state to avoid. The stack's [containers](../../start/glossary.md#container) do not mount your home directory, and no AWS profile or `~/.aws` file is read. Create the key pair for an IAM user that may invoke Bedrock. `llm.bedrock.region` in `config.yaml` is required with the two keys; write the region of the Bedrock endpoint, such as `us-east-1`.
 
-Server-side fallbacks are not offered on Bedrock; if a safety check declines a reply, the co-host says nothing that turn. Bedrock models other than Claude (Llama, Mistral) are not covered by this provider.
+Claude replies stream as they are written, as on the local models. Server-side fallbacks are not offered on Bedrock; if a safety check declines a reply, the co-host says nothing that turn. Bedrock models other than Claude (Llama, Mistral) are not covered by this provider.
 
 ## Mix models
 

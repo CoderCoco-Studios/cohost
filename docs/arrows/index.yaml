@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 164 [x], 62 [ ]. Built: mock complete() and stream() with the tool and failure markers (LLM-MOCK-006..021, VIS-006); complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field); tool calls on both (definitions, calls with ids, results, argument rules, finish mapping, streamed calls after the text and before done); ChatError kinds http, connect, stream. Open: IF-005..007, IF-018, IF-020; ERR-002, -003, -009; CHAT-017, -018; STOP-010, -015..017, -019; STREAM-007, -008, -013, -017, -021, -027, -030..033; TOOL-010..015, -017, -020, -025, -030; CLAUDE-020..033; VIS-002..005, -007..013."
+    next: "226 specs: 200 [x], 26 [ ]. Built: mock complete() and stream() with the tool and failure markers (LLM-MOCK-006..021, VIS-006); complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field); complete() and stream() on the Claude API and Bedrock for text (one request builder, SDK streaming under the shared clocks, refusal, fallbacks on complete() only, http/connect/stream/not_configured errors; #161); tool calls on Ollama and OpenAI-compatible (definitions, calls with ids, results, argument rules, finish mapping, streamed calls after the text and before done); ChatError kinds http, connect, stream, not_configured. Open: IF-018; STREAM-030, -032; STOP-010, -019; TOOL-010..015, -017, -020, -025, -030 (Claude tools, #163); VIS-002..005, -007..013 (#164)."
     drift: null
 
   region-hooks:

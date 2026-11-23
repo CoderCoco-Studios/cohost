@@ -139,7 +139,7 @@ async fn conn_001_dropped_blocked_read_rejects_connection_and_next_call_reconnec
 /// reply, so the client gets neither data nor an error) must reject `BUS_CONNECTION` within the read's block time plus
 /// a bounded grace, never wait forever, and the reader's next call must open a new connection. Deterministic: the
 /// silence is imposed by the proxy, not left to a race. The test-level `within` turns a hang into a failure.
-// @spec BUS-NAT-CONN-001
+// @spec BUS-NAT-CONN-001, BUS-NAT-CONN-008
 #[tokio::test(flavor = "multi_thread")]
 async fn conn_001_read_group_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects()
  {
@@ -175,7 +175,7 @@ async fn conn_001_read_group_on_a_silent_cached_connection_rejects_instead_of_ha
 }
 
 /// Same as above for `read` (`XREAD`).
-// @spec BUS-NAT-CONN-001
+// @spec BUS-NAT-CONN-001, BUS-NAT-CONN-008
 #[tokio::test(flavor = "multi_thread")]
 async fn conn_001_read_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects() {
     let mut fx = fixture_or_skip!("conn001d");

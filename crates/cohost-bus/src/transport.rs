@@ -694,6 +694,9 @@ fn optional_bytes(v: &Value) -> Result<Option<Vec<u8>>> {
 
 // ------------------------------------------------------------------ Reader
 
+/// Grace added to a read's `block_ms` before a reader abandons a silent connection (BUS-NAT-CONN-008).
+const READ_REPLY_GRACE_MS: u64 = 2000;
+
 struct ReaderShared {
     inner: Arc<Inner>,
     conn: Mutex<Option<MultiplexedConnection>>,
@@ -752,6 +755,26 @@ impl ReaderShared {
         be
     }
 
+    /// Awaits the reply to one read command for at most `block_ms` plus `READ_REPLY_GRACE_MS` (BUS-NAT-CONN-008).
+    /// A reply that never arrives drops the cached connection, so the reader's next call opens a new one.
+    // @spec BUS-NAT-CONN-008
+    async fn read_reply<T>(
+        &self,
+        block_ms: u64,
+        round_trip: impl Future<Output = redis::RedisResult<T>>,
+    ) -> Result<T> {
+        let bound = Duration::from_millis(block_ms.saturating_add(READ_REPLY_GRACE_MS));
+        match timeout(bound, round_trip).await {
+            Ok(r) => r.map_err(|e| self.failed(&e)),
+            Err(_) => {
+                *lock(&self.conn) = None;
+                Err(BusError::connection(format!(
+                    "no reply to a read within {block_ms} ms block plus {READ_REPLY_GRACE_MS} ms grace"
+                )))
+            }
+        }
+    }
+
     async fn xread(
         &self,
         key: &str,
@@ -768,10 +791,9 @@ impl ReaderShared {
             .arg("STREAMS")
             .arg(key)
             .arg(from_id);
-        let v = cmd
-            .query_async::<Value>(&mut c)
-            .await
-            .map_err(|e| self.failed(&e))?;
+        let v = self
+            .read_reply(block_ms, cmd.query_async::<Value>(&mut c))
+            .await?;
         stream_reply(&v)
     }
 }
@@ -783,7 +805,7 @@ pub struct Reader {
 impl Reader {
     /// Sends the queued acks, then `XREADGROUP`, in one pipeline (BUS-NAT-ACK-001, BUS-NAT-ACK-003,
     /// BUS-NAT-ACK-004).
-    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-ACK-009, BUS-NAT-CONN-001, BUS-NAT-TRN-003
+    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-ACK-009, BUS-NAT-CONN-001, BUS-NAT-CONN-008, BUS-NAT-TRN-003
     pub async fn read_group(
         &self,
         group: &str,
@@ -813,10 +835,9 @@ impl Reader {
                 .arg("STREAMS")
                 .arg(&events)
                 .arg(cursor);
-            let mut vals = pipe
-                .query_async::<Vec<Value>>(&mut c)
-                .await
-                .map_err(|e| s.failed(&e))?;
+            let mut vals = s
+                .read_reply(block_ms, pipe.query_async::<Vec<Value>>(&mut c))
+                .await?;
             // The pipeline reached Redis: those acks are settled, refused or not.
             lock(&s.acks).drain(..acks.len());
             let read = vals.pop().ok_or_else(|| unexpected("pipeline"))?;
@@ -856,7 +877,7 @@ impl Reader {
         }
     }
 
-    // @spec BUS-NAT-TRN-001, BUS-NAT-TRN-014
+    // @spec BUS-NAT-TRN-001, BUS-NAT-TRN-014, BUS-NAT-CONN-008
     pub async fn read(
         &self,
         stream: EventStream,

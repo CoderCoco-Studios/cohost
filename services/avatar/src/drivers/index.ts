@@ -22,5 +22,8 @@ export function createDriver(cfg: Config["avatar"]): AvatarDriver { // @spec AVA
       return new VmcDriver({ host: cfg.vmc.host, port: cfg.vmc.port });
     case "null":
       return new NullDriver();
+    case "browser":
+      // The browser driver lands with #215; until then a browser selection fails loudly instead of drawing nothing.
+      throw new Error("avatar.driver browser is not built yet (#215)");
   }
 }

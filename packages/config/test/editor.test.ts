@@ -309,3 +309,15 @@ test("the edited text runs through the loader's placeholder check: a file that h
   assert.equal((parseYaml(fixed.text) as any).llm.model, "qwen2.5:7b");
   assert.equal(readSection(withPlaceholder, "llm").keys["model"]!.editable, true);
 });
+
+// @spec CFG-SCH-097, CFG-SCH-099, CFG-SCH-100
+test("sectionJsonSchema renders the renderer section with its defaults and bounds, and dashboard.models.max_bytes with its range", () => {
+  const r = sectionJsonSchema("renderer") as any;
+  assert.deepEqual([r.properties.model.default, r.properties.zoom.default, r.properties.offset_y.default, r.properties.turn.default], ["", 1, 0, 0]);
+  assert.deepEqual([r.properties.zoom.minimum, r.properties.zoom.maximum], [0.5, 3]);
+  assert.deepEqual([r.properties.offset_y.minimum, r.properties.offset_y.maximum], [-1.5, 1.5]);
+  assert.deepEqual([r.properties.turn.minimum, r.properties.turn.maximum], [-90, 90]);
+  assert.equal(r.properties.model.maxLength, 80);
+  const m = (sectionJsonSchema("dashboard") as any).properties.models.properties.max_bytes;
+  assert.deepEqual([m.type, m.minimum, m.maximum, m.default], ["integer", 1048576, 1073741824, 104857600]);
+});

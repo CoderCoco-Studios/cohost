@@ -102,6 +102,9 @@ const DISCORD_ID = z
 const isHttpUrl = (u: string): boolean => URL.canParse(u) && /^https?:$/.test(new URL(u).protocol);
 const optionalUrl = (message: string) => z.string().refine((u) => u === "" || isHttpUrl(u), message);
 
+/** The name of a `.vrm` model file: a letter or digit first, then letters, digits, spaces, dots, underscores or hyphens, ending in `.vrm` (CFG-SCH-098). The model store reuses it. */
+export const RENDERER_MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9 _.-]*\.vrm$/;
+
 /** A DNS host name as `dashboard.allowed_hosts` lists it: labels of letters, digits and hyphens or underscores, dots between, optionally ending in a dot. */
 const HOST_NAME = /^[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?\.?$/;
 
@@ -548,7 +551,7 @@ export const ConfigSchema = z.object({
   }).transform((v, ctx) => ({ ...v, voice: resolveVoice(v.engine, v.voice, ctx) })),
   avatar: z.object({
     // A blank value means "no avatar app"; a non-empty unknown value still fails.
-    driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "null"])), // @spec AVATAR-DRV-004
+    driver: z.preprocess((v) => v || "null", z.enum(["vtube-studio", "vmc", "browser", "null"])), // @spec AVATAR-DRV-004, CFG-SCH-006
     fps: z.number().int().positive().default(30),
     smoothing: z.number().min(0).max(1).default(0.25),
     idle_motion: z.boolean().default(true),
@@ -560,6 +563,21 @@ export const ConfigSchema = z.object({
     }),
     vmc: z.object({ host: str("host.docker.internal"), port: z.number().int().default(39539) }),
   }),
+  /**
+   * The browser avatar renderer's settings (config design, Schema: key groups). The `avatar` container reads them from
+   * `./config` at its start; the dashboard pushes a saved section to a running renderer (CFG-LOAD-008).
+   */
+  // @spec CFG-SCH-097
+  renderer: z.object({
+    /** A `.vrm` file name in the model directory, or empty for the built-in placeholder model. */
+    model: z.string().max(80).refine((v) => v === "" || RENDERER_MODEL_NAME.test(v), "must be empty or a .vrm file name: a letter or digit first, then letters, digits, spaces, dots, underscores or hyphens, ending in .vrm").default(""), // @spec CFG-SCH-098
+    /** Camera distance multiplier. */
+    zoom: z.number().min(0.5).max(3).default(1), // @spec CFG-SCH-099
+    /** Vertical framing offset, in metres. */
+    offset_y: z.number().min(-1.5).max(1.5).default(0), // @spec CFG-SCH-099
+    /** Yaw of the model in degrees. */
+    turn: z.number().min(-90).max(90).default(0), // @spec CFG-SCH-099
+  }).prefault({}),
   ears: z.object({
     /**
      * The enabled listening sources, started together: `http` (clips POSTed to `ears.http`), `dir` (WAV files dropped in
@@ -720,6 +738,11 @@ export const ConfigSchema = z.object({
       max_audio_bytes: z.number().int().positive().default(26214400),
       ttl_ms: z.number().int().positive().default(300000),
     }).prefault({}),
+    /** Limits of the model store the dashboard keeps `.vrm` files in. */
+    models: z.object({
+      /** The largest `.vrm` file the store accepts; 1 MiB to 1 GiB. */
+      max_bytes: z.number().int().min(1048576).max(1073741824).default(104857600), // @spec CFG-SCH-100
+    }).prefault({}),
   }).superRefine((v, ctx) => {
     if (v.port === v.lan_port) ctx.addIssue({ code: "custom", path: ["lan_port"], message: "must differ from dashboard.port: the full surface and the LAN listener cannot share a port" });
   }),
@@ -735,6 +758,9 @@ export function earsSources(ears: Pick<Config["ears"], "sources">): string[] {
   return [...new Set(ears.sources ?? ["discord"])];
 }
 
+/** The longest value of the `browser` block of expressions.yaml (CFG-SCH-101). */
+export const BROWSER_EXPRESSION_MAX = 64;
+
 /** Per-driver expression map: canonical emotion -> app-specific name, plus gestures. */
 // @spec CFG-SCH-007
 export const ExpressionMapSchema = z.record(
@@ -742,5 +768,15 @@ export const ExpressionMapSchema = z.record(
   z
     .object({ gestures: z.record(z.string(), z.string()).prefault({}) })
     .catchall(z.string()),
-);
+).superRefine((map, ctx) => {
+  // @spec CFG-SCH-101
+  for (const [driver, block] of Object.entries(map)) {
+    if (driver !== "browser") continue;
+    for (const [name, value] of Object.entries(block)) {
+      if (name !== "gestures" && typeof value === "string" && value.length > BROWSER_EXPRESSION_MAX) {
+        ctx.addIssue({ code: "custom", path: [driver, name], message: `must be at most ${BROWSER_EXPRESSION_MAX} characters` });
+      }
+    }
+  }
+});
 export type ExpressionMap = z.infer<typeof ExpressionMapSchema>;

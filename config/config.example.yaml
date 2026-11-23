@@ -242,7 +242,7 @@ voice:
       - "Error four oh four: words not found."
 
 avatar:
-  driver: "null"               # vtube-studio | vmc | null (null = no avatar app, dashboard only)
+  driver: "null"               # vtube-studio | vmc | browser | null (browser = the browser renderer in the avatar container; null = no avatar app, dashboard only)
   fps: 30
   smoothing: 0.25              # 0..1, higher = snappier
   idle_motion: true            # gentle head/eye drift when idle
@@ -254,6 +254,13 @@ avatar:
   vmc:
     host: "host.docker.internal"  # the VMC receiver's host
     port: 39539                # the VMC receiver's port
+
+# The browser renderer's model and framing (avatar.driver browser). Applies to a running renderer without a restart.
+renderer:
+  model: ""                    # a .vrm file name from the dashboard's model store (letters, digits, spaces, . _ -; ends in .vrm); empty = the built-in placeholder
+  zoom: 1                      # camera distance, 0.5..3 (1 = default framing)
+  offset_y: 0                  # vertical framing offset, -1.5..1.5 (0 = centred)
+  turn: 0                      # yaw in degrees, -90..90 (0 = facing the camera)
 
 ears:
   # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
@@ -346,6 +353,8 @@ dashboard:
     max_image_bytes: 8388608   # largest image accepted (8 MiB)
     max_audio_bytes: 26214400  # largest audio clip accepted (25 MiB)
     ttl_ms: 300000             # how long an upload stays available to the service that asked for it
+  models:                      # the model store for browser-renderer .vrm files
+    max_bytes: 104857600       # largest .vrm file accepted (100 MiB; 1 MiB to 1 GiB)
 
 # The MCP servers the co-host may call and the tools it may use. No tool is enabled until tools.allow names it; a server
 # listed here is called only for an allowed tool. A server's token lives in secrets.yaml, never here.

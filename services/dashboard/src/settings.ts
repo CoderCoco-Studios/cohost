@@ -32,8 +32,9 @@ const json = (res: http.ServerResponse, status: number, value: unknown): void =>
 /** The secret paths `secrets.yaml` (beside `config.yaml`) holds a value for. */
 const secretsSet = (d: SettingsDeps): string[] => setSecretPaths(join(dirname(d.file()), "secrets.yaml"));
 
-/** The declared sections, in manifest order, then `dashboard`. */
-export const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new Set(manifest.flatMap((s) => s.config)), "dashboard"];
+/** The declared sections, in manifest order, then `dashboard` and `renderer` (host-run, read by no unit's start-up config). */
+// @spec MOD-CFG-001
+export const declaredSections = (manifest: readonly ServiceDef[]): string[] => [...new Set(manifest.flatMap((s) => s.config)), "dashboard", "renderer"];
 const readers = (manifest: readonly ServiceDef[], section: string): string[] => manifest.filter((s) => s.config.includes(section)).map((s) => s.id);
 /** The ids of the units that declare `section`, in manifest order. */
 export const unitsReading = readers;

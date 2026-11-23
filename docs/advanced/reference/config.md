@@ -299,7 +299,7 @@ The `avatar` service.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `avatar` | map | The avatar service |
-| `avatar.driver` | `null` | `vtube-studio`, `vmc` or `null` (no avatar app, dashboard only). A blank value means `null` |
+| `avatar.driver` | `null` | `vtube-studio`, `vmc`, `browser` (the browser renderer in the [container](../../start/glossary.md#container) `avatar`) or `null` (no avatar app, dashboard only). A blank value means `null` |
 | `avatar.fps` | `30` | Frames per second of the avatar engine |
 | `avatar.smoothing` | `0.25` | 0 to 1; higher is snappier |
 | `avatar.idle_motion` | `true` | Gentle head and eye drift when idle |
@@ -311,6 +311,18 @@ The `avatar` service.
 | `avatar.vmc` | map | The VMC driver |
 | `avatar.vmc.host` | `host.docker.internal` | Where the VMC receiver runs: `host.docker.internal` on the same machine, the LAN address on another PC |
 | `avatar.vmc.port` | `39539` | The VMC receiver's UDP port |
+
+## `renderer`
+
+The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. Selecting `browser` fails at start until the browser driver exists (#215), and a saved change reaches a running renderer without a restart once the live push lands (#216).
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `renderer` | map | The browser renderer's model and framing |
+| `renderer.model` | `""` | A `.vrm` file name from the dashboard's model store: a letter or digit first, then letters, digits, spaces, dots, underscores or hyphens, ending in `.vrm`, at most 80 characters. Empty draws the built-in placeholder model |
+| `renderer.zoom` | `1` | Camera distance, `0.5` to `3` |
+| `renderer.offset_y` | `0` | Vertical framing offset, `-1.5` to `1.5` |
+| `renderer.turn` | `0` | Yaw in degrees, `-90` to `90` |
 
 ## `ears`
 
@@ -407,6 +419,8 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard.inject.max_image_bytes` | `8388608` | The largest image accepted, in bytes |
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |
 | `dashboard.inject.ttl_ms` | `300000` | How long an upload stays available to the service that asked for it |
+| `dashboard.models` | map | The model store for browser-renderer `.vrm` files |
+| `dashboard.models.max_bytes` | `104857600` | The largest `.vrm` file accepted, in bytes: 1 MiB (`1048576`) to 1 GiB (`1073741824`) |
 
 ## `network`
 

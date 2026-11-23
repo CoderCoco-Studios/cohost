@@ -34,6 +34,8 @@ test("createDriver picks the driver named in config", () => { // @spec AVATAR-DR
   assert.ok(createDriver(cfg("vtube-studio")) instanceof VTubeStudioDriver);
   assert.ok(createDriver(cfg("vmc")) instanceof VmcDriver);
   assert.ok(createDriver(cfg("null")) instanceof NullDriver);
+  // the browser driver lands with #215: until then a browser selection fails at start instead of drawing nothing
+  assert.throws(() => createDriver(cfg("browser")), /browser/);
 });
 
 // @spec AVATAR-DRV-003

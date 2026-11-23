@@ -139,7 +139,7 @@ arrows:
     drift: null
 
   eyes:
-    status: AUDITED
+    status: DRIFTED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "63 specs: 38 [x], 25 [ ], 0 [D] (the gaps are the provider construction, hosted choice, configuration, outage, egress and vision-dependency specs; see eyes.md). Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
+    next: "64 specs: 64 [x], 0 [ ], 0 [D] (#189 built the vision provider, configuration gaps, outage and frame-fault classes, egress notes and the vision dependency). Not audited since #189: run the audit pass. Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
     drift: null
 
   connections:

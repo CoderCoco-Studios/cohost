@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { ConfigSchema } from "@cohost/config";
-import { AnthropicProvider, BedrockProvider, OpenAICompatible, Ollama } from "../src/index.js";
+import { AnthropicProvider, BedrockProvider, OpenAICompatible, Ollama, ImageDataError } from "../src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string): string => readFileSync(path.join(here, "fixtures", name), "utf8");
@@ -203,6 +203,16 @@ test("data in none of the supported formats is a TypeError from chat() and compl
     const err = await failure(make(kind, b.url), call, [{ role: "user", content: "look", images: [bad] }]);
     assert.ok(err instanceof TypeError, `${kind} ${call} ${what}: got ${err}`);
     assert.equal(b.seen.length, 0, `${kind} ${call} ${what}: a request was sent`);
+  }
+});
+
+// @spec LLM-VIS-005
+test("image data the model layer refuses is an ImageDataError, a TypeError subclass, so a caller can tell it from a transport TypeError", async () => {
+  for (const kind of kinds) for (const [what, bad] of UNKNOWN) {
+    const b = await serve(kind);
+    const err = await failure(make(kind, b.url), "chat", [{ role: "user", content: "look", images: [bad] }]);
+    assert.ok(err instanceof ImageDataError, `${kind} ${what}: got ${err}`);
+    assert.ok(err instanceof TypeError, `${kind} ${what}: still a TypeError`);
   }
 });
 

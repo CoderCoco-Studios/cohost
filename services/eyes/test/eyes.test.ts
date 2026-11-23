@@ -2,7 +2,10 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, silentLog, testConfig } from "@cohost/testing";
-import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber } from "../src/eyes.js";
+import { ImageDataError } from "@cohost/llm";
+import { parseConfigText } from "@cohost/config";
+import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber, buildVisionProvider, gapOf } from "../src/eyes.js";
+import { JPEG_B64, serveModel } from "./support.js";
 
 function setup(replies: string[]) {
   const bus = new FakeBus();
@@ -180,4 +183,146 @@ test("the describer aborts a describe call the model has not answered within vis
   const t0 = performance.now();
   await assert.rejects(describe("IMG", ""), /did not answer within 50 ms/);
   assert.ok(performance.now() - t0 < 2000);
+});
+
+// @spec EYES-PROV-002, EYES-PROV-004, EYES-PROV-005, EYES-DESC-001
+test("provider openai: the describer asks llm.openai.base_url with vision.model and the chat credential, non-streamed, with the image and the vision options", async () => {
+  const m = await serveModel("  A boss appears.\nIt looks angry.  ");
+  const cfg = testConfig({
+    llm: { model: "chat-model", openai: { base_url: m.url, api_key: "sk-chat" } },
+    vision: { provider: "openai", model: "vision-model", temperature: 0.4, num_predict: 25 },
+  });
+  const describe = createDescriber(cfg);
+  assert.equal(await describe(JPEG_B64, "In a cave."), "A boss appears.");
+  const [req] = m.seen;
+  assert.equal(req!.method, "POST");
+  assert.equal(req!.url, "/chat/completions");
+  assert.equal(req!.headers.authorization, "Bearer sk-chat", "the credential stored for the chat model");
+  assert.equal(req!.body.model, "vision-model", "vision.model, not llm.model");
+  assert.equal(req!.body.stream, false);
+  assert.equal(req!.body.temperature, 0.4);
+  assert.equal(req!.body.max_tokens, 25);
+  assert.deepEqual(req!.body.messages[0], { role: "system", content: cfg.vision.prompt });
+  assert.deepEqual(req!.body.messages[1].content, [
+    { type: "text", text: "Previous description: In a cave.\nWhat is happening now?" },
+    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${JPEG_B64}` } },
+  ]);
+});
+
+// @spec EYES-PROV-001, EYES-PROV-002, EYES-DESC-001
+test("a blank vision.provider is ollama: the request goes to <OLLAMA_URL>/api/chat with the image on the user message, whatever llm.provider is", async () => {
+  const m = await serveModel();
+  const saved = process.env.OLLAMA_URL;
+  process.env.OLLAMA_URL = m.url;
+  try {
+    const cfg = testConfig({ llm: { provider: "openai", openai: { base_url: "http://127.0.0.1:1" } }, vision: { provider: "", model: "llava", temperature: 0.1, num_predict: 12 } });
+    assert.equal(cfg.vision.provider, "ollama");
+    assert.equal(await createDescriber(cfg)(JPEG_B64, ""), "A boss appears.");
+    const [req] = m.seen;
+    assert.equal(req!.url, "/api/chat");
+    assert.equal(req!.body.model, "llava");
+    assert.equal(req!.body.stream, false);
+    assert.equal(req!.body.options.num_predict, 12);
+    assert.deepEqual(req!.body.messages[1], { role: "user", content: "What is happening now?", images: [JPEG_B64] });
+  } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
+});
+
+// @spec EYES-PROV-004
+test("llm.openai.base_url defaults to the hosted https://api.openai.com/v1, which the openai vision provider then uses", () => {
+  assert.equal(testConfig().llm.openai.base_url, "https://api.openai.com/v1");
+});
+
+// @spec EYES-PROV-005
+test("the vision section defines no credential of its own", () => {
+  assert.deepEqual(Object.keys(testConfig().vision).filter((k) => /key|secret|token|credential|password/i.test(k)), []);
+});
+
+// @spec EYES-DESC-006
+test("vision.timeout_ms aborts a describe call to an OpenAI-compatible server that never answers", async () => {
+  const m = await serveModel();
+  m.state.hang = true;
+  const cfg = testConfig({ llm: { openai: { base_url: m.url } }, vision: { provider: "openai", model: "vision-model", timeout_ms: 50 } });
+  const t0 = performance.now();
+  await assert.rejects(createDescriber(cfg)(JPEG_B64, ""), /did not answer within 50 ms/);
+  assert.ok(performance.now() - t0 < 2000);
+});
+
+// @spec EYES-STUB-003
+test("an isolation override that sets vision.provider to stub wins over the configured provider: no request, fixed text", async () => {
+  const base = testConfig({ vision: { enabled: true, provider: "anthropic", model: "claude-vision" } });
+  const parsed = parseConfigText(JSON.stringify(base), {}, { VISION_PROVIDER: "stub" });
+  assert.ok(parsed.ok, `the preset loads: ${parsed.ok ? "" : JSON.stringify(parsed.issues)}`);
+  assert.equal(parsed.config.vision.provider, "stub");
+  assert.equal(await createDescriber(parsed.config)(JPEG_B64, ""), `stub vision: ${Buffer.from(JPEG_B64, "base64").length} bytes`);
+});
+
+// @spec EYES-GAP-001, EYES-GAP-004
+test("a blank vision.model with a real provider fails each describe at once with `vision.model is not set` and sends nothing", async () => {
+  const m = await serveModel();
+  for (const provider of ["ollama", "openai"] as const) {
+    const cfg = testConfig({ llm: { openai: { base_url: m.url } }, vision: { provider, model: "" } });
+    const saved = process.env.OLLAMA_URL;
+    process.env.OLLAMA_URL = m.url;
+    try {
+      const t0 = performance.now();
+      await assert.rejects(createDescriber(cfg)(JPEG_B64, ""), /vision\.model is not set/, provider);
+      assert.ok(performance.now() - t0 < 1000, "at once");
+    } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }
+  }
+  assert.deepEqual(m.seen, []);
+});
+
+// @spec EYES-GAP-001
+test("a blank vision.model with the stub provider is not a gap: the stub still describes", async () => {
+  const cfg = testConfig({ vision: { provider: "stub", model: "" } });
+  assert.equal(await createDescriber(cfg)(JPEG_B64, ""), `stub vision: ${Buffer.from(JPEG_B64, "base64").length} bytes`);
+});
+
+// @spec EYES-GAP-003
+test("anthropic and bedrock without their credentials fail each describe at once with a not-configured error naming the missing key", async () => {
+  const cases: [string, Record<string, unknown>, RegExp][] = [
+    ["anthropic", {}, /not configured: llm\.claude\.api_key is not set/],
+    ["bedrock", {}, /not configured: llm\.bedrock\.region/],
+    ["bedrock", { bedrock: { region: "us-east-1" } }, /not configured: llm\.bedrock\.access_key_id, llm\.bedrock\.secret_access_key/],
+  ];
+  for (const [provider, llm, want] of cases) {
+    const cfg = testConfig({ llm, vision: { provider, model: "claude-vision" } });
+    const t0 = performance.now();
+    await assert.rejects(createDescriber(cfg)(JPEG_B64, ""), want, provider);
+    assert.ok(performance.now() - t0 < 1000, "at once");
+  }
+});
+
+// @spec EYES-PROV-007, EYES-DESC-001
+test("a BMP or PDF frame is refused by every hosted provider with a TypeError before any request, so it is a frame fault, not an outage", async () => {
+  const m = await serveModel();
+  const bmp = Buffer.from("BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00", "latin1").toString("base64");
+  const pdf = Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", "latin1").toString("base64");
+  const keyed = { claude: { api_key: "sk-test" }, bedrock: { region: "us-east-1", access_key_id: "AKIA", secret_access_key: "s" } };
+  for (const [provider, llm] of [["openai", { openai: { base_url: m.url } }], ["anthropic", keyed], ["bedrock", keyed]] as const) {
+    const describe = createDescriber(testConfig({ llm, vision: { provider, model: "vision-model" } }));
+    for (const img of [bmp, pdf]) {
+      await assert.rejects(describe(img, ""), (err) => err instanceof ImageDataError, provider);
+    }
+  }
+  assert.deepEqual(m.seen, []);
+});
+
+// @spec EYES-DESC-006
+test("a provider that ignores the abort signal does not stall the describer: its timer rejects the call at vision.timeout_ms", async () => {
+  const chat = { name: "x", model: "v", chat: () => new Promise<string>(() => {}) };
+  const cfg = testConfig({ vision: { provider: "openai", model: "v", timeout_ms: 50 } });
+  const t0 = performance.now();
+  await assert.rejects(modelDescriber(cfg.vision, cfg.llm, chat as never)(JPEG_B64, ""), /did not answer within 50 ms/);
+  assert.ok(performance.now() - t0 < 2000);
+});
+
+// @spec EYES-GAP-006
+test("bedrock with a region and only one of the key pair is a gap: createDescriber does not throw, each describe fails at once with the model layer's message, and nothing is sent", async () => {
+  const cfg = testConfig({ llm: { bedrock: { region: "us-east-1", access_key_id: "AKIA" } }, vision: { provider: "bedrock", model: "claude-vision" } });
+  const describe = createDescriber(cfg);
+  const t0 = performance.now();
+  await assert.rejects(describe(JPEG_B64, ""), /must be set together: only one of them is set/);
+  assert.ok(performance.now() - t0 < 1000, "at once");
+  assert.equal(gapOf(buildVisionProvider(cfg)), "llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set");
 });

@@ -35,7 +35,15 @@ export function createInjectHandler(d: InjectDeps): InjectHandler {
     maxBytes: { image: d.uploadMaxBytes ?? UPLOAD_MAX_BYTES },
     kinds: {
       image: async (bytes, r) => {
-        const text = (await d.describe(bytes.toString("base64"), "")).trim();
+        let text: string;
+        try {
+          text = (await d.describe(bytes.toString("base64"), "")).trim();
+        } catch (err) {
+          // @spec EYES-GAP-004, EYES-PROV-007
+          // The provider's own message, without the `Error:` prefix String(err) would add.
+          d.log.warn({ id: r.id, err: String(err) }, "describe failed (injected)");
+          return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+        }
         if (isSame(text)) return { ok: false, detail: "no description" };
         await d.bus.publish("vision.summary", { text, changed: true, injected: true, remember: r.remember });
         d.log.info({ id: r.id, text }, "saw (injected)");

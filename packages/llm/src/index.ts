@@ -87,6 +87,14 @@ export class ChatError extends Error {
   ) { super(message); this.name = "ChatError"; }
 }
 
+/**
+ * Image data in none of the supported formats, or not base64 (LLM-VIS-005): a caller's programming error, raised before any request.
+ * A `TypeError` by subclass, so callers that match the class can tell it from a transport failure that also reads `TypeError`.
+ */
+export class ImageDataError extends TypeError {
+  constructor(message: string) { super(message); this.name = "ImageDataError"; }
+}
+
 export interface ChatProvider { // @spec LLM-IF-001, LLM-IF-020
   readonly name: string;
   readonly model: string;
@@ -126,14 +134,25 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
  * is none of JPEG, PNG, GIF or WebP, is a caller's programming error: a `TypeError`, raised before any request (LLM-VIS-005).
  */
 function sniffImage(data: string): ImageMediaType { // @spec LLM-VIS-004, LLM-VIS-005
-  if (data.length % 4 !== 0 || !BASE64.test(data)) throw new TypeError("image data is not base64");
+  if (data.length % 4 !== 0 || !BASE64.test(data)) throw new ImageDataError("image data is not base64");
   const head = Buffer.from(data.slice(0, 16), "base64");
   const at = (offset: number, text: string): boolean => head.subarray(offset, offset + text.length).toString("latin1") === text;
   if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
   if (head.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return "image/png";
   if (at(0, "GIF8")) return "image/gif";
   if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
-  throw new TypeError("image data is not JPEG, PNG, GIF or WebP");
+  throw new ImageDataError("image data is not JPEG, PNG, GIF or WebP");
+}
+
+/**
+ * Why a hosted Claude provider has no client, in the words its `not configured` error uses (LLM-CLAUDE-017, LLM-CLAUDE-018), or
+ * undefined when it is configured. Anthropic needs `llm.claude.api_key`; Bedrock needs its region and key pair.
+ */
+export function notConfiguredReason(cfg: Config["llm"], provider: "anthropic" | "bedrock"): string | undefined {
+  if (provider === "anthropic") return cfg.claude.api_key ? undefined : "the anthropic provider is not configured: llm.claude.api_key is not set";
+  const { region, access_key_id: a, secret_access_key: k } = cfg.bedrock;
+  const empty = [["region", region], ["access_key_id", a], ["secret_access_key", k]].filter(([, v]) => !v).map(([n]) => `llm.bedrock.${n}`);
+  return empty.length ? `the bedrock provider is not configured: ${empty.join(", ")} not set` : undefined;
 }
 
 export function createChatProvider(cfg: Config["llm"]): ChatProvider { // @spec LLM-IF-002, LLM-IF-003
@@ -1101,7 +1120,7 @@ export class AnthropicProvider extends ClaudeBase {
       : undefined;
     this.serverFallbacks = cfg.claude.fallbacks;
   }
-  protected notConfigured(): string { return "the anthropic provider is not configured: llm.claude.api_key is not set"; }
+  protected notConfigured(): string { return notConfiguredReason(this.cfg, "anthropic") ?? "the anthropic provider is not configured"; }
   async ping(): Promise<boolean> { // @spec LLM-PING-003, LLM-PING-005
     if (!this.client) { this.lastError = this.notConfigured(); return false; } // @spec LLM-CLAUDE-017
     try {
@@ -1148,11 +1167,7 @@ export class BedrockProvider extends ClaudeBase {
         })) // @spec LLM-CLAUDE-014
       : undefined;
   }
-  protected notConfigured(): string {
-    const { region, access_key_id: a, secret_access_key: k } = this.cfg.bedrock;
-    const empty = [["region", region], ["access_key_id", a], ["secret_access_key", k]].filter(([, v]) => !v).map(([n]) => `llm.bedrock.${n}`);
-    return `the bedrock provider is not configured: ${empty.join(", ")} not set`;
-  }
+  protected notConfigured(): string { return notConfiguredReason(this.cfg, "bedrock") ?? "the bedrock provider is not configured"; }
   readonly pingIsNominal = true; // @spec LLM-PING-006
   async ping(): Promise<boolean> { return true; } // @spec LLM-PING-004 (no cheap probe on Bedrock; errors surface on first chat)
 }

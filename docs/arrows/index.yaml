@@ -195,7 +195,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "57 specs: 36 [x], 21 [ ] (chat safety: bounded intake, counting chat once per window, guarded appraiser prompt; viewer identity by platform and user id; dropping queued removed chat)."
+    next: "57 specs: 51 [x], 6 [ ] (AFF-IN-001 start mode; AFF-IN-011 receipt call, flipped by #183; AFF-IN-017 to AFF-IN-020: dropping queued removed chat and viewer identity)."
     drift: null
 
   memory:

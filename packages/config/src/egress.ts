@@ -4,7 +4,7 @@ import type { Config } from "./schema.js";
 
 /** One destination private data is sent to: the service that sends it, what it is, and whether it leaves the LAN. */
 export interface EgressEntry {
-  service: "voice" | "ears" | "eyes" | "cortex";
+  service: "voice" | "ears" | "eyes" | "cortex" | "tools";
   /** `text` a prompt or line of speech, `audio` a clip sent to a transcriber, `frames` a screenshot. */
   data: "text" | "audio" | "frames";
   /** The engine or provider the entry is for (`kokoro`, `speaches`, `ollama`, `openai` ...). */
@@ -143,7 +143,7 @@ export function offLanHost(host: string, lan: readonly string[]): boolean {
  * frames and cortex text. A stub engine, the mock chat provider and a blank server value give no entry. A hosted provider
  * (anthropic, bedrock) has no host, only its name, and is off the LAN.
  */
-// @spec CFG-EGR-001, CFG-EGR-002, CFG-EGR-003, CFG-EGR-004, CFG-EGR-005, CFG-EGR-006, CFG-EGR-007, CFG-EGR-013
+// @spec CFG-EGR-001, CFG-EGR-002, CFG-EGR-003, CFG-EGR-004, CFG-EGR-005, CFG-EGR-006, CFG-EGR-007, CFG-EGR-013, CFG-EGR-014, CFG-EGR-015, CFG-EGR-016
 export function egressDestinations(config: Config): EgressEntry[] {
   const lan = config.network?.lan ?? [];
   const out: EgressEntry[] = [];
@@ -187,6 +187,18 @@ export function egressDestinations(config: Config): EgressEntry[] {
   if (l === "ollama") add("cortex", "text", "ollama", urls.ollama());
   else if (l === "openai") add("cortex", "text", "openai", config.llm.openai.base_url);
   else if (l === "anthropic" || l === "bedrock") hosted("cortex", "text", l);
+
+  // tools: the prompt and the tool arguments to each MCP server, whether or not any of its tools is enabled (CFG-EGR-014); mock
+  // mode calls no server (CFG-EGR-016), and `stream_info` calls none either
+  if (config.tools.mode === "live") {
+    for (const [name, server] of Object.entries(config.tools.servers)) {
+      const host = hostOf(server.url);
+      out.push({
+        service: "tools", data: "text", engine: `mcp:${name}`, ...(host === undefined ? {} : { host }),
+        offLan: server.external || (host === undefined ? true : offLanHost(host, lan)),
+      });
+    }
+  }
 
   return out;
 }

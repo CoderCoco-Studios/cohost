@@ -117,8 +117,9 @@ test("a set stores the value trimmed at its config path, mode 0600, answers {ok,
 // @spec DASH-SECRET-001
 test("each of the seventeen wildcard-free secret paths can be set and cleared", async () => {
   const t = await boot({ control: true });
-  assert.equal(SECRET_PATHS.length, 17); // CFG-SEC-003, wildcard-free paths only
-  for (const p of SECRET_PATHS) {
+  const wildcardFree = SECRET_PATHS.filter((p) => !p.includes("*"));
+  assert.equal(wildcardFree.length, 17); // CFG-SEC-003, wildcard-free paths only
+  for (const p of wildcardFree) {
     // the Bedrock pair is only ever changed together (DASH-SECRET-012)
     if (p === BR_ID || p === BR_SECRET) continue;
     assert.equal((await t.put(`/secrets/${p}`, { value: `v-${p}` }, TOKEN)).status, 200, p);
@@ -299,7 +300,7 @@ test("the file ends at mode 0600 even when it existed with a looser mode", async
 // @spec DASH-SECRET-009
 test("two requests in flight are applied one after the other and leave the file well-formed with both applied", async () => {
   const t = await boot({ control: true });
-  const paths = SECRET_PATHS.filter((p) => p !== BR_ID && p !== BR_SECRET);
+  const paths = SECRET_PATHS.filter((p) => p !== BR_ID && p !== BR_SECRET && !p.includes("*"));
   const rs = await Promise.all(paths.map((p) => t.put(`/secrets/${p}`, { value: `v-${p}` }, TOKEN)));
   assert.deepEqual(rs.map((r) => r.status), paths.map(() => 200));
   assert.deepEqual(t.values(), Object.fromEntries(paths.map((p) => [p, `v-${p}`])));

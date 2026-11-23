@@ -45,6 +45,8 @@ test("every declared section is a path of ConfigSchema, and every section Config
   assert.ok(sections.length >= 10, `read ${sections.join(", ")}`);
   // `dashboard` is host-run, not a unit: the one section no unit declares.
   const hostRun = new Set(["dashboard"]);
+  // TEMPORARY (#204): the `tools` unit and its section declaration arrive with #208, which removes this allowance.
+  hostRun.add("tools");
   for (const sec of sections) assert.ok(declared.has(sec) || hostRun.has(sec), `section ${sec} is declared by no unit`);
 });
 

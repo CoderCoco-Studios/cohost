@@ -179,3 +179,44 @@ test("a stub engine, the mock chat provider and a blank value give no entry, so 
   });
   assert.deepEqual(none, []);
 });
+
+const mcp = (servers: Record<string, unknown>, mode?: string, lan?: string[]) => ({ tools: { ...(mode !== undefined ? { mode } : {}), servers }, ...(lan ? { network: { lan } } : {}) });
+const toolsOf = (over: Record<string, unknown>) => of(over, "tools");
+
+// @spec CFG-EGR-014
+test("while tools.mode is live, tools gets one text entry per server, engine mcp:<name>, the host of its url, whether or not any tool is enabled", () => {
+  assert.deepEqual(toolsOf({}), [], "no server, no entry");
+  const list = toolsOf(mcp({ weather: { url: "http://host.docker.internal:8931/mcp" }, search: { url: "https://search.example.com:8443/mcp?region=eu" }, nas: { url: "http://192.168.1.20/mcp" } }));
+  assert.deepEqual(list.map((e) => `${e.data}:${e.engine}:${e.host}`), [
+    "text:mcp:weather:host.docker.internal", "text:mcp:search:search.example.com", "text:mcp:nas:192.168.1.20",
+  ]);
+  assert.deepEqual(list.map((e) => e.offLan), [false, true, false]);
+  assert.equal(toolsOf(mcp({ a: { url: "http://h/mcp" } }, "live")).length, 1, "explicit live is the same");
+  assert.equal(toolsOf(mcp({ a: { url: "http://h/mcp" } }, "")).length, 1, "blank mode is live");
+  // listed although no tool of the server is enabled, and also when one is
+  const allowed = mcp({ a: { url: "http://h/mcp" } });
+  (allowed.tools as Record<string, unknown>).allow = { a__t: { enabled: true } };
+  assert.equal(toolsOf(allowed).length, 1);
+  // network.lan applies like for any host
+  assert.equal(toolsOf(mcp({ a: { url: "https://mcp.corp.example/x?y=1" } }, undefined, ["mcp.corp.example"]))[0]!.offLan, false);
+  // entries of the other services are unchanged
+  assert.deepEqual(entries(mcp({ a: { url: "http://h/mcp" } })).filter((e) => e.service !== "tools").map((e) => e.service).sort(), ["cortex", "ears", "eyes", "voice"]);
+});
+
+// @spec CFG-EGR-015
+test("a server with external true is offLan whatever its host; external false or absent is judged by the host", () => {
+  const list = toolsOf(mcp({ lan: { url: "http://192.168.1.20/mcp", external: true }, plain: { url: "http://192.168.1.20/mcp" }, off: { url: "http://192.168.1.20/mcp", external: false } }));
+  assert.deepEqual(list.map((e) => [e.engine, e.offLan]), [["mcp:lan", true], ["mcp:plain", false], ["mcp:off", false]]);
+  assert.equal(toolsOf(mcp({ a: { url: "http://localhost:1/mcp", external: true } }))[0]!.offLan, true);
+  assert.equal(toolsOf(mcp({ a: { url: "http://mcp.corp.example/mcp", external: true } }, undefined, ["mcp.corp.example"]))[0]!.offLan, true, "network.lan does not override external");
+});
+
+// @spec CFG-EGR-016
+test("while tools.mode is mock, tools gets no entry; neither mode has an entry for stream_info", () => {
+  assert.deepEqual(toolsOf(mcp({ a: { url: "http://h/mcp" }, b: { url: "https://x.example.com/mcp", external: true } }, "mock")), []);
+  for (const mode of ["live", "mock"]) {
+    const list = toolsOf(mcp({ a: { url: "http://h/mcp" } }, mode));
+    assert.ok(list.every((e) => !/stream[_-]?info/.test(e.engine)), `${mode}: no stream_info entry`);
+  }
+  assert.deepEqual(toolsOf({ tools: { mode: "live", stream_info: { cache_ms: 0 } } }), [], "stream_info configuration adds no entry");
+});

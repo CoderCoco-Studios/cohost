@@ -242,7 +242,8 @@ test("restart lists units in manifest order that read the section and are runnin
 // @spec MOD-CFG-015
 test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
   const t = await boot();
-  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "stub" } });
+  // voice.sample_rate, not voice.engine: CFG-PRES-011 makes the engine sensitive, so its save needs the control token
+  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { sample_rate: 24000 } });
   const j = (await r.json()) as { warnings: string[] };
   assert.deepEqual(j.warnings, []);
   const d = await t.put("/config/dashboard", { etag: sha(t.text()), values: { port: 3010 } });

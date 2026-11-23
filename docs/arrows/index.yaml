@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 167 [x], 64 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 203 [x], 28 [ ] (the renderer settings CFG-SCH-097 to 101, CFG-PRES-018 to 020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008 and the early-reply settings CFG-SCH-102 to 112 are open gaps; CFG-SEC-018 waits on DASH-SECRET-014, CFG-PRES-014 on #208)."
     drift: null
 
   event-bus:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "163 specs: 73 [x], 90 [ ] (YouTube reader CHAT-YT-001 to CHAT-YT-068 except 003 to 006, forgetting removed messages CHAT-FORGET-*, Twitch message ids and removals CHAT-TW-013 to CHAT-TW-018, the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005, CHAT-HEALTH-011, CHAT-FILT-012 to CHAT-FILT-014)."
+    next: "163 specs: 87 [x], 76 [ ] (the YouTube reader CHAT-YT-*, the YouTube removals CHAT-FORGET-002 to 005 and the YouTube identifiers CHAT-FILT-013, all #179; the Twitch removals CHAT-TW-014 to 017 held for the live check on #239; the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005; CHAT-HEALTH-011)."
     drift: null
 
   eyes:
@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "44 specs, all [x]. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
+    next: "63 specs: 38 [x], 25 [ ], 0 [D] (the gaps are the provider construction, hosted choice, configuration, outage, egress and vision-dependency specs; see eyes.md). Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
     drift: null
 
   connections:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "168 specs: 69 [x], 98 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Notes (the counts above are current): 98 specs: 73 [x], 24 [ ] (chat safety: counting a burst once, guarded scorer prompt; viewer identity by platform and user id; forgetting removed chat), 1 [D] (SAL-TRIG-010)."
+    next: "168 specs: 83 [x], 84 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs SAL-PROV, SAL-INTJ are open gaps). Counting a burst once and the guarded scorer prompt are built (#172); SAL-DECIDE-011 and -012 are owned by #182. 1 [D] is SAL-TRIG-010."
     drift: null
 
   affect:
@@ -195,7 +195,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks]
     detail: affect.md
-    next: "57 specs: 36 [x], 21 [ ] (chat safety: bounded intake, counting chat once per window, guarded appraiser prompt; viewer identity by platform and user id; dropping queued removed chat)."
+    next: "57 specs: 51 [x], 6 [ ] (AFF-IN-001 start mode; AFF-IN-011 receipt call, flipped by #183; AFF-IN-017 to AFF-IN-020: dropping queued removed chat and viewer identity)."
     drift: null
 
   memory:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 138 [x], 35 [ ] (viewer identity by platform and user id, the platform and message id on chat rows, forgetting removed chat, and the streamed-speech clause writes MEM-WRITE-010 to 019). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 160 [x], 13 [ ] (streamed-speech clause writes MEM-WRITE-010 to 019; MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 86 [x], 198 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Open in the chat-safety work: the repetition trigger on clauses and the streamed-line exception (CTX-REPEAT-001, 002), the repetition log (CTX-REPEAT-010, 011), the no-line exit status (CTX-GATE-012), and CTX-EVT-005, CTX-EVT-012, CTX-FALL-007; viewer identity by platform and user id; forgetting removed chat."
+    next: "285 specs: 93 [x], 191 [ ], 1 [D] (streamed-speech clause specs and the early-reply specs CTX-PROV, CTX-INTJ are open gaps). Open in the chat-safety work: the repetition trigger on clauses and the streamed-line exception (CTX-REPEAT-001, 002), the repetition log (CTX-REPEAT-010, 011), the no-line exit status (CTX-GATE-012), and CTX-EVT-005, CTX-EVT-012, CTX-FALL-007."
     drift: null
 
   tools:
@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "109 specs: 0 [x], 109 [ ] (the segment is designed and specified, not built). The cascade lines in the segments listed in tools.md are written; build the service, then audit."
+    next: "108 specs: 0 [x], 108 [ ] (the segment is designed and specified, not built). The cascade lines in the segments listed in tools.md are written; build the service, then audit."
     drift: null
 
   voice:

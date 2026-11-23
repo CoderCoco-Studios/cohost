@@ -1,6 +1,6 @@
 import { readFileSync, statSync, realpathSync, lstatSync } from "node:fs";
 import { parseDocument, Document, isMap } from "yaml";
-import { SECRET_PATHS } from "./schema.js";
+import { secretPathOf, isSecretPrefix } from "./schema.js";
 import { writeFileAtomic } from "./atomic.js";
 import type { SecretValues } from "./pipeline.js";
 
@@ -16,9 +16,6 @@ export interface LoadedSecrets {
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
-/** The paths that are a proper prefix of a secret path (`llm`, `llm.openai`, ...): a mapping may sit there. */
-const PREFIXES: ReadonlySet<string> = new Set(SECRET_PATHS.flatMap((p) => p.split(".").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("."))));
-
 /** The failure of a file the loader or `updateSecrets` cannot use: names the file and a position or a path, never text of the file. */
 const invalid = (file: string, lines: string[]): Error => new Error(`Invalid ${file}:\n${lines.map((l) => `  ${l}`).join("\n")}`);
 
@@ -33,7 +30,7 @@ function parseSecretsText(file: string, text: string): Document {
 }
 
 /** Reads `file` as `secrets.yaml`: a missing file holds nothing, one that cannot be read or parsed is an error. */
-// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010
+// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010, CFG-SEC-016
 export function loadSecrets(file: string): LoadedSecrets {
   let text: string;
   try {
@@ -53,14 +50,14 @@ export function loadSecrets(file: string): LoadedSecrets {
   const walk = (node: Record<string, unknown>, prefix: string): void => {
     for (const [k, v] of Object.entries(node)) {
       const path = prefix ? `${prefix}.${k}` : k;
-      if (SECRET_PATHS.includes(path)) {
+      if (secretPathOf(path) !== undefined) {
         if (v === null) continue;
         if (typeof v !== "string") { wrong.push(path); continue; }
         const trimmed = v.trim();
         if (trimmed === "") continue;
         if (/[\r\n]/.test(trimmed)) multiline.push(path);
         else values[path] = trimmed;
-      } else if (PREFIXES.has(path) && (v === null || isObj(v))) {
+      } else if (isSecretPrefix(path) && (v === null || isObj(v))) {
         if (v !== null) walk(v, path);
       } else {
         ignored.push(path);
@@ -84,11 +81,11 @@ export function loadSecrets(file: string): LoadedSecrets {
  * keeping every other key and comment. Refuses a path outside `SECRET_PATHS` and a value that is empty after trimming, and
  * applies nothing when any change is refused. Returns nothing and never logs or echoes a value.
  */
-// @spec CFG-SEC-009, CFG-SEC-010, CFG-SEC-012, CFG-SEC-013, CFG-SEC-015
+// @spec CFG-SEC-009, CFG-SEC-010, CFG-SEC-012, CFG-SEC-013, CFG-SEC-015, CFG-SEC-018
 export function updateSecrets(linkOrFile: string, changes: Readonly<Record<string, string | null>>): void {
   const next: [string, string][] = [];
   for (const [path, value] of Object.entries(changes)) {
-    if (!SECRET_PATHS.includes(path)) throw new Error(`${path} is not a secret key`);
+    if (secretPathOf(path) === undefined) throw new Error(`${path} is not a secret key`);
     if (value === null) { next.push([path, ""]); continue; }
     const trimmed = value.trim();
     if (trimmed === "") throw new Error(`${path}: the value is empty after trimming; to remove a credential, clear it`);

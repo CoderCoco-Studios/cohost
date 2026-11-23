@@ -4,7 +4,7 @@
 
 ## Status
 
-**DRIFTED**: 123 specs: 58 implemented, 62 gaps, 3 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002`, clause-chunked synthesis and streaming input; `VOICE-ENG-017` Qwen3-TTS). The code is the Kokoro-only synthesizer; the engine contract, `openai` and `pocket` engines, the shared WAV reader, bounds, the concurrency gate, error classes, configuration gaps, egress notes and the `tts` health dependency are specified and not built. Eight earlier lines are revised and re-marked as gaps (`VOICE-SYN-002`, `VOICE-ENV-005`, `VOICE-CLIP-001`, `-003`, `-005`, `-006`, `VOICE-HLTH-001` to `-003`).
+**DRIFTED**: 147 specs: 35 implemented, 111 gaps, 1 deferred (`VOICE-CHUNK-001`, `VOICE-CHUNK-002`, clause-chunked synthesis and streaming input; `VOICE-ENG-017` Qwen3-TTS). The code is the Kokoro-only synthesizer; the engine contract, `openai` and `pocket` engines, the shared WAV reader, bounds, the concurrency gate, error classes, configuration gaps, egress notes and the `tts` health dependency are specified and not built. Eight earlier lines are revised and re-marked as gaps (`VOICE-SYN-002`, `VOICE-ENV-005`, `VOICE-CLIP-001`, `-003`, `-005`, `-006`, `VOICE-HLTH-001` to `-003`).
 
 ## Listening and speaking split
 

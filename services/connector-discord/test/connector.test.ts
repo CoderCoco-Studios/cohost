@@ -495,6 +495,26 @@ test("a connector that never receives a flush frame plays a stopped line's writt
   await r.stop();
 });
 
+// @spec CONN-DISC-012, CONN-AUD-008
+test("a flush frame naming the line id cuts a clause stream keyed <id>-<seq> after its last frame was read, uncounted, and the next line starts on a fresh stream", async () => {
+  const r = await up();
+  r.bus.feed("out", "discord", outFrame(0, { utt: "u1-1" }));
+  r.bus.feed("out", "discord", outFrame(1, { utt: "u1-1", last: true }));
+  assert.equal(r.player.state.status, "playing", "the player still plays the clause's buffered tail");
+  const first = r.player.played[0]!;
+  r.bus.feed("out", "discord", flushOut(2, { utt: "u1" })); // the flush carries the line id, whatever clause key the frames carry
+  assert.equal(r.player.stops, 1, "the player is stopped");
+  assert.ok(first.stream.destroyed || first.stream.writableEnded);
+  r.bus.feed("out", "discord", outFrame(3, { utt: "u2-0" }));
+  r.bus.feed("out", "discord", outFrame(4, { utt: "u2-0", last: true }));
+  assert.equal(r.player.played.length, 2);
+  assert.notEqual(r.player.played[1]!.stream, first.stream, "a fresh stream");
+  await waitFor(() => r.player.played[1]!.chunks.length === 2, "the next line's frames");
+  assert.deepEqual(r.player.played[1]!.chunks.map((c) => c[0]), [4, 5]);
+  await waitFor(() => /dropped 0/.test(r.bus.lastHealth()?.detail ?? ""), "discarded frames are not counted as dropped");
+  await r.stop();
+});
+
 // @spec CONN-DISC-013
 test("an audio player error is logged as the warning 'player error' with the error's message", async () => {
   const r = await up();

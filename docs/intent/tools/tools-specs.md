@@ -37,10 +37,10 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 ## Pinned definitions (TOOL-PIN)
 
 - [x] **TOOL-PIN-001**: The service shall compute the `hash` of an MCP tool as the lower-case hexadecimal SHA-256 of the UTF-8 JSON object with exactly the members `name` (the qualified name), `title` (as cut; the member is absent when the server gives none), `description` (as cut), `parameters` (the argument schema) and `label`, serialized with the keys of every object, that one and those inside `parameters`, in ascending code-unit order and no whitespace outside strings.
-- [ ] **TOOL-PIN-002**: The catalog shall carry for each MCP tool the hash of the definition its server lists now, and shall carry no hash for a built-in tool.
+- [x] **TOOL-PIN-002**: The catalog shall carry for each MCP tool the hash of the definition its server lists now, and shall carry no hash for a built-in tool.
 - [x] **TOOL-PIN-003**: While `tools.mode` is not `mock`, if an enabled MCP tool's `tools.allow` entry records no `hash`, then the service shall not offer it and shall give it the catalog reason `not_approved`.
 - [x] **TOOL-PIN-004**: While `tools.mode` is not `mock`, if an enabled MCP tool's recorded `hash` differs from the hash of the definition its server lists, then the service shall not offer it and shall give it the catalog reason `changed`.
-- [ ] **TOOL-PIN-005**: The service shall check no hash for a built-in tool, and none while `tools.mode` is `mock`.
+- [x] **TOOL-PIN-005**: The service shall check no hash for a built-in tool, and none while `tools.mode` is `mock`.
 
 ## Who can cause a call (TOOL-ORIG)
 
@@ -63,8 +63,8 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
 - [x] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
 - [x] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
-- [ ] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
-- [ ] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
+- [x] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
+- [x] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
 - [x] **TOOL-CALL-013**: When an MCP result has text parts, the service shall join them with newlines as the result text, followed by one bracket pair per part that is not text, joined by a space and set after the text with a space, naming the part's type as `image`, `audio` or `resource`, and as `other` for any other type the server gives, never the server's own string.
 - [x] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
 - [x] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
@@ -89,19 +89,34 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## MCP servers (TOOL-MCP)
 
-- [ ] **TOOL-MCP-001**: The service shall reach an MCP server only over the protocol's Streamable HTTP transport and shall start no process for a server.
-- [ ] **TOOL-MCP-002**: When the service starts in live mode, it shall connect to every server in `tools.servers`, including one with no enabled tool, initialize a session and list its tools.
-- [ ] **TOOL-MCP-003**: When a server's connection drops or a request to it fails, the service shall reconnect with the shared retry-with-backoff, and meanwhile keep the server's tools in the catalog with their last known definitions and not offer them.
-- [ ] **TOOL-MCP-004**: The service shall list a server's tools again when the server announces a change and every `tools.catalog_ms`.
-- [ ] **TOOL-MCP-005**: The service shall send a server's secret in the header named by `tools.servers.<name>.header`, `Authorization` when the name is blank or absent, with the value `Bearer <token>` when the header is `Authorization` (compared without regard to case) and the token as written for any other header.
-- [ ] **TOOL-MCP-006**: When a server answers `401` or `403`, the service shall give it the state `auth`, report it as a `down` dependency, and leave the state when a later reconnect succeeds.
-- [ ] **TOOL-MCP-007**: The service shall write no server secret, no userinfo and no query string of a server URL to an event, a catalog entry, a log line, a heartbeat detail or an error text.
-- [ ] **TOOL-MCP-008**: Where a server's URL is `http`, its host is off the LAN and a secret is set, the service shall put `credential sent without TLS` in the server's `detail` and shall still connect.
-- [ ] **TOOL-MCP-009**: The service shall mark a server `external` when its host is off the LAN by the LAN rule or when `tools.servers.<name>.external` is `true`.
-- [ ] **TOOL-MCP-010**: While a server has at least one enabled tool, the heartbeat shall carry the dependency `mcp.<name>` as `ok` while the server is connected, `down` while it is not and `n/a` in mock mode, and shall carry no dependency for a server with no enabled tool.
-- [ ] **TOOL-MCP-011**: When the service starts in live mode, it shall log one warning for each egress entry of `tools` whose `offLan` is true, naming the server and the host.
-- [ ] **TOOL-MCP-012**: When an MCP server's response is longer than 1 MiB, the service shall cut it to 1 MiB before shaping, drop the excess and add a note to the result saying so.
-- [ ] **TOOL-MCP-013**: The service shall follow no redirect on the MCP transport: a 3xx answer is an error for that call, and the secret header is sent only to the configured URL.
+- [x] **TOOL-MCP-001**: The service shall reach an MCP server only over the protocol's Streamable HTTP transport and shall start no process for a server.
+- [x] **TOOL-MCP-002**: When the service starts in live mode, it shall connect to every server in `tools.servers`, including one with no enabled tool, initialize a session and list its tools.
+- [x] **TOOL-MCP-003**: When a server's connection drops or a request to it fails, the service shall reconnect with the shared retry-with-backoff, and meanwhile keep the server's tools in the catalog with their last known definitions and not offer them.
+- [x] **TOOL-MCP-004**: The service shall list a server's tools again when the server announces a change and every `tools.catalog_ms`.
+- [x] **TOOL-MCP-005**: The service shall send a server's secret in the header named by `tools.servers.<name>.header`, `Authorization` when the name is blank or absent, with the value `Bearer <token>` when the header is `Authorization` (compared without regard to case) and the token as written for any other header.
+- [x] **TOOL-MCP-006**: When a server answers `401` or `403`, the service shall give it the state `auth`, report it as a `down` dependency, and leave the state when a later reconnect succeeds.
+- [x] **TOOL-MCP-007**: The service shall write no server secret, no userinfo and no query string of a server URL to an event, a catalog entry, a log line, a heartbeat detail or an error text.
+- [x] **TOOL-MCP-008**: Where a server's URL is `http`, its host is off the LAN and a secret is set, the service shall put `credential sent without TLS` in the server's `detail` and shall still connect.
+- [x] **TOOL-MCP-009**: The service shall mark a server `external` when its host is off the LAN by the LAN rule or when `tools.servers.<name>.external` is `true`.
+- [x] **TOOL-MCP-010**: While a server has at least one enabled `tools.allow` entry naming it, listed or not, the heartbeat shall carry the dependency `mcp.<name>` as `ok` while the server is connected, `down` while it is not (including `auth`) and `n/a` in mock mode, and shall carry no dependency for a server with no such entry; an entry names a server when its key begins with the server's name and `__`.
+- [x] **TOOL-MCP-011**: When the service starts in live mode, it shall log one warning for each egress entry of `tools` whose `offLan` is true, naming the server and the host.
+- [x] **TOOL-MCP-012**: When an MCP server's response body is longer than 1 MiB, the service shall stop reading it at 1 MiB and hang up; a tool call whose response is so cut shall end `error` with reason `unavailable` and a sentence saying the server's response was too large, and nothing of the partial body shall be parsed or shown.
+- [x] **TOOL-MCP-013**: The service shall follow no redirect on the MCP transport: a 3xx answer is an error for that call, and the secret header is sent only to the configured URL.
+- [x] **TOOL-MCP-014**: When the service makes the initialize or the tools/list request of a connection attempt, it shall give that request a setup timeout of 10 seconds, and a request with no answer by then shall be aborted and count the attempt as failed.
+- [x] **TOOL-MCP-015**: When a server's tools/list is paged, the service shall follow its `nextCursor` for at most 50 pages and at most 10 000 entries in all; a cursor that is not a string, a repeated cursor, or a list beyond either limit shall fail the list.
+- [x] **TOOL-MCP-016**: When a server's tools/list response is longer than 1 MiB, the service shall fail the list and list none of its tools, before `tools.max_tools_per_server` is applied.
+- [x] **TOOL-MCP-017**: When a server's list names one tool more than once, the service shall list only the first definition of that name.
+- [x] **TOOL-MCP-018**: When a listed tool's `inputSchema` is not a JSON object, the service shall leave the tool out.
+- [x] **TOOL-MCP-019**: When a listed tool's `readOnlyHint` annotation is not a boolean, the service shall give the tool the label `unlabelled`.
+- [x] **TOOL-MCP-020**: When a listed tool's `title` is not a string, the service shall carry no title for it.
+- [x] **TOOL-MCP-021**: The service shall declare no client capability at initialize, and shall answer no request a server sends it with a result.
+- [x] **TOOL-MCP-022**: The service shall never use a legacy `endpoint` event of a server to choose the address of a request, so that every request goes to the configured URL.
+- [x] **TOOL-MCP-023**: The service shall never fetch a resource link in a tool result, and shall report the link only as a note of its type.
+- [x] **TOOL-MCP-024**: When a response's JSON-RPC id is not the id of the request it answers, the service shall not take it as that request's answer.
+- [x] **TOOL-MCP-025**: When calls run at once on one session, the service shall answer each call with the response whose JSON-RPC id is that call's request id.
+- [x] **TOOL-MCP-026**: When a server answers 404 to a request that carries its session id, the service shall fail that request, start a new session, and shall not retry the call that failed, which ends `error` with reason `unavailable`.
+- [x] **TOOL-MCP-027**: When a server answers a `tools/call` with a JSON-RPC error, the service shall end the call `error` with reason `tool_error` and a sentence it wrote, and shall keep the session.
+- [x] **TOOL-MCP-028**: When a call passes its call limit, the service shall not reconnect the server.
 
 ## Built-in tool: clock (TOOL-CLOCK)
 

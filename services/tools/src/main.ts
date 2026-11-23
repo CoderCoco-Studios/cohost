@@ -5,22 +5,24 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Bus, BusEvent, EventType, Publisher } from "@cohost/bus";
-import { createLogger, type Config } from "@cohost/config";
+import { createLogger, egressDestinations, type Config } from "@cohost/config";
 import { createInjectHandler, runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { buildSnapshot, publishedServers, publishedTool, type DepStatus, type Mode, type Snapshot } from "./catalog.js";
 import { CallPipeline, type ToolRequest } from "./calls.js";
 import { healthOf, type Health } from "./health.js";
 import { mockSources } from "./mock.js";
+import { mcpSources, type McpEnv } from "./mcp.js";
 import type { ToolSource } from "./source.js";
-
 
 /** What `toolsMain` needs from a Bus; tests pass a fake. */
 export type ToolsBus = Publisher & HealthPublisher & Pick<Bus, "subscribe" | "resetGroup" | "stop">;
 
 /** The process-level collaborators of the service, replaceable so a test runs it without Redis, signals or exit. */
 export type ToolsEnv = Pick<RunServiceOptions<ToolsBus>, "loadConfig" | "createBus" | "onShutdown" | "exit" | "log" | "stopTimeoutMs"> & {
-  /** The live sources of the configured servers. Not called in mock mode. The MCP client (#206) supplies them. */
+  /** The live sources of the configured servers. Not called in mock mode; absent, the MCP client builds one per server. */
   createSources?: (cfg: Config) => ToolSource[];
+  /** The MCP client's seam: the backoff and the setup timeout of each server connection (TOOL-MCP-014). */
+  mcp?: McpEnv;
 };
 
 /** The dependencies the heartbeat reads: none until the service has checked its sources (TOOL-SVC-004). */
@@ -52,7 +54,13 @@ export async function toolsMain(
 ): Promise<void> {
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const mode: Mode = cfg.tools.mode;
-  const sources: ToolSource[] = mode === "mock" ? mockSources(cfg) : (env.createSources ?? (() => []))(cfg);
+  const sources: ToolSource[] = mode === "mock" ? mockSources(cfg) : (env.createSources ?? ((c) => mcpSources(c, env.mcp)))(cfg);
+  // @spec TOOL-MCP-011: one start warning for each egress entry of a server that is off the LAN, naming the server and the host.
+  if (mode === "live") {
+    for (const e of egressDestinations(cfg)) {
+      if (e.service === "tools" && e.offLan) log.warn({ server: e.engine.replace(/^mcp:/, ""), host: e.host }, "MCP server is off the LAN: its arguments leave this machine");
+    }
+  }
 
   // The group must exist before the subscription; resetGroup creates it at `$`, the same as start mode `latest`.
   await bus.resetGroup("tools");
@@ -150,6 +158,7 @@ export async function toolsMain(
   refresh(true); // TOOL-CAT-011: published when ready
 
   for (const s of sources) s.onChange(() => refresh(false)); // TOOL-CAT-011: on a change
+  for (const s of sources) s.start?.(); // the sources connect only now, so no change is missed (TOOL-MCP-002)
   const timer = setInterval(() => refresh(true), cfg.tools.catalog_ms); // TOOL-CAT-011: every catalog_ms
 
   // Shutdown runs in reverse: refuse the calls and confirmations first, then stop the timer, then close the sources
@@ -163,7 +172,7 @@ export async function toolsMain(
 
 /** The service entry: bootstrap, then `toolsMain`. */
 export function runTools(env: ToolsEnv = {}): Promise<void> {
-  const { createSources, ...boot } = env;
+  const { createSources, mcp, ...boot } = env;
   const exit = boot.exit ?? ((code: number) => process.exit(code));
   const log = boot.log ?? createLogger("tools");
   const health: HealthRef = { deps: () => ({}) };
@@ -174,7 +183,7 @@ export function runTools(env: ToolsEnv = {}): Promise<void> {
       mode: cfg.tools.mode === "mock" ? "mock" : "live", // TOOL-SVC-005
       deps: () => health.deps(),
     }),
-    main: (ctx) => toolsMain(ctx, { createSources }, health, exit),
+    main: (ctx) => toolsMain(ctx, { createSources, mcp }, health, exit),
     ...boot,
     log,
   }).catch((err) => { log.error({ err }, "fatal"); exit(1); }); // a bus that cannot be built is a startup failure too

@@ -94,11 +94,23 @@ export interface Snapshot {
   tools: KnownTool[];
   servers: CatalogServer[];
   byName: Map<string, KnownTool>;
+  /** The qualified names of every enabled `tools.allow` entry, listed or not (TOOL-MCP-010): a server with one is a dependency. */
+  enabledNames: string[];
 }
 
 const hostOf = (url: string): string | undefined => {
   try { return new URL(url).hostname; } catch { return undefined; }
 };
+
+/**
+ * Whether a configured server is external: its host is off the LAN by the LAN rule, or `external` is set, or its URL has no
+ * readable host (TOOL-MCP-009). The egress entry of the server uses the same rule (CFG-EGR-014).
+ */
+// @spec TOOL-MCP-009
+export function serverExternal(entry: { url: string; external: boolean }, lan: readonly string[]): boolean {
+  const host = hostOf(entry.url);
+  return entry.external || (host === undefined ? true : offLanHost(host, lan));
+}
 
 const STATE_WORDS: Record<SourceState, string> = { ok: "connected", down: "not connected", auth: "refused its credential", mock: "mock server" };
 
@@ -121,10 +133,8 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
   for (const [server, entry] of Object.entries(cfg.tools.servers)) {
     const source = bySource.get(server);
     const state: SourceState = mode === "mock" ? "mock" : source ? source.state : "down";
-    const host = hostOf(entry.url);
-    // Mock mode reaches no server and ignores `tools.servers.<name>.external`: no server is external there. The external rule
-    // itself (TOOL-MCP-009) is open for #206.
-    const external = mode === "mock" ? false : entry.external || (host === undefined ? true : offLanHost(host, lan));
+    // Mock mode reaches no server and ignores `tools.servers.<name>.external`: no server is external there.
+    const external = mode === "mock" ? false : serverExternal(entry, lan);
     let listed = 0;
     let left = 0;
     for (const def of source?.list() ?? []) {
@@ -150,7 +160,8 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     if (source?.detail) parts.push(source.detail);
     servers.push({ name: server, state, external, detail: parts.join("; ") });
   }
-  return { mode, tools, servers, byName };
+  const enabledNames = Object.entries(cfg.tools.allow).filter(([, a]) => a.enabled).map(([name]) => name);
+  return { mode, tools, servers, byName, enabledNames };
 }
 
 function listTool(cfg: Config, source: ToolSource, server: string, name: string, def: SourceTool, state: SourceState, mode: Mode): KnownTool {

@@ -19,13 +19,12 @@ export interface Health {
 export function healthOf(snap: Snapshot): Health {
   const deps: Record<string, DepStatus> = {};
   for (const s of snap.servers) {
-    if (!snap.tools.some((t) => t.server === s.name && t.enabled)) continue;
+    if (!snap.enabledNames.some((n) => n.startsWith(`${s.name}__`))) continue;
     deps[`mcp.${s.name}`] = s.state === "mock" ? "n/a" : s.state === "ok" ? "ok" : "down";
   }
   const offered = snap.tools.filter((t) => t.offered).length;
-  const enabled = snap.tools.filter((t) => t.enabled).length;
   const parts = [`${offered} tools offered`];
-  if (enabled === 0) parts.push("no tools enabled");
+  if (snap.enabledNames.length === 0) parts.push("no tools enabled");
   for (const s of snap.servers) {
     if (deps[`mcp.${s.name}`] !== "down") continue;
     parts.push(s.state === "auth" ? `${s.name} refused its credential` : `${s.name} down`);

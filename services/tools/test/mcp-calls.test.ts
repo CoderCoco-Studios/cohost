@@ -28,7 +28,7 @@ test("on the call limit the HTTP request is aborted and a cancellation notificat
   await s.stop();
 });
 
-test("a cancellation the server never answers does not delay or change the timeout result, nor stop the next call or the service", async () => { // @spec TOOL-CALL-011
+test("a cancellation the server never answers does not delay or change the timeout result, nor stop the next call or the service", async () => { // @spec TOOL-CALL-011, TOOL-MCP-028
   const srv = await FakeMcp.start({ tools: [web] });
   let hang = true;
   srv.byMethod["tools/call"] = (_s, ctx) => (hang ? { hang: true } : ctx.result({ content: [{ type: "text", text: "next" }] }));
@@ -42,6 +42,7 @@ test("a cancellation the server never answers does not delay or change the timeo
   hang = false;
   await waitFor(() => catalogServer(s, "search")?.state === "ok", "the server usable");
   assert.equal((await resultOf(s, await s.request())).content, "next");
+  assert.equal(srv.rpcs("initialize").length, 1, "the call limit did not reconnect the server");
   await s.stop(); // must not wait on the hung notification
   assert.deepEqual(s.exits, []);
 });
@@ -123,7 +124,7 @@ for (const [name, reply] of FAILURES) {
   });
 }
 
-test("a JSON-RPC error answer to tools/call is an error result and leaves the server connected on the same session", async () => { // @spec TOOL-CALL-012
+test("a JSON-RPC error answer to tools/call is an error result and leaves the server connected on the same session", async () => { // @spec TOOL-CALL-012, TOOL-MCP-027
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod["tools/call"] = (_s, ctx) => ctx.error(-32602, "invalid params: q is required");
   const s = await startMcp({ servers: { search: entry(srv) }, allow });
@@ -135,7 +136,7 @@ test("a JSON-RPC error answer to tools/call is an error result and leaves the se
   await s.stop();
 });
 
-test("a response whose id is not the call's is not taken for its answer", async () => { // @spec TOOL-CALL-012
+test("a response whose id is not the call's is not taken for its answer", async () => { // @spec TOOL-CALL-012, TOOL-MCP-024
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod["tools/call"] = () => ({ json: { jsonrpc: "2.0", id: 987654, result: { content: [{ type: "text", text: "INJECTED" }] } } });
   const s = await startMcp({ servers: { search: entry(srv) }, allow, timeout_ms: 300 });
@@ -148,7 +149,7 @@ test("a response whose id is not the call's is not taken for its answer", async 
 
 // ---- result shaping through the real client (TOOL-CALL-013..016 are the pipeline's; here only the MCP side feeds them)
 
-test("an MCP result's text parts, non-text parts by type name, structured content and isError reach the pipeline as the server gave them, and a resource_link is not fetched", async () => { // @spec TOOL-CALL-013, TOOL-CALL-014, TOOL-CALL-016
+test("an MCP result's text parts, non-text parts by type name, structured content and isError reach the pipeline as the server gave them, and a resource_link is not fetched", async () => { // @spec TOOL-CALL-013, TOOL-CALL-014, TOOL-CALL-016, TOOL-MCP-023
   const sink = await FakeMcp.start({ tools: [web] });
   const srv = await FakeMcp.start({ tools: [web] });
   let result: unknown;
@@ -168,16 +169,15 @@ test("an MCP result's text parts, non-text parts by type name, structured conten
 
 // ---- TOOL-MCP-012: response size
 
-test("a response over 1 MiB is cut to 1 MiB before shaping with a note in the result", async () => { // @spec TOOL-MCP-012
+test("a response over 1 MiB is stopped at 1 MiB and the call ends error unavailable saying the response was too large, with none of it shown", async () => { // @spec TOOL-MCP-012
   const srv = await FakeMcp.start({ tools: [web] });
   srv.callResult = () => ({ content: [{ type: "text", text: "a".repeat(3 * MIB) }] });
   const s = await startMcp({ servers: { search: entry(srv) }, allow, max_result_chars: 4 * MIB });
   await waitServer(s, "search", "ok");
   const r = await resultOf(s, await s.request());
-  assert.equal(r.status, "ok");
-  const run = (String(r.content).match(/a+/) ?? [""])[0].length;
-  assert.ok(run <= MIB && run > MIB - 4096, `the text was cut to about 1 MiB, run ${run}`);
-  assert.match(String(r.content), /1 ?MiB|1048576|cut|truncat/i, "a note says so");
+  assert.deepEqual([r.status, r.reason], ["error", "unavailable"]);
+  assert.match(String(r.content), /too large/, "a sentence the service wrote says so");
+  assert.doesNotMatch(String(r.content), /a{16}/, "nothing partial of the response is shown");
   await s.stop();
 });
 
@@ -250,7 +250,7 @@ test("a redirect to another path of the configured server is not followed either
 
 // ---- hostile tool definitions
 
-test("malformed and malicious tool definitions are left out or neutralised and do not take the server down", async () => { // @spec TOOL-MCP-002, TOOL-CAT-002, TOOL-CAT-003
+test("malformed and malicious tool definitions are left out or neutralised and do not take the server down", async () => { // @spec TOOL-MCP-002, TOOL-MCP-017, TOOL-MCP-018, TOOL-MCP-019, TOOL-MCP-020, TOOL-CAT-002, TOOL-CAT-003
   const dup1 = toolJson("dup", { annotations: { readOnlyHint: true } });
   const dup2 = toolJson("dup", { description: "second", annotations: { readOnlyHint: false } });
   const evil = JSON.parse('{"name":"proto","description":"p","inputSchema":{"type":"object","properties":{"__proto__":{"type":"string"},"constructor":{"type":"string"}}}}');

@@ -52,7 +52,7 @@ for (const status of [401, 403]) {
     assert.match(catalogServer(s, "search")!.detail, /refused its credential/);
     assert.match(lastHealth(s).detail ?? "", /search refused its credential/);
     const r = await resultOf(s, await s.request());
-    assert.deepEqual([r.status, r.reason], ["refused", "server_down"]);
+    assert.deepEqual([r.status, r.reason], ["refused", "unknown_tool"]); // never listed: no catalog entry (TOOL-CALL-002)
     // still auth after another failed attempt
     await bo.next(); bo.release();
     await bo.next();

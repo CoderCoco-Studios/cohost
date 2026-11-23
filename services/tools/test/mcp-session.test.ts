@@ -61,7 +61,7 @@ test("it works whether the server answers a request as application/json or as a 
   await s.stop();
 });
 
-test("it declares no client capability (no sampling, roots or elicitation) and answers no server-initiated request with a result", async () => { // @spec TOOL-MCP-001
+test("it declares no client capability (no sampling, roots or elicitation) and answers no server-initiated request with a result", async () => { // @spec TOOL-MCP-021
   const srv = await FakeMcp.start({ tools: [web] });
   const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } });
   await waitServer(s, "search", "ok");
@@ -87,7 +87,7 @@ test("it starts no process for a server: no child process, and mcp.ts names no c
   assert.doesNotMatch(code, /child_process|spawn\(|exec\(|StdioClientTransport|stdio/i);
 });
 
-test("a legacy SSE server that tells the client an endpoint to POST to does not make it connect there: the client falls back to nothing", async () => { // @spec TOOL-MCP-001
+test("a legacy SSE server that tells the client an endpoint to POST to does not make it connect there: the client falls back to nothing", async () => { // @spec TOOL-MCP-022
   const sink = await FakeMcp.start({ tools: [web] });
   const legacy = await FakeMcp.start({ tools: [web] });
   legacy.before = (seen) => {
@@ -114,7 +114,7 @@ test("in mock mode it opens no connection to a configured server", async () => {
   assert.ok(s.catalogs().at(-1)!.tools.every((t) => t.hash === undefined), "no pin in mock mode");
 });
 
-test("two calls at once on one session are each answered with their own result", async () => { // @spec TOOL-MCP-001
+test("two calls at once on one session are each answered with their own result", async () => { // @spec TOOL-MCP-025
   const srv = await FakeMcp.start({ tools: [web] });
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
@@ -185,7 +185,7 @@ test("a call whose request fails ends error unavailable and takes the same recon
   await s.stop();
 });
 
-test("a session the server forgot (404) is replaced by a new one, and later calls carry the new session id", async () => { // @spec TOOL-MCP-003
+test("a session the server forgot (404) is replaced by a new one, and later calls carry the new session id", async () => { // @spec TOOL-MCP-003, TOOL-MCP-026
   const srv = await FakeMcp.start({ tools: [web] });
   const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } }, { catalogMs: 40 });
   await waitServer(s, "search", "ok");
@@ -200,7 +200,7 @@ test("a session the server forgot (404) is replaced by a new one, and later call
   await s.stop();
 });
 
-test("a server that never answers initialize is abandoned after the setup timeout and retried", async () => { // @spec TOOL-MCP-003
+test("a server that never answers initialize is abandoned after the setup timeout and retried", async () => { // @spec TOOL-MCP-003, TOOL-MCP-014
   const srv = await FakeMcp.start({ tools: [web] });
   let hang = true;
   srv.byMethod.initialize = () => (hang ? { hang: true } : undefined);
@@ -302,7 +302,7 @@ test("an enabled tool with no recorded hash is not_approved but carries the hash
   await s.stop();
 });
 
-test("a server's tools/list is followed across pages, and a server that never stops paging is cut off while the service stays up", async () => { // @spec TOOL-MCP-002, TOOL-MCP-004
+test("a server's tools/list is followed across pages, and a server that never stops paging is cut off while the service stays up", async () => { // @spec TOOL-MCP-002, TOOL-MCP-004, TOOL-MCP-015
   const paged = await FakeMcp.start();
   paged.byMethod["tools/list"] = (seen, ctx) => {
     const cursor = seen.rpc!.params?.cursor;
@@ -350,7 +350,7 @@ test("the heartbeat carries mcp.<name> only for a server with an enabled tool: o
   await s.stop();
 });
 
-test("an endless tools/list response is read to a bounded size and the connection is closed", async () => { // @spec TOOL-MCP-012, TOOL-MCP-003
+test("an endless tools/list response is read to a bounded size and the connection is closed", async () => { // @spec TOOL-MCP-012, TOOL-MCP-003, TOOL-MCP-016
   const srv = await FakeMcp.start({ tools: [web] });
   const e = endless('{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"x","description":"', "a".repeat(65536));
   srv.byMethod["tools/list"] = () => e.reply;
@@ -362,5 +362,16 @@ test("an endless tools/list response is read to a bounded size and the connectio
   assert.ok(e.bytesWritten() < 16 * 1024 * 1024, `read a bounded prefix, server wrote ${e.bytesWritten()} bytes`);
   assert.equal(catalogServer(s, "search")?.state, "down", "a list that was cut off is a failed list");
   assert.deepEqual(s.exits, []);
+  await s.stop();
+});
+test("a tools/list over 1 MiB fails the list and lists none of its tools, even the first ones that fit max_tools_per_server", async () => { // @spec TOOL-MCP-016
+  const srv = await FakeMcp.start({ tools: [] });
+  const fits = Array.from({ length: 32 }, (_, i) => toolJson(`ok${i}`));
+  const huge = toolJson("huge", { description: "H".repeat(1024 * 1024 + 1000) });
+  srv.tools = [...fits, huge];
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {}, max_tools_per_server: 32 });
+  await srv.waitUntil(() => srv.rpcs("tools/list").length > 0, "the list request");
+  await waitFor(() => catalogServer(s, "search")?.state === "down", "the list failed");
+  assert.equal(s.catalogs().at(-1)!.tools.filter((t) => t.server === "search").length, 0, "no tool of the failed list is listed");
   await s.stop();
 });

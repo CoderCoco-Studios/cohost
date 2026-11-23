@@ -34,6 +34,14 @@ export interface SourceCallResult {
   isError?: boolean | undefined;
 }
 
+/**
+ * A call that failed in the source's transport. Its text is a sentence the source wrote, never text from the server; the
+ * pipeline shows it as the `unavailable` result's content (TOOL-CALL-012). Any other rejection shows the pipeline's own sentence.
+ */
+export class SourceFailed extends Error {
+  constructor(readonly text: string) { super(text); }
+}
+
 export interface ToolSource {
   /** The server's name in `tools.servers`. */
   readonly name: string;
@@ -49,5 +57,7 @@ export interface ToolSource {
   call(tool: string, args: Record<string, unknown>, signal: AbortSignal): Promise<SourceCallResult>;
   /** Registers a listener the source calls when its tools or its state changed. */
   onChange(listener: () => void): void;
+  /** Begins the source's work (a live source connects here), after the service has registered its listeners. */
+  start?(): void;
   close(): Promise<void>;
 }

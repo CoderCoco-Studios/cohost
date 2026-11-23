@@ -16,7 +16,8 @@ export function busError(code: BusErrorCode, message: string = code): Error & { 
 
 type Fn = (...args: any[]) => unknown;
 export type TransportMethod =
-  | "append" | "recent" | "createGroup" | "moveGroupToLatest" | "putUpload" | "takeUpload" | "writeRegistration"
+  | "append" | "recent" | "createGroup" | "moveGroupToLatest" | "putUpload" | "takeUpload" | "putTimer" | "deleteTimer"
+  | "listTimers" | "writeRegistration"
   | "readRegistration" | "deleteRegistration" | "listRegistrations" | "serverTime" | "openReader" | "close"
   | "readGroup" | "ack" | "read" | "readerClose";
 
@@ -95,6 +96,11 @@ export class FakeTransport implements BusTransport {
   moveGroupToLatest(group: string) { return this.run("moveGroupToLatest", [group], () => undefined); }
   putUpload(id: string, bytes: Buffer, ttlMs: number) { return this.run("putUpload", [id, bytes, ttlMs], () => undefined); }
   takeUpload(id: string) { return this.run("takeUpload", [id], (): Buffer | null => null); }
+  /** The timer hash of BUS-TIMER-001, kept in memory: field `id` holds `json`. */
+  timers = new Map<string, string>();
+  putTimer(id: string, json: string) { return this.run("putTimer", [id, json], () => { this.timers.set(id, json); }); }
+  deleteTimer(id: string) { return this.run("deleteTimer", [id], () => { this.timers.delete(id); }); }
+  listTimers() { return this.run("listTimers", [], () => [...this.timers].map(([id, json]) => ({ id, json }))); }
   writeRegistration(id: string, json: string, leaseMs: number) { return this.run("writeRegistration", [id, json, leaseMs], () => undefined); }
   readRegistration(id: string) { return this.run("readRegistration", [id], (): string | null => null); }
   deleteRegistration(id: string) { return this.run("deleteRegistration", [id], () => undefined); }

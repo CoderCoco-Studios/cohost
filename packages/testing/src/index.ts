@@ -74,6 +74,20 @@ export class FakeBus implements Publisher {
     this.uploads.delete(id);
     return u?.bytes ?? null;
   }
+  /** Tool timers stored by `putTimer`, by id: the JSON text the real hash holds (BUS-TIMER-001). */
+  timers = new Map<string, string>();
+  // @spec BUS-TEST-004
+  async putTimer(id: string, json: string): Promise<void> {
+    this.timers.set(id, json);
+  }
+  // @spec BUS-TEST-004
+  async deleteTimer(id: string): Promise<void> {
+    this.timers.delete(id);
+  }
+  // @spec BUS-TEST-004
+  async listTimers(): Promise<{ id: string; json: string }[]> {
+    return [...this.timers].map(([id, json]) => ({ id, json }));
+  }
   // @spec BUS-TEST-002
   async publishHealth(data: EventInput<"service.heartbeat">): Promise<string> {
     const parsed = EventPayloads["service.heartbeat"].parse(data);
@@ -104,6 +118,7 @@ export class FakeBus implements Publisher {
   types(): EventType[] {
     return this.published.map((p) => p.type);
   }
+  /** Empties `published` and `health` only: stored uploads and timers stay (BUS-TEST-004). */
   clear(): void { this.published = []; this.health = []; this.healthIds = []; }
 }
 

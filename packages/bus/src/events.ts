@@ -24,6 +24,19 @@ const PlaybackDone = PlaybackReport.extend({
 /** Why a streamed reply ended before the model finished (event-bus design, Streamed lines); only with `last` (BUS-EVT-040). */
 const CLAUSE_CUTS = ["repeat", "muted", "busy", "failed", "length", "stopped", "timeout", "vetoed", "tools"] as const;
 
+/** The `origin` of a tool call: the event that caused it (BUS-EVT-043, BUS-EVT-049). */
+const TOOL_ORIGINS = ["speech", "guest", "chat", "vision", "reminder", "dashboard", "idle"] as const;
+
+/** A tool's name as the tools service registers it (BUS-EVT-043). */
+const ToolName = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+
+/** `tool.result` `reason` by status (BUS-EVT-045). */
+const REFUSAL_REASONS = ["unknown_tool", "not_enabled", "acts_not_allowed", "not_approved", "definition_changed", "origin_not_allowed", "invalid_arguments", "server_down", "busy", "denied", "unconfirmed", "shutdown"] as const;
+const ERROR_REASONS = ["tool_error", "unavailable", "limit"] as const;
+
+/** A `tool.catalog` entry's `reason` (BUS-EVT-047). */
+const CATALOG_REASONS = ["not_enabled", "acts_not_allowed", "not_approved", "changed", "server_down"] as const;
+
 /** `control.routing` (`set_routing`, read by mouth): output id to its live `enabled` flag and, for `discord`, `gain_db`. */
 export const RoutingPatch = z.record(z.string(), z.object({ enabled: z.boolean().optional(), gain_db: z.number().min(-40).max(12).optional() }).strict());
 
@@ -198,7 +211,9 @@ export const EventPayloads = {
     /** The single event most worth replying to, if any. */
     focus: z
       .object({
-        kind: z.enum(["chat", "speech", "vision"]),
+        kind: z.enum(["chat", "speech", "vision", "reminder"]),
+        /** The listening source of a speech focus, kept unchanged (BUS-EVT-051). */
+        source: z.string().optional(),
         who: z.string().optional(),
         /** The chat source and the viewer's platform id, for chat focus (BUS-EVT-036). */
         platform: z.enum(["twitch", "youtube", "discord"]).optional(),
@@ -407,7 +422,7 @@ export const EventPayloads = {
   // @spec BUS-EVT-006
   "inject.request": z.object({
     id: z.string(),
-    target: z.enum(["eyes", "ears", "chat", "connector-discord"]),
+    target: z.enum(["eyes", "ears", "chat", "connector-discord", "tools"]),
     kind: z.enum(["image", "audio", "text"]),
     uploadId: z.string().optional(),
     contentType: z.string().optional(),
@@ -431,6 +446,94 @@ export const EventPayloads = {
     id: z.string(),
     ok: z.boolean(),
     detail: z.string().optional(),
+  }),
+
+  /** A model's call of a tool (tools service, tool calling): what was asked, by which event, in which round. */
+  // @spec BUS-EVT-043
+  "tool.request": z.object({
+    id: z.string(),
+    tool: ToolName,
+    arguments: z.record(z.string(), z.unknown()),
+    origin: z.enum(TOOL_ORIGINS),
+    round: z.number().int().min(1),
+    listed: z.boolean(),
+    injected: z.boolean().optional(),
+  }),
+
+  /**
+   * The outcome of a `tool.request`, correlated by id. `reason` is allowed only with `refused` or `error`, and only
+   * the reasons of that status (BUS-EVT-045). `truncated` and `mock` are the boolean `true` or absent (BUS-EVT-044).
+   */
+  // @spec BUS-EVT-044, BUS-EVT-045
+  "tool.result": z.object({
+    id: z.string(),
+    tool: z.string(),
+    status: z.enum(["ok", "error", "timeout", "refused"]),
+    reason: z.enum([...REFUSAL_REASONS, ...ERROR_REASONS]).optional(),
+    content: z.string(),
+    durationMs: z.number().int().nonnegative(),
+    truncated: z.literal(true).optional(),
+    mock: z.literal(true).optional(),
+  }).superRefine((d, ctx) => {
+    if (d.reason === undefined) return;
+    const allowed: readonly string[] = d.status === "refused" ? REFUSAL_REASONS : d.status === "error" ? ERROR_REASONS : [];
+    if (!allowed.includes(d.reason)) ctx.addIssue({ code: "custom", path: ["reason"], message: `reason ${d.reason} does not go with status ${d.status}` });
+  }),
+
+  /** The tool catalog snapshot: the servers the tools come from, and every tool with its enablement and offer state. */
+  // @spec BUS-EVT-046, BUS-EVT-047
+  "tool.catalog": z.object({
+    intervalMs: z.number().int().positive(),
+    mode: z.enum(["live", "mock"]),
+    servers: z.array(z.object({
+      name: z.string(),
+      state: z.enum(["ok", "down", "auth", "mock"]),
+      external: z.boolean(),
+      detail: z.string().optional(),
+    })),
+    tools: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+      parameters: z.record(z.string(), z.unknown()),
+      label: z.enum(["read", "acts", "unlabelled"]),
+      effect: z.enum(["read", "acts"]),
+      enabled: z.boolean(),
+      acts: z.boolean(),
+      chat: z.boolean(),
+      confirm: z.boolean(),
+      offered: z.boolean(),
+      server: z.string().optional(),
+      title: z.string().optional(),
+      hash: z.string().optional(),
+      reason: z.enum(CATALOG_REASONS).optional(),
+    })),
+  }),
+
+  /** A timer the co-host set, or one that came due: `missed` only as the boolean `true` (BUS-EVT-048). */
+  // @spec BUS-EVT-048
+  "tool.timer": z.object({
+    id: z.string(),
+    note: z.string(),
+    setAt: z.number().int(),
+    dueAt: z.number().int(),
+    missed: z.literal(true).optional(),
+  }),
+
+  /** A tool call that waits for the owner's confirmation before it runs (BUS-EVT-049). */
+  // @spec BUS-EVT-049
+  "tool.confirm": z.object({
+    id: z.string(),
+    tool: z.string(),
+    arguments: z.record(z.string(), z.unknown()),
+    origin: z.enum(TOOL_ORIGINS),
+    expiresAt: z.number().int(),
+  }),
+
+  /** The owner's answer to a `tool.confirm`, correlated by id (BUS-EVT-050). */
+  // @spec BUS-EVT-050
+  "tool.answer": z.object({
+    id: z.string(),
+    allow: z.boolean(),
   }),
 
   /** Audit record of a start/stop/restart attempt made through the service controller. */

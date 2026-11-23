@@ -51,3 +51,20 @@ test("FakeBus keeps uploads in memory: putUpload then takeUpload returns the byt
   bus.failUpload = true;
   await assert.rejects(bus.putUpload("b", Buffer.from("x"), 1), /putUpload failed/);
 });
+
+// @spec BUS-TEST-004
+test("FakeBus implements the timer half of Bus over an in-memory map, and clear() leaves it alone", async () => {
+  const bus = new FakeBus();
+  assert.deepEqual(await bus.listTimers(), []);
+  await bus.putTimer("a", "{\"n\":1}");
+  await bus.putTimer("b", "{\"n\":2}");
+  await bus.putTimer("a", "{\"n\":3}");
+  assert.deepEqual((await bus.listTimers()).sort((x, y) => x.id.localeCompare(y.id)), [{ id: "a", json: "{\"n\":3}" }, { id: "b", json: "{\"n\":2}" }]);
+  await bus.publish("control", { cmd: "mute" });
+  bus.clear();
+  assert.equal(bus.published.length, 0);
+  assert.equal((await bus.listTimers()).length, 2, "clear() empties published and health only");
+  await bus.deleteTimer("a");
+  await bus.deleteTimer("never");
+  assert.deepEqual(await bus.listTimers(), [{ id: "b", json: "{\"n\":2}" }]);
+});

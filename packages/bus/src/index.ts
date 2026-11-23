@@ -131,6 +131,24 @@ export class Bus {
     return this.transport.takeUpload(id);
   }
 
+  /** Write a pending tool timer as field `id` of `<prefix>:tools:timers`; not a stream entry (BUS-TIMER-001). */
+  // @spec BUS-TIMER-001
+  putTimer(id: string, json: string): Promise<void> {
+    return this.transport.putTimer(id, json);
+  }
+
+  /** Delete the timer `id` from `<prefix>:tools:timers`; a missing id is not an error (BUS-TIMER-001). */
+  // @spec BUS-TIMER-001
+  deleteTimer(id: string): Promise<void> {
+    return this.transport.deleteTimer(id);
+  }
+
+  /** Every pending tool timer as id and json, or an empty list when none is stored (BUS-TIMER-002). */
+  // @spec BUS-TIMER-002
+  listTimers(): Promise<{ id: string; json: string }[]> {
+    return this.transport.listTimers();
+  }
+
   /** The key of a connector's registration, `<prefix>:connector:<id>` (BUS-AUD-002, BUS-NAT-RS-006). */
   connectorKey(id: string): string { return connectorKey(this.prefix, id); }
 

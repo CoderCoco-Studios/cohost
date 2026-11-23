@@ -533,6 +533,30 @@ impl Transport {
         optional_bytes(&self.inner.cmd(cmd).await?)
     }
 
+    /// `HSET <prefix>:tools:timers <id> <json>` (BUS-TIMER-001).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-001
+    pub async fn put_timer(&self, id: &str, json: &str) -> Result<()> {
+        let mut cmd = redis::cmd("HSET");
+        cmd.arg(self.inner.keys.timers()).arg(id).arg(json);
+        self.inner.cmd(cmd).await.map(|_| ())
+    }
+
+    /// `HDEL <prefix>:tools:timers <id>` (BUS-TIMER-001).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-001
+    pub async fn delete_timer(&self, id: &str) -> Result<()> {
+        let mut cmd = redis::cmd("HDEL");
+        cmd.arg(self.inner.keys.timers()).arg(id);
+        self.inner.cmd(cmd).await.map(|_| ())
+    }
+
+    /// `HGETALL <prefix>:tools:timers` as id and json pairs; an absent key lists as empty (BUS-TIMER-002).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-002
+    pub async fn list_timers(&self) -> Result<Vec<(String, String)>> {
+        let mut cmd = redis::cmd("HGETALL");
+        cmd.arg(self.inner.keys.timers());
+        timer_pairs(&self.inner.cmd(cmd).await?)
+    }
+
     // @spec BUS-NAT-TRN-001, CONN-REG-001
     pub async fn write_registration(&self, id: &str, json: &str, lease_ms: u64) -> Result<()> {
         let mut cmd = redis::cmd("SET");
@@ -680,6 +704,29 @@ impl Transport {
             let _ = timeout(budget, pipe.query_async::<Vec<Value>>(&mut c)).await;
         }
         *done = true;
+    }
+}
+
+/// The field and value pairs of an `HGETALL` reply: a flat array under RESP2, a map under RESP3 (BUS-TIMER-002).
+fn timer_pairs(v: &Value) -> Result<Vec<(String, String)>> {
+    let text = |b: &Value| -> Result<String> {
+        bytes_of(b)
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .ok_or_else(|| unexpected("HGETALL"))
+    };
+    match v {
+        Value::Array(parts) => parts
+            .chunks(2)
+            .map(|pair| match pair {
+                [id, json] => Ok((text(id)?, text(json)?)),
+                _ => Err(unexpected("HGETALL")),
+            })
+            .collect(),
+        Value::Map(pairs) => pairs
+            .iter()
+            .map(|(id, json)| Ok((text(id)?, text(json)?)))
+            .collect(),
+        _ => Err(unexpected("HGETALL")),
     }
 }
 
@@ -944,7 +991,33 @@ impl Reader {
 
 #[cfg(test)]
 mod tests {
-    use super::ConnSlot;
+    use super::{ConnSlot, Value, timer_pairs};
+
+    // @spec BUS-TIMER-002
+    #[test]
+    fn timer_pairs_reads_a_resp2_flat_array_and_a_resp3_map() {
+        let bulk = |s: &str| Value::BulkString(s.as_bytes().to_vec());
+        let flat = Value::Array(vec![
+            bulk("t1"),
+            bulk("{\"n\":1}"),
+            bulk("t2"),
+            bulk("{\"n\":2}"),
+        ]);
+        let map = Value::Map(vec![
+            (bulk("t1"), bulk("{\"n\":1}")),
+            (bulk("t2"), bulk("{\"n\":2}")),
+        ]);
+        let want = vec![
+            ("t1".to_string(), "{\"n\":1}".to_string()),
+            ("t2".to_string(), "{\"n\":2}".to_string()),
+        ];
+        assert_eq!(timer_pairs(&flat).unwrap(), want);
+        assert_eq!(timer_pairs(&map).unwrap(), want);
+        assert!(timer_pairs(&Value::Array(vec![])).unwrap().is_empty());
+        assert!(timer_pairs(&Value::Map(vec![])).unwrap().is_empty());
+        assert!(timer_pairs(&Value::Array(vec![bulk("odd")])).is_err());
+        assert!(timer_pairs(&Value::Nil).is_err());
+    }
 
     // @spec BUS-NAT-CONN-008
     #[test]

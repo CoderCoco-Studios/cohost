@@ -101,6 +101,32 @@ async fn trn_001_every_method_issues_its_commands_under_the_prefix() {
     assert_eq!(t.take_upload("u1").await.unwrap(), Some(vec![1, 2, 3]));
     assert_eq!(t.take_upload("u1").await.unwrap(), None);
 
+    // timers: HSET / HDEL / HGETALL <prefix>:tools:timers; an absent key lists as empty.
+    assert!(t.list_timers().await.unwrap().is_empty());
+    t.put_timer("t1", "{\"n\":1}").await.unwrap();
+    t.put_timer("t2", "{\"n\":2}").await.unwrap();
+    t.put_timer("t1", "{\"n\":3}").await.unwrap();
+    let stored: std::collections::HashMap<String, String> =
+        q(&fx, &["HGETALL", &format!("{}:tools:timers", fx.prefix)]).await;
+    assert_eq!(stored.len(), 2);
+    assert_eq!(stored["t1"], "{\"n\":3}");
+    let mut listed = t.list_timers().await.unwrap();
+    listed.sort();
+    assert_eq!(
+        listed,
+        vec![
+            ("t1".to_string(), "{\"n\":3}".to_string()),
+            ("t2".to_string(), "{\"n\":2}".to_string())
+        ]
+    );
+    t.delete_timer("t1").await.unwrap();
+    t.delete_timer("never").await.unwrap();
+    assert_eq!(
+        t.list_timers().await.unwrap(),
+        vec![("t2".to_string(), "{\"n\":2}".to_string())]
+    );
+    t.delete_timer("t2").await.unwrap();
+
     // registrations: SET ... PX lease, GET, DEL, SCAN + MGET.
     t.write_registration("conn-a", "{\"a\":1}", 15000)
         .await
@@ -489,6 +515,9 @@ async fn err_005_every_method_rejects_closed_after_close() {
     closed(t.move_group_to_latest("g").await.unwrap_err());
     closed(t.put_upload("u", &[0], 1000).await.unwrap_err());
     closed(t.take_upload("u").await.unwrap_err());
+    closed(t.put_timer("t", "{}").await.unwrap_err());
+    closed(t.delete_timer("t").await.unwrap_err());
+    closed(t.list_timers().await.unwrap_err());
     closed(t.write_registration("c", "{}", 1000).await.unwrap_err());
     closed(t.read_registration("c").await.unwrap_err());
     closed(t.delete_registration("c").await.unwrap_err());

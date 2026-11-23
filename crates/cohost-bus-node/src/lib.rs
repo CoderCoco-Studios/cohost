@@ -7,7 +7,7 @@
 //!
 //! JavaScript surface (the `BusTransport` seam of `packages/bus/src/transport.ts`):
 //! - `new Transport(url, prefix, failFast)`: `append`, `recent`, `createGroup`, `moveGroupToLatest`, `putUpload`,
-//!   `takeUpload`, `writeRegistration`, `readRegistration`, `deleteRegistration`, `listRegistrations`,
+//!   `takeUpload`, `putTimer`, `deleteTimer`, `listTimers`, `writeRegistration`, `readRegistration`, `deleteRegistration`, `listRegistrations`,
 //!   `serverTime`, `openReader`, `close`.
 //! - `Reader` (from `openReader()`): `readGroup`, `ack`, `read`, `close`.
 //! - Synchronous helper: `connectorKey`.
@@ -142,6 +142,13 @@ fn millis(n: f64) -> BusResult<u64> {
 }
 
 // ------------------------------------------------------------------ value conversion
+
+/// One pending tool timer as `listTimers` returns it: the field `id` and its JSON `json` (BUS-TIMER-002).
+#[napi(object)]
+pub struct TimerEntryJs {
+    pub id: String,
+    pub json: String,
+}
 
 #[napi(object)]
 pub struct EntryFieldsJs {
@@ -309,6 +316,43 @@ impl JsTransport {
         let t = self.inner.clone();
         run(env, async move { t.take_upload(&id).await }, |_, b| {
             Ok(b.map(Buffer::from))
+        })
+    }
+
+    #[napi(js_name = "putTimer")]
+    pub fn put_timer<'env>(
+        &self,
+        env: &'env Env,
+        id: String,
+        json: String,
+    ) -> napi::Result<PromiseRaw<'env, ()>> {
+        let t = self.inner.clone();
+        run(env, async move { t.put_timer(&id, &json).await }, |_, _| {
+            Ok(())
+        })
+    }
+
+    #[napi(js_name = "deleteTimer")]
+    pub fn delete_timer<'env>(
+        &self,
+        env: &'env Env,
+        id: String,
+    ) -> napi::Result<PromiseRaw<'env, ()>> {
+        let t = self.inner.clone();
+        run(env, async move { t.delete_timer(&id).await }, |_, _| Ok(()))
+    }
+
+    #[napi(js_name = "listTimers")]
+    pub fn list_timers<'env>(
+        &self,
+        env: &'env Env,
+    ) -> napi::Result<PromiseRaw<'env, Vec<TimerEntryJs>>> {
+        let t = self.inner.clone();
+        run(env, async move { t.list_timers().await }, |_, pairs| {
+            Ok(pairs
+                .into_iter()
+                .map(|(id, json)| TimerEntryJs { id, json })
+                .collect())
         })
     }
 

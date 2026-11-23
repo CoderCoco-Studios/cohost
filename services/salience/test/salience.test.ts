@@ -149,3 +149,128 @@ test("Scheduler.cooling and Context.last/markSeenEvents", async () => {
   ctx.markSeenEvents([ctx.last()!]);
   assert.deepEqual(ctx.unseen().map((e) => (e as { text: string }).text), ["a"]);
 });
+
+// ---- counting a burst (issue #172)
+
+const from = (userId: string, text: string, extra: Record<string, unknown> = {}) => chat(text, { userId, user: `name-${userId}`, ...extra });
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} !~ ${b}`);
+const speech = (text: string) =>
+  ({ id: `s${seq++}`, type: "speech.heard", ts: Date.now(), source: "t", data: { speaker: "chris", text, final: true } }) as never;
+
+test("Scheduler: one viewer's ten-line burst adds one score", async () => { // @spec SAL-DECIDE-002, SAL-DECIDE-011, SAL-DECIDE-013
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  for (let i = 0; i < 10; i++) ctx.push(from("v1", `line ${i}`));
+  const d = await sch.decide(ctx, false, false);
+  near(d.score, 0.15);
+  assert.equal(d.speak, false);
+});
+
+test("Scheduler: one text pasted by ten viewers adds one score", async () => { // @spec SAL-DECIDE-002, SAL-DECIDE-011, SAL-DECIDE-012
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  for (let i = 0; i < 10; i++) ctx.push(from(`v${i}`, i % 2 ? "SPAM  spam" : "spam spam"));
+  near((await sch.decide(ctx, false, false)).score, 0.15);
+});
+
+test("Scheduler: ten viewers with ten texts all count", async () => { // @spec SAL-DECIDE-002, SAL-DECIDE-011
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  for (let i = 0; i < 10; i++) ctx.push(from(`v${i}`, `distinct ${i}`));
+  const d = await sch.decide(ctx, false, false);
+  near(d.score, 1.5);
+  assert.equal(d.speak, true);
+});
+
+test("Scheduler: viewers compare by platform and id, not display name", async () => { // @spec SAL-DECIDE-012
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(chat("one", { platform: "twitch", userId: "1", user: "Sam" }));
+  ctx.push(chat("two", { platform: "youtube", userId: "1", user: "Sam" }));
+  ctx.push(chat("three", { platform: "twitch", userId: "2", user: "Sam" }));
+  ctx.push(chat("four", { platform: "twitch", userId: "1", user: "Renamed" })); // same viewer as "one"
+  near((await sch.decide(ctx, false, false)).score, 0.45);
+});
+
+test("Scheduler: the walk takes the highest score first, so a viewer counts at their best line", async () => { // @spec SAL-DECIDE-009, SAL-DECIDE-014
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(from("v1", "plain"));
+  ctx.push(from("v1", "a question?"));
+  ctx.push(from("v1", "hey Coco", { mentionsCohost: true }));
+  const d = await sch.decide(ctx, false, false);
+  near(d.score, 1.0);
+  assert.equal((d.focus as { text: string }).text, "hey Coco");
+  assert.equal(d.reason, "mentioned");
+});
+
+test("Scheduler: equal scores go to the later event in window order, whatever the timestamps", async () => { // @spec SAL-DECIDE-009, SAL-DECIDE-014
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  const early = from("v1", "first plain");
+  const late = from("v1", "second plain");
+  (early as { ts: number }).ts = 2000; // the earlier arrival carries the later timestamp
+  (late as { ts: number }).ts = 1000;
+  ctx.push(early);
+  ctx.push(late);
+  const d = await sch.decide(ctx, false, false);
+  assert.equal((d.focus as { text: string }).text, "second plain");
+  near(d.score, 0.15);
+});
+
+test("Scheduler: speech and vision always count, repeated text included", async () => { // @spec SAL-DECIDE-010
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(from("v1", "hi"));
+  ctx.push(vision("screen changed"));
+  ctx.push(vision("screen changed"));
+  ctx.push(speech("hi"));
+  ctx.push(speech("hi"));
+  near((await sch.decide(ctx, false, false)).score, 0.15 + 0.3 + 0.3 + 0.9 + 0.9);
+});
+
+test("Scheduler: a discounted line adds nothing, is never the focus, and is reported scored", async () => { // @spec SAL-DECIDE-007, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(from("v1", "why?")); // 0.55
+  ctx.push(from("v1", "ok")); // 0.15, same viewer: discounted
+  ctx.push(from("v2", "why?")); // 0.55, later than v1's equal line so walked first and counted
+  const d = await sch.decide(ctx, false, false);
+  near(d.score, 0.55);
+  assert.equal(d.scored.length, 3);
+  assert.equal(d.focus, ctx.unseen()[2]);
+  ctx.markSeenEvents(d.scored);
+  assert.equal(ctx.unseen().length, 0);
+  ctx.push(from("v1", "another")); // a new burst once marked seen
+  near((await sch.decide(ctx, false, false)).score, 0.15);
+});
+
+test("Scheduler: a discounted line stays discounted at every tick while unseen", async () => { // @spec SAL-DECIDE-015
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(from("v1", "a"));
+  ctx.push(from("v1", "b"));
+  for (let i = 0; i < 4; i++) near((await sch.decide(ctx, false, false)).score, 0.15);
+});
+
+test("Scheduler: idle chatter reports every unseen event scored, counted or not", async () => { // @spec SAL-DECIDE-007, SAL-DECIDE-015
+  const sch = new Scheduler(salienceCfg({ idle_chatter_ms: 1 }), rulesScorer());
+  const ctx = new Context(20);
+  ctx.push(from("v1", "a"));
+  ctx.push(from("v1", "b"));
+  await new Promise((r) => setTimeout(r, 5));
+  const d = await sch.decide(ctx, false, false);
+  assert.equal(d.reason, "idle chatter");
+  assert.equal(d.scored.length, 2);
+});
+
+test("Scheduler: counting reads and changes no reflex state", async () => { // @spec SAL-DECIDE-016
+  const reflexes = new Reflexes([{ match: "raid", on: ["chat"], say: ["Raid!"], emotion: "happy", cooldown_ms: 1000 }]);
+  const sch = new Scheduler(salienceCfg(), rulesScorer());
+  const ctx = new Context(40);
+  assert.ok(reflexes.test("chat", "raid incoming", 0)); // fires once
+  for (let i = 0; i < 20; i++) ctx.push(from("v1", `raid ${i}`)); // a flood
+  await sch.decide(ctx, false, false);
+  assert.equal(reflexes.test("chat", "raid again", 500), undefined, "still inside its own cooldown after a decision");
+  assert.ok(reflexes.test("chat", "raid again", 1001), "fires under its own cooldown only");
+});

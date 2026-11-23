@@ -194,7 +194,8 @@ function cutOff(raw: unknown): boolean {
 }
 
 /** A tool call as a backend sent it: whole (Ollama, or a single JSON body), or one fragment of the call at `index` (OpenAI streams). */
-interface WireCall { index?: number; id?: string; name?: string; args?: unknown }
+/** `fragment` marks a piece of a streamed call (OpenAI deltas), which may continue the last call when it has no index or id. */
+interface WireCall { index?: number; id?: string; name?: string; args?: unknown; fragment?: boolean }
 
 /**
  * Collects a reply's calls and builds them in the order the model asked (LLM-TOOL-024). Fragments of one call join by `index`
@@ -203,9 +204,11 @@ interface WireCall { index?: number; id?: string; name?: string; args?: unknown 
  */
 class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOOL-024
   private calls = new Map<number, { id?: string; name?: string; args?: unknown }>();
-  private seq = 0;
+  private last: number | undefined;
   add(c: WireCall): void {
-    const i = c.index ?? this.seq++;
+    // An unindexed fragment without an id continues the last call; any other unindexed call takes the next free position.
+    const i = c.index ?? (c.fragment && c.id === undefined && this.last !== undefined ? this.last : Math.max(-1, ...this.calls.keys()) + 1);
+    this.last = i;
     const cur = this.calls.get(i) ?? {};
     if (c.id !== undefined) cur.id = c.id;
     if (c.name !== undefined) cur.name ??= c.name;
@@ -217,7 +220,9 @@ class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOO
     const out: ToolCall[] = [];
     for (const i of [...this.calls.keys()].sort((a, b) => a - b)) {
       const c = this.calls.get(i)!;
-      if (capped && dropCut && cutOff(c.args)) continue;
+      // A call the cap cut before its arguments began (no arguments, or blank) is incomplete too.
+      const unbegun = c.args === undefined || (typeof c.args === "string" && c.args.trim() === "");
+      if (capped && dropCut && (unbegun || cutOff(c.args))) continue;
       out.push({ id: c.id ?? `call_${i}`, name: c.name ?? "", ...parseArguments(c.args) });
     }
     return out;
@@ -428,15 +433,23 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
     let asked = false;
     let finished = false;
     /** The whole reply as one document, when the backend sent one rather than a stream (LLM-STREAM-029). */
-    let whole: { value: unknown } | undefined;
+    let whole: { value: any } | undefined;
     if ((res.headers.get("content-type") ?? "").startsWith("application/json")) { // @spec LLM-STREAM-029
       whole = { value: parseWhole(plan.name, await clocked(() => res.text())) };
     } else {
       let wholeText: string | undefined;
+      let sawLine = false;
       outer: for await (const line of lines(res.body)) { // @spec LLM-STREAM-002, LLM-STREAM-005
         if (wholeText !== undefined) { wholeText += `\n${line}`; continue; } // @spec LLM-STREAM-029
+        const firstLine = !sawLine;
+        if (line.trim() !== "") sawLine = true;
         for (const ev of plan.line(line)) {
-          if (ev.kind === "whole") { wholeText = line; break; } // @spec LLM-STREAM-029
+          if (ev.kind === "whole") {
+            // A single JSON body is the whole reply only when it is the first line of the answer.
+            if (!firstLine) throw streamError(plan.name, "a JSON object arrived after stream events");
+            wholeText = line;
+            break;
+          } // @spec LLM-STREAM-029
           if (ev.kind === "keepalive") { mark = Date.now(); continue; }
           if (ev.kind === "end") throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-037, LLM-STREAM-022
           sawOutput = true;
@@ -449,6 +462,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       }
       if (wholeText !== undefined) whole = { value: parseWhole(plan.name, wholeText) }; // @spec LLM-STREAM-029
     }
+    if (whole !== undefined && whole.value?.error !== undefined) throw backendError(plan.name, whole.value.error); // @spec LLM-STREAM-023
     if (whole !== undefined) {
       const one = plan.whole(whole.value); // @spec LLM-STREAM-029
       sawOutput = true;
@@ -465,6 +479,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
     for (const call of toolCalls) {
       throwIfAborted();
       yield { type: "tool_call", call }; // @spec LLM-STREAM-003, LLM-STREAM-006, LLM-STREAM-012, LLM-STREAM-032
+      throwIfAborted(); // @spec LLM-STREAM-026
     }
     yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls), toolCalls) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028
   } finally {
@@ -492,7 +507,11 @@ function ollamaLine(line: string): WireEvent[] { // @spec LLM-STREAM-002, LLM-ST
 /** OpenAI-compatible framing: SSE. `data:` chunks carry `delta.content` and `delta.tool_calls` fragments, and the `finish_reason` chunk is final; `[DONE]` before it ends the reply without one (LLM-STREAM-004, LLM-STREAM-006, LLM-STREAM-037). A line that starts with `{` is a single JSON body (LLM-STREAM-029). Comments and other fields are keepalives. */
 function openaiLine(line: string): WireEvent[] { // @spec LLM-STREAM-004, LLM-STREAM-005, LLM-STREAM-006, LLM-STREAM-029
   if (!line.trim()) return [];
-  if (line.trimStart().startsWith("{")) return [{ kind: "whole" }]; // @spec LLM-STREAM-029
+  if (line.trimStart().startsWith("{")) { // @spec LLM-STREAM-029
+    // A raw JSON line: an `error` field is the backend's failure; otherwise it starts a single-body reply (streamReply decides).
+    try { const j = JSON.parse(line); if (j?.error !== undefined) throw backendError("openai", j.error); } catch (e) { if (e instanceof ChatError) throw e; }
+    return [{ kind: "whole" }];
+  }
   if (!line.startsWith("data:")) return [{ kind: "keepalive" }];
   const payload = line.slice(5).trim();
   if (payload === "[DONE]") return [{ kind: "end" }];
@@ -503,7 +522,7 @@ function openaiLine(line: string): WireEvent[] { // @spec LLM-STREAM-004, LLM-ST
   const content = choice?.delta?.content;
   if (typeof content === "string" && content !== "") evs.push({ kind: "content", text: content });
   for (const c of choice?.delta?.tool_calls ?? []) {
-    evs.push({ kind: "call", call: { index: c?.index, id: c?.id, name: c?.function?.name, args: c?.function?.arguments } }); // @spec LLM-TOOL-007
+    evs.push({ kind: "call", call: { index: c?.index, id: c?.id, name: c?.function?.name, args: c?.function?.arguments, fragment: true } }); // @spec LLM-TOOL-007
   }
   if (evs.length === 0) evs.push({ kind: "keepalive" });
   if (choice?.finish_reason) evs.push({ kind: "final", capped: choice.finish_reason === "length", asked: choice.finish_reason === "tool_calls" });
@@ -559,7 +578,7 @@ export class Ollama implements ChatProvider, Embedder {
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
     assertTextHistory(messages);
-    return (await this.complete(messages, opts)).text;
+    return (await this.complete(messages, { ...opts, tools: undefined })).text;
   }
 
   async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016, LLM-IF-019, LLM-TOOL-004, LLM-TOOL-024, LLM-TOOL-001, LLM-TOOL-002
@@ -662,7 +681,7 @@ export class OpenAICompatible implements ChatProvider {
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-004
     assertTextHistory(messages);
-    return (await this.complete(messages, opts)).text;
+    return (await this.complete(messages, { ...opts, tools: undefined })).text;
   }
 
   async complete(messages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016, LLM-IF-017, LLM-TOOL-007, LLM-TOOL-020, LLM-TOOL-024, LLM-TOOL-022, LLM-TOOL-001, LLM-TOOL-002

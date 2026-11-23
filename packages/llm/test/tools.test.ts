@@ -1,10 +1,10 @@
 // Tool calls on Ollama and OpenAI-compatible, and the provider-independent tool rules (issue #162).
-// Tools are not carried across the boundary yet, so every test here fails until they are. Providers are read through `any`.
+// Providers are read through `any` so a test can pass the request shapes the spec names.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ConfigSchema } from "@cohost/config";
-import { OpenAICompatible, Ollama } from "../src/index.js";
+import { OpenAICompatible, Ollama, ChatError } from "../src/index.js";
 
 const llmCfg = (over: Record<string, unknown> = {}) =>
   ConfigSchema.shape.llm.parse({ provider: "openai", model: "m", embed_model: "e", ...over });
@@ -23,13 +23,13 @@ const make = (kind: Kind, url: string, over: Record<string, unknown> = {}): any 
 type Seen = { url: string; body: Record<string, any> };
 type Out = { write(s: string): void; end(): void };
 /** A backend that records requests and scripts each response by hand. */
-async function serve(script: (out: Out, n: number) => void | Promise<void>) {
+async function serve(script: (out: Out, n: number) => void | Promise<void>, type = "text/event-stream") {
   const seen: Seen[] = [];
   const s = http.createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
     seen.push({ url: req.url ?? "", body: raw ? JSON.parse(raw) : {} });
     const out: Out = {
-      write: (c) => { if (!res.headersSent) res.writeHead(200, { "content-type": "text/event-stream" }); res.write(c); },
+      write: (c) => { if (!res.headersSent) res.writeHead(200, { "content-type": type }); res.write(c); },
       end: () => { if (!res.headersSent) res.writeHead(200); res.end(); },
     };
     await script(out, seen.length);
@@ -493,4 +493,95 @@ test("a backend that answers a stream request with one JSON body gives text, one
     const n = await json(kind === "ollama" ? ollamaBody("", [oCall("get_weather", { city: "x" })]) : openaiBody(null, [aCall("a", "get_weather", '{"city":"x"}')], "tool_calls"));
     assert.deepEqual((await collect(make(kind, n.url).stream(hello, { tools: [weather] }))).map((e) => e.type), ["tool_call", "done"], `${kind} no text`);
   }
+});
+
+// ---- review round 1
+
+// @spec LLM-STREAM-023, LLM-STREAM-029
+test("openai stream: a raw JSON error line after stream text is a stream ChatError; a single JSON error body is one too", async () => {
+  const b = await serve((o) => { o.write(txt("hi")); o.write('{"error":{"message":"boom"}}\n'); o.end(); });
+  const err = await failure(collect(make("openai", b.url).stream(hello, { tools: [weather] })));
+  assert.ok(err instanceof ChatError);
+  assert.equal(err.kind, "stream");
+  assert.match(err.message, /boom/);
+  const j = await json({ error: "nope" });
+  const e2 = await failure(collect(make("openai", j.url).stream(hello, { tools: [weather] })));
+  assert.ok(e2 instanceof ChatError);
+  assert.equal(e2.kind, "stream");
+});
+
+// @spec LLM-STREAM-029
+test("a single JSON answer labelled application/json is read as the whole reply on both providers; a JSON error in it is a stream ChatError", async () => {
+  const bodies: Record<Kind, unknown> = {
+    ollama: ollamaBody("Looking.", [oCall("get_weather", { city: "Oslo" })]),
+    openai: openaiBody("Looking.", [aCall("a", "get_weather", '{"city":"Oslo"}')], "tool_calls"),
+  };
+  for (const kind of kinds) {
+    const b = await serve((o) => { o.write(JSON.stringify(bodies[kind])); o.end(); }, "application/json");
+    const evs = await collect(make(kind, b.url).stream(hello, { tools: [weather] }));
+    assert.deepEqual(evs.map((e) => e.type), ["text", "tool_call", "done"], kind);
+    assert.equal(evs[2].result.finish, "tool_calls", kind);
+  }
+  const e = await serve((o) => { o.write(JSON.stringify({ error: { message: "boom" } })); o.end(); }, "application/json");
+  const err = await failure(collect(make("openai", e.url).stream(hello, { tools: [weather] })));
+  assert.ok(err instanceof ChatError);
+  assert.equal(err.kind, "stream");
+});
+
+// @spec LLM-IF-011, LLM-CHAT-010
+test("chat() offers no tools even when its options carry them, and keeps the stops", async () => {
+  for (const kind of kinds) {
+    const b = await json(kind === "ollama" ? ollamaBody("ok", undefined) : openaiBody("ok", undefined));
+    await make(kind, b.url).chat(hello, { tools: [weather] });
+    assert.equal("tools" in b.seen[0]!.body, false, `${kind} tools key sent`);
+    const stops = kind === "ollama" ? b.seen[0]!.body.options.stop : b.seen[0]!.body.stop;
+    assert.deepEqual(stops, stopsAll, `${kind} stops`);
+  }
+});
+
+// @spec LLM-STREAM-026, LLM-STREAM-012
+test("a caller abort after the last tool_call event stops the stream before done", async () => {
+  const b = await serve((o) => { o.write(olLine("", [oCall("get_weather", { city: "Oslo" })])); o.write(olEnd()); o.end(); });
+  const ac = new AbortController();
+  const it = make("ollama", b.url).stream(hello, { tools: [weather], signal: ac.signal })[Symbol.asyncIterator]();
+  const first = await it.next();
+  assert.equal(first.value.type, "tool_call");
+  ac.abort("stop-now");
+  assert.equal(await failure(it.next()), "stop-now");
+});
+
+// @spec LLM-TOOL-022
+test("openai: a call the cap cut before any argument is dropped, streamed and complete", async () => {
+  const s = await serve((o) => {
+    o.write(frag(0, { id: "a", type: "function", function: { name: "get_weather", arguments: '{"city":"Oslo"}' } }));
+    o.write(frag(1, { id: "b", type: "function", function: { name: "get_weather" } }));
+    o.write(frag(2, { id: "c", type: "function", function: { name: "get_weather", arguments: "  " } }));
+    o.write(fin("length"));
+    o.end();
+  });
+  const evs = await collect(make("openai", s.url).stream(hello, { tools: [weather] }));
+  assert.deepEqual(evs.filter((e) => e.type === "tool_call").map((e) => e.call.id), ["a"]);
+  assert.equal(evs.at(-1).result.finish, "length");
+  const j = await json(openaiBody("", [
+    aCall("a", "get_weather", '{"city":"Oslo"}'),
+    { id: "b", type: "function", function: { name: "get_weather" } },
+    aCall("c", "get_weather", ""),
+  ], "length"));
+  const r = await make("openai", j.url).complete(hello, { tools: [weather] });
+  assert.deepEqual(r.toolCalls.map((c: any) => c.id), ["a"]);
+});
+
+// @spec LLM-TOOL-007, LLM-TOOL-024
+test("openai stream: an unindexed fragment with no id continues the last call; an unindexed call with an id takes a free position", async () => {
+  const s = await serve((o) => {
+    o.write(frag(0, { id: "a", type: "function", function: { name: "get_weather", arguments: '{"city":' } }));
+    o.write(frag(undefined, { function: { arguments: '"Oslo"}' } }));
+    o.write(frag(2, { id: "c", type: "function", function: { name: "get-time", arguments: "{}" } }));
+    o.write(frag(undefined, { id: "d", type: "function", function: { name: "get_weather", arguments: '{"city":"Rome"}' } }));
+    o.write(fin("tool_calls"));
+    o.end();
+  });
+  const evs = await collect(make("openai", s.url).stream(hello, { tools: [weather, clock] }));
+  const calls = evs.filter((e) => e.type === "tool_call").map((e) => e.call);
+  assert.deepEqual(calls.map((c: any) => [c.id, c.arguments]), [["a", { city: "Oslo" }], ["c", {}], ["d", { city: "Rome" }]]);
 });

@@ -333,14 +333,14 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.vad.engine` | `silero` | `silero` (the Silero VAD model, run by onnxruntime) or `gap` (cut on the frame gap alone) |
 | `ears.vad.threshold` | `0.5` | The speech probability a frame needs, 0 to 1 |
 | `ears.max_utterance_ms` | `15000` | An utterance is cut at this length; the speaker's next speech opens a new one |
-| `ears.partials` | `off` | `on` publishes `speech.partial` while a connector utterance is open. It costs speech-to-text calls |
-| `ears.stt_gpu` | `false` | Declare that the STT backend runs on a GPU. It only silences a start-up warning about partials |
-| `ears.partial_step_ms` | `1000` | How often a growing partial transcription is made |
+| `ears.partials` | `off` | `on` publishes `speech.partial` while a connector utterance is open. With a batch engine each partial is a speech-to-text call; with a streaming engine the partials come from the session's hypotheses at no extra call |
+| `ears.stt_gpu` | `false` | Declare that the batch STT backend runs on a GPU. It only silences the start-up warning about partials of a batch engine; a streaming engine never warns |
+| `ears.partial_step_ms` | `1000` | With a batch engine, how often a growing partial transcription is made; with a streaming engine, the pacing window between published partials |
 | `ears.min_speech_ms` | `400` | The shortest speech worth transcribing |
 | `ears.stt_model` | `Systran/faster-whisper-small` | The model name sent to the STT server |
 | `ears.stt_engine` | `speaches` | `speaches`, `openai`, `nemotron`, `kyutai`, or `stub` for a fixed transcript with no STT server |
 | `ears.stt_fallback_engine` | `speaches` | `speaches`, `openai` or `none`: the batch engine for whole clips a streaming engine (`nemotron`, `kyutai`) cannot serve |
-| `ears.stt_timeout_ms` | `20000` | The bound on one speech-to-text request |
+| `ears.stt_timeout_ms` | `20000` | The bound on one speech-to-text call: a batch request, a streaming session's connect (aborted at the bound), a readiness ping, and a session's `finish()`. The buffered start of a session is bounded the same way |
 | `ears.max_stt_sessions` | `2` | How many speech-to-text sessions run at once (at least 1) |
 | `ears.openai.base_url` | `""` | The base URL of an OpenAI-compatible transcription server, for `openai`. Trailing slashes are dropped |
 | `ears.openai.api_key` | `""` | Its API key. A secret, in `secrets.yaml` |

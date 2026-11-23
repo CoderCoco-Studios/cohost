@@ -15,7 +15,8 @@ import { FakeBus, silentLog, testConfig } from "@cohost/testing";
 import { parseWav, wavWrap } from "@cohost/shared";
 import { createHttpCapture } from "../src/capture-http.js";
 import { decodeClip } from "../src/capture.js";
-import { Hearing, stubTranscriber } from "../src/hearing.js";
+import { Hearing } from "../src/hearing.js";
+import { createBatchEngine } from "../src/engines.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const dir = path.join(root, "examples/audio-in");
@@ -34,7 +35,7 @@ writeFileSync(clipPath, wavWrap(Buffer.alloc(32000), 16000, 1));
 
 async function listener(token = "") {
   const bus = new FakeBus();
-  const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: stubTranscriber() });
+  const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: (w) => createBatchEngine("stub", testConfig().ears).transcribe(w) });
   const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, token, hear: (c, s, src, id) => hearing.heardClip(c, s, src, id) });
   await cap.start();
   return { bus, cap, url: `http://127.0.0.1:${cap.port}/audio` };

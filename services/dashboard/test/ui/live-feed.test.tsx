@@ -47,9 +47,9 @@ test("each rendered type gets a row with a plain kind label, the event type as t
     ["service.lifecycle", { action: "restart", service: "voice", by: "dashboard", ok: false, detail: "boom" }, "Service", "status", /^restart voice by dashboard · FAILED \(boom\)/],
     ["inject.request", { target: "chat", kind: "text", text: "yo", remember: true }, "Test", "status", /^→ chat text "yo" \(remember\)/],
     ["inject.result", { id: "r", ok: true, detail: "queued" }, "Test", "status", /^ok · queued/],
-    ["voice.utterance", { id: "u", durationMs: 1234.4 }, "Voice", "status", /^audio ready 1234ms/],
-    ["voice.playing", { id: "u", sink: "obs" }, "Voice", "status", /^obs/],
-    ["voice.done", { id: "u", sink: "obs" }, "Voice", "status", /^obs/],
+    ["voice.utterance", { id: "u", seq: 0, durationMs: 1234.4 }, "Voice", "status", /^audio ready 1234ms/],
+    ["voice.playing", { id: "u", seq: 0, sink: "obs" }, "Voice", "status", /^obs/],
+    ["voice.done", { id: "u", seq: 0, sink: "obs" }, "Voice", "status", /^obs/],
   ];
   for (const [type, data] of cases) frame(app, type, data);
   frame(app, "affect.state", { x: 1 });

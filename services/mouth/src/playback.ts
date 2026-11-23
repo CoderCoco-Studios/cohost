@@ -116,7 +116,7 @@ export class Playback {
       this.stopping = false;
     }
     const heard = this.d.spoken && !clip && utt ? spokenSplit(utt.text, elapsed / utt.durationMs) : undefined;
-    await this.publish("voice.done", { id, sink: this.d.sink, interrupted: true, ...heard });
+    await this.publish("voice.done", { id, seq: 0, sink: this.d.sink, interrupted: true, ...heard });
     void this.pump(); // the stop itself does not wait for the next item to start
   }
 
@@ -162,7 +162,7 @@ export class Playback {
       this.current = undefined;
       this.playing = false;
       this.clipPlaying = false;
-      await this.publish("voice.done", { id, sink: this.d.sink });
+      await this.publish("voice.done", { id, seq: 0, sink: this.d.sink });
     } else {
       if (await this.giveUp(id, `playback stuck: player not idle ${Math.round(ms)} ms after the audio started`)) return;
       this.current = undefined;
@@ -181,7 +181,7 @@ export class Playback {
     this.clipPlaying = false;
     if (id) {
       try {
-        await this.d.bus.publish("voice.done", { id, sink: this.d.sink });
+        await this.d.bus.publish("voice.done", { id, seq: 0, sink: this.d.sink });
       } catch (err) {
         this.d.log.warn({ err: String(err), id }, "voice.done publish failed");
       }
@@ -234,7 +234,7 @@ export class Playback {
     }
     this.playing = true;
     this.playingSince = this.nowMs();
-    await this.publish("voice.playing", { id: next.id, sink: this.d.sink });
+    await this.publish("voice.playing", { id: next.id, seq: 0, sink: this.d.sink });
   }
 
   /** The current item was stopped before it started playing (MOUTH-STOP-010): forget it, stopping the player if it had begun. */
@@ -281,9 +281,9 @@ export class Playback {
     if (playing) {
       this.playing = true;
       this.playingSince = this.nowMs();
-      await this.publish("voice.playing", { id, sink: this.d.sink });
+      await this.publish("voice.playing", { id, seq: 0, sink: this.d.sink });
     }
-    await this.publish("voice.failed", { id, sink: this.d.sink, reason, ...(playing ? { fallback: { clip: playing.name, text: playing.text } } : {}) });
+    await this.publish("voice.failed", { id, seq: 0, sink: this.d.sink, reason, ...(playing ? { fallback: { clip: playing.name, text: playing.text } } : {}) });
     return playing !== undefined;
   }
 

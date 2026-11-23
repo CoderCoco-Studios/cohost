@@ -198,7 +198,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (req.method === "POST" && url.pathname === "/sink") {
         const { event, id } = JSON.parse(await readText(req)) as { event?: unknown; id: string };
         if (event !== "playing" && event !== "done") { res.writeHead(400); res.end("event must be 'playing' or 'done'"); return; } // @spec DASH-SINK-003
-        await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, sink: "dashboard" });
+        await d.bus.publish(event === "playing" ? "voice.playing" : "voice.done", { id, seq: 0, sink: "dashboard" });
         res.writeHead(204); res.end();
         return;
       }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { event, recordingLog, testConfig } from "@cohost/testing";
 import { EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "../src/session.js";
 
-const utterance = () => event("voice.utterance", { id: "u1", text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 });
+const utterance = () => event("voice.utterance", { id: "u1", seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 });
 const inject = () => event("inject.request", { id: "i1", target: "ears", kind: "audio", uploadId: "0123456789abcdef0123456789abcdef", remember: false });
 
 // @spec EARS-INJ-009
@@ -20,7 +20,7 @@ test("the ears loop reads inject.request only, and the handler ignores anything 
   const handled: string[] = [];
   const h = createEarsHandler({ onInject: async (ev) => { handled.push(ev.data.id); } });
   await h(utterance());
-  await h(event("voice.playing", { id: "u1", sink: "discord" }));
+  await h(event("voice.playing", { id: "u1", seq: 0, sink: "discord" }));
   assert.deepEqual(handled, []);
 });
 

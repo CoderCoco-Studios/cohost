@@ -90,7 +90,7 @@ test("mute and pause change nothing in mouth: it still queues every utterance", 
   const h = createMouthHandler({ outputs: [out], log: recordingLog().log, bus: new FakeBus(), enabled: (n) => r.isEnabled(n), control: reader });
   await h(event("control", { cmd: "mute" }));
   await h(event("control", { cmd: "pause" }));
-  await h(event("voice.utterance", { id: "u1", text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 }));
+  await h(event("voice.utterance", { id: "u1", seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 }));
   assert.deepEqual(queued, ["u1"]);
 });
 
@@ -101,7 +101,7 @@ test("an output switched off live skips later utterances without queueing, claim
   const mk = (name: string): MouthOutput => ({ name, isReady: () => true, playback: { enqueue: async (id) => { queued.push(`${name}:${id}`); } } });
   const reader = controlFor("mouth", { set_routing: setRoutingHandler(r, { heartbeat: { setDetail() {} }, log: recordingLog().log }) });
   const h = createMouthHandler({ outputs: [mk("discord"), mk("dryrun")], log: recordingLog().log, bus: new FakeBus(), enabled: (n) => r.isEnabled(n), control: reader });
-  const utt = (id: string) => event("voice.utterance", { id, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
+  const utt = (id: string) => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
   await h(utt("a"));
   await h(setRouting({ discord: { enabled: false } }));
   await h(utt("b"));

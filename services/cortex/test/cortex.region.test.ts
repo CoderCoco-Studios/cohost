@@ -90,7 +90,7 @@ test("recall: no focus text falls back to what's on screen; nothing at all skips
   const { cortex, bus } = setup({ cfg: { brain: { memory: { recall_k: 4 } } } });
   await cortex.think({ reason: "idle chatter", score: 0 });
   assert.equal(bus.of("memory.recall.request").length, 0);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.onEvent(event("vision.summary", { text: "a boss fight", changed: true }));
   const t = cortex.think({ reason: "idle chatter", score: 0 });
   await waitFor(() => bus.of("memory.recall.request").length === 1);
@@ -142,7 +142,7 @@ test("only one thought at a time: a second focus while thinking just re-reports 
   llm.reply = () => "[happy] again";
   assert.deepEqual(statuses(), ["thinking", "thinking", "speaking"]);
   assert.equal(bus.of("brain.status")[1]!.detail, "engaged");
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.think(mention()); // and it's free again afterwards
   assert.equal(llm.calls.length, 2);
 });
@@ -166,9 +166,9 @@ test("someone else's line (reflex/operator) holds the cortex until its voice.don
   await cortex.think(mention());
   assert.equal(llm.calls.length, 0);
   assert.deepEqual(statuses(), ["speaking"]);
-  await cortex.onEvent(event("voice.done", { id: "other", sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: "other", seq: 0, sink: "x" }));
   assert.deepEqual(statuses(), ["speaking"]);
-  await cortex.onEvent(event("voice.done", { id: "reflex-1", sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: "reflex-1", seq: 0, sink: "x" }));
   assert.deepEqual(statuses(), ["speaking", "idle"]);
   await cortex.think(mention());
   assert.equal(llm.calls.length, 1);
@@ -204,7 +204,7 @@ test("speaking_timeout_ms measures elapsed time, not the wall clock: a clock ste
     await cortex.think(mention());
   } finally { stepped.mock.restore(); }
   assert.equal(llm.calls.length, 0, "the line is still playing: no reply over it");
-  await cortex.onEvent(event("voice.done", { id: "playing", sink: "discord" }));
+  await cortex.onEvent(event("voice.done", { id: "playing", seq: 0, sink: "discord" }));
 });
 
 // @spec CTX-GATE-003, CTX-SAY-004
@@ -213,7 +213,7 @@ test("while it waits on voice.done for its own line, it doesn't start another", 
   await cortex.think(mention());
   await cortex.think(mention());
   assert.equal(llm.calls.length, 1);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "virtual" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "virtual" }));
   await cortex.think(mention());
   assert.equal(llm.calls.length, 2);
 });
@@ -282,7 +282,7 @@ test("critic: sees the line and transcript; can veto, rewrite and re-emote", asy
 // @spec CTX-VIEWER-001, CTX-VIEWER-003
 test("viewer notes: new and regular viewers are introduced once, to that viewer's reply only", async () => {
   const { cortex, bus, llm } = setup();
-  const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, sink: "x" }));
+  const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
   await cortex.onEvent(event("memory.viewer", { user: "Bob", isNew: true, msgCount: 1, regular: false }));
   await cortex.onEvent(event("memory.viewer", { user: "amy", isNew: false, msgCount: 40, regular: true }));
   await cortex.onEvent(event("memory.viewer", { user: "cat", isNew: false, msgCount: 10, regular: false }));
@@ -339,7 +339,7 @@ test("control: say speaks as the operator; forget_context clears the window and 
   await cortex.onEvent(event("control", { cmd: "say", text: "brb" }));
   const [op] = bus.of("brain.say");
   assert.deepEqual([op!.text, op!.emotion, op!.gesture, op!.reason], ["brb", "neutral", undefined, "operator"]);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.onEvent(event("control", { cmd: "say" })); // no text: nothing to say
   assert.equal(bus.of("brain.say").length, 1);
 
@@ -444,7 +444,7 @@ test("speaking_timeout_ms with no voice.done releases the status: idle, or muted
   // voice.done in time cancels the release; so does the cortex's own line finishing.
   const c = setup({ cfg });
   await c.cortex.onEvent(event("brain.say", { id: "ok", text: "x", emotion: "neutral" }, "operator"));
-  await c.cortex.onEvent(event("voice.done", { id: "ok", sink: "x" }));
+  await c.cortex.onEvent(event("voice.done", { id: "ok", seq: 0, sink: "x" }));
   await new Promise((r) => setTimeout(r, 60));
   assert.deepEqual(c.statuses(), ["idle"]);
 });
@@ -476,12 +476,12 @@ test("viewer note: kept when the reply is vetoed, dropped or fails; deleted once
   assert.equal(llm.calls.length, 3);
   for (const c of llm.calls) assert.match(c[0]!.content, note);
 
-  await cortex.onEvent(event("voice.done", { id: "op", sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: "op", seq: 0, sink: "x" }));
   llm.reply = () => "[happy] hello bob";
   await cortex.think(mention("bob")); // spoken: note used and consumed
   assert.match(llm.calls[3]![0]!.content, note);
   assert.equal(bus.of("brain.say").length, 1);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.think(mention("bob"));
   assert.doesNotMatch(llm.calls[4]![0]!.content, note);
 });
@@ -535,7 +535,7 @@ test("notes request: no focus who means the window users alone; an empty list sk
   await cortex.onEvent(say("amy"));
   await cortex.think({ reason: "idle chatter", score: 0 });
   assert.deepEqual(bus.of("memory.notes.request")[0]!.users, ["amy"]);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   await cortex.think(mention("amy"));
   const ids = bus.of("memory.notes.request").map((r) => r.id);
   assert.equal(new Set(ids).size, 2);
@@ -661,11 +661,11 @@ test("notes live for one think only: a deleted note is absent from the next repl
   const { cortex, bus, llm } = setup({ notes: () => answer });
   await cortex.think(mention("alice"));
   assert.match(llm.system, /Biscuit/);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   answer = []; // the owner deleted the note
   await cortex.think(mention("alice"));
   assert.doesNotMatch(llm.system, /Biscuit|People here/);
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[1]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[1]!.id, seq: 0, sink: "x" }));
   answer = [];
   await cortex.onEvent(event("control", { cmd: "forget_context" }));
   await cortex.think(mention("alice"));

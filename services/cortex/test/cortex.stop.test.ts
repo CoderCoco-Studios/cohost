@@ -30,7 +30,7 @@ function setup() {
 const mention = () => ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who: "bob", text: "hey Coco, how are you?", mention: true } });
 const stop = (ids?: string[]) => event("voice.stop" as never, { reason: "barge-in", ...(ids ? { ids } : {}) } as never);
 const line = (id: string) => event("brain.say", { id, text: "Oof.", emotion: "surprised", reason: "reflex: died" }, "salience");
-const done = (id: string, extra: Record<string, unknown> = {}) => event("voice.done", { id, sink: "discord", ...extra } as never);
+const done = (id: string, extra: Record<string, unknown> = {}) => event("voice.done", { id, seq: 0, sink: "discord", ...extra } as never);
 
 // @spec CTX-EVT-010
 test("a voice.stop without ids ends every pending line and publishes idle once none is pending", async () => {

@@ -296,6 +296,12 @@ export const ConfigSchema = z.object({
       fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
       /** The cortex stays silent rather than say a line this similar (0..1) to a recent one of its own; 0 turns the check off. */
       repeat_similarity: z.number().min(0).max(1).default(0.8), // @spec CFG-SCH-046
+      /** The shortest clause a streamed reply is cut into (cortex cuts at a clause boundary once it has this many characters). */
+      clause_min_chars: z.number().int().min(1).default(24), // @spec CFG-SCH-072
+      /** The longest clause; a clause over it is cut at the last word boundary. Not below clause_min_chars (checked on the brain). */
+      clause_max_chars: z.number().int().default(160), // @spec CFG-SCH-073
+      /** The most clauses one streamed reply may have before the cortex closes it with cut `length`. */
+      max_clauses: z.number().int().min(1).max(16).default(8), // @spec CFG-SCH-074
       /** Inhibition: a check on each reply before it's spoken. rules = pass-through. */
       critic: ModuleSchema,
     }).prefault({}),
@@ -304,6 +310,10 @@ export const ConfigSchema = z.object({
     // The issue sits on the key, so the loader names `brain.working_memory_own_lines` and not the parent object.
     if (v.working_memory_own_lines >= v.working_memory_events) {
       ctx.addIssue({ code: "custom", path: ["working_memory_own_lines"], message: `must be less than brain.working_memory_events (${v.working_memory_events}): the window has to keep room for events other than the co-host's own lines` });
+    }
+    // @spec CFG-SCH-073
+    if (v.cortex.clause_max_chars < v.cortex.clause_min_chars) {
+      ctx.addIssue({ code: "custom", path: ["cortex", "clause_max_chars"], message: `must not be below brain.cortex.clause_min_chars (${v.cortex.clause_min_chars})` });
     }
   }),
   /**

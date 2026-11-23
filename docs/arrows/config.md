@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 231 specs: 109 implemented, 0 deferred, 122 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 231 specs: 114 implemented, 0 deferred, 117 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,10 +23,11 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 109 `[x]`, 122 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 114 `[x]`, 117 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
+- packages/config/test/config-clauses.test.ts
 - packages/config/test/config.test.ts
 - packages/config/test/config-c3.test.ts
 - packages/config/test/config-barge-in.test.ts
@@ -70,15 +71,17 @@ Orientation:
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-007 | 7 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-015 | 14 | 0 | 1 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-014 | 9 | 0 | 5 |
+| Clause settings presentation | CFG-PRES-015 | 1 | 0 | 0 |
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 1 | 0 | 1 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 0 | 0 | 13 |
 | Schema | CFG-SCH-001 to CFG-SCH-071 | 38 | 0 | 33 |
+| Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-010 | 4 | 0 | 6 |
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
-| User-owned files | CFG-USR-001 to CFG-USR-019 (CFG-USR-005 does not exist) | 14 | 0 | 4 |
+| User-owned files | CFG-USR-001 to CFG-USR-019 (CFG-USR-005 does not exist) | 15 | 0 | 3 |
 
-**Summary:** 231 specs: 109 implemented, 122 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. The renderer settings (CFG-SCH-097 to -101, CFG-PRES-018 to -020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008, with CFG-PRES-005, -007, CFG-SCH-006 and CFG-ISO-005 revised for the `browser` driver and the `renderer` section) are specified and not built. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 231 specs: 114 implemented, 117 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. The renderer settings (CFG-SCH-097 to -101, CFG-PRES-018 to -020, CFG-USR-021, CFG-ISO-011, CFG-LOAD-008, with CFG-PRES-005, -007, CFG-SCH-006 and CFG-ISO-005 revised for the `browser` driver and the `renderer` section) are specified and not built. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 
@@ -89,4 +92,4 @@ Annotated tests that cover only part of their spec line: CFG-SCH-001 (only `coho
 - Speech and vision engines (design 2026-11-16): the engine, fallback and provider keys, the `network` section, five new secret paths, the widened sensitive list, `VISION_PROVIDER`, the gap-not-failure rule for blank engine values (`vision.model` included) and `egressDestinations` (CFG-SCH-055 to -071, CFG-EGR-001 to -013, CFG-PRES-011, -014, CFG-SEC-003, CFG-ISO-004, -006, CFG-USR-016, -019).
 - YouTube chat (design 2026-11-16, no code): `chat.sources`, the `chat.youtube` section and its numeric ranges, the twelfth secret path `chat.youtube.api_key`, the `CHAT_SOURCES` override and the example files (CFG-SCH-048 to CFG-SCH-054, CFG-SEC-003, CFG-SCH-010, CFG-SCH-039, CFG-ISO-001 to CFG-ISO-004, CFG-ISO-006, CFG-ISO-007, CFG-PRES-006, CFG-USR-016, CFG-USR-018).
 ### Must Fix
-The control plane manifest declares the three sections `viewer_text`, `brain.input_limits` and `brain.working_memory_own_lines` for the units that read them (module-contract MOD-MAN-002, whose `tools`, `network` and chat `cohost` entries are still open). CFG-USR-017 stays open for the three `brain.cortex` clause keys the shipped example does not carry yet.
+The control plane manifest declares the three sections `viewer_text`, `brain.input_limits` and `brain.working_memory_own_lines` for the units that read them (module-contract MOD-MAN-002, whose `tools`, `network` and chat `cohost` entries are still open).

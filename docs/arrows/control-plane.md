@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 78 `[x]`, 31 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 80 `[x]`, 29 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -80,8 +80,9 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 4 | 0 | 0 |
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -017 | 15 | 15 | 0 | 0 |
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
+| Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-016 (017 not in #193) | 2 | 2 | 0 | 0 |
 
-**Summary:** 111 specs: 78 implemented, 31 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 111 specs: 80 implemented, 29 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

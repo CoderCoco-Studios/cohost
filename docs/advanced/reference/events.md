@@ -28,7 +28,8 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 | --- | --- | --- | --- |
 | `attention.focus` | `salience` | `cortex` | `reason` (free text, such as `mentioned`), `score`, `focus` (optional: `kind` of `chat`, `speech` or `vision`, `who`, `text`, `mention`), `timing`, `injected`, `remember` |
 | `affect.state` | `affect` | `salience`, `cortex`, `avatar` | `valence` (-1 to 1), `arousal` (0 to 1), `mood` (the nearest emotion), `cause` (optional) |
-| `brain.say` | `cortex`, `salience` (a [reflex](../../start/glossary.md#reflex)), the dashboard (unit-level injection) | `voice`, `avatar`, `affect`, `salience`, `cortex`, `memory` | `id`, `text`, `emotion`, `gesture` (optional), `reason` (optional), `route` (optional: the mouth outputs this line is for; absent means every enabled output), `timing`, `injected`, `remember` |
+| `brain.say` | `cortex`, `salience` (a [reflex](../../start/glossary.md#reflex)), the dashboard (unit-level injection) | `voice`, `avatar`, `affect`, `salience`, `cortex`, `memory` | `id`, `text`, `emotion`, `gesture` (optional), `reason` (optional), `route` (optional: the mouth outputs this line is for; absent means every enabled output), `more` (optional, `true` when later clauses follow as `brain.clause` events), `timing`, `injected`, `remember` |
+| `brain.clause` | `cortex` | `voice`, `mouth`, `memory`, `cortex`, `dashboard` | `id` (the line's `brain.say` id), `seq` (1 or more, counting from the `brain.say` text as clause 0), `text` (empty only on the closing event), `last` (optional, `true` on the closing event), `through` (required with `last`: the last `seq` sinks should expect audio for), `cut` (optional, only with `last`: why the reply ended early) |
 | `brain.status` | `cortex` | `salience`, `memory` | `state` (`idle`, `thinking`, `speaking` or `muted`), `detail` (optional) |
 | `memory.recall.request` | `cortex` | `memory` | `id`, `query`, `k` (optional) |
 | `memory.recall.reply` | `memory` | `cortex` | `id`, `memories[]`: `ts`, `kind` (`chat`, `speech`, `self` or `note`), `who`, `text`, `similarity` (optional). An empty list is a valid answer |
@@ -42,10 +43,10 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
-| `voice.utterance` | `voice` | `avatar`, `mouth` | `id`, `text`, `emotion`, `gesture` (optional), `route` (optional, copied from `brain.say`), `durationMs`, `envelopeHz`, `envelope[]` (mouth-open level per frame, 0 to 1), `audioUrl` (`/audio/<id>.wav` on the voice service), `sampleRate` |
-| `voice.playing` | A [sink](../../start/glossary.md#sink): `mouth`, the dashboard sink page | `voice`, `avatar`, `mouth`, `ears` (to ignore its own echo) | `id`, `sink` |
-| `voice.done` | A sink, or `voice` itself when synthesis fails (sink `error`) | `avatar`, `cortex`, `ears` | `id`, `sink`, and for an interrupted line `interrupted` (true), `spokenText` and `unsaidText` |
-| `voice.failed` | A sink | `voice`, `cortex` | `id`, `sink`, `reason`, `fallback` (optional: `clip`, `text`, present exactly when a fallback clip plays for this id) |
+| `voice.utterance` | `voice` | `avatar`, `mouth` | `id`, `seq` (0 for a line that is not streamed), `more` (optional, `true` on clause 0 of a streamed line), `text`, `emotion`, `gesture` (optional), `route` (optional, copied from `brain.say`), `durationMs`, `envelopeHz`, `envelope[]` (mouth-open level per frame, 0 to 1), `audioUrl` (`/audio/<id>.wav` on the voice service), `sampleRate` |
+| `voice.playing` | A [sink](../../start/glossary.md#sink): `mouth`, the dashboard sink page | `voice`, `avatar`, `mouth`, `ears` (to ignore its own echo) | `id`, `seq`, `sink` |
+| `voice.done` | A sink, or `voice` itself when synthesis fails (sink `error`) | `avatar`, `cortex`, `ears` | `id`, `seq`, `sink`, `final` (optional, `true` when the sink will play no more of the line), and for an interrupted line `interrupted` (true), `spokenText` and `unsaidText` |
+| `voice.failed` | A sink | `voice`, `cortex` | `id`, `seq`, `sink`, `reason`, `fallback` (optional: `clip`, `text`, present exactly when a fallback clip plays for this id) |
 | `voice.stop` | `salience` (a barge-in) | `voice`, `mouth`, `cortex` | `reason`, `ids` (optional: the lines to stop; absent means every line) |
 | `avatar.state` | `avatar` | The dashboard feed | `emotion`, `intensity`, `mouthOpen`, `mouthSmile`, `headX`, `headY`, `headZ` (degrees), `eyeX`, `eyeY`, `blink` (0 open to 1 closed), `driver`, `connected`. Published at about 5 Hz |
 

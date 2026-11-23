@@ -31,8 +31,8 @@ function setup(opts: { chance?: number; critic?: (i: CriticInput) => CriticOutpu
 const mention = () => ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who: "bob", text: "hey Coco", mention: true } });
 const FALLBACK = { clip: "c1", text: "my mic died" };
 const failed = (id: string, fallback: { clip: string; text: string } | null = FALLBACK) =>
-  event("voice.failed", { id, sink: "discord", reason: "tts down", ...(fallback ? { fallback } : {}) });
-const doneFor = (cortex: Cortex, id: string) => cortex.onEvent(event("voice.done", { id, sink: "x" }));
+  event("voice.failed", { id, seq: 0, sink: "discord", reason: "tts down", ...(fallback ? { fallback } : {}) });
+const doneFor = (cortex: Cortex, id: string) => cortex.onEvent(event("voice.done", { id, seq: 0, sink: "x" }));
 
 /** Cortex says one line and it plays out; returns that line's brain.say id. */
 async function sayOne(s: ReturnType<typeof setup>, text = "[happy] intended line"): Promise<string> {

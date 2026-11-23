@@ -349,17 +349,18 @@ test("avatar.state accepts each parameter at the ends of its range and rejects a
 });
 
 // @spec BUS-EVT-017
-test("voice.playing and voice.done require id and sink; only voice.done accepts the interrupted members", () => {
-  const samples: unknown[] = [{ id: "u1", sink: "discord" }, { id: "u1" }, { sink: "x" }, { id: 1, sink: "x" }, { id: "u1", sink: "x", extra: 1 }, {}];
+test("voice.playing and voice.done require id, seq and sink; only voice.done accepts the interrupted members", () => {
+  const samples: unknown[] = [{ id: "u1", seq: 0, sink: "discord" }, { id: "u1", seq: 0 }, { seq: 0, sink: "x" }, { id: 1, seq: 0, sink: "x" }, { id: "u1", seq: 0, sink: "x", extra: 1 }, {}];
   for (const sample of samples) {
     const playing = EventPayloads["voice.playing"].safeParse(sample);
     const done = EventPayloads["voice.done"].safeParse(sample);
     assert.deepEqual(playing.success, done.success, JSON.stringify(sample));
     if (playing.success) assert.deepEqual(playing.data, done.data);
   }
-  assert.ok(EventPayloads["voice.playing"].safeParse({ id: "u1", sink: "discord" }).success);
-  assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1" }).success, false);
-  const withInterrupt = { id: "u1", sink: "discord", interrupted: true };
+  assert.ok(EventPayloads["voice.playing"].safeParse({ id: "u1", seq: 0, sink: "discord" }).success);
+  assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1", sink: "discord" }).success, false, "seq is required");
+  assert.equal(EventPayloads["voice.done"].safeParse({ id: "u1", seq: 0 }).success, false, "sink is required");
+  const withInterrupt = { id: "u1", seq: 0, sink: "discord", interrupted: true };
   const playing = EventPayloads["voice.playing"].safeParse(withInterrupt);
   assert.ok(!playing.success || !("interrupted" in playing.data), "voice.playing accepts none of the BUS-EVT-031 members");
   assert.equal((EventPayloads["voice.done"].safeParse(withInterrupt) as { data?: { interrupted?: boolean } }).data?.interrupted, true);
@@ -383,7 +384,7 @@ test("voice.stop requires a string reason and accepts optional string ids (empty
 // @spec BUS-EVT-031
 test("voice.done accepts interrupted:true, spokenText and unsaidText; the text members need interrupted", () => {
   const done = EventPayloads["voice.done"];
-  const base = { id: "u1", sink: "discord" };
+  const base = { id: "u1", seq: 0, sink: "discord" };
   assert.equal(done.safeParse(base).success, true, "an event written before the members existed stays valid");
   assert.equal(done.safeParse({ ...base, interrupted: true }).success, true);
   assert.equal(done.safeParse({ ...base, interrupted: true, spokenText: "hi", unsaidText: "there" }).success, true);
@@ -439,34 +440,34 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
 });
 
 // @spec BUS-EVT-001
-test("the catalogue is exactly the 26 documented event types, exported as EVENT_TYPES", () => {
+test("the catalogue is exactly the 27 documented event types, exported as EVENT_TYPES", () => {
   const expected = [
-    "chat.message", "vision.summary", "speech.heard", "speech.partial", "brain.say", "brain.status", "attention.focus", "affect.state",
+    "chat.message", "vision.summary", "speech.heard", "speech.partial", "brain.say", "brain.clause", "brain.status", "attention.focus", "affect.state",
     "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
     "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "voice.stop", "voice.failed", "avatar.state",
     "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat",
   ];
-  assert.equal(EVENT_TYPES.length, 26);
+  assert.equal(EVENT_TYPES.length, 27);
   assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
   assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
 });
 
 // @spec BUS-EVT-022
-test("voice.failed requires string id, sink and reason, and accepts an optional fallback with string clip and text", () => {
+test("voice.failed requires string id, seq, sink and reason, and accepts an optional fallback with string clip and text", () => {
   const f = EventPayloads["voice.failed"];
-  assert.ok(f.safeParse({ id: "u1", sink: "discord", reason: "fetch audio 404" }).success);
-  assert.ok(f.safeParse({ id: "u1", sink: "discord", reason: "x", fallback: { clip: "00-ab12cd34.wav", text: "Error: unable to play line." } }).success);
+  assert.ok(f.safeParse({ id: "u1", seq: 0, sink: "discord", reason: "fetch audio 404" }).success);
+  assert.ok(f.safeParse({ id: "u1", seq: 2, sink: "discord", reason: "x", fallback: { clip: "00-ab12cd34.wav", text: "Error: unable to play line." } }).success);
   for (const bad of [
-    { sink: "discord", reason: "x" }, { id: "u1", reason: "x" }, { id: "u1", sink: "discord" },
-    { id: 1, sink: "discord", reason: "x" }, { id: "u1", sink: "discord", reason: "x", fallback: { clip: "a" } },
-    { id: "u1", sink: "discord", reason: "x", fallback: { clip: "a", text: 3 } },
+    { seq: 0, sink: "discord", reason: "x" }, { id: "u1", seq: 0, reason: "x" }, { id: "u1", seq: 0, sink: "discord" }, { id: "u1", sink: "discord", reason: "x" },
+    { id: 1, seq: 0, sink: "discord", reason: "x" }, { id: "u1", seq: 0, sink: "discord", reason: "x", fallback: { clip: "a" } },
+    { id: "u1", seq: 0, sink: "discord", reason: "x", fallback: { clip: "a", text: 3 } }, { id: "u1", seq: -1, sink: "discord", reason: "x" },
   ]) assert.equal(f.safeParse(bad).success, false, JSON.stringify(bad));
 });
 
 // @spec BUS-EVT-023
 test("control, brain.say and voice.utterance accept an optional route of strings, keep it (empty included) and reject anything else", () => {
   const say = { id: "s", text: "hi", emotion: "neutral" };
-  const utt = { ...say, durationMs: 1, envelopeHz: 30, envelope: [0], audioUrl: "/audio/s.wav", sampleRate: 24000 };
+  const utt = { ...say, seq: 0, durationMs: 1, envelopeHz: 30, envelope: [0], audioUrl: "/audio/s.wav", sampleRate: 24000 };
   const cases = [["control", { cmd: "say", text: "hi" }], ["brain.say", say], ["voice.utterance", utt]] as const;
   for (const [type, base] of cases) {
     const schema = EventPayloads[type] as unknown as { safeParse(v: unknown): { success: boolean; data?: { route?: string[] } } };

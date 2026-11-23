@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   StackController, ServiceController, stackState,
   type ExecFile, type ContainerStatus, type Runtime, type StackStatus,
@@ -285,5 +289,101 @@ test("every docker compose call sets COHOST_ISOLATION to the empty string, whate
       if (bin === "docker.exe") assert.equal(c.env.WSLENV, "PATH/l:COHOST_ISOLATION");
       else assert.equal(c.env.WSLENV, "PATH/l");
     }
+  }
+});
+
+// @spec CTRL-STACK-018
+test("launch: enabled engine profiles add no argument: the command is the same with COMPOSE_PROFILES naming pocket, nemotron and kyutai, or none of them", async () => {
+  const argv = ["compose", "up", "-d", "--build", "--remove-orphans"];
+  for (const profiles of [undefined, "pocket", "nemotron,kyutai", "discord,ears,pocket,nemotron,kyutai"]) {
+    const calls: Call[] = [];
+    const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env, cwd: opts.cwd, timeoutMs: opts.timeoutMs }); return { stdout: args[1] === "ps" ? ps(ready) : "", stderr: "" }; };
+    const env: NodeJS.ProcessEnv = { BASE: "1", ...(profiles ? { COMPOSE_PROFILES: profiles } : {}) };
+    const stack = new StackController({ exec, cwd: "/root", env, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {} });
+    assert.equal((await stack.launch()).ok, true);
+    const up = calls.find((c) => c.args[1] === "up")!;
+    assert.deepEqual([up.file, ...up.args], ["docker", ...argv], `COMPOSE_PROFILES=${profiles}`);
+    assert.equal(up.env.COMPOSE_PROFILES, profiles, "the variable reaches Compose unchanged, which selects the profiles");
+    assert.ok(!calls.some((c) => c.args.includes("--profile")), "no --profile argument is added");
+  }
+});
+
+/** A throwaway workspace whose config/ holds the example config and, when `secrets` is given, a secrets.yaml. */
+function workspace(secrets?: string) {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
+  const repo = fileURLToPath(new URL("../../../", import.meta.url));
+  mkdirSync(join(dir, "config"));
+  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config", "config.yaml"));
+  if (secrets !== undefined) writeFileSync(join(dir, "config", "secrets.yaml"), secrets, { mode: 0o600 });
+  return dir;
+}
+
+/** Launches in `dir`, recording whether the token file and its directory existed at the moment `docker compose up` ran. */
+async function launchIn(dir: string) {
+  const saw: { dir: boolean; file: boolean; content?: string; order: string[] } = { dir: false, file: false, order: [] };
+  const secretDir = join(dir, "data", "tts-pocket-secret");
+  const exec: ExecFile = async (_file, args) => {
+    saw.order.push(args[1]!);
+    if (args[1] === "up") {
+      saw.dir = existsSync(secretDir) && statSync(secretDir).isDirectory();
+      saw.file = existsSync(join(secretDir, "hf_token"));
+      if (saw.file) saw.content = readFileSync(join(secretDir, "hf_token"), "utf8");
+    }
+    return { stdout: args[1] === "ps" ? ps(ready) : "", stderr: "" };
+  };
+  const before = process.env.CONFIG_DIR;
+  process.env.CONFIG_DIR = join(dir, "config");
+  try {
+    const stack = new StackController({ exec, cwd: dir, env: { BASE: "1" }, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {} });
+    const r = await stack.launch();
+    return { r, saw, secretDir };
+  } finally {
+    if (before === undefined) delete process.env.CONFIG_DIR; else process.env.CONFIG_DIR = before;
+  }
+}
+
+// @spec CTRL-STACK-019
+test("launch: writes voice.pocket.hf_token to data/tts-pocket-secret/hf_token, directory created first, before docker compose up, and no other secret to a file", async () => {
+  const dir = workspace('voice:\n  pocket:\n    hf_token: "hf_abc123"\nllm:\n  openai:\n    api_key: "sk-other-secret"\n');
+  try {
+    const { r, saw, secretDir } = await launchIn(dir);
+    assert.equal(r.ok, true, r.detail);
+    assert.ok(saw.dir, "the directory existed when up ran");
+    assert.equal(saw.content, "hf_abc123", "the file holds only the token");
+    assert.ok(saw.order.indexOf("up") >= 0);
+    assert.equal(readFileSync(join(secretDir, "hf_token"), "utf8"), "hf_abc123");
+    for (const f of ["data/tts-pocket-secret/hf_token"]) assert.ok(existsSync(join(dir, f)));
+    const written = new Set<string>();
+    const walk = (d: string, rel = ""): void => { for (const n of readdirSync(d)) { const p = join(d, n); statSync(p).isDirectory() ? walk(p, `${rel}${n}/`) : written.add(`${rel}${n}`); } };
+    walk(join(dir, "data"));
+    assert.deepEqual([...written], ["tts-pocket-secret/hf_token"], "no other secret is written to a file under data/");
+    assert.doesNotMatch(readFileSync(join(secretDir, "hf_token"), "utf8"), /sk-other-secret/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// @spec CTRL-STACK-019
+test("launch: rewrites the token file on every launch, and leaves it absent (directory still created) when the token is blank, removing a stale one", async () => {
+  const dir = workspace('voice:\n  pocket:\n    hf_token: "first"\n');
+  try {
+    assert.equal((await launchIn(dir)).saw.content, "first");
+    writeFileSync(join(dir, "config", "secrets.yaml"), 'voice:\n  pocket:\n    hf_token: "second"\n', { mode: 0o600 });
+    assert.equal((await launchIn(dir)).saw.content, "second", "rewritten on every launch");
+    writeFileSync(join(dir, "config", "secrets.yaml"), 'voice:\n  pocket:\n    hf_token: ""\n', { mode: 0o600 });
+    const blank = await launchIn(dir);
+    assert.equal(blank.r.ok, true, blank.r.detail);
+    assert.ok(blank.saw.dir, "the directory is created even with no token");
+    assert.equal(blank.saw.file, false, "a blank token leaves the file absent, so a stale one is removed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const none = workspace();
+  try {
+    const r = await launchIn(none);
+    assert.equal(r.saw.dir, true, "no secrets.yaml at all: the directory exists");
+    assert.equal(r.saw.file, false);
+  } finally {
+    rmSync(none, { recursive: true, force: true });
   }
 });

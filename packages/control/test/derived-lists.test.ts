@@ -15,7 +15,7 @@ const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
 const unitIds = units.map((u) => u.id);
 const rootPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 
-interface ComposeFile { services: Record<string, { build?: { args?: { SERVICE?: string } } }> }
+interface ComposeFile { services: Record<string, { profiles?: string[]; build?: { args?: { SERVICE?: string } } }> }
 const composeServices = (parse(readFileSync(rootPath("docker-compose.yml"), "utf8"), { merge: true }) as ComposeFile).services;
 
 const composeNames = units.map((u) => u.composeName);
@@ -101,5 +101,19 @@ test("for every unit with a Compose service, the name its healthcheck is given e
     const published = heartbeatNames(u.composeName);
     assert.ok(published.length > 0, `${u.id}: no heartbeat service name found in its entry or health file`);
     for (const name of published) assert.equal(name, given, `${u.id}: heartbeat service ${name} is not the name its healthcheck is given (${given})`);
+  }
+});
+
+// @spec MOD-MAN-014
+test("every Compose service of the profiles pocket, nemotron and kyutai has a manifest unit, and each such unit has a Compose service named for its composeName", () => {
+  const ENGINE_PROFILES = ["pocket", "nemotron", "kyutai"];
+  const engineServices = Object.entries(composeServices).filter(([, s]) => (s.profiles ?? []).some((p) => ENGINE_PROFILES.includes(p))).map(([n]) => n).sort();
+  assert.deepEqual(engineServices, ["stt-kyutai", "stt-nemotron", "tts-pocket"], "the three engine servers are the services of those profiles");
+  const manifestNames = SERVICE_MANIFEST.map((s) => s.composeName);
+  for (const name of engineServices) assert.ok(manifestNames.includes(name), `Compose service ${name} has no unit in SERVICE_MANIFEST`);
+  for (const id of engineServices) {
+    const unit = SERVICE_MANIFEST.find((s) => s.id === id);
+    assert.ok(unit, `${id} has a unit`);
+    assert.ok(composeServices[unit.composeName], `unit ${id} has no Compose service named ${unit.composeName}`);
   }
 });

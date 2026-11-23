@@ -116,7 +116,7 @@ async fn settle() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
-// @spec EARS-SRC-015, EARS-SRC-017
+// @spec EARS-SRC-017, EARS-SRC-019
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_read_failure_after_a_closed_clip_is_a_device_failure_and_the_clip_is_posted() {
     let mut c = Scripted {

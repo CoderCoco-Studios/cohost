@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 172 [x], 1 [ ] (MEM-RECALL-007). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 170 [x], 3 [ ] (MEM-RECALL-007, MEM-SURF-006, MEM-VOICE-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:

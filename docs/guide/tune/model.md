@@ -119,7 +119,7 @@ The `claude` keys tune how Claude answers:
 | --- | --- |
 | `effort` | How hard it thinks. `low` suits one-line replies. |
 | `max_tokens` | A cap on thinking and the reply together, so leave it roomier than the 120 used for local models. |
-| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only. |
+| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only, and only for a reply that is not streamed (no co-host service streams a reply yet). |
 
 ## Claude through Amazon Bedrock
 

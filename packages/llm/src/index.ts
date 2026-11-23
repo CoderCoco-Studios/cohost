@@ -87,10 +87,14 @@ export class ChatError extends Error {
   ) { super(message); this.name = "ChatError"; }
 }
 
-export interface ChatProvider { // @spec LLM-IF-001
+export interface ChatProvider { // @spec LLM-IF-001, LLM-IF-020
   readonly name: string;
   readonly model: string;
   chat(messages: ChatMessage[], opts?: ChatOptions): Promise<string>;
+  /** A non-streamed reply: text, tool calls, finish reason and the assistant message (LLM-IF-005). */
+  complete(messages: ChatMessage[], req?: ChatRequest): Promise<ChatResult>;
+  /** A streamed reply: text as it arrives, the calls, then `done` (LLM-IF-008). Nothing is sent before the first read. */
+  stream(messages: ChatMessage[], opts?: ChatRequest): AsyncGenerator<ChatEvent>;
   /** True once the backend is reachable and answering. On false, `lastError` says why. */
   ping(): Promise<boolean>;
   lastError?: string;
@@ -224,8 +228,8 @@ class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOO
  * The finish of a reply (LLM-IF-013 to LLM-IF-016): the token cap beats everything; a reply that asked for tools, or holds
  * calls, is `tool_calls`; anything else is `stop`.
  */
-function finishOf(capped: boolean, asked: boolean, calls: ToolCall[]): ChatResult["finish"] { // @spec LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016
-  return capped ? "length" : asked || calls.length > 0 ? "tool_calls" : "stop";
+function finishOf(capped: boolean, asked: boolean, calls: ToolCall[], refused = false): ChatResult["finish"] { // @spec LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-IF-016, LLM-STREAM-027
+  return refused ? "refusal" : capped ? "length" : asked || calls.length > 0 ? "tool_calls" : "stop";
 }
 
 /** The result of a reply: trimmed text (LLM-IF-006), the calls in order, and the assistant message to append (LLM-IF-007, LLM-IF-022). */
@@ -273,27 +277,30 @@ function ollamaCalls(list: any[] | undefined): WireCall[] {
 
 // ---------------------------------------------------------------------------
 
-/** One backend event as a provider's framing reads it. `final` is the backend's last event, with the cap and tool flags; `end` is the backend closing its reply before a final event; `whole` starts a reply that arrives as one JSON document (LLM-STREAM-029). */
+/** One event of a streamed reply as a provider frames it. `final` is the backend's last event, with the cap, tool and refusal flags; `end` is the backend closing its reply before a final event; `document` is a reply that arrived as one JSON document (LLM-STREAM-029). */
 type WireEvent =
   | { kind: "content"; text: string }
   | { kind: "call"; call: WireCall }
   | { kind: "keepalive" }
-  | { kind: "final"; capped: boolean; asked: boolean }
+  | { kind: "final"; capped: boolean; asked: boolean; refused?: boolean }
   | { kind: "end" }
-  | { kind: "whole" };
+  | { kind: "document"; value: unknown };
+/** A line of a framed body as a provider's line framing reads it; `whole` starts a reply that arrives as one JSON document (LLM-STREAM-029). */
+type LineEvent = WireEvent | { kind: "whole" };
 
-/** What a provider adds to the shared streamed-reply machinery: the request, its framing, and its single-body reading. */
+/** Starts a streamed reply under the signal the stream machinery supplies. Resolves once the backend has answered, and rejects with a `ChatError` before that. */
+type Opener = (signal: AbortSignal) => Promise<AsyncIterable<WireEvent>>;
+
+/** What a provider adds to the shared streamed-reply machinery: how it opens the reply, and how a single JSON body reads. */
 interface StreamPlan {
   name: string;
   timeoutMs: number;
   /** Whether the token cap can cut a call's arguments on this backend, so the cut call is dropped (LLM-TOOL-022). */
   dropCut: boolean;
-  /** Synchronous; a throw here is a programming error and surfaces unwrapped (LLM-IF-021). */
-  request(): { url: string; init: RequestInit };
-  /** One line of the framed body (blank lines included); a bad line throws `ChatError` of kind `stream`. */
-  line(line: string): WireEvent[];
-  /** A backend that ignored `stream:true` and answered one JSON document (LLM-STREAM-029). */
-  whole(json: any): { text: string | null | undefined; capped: boolean; asked: boolean; calls: WireCall[] };
+  /** Synchronous; a throw here is a programming error and surfaces unwrapped (LLM-IF-021). Returns the opener that runs under the clocks. */
+  begin(): Opener;
+  /** A backend that ignored `stream:true` and answered one JSON document (LLM-STREAM-029). Absent where no such reply is possible. */
+  whole?(json: any): { text: string | null | undefined; capped: boolean; asked: boolean; calls: WireCall[] };
 }
 
 /** Holds back whitespace so no delta starts a reply with it or ends the reply with it (LLM-STREAM-009 to LLM-STREAM-011). */
@@ -344,6 +351,54 @@ function parseWhole(name: string, text: string): unknown {
   try { return JSON.parse(text); } catch { throw streamError(name, "the single JSON body is not JSON"); }
 }
 
+/** The lines of a fetched body as they arrive; the last one is yielded even without a newline. */
+async function* linesOf(reader: ReadableStreamDefaultReader<Uint8Array>): AsyncGenerator<string> {
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
+      yield buf.slice(0, nl).replace(/\r$/, "");
+      buf = buf.slice(nl + 1);
+    }
+  }
+  buf += dec.decode();
+  if (buf) yield buf.replace(/\r$/, "");
+}
+
+/** The events of a fetched response: a non-2xx status is `http` (LLM-STREAM-020), a JSON body is one document (LLM-STREAM-029), and any other body is framed line by line by the provider. */
+async function* framedResponse(name: string, res: Response, line: (line: string) => LineEvent[]): AsyncGenerator<WireEvent> {
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ChatError("http", `${name} chat ${res.status}: ${body}`, res.status); // @spec LLM-STREAM-020, LLM-ERR-004, LLM-CHAT-020
+  }
+  if (!res.body) throw streamError(name, "the response had no body");
+  if ((res.headers.get("content-type") ?? "").startsWith("application/json")) { // @spec LLM-STREAM-029
+    yield { kind: "document", value: parseWhole(name, await res.text()) };
+    return;
+  }
+  const reader = res.body.getReader();
+  try {
+    let wholeText: string | undefined;
+    for await (const text of linesOf(reader)) { // @spec LLM-STREAM-002, LLM-STREAM-005
+      if (wholeText !== undefined) { wholeText += `\n${text}`; continue; } // @spec LLM-STREAM-029
+      for (const ev of line(text)) {
+        if (ev.kind === "whole") { wholeText = text; break; } // @spec LLM-STREAM-029
+        yield ev;
+      }
+    }
+    if (wholeText !== undefined) yield { kind: "document", value: parseWhole(name, wholeText) }; // @spec LLM-STREAM-029
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
+/** The opener of a fetch-framed backend: it sends the request under the signal the stream machinery supplies. */
+const fetchOpener = (name: string, url: string, init: RequestInit, line: (line: string) => LineEvent[]) =>
+  (signal: AbortSignal): Promise<AsyncIterable<WireEvent>> => fetch(url, { ...init, signal }).then((res) => framedResponse(name, res, line));
+
 /**
  * The streamed call every streaming provider runs. Nothing runs until the first read (LLM-IF-008), and a failure of any kind
  * surfaces from that read (LLM-IF-021). Two clocks, each `timeoutMs`, run only while a read is pending (LLM-STREAM-034,
@@ -355,7 +410,7 @@ function parseWhole(name: string, text: string): unknown {
  */
 async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: ChatRequest): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-IF-009, LLM-IF-010, LLM-IF-021, LLM-STREAM-012, LLM-STREAM-032
   checkRequest(opts); // @spec LLM-TOOL-001, LLM-TOOL-002
-  const { url, init } = plan.request(); // @spec LLM-STREAM-001, LLM-STREAM-004, LLM-STREAM-014, LLM-STOP-012, LLM-STOP-014, LLM-STOP-018
+  const open = plan.begin(); // @spec LLM-STREAM-001, LLM-STREAM-004, LLM-STREAM-014, LLM-STOP-012, LLM-STOP-014, LLM-STOP-018
   const caller = opts.signal;
   const ac = new AbortController();
   /** A caller that aborted (before the call, or between reads) gets its reason, never another event (LLM-STREAM-026). */
@@ -370,7 +425,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   const firstStart = Date.now();
   let mark = firstStart;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let events: AsyncIterator<WireEvent> | undefined;
   const trimmer = new TextTrimmer();
   const calls = new CallAssembler();
 
@@ -379,87 +434,60 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
     const due = (sawOutput ? mark : firstStart) + plan.timeoutMs;
     timer = setTimeout(() => { timedOut = true; ac.abort(); }, Math.max(0, due - Date.now()));
     try {
-      return await step();
+      const value = await step();
+      // A source that ends quietly when its request is aborted (the SDK's stream does) still reports the abort's cause.
+      if (timedOut) throw timeoutError(plan.timeoutMs);
+      if (caller?.aborted) throw caller.reason;
+      return value;
     } catch (e) {
       if (timedOut) throw timeoutError(plan.timeoutMs);
       if (caller?.aborted) throw caller.reason;
       if (e instanceof ChatError) throw e;
       throw responded
         ? streamError(plan.name, `the connection failed mid-reply: ${String(e)}`)
-        : new ChatError("connect", `cannot reach ${plan.name} at ${url}: ${String(e)}`);
+        : new ChatError("connect", `cannot reach ${plan.name}: ${String(e)}`);
     } finally {
       clearTimeout(timer);
     }
   };
 
-  /** The reply's lines as they arrive; each pending read runs under the clock. */
-  async function* lines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-    reader = body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { value, done } = await clocked(() => reader!.read());
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
-        yield buf.slice(0, nl).replace(/\r$/, "");
-        buf = buf.slice(nl + 1);
-      }
-    }
-    buf += dec.decode();
-    if (buf) yield buf.replace(/\r$/, "");
-  }
-
   try {
-    const res = await clocked(() => fetch(url, { ...init, signal: ac.signal }));
+    const opened = await clocked(() => open(ac.signal));
     responded = true;
     mark = Date.now();
-    if (!res.ok) {
-      const body = await clocked(() => res.text());
-      throw new ChatError("http", `${plan.name} chat ${res.status}: ${body}`, res.status); // @spec LLM-STREAM-020, LLM-ERR-004, LLM-CHAT-020
-    }
-    if (!res.body) throw streamError(plan.name, "the response had no body");
-
+    events = opened[Symbol.asyncIterator]();
     let capped = false;
     let asked = false;
+    let refused = false;
     let finished = false;
-    /** The whole reply as one document, when the backend sent one rather than a stream (LLM-STREAM-029). */
-    let whole: { value: any } | undefined;
-    if ((res.headers.get("content-type") ?? "").startsWith("application/json")) { // @spec LLM-STREAM-029
-      whole = { value: parseWhole(plan.name, await clocked(() => res.text())) };
-    } else {
-      let wholeText: string | undefined;
-      outer: for await (const line of lines(res.body)) { // @spec LLM-STREAM-002, LLM-STREAM-005
-        if (wholeText !== undefined) { wholeText += `\n${line}`; continue; } // @spec LLM-STREAM-029
-        for (const ev of plan.line(line)) {
-          if (ev.kind === "whole") {
-            // A single JSON body is the whole reply only when no stream event came before it (keepalives may).
-            if (sawOutput) throw streamError(plan.name, "a JSON object arrived after stream events");
-            wholeText = line;
-            break;
-          } // @spec LLM-STREAM-029
-          if (ev.kind === "keepalive") { mark = Date.now(); continue; }
-          if (ev.kind === "end") throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-037, LLM-STREAM-022
-          sawOutput = true;
-          if (ev.kind === "final") { capped = ev.capped; asked = ev.asked; finished = true; break outer; } // @spec LLM-STREAM-036, LLM-IF-016, LLM-IF-017, LLM-IF-019
-          if (ev.kind === "call") { calls.add(ev.call); mark = Date.now(); continue; } // @spec LLM-STREAM-003, LLM-STREAM-006
-          const delta = trimmer.push(ev.text);
-          mark = Date.now();
-          if (delta) { yield { type: "text", delta }; mark = Date.now(); throwIfAborted(); } // @spec LLM-STREAM-010, LLM-STREAM-026
+    for (;;) {
+      const step = await clocked(() => events!.next());
+      if (step.done) break;
+      const ev = step.value;
+      if (ev.kind === "keepalive") { mark = Date.now(); continue; }
+      if (ev.kind === "document") { // @spec LLM-STREAM-029
+        if (sawOutput) throw streamError(plan.name, "a JSON object arrived after stream events");
+        if (ev.value && typeof ev.value === "object" && (ev.value as { error?: unknown }).error !== undefined) {
+          throw backendError(plan.name, (ev.value as { error: unknown }).error); // @spec LLM-STREAM-023
         }
+        if (!plan.whole) throw streamError(plan.name, "the backend sent a JSON body on a stream");
+        const one = plan.whole(ev.value); // @spec LLM-STREAM-029
+        sawOutput = true;
+        const delta = trimmer.push(one.text ?? "");
+        if (delta) { yield { type: "text", delta }; throwIfAborted(); }
+        for (const c of one.calls) calls.add(c);
+        capped = one.capped;
+        asked = one.asked;
+        finished = true;
+        continue;
       }
-      if (wholeText !== undefined) whole = { value: parseWhole(plan.name, wholeText) }; // @spec LLM-STREAM-029
-    }
-    if (whole !== undefined && whole.value?.error !== undefined) throw backendError(plan.name, whole.value.error); // @spec LLM-STREAM-023
-    if (whole !== undefined) {
-      const one = plan.whole(whole.value); // @spec LLM-STREAM-029
+      if (ev.kind === "end") throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-037, LLM-STREAM-022
       sawOutput = true;
-      const delta = trimmer.push(one.text ?? "");
-      if (delta) { yield { type: "text", delta }; throwIfAborted(); }
-      for (const c of one.calls) calls.add(c);
-      capped = one.capped;
-      asked = one.asked;
-      finished = true;
+      if (ev.kind === "final") { capped = ev.capped; asked = ev.asked; refused = ev.refused === true; finished = true; break; } // @spec LLM-STREAM-036, LLM-IF-016, LLM-IF-017, LLM-IF-019, LLM-STREAM-027, LLM-STREAM-031
+      if (ev.kind === "call") { calls.add(ev.call); mark = Date.now(); continue; } // @spec LLM-STREAM-003, LLM-STREAM-006
+      const delta = trimmer.push(ev.text);
+      mark = Date.now();
+      if (delta) { yield { type: "text", delta }; mark = Date.now(); throwIfAborted(); } // @spec LLM-STREAM-010, LLM-STREAM-026
     }
     if (!finished) throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-022
     throwIfAborted(); // @spec LLM-STREAM-026
@@ -469,17 +497,18 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       yield { type: "tool_call", call }; // @spec LLM-STREAM-003, LLM-STREAM-006, LLM-STREAM-012, LLM-STREAM-032
       throwIfAborted(); // @spec LLM-STREAM-026
     }
-    yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls), toolCalls) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028
+    yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls, refused), toolCalls) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028, LLM-STREAM-033
   } finally {
     clearTimeout(timer);
     caller?.removeEventListener("abort", onCallerAbort);
-    if (reader) reader.cancel().catch(() => {});
+    // Closing the event source releases the connection (the fetch reader, or the SDK stream) when the caller stopped early.
+    if (events?.return) Promise.resolve(events.return(undefined)).catch(() => {});
     if (!ac.signal.aborted) ac.abort(); // @spec LLM-IF-010
   }
 }
 
 /** Ollama's framing: one JSON object per line; `content` is text, `message.tool_calls` are calls, and `done: true` is the final line (LLM-STREAM-002, LLM-STREAM-003). */
-function ollamaLine(line: string): WireEvent[] { // @spec LLM-STREAM-002, LLM-STREAM-003
+function ollamaLine(line: string): LineEvent[] { // @spec LLM-STREAM-002, LLM-STREAM-003
   if (!line.trim()) return [];
   const j = parseChunk("ollama", line);
   if (j?.error !== undefined) throw backendError("ollama", j.error); // @spec LLM-STREAM-023
@@ -493,7 +522,7 @@ function ollamaLine(line: string): WireEvent[] { // @spec LLM-STREAM-002, LLM-ST
 }
 
 /** OpenAI-compatible framing: SSE. `data:` chunks carry `delta.content` and `delta.tool_calls` fragments, and the `finish_reason` chunk is final; `[DONE]` before it ends the reply without one (LLM-STREAM-004, LLM-STREAM-006, LLM-STREAM-037). A line that starts with `{` is a single JSON body (LLM-STREAM-029). Comments and other fields are keepalives. */
-function openaiLine(line: string): WireEvent[] { // @spec LLM-STREAM-004, LLM-STREAM-005, LLM-STREAM-006, LLM-STREAM-029
+function openaiLine(line: string): LineEvent[] { // @spec LLM-STREAM-004, LLM-STREAM-005, LLM-STREAM-006, LLM-STREAM-029
   if (!line.trim()) return [];
   if (line.trimStart().startsWith("{")) { // @spec LLM-STREAM-029
     // A raw JSON line: an `error` field is the backend's failure; otherwise it starts a single-body reply (streamReply decides).
@@ -585,11 +614,8 @@ export class Ollama implements ChatProvider, Embedder {
       name: this.name,
       timeoutMs: this.cfg.timeout_ms,
       dropCut: false,
-      request: () => ({
-        url: `${this.base}/api/chat`,
-        init: { method: "POST", headers: { "content-type": "application/json" }, body: this.body(messages, opts, true) },
-      }),
-      line: ollamaLine,
+      begin: () => fetchOpener(this.name, `${this.base}/api/chat`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: this.body(messages, opts, true) }, ollamaLine),
       whole: (j) => ({ text: j?.message?.content, capped: j?.done_reason === "length", asked: false, calls: ollamaCalls(j?.message?.tool_calls) }),
     }, messages, opts);
   }
@@ -689,11 +715,8 @@ export class OpenAICompatible implements ChatProvider {
       name: this.name,
       timeoutMs: this.cfg.timeout_ms,
       dropCut: true,
-      request: () => ({
-        url: `${this.base}/chat/completions`,
-        init: { method: "POST", headers: this.headers(), body: this.body(messages, opts, true) },
-      }),
-      line: openaiLine,
+      begin: () => fetchOpener(this.name, `${this.base}/chat/completions`,
+        { method: "POST", headers: this.headers(), body: this.body(messages, opts, true) }, openaiLine),
       whole: (j) => {
         const choice = j?.choices?.[0];
         return { text: choice?.message?.content, capped: choice?.finish_reason === "length", asked: choice?.finish_reason === "tool_calls", calls: openaiCalls(choice?.message?.tool_calls) };
@@ -744,10 +767,11 @@ abstract class ClaudeBase implements ChatProvider {
     this.images = new ImageDropper(provider, log);
   }
 
-  async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-012
-    assertTextHistory(allMessages);
-    const client = this.client;
-    if (!client) throw new Error(this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
+  /**
+   * The request body `chat()`, `complete()` and `stream()` share: joined `system`, the `(begin)` turn, `max_tokens`, effort and no
+   * temperature (LLM-CLAUDE-023 to LLM-CLAUDE-030). Fallbacks go on a non-streamed anthropic request only (LLM-CLAUDE-007, LLM-CLAUDE-022).
+   */
+  private params(allMessages: ChatMessage[], opts: ChatOptions, streaming: boolean): Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "stream"> { // @spec LLM-CLAUDE-023, LLM-CLAUDE-024, LLM-CLAUDE-025, LLM-CLAUDE-026, LLM-CLAUDE-027, LLM-CLAUDE-028, LLM-CLAUDE-029, LLM-CLAUDE-030
     const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
     const turns: Anthropic.MessageParam[] = messages
@@ -757,23 +781,64 @@ abstract class ClaudeBase implements ChatProvider {
 
     // The caller's budget is honoured (thinking shares it; hooks run at low effort), down to the API's minimum of 1.
     const maxTokens = opts.maxTokens === undefined ? this.cfg.claude.max_tokens : Math.max(CLAUDE_MIN_MAX_TOKENS, Math.floor(opts.maxTokens)); // @spec LLM-CLAUDE-003
-    const res = await client.beta.messages.create({
+    return {
       model: this.cfg.model,
       max_tokens: maxTokens,
       system: system || undefined,
       messages: turns,
       output_config: { effort: this.cfg.claude.effort }, // @spec LLM-CLAUDE-004
-      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }), // @spec LLM-STOP-003, LLM-STOP-004
+      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }), // @spec LLM-STOP-003, LLM-STOP-004, LLM-STOP-015, LLM-STOP-016, LLM-STOP-017
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
-      // in the same call. Not offered on Bedrock, where a refusal just means "say nothing".
-      ...(this.serverFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007
-    }, opts.signal ? { signal: opts.signal } : { timeout: this.cfg.timeout_ms }); // @spec LLM-CLAUDE-010, LLM-CHAT-006, LLM-CHAT-008
-    if (res.stop_reason === "refusal") return ""; // @spec LLM-CLAUDE-006
-    return res.content // @spec LLM-CLAUDE-005, LLM-IF-004
+      // in the same call. Not offered on Bedrock, where a refusal just means "say nothing", and never on a stream (LLM-CLAUDE-022).
+      ...(this.serverFallbacks && !streaming ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007, LLM-CLAUDE-008, LLM-CLAUDE-032
+    };
+  }
+
+  async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-012
+    assertTextHistory(allMessages);
+    return (await this.complete(allMessages, opts)).text;
+  }
+
+  async complete(allMessages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-CLAUDE-010, LLM-CLAUDE-020, LLM-CLAUDE-021, LLM-CLAUDE-031, LLM-CLAUDE-033, LLM-CHAT-017, LLM-ERR-003, LLM-ERR-002, LLM-ERR-009
+    checkRequest(req); // @spec LLM-TOOL-001, LLM-TOOL-002
+    const client = this.client;
+    if (!client) throw new ChatError("not_configured", this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
+    const params = this.params(allMessages, req, false);
+    // The caller's signal when it passed one; otherwise llm.timeout_ms, as the Ollama and OpenAI-compatible providers bound theirs.
+    // A timeout is one request the SDK does not retry, and it rejects with the TimeoutError of LLM-ERR-005 (LLM-CHAT-018).
+    const caller = req.signal;
+    const signal = caller ?? AbortSignal.timeout(this.cfg.timeout_ms); // @spec LLM-CHAT-006, LLM-CHAT-008, LLM-CHAT-018
+    let res: Anthropic.Beta.BetaMessage;
+    try {
+      res = await client.beta.messages.create(params, { signal });
+    } catch (e) {
+      if (!caller && signal.aborted) throw timeoutError(this.cfg.timeout_ms); // @spec LLM-ERR-005
+      throw sdkFailure(this.name, e, caller);
+    }
+    if (res.stop_reason === "refusal") return resultOf("", "refusal", []); // @spec LLM-CLAUDE-006, LLM-CLAUDE-021
+    const text = res.content // @spec LLM-CLAUDE-005, LLM-CLAUDE-031, LLM-IF-004, LLM-STREAM-013
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
-      .join("")
-      .trim();
+      .join("");
+    return resultOf(text, res.stop_reason === "max_tokens" ? "length" : "stop", []); // @spec LLM-IF-014, LLM-IF-015
+  }
+
+  /** A streamed reply (LLM-IF-008): the SDK's streaming request, read under the stream machinery's clocks. */
+  stream(messages: ChatMessage[], opts: ChatRequest = {}): AsyncGenerator<ChatEvent> { // @spec LLM-IF-008, LLM-STREAM-007, LLM-STREAM-008, LLM-STREAM-013, LLM-STREAM-017, LLM-STREAM-021, LLM-STREAM-027, LLM-STREAM-031, LLM-STREAM-033, LLM-STOP-016, LLM-CLAUDE-022, LLM-CLAUDE-024, LLM-CLAUDE-026, LLM-CLAUDE-028, LLM-CLAUDE-030
+    return streamReply({
+      name: this.name,
+      timeoutMs: this.cfg.timeout_ms,
+      dropCut: false,
+      begin: () => {
+        const params = this.params(messages, opts, true);
+        return async (signal) => {
+          const client = this.client;
+          if (!client) throw new ChatError("not_configured", this.notConfigured()); // @spec LLM-ERR-003
+          const events = await sdkCall(this.name, signal, () => client.beta.messages.create({ ...params, stream: true }, { signal }));
+          return claudeEvents(this.name, events);
+        };
+      },
+    }, messages, opts);
   }
 
   abstract ping(): Promise<boolean>;
@@ -806,6 +871,51 @@ function pinnedFetch(base: typeof fetch | undefined, credential: (headers: Heade
     credential(headers);
     return send(input, { ...init, headers });
   }) as typeof fetch;
+}
+
+/**
+ * Maps an SDK failure from a Claude request before its reply began: an HTTP status is `http` with that status (LLM-ERR-002); every
+ * other failure is `connect` with no status (LLM-ERR-009), so a caller only ever sees a ChatError (LLM-ERR-001). A caller's abort (or
+ * the stream's clock, which aborts the same signal) passes its reason through.
+ */
+function sdkFailure(name: string, e: unknown, signal?: AbortSignal): unknown { // @spec LLM-ERR-002, LLM-ERR-009
+  if (signal?.aborted) return signal.reason;
+  if (e instanceof ChatError) return e;
+  const err = e as { name?: unknown; status?: unknown; message?: unknown } | null;
+  if (e instanceof Anthropic.APIConnectionError || err?.name === "APIConnectionError" || err?.name === "APIConnectionTimeoutError") {
+    return new ChatError("connect", `cannot reach ${name}: ${String(err?.message)}`);
+  }
+  if (typeof err?.status === "number") return new ChatError("http", `${name} chat ${err.status}: ${String(err.message)}`, err.status);
+  // Any other failure of a request that got no usable answer is a connection failure (LLM-ERR-001): the SDK's connection errors and
+  // timeouts, and the errors it raises for a body it cannot use.
+  return new ChatError("connect", `${name} request failed before its reply: ${String(err?.message ?? e)}`);
+}
+
+/** Awaits one SDK request, mapping its failure with `sdkFailure`. */
+async function sdkCall<T>(name: string, signal: AbortSignal | undefined, call: () => Promise<T>): Promise<T> {
+  try { return await call(); } catch (e) { throw sdkFailure(name, e, signal); }
+}
+
+/** The SDK's stream events as wire events. Text deltas are content; thinking, signature and tool-input deltas are keepalives, so they restart the between-events clock but are not output (LLM-STREAM-008, LLM-STREAM-017). */
+async function* claudeEvents(name: string, events: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent>): AsyncGenerator<WireEvent> {
+  for await (const ev of events) yield claudeEvent(name, ev);
+}
+
+function claudeEvent(name: string, ev: Anthropic.Beta.BetaRawMessageStreamEvent): WireEvent { // @spec LLM-STREAM-007, LLM-STREAM-008, LLM-STREAM-013, LLM-STREAM-021, LLM-STREAM-027, LLM-STREAM-031
+  switch (ev.type) {
+    case "content_block_start":
+      return ev.content_block.type === "text" && ev.content_block.text ? { kind: "content", text: ev.content_block.text } : { kind: "keepalive" };
+    case "content_block_delta":
+      return ev.delta.type === "text_delta" ? { kind: "content", text: ev.delta.text } : { kind: "keepalive" };
+    case "message_delta": // the final message delta carries the stop reason (LLM-STREAM-031)
+      return ev.delta.stop_reason
+        ? { kind: "final", capped: ev.delta.stop_reason === "max_tokens", asked: false, refused: ev.delta.stop_reason === "refusal" }
+        : { kind: "keepalive" };
+    default:
+      // The SDK types no `error` event (it throws one itself); an unexpected one still fails the reply (LLM-STREAM-021).
+      if ((ev as { type: string }).type === "error") throw streamError(name, "the backend reported an error mid-reply"); // @spec LLM-STREAM-021
+      return { kind: "keepalive" };
+  }
 }
 
 /** The Claude API's own endpoint: the SDK would otherwise take `ANTHROPIC_BASE_URL` (LLM-CLAUDE-009). */

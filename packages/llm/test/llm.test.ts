@@ -400,8 +400,9 @@ test("timeout: Claude requests carry the default timeout only when the caller pa
   const { p, calls } = claude();
   (p as unknown as { cfg: unknown }).cfg = { ...(p as unknown as { cfg: object }).cfg, timeout_ms: 4321 };
   await p.chat(user);
-  assert.equal((calls[0]!.opts as { timeout?: number }).timeout, 4321);
-  assert.equal(calls[0]!.opts.signal, undefined);
+  // Without a caller signal the request carries AbortSignal.timeout(llm.timeout_ms), not the SDK's timeout option (LLM-CHAT-018).
+  assert.ok(calls[0]!.opts.signal instanceof AbortSignal);
+  assert.equal("timeout" in calls[0]!.opts, false);
   const signal = new AbortController().signal;
   await p.chat(user, { signal });
   assert.equal(calls[1]!.opts.signal, signal);
@@ -412,7 +413,8 @@ test("timeout: Claude requests carry the default timeout only when the caller pa
   assert.deepEqual(seen, [{ timeout: 4321 }]);
   const dflt = claude();
   await dflt.p.chat(user);
-  assert.equal((dflt.calls[0]!.opts as { timeout?: number }).timeout, 60000);
+  assert.ok(dflt.calls[0]!.opts.signal instanceof AbortSignal, "the default bound is a signal");
+  assert.equal("timeout" in dflt.calls[0]!.opts, false);
 });
 
 // @spec LLM-PING-006

@@ -63,3 +63,19 @@ test("trackLlm: every chat outcome feeds the dependency: failure down, success o
   assert.deepEqual(seen, [false, true]);
   assert.deepEqual([llm.name, llm.model, llm.lastError, llm.pingIsNominal, await llm.ping()], ["fake", "m", "boom", true, true]);
 });
+
+test("trackLlm: complete() and stream() pass through to the provider untracked", async () => {
+  const seen: boolean[] = [];
+  const result = { text: "x", toolCalls: [], finish: "stop", message: { role: "assistant", content: "x" } };
+  const fake = {
+    ...llmWith(async () => "ok"),
+    complete: async () => result,
+    stream: async function* () { yield { type: "text", delta: "x" }; },
+  } as unknown as ChatProvider;
+  const llm = trackLlm(fake, (ok) => seen.push(ok));
+  assert.equal(await llm.complete!([]), result);
+  const events: unknown[] = [];
+  for await (const e of llm.stream!([])) events.push(e);
+  assert.deepEqual(events, [{ type: "text", delta: "x" }]);
+  assert.deepEqual(seen, []);
+});

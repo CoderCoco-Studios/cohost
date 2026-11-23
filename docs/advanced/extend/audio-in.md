@@ -42,6 +42,8 @@ A clip that was fine but produced no speech (for example, one that is too short)
 
 Whole clips always go to a batch speech-to-text engine: the selected one when it is batch (`speaches`, `openai`, `stub`), otherwise `ears.stt_fallback_engine`. A streaming engine (`nemotron`, `kyutai`) is never used for a clip you send. With a streaming engine selected and `ears.stt_fallback_engine: none`, there is no batch engine, and the clip is answered 502 with `{"heard":false,"reason":"stt-error","detail":"no batch STT engine"}`.
 
+Live audio from a connector source (`ears.sources`, such as `discord`) is transcribed per utterance. `speaches` and `openai` take each utterance whole after it closes. `nemotron` (NeMo-Speech.cpp, `ears.nemotron.url`) and `kyutai` (`moshi-server`, `ears.kyutai.url`) stream the audio as it arrives, so partial text appears while the speaker talks, and each utterance's final comes when it closes. Choose `nemotron` for an NVIDIA server that serves Nemotron Speech Streaming and `kyutai` for a `moshi-server` serving Kyutai STT. When the streaming server refuses or fails an utterance, `ears.stt_fallback_engine` transcribes it instead. `kyutai` can also end an utterance at the server's own end-of-turn signal: set `ears.kyutai.end_of_turn` to `on` (default `off`). It is ignored under `ears.vad.engine: gap`.
+
 ## Send a clip
 
 Each client shows the same call. In every one, the reply is printed, and the exit status is 0 only when ears answered 200.

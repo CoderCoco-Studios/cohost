@@ -139,7 +139,7 @@ interface Speaker { detector?: SpeechDetector; open?: Open; ring: Buffer[]; ring
 
 const normWord = (w: string): string => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 
-// @spec EARS-CON-001, EARS-CON-003, EARS-CON-004, EARS-CON-005, EARS-HEAR-001, EARS-HEAR-002, EARS-SRC-009, EARS-SRC-012, EARS-SRC-004, CONN-AUD-004, CONN-DESK-003, EARS-VAD-001, EARS-VAD-002, EARS-VAD-003, EARS-VAD-004, EARS-VAD-005, EARS-VAD-006, EARS-VAD-007, EARS-VAD-008, EARS-PART-003, EARS-PART-004, EARS-PART-005, EARS-PART-006, EARS-PART-007, EARS-PART-008, EARS-PART-009, EARS-PART-010, EARS-PART-013, EARS-PART-014
+// @spec EARS-CON-001, EARS-CON-003, EARS-CON-004, EARS-CON-005, EARS-HEAR-001, EARS-HEAR-002, EARS-HEAR-012, EARS-SRC-009, EARS-SRC-012, EARS-SRC-004, CONN-AUD-004, CONN-DESK-003, EARS-VAD-001, EARS-VAD-002, EARS-VAD-003, EARS-KYU-010, EARS-KYU-011, EARS-KYU-012, EARS-VAD-004, EARS-VAD-005, EARS-VAD-006, EARS-VAD-007, EARS-VAD-008, EARS-PART-003, EARS-PART-004, EARS-PART-005, EARS-PART-006, EARS-PART-007, EARS-PART-008, EARS-PART-009, EARS-PART-010, EARS-PART-013, EARS-PART-014
 export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
   const tracker = new FrameTracker(IN_FORMAT);
   const speakers = new Map<string, Speaker>();
@@ -210,15 +210,18 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     finalize(o, s, s.session!, clip, spk, durationMs);
   };
 
-  /** Close a speaker's open utterance and hand its clip, up to the last speech frame, on: to its session, or to transcription (EARS-VAD-003). */
-  const close = (sp: Speaker): void => {
+  /**
+   * Close a speaker's open utterance and hand its clip on: to its session, or to transcription (EARS-VAD-003). The clip ends at
+   * the last speech frame, or at the last frame received when `toLastFrame` (an end-of-turn signal, EARS-KYU-010).
+   */
+  const close = (sp: Speaker, toLastFrame = false): void => {
     const o = sp.open;
     if (!o) return;
     stopSteps(o);
     sp.open = undefined;
     sp.ring = []; sp.ringAt = [];
     const spk = [...speakers.entries()].find(([, v]) => v === sp)![0];
-    const end = Math.max(o.speechEnd, 1);
+    const end = toLastFrame ? o.chunks.length : Math.max(o.speechEnd, 1);
     const pcm = Buffer.concat(o.chunks.slice(0, end));
     const clip: Clip = { pcm, ...IN_FORMAT, audioEndedAt: o.at[end - 1]!, utteranceId: o.id };
     const s = o.stream;
@@ -320,7 +323,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
   // @spec EARS-SES-001, EARS-SES-002, EARS-SES-008, EARS-SES-009, EARS-SES-012
   /** Opens a session for a new utterance when one of `ears.max_stt_sessions` is free; the audio held so far waits for it. */
   // @spec EARS-SES-001, EARS-SES-002, EARS-SES-003, EARS-SES-010
-  const startSession = (o: Open): void => {
+  const startSession = (sp: Speaker, o: Open): void => {
     const st = d.stream;
     if (!st || !st.router.slots.acquire()) return;
     o.slot = true;
@@ -350,6 +353,11 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         s.session = session;
         s.state = "starting";
         session.onHypothesis((t) => hypothesis(o, t));
+        // @spec EARS-KYU-010, EARS-KYU-011, EARS-KYU-012: the signal closes this utterance only while it is still open
+        session.onEndOfTurn(() => {
+          if (o.closed || sp.open !== o) return;
+          close(sp, true);
+        });
         void session.failed.then((err) => s.fail?.(err));
         // the buffered start: each frame is pushed and, when the server returns a promise, awaited; frames that arrive meanwhile queue behind it
         const pump = async (): Promise<void> => {
@@ -394,7 +402,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       const chunks = [...sp.ring, pcm], at = [...sp.ringAt, now];
       sp.ring = []; sp.ringAt = [];
       const fresh = open(sp, spk, name, chunks, at);
-      if (d.stream) startSession(fresh);
+      if (d.stream) startSession(sp, fresh);
       if (d.maxUtteranceMs !== undefined && fresh.bytes >= d.maxUtteranceMs * BYTES_PER_MS) close(sp);
       return;
     }

@@ -272,3 +272,49 @@ test("barge-in: a line without more is not renewed, so it is not barged into aft
   await flush();
   assert.equal(stops(bus).length, 0);
 });
+
+// ---- A final after an interjection (SAL-BARGE-001 exemptions; SAL-INTJ-009, SAL-INTJ-010, SAL-INTJ-012) ----
+
+/** An interjection that cortex spoke, with this file's settings (barge_in on). */
+async function interjected(salience: Record<string, unknown> = {}) {
+  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0, barge_in: true, interject: true, ...salience } } });
+  const bus = new FakeBus();
+  const scorer = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), cfg.llm, { rules: (i) => scoreRules(i, true) }, silentLog);
+  // `random` is the injectable source of SAL-INTJ-004; not on SalienceDeps yet, hence a variable and not an object literal.
+  const deps = { cfg, bus, scorer, log: silentLog, now: () => 1_000_000, random: () => 0 };
+  const s = new Salience(deps);
+  await s.onEvent(event("speech.early", { speaker: "Chris", source: "discord", text: "look at this one", utteranceId: "u1", seq: 0, sttMs: 120 }));
+  await flush();
+  await s.onEvent(event("speech.retracted", { speaker: "Chris", source: "discord", utteranceId: "u1", seq: 0 }));
+  await flush();
+  await s.onEvent(event("brain.say", { id: "L1", text: "I know that one", emotion: "happy", reason: "engaged", interjected: true }));
+  await flush();
+  return { s, bus };
+}
+const finalOf = (text: string) => speech(text, { utteranceId: "u1", earlySeq: 2 });
+
+// @spec SAL-BARGE-001, SAL-INTJ-009
+test("barge-in: the final of an interjected utterance that the yield rule stops publishes no barge-in stop", async () => {
+  const { s, bus } = await interjected();
+  await s.onEvent(finalOf("look at this one and then some more"));
+  await flush();
+  assert.deepEqual(stops(bus), [{ reason: "yield", ids: ["L1"] }], "one stop, the yield, and no barge-in");
+});
+
+// @spec SAL-BARGE-001, SAL-INTJ-010
+test("barge-in: the short continuation of an interjected utterance takes no part in barge-in, with yield on or off", async () => {
+  for (const interject_yield of [true, false]) {
+    const { s, bus } = await interjected({ interject_yield });
+    await s.onEvent(finalOf("look at this one please"));
+    await flush();
+    assert.equal(stops(bus).length, 0, `yield ${interject_yield}`);
+  }
+});
+
+// @spec SAL-BARGE-001, SAL-INTJ-012
+test("barge-in: with yield off the final of an interjected utterance is checked for barge-in as any line is", async () => {
+  const { s, bus } = await interjected({ interject_yield: false });
+  await s.onEvent(finalOf("look at this one and then some more"));
+  await flush();
+  assert.deepEqual(stops(bus), [{ reason: "barge-in" }]);
+});

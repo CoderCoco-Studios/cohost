@@ -4,8 +4,8 @@ import type { Config, Emotion, Logger } from "@cohost/config";
 import type { ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
-import { speakerLabel } from "@cohost/shared/untrusted";
-import { Context, propagatedFlags, type InjectionFlags } from "@cohost/working-memory";
+import { normalizeKey, speakerLabel, viewerKey } from "@cohost/shared/untrusted";
+import { Context, propagatedFlags, type ContextEvent, type InjectionFlags } from "@cohost/working-memory";
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
 import { isRepeat, type RecentLine } from "./repeat.js";
@@ -24,6 +24,67 @@ export interface CortexDeps {
 /** Most viewer notes kept at once (CTX-VIEWER-002). */
 const MAX_VIEWER_NOTES = 50;
 
+/** A viewer a notes request names: a platform and user id when the sender has them, else the name alone. */
+type ViewerRef = BusEvent<"memory.notes.request">["data"]["viewers"][number];
+
+/** The one identity a viewer ref is deduplicated by: its `viewerKey`, or its name when it has no platform. */
+function refKey(r: ViewerRef): string {
+  return r.platform ? viewerKey({ platform: r.platform, userId: r.userId, user: r.user }) : `name:${normalizeKey(r.user)}`;
+}
+
+/**
+ * The viewers of a notes request: the focus's viewer first, then the chat viewers in the window newest first, one per
+ * `refKey`. The first spelling of a viewer wins, so the focus keeps its own and a window viewer takes its newest.
+ */
+// @spec CTX-NOTES-001
+function notesViewers(focus: Focus, events: readonly ContextEvent[]): ViewerRef[] {
+  const out: ViewerRef[] = [];
+  const seen = new Set<string>();
+  const add = (r: ViewerRef) => {
+    const k = refKey(r);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(r);
+  };
+  // A viewer ref carries the platform and user id only when the event has a platform: a focus with none is named alone (MEM-SURF-006).
+  const ref = (user: string, platform?: ViewerRef["platform"], userId?: string): ViewerRef =>
+    platform ? { user, platform, ...(userId ? { userId } : {}) } : { user };
+  const who = focus.focus?.who?.trim();
+  if (who) add(ref(who, focus.focus?.platform, focus.focus?.userId));
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.kind !== "chat") continue;
+    const user = e.user.trim();
+    if (user) add(ref(user, e.platform, e.userId));
+  }
+  return out;
+}
+
+/**
+ * Keep the reply entries that name a requested viewer, each once and as that viewer's name. An entry with a platform
+ * matches on its full key (`refKey`: the user id, or the name when it has none); an entry with no platform matches by
+ * name, and only when exactly one requested viewer has that name. An entry with a user id but no platform matches nothing.
+ */
+// @spec CTX-NOTES-011
+function matchNotes(people: People, requested: readonly ViewerRef[]): People {
+  const out: People = [];
+  const matched = new Set<number>();
+  for (const entry of people) {
+    let idx = -1;
+    if (entry.platform) {
+      const key = refKey(entry);
+      idx = requested.findIndex((r) => refKey(r) === key);
+    } else if (!entry.userId) {
+      const named = requested.flatMap((r, i) => (normalizeKey(r.user) === normalizeKey(entry.user) ? [i] : []));
+      if (named.length === 1) idx = named[0]!;
+    }
+    if (idx < 0 || matched.has(idx)) continue;
+    matched.add(idx);
+    out.push({ ...entry, user: requested[idx]!.user });
+  }
+  return out;
+}
+
 /** The cortex's state and event handling; main.ts wires it to the bus. */
 export class Cortex {
   readonly ctx: Context;
@@ -38,7 +99,7 @@ export class Cortex {
    */
   private pending = new Map<string, { since: number; timer: ReturnType<typeof setTimeout> }>();
   private mood: Mood | undefined;
-  /** Who-is-this notes from the memory region, keyed by lowercase user so one viewer's framing never lands on another's reply. */
+  /** Who-is-this notes from the memory region, keyed by `viewerKey` so one viewer's framing never lands on another's reply (CTX-VIEWER-002). */
   private viewerNotes = new Map<string, string>();
   /** A fallback line played in place of this one: kept until a reply that carried its hint is published (CTX-FALL-003, CTX-FALL-005). */
   private glitch: { id: string; intended: string; fallback: string } | undefined;
@@ -130,6 +191,8 @@ export class Cortex {
       // @spec CTX-VIEWER-001, CTX-VIEWER-002
       case "memory.viewer": {
         const d = ev.data as BusEvent<"memory.viewer">["data"];
+        // A viewer with no platform has no key, so it makes no note (CTX-VIEWER-002).
+        if (!d.platform) break;
         // Memory decides who is a regular (the owner's flag or its message threshold); no notes text rides here.
         // @spec CTX-VIEWER-001, CTX-VIEWER-004
         const name = speakerLabel(d.user, this.d.cfg.viewer_text.max_name_chars);
@@ -138,12 +201,20 @@ export class Cortex {
           : d.regular
             ? `${name} is a regular (${d.msgCount} messages).`
             : undefined;
-        const key = d.user.toLowerCase();
+        const key = viewerKey({ platform: d.platform, userId: d.userId, user: d.user });
         this.viewerNotes.delete(key);
         if (note) this.viewerNotes.set(key, note);
         if (this.viewerNotes.size > MAX_VIEWER_NOTES) {
           for (const oldest of this.viewerNotes.keys()) { this.viewerNotes.delete(oldest); break; } // a Map iterates in insertion order
         }
+        break;
+      }
+      // @spec CTX-FORGET-001, CTX-FORGET-002
+      case "chat.removed": {
+        const d = ev.data as BusEvent<"chat.removed">["data"];
+        this.ctx.forget(d);
+        // Only a user removal ends that viewer's familiarity note; a message removal keeps it. The key needs no name when it has a userId.
+        if (d.scope === "user" && d.userId) this.viewerNotes.delete(viewerKey({ platform: d.platform, userId: d.userId, user: "" }));
         break;
       }
       // @spec CTX-EVT-007
@@ -181,8 +252,10 @@ export class Cortex {
       // @spec CTX-NOTES-008
       if (people.length) log.info({ viewers: people.length, notes: people.reduce((n, v) => n + v.notes.length, 0) }, "viewer notes");
       // @spec CTX-VIEWER-003
-      const who = focus.focus?.who?.toLowerCase();
-      const viewerNote = who ? this.viewerNotes.get(who) : undefined;
+      const focusKey = focus.focus?.platform && focus.focus.who
+        ? viewerKey({ platform: focus.focus.platform, userId: focus.focus.userId, user: focus.focus.who })
+        : undefined;
+      const viewerNote = focusKey ? this.viewerNotes.get(focusKey) : undefined;
       // @spec CTX-FALL-004, CTX-FALL-005, CTX-FALL-006
       // The hint states the base chance and nothing more: no draw, and the reply is never checked against it.
       if (this.glitch && !this.ctx.hasSelf(this.glitch.id)) this.glitch = undefined; // its line scrolled out of the window
@@ -228,7 +301,7 @@ export class Cortex {
       // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
       const timing = { ...(focusedAt === undefined ? {} : { focusedAt }), llmStartedAt, llmEndedAt, criticEndedAt, ...focus.timing }; // received stamps win (BUS-EVT-025)
       await this.say(text, emotion, gesture, focus.reason, { ...propagatedFlags(focus), timing }, () => {
-        if (who && this.viewerNotes.get(who) === viewerNote) this.viewerNotes.delete(who);
+        if (focusKey && this.viewerNotes.get(focusKey) === viewerNote) this.viewerNotes.delete(focusKey);
         if (carried && this.glitch === carried) this.glitch = undefined; // a newer glitch stays pending (CTX-FALL-005)
       });
     } catch (err) {
@@ -305,37 +378,17 @@ export class Cortex {
     });
   }
 
-  // @spec CTX-NOTES-001
-  /** The replied-to viewer first, then the distinct chat users in the working-memory window, newest first; each name once. */
-  private notesUsers(focus: Focus): string[] {
-    const seen = new Set<string>();
-    const users: string[] = [];
-    const add = (name: string | undefined) => {
-      const trimmed = name?.trim();
-      if (!trimmed || seen.has(trimmed.toLowerCase())) return;
-      seen.add(trimmed.toLowerCase());
-      users.push(trimmed);
-    };
-    add(focus.focus?.who);
-    const events = this.ctx.all();
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i]!;
-      if (e.kind === "chat") add(e.user);
-    }
-    return users;
-  }
-
-  // @spec CTX-NOTES-001, CTX-NOTES-002, CTX-NOTES-003, CTX-NOTES-007
+  // @spec CTX-NOTES-001, CTX-NOTES-002, CTX-NOTES-003, CTX-NOTES-007, CTX-NOTES-011
   /** Ask the memory region for the notes of the people in this conversation; none if it is silent or the publish fails. Nothing is kept afterwards. */
   private fetchNotes(focus: Focus): Promise<People> {
     const { cfg, bus, log } = this.d;
-    const users = this.notesUsers(focus);
-    if (!users.length) return Promise.resolve([]);
+    const viewers = notesViewers(focus, this.ctx.all());
+    if (!viewers.length) return Promise.resolve([]);
     const id = randomUUID();
     return new Promise<People>((resolve) => {
       const timer = setTimeout(() => { this.pendingNotes.delete(id); log.warn("memory region did not answer the viewer-notes request in time"); resolve([]); }, cfg.brain.cortex.recall_timeout_ms);
-      this.pendingNotes.set(id, (p) => { clearTimeout(timer); this.pendingNotes.delete(id); resolve(p); });
-      void bus.publish("memory.notes.request", { id, viewers: users.map((user) => ({ user })) as [{ user: string }, ...{ user: string }[]] }).catch(() => {
+      this.pendingNotes.set(id, (p) => { clearTimeout(timer); this.pendingNotes.delete(id); resolve(matchNotes(p, viewers)); });
+      void bus.publish("memory.notes.request", { id, viewers: viewers as [ViewerRef, ...ViewerRef[]] }).catch(() => {
         clearTimeout(timer); this.pendingNotes.delete(id); resolve([]);
       });
     });

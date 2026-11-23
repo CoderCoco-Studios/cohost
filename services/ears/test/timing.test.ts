@@ -102,3 +102,33 @@ test("http clip: audioEndedAt is when ears received the clip", async () => {
     assert.ok(at !== undefined && at >= before && at <= after, `audioEndedAt ${String(at)} within [${before}, ${after}]`);
   } finally { await r.stop(); }
 });
+
+// @spec EARS-EARLY-020
+test("a dir clip and injected audio are not closed by ears: no closedAt", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ears-timing-"));
+  const r = await boot({ sources: ["dir"], stt_engine: "stub", dir: { path: dir, poll_ms: 20 } });
+  try {
+    await writeFile(join(dir, "a.wav"), wavWrap(Buffer.alloc(32000), 16000, 1));
+    await waitFor(() => r.bus.of("speech.heard").length === 1, "speech.heard");
+    assert.equal((r.bus.of("speech.heard")[0]!.timing as { closedAt?: number } | undefined)?.closedAt, undefined);
+  } finally { await r.stop(); await rm(dir, { recursive: true, force: true }); }
+  const bus = new FakeBus();
+  const UP = "0123456789abcdef0123456789abcdef";
+  bus.takeUpload = async () => wavWrap(Buffer.alloc(32000), 16000, 1);
+  const handle = createInjectHandler({ bus, log: silentLog, transcribe: async () => "hello there" });
+  handle(event("inject.request", { id: "a1", target: "ears", kind: "audio", uploadId: UP, contentType: "audio/wav", remember: false }) as never);
+  await handle.drain();
+  assert.equal((bus.of("speech.heard")[0]!.timing as { closedAt?: number } | undefined)?.closedAt, undefined);
+});
+
+// @spec EARS-EARLY-020
+test("an http clip is not closed by ears: no closedAt", async () => {
+  const port = await freePort();
+  const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port } });
+  try {
+    let res: Response | undefined;
+    for (let i = 0; i < 50 && !res; i++) { res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav" } }).catch(() => undefined); if (!res) await sleep(20); }
+    assert.equal(res?.status, 200);
+    assert.equal((r.bus.of("speech.heard")[0]!.timing as { closedAt?: number } | undefined)?.closedAt, undefined);
+  } finally { await r.stop(); }
+});

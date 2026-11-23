@@ -8,14 +8,14 @@ test("ready when the llm answered ping", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => true));
   assert.equal(hbs[1]!.service, "cortex");
   assert.equal(hbs[1]!.mode, "live");
-  assert.deepEqual(hbs[1]!.deps, { llm: "ok" });
+  assert.deepEqual(hbs[1]!.deps, { llm: "ok", tools: "n/a" });
   assert.deepEqual(hbs.map((h) => h.state), ["starting", "ready", "stopping"]);
 });
 
 // @spec CTX-HEALTH-002
 test("llm unreachable: dep down and state degraded", async () => {
   const hbs = await runHeartbeat(cortexHealth(() => false));
-  assert.deepEqual(hbs[1]!.deps, { llm: "down" });
+  assert.deepEqual(hbs[1]!.deps, { llm: "down", tools: "n/a" });
   assert.equal(hbs[1]!.state, "degraded");
 });
 
@@ -29,12 +29,12 @@ test("mock provider: mode mock", async () => {
 test("llm status follows the supplied outcome: down after a failed reply, ok again after recovery", async () => {
   let ok = true;
   const spec = cortexHealth(() => ok);
-  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok", tools: "n/a" });
   ok = false;
   const down = await runHeartbeat(spec);
   assert.equal(down[1]!.state, "degraded");
   ok = true;
-  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok", tools: "n/a" });
 });
 
 // @spec CTX-HEALTH-004
@@ -42,9 +42,9 @@ test("a provider whose ping is nominal reports llm n/a (not probed) until a repl
   let probed = false;
   const spec = cortexHealth(() => true, "bedrock", () => probed);
   const before = await runHeartbeat(spec);
-  assert.deepEqual([before[1]!.state, before[1]!.deps], ["ready", { llm: "n/a" }]);
+  assert.deepEqual([before[1]!.state, before[1]!.deps], ["ready", { llm: "n/a", tools: "n/a" }]);
   probed = true;
-  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok" });
+  assert.deepEqual((await runHeartbeat(spec))[1]!.deps, { llm: "ok", tools: "n/a" });
 });
 
 // @spec CTX-HEALTH-004

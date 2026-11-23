@@ -94,12 +94,12 @@ Design: LLD Interrupted thoughts (deferred). Prerequisite: CTX-REPLAN-001.
 
 Design: [working-memory-design.md § An unfinished line](working-memory-design.md#an-unfinished-line). Only an interjection writes an unfinished event (SAL-INTJ-007, CTX-INTJ-002); nothing else writes an early transcript to a window.
 
-- [ ] **WM-UNF-001**: When `pushUnfinished(utteranceId, speaker, text, ts)` is called, the system shall append one `speech` context event flagged `unfinished` that carries `utteranceId`, `seen` true, `speaker` bounded as WM-PUSH-017 bounds it and `text` bounded as WM-PUSH-016 bounds it, and shall return that event.
-- [ ] **WM-UNF-002**: When `push` is given a `speech.heard` bus event for an `utteranceId` that has an unfinished event in the window, the system shall append an ordinary unseen `speech` context event with the final's full text after it, and shall remove or change no existing event.
-- [ ] **WM-UNF-003**: When `push` is given a `speech.early` or a `speech.retracted` bus event, the system shall leave the window unchanged and return `undefined` (WM-PUSH-009).
-- [ ] **WM-UNF-004**: When `transcript` renders an unfinished `speech` context event, the system shall emit `[voice] <label> (unfinished): <text>` on one line, where `<label>` is `speakerLabel(speaker, viewer_text.max_name_chars)` and `<text>` is the stored text, not quoted.
-- [ ] **WM-UNF-005**: While an unfinished `speech` context event's `utteranceId` has produced no `speech.heard`, the system shall keep the event until the count trimming of WM-WIN-001 removes it, and shall evict it by no age (WM-WIN-002).
-- [ ] **WM-UNF-006**: When `push` is given a `speech.heard` bus event that carries an `utteranceId`, the system shall store it on the entry's `utteranceId`.
+- [x] **WM-UNF-001**: When `pushUnfinished(utteranceId, speaker, text, ts)` is called, the system shall append one `speech` context event flagged `unfinished` that carries `utteranceId`, `seen` true, `speaker` bounded as WM-PUSH-017 bounds it and `text` bounded as WM-PUSH-016 bounds it, and shall return that event.
+- [x] **WM-UNF-002**: When `push` is given a `speech.heard` bus event for an `utteranceId` that has an unfinished event in the window, the system shall append an ordinary unseen `speech` context event with the final's full text after it, and shall remove or change no existing event.
+- [x] **WM-UNF-003**: When `push` is given a `speech.early` or a `speech.retracted` bus event, the system shall leave the window unchanged and return `undefined` (WM-PUSH-009).
+- [x] **WM-UNF-004**: When `transcript` renders an unfinished `speech` context event, the system shall emit `[voice] <label> (unfinished): <text>` on one line, where `<label>` is `speakerLabel(speaker, viewer_text.max_name_chars)` and `<text>` is the stored text, not quoted.
+- [x] **WM-UNF-005**: While an unfinished `speech` context event's `utteranceId` has produced no `speech.heard`, the system shall keep the event until the count trimming of WM-WIN-001 removes it, and shall evict it by no age (WM-WIN-002).
+- [x] **WM-UNF-006**: When `push` is given a `speech.heard` bus event that carries an `utteranceId`, the system shall store it on the entry's `utteranceId`.
 
 ## Streamed lines
 

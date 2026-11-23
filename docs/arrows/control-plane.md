@@ -4,9 +4,9 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 84 `[x]`, 25 `[ ]`, 2 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 103 `[x]`, 6 `[ ]`, 2 `[D]`.
 
-**AUDITED**: 111 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 25 gaps: CTRL-HEALTH-005; CTRL-LAT-003 to 005 and 017 to 033 (the early-reply latency specs); CTRL-MANIFEST-001, -002, -003, -005 (the 19-unit manifest and the `VISION_PROVIDER` preset). The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
+**AUDITED**: 111 specs: 103 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 6 gaps: CTRL-HEALTH-005; CTRL-LAT-017; CTRL-MANIFEST-001, -002, -003, -005 (the 19-unit manifest and the `VISION_PROVIDER` preset). The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
 ## Orientation
 
@@ -38,6 +38,8 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - packages/control/test/health-clock.test.ts
 - packages/control/test/healthcheck.test.ts
 - packages/control/test/latency.test.ts
+- packages/control/test/latency-early.test.ts
+- packages/control/test/perf-baseline.test.ts
 - packages/control/test/launch.e2e.test.ts
 - packages/control/test/lock.test.ts
 - packages/control/test/manifest.test.ts
@@ -47,6 +49,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 
 ### Code
 - packages/control/src/cli.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts
+- scripts/dev/perf-baseline.sh, scripts/dev/perf-connector.ts (connector mode, CTRL-LAT-030, -031)
 - packages/bus/src/index.ts (`Bus.serverTime`, CTRL-CHECK-004), crates/cohost-bus/src/transport.rs (CTRL-CHECK-004)
 - Consumers (owned elsewhere): services/dashboard/src/control.ts, routes.ts, stack.ts; docker-compose.yml (`x-ts-service`, realizes CTRL-CHECK-003, not annotated); Dockerfile
 
@@ -70,19 +73,20 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
-| Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-005 | 5 | 5 | 0 | 0 |
-| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -012 | 8 | 8 | 0 | 0 |
+| Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-006 | 6 | 2 | 0 | 4 |
+| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -013 | 9 | 9 | 0 | 0 |
 | Controller guards and orchestration | CTRL-GUARD-001, -003 to -008 | 7 | 7 | 0 | 0 |
-| Stack controller | CTRL-STACK-001 to CTRL-STACK-015 | 15 | 15 | 0 | 0 |
+| Stack controller | CTRL-STACK-001 to CTRL-STACK-019 | 19 | 19 | 0 | 0 |
 | Lifecycle lock | CTRL-LOCK-001 to CTRL-LOCK-004 | 4 | 4 | 0 | 0 |
 | Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 3 | 0 | 0 |
-| Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 11 | 0 | 0 |
+| Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 10 | 0 | 1 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 4 | 0 | 0 |
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -017 | 15 | 15 | 0 | 0 |
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
-| Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-016 (017 not in #193) | 2 | 2 | 0 | 0 |
+| Early-reply latency | CTRL-LAT-018 to CTRL-LAT-033 | 16 | 16 | 0 | 0 |
+| Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-017 | 3 | 2 | 0 | 1 |
 
-**Summary:** 111 specs: 84 implemented, 25 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 111 specs: 103 implemented, 6 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

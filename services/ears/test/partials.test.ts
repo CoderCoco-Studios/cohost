@@ -533,3 +533,27 @@ test("streamed partials are published one at a time, and seq rises by one for ea
     };
   }));
 });
+
+// @spec EARS-PART-009, EARS-EARLY-016
+test("a reused early transcript is the final even with a partial in flight: nothing waits for the partial, and its late result publishes nothing", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let lastFrameAt = Infinity;
+  let earlyTaken = false;
+  const stt = fakeStt(async (c) => {
+    if (!earlyTaken && c.startedAt >= lastFrameAt + 80) { earlyTaken = true; return "hello there"; } // the early snapshot
+    await gate; // every partial step
+    return "hello there my friend";
+  });
+  await run(stt, cfg({ silence_ms: 700, partial_step_ms: 150, stt_timeout_ms: 5000, early: { enabled: true, after_ms: 100 } }), async (r) => {
+    await feed(r.bus, 10, { gapMs: 15 });
+    lastFrameAt = Date.now();
+    await waitFor(() => r.heard().length === 1, "speech.heard while a partial is in flight", 3000);
+    const h = r.heard()[0]!;
+    assert.equal(stt.stats.inflight() >= 1, true, "a partial is still in flight");
+    assert.deepEqual([h.text, h.earlySeq], ["hello there", 0]);
+    release();
+    await sleep(150);
+    assert.equal(r.partials().length, 0, "no partial after the final");
+  });
+});

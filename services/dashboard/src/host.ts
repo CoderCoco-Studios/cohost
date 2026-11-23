@@ -12,11 +12,11 @@ export function resolvePorts(dashboard: { port: number; lan_port: number }): { p
 }
 
 /** What the LAN listener serves: the sink page with its bundle, its audio and the health check. */
-// @spec DASH-HOST-002
+// @spec DASH-HOST-002, DASH-MDL-008
 export function lanAllows(method: string, pathname: string): boolean {
   if (pathname === "/health") return true;
   if (method === "GET" && (pathname === "/" || pathname.startsWith("/audio/"))) return true;
-  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
+  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || pathname === "/avatar/model" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
   return method === "POST" && pathname === "/sink";
 }
 
@@ -195,7 +195,8 @@ function listen(server: http.Server, host: string | undefined, port: number, lab
 export async function startListeners(o: ListenerOptions): Promise<Listeners | undefined> {
   const loopback = isLoopback(o.bind);
   const allowedHosts = o.allowedHosts ?? [];
-  const full = http.createServer(guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
+  // No request timeout on the full surface: an upload's own 30 s idle limit (DASH-MDL-023) is the only cut on a slow body that keeps moving.
+  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
   const lan = http.createServer(lanHandler(o.handler, allowedHosts));
   // @spec DASH-HOST-008, DASH-HOST-009
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);

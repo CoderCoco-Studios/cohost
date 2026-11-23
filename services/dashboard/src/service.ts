@@ -4,6 +4,8 @@ import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
+import { AppliedView } from "./applied.js";
+import { ModelStore, modelsDir } from "./models.js";
 import { uploadLimits } from "./uploads.js";
 import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
@@ -22,6 +24,10 @@ export interface DashboardDeps {
   lanHost?: string;
   /** Gives the stack service its controller; default the Compose-backed one. */
   attachStack?: (stack: StackService) => void;
+  /** Writes one chunk of an upload to its temporary file; default the file system. Tests inject a failing one (DASH-MDL-029). */
+  writeModelChunk?: ModelStore["writeChunk"];
+  /** Awaited at the start of each model listing; tests inject a delay to widen a race (DASH-AVR-028). */
+  modelPause?: () => Promise<void>;
 }
 
 /**
@@ -57,7 +63,14 @@ export function dashboardService(deps: DashboardDeps = {}) {
 
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.
       const decorate = (snap: ServiceHealth[]): ServiceHealth[] => { const s = stack.snapshot(); return withContainerRestarts(snap, { docker: s.docker, services: s.services.map((c) => ({ ...c })) }); };
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack });
+      // @spec DASH-MDL-031, DASH-AVR-023
+      const store = new ModelStore(modelsDir(), deps.writeModelChunk, deps.modelPause);
+      await store.sweep();
+      const applied = new AppliedView(log);
+      const r = cfg.renderer;
+      applied.start({ model: r.model, zoom: r.zoom, offset_y: r.offset_y, turn: r.turn }, await store.loadable());
+      const models = { store, applied, maxBytes: cfg.dashboard.models.max_bytes };
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models });
 
       const wss = new WebSocketServer({ noServer: true });
       const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev) });

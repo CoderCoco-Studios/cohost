@@ -135,7 +135,7 @@ test("a refused connection is a plain network failure, not an API error", async 
   await assert.rejects(t.lookup(VIDEO), (e: unknown) => e instanceof Error && !(e instanceof YouTubeApiError));
 });
 
-// @spec CHAT-YT-026, CHAT-YT-024, CHAT-YT-001
+// @spec CHAT-YT-026, CHAT-YT-001
 test("poll is one GET of liveChatMessages.list with the chat id, parts snippet and authorDetails, the page token and the key", async () => {
   await withServers(async (s) => {
     const body = { kind: "youtube#liveChatMessageListResponse", pollingIntervalMillis: 5000, nextPageToken: "NEXT", items: [{ id: "m1", snippet: { type: "textMessageEvent", textMessageDetails: { messageText: "hi" } }, authorDetails: { channelId: "UC1", displayName: "A" } }] };

@@ -271,18 +271,6 @@ test("after the switch to polling the source never returns to the stream", async
   assert.ok(r.t.of("poll").length > 10);
 });
 
-// A page token exists only once a response has begun, and a stream that has begun never falls back (CHAT-YT-021), so the
-// switch cannot carry a token in this design: reported to the owner as a spec/LLD inconsistency.
-// @spec CHAT-YT-024
-test("the switch to polling passes the last page token", { todo: "unreachable as specified: no token exists before a stream has opened, and no fallback happens after it has" }, async () => {
-  assert.fail("no scenario reaches a switch to polling with a token");
-});
-
-// @spec CHAT-YT-025
-test("a token rejected on the switch to polling is dropped, with newest as the baseline", { todo: "unreachable as specified, see CHAT-YT-024" }, async () => {
-  assert.fail("no scenario reaches a switch to polling with a token");
-});
-
 // ---------------------------------------------------------------- polling
 
 // @spec CHAT-YT-026
@@ -412,7 +400,8 @@ test("after quota the source resumes from its last page token", async () => {
   await r.start();
   await r.clock.advance(1000 + HOUR + 5000);
   const polls = r.t.of("poll");
-  assert.equal(polls.at(-1)!.pageToken, "tokA");
+  // The resume call (the third poll) carries the token; later polls carry what their responses returned (CHAT-YT-027).
+  assert.equal(polls[2]!.pageToken, "tokA", "the resume call carries the token");
   assert.deepEqual(r.texts(), ["n"]);
 });
 
@@ -427,7 +416,8 @@ test("a token rejected on resume after quota is dropped and newest is the baseli
   await r.start();
   await r.clock.advance(1000 + HOUR + 10_000);
   const polls = r.t.of("poll");
-  assert.equal(polls.at(-1)!.pageToken, undefined, "polling without a token");
+  assert.equal(polls[2]!.pageToken, "tokA", "the resume call carries the rejected token");
+  assert.equal(polls[3]!.pageToken, undefined, "the next call polls without a token");
   assert.deepEqual(r.texts(), ["n"], "history is dropped by newest and by the seen ids");
 });
 
@@ -473,6 +463,13 @@ test("a later message is published only when its id is unseen and its publishedA
   const r = await afterHistory([text("h", 10)], [resp([text("old", 5), text("same", 10), text("new", 11)])]);
   await next(r);
   assert.deepEqual(r.texts(), ["new"], "older and equal times are dropped");
+});
+
+// @spec CHAT-YT-035
+test("a later message with no publishedAt is published once its id is unseen, after the baseline exists", async () => {
+  const r = await afterHistory([text("h", 10)], [resp([text("h", undefined), text("bare", undefined), text("new", 11)])]);
+  await next(r);
+  assert.deepEqual(r.texts(), ["bare", "new"], "the seen id h is dropped; a message with no publishedAt is published");
 });
 
 // @spec CHAT-YT-036
@@ -713,6 +710,19 @@ test("poll failures retry on the capped backoff, which resets when a call succee
 });
 
 // @spec CHAT-YT-049
+test("a successful live lookup does not reset the backoff: the next poll failure waits the grown delay", async () => {
+  const r = rig({ transport: "poll" });
+  r.t.lookup_(apiErr(500), apiErr(500), LIVE);
+  r.t.poll_(apiErr(500), resp([]));
+  await r.start();
+  await r.clock.advance(3000);
+  assert.deepEqual(r.t.of("lookup").map((c) => c.at), [0, 1000, 3000], "lookups paced 1 s then 2 s");
+  assert.deepEqual(r.t.of("poll").map((c) => c.at), [3000], "the live lookup starts the poll at once");
+  await r.clock.advance(4000);
+  assert.deepEqual(r.t.of("poll").map((c) => c.at), [3000, 7000], "the poll failure waits 4 s, not 1 s: the lookup did not reset the backoff");
+});
+
+// @spec CHAT-YT-049
 test("the backoff is capped at 60 s", async () => {
   const r = rig({ transport: "poll" });
   r.t.lookup_(...Array.from({ length: 10 }, () => apiErr(502)), LIVE);
@@ -773,7 +783,7 @@ async function afterBreak(resumed: Item[], how: "error" | "quota"): Promise<Rig>
   if (how === "quota") r.t.lookup_(LIVE);
   await r.start();
   await r.clock.advance(how === "error" ? 5000 : HOUR + 5000);
-  assert.equal(r.t.of("poll").at(-1)!.pageToken, "tokA", "resumed from the token");
+  assert.equal(r.t.of("poll")[2]!.pageToken, "tokA", "the resume call carries the token");
   return r;
 }
 

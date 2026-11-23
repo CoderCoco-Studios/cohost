@@ -464,9 +464,25 @@ test("a failed chat.removed publish is logged at warn and the next removal is st
 });
 
 // @spec CHAT-FORGET-007
+// The write guard: no call that sends a line, bans, times out or deletes on a platform. The YouTube poll is a GET of
+// liveChatMessages.list (CHAT-YT-026, CHAT-YT-059) and is read, not write, so the guard matches only write shapes.
+const PLATFORM_WRITE = new RegExp([
+  String.raw`\.(say|ban|timeout|deleteMessage|deleteChatMessage|clear|action|whisper|banUser|timeoutUser)\s*\(`,
+  String.raw`\/moderation\/|helix\.moderation`,
+  String.raw`liveChat\/(bans|moderators)`,
+  String.raw`liveChatMessages\.insert|liveChat\/messages\/(insert|transition)`,
+  String.raw`method\s*:\s*["'](POST|PUT|DELETE|PATCH)["']`,
+].join("|"));
+
 test("chat/src has no call that sends a line, ban, timeout or delete to a platform", () => {
   const dir = fileURLToPath(new URL("../src/", import.meta.url));
   const all = readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
-  assert.doesNotMatch(all, /\.(say|ban|timeout|deleteMessage|deleteChatMessage|clear|action|whisper|banUser|timeoutUser)\s*\(/);
-  assert.doesNotMatch(all, /\/moderation\/|helix\.moderation|liveChat\/(bans|messages)/);
+  assert.doesNotMatch(all, PLATFORM_WRITE);
+});
+
+test("the write guard trips on a write shape and passes the YouTube poll read (positive control)", () => {
+  assert.match('fetch(new URL("https://www.googleapis.com/youtube/v3/liveChat/messages"), { method: "POST" })', PLATFORM_WRITE, "a POST to liveChat/messages");
+  assert.match('client.say("#chan", "hi")', PLATFORM_WRITE, "a chat send");
+  assert.match("/youtube/v3/liveChat/bans", PLATFORM_WRITE, "a ban call");
+  assert.doesNotMatch('url.pathname = "/youtube/v3/liveChat/messages"; // list, GET by default', PLATFORM_WRITE, "the poll read");
 });

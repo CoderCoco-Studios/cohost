@@ -9,3 +9,6 @@ packages:
 allowBuilds:
   esbuild: true
   onnxruntime-node: false
+  # protobufjs (via @grpc/proto-loader) has a postinstall that only prints a donation notice;
+  # denied explicitly so the gRPC transport installs without running install scripts.
+  protobufjs: false

@@ -1,8 +1,14 @@
-// Vendored for the YouTube chat source (docs/intent/chat/chat-design.md, "The transport").
-// The YouTube Live Streaming API StreamList proto (service V3DataLiveChatMessageService, package youtube.api.v3).
-// Provenance: copied from github.com/xaionaro-go/streamctl, pkg/streamcontrol/youtube/grpc/stream_list.proto, a copy of
-// the proto Google publishes for liveChatMessages.streamList. The Google-hosted original could not be fetched when this
-// was vendored (youtube/api-samples has no proto/ directory); re-check this file against Google's.
+// YouTube Live Streaming API: V3DataLiveChatMessageService.StreamList (liveChatMessages.streamList), messages as the
+// stream returns them. Vendored for the YouTube chat source (docs/intent/chat/chat-design.md, "The transport").
+//
+// Source: github.com/xaionaro-go/streamctl, pkg/streamcontrol/youtube/grpc/stream_list.proto (the body below is a
+// byte-for-byte copy of that file at vendoring time). That repository is licensed CC0-1.0 (public domain dedication),
+// which permits this copy. The Google-published original was not fetched, so its own terms are unverified.
+//
+// This file must match the YouTube Live Chat API documentation (liveChatMessages.streamList, the LiveChatMessage
+// resource). It is the only wire contract for the stream: when the documentation changes, update this file, then
+// the mapper and the transport tests. Re-check every field name and enum value against the docs before relying on
+// a new field. The Node loader reads it with @grpc/proto-loader (camelCase names, enum names as strings).
 syntax = "proto3";
 package youtube.api.v3;
 option go_package = "github.com/xaionaro-go/streamctl/pkg/streamcontrol/youtube/grpc/ytgrpc;ytgrpc";

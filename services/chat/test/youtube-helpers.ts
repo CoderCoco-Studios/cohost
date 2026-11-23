@@ -169,8 +169,10 @@ export class ScriptedTransport implements YouTubeTransport {
 
   private async answer<T>(queue: Step<T>[], call: Call, fallback?: (c: Call) => T): Promise<T> {
     this.calls.push(call);
-    const step = queue.shift();
-    if (step === undefined) {
+    // An `undefined` step is an answer (no item), so an empty queue is tested by length, not by the step's value.
+    const empty = queue.length === 0;
+    const step = empty ? undefined : queue.shift();
+    if (empty) {
       if (fallback) return fallback(call);
       return new Promise<T>((_, rej) => {
         const err = Object.assign(new Error("aborted"), { name: "AbortError" });

@@ -15,9 +15,11 @@ function setup(opts: { enabled?: boolean } = {}) {
   const feed = createFeed({ url: "ws://x/ws", createSocket: (u) => new FakeSocket(u) as unknown as WebSocket, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, now: () => clock.now });
   feed.start(); FakeSocket.last().open();
   const posts: Report[] = [];
+  /** Indexes into `posts` of the reports posted with `keepalive`. */
+  const keep = new Set<number>();
   const unload = new EventTarget();
   const audio = createAudio({
-    feed, sink: async (r: Report) => { posts.push(r); }, createAudio: (src: string) => new FakeAudio(src) as unknown as HTMLAudioElement, enabled: opts.enabled,
+    feed, sink: async (r: Report, o?: { keepalive?: boolean }) => { if (o?.keepalive) keep.add(posts.length); posts.push(r); }, createAudio: (src: string) => new FakeAudio(src) as unknown as HTMLAudioElement, enabled: opts.enabled,
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, target: unload,
   } as unknown as Parameters<typeof createAudio>[0]);
   let n = 0;
@@ -30,7 +32,7 @@ function setup(opts: { enabled?: boolean } = {}) {
   const stop = (ids?: string[], replay = false) => frame("voice.stop", { reason: "barge-in", ...(ids ? { ids } : {}) }, replay);
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const clip = (i: number) => FakeAudio.instances[i]!;
-  return { audio, posts, utt, clause, stop, flush, clock, clip, unload };
+  return { audio, posts, utt, clause, stop, flush, clock, clip, unload, keep };
 }
 const srcs = () => FakeAudio.instances.map((a) => a.src);
 
@@ -304,7 +306,11 @@ test("a clause 0 that errors counts as not played: its line is skipped and its l
   utt("L", 0, "A", { more: true }); utt("L", 1, "B");
   await flush();
   clip(0).fail(); await flush();
-  assert.deepEqual(posts, [{ event: "playing", id: "L", seq: 0 }, { event: "done", id: "L", seq: 0 }]);
+  assert.deepEqual(posts, [
+    { event: "playing", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 1, final: true },
+  ]);
   assert.deepEqual(srcs(), ["/audio/L-0.wav"]);
 });
 
@@ -338,4 +344,53 @@ test("a refusal turns audio off and finishes every other open line with final, s
   FakeAudio.refuse = false;
   assert.equal(audio.state.get().enabled, false);
   assert.deepEqual(posts.at(-1), { event: "done", id: "B", seq: 1, final: true });
+});
+
+// @spec DASH-UI-051
+test("unloading while a clip of an open line plays reports that clip's done and final for the next clause, both with keepalive", async () => {
+  const { posts, utt, flush, clip, unload, keep } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); await flush();
+  unload.dispatchEvent(new Event("pagehide")); await flush();
+  clip(0).end(); await flush();
+  assert.deepEqual(posts, [
+    { event: "playing", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 1, final: true },
+  ]);
+  assert.deepEqual([...keep].sort(), [1, 2]);
+});
+
+// @spec DASH-UI-045, DASH-UI-044
+test("a clause that errors still counts as finished for the closing clause's through, but its text is not spoken", async () => {
+  const { posts, utt, clause, stop, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); utt("L", 1, "B");
+  await flush(); clip(0).end(); await flush();
+  clip(1).fail(); await flush();
+  clause("L", 2, "", { last: true, through: 1 }); await flush();
+  const before = posts.length;
+  stop(); await flush();
+  assert.equal(posts.length, before, "the line ended once clause 1 errored");
+});
+
+// @spec DASH-UI-052, DASH-UI-051
+test("a clause 0 that errors after it played finishes an open line with final for the next clause, and that line is skipped", async () => {
+  const { posts, utt, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A", { more: true }); utt("L", 1, "B");
+  await flush(); clip(0).fail(); await flush();
+  assert.deepEqual(posts, [
+    { event: "playing", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 0 },
+    { event: "done", id: "L", seq: 1, final: true },
+  ]);
+  assert.deepEqual(srcs(), ["/audio/L-0.wav"]);
+});
+
+// @spec DASH-UI-047, DASH-UI-051
+test("audio switched off mid-clip, then a live voice.stop for that line: the clip is cut and the interrupted done is the line's last report", async () => {
+  const { audio, posts, utt, stop, flush, clip } = setup({ enabled: true });
+  utt("L", 0, "A B", { more: true }); await flush();
+  audio.disable();
+  stop(["L"]); await flush();
+  assert.equal(clip(0).paused, true);
+  assert.deepEqual(posts.slice(1), [{ event: "done", id: "L", seq: 0, interrupted: true, unsaidText: "A B" }]);
 });

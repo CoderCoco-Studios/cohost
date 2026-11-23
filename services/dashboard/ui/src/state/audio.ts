@@ -156,8 +156,20 @@ export function createAudio(deps: AudioDeps): Audio {
    */
   function finishLine(l: Line, keepalive: boolean): void {
     if (l.ended || !l.open) return;
-    if (current && current.item.line === l) { l.finalAfter = true; endLine(l); return; }
-    post({ event: "done", id: l.id, seq: l.lastStarted + 1, final: true }, keepalive ? { keepalive: true } : undefined);
+    const opts = keepalive ? { keepalive: true } : undefined;
+    if (current && current.item.line === l) {
+      if (!keepalive) { l.finalAfter = true; endLine(l); return; }
+      // Unload: the page is going, so the clip is not waited for; its done and the line's final go now.
+      const p = current;
+      p.done = true;
+      current = null;
+      try { p.audio.pause(); } catch { /* the page is going */ }
+      post({ event: "done", id: l.id, seq: p.item.seq }, opts);
+      post({ event: "done", id: l.id, seq: p.item.seq + 1, final: true }, opts);
+      endLine(l);
+      return;
+    }
+    post({ event: "done", id: l.id, seq: l.lastStarted + 1, final: true }, opts);
     endLine(l);
   }
 
@@ -191,12 +203,11 @@ export function createAudio(deps: AudioDeps): Audio {
     const { item } = p;
     const l = item.line;
     if (current === p) current = null;
-    if (!errored) {
-      l.finishedSeq = Math.max(l.finishedSeq, item.seq);
-      l.spoken.push(item.text);
-    }
+    l.finishedSeq = Math.max(l.finishedSeq, item.seq);
+    if (!errored) l.spoken.push(item.text);
     post({ event: "done", id: l.id, seq: item.seq });
     if (l.finalAfter) { l.finalAfter = false; post({ event: "done", id: l.id, seq: item.seq + 1, final: true }); }
+    else if (errored && item.seq === 0 && l.streamed && l.open) post({ event: "done", id: l.id, seq: item.seq + 1, final: true });
     // A clause 0 that errored counts as not played: the line is skipped (DASH-UI-045).
     if (errored && item.seq === 0) endLine(l);
     arm(l);
@@ -228,18 +239,30 @@ export function createAudio(deps: AudioDeps): Audio {
   }
 
   /** A live `voice.stop` cuts the clip of a named line and reports the split, or reports the last clause of an open line (DASH-UI-048, 049). */
+  /** Cuts the clip that is playing and reports the split (DASH-UI-048). */
+  function cutCurrent(p: Playing): void {
+    const l = p.item.line;
+    p.done = true;
+    current = null;
+    try { p.audio.pause(); } catch { /* the clip is already gone */ }
+    const { spoken, rest } = splitWords(p.item.text, p.audio.currentTime, p.audio.duration);
+    const queued = queue.filter((i) => i.line === l).map((i) => i.text);
+    post({ event: "done", id: l.id, seq: p.item.seq, interrupted: true, ...spokenFields(joinTexts([...l.spoken, spoken]), joinTexts([rest, ...queued])) });
+  }
+
   function stopLines(ids: string[] | undefined): void {
-    const targets = ids !== undefined && ids.length > 0 ? ids.map(lineOf) : [...lines.values()];
+    const named = ids !== undefined && ids.length > 0 ? ids : undefined;
+    // Audio switched off mid-clip finished the line but left its clip to play; the stop cuts that clip (DASH-UI-047).
+    const cur = current;
+    if (cur && cur.item.line.finalAfter && (named === undefined || named.includes(cur.item.line.id))) {
+      cur.item.line.finalAfter = false;
+      cutCurrent(cur);
+    }
+    const targets = named !== undefined ? named.map(lineOf) : [...lines.values()];
     for (const l of targets) {
       if (l.ended) continue;
       if (current && current.item.line === l) {
-        const p = current;
-        p.done = true;
-        current = null;
-        try { p.audio.pause(); } catch { /* the clip is already gone */ }
-        const { spoken, rest } = splitWords(p.item.text, p.audio.currentTime, p.audio.duration);
-        const queued = queue.filter((i) => i.line === l).map((i) => i.text);
-        post({ event: "done", id: l.id, seq: p.item.seq, interrupted: true, ...spokenFields(joinTexts([...l.spoken, spoken]), joinTexts([rest, ...queued])) });
+        cutCurrent(current);
       } else if (l.open) {
         const queued = queue.filter((i) => i.line === l).map((i) => i.text);
         post({ event: "done", id: l.id, seq: l.finishedSeq, interrupted: true, ...spokenFields(joinTexts(l.spoken), joinTexts(queued)) });

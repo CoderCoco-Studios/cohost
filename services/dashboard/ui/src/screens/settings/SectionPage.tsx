@@ -8,7 +8,13 @@ import { SaveBar } from "./SaveBar";
 import { SecretPair, SecretRow, pairOf } from "./secrets";
 import { keyGroups, matchIssue, noteFor, sourceLabel, type JsonSchema, type KeyModel, type KeyRead, type SectionModel } from "./schemaModel";
 import { useSettings, useSettingsState, type SectionState } from "./store";
+import { egressNote, useEgress, type EgressEntry } from "../../state/egress";
 import { validateKey, type Errors } from "./validate";
+
+/** The settings keys whose engine or provider sends private data somewhere, and the service that sends it (DASH-SET-034). */
+const EGRESS_KEYS: Record<string, EgressEntry["service"]> = {
+  "voice.engine": "voice", "ears.stt_engine": "ears", "ears.stt_fallback_engine": "ears", "vision.provider": "eyes", "llm.provider": "cortex",
+};
 
 /** A key the answer carries that the schema does not describe: shown with the generic control for its value's type, never hidden. */
 function undescribed(key: string, info: KeyRead): KeyModel {
@@ -26,7 +32,8 @@ function keysOf(section: SectionModel, st: SectionState | undefined): SectionMod
   return extra.length ? { ...section, keys: [...section.keys, ...extra] } : section;
 }
 
-function Row({ section, km, st, picks }: { section: SectionModel; km: KeyModel; st: SectionState; picks: ReturnType<typeof usePickLists> }) {
+// @spec DASH-SET-034
+function Row({ section, km, st, picks, egress }: { section: SectionModel; km: KeyModel; st: SectionState; picks: ReturnType<typeof usePickLists>; egress: EgressEntry[] }) {
   const settings = useSettings();
   const id = useId();
   const info = st.keys[km.key];
@@ -40,6 +47,8 @@ function Row({ section, km, st, picks }: { section: SectionModel; km: KeyModel; 
     if (m?.key === km.key) errors[m.rest] = i.message;
   }
   const note = noteFor(km, info);
+  const service = EGRESS_KEYS[`${section.path}.${km.key}`];
+  const egressNotes = service ? egress.filter((e) => e.service === service).map(egressNote).filter((n): n is string => n !== undefined) : [];
   const overriders = info?.isolation?.overriddenBy ?? [];
   const ids = { help: `${id}-help`, note: `${id}-note`, sens: `${id}-sens`, iso: `${id}-iso`, err: `${id}-err` };
   const describedBy = [
@@ -53,6 +62,7 @@ function Row({ section, km, st, picks }: { section: SectionModel; km: KeyModel; 
         onChange={(v, error) => settings.edit(section.path, km.key, v, error)} />
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
       {note ? <p className="help" id={ids.note}>{note}</p> : null}
+      {egressNotes.map((n) => <p className="help egress-note" key={n}>{n}</p>)}
       {km.sensitive ? <p className="help" id={ids.sens}>Changing this needs the control token.</p> : null}
       {overriders.length > 0 ? (
         <div className="note note-warn small" id={ids.iso}>
@@ -64,7 +74,7 @@ function Row({ section, km, st, picks }: { section: SectionModel; km: KeyModel; 
   );
 }
 
-function Group({ title, section, keys, st, picks }: { title: string; section: SectionModel; keys: KeyModel[]; st: SectionState; picks: ReturnType<typeof usePickLists> }) {
+function Group({ title, section, keys, st, picks, egress }: { title: string; section: SectionModel; keys: KeyModel[]; st: SectionState; picks: ReturnType<typeof usePickLists>; egress: EgressEntry[] }) {
   const done = new Set<string>();
   const rows = keys.flatMap((km) => {
     if (done.has(km.key)) return [];
@@ -75,7 +85,7 @@ function Group({ title, section, keys, st, picks }: { title: string; section: Se
       return [<SecretPair key={pair.keys[0]} section={section} title={pair.title} keys={pair.keys} models={models} reads={[st.keys[pair.keys[0]], st.keys[pair.keys[1]]]} />];
     }
     if (km.control.kind === "secret") return [<SecretRow key={km.key} section={section} km={km} info={st.keys[km.key]} />];
-    return [<Row key={km.key} section={section} km={km} st={st} picks={picks} />];
+    return [<Row key={km.key} section={section} km={km} st={st} picks={picks} egress={egress} />];
   });
   return (
     <details className="sgroup" open>
@@ -106,6 +116,7 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
   const sections = useSettingsState((s) => s.sections);
   const wanted = (kind: string) => members.some((m) => m.keys.some((k) => k.control.kind === kind));
   const picks = usePickLists(wanted("model"), wanted("voice"), primary.path);
+  const egress = useEgress();
   useEffect(() => { for (const m of members) void settings.loadSection(m.path); }, [settings, primary.path]); // eslint-disable-line react-hooks/exhaustive-deps
   const st = sections[primary.path];
   const failed = members.find((m) => sections[m.path]?.status === "error" && !Object.keys(sections[m.path]!.keys).length);
@@ -128,8 +139,8 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
           : (
             <>
               <UnknownKeys paths={members.flatMap((m) => sections[m.path]?.unknown ?? [])} />
-              {keyGroups(full).map((g) => <Group key={g.id || "general"} title={g.title} section={full} keys={g.keys} st={sections[primary.path]!} picks={picks} />)}
-              {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} />; })}
+              {keyGroups(full).map((g) => <Group key={g.id || "general"} title={g.title} section={full} keys={g.keys} st={sections[primary.path]!} picks={picks} egress={egress} />)}
+              {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} egress={egress} />; })}
             </>
           )}
       </div>

@@ -139,9 +139,9 @@ async fn conn_001_dropped_blocked_read_rejects_connection_and_next_call_reconnec
 /// reply, so the client gets neither data nor an error) must reject `BUS_CONNECTION` within the read's block time plus
 /// a bounded grace, never wait forever, and the reader's next call must open a new connection. Deterministic: the
 /// silence is imposed by the proxy, not left to a race. The test-level `within` turns a hang into a failure.
-// @spec BUS-NAT-CONN-001, BUS-NAT-CONN-008
+// @spec BUS-NAT-CONN-008, BUS-NAT-CONN-001
 #[tokio::test(flavor = "multi_thread")]
-async fn conn_001_read_group_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects()
+async fn conn_008_read_group_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects()
  {
     let mut fx = fixture_or_skip!("conn001c");
     let proxy = Proxy::start().await;
@@ -175,19 +175,24 @@ async fn conn_001_read_group_on_a_silent_cached_connection_rejects_instead_of_ha
 }
 
 /// Same as above for `read` (`XREAD`).
-// @spec BUS-NAT-CONN-001, BUS-NAT-CONN-008
+// @spec BUS-NAT-CONN-008, BUS-NAT-CONN-001
 #[tokio::test(flavor = "multi_thread")]
-async fn conn_001_read_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects() {
+async fn conn_008_read_on_a_silent_cached_connection_rejects_instead_of_hanging_then_reconnects() {
     let mut fx = fixture_or_skip!("conn001d");
     let proxy = Proxy::start().await;
     let t = Transport::new(&proxy.url(), opts(&fx.prefix, false));
     let r = t.open_reader();
     r.read(EventStream::Events, "0", 10, 50).await.unwrap();
     proxy.mute_down(true);
+    let started = Instant::now();
     let res = within(8000, r.read(EventStream::Events, "0", 10, 100))
         .await
         .expect("read hung on a connection that stopped answering");
     assert_eq!(res.unwrap_err().code, ErrorCode::Connection);
+    assert!(
+        started.elapsed() < Duration::from_secs(6),
+        "rejected within the block time plus a bounded grace"
+    );
     proxy.mute_down(false);
     let accepted = proxy.accepted();
     within(8000, r.read(EventStream::Events, "0", 10, 50))

@@ -66,7 +66,7 @@ test("think: status thinking → LLM → brain.say with the parsed emotion and g
   assert.deepEqual({ ...rest, id: "x" }, { id: "x", text: "hi bob!", emotion: "laugh", gesture: "wave", reason: "mentioned" });
   assert.ok(timing?.llmEndedAt !== undefined);
   assert.deepEqual(statuses(), ["thinking", "speaking"]);
-  assert.match(llm.calls[0]![1]!.content, /\[chat\] bob: hey Coco/);
+  assert.match(llm.calls[0]![1]!.content, /\[chat\] bob: «hey Coco»/);
   assert.equal(bus.of("brain.status").at(-1)!.detail, "hi bob!");
 });
 
@@ -268,7 +268,7 @@ test("critic: sees the line and transcript; can veto, rewrite and re-emote", asy
   const veto = setup({ critic: (i) => { seen = i; return { ok: false, note: "too long" }; } });
   await veto.cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: "hi", isMod: false, isSub: false, mentionsCohost: true }));
   await veto.cortex.think(mention());
-  assert.deepEqual(seen, { text: "hey chat!", emotion: "happy", reason: "mentioned", transcript: "[chat] bob: hi" });
+  assert.deepEqual(seen, { text: "hey chat!", emotion: "happy", reason: "mentioned", transcript: "[chat] bob: «hi»" });
   assert.equal(veto.bus.of("brain.say").length, 0);
   assert.deepEqual(veto.statuses(), ["thinking", "idle"]);
 

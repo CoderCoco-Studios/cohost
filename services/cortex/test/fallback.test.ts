@@ -172,7 +172,7 @@ test("forget_context drops the glitch", async () => {
 });
 
 // @spec CTX-FALL-005
-test("a glitch whose line has left the window is dropped, and stays dropped", async () => {
+test("a glitch whose own line the window still protects keeps its hint through a chat flood", async () => {
   const s = setup();
   const cap = s.cfg.brain.working_memory_events;
   await s.cortex.onEvent(event("brain.say", { id: "a", text: "old line", emotion: "happy", reason: "r" }, "salience"));
@@ -180,7 +180,7 @@ test("a glitch whose line has left the window is dropped, and stays dropped", as
   await doneFor(s.cortex, "a");
   for (let i = 0; i < cap; i++) await s.cortex.onEvent(event("chat.message", { platform: "twitch", user: "u", text: `m${i}`, isMod: false, isSub: false, mentionsCohost: false }));
   await s.cortex.think(mention());
-  assert.doesNotMatch(s.llm.system(), HINT);
+  assert.match(s.llm.system(), HINT);
 });
 
 // @spec CTX-FALL-004

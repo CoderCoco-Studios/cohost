@@ -634,7 +634,7 @@ impl Transport {
         let (closed, _) = watch::channel(matches!(*self.inner.state.borrow(), ConnState::Closed));
         let shared = Arc::new(ReaderShared {
             inner: self.inner.clone(),
-            conn: Mutex::new(None),
+            conn: ConnSlot::new(),
             acks: Mutex::new(Vec::new()),
             closed,
         });
@@ -694,9 +694,51 @@ fn optional_bytes(v: &Value) -> Result<Option<Vec<u8>>> {
 
 // ------------------------------------------------------------------ Reader
 
+/// Grace added to a read's `block_ms` before a reader abandons a silent connection (BUS-NAT-CONN-008).
+const READ_REPLY_GRACE_MS: u64 = 2000;
+
+/// A reader's cached connection, tagged with a generation so that a failure observed on one connection clears only
+/// that connection: a stale timeout or error from an earlier connection never drops the one that replaced it.
+struct ConnSlot<T> {
+    next_gen: AtomicU64,
+    cur: Mutex<Option<(u64, T)>>,
+}
+
+impl<T: Clone> ConnSlot<T> {
+    fn new() -> Self {
+        ConnSlot {
+            next_gen: AtomicU64::new(0),
+            cur: Mutex::new(None),
+        }
+    }
+
+    fn current(&self) -> Option<(u64, T)> {
+        lock(&self.cur).clone()
+    }
+
+    /// Caches `v` as the new connection and returns its generation.
+    fn store(&self, v: T) -> u64 {
+        let g = self.next_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        *lock(&self.cur) = Some((g, v));
+        g
+    }
+
+    /// Drops the cached connection only if it is still generation `generation`.
+    fn clear_if(&self, generation: u64) {
+        let mut cur = lock(&self.cur);
+        if cur.as_ref().map(|(g, _)| *g) == Some(generation) {
+            *cur = None;
+        }
+    }
+
+    fn clear(&self) {
+        *lock(&self.cur) = None;
+    }
+}
+
 struct ReaderShared {
     inner: Arc<Inner>,
-    conn: Mutex<Option<MultiplexedConnection>>,
+    conn: ConnSlot<MultiplexedConnection>,
     /// Queued `(group, id)` acks, sent ahead of the next `XREADGROUP` (BUS-NAT-ACK-001).
     acks: Mutex<Vec<(String, String)>>,
     closed: watch::Sender<bool>,
@@ -710,11 +752,12 @@ impl ReaderShared {
     fn close(&self) {
         self.closed.send_replace(true);
         lock(&self.acks).clear();
-        *lock(&self.conn) = None;
+        self.conn.clear();
     }
 
-    async fn connection(&self) -> Result<MultiplexedConnection> {
-        if let Some(c) = lock(&self.conn).clone() {
+    /// The cached connection and its generation, or a new one.
+    async fn connection(&self) -> Result<(u64, MultiplexedConnection)> {
+        if let Some(c) = self.conn.current() {
             return Ok(c);
         }
         let client = self.inner.client.as_ref().map_err(|e| e.clone())?;
@@ -722,8 +765,8 @@ impl ReaderShared {
         if *self.closed.borrow() {
             return Err(BusError::closed());
         }
-        *lock(&self.conn) = Some(c.clone());
-        Ok(c)
+        let generation = self.conn.store(c.clone());
+        Ok((generation, c))
     }
 
     /// Runs `f` until the reader is closed, which interrupts it with `BUS_CLOSED` (BUS-NAT-ERR-001).
@@ -739,17 +782,38 @@ impl ReaderShared {
         }
     }
 
-    /// Maps a client error; a connection failure drops the connection so the next call opens a new one
+    /// Maps a client error; a connection failure drops connection `generation` so the next call opens a new one
     /// (BUS-NAT-CONN-001).
-    fn failed(&self, e: &redis::RedisError) -> BusError {
+    fn failed(&self, generation: u64, e: &redis::RedisError) -> BusError {
         if *self.closed.borrow() {
             return BusError::closed();
         }
         let be = BusError::from_redis(e);
         if be.is_connection() {
-            *lock(&self.conn) = None;
+            self.conn.clear_if(generation);
         }
         be
+    }
+
+    /// Awaits the reply to one read command on connection `generation` for at most `block_ms` plus `READ_REPLY_GRACE_MS`
+    /// (BUS-NAT-CONN-008). A reply that never arrives drops that connection, so the reader's next call opens a new one.
+    // @spec BUS-NAT-CONN-008
+    async fn read_reply<T>(
+        &self,
+        generation: u64,
+        block_ms: u64,
+        round_trip: impl Future<Output = redis::RedisResult<T>>,
+    ) -> Result<T> {
+        let bound = Duration::from_millis(block_ms.saturating_add(READ_REPLY_GRACE_MS));
+        match timeout(bound, round_trip).await {
+            Ok(r) => r.map_err(|e| self.failed(generation, &e)),
+            Err(_) => {
+                self.conn.clear_if(generation);
+                Err(BusError::connection(format!(
+                    "no reply to a read within {block_ms} ms block plus {READ_REPLY_GRACE_MS} ms grace"
+                )))
+            }
+        }
     }
 
     async fn xread(
@@ -759,7 +823,7 @@ impl ReaderShared {
         count: usize,
         block_ms: u64,
     ) -> Result<Option<Vec<RawFields>>> {
-        let mut c = self.connection().await?;
+        let (generation, mut c) = self.connection().await?;
         let mut cmd = redis::cmd("XREAD");
         cmd.arg("COUNT")
             .arg(count)
@@ -768,10 +832,9 @@ impl ReaderShared {
             .arg("STREAMS")
             .arg(key)
             .arg(from_id);
-        let v = cmd
-            .query_async::<Value>(&mut c)
-            .await
-            .map_err(|e| self.failed(&e))?;
+        let v = self
+            .read_reply(generation, block_ms, cmd.query_async::<Value>(&mut c))
+            .await?;
         stream_reply(&v)
     }
 }
@@ -783,7 +846,7 @@ pub struct Reader {
 impl Reader {
     /// Sends the queued acks, then `XREADGROUP`, in one pipeline (BUS-NAT-ACK-001, BUS-NAT-ACK-003,
     /// BUS-NAT-ACK-004).
-    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-ACK-009, BUS-NAT-CONN-001, BUS-NAT-TRN-003
+    // @spec BUS-NAT-ACK-001, BUS-NAT-ACK-003, BUS-NAT-ACK-004, BUS-NAT-ACK-009, BUS-NAT-CONN-001, BUS-NAT-CONN-008, BUS-NAT-TRN-003
     pub async fn read_group(
         &self,
         group: &str,
@@ -796,7 +859,7 @@ impl Reader {
         s.guarded(async {
             let acks: Vec<(String, String)> = lock(&s.acks).clone();
             let events = s.inner.keys.events();
-            let mut c = s.connection().await?;
+            let (generation, mut c) = s.connection().await?;
             let mut pipe = redis::pipe();
             pipe.ignore_errors();
             for (g, id) in &acks {
@@ -813,10 +876,9 @@ impl Reader {
                 .arg("STREAMS")
                 .arg(&events)
                 .arg(cursor);
-            let mut vals = pipe
-                .query_async::<Vec<Value>>(&mut c)
-                .await
-                .map_err(|e| s.failed(&e))?;
+            let mut vals = s
+                .read_reply(generation, block_ms, pipe.query_async::<Vec<Value>>(&mut c))
+                .await?;
             // The pipeline reached Redis: those acks are settled, refused or not.
             lock(&s.acks).drain(..acks.len());
             let read = vals.pop().ok_or_else(|| unexpected("pipeline"))?;
@@ -856,7 +918,7 @@ impl Reader {
         }
     }
 
-    // @spec BUS-NAT-TRN-001, BUS-NAT-TRN-014
+    // @spec BUS-NAT-TRN-001, BUS-NAT-TRN-014, BUS-NAT-CONN-008
     pub async fn read(
         &self,
         stream: EventStream,
@@ -877,5 +939,24 @@ impl Reader {
     /// Closes this reader's connection, dropping its queued acks; a blocked read rejects `BUS_CLOSED`.
     pub fn close(&self) {
         self.shared.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConnSlot;
+
+    // @spec BUS-NAT-CONN-008
+    #[test]
+    fn conn_008_stale_generation_clears_only_its_own_connection() {
+        let slot: ConnSlot<u32> = ConnSlot::new();
+        let g1 = slot.store(1);
+        let g2 = slot.store(2);
+        assert_ne!(g1, g2);
+        // A timeout observed on the first connection must not drop the second that replaced it.
+        slot.clear_if(g1);
+        assert_eq!(slot.current().map(|(_, v)| v), Some(2));
+        slot.clear_if(g2);
+        assert!(slot.current().is_none());
     }
 }

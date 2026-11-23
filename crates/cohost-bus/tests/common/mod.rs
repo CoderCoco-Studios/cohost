@@ -221,10 +221,12 @@ async fn serve(mut client: TcpStream, target: String, st: Arc<State>) {
             }
         }
     };
+    // Kill first and biased: once `kill_all` has fired, no pending forward wins the race and reaches Redis.
     tokio::select! {
+        biased;
+        _ = kill.changed() => {}
         _ = up => {}
         _ = down => {}
-        _ = kill.changed() => {}
     }
 }
 

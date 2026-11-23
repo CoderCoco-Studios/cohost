@@ -457,8 +457,8 @@ const claudeMake = (kind: ClaudeKind, url: string, over: Record<string, unknown>
     return fetch(`${url}${u.pathname}${u.search}`, init);
   }) as typeof fetch;
   return kind === "anthropic"
-    ? new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" }, ...over }), undefined, { fetch: fetchImpl })
-    : new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: CONFIGURED, ...over }), undefined, { fetch: fetchImpl });
+    ? new AnthropicProvider(llmCfg({ provider: "anthropic", model: "claude-fixture", claude: { api_key: "sk-config" }, ...over }), { fetch: fetchImpl })
+    : new BedrockProvider(llmCfg({ provider: "bedrock", model: "anthropic.claude-fixture", bedrock: CONFIGURED, ...over }), { fetch: fetchImpl });
 };
 
 // @spec LLM-IF-010, LLM-STREAM-007

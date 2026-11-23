@@ -39,8 +39,8 @@ llm:
 
 vision:
   enabled: false               # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
-  model: "qwen2.5vl:3b"        # required while enabled
-  engine: "ollama"             # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
+  model: "qwen2.5vl:3b"        # the describer model; Ollama pulls it when provider is ollama. Blank = none (eyes reports it down while enabled)
+  provider: "ollama"           # ollama | openai | anthropic | bedrock (hosted, credentials in secrets.yaml and llm) | stub (fixed text, no model; isolated runs)
   interval_ms: 8000            # how often to look at the game
   temperature: 0.2             # vision model sampling temperature (0 to 2)
   num_predict: 60              # longest description the model may write, in tokens
@@ -203,9 +203,17 @@ viewer_text:
   max_name_chars: 40           # longest viewer name a prompt carries (at least 8)
 
 voice:
-  engine: "kokoro"             # kokoro | stub (silent WAV sized from the text; isolated runs)
-  voice: "af_heart"            # kokoro voice id
+  engine: "kokoro"             # kokoro | openai | pocket | stub (silent WAV sized from the text; isolated runs)
+  voice: "af_heart"            # kokoro: a voice id or mix; pocket: a catalogue name or an http(s) URL; openai: any voice name; blank = kokoro af_heart, pocket alba
   speed: 1.05                  # 0.25 to 4
+  timeout_ms: 15000            # bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks
+  # openai: an OpenAI-compatible speech server, used with engine openai. The API key is voice.openai.api_key in secrets.yaml.
+  # openai:
+  #   base_url: "https://api.openai.com/v1"
+  #   model: "tts-1"
+  pocket:
+    # the Pocket TTS server, used with engine pocket; blank is a configuration gap. The gated-weights token is in secrets.yaml.
+    url: "http://tts-pocket:8000"
   # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
   # voice also accepts a mix, e.g. "af_bella(2)+af_sky".
   # lang_code: "b"             # a b e f h i j p z; blank derives it from the voice name
@@ -279,7 +287,19 @@ ears:
   partial_step_ms: 1000
   min_speech_ms: 400
   stt_model: "Systran/faster-whisper-small"  # the speech-to-text model name sent to the stt service (it is not pulled by the `models` service)
-  stt_engine: "speaches"       # speaches | stub (fixed text, no STT server; isolated runs)
+  stt_engine: "speaches"       # speaches | openai | nemotron | kyutai | stub (fixed text, no STT server; isolated runs)
+  stt_fallback_engine: "speaches" # speaches | openai | none: batch engine for whole clips a streaming engine cannot serve
+  stt_timeout_ms: 20000        # bound on one speech-to-text request
+  max_stt_sessions: 2          # speech-to-text sessions that run at once (at least 1)
+  # openai: an OpenAI-compatible transcription server (stt_engine or stt_fallback_engine openai). Its key goes in secrets.yaml.
+  # openai:
+  #   base_url: "https://api.openai.com/v1"
+  nemotron:
+    url: "http://stt-nemotron:8080" # the NVIDIA Nemotron STT server, used with stt_engine nemotron; blank is a configuration gap
+  kyutai:
+    url: "http://stt-kyutai:8080"   # the Kyutai STT server, used with stt_engine kyutai; blank is a configuration gap
+    end_of_turn: "off"       # on | off: let the server's end-of-turn detection close a sentence instead of the silence gap
+    end_of_turn_threshold: 0.5 # the end-of-turn probability needed, above 0 and below 1
   # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
   # hallucinations on silence. Empty by default; uncomment to use.
   drop_phrases: []
@@ -326,3 +346,8 @@ dashboard:
     max_image_bytes: 8388608   # largest image accepted (8 MiB)
     max_audio_bytes: 26214400  # largest audio clip accepted (25 MiB)
     ttl_ms: 300000             # how long an upload stays available to the service that asked for it
+
+# The machines the egress rule counts as the LAN: host names, single addresses, dot suffixes such as .ts.net, and CIDR ranges.
+# Private addresses, localhost, host.docker.internal and dotless or .local names are on the LAN already; list other machines you trust.
+network:
+  lan: []                     # host names, addresses, .suffixes and CIDR ranges counted as LAN (CFG-EGR-011); empty adds none

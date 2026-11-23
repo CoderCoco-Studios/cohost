@@ -559,18 +559,19 @@ test("mouth.outputs.discord.gain_db accepts -40 to 12 inclusive and a failure na
 });
 
 // @spec CFG-SCH-021, EYES-DESC-007
-test("vision.engine defaults to ollama (blank too), accepts stub, rejects others; the describer tuning keys default and validate", () => {
+test("vision.provider defaults to ollama (blank too), accepts the five providers, rejects others; the describer tuning keys default and validate", () => {
   const vision = (v: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), vision: { model: "v", obs: {}, ...v } });
   const d = vision({});
   assert.ok(d.success);
-  assert.equal(d.data.vision.engine, "ollama");
+  assert.equal(d.data.vision.provider, "ollama");
   assert.equal(d.data.vision.temperature, 0.2);
   assert.equal(d.data.vision.num_predict, 60);
   assert.equal(d.data.vision.jpeg_quality, 70);
   assert.match(d.data.vision.prompt, /exactly: SAME/);
-  assert.equal(vision({ engine: "" }).data!.vision.engine, "ollama");
-  assert.equal(vision({ engine: "stub" }).data!.vision.engine, "stub");
-  assert.equal(vision({ engine: "openai" }).success, false);
+  assert.equal(vision({ provider: "" }).data!.vision.provider, "ollama");
+  assert.equal(vision({ provider: "stub" }).data!.vision.provider, "stub");
+  assert.equal(vision({ provider: "bedrock" }).data!.vision.provider, "bedrock");
+  assert.equal(vision({ provider: "gemini" }).success, false);
   assert.equal(vision({ prompt: "  " }).data!.vision.prompt, d.data.vision.prompt, "a blank prompt is the default");
   assert.equal(vision({ prompt: "Say SAME or one line." }).data!.vision.prompt, "Say SAME or one line.");
   for (const bad of [{ temperature: -0.1 }, { temperature: 2.1 }, { num_predict: 0 }, { num_predict: 1.5 }, { jpeg_quality: 0 }, { jpeg_quality: 101 }]) {
@@ -645,7 +646,8 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   assert.match(text, /mouth:[\s\S]*fallback:\s*\n\s*min_interval_ms:\s*20000\b/);
   // @spec CFG-SCH-018
   const earsBlock = text.match(/^ears:\n((?:[ \t]+.*\n|\n)*)/m)![1]!;
-  assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
+  // CFG-SCH-018: no `fallback` key (the spoken fallback lives under voice). CFG-SCH-063 adds `stt_fallback_engine`, a different key.
+  assert.doesNotMatch(earsBlock, /^ {2}fallback:/m, "the ears block carries no fallback key");
   assert.equal("fallback" in cfg.ears, false);
 });
 

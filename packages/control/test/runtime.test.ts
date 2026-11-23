@@ -58,10 +58,10 @@ test("compose: a preset reaches the container as the one COHOST_ISOLATION variab
   const { exec, calls } = fakeExec();
   const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
   await rt.start("avatar", { env: { AVATAR_DRIVER: "null" } });
-  await rt.restart("eyes", { env: { VISION_ENABLED: "false", VISION_ENGINE: "stub" } });
+  await rt.restart("eyes", { env: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" } });
   await rt.start("ears", { env: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" } });
   assert.deepEqual(calls.map((c) => JSON.parse(c.env[ISOLATION_ENV]!)), [
-    { AVATAR_DRIVER: "null" }, { VISION_ENABLED: "false", VISION_ENGINE: "stub" }, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
+    { AVATAR_DRIVER: "null" }, { VISION_ENABLED: "false", VISION_PROVIDER: "stub" }, { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
   ]);
   for (const c of calls) for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(c.env[name], undefined, `${name} is set on no process`);
 });

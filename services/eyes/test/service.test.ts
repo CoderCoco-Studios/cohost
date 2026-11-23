@@ -47,7 +47,7 @@ function rig(over: Record<string, unknown>, deps: Record<string, unknown> = {}, 
     obs, exit: (c) => { exits.push(c); }, sleep: () => new Promise((r) => setTimeout(r, 2)),
     ...deps,
   });
-  const cfg = testConfig({ vision: { model: "v", engine: "stub", interval_ms: 1000, ...over } });
+  const cfg = testConfig({ vision: { model: "v", provider: "stub", interval_ms: 1000, ...over } });
   const start = () => runService({
     service: "eyes", health: () => svc.health(cfg), main: async (ctx) => { heartbeat = ctx.heartbeat; await svc.main(ctx); },
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
@@ -114,7 +114,7 @@ test("a look that throws is logged and the loop continues; a drop during the loo
     if (n === 2) { r.obs.identified = false; throw new Error("socket dropped"); }
     return "A boss.";
   };
-  const r = rig({ enabled: true, engine: "ollama" }, { createDescriber: () => describe });
+  const r = rig({ enabled: true, provider: "ollama" }, { createDescriber: () => describe });
   try {
     await r.start();
     await waitFor(() => r.bus.of("vision.summary").length === 1, "recovered");
@@ -168,7 +168,7 @@ test("an injected image is described and answered through the shared handler, wi
 
 // @spec EYES-HEALTH-003
 test("the loop and injection share one tracked describer: a failed describe marks ollama down", async () => {
-  const r = rig({ enabled: true, engine: "ollama" }, { createDescriber: () => async () => { throw new Error("model down"); } });
+  const r = rig({ enabled: true, provider: "ollama" }, { createDescriber: () => async () => { throw new Error("model down"); } });
   try {
     await r.start();
     await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.ollama === "down"), "ollama down");

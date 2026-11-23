@@ -10,7 +10,7 @@ isolateEnv();
 
 const MAP = {
   LLM_PROVIDER: "llm.provider", MEMORY_STORE: "brain.memory.store", MEMORY_EMBEDDER: "brain.memory.embedder", VOICE_ENGINE: "voice.engine",
-  CHAT_SOURCES: "chat.sources", VISION_ENABLED: "vision.enabled", VISION_ENGINE: "vision.engine", EARS_SOURCES: "ears.sources",
+  CHAT_SOURCES: "chat.sources", VISION_ENABLED: "vision.enabled", VISION_PROVIDER: "vision.provider", EARS_SOURCES: "ears.sources",
   EARS_STT_ENGINE: "ears.stt_engine", CONNECTIONS_DISCORD_ENABLED: "connections.discord.enabled", MOUTH_DISCORD_ENABLED: "mouth.outputs.discord.enabled",
   MOUTH_DRYRUN_ENABLED: "mouth.outputs.dryrun.enabled", AVATAR_DRIVER: "avatar.driver",
 } as const;
@@ -39,14 +39,14 @@ test("the shipped example writes each of the thirteen override keys as a literal
   assert.deepEqual(
     Object.values(MAP).map((p) => [p, at(p)]),
     [["llm.provider", "ollama"], ["brain.memory.store", "postgres"], ["brain.memory.embedder", "ollama"], ["voice.engine", "kokoro"], ["chat.sources", ["twitch"]],
-      ["vision.enabled", false], ["vision.engine", "ollama"], ["ears.sources", ["discord"]], ["ears.stt_engine", "speaches"], ["connections.discord.enabled", true],
+      ["vision.enabled", false], ["vision.provider", "ollama"], ["ears.sources", ["discord"]], ["ears.stt_engine", "speaches"], ["connections.discord.enabled", true],
       ["mouth.outputs.discord.enabled", true], ["mouth.outputs.dryrun.enabled", false], ["avatar.driver", "null"]],
   );
   const { cfg } = loadShipped();
   assert.equal(cfg.llm.provider, "ollama");
   assert.equal(cfg.voice.engine, "kokoro");
   assert.equal(cfg.vision.enabled, false);
-  assert.equal(cfg.vision.engine, "ollama");
+  assert.equal(cfg.vision.provider, "ollama");
   assert.equal(cfg.brain.memory.store, "postgres");
   assert.equal(cfg.brain.memory.embedder, "ollama");
   assert.deepEqual(cfg.chat.sources, ["twitch"]);
@@ -83,7 +83,7 @@ test("an unknown avatar.driver still fails the load naming avatar.driver, and a 
 test("COHOST_ISOLATION sets each entry at its key path, wins over the file, parses booleans and ears.sources as YAML and keeps the rest as strings", () => {
   const { cfg } = loadShipped({
     LLM_PROVIDER: "mock", MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash", VOICE_ENGINE: "stub", CHAT_SOURCES: "[fake]", VISION_ENABLED: "true",
-    VISION_ENGINE: "stub", EARS_SOURCES: "[http, dir]", EARS_STT_ENGINE: "stub", CONNECTIONS_DISCORD_ENABLED: "false", MOUTH_DISCORD_ENABLED: "false",
+    VISION_PROVIDER: "stub", EARS_SOURCES: "[http, dir]", EARS_STT_ENGINE: "stub", CONNECTIONS_DISCORD_ENABLED: "false", MOUTH_DISCORD_ENABLED: "false",
     MOUTH_DRYRUN_ENABLED: "true", AVATAR_DRIVER: "vmc",
   });
   assert.equal(cfg.llm.provider, "mock");
@@ -92,7 +92,7 @@ test("COHOST_ISOLATION sets each entry at its key path, wins over the file, pars
   assert.equal(cfg.voice.engine, "stub");
   assert.deepEqual(cfg.chat.sources, ["fake"]);
   assert.equal(cfg.vision.enabled, true);
-  assert.equal(cfg.vision.engine, "stub");
+  assert.equal(cfg.vision.provider, "stub");
   assert.deepEqual(earsSources(cfg.ears), ["http", "dir"]);
   assert.equal(cfg.ears.stt_engine, "stub");
   assert.equal(cfg.connections.discord.enabled, false);

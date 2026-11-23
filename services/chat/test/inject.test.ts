@@ -138,3 +138,14 @@ test("publish failure becomes ok:false when the bus can still answer", async () 
   await run(handle, req());
   assert.equal(bus.of("inject.result")[0]!.ok, false);
 });
+
+// @spec CHAT-INJ-014
+test("an injected line naming platform youtube publishes with that platform, no userId and no messageId", async () => {
+  const { bus, handle } = setup();
+  await run(handle, req({ meta: { platform: "youtube", user: "yt_viewer" } }));
+  const m = bus.of("chat.message")[0]!;
+  assert.equal(m.platform, "youtube");
+  assert.equal("userId" in m, false);
+  assert.equal("messageId" in m, false);
+  assert.deepEqual(bus.of("inject.result"), [{ id: "r1", ok: true }]);
+});

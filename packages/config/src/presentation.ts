@@ -54,7 +54,7 @@ export interface SectionPresentation {
 export const SECTION_PATHS: readonly string[] = [
   "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.affect", "brain.memory", "brain.cortex",
   "brain.input_limits", "viewer_text",
-  "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard",
+  "chat", "vision", "ears", "voice", "mouth", "avatar", "connections", "dashboard", "network",
 ];
 
 const sections: Record<string, SectionPresentation> = {
@@ -76,6 +76,7 @@ const sections: Record<string, SectionPresentation> = {
   "avatar": { title: "Avatar", group: "Voice and body", about: "Which avatar app the co-host drives (VTube Studio or a VMC receiver) and how smoothly and lively it moves." },
   "connections": { title: "Discord", group: "System", about: "The Discord bot's server, voice channel and token, shared by hearing and speaking." },
   "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, and the size and lifetime limits of its test uploads." },
+  "network": { title: "Network", group: "System", about: "Which machines and address ranges count as your own network, so the co-host can tell what private data leaves it for a server outside your LAN." },
 };
 
 /** The five keys of a region hook (`ModuleSchema`), under `base` (a dotted path), with help written for what that hook decides. */
@@ -117,8 +118,8 @@ const keys: Record<string, KeyPresentation> = {
 
   // ---- vision
   "vision.enabled": { help: "Turns the co-host's eyes on. Off, the vision service stays idle and never touches OBS, so the co-host reacts to chat and speech only; on, it keeps an eye on your game and can comment on what happens." },
-  "vision.model": { help: "The Ollama vision model that describes the screenshot. Required while vision is on; a larger model describes better but takes longer on each look.", widget: { type: "model", kind: "vision" } },
-  "vision.engine": { help: "ollama asks the vision model to describe each screenshot; stub replies with fixed text and calls no model, for testing the rest of the stack without a graphics card." },
+  "vision.model": { help: "The Ollama vision model that describes the screenshot. Ollama pulls it while the provider is ollama; leave it empty if no model describes the screen. A larger model describes better but takes longer on each look.", widget: { type: "model", kind: "vision" } },
+  "vision.provider": { help: "Which chat provider describes the screenshot: ollama asks a model on your graphics card, openai, anthropic and bedrock send it to a hosted service (their keys are in secrets.yaml), and stub replies with fixed text and calls no model, for testing the rest of the stack.", label: "Vision provider" },
   "vision.prompt": { help: "The instruction the vision model follows for each screenshot, which decides how the screen is described. Keep the rule to reply exactly SAME when nothing meaningful changed, or every look counts as a change and the co-host keeps reacting.", widget: { type: "textarea" } },
   "vision.temperature": { help: "How adventurous the screen descriptions are, from 0 to 2. Keep it low so the description stays factual; higher makes it more inventive and less reliable." },
   "vision.num_predict": { help: "The longest description the vision model may write, in tokens (about three quarters of a word each). Lower keeps descriptions to a short sentence; higher lets it say more but slows each look.", unit: "tokens", label: "Description length limit" },
@@ -264,8 +265,14 @@ const keys: Record<string, KeyPresentation> = {
   }),
 
   // ---- voice
-  "voice.engine": { help: "kokoro speaks the replies with the Kokoro voice server; stub makes silent clips of the right length and calls no voice server, for testing the rest of the stack." },
-  "voice.voice": { help: "The Kokoro voice the co-host speaks with, or a blend of voices such as af_bella(2)+af_sky, where the number is how much of that voice to mix in. The voice id starts with its language and gender, for example af for American female.", widget: { type: "voice" } },
+  "voice.engine": { help: "kokoro speaks the replies with the Kokoro voice server; openai uses an OpenAI-compatible speech server; pocket uses a Pocket TTS server; stub makes silent clips of the right length and calls no voice server, for testing the rest of the stack.", label: "Speech engine" },
+  "voice.voice": { help: "The voice the co-host speaks with. Kokoro takes a voice id or a blend such as af_bella(2)+af_sky, where the number is how much of that voice to mix in; the id starts with its language and gender, for example af for American female. Pocket takes a catalogue voice name or an http or https address of a voice file. OpenAI takes the name the server knows. Leave it empty for the engine's own default (af_heart for Kokoro, alba for Pocket).", widget: { type: "voice" } },
+  "voice.timeout_ms": { help: "How long to wait for the speech server to send the first sound of a line, and for each gap in it, before giving up on that line. Raise it for a slow server or a first load.", unit: "ms" },
+  "voice.openai.base_url": { help: "Only for engine openai: the web address of the OpenAI-compatible speech server, for example OpenAI itself or a server you run. The API key is sent to this address, so only point it somewhere you trust.", sensitive: true, label: "Base URL" },
+  "voice.openai.model": { help: "Only for engine openai: the speech model the server should use, named as the server spells it, for example tts-1." },
+  "voice.openai.api_key": { help: "Only for engine openai: the API key of the speech server. It is stored in secrets.yaml and is never shown again once saved." },
+  "voice.pocket.url": { help: "Only for engine pocket: the web address of your Pocket TTS server (an http or https address). The co-host's voice is sent to this address, so only point it somewhere you trust. Empty leaves the voice down.", sensitive: true, label: "URL" },
+  "voice.pocket.hf_token": { help: "Only for engine pocket: the Hugging Face token the Pocket TTS server needs to fetch its gated weights. Only an owner who has accepted those weights needs it. It is stored in secrets.yaml and is never shown again once saved." },
   "voice.speed": { help: "How fast the co-host talks, as a multiplier from 0.25 to 4: 1 is the voice's normal pace, higher is faster and lower is slower." },
   "voice.lang_code": { help: "The language Kokoro uses to read the text, which decides how words are pronounced. Leave empty to use the language that matches the voice's first letter.", widget: { type: "options", options: [
     lang("a", "American English"), lang("b", "British English"), lang("e", "Spanish"), lang("f", "French"), lang("h", "Hindi"),
@@ -314,8 +321,22 @@ const keys: Record<string, KeyPresentation> = {
   "ears.partial_step_ms": { help: "With partials on: how often a growing sentence is transcribed again. Lower shows early text sooner but makes more speech-to-text requests.", unit: "ms" },
   "ears.min_speech_ms": { help: "Audio shorter than this is thrown away as noise or a cough instead of being transcribed. Higher ignores more short sounds but may drop a short answer like \"yes\".", unit: "ms" },
   "ears.stt_model": { help: "The speech-to-text model, named as your speech-to-text server knows it. A larger model hears more accurately but is slower, which delays the co-host's answer.", widget: { type: "model", kind: "stt" }, label: "Speech-to-text model" },
-  "ears.stt_engine": { help: "speaches transcribes with a speech-to-text server; stub gives every clip the same fixed text and needs no server, for testing the rest of the stack.", label: "Speech-to-text engine" },
+  "ears.stt_engine": { help: "speaches transcribes with a speech-to-text server; openai uses an OpenAI-compatible transcription server; nemotron and kyutai use their own streaming servers; stub gives every clip the same fixed text and needs no server, for testing the rest of the stack.", label: "Speech-to-text engine" },
+  "ears.stt_fallback_engine": { help: "The batch engine that transcribes whole clips the streaming engine above cannot handle (speaches or openai), or none for no fallback. It is used only while the streaming engine is nemotron or kyutai.", label: "Speech-to-text fallback" },
+  "ears.stt_timeout_ms": { help: "How long to wait for one transcription before giving up on it. Raise it for a slow server or a long sentence.", unit: "ms", label: "Transcription timeout" },
+  "ears.max_stt_sessions": { help: "How many speech-to-text sessions may run at once. Higher hears more speakers together but needs more of the server.", label: "Speech-to-text sessions" },
+  "ears.openai.base_url": { help: "Only for an openai speech-to-text engine or fallback: the web address of the OpenAI-compatible transcription server. Clips of speech are sent to this address, so only point it somewhere you trust. Empty leaves it down.", sensitive: true, label: "Base URL" },
+  "ears.openai.api_key": { help: "Only for an openai speech-to-text engine or fallback: the API key of the transcription server. It is stored in secrets.yaml and is never shown again once saved." },
+  "ears.nemotron.url": { help: "Only for the nemotron speech-to-text engine: the web address of the NVIDIA Nemotron server. Speech is sent to this address, so only point it somewhere you trust. Empty leaves it down.", sensitive: true, label: "URL" },
+  "ears.nemotron.api_key": { help: "Only for the nemotron speech-to-text engine: the key of its server, if the server asks for one. It is stored in secrets.yaml and is never shown again once saved." },
+  "ears.kyutai.url": { help: "Only for the kyutai speech-to-text engine: the web address of the Kyutai server. Speech is sent to this address, so only point it somewhere you trust. Empty leaves it down.", sensitive: true, label: "URL" },
+  "ears.kyutai.api_key": { help: "Only for the kyutai speech-to-text engine: the key of its server, if the server asks for one. It is stored in secrets.yaml and is never shown again once saved." },
+  "ears.kyutai.end_of_turn": { help: "Only for kyutai: on lets the server decide when a speaker has finished a sentence; off closes a sentence on silence alone, as the other engines do.", widget: { type: "options", options: [{ value: "off", label: "Off" }, { value: "on", label: "On" }] }, label: "End-of-turn detection" },
+  "ears.kyutai.end_of_turn_threshold": { help: "Only for kyutai with end-of-turn detection on: how sure the server must be that a sentence has ended, from above 0 to below 1. Higher waits for a clearer end; lower cuts in sooner.", label: "End-of-turn threshold" },
   "ears.drop_phrases": { help: "Transcripts that equal one of these lines are thrown away, ignoring capitals, spacing and punctuation at the ends. Use it for phrases the speech model invents out of silence, such as \"Thanks for watching!\". Empty drops nothing.", label: "Phrases to ignore" },
+
+  // ---- network
+  "network.lan": { help: "Machines and networks you trust as your own, one per line: a host name such as nas, a single address such as 203.0.113.7, a dot suffix such as .ts.net for every machine in that domain, or a range such as 100.64.0.0/10. Use it for machines the co-host reaches over a VPN that the rule would otherwise count as outside your network. Empty adds none.", label: "Your network" },
 
   // ---- mouth
   "mouth.outputs.discord.enabled": { help: "When on, the co-host's voice is played into the Discord voice channel. Off, nothing is played there." },

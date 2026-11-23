@@ -28,7 +28,7 @@ export interface ObsClient extends ObsLike {
 
 export interface EyesServiceDeps {
   obs: ObsClient;
-  /** Replaces the describer `vision.engine` selects. */
+  /** Replaces the describer `vision.provider` selects. */
   createDescriber?: (cfg: Config) => Describe;
   /** Monotonic clock, ms (default `performance.now`). */
   now?: () => number;
@@ -52,7 +52,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
   return {
     // @spec EYES-HEALTH-001, EYES-HEALTH-002, EYES-STUB-002
     health(cfg) {
-      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.engine);
+      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.provider);
       return health.spec;
     },
 
@@ -76,7 +76,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
         return stripDataUrl(res.imageData);
       }
 
-      if (cfg.vision.engine === "stub") log.warn("vision.engine is stub: descriptions are fixed text, no model is called (mode mock)");
+      if (cfg.vision.provider === "stub") log.warn("vision.provider is stub: descriptions are fixed text, no model is called (mode mock)");
       // @spec EYES-HEALTH-003
       const describe = health!.track((deps.createDescriber ?? createDescriber)(cfg));
       const eyes = new Eyes({ bus, log, screenshot, describe, now });

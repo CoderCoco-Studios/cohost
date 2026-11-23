@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "110 specs: 101 [x], 9 [ ] (SHARED-GUARD-003 and -028 to -030, the untrusted totality and tool notice; SHARED-VID-001 and 002, the video module; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 103 [x], 7 [ ] (SHARED-GUARD-003 and -028 to -030, the untrusted totality and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
     drift: null
 
   module-contract:
@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 47 [x], 14 [ ] (MOD-MAN-002, MOD-CFG-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
+    next: "61 specs: 48 [x], 13 [ ] (MOD-MAN-002, MOD-MAN-013 and MOD-MAN-014, the engine units, and the renderer section: MOD-MAN-008, MOD-CFG-001, MOD-CFG-021, MOD-CFG-022)."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 126 [x], 105 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 167 [x], 64 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:
@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "163 specs: 32 [x], 131 [ ] (YouTube chat source, source list and plan, forgetting removed messages, platform and user id on chat.message). Design 2026-11-16; no code."
+    next: "163 specs: 73 [x], 90 [ ] (YouTube reader CHAT-YT-001 to CHAT-YT-068 except 003 to 006, forgetting removed messages CHAT-FORGET-*, Twitch message ids and removals CHAT-TW-013 to CHAT-TW-018, the open source-contract lines CHAT-SRC-001 and CHAT-SRC-005, CHAT-HEALTH-011, CHAT-FILT-012 to CHAT-FILT-014)."
     drift: null
 
   eyes:

@@ -90,7 +90,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 ## Work Required
 
 ### Must Fix
-- Owner decisions open: `DEPLOY-COMPOSE-006` still lists the published infrastructure and voice ports only, while `DEPLOY-ENG-008` publishes three more on loopback; its published-port test (`packages/config/test/compose-standalone.test.ts`) now names the engine ports. The `MOD-MAN-008` build check (`packages/control/test/derived-lists.test.ts`) exempts the engine servers by name, and the spec text does not say so.
+None.
 
 ### Should Fix
 - Run `scripts/install.sh` once on a clean machine to observe DEPLOY-INST-007 and DEPLOY-INST-014 end to end (their tests check the script's source, not a run).

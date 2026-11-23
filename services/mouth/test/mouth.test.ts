@@ -40,7 +40,7 @@ function rig(outputs: Outputs, over: { connector?: boolean; opts?: Partial<Mouth
   return { bus, calls, subs, rec, exits, done, lastHealth, stop: async () => { await shutdown?.(); } };
 }
 
-const utterance = (id: string) => event("voice.utterance", { id, text: "hi", emotion: "neutral", durationMs: 30, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
+const utterance = (id: string) => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", durationMs: 30, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
 
 // @spec MOUTH-START-001, MOUTH-START-004, MOUTH-START-006
 test("mouth with no output enabled stays up idle: no client, no subscription, no clips, mode off and ready; shutdown stops the bus", async () => {
@@ -70,8 +70,8 @@ test("the local plan runs the dryrun output with no Discord: group mouth at late
     assert.equal(r.lastHealth().deps.dryrun, "ok");
     await r.subs[0]!.handler(utterance("u1"));
     await waitFor(() => r.bus.of("voice.done").length === 1, "voice.done");
-    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u1", sink: "dryrun" }]);
-    assert.deepEqual(r.bus.of("voice.done"), [{ id: "u1", sink: "dryrun" }]);
+    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u1", seq: 0, sink: "dryrun" }]);
+    assert.deepEqual(r.bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "dryrun" }]);
   } finally {
     await r.stop();
   }
@@ -91,7 +91,7 @@ test("a discord output with no connector: mouth runs and subscribes, deps.discor
     assert.equal(hb.mode, "live");
     await r.subs[0]!.handler(utterance("u1"));
     await waitFor(() => r.bus.of("voice.done").length === 1, "dryrun played it");
-    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u1", sink: "dryrun" }], "discord skipped it, claiming nothing");
+    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u1", seq: 0, sink: "dryrun" }], "discord skipped it, claiming nothing");
     assert.equal(r.bus.frames.length, 0);
     r.bus.register("discord", SINK);
     await waitFor(() => r.lastHealth().deps.discord === "ok" && r.lastHealth().state === "ready", "discord ok and ready");
@@ -140,7 +140,7 @@ test("live routing in the local plan: a set_routing on the one loop switches dry
     await waitFor(() => r.lastHealth().deps.dryrun === "ok", "dryrun ok again");
     await handle(utterance("u2"));
     await waitFor(() => r.bus.of("voice.done").length === 1, "played again");
-    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u2", sink: "dryrun" }]);
+    assert.deepEqual(r.bus.of("voice.playing"), [{ id: "u2", seq: 0, sink: "dryrun" }]);
   } finally {
     await r.stop();
   }
@@ -209,7 +209,7 @@ test("an unknown id in a line's route sets the heartbeat detail to the ignored i
   try {
     await r.done;
     await waitFor(() => r.bus.health.some((h) => h.state === "ready"), "ready heartbeat");
-    await r.subs[0]!.handler(event("voice.utterance", { id: "x1", text: "hi", emotion: "neutral", route: ["bogus", "dryrun"], durationMs: 30, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/x1.wav", sampleRate: 24000 }));
+    await r.subs[0]!.handler(event("voice.utterance", { id: "x1", seq: 0, text: "hi", emotion: "neutral", route: ["bogus", "dryrun"], durationMs: 30, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/x1.wav", sampleRate: 24000 }));
     await waitFor(() => r.bus.health.some((h) => h.detail?.startsWith('route ignored unknown output id "bogus"; routing {"dryrun":{"enabled":true}}')), "route detail heartbeat");
   } finally {
     await r.stop();

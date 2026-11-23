@@ -31,8 +31,8 @@ function setup(opts: { chance?: number; critic?: (i: CriticInput) => CriticOutpu
 const mention = () => ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who: "bob", text: "hey Coco", mention: true } });
 const FALLBACK = { clip: "c1", text: "my mic died" };
 const failed = (id: string, fallback: { clip: string; text: string } | null = FALLBACK) =>
-  event("voice.failed", { id, sink: "discord", reason: "tts down", ...(fallback ? { fallback } : {}) });
-const doneFor = (cortex: Cortex, id: string) => cortex.onEvent(event("voice.done", { id, sink: "x" }));
+  event("voice.failed", { id, seq: 0, sink: "discord", reason: "tts down", ...(fallback ? { fallback } : {}) });
+const doneFor = (cortex: Cortex, id: string) => cortex.onEvent(event("voice.done", { id, seq: 0, sink: "x" }));
 
 /** Cortex says one line and it plays out; returns that line's brain.say id. */
 async function sayOne(s: ReturnType<typeof setup>, text = "[happy] intended line"): Promise<string> {
@@ -172,13 +172,29 @@ test("forget_context drops the glitch", async () => {
 });
 
 // @spec CTX-FALL-005
-test("a glitch whose line has left the window is dropped, and stays dropped", async () => {
+test("a glitch whose own line the window still protects keeps its hint through a chat flood", async () => {
   const s = setup();
   const cap = s.cfg.brain.working_memory_events;
   await s.cortex.onEvent(event("brain.say", { id: "a", text: "old line", emotion: "happy", reason: "r" }, "salience"));
   await s.cortex.onEvent(failed("a"));
   await doneFor(s.cortex, "a");
   for (let i = 0; i < cap; i++) await s.cortex.onEvent(event("chat.message", { platform: "twitch", user: "u", text: `m${i}`, isMod: false, isSub: false, mentionsCohost: false }));
+  await s.cortex.think(mention());
+  assert.match(s.llm.system(), HINT);
+});
+
+// @spec CTX-FALL-005
+test("a glitch whose line newer lines have evicted from the window is dropped, and stays dropped", async () => {
+  const s = setup();
+  const cap = s.cfg.brain.working_memory_events;
+  const own = s.cfg.brain.working_memory_own_lines;
+  const id = await sayOne(s);
+  await s.cortex.onEvent(failed(id));
+  for (let i = 0; i <= own; i++) await s.cortex.onEvent(event("brain.say", { id: `n${i}`, text: `newer ${i}`, emotion: "happy", reason: "r" }, "salience"));
+  for (let i = 0; i < cap; i++) await s.cortex.onEvent(event("chat.message", { platform: "twitch", user: "u", text: `m${i}`, isMod: false, isSub: false, mentionsCohost: false }));
+  assert.equal(s.cortex.ctx.hasSelf(id), false);
+  await s.cortex.think(mention());
+  assert.doesNotMatch(s.llm.system(), HINT);
   await s.cortex.think(mention());
   assert.doesNotMatch(s.llm.system(), HINT);
 });

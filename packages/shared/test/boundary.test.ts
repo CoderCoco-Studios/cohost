@@ -27,3 +27,13 @@ test("shared depends on config and bus only among workspace packages, and bus do
     assert.doesNotMatch(readFileSync(f, "utf8"), /from "@cohost\/(llm|control|modules|working-memory|testing)"/, f);
   }
 });
+
+// @spec SHARED-GUARD-002
+test("the untrusted module has no imports and touches no I/O, clock or model", () => {
+  const src = readFileSync(new URL("../src/untrusted.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /^\s*import[\s{*"']/m, "no static import");
+  assert.doesNotMatch(src, /^\s*export\s[^;\n]*\sfrom\s/m, "no re-export from another module");
+  assert.doesNotMatch(src, /\bimport\s*\(/, "no dynamic import");
+  assert.doesNotMatch(src, /\brequire\s*\(/, "no require");
+  assert.doesNotMatch(src, /\b(Date\.now|new Date|performance\.now|process\.hrtime|setTimeout|setInterval|fetch)\b/, "no clock, timer or network");
+});

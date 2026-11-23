@@ -1,5 +1,5 @@
 schema_version: 2
-last_updated: 2026-11-18
+last_updated: 2026-11-22
 
 # Taxonomy is navigational only. Segments are flat (depth-2) under the root HLD.
 taxonomy:
@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "109 specs: 74 [x], 35 [ ] (SHARED-GUARD-001 to SHARED-GUARD-027, the untrusted text guard and the viewer key; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 96 [x], 14 [ ] (SHARED-GUARD-003, -020, -021 and -025 to -030, the untrusted totality, counter admission, viewer key and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
     drift: null
 
   module-contract:
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 100 [x], 131 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
+    next: "231 specs: 114 [x], 117 [ ] (streamed-speech clause specs, the renderer settings and the early-reply settings CFG-SCH-102 to 112 are open gaps)."
     drift: null
 
   event-bus:
@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "213 specs: 144 [x], 64 [ ], 5 [D] (streamed-speech clause specs, the early-reply specs BUS-EVT-052 to 060 and the avatar-frame stream BUS-AVF-001 to 012 are open gaps)."
+    next: "213 specs: 171 [x], 37 [ ], 5 [D] (streamed-speech clause specs and the early-reply specs BUS-EVT-052 to 060 are open gaps)."
     drift: null
 
   model-backends:
@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 63 [x], 163 [ ]. Open: the revised contract (complete(), stream(), tool calls, image input on every provider, one ChatError type, the mock markers): LLM-IF-005 to -019, LLM-ERR, LLM-STREAM, LLM-TOOL the new complete()/stream() lines of LLM-CHAT, LLM-VIS, LLM-STOP, LLM-CLAUDE and LLM-MOCK, and LLM-VIS-002, -003. The 63 [x] lines are not covered by the last audit."
+    next: "226 specs: 116 [x], 110 [ ]. Built: complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field), ChatError kinds http, connect, stream. Open: IF-005..007, IF-013..020; ERR-002, -003, -009; CHAT-017, -018; STOP-008..010, -015..017, -019; STREAM-003, -006..008, -012, -013, -017, -021, -027, -029..033 (029 has its text part; tool_call events are #162); CLAUDE-020..033; MOCK-006..021; VIS-002..013; TOOL-001..030; EX-008."
     drift: null
 
   region-hooks:
@@ -123,7 +123,7 @@ arrows:
     blocks: [salience, cortex]
     blockedBy: [config, event-bus]
     detail: working-memory.md
-    next: "74 specs: 31 [x], 42 [ ], 1 [D] (streamed-speech clause specs and the unfinished-line specs WM-UNF are open gaps). Notes (the counts above are current): 62 specs: 33 [x], 28 [ ] (chat safety: bounding on push, quoted chat lines, own-line protection, markHeard; platform and user id on the chat entry; forget), 1 [D] (WM-STACK-001)."
+    next: "74 specs: 52 [x], 21 [ ], 1 [D] (the unfinished-line specs WM-UNF, the streamed-speech clause specs, the platform and user id on the chat entry and forget WM-FORGET; WM-STACK-001 deferred)."
     drift: null
 
   chat:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 78 [x], 31 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
+    next: "111 specs: 80 [x], 29 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Notes (the counts above are current): 91 specs: 84 [x], 5 [ ] (the CHAT_SOURCES and VISION_PROVIDER presets: CTRL-MANIFEST-003, CTRL-RUNTIME-009; the 19-unit manifest and engine units: CTRL-MANIFEST-001, -006; Launch with engine profiles: CTRL-STACK-018), 2 [D]."
     drift: null
 
   deployment:

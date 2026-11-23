@@ -1,8 +1,8 @@
 // Read loops on a scripted BusTransport: acks, drain, backoff, stop (BUS-NAT-ACK-*, CONN-*, ERR-*, amended BUS-SUB-008/009,
-// BUS-STOP-001). Until the facade runs on `BusOptions.transport` (Phase 6) every test here fails at the first assertion.
+// BUS-STOP-001).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Bus, BusEvent, EventType } from "../src/index.js";
+import type { AvatarFrame, Bus, BusEvent, EventType } from "../src/index.js";
 import { FakeTransport, FakeFrameTransport, rawEntry, groupRead, busError, withBus, withBus2, busWith, until, within, tick, run } from "./native-helpers.js";
 
 const empty = () => groupRead(null);
@@ -226,6 +226,38 @@ test("a failing read of subscribe, tail, tailHealth or tailAudio logs exactly on
       }
     });
   }
+});
+
+// @spec BUS-NAT-CONN-002, BUS-AVF-012
+test("a failing read of tailAvatarFrames logs exactly one warn, waits min(cap, base*2^(n-1)), then reads again from $ and not from the last id", async () => {
+  const frame: AvatarFrame = { mouthOpen: 0.1, mouthSmile: 0, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, emotion: "neutral", intensity: 0, expression: "" };
+  const ok = () => [{ id: "7-0", frame }];
+  const frames = new FakeFrameTransport().on("readAvatarFrames", ok, down(), down(), down(), () => null, down());
+  await withBus2(new FakeTransport(), frames, { retryBaseMs: 20, retryMaxMs: 60 }, async ({ bus, l }) => {
+    bus.tailAvatarFrames(() => {});
+    const reads = () => frames.calls.filter((c) => c.method === "readAvatarFrames");
+    await until(() => reads().length >= 7, "all scripted reads");
+    const warns = l.at("warn");
+    assert.equal(warns.length, 4, "one warn per failure");
+    assert.deepEqual(warns.map((w) => w.obj.delayMs), [20, 40, 60, 20]);
+    assert.ok(warns.every((w) => w.obj.err instanceof Error));
+    // read 1 is from $ and returns 7-0; read 2 follows the success from the last id and fails; every read after a failure is from $
+    assert.deepEqual(reads().slice(0, 7).map((c) => c.args[0]), ["$", "7-0", "$", "$", "$", "$", "$"]);
+    for (const [i, delay] of [[2, 20], [3, 40], [4, 60]] as const) assert.ok(reads()[i]!.at - reads()[i - 1]!.at >= delay - 3, `waited ~${delay} ms before read ${i + 1}`);
+  });
+});
+
+// @spec BUS-AVF-012, BUS-STOP-001
+test("after stop(), a tailAvatarFrames read that rejects ends the loop without a log line or a rethrow", async () => {
+  const frames = new FakeFrameTransport();
+  await withBus2(new FakeTransport(), frames, {}, async ({ bus, l }) => {
+    bus.tailAvatarFrames(() => {});
+    await until(() => frames.calls.some((c) => c.method === "readAvatarFrames"), "a blocked read");
+    await within(bus.stop(), 1000, "stop");
+    await tick(50);
+    assert.deepEqual([...l.at("warn"), ...l.at("error")], [], "no log line");
+    assert.equal(frames.closed, true);
+  });
 });
 
 // @spec BUS-NAT-CONN-003

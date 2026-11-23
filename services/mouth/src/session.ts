@@ -76,8 +76,8 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
       // A line that goes to no enabled output is completed here, so cortex is released and no fallback clip plays for it.
       if (!outputs.some((o) => route.includes(o.name) && (!enabled || enabled(o.name)))) {
         try {
-          await bus.publish("voice.playing", { id: d.id, sink: "mouth" });
-          await bus.publish("voice.done", { id: d.id, sink: "mouth" });
+          await bus.publish("voice.playing", { id: d.id, seq: 0, sink: "mouth" });
+          await bus.publish("voice.done", { id: d.id, seq: 0, sink: "mouth" });
         } catch (err) {
           log.warn({ err, id: d.id }, "publishing the completion of an unrouted line failed");
         }

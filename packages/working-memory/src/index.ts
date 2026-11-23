@@ -1,5 +1,6 @@
 import type { BusEvent, EventType, Timing } from "@cohost/bus";
 import type { Emotion } from "@cohost/config";
+import { boundText, quoteUntrusted, speakerLabel, UNKNOWN_NAME } from "@cohost/shared/untrusted";
 
 /** Set on events that came from test injection; absent on real ones. */
 export interface InjectionFlags { injected?: boolean; remember?: boolean }
@@ -30,7 +31,30 @@ export type ContextEvent =
   | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
   | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
-  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string };
+  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
+
+/**
+ * The character limits a window bounds text to on intake and renders with. Absent (a directly constructed `Context`)
+ * the window bounds nothing: text is stored and rendered as given, apart from the transcript's own line flattening.
+ */
+export interface ContextLimits {
+  chatChars: number;
+  nameChars: number;
+  speechChars: number;
+  visionChars: number;
+}
+
+/** `ownLines`: how many of the newest `self` events eviction never drops (capped at `max - 1`); 0 when absent. */
+export interface ContextOptions {
+  ownLines?: number;
+  limits?: ContextLimits;
+}
+
+/** Bounds `raw` to `max` when a limit is set; otherwise returns it unchanged. */
+const bounded = (raw: string, max: number | undefined): string => (max === undefined ? raw : boundText(raw, max)); // @spec WM-WIN-011
+
+/** A viewer or speaker name as stored: bounded, and `unknown` when nothing is left. */
+const nameOf = (raw: string, max: number | undefined): string => bounded(raw, max) || UNKNOWN_NAME; // @spec WM-PUSH-015, WM-PUSH-017
 
 /** Rolling window of what's happened recently — the brain's working memory. */
 export class Context {
@@ -39,12 +63,36 @@ export class Context {
 
   /** Entries `push` returned since `holdArrivals`; `undefined` when not holding. */
   private held: ContextEvent[] | undefined;
+  private readonly ownLines: number;
+  private readonly limits: ContextLimits | undefined;
 
-  constructor(private max: number) {}
+  constructor(private max: number, opts: ContextOptions = {}) { // @spec WM-WIN-012
+    this.ownLines = opts.ownLines ?? 0;
+    this.limits = opts.limits;
+  }
 
-  /** The one place a region sizes its window: `brain.working_memory_events`. */
-  static forBrain(brain: { working_memory_events: number }): Context { // @spec WM-WIN-005, WM-WIN-008
-    return new Context(brain.working_memory_events);
+  /**
+   * The one place a region sizes its window and reads the limit keys for it: `brain.working_memory_events` sizes it,
+   * `brain.working_memory_own_lines` protects its newest own lines, and `viewerText` plus `brain.input_limits` bound
+   * what `push` stores and `transcript` renders.
+   */
+  static forBrain( // @spec WM-WIN-008, WM-WIN-010, WM-WIN-011
+    brain: {
+      working_memory_events: number;
+      working_memory_own_lines: number;
+      input_limits: { speech_max_chars: number; vision_max_chars: number };
+    },
+    viewerText: { max_chars: number; max_name_chars: number },
+  ): Context {
+    return new Context(brain.working_memory_events, {
+      ownLines: brain.working_memory_own_lines,
+      limits: {
+        chatChars: viewerText.max_chars,
+        nameChars: viewerText.max_name_chars,
+        speechChars: brain.input_limits.speech_max_chars,
+        visionChars: brain.input_limits.vision_max_chars,
+      },
+    });
   }
 
   /** Start recording what `push` appends (a fresh record), at most one window's worth. */
@@ -60,26 +108,28 @@ export class Context {
   }
 
   /** Append the perception in `bus` to the window and return its context entry; `undefined` for any other event type. */
-  push(bus: BusEvent): ContextEvent | undefined {
+  push(bus: BusEvent): ContextEvent | undefined { // @spec WM-PUSH-014, WM-PUSH-015, WM-PUSH-016, WM-PUSH-017, WM-PUSH-018
     const ev = bus as TaggedEvent;
+    const limits = this.limits;
     let entry: ContextEvent;
     switch (ev.type) {
       case "chat.message": { // @spec WM-PUSH-001, WM-PUSH-010
         const d = ev.data;
-        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, user: d.user, text: d.text, mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
+        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, user: nameOf(d.user, limits?.nameChars), text: bounded(d.text, limits?.chatChars), mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
         break;
       }
       case "vision.summary": { // @spec WM-PUSH-004, WM-PUSH-005
         const d = ev.data;
-        this.lastVision = d.text;
+        const text = bounded(d.text, limits?.visionChars);
+        this.lastVision = text;
         // Keep only the latest vision line in the window; older ones are noise.
         this.events = this.events.filter((e) => e.kind !== "vision");
-        entry = { kind: "vision", eventId: ev.id, ts: ev.ts, text: d.text, changed: d.changed, ...(d.timing ? { timing: d.timing } : {}), seen: !d.changed, ...flagsOf(d) }; // @spec WM-PUSH-013
+        entry = { kind: "vision", eventId: ev.id, ts: ev.ts, text, changed: d.changed, ...(d.timing ? { timing: d.timing } : {}), seen: !d.changed, ...flagsOf(d) }; // @spec WM-PUSH-013
         break;
       }
       case "speech.heard": { // @spec WM-PUSH-002
         const d = ev.data;
-        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: d.speaker, text: d.text, ...(d.timing ? { timing: d.timing } : {}), seen: false, ...flagsOf(d) }; // @spec WM-PUSH-011
+        entry = { kind: "speech", eventId: ev.id, ts: ev.ts, speaker: nameOf(d.speaker, limits?.nameChars), text: bounded(d.text, limits?.speechChars), ...(d.timing ? { timing: d.timing } : {}), seen: false, ...flagsOf(d) }; // @spec WM-PUSH-011
         break;
       }
       default: // @spec WM-PUSH-003
@@ -105,6 +155,18 @@ export class Context {
     const e = this.events.find((x) => x.kind === "self" && x.id === id);
     if (!e || e.kind !== "self") return false;
     e.fallback = fallbackText;
+    return true;
+  }
+
+  /**
+   * Record (a string) or clear (`undefined`) the text the audience heard of the `self` event with this id, without
+   * moving it or changing its `seen`; false (and no change) when no such event is in the window.
+   */
+  markHeard(id: string, heard: string | undefined): boolean { // @spec WM-PUSH-019, WM-PUSH-020
+    const e = this.events.find((x) => x.kind === "self" && x.id === id);
+    if (!e || e.kind !== "self") return false;
+    if (heard === undefined) delete e.heard;
+    else e.heard = heard;
     return true;
   }
 
@@ -138,14 +200,22 @@ export class Context {
     return [...this.events];
   }
 
-  /** Render the window as transcript lines for the prompt. */
-  transcript(cohostName: string): string { // @spec WM-TRANS-001, WM-TRANS-007
+  /**
+   * Render the window as transcript lines for the prompt. Every line is one line starting with its tag. Chat is
+   * a labelled, quoted line; a `self` line renders the same whether or not it has `heard` text.
+   */
+  transcript(cohostName: string): string { // @spec WM-TRANS-001, WM-TRANS-007, WM-TRANS-013, WM-TRANS-014
+    const limits = this.limits;
     return this.events
       .map((e) => {
         switch (e.kind) {
-          case "chat": return `${LINE_TAG.chat} ${oneLine(e.user)}${e.isMod ? " (mod)" : ""}: ${oneLine(e.text)}`; // @spec WM-TRANS-002, WM-TRANS-006
-          case "speech": return `${LINE_TAG.speech} ${oneLine(e.speaker)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
-          case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006
+          case "chat": { // @spec WM-TRANS-002, WM-TRANS-008
+            const label = speakerLabel(e.user, limits?.nameChars ?? Infinity);
+            const quoted = quoteUntrusted(e.text, limits?.chatChars ?? Infinity);
+            return `${LINE_TAG.chat} ${label}${e.isMod ? " (mod)" : ""}: ${quoted}`;
+          }
+          case "speech": return `${LINE_TAG.speech} ${speakerLabel(e.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
+          case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
             return e.fallback !== undefined
               ? `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`
@@ -155,8 +225,25 @@ export class Context {
       .join("\n");
   }
 
-  private trim(): void { // @spec WM-WIN-001, WM-WIN-002
-    if (this.events.length > this.max) this.events.splice(0, this.events.length - this.max);
+  /**
+   * Keep the window at `max`: drop the oldest event that is not among the newest protected `self` events, repeating
+   * until the count is `max`. Protection is `ownLines` capped at `max - 1`, so an unprotected event always exists.
+   */
+  private trim(): void { // @spec WM-WIN-001, WM-WIN-002, WM-WIN-009
+    let excess = this.events.length - this.max;
+    if (excess <= 0) return;
+    const protectedSet = new Set<ContextEvent>();
+    let budget = Math.min(this.ownLines, this.max - 1);
+    for (let i = this.events.length - 1; i >= 0 && budget > 0; i--) {
+      const e = this.events[i]!;
+      if (e.kind === "self") { protectedSet.add(e); budget--; }
+    }
+    const kept: ContextEvent[] = [];
+    for (const e of this.events) {
+      if (excess > 0 && !protectedSet.has(e)) { excess--; continue; }
+      kept.push(e);
+    }
+    this.events = kept;
   }
 }
 

@@ -41,12 +41,12 @@ test("an operator say over a pending line keeps that line pending: its voice.don
   assert.equal(operator!.emotion, "neutral");
   assert.equal(operator!.reason, "operator");
 
-  await cortex.onEvent(event("voice.done", { id: "reflex-1", sink: "x" })); // the interrupted line ends first
+  await cortex.onEvent(event("voice.done", { id: "reflex-1", seq: 0, sink: "x" })); // the interrupted line ends first
   await cortex.think(mention());
   assert.equal(llm.calls.length, 0, "the operator's line is still playing");
   assert.ok(!statuses().includes("idle"), "not reported idle while a line plays");
 
-  await cortex.onEvent(event("voice.done", { id: operator!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: operator!.id, seq: 0, sink: "x" }));
   assert.equal(statuses().at(-1), "idle");
   await cortex.think(mention());
   assert.equal(llm.calls.length, 1);
@@ -56,11 +56,11 @@ test("the operator's line ending first does not free the cortex while the interr
   const { cortex, bus, llm, statuses } = setup();
   await cortex.onEvent(event("brain.say", { id: "reflex-1", text: "Oof.", emotion: "surprised" }, "salience"));
   await cortex.onEvent(operatorSay("Quick note"));
-  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say")[0]!.id, seq: 0, sink: "x" }));
   assert.ok(!statuses().includes("idle"));
   await cortex.think(mention());
   assert.equal(llm.calls.length, 0);
-  await cortex.onEvent(event("voice.done", { id: "reflex-1", sink: "x" }));
+  await cortex.onEvent(event("voice.done", { id: "reflex-1", seq: 0, sink: "x" }));
   assert.equal(statuses().at(-1), "idle");
 });
 
@@ -89,7 +89,7 @@ test("with recall_k 0 no recall request is published, even with a vision line to
 test("viewer notes are capped at 50: the oldest note is evicted first", async () => { // @spec CTX-VIEWER-002
   const { cortex, llm, bus } = setup();
   for (let i = 0; i <= 50; i++) await cortex.onEvent(event("memory.viewer", { user: `user${i}`, isNew: true, msgCount: 1, regular: false }));
-  const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, sink: "x" }));
+  const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
   await cortex.think(mention("user0")); // 51 notes were stored: the first is gone
   assert.doesNotMatch(llm.system, /user0 is new here/);
   await done();
@@ -123,7 +123,7 @@ test("pause is reported in the heartbeat detail and cleared by resume", async ()
 });
 
 test("the cortex window is sized by brain.working_memory_events", async () => { // @spec WM-WIN-005
-  const { cortex } = setup({ brain: { working_memory_events: 3, memory: { recall_k: 0 } } });
+  const { cortex } = setup({ brain: { working_memory_events: 3, working_memory_own_lines: 2, memory: { recall_k: 0 } } });
   for (const t of ["a", "b", "c", "d", "e"]) {
     await cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: t, isMod: false, isSub: false, mentionsCohost: false }));
   }

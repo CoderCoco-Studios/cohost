@@ -27,8 +27,12 @@ test("PRESENTATION holds sections and keys maps, GROUPS is the ordered five, and
   assert.deepEqual(Object.keys(PRESENTATION.sections).sort(), [...SECTION_LIST].sort());
   assert.deepEqual(
     [...SECTION_LIST].sort(),
-    [...TOP_LEVEL.filter((k) => k !== "brain"), "brain.working_memory_events", "brain.salience", "brain.affect", "brain.memory", "brain.cortex"].sort(),
+    [
+      ...TOP_LEVEL.filter((k) => k !== "brain"),
+      "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "brain.salience", "brain.affect", "brain.memory", "brain.cortex",
+    ].sort(),
   );
+  assert.ok(TOP_LEVEL.includes("viewer_text"), "viewer_text is a top-level section");
   assert.ok(Object.keys(PRESENTATION.keys).length > 0);
 });
 
@@ -46,7 +50,7 @@ test("every declared section has a one-line title, group and about", () => {
 // @spec CFG-PRES-003
 test("a section's page names another declared section", () => {
   const pages = Object.entries(PRESENTATION.sections).filter(([, e]) => e.page !== undefined);
-  assert.deepEqual(pages.map(([s, e]) => [s, e.page]), [["brain.working_memory_events", "brain.memory"]]);
+  assert.deepEqual(pages.map(([s, e]) => [s, e.page]), [["brain.working_memory_events", "brain.memory"], ["brain.working_memory_own_lines", "brain.memory"]]);
   for (const [s, e] of pages) {
     assert.ok(SECTION_LIST.includes(e.page!), `${s}: page ${e.page} is not a declared section`);
     assert.notEqual(e.page, s);
@@ -78,6 +82,28 @@ test("an entry for a section or key that the schema does not define fails, and t
 test("the declared sections are the sections the control plane's manifest declares plus dashboard", () => {
   const declared = new Set<string>(["dashboard", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
   assert.deepEqual([...declared].sort(), [...SECTION_LIST].sort());
+});
+
+// @spec CFG-PRES-012
+test("the own-lines, input-limits and viewer-text sections are in group Brain, and own lines are shown on brain.memory", () => {
+  const s = PRESENTATION.sections;
+  assert.equal(s["brain.working_memory_own_lines"]?.group, "Brain");
+  assert.equal(s["brain.working_memory_own_lines"]?.page, "brain.memory");
+  assert.equal(s["brain.input_limits"]?.group, "Brain");
+  assert.equal(s["brain.input_limits"]?.page, undefined);
+  assert.equal(s["viewer_text"]?.group, "Brain");
+  assert.equal(s["viewer_text"]?.page, undefined);
+  assert.deepEqual(sectionKeyPaths("brain.working_memory_own_lines"), ["brain.working_memory_own_lines"]);
+  assert.deepEqual(sectionKeyPaths("brain.input_limits").sort(), ["brain.input_limits.speech_max_chars", "brain.input_limits.vision_max_chars"]);
+  assert.deepEqual(sectionKeyPaths("viewer_text").sort(), ["viewer_text.max_chars", "viewer_text.max_name_chars"]);
+});
+
+// @spec CFG-PRES-013
+test("the four text-limit keys carry the unit chars and brain.affect.count_window_ms the unit ms", () => {
+  for (const k of ["viewer_text.max_chars", "viewer_text.max_name_chars", "brain.input_limits.speech_max_chars", "brain.input_limits.vision_max_chars"]) {
+    assert.equal(PRESENTATION.keys[k]?.unit, "chars", k);
+  }
+  assert.equal(PRESENTATION.keys["brain.affect.count_window_ms"]?.unit, "ms");
 });
 
 // @spec CFG-PRES-005

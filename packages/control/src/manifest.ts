@@ -55,26 +55,26 @@ const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName"
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" },
-    config: ["chat"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
+    config: ["chat", "viewer_text"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
     groups: ["salience"], defaultMode: "fresh",
-    config: ["brain.salience", "brain.working_memory_events", "cohost", "llm"], uses: ["affect", "cortex"], pause: true,
+    config: ["brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"], uses: ["affect", "cortex"], pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary"], observe: ["attention.focus", "brain.say"] },
   }),
   svc("affect", {
     groups: ["affect"], defaultMode: "fresh",
-    config: ["brain.affect", "cohost", "llm"], pause: true,
+    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"], pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary", "brain.say"], observe: ["affect.state"] },
   }),
   svc("memory", {
     groups: ["memory", "memory-recall", "memory-notes"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
-    config: ["brain.memory", "cohost", "llm"],
+    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
     test: { inputs: ["chat.message", "memory.recall.request"], observe: ["memory.recall.reply", "memory.viewer"] },
   }),
   svc("cortex", {
     requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" },
-    config: ["brain.cortex", "brain.working_memory_events", "cohost", "llm"], uses: ["salience", "affect", "memory"], pause: true,
+    config: ["brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"], uses: ["salience", "affect", "memory"], pause: true,
     test: { inputs: ["attention.focus"], observe: ["brain.status", "brain.say"] },
   }),
   svc("voice", {

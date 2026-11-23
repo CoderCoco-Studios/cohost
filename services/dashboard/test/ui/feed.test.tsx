@@ -51,8 +51,8 @@ test("a replayed event is flagged as a replay for every listener and a live one 
   const seen: [string, boolean][] = [];
   feed.onEvent((e, replay) => seen.push([e.id, replay]));
   sock().open();
-  sock().message(ev("1-0", "voice.utterance", { id: "u1" }, { replay: true }));
-  sock().message(ev("2-0", "voice.utterance", { id: "u2" }));
+  sock().message(ev("1-0", "voice.utterance", { id: "u1", seq: 0 }, { replay: true }));
+  sock().message(ev("2-0", "voice.utterance", { id: "u2", seq: 0 }));
   assert.deepEqual(seen, [["1-0", true], ["2-0", false]]);
 });
 

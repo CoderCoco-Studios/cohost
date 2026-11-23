@@ -44,7 +44,7 @@ export class Cortex {
   private pendingNotes = new Map<string, (p: People) => void>();
 
   constructor(private d: CortexDeps) {
-    this.ctx = Context.forBrain(d.cfg.brain);
+    this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
     this.personality = d.loadPersonality();
     this.control = controlFor("cortex", {
       // @spec CTX-CTRL-002

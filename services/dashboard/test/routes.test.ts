@@ -95,8 +95,8 @@ test("POST /sink reports the browser audio sink's playing / done", async () => {
   await post("/sink", { event: "playing", id: "a1" });
   await post("/sink", { event: "done", id: "a1" });
   assert.deepEqual(bus.published, [
-    { type: "voice.playing", data: { id: "a1", sink: "dashboard" } },
-    { type: "voice.done", data: { id: "a1", sink: "dashboard" } },
+    { type: "voice.playing", data: { id: "a1", seq: 0, sink: "dashboard" } },
+    { type: "voice.done", data: { id: "a1", seq: 0, sink: "dashboard" } },
   ]);
 });
 

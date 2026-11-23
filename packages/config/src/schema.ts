@@ -21,7 +21,7 @@ const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.s
 export const SECRET_PATHS: readonly string[] = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
   "ears.http.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
-  "connections.discord.token",
+  "chat.youtube.api_key", "connections.discord.token",
 ];
 export const EMOTIONS = Emotion.options;
 
@@ -154,10 +154,16 @@ export const ConfigSchema = z.object({
     // @spec CFG-SCH-025
     if (v.enabled && !v.model) ctx.addIssue({ code: "custom", path: ["model"], message: "required while vision.enabled is true" });
   }),
+  // @spec CFG-SCH-010
   chat: z.object({
-    /** `fake` publishes scripted/stdin messages with no Twitch connection (isolated runs). */
-    source: z.preprocess((v) => v || "twitch", z.enum(["twitch", "fake"])),
+    /**
+     * The chat sources read at once: `twitch`, `youtube`, and `fake` (scripted/stdin messages, no channel).
+     * Absent or null is `[twitch]`; a name listed twice is read once, in first-occurrence order.
+     */
+    // @spec CFG-SCH-048
+    sources: z.preprocess((v) => (v == null ? ["twitch"] : v), z.array(z.enum(["twitch", "youtube", "fake"])).transform((names) => [...new Set(names)])),
     fake: z.object({ interval_ms: z.number().int().positive().default(8000) }).prefault({}),
+    // @spec CFG-SCH-054
     twitch: z.object({
       channel: z.string().default(""),
       /** Credentials (secrets, from `secrets.yaml`); the refresh token is required whenever the access token is set. */
@@ -165,7 +171,20 @@ export const ConfigSchema = z.object({
       client_secret: z.string().default(""),
       access_token: z.string().default(""),
       refresh_token: z.string().default(""),
-    }),
+    }).prefault({}),
+    // @spec CFG-SCH-049, CFG-SCH-050, CFG-SCH-051, CFG-SCH-052, CFG-SCH-053
+    youtube: z.object({
+      /** The video (or live stream) whose chat is read: any string; a value that names no video is a source gap, not a load failure. */
+      video: z.string().default(""),
+      /** Credential (secret, from `secrets.yaml`, CFG-SEC-003). */
+      api_key: z.string().default(""),
+      /** `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`. */
+      transport: z.preprocess((v) => v || "stream", z.enum(["stream", "poll"])),
+      /** The shortest gap between two chat polls, in ms. */
+      poll_floor_ms: z.number().int().min(1000).default(12000),
+      /** How often the video is rechecked for a live chat, in ms. */
+      recheck_ms: z.number().int().min(30000).default(120000),
+    }).prefault(EMPTY_INPUT),
     ignore_users: z.array(z.string()).default([]),
     ignore_prefixes: z.array(z.string()).default(["!"]),
   }),

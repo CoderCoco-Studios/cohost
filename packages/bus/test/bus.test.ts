@@ -68,10 +68,10 @@ test("every region event validates its documented shape", () => {
 // @spec BUS-EVT-020
 test("memory.notes.request/reply validate their shapes: text optional (absent for health/family), no subscriber field", () => {
   const req = EventPayloads["memory.notes.request"];
-  assert.ok(req.safeParse({ id: "1", users: ["bob", "amy"] }).success);
-  assert.equal(req.safeParse({ id: "1", users: [] }).success, false, "users must be non-empty");
+  assert.ok(req.safeParse({ id: "1", viewers: [{ user: "bob" }, { user: "amy" }] }).success);
+  assert.equal(req.safeParse({ id: "1", viewers: [] }).success, false, "viewers must be non-empty");
   assert.equal(req.safeParse({ id: "1" }).success, false);
-  assert.equal(req.safeParse({ id: "1", users: [3] }).success, false);
+  assert.equal(req.safeParse({ id: "1", viewers: [{ user: 3 }] }).success, false);
 
   const rep = EventPayloads["memory.notes.reply"];
   const viewer = (notes: unknown[]) => ({ id: "1", viewers: [{ user: "Bob", regular: true, msgCount: 3, notes }] });
@@ -440,14 +440,14 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
 });
 
 // @spec BUS-EVT-001
-test("the catalogue is exactly the 27 documented event types, exported as EVENT_TYPES", () => {
+test("the catalogue is exactly the 28 documented event types, exported as EVENT_TYPES", () => {
   const expected = [
     "chat.message", "vision.summary", "speech.heard", "speech.partial", "brain.say", "brain.clause", "brain.status", "attention.focus", "affect.state",
     "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
     "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "voice.stop", "voice.failed", "avatar.state",
-    "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat",
+    "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat", "chat.removed",
   ];
-  assert.equal(EVENT_TYPES.length, 27);
+  assert.equal(EVENT_TYPES.length, 28);
   assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
   assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
 });

@@ -18,7 +18,7 @@ export const ISOLATION_OVERRIDES = {
   MEMORY_STORE: "brain.memory.store",
   MEMORY_EMBEDDER: "brain.memory.embedder",
   VOICE_ENGINE: "voice.engine",
-  CHAT_SOURCE: "chat.source",
+  CHAT_SOURCES: "chat.sources",
   VISION_ENABLED: "vision.enabled",
   VISION_ENGINE: "vision.engine",
   EARS_SOURCES: "ears.sources",
@@ -31,7 +31,8 @@ export const ISOLATION_OVERRIDES = {
 export type IsolationName = keyof typeof ISOLATION_OVERRIDES;
 
 /** Override values parsed as a YAML flow value (the boolean keys and the list); every other value stays a string. */
-const YAML_VALUED: ReadonlySet<string> = new Set(["VISION_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "EARS_SOURCES"]);
+// @spec CFG-ISO-007
+const YAML_VALUED: ReadonlySet<string> = new Set(["VISION_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "CHAT_SOURCES", "EARS_SOURCES"]);
 
 /** A set of overrides: override name to the string value to apply. */
 export type IsolationOverrides = Readonly<Record<string, string>>;

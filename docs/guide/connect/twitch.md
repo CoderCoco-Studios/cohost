@@ -21,12 +21,12 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
    ```yaml
    chat:
-     source: "twitch"
+     sources: [twitch]
      twitch:
        channel: "yourchannel"
    ```
 
-2. Check that `chat.source` is `twitch`. The value `fake` makes chat a scripted fake instead of Twitch.
+2. Check that `chat.sources` lists `twitch`. Every source listed is read at once, so a `fake` in the list also plays scripted messages alongside Twitch.
 
 3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 
@@ -66,7 +66,7 @@ If chat is quiet, I will not make things up. Well. Not until the idle chatter ki
 ## If it didn't
 
 - **`chat` shows `degraded`.** `chat.twitch.channel` is empty, so the service is waiting for you. Set it and restart `chat`.
-- **Fake messages keep arriving.** `chat.source` is still `fake` in `config/config.yaml`. Set it to `twitch` and restart `chat`.
+- **Fake messages keep arriving.** `chat.sources` still lists `fake` in `config/config.yaml`. Remove `fake` from it and restart `chat`.
 - **`chat` will not start once the access token is set.** The refresh token is missing. Both are required together.
 - **Nothing appears and the channel is busy.** Check the channel name for a typo, and read the `chat` log with `docker compose logs chat`.
 

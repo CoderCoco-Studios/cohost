@@ -5,7 +5,7 @@ import type { ChatUserInfo } from "./filter.js";
 
 type ToEvent = (user: string, text: string, info: ChatUserInfo) => EventInput<"chat.message"> | undefined;
 
-/** Scripted chat for `chat.source: fake`; a mix of mentions, questions and filtered lines. */
+/** Scripted chat for `chat.sources` `fake`; a mix of mentions, questions and filtered lines. */
 export function fakeScript(cohostName: string): { user: string; text: string }[] {
   return [
     { user: "fake_viewer1", text: `hey ${cohostName}, how's the stream going?` },

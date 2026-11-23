@@ -335,7 +335,7 @@ export class Cortex {
     return new Promise<People>((resolve) => {
       const timer = setTimeout(() => { this.pendingNotes.delete(id); log.warn("memory region did not answer the viewer-notes request in time"); resolve([]); }, cfg.brain.cortex.recall_timeout_ms);
       this.pendingNotes.set(id, (p) => { clearTimeout(timer); this.pendingNotes.delete(id); resolve(p); });
-      void bus.publish("memory.notes.request", { id, users: users as [string, ...string[]] }).catch(() => {
+      void bus.publish("memory.notes.request", { id, viewers: users.map((user) => ({ user })) as [{ user: string }, ...{ user: string }[]] }).catch(() => {
         clearTimeout(timer); this.pendingNotes.delete(id); resolve([]);
       });
     });

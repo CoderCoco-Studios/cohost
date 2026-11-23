@@ -4,9 +4,9 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 94 specs: 83 `[x]`, 9 `[ ]`, 2 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 111 specs: 81 `[x]`, 28 `[ ]`, 2 `[D]`.
 
-**AUDITED**: 92 specs: 84 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 6 gaps (the `CHAT_SOURCES` preset, YouTube chat design 2026-11-16; the 19-unit manifest, `VISION_PROVIDER` preset, engine units and Launch profiles, engines design 2026-11-16: CTRL-MANIFEST-001, -003, -006, CTRL-STACK-018).
+**AUDITED**: 111 specs: 81 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 28 gaps: CTRL-HEALTH-005; CTRL-LAT-003 to 005 and 017 to 033 (the early-reply latency specs); CTRL-MANIFEST-001, -002, -003, -005, -006 (the 19-unit manifest, the `VISION_PROVIDER` preset, engine units and Launch profiles); CTRL-STACK-018, -019. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
 ## Orientation
 
@@ -26,7 +26,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 80 `[x]`, 29 `[ ]`, 2 `[D]`)
+- docs/intent/control-plane/control-plane-specs.md (111 specs, prefix `CTRL`: 81 `[x]`, 28 `[ ]`, 2 `[D]`)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -82,7 +82,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Latency report | CTRL-LAT-001 to CTRL-LAT-014 | 14 | 12 | 2 | 0 |
 | Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-016 (017 not in #193) | 2 | 2 | 0 | 0 |
 
-**Summary:** 111 specs: 80 implemented, 29 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 111 specs: 81 implemented, 28 gaps, 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -94,7 +94,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 ## Work Required
 
 - Speech engine servers (design 2026-11-16): three compose-only units, the `VISION_PROVIDER` preset and Launch with engine profiles (CTRL-MANIFEST-001, -003, -006, CTRL-STACK-018).
-- YouTube chat (design 2026-11-16): the chat isolation preset is `CHAT_SOURCES=[fake]` (CTRL-MANIFEST-003, CTRL-RUNTIME-009).
+- The chat isolation preset `CHAT_SOURCES=[fake]` is built (CTRL-RUNTIME-009); the `VISION_PROVIDER` preset is open (CTRL-MANIFEST-003).
 ### Must Fix
 None.
 

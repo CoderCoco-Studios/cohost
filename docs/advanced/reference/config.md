@@ -85,16 +85,22 @@ The `eyes` service: OBS screenshots described by a vision model.
 
 ## `chat`
 
-The `chat` service: Twitch chat in. The channel to read is here; its login credentials are in `secrets.yaml`.
+The `chat` service: chat in from the sources listed in `chat.sources`. The Twitch channel and the YouTube video are here; their credentials are in `secrets.yaml`.
 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `chat` | map | The chat service |
-| `chat.source` | `twitch` | `twitch`, or `fake` for scripted or stdin messages with no channel |
-| `chat.fake` | map | Settings for `source: fake` |
+| `chat.sources` | `[twitch]` | The chat sources read at once: any of `twitch`, `youtube` and `fake` (scripted or stdin messages with no channel), in a list. Empty turns chat off; a name listed twice is read once; any other name fails the load naming `chat.sources` |
+| `chat.fake` | map | Settings for the `fake` source |
 | `chat.fake.interval_ms` | `8000` | The gap between scripted messages |
-| `chat.twitch` | map | Settings for `source: twitch` (the credentials are `chat.twitch.*` keys of `secrets.yaml`) |
+| `chat.twitch` | map | Settings for the `twitch` source (the credentials are `chat.twitch.*` keys of `secrets.yaml`); optional, every key defaults |
 | `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded` |
+| `chat.youtube` | map | Settings for the `youtube` source; optional, every key defaults |
+| `chat.youtube.video` | empty | The YouTube video or live stream whose chat is read: any string (a video id, a link or a handle). A value that names no video is a source gap, not a load failure |
+| `chat.youtube.api_key` | empty | The YouTube Data API key. A secret: it is a `chat.youtube.api_key` key of `secrets.yaml`, never of `config.yaml` |
+| `chat.youtube.transport` | `stream` | `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`; any other value fails the load naming `chat.youtube.transport` |
+| `chat.youtube.poll_floor_ms` | `12000` | Transport `poll`: the shortest gap between two chat polls, in milliseconds. An integer of at least 1000 |
+| `chat.youtube.recheck_ms` | `120000` | How often the video is checked again for a live chat, in milliseconds. An integer of at least 30000 |
 | `chat.ignore_users` | `[]` (`nightbot`, `streamelements`, `moobot` in the example) | Usernames whose messages are dropped |
 | `chat.ignore_prefixes` | `["!"]` | Messages starting with any of these are dropped (bot commands) |
 

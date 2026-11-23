@@ -127,7 +127,7 @@ test("twitch shutdown quits the client; fake source builds no client", async () 
   await t.start();
   await t.stop();
   assert.equal(t.clients[0]!.quits, 1);
-  const f = rig({ chat: { source: "fake", twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) });
+  const f = rig({ chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) });
   try {
     await f.start();
     assert.equal(f.clients.length, 0);
@@ -320,7 +320,7 @@ test("chat/src has no value import of @twurple/*: type-only imports and dynamic 
 // @spec CHAT-INJ-001
 test("inject.request is subscribed with group chat in the fake, idle and twitch plans", async () => {
   const plans: [string, Record<string, unknown>, Partial<ChatServiceDeps>][] = [
-    ["fake", { chat: { source: "fake", twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) }],
+    ["fake", { chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) }],
     ["idle", { chat: { twitch: { channel: "" } } }, {}],
     ["twitch", {}, {}],
   ];
@@ -336,7 +336,7 @@ test("inject.request is subscribed with group chat in the fake, idle and twitch 
 // @spec CHAT-FAKE-006
 test("a rejecting fake publish warns 'fake chat publish failed' and the source keeps running", async () => {
   const stdin = new PassThrough();
-  const r = rig({ chat: { source: "fake", twitch: { channel: "" } } }, { stdin });
+  const r = rig({ chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin });
   try {
     await r.start();
     r.bus.fail = (t) => t === "chat.message";

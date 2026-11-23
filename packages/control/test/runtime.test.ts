@@ -184,7 +184,7 @@ test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV f
 // @spec CTRL-RUNTIME-013
 test("compose: every action without a preset sets COHOST_ISOLATION to the empty string over an ambient value", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { [ISOLATION_ENV]: '{"CHAT_SOURCE":"fake"}' } });
+  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { [ISOLATION_ENV]: '{"CHAT_SOURCES":"[fake]"}' } });
   await rt.start("chat");
   await rt.start("chat", { env: {} });
   await rt.stop("chat");
@@ -193,6 +193,6 @@ test("compose: every action without a preset sets COHOST_ISOLATION to the empty 
   await rt.reembed();
   assert.equal(calls.length, 6);
   for (const c of calls) assert.equal(c.env[ISOLATION_ENV], "", c.args.join(" "));
-  await rt.start("chat", { env: { CHAT_SOURCE: "fake" } });
-  assert.equal(calls[6]!.env[ISOLATION_ENV], '{"CHAT_SOURCE":"fake"}', "a preset replaces the ambient value too");
+  await rt.start("chat", { env: { CHAT_SOURCES: "[fake]" } });
+  assert.equal(calls[6]!.env[ISOLATION_ENV], '{"CHAT_SOURCES":"[fake]"}', "a preset replaces the ambient value too");
 });

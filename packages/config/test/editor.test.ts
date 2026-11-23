@@ -63,14 +63,14 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 });
 
 // @spec MOD-CFG-002
-test("exactly the marked keys are secret: SECRET_PATHS (the eleven), each section's secrets and the schema marks agree", () => {
+test("exactly the marked keys are secret: SECRET_PATHS (the twelve), each section's secrets and the schema marks agree", () => {
   assert.deepEqual([...SECRET_PATHS].sort(), [
-    "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "connections.discord.token", "ears.http.token",
+    "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
     "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
   ]);
   assert.deepEqual(sectionSecrets("ears"), ["http.token"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
-  assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
+  assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
   assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
   assert.deepEqual(sectionSecrets("voice"), []);
   const marked: string[] = [];
@@ -208,9 +208,9 @@ test("a key absent from the file is added under its section (block and flow), a 
   const block = ok(applySection(FIXTURE, "brain.salience", { tick_ms: 900 }));
   assert.match(block.text, /        say: \["hi"\]   # trailing\n    tick_ms: 900\n  working_memory_events: 30\n/);
   assert.equal((parseYaml(block.text) as any).brain.salience.tick_ms, 900);
-  const flow = ok(applySection(FIXTURE, "chat", { source: "fake" }));
+  const flow = ok(applySection(FIXTURE, "chat", { sources: ["fake"] }));
   assert.deepEqual(footprint(FIXTURE, flow.text).removed, ["chat: { twitch: { channel: chan } }"]);
-  assert.equal((parseYaml(flow.text) as any).chat.source, "fake");
+  assert.deepEqual((parseYaml(flow.text) as any).chat.sources, ["fake"]);
   assert.equal((parseYaml(flow.text) as any).chat.twitch.channel, "chan");
   const section = ok(applySection(FIXTURE, "mouth", { "outputs.discord.gain_db": 3 }));
   assert.ok(section.text.startsWith(FIXTURE));

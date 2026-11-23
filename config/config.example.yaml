@@ -56,11 +56,16 @@ vision:
     width: 896                 # downscale before sending to the VLM
 
 chat:
-  source: "twitch"             # twitch | fake (scripted/stdin messages, no channel needed)
+  sources: [twitch]            # twitch | youtube | fake (scripted/stdin messages, no channel needed); each listed source is read at once
   fake:
-    interval_ms: 8000          # source=fake: gap between scripted messages
+    interval_ms: 8000          # sources includes fake: gap between scripted messages
   twitch:
     channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in secrets.yaml
+  youtube:
+    video: ""                  # the YouTube video or live stream whose chat is read; its API key is the secret chat.youtube.api_key in secrets.yaml
+    transport: stream          # stream | poll (blank is stream)
+    poll_floor_ms: 12000       # transport poll: the shortest gap between two chat polls (at least 1000)
+    recheck_ms: 120000         # how often the video is checked again for a live chat (at least 30000)
   ignore_users: ["nightbot", "streamelements", "moobot"]
   ignore_prefixes: ["!"]       # bot commands
 

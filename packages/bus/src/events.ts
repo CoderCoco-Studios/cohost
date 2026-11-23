@@ -51,6 +51,13 @@ export const Timing = z.object({
 
 export type Timing = z.infer<typeof Timing>;
 
+/** A viewer named in a request: the display name, and the platform and platform id when the sender has them. */
+const viewerRef = z.object({
+  user: z.string(),
+  platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+  userId: z.string().optional(),
+});
+
 export const EventPayloads = {
   /** A viewer said something (Twitch / YouTube / Discord text). */
   // @spec BUS-EVT-002, BUS-EVT-005
@@ -58,6 +65,8 @@ export const EventPayloads = {
     platform: z.enum(["twitch", "youtube", "discord"]),
     user: z.string(),
     userId: z.string().optional(),
+    /** The platform's id for this message, so a later `chat.removed` can name it. */
+    messageId: z.string().optional(),
     text: z.string(),
     isMod: z.boolean().default(false),
     isSub: z.boolean().default(false),
@@ -67,6 +76,24 @@ export const EventPayloads = {
     injected: z.boolean().optional(),
     remember: z.boolean().optional(),
   }),
+
+  /**
+   * A chat source took messages away: one message (`scope` message, named by `messageId`), everything one viewer said
+   * (`scope` user, named by `userId`), or the whole chat (`scope` all). Published by the chat sources that can remove a message.
+   */
+  // @spec BUS-EVT-033, BUS-EVT-034, BUS-EVT-035
+  "chat.removed": z
+    .object({
+      platform: z.enum(["twitch", "youtube", "discord"]),
+      scope: z.enum(["message", "user", "all"]),
+      messageId: z.string().optional(),
+      userId: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .superRefine((v, ctx) => {
+      if (v.scope === "message" && !v.messageId) ctx.addIssue({ code: "custom", path: ["messageId"], message: "required when scope is message" });
+      if (v.scope === "user" && !v.userId) ctx.addIssue({ code: "custom", path: ["userId"], message: "required when scope is user" });
+    }),
 
   /** The eyes looked at the game and this is what they saw. */
   // @spec BUS-EVT-012, BUS-EVT-005, BUS-EVT-024
@@ -163,7 +190,7 @@ export const EventPayloads = {
   // ---- brain regions talk to each other through these ----
 
   /** salience → cortex: something is worth responding to right now. */
-  // @spec BUS-EVT-010, BUS-EVT-005, BUS-EVT-024
+  // @spec BUS-EVT-010, BUS-EVT-005, BUS-EVT-024, BUS-EVT-036
   "attention.focus": z.object({
     /** "mentioned" | "engaged" | "idle chatter" ... free text for the dashboard. */
     reason: z.string(),
@@ -173,6 +200,9 @@ export const EventPayloads = {
       .object({
         kind: z.enum(["chat", "speech", "vision"]),
         who: z.string().optional(),
+        /** The chat source and the viewer's platform id, for chat focus (BUS-EVT-036). */
+        platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+        userId: z.string().optional(),
         text: z.string(),
         mention: z.boolean().default(false),
       })
@@ -220,9 +250,11 @@ export const EventPayloads = {
   }),
 
   /** memory → cortex: who this viewer is, emitted when they address the co-host. Carries no note text. */
-  // @spec BUS-EVT-010
+  // @spec BUS-EVT-010, BUS-EVT-036
   "memory.viewer": z.object({
     user: z.string(),
+    platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+    userId: z.string().optional(),
     isNew: z.boolean(),
     msgCount: z.number().int(),
     regular: z.boolean(),
@@ -232,7 +264,7 @@ export const EventPayloads = {
   // @spec BUS-EVT-020
   "memory.notes.request": z.object({
     id: z.string(),
-    users: z.array(z.string()).nonempty(),
+    viewers: z.array(viewerRef).nonempty(),
   }),
   /**
    * memory → cortex: the notes of each viewer memory resolved, no subscriber status. `text` is absent for
@@ -244,6 +276,8 @@ export const EventPayloads = {
     viewers: z.array(
       z.object({
         user: z.string(),
+        platform: z.enum(["twitch", "youtube", "discord"]).optional(),
+        userId: z.string().optional(),
         regular: z.boolean(),
         msgCount: z.number().int(),
         notes: z.array(

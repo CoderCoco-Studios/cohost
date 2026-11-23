@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 175 `[x]`, 33 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 175 `[x]` specs, 167 have an `@spec` annotation in a test file and 8 do not (listed under Work Required; recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 are `[x]`: `examples/rust-bus/tests/round_trip.rs` ran against the Redis service of `test.yml` on PR #247 (GitHub Actions run 45095337667, 2026-11-23, log line `RAN round_trip against redis://127.0.0.1:6379`; re-run green on head 65aeab0, run 45096011116), and that file fails, not skips, when `REDIS_URL` is set and Redis is unreachable. `packages/bus/test/example-rust-bus.test.ts` asserts the same under `pnpm test`, and a dedicated `test.yml` step fails on a `SKIP` line. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 181 `[x]`, 27 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 181 `[x]` specs, 173 have an `@spec` annotation in a test file and 8 do not (listed under Work Required; recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 are `[x]`: `examples/rust-bus/tests/round_trip.rs` ran against the Redis service of `test.yml` on PR #247 (GitHub Actions run 45095337667, 2026-11-23, log line `RAN round_trip against redis://127.0.0.1:6379`; re-run green on head 65aeab0, run 45096011116), and that file fails, not skips, when `REDIS_URL` is set and Redis is unreachable. `packages/bus/test/example-rust-bus.test.ts` asserts the same under `pnpm test`, and a dedicated `test.yml` step fails on a `SKIP` line. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -34,7 +34,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (213 specs: 171 `[x]`, 37 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (213 specs: 181 `[x]`, 27 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: bus.test.ts, clauses.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -67,7 +67,8 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Publish and envelope | BUS-STREAM-001 to 009 | 9 | 0 | 0 |
 | Connector audio streams | BUS-AUD-001, 002 | 2 | 0 | 0 |
 | Upload store | BUS-UPL-001 to 003 | 3 | 0 | 0 |
-| Event catalogue and schemas | BUS-EVT-001 to 032 (011 retired) | 25 | 6 | 0 |
+| Event catalogue and schemas | BUS-EVT-001 to 032 (011 retired) | 27 | 4 | 0 |
+| Chat removal | BUS-EVT-033 to 036 | 4 | 0 | 0 |
 | Streamed lines | BUS-EVT-037 to 042 (040 built, not flipped: #203) | 5 | 1 | 0 |
 | Consumer-group subscription | BUS-SUB-001 to 013 | 13 | 0 | 0 |
 | Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |
@@ -88,7 +89,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 11 | 1 | 0 |
 
-**Summary:** 213 specs: 175 implemented, 33 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060, with BUS-EVT-001 and BUS-EVT-024 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 213 specs: 181 implemented, 27 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060, with BUS-EVT-001 and BUS-EVT-024 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

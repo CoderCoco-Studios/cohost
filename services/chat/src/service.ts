@@ -58,7 +58,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
     // @spec CHAT-HEALTH-001
     health(cfg) {
       channel = channelName(cfg.chat);
-      return chatHealth(channel, () => connected, cfg.chat.source);
+      return chatHealth(channel, () => connected, cfg.chat.sources.includes("fake") ? "fake" : "twitch");
     },
 
     // @spec CHAT-PLAN-001, CHAT-PLAN-002, CHAT-PLAN-003, CHAT-PLAN-005, CHAT-PLAN-006
@@ -77,7 +77,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
       if (plan === "fake") {
         // @spec CHAT-HEALTH-002
         // No channel, credentials or network; @twurple is never loaded.
-        log.warn({ intervalMs: cfg.chat.fake.interval_ms }, "chat.source is fake: publishing scripted/stdin messages (mode mock)");
+        log.warn({ intervalMs: cfg.chat.fake.interval_ms }, "chat.sources includes fake: publishing scripted/stdin messages (mode mock)");
         const stop = startFakeSource({
           toEvent,
           publish: (ev) => bus.publish("chat.message", ev),

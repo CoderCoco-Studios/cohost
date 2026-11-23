@@ -222,11 +222,10 @@ test("Scheduler: speech and vision always count, repeated text included", async 
   const sch = new Scheduler(salienceCfg(), rulesScorer());
   const ctx = new Context(20);
   ctx.push(from("v1", "hi"));
-  ctx.push(vision("screen changed"));
-  ctx.push(vision("screen changed again"));
+  ctx.push(vision("screen changed")); // the window keeps one unseen vision summary
   ctx.push(speech("hi"));
   ctx.push(speech("hi"));
-  near((await sch.decide(ctx, false, false)).score, 0.15 + 0.3 + 0.3 + 0.9 + 0.9);
+  near((await sch.decide(ctx, false, false)).score, 0.15 + 0.3 + 0.9 + 0.9);
 });
 
 test("Scheduler: a discounted line adds nothing, is never the focus, and is reported scored", async () => { // @spec SAL-DECIDE-007, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015

@@ -315,9 +315,10 @@ starts a fresh voice viewer. Linking replaces an earlier link of the same id. Th
 target must be an existing viewer row that is not itself a voice viewer.
 
 **Names.** The cortex asks for notes by the display name it knows, and for a
-voice line that is the Discord display name. A name that matches no viewer's
-`display` also matches the latest Discord display name of a linked id, so a linked
-speaker's notes surface under the name they speak under (`MEM-VOICE-007`).
+voice line that is the Discord display name. A name-only entry resolves only to a
+viewer keyed by name, never to a viewer keyed by an id (`MEM-SURF-006`). A link's
+`discord_display` is not a name key, so a linked speaker's notes do not surface
+under the Discord name they speak under (`MEM-VOICE-007`).
 
 **Privacy.** Voice lines go through the same capture hook, validation and writer
 as chat lines, so politics is never stored and money never becomes a note
@@ -412,8 +413,8 @@ leaves the rest dirty (`MEM-CONSOL-011`). Each completed pass records
 The cortex asks for notes when it replies, with `memory.notes.request {id, viewers}`,
 handled in the `memory-recall` group next to recall (`MEM-SURF-001`). The first entry in `viewers` is the viewer being replied to; the rest
 are the other viewers in the cortex's working-memory window. An entry that carries a `platform` and a `userId` resolves to the viewer row with the `viewerKey` of that pair, and to nothing when there is no such row: it is never matched by name, so a same-named viewer on another platform cannot receive these notes (`MEM-SURF-002`). An entry with a `platform` and no `userId` (an injected line) resolves to the row with the `viewerKey` of that platform and its name (`MEM-SURF-007`). Only an entry with no `platform` (a speech focus, whose speaker is known by name) resolves by display name, to
-the viewer row whose display name matches it case-insensitively, the most recently
-seen one when several do (`MEM-SURF-006`). The reply lists, per resolved
+the name-keyed viewer row whose display name matches it case-insensitively, the most recently
+seen one when several do; a row keyed by an id is never chosen by name (`MEM-SURF-006`). The reply lists, per resolved
 viewer, `regular`, `msgCount` and their notes (never subscriber status, which is
 stored but not surfaced), strongest first, at most
 `max_notes_per_viewer` (default 5) each and `max_notes_total` (default 15) overall,
@@ -734,7 +735,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
 | Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
 | Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres |. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
-| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
+| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, among name-keyed rows only and only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
 | Sensitive-cooldown concurrency | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a courtesy, not a safety property, and a race costs at most one repeated hint. `MEM-SURF-004` |

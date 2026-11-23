@@ -231,6 +231,9 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   const ac = new AbortController();
   const onCallerAbort = () => ac.abort(caller?.reason);
   caller?.addEventListener("abort", onCallerAbort, { once: true });
+  /** A caller that aborted (before the call, or between reads) gets its reason, never another event (LLM-STREAM-026). */
+  const throwIfAborted = () => { if (caller?.aborted) throw caller.reason; };
+  throwIfAborted();
 
   let timedOut = false;
   let responded = false;
@@ -295,7 +298,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       const one = plan.whole(json);
       sawOutput = true;
       const delta = trimmer.push(one.text ?? "");
-      if (delta) yield { type: "text", delta };
+      if (delta) { yield { type: "text", delta }; throwIfAborted(); }
       finish = one.finish;
     } else {
       outer: for await (const line of lines(res.body)) { // @spec LLM-STREAM-002, LLM-STREAM-005
@@ -306,11 +309,12 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
           if (ev.kind === "final") { finish = ev.finish; break outer; } // @spec LLM-STREAM-036
           const delta = trimmer.push(ev.text);
           mark = Date.now();
-          if (delta) { yield { type: "text", delta }; mark = Date.now(); } // @spec LLM-STREAM-010
+          if (delta) { yield { type: "text", delta }; mark = Date.now(); throwIfAborted(); } // @spec LLM-STREAM-010, LLM-STREAM-026
         }
       }
     }
     if (!finish) throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-022
+    throwIfAborted(); // @spec LLM-STREAM-026
     yield { type: "done", result: textResult(trimmer.raw, finish) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028
   } finally {
     clearTimeout(timer);
@@ -324,6 +328,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
 function ollamaLine(line: string): WireEvent[] {
   if (!line.trim()) return [];
   const j = parseChunk("ollama", line);
+  if (j?.error !== undefined) throw backendError("ollama", j.error); // @spec LLM-STREAM-023
   const content = j?.message?.content;
   const evs: WireEvent[] = [typeof content === "string" && content !== "" ? { kind: "content", text: content } : { kind: "keepalive" }];
   if (j?.done) evs.push({ kind: "final", finish: j.done_reason === "length" ? "length" : "stop" });
@@ -336,11 +341,19 @@ function openaiLine(line: string): WireEvent[] {
   if (!line.startsWith("data:")) return [{ kind: "keepalive" }];
   const payload = line.slice(5).trim();
   if (payload === "[DONE]") return [{ kind: "end" }];
-  const choice = parseChunk("openai", payload)?.choices?.[0];
+  const chunk = parseChunk("openai", payload);
+  if (chunk?.error !== undefined) throw backendError("openai", chunk.error); // @spec LLM-STREAM-023
+  const choice = chunk?.choices?.[0];
   const content = choice?.delta?.content;
   const evs: WireEvent[] = [typeof content === "string" && content !== "" ? { kind: "content", text: content } : { kind: "keepalive" }];
   if (choice?.finish_reason) evs.push({ kind: "final", finish: choice.finish_reason === "length" ? "length" : "stop" });
   return evs;
+}
+
+/** A `stream` ChatError carrying the message the backend sent in an `error` field (a string, or an object with `message`). */
+function backendError(name: string, error: unknown): ChatError {
+  const message = typeof error === "string" ? error : (error as { message?: unknown } | null)?.message;
+  return streamError(name, `the backend reported an error: ${typeof message === "string" ? message : JSON.stringify(error)}`);
 }
 
 function parseChunk(name: string, text: string): any {

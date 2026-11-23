@@ -393,3 +393,45 @@ test("a failed stream() leaves lastError unchanged", async () => {
     assert.equal(q.lastError, undefined);
   }
 });
+
+// @spec LLM-STREAM-026, LLM-ERR-006, LLM-STREAM-018
+test("a signal aborted before stream() is read rejects with the caller's reason and sends no request", async () => {
+  for (const kind of kinds) {
+    const b = await serve((o) => { o.write(piece(kind, "x") + finish(kind)); o.end(); });
+    const ac = new AbortController();
+    const reason = new Error("gave up before start");
+    ac.abort(reason);
+    await assert.rejects(collect(make(kind, b.url).stream(hello, { signal: ac.signal })), (e: unknown) => e === reason, kind);
+    await sleep(50);
+    assert.equal(b.seen.length, 0, `${kind}: request sent for an aborted signal`);
+  }
+});
+
+// @spec LLM-STREAM-026
+test("an abort while the caller is between reads throws the caller's reason before the next buffered event is delivered", async () => {
+  for (const kind of kinds) {
+    // Three pieces in one write, so the rest of the reply is already buffered when the caller pauses.
+    const b = await serve((o) => { o.write(piece(kind, "a") + piece(kind, "b") + piece(kind, "c")); o.end(); });
+    const ac = new AbortController();
+    const reason = new Error("stop now");
+    const it = make(kind, b.url, { timeout_ms: 5000 }).stream(hello, { signal: ac.signal })[Symbol.asyncIterator]();
+    assert.equal((await it.next()).value.delta, "a");
+    ac.abort(reason);
+    await assert.rejects(it.next(), (e: unknown) => e === reason, kind);
+  }
+});
+
+// @spec LLM-STREAM-002, LLM-STREAM-005, LLM-STREAM-023
+test("a backend error inside the stream throws a ChatError of kind stream carrying the backend's message", async () => {
+  const ollama = await serve((o) => { o.write(nd("part") + JSON.stringify({ error: "model crashed" }) + "\n"); o.end(); });
+  const e1 = await failure(make("ollama", ollama.url).stream(hello));
+  assert.ok(e1 instanceof ChatError);
+  assert.equal(e1.kind, "stream");
+  assert.match(e1.message, /model crashed/);
+
+  const openai = await serve((o) => { o.write(sse("part") + `data: ${JSON.stringify({ error: { message: "rate limited" } })}\n\n`); o.end(); });
+  const e2 = await failure(make("openai", openai.url).stream(hello));
+  assert.ok(e2 instanceof ChatError);
+  assert.equal(e2.kind, "stream");
+  assert.match(e2.message, /rate limited/);
+});

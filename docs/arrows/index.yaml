@@ -99,7 +99,7 @@ arrows:
     blocks: [region-hooks, memory, cortex]
     blockedBy: [config]
     detail: model-backends.md
-    next: "226 specs: 116 [x], 110 [ ]. Built on Ollama and OpenAI-compatible: complete(), stream() (text events, both clocks, single-body fallback), ChatError kinds http, connect, stream. Open: complete() and stream() on Claude, Bedrock and mock (LLM-IF-005 to -007, -013 and LLM-STREAM-003 to -008, -012, -013, -027, -029 to -033), tool calls (#162), image input on every provider (#164), the mock markers and LLM-TOOL, LLM-CLAUDE and LLM-MOCK gap lines, LLM-ERR-002, -003, -009, LLM-VIS-002, -003. The 116 [x] lines are not covered by the last audit."
+    next: "226 specs: 116 [x], 110 [ ]. Built: complete() and stream() on Ollama and OpenAI-compatible (text events, both clocks, single-JSON fallback, backend error field), ChatError kinds http, connect, stream. Open: IF-005..007, IF-013..020; ERR-002, -003, -009; CHAT-017, -018; STOP-008..010, -015..017, -019; STREAM-003, -006..008, -012, -013, -017, -021, -027, -029..033 (029 has its text part; tool_call events are #162); CLAUDE-020..033; MOCK-006..021; VIS-002..013; TOOL-001..030; EX-008."
     drift: null
 
   region-hooks:

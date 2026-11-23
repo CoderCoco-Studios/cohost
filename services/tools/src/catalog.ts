@@ -38,8 +38,8 @@ function canonicalJson(v: unknown): string {
 
 /**
  * The pinned hash of an MCP definition: lower-case hex SHA-256 of the canonical JSON of its qualified name, its cut
- * title (absent when none), its cut description, its schema and its label (TOOL-PIN-001). The MCP source uses it to
- * fill `SourceTool.hash`.
+ * title (absent when none), its cut description, its schema and its label (TOOL-PIN-001). The catalog computes it from
+ * each listed definition in live mode, so a source cannot supply or skip the pin.
  */
 // @spec TOOL-PIN-001
 export function definitionHash(d: { name: string; title?: string | undefined; description: string; parameters: Record<string, unknown>; label: Label }): string {
@@ -73,7 +73,7 @@ export interface KnownTool {
   acts: boolean;
   chat: boolean;
   confirm: boolean;
-  /** The hash the source lists now; absent in mock mode. */
+  /** The pin of the definition the server lists now (TOOL-PIN-002); absent in mock mode, where no pin is checked. */
   hash?: string;
   /** The hash the owner approved (`tools.allow.<name>.hash`); empty when none. */
   recordedHash: string;
@@ -122,7 +122,8 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     const source = bySource.get(server);
     const state: SourceState = mode === "mock" ? "mock" : source ? source.state : "down";
     const host = hostOf(entry.url);
-    // Mock mode reaches no server, so none is external (default; the owner may overrule).
+    // Mock mode reaches no server and ignores `tools.servers.<name>.external`: no server is external there. The external rule
+    // itself (TOOL-MCP-009) is open for #206.
     const external = mode === "mock" ? false : entry.external || (host === undefined ? true : offLanHost(host, lan));
     let listed = 0;
     let left = 0;
@@ -159,7 +160,9 @@ function listTool(cfg: Config, source: ToolSource, server: string, name: string,
   const recordedHash = allow?.hash ?? "";
   const label = labelOf(def.readOnlyHint);
   const effect = effectOf(label, acts);
-  const hash = mode === "live" ? def.hash : undefined;
+  const hash = mode === "live"
+    ? definitionHash({ name, title: def.title, description: def.description, parameters: def.parameters, label })
+    : undefined;
   const known: KnownTool = {
     name, server, own: def.name, source,
     description: cutDescription(def.description), parameters: def.parameters,

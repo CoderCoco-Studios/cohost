@@ -28,7 +28,7 @@ export interface CallDeps {
   snapshot: () => Snapshot;
   publish: (result: ToolResult) => void;
   publishConfirm: (confirm: ConfirmRequest) => void;
-  log: Pick<Logger, "info">;
+  log: Pick<Logger, "info" | "warn">;
 }
 
 /** The sentence the service writes for each refusal (TOOL-CALL-018); no text from a server. */
@@ -74,6 +74,19 @@ interface Admitted {
   stop: () => void;
 }
 
+/** A pending confirmation: the window's end, and how to end the wait (TOOL-CONF-005, TOOL-CONF-007). */
+interface Pending {
+  expiresAt: number;
+  decide: (d: Decision) => void;
+}
+
+/** What `handle` gives its body: the outcome helpers, and a way to record the admitted entry it owns. */
+interface Helpers {
+  finish: (o: Outcome) => ToolResult;
+  refuse: (reason: Extract<Reason, keyof typeof REFUSAL_TEXT>) => ToolResult;
+  admit: (entry: Admitted) => void;
+}
+
 /** The origin table (TOOL-ORIG-002 to TOOL-ORIG-005): the one definition of who may call which tool. */
 // @spec TOOL-ORIG-002, TOOL-ORIG-003, TOOL-ORIG-004, TOOL-ORIG-005
 export function originAllows(tool: KnownTool, origin: Origin): boolean {
@@ -114,20 +127,27 @@ export function shape(r: SourceCallResult, maxChars: number): Outcome {
 
 export class CallPipeline {
   private readonly admitted = new Map<string, Admitted>();
-  private readonly pending = new Map<string, (d: Decision) => void>();
+  private readonly pending = new Map<string, Pending>();
 
   constructor(private readonly deps: CallDeps) {}
 
   /**
    * Runs one request through the pipeline and publishes its one result. `readAt` is the performance clock and
-   * `readWall` the epoch time at which the service read the request. Resolves with the published result.
+   * `readWall` the epoch time at which the service read the request. Resolves with the published result, or
+   * `undefined` for a duplicate id, which publishes nothing (TOOL-CALL-022).
    */
-  // @spec TOOL-CALL-001, TOOL-CALL-019, TOOL-CALL-020, TOOL-SVC-007, TOOL-ORIG-001, TOOL-ORIG-006
-  async handle(req: ToolRequest, readAt: number, readWall: number): Promise<ToolResult> {
+  // @spec TOOL-CALL-001, TOOL-CALL-019, TOOL-CALL-020, TOOL-CALL-022, TOOL-SVC-007, TOOL-ORIG-001, TOOL-ORIG-006
+  async handle(req: ToolRequest, readAt: number, readWall: number): Promise<ToolResult | undefined> {
+    if (this.admitted.has(req.id)) {
+      this.deps.log.warn({ id: req.id }, "duplicate tool.request id while the first is admitted: no result published");
+      return undefined;
+    }
     let published: ToolResult | undefined;
+    let mine: Admitted | undefined;
+    // Frees only this request's own entry (a map entry is never another request's to delete).
     const finish = (o: Outcome): ToolResult => {
       if (published !== undefined) return published;
-      this.admitted.delete(req.id);
+      if (mine !== undefined && this.admitted.get(req.id) === mine) this.admitted.delete(req.id);
       const durationMs = Math.round(performance.now() - readAt);
       const result: ToolResult = {
         id: req.id,
@@ -147,6 +167,25 @@ export class CallPipeline {
     };
     const refuse = (reason: Extract<Reason, keyof typeof REFUSAL_TEXT>): ToolResult =>
       finish({ status: "refused", reason, content: REFUSAL_TEXT[reason] });
+    try {
+      return await this.run(req, readAt, readWall, {
+        finish,
+        refuse,
+        admit: (entry) => { mine = entry; },
+      });
+    } catch {
+      // A source or a snapshot that fails in the service's own code still ends the request with one result (TOOL-CALL-012).
+      return finish({ status: "error", reason: "unavailable", content: UNAVAILABLE_TEXT });
+    }
+  }
+
+  private async run(
+    req: ToolRequest,
+    readAt: number,
+    readWall: number,
+    h: Helpers,
+  ): Promise<ToolResult> {
+    const { finish, refuse } = h;
 
     // 1. Look up (TOOL-CALL-001 order).
     const known = this.deps.snapshot().byName.get(req.tool);
@@ -164,12 +203,14 @@ export class CallPipeline {
     // 2. Admit (TOOL-CALL-009): a confirmation waiting holds a slot too.
     if (this.admitted.size >= this.deps.limits.maxConcurrent) return refuse("busy");
     const ctl = new AbortController();
-    this.admitted.set(req.id, {
+    const entry: Admitted = {
       stop: () => {
         finish({ status: "refused", reason: "shutdown", content: REFUSAL_TEXT.shutdown });
         ctl.abort();
       },
-    });
+    };
+    this.admitted.set(req.id, entry);
+    h.admit(entry);
 
     // 3. Confirm (TOOL-CONF-001, TOOL-CONF-006, TOOL-CONF-008). The built-in timer is not in this set.
     const skip = !known.confirm && req.round === 1 && !req.injected
@@ -179,53 +220,62 @@ export class CallPipeline {
       if (decision !== "allow") return finish(DECISION_OUTCOME[decision]);
     }
 
-    // 4. Call (TOOL-CALL-010, TOOL-CALL-011, TOOL-CALL-012): the call limit starts when the call is sent.
+    // 4. Call (TOOL-CALL-010, TOOL-CALL-011): the call limit starts when the call is sent.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = new Promise<{ kind: "timeout" }>((resolve) => {
-      timer = setTimeout(() => resolve({ kind: "timeout" }), this.deps.limits.timeoutMs);
-    });
-    const sent = (async () => known.source.call(known.own, req.arguments, ctl.signal))();
-    const outcome = await Promise.race([
-      sent.then((r) => ({ kind: "answer" as const, r }), () => ({ kind: "failed" as const })),
-      timedOut,
-    ]);
-    clearTimeout(timer);
-    if (outcome.kind === "timeout") {
-      ctl.abort();
-      return finish({ status: "timeout", content: TIMEOUT_TEXT });
-    }
-    if (outcome.kind === "failed") return finish({ status: "error", reason: "unavailable", content: UNAVAILABLE_TEXT }); // TOOL-CALL-012
+    try {
+      const timedOut = new Promise<{ kind: "timeout" }>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: "timeout" }), this.deps.limits.timeoutMs);
+      });
+      const sent = (async () => known.source.call(known.own, req.arguments, ctl.signal))();
+      const outcome = await Promise.race([
+        sent.then((r) => ({ kind: "answer" as const, r }), () => ({ kind: "failed" as const })),
+        timedOut,
+      ]);
+      if (outcome.kind === "timeout") {
+        ctl.abort();
+        return finish({ status: "timeout", content: TIMEOUT_TEXT });
+      }
+      if (outcome.kind === "failed") return finish({ status: "error", reason: "unavailable", content: UNAVAILABLE_TEXT }); // TOOL-CALL-012
 
-    // 5. Shape and 6. publish (TOOL-CALL-019).
-    return finish(shape(outcome.r, this.deps.limits.maxResultChars));
+      // 5. Shape (a malformed result throws here and ends as unavailable) and 6. publish (TOOL-CALL-019).
+      return finish(shape(outcome.r, this.deps.limits.maxResultChars));
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Publishes `tool.confirm` and waits for one answer or the window's end (TOOL-CONF-003 to TOOL-CONF-005). */
   // @spec TOOL-CONF-001, TOOL-CONF-002, TOOL-CONF-005, TOOL-CONF-007
   private confirm(req: ToolRequest, expiresAt: number): Promise<Decision> {
     return new Promise<Decision>((resolve) => {
-      const done = (d: Decision): void => {
+      const decide = (d: Decision): void => {
         clearTimeout(timer);
-        this.pending.delete(req.id);
+        if (this.pending.get(req.id)?.decide === decide) this.pending.delete(req.id);
         resolve(d);
       };
-      const timer = setTimeout(() => done("expired"), Math.max(0, expiresAt - Date.now()));
-      this.pending.set(req.id, done);
+      const timer = setTimeout(() => decide("expired"), Math.max(0, expiresAt - Date.now()));
+      this.pending.set(req.id, { expiresAt, decide });
       this.deps.publishConfirm({ id: req.id, tool: req.tool, arguments: req.arguments, origin: req.origin, expiresAt });
     });
   }
 
-  /** The owner's answer to a pending call; one answer per call, and an answer for anything else is ignored (TOOL-CONF-007). */
+  /**
+   * The owner's answer to a pending call. One answer per call: the first decides and the call is no longer pending.
+   * An answer for an unknown, finished or already answered call is ignored, and so is one that arrives after the
+   * window's end, even before the window's timer has fired (TOOL-CONF-007).
+   */
   // @spec TOOL-CONF-003, TOOL-CONF-004, TOOL-CONF-007
   answer(id: string, allow: boolean): void {
-    const done = this.pending.get(id);
-    if (done !== undefined) done(allow ? "allow" : "deny");
+    const p = this.pending.get(id);
+    if (p === undefined) return;
+    if (Date.now() > p.expiresAt) return;
+    p.decide(allow ? "allow" : "deny");
   }
 
   /** Ends every request in flight and every pending confirmation with `refused` `shutdown` (TOOL-SVC-008). */
   // @spec TOOL-SVC-008
   shutdown(): void {
-    for (const done of [...this.pending.values()]) done("shutdown");
+    for (const p of [...this.pending.values()]) p.decide("shutdown");
     for (const a of [...this.admitted.values()]) a.stop();
   }
 }

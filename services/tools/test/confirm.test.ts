@@ -1,10 +1,11 @@
+import { mock } from "node:test";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeSource, def, hang, on, resultOf, search, startTools, text, waitFor } from "./helpers.js";
 
 const acting = (over: Record<string, unknown> = {}) => ({
   servers: { search },
-  allow: { search__post: on("post", { acts: true }), search__web: on("web") },
+  allow: { search__post: on("post", { acts: true }, false), search__web: on("web") },
   timeout_ms: 5000,
   confirm_timeout_ms: 5000,
   ...over,
@@ -30,7 +31,7 @@ test("a call to an acting tool publishes tool.confirm with id, tool, arguments, 
 
 test("an injected request is confirmed whatever its confirm mark and listed", async () => { // @spec TOOL-CONF-001
   const src = post();
-  const s = await startTools(acting({ allow: { search__post: on("post", { acts: true, confirm: false }) } }), [src]);
+  const s = await startTools(acting({ allow: { search__post: on("post", { acts: true, confirm: false }, false) } }), [src]);
   const a = await s.request({ tool: "search__post", origin: "speech", listed: true, round: 1, injected: true });
   const b = await s.request({ tool: "search__post", origin: "dashboard", listed: false, round: 1, injected: true });
   await waitFor(() => confirms(s).length === 2, "both injected requests confirm");
@@ -106,7 +107,7 @@ test("with no answer by expiresAt the request is refused unconfirmed, never time
 
 test("confirm:false skips the confirmation only in round 1 from the dashboard or from listed speech, never when injected", async () => { // @spec TOOL-CONF-006
   const src = post();
-  const s = await startTools(acting({ allow: { search__post: on("post", { acts: true, confirm: false }) } }), [src]);
+  const s = await startTools(acting({ allow: { search__post: on("post", { acts: true, confirm: false }, false) } }), [src]);
   const runs = (id: string) => s.results().some((r) => r.id === id) || src.calls.length > 0;
   let ran = 0;
   const skipped = async (over: Record<string, unknown>): Promise<boolean> => {
@@ -180,4 +181,72 @@ test("in mock mode a call that would wait for a confirmation runs at once with n
   assert.equal(r.mock, true);
   assert.equal(confirms(s).length, 0);
   await s.stop();
+});
+
+// ---- security review round 1: duplicate ids (TOOL-CALL-022)
+
+test("a duplicate id while the first is pending publishes nothing: the first confirms, answers only it, and the duplicate does not free its slot", async () => { // @spec TOOL-CALL-022, TOOL-CONF-007, TOOL-CALL-009
+  const src = new FakeSource("search", [def("post", {}, false), def("web")]);
+  const s = await startTools(acting({ max_concurrent: 1, confirm_timeout_ms: 5000 }), [src]);
+  const X = "dup-x";
+  await s.send("tool.request", { id: X, tool: "search__post", arguments: { a: 1 }, origin: "speech", round: 1, listed: false });
+  await waitFor(() => s.bus.of("tool.confirm").length === 1, "first confirmation");
+  await s.send("tool.request", { id: X, tool: "search__post", arguments: { a: 2 }, origin: "speech", round: 1, listed: false });
+  await settle();
+  assert.equal(s.bus.of("tool.confirm").length, 1, "the duplicate asks nothing");
+  assert.equal(s.results().filter((r) => r.id === X).length, 0, "the duplicate publishes no result");
+  assert.equal(s.bus.of("tool.confirm")[0]!.arguments.a, 1, "the first request is the one pending");
+  assert.equal((await resultOf(s, await s.request({ tool: "search__web" }))).reason, "busy", "the duplicate did not free the first's slot");
+  assert.ok(s.log.lines.some((l) => l.level === "warn" && JSON.stringify(l.obj).includes(X)), "the duplicate is logged at warn");
+  await s.answer(X, true);
+  await waitFor(() => src.calls.length === 1, "the first call runs once");
+  assert.deepEqual(src.calls[0]!.args, { a: 1 });
+  await s.stop();
+});
+
+test("with max_concurrent 2 an answer for id X confirms only the first request, and a duplicate never runs", async () => { // @spec TOOL-CALL-022, TOOL-CONF-007
+  const src = new FakeSource("search", [def("post", {}, false)], async () => text("ran"));
+  const s = await startTools(acting({ max_concurrent: 2, confirm_timeout_ms: 5000 }), [src]);
+  await s.send("tool.request", { id: "X", tool: "search__post", arguments: { a: 1 }, origin: "speech", round: 1, listed: false });
+  await waitFor(() => s.bus.of("tool.confirm").length === 1, "first confirmation");
+  await s.send("tool.request", { id: "X", tool: "search__post", arguments: { a: 2 }, origin: "speech", round: 1, listed: false });
+  await settle();
+  assert.equal(s.bus.of("tool.confirm").length, 1);
+  await s.answer("X", true);
+  const r = await resultOf(s, "X");
+  assert.equal(r.status, "ok");
+  await settle();
+  assert.deepEqual(src.calls.map((c) => c.args), [{ a: 1 }], "only the first request's arguments ran");
+  assert.equal(s.results().filter((x) => x.id === "X").length, 1, "one result for X");
+  await s.stop();
+});
+
+test("shutdown refuses every live entry: each admitted or pending request gets one refused shutdown result", async () => { // @spec TOOL-CALL-022, TOOL-SVC-008
+  const src = new FakeSource("search", [def("post", {}, false)]);
+  const s = await startTools(acting({ max_concurrent: 3, confirm_timeout_ms: 60000 }), [src]);
+  await s.send("tool.request", { id: "A", tool: "search__post", arguments: {}, origin: "speech", round: 1, listed: false });
+  await s.send("tool.request", { id: "B", tool: "search__post", arguments: {}, origin: "speech", round: 1, listed: false });
+  await s.send("tool.request", { id: "B", tool: "search__post", arguments: { dup: true }, origin: "speech", round: 1, listed: false });
+  await waitFor(() => s.bus.of("tool.confirm").length === 2, "two pending");
+  await s.stop();
+  for (const id of ["A", "B"]) assert.deepEqual(s.results().filter((r) => r.id === id).map((r) => [r.status, r.reason]), [["refused", "shutdown"]], id);
+  assert.equal(s.results().length, 2, "the duplicate published nothing");
+});
+
+test("an answer after expiresAt is ignored even before the window's timer fires, with a mocked clock", async () => { // @spec TOOL-CONF-007, TOOL-CONF-005
+  mock.timers.enable({ apis: ["Date"] });
+  try {
+    const src = new FakeSource("search", [def("post", {}, false)], async () => text("ran"));
+    const s = await startTools(acting({ confirm_timeout_ms: 60000 }), [src]);
+    await s.request({ tool: "search__post" });
+    await waitFor(() => confirms(s).length === 1, "tool.confirm");
+    const id = confirms(s)[0]!.id;
+    assert.equal(confirms(s)[0]!.expiresAt, Date.now() + 60000, "expiresAt is the read moment plus the window");
+    mock.timers.setTime(confirms(s)[0]!.expiresAt + 1);
+    await s.answer(id, true);
+    await settle();
+    assert.equal(src.calls.length, 0, "the late Allow does not run the call");
+    assert.equal(s.results().filter((r) => r.id === id).length, 0, "the window's end has not been published yet either");
+    await s.stop();
+  } finally { mock.timers.reset(); }
 });

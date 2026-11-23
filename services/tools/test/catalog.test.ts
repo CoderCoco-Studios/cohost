@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { FakeSource, def, on, search, startTools, waitFor } from "./helpers.js";
+import { FakeSource, def, on, pinOf, search, startTools, waitFor } from "./helpers.js";
 
 const names = (s: { catalogs: () => { tools: { name: string }[] }[] }) => s.catalogs().at(-1)!.tools.map((t) => t.name);
 
@@ -62,9 +63,9 @@ test("effect is acts when the label is not read or the acts mark is set, and rea
   await s.stop();
 });
 
-test("offered needs enabled, a usable server, a read label or the acts mark, and a matching pin; reason is the first that applies", async () => { // @spec TOOL-CAT-006, TOOL-CAT-007
+test("offered needs enabled, a usable server, a read label or the acts mark, and a matching pin; reason is the first that applies", async () => { // @spec TOOL-CAT-006, TOOL-CAT-007, TOOL-PIN-003, TOOL-PIN-004
   const src = new FakeSource("search", [
-    def("good"), def("off"), def("acting", {}, false), def("unpinned"), def("moved", { hash: "new" }), def("both", { hash: "new" }, false),
+    def("good"), def("off"), def("acting", {}, false), def("unpinned"), def("moved", { description: "changed" }), def("both", {}, false),
   ]);
   const downSrc = new FakeSource("dead", [def("x"), def("y")]);
   downSrc.state = "down";
@@ -73,11 +74,11 @@ test("offered needs enabled, a usable server, a read label or the acts mark, and
     allow: {
       search__good: on("good"),
       search__off: { enabled: false, hash: "h-off" },
-      search__acting: on("acting"), // enabled, label acts, no acts mark
+      search__acting: on("acting", {}, false), // enabled, label acts, no acts mark
       search__unpinned: { enabled: true }, // no recorded hash
-      search__moved: on("moved"), // recorded hash differs from the listed one
+      search__moved: on("moved"), // recorded hash differs from the listed one (its description changed since)
       search__both: { enabled: true }, // acts_not_allowed outranks not_approved
-      dead__x: on("x"),
+      dead__x: on("x", {}, true, {}, "dead"),
     },
   }, [src, downSrc]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
@@ -99,7 +100,7 @@ test("an acting tool with its acts mark and a matching pin is offered; an auth s
   authSrc.state = "auth";
   const s = await startTools({
     servers: { search, locked: { url: "https://locked.example.com/mcp" } },
-    allow: { search__post: on("post", { acts: true }), locked__x: on("x") },
+    allow: { search__post: on("post", { acts: true }, false), locked__x: on("x", {}, true, {}, "locked") },
   }, [src, authSrc]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
   assert.equal(s.entry("search__post").offered, true);
@@ -110,12 +111,14 @@ test("an acting tool with its acts mark and a matching pin is offered; an auth s
 
 test("the catalog lists each tool with name, server, title, description, parameters, label, effect, marks, hash, offered and reason", async () => { // @spec TOOL-CAT-009
   const params = { type: "object", properties: { q: { type: "string" } }, required: ["q"] };
-  const src = new FakeSource("search", [def("web", { title: "Web search", description: "Searches.", parameters: params, hash: "abc123" })]);
-  const s = await startTools({ servers: { search }, allow: { search__web: { enabled: true, chat: true, confirm: false, hash: "abc123" } } }, [src]);
+  const d = def("web", { title: "Web search", description: "Searches.", parameters: params });
+  const h = pinOf(d);
+  const src = new FakeSource("search", [d]);
+  const s = await startTools({ servers: { search }, allow: { search__web: { enabled: true, chat: true, confirm: false, hash: h } } }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
   assert.deepEqual(s.entry("search__web"), {
     name: "search__web", server: "search", title: "Web search", description: "Searches.", parameters: params,
-    label: "read", effect: "read", enabled: true, acts: false, chat: true, confirm: false, hash: "abc123", offered: true,
+    label: "read", effect: "read", enabled: true, acts: false, chat: true, confirm: false, hash: h, offered: true,
   });
   await s.stop();
 });
@@ -218,5 +221,27 @@ test("an allow entry naming no listed tool is offered to nothing and does not ap
   await waitFor(() => s.catalogs().length > 0, "catalog");
   assert.deepEqual(names(s), ["search__web"]);
   assert.equal(s.catalogs().at(-1)!.tools.some((t) => t.offered && t.name !== "search__web"), false);
+  await s.stop();
+});
+
+// ---- TOOL-PIN-001: known vectors (the canonical JSON is written out here, not produced by the code under test)
+
+const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+test("the pin is the SHA-256 of the canonical JSON of the cut values: nested keys sorted, absent title omitted, cut description, non-ASCII kept", async () => { // @spec TOOL-PIN-001, TOOL-CAT-003
+  const description = "d".repeat(400);
+  const withTitle = `{"description":"${description}","label":"read","name":"search__web","parameters":{"a":{"x":"é","y":[{"c":2,"d":1}]},"z":1},"title":"${"t".repeat(100)}"}`;
+  const withoutTitle = `{"description":"${description}","label":"read","name":"search__web","parameters":{"a":{"x":"é","y":[{"c":2,"d":1}]},"z":1}}`;
+  const parameters = { z: 1, a: { y: [{ d: 1, c: 2 }], x: "é" } };
+  const cutDefs = [
+    def("web", { title: "t".repeat(150), description: "d".repeat(500), parameters }, true),
+    def("web", { description: "d".repeat(500), parameters }, true),
+  ];
+  assert.equal(pinOf(cutDefs[0]!), sha256(withTitle), "with a cut title");
+  assert.equal(pinOf(cutDefs[1]!), sha256(withoutTitle), "without a title");
+  const s = await startTools({ servers: { search }, allow: { search__web: { enabled: true, hash: sha256(withTitle) } } }, [new FakeSource("search", [cutDefs[0]!])]);
+  await waitFor(() => s.catalogs().length > 0, "catalog");
+  assert.equal(s.entry("search__web").hash, sha256(withTitle), "the catalog computes the same pin");
+  assert.equal(s.entry("search__web").offered, true, "and offers the tool when the owner approved it");
   await s.stop();
 });

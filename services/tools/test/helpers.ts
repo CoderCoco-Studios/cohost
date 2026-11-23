@@ -13,6 +13,7 @@ import { event, FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testi
 import type { EventType, Handler, SubscribeOptions } from "@cohost/bus";
 import { runTools, type ToolsBus } from "../src/main.js";
 import type { SourceCallResult, SourceTool, ToolSource } from "../src/source.js";
+import { definitionHash, labelOf } from "../src/catalog.js";
 
 export { event, waitFor };
 
@@ -64,7 +65,11 @@ export class FakeSource implements ToolSource {
  * take it for `true`).
  */
 export function def(own: string, over: Partial<SourceTool> = {}, hint: boolean | null = true): SourceTool {
-  return { name: own, description: `desc of ${own}`, parameters: { type: "object" }, readOnlyHint: hint ?? undefined, hash: `h-${own}`, ...over };
+  return { name: own, description: `desc of ${own}`, parameters: { type: "object" }, readOnlyHint: hint ?? undefined, ...over };
+}
+/** The pin of a definition as the catalog computes it: the qualified name `<server>__<own>` and the cut values (TOOL-PIN-001). */
+export function pinOf(d: SourceTool, server = "search"): string {
+  return definitionHash({ name: `${server}__${d.name}`, title: d.title, description: d.description, parameters: d.parameters, label: labelOf(d.readOnlyHint) });
 }
 export const text = (t: string): SourceCallResult => ({ content: [{ type: "text", text: t }] });
 /** A call that never answers until the abort signal fires, then rejects as an aborted fetch does. */
@@ -76,8 +81,12 @@ export const stuck = (): Promise<SourceCallResult> => new Promise(() => {});
 export const SERVER_URL = "https://search.example.com/mcp";
 /** The `tools.servers` entry of the usual fixture server `search`. */
 export const search = { url: SERVER_URL };
-/** An approved, enabled, read-only entry for the fixture tool `search__<own>`. */
-export const on = (own: string, over: Record<string, unknown> = {}) => ({ enabled: true, hash: `h-${own}`, ...over });
+/**
+ * An approved, enabled entry for the fixture tool `<server>__<own>`: its recorded hash is the pin of `def(own, d, hint)`,
+ * so it matches the listed definition unless the test changes that definition.
+ */
+export const on = (own: string, over: Record<string, unknown> = {}, hint: boolean | null = true, d: Partial<SourceTool> = {}, server = "search") =>
+  ({ enabled: true, hash: pinOf(def(own, d, hint), server), ...over });
 
 export interface Started {
   bus: ToolsFakeBus;

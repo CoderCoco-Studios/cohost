@@ -17,8 +17,6 @@ export interface SourceTool {
   parameters: Record<string, unknown>;
   /** The server's `readOnlyHint` annotation; absent when the server gives none (label `unlabelled`). */
   readOnlyHint?: boolean | undefined;
-  /** The hash of the definition the source lists now (TOOL-PIN-002); absent for a mock tool, which is not pinned. */
-  hash?: string | undefined;
 }
 
 /** One content part of a call's result, as the protocol gives it. Only `text` parts carry text. */

@@ -92,6 +92,7 @@ export async function toolsMain(
           performance.now(),
           Date.now(),
         );
+        if (r === undefined) return { ok: false, detail: "duplicate request id" };
         return { ok: true, detail: `status ${r.status}${r.reason ? ` (${r.reason})` : ""} in ${r.durationMs} ms` }; // TOOL-INJ-002
       },
     },
@@ -100,7 +101,10 @@ export async function toolsMain(
   const dispatch = (ev: BusEvent<EventType>): void => {
     switch (ev.type) {
       case "tool.request":
-        void pipeline.handle(ev.data as ToolRequest, performance.now(), Date.now()); // TOOL-SVC-007
+        // TOOL-SVC-007: one result per request; a failure of the service's own code is logged, never thrown into the bus.
+        const req = ev.data as ToolRequest;
+        pipeline.handle(req, performance.now(), Date.now())
+          .catch(() => log.error({ id: req.id }, "tool request failed in the service"));
         return;
       case "tool.answer": {
         const d = ev.data as BusEvent<"tool.answer">["data"];
@@ -122,18 +126,23 @@ export async function toolsMain(
 
   /** Publishes the catalog when it changed, or always when forced, and sets the heartbeat from its dependencies. */
   const refresh = (force: boolean): void => {
-    const snap = snapshot();
-    checked = true;
-    const key = JSON.stringify([snap.tools.map(publishedTool), publishedServers(snap)]);
-    if (force || key !== lastKey) {
-      lastKey = key;
-      bus.publish("tool.catalog", { intervalMs: cfg.tools.catalog_ms, mode, servers: publishedServers(snap), tools: snap.tools.map(publishedTool) })
-        .catch(() => log.warn("tool.catalog publish failed"));
+    try {
+      const snap = snapshot();
+      checked = true;
+      const key = JSON.stringify([snap.tools.map(publishedTool), publishedServers(snap)]);
+      if (force || key !== lastKey) {
+        lastKey = key;
+        bus.publish("tool.catalog", { intervalMs: cfg.tools.catalog_ms, mode, servers: publishedServers(snap), tools: snap.tools.map(publishedTool) })
+          .catch(() => log.warn("tool.catalog publish failed"));
+      }
+      latest = healthOf(snap);
+      heartbeat.setDetail(latest.detail);
+      if (latest.degraded) heartbeat.degraded(latest.detail);
+      else heartbeat.ready();
+    } catch {
+      // A source that throws while it is listed must not end the service: the last catalog stands and this is logged.
+      log.error("catalog refresh failed in the service");
     }
-    latest = healthOf(snap);
-    heartbeat.setDetail(latest.detail);
-    if (latest.degraded) heartbeat.degraded(latest.detail);
-    else heartbeat.ready();
   };
 
   // Ready once the group exists, before any source is checked (TOOL-SVC-004); the first refresh checks them.

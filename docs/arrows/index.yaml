@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "111 specs: 63 [x], 48 [ ] (the service, catalog, call pipeline, confirmation, mock mode and test injection are built and tested; open: the MCP client TOOL-MCP (#206, incl. TOOL-MCP-012/013), the built-in tools TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER and the built-in halves of TOOL-CAT-001, TOOL-CAT-004, TOOL-CAT-013, TOOL-CALL-007, TOOL-CALL-017 (#207), mock TOOL-MOCK-005/006, and the pins TOOL-PIN-001..005 (in code, not yet flipped))."
+    next: "112 specs: 65 [x], 47 [ ]. Open: the MCP client TOOL-MCP-001..013 (#206), the MCP parts of TOOL-CALL-011 and TOOL-CALL-012 (cancellation notification, session failure; #206), TOOL-PIN-002 and TOOL-PIN-005; the built-in tools TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER, the built-in halves of TOOL-CAT-001, TOOL-CAT-004, TOOL-CAT-013, TOOL-CALL-007, TOOL-CALL-017 and mock TOOL-MOCK-005/006 (#207)."
     drift: null
 
   voice:

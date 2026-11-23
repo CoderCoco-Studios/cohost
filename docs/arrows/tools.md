@@ -4,7 +4,7 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 
 ## Status
 
-**PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 111 specs: 63 `[x]`, 48 `[ ]`. The MCP client (#206) and the built-in tools (#207) are not built yet; no live MCP server has been run against the service.
+**PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 112 specs: 65 `[x]`, 47 `[ ]`. The MCP client (#206) and the built-in tools (#207) are not built yet; no live MCP server has been run against the service.
 
 ## References
 
@@ -15,7 +15,7 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 - docs/intent/tools/tools-design.md
 
 ### EARS
-- docs/intent/tools/tools-specs.md (111 specs, prefix `TOOL`: 63 `[x]`, 48 `[ ]`, 0 `[D]`)
+- docs/intent/tools/tools-specs.md (112 specs, prefix `TOOL`: 65 `[x]`, 47 `[ ]`, 0 `[D]`)
 
 ### Code and tests
 - services/tools/src/ (catalog.ts, calls.ts, mock.ts, health.ts, main.ts, source.ts); tests under services/tools/test/

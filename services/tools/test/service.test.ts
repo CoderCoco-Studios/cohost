@@ -18,7 +18,7 @@ test("it runs on runService as `tools` in group tools, start mode latest, subscr
 
 test("it publishes only tool.result, tool.catalog, tool.confirm, tool.timer, memory.recall.request and inject.result, never brain or attention events", async () => { // @spec TOOL-SVC-002
   const src = new FakeSource("search", [def("web"), def("post", {}, false)]);
-  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }) }, confirm_timeout_ms: 40 }), [src]);
+  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }, false) }, confirm_timeout_ms: 40 }), [src]);
   await resultOf(s, await s.request({ arguments: { text: "say hello" } }));
   await resultOf(s, await s.request({ tool: "search__post" })); // confirm, then unconfirmed
   await s.send("inject.request", { id: "i1", target: "tools", kind: "text", text: JSON.stringify({ tool: "search__web", arguments: {} }), remember: false } as never);
@@ -35,7 +35,7 @@ test("on stop it publishes refused shutdown for each call in flight and each pen
   const src = new FakeSource("search", [def("web"), def("post", {}, false)], hang, () => order.push(`close(results=${bus.of("tool.result").length})`));
   const due = JSON.stringify({ id: "t1", note: "later", setAt: Date.now(), dueAt: Date.now() + 3_600_000 });
   bus.timers.set("t1", due);
-  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }) }, confirm_timeout_ms: 60000 }), [src], {}, bus);
+  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }, false) }, confirm_timeout_ms: 60000 }), [src], {}, bus);
   const inFlight = await s.request();
   const pending = await s.request({ tool: "search__post" });
   await waitFor(() => src.calls.length === 1 && bus.of("tool.confirm").length === 1, "one call in flight, one confirmation pending");
@@ -100,7 +100,7 @@ const inject = (text: string, id = "inj-1") => ({ id, target: "tools", kind: "te
 
 test("an inject.request to tools runs {tool, arguments} through the pipeline as origin dashboard, round 1, listed false", async () => { // @spec TOOL-INJ-001
   const src = new FakeSource("search", [def("web"), def("post", {}, false)]);
-  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }) }, confirm_timeout_ms: 5000 }), [src]);
+  const s = await startTools(live({ allow: { search__web: on("web"), search__post: on("post", { acts: true }, false) }, confirm_timeout_ms: 5000 }), [src]);
   await s.send("inject.request", inject(JSON.stringify({ tool: "search__web", arguments: { q: "x" } })));
   await waitFor(() => s.results().length === 1, "tool.result");
   assert.deepEqual(src.calls.map((c) => [c.tool, c.args]), [["web", { q: "x" }]]);
@@ -171,7 +171,7 @@ test("an inject.request for another target is ignored", async () => { // @spec T
 
 test("an inject-driven acting call asks for confirmation even when its confirm mark is false", async () => { // @spec TOOL-INJ-001, TOOL-CONF-006
   const src = new FakeSource("search", [def("post", {}, false)]);
-  const s = await startTools(live({ allow: { search__post: on("post", { acts: true, confirm: false }) }, confirm_timeout_ms: 5000 }), [src]);
+  const s = await startTools(live({ allow: { search__post: on("post", { acts: true, confirm: false }, false) }, confirm_timeout_ms: 5000 }), [src]);
   await s.send("inject.request", inject(JSON.stringify({ tool: "search__post", arguments: {} }), "cf"));
   await waitFor(() => s.bus.of("tool.confirm").length === 1, "tool.confirm");
   assert.equal(src.calls.length, 0, "not run before the owner allows it");

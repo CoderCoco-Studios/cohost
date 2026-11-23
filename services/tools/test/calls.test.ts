@@ -29,8 +29,8 @@ test("an offered tool called from an allowed origin runs and the result is ok wi
 
 test("the look-up refuses with the first reason of unknown_tool, not_enabled, acts_not_allowed, not_approved, definition_changed, server_down, origin_not_allowed", async () => { // @spec TOOL-CALL-001
   const src = new FakeSource("search", [
-    def("off"), def("acting", {}, false), def("unpinned"), def("moved", { hash: "new" }),
-    def("actingNoHash", {}, false), def("movedDownChat", { hash: "new" }),
+    def("off"), def("acting", {}, false), def("unpinned"), def("moved", { description: "changed" }),
+    def("actingNoHash", {}, false), def("movedDownChat", { description: "changed" }),
   ]);
   const dead = new FakeSource("dead", [def("x"), def("off2")]);
   dead.state = "down";
@@ -38,11 +38,11 @@ test("the look-up refuses with the first reason of unknown_tool, not_enabled, ac
     servers: { search, dead: { url: "https://dead.example.com/mcp" } },
     allow: {
       search__off: { enabled: false, hash: "h-off" },
-      search__acting: on("acting"),
+      search__acting: on("acting", {}, false),
       search__unpinned: { enabled: true },
       search__moved: on("moved"),
       search__actingNoHash: { enabled: true },
-      dead__x: on("x"),
+      dead__x: on("x", {}, true, {}, "dead"),
       dead__off2: { enabled: false },
     },
   }), [src, dead]);
@@ -64,7 +64,7 @@ test("the look-up refuses with the first reason of unknown_tool, not_enabled, ac
 
 test("the look-up comes before admission, and admission before confirmation", async () => { // @spec TOOL-CALL-001
   const src = new FakeSource("search", [def("web"), def("post", {}, false)], hang);
-  const s = await startTools(base({ max_concurrent: 1, timeout_ms: 5000, allow: { search__web: on("web"), search__post: on("post", { acts: true }) } }), [src]);
+  const s = await startTools(base({ max_concurrent: 1, timeout_ms: 5000, allow: { search__web: on("web"), search__post: on("post", { acts: true }, false) } }), [src]);
   const held = await s.request();
   await waitFor(() => src.calls.length === 1, "the first call is in flight");
   assert.equal((await resultOf(s, await s.request({ tool: "nothing" }))).reason, "unknown_tool", "an unknown tool is not busy");
@@ -91,15 +91,15 @@ test("a refusal and a timeout carry a sentence the service wrote, never text fro
 
 test("a tool in the catalog that is enabled but acts without its acts mark is refused acts_not_allowed", async () => { // @spec TOOL-CALL-003
   const src = new FakeSource("search", [def("post", {}, false), def("unl", {}, null)]);
-  const s = await startTools(base({ allow: { search__post: on("post"), search__unl: on("unl") } }), [src]);
+  const s = await startTools(base({ allow: { search__post: on("post", {}, false), search__unl: on("unl") } }), [src]);
   assert.equal((await resultOf(s, await s.request({ tool: "search__post" }))).reason, "acts_not_allowed");
   assert.equal((await resultOf(s, await s.request({ tool: "search__unl" }))).reason, "acts_not_allowed");
   assert.equal(src.calls.length, 0);
   await s.stop();
 });
 
-test("outside mock mode an MCP tool with no recorded hash is not_approved and one with a different hash is definition_changed", async () => { // @spec TOOL-CALL-004
-  const src = new FakeSource("search", [def("a"), def("b", { hash: "now" }), def("c")]);
+test("outside mock mode an MCP tool with no recorded hash is not_approved and one with a different hash is definition_changed", async () => { // @spec TOOL-CALL-004, TOOL-PIN-003, TOOL-PIN-004
+  const src = new FakeSource("search", [def("a"), def("b", { description: "now" }), def("c")]);
   const s = await startTools(base({ allow: { search__a: { enabled: true }, search__b: { enabled: true, hash: "then" }, search__c: on("c") } }), [src]);
   assert.equal((await resultOf(s, await s.request({ tool: "search__a" }))).reason, "not_approved");
   assert.equal((await resultOf(s, await s.request({ tool: "search__b" }))).reason, "definition_changed");
@@ -112,7 +112,7 @@ test("a tool of a down or auth server is refused server_down without a request t
   const src = new FakeSource("search", [def("web")]);
   const auth = new FakeSource("locked", [def("x")]);
   auth.state = "auth";
-  const s = await startTools(base({ servers: { search, locked: { url: "https://l.example.com/mcp" } }, allow: { search__web: on("web"), locked__x: on("x") } }), [src, auth]);
+  const s = await startTools(base({ servers: { search, locked: { url: "https://l.example.com/mcp" } }, allow: { search__web: on("web"), locked__x: on("x", {}, true, {}, "locked") } }), [src, auth]);
   src.state = "down";
   src.change();
   assert.equal((await resultOf(s, await s.request())).reason, "server_down");
@@ -136,7 +136,7 @@ test("a request the origin does not allow is refused origin_not_allowed", async 
 test("the arguments of an MCP tool are not validated against the server's schema", async () => { // @spec TOOL-CALL-008
   const schema = { type: "object", properties: { q: { type: "string" } }, required: ["q"], additionalProperties: false };
   const src = new FakeSource("search", [def("web", { parameters: schema })]);
-  const s = await startTools(base(), [src]);
+  const s = await startTools(base({ allow: { search__web: on("web", {}, true, { parameters: schema }) } }), [src]);
   const r = await resultOf(s, await s.request({ arguments: { q: 42, extra: true } }));
   assert.equal(r.status, "ok");
   assert.deepEqual(src.calls[0]!.args, { q: 42, extra: true }, "forwarded as the model wrote them");
@@ -167,7 +167,7 @@ test("at max_concurrent calls a further request is refused busy at once and neve
 
 test("a call waiting for its confirmation holds a slot", async () => { // @spec TOOL-CALL-009
   const src = new FakeSource("search", [def("post", {}, false), def("web")]);
-  const s = await startTools(base({ max_concurrent: 1, confirm_timeout_ms: 5000, allow: { search__post: on("post", { acts: true }), search__web: on("web") } }), [src]);
+  const s = await startTools(base({ max_concurrent: 1, confirm_timeout_ms: 5000, allow: { search__post: on("post", { acts: true }, false), search__web: on("web") } }), [src]);
   await s.request({ tool: "search__post" });
   await waitFor(() => s.bus.of("tool.confirm").length === 1, "pending confirmation");
   const r = await resultOf(s, await s.request());
@@ -308,7 +308,7 @@ async function originFixture(): Promise<Fixture> {
     allow: {
       search__plain: on("plain"),
       search__chatty: on("chatty", { chat: true }),
-      search__post: on("post", { acts: true }),
+      search__post: on("post", { acts: true }, false),
       search__readActs: on("readActs", { acts: true }), // a read-labelled tool the owner marked as acting
     },
   }), [src]);
@@ -344,7 +344,7 @@ test("the origin table: speech and dashboard allow any offered tool, reminder on
 
 test("the origin, round and listed of the request are taken as sent, not derived", async () => { // @spec TOOL-ORIG-001
   const src = new FakeSource("search", [def("post", {}, false)]);
-  const s = await startTools(base({ confirm_timeout_ms: 5000, allow: { search__post: on("post", { acts: true, confirm: false }) } }), [src]);
+  const s = await startTools(base({ confirm_timeout_ms: 5000, allow: { search__post: on("post", { acts: true, confirm: false }, false) } }), [src]);
   // confirm:false skips only in round 1 from a listed speech source or the dashboard: the service must read the three fields it was given
   await s.request({ tool: "search__post", origin: "speech", listed: true, round: 1 });
   await waitFor(() => src.calls.length === 1, "round 1 listed speech runs at once");
@@ -377,5 +377,48 @@ test("arguments of 64 KiB exactly are called; more is refused invalid_arguments 
   const r = await resultOf(s, await s.request({ arguments: over }));
   assert.deepEqual([r.status, r.reason], ["refused", "invalid_arguments"]);
   assert.equal(src.calls.length, 1, "the oversized call never reached the server");
+  await s.stop();
+});
+
+// ---- security review round 1: malformed results and the service's own failures
+
+test("a malformed source result ends the request as unavailable and frees its slot", async () => { // @spec TOOL-CALL-012, TOOL-CALL-020
+  const answers: unknown[] = [{ content: [null] }, undefined, { content: [{ type: "text", text: "fine" }] }];
+  const src = new FakeSource("search", [def("web")], async () => answers.shift() as never);
+  const s = await startTools(base({ max_concurrent: 1 }), [src]);
+  const a = await resultOf(s, await s.request());
+  assert.deepEqual([a.status, a.reason, a.content], ["error", "unavailable", "The tool could not be reached."]);
+  const b = await resultOf(s, await s.request());
+  assert.deepEqual([b.status, b.reason], ["error", "unavailable"], "an undefined answer is also unavailable");
+  const c = await resultOf(s, await s.request());
+  assert.deepEqual([c.status, c.content], ["ok", "fine"], "the slot was freed: a later call runs");
+  await s.stop();
+});
+
+test("a failure in the service's own code while it reads the catalog still ends the request with one result", async () => { // @spec TOOL-SVC-007, TOOL-CALL-012
+  const src = new FakeSource("search", [def("web")]);
+  const s = await startTools(base(), [src]);
+  src.list = () => { throw new Error("list broke with SECRET-TEXT"); };
+  const id = await s.request();
+  const r = await resultOf(s, id);
+  assert.deepEqual([r.status, r.reason], ["error", "unavailable"]);
+  src.change(); // the catalog refresh throws too: the service logs it and stays up
+  await settle();
+  assert.equal(s.results().filter((x) => x.id === id).length, 1, "one result");
+  assert.equal(JSON.stringify(s.log.lines).includes("SECRET-TEXT"), false, "the error text is not logged");
+  await s.stop();
+});
+
+test("arguments of 64 KiB counted in UTF-8 bytes: a multibyte value over the limit is refused although its length in characters is not", async () => { // @spec TOOL-CALL-021
+  const src = new FakeSource("search", [def("web")]);
+  const s = await startTools(base({ timeout_ms: 5000 }), [src]);
+  const over = { q: "é".repeat(32768) }; // 65536 bytes of value plus the wrapper
+  assert.ok(JSON.stringify(over).length < 65536, "shorter than 64 Ki characters");
+  const r = await resultOf(s, await s.request({ arguments: over }));
+  assert.deepEqual([r.status, r.reason], ["refused", "invalid_arguments"]);
+  const fits = { q: "é".repeat(32764) }; // 65528 bytes of value plus 8 bytes of wrapper: exactly 64 KiB
+  assert.equal(Buffer.byteLength(JSON.stringify(fits)), 65536);
+  assert.equal((await resultOf(s, await s.request({ arguments: fits }))).status, "ok");
+  assert.equal(src.calls.length, 1);
   await s.stop();
 });

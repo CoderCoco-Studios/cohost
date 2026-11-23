@@ -36,10 +36,10 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Pinned definitions (TOOL-PIN)
 
-- [ ] **TOOL-PIN-001**: The service shall compute the `hash` of an MCP tool as the lower-case hexadecimal SHA-256 of the UTF-8 JSON object with exactly the members `name` (the qualified name), `title` (as cut; the member is absent when the server gives none), `description` (as cut), `parameters` (the argument schema) and `label`, serialized with the keys of every object, that one and those inside `parameters`, in ascending code-unit order and no whitespace outside strings.
+- [x] **TOOL-PIN-001**: The service shall compute the `hash` of an MCP tool as the lower-case hexadecimal SHA-256 of the UTF-8 JSON object with exactly the members `name` (the qualified name), `title` (as cut; the member is absent when the server gives none), `description` (as cut), `parameters` (the argument schema) and `label`, serialized with the keys of every object, that one and those inside `parameters`, in ascending code-unit order and no whitespace outside strings.
 - [ ] **TOOL-PIN-002**: The catalog shall carry for each MCP tool the hash of the definition its server lists now, and shall carry no hash for a built-in tool.
-- [ ] **TOOL-PIN-003**: While `tools.mode` is not `mock`, if an enabled MCP tool's `tools.allow` entry records no `hash`, then the service shall not offer it and shall give it the catalog reason `not_approved`.
-- [ ] **TOOL-PIN-004**: While `tools.mode` is not `mock`, if an enabled MCP tool's recorded `hash` differs from the hash of the definition its server lists, then the service shall not offer it and shall give it the catalog reason `changed`.
+- [x] **TOOL-PIN-003**: While `tools.mode` is not `mock`, if an enabled MCP tool's `tools.allow` entry records no `hash`, then the service shall not offer it and shall give it the catalog reason `not_approved`.
+- [x] **TOOL-PIN-004**: While `tools.mode` is not `mock`, if an enabled MCP tool's recorded `hash` differs from the hash of the definition its server lists, then the service shall not offer it and shall give it the catalog reason `changed`.
 - [ ] **TOOL-PIN-005**: The service shall check no hash for a built-in tool, and none while `tools.mode` is `mock`.
 
 ## Who can cause a call (TOOL-ORIG)
@@ -63,8 +63,8 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
 - [x] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
 - [x] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
-- [x] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
-- [x] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
+- [ ] **TOOL-CALL-011**: When the call limit passes on an MCP call, the service shall abort the HTTP request and send a cancellation notification to the server on a best-effort basis.
+- [ ] **TOOL-CALL-012**: If the HTTP request or the session of an MCP call fails during the call, then the service shall publish an `error` result with reason `unavailable` and a sentence it wrote.
 - [x] **TOOL-CALL-013**: When an MCP result has text parts, the service shall join them with newlines as the result text, followed by one bracket pair per part that is not text, joined by a space and set after the text with a space, naming the part's type as `image`, `audio` or `resource`, and as `other` for any other type the server gives, never the server's own string.
 - [x] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
 - [x] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
@@ -74,6 +74,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-019**: The `tool.result` shall carry `id`, `tool`, `status`, `reason` where one applies, `content`, `truncated` where set, `durationMs` from the moment the service read the request, and, in mock mode, `mock` true.
 - [x] **TOOL-CALL-020**: The service shall not retry a call.
 - [x] **TOOL-CALL-021**: A call whose arguments serialize to more than 64 KiB (65536 UTF-8 bytes) shall be refused with reason `invalid_arguments` and shall not reach the server.
+- [x] **TOOL-CALL-022**: While a `tool.request` with an `id` is admitted, a further `tool.request` with that `id` shall publish no result, be logged at `warn`, and leave the admitted request untouched, so that each admitted request has one result.
 
 ## Confirming an acting call (TOOL-CONF)
 

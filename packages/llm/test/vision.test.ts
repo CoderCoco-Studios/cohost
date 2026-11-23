@@ -264,3 +264,43 @@ test("ollama: stream() sends the message's images array, as given, in the /api/c
   assert.equal(b.seen[0]!.body.stream, true);
   assert.deepEqual(b.seen[0]!.body.messages, [{ role: "user", content: "what is this?", images: [PNG, "QUJD"] }]);
 });
+
+// ---- large images, empty text, unconfigured providers
+
+// @spec LLM-VIS-002, LLM-VIS-003, LLM-VIS-004
+test("a valid 6 MB image is sent on every provider, read as its format, not refused for its length", async () => {
+  const big = Buffer.alloc(6 * 1024 * 1024, 7);
+  big.set([0xff, 0xd8, 0xff, 0xe0]);
+  const data = big.toString("base64");
+  for (const kind of kinds) {
+    const b = await serve(kind);
+    await make(kind, b.url).complete([{ role: "user", content: "look", images: [data] }]);
+    const part = (lastUser(b.seen).content as any[]).find((c) => c.type !== "text");
+    assert.deepEqual(part, kind === "openai" ? imagePart("image/jpeg", data) : imageBlock("image/jpeg", data), kind);
+  }
+});
+
+// @spec LLM-VIS-002, LLM-VIS-012
+test("a user message with images and empty content sends only the image parts: the empty text part or block is omitted", async () => {
+  const b = await serve("openai");
+  await make("openai", b.url).complete([{ role: "user", content: "", images: [PNG] }]);
+  assert.deepEqual(lastUser(b.seen).content, [imagePart("image/png", PNG)]);
+  for (const kind of claudeKinds) {
+    const c = await serve(kind);
+    await make(kind, c.url).complete([{ role: "user", content: "", images: [PNG] }]);
+    assert.deepEqual(lastUser(c.seen).content, [imageBlock("image/png", PNG)], kind);
+  }
+});
+
+// @spec LLM-VIS-005
+test("bad image data on an unconfigured Claude or Bedrock provider is still a TypeError, not not_configured", async () => {
+  const unconfigured: any[] = [
+    new AnthropicProvider(llmCfg({ provider: "anthropic" })),
+    new BedrockProvider(llmCfg({ provider: "bedrock" })),
+  ];
+  for (const p of unconfigured) {
+    const bad = [{ role: "user" as const, content: "look", images: ["QUJD"] }];
+    assert.ok((await failure(p, "chat", bad)) instanceof TypeError, p.name);
+    assert.ok((await failure(p, "complete", bad)) instanceof TypeError, p.name);
+  }
+});

@@ -118,7 +118,7 @@ const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal =>
  * no caller names it (LLM-VIS-004).
  */
 type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/; // standard alphabet, padded; checked with a length rule, so the match stays linear on large images
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
@@ -126,7 +126,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
  * is none of JPEG, PNG, GIF or WebP, is a caller's programming error: a `TypeError`, raised before any request (LLM-VIS-005).
  */
 function sniffImage(data: string): ImageMediaType { // @spec LLM-VIS-004, LLM-VIS-005
-  if (!BASE64.test(data)) throw new TypeError("image data is not base64");
+  if (data.length % 4 !== 0 || !BASE64.test(data)) throw new TypeError("image data is not base64");
   const head = Buffer.from(data.slice(0, 16), "base64");
   const at = (offset: number, text: string): boolean => head.subarray(offset, offset + text.length).toString("latin1") === text;
   if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
@@ -859,9 +859,10 @@ abstract class ClaudeBase implements ChatProvider {
 
   async complete(allMessages: ChatMessage[], req: ChatRequest = {}): Promise<ChatResult> { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-013, LLM-IF-014, LLM-IF-015, LLM-CLAUDE-010, LLM-CLAUDE-020, LLM-CLAUDE-021, LLM-CLAUDE-031, LLM-CLAUDE-033, LLM-CHAT-017, LLM-ERR-003, LLM-ERR-002, LLM-ERR-009
     checkRequest(req); // @spec LLM-TOOL-001, LLM-TOOL-002
+    // The body is built before the client check, so image data in no supported format is a TypeError whatever the configuration (LLM-VIS-005).
+    const params = this.params(allMessages, req, false);
     const client = this.client;
     if (!client) throw new ChatError("not_configured", this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
-    const params = this.params(allMessages, req, false);
     // The caller's signal when it passed one; otherwise llm.timeout_ms, as the Ollama and OpenAI-compatible providers bound theirs.
     // A timeout is one request the SDK does not retry, and it rejects with the TimeoutError of LLM-ERR-005 (LLM-CHAT-018).
     const caller = req.signal;

@@ -257,3 +257,45 @@ test("the service hands the driver the active driver's block of expressions.yaml
   assert.deepEqual(t.driver.ctx!.expressions, { happy: "Smile" });
   assert.deepEqual(t.driver.ctx!.gestures, { wave: "WAVE" });
 });
+
+// @spec AVATAR-BUS-003, AVATAR-BUS-004, AVATAR-BUS-005
+test("a streamed line: each clause is prepared by id and seq, played on its own voice.playing, closed on its own voice.done", async (ctx) => {
+  const t = boot(ctx);
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  const utt = (seq: number, level: number) => event("voice.utterance", {
+    id: "l1", seq, text: "c", emotion: "happy", durationMs: 1000, envelopeHz: 30, envelope: Array(30).fill(level), audioUrl: "http://v/a.wav", sampleRate: 24000,
+  } as never);
+  await t.bus.deliver(utt(0, 0.9));
+  await t.bus.deliver(utt(1, 0.5));
+  assert.equal(t.driver.expressions.length, 0, "prepared, none playing");
+  await t.bus.deliver(event("voice.playing", { id: "l1", seq: 1, sink: "discord" }));
+  await waitFor(() => t.driver.params.some((p) => p.mouthOpen > 0.3 && p.mouthOpen < 0.7), "clause 1 envelope drives the mouth");
+  await t.bus.deliver(event("voice.done", { id: "l1", seq: 0, sink: "discord" })); // another clause: no effect
+  assert.ok(t.driver.params.at(-1)!.mouthOpen > 0.1);
+  await t.bus.deliver(event("voice.done", { id: "l1", seq: 1, sink: "discord" }));
+  await waitFor(() => t.driver.params.at(-1)!.mouthOpen < 0.1, "mouth closes");
+});
+
+// @spec AVATAR-BUS-004, AVATAR-ENG-021
+test("voice.playing from any sink plays the clause, and a second sink's playing for seq 0 does not fire the gesture again", async (ctx) => {
+  const t = boot(ctx);
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  await t.bus.deliver(event("voice.utterance", {
+    id: "l2", seq: 0, text: "c", emotion: "happy", gesture: "wave", durationMs: 1000, envelopeHz: 30, envelope: Array(30).fill(0.9), audioUrl: "http://v/a.wav", sampleRate: 24000,
+  } as never));
+  await t.bus.deliver(event("voice.playing", { id: "l2", seq: 0, sink: "discord" }));
+  await t.bus.deliver(event("voice.playing", { id: "l2", seq: 0, sink: "browser" } as never));
+  assert.deepEqual(t.driver.gestures, ["wave"]);
+});
+
+// @spec AVATAR-BUS-009
+test("does not subscribe to brain.clause", async (ctx) => {
+  const t = boot(ctx);
+  void runAvatar(t.b);
+  await waitFor(() => t.bus.subscribed.length === 1, "subscription");
+  assert.ok(!(t.bus.subscribed[0]!.opts.types as string[]).includes("brain.clause"));
+  await t.bus.deliver(event("brain.clause", { id: "l3", seq: 1, text: "x" } as never));
+  assert.equal(t.driver.expressions.length, 0, "a brain.clause that reached the handler changes nothing");
+});

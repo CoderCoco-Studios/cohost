@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
 import { bearerOk, type ServiceDef } from "@cohost/control";
+import { modelIssue, type AppliedView, type Framing, type Loadable } from "./applied.js";
+import type { ModelStore } from "./models.js";
 import { changedSensitiveKeys, noTokenDetail } from "./sensitive.js";
 import type { StackSnapshot } from "./stack.js";
 
@@ -20,6 +22,15 @@ export interface SettingsDeps {
   controlToken?: string;
   /** The request body as text, capped at 64 KiB (throws past the cap). */
   body: (req: http.IncomingMessage) => Promise<string>;
+  /** The model store and the applied view a save of `renderer` checks and sets (DASH-MDL-037, DASH-AVR-024). */
+  models?: { store: ModelStore; applied: AppliedView };
+}
+
+/** The `renderer` section as the file would hold it after an edit: its model and framing (DASH-AVR-024). */
+function rendererFraming(text: string, secrets: readonly string[]): Framing {
+  const keys = readSection(text, "renderer", [...secrets]).keys;
+  const v = (k: string) => keys[k]?.value;
+  return { model: String(v("model") ?? ""), zoom: Number(v("zoom")), offset_y: Number(v("offset_y")), turn: Number(v("turn")) };
 }
 
 export const defaultWrite = writeFileAtomic;
@@ -135,19 +146,31 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     if (sensitive.length) { refuseSensitive(res, d.controlToken, sensitive); return true; }
   }
 
-  // Everything from here to the write is synchronous, so no other request can change the file in between.
-  const file = d.file();
-  const text = readFileSync(file, "utf8");
-  const current = etagOf(text);
-  if (etag !== current) { json(res, 409, { ok: false, etag: current }); return true; }
-  const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d), runningOverrides(d, name));
-  if (!edit.ok) { json(res, 400, { ok: false, issues: edit.issues }); return true; }
-  const warnings = edit.warnings;
-  if (dryRun) { json(res, 200, { ok: true, dryRun: true, warnings }); return true; }
-  try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(String((e as Error).message ?? e)); return true; }
+  // The save is synchronous from the etag check to the write, so no other request can change the file in between. A save of
+  // `renderer` also holds the applied view's lock, and reads the loadable models first, so the check sees the same store.
+  const save = (models: readonly Loadable[]): void => {
+    const file = d.file();
+    const text = readFileSync(file, "utf8");
+    const current = etagOf(text);
+    if (etag !== current) { json(res, 409, { ok: false, etag: current }); return; }
+    const edit = applySection(text, name, values as Record<string, unknown>, secretsSet(d), runningOverrides(d, name));
+    if (!edit.ok) { json(res, 400, { ok: false, issues: edit.issues }); return; }
+    const warnings = edit.warnings;
+    // @spec DASH-MDL-037, DASH-AVR-024, DASH-AVR-029
+    const framing = name === "renderer" && d.models ? rendererFraming(edit.text, secretsSet(d)) : undefined;
+    const issue = framing && modelIssue(models, framing.model);
+    if (issue) { json(res, 400, { ok: false, issues: [{ path: "renderer.model", message: issue }] }); return; }
+    if (dryRun) { json(res, 200, { ok: true, dryRun: true, warnings }); return; }
+    try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(String((e as Error).message ?? e)); return; }
+    if (framing && d.models) d.models.applied.apply(framing, models);
 
-  const stack = d.stack();
-  const running = new Set(stack.docker.ok ? stack.services.filter((s) => s.status === "running").map((s) => s.service) : []);
-  json(res, 200, { ok: true, etag: etagOf(edit.text), restart: readers(d.manifest, name).filter((id) => running.has(id)), warnings });
+    const stack = d.stack();
+    const running = new Set(stack.docker.ok ? stack.services.filter((s) => s.status === "running").map((s) => s.service) : []);
+    json(res, 200, { ok: true, etag: etagOf(edit.text), restart: readers(d.manifest, name).filter((id) => running.has(id)), warnings });
+  };
+  if (name === "renderer" && d.models) {
+    const { applied, store } = d.models;
+    await applied.lock.run(async () => save(await store.loadable()));
+  } else save([]);
   return true;
 }

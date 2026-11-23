@@ -21,7 +21,8 @@ import { SttStatus, boot, connectorOffer, fakeStreaming, fakeStt, resetSeq, slee
 const cfgOf = (ears: Record<string, unknown> = {}) => testConfig({ ears }).ears;
 const wav = (ms = 1000) => wavWrap(Buffer.alloc((ms / 1000) * 32000), 16000, 1);
 const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => b.register("discord", connectorOffer);
-const cfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "speaches", partials: "off", vad: { engine: "gap" }, silence_ms: 150, min_speech_ms: 100, ...over });
+// CFG-SCH-105: ears.early.after_ms (default 250) must sit below silence_ms, so it is set here.
+const cfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "speaches", partials: "off", vad: { engine: "gap" }, silence_ms: 150, early: { after_ms: 100 }, min_speech_ms: 100, ...over });
 const oneFile = async (dir: string) => (await readdir(dir)).filter((n) => n.startsWith("a.wav"));
 const freePort = (): Promise<number> => new Promise((res) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const p = (s.address() as { port: number }).port; s.close(() => res(p)); }); });
 

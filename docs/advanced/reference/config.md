@@ -142,6 +142,13 @@ When to speak, and reflexes. The region scores unseen events at a poll every `ti
 | `brain.salience.reply_on_mention` | `true` | Always respond when the co-host's name is used |
 | `brain.salience.speak_threshold` | `0.6` | The summed event score needed to speak |
 | `brain.salience.arousal_bias` | `0.2` | An excited mood lowers the threshold by up to this much, 0 to 1 |
+| `brain.salience.interject` | `false` | Answer a sentence while the speaker is still talking. Off until live-tested |
+| `brain.salience.interject_chance` | `0.15` | The chance, 0 to 1, that an eligible sentence is answered while it is spoken |
+| `brain.salience.interject_yield` | `true` | Stop an interjection when the speaker carries on talking |
+| `brain.salience.interject_min_gap_ms` | `120000` | The shortest time between two interjections, in milliseconds |
+| `brain.salience.interject_min_words` | `4` | Words a sentence needs before it may be interjected on |
+| `brain.salience.interject_followup_min_words` | `3` | Words a follow-up sentence needs before it may be interjected on |
+| `brain.salience.unresolved_limit_ms` | `4000` | How long a provisional focus may wait to be confirmed or withdrawn, in milliseconds |
 | `brain.salience.module` | map | The hook. See [Brain hooks](../extend/hooks.md) |
 | `brain.salience.module.kind` | `rules` | `rules` (built in), `llm` (one chat call, JSON reply) or `http` (POST to your URL). A blank value means `rules` |
 | `brain.salience.module.url` | `""` | `http` only: the endpoint to POST to, for example `http://host.docker.internal:8900/salience`. Required when `kind` is `http` |
@@ -156,7 +163,7 @@ When to speak, and reflexes. The region scores unseen events at a poll every `ti
 | `brain.salience.reflexes[].emotion` | `surprised` | The emotion the line is said with |
 | `brain.salience.reflexes[].gesture` | none | An optional avatar gesture |
 | `brain.salience.reflexes[].cooldown_ms` | `30000` | This reflex's own cooldown |
-| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped |
+| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped, republished as `missed` and never spoken |
 
 ## `brain.affect`
 
@@ -241,6 +248,7 @@ The only region that calls the chat model.
 | `brain.cortex.clause_min_chars` | `24` | The shortest piece of a streamed reply spoken on its own, in characters; at least 1 |
 | `brain.cortex.clause_max_chars` | `160` | The longest piece spoken as one clause, in characters; not below `clause_min_chars` |
 | `brain.cortex.max_clauses` | `8` | How many clauses one reply may be spoken in before the co-host stops there, 1 to 16 |
+| `brain.cortex.hold_limit_ms` | `5000` | The longest a reply started on a provisional sentence may hold its first words back, in milliseconds |
 | `brain.cortex.critic` | map | The hook. See [Brain hooks](../extend/hooks.md) |
 | `brain.cortex.critic.kind` | `rules` | `rules` (built in), `llm` (one chat call, JSON reply) or `http` (POST to your URL). A blank value means `rules` |
 | `brain.cortex.critic.url` | `""` | `http` only: the endpoint to POST to, for example `http://host.docker.internal:8900/critic`. Required when `kind` is `http` |
@@ -338,7 +346,11 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.dir` | map | The `dir` source |
 | `ears.dir.path` | empty | The directory to watch, created if missing. Empty means not configured, and `ears` idles as `degraded` |
 | `ears.dir.poll_ms` | `1000` | How often to look for new `.wav` files |
-| `ears.silence_ms` | `700` | End-of-utterance detection |
+| `ears.early` | map | Early reply: the co-host starts on a provisional transcript of a sentence still being spoken |
+| `ears.early.enabled` | `false` | Publish provisional transcripts while a sentence is still being spoken. Works with any `ears.stt_engine` |
+| `ears.early.after_ms` | `250` | The pause, in milliseconds, before an early transcript is published; at least 100 and below `ears.silence_ms` |
+| `ears.early.max_per_utterance` | `2` | How many early transcripts one sentence may produce, 1 to 5 |
+| `ears.silence_ms` | `700` | End-of-utterance detection. It must stay above `ears.early.after_ms` (default 250), even while early reply is off; lower both together |
 | `ears.echo_suppress_sources` | `[desktop]` | Sources that are deaf while the co-host's voice plays, because a loopback capture hears it |
 | `ears.echo_tail_ms` | `1500` | Keep them deaf this long after a line ends |
 | `ears.vad` | map | Voice activity detection for connector audio |

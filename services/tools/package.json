@@ -1,0 +1,21 @@
+{
+  "name": "@cohost/tools",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*",
+    "@cohost/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cohost/testing": "workspace:*"
+  }
+}

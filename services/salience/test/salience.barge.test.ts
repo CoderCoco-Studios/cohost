@@ -55,7 +55,7 @@ test("barge-in: the cortex state goes idle and the cooldown clears, so the inter
   await flush();
   assert.equal(stops(bus).length, 1);
   assert.equal(bus.of("attention.focus").length, 1, "not held back by the busy or cooldown gate");
-  assert.deepEqual(bus.of("attention.focus")[0]!.focus, { kind: "speech", who: "Chris", text: "wait stop", mention: false });
+  assert.deepEqual(bus.of("attention.focus")[0]!.focus, { kind: "speech", who: "Chris", text: "wait stop", source: "discord", mention: false });
 });
 
 // @spec SAL-BARGE-002, SAL-BARGE-003

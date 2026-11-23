@@ -58,7 +58,7 @@ test("main: subscribes in start mode latest and signals ready only after the con
   assert.deepEqual(bus.calls, ["resetGroup:salience", "subscribe:salience"]);
   assert.deepEqual(bus.subscribed[0], {
     group: "salience",
-    types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "control"],
+    types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
     start: "latest",
   });
   for (const fn of shutdown) await fn();

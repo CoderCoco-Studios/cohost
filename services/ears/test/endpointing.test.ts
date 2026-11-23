@@ -8,8 +8,9 @@ import { waitFor } from "@cohost/testing";
 import { SILENCE, SPEECH, boot, connectorOffer, fakeStreaming, fakeVad, feed, frame, resetSeq, sleep } from "./rig.js";
 
 const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => b.register("discord", connectorOffer);
-/** Stub STT, 100 ms of silence closes an utterance, 100 ms is long enough to transcribe. The frame gap timer is long enough not to fire while frames are fed fast. */
-const cfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "stub", silence_ms: 100, min_speech_ms: 100, ...over });
+/** Stub STT, 101 ms of silence closes an utterance, 100 ms is long enough to transcribe. The frame gap timer is long enough not to fire while frames are fed fast. */
+// CFG-SCH-105 with CFG-SCH-103: silence_ms 100 cannot load (after_ms is at least 100 and must be below silence_ms), so the default is 101 with after_ms 100.
+const cfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "stub", silence_ms: 101, early: { after_ms: 100 }, min_speech_ms: 100, ...over });
 const durations = (r: Awaited<ReturnType<typeof boot>>) => r.heard().map((h) => h.durationMs);
 
 // @spec EARS-VAD-001, EARS-VAD-002, EARS-VAD-003
@@ -23,8 +24,9 @@ test("silero (the default): silence closes an utterance, the trailing silence is
     await feed(r.bus, 15, { fill: SILENCE });
     await feed(r.bus, 10, { fill: SPEECH });
     await waitFor(() => r.heard().length === 2, "two utterances");
-    // First: 10 speech frames, closing silence excluded. Second: 200 ms of pre-roll (the last 10 silence frames) + 10 speech frames.
-    assert.deepEqual(durations(r), [200, 400]);
+    // First: 10 speech frames (200 ms), closing silence excluded. Second: 180 ms of pre-roll + 10 speech frames (200 ms).
+    // CFG-SCH-105: silence_ms is 101 (100 cannot load), so it closes on the 6th of the 15 silence frames; the last 9 silence frames (180 ms) are the second utterance's pre-roll, so 180 + 200 = 380.
+    assert.deepEqual(durations(r), [200, 380]);
   } finally { await r.stop(); }
 });
 
@@ -185,7 +187,8 @@ test("a seq gap closes nothing and is not filled: the received frames are one ut
 // ---------------------------------------------------------------------------------------- Kyutai end of turn (#188)
 // The adapter decides when to signal (kyutai.test.ts); these cases pin what ears does with a signal. A scripted kyutai session
 // fires it through `FakeSession.endOfTurn()` (rig.ts). The silence rule is 150 ms so a signal always beats it by design.
-const eotCfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "kyutai", silence_ms: 150, min_speech_ms: 100, stt_timeout_ms: 300, ...over });
+// CFG-SCH-105: ears.early.after_ms (default 250) must sit below silence_ms, so it is set here.
+const eotCfg = (over: Record<string, unknown> = {}) => ({ sources: ["discord"], stt_engine: "kyutai", silence_ms: 150, early: { after_ms: 100 }, min_speech_ms: 100, stt_timeout_ms: 300, ...over });
 const eotRig = (over: Record<string, unknown> = {}) => {
   const s = fakeStreaming({ name: "kyutai", finish: () => "closed early" });
   return { s, boot: () => boot(eotCfg(over), { setup: reg, loadVad: fakeVad().load, streaming: s.engine }) };

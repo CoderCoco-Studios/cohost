@@ -4,7 +4,9 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 
 ## Status
 
-**MAPPED**: designed and specified, not built. The LLD is written (2026-11-18) and `tools-specs.md` holds 108 specs, all `[ ]`. No code mentions MCP, tool calls or function calls.
+**PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 112 specs: 65 `[x]`, 47 `[ ]`. The MCP client (#206) and the built-in tools (#207) are not built yet; no live MCP server has been run against the service.
+
+`tools` has no Compose service or manifest unit yet: #208 adds them. Until then `packages/config/test/compose-standalone.test.ts` exempts it by name (`UNCOMPOSED_UNTIL_208`), and #208 removes that exemption.
 
 ## References
 
@@ -15,10 +17,10 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 - docs/intent/tools/tools-design.md
 
 ### EARS
-- docs/intent/tools/tools-specs.md (108 specs, prefix `TOOL`: 0 `[x]`, 108 `[ ]`, 0 `[D]`)
+- docs/intent/tools/tools-specs.md (112 specs, prefix `TOOL`: 65 `[x]`, 47 `[ ]`, 0 `[D]`)
 
 ### Code and tests
-- services/tools/ (to be built)
+- services/tools/src/ (catalog.ts, calls.ts, mock.ts, health.ts, main.ts, source.ts); tests under services/tools/test/
 
 ## Work Required
 

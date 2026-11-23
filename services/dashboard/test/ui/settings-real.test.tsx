@@ -37,6 +37,8 @@ test("every section of the real schema renders every key as a labelled control w
     await settle(3);
     for (const m of members) {
       for (const key of sectionKeyPaths(m.path)) {
+        // a map entry's secret (tools.servers.*.token) is rendered per entry by the tools map UI, which #211 builds
+        if (key.includes(".*.")) continue;
         const rel = key === m.path ? m.path.split(".").pop()! : key.slice(m.path.length + 1);
         const row = document.querySelector<HTMLElement>(`[data-key="${rel}"][data-section="${m.path}"]`);
         assert.ok(row, `${key} has no row on the ${path} page`);

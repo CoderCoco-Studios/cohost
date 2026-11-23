@@ -8,8 +8,7 @@ import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./help
 isolateEnv();
 
 const mode = (f: string): number => statSync(f).mode & 0o777;
-// The seventeen wildcard-free paths of CFG-SEC-003; `tools.servers.*.token` joins them when #204 adds CFG-SEC-016, and this list then
-// gains a wildcard entry (its test builds a config with a server entry).
+// The seventeen wildcard-free paths of CFG-SEC-003; `tools.servers.*.token` (CFG-SEC-016) is the eighteenth entry of SECRET_PATHS.
 const TWELVE = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
   "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
@@ -17,8 +16,8 @@ const TWELVE = [
 const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>((x, k) => (x as Record<string, unknown> | undefined)?.[k], o);
 
 // @spec CFG-SEC-003, CFG-SCH-039
-test("SECRET_PATHS lists exactly the seventeen wildcard-free credentials, and each is a schema key that defaults to the empty string", () => {
-  assert.deepEqual([...SECRET_PATHS].sort(), [...TWELVE].sort());
+test("SECRET_PATHS lists exactly the seventeen wildcard-free credentials and tools.servers.*.token, and each wildcard-free one defaults to the empty string", () => {
+  assert.deepEqual([...SECRET_PATHS].sort(), [...TWELVE, "tools.servers.*.token"].sort());
   const cfg = ConfigSchema.parse({
     cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
@@ -309,4 +308,105 @@ test("chat.youtube.api_key is a secret path (owned by CFG-SEC-003): listed, defa
   assert.equal(loadConfig(true).chat.youtube.api_key, "yt-key");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assert.equal((sectionJsonSchema("chat") as any).properties.youtube.properties.api_key["x-secret"], true);
+});
+
+const TOOLS_YAML = `${MINIMAL_YAML}tools:\n  servers:\n    weather:\n      url: "http://h:1/mcp"\n    search:\n      url: "http://h:2/mcp"\n`;
+const secretsFile = (dir: string, text: string): string => {
+  const f = join(dir, "secrets.yaml");
+  writeFileSync(f, text);
+  chmodSync(f, 0o600);
+  return f;
+};
+
+// @spec CFG-SEC-016, CFG-SCH-087
+test("tools.servers.*.token matches one key of the map config.yaml holds: each configured server gets its own token, others stay empty", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: tok-weather\n");
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  assert.deepEqual(warnings, []);
+  assert.equal(cfg.tools.servers.weather!.token, "tok-weather");
+  assert.equal(cfg.tools.servers.search!.token, "");
+  secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: ''\n    search:\n      token: '  tok-search '\n");
+  cfg = loadConfig(true);
+  assert.equal(cfg.tools.servers.weather!.token, "");
+  assert.equal(cfg.tools.servers.search!.token, "tok-search", "trimmed like every secret");
+});
+
+// @spec CFG-SEC-016
+test("the wildcard matches exactly one segment: another key under a server entry is not a secret path", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  secretsFile(dir, "tools:\n  servers:\n    weather:\n      url: http://evil/mcp\n      token: ok-tok\n");
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  assert.equal(cfg.tools.servers.weather!.token, "ok-tok");
+  assert.equal(cfg.tools.servers.weather!.url, "http://h:1/mcp", "secrets.yaml cannot override a setting");
+  const ignored = warnings.filter((w) => /not secret keys/.test(w));
+  assert.equal(ignored.length, 1);
+  assert.match(ignored[0]!, /tools\.servers\.weather\.url/);
+  assert.doesNotMatch(warnings.join("\n"), /ok-tok|evil/);
+});
+
+// @spec CFG-SEC-016
+test("a non-string token at a wildcard path fails the load naming the concrete path, never the value", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: 12345\n");
+  assert.throws(() => loadConfig(true), (e: Error) => e.message.includes("tools.servers.weather.token") && !e.message.includes("12345"));
+});
+
+// @spec CFG-SEC-017
+test("a token for a server config.yaml does not hold is not merged and is warned by path, once, in the CFG-SEC-005 warning", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  secretsFile(dir, "llm:\n  openai:\n    api_key: sk-ok\ntools:\n  servers:\n    gone:\n      token: tok-gone-secret\n    weather:\n      token: tok-w\n");
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  assert.equal(cfg.tools.servers.gone, undefined, "the merge never creates the entry a credential belongs to");
+  assert.equal(cfg.tools.servers.weather!.token, "tok-w");
+  assert.equal(warnings.filter((w) => w.includes("tools.servers.gone.token")).length, 1);
+  assert.equal(warnings.filter((w) => /not secret keys/.test(w)).length, 1, "one warning, the CFG-SEC-005 one");
+  assert.doesNotMatch(warnings.join("\n"), /tok-gone-secret|tok-w\b/);
+});
+
+// @spec CFG-SEC-017
+test("with no tools section in config.yaml a token under tools.servers is ignored by path and creates no entry", () => {
+  const dir = sandbox({ "config.yaml": MINIMAL_YAML });
+  secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: tok-w\n");
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  assert.deepEqual(cfg.tools.servers, {});
+  assert.equal(warnings.filter((w) => w.includes("tools.servers.weather.token")).length, 1);
+});
+
+// @spec CFG-SEC-018
+test("updateSecrets sets, trims and clears a token at a wildcard path; clearing works whatever entries config.yaml holds", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  const file = join(dir, "secrets.yaml");
+  updateSecrets(file, { "tools.servers.weather.token": "  tok-1 " });
+  assert.equal(loadConfig(true).tools.servers.weather!.token, "tok-1");
+  assert.equal(mode(file), 0o600);
+  // a removed server's token is cleared by path although config.yaml no longer holds the server
+  writeFileSync(join(dir, "config.yaml"), MINIMAL_YAML);
+  updateSecrets(file, { "tools.servers.weather.token": null });
+  assert.match(readFileSync(file, "utf8"), /weather:\s*\n\s+token: ""/);
+  const warnings = captureWarnings(() => { loadConfig(true); });
+  assert.deepEqual(warnings.filter((w) => w.includes("tools.servers.weather.token")), [], "an empty value is not warned about");
+});
+
+// @spec CFG-SEC-018, CFG-SEC-003
+test("updateSecrets refuses a path that only looks like the wildcard path, and applies no change when any is refused", () => {
+  const dir = sandbox({ "config.yaml": TOOLS_YAML });
+  const file = join(dir, "secrets.yaml");
+  for (const bad of ["tools.servers.weather.url", "tools.servers.token", "tools.servers.weather.extra.token", "tools.allow.x.token", "tools.servers..token"]) {
+    assert.throws(() => updateSecrets(file, { "llm.openai.api_key": "sk-new", [bad]: "x" }), (e: Error) => e.message.includes(bad), bad);
+  }
+  assert.equal(existsSync(file), false, "nothing is written when any change is refused");
+});
+
+// @spec CFG-USR-016
+test("the shipped secrets.example.yaml carries a commented tools.servers.<name>.token example, and holds no live tools key", () => {
+  const text = readFileSync(join(repo, "config", "secrets.example.yaml"), "utf8");
+  const commented = text.split("\n").filter((l) => /^\s*#/.test(l));
+  assert.ok(commented.some((l) => /tools:/.test(l)) || commented.some((l) => /tools\.servers\.<name>\.token/.test(l)), "a commented tools.servers.<name>.token example");
+  assert.ok(commented.some((l) => /token/.test(l)));
+  assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /tools:/, "the example is commented out");
 });

@@ -235,15 +235,15 @@ arrows:
     drift: null
 
   voice:
-    status: PARTIAL
+    status: MAPPED
     parent: null
-    sampled: 2026-10-31
+    sampled: 2026-11-23
     audited: 2026-11-14
     audited_sha: cb06bf3
     blocks: []
     blockedBy: [config, event-bus]
     detail: voice.md
-    next: "147 specs: 96 [x], 50 [ ], 1 [D] (the clause-chunked and streamed-speech specs VOICE-CHUNK-*, VOICE-CLAUSE-* and VOICE-ENG-005 are open, epic #192; the sink, stop, store and utterance gaps are listed in the segment arrow)."
+    next: "147 specs: 146 [x], 0 [ ], 1 [D] (clause-by-clause synthesis and arbitration, issue #195, implemented since the last audit). AUDITED pass pending: audited_sha predates the change."
     drift: null
 
   mouth:

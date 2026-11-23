@@ -39,7 +39,7 @@ test("brain.say → voice.utterance with duration, envelope and a fetchable URL"
   assert.equal(u!.envelopeHz, 30);
   assert.equal(u!.envelope.length, 15);
   assert.equal(u!.sampleRate, 24000);
-  assert.equal(u!.audioUrl, "http://voice:8700/audio/u1.wav");
+  assert.equal(u!.audioUrl, "http://voice:8700/audio/u1-0.wav");
 });
 
 test("virtual sink: unclaimed after 1.5 s, voice times the line itself", async () => { // @spec VOICE-SINK-002, VOICE-SINK-003
@@ -70,7 +70,7 @@ test("a failed voice.utterance publish is logged as tts failed and reports voice
   const { voice, bus, rec } = setup();
   bus.fail = (type) => type === "voice.utterance";
   await sayAndWait(voice, say("u1"));
-  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error", final: true } }]);
   assert.deepEqual(rec.msgs("error"), ["tts failed"]);
   mock.timers.tick(5000);
   await new Promise((r) => setImmediate(r));
@@ -80,11 +80,11 @@ test("a failed voice.utterance publish is logged as tts failed and reports voice
 test("a TTS failure still reports voice.done so the brain moves on", async () => { // @spec VOICE-UTT-003, VOICE-SINK-006
   const { voice, bus, rec } = setup(async () => { throw new Error("tts 500"); });
   await sayAndWait(voice, say("u1"));
-  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error" } }]);
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "u1", seq: 0, sink: "error", final: true } }]);
   assert.deepEqual(rec.msgs("error"), ["tts failed"]);
   const garbage = setup(async () => Buffer.from("not audio"));
   await sayAndWait(garbage.voice, say("u2"));
-  assert.deepEqual(garbage.bus.of("voice.done"), [{ id: "u2", seq: 0, sink: "error" }]);
+  assert.deepEqual(garbage.bus.of("voice.done"), [{ id: "u2", seq: 0, sink: "error", final: true }]);
 });
 
 test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", async () => { // @spec VOICE-HTTP-002, VOICE-HTTP-003, VOICE-HTTP-004
@@ -95,7 +95,7 @@ test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", a
   await new Promise<void>((r) => server.listen(0, r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const ok = await fetch(`${base}/audio/abc-123.wav`);
+    const ok = await fetch(`${base}/audio/abc-123-0.wav`);
     assert.equal(ok.status, 200);
     assert.equal(ok.headers.get("content-type"), "audio/wav");
     assert.equal(ok.headers.get("access-control-allow-origin"), "*");
@@ -107,18 +107,18 @@ test("HTTP: serves stored audio with CORS, 404s unknown ids, answers /health", a
   } finally { server.close(); }
 });
 
-test("only the newest 50 utterances are kept", async () => { // @spec VOICE-HTTP-001, VOICE-HTTP-003
+test("only the newest 100 clauses are kept", async () => { // @spec VOICE-HTTP-001, VOICE-HTTP-003
   mock.timers.reset();
   const { voice } = setup();
-  for (let i = 0; i < 51; i++) await sayAndWait(voice, say(`u${i}`));
+  for (let i = 0; i < 101; i++) await sayAndWait(voice, say(`u${i}`));
   const status = (id: string) => {
     let code = 0;
-    voice.handle({ method: "GET", url: `/audio/${id}.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
+    voice.handle({ method: "GET", url: `/audio/${id}-0.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
     return code;
   };
   assert.equal(status("u0"), 404);
   assert.equal(status("u1"), 200);
-  assert.equal(status("u50"), 200);
+  assert.equal(status("u100"), 200);
 });
 
 test("kokoro asks the TTS container for a WAV in the configured voice and speed", async () => { // @spec VOICE-SYN-002, VOICE-SYN-003
@@ -146,7 +146,7 @@ test("kokoro asks the TTS container for a WAV in the configured voice and speed"
 const flush = () => new Promise((r) => setImmediate(r));
 const httpStatus = (voice: Voice, id: string) => {
   let code = 0;
-  voice.handle({ method: "GET", url: `/audio/${id}.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
+  voice.handle({ method: "GET", url: `/audio/${id}-0.wav` } as never, { writeHead: (c: number) => { code = c; }, end() {} } as never);
   return code;
 };
 
@@ -271,7 +271,7 @@ test("claims are dropped when their audio is evicted, so the claimed set stays b
   const { voice, bus } = setup();
   await sayAndWait(voice, say("old"));
   await voice.onEvent(event("voice.playing", { id: "old", seq: 0, sink: "discord" }));
-  for (let i = 0; i < 50; i++) await sayAndWait(voice, say(`n${i}`)); // evicts "old" (store holds 50)
+  for (let i = 0; i < 100; i++) await sayAndWait(voice, say(`n${i}`)); // evicts "old" (store holds 100)
   assert.equal(httpStatus(voice, "old"), 404);
   assert.equal(voice.claimCount, 0); // the evicted line's claim went with its audio
   // a claim for an id that was never synthesized (or already evicted) is not kept
@@ -323,7 +323,7 @@ test("a voice.failed inside the claim window: the window runs in full, then the 
   mock.timers.tick(1);
   await flush();
   assert.deepEqual(bus.of("voice.playing"), []);
-  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual" }]);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", final: true }]);
   mock.timers.tick(10_000);
   await flush();
   assert.equal(bus.of("voice.done").length, 1, "no second done from the line's duration");
@@ -350,7 +350,7 @@ test("a voice.failed after the virtual playing cancels the pending virtual done 
   mock.timers.tick(100);
   await voice.onEvent(failed("u1"));
   await flush();
-  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual" }]);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", final: true }]);
   mock.timers.tick(10_000);
   await flush();
   assert.equal(bus.of("voice.done").length, 1, "the cancelled timer does not publish a second done");
@@ -370,6 +370,7 @@ test("a voice.failed that arrives while the virtual playing publish is pending r
   release();
   await flush();
   assert.deepEqual(bus.types(), ["voice.utterance", "voice.playing", "voice.done"]);
+  assert.deepEqual(bus.of("voice.done"), [{ id: "u1", seq: 0, sink: "virtual", final: true }]);
   mock.timers.tick(10_000);
   await flush();
   assert.equal(bus.of("voice.done").length, 1);

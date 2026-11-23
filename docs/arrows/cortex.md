@@ -16,9 +16,9 @@ Design: LLD § Viewer notes. `CTX-VIEWER-001` to `004` (familiarity line from me
 
 ## Streamed reply
 
-Design: LLD §§ The think pipeline, Streaming the reply, Critic, Repetition check. `services/cortex/src/clauses.ts` holds the pure parts: `readHead` (the leading `Name:`, `[emotion]` and `[gesture:name]`, decided at the first non-tag character, at 80 characters, or at the end), `cutClause` (boundaries, `clause_min_chars`/`clause_max_chars`, bracketed spans) and `cleanClause`. `cortex.ts` `readReply` reads `llm.stream` under an `AbortSignal`: with a `rules` critic each clause is checked as it arrives (critic on the first clause only, then repetition, then the mute and busy re-check) and published; with an `llm` or `http` critic the whole reply is read, criticised once and then cut. The first clause is `brain.say` (`more` unless it is the whole reply); later clauses are `brain.clause` with `seq` from 1; exactly one closing `brain.clause` (`last`, `through`, optional `cut`: `repeat`, `muted`, `busy`, `length`, `stopped`) closes each line that had `more`. `closeLine` aborts the stream before the closing event. `stop()` is async and closes an open line as `stopped`. The cortex's own `brain.clause` extends its working-memory line (`extendSelf`). `trackLlm` in `startup.ts` tracks `stream()` outcomes (CTX-HEALTH-003).
+Design: LLD §§ The think pipeline, Streaming the reply, Critic, Repetition check. `services/cortex/src/clauses.ts` holds the pure parts: `readHead` (the leading `Name:`, `[emotion]` and `[gesture:name]`, decided at the first non-tag character, at 80 characters, or at the end), `cutClause` (boundaries, `clause_min_chars`/`clause_max_chars`, bracketed spans) and `cleanClause`. `cortex.ts` `readReply` reads `llm.stream` under an `AbortSignal`: with a `rules` critic each clause is checked as it arrives (critic on the first clause only, then repetition, then the mute and busy re-check) and published; with an `llm` or `http` critic the whole reply is read, criticised once and then cut. The first clause is `brain.say` (`more` unless it is the whole reply); later clauses are `brain.clause` with `seq` from 1; exactly one closing `brain.clause` (`last`, `through`, optional `cut`: `repeat`, `muted`, `busy`, `length`, `stopped`) closes each line that had `more`. `closeLine` aborts the stream before the closing event. `stop()` is async and closes an open line as `stopped`. The cortex's own `brain.clause` extends its working-memory line (`extendSelf`). `trackLlm` in `startup.ts` tracks `stream()` outcomes (CTX-HEALTH-003). A reply line's release record (`Pending`, `armValve`, `settle`) releases a streamed line by its players' completion, by the claim window and failure condition, or by the valve; released lines are kept in `retired` (bounded) until their closing clause reads back, so a `voice.failed` queued before the release still applies its mark and a late failure still judges who played (CTX-REL-016, CTX-FALL-009).
 
-Open in this area: CTX-STREAM-003, 004 (the first newline ends the reply; implemented, not yet flipped), 011 to 013 and 019 (ownership to be confirmed), 030. CTX-STREAM-001, 031, 035 and 036 and the release, fallback and control specs landed with #197.
+Open in this area: CTX-STREAM-003, 004 (the first newline ends the reply; implemented, not yet flipped), 011 to 013 and 019 (ownership to be confirmed), 030.
 
 ## Decisions applied
 
@@ -58,6 +58,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - services/cortex/test/cortex.stream.test.ts
 - services/cortex/test/transcript-stops.test.ts
 - services/cortex/test/cortex.dispositions.test.ts
+- services/cortex/test/cortex.release.test.ts
 - services/cortex/test/cortex.stop.test.ts
 - services/cortex/test/cortex.test.ts
 - services/cortex/test/critic.test.ts
@@ -136,5 +137,5 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 - Streamed reply: CTX-STREAM-003, 004 (implemented; not yet flipped), 011 to 013, 019, 030 are open.
 - Early reply and tools (CTX-PROV, CTX-INTJ, CTX-TOOL) are open.
-- Event handling: CTX-EVT-001 and CTX-EVT-009 are open. CTX-EVT-001 is owned by #225; `CORTEX_EVENTS` in `startup.ts` gained `voice.utterance` and `voice.playing` for the release logic (CTX-REL-001, CTX-REL-002), so CTX-EVT-001 stays `[ ]` until its full list is settled.
+- Event handling: CTX-EVT-001 and CTX-EVT-009 are open. `CORTEX_EVENTS` in `startup.ts` includes `voice.utterance` and `voice.playing` for the release logic (CTX-REL-001, CTX-REL-002); the rest of CTX-EVT-001's list is owned by #225.
 - The LLD's open questions: a repeat on a mention.

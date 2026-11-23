@@ -114,6 +114,9 @@ type LineCut = NonNullable<BusEvent<"brain.clause">["data"]["cut"]>;
 /** The claim window a streamed line's players have to start it (VOICE-SINK-002, CTX-REL-011). */
 const CLAIM_WINDOW_MS = 1500;
 
+/** Released lines kept for late marks and players (see `retired`). */
+const RETIRED_MAX = 64;
+
 /** A sink that published `voice.playing` for a pending line (CTX-REL-002). */
 interface Player {
   /** The clauses it reported a plain `voice.done` for. */
@@ -129,7 +132,6 @@ interface Mark { sink: string; seq: number; fallback?: string }
 
 /** A line pending on the voice: its valve, its players and, for a line of the cortex's own reply, its release record. */
 interface Pending {
-  since: number;
   /** The valve (CTX-GATE-004, CTX-GATE-009); a streamed line's valve runs only while a clause is outstanding (CTX-REL-001). */
   timer?: ReturnType<typeof setTimeout>;
   /** A streamed line's claim window (CTX-REL-011), started at its first `voice.utterance`. */
@@ -172,6 +174,11 @@ export class Cortex {
    * `speaking_timeout_ms` to end before it is released as a stuck sink (CTX-GATE-004, CTX-GATE-009).
    */
   private pending = new Map<string, Pending>();
+  /**
+   * Lines released recently, by id, bounded (RETIRED_MAX): kept until their closing clause is read back, so a `voice.failed`
+   * queued before the release still applies its mark, and a late failure still judges who played (CTX-REL-016, CTX-FALL-009).
+   */
+  private retired = new Map<string, Pending>();
   /** A status a line's end owes the end of the think in flight, which publishes it (CTX-REL-009, CTX-EVT-005). */
   private statusOwed = false;
   private mood: Mood | undefined;
@@ -225,7 +232,7 @@ export class Cortex {
         this.ctx.extendSelf(d.id, d.seq, d.text);
         // The closing clause read back: the failures read while the reply was open apply now (CTX-REL-016).
         // @spec CTX-REL-016
-        const p = d.last ? this.pending.get(d.id) : undefined;
+        const p = d.last ? (this.pending.get(d.id) ?? this.retired.get(d.id)) : undefined;
         if (p) { p.readBack = true; const marks = p.marks; p.marks = []; this.applyMarks(d.id, p, marks); }
         break;
       }
@@ -233,10 +240,9 @@ export class Cortex {
       case "voice.utterance": {
         const d = ev.data as BusEvent<"voice.utterance">["data"];
         const p = this.pending.get(d.id);
-        if (p?.own?.streamed) {
-          if (!p.window && !p.windowEnded) this.startWindow(d.id, p);
-          this.armValve(d.id, p, true);
-        }
+        if (!p) break;
+        if (p.own?.streamed && !p.window && !p.windowEnded) this.startWindow(d.id, p);
+        this.progress();
         break;
       }
       // @spec CTX-REL-002, CTX-REL-001
@@ -245,10 +251,10 @@ export class Cortex {
         const p = this.pending.get(d.id);
         if (!p) break;
         if (!p.players.has(d.sink)) p.players.set(d.sink, { done: new Set(), completedAll: false, ended: false });
-        if (p.own?.streamed) this.armValve(d.id, p, true);
+        this.progress();
         break;
       }
-      // @spec CTX-EVT-005
+      // @spec CTX-EVT-005, CTX-STREAM-001
       case "voice.done": {
         const d = ev.data as BusEvent<"voice.done">["data"];
         // What the audience heard of an interrupted line, recorded whether or not the line is still pending (CTX-EVT-011, CTX-GATE-011).
@@ -259,8 +265,9 @@ export class Cortex {
         else if (!d.interrupted && !d.final) this.ctx.markHeard(d.id, undefined);
         const p = this.pending.get(d.id);
         if (!p) break;
-        if (p.own?.streamed) { await this.streamDone(d, p); break; }
-        if (this.endSpeaking(d.id)) await this.endedLine();
+        if (p.own?.streamed) await this.streamDone(d, p);
+        else if (this.endSpeaking(d.id)) await this.endedLine();
+        this.progress();
         break;
       }
       // A stop ends lines, never a think: no cancel, restart or start (CTX-GATE-010). A later `voice.done` flagged interrupted
@@ -284,16 +291,17 @@ export class Cortex {
       // @spec CTX-EVT-008, CTX-FALL-002, CTX-FALL-003, CTX-FALL-007, CTX-REL-012, CTX-REL-014
       case "voice.failed": {
         const d = ev.data as BusEvent<"voice.failed">["data"];
-        const p = this.pending.get(d.id);
-        if (p) {
-          p.failureRead = true;
-          const pl = p.players.get(d.sink);
+        const live = this.pending.get(d.id);
+        if (live) {
+          live.failureRead = true;
+          const pl = live.players.get(d.sink);
           if (pl) pl.ended = true;
         }
+        const p = live ?? this.retired.get(d.id);
         const mark: Mark = { sink: d.sink, seq: d.seq, ...(d.fallback ? { fallback: d.fallback.text } : {}) };
         if (p && !p.readBack) p.marks.push(mark);
         else this.applyMarks(d.id, p, [mark]);
-        if (p?.own?.streamed) await this.settle(d.id);
+        if (live?.own?.streamed) await this.settle(d.id);
         break;
       }
       // @spec CTX-EVT-006
@@ -403,11 +411,13 @@ export class Cortex {
       });
     } catch (err) {
       log.error({ err }, "think failed");
-      await this.status("idle").catch(() => {});
+      // A pending line keeps the status (CTX-REL-010): idle only when nothing is pending, and the owed status is taken here so the finally does not repeat it.
+      this.statusOwed = false;
+      if (this.pending.size === 0) await this.status("idle").catch(() => {});
     } finally {
       // @spec CTX-STREAM-029
       this.thinking = false;
-      // A line that ended during the think owes its status to the end of the think (CTX-REL-010).
+      // @spec CTX-REL-009, CTX-REL-010: a line that ended during the think owes its status to the end of the think.
       if (this.statusOwed) {
         this.statusOwed = false;
         if (this.pending.size === 0) await this.statusLogged(this.control.muted || this.control.paused ? "muted" : "idle");
@@ -530,6 +540,9 @@ export class Cortex {
         await this.d.bus.publish("brain.say", {
           id, text: t, emotion: line.emotion, gesture: line.gesture, reason: r.focus.reason,
           ...propagatedFlags(r.focus), timing, ...(final ? {} : { more: true as const }),
+        }).catch((err) => {
+          this.endSpeaking(id); // a line that never reached the bus is not pending
+          throw err;
         });
         r.onSaid();
         // @spec CTX-STREAM-018
@@ -688,10 +701,8 @@ export class Cortex {
   }
 
   // @spec CTX-GATE-004
-  /** Some line is still pending on the voice (with the stuck-sink safety valve per line). A streamed line's valve is timed by its clauses (CTX-REL-001). */
+  /** Some line is still pending on the voice. Each line's valve is armed on its own progress (CTX-GATE-004, CTX-REL-001), so none is swept here. */
   private voiceBusy(except?: string): boolean {
-    const limit = this.d.cfg.brain.cortex.speaking_timeout_ms;
-    for (const [id, p] of this.pending) if (!p.own?.streamed && performance.now() - p.since > limit) this.endSpeaking(id); // monotonic: a stepped wall clock must not move the valve
     for (const id of this.pending.keys()) if (id !== except) return true;
     return false;
   }
@@ -700,20 +711,15 @@ export class Cortex {
    * A line began playing: remember it and arm its valve. `own` marks a reply line of the cortex's own think, with its line object
    * and whether it is streamed. Lines already pending stay pending.
    */
+  // @spec CTX-SAY-005, CTX-GATE-004, CTX-GATE-009
   private startSpeaking(id: string, own?: { line: Line; streamed: boolean }): void {
     this.endSpeaking(id); // the same id again restarts its valve
     const p: Pending = {
-      since: performance.now(), windowEnded: false, players: new Map(), failureRead: false, errorZero: false,
+      windowEnded: false, players: new Map(), failureRead: false, errorZero: false,
       readBack: own?.streamed !== true, marks: [], ...(own ? { own } : {}),
     };
     this.pending.set(id, p);
-    if (own?.streamed) { this.armValve(id, p, true); return; } // CTX-GATE-004, CTX-REL-001
-    // @spec CTX-GATE-009
-    const timer = setTimeout(() => {
-      void this.release(id).catch((err) => this.d.log.error({ err }, "brain.status publish failed"));
-    }, this.d.cfg.brain.cortex.speaking_timeout_ms);
-    timer.unref();
-    p.timer = timer;
+    this.armValve(id, p, true);
   }
 
   /** Service shutdown: release the valves, end a think that has published no clause, and close an open streamed line as `stopped`, once (CTX-STREAM-037). */
@@ -728,17 +734,21 @@ export class Cortex {
 
   }
 
-  /** A line ended (its release, its valve or a stop); false when it was not pending. Clears its timers. */
+  /** A line ended (its release, its valve or a stop); false when it was not pending. Clears its timers and keeps it as retired. */
   private endSpeaking(id: string): boolean {
     const p = this.pending.get(id);
     if (!p) return false;
     clearTimeout(p.timer);
     clearTimeout(p.window);
     this.pending.delete(id);
+    this.retired.delete(id);
+    this.retired.set(id, p);
+    if (this.retired.size > RETIRED_MAX) this.retired.delete(this.retired.keys().next().value!); // a Map iterates in insertion order
     return true;
   }
 
-  /** A line ended: publish the status it leaves, or owe it to the end of the think in flight (CTX-EVT-005, CTX-REL-009, CTX-REL-010). */
+  // @spec CTX-REL-009, CTX-REL-010, CTX-EVT-005
+  /** A line ended: publish the status it leaves, or owe it to the end of the think in flight. */
   private async endedLine(): Promise<void> {
     if (this.pending.size > 0) return;
     if (this.thinking) { this.statusOwed = true; return; }
@@ -757,9 +767,15 @@ export class Cortex {
     return [...p.players.values()].every((pl) => pl.completedAll || pl.done.has(last));
   }
 
-  /** A clause is outstanding until every player has completed the line (CTX-REL-001). */
+  /** A clause is outstanding until every player has completed it (CTX-REL-001); a single-clause line is outstanding until it ends. */
   private outstanding(p: Pending): boolean {
-    return !this.allCompleted(p);
+    return p.own?.streamed ? !this.allCompleted(p) : true;
+  }
+
+  // @spec CTX-REL-001, CTX-GATE-004
+  /** Voice made progress on some pending line: every pending line's valve restarts, since voice plays the lines in order. */
+  private progress(): void {
+    for (const [id, p] of this.pending) this.armValve(id, p, true);
   }
 
   // @spec CTX-REL-012
@@ -782,11 +798,10 @@ export class Cortex {
 
   // @spec CTX-REL-001, CTX-GATE-004, CTX-GATE-009
   /**
-   * (Re)arm the valve of a streamed line while a clause is outstanding; with none outstanding it is off. `restart` false keeps a
-   * running valve (a clause published while one is outstanding is not progress).
+   * (Re)arm a line's valve while a clause is outstanding; with none outstanding it is off. `restart` false keeps a running valve
+   * (a clause published while one is outstanding is not progress).
    */
   private armValve(id: string, p: Pending, restart: boolean): void {
-    if (!p.own?.streamed) return;
     if (!this.outstanding(p)) { clearTimeout(p.timer); p.timer = undefined; return; }
     if (!restart && p.timer) return;
     clearTimeout(p.timer);
@@ -801,12 +816,12 @@ export class Cortex {
   /** The valve ran out with a clause outstanding and no progress: an open streamed reply closes `timeout`, then the line is released. */
   private async onValve(id: string): Promise<void> {
     const p = this.pending.get(id);
-    if (!p?.own?.streamed) return;
-    if (!p.own.line.closed) await this.closeLine(p.own.line, "timeout");
+    if (!p) return;
+    if (p.own?.streamed && !p.own.line.closed) await this.closeLine(p.own.line, "timeout");
     await this.release(id);
   }
 
-  // @spec CTX-REL-003, CTX-REL-004, CTX-REL-005, CTX-REL-008, CTX-REL-015, CTX-FALL-012, CTX-REL-001
+  // @spec CTX-REL-003, CTX-REL-004, CTX-REL-005, CTX-REL-008, CTX-REL-015, CTX-FALL-012
   /** A `voice.done` for a streamed line: a player's completion, an `error` final's lowered clause, then the release rules. */
   private async streamDone(d: BusEvent<"voice.done">["data"], p: Pending): Promise<void> {
     const line = p.own!.line;
@@ -824,7 +839,6 @@ export class Cortex {
         if (!d.final && !d.interrupted) pl.done.add(d.seq);
       }
     }
-    if (this.pending.get(d.id) === p) this.armValve(d.id, p, true);
     await this.settle(d.id);
   }
 

@@ -59,9 +59,23 @@ class LoopBus extends FakeBus {
   }
 }
 
-function setup(cfg: Record<string, unknown> = {}) {
+/** A bus that holds the cortex's closing `brain.clause` until `deliver()`: its read-back comes later, as on the real bus. */
+class HeldBus extends LoopBus {
+  held: Array<() => Promise<void>> = [];
+  override async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
+    if (type === "brain.clause" && (data as { last?: boolean }).last) {
+      const id = await (FakeBus.prototype as unknown as { publish: (t: string, d: unknown) => Promise<string> }).publish.call(this, type, data);
+      this.held.push(async () => { await this.cortex?.onEvent(event(type, data, "cortex") as never); });
+      return id;
+    }
+    return super.publish(type, data);
+  }
+  /** Reads back the held closing clauses, in publication order. */
+  async deliver(): Promise<void> { while (this.held.length) await this.held.shift()!(); }
+}
+
+function setup(cfg: Record<string, unknown> = {}, bus: LoopBus = new LoopBus()) {
   const config = testConfig({ brain: { memory: { recall_k: 0 }, cortex: { recall_timeout_ms: 100, clause_min_chars: 10, clause_max_chars: 60, max_clauses: 8, ...cfg } } });
-  const bus = new LoopBus();
   const llm = new StreamLlm();
   const critic = new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: () => ({ ok: true }) }, silentLog);
   const cortex = new Cortex({ cfg: config, bus, llm, critic, log: silentLog, loadPersonality: () => "You are Coco." });
@@ -585,4 +599,180 @@ test("a pause with a think in flight and no line published yet publishes no voic
   await thinking;
   assert.equal(s.bus.of("voice.stop").length, 0);
   assert.equal(s.bus.of("brain.say").length, 0);
+});
+
+// ---- marks that outlive their line: the closing clause is read back after the release (CTX-REL-016, CTX-FALL-008..012) ----
+
+// @spec CTX-REL-016, CTX-REL-011, CTX-FALL-011
+test("a failure without fallback queued before a no-player line is released applies its heard record at the delayed read-back", async () => {
+  const bus = new HeldBus();
+  const s = setup({}, bus);
+  const id = await closedLine(s);
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(utt(id));
+    await s.cortex.onEvent(failed(id, 0, "A"));
+    await tick(1500);
+  });
+  assert.equal(s.statuses().at(-1), "idle", "released: nobody played it");
+  assert.equal(selfEntry(s, id)!.heard, undefined, "the closing clause is not read back yet");
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.heard, "", "heard by nobody once read back");
+});
+
+// @spec CTX-REL-016, CTX-FALL-008, CTX-FALL-003
+test("a fallback queued before a no-player line is released marks it and keeps the glitch at the delayed read-back", async () => {
+  const bus = new HeldBus();
+  const s = setup({}, bus);
+  const id = await closedLine(s);
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(utt(id));
+    await s.cortex.onEvent(failed(id, 0, "A", FALLBACK));
+    await tick(1500);
+  });
+  assert.equal(selfEntry(s, id)!.fallback, undefined, "not applied before the read-back");
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.fallback, "my mic died");
+  await s.cortex.think(mention());
+  assert.match(s.llm.system(), /Your voice glitched: your line "First clause is here, second clause is here\." failed to play/);
+});
+
+// @spec CTX-REL-016, CTX-STREAM-035, CTX-FALL-008
+test("a fallback queued on an open reply survives a voice.stop that releases the line before the closing clause is read back", async () => {
+  const bus = new HeldBus();
+  const s = setup({}, bus);
+  const { id, thinking, g } = await openLine(s);
+  await s.cortex.onEvent(failed(id, 0, "A", FALLBACK));
+  await s.cortex.onEvent(stop([id]));
+  g.open();
+  await thinking;
+  assert.equal(selfEntry(s, id)!.fallback, undefined);
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.fallback, "my mic died");
+});
+
+// @spec CTX-REL-016, CTX-CTRL-008, CTX-FALL-008
+test("a fallback queued on an open reply survives a mute that releases the line before the closing clause is read back", async () => {
+  const bus = new HeldBus();
+  const s = setup({}, bus);
+  const { id, thinking, g } = await openLine(s);
+  await s.cortex.onEvent(failed(id, 0, "A", FALLBACK));
+  await s.cortex.onEvent(control("mute"));
+  g.open();
+  await thinking;
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.fallback, "my mic died");
+  assert.equal(s.statuses().at(-1), "muted");
+});
+
+// @spec CTX-REL-016, CTX-GATE-004, CTX-STREAM-036, CTX-FALL-008
+test("a fallback queued on an open reply survives the valve releasing the line before the closing clause is read back", async () => {
+  const bus = new HeldBus();
+  const s = setup({ speaking_timeout_ms: 1000 }, bus);
+  const { id, thinking, g } = await openLine(s);
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(playing(id, 0, "A")); // progress: the valve restarts under the fake clock
+    await s.cortex.onEvent(failed(id, 0, "A", FALLBACK));
+    await tick(1000);
+  });
+  g.open();
+  await thinking;
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.fallback, "my mic died");
+});
+
+// @spec CTX-REL-016, CTX-FALL-011, CTX-FALL-012, CTX-REL-015
+test("heard text for an error final on clause 1 is the clause before it, applied when the released line's closing clause is read back", async () => {
+  const bus = new HeldBus();
+  const s = setup({}, bus);
+  const { id, thinking, g } = await openLine(s);
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(utt(id));
+    await s.cortex.onEvent(failed(id, 1, "A"));
+    await s.cortex.onEvent(done(id, 1, "error", { final: true })); // closes failed through 0
+    await tick(1500); // the window ends: nobody played, the failure holds, the line is released
+  });
+  assert.equal(selfEntry(s, id)!.heard, undefined, "not read back yet");
+  g.open();
+  await thinking;
+  await bus.deliver();
+  assert.equal(selfEntry(s, id)!.heard, "First clause is here,");
+});
+
+// ---- late failures judge the players and clauses of a released line (CTX-FALL-009, CTX-FALL-008) ----
+
+// @spec CTX-FALL-009, CTX-REL-016
+test("a sink that fails after another sink's done released a line without more is not marked: another sink played it", async () => {
+  const s = setup();
+  const id = await closedLine(s, ["[happy] Just one short line here."]);
+  await s.cortex.onEvent(playing(id, 0, "A"));
+  await s.cortex.onEvent(playing(id, 0, "B"));
+  await s.cortex.onEvent(done(id, 0, "A")); // A's done releases the line
+  assert.equal(s.statuses().at(-1), "idle");
+  await s.cortex.onEvent(failed(id, 0, "B", FALLBACK));
+  assert.equal(selfEntry(s, id)!.fallback, undefined);
+  assert.equal(selfEntry(s, id)!.heard, undefined);
+  await s.cortex.think(mention());
+  assert.doesNotMatch(s.llm.system(), /Your voice glitched/);
+});
+
+// @spec CTX-FALL-008, CTX-FALL-009
+test("a stuck sink that fails after the valve released a streamed line marks the line only from the failed seq", async () => {
+  const s = setup({ speaking_timeout_ms: 1000 });
+  const { id, thinking, g } = await openLine(s);
+  g.open();
+  await thinking; // clauses 0 and 1 published, the reply closed
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(playing(id, 0, "A")); // A never completes: the valve runs
+    await tick(1000);
+  });
+  assert.equal(s.statuses().at(-1), "idle", "the valve released the line");
+  await s.cortex.onEvent(failed(id, 1, "A", FALLBACK));
+  assert.equal(selfEntry(s, id)!.fallback, "First clause is here, my mic died");
+  await s.cortex.think(mention());
+  assert.match(s.llm.system(), /the rest of your line "second clause is here\." failed to play/);
+});
+
+// ---- the valve of every pending line restarts on voice progress (CTX-SAY-005, CTX-REL-001) ----
+
+// @spec CTX-SAY-005, CTX-REL-001, CTX-GATE-004
+test("an operator say queued behind a reply that keeps progressing is not timed out by its own valve, and no idle is published while it is queued", async () => {
+  const s = setup({ speaking_timeout_ms: 1000 });
+  const { id, thinking, g } = await openLine(s);
+  await withTimers(async (tick) => {
+    await s.cortex.onEvent(event("control", { cmd: "say", text: "operator words" }));
+    for (let i = 0; i < 4; i++) {
+      await tick(800);
+      await s.cortex.onEvent(utt(id)); // the reply's progress: voice is playing the queue, so every valve restarts
+    }
+    // 3200 ms on: the operator line is still queued behind the reply, which has now closed
+    g.open();
+    await thinking;
+    assert.ok(await busy(s), "the operator line is still queued");
+    assert.equal(idles(s), 0, "no idle while the operator line is queued");
+    await tick(999);
+    assert.equal(idles(s), 0);
+    await tick(1);
+  });
+  assert.equal(s.statuses().at(-1), "idle", "released by the valve once no progress came for the timeout");
+});
+
+// ---- a failed publish of a clause does not idle a pending line (CTX-REL-010) ----
+
+// @spec CTX-REL-010, CTX-EVT-005
+test("a think whose clause publish fails ends with no idle while its streamed line stays pending", async () => {
+  class FailClauses extends LoopBus {
+    failClauses = false;
+    override async publish<T extends EventType>(type: T, data: EventInput<T>): Promise<string> {
+      if (type === "brain.clause" && this.failClauses) throw new Error("bus down");
+      return super.publish(type, data);
+    }
+  }
+  const bus = new FailClauses();
+  const s = setup({}, bus);
+  const { thinking, g } = await openLine(s);
+  bus.failClauses = true;
+  g.open();
+  await thinking;
+  assert.equal(idles(s), 0, "the pending line owns the status");
+  assert.ok(await busy(s), "the line is still pending");
 });

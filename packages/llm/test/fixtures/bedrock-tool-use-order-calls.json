@@ -1,0 +1,38 @@
+{
+  "id": "msg_01FixtureTool",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "Two lookups.",
+      "signature": "sig-a"
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_bdrk_01A",
+      "name": "get_weather",
+      "input": {
+        "city": "Oslo"
+      }
+    },
+    {
+      "type": "thinking",
+      "thinking": "And the time.",
+      "signature": "sig-b"
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_bdrk_01B",
+      "name": "get-time",
+      "input": {}
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 52,
+    "output_tokens": 38
+  }
+}

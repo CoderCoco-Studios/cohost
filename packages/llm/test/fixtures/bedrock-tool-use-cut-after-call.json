@@ -1,0 +1,24 @@
+{
+  "id": "msg_01FixtureTool",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_bdrk_01A",
+      "name": "get-time",
+      "input": {}
+    },
+    {
+      "type": "text",
+      "text": "Let me"
+    }
+  ],
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 52,
+    "output_tokens": 38
+  }
+}

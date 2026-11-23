@@ -42,7 +42,7 @@ export type ChatMessage =
   | { role: "system"; content: string }
   /** Base64 images for a vision model; only the Ollama provider sends them with the message (LLM-VIS-001); the others drop them (LLM-VIS-002, LLM-VIS-003). */
   | { role: "user"; content: string; images?: string[] }
-  /** `toolCalls` is present only when the model asked for tools; `continuation` is opaque to callers. */
+  /** `toolCalls` is present only when the model asked for tools; `continuation` is opaque to callers and is read only by the provider named in its `name` (LLM-TOOL-014, LLM-TOOL-015). */
   | { role: "assistant"; content: string; toolCalls?: ToolCall[]; continuation?: unknown }
   /** One tool's result, answering the call with `callId`. */
   | { role: "tool"; callId: string; name: string; content: string; isError?: boolean };
@@ -211,6 +211,8 @@ class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOO
     else if (c.args !== undefined) cur.args = c.args;
     this.calls.set(i, cur);
   }
+  /** Removes the call at content index `i`: the cap cut it off (LLM-TOOL-022). */
+  drop(i: number): void { this.calls.delete(i); }
   build(capped: boolean, dropCut: boolean): ToolCall[] {
     const out: ToolCall[] = [];
     for (const i of [...this.calls.keys()].sort((a, b) => a - b)) {
@@ -233,9 +235,12 @@ function finishOf(capped: boolean, asked: boolean, calls: ToolCall[], refused = 
 }
 
 /** The result of a reply: trimmed text (LLM-IF-006), the calls in order, and the assistant message to append (LLM-IF-007, LLM-IF-022). */
-function resultOf(content: string | null | undefined, finish: ChatResult["finish"], toolCalls: ToolCall[]): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-CHAT-007, LLM-TOOL-021
+function resultOf(content: string | null | undefined, finish: ChatResult["finish"], toolCalls: ToolCall[], continuation?: unknown): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-CHAT-007, LLM-TOOL-021, LLM-TOOL-014
   const text = (content ?? "").trim();
-  return { text, toolCalls, finish, message: { role: "assistant", content: text, ...(toolCalls.length ? { toolCalls } : {}) } };
+  return {
+    text, toolCalls, finish,
+    message: { role: "assistant", content: text, ...(toolCalls.length ? { toolCalls } : {}), ...(continuation !== undefined ? { continuation } : {}) },
+  };
 }
 
 /** Ollama's history: a result is `{role: "tool", tool_name, content}`; a call goes back with its arguments as an object (LLM-TOOL-005, LLM-TOOL-017, LLM-TOOL-028). */
@@ -284,7 +289,11 @@ type WireEvent =
   | { kind: "keepalive" }
   | { kind: "final"; capped: boolean; asked: boolean; refused?: boolean }
   | { kind: "end" }
-  | { kind: "document"; value: unknown };
+  | { kind: "document"; value: unknown }
+  /** A completed provider content block, by its content index, that the reply keeps for its continuation (LLM-TOOL-014); not output. */
+  | { kind: "block"; index: number; block: unknown }
+  /** The token cap cut off the call at this content index, so it is dropped (LLM-TOOL-022). */
+  | { kind: "cut"; index: number };
 /** A line of a framed body as a provider's line framing reads it; `whole` starts a reply that arrives as one JSON document (LLM-STREAM-029). */
 type LineEvent = WireEvent | { kind: "whole" };
 
@@ -301,6 +310,8 @@ interface StreamPlan {
   begin(): Opener;
   /** A backend that ignored `stream:true` and answered one JSON document (LLM-STREAM-029). Absent where no such reply is possible. */
   whole?(json: any): { text: string | null | undefined; capped: boolean; asked: boolean; calls: WireCall[] };
+  /** The continuation of a finished reply, from its kept content blocks in the order the backend sent them (LLM-TOOL-014). Absent where the backend keeps none. */
+  continuation?(blocks: unknown[]): unknown;
 }
 
 /** Holds back whitespace so no delta starts a reply with it or ends the reply with it (LLM-STREAM-009 to LLM-STREAM-011). */
@@ -428,6 +439,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
   let events: AsyncIterator<WireEvent> | undefined;
   const trimmer = new TextTrimmer();
   const calls = new CallAssembler();
+  const blocks = new Map<number, unknown>(); // @spec LLM-TOOL-014
 
   /** Runs one pending step under the clock, and maps what it throws. */
   const clocked = async <T>(step: () => Promise<T>): Promise<T> => {
@@ -465,6 +477,8 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       if (step.done) break;
       const ev = step.value;
       if (ev.kind === "keepalive") { mark = Date.now(); continue; }
+      if (ev.kind === "block") { blocks.set(ev.index, ev.block); mark = Date.now(); continue; } // @spec LLM-TOOL-014
+      if (ev.kind === "cut") { calls.drop(ev.index); blocks.delete(ev.index); mark = Date.now(); continue; } // @spec LLM-TOOL-022
       if (ev.kind === "document") { // @spec LLM-STREAM-029
         if (sawOutput) throw streamError(plan.name, "a JSON object arrived after stream events");
         if (ev.value && typeof ev.value === "object" && (ev.value as { error?: unknown }).error !== undefined) {
@@ -491,13 +505,16 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
     }
     if (!finished) throw streamError(plan.name, "the reply ended before its final event"); // @spec LLM-STREAM-022
     throwIfAborted(); // @spec LLM-STREAM-026
-    const toolCalls = calls.build(capped, plan.dropCut); // @spec LLM-TOOL-022, LLM-TOOL-023, LLM-STREAM-012
+    // A refused reply delivers no calls and no continuation, as complete() resolves none (LLM-CLAUDE-021, LLM-STREAM-038).
+    const toolCalls = refused ? [] : calls.build(capped, plan.dropCut); // @spec LLM-TOOL-022, LLM-TOOL-023, LLM-STREAM-012, LLM-STREAM-038
     for (const call of toolCalls) {
       throwIfAborted();
       yield { type: "tool_call", call }; // @spec LLM-STREAM-003, LLM-STREAM-006, LLM-STREAM-012, LLM-STREAM-032
       throwIfAborted(); // @spec LLM-STREAM-026
     }
-    yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls, refused), toolCalls) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028, LLM-STREAM-033
+    const ordered = [...blocks].sort(([a], [b]) => a - b).map(([, block]) => block);
+    const continuation = refused ? undefined : plan.continuation?.(ordered); // @spec LLM-TOOL-014, LLM-STREAM-038
+    yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls, refused), toolCalls, continuation) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028, LLM-STREAM-033
   } finally {
     clearTimeout(timer);
     caller?.removeEventListener("abort", onCallerAbort);
@@ -771,27 +788,61 @@ abstract class ClaudeBase implements ChatProvider {
    * The request body `chat()`, `complete()` and `stream()` share: joined `system`, the `(begin)` turn, `max_tokens`, effort and no
    * temperature (LLM-CLAUDE-023 to LLM-CLAUDE-030). Fallbacks go on a non-streamed anthropic request only (LLM-CLAUDE-007, LLM-CLAUDE-022).
    */
-  private params(allMessages: ChatMessage[], opts: ChatOptions, streaming: boolean): Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "stream"> { // @spec LLM-CLAUDE-023, LLM-CLAUDE-024, LLM-CLAUDE-025, LLM-CLAUDE-026, LLM-CLAUDE-027, LLM-CLAUDE-028, LLM-CLAUDE-029, LLM-CLAUDE-030
+  private params(allMessages: ChatMessage[], req: ChatRequest, streaming: boolean): Omit<Anthropic.Beta.MessageCreateParamsNonStreaming, "stream"> { // @spec LLM-CLAUDE-023, LLM-CLAUDE-024, LLM-CLAUDE-025, LLM-CLAUDE-026, LLM-CLAUDE-027, LLM-CLAUDE-028, LLM-CLAUDE-029, LLM-CLAUDE-030
     const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
-    const turns: Anthropic.MessageParam[] = messages
-      .filter((m): m is Extract<ChatMessage, { role: "user" | "assistant" }> => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content }));
+    const turns = this.turns(messages);
     if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" }); // @spec LLM-CLAUDE-002
 
     // The caller's budget is honoured (thinking shares it; hooks run at low effort), down to the API's minimum of 1.
-    const maxTokens = opts.maxTokens === undefined ? this.cfg.claude.max_tokens : Math.max(CLAUDE_MIN_MAX_TOKENS, Math.floor(opts.maxTokens)); // @spec LLM-CLAUDE-003
+    const maxTokens = req.maxTokens === undefined ? this.cfg.claude.max_tokens : Math.max(CLAUDE_MIN_MAX_TOKENS, Math.floor(req.maxTokens)); // @spec LLM-CLAUDE-003
+    const tools = hasTools(req)
+      ? req.tools!.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters as Anthropic.Beta.BetaTool.InputSchema })) // @spec LLM-TOOL-010
+      : undefined;
     return {
       model: this.cfg.model,
       max_tokens: maxTokens,
       system: system || undefined,
       messages: turns,
       output_config: { effort: this.cfg.claude.effort }, // @spec LLM-CLAUDE-004
-      ...(opts.json ? {} : { stop_sequences: TRANSCRIPT_STOPS }), // @spec LLM-STOP-003, LLM-STOP-004, LLM-STOP-015, LLM-STOP-016, LLM-STOP-017
+      ...(tools ? { tools } : {}),
+      ...(req.json || tools ? {} : { stop_sequences: TRANSCRIPT_STOPS }), // @spec LLM-STOP-003, LLM-STOP-004, LLM-STOP-010, LLM-STOP-015, LLM-STOP-016, LLM-STOP-017, LLM-STOP-019
       // Safety classifiers can decline; server-side fallback re-runs on another Claude model
       // in the same call. Not offered on Bedrock, where a refusal just means "say nothing", and never on a stream (LLM-CLAUDE-022).
       ...(this.serverFallbacks && !streaming ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}), // @spec LLM-CLAUDE-007, LLM-CLAUDE-008, LLM-CLAUDE-032
     };
+  }
+
+  /**
+   * The history as Claude's turns. Consecutive `tool` messages share one user turn of `tool_result` blocks, in the order given, each
+   * answering its own `callId` (LLM-TOOL-012, LLM-TOOL-025); an assistant turn with calls is built by `assistantContent` (LLM-TOOL-013).
+   */
+  private turns(messages: ChatMessage[]): Anthropic.MessageParam[] { // @spec LLM-TOOL-012, LLM-TOOL-013, LLM-TOOL-025
+    const out: Anthropic.MessageParam[] = [];
+    let resultsOpen = false;
+    for (const m of messages) {
+      if (m.role === "system") continue;
+      if (m.role === "tool") {
+        const block: Anthropic.ToolResultBlockParam = { type: "tool_result", tool_use_id: m.callId, content: m.content, ...(m.isError ? { is_error: true } : {}) };
+        if (resultsOpen) (out.at(-1)!.content as Anthropic.ContentBlockParam[]).push(block);
+        else { out.push({ role: "user", content: [block] }); resultsOpen = true; }
+        continue;
+      }
+      resultsOpen = false;
+      if (m.role === "user") out.push({ role: "user", content: m.content });
+      else out.push({ role: "assistant", content: this.assistantContent(m) });
+    }
+    return out;
+  }
+
+  /** An assistant turn: a plain one is its text. One with calls and its own continuation is sent back verbatim from the continuation's blocks (LLM-TOOL-013); without one, a text block when content is non-empty, then one `tool_use` per call (LLM-TOOL-013, LLM-TOOL-015, LLM-TOOL-017). */
+  private assistantContent(m: Extract<ChatMessage, { role: "assistant" }>): string | Anthropic.ContentBlockParam[] { // @spec LLM-TOOL-013, LLM-TOOL-015, LLM-TOOL-017
+    if (!m.toolCalls?.length) return m.content;
+    const own = ownContinuation(m.continuation, this.name);
+    if (own) return own.content as Anthropic.ContentBlockParam[];
+    const text: Anthropic.TextBlockParam[] = m.content === "" ? [] : [{ type: "text", text: m.content }];
+    const uses = m.toolCalls.map((c): Anthropic.ToolUseBlockParam => ({ type: "tool_use", id: c.id, name: c.name, input: c.invalid !== undefined ? {} : c.arguments }));
+    return [...text, ...uses];
   }
 
   async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-012
@@ -816,11 +867,17 @@ abstract class ClaudeBase implements ChatProvider {
       throw sdkFailure(this.name, e, caller);
     }
     if (res.stop_reason === "refusal") return resultOf("", "refusal", []); // @spec LLM-CLAUDE-006, LLM-CLAUDE-021
-    const text = res.content // @spec LLM-CLAUDE-005, LLM-CLAUDE-031, LLM-IF-004, LLM-STREAM-013
+    // A reply the token cap cut off ends in the call it was writing; that call's arguments never finished, so it is dropped (LLM-TOOL-022).
+    const capped = res.stop_reason === "max_tokens";
+    const content = capped && res.content.at(-1)?.type === "tool_use" ? res.content.slice(0, -1) : res.content;
+    const text = content // @spec LLM-CLAUDE-005, LLM-CLAUDE-031, LLM-IF-004, LLM-STREAM-013
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    return resultOf(text, res.stop_reason === "max_tokens" ? "length" : "stop", []); // @spec LLM-IF-014, LLM-IF-015
+    const toolCalls: ToolCall[] = content // @spec LLM-TOOL-011, LLM-TOOL-020, LLM-TOOL-024
+      .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
+      .map((b) => ({ id: b.id, name: b.name, ...parseArguments(b.input) }));
+    return resultOf(text, finishOf(capped, res.stop_reason === "tool_use", toolCalls), toolCalls, claudeContinuation(this.name, content)); // @spec LLM-IF-014, LLM-IF-015, LLM-IF-018, LLM-TOOL-014
   }
 
   /** A streamed reply (LLM-IF-008): the SDK's streaming request, read under the stream machinery's clocks. */
@@ -828,7 +885,8 @@ abstract class ClaudeBase implements ChatProvider {
     return streamReply({
       name: this.name,
       timeoutMs: this.cfg.timeout_ms,
-      dropCut: false,
+      dropCut: false, // the cap's cut is a `cut` event from the stream (LLM-TOOL-022)
+      continuation: (blocks) => claudeContinuation(this.name, blocks), // @spec LLM-TOOL-014
       begin: () => {
         const params = this.params(messages, opts, true);
         return async (signal) => {
@@ -896,26 +954,119 @@ async function sdkCall<T>(name: string, signal: AbortSignal | undefined, call: (
   try { return await call(); } catch (e) { throw sdkFailure(name, e, signal); }
 }
 
-/** The SDK's stream events as wire events. Text deltas are content; thinking, signature and tool-input deltas are keepalives, so they restart the between-events clock but are not output (LLM-STREAM-008, LLM-STREAM-017). */
-async function* claudeEvents(name: string, events: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent>): AsyncGenerator<WireEvent> {
-  for await (const ev of events) yield claudeEvent(name, ev);
+/** An open Claude content block, assembled from its deltas until it stops (LLM-TOOL-011, LLM-TOOL-014). */
+type OpenBlock =
+  | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string; signature: string }
+  | { type: "tool_use"; id: string; name: string; start: Record<string, unknown>; partial?: string };
+
+/** The arguments of a streamed `tool_use` block from its joined `input_json_delta` text; a blank or unparsable text is `{}` (a cut call is dropped before it matters). */
+function assembledInput(raw: string): Record<string, unknown> {
+  if (raw.trim() === "") return {};
+  try { return asObject(JSON.parse(raw))?.arguments ?? {}; } catch { return {}; }
 }
 
-function claudeEvent(name: string, ev: Anthropic.Beta.BetaRawMessageStreamEvent): WireEvent { // @spec LLM-STREAM-007, LLM-STREAM-008, LLM-STREAM-013, LLM-STREAM-021, LLM-STREAM-027, LLM-STREAM-031
-  switch (ev.type) {
-    case "content_block_start":
-      return ev.content_block.type === "text" && ev.content_block.text ? { kind: "content", text: ev.content_block.text } : { kind: "keepalive" };
-    case "content_block_delta":
-      return ev.delta.type === "text_delta" ? { kind: "content", text: ev.delta.text } : { kind: "keepalive" };
-    case "message_delta": // the final message delta carries the stop reason (LLM-STREAM-031)
-      return ev.delta.stop_reason
-        ? { kind: "final", capped: ev.delta.stop_reason === "max_tokens", asked: false, refused: ev.delta.stop_reason === "refusal" }
-        : { kind: "keepalive" };
-    default:
-      // The SDK types no `error` event (it throws one itself); an unexpected one still fails the reply (LLM-STREAM-021).
-      if ((ev as { type: string }).type === "error") throw streamError(name, "the backend reported an error mid-reply"); // @spec LLM-STREAM-021
-      return { kind: "keepalive" };
+/**
+ * The SDK's stream events as wire events. A `tool_use` block is a call: its id and name come at its start (with its `input` when
+ * the start carries one), and its `input_json_delta` fragments join by block index (LLM-STREAM-030, LLM-TOOL-011, LLM-TOOL-022); a
+ * call with no input at all is `{}` when its block stops. Every completed content block is kept as a `block`, by index, so the
+ * continuation holds the reply's blocks in order (LLM-TOOL-014). When the token cap ends the reply on a `tool_use` block, that
+ * call is cut off (LLM-TOOL-022). Text deltas are content; the other deltas are keepalives, so they restart the between-events clock
+ * but are not output (LLM-STREAM-008, LLM-STREAM-017).
+ */
+async function* claudeEvents(name: string, events: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent>): AsyncGenerator<WireEvent> { // @spec LLM-STREAM-030, LLM-TOOL-011, LLM-TOOL-014, LLM-TOOL-022
+  const open = new Map<number, OpenBlock>();
+  const kinds = new Map<number, string>();
+  for await (const ev of events) {
+    if (ev.type === "content_block_start") {
+      const b = ev.content_block;
+      kinds.set(ev.index, b.type);
+      if (b.type === "text") {
+        open.set(ev.index, { type: "text", text: b.text });
+        yield b.text ? { kind: "content", text: b.text } : { kind: "keepalive" };
+        continue;
+      }
+      if (b.type === "thinking") {
+        open.set(ev.index, { type: "thinking", thinking: b.thinking, signature: b.signature });
+        yield { kind: "keepalive" };
+        continue;
+      }
+      if (b.type === "redacted_thinking") { yield { kind: "block", index: ev.index, block: { type: "redacted_thinking", data: b.data } }; continue; }
+      if (b.type === "tool_use") {
+        const input = (b.input ?? {}) as Record<string, unknown>;
+        open.set(ev.index, { type: "tool_use", id: b.id, name: b.name, start: input });
+        const hasInput = Object.keys(input).length > 0;
+        yield { kind: "call", call: { index: ev.index, id: b.id, name: b.name, ...(hasInput ? { args: input } : {}) } }; // @spec LLM-TOOL-011
+        continue;
+      }
+    } else if (ev.type === "content_block_delta") {
+      const o = open.get(ev.index);
+      const d = ev.delta;
+      if (d.type === "text_delta") {
+        if (o?.type === "text") o.text += d.text;
+        yield { kind: "content", text: d.text };
+        continue;
+      }
+      if (d.type === "thinking_delta" && o?.type === "thinking") { o.thinking += d.thinking; yield { kind: "keepalive" }; continue; }
+      if (d.type === "signature_delta" && o?.type === "thinking") { o.signature = d.signature; yield { kind: "keepalive" }; continue; }
+      if (d.type === "input_json_delta" && o?.type === "tool_use") {
+        o.partial = (o.partial ?? "") + d.partial_json;
+        yield { kind: "call", call: { index: ev.index, args: d.partial_json } }; // @spec LLM-STREAM-030
+        continue;
+      }
+    } else if (ev.type === "content_block_stop") {
+      const o = open.get(ev.index);
+      if (o) {
+        open.delete(ev.index);
+        if (o.type === "text") { yield { kind: "block", index: ev.index, block: { type: "text", text: o.text } }; continue; }
+        if (o.type === "thinking") { yield { kind: "block", index: ev.index, block: { type: "thinking", thinking: o.thinking, signature: o.signature } }; continue; }
+        if (o.partial === undefined && Object.keys(o.start).length === 0) yield { kind: "call", call: { index: ev.index, args: "{}" } }; // a call with no arguments at all
+        yield { kind: "block", index: ev.index, block: { type: "tool_use", id: o.id, name: o.name, input: o.partial !== undefined ? assembledInput(o.partial) : o.start } };
+        continue;
+      }
+    } else if (ev.type === "message_delta" && ev.delta.stop_reason === "max_tokens" && kinds.size > 0) {
+      // The cap ended the reply: a tool_use at the reply's last block index is the call it was writing, and is dropped (LLM-TOOL-022).
+      const top = Math.max(...kinds.keys());
+      if (kinds.get(top) === "tool_use") yield { kind: "cut", index: top };
+    }
+    yield claudeEvent(name, ev);
   }
+}
+
+function claudeEvent(name: string, ev: Anthropic.Beta.BetaRawMessageStreamEvent): WireEvent { // @spec LLM-STREAM-021, LLM-STREAM-027, LLM-STREAM-031, LLM-IF-018
+  if (ev.type === "message_delta") { // the final message delta carries the stop reason (LLM-STREAM-031, LLM-IF-018)
+    return ev.delta.stop_reason
+      ? { kind: "final", capped: ev.delta.stop_reason === "max_tokens", asked: ev.delta.stop_reason === "tool_use", refused: ev.delta.stop_reason === "refusal" }
+      : { kind: "keepalive" };
+  }
+  // The SDK types no `error` event (it throws one itself); an unexpected one still fails the reply (LLM-STREAM-021).
+  if ((ev as { type: string }).type === "error") throw streamError(name, "the backend reported an error mid-reply"); // @spec LLM-STREAM-021
+  return { kind: "keepalive" };
+}
+
+/**
+ * What a Claude reply keeps for the turn that answers its calls (LLM-TOOL-014): its content blocks (thinking, redacted_thinking, text
+ * and tool_use) in the order the API sent them, sent back verbatim on the next request. `name` is the producing provider; another
+ * provider's continuation is ignored (LLM-TOOL-015, LLM-TOOL-030).
+ */
+interface ClaudeContinuation {
+  name: string;
+  content: unknown[];
+}
+
+const KEPT_BLOCKS = new Set(["thinking", "redacted_thinking", "text", "tool_use"]);
+
+/** The continuation of a Claude reply whose content holds thinking or calls; undefined for a plain text reply (LLM-TOOL-014). */
+function claudeContinuation(name: string, blocks: unknown[]): ClaudeContinuation | undefined { // @spec LLM-TOOL-014, LLM-TOOL-030
+  const content = blocks.filter((b) => KEPT_BLOCKS.has((b as { type: string }).type));
+  if (!content.some((b) => (b as { type: string }).type !== "text")) return undefined;
+  return { name, content };
+}
+
+/** The continuation an assistant message carries for this provider, or undefined when it has none or another provider wrote it (LLM-TOOL-015). */
+function ownContinuation(continuation: unknown, name: string): ClaudeContinuation | undefined { // @spec LLM-TOOL-015
+  const c = continuation as Partial<ClaudeContinuation> | null | undefined;
+  return c && c.name === name && Array.isArray(c.content) ? (c as ClaudeContinuation) : undefined;
 }
 
 /** The Claude API's own endpoint: the SDK would otherwise take `ANTHROPIC_BASE_URL` (LLM-CLAUDE-009). */

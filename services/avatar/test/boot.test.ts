@@ -12,6 +12,8 @@ class BootBus extends FakeBus {
   calls: string[] = [];
   subscribed: SubscribeCall[] = [];
   stopped = false;
+  avatarFrames: unknown[] = [];
+  async publishAvatarFrame(frame: unknown): Promise<string> { this.avatarFrames.push(frame); return "1-0"; }
   resetGate?: Promise<void>;
   subscribeError?: Error;
   async resetGroup(group: string): Promise<void> {
@@ -174,6 +176,20 @@ test("the engine runs and the subscription starts while the first driver connect
   assert.deepEqual(t.driver.ctx?.gestures, { wave: "WAVE" });
   assert.equal(t.driver.ctx?.stateDir, "/state");
   assert.deepEqual(t.exits, []);
+});
+
+// @spec AVATAR-BRW-002
+test("the driver context carries frames, the bus client's publishAvatarFrame, beside the log, maps and state directory", async (ctx) => {
+  const t = boot(ctx);
+  void runAvatar(t.b);
+  await waitFor(() => t.driver.ctx !== undefined, "driver connect started");
+  const c = t.driver.ctx as unknown as { frames: unknown; log: unknown; expressions: unknown; gestures: unknown; stateDir: string };
+  assert.ok(c.log && c.expressions && c.gestures && c.stateDir === "/state");
+  const frame = { mouthOpen: 0, mouthSmile: 0, headX: 0, headY: 0, headZ: 0, eyeX: 0, eyeY: 0, blink: 0, emotion: "neutral", intensity: 0, expression: "" };
+  const frames = c.frames as { publishAvatarFrame?: (f: unknown) => Promise<unknown> } & ((f: unknown) => Promise<unknown>);
+  assert.ok(frames, "frames is in the context");
+  await (typeof frames.publishAvatarFrame === "function" ? frames.publishAvatarFrame(frame) : frames(frame));
+  assert.deepEqual(t.bus.avatarFrames, [frame], "a write through frames reaches the bus client's publishAvatarFrame");
 });
 
 // @spec AVATAR-BUS-007

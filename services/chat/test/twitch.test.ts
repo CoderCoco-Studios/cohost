@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
-import { createChatFilter, type ChatUserInfo } from "../src/filter.js";
+import { createChatFilter, type ChatSender } from "../src/filter.js";
 import { createMessageHandler, registerUserToken, TwitchSource } from "../src/twitch.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { subscribeInject } from "@cohost/shared";
 
-const info: ChatUserInfo = { displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false };
+const info: ChatSender = { displayName: "Bob", login: "bob", userId: "42", isMod: false, isSub: false, ignoreIdentifiers: ["bob", "Bob"] };
 const toEvent = createChatFilter(testConfig(), "twitch");
 
 // @spec CHAT-TW-007
@@ -18,8 +18,8 @@ test("a failed chat.message publish is logged and the next message is still hand
   let calls = 0;
   bus.fail = () => ++calls === 1;
   const onMessage = createMessageHandler({ toEvent, bus, log: rec.log });
-  await onMessage("bob", "first", info); // publish rejects: must not throw
-  await onMessage("bob", "second", info);
+  await onMessage(info, "first"); // publish rejects: must not throw
+  await onMessage(info, "second");
   assert.deepEqual(rec.msgs("warn"), ["chat.message publish failed"]);
   assert.deepEqual(bus.of("chat.message").map((m) => m.text), ["second"]);
 });
@@ -27,7 +27,7 @@ test("a failed chat.message publish is logged and the next message is still hand
 // @spec CHAT-TW-008
 test("a filtered message publishes nothing", async () => {
   const bus = new FakeBus();
-  await createMessageHandler({ toEvent, bus, log: recordingLog().log })("bob", "!uptime", info);
+  await createMessageHandler({ toEvent, bus, log: recordingLog().log })(info, "!uptime");
   assert.equal(bus.published.length, 0);
 });
 

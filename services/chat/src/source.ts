@@ -1,4 +1,5 @@
 import type { Logger } from "@cohost/config";
+import type { ChatSender } from "./filter.js";
 
 /** The sources `chat.sources` can list. */
 export type ChatSourceName = "twitch" | "youtube" | "fake";
@@ -12,17 +13,6 @@ export type ChatSourceState = "starting" | "waiting" | "reading" | "retrying" | 
 export interface ChatSourceStatus {
   state: ChatSourceState;
   reason?: string;
-}
-
-/** A sender as a source reads it. `platform` lets one source (fake) emit for more than one platform. */
-export interface ChatSender {
-  login: string;
-  displayName: string;
-  userId?: string;
-  isMod: boolean;
-  isSubscriber: boolean;
-  isBroadcaster?: boolean;
-  platform?: ChatPlatform;
 }
 
 /** A removal a source reports; #178 publishes it as `chat.removed`. */

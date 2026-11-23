@@ -435,7 +435,7 @@ test("a removal for an ignored viewer is still published: ignore lists do not ap
 // @spec CHAT-FORGET-001
 test("any source's removal is published with that source's platform", async () => {
   const hold: { env?: any } = {};
-  const r = rig({ chat: { sources: ["youtube"] } }, {
+  const r = rig({ chat: { sources: ["youtube"], youtube: { api_key: "k", video: "dQw4w9WgXcQ" } } }, {
     sourceFactories: { youtube: () => ({ name: "youtube", state: () => ({ state: "reading" }), async start(env: any) { hold.env = env; env.onState("reading"); }, stop() {} }) as never },
   });
   try {

@@ -13,7 +13,7 @@ import type { Readable } from "node:stream";
 import type { Bus } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
-import { channelName, createChatFilter, type ChatUserInfo } from "./filter.js";
+import { channelName, createChatFilter, type ChatSender } from "./filter.js";
 import { chatHealth } from "./health.js";
 import { FakeSource } from "./fake.js";
 import { createInjectHandler } from "./inject.js";
@@ -21,7 +21,7 @@ import { sourcePlan } from "./plan.js";
 import { tokenFile } from "./token-store.js";
 import { createMessageHandler, TwitchSource, type CreateAuth, type CreateClient } from "./twitch.js";
 import { YouTubeSource } from "./youtube.js";
-import type { ChatPlatform, ChatSender, ChatSource, ChatSourceName, ChatSourceStartEnv, ChatSourceState, ChatSourceStatus } from "./source.js";
+import type { ChatPlatform, ChatRemoval, ChatSource, ChatSourceName, ChatSourceStartEnv, ChatSourceState, ChatSourceStatus } from "./source.js";
 
 export type { ChatClientLike } from "./twitch.js";
 
@@ -147,23 +147,27 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
         return pub;
       };
 
+      // A removal is what the platform did: it is published as it is, and ignore lists never apply to it (CHAT-FORGET-006).
+      const publishRemoval = async (removal: ChatRemoval): Promise<void> => {
+        try {
+          await bus.publish("chat.removed", removal);
+        } catch (err) {
+          log.warn({ err: String(err) }, "chat.removed publish failed");
+        }
+      };
+
       const envFor = (name: ChatSourceName): ChatSourceStartEnv => ({
         log,
         // @spec CHAT-SRC-007, CHAT-SRC-006
         emit: (sender: ChatSender, text, messageId) => {
           if (closed) return;
-          const platform = sender.platform ?? defaultPlatform(name);
-          void publisherFor(platform)(sender.login, text, {
-            displayName: sender.displayName,
-            userId: sender.userId,
-            isMod: sender.isMod,
-            isBroadcaster: sender.isBroadcaster ?? false,
-            isSubscriber: sender.isSubscriber,
-            messageId,
-          } satisfies ChatUserInfo);
+          void publisherFor(sender.platform ?? defaultPlatform(name))(sender, text, messageId);
         },
-        // #178 publishes chat.removed; the hook is typed here so every source has the same contract.
-        emitRemoval: () => {},
+        // @spec CHAT-FORGET-001, CHAT-FORGET-006
+        emitRemoval: (removal) => {
+          if (closed) return;
+          void publishRemoval(removal);
+        },
         // @spec CHAT-SRC-002
         onState: (state: ChatSourceState, reason?: string) => {
           if (closed) return;
